@@ -65,13 +65,6 @@ vi.mock(
 );
 
 vi.mock(
-  '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksRow',
-  () => ({
-    VacancyMeetLinksRow: () => null,
-  }),
-);
-
-vi.mock(
   '@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView',
   () => ({
     VacancyFunnelView: () => (
@@ -81,10 +74,10 @@ vi.mock(
 );
 
 vi.mock(
-  '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksCard',
+  '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard',
   () => ({
-    VacancyMeetLinksCard: () => (
-      <div data-testid="vacancy-meet-links-card">MeetLinksCard</div>
+    VacancySocialLinksCard: () => (
+      <div data-testid="vacancy-social-links-card">SocialLinksCard</div>
     ),
   }),
 );
@@ -249,10 +242,10 @@ describe('VacancyDetailPage — tab content encuadres (default)', () => {
     expect(screen.getByTestId('vacancy-encuadres-card')).toBeInTheDocument();
   });
 
-  it('meet links card is NOT visible on encuadres tab', () => {
+  it('social links card is NOT visible on encuadres tab', () => {
     renderPage();
     expect(
-      screen.queryByTestId('vacancy-meet-links-card'),
+      screen.queryByTestId('vacancy-social-links-card'),
     ).not.toBeInTheDocument();
   });
 
@@ -312,13 +305,13 @@ describe('VacancyDetailPage — tab content talentum', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('meet links card is NOT visible on talentum tab', async () => {
+  it('social links card is NOT visible on talentum tab', async () => {
     renderPage();
     await userEvent.click(
       screen.getByText('admin.vacancyDetail.tabs.talentum'),
     );
     expect(
-      screen.queryByTestId('vacancy-meet-links-card'),
+      screen.queryByTestId('vacancy-social-links-card'),
     ).not.toBeInTheDocument();
   });
 });
@@ -326,10 +319,18 @@ describe('VacancyDetailPage — tab content talentum', () => {
 // ── GARANTIA 5: Aba Links ────────────────────────────────────────────────────
 
 describe('VacancyDetailPage — tab content links', () => {
-  it('CRITICAL: meet links card is visible after clicking links tab', async () => {
+  it('CRITICAL: social links card is visible after clicking links tab', async () => {
     renderPage();
     await userEvent.click(screen.getByText('admin.vacancyDetail.tabs.links'));
-    expect(screen.getByTestId('vacancy-meet-links-card')).toBeInTheDocument();
+    expect(screen.getByTestId('vacancy-social-links-card')).toBeInTheDocument();
+  });
+
+  it('o card de links de Meet NÃO existe mais na aba Links (spec 052: o fluxo automático saiu)', async () => {
+    renderPage();
+    await userEvent.click(screen.getByText('admin.vacancyDetail.tabs.links'));
+    expect(screen.getByTestId('vacancy-social-links-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-meet-links-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('meet-links-save')).not.toBeInTheDocument();
   });
 
   it('encuadres card is NOT visible on links tab', async () => {
@@ -356,7 +357,7 @@ describe('VacancyDetailPage — tab navigation round-trip', () => {
     renderPage();
 
     await userEvent.click(screen.getByText('admin.vacancyDetail.tabs.links'));
-    expect(screen.getByTestId('vacancy-meet-links-card')).toBeInTheDocument();
+    expect(screen.getByTestId('vacancy-social-links-card')).toBeInTheDocument();
     expect(
       screen.queryByTestId('vacancy-encuadres-card'),
     ).not.toBeInTheDocument();
@@ -366,7 +367,7 @@ describe('VacancyDetailPage — tab navigation round-trip', () => {
     );
     expect(screen.getByTestId('vacancy-encuadres-card')).toBeInTheDocument();
     expect(
-      screen.queryByTestId('vacancy-meet-links-card'),
+      screen.queryByTestId('vacancy-social-links-card'),
     ).not.toBeInTheDocument();
   });
 });

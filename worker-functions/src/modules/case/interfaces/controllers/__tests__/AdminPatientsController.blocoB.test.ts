@@ -108,7 +108,7 @@ describe('AdminPatientsController — bloco B', () => {
       const ctrl = makeController({ moveStatus });
       const [req, res] = reqRes({ id: ID }, { status: 'ON_HOLD', onHoldReason: 'INSURER', onHoldNote: NOTE, changeSource: 'kanban' });
       await ctrl.updatePatientStatus(req, res);
-      expect(moveStatus).toHaveBeenCalledWith(ID, 'ON_HOLD', { onHoldReason: 'INSURER', onHoldNote: NOTE, changeSource: 'kanban' });
+      expect(moveStatus).toHaveBeenCalledWith(ID, 'ON_HOLD', { onHoldReason: 'INSURER', onHoldNote: NOTE, changeSource: 'kanban', cells: null });
       expect(res.status).toHaveBeenCalledWith(200);
       expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toContain(NOTE);
       expect(JSON.stringify((reportError as jest.Mock).mock.calls)).not.toContain(NOTE);
@@ -168,7 +168,7 @@ describe('AdminPatientsController — bloco B', () => {
       );
       await ctrl.updatePatientStatus(req, res);
       expect(moveStatus).toHaveBeenCalledWith(ID, 'SEARCHING', {
-        onHoldReason: null, changeSource: 'admin_panel', suspensionExitReason: 'RESUMED_SERVICE', actorUid: 'uid-staff-1',
+        onHoldReason: null, changeSource: 'admin_panel', suspensionExitReason: 'RESUMED_SERVICE', actorUid: 'uid-staff-1', cells: null,
       });
       expect(res.status).toHaveBeenCalledWith(200);
     });

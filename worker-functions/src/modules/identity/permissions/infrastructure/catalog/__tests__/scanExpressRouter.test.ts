@@ -339,6 +339,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // `route.stack`), então esta célula só existe no catálogo por `cellsForaDeRota`. Sem
       // esta linha em `CELL_DESCRIPTION`, o export nasce `deprecated_at` a cada sync/boot.
       'patient_therapeutic_project:export',
+      // spec 048: `waive_contact` é checada no repositório do PT (`cells.includes`) e `incomplete_alert` pelo job de
+      // lembretes (`iam.effective_permissions`) — nenhuma das duas é `perm.require` de rota, só `CELL_DESCRIPTION`.
+      'patient_therapeutic_project:waive_contact',
+      'patient_therapeutic_project:incomplete_alert',
       // Os `:write` dos catálogos terapêuticos (objectives/activities/segments) REMOVIDOS de
       // `CELL_DESCRIPTION` (mesma change, F8/F9): órfãos — cobertos pelos `:create`/`:update`
       // explícitos abaixo.
@@ -367,6 +371,20 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // Spec 031 (02/10): aba "Documentos" — 4 células declaradas por rota real
       // (`patientDocumentsRoutes.ts`); o fixture de 2 rotas deste teste não as declara.
       'patient_document:read', 'patient_document:create', 'patient_document:update', 'patient_document:delete',
+      // Spec 049 (F3): aba "Admissão" — 4 células declaradas por rota real (`adminAdmissionRoutes.ts`).
+      'patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message',
+      // Spec 050 (F3): ensaio pago por reunião — célula própria (só Master), declarada em `adminAdmissionRoutes.ts`.
+      'patient_admission:release_paid_rehearsal',
+      // Spec 050 (F11): reprocesso do resumo — célula própria (Master + Admisión y Supervisión), declarada em `adminAdmissionRoutes.ts`.
+      'patient_admission:retry_summary',
+      // Spec 052 (F2): aba "Enquadre" da vaga — 4 células declaradas por rota real (`adminEnquadreEventRoutes.ts`).
+      'enquadre_event:read', 'enquadre_event:create', 'enquadre_event:update', 'enquadre_result:update',
+      // Spec 052 (F3): o resumo do evento — declarada em `adminEnquadreEventRoutes.ts` (download do PDF).
+      'enquadre_summary:read',
+      // Spec 055: tela Entrevistadores — declaradas em `adminInterviewHostRoutes.ts` (família admin.users).
+      'interview_host:read', 'interview_host:update',
+      // Spec 049 (F4): vínculo do Tactiq — 2 células `own_*` declaradas por rota real (`tactiqLinkRoutes.ts`).
+      'own_tactiq_link:read', 'own_tactiq_link:create',
       'staff_directory:read',
       // Spec 022, Bloco 4 (fecho, 21/09): notificações in-app — `own_notifications:read|update`
       // (família `admin.users`). Mesma situação das 5 células acima: rota real existe
@@ -394,7 +412,6 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'prescreening:create', 'prescreening:update',
       'interview:create', 'interview:update',
       'messaging:create', 'messaging:update',
-      'recruitment:create', 'recruitment:update',
       'worker:update',
       'worker_document:create', 'worker_document:update',
       // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345, 15/09): DECLARADAS por rota real
@@ -416,6 +433,15 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'recruitment_blocked:read',
       // Spec 029 (prompts de IA): descrição em CELL_DESCRIPTION; a rota real é adminAiPromptRoutes.
       'ai_prompt:read', 'ai_prompt:update',
+      // Spec 051 (F1): trocar o status do paciente por FORA da FSM — uma célula por destino; o
+      // consumidor é `decidirTrocaForaDoFluxo` (domínio), sem `perm.require` de rota neste PR.
+      'patient_status:move_to_searching',
+      'patient_status:move_to_active',
+      'patient_status:move_to_replacement',
+      'patient_status:move_to_on_hold',
+      'patient_status:move_to_suspended',
+      'patient_status:move_to_alta',
+      'patient_status:move_to_discharged',
     ]);
   });
 

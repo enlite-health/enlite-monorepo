@@ -31,7 +31,7 @@ import {
  *   C3  idempotência por (worker, vaga, ETAPA) em 7 dias, serializada por
  *       advisory lock do par (dois arrastos em segundos não passam os dois).
  *
- * QUALIFIED NÃO passa por aqui: é o QualifiedInterviewHandler (built-in).
+ * QUALIFIED passa por aqui como as demais (spec 052: o convite automático saiu); a linha `builtin` dela cai em DISABLED.
  * Nada de disparo em massa: 1 evento = 1 tarjeta = no máximo 1 mensagem.
  */
 

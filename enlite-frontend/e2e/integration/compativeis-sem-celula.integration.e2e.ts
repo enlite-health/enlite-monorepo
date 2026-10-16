@@ -31,7 +31,7 @@
  *
  * Exercises:
  *   P21 — funil-compativeis-sem-celula: API (`GET .../funnel`, `GET .../funnel-table`)
- *         e tela (lista de vacantes, modo lista aba Compatibles, Kanban) com A veem a
+ *         e tela (lista de vacantes, Lista com ETAPA = Compatibles, Kanban) com A veem a
  *         contagem de Compatíveis = 1 e o nome REDIGIDO ("Contato restrito", workerId
  *         null); o convidado (INVITED) continua com nome visível (controle: a redação é
  *         só de Compatíveis). Com B (`match:read`), o nome do compatível aparece nas
@@ -45,6 +45,11 @@ import {
   cleanupCompatibleCard,
   readFunnelApi,
   readFunnelTableApi,
+  gotoVacancyDetail,
+  switchToKanban,
+  switchToLista,
+  countListaRowsInStage,
+  readStageCount,
   type SeedCompatibleCardResult,
 } from '../helpers/compativeis-e2e-helper';
 import {
@@ -166,7 +171,7 @@ test.describe('Compatíveis some o nome sem match:read (engine ABAC ligado) @int
 
     console.log('[5.7] API com A (sem match:read): COMPATIBLE.length=', funnelA.stages.COMPATIBLE.length, 'nome=', funnelA.stages.COMPATIBLE[0].workerName);
 
-    // ── 2. Tela com A: lista de vacantes, modo lista (aba Compatibles), Kanban ──
+    // ── 2. Tela com A: lista de vacantes, Lista (ETAPA = Compatibles), Kanban ──
     await loginAs(page, STAFF_A);
 
     const [listResponse] = await Promise.all([
@@ -178,34 +183,28 @@ test.describe('Compatíveis some o nome sem match:read (engine ABAC ligado) @int
     await vacantesCompat.scrollIntoViewIfNeeded();
     await expect(vacantesCompat, 'lista de vacantes: stage-COMPATIBLE').toHaveText('01');
 
-    await page
-      .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
-      .catch(() => {});
-    const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
-    const [tableResponse] = await Promise.all([
-      page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-      page.goto(`/admin/vacancies/${vacancyId}`),
-    ]);
-    expect(tableResponse.ok(), 'GET funnel-table falhou').toBe(true);
-    await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+    // 054: a tela abre no Kanban; a Lista (sem abas) é aberta CLICANDO "Lista". A linha do
+    // compatível é a que tem ETAPA = Compatibles (`funnel-stage-<rowId>[data-stage=COMPATIBLE]`) —
+    // a linha redigida segue aparecendo na Lista, agora junto com a do convidado.
+    await gotoVacancyDetail(page, vacancyId);
+    await expect(
+      page.getByTestId('kanban-column-COMPATIBLE-count'),
+      'Kanban (vista padrão): kanban-column-COMPATIBLE-count = 1',
+    ).toHaveText('1');
+    const kanbanCompatCount = await readStageCount(page, 'kanban-column-COMPATIBLE-count');
 
-    await expect(page.getByTestId('funnel-tab-COMPATIBLE-count'), 'modo lista: aba Compatibles = 1').toHaveText('1');
-    await page.locator('#funnel-tab-COMPATIBLE').click();
-    const rows = page.locator('[data-testid^="funnel-row-"]');
-    await expect(rows, 'modo lista aba Compatibles: 1 linha').toHaveCount(1);
+    await switchToLista(page, vacancyId);
+    const compatStages = page.locator('[data-testid^="funnel-stage-"][data-stage="COMPATIBLE"]');
+    await expect(compatStages, 'Lista: 1 linha com ETAPA = Compatibles').toHaveCount(1);
+    expect(await countListaRowsInStage(page, 'COMPATIBLE'), 'Lista (linhas COMPATIBLE) = Kanban (coluna COMPATIBLE)').toBe(
+      kanbanCompatCount,
+    );
+    const rows = page.locator('[data-testid^="funnel-row-"]').filter({ has: compatStages });
+    await expect(rows, 'Lista: a linha do compatível').toHaveCount(1);
     await expect(rows.first(), 'modo lista: linha SEM o nome do compatível').not.toContainText(NOME_COMPATIVEL);
     await expect(rows.first(), 'modo lista: linha mostra o texto de redação').toContainText(NOME_REDIGIDO);
 
-    const funnelRe = new RegExp(`/vacancies/${vacancyId}/funnel(\\?|$)`);
-    const [kanbanResponse] = await Promise.all([
-      page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-      page
-        .getByRole('group', { name: 'Cambiar vista' })
-        .getByRole('button', { name: /Kanban/i })
-        .click(),
-    ]);
-    expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
-    await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+    await switchToKanban(page, vacancyId);
 
     await expect(
       page.getByTestId('kanban-column-COMPATIBLE-count'),
@@ -222,36 +221,23 @@ test.describe('Compatíveis some o nome sem match:read (engine ABAC ligado) @int
       'Kanban: nome do convidado aparece em Invitados (controle)',
     ).toContainText('FunnelMoveINVITED');
 
-    console.log('[5.7] Tela com A: vacantes=01, aba=1 (sem nome), kanban=1 (sem nome)');
+    console.log('[5.7] Tela com A: vacantes=01, lista(COMPATIBLE)=1 (sem nome), kanban=1 (sem nome)');
 
     // ── 3. Contexto novo com B (match:read): o nome aparece nas duas telas ──────
     const ctx2 = await browser.newContext();
     const page2 = await ctx2.newPage();
     await loginAs(page2, STAFF_B);
 
-    await page2
-      .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
-      .catch(() => {});
-    const [tableResponse2] = await Promise.all([
-      page2.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-      page2.goto(`/admin/vacancies/${vacancyId}`),
-    ]);
-    expect(tableResponse2.ok(), 'B: GET funnel-table falhou').toBe(true);
-    await page2.locator('#funnel-tab-COMPATIBLE').click();
+    await gotoVacancyDetail(page2, vacancyId);
+    await switchToLista(page2, vacancyId);
     await expect(
-      page2.locator('[data-testid^="funnel-row-"]').first(),
+      page2.locator('[data-testid^="funnel-row-"]').filter({
+        has: page2.locator('[data-testid^="funnel-stage-"][data-stage="COMPATIBLE"]'),
+      }),
       'B (match:read): nome do compatível visível no modo lista',
     ).toContainText(NOME_COMPATIVEL);
 
-    const [kanbanResponse2] = await Promise.all([
-      page2.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-      page2
-        .getByRole('group', { name: 'Cambiar vista' })
-        .getByRole('button', { name: /Kanban/i })
-        .click(),
-    ]);
-    expect(kanbanResponse2.ok(), 'B: GET funnel (kanban) falhou').toBe(true);
-    await expect(page2.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+    await switchToKanban(page2, vacancyId);
     await expect(
       page2.getByTestId('kanban-column-COMPATIBLE'),
       'B (match:read): nome do compatível visível no Kanban',

@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
+import { Hand, MapPin, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
-import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
+import { KanbanCardNotesButton } from './KanbanCardNotesButton';
 import { MoveToMenu } from './MoveToMenu';
+import { convocationLabel } from '@presentation/components/features/admin/VacancyDetail/Enquadre/enquadreEventTime';
 import { KanbanCardStageMessage } from './KanbanCardStageMessage';
 import { KanbanCardBlocked, type PromoteStatus } from './KanbanCardBlocked';
 import { KanbanCardResend, type ResendStatus } from './KanbanCardResend';
@@ -55,8 +56,12 @@ interface KanbanCardProps {
   /** Move o card para outro stage via menu de clique (alternativa ao arrasto).
    *  Só é passado para cards movíveis (com encuadre) — orphans/BLOQUEADO ficam sem. */
   onMoveTo?: (targetStage: string) => void;
+  /** Destinos do "Mover a…" (ids de coluna). Ausente = os do funil da vaga. */
+  moveTargets?: readonly string[];
   /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
   onOpenNotes?: () => void;
+  /** Botão de comentários só com o ícone, na linha da tag (kanban do evento de enquadre). Ausente = botão largo do funil. */
+  compactNotes?: boolean;
   /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. */
   lastMessagedAt?: string | null;
   /** PEND-14/DEC-12: último template enfileirado por ETAPA (mover a tarjeta) — o painel mostra o último envio por pessoa. */
@@ -82,6 +87,10 @@ interface KanbanCardProps {
    * (a autoria só é gravada desde 06/08): ausência NÃO significa desinteresse.
    */
   selfAppliedAt?: string | null;
+  /** Evento de enquadre para o qual o prestador foi convocado (spec 052): vira a etiqueta "Convocado · dd/mm hh:mm". */
+  convocation?: { startsAt: string } | null;
+  /** Spec 052: enquadre em que foi marcado. Só aparece em SELECTED e QUICK_RESPONSE_TEAM; nos outros estágios é ignorada. */
+  enquadreOrigin?: { eventCode: string } | null;
 }
 
 const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = {
@@ -102,6 +111,9 @@ const TALENTUM_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   IN_DOUBT: { bg: 'bg-orange-50', text: 'text-orange-700' },
   NOT_QUALIFIED: { bg: 'bg-red-50', text: 'text-red-600' },
 };
+
+/** Estágio → chave da etiqueta do enquadre de origem. Só estes dois estágios a mostram. */
+const ORIGIN_KEY: Record<string, string | undefined> = { SELECTED: 'originSelected', QUICK_RESPONSE_TEAM: 'originQuickResponse' };
 
 const COMPLETADO_BADGE_STYLE: Record<string, string> = {
   QUALIFIED: 'bg-green-50 text-green-700',
@@ -142,7 +154,11 @@ export function KanbanCard({
   onReject,
   onUndismiss,
   onMoveTo,
+  moveTargets,
+  convocation,
+  enquadreOrigin,
   onOpenNotes,
+  compactNotes = false,
   contactNotesCount = 0,
   selfAppliedAt,
   lastMessagedAt,
@@ -166,10 +182,6 @@ export function KanbanCard({
   // (funciona com clique do meio / ctrl+clique) e o Kanban fica intacto atrás.
   // stopPropagation evita que o clique dispare o drag do card.
   const stopPropagation = (e: React.MouseEvent) => e.stopPropagation();
-
-  const interviewLabel = interviewDate
-    ? `${formatCalendarDate(interviewDate, { day: 'numeric', month: 'short' }) ?? ''}${interviewTime ? ` ${formatClockTime(interviewTime)}` : ''}`
-    : null;
 
   // M5/E5: bloqueado de verdade (não elegível, não dispensado) ganha borda vermelha.
   const showBlockedBorder = !!isBlocked && blockedReason !== 'eligible' && !isDismissed;
@@ -206,10 +218,21 @@ export function KanbanCard({
         )}
       </div>
 
-      {occupation && (
-        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
-          {occupation}
-        </span>
+      {compactNotes && onOpenNotes ? (
+        <div className="flex items-center mt-1">
+          {occupation && (
+            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
+              {occupation}
+            </span>
+          )}
+          <KanbanCardNotesButton compact onOpen={onOpenNotes} count={contactNotesCount} />
+        </div>
+      ) : (
+        occupation && (
+          <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
+            {occupation}
+          </span>
+        )
       )}
 
       {/* "Se postuló sola": a pessoa clicou no link da vaga por conta própria.
@@ -252,15 +275,6 @@ export function KanbanCard({
         </span>
       )}
 
-      {stage === 'CONFIRMED' && interviewLabel && (
-        <div className="mt-1">
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-50 text-cyan-700">
-            <CalendarClock className="w-3 h-3" />
-            {interviewLabel}
-          </span>
-        </div>
-      )}
-
       <div className="mt-2 flex flex-col gap-1">
         {formattedPhone && (
           <div className="flex items-center gap-1 text-slate-500">
@@ -274,7 +288,7 @@ export function KanbanCard({
             <span className="text-xs">{workZone}</span>
           </div>
         )}
-        {stage !== 'CONFIRMED' && interviewDate && (
+        {interviewDate && (
           <span className="text-[10px] text-slate-400">
             {formatCalendarDate(interviewDate, {})}
             {interviewTime ? ` ${formatClockTime(interviewTime)}` : ''}
@@ -287,6 +301,22 @@ export function KanbanCard({
         <div className="mt-2">
           <span data-testid="reprogram-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">
             {t('admin.kanban.reprogramBadge')}
+          </span>
+        </div>
+      )}
+
+      {convocation && (
+        <div className="mt-2">
+          <span data-testid="convocation-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
+            {t('admin.vacancyDetail.enquadre.kanban.convoked', { date: convocationLabel(convocation.startsAt) })}
+          </span>
+        </div>
+      )}
+
+      {enquadreOrigin && ORIGIN_KEY[stage] && (
+        <div className="mt-2">
+          <span data-testid="enquadre-origin-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
+            {t(`admin.vacancyDetail.enquadre.kanban.${ORIGIN_KEY[stage]}`, { code: enquadreOrigin.eventCode })}
           </span>
         </div>
       )}
@@ -310,21 +340,7 @@ export function KanbanCard({
         />
       )}
 
-      {onOpenNotes && (
-        <button
-          data-testid="notes-button"
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenNotes();
-          }}
-          className="mt-2 w-full flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-slate-600 hover:bg-slate-100 hover:text-primary transition-colors border border-transparent hover:border-slate-200"
-        >
-          <MessageSquare className="w-3 h-3" />
-          {t('admin.kanban.notesButton')}
-          <NotesCountBadge count={contactNotesCount} />
-        </button>
-      )}
+      {onOpenNotes && !compactNotes && <KanbanCardNotesButton onOpen={onOpenNotes} count={contactNotesCount} />}
 
       <KanbanCardStageMessage lastStageMessage={lastStageMessage} />
       {presentationInvite && <KanbanCardPresentationInvite onInvite={presentationInvite.onInvite} state={presentationInvite.state} lastInvitedAt={presentationInvite.lastInvitedAt} />}
@@ -332,7 +348,7 @@ export function KanbanCard({
         <KanbanCardResend onResend={onResend} status={resendStatus} message={resendMessage} blockedReason={resendBlockedReason} lastMessagedAt={lastMessagedAt} />
       )}
 
-      {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} />}
+      {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} targets={moveTargets} />}
 
       {onReject && stage !== 'REJECTED' && (
         <button

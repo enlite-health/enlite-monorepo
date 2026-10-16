@@ -1,14 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { VacanciesTable, VacancyRow } from '../VacanciesTable';
+import { VACANCY_FUNNEL_COLUMNS } from '../VacancyDetail/Funnel/funnelTabsConfig';
 
 describe('VacanciesTable', () => {
   const realApiData: VacancyRow[] = [
     {
       id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
-      caso: 'Caso 349',
+      caseNumber: 349, caseOrdinal: 1,
       status: 'Esperando Ativação',
-      priority: 'URGENT',
       diasAberto: '05',
       stageCounts: {
         COMPATIBLE: 6,
@@ -16,7 +16,6 @@ describe('VacanciesTable', () => {
         INICIADO: 9,
         PRE_SCREENING: 5,
         COMPLETED: 3,
-        CONFIRMED: 43,
         SELECTED: 27,
         QUICK_RESPONSE_TEAM: 7,
         REJECTED: 2,
@@ -25,13 +24,11 @@ describe('VacanciesTable', () => {
       faltantes: '00',
       isDraft: false,
       lastActionAt: '2026-09-20T14:30:00.000Z',
-      daysWithoutDivulgation: 5,
     },
     {
       id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
-      caso: 'Caso 348',
+      caseNumber: 348, caseOrdinal: 1,
       status: 'Esperando Ativação',
-      priority: 'NORMAL',
       diasAberto: '03',
       stageCounts: {
         COMPATIBLE: 8,
@@ -39,7 +36,6 @@ describe('VacanciesTable', () => {
         INICIADO: 41,
         PRE_SCREENING: 18,
         COMPLETED: 11,
-        CONFIRMED: 19,
         SELECTED: 61,
         QUICK_RESPONSE_TEAM: 4,
         REJECTED: 10,
@@ -48,29 +44,39 @@ describe('VacanciesTable', () => {
       faltantes: '01',
       isDraft: false,
       lastActionAt: null,
-      daysWithoutDivulgation: null,
     },
   ];
 
-  it('should render table headers (case, status, priority, as 9 colunas do funil, applicants, missing)', () => {
+  it('should render table headers (case, status, última ação, as 8 colunas do funil, applicants, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.status')).toBeInTheDocument();
-    expect(screen.getByText('admin.vacancies.table.priority')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.lastAction')).toBeInTheDocument();
-    expect(screen.getByText('admin.vacancies.table.daysWithoutDivulgation')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.COMPATIBLE')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.COMPLETED')).toBeInTheDocument();
-    expect(screen.getByText('admin.kanban.columns.CONFIRMED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.SELECTED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.QUICK_RESPONSE_TEAM')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.REJECTED')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.applicants')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.missing')).toBeInTheDocument();
+  });
+
+  it('A1 (spec 046 F1): a lista não tem as colunas Prioridad nem Días sin difusión', () => {
+    render(<VacanciesTable vacancies={realApiData} />);
+    expect(screen.queryByTestId('vacancies-col-priority')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('vacancies-col-days-without-divulgation')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancies.table.priority')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancies.table.daysWithoutDivulgation')).not.toBeInTheDocument();
+  });
+
+  it('A2 (spec 052): a lista mostra as mesmas 8 colunas do funil (Kanban/abas), sem filtro local', () => {
+    expect(VACANCY_FUNNEL_COLUMNS).toHaveLength(8);
+    render(<VacanciesTable vacancies={realApiData} />);
+    VACANCY_FUNNEL_COLUMNS.forEach((c) => expect(screen.getByTestId(`vacancies-col-${c.id}`)).toBeInTheDocument());
   });
 
   it('should NOT render the removed dependencyLevel column', () => {
@@ -86,22 +92,14 @@ describe('VacanciesTable', () => {
   it('should render vacancy rows when data is provided', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
-    expect(screen.getByText('Caso 349')).toBeInTheDocument();
-    expect(screen.getByText('Caso 348')).toBeInTheDocument();
+    expect(screen.getByText('349#01')).toBeInTheDocument();
+    expect(screen.getByText('348#01')).toBeInTheDocument();
 
     const statusElements = screen.getAllByText('Esperando Ativação');
     expect(statusElements).toHaveLength(2);
   });
 
-  it('should render priority badge with the localized label', () => {
-    render(<VacanciesTable vacancies={realApiData} />);
-
-    // t() returns the key in test env
-    expect(screen.getByText('admin.vacancies.priorityOptions.urgent')).toBeInTheDocument();
-    expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeInTheDocument();
-  });
-
-  it('should render numeric data fields (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
+  it('should render numeric data fields (stageCounts das 8 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
     // Caso 349: stageCounts padStart(2,'0')
@@ -110,7 +108,6 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('09')).toBeInTheDocument();
     expect(screen.getByText('05')).toBeInTheDocument();
     expect(screen.getByText('03')).toBeInTheDocument();
-    expect(screen.getByText('43')).toBeInTheDocument();
     expect(screen.getByText('27')).toBeInTheDocument();
     expect(screen.getByText('07')).toBeInTheDocument();
     expect(screen.getByText('02')).toBeInTheDocument();
@@ -122,7 +119,6 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('41')).toBeInTheDocument();
     expect(screen.getByText('18')).toBeInTheDocument();
     expect(screen.getByText('11')).toBeInTheDocument();
-    expect(screen.getByText('19')).toBeInTheDocument();
     expect(screen.getByText('61')).toBeInTheDocument();
     expect(screen.getByText('04')).toBeInTheDocument();
     expect(screen.getByText('10')).toBeInTheDocument();
@@ -151,14 +147,6 @@ describe('VacanciesTable', () => {
     expect(rows).toHaveLength(2);
   });
 
-  it('renders "—" when priority is null', () => {
-    const noPriority: VacancyRow[] = [
-      { ...realApiData[0], priority: null },
-    ];
-    render(<VacanciesTable vacancies={noPriority} />);
-    expect(screen.getByText('—')).toBeInTheDocument();
-  });
-
   it('shows the draft badge only on rows where isDraft is true', () => {
     const mixed: VacancyRow[] = [
       { ...realApiData[0], id: 'draft-1', isDraft: true },
@@ -182,38 +170,24 @@ describe('VacanciesTable', () => {
   it('calls onRowClick with the row id AND isDraft when the row is clicked (F25/D425, Fase 3 — quem decide o destino em rascunho é o pai)', () => {
     const onRowClick = vi.fn();
     render(<VacanciesTable vacancies={realApiData} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByText('Caso 349'));
+    fireEvent.click(screen.getByText('349#01'));
     expect(onRowClick).toHaveBeenCalledWith('fd269cde-d8c9-4fdc-88a9-5b19ebcdb531', false);
   });
 });
 
 // Colunas novas da Fase 3 (DX-3.5/DX-3.6/DX-3.7): última ação + dias sem divulgação.
-describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3.6)', () => {
+describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () => {
   const base: VacancyRow = {
     id: 'vac-x',
-    caso: 'Caso X',
+    caseNumber: 9999, caseOrdinal: 1,
     status: 'Activo',
-    priority: 'NORMAL',
     diasAberto: '01',
     stageCounts: {},
     postulados: '0',
     faltantes: '0',
     isDraft: false,
     lastActionAt: null,
-    daysWithoutDivulgation: null,
   };
-
-  it('daysWithoutDivulgation: 5 → mostra "5" (sem padStart)', () => {
-    render(<VacanciesTable vacancies={[{ ...base, daysWithoutDivulgation: 5 }]} />);
-    expect(screen.getByTestId('vacancies-row-vac-x-days-without-divulgation')).toHaveTextContent('5');
-  });
-
-  it('daysWithoutDivulgation: null → a chave noDivulgationRecord, NUNCA "0"', () => {
-    render(<VacanciesTable vacancies={[{ ...base, daysWithoutDivulgation: null }]} />);
-    const cell = screen.getByTestId('vacancies-row-vac-x-days-without-divulgation');
-    expect(cell).toHaveTextContent('admin.vacancies.table.noDivulgationRecord');
-    expect(cell).not.toHaveTextContent('0');
-  });
 
   it('lastActionAt: null → a chave noLastAction', () => {
     render(<VacanciesTable vacancies={[{ ...base, lastActionAt: null }]} />);
@@ -229,27 +203,48 @@ describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3
     expect(cell.textContent).not.toBe('');
   });
 
-  it('ordem dos vacancies-col-* = lista literal de 16 (tudo menos o olho; Fase 5: +COMPATIBLE)', () => {
+  it('ordem dos vacancies-col-* = lista literal de 13 (tudo menos o olho; sem priority nem dias sem divulgação)', () => {
     render(<VacanciesTable vacancies={[base]} />);
     const headers = screen.getAllByTestId(/^vacancies-col-/);
     const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));
     expect(ids).toEqual([
       'case',
       'status',
-      'priority',
       'last-action',
-      'days-without-divulgation',
       'COMPATIBLE',
       'INVITED',
       'INICIADO',
       'PRE_SCREENING',
       'COMPLETED',
-      'CONFIRMED',
       'SELECTED',
       'QUICK_RESPONSE_TEAM',
       'REJECTED',
       'applicants',
       'missing',
     ]);
+  });
+});
+
+// Coluna "Caso" (spec 046 F2): o texto vem da função com dono, a célula não concatena nada.
+describe('VacanciesTable — coluna Caso (spec 046 F2, A5/A7/A8)', () => {
+  const base: VacancyRow = {
+    id: 'vac-c', caseNumber: 1234, caseOrdinal: 2, status: 'Activo', diasAberto: '01',
+    stageCounts: {}, postulados: '0', faltantes: '0', isDraft: false, lastActionAt: null,
+  };
+  const cellOf = () => screen.getByTestId('vacancy-row-vac-c').querySelectorAll('td')[1];
+
+  it('A5: caso 1234, posição 2 -> exatamente EN1234#02', () => {
+    render(<VacanciesTable vacancies={[base]} />);
+    expect(cellOf().textContent).toBe('EN1234#02');
+  });
+
+  it('A8: caso legado 812, posição 1 -> 812#01 (sem EN)', () => {
+    render(<VacanciesTable vacancies={[{ ...base, caseNumber: 812, caseOrdinal: 1 }]} />);
+    expect(cellOf().textContent).toBe('812#01');
+  });
+
+  it('A7: vaga sem paciente -> "—"', () => {
+    render(<VacanciesTable vacancies={[{ ...base, caseNumber: null, caseOrdinal: null }]} />);
+    expect(cellOf().textContent).toBe('—');
   });
 });

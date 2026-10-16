@@ -13,7 +13,7 @@ function makeWorkerRow(workerId: string, isTest: boolean) {
     worker_status: 'REGISTERED',
     is_test: isTest,
     diagnostic_preferences: [],
-    sex_encrypted: null,
+    sex_encrypted: null as string | null,
     first_name_encrypted: null,
     last_name_encrypted: null,
     work_zone: 'Palermo',
@@ -99,5 +99,36 @@ describe('runHardFilter — segregação por realm', () => {
     const match = (sql as string).match(IS_TEST_CLAUSE);
     expect(match).not.toBeNull();
     expect(params[Number(match![1]) - 1]).toBe(true);
+  });
+});
+
+// Spec 027 Fase 3 (lex S.3, D507 item 3): o requisito de sexo é FILTRO DURO. Estes três casos morrem se o
+// `continue` do filtro de sexo for removido de `runHardFilter` (sabotagem na T032).
+describe('runHardFilter — requisito de sexo da vaga é filtro duro (D507)', () => {
+  const maleWorker = { ...makeWorkerRow('worker-male', false), sex_encrypted: 'enc-male' };
+  const femaleWorker = { ...makeWorkerRow('worker-female', false), sex_encrypted: 'enc-female' };
+  const noSexWorker = { ...makeWorkerRow('worker-nosex', false), sex_encrypted: null };
+  const sexKms = {
+    decrypt: jest.fn(async (enc: string) => (enc === 'enc-male' ? 'MALE' : 'FEMALE')),
+  } as unknown as KMSEncryptionService;
+  const jobWithSex = (requiredSex: string): JobPosting => ({ ...makeJob(DataRealm.LIVE), requiredSex });
+
+  it("vaga 'F' exclui worker MALE (e mantém a FEMALE)", async () => {
+    const db = makeFakeDb([maleWorker, femaleWorker]);
+    const out = await runHardFilter(db as never, sexKms, jobWithSex('F'), null, false, false);
+    expect(out.map(c => c.workerId)).toEqual(['worker-female']);
+  });
+
+  it("vaga 'F' exclui worker com sexo null (não cadastrado)", async () => {
+    const db = makeFakeDb([noSexWorker, femaleWorker]);
+    const out = await runHardFilter(db as never, sexKms, jobWithSex('F'), null, false, false);
+    expect(out.map(c => c.workerId)).toEqual(['worker-female']);
+    expect(out.map(c => c.workerId)).not.toContain('worker-nosex');
+  });
+
+  it("vaga 'BOTH' não exclui ninguém (nem o worker sem sexo)", async () => {
+    const db = makeFakeDb([maleWorker, femaleWorker, noSexWorker]);
+    const out = await runHardFilter(db as never, sexKms, jobWithSex('BOTH'), null, false, false);
+    expect(out.map(c => c.workerId).sort()).toEqual(['worker-female', 'worker-male', 'worker-nosex']);
   });
 });

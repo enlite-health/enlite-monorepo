@@ -11,6 +11,13 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
+import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
+import {
+  captureFieldBefore,
+  isClearedValue,
+  recordFieldChange,
+  type GuardedServiceField,
+} from './vacancySourceChangeNotice';
 import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
@@ -36,6 +43,18 @@ export class AddressNotOfPatientError extends Error {
   constructor(readonly addressId: string | null | undefined) {
     super('address_id does not belong to this patient');
     this.name = 'AddressNotOfPatientError';
+  }
+}
+
+/**
+ * F2/F5 (vaga-le-do-servico-contratado): o horário e a quantidade do serviço são a ÚNICA fonte desses campos na vaga viva —
+ * apagá-los (`null`/`[]`; quantidade `null`/`0`) com vaga viva deixaria a vaga sem eles. O controller responde 422.
+ */
+export class ServiceFieldRequiredByLiveVacancyError extends Error {
+  readonly code = 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY';
+  constructor(readonly field: GuardedServiceField, readonly vacancyIds: string[]) {
+    super(`service ${field} cannot be cleared while a live vacancy reads it`);
+    this.name = 'ServiceFieldRequiredByLiveVacancyError';
   }
 }
 
@@ -68,11 +87,21 @@ export interface ContractedServiceDetail {
   addressId: string | null;
   /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
   schedule: ContractedServiceScheduleSlot[] | null;
-  /** Vaga viva deste serviço (spec 018, PR-6) — null = ainda pode ativar recrutamento. */
-  liveVacancyId: string | null;
-  /** Sexo requerido da vaga viva (`job_postings.required_sex`) — aba Encuadre, coluna SEXO (Figma,
-   *  rodada 2, decisão A). `null` sem vaga viva OU vaga sem o campo informado; o front mostra "—". */
+  /**
+   * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros são COPIADOS para a vaga na ativação;
+   * `workerAttributes` e `dailyObs` são SÓ FICHA (nunca copiados). Texto livre: nunca em log (lex T.4).
+   */
+  requiredProfessions: string[] | null;
+  /** 'M' | 'F' | 'BOTH' (Zod). Sem campo de motivo: o motivo é clínico e nunca se registra (D507 item 4). */
   requiredSex: string | null;
+  requiredExperience: string | null;
+  workerAttributes: string | null;
+  workSchedule: string | null;
+  /** Dia em que a Enlite paga o PRESTADOR (D508 b), não o termo de pagamento da família. */
+  paymentDay: string | null;
+  dailyObs: string | null;
+  /** Vaga viva deste serviço (spec 018 PR-6; objeto na spec 047) — null = sem vaga OU redigida (ver `liveVacancyRedacted`, aplicado na projeção por ator). */
+  liveVacancy: LiveVacancy | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -98,6 +127,13 @@ export interface ContractedServiceWriteInput {
   providerAgeBand?: string | null;
   addressId?: string | null;
   schedule?: ContractedServiceScheduleSlot[] | null;
+  requiredProfessions?: string[] | null;
+  requiredSex?: string | null;
+  requiredExperience?: string | null;
+  workerAttributes?: string | null;
+  workSchedule?: string | null;
+  paymentDay?: string | null;
+  dailyObs?: string | null;
   deviceTypeCodes?: string[];
   /** Só `false` é caminho válido de escrita (baixa) — reabrir não existe (mesma régua do C-e.2). */
   active?: boolean;
@@ -109,6 +145,13 @@ export interface CreateContractedServiceInput extends ContractedServiceWriteInpu
   patientId: string;
   serviceCode: string;
 }
+
+/** Campo vigiado de `GUARDED_SERVICE_COLUMNS` → chave do corpo do PATCH. */
+const GUARDED_FIELDS: ReadonlyArray<readonly [GuardedServiceField, 'schedule' | 'providersNeeded' | 'providerAgeBand']> = [
+  ['schedule', 'schedule'],
+  ['providers_needed', 'providersNeeded'],
+  ['age_range', 'providerAgeBand'],
+];
 
 const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['serviceCode', 'service_code'],
@@ -126,6 +169,13 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['providerAgeBand', 'provider_age_band'],
   ['addressId', 'address_id'],
   ['schedule', 'schedule'],
+  ['requiredProfessions', 'required_professions'],
+  ['requiredSex', 'required_sex'],
+  ['requiredExperience', 'required_experience'],
+  ['workerAttributes', 'worker_attributes'],
+  ['workSchedule', 'work_schedule'],
+  ['paymentDay', 'payment_day'],
+  ['dailyObs', 'daily_obs'],
 ];
 
 /**
@@ -155,6 +205,13 @@ interface ServiceRow {
   provider_age_band: string | null;
   address_id: string | null;
   schedule: ContractedServiceScheduleSlot[] | null;
+  required_professions: string[] | null;
+  required_sex: string | null;
+  required_experience: string | null;
+  worker_attributes: string | null;
+  work_schedule: string | null;
+  payment_day: string | null;
+  daily_obs: string | null;
   active: boolean;
   ended_at: string | null;
   country: string;
@@ -190,18 +247,11 @@ export class PatientContractedServiceRepository {
       [row.id],
     );
     const providers = await this.providerRepo.listForService(row.id);
-    // Spec 018, PR-6 (`contracts/activation.md`): "some quando o serviço já tem vaga viva (mostra
-    // Ver vacante)" — a MESMA condição do 409 de `ActivateRecruitmentUseCase`
-    // (`contracted_service_id = :sid AND deleted_at IS NULL`), lida aqui para a ficha exibir sem
-    // reimplementar o critério.
-    const liveVacancy = await cli.query<{ id: string; required_sex: string | null }>(
-      `SELECT id, required_sex FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL LIMIT 1`,
-      [row.id],
-    );
+    // Spec 018 PR-6 / spec 047 F2: a MESMA leitura do mapper da ficha (`fetchLiveVacancies`) — um dono só.
+    const liveVacancy = (await fetchLiveVacancies(cli, [row.id])).get(row.id) ?? null;
     return {
       id: row.id,
-      liveVacancyId: liveVacancy.rows[0]?.id ?? null,
-      requiredSex: liveVacancy.rows[0]?.required_sex ?? null,
+      liveVacancy,
       patientId: row.patient_id,
       serviceCode: row.service_code,
       professionalProfile: row.professional_profile,
@@ -218,6 +268,13 @@ export class PatientContractedServiceRepository {
       providerAgeBand: row.provider_age_band,
       addressId: row.address_id,
       schedule: row.schedule,
+      requiredProfessions: row.required_professions,
+      requiredSex: row.required_sex,
+      requiredExperience: row.required_experience,
+      workerAttributes: row.worker_attributes,
+      workSchedule: row.work_schedule,
+      paymentDay: row.payment_day,
+      dailyObs: row.daily_obs,
       active: row.active,
       endedAt: row.ended_at,
       country: row.country,
@@ -341,6 +398,25 @@ export class PatientContractedServiceRepository {
   }
 
   /**
+   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada e
+   * status fora de `DE_BAJA`/`CLOSED`). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
+   * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
+   * depois enxerga o commit do outro. Client = `withActorContext` (com identidade), nunca `connect()` cru.
+   */
+  private async refuseClearWhenLiveVacancy(cli: PoolClient, serviceId: string, field: GuardedServiceField): Promise<void> {
+    await cli.query('SELECT id FROM patient_contracted_services WHERE id = $1 FOR UPDATE', [serviceId]);
+    const live = await cli.query<{ id: string }>(
+      `SELECT id FROM job_postings
+        WHERE contracted_service_id = $1 AND ${liveVacancySql('')}
+        FOR UPDATE`,
+      [serviceId],
+    );
+    if ((live.rowCount ?? live.rows.length) > 0) {
+      throw new ServiceFieldRequiredByLiveVacancyError(field, live.rows.map((r) => r.id));
+    }
+  }
+
+  /**
    * Atualização PARCIAL (Merge Patch, molde `PatientClinicalRepository`): chave ausente não
    * toca a coluna. `active:false` grava `ended_at=NOW()` (baixa, C-a.4); o schema HTTP só
    * aceita `false` (reabrir não existe, lex C-a.4) — o repositório aceita as duas direções
@@ -350,6 +426,13 @@ export class PatientContractedServiceRepository {
     try {
       // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
       const row = await withActorContext(this.pool, async (cli) => {
+        // F2/F5: apagar um campo que a vaga viva lê → recusa (um campo por vez, na ordem de GUARDED_FIELDS).
+        for (const [field, key] of GUARDED_FIELDS) {
+          if (isClearedValue(field, patch[key])) await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
+        }
+        // F3/F5: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o campo.
+        const before = new Map<GuardedServiceField, unknown>();
+        for (const [field, key] of GUARDED_FIELDS) before.set(field, await captureFieldBefore(cli, serviceId, field, patch[key]));
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
@@ -375,6 +458,8 @@ export class PatientContractedServiceRepository {
           // Linha inexistente → ROLLBACK (o `replaceDevices` acima pode já ter escrito) e null.
           if ((res.rowCount ?? 0) === 0) throw SERVICE_ROW_MISSING;
         }
+        // F3/F5: valor mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
+        for (const [field, key] of GUARDED_FIELDS) await recordFieldChange(cli, serviceId, field, before.get(field), patch[key]);
         await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
         // DX-7.5: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch:
         // chave ausente não sincroniza nada).

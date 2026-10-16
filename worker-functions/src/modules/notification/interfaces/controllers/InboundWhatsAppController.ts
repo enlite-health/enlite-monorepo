@@ -1,18 +1,9 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import twilio from 'twilio';
-import { BookSlotFromWhatsAppUseCase } from '../../application/BookSlotFromWhatsAppUseCase';
-import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
 import { TriggerWorkerHandoverUseCase } from '../../application/TriggerWorkerHandoverUseCase';
 import { logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
-import {
-  INTERVIEW_INVITE_SLUG,
-  LEGACY_INVITE_SLUG,
-  REMINDER_CONFIRM_SLUG,
-  REMINDER_RESCHEDULE_SLUG,
-  INTERVIEW_SLUGS,
-} from '../../domain/interviewFlowTemplateSlugs';
 import { matchesOptOut, OPT_OUT_BUTTON_PAYLOAD } from '../../domain/optOutMatch';
 import { RegisterOptOutUseCase } from '../../application/RegisterOptOutUseCase';
 import { ChatwootClient } from '../../infrastructure/ChatwootClient';
@@ -23,12 +14,8 @@ import { ChatwootClient } from '../../infrastructure/ChatwootClient';
  * Recebe POST application/x-www-form-urlencoded quando o worker
  * toca num botão interativo (quick-reply).
  *
- * Roteamento em dois passos:
- *   1. OriginalRepliedMessageSid → lookup na messaging_outbox → template_slug
- *   2. template_slug + ButtonPayload determinam o use case correto
- *
- * Se o template_slug não pertence ao fluxo de entrevista, a mensagem é ignorada.
- * Sempre responde 200 para evitar retentativas do Twilio.
+ * Opt-out (texto ou botão) e texto livre (handover/espelho) continuam; botões dos fluxos de convite e
+ * lembrete de entrevista saíram (spec 052) e são ignorados. Sempre responde 200 para evitar retentativas do Twilio.
  */
 export class InboundWhatsAppController {
   /** Cache: contentSid → array de { id, title } dos botões quick-reply */
@@ -36,8 +23,6 @@ export class InboundWhatsAppController {
 
   constructor(
     private readonly db: Pool,
-    private readonly bookSlotUseCase: BookSlotFromWhatsAppUseCase,
-    private readonly handleReminderResponseUseCase: HandleReminderResponseUseCase,
     /**
      * Opcional: quando ausente OU PERISKOPE_HANDOVER_ENABLED != 'true', o
      * comportamento de texto-livre não-roteável fica idêntico ao atual
@@ -97,15 +82,10 @@ export class InboundWhatsAppController {
       }
     }
 
-    // Texto livre: se não tem ButtonPayload, checar se worker está em awaiting_reason
+    // Texto livre (sem ButtonPayload)
     if (!buttonPayload) {
       const bodyText = (body['Body'] ?? '').trim();
       if (bodyText) {
-        const handled = await this.tryHandleTextResponse(from, bodyText);
-        if (handled) {
-          res.status(200).send();
-          return;
-        }
         // Texto livre não-roteável: gatilho de handover Twilio → Periskope
         // (item de fundação do roteamento por worker). Flag default OFF.
         await this.maybeTriggerHandover(from);
@@ -119,71 +99,8 @@ export class InboundWhatsAppController {
       return;
     }
 
-    // 2. Identificar template_slug via OriginalRepliedMessageSid + rotear
-    try {
-      let templateSlug: string | null = null;
-
-      if (originalMessageSid) {
-        const outboxResult = await this.db.query<{ template_slug: string }>(
-          `SELECT template_slug FROM messaging_outbox WHERE twilio_sid = $1 LIMIT 1`,
-          [originalMessageSid],
-        );
-        templateSlug = outboxResult.rows[0]?.template_slug ?? null;
-      }
-
-      // 3. Rotear por template_slug + ButtonPayload
-      if (templateSlug && !INTERVIEW_SLUGS.has(templateSlug)) {
-        // Mensagem de outro fluxo (ex: client_selection) — não é nossa
-        console.info('[InboundWhatsApp] Message ignored (template not interview flow)', {
-          from, templateSlug, buttonPayload,
-        });
-      } else if ((templateSlug === INTERVIEW_INVITE_SLUG || templateSlug === LEGACY_INVITE_SLUG) && buttonPayload.startsWith('slot_')) {
-        // Resposta ao convite de entrevista: worker escolheu horário
-        const result = await this.bookSlotUseCase.execute(from, buttonPayload, originalMessageSid);
-        if (result.isFailure) {
-          console.warn(`[InboundWhatsApp] BookSlot failed: ${result.error}`);
-        }
-      } else if (templateSlug === REMINDER_CONFIRM_SLUG && buttonPayload.startsWith('confirm_')) {
-        // Resposta ao reminder de 24h: worker confirmou ou declinou
-        const result = await this.handleReminderResponseUseCase.execute(from, buttonPayload, originalMessageSid);
-        if (result.isFailure) {
-          console.warn(`[InboundWhatsApp] ReminderResponse failed: ${result.error}`);
-        }
-      } else if (templateSlug === REMINDER_RESCHEDULE_SLUG && buttonPayload.startsWith('reschedule_')) {
-        // Resposta à pergunta de reagendamento: worker quer ou não reagendar
-        const result = await this.handleReminderResponseUseCase.execute(from, buttonPayload, originalMessageSid);
-        if (result.isFailure) {
-          console.warn(`[InboundWhatsApp] RescheduleResponse failed: ${result.error}`);
-        }
-      } else if (!templateSlug) {
-        // OriginalRepliedMessageSid ausente ou não encontrado na outbox
-        // Fallback: rotear pelo prefixo do ButtonPayload (compatibilidade / janela 7 dias)
-        if (buttonPayload.startsWith('slot_')) {
-          const result = await this.bookSlotUseCase.execute(from, buttonPayload, originalMessageSid);
-          if (result.isFailure) {
-            console.warn(`[InboundWhatsApp] BookSlot (fallback) failed: ${result.error}`);
-          }
-        } else if (buttonPayload.startsWith('confirm_')) {
-          const result = await this.handleReminderResponseUseCase.execute(from, buttonPayload, originalMessageSid);
-          if (result.isFailure) {
-            console.warn(`[InboundWhatsApp] ReminderResponse (fallback) failed: ${result.error}`);
-          }
-        } else if (buttonPayload.startsWith('reschedule_')) {
-          const result = await this.handleReminderResponseUseCase.execute(from, buttonPayload, originalMessageSid);
-          if (result.isFailure) {
-            console.warn(`[InboundWhatsApp] RescheduleResponse (fallback) failed: ${result.error}`);
-          }
-        } else {
-          console.info('[InboundWhatsApp] Message ignored (unrecognized payload)', { from, buttonPayload });
-        }
-      } else {
-        console.info('[InboundWhatsApp] Message ignored (template/payload mismatch)', {
-          from, templateSlug, buttonPayload,
-        });
-      }
-    } catch (err) {
-      console.error('[InboundWhatsApp] Unexpected error:', err);
-    }
+    // Botão de convite/lembrete de entrevista antigo: o fluxo automático saiu (spec 052) — ignorado, sempre 200.
+    console.info('[InboundWhatsApp] Message ignored (button of removed interview flow)', { from: maskPhoneForLog(from), buttonPayload });
 
     // 4. Twilio espera 200 OK
     res.status(200).send();
@@ -213,25 +130,6 @@ export class InboundWhatsAppController {
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       log.error({ error: e.message }, 'Failed to process opt-out');
-    }
-  }
-
-  /**
-   * Verifica se o worker está em estado awaiting_reason e processa texto livre.
-   * Retorna true se o texto foi capturado como motivo de recusa.
-   */
-  private async tryHandleTextResponse(from: string, bodyText: string): Promise<boolean> {
-    try {
-      const result = await this.handleReminderResponseUseCase.executeTextResponse(from, bodyText);
-      if (result.isSuccess) {
-        console.info('[InboundWhatsApp] Free text captured as decline reason', { from });
-        return true;
-      }
-      // Result.fail('No application awaiting reason') = worker não está em awaiting_reason
-      return false;
-    } catch (err) {
-      console.warn('[InboundWhatsApp] tryHandleTextResponse error:', err);
-      return false;
     }
   }
 

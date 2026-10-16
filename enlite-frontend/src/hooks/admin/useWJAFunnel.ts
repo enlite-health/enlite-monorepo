@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { startVisiblePolling } from './visiblePolling';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
@@ -61,6 +62,10 @@ interface FunnelEncuadre {
   resendBlockedReason?: { code: string; until: string } | null;
   /** Blocked card que foi "rechazado" (soft-dismiss): aparece em RECHAZADOS, com botão de voltar. */
   isDismissed?: boolean;
+  /** Spec 052: o prestador está convocado para um evento de enquadre (ISO do início). Derivado no servidor. */
+  convocation?: { startsAt: string } | null;
+  /** Spec 052: código do evento de enquadre (`ENC-` + 6 caracteres) em que a pessoa foi marcada Selecionada ou Resposta rápida. Derivado no servidor. */
+  enquadreOrigin?: { eventCode: string } | null;
 }
 
 export interface FunnelStages {
@@ -70,7 +75,6 @@ export interface FunnelStages {
   PRE_SCREENING: FunnelEncuadre[];
   IN_PROGRESS: FunnelEncuadre[];
   COMPLETED: FunnelEncuadre[];
-  CONFIRMED: FunnelEncuadre[];
   SELECTED: FunnelEncuadre[];
   QUICK_RESPONSE_TEAM: FunnelEncuadre[];
   REJECTED: FunnelEncuadre[];
@@ -106,11 +110,10 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     }
   }, [vacancyId]);
 
-  // Fetch inicial + polling a cada 5s — limpa ao sair da tela
+  // Fetch inicial + polling a cada 5s (pausado com a aba oculta) — limpa ao sair da tela
   useEffect(() => {
     fetchFunnel();
-    const intervalId = setInterval(() => fetchFunnel(true), POLL_INTERVAL_MS);
-    return () => clearInterval(intervalId);
+    return startVisiblePolling(() => void fetchFunnel(true), POLL_INTERVAL_MS);
   }, [fetchFunnel]);
 
   const moveEncuadre = useCallback(async (

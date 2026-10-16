@@ -4,6 +4,8 @@ import type { PublicJobRow } from '../domain/PublicJobDto';
 import type { PublicJobsFilters } from '../domain/PublicJobsFilters';
 import { buildPublicJobsWhere } from './PublicJobsQueryBuilder';
 import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
+import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 // ─── Helper: resolve coordinator_name → coordinator_id (findOrCreate) ──────────
 
@@ -298,7 +300,7 @@ export class JobPostingARRepository {
          jp.status,
          jp.talentum_description           AS description,
          jp.schedule_days_hours,
-         jp.schedule,
+         ${vacancyEffectiveScheduleSql('jp')} AS schedule,
          COALESCE(jp.worker_profile_sought, jp.worker_attributes) AS worker_profile_sought,
          p.service_type                       AS service,
          -- A coluna clinica do paciente saiu do feed publico em 25/08/2026 (rota aberta,
@@ -314,16 +316,16 @@ export class JobPostingARRepository {
          COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood,
          NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city,
          jp.country                           AS country,
-         jp.age_range_min,
-         jp.age_range_max,
+         ${vacancyEffectiveAgeRangeSql('jp')},
          jp.talentum_whatsapp_url             AS whatsapp_url
        FROM job_postings jp
+       ${vacancyEffectiveJoinSql('jp')}
        LEFT JOIN patients p    ON jp.patient_id = p.id
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
        ${whereClause}
        ORDER BY jp.case_number DESC, jp.vacancy_number DESC`;
     const result = await this.pool.query<PublicJobRow>(sql, params);
-    return result.rows;
+    return result.rows.map((row) => applyEffectiveAgeRange(row) as PublicJobRow);
   }
 
   async saveCommentIfNew(params: {

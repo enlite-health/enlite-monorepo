@@ -4,7 +4,6 @@ export type VacancyFunnelColumnId =
   | 'INICIADO'
   | 'PRE_SCREENING'
   | 'COMPLETED'
-  | 'CONFIRMED'
   | 'SELECTED'
   | 'QUICK_RESPONSE_TEAM'
   | 'REJECTED';
@@ -16,14 +15,13 @@ export interface VacancyFunnelColumn {
   droppable: boolean;
 }
 
-/** Quadro B (D433): 9 colunas; Compatíveis (Fase 5) é derivada do match, só leitura. */
+/** Quadro B (D433): 8 colunas (052: o estágio Confirmado saiu); Compatíveis (Fase 5) é derivada do match, só leitura. */
 export const VACANCY_FUNNEL_COLUMNS: readonly VacancyFunnelColumn[] = [
   { id: 'COMPATIBLE', sources: ['COMPATIBLE'], color: 'bg-slate-400', droppable: false },
   { id: 'INVITED', sources: ['INVITED'], color: 'bg-blue-400', droppable: true },
   { id: 'INICIADO', sources: ['INICIADO'], color: 'bg-indigo-400', droppable: false },
   { id: 'PRE_SCREENING', sources: ['PRE_SCREENING', 'IN_PROGRESS'], color: 'bg-violet-400', droppable: false },
   { id: 'COMPLETED', sources: ['COMPLETED'], color: 'bg-violet-600', droppable: false },
-  { id: 'CONFIRMED', sources: ['CONFIRMED'], color: 'bg-cyan-400', droppable: true },
   { id: 'SELECTED', sources: ['SELECTED'], color: 'bg-green-500', droppable: true },
   { id: 'QUICK_RESPONSE_TEAM', sources: ['QUICK_RESPONSE_TEAM'], color: 'bg-teal-500', droppable: true },
   { id: 'REJECTED', sources: ['REJECTED'], color: 'bg-red-400', droppable: true },
@@ -37,15 +35,12 @@ export function columnCount(col: VacancyFunnelColumn, counts: Partial<Record<str
   return col.sources.reduce((acc, s) => acc + (counts?.[s] ?? 0), 0);
 }
 
-export type FunnelTab =
-  | { key: 'ALL'; kind: 'bucket'; bucket: 'ALL'; i18nKey: string }
-  | { key: VacancyFunnelColumnId; kind: 'column'; column: VacancyFunnelColumn; i18nKey: string }
-  | { key: 'POSTULATED' | 'PRE_SELECTED' | 'WITHDREW'; kind: 'bucket'; bucket: 'POSTULATED' | 'PRE_SELECTED' | 'WITHDREW'; i18nKey: string };
-
-export const FUNNEL_TABS: readonly FunnelTab[] = [
-  { key: 'ALL', kind: 'bucket', bucket: 'ALL', i18nKey: 'admin.vacancyDetail.funnelTabs.all' },
-  ...VACANCY_FUNNEL_COLUMNS.map((c) => ({ key: c.id, kind: 'column' as const, column: c, i18nKey: `admin.kanban.columns.${c.id}` })),
-  { key: 'POSTULATED', kind: 'bucket', bucket: 'POSTULATED', i18nKey: 'admin.vacancyDetail.funnelTabs.postulated' },
-  { key: 'PRE_SELECTED', kind: 'bucket', bucket: 'PRE_SELECTED', i18nKey: 'admin.vacancyDetail.funnelTabs.preSelected' },
-  { key: 'WITHDREW', kind: 'bucket', bucket: 'WITHDREW', i18nKey: 'admin.vacancyDetail.funnelTabs.withdrew' },
-];
+/**
+ * Etapa da Lista = coluna do Kanban em que o prestador está. O back decide `kanbanColumn`
+ * (deriveKanbanColumn); aqui só se traduz source → id da coluna (IN_PROGRESS → PRE_SCREENING).
+ * Nulo ou fora do mapa → null.
+ */
+export function stageColumnIdFor(kanbanColumn: string | null | undefined): VacancyFunnelColumnId | null {
+  if (!kanbanColumn) return null;
+  return VACANCY_FUNNEL_COLUMNS.find((c) => c.sources.includes(kanbanColumn))?.id ?? null;
+}

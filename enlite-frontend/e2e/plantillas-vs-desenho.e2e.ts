@@ -83,13 +83,13 @@ const CATALOGO = {
         slug: 'ar_bienvenida_contratacion', baseName: 'bienvenida_contratacion',
         bodyTwilio: '¡Hola María González! Te damos la bienvenida al equipo de EnLite Health.',
         metaStatus: 'APPROVED', metaCheckedAt: '2026-08-31T14:32:00Z',
-        placeholders: ['worker_name'], usedInStages: ['CONFIRMED'],
+        placeholders: ['worker_name'], usedInStages: ['SELECTED'],
       }),
       linha({
         slug: 'br_bienvenida_contratacion', baseName: 'bienvenida_contratacion', language: 'pt-BR',
         bodyTwilio: 'Olá María González! Damos as boas-vindas ao time da EnLite Health.',
         metaStatus: 'APPROVED', metaCheckedAt: '2026-08-31T14:32:00Z',
-        placeholders: ['worker_name'], usedInStages: ['CONFIRMED'],
+        placeholders: ['worker_name'], usedInStages: ['SELECTED'],
       }),
       linha({
         slug: 'ar_entrevista_confirmada', baseName: 'entrevista_confirmada',

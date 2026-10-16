@@ -14,6 +14,7 @@ interface VacancyDetailTabsProps {
 
 const TAB_I18N_KEYS: Record<VacancyTab, string> = {
   encuadres: 'admin.vacancyDetail.tabs.encuadres',
+  enquadre: 'admin.vacancyDetail.tabs.enquadre',
   talentum: 'admin.vacancyDetail.tabs.talentum',
   links: 'admin.vacancyDetail.tabs.links',
   notes: 'admin.vacancyDetail.tabs.notes',

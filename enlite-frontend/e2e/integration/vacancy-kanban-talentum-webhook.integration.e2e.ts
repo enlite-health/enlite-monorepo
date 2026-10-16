@@ -109,7 +109,7 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    const colIds = ['INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+    const colIds = ['INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'SELECTED', 'REJECTED'];
     for (const id of colIds) {
       await expect(page.locator(`[data-testid="kanban-column-${id}-count"]`)).toHaveText('0');
     }

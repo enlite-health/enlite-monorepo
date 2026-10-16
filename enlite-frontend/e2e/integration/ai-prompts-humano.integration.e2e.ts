@@ -60,6 +60,8 @@ const GROUP = `E2E T035 prompts ${RUN_ID}`;
 
 const SLUG = 'VACANCY_DESCRIPTION';
 const CASE_TITLE = 'T035 Caso Preview e2e';
+const PATIENT_T035 = 'e2e-t035-paciente-caso';
+const PATIENT_T074 = 'e2e-t074-paciente-caso';
 // Texto fixo (não carimbado): o banco é restaurado ao fim, e o screenshot precisa ser estável.
 const DIGITADO = 'Nota e2e T035: linha escrita por uma pessoa no teclado.';
 
@@ -175,10 +177,17 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
 
     // Um caso NÃO-rascunho, visível na lista de vacantes (o seletor do painel filtra rascunhos).
     // `vacancy_number` fixo: o rótulo do seletor (`Caso 990035-35`) entra no screenshot e a sequência mudaria a cada rodada.
+    // O número do caso vem do PACIENTE (spec 046, `VACANCY_CASE_NUMBER_SQL = p.case_number`): sem paciente o rótulo é `—`.
+    // A lista da main só traz vagas com `jp.case_number IS NOT NULL` (vacancyListHelpers.ts:121): a vaga também leva o número, senão some.
     safeSql(`DELETE FROM job_postings WHERE title = '${CASE_TITLE}'`);
+    safeSql(`DELETE FROM patients WHERE clickup_task_id = '${PATIENT_T035}'`);
+    const patientT035 = scalar(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, status, country, case_number)
+       VALUES ('${PATIENT_T035}', 'T035', 'Caso Preview', 'ACTIVE', 'AR', 990035) RETURNING id`,
+    );
     jobPostingId = scalar(
-      `INSERT INTO job_postings (title, description, country, status, is_draft, case_number, vacancy_number)
-       VALUES ('${CASE_TITLE}', 'T035 e2e — caso do simulador', 'AR', 'SEARCHING', false, 990035, 35) RETURNING id`,
+      `INSERT INTO job_postings (title, description, country, status, is_draft, case_number, patient_id, vacancy_number)
+       VALUES ('${CASE_TITLE}', 'T035 e2e — caso do simulador', 'AR', 'SEARCHING', false, 990035, '${patientT035}', 35) RETURNING id`,
     );
     expect(jobPostingId).toMatch(/^[0-9a-f-]{36}$/);
   });
@@ -194,6 +203,7 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
       safeSql(`INSERT INTO ai_prompt_audit_log SELECT * FROM jsonb_populate_record(NULL::ai_prompt_audit_log, ${sqlLit(line)}::jsonb)`);
     }
     if (jobPostingId) safeSql(`DELETE FROM job_postings WHERE id = '${jobPostingId}'`);
+    safeSql(`DELETE FROM patients WHERE clickup_task_id = '${PATIENT_T035}'`);
     cleanupStaffAndGroup(UID, groupId);
   });
 
@@ -612,9 +622,14 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
     const TITULO_EFEMERO = 'T074 Caso que some';
     const antes = promptRow();
     safeSql(`DELETE FROM job_postings WHERE title = '${TITULO_EFEMERO}'`);
+    safeSql(`DELETE FROM patients WHERE clickup_task_id = '${PATIENT_T074}'`);
+    const patientT074 = scalar(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, status, country, case_number)
+       VALUES ('${PATIENT_T074}', 'T074', 'Caso Efemero', 'ACTIVE', 'AR', 990074) RETURNING id`,
+    );
     const efemeroId = scalar(
-      `INSERT INTO job_postings (title, description, country, status, is_draft, case_number, vacancy_number)
-       VALUES ('${TITULO_EFEMERO}', 'T074 e2e — caso que some', 'AR', 'SEARCHING', false, 990074, 75) RETURNING id`,
+      `INSERT INTO job_postings (title, description, country, status, is_draft, case_number, patient_id, vacancy_number)
+       VALUES ('${TITULO_EFEMERO}', 'T074 e2e — caso que some', 'AR', 'SEARCHING', false, 990074, '${patientT074}', 75) RETURNING id`,
     );
     try {
       await abrirTela(page, request);
@@ -661,6 +676,7 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
       expect(promptRow()).toEqual(antes);
     } finally {
       safeSql(`DELETE FROM job_postings WHERE id = '${efemeroId}'`);
+      safeSql(`DELETE FROM patients WHERE id = '${patientT074}'`);
     }
   });
 

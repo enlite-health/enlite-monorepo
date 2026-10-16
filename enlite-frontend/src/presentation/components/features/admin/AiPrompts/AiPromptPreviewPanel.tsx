@@ -17,6 +17,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Select } from '@presentation/components/atoms/Select';
 import { AdminApiService, ApiError, type AiPromptSlug } from '@infrastructure/http/AdminApiService';
 import type { VacancyRow } from '@presentation/components/features/admin/VacanciesTable';
+import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 
 interface AiPromptPreviewPanelProps {
   slug: AiPromptSlug;
@@ -46,7 +47,7 @@ export function AiPromptPreviewPanel({ slug, body }: AiPromptPreviewPanelProps) 
         setCases(
           (data as VacancyRow[])
             .filter((v) => !v.isDraft)
-            .map((v) => ({ value: v.id, label: v.caso })),
+            .map((v) => ({ value: v.id, label: formatVacancyCase(v.caseNumber, v.caseOrdinal) })),
         );
         setCasesState('ready');
       } catch {

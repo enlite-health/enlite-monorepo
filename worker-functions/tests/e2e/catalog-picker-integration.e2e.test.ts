@@ -21,12 +21,12 @@ describe('catálogo × mensajes-por-etapa: a mesma mensagem nas duas telas @inte
   beforeAll(async () => {
     await waitForBackend(api);
     pool = new Pool({ connectionString: DATABASE_URL });
-    // A semente das 9 etapas (migration 292). Se outra suíte a apagou, este
+    // A semente das 8 etapas (migration 292 menos a retirada na spec 052). Se outra suíte a apagou, este
     // teste mediria a poluição do banco em vez do produto.
     await pool.query(
       `INSERT INTO funnel_stage_messages (country, stage, builtin) VALUES
          ('AR','INVITED',NULL),('AR','PRE_SCREENING',NULL),('AR','IN_PROGRESS',NULL),('AR','COMPLETED',NULL),
-         ('AR','QUALIFIED','interview_invite'),('AR','IN_DOUBT',NULL),('AR','CONFIRMED',NULL),
+         ('AR','QUALIFIED','interview_invite'),('AR','IN_DOUBT',NULL),
          ('AR','SELECTED',NULL),('AR','REJECTED',NULL)
        ON CONFLICT (country, stage) DO NOTHING`);
     await limpar();
@@ -38,7 +38,7 @@ describe('catálogo × mensajes-por-etapa: a mesma mensagem nas duas telas @inte
   });
   afterAll(async () => { await limpar(); await pool.end(); });
   async function limpar() {
-    // ⚠️ NÃO apagar linha de funnel_stage_messages: as 9 etapas são SEMENTE da
+    // ⚠️ NÃO apagar linha de funnel_stage_messages: as 8 etapas são SEMENTE da
     // migration 292, e o PUT do picker é UPDATE puro — sem a linha ele vira
     // no-op silencioso (devolve 200 e não grava). Apagar aqui envenena o banco
     // compartilhado para toda suíte seguinte. Desliga em vez de remover.
@@ -80,7 +80,7 @@ describe('catálogo × mensajes-por-etapa: a mesma mensagem nas duas telas @inte
   });
 
   it('🔴 e o picker ACEITA pendurar numa etapa uma mensagem que a Meta desligou', async () => {
-    const put = await api.put(`/api/admin/funnel-stage-messages/CONFIRMED`, { template_slug: SLUG_PAUSED, enabled: true }, asAdmin);
+    const put = await api.put(`/api/admin/funnel-stage-messages/IN_DOUBT`, { template_slug: SLUG_PAUSED, enabled: true }, asAdmin);
     expect(put.status).toBe(200);
   });
 });

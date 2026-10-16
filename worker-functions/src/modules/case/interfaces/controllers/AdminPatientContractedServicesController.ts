@@ -4,7 +4,7 @@ import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { PatientContractedServiceRepository, type ContractedServiceDetail } from '../../infrastructure/PatientContractedServiceRepository';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
-import { AddressNotOfPatientError } from '../../infrastructure/PatientContractedServiceRepository';
+import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../infrastructure/PatientContractedServiceRepository';
 import { SlotHasActiveAllocationError } from '../../application/ItinerarySlotWriteUseCase';
 import {
   createContractedServiceSchema,
@@ -151,6 +151,11 @@ export class AdminPatientContractedServicesController {
       // o MESMO código da rota do itinerário; a transação inteira desfez.
       if (err instanceof SlotHasActiveAllocationError) {
         res.status(422).json({ success: false, error: 'itinerary slot has an active allocation — end it first', code: 'SLOT_HAS_ACTIVE_ALLOCATION', details: { slotId: err.slotId } });
+        return;
+      }
+      // F2/F5: apagar horário ou quantidade com vaga viva — a vaga lê esses campos do serviço (vaga-le-do-servico-contratado).
+      if (err instanceof ServiceFieldRequiredByLiveVacancyError) {
+        res.status(422).json({ success: false, error: `Service ${err.field} cannot be cleared while a live vacancy reads it`, code: err.code, details: { field: err.field, vacancyIds: err.vacancyIds } });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

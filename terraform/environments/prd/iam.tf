@@ -17,13 +17,25 @@ module "sa_enlite_functions" {
     "roles/aiplatform.user", # Vertex AI (geração de descrição + prescreening via ADC)
     "roles/cloudsql.client",
     "roles/cloudtasks.enqueuer",
-    "roles/firebase.admin",
-    "roles/iam.serviceAccountTokenCreator",
+    "roles/firebaseauth.admin", # spec 050 R-41: papel estreito de Auth (11 permissões, nenhuma de Storage); R-42 tirou o firebase.admin
     "roles/pubsub.publisher",
     "roles/secretmanager.secretAccessor",
     "roles/serviceusage.apiKeysViewer",
     "roles/serviceusage.serviceUsageConsumer",
   ]
+}
+
+# spec 050 §18 R-40: o papel de assumir a PRÓPRIA conta (signBlob/signJwt) estava feito à mão no vivo. Entra no HCL por
+# `import` (executa só no apply) antes de o papel de projeto sair (R-43).
+resource "google_service_account_iam_member" "sa_enlite_functions_self_token_creator" {
+  service_account_id = module.sa_enlite_functions.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = module.sa_enlite_functions.member
+}
+
+import {
+  to = google_service_account_iam_member.sa_enlite_functions_self_token_creator
+  id = "projects/enlite-prd/serviceAccounts/enlite-functions-sa@enlite-prd.iam.gserviceaccount.com roles/iam.serviceAccountTokenCreator serviceAccount:enlite-functions-sa@enlite-prd.iam.gserviceaccount.com"
 }
 
 module "sa_pubsub_invoker" {

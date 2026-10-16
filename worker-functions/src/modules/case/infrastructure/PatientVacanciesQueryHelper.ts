@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
 
 /**
  * PatientVacancyRow — shape returned by GET /api/admin/patients/:id/vacancies.
@@ -8,7 +9,10 @@ import { Pool } from 'pg';
  */
 export interface PatientVacancyRow {
   id: string;
+  /** Caso efetivo do PACIENTE (fragmento com dono, spec 046) — o mesmo da coluna da ficha e da lista de vagas. */
   caseNumber: number | null;
+  /** Posição da vaga no caso (migration 460) — null = vaga legada. */
+  caseOrdinal: number | null;
   vacancyNumber: number | null;
   title: string | null;
   status: string | null;
@@ -19,13 +23,15 @@ export interface PatientVacancyRow {
 const PATIENT_VACANCIES_SQL = `
   SELECT
     jp.id,
-    jp.case_number   AS "caseNumber",
+    ${VACANCY_CASE_NUMBER_SQL} AS "caseNumber",
+    jp.case_ordinal  AS "caseOrdinal",
     jp.vacancy_number AS "vacancyNumber",
     jp.title,
     jp.status,
     jp.is_draft      AS "isDraft",
     jp.created_at    AS "createdAt"
   FROM job_postings jp
+  LEFT JOIN patients p ON p.id = jp.patient_id
   WHERE jp.patient_id = $1
     AND jp.deleted_at IS NULL
   ORDER BY jp.created_at DESC
@@ -43,6 +49,7 @@ export async function fetchPatientVacancies(
   const result = await pool.query<{
     id: string;
     caseNumber: number | null;
+    caseOrdinal: number | null;
     vacancyNumber: number | null;
     title: string | null;
     status: string | null;
@@ -53,6 +60,7 @@ export async function fetchPatientVacancies(
   return result.rows.map((row) => ({
     id: row.id,
     caseNumber: row.caseNumber != null ? Number(row.caseNumber) : null,
+    caseOrdinal: row.caseOrdinal != null ? Number(row.caseOrdinal) : null,
     vacancyNumber: row.vacancyNumber != null ? Number(row.vacancyNumber) : null,
     title: row.title,
     status: row.status,

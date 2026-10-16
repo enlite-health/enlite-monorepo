@@ -104,7 +104,7 @@ describe('allocation-options e gate de alocação — pool do step final da vaca
     await mkWorker('soSelecionado', 'SELECTED');
     await mkWorker('respostaRapida', 'QUICK_RESPONSE_TEAM');
     await mkWorker('rejeitado', 'SELECTED');
-    await mkWorker('colunaAnterior', 'CONFIRMED');
+    await mkWorker('colunaAnterior', 'QUALIFIED');
     await pool.query(
       `INSERT INTO contracted_service_rejections (service_id, worker_id, reject_reason_category, rejected_by, created_by, updated_by)
        VALUES ($1, $2, 'OTHER', $3, $3, $3)`,

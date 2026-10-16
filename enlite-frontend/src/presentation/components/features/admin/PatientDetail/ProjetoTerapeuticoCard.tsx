@@ -31,7 +31,7 @@ interface Props {
 export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectCard.${k}`, o ?? {});
-  const { versions, fieldClass, isLoading, error, refetch } = useTherapeuticProjects(patient.id);
+  const { versions, fieldClass, contactReminderDates, isLoading, error, refetch } = useTherapeuticProjects(patient.id);
   const [target, setTarget] = useState<TherapeuticProjectTarget | null>(null);
   const current = currentVersion(versions);
   // Sem `patient_services:read` o backend redige `contractedServices` para `null` (D113: `null` ≠
@@ -107,6 +107,8 @@ export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
           patient={patient}
           target={target}
           fieldClass={fieldClass}
+          currentContactStatus={current?.contactStatus ?? []}
+          contactReminderDates={contactReminderDates}
           onClose={() => setTarget(null)}
           onSaved={refetch}
         />

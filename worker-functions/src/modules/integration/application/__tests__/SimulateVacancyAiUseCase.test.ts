@@ -163,7 +163,7 @@ function makeRealServicesUseCase(professions: string[]) {
   const { pool } = makePool([caseRow(professions)]);
   const useCase = new SimulateVacancyAiUseCase({ db: pool });
   const svc = (useCase as any).descService as TalentumDescriptionService;
-  jest.spyOn(svc as any, 'loadInput').mockResolvedValue({ caseNumber: '9', title: 'Caso 9', requiredProfessions: professions });
+  (svc as any).db = { query: jest.fn().mockResolvedValue({ rows: [caseRow(professions)], rowCount: 1 }) };
   return useCase;
 }
 

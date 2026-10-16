@@ -3,12 +3,12 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   buildListVacanciesQuery,
-  mapVacancyListRow,
   loadStageCounts,
   loadVacancyActivity,
   VacancyListRow,
 } from './vacancyListHelpers';
-import { emptyFunnelColumnCounts } from '../../domain/kanbanColumn';
+import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
+import { SortParamError } from '@shared/utils/parseSort';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { SOURCE_LOCKED_FIELDS } from './vacancyCrudHelpers';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
@@ -21,6 +21,8 @@ import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientD
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
+import { vacancyEffectiveColumnsSql, vacancyEffectiveGroupBySql, vacancyEffectiveJoinSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
@@ -79,16 +81,17 @@ export class VacanciesController {
   async listVacancies(req: Request, res: Response): Promise<void> {
     try {
       const {
-        search, status, priority,
+        search, status,
         worker_type, state, city, required_sex,
         days, time_from, time_to,
         limit = '20', offset = '0',
       } = req.query;
+      const sort = parseVacancySort(req.query);
 
       // D286 fase 2: nome do paciente na lista segue `patient_identity:read` — inclusive na BUSCA.
       const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
-        search, status, priority,
+        search, status,
         workerType: worker_type,
         state,
         city,
@@ -104,11 +107,18 @@ export class VacanciesController {
       const countResult = await this.db.query(countQuery, params);
       const total = parseInt(countResult.rows[0]?.total || '0');
 
-      const finalQuery =
-        baseQuery +
-        ` ORDER BY jp.created_at DESC` +
-        ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(parseInt(limit as string), parseInt(offset as string));
+      const parsedLimit = parseInt(limit as string);
+      const parsedOffset = parseInt(offset as string);
+
+      // Sem `sort`: caminho de sempre (created_at DESC, desempate por id) paginado no SQL.
+      // Com `sort`: as colunas ordenáveis são calculadas depois do SQL, então carrega TODAS as
+      // vagas filtradas, ordena em memória sobre o payload e só então pagina (spec 046 F3).
+      const finalQuery = sort
+        ? baseQuery + ` ORDER BY jp.created_at DESC, jp.id ASC`
+        : baseQuery +
+          ` ORDER BY jp.created_at DESC, jp.id ASC` +
+          ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      if (!sort) params.push(parsedLimit, parsedOffset);
 
       const result = await this.db.query(finalQuery, params);
       const ids = (result.rows as VacancyListRow[]).map((r) => r.id);
@@ -116,20 +126,24 @@ export class VacanciesController {
         loadStageCounts(this.db, ids),
         loadVacancyActivity(this.db, ids),
       ]);
-      const vacancies = (result.rows as VacancyListRow[]).map((r) => ({
-        ...mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)),
-        stageCounts: stageCounts.get(r.id) ?? emptyFunnelColumnCounts(),
-        ...(activity.get(r.id) ?? { lastActionAt: null, daysWithoutDivulgation: null }),
-      }));
+      const items = (result.rows as VacancyListRow[]).map((r) =>
+        buildVacancyListItem(r, cellsDaLista, stageCounts.get(r.id), activity.get(r.id)));
+      const vacancies = sort
+        ? sortVacancyItems(items, sort).slice(parsedOffset, parsedOffset + parsedLimit)
+        : items;
 
       res.status(200).json({
         success: true,
         data: vacancies,
         total,
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
+        limit: parsedLimit,
+        offset: parsedOffset,
       });
     } catch (error: unknown) {
+      if (error instanceof SortParamError) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
       const msg = error instanceof Error ? error.message : String(error);
       reportError(
         error instanceof Error ? error : new Error(msg),
@@ -220,7 +234,7 @@ export class VacanciesController {
       const { id } = req.params;
       const result = await this.db.query(`
         SELECT
-          jp.*,
+          ${vacancyEffectiveColumnsSql('jp')},
           jp.closes_at as closed_at,
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
@@ -232,13 +246,20 @@ export class VacanciesController {
           -- outra celula: foi TIRADA, porque o dado nao e necessario para operar a
           -- vaga (o requisito de perfil vem de required_professions,
           -- worker_attributes e da descricao). Quem precisar do quadro clinico le
-          -- no cadastro do paciente, que tem guarda propria. Irmao do mesmo
-          -- defeito: RecruitmentAnalyticsController.getCaseAnalysis.
+          -- no cadastro do paciente, que tem guarda propria.
           -- (O ponteiro para a guarda mora no JSDoc do metodo, nao aqui: comentario
           -- de SQL viaja DENTRO da query, e ate o NOME do arquivo de teste casaria
           -- a regex clinica da guarda -- D182.)
           p.insurance_verified,
           p.service_type,
+          -- F3 (vaga-le-do-servico): avisos ABERTOS de "o serviço mudou com a vaga publicada". Mesma query (sessão com
+          -- identidade); sem aviso = '[]'. Só campo e instante, nunca valor.
+          COALESCE(
+            (SELECT json_agg(json_build_object('field', n.field, 'changed_at', n.changed_at) ORDER BY n.changed_at, n.field)
+               FROM vacancy_source_change_notices n
+              WHERE n.job_posting_id = jp.id AND n.acknowledged_at IS NULL),
+            '[]'::json
+          ) as source_change_notices,
           COALESCE(pa.city, p.city_locality) as patient_city,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_neighborhood,
           pa.address_formatted as patient_address_formatted,
@@ -263,13 +284,14 @@ export class VacanciesController {
             )
           ) FILTER (WHERE pub.id IS NOT NULL) as publications
         FROM job_postings jp
+        ${vacancyEffectiveJoinSql('jp')}
         LEFT JOIN patients p ON jp.patient_id = p.id
         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
         LEFT JOIN encuadres e ON jp.id = e.job_posting_id
         LEFT JOIN workers w ON e.worker_id = w.id
         LEFT JOIN publications pub ON jp.id = pub.job_posting_id
         WHERE jp.id = $1
-        GROUP BY jp.id, p.id, pa.id
+        GROUP BY jp.id, p.id, pa.id, ${vacancyEffectiveGroupBySql()}
       `, [id]);
 
       if (result.rows.length === 0) {
@@ -277,7 +299,7 @@ export class VacanciesController {
         return;
       }
 
-      const row = result.rows[0];
+      const row = applyEffectiveAgeRange(result.rows[0]);
 
       // F2/C3 — os encuadres embutidos carregam NOME e TELEFONE do prestador
       // sob `vacancy:read`. Aqui não há KMS a economizar: `e.worker_raw_name` e

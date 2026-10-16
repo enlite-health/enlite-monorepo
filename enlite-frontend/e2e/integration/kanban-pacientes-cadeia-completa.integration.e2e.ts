@@ -34,7 +34,7 @@ import {
 import {
   readPatientStatusApi, countOutboundSince, readTrail, countTrail, putMove, chooseReasonInModal,
 } from '../helpers/funnel-move-e2e-helper';
-import { readFunnelApi, gotoVacancyDetail, switchToKanban } from '../helpers/compativeis-e2e-helper';
+import { runMatchApi, readFunnelApi, gotoVacancyDetail, switchToKanban } from '../helpers/compativeis-e2e-helper';
 import { readItineraryApi, type ReadItineraryResult, type ItineraryResponseDto } from '../helpers/itinerario-e2e-helper';
 import {
   assembleApi, allocationOptionsApi, endAllocationApi, countActiveAllocations,
@@ -175,7 +175,7 @@ test.describe('cadeia-completa @integration', () => {
         console.log('[16.p2]', v, isDraft, status, trail);
       });
 
-      await test.step('passo 3 — completar e enviar à Talentum (stub) pela tela: X segue em Búsqueda (já movido pelo foguete, D469) e o match deposita em Compatíveis, sem convite', async () => {
+      await test.step('passo 3 — completar e enviar à Talentum (stub) pela tela: X segue em Búsqueda (já movido pelo foguete, D469) e o match, chamado pela rota, deposita em Compatíveis, sem convite', async () => {
         await completeDraftViaWizard(page, v);
         const publishStatus = await publishOnTalentumPage(page, v);
         expect(publishStatus).toBe(200);
@@ -185,6 +185,10 @@ test.describe('cadeia-completa @integration', () => {
         expect(trail).toBe(0); // o envio não move quem o foguete já moveu (idempotente)
         const column = await readPatientKanbanColumn(page, X.patientId);
         expect(column).toBe('SEARCHING');
+
+        // D466 (main): o lançamento só move o paciente; o match roda pela rota.
+        const matchRes = await runMatchApi(request, token, v, { radiusKm: 1, topN: 200 });
+        expect(matchRes.status).toBe(200);
 
         await gotoVacancyDetail(page, v);
         await switchToKanban(page, v);
@@ -518,11 +522,11 @@ test.describe('cadeia-completa @integration', () => {
       expect(await readPatientStatusApi(request, backendUrl(), token, z.patientId)).toBe('SEARCHING');
       const assembled = await assembleApi(request, token, z.patientId);
       expect(assembled.status, `assemble ${assembled.status}`).toBeLessThan(300);
-      // WZ nasce DEPOIS do lançamento (fora do match), em Confirmado.
+      // WZ nasce DEPOIS do lançamento (fora do match), em Completado (coluna anterior a Selecionados; 052 retirou Confirmado).
       const wz = seedMarkedWorker('WZ');
       ids.workerIds.push(wz);
       ids.workerVacancyPairs.push({ workerId: wz, vacancyId: z.vacancyId });
-      const wjaZ = insertWJA({ workerId: wz, jobPostingId: z.vacancyId, funnelStage: 'CONFIRMED' });
+      const wjaZ = insertWJA({ workerId: wz, jobPostingId: z.vacancyId, funnelStage: 'COMPLETED' });
       // Card sem encuadre não arrasta (`KanbanBoard.tsx` `isDragDisabled`) — mesma semente de `seedVacancyWithCards`.
       upsertEncuadre({ workerId: wz, jobPostingId: z.vacancyId });
 
@@ -533,13 +537,13 @@ test.describe('cadeia-completa @integration', () => {
       const pairBefore = await readSubcardPair(page, z.serviceId);
       let putStatus = 0;
 
-      await test.step('silencio 1 — levar WZ pela tela de Confirmado a Selecionados de B, sem Equipe de Resposta Rápida e sem alocação (invariantes 1 e 3)', async () => {
+      await test.step('silencio 1 — levar WZ pela tela de Completado a Selecionados de B, sem Equipe de Resposta Rápida e sem alocação (invariantes 1 e 3)', async () => {
         await gotoVacancyDetail(page, z.vacancyId);
         await switchToKanban(page, z.vacancyId);
         await expect(
-          page.locator(`[data-testid="kanban-column-CONFIRMED"] [data-testid="kanban-card-${wjaZ}"]`),
+          page.locator(`[data-testid="kanban-column-COMPLETED"] [data-testid="kanban-card-${wjaZ}"]`),
         ).toBeVisible({ timeout: 15_000 });
-        // Confirmado é a 6ª coluna: fora da viewport de 1366 (medido: x = 1766) — o `dndKitDrag` mede a ORIGEM sem rolar.
+        // Origem pode estar fora da viewport de 1366 — o `dndKitDrag` mede a ORIGEM sem rolar.
         const sourceZ = page.locator(`[data-testid="kanban-draggable-${wjaZ}"]`);
         await sourceZ.scrollIntoViewIfNeeded();
         await dndKitDrag(page, sourceZ, page.locator('[data-testid="kanban-column-SELECTED"]'));

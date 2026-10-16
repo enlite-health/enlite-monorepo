@@ -4,7 +4,6 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 export interface UseVacanciesDataFilters {
   search?: string;
   status?: string;
-  priority?: string;
   limit?: string;
   offset?: string;
   worker_type?: string;
@@ -14,6 +13,8 @@ export interface UseVacanciesDataFilters {
   days?: string;     // CSV of ints, e.g. "1,3,5"
   time_from?: string;
   time_to?: string;
+  sort?: string;
+  order?: string;
 }
 
 export function useVacanciesData(filters?: UseVacanciesDataFilters) {
@@ -53,7 +54,6 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
   }, [
     filters?.search,
     filters?.status,
-    filters?.priority,
     filters?.limit,
     filters?.offset,
     filters?.worker_type,
@@ -63,6 +63,8 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
     filters?.days,
     filters?.time_from,
     filters?.time_to,
+    filters?.sort,
+    filters?.order,
     fetchKey,
   ]);
 

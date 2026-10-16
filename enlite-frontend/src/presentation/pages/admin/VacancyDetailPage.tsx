@@ -19,16 +19,16 @@ import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
 import { VacancyCaseCard } from '@presentation/components/features/admin/VacancyDetail/VacancyCaseCard';
 import { VacancyPatientCard } from '@presentation/components/features/admin/VacancyDetail/VacancyPatientCard';
 import { VacancyProfessionCard } from '@presentation/components/features/admin/VacancyDetail/VacancyProfessionCard';
-import { VacancyMeetLinksRow } from '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksRow';
 import { VacancyFunnelView } from '@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView';
-import { VacancyMeetLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksCard';
 import { VacancySocialLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard';
+import { VacancySourceChangeNoticeBanner } from '@presentation/components/features/admin/VacancyDetail/VacancySourceChangeNoticeBanner';
 import { VacancyScheduleEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal';
 import { VacancyDescriptionEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyDescriptionEditModal';
 import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
+import { EnquadreTab } from '@presentation/components/features/admin/VacancyDetail/Enquadre/EnquadreTab';
 import { VacancyDetailTabs } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
 import { VacancyNotesPanel } from '@presentation/components/features/admin/VacancyDetail/VacancyNotesPanel';
 import { VACANCY_TABS, type VacancyTab } from '@presentation/components/features/admin/VacancyDetail/vacancyTabs';
@@ -146,6 +146,13 @@ export default function VacancyDetailPage() {
         </div>
       )}
 
+      {/* O serviço contratado mudou com a vaga publicada: só avisa; "marcar como atendido" fecha o campo. */}
+      <VacancySourceChangeNoticeBanner
+        vacancyId={vacancy.id ?? id!}
+        notices={vacancy.source_change_notices}
+        onAcknowledged={refetch}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
@@ -239,22 +246,13 @@ export default function VacancyDetailPage() {
           serviceType={vacancy.service_type ?? null}
           schedule={vacancy.schedule ?? null}
           onEditSchedule={() => setShowScheduleModal(true)}
+          // Horário do serviço contratado: o lápis leva à ficha (aba Servicio Contratado); o modal fica para vaga manual.
+          scheduleServicePatientId={
+            vacancy.locked_fields?.includes('schedule') ? (vacancy.patient_id ?? null) : null
+          }
           onEditDescription={() => setShowDescriptionModal(true)}
         />
       </div>
-
-      {/* Meet links row (renders nothing when no slots filled) */}
-      <VacancyMeetLinksRow
-        meetLink1={vacancy.meet_link_1 ?? null}
-        meetDatetime1={vacancy.meet_datetime_1 ?? null}
-        meetLink2={vacancy.meet_link_2 ?? null}
-        meetDatetime2={vacancy.meet_datetime_2 ?? null}
-        meetLink3={vacancy.meet_link_3 ?? null}
-        meetDatetime3={vacancy.meet_datetime_3 ?? null}
-        recurringWeekday={vacancy.meet_recurring_weekday ?? null}
-        recurringTime={vacancy.meet_recurring_time ?? null}
-        recurringLink={vacancy.meet_recurring_link ?? null}
-      />
 
       {/* TODO TD-XXX: Estado de Busca (candidatos summary) — próximo PR */}
 
@@ -271,6 +269,8 @@ export default function VacancyDetailPage() {
           <VacancyFunnelView vacancyId={id!} vacancy={vacancy} />
         </div>
       )}
+
+      {shownTab === 'enquadre' && <EnquadreTab vacancyId={id!} />}
 
       {shownTab === 'talentum' && (
         <>
@@ -336,21 +336,6 @@ export default function VacancyDetailPage() {
               vacancyNumber={vacancy.vacancy_number ?? null}
               socialShortLinks={vacancy.social_short_links ?? null}
               onRefresh={refetch}
-            />
-          </div>
-          <div className="mb-6">
-            <VacancyMeetLinksCard
-              vacancyId={id!}
-              meetLink1={vacancy.meet_link_1 ?? null}
-              meetDatetime1={vacancy.meet_datetime_1 ?? null}
-              meetLink2={vacancy.meet_link_2 ?? null}
-              meetDatetime2={vacancy.meet_datetime_2 ?? null}
-              meetLink3={vacancy.meet_link_3 ?? null}
-              meetDatetime3={vacancy.meet_datetime_3 ?? null}
-              recurringWeekday={vacancy.meet_recurring_weekday ?? null}
-              recurringTime={vacancy.meet_recurring_time ?? null}
-              recurringLink={vacancy.meet_recurring_link ?? null}
-              onSaved={refetch}
             />
           </div>
         </>

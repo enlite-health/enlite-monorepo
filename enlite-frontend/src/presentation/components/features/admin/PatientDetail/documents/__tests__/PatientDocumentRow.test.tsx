@@ -44,6 +44,17 @@ describe('PatientDocumentRow — leitura', () => {
     expect(screen.getByTestId('patient-document-meta-doc-1')).toHaveTextContent('Enviado por el chat');
   });
 
+  // Spec 049 (A7-6): o resumo da entrevista é gerado pelo sistema — rótulo próprio, nunca "ficha" nem "chat", e sem "Autor desconocido".
+  it('A7-6: origem admission → "Entrevista de admisión" (nem "Subido en la ficha" nem "Enviado por el chat") e sem autor', () => {
+    setup(syntheticDoc({ origin: 'admission', label: 'Resumen de admisión · 12/10/2026', createdByDisplayName: null }));
+    const meta = screen.getByTestId('patient-document-meta-doc-1').textContent ?? '';
+    expect(meta).toContain('Entrevista de admisión');
+    expect(meta).not.toContain('Subido en la ficha');
+    expect(meta).not.toContain('Enviado por el chat');
+    expect(meta).not.toContain('Autor desconocido');
+    expect(name()).toHaveTextContent('Resumen de admisión · 12/10/2026');
+  });
+
   it('sem nome decifrado e sem autor → rótulos genéricos, nunca vazio nem "null"', () => {
     setup(syntheticDoc({ label: null, createdByDisplayName: null }));
     expect(name()).toHaveTextContent('Documento sin nombre');

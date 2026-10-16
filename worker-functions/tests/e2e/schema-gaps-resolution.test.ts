@@ -3,7 +3,7 @@
  *
  * Testa os 4 gaps identificados no roadmap_schema_gaps.md:
  *
- * GAP 1 (D6): deleted_at IS NULL no RecruitmentController
+ * GAP 1 (D6): deleted_at IS NULL no RecruitmentController (removido com o dashboard de recrutamento; o teste abaixo valida o padrão da query)
  * GAP 2 (N5): worker_eligibility no MatchmakingService (SQL-level only)
  * GAP 3 (C3): coordinator_id nos 3 repositorios
  * GAP 4 (N8-C): KMS encryption no BlacklistRepository
@@ -480,7 +480,7 @@ describe('GAP 3 — coordinator_id resolution', () => {
       [coordId]
     );
 
-    // Query pattern from RecruitmentController.getClickUpCases
+    // Query pattern do antigo RecruitmentController.getClickUpCases (controller removido)
     const result = await pool.query(
       `SELECT c.name AS coordinator_name, jp.case_number
        FROM job_postings jp

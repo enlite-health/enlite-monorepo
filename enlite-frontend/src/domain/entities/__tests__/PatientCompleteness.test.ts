@@ -94,26 +94,43 @@ describe('isPlaceholderCoverageValue (FR-121/122, espelha o backend)', () => {
 });
 
 describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECRUITMENT_BLOCKING_CODES)', () => {
+  const FIELDS = { requiredProfessions: ['AT'], requiredSex: 'F', requiredExperience: 'exp', workSchedule: 'part-time', paymentDay: 'dia 5' };
+  const BASE = { serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular' };
+  // helper: sem `serviceRecruitmentFields` explícito, os 5 campos vêm preenchidos (os casos antigos medem OUTROS códigos).
+  const rm = (i: Parameters<typeof recruitmentMissingCodes>[0]) => recruitmentMissingCodes({ serviceRecruitmentFields: FIELDS, ...i });
+
+  // Spec 027 Fase 3 (D508 c, lex S.2) — espelha o backend.
+  it('requiredSex null → SERVICE_RECRUITMENT_FIELDS; BOTH → ok', () => {
+    expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, requiredSex: null } })).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, requiredSex: 'BOTH' } })).toEqual([]);
+  });
+  it('cada um dos 5 faltando (lista vazia, texto em branco, null) bloqueia; sem o objeto = faltando', () => {
+    for (const f of [{ requiredProfessions: [] }, { requiredExperience: '  ' }, { workSchedule: null }, { paymentDay: '' }]) {
+      expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, ...f } })).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    }
+    expect(recruitmentMissingCodes(BASE)).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+  });
+
   it('tudo presente → vazio (pronto para ativar)', () => {
-    expect(recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular' })).toEqual([]);
+    expect(rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular' })).toEqual([]);
   });
 
   it('falta endereço do serviço → SERVICE_ADDRESS', () => {
-    expect(recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: true, insuranceInformed: 'Particular' }))
+    expect(rm({ serviceHasAddress: false, serviceHasSchedule: true, insuranceInformed: 'Particular' }))
       .toEqual(['SERVICE_ADDRESS']);
   });
 
   it('falta horário do serviço → SERVICE_SCHEDULE', () => {
-    expect(recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: false, insuranceInformed: 'Particular' }))
+    expect(rm({ serviceHasAddress: true, serviceHasSchedule: false, insuranceInformed: 'Particular' }))
       .toEqual(['SERVICE_SCHEDULE']);
   });
 
   it('cobertura placeholder (null) → COVERAGE', () => {
-    expect(recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null }))
+    expect(rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null }))
       .toEqual(['COVERAGE']);
   });
 
-  it('faltando tudo → os 3 códigos, nesta ordem (a mesma de RECRUITMENT_BLOCKING_CODES)', () => {
+  it('faltando tudo → os 4 códigos, nesta ordem (a mesma de RECRUITMENT_BLOCKING_CODES)', () => {
     expect(recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null }))
       .toEqual([...RECRUITMENT_BLOCKING_CODES]);
   });
@@ -123,25 +140,25 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
   // com tooltip "Falta: COVERAGE" mesmo tendo cobertura válida pelo caminho novo.
   it('só legado preenchido → COVERAGE não falta (regressão do comportamento atual)', () => {
     expect(
-      recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', hasVerifiedActiveCoverage: false }),
+      rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', hasVerifiedActiveCoverage: false }),
     ).toEqual([]);
   });
 
   it('só cobertura verificada válida (sem legado) → COVERAGE não falta — é o caso do bug', () => {
     expect(
-      recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
+      rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
     ).toEqual([]);
   });
 
   it('nenhuma das duas → COVERAGE continua faltando', () => {
     expect(
-      recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: false }),
+      rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: false }),
     ).toEqual(['COVERAGE']);
   });
 
   it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com COVERAGE ok pela cobertura verificada', () => {
     expect(
-      recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
+      rm({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
     ).toEqual(['SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
   });
 });

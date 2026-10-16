@@ -335,6 +335,30 @@ describe('PublicVacancyController.getById', () => {
     expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Failed to fetch vacancy' });
   });
 
+  it('F6: vaga com serviço — a faixa vem da BANDA do serviço (mapeamento em TS), a coluna auxiliar não sai e o SQL não lê a cópia', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [makeVacancyRow({ age_range_min: null, age_range_max: null, effective_provider_age_band: 'AGE_30_45' })],
+    });
+    const [req, res] = mockReqRes({ id: VACANCY_ID });
+    await controller.getById(req, res);
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.data.age_range_min).toBe(30);
+    expect(body.data.age_range_max).toBe(44);
+    expect(body.data).not.toHaveProperty('effective_provider_age_band');
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain('pcs_eff.provider_age_band');
+    expect(sql).not.toMatch(/\bjp\.age_range_m(in|ax),/);
+  });
+
+  it('F6: vaga manual (sem banda) devolve a própria faixa', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ effective_provider_age_band: null })] });
+    const [req, res] = mockReqRes({ id: VACANCY_ID });
+    await controller.getById(req, res);
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.data.age_range_min).toBe(5);
+    expect(body.data.age_range_max).toBe(12);
+  });
+
   it('SQL query selects all expected columns (catches missing column bugs)', async () => {
     const row = makeVacancyRow();
     mockQuery.mockResolvedValueOnce({ rows: [row] });
@@ -353,8 +377,9 @@ describe('PublicVacancyController.getById', () => {
       'p.service_type AS service_type',
       'jp.required_professions',
       'jp.required_sex',
-      'jp.age_range_min',
-      'jp.age_range_max',
+      'AS age_range_min',
+      'AS age_range_max',
+      'AS effective_provider_age_band',
       'jp.worker_attributes',
       'jp.schedule',
       'jp.schedule_days_hours',

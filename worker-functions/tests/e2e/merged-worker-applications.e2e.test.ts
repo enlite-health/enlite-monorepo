@@ -116,7 +116,7 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
     await pool.query(`UPDATE workers SET merged_into_id = $1 WHERE id = $2`, [survivorId, mergedId]);
 
     // O caso real: duas postulações na mesma vaga, uma em cada cadastro.
-    survivingWjaId = await insertApplication(survivorId, dupVacancyId, 'CONFIRMED', null);
+    survivingWjaId = await insertApplication(survivorId, dupVacancyId, 'SELECTED', null);
     ghostWjaId = await insertApplication(mergedId, dupVacancyId, 'QUALIFIED', 6.6);
     // E uma postulação que só existe no cadastro morto.
     orphanWjaId = await insertApplication(mergedId, orphanVacancyId, 'QUALIFIED', 8.1);
@@ -211,8 +211,8 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
     expect(remaining.rows).toHaveLength(1);
     expect(remaining.rows[0].id).toBe(survivingWjaId);
 
-    // 2. a etapa NÃO regrediu (CONFIRMED vence QUALIFIED)...
-    expect(remaining.rows[0].stage).toBe('CONFIRMED');
+    // 2. a etapa NÃO regrediu (SELECTED vence QUALIFIED)...
+    expect(remaining.rows[0].stage).toBe('SELECTED');
     // ...e o score do Talentum foi preservado no buraco.
     expect(Number(remaining.rows[0].match_score)).toBe(6.6);
 
@@ -369,10 +369,10 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
   });
 
   it('canônica JÁ DECIDIDA não é sobrescrita pela triagem da fantasma', async () => {
-    // O inverso: CONFIRMED/SELECTED/REJECTED é decisão humana e vence a triagem
-    // automática. Foi o caso da própria Norma (CONFIRMED × QUALIFIED).
+    // O inverso: SELECTED/REJECTED é decisão humana e vence a triagem
+    // automática. Foi o caso da própria Norma (decisão × QUALIFIED; na época a decisão era Confirmado).
     const vacancyId = await insertVacancy(99986);
-    const canonical = await insertApplication(survivorId, vacancyId, 'CONFIRMED', null);
+    const canonical = await insertApplication(survivorId, vacancyId, 'SELECTED', null);
     const ghost = await insertApplication(mergedId, vacancyId, 'QUALIFIED', 6.6);
 
     const row = (await findMergedOrphans(pool)).find(
@@ -393,7 +393,7 @@ describe('Reconciliação de postulações presas em cadastro fundido', () => {
       `SELECT application_funnel_stage AS stage FROM worker_job_applications WHERE id = $1`,
       [canonical],
     );
-    expect(after.rows[0].stage).toBe('CONFIRMED');
+    expect(after.rows[0].stage).toBe('SELECTED');
 
     await pool.query(`DELETE FROM encuadres WHERE job_posting_id = $1`, [vacancyId]);
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [vacancyId]);

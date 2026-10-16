@@ -28,6 +28,7 @@ import {
   type AiVacancySimulation,
 } from '@infrastructure/http/AdminApiService';
 import type { VacancyRow } from '@presentation/components/features/admin/VacanciesTable';
+import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 import { AIDescriptionEditor } from '@presentation/components/features/admin/TalentumConfig/AIDescriptionEditor';
 import { PrescreeningStep } from '@presentation/components/features/admin/TalentumConfig/PrescreeningStep';
 import { AI_PROMPT_TAB_I18N_KEYS } from '@presentation/pages/admin/AiPromptsPage/aiPromptTabs';
@@ -69,7 +70,7 @@ export function VacancySimulationSection({ bodies }: VacancySimulationSectionPro
         const { data } = await AdminApiService.listVacancies({ limit: '100' });
         if (!alive) return;
         setCases(
-          (data as VacancyRow[]).filter((v) => !v.isDraft).map((v) => ({ value: v.id, label: v.caso })),
+          (data as VacancyRow[]).filter((v) => !v.isDraft).map((v) => ({ value: v.id, label: formatVacancyCase(v.caseNumber, v.caseOrdinal) })),
         );
         setCasesState('ready');
       } catch {

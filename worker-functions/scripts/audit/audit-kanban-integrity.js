@@ -30,13 +30,6 @@ function inferExpectedStage(useCase, jsonPayload) {
   if (!useCase) return null;
   // ProcessTalentumPrescreening writes multiple stages; we don't know which without statusLabel
   if (useCase.includes('ProcessTalentumPrescreening')) return null;
-  // BookSlot always sets CONFIRMED on success
-  if (useCase.includes('BookSlotFromWhatsApp')) {
-    // Apenas se for happy path (não slot inválido); inferir do msg
-    const msg = jsonPayload?.message || jsonPayload?.msg || '';
-    if (msg.includes('Booked slot')) return 'CONFIRMED';
-    return null;
-  }
   // QualifiedInterviewHandler runs after stage already QUALIFIED — sem expectativa direta
   if (useCase.includes('QualifiedInterviewHandler')) return null;
   // VacancyAutoInviteHandler cria WJA em INVITED

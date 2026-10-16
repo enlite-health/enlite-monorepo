@@ -20,9 +20,9 @@
  * Não é "a Fase 1 é sobre mensageria" por rótulo. É mecanismo:
  *   · `WJAFunnelController.moveEncuadre` chama `emitFunnelStageEvent` em TODO
  *     movimento que muda de etapa → grava `funnel_stage.<etapa>` em `domain_events`;
- *   · `funnel_stage.qualified` cai no `QualifiedInterviewHandler` (built-in), que
- *     ENFILEIRA o convite; as demais caem no `StageMessageHandler`, que enfileira o
- *     template da etapa se ele estiver LIGADO;
+ *   · todas as etapas (QUALIFIED inclusive, desde a spec 052) caem no `StageMessageHandler`,
+ *     que enfileira o template da etapa se ele estiver LIGADO (a linha `builtin` da
+ *     QUALIFIED é pulada como DISABLED: o convite automático saiu);
  *   · quem impede a mensagem de SAIR para um fixture é o guard `is_test` no
  *     `OutboxProcessor` — o "ponto único de defesa", o mesmo do opt-out.
  *
@@ -52,9 +52,9 @@
  *
  * ── TEARDOWN ─────────────────────────────────────────────────────────────────
  * `POST /api/admin/test-fixtures/cleanup` (worker + vaga + linha de outbox), provado
- * por releitura 404, no molde da `qualified-interview-invite`.
+ * por releitura 404.
  */
-import { test, expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Browser, type Page, type Response } from '@playwright/test';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { newAdminApiContext } from '../src/support/adminApi';
@@ -109,17 +109,22 @@ type DeliveryBody = {
 };
 
 /**
- * Coluna do Kanban a partir de (etapa, origem) — espelho EXATO de
+ * Coluna do Kanban a partir de (etapa, origem, messaged_at) — espelho EXATO de
  * `worker-functions/src/modules/matching/domain/kanbanColumn.ts:deriveKanbanColumn`.
  *
  * Duplicar a regra aqui é deliberado: se a suíte importasse a função do backend, ela
  * concordaria com o backend por construção e não provaria nada. O oráculo tem de ser
  * INDEPENDENTE — se as duas divergirem, é sinal, não ruído.
  */
-function colunaEsperada(stage: string | null, source: string | null): string {
+function colunaEsperada(
+  stage: string | null,
+  source: string | null,
+  messagedAt: string | Date | null,
+): string {
+  if (stage === 'INVITED' && source === 'system' && messagedAt == null) return 'COMPATIBLE';
   if (stage === 'SELECTED') return 'SELECTED';
+  if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
-  if (stage === 'CONFIRMED') return 'CONFIRMED';
   if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
   if (stage === 'PRE_SCREENING') return 'PRE_SCREENING';
@@ -130,12 +135,11 @@ function colunaEsperada(stage: string | null, source: string | null): string {
 /**
  * Abre a vaga e coloca o funil na visão KANBAN.
  *
- * ⚠️ A troca de visão é obrigatória, e descobri isso na 1ª execução real: o padrão do
- * funil é `list`, não `kanban` (`VacancyFunnelView.getPersistedView` → `return 'list'`),
- * e a escolha é persistida em `localStorage` POR VAGA
- * (`vacancy-funnel-view-<id>`). Num contexto de browser novo — que é o que todo run
- * cria — não há nada persistido, então o Kanban simplesmente não é renderizado e
- * `kanban-card-*` não existe no DOM.
+ * Desde a 054 o padrão do funil é `kanban` (`VacancyFunnelView.getPersistedView` →
+ * `return 'kanban'`); antes era `list`, e foi aí que a troca de visão abaixo nasceu. A
+ * escolha é persistida em `localStorage` POR VAGA (`vacancy-funnel-view-v2-<id>`). Num
+ * contexto de browser novo — que é o que todo run cria — não há nada persistido e o
+ * Kanban já abre; o clique no alternador segue aqui por garantia, é inofensivo.
  *
  * O clique no alternador é também o que o staff faz, então não é contorno: é o passo
  * que faltava na jornada. O `aria-label` é "Kanban" em ES e pt-BR, então o seletor por
@@ -164,13 +168,12 @@ async function abrirVaga(browser: Browser): Promise<{ page: Page; fechar: () => 
  *    a sequência manual de mouse não dispara o `PUT /encuadres/:id/move` — 20 s de
  *    `waitForResponse` estourando, 2 tentativas. O `MoveToMenu` vive no MESMO card
  *    (`KanbanCard.tsx:336`), é a via ACESSÍVEL e chama o mesmo `onMoveTo`.
- * 2. OS DESTINOS SÃO TRÊS, NÃO NOVE. `MOVE_TARGETS = ['INVITED','CONFIRMED','SELECTED']`
- *    menos o atual — de INICIADO sobram "Confirmados" e "Seleccionados". Meu primeiro
+ * 2. OS DESTINOS SÃO DOIS, NÃO NOVE. `MOVE_TARGETS = ['INVITED','SELECTED']`
+ *    menos o atual — de INICIADO sobra só "Seleccionados". Meu primeiro
  *    destino (`PRE_SCREENING`) simplesmente não existe no menu.
- * 3. OS DOIS ABREM MODAL, de propósito: SELECTED pede o PAPEL, CONFIRMED pede a DATA.
- *    O comentário do `KanbanBoard` diz por quê: "os dois caminhos têm que pedir a mesma
- *    coisa, senão o menu vira a porta dos fundos que grava card sem data". Ou seja: o
- *    modal É a jornada, não um obstáculo — e é isso que este teste passa a exercitar.
+ * 3. SELECTED ABRE MODAL, de propósito: pede o PAPEL. O comentário do `KanbanBoard` diz por
+ *    quê: "os dois caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos
+ *    fundos". Ou seja: o modal É a jornada, não um obstáculo — e é isso que este teste exercita.
  *
  * O que fica SEM cobertura, dito para não virar falsa sensação: se o `@dnd-kit` quebrar,
  * este teste continua verde. Cobrir o arrasto exige afinar pointer events contra o
@@ -186,6 +189,19 @@ async function moverTarjetaParaSelecionados(page: Page): Promise<void> {
   await expect(modal, 'mover para SELECIONADOS pergunta o PAPEL antes de gravar').toBeVisible();
   await modal.getByTestId('role-option-titular').click();
   await modal.getByTestId('role-confirm').click();
+}
+
+/**
+ * INICIADO → SELECIONADOS salta mais de 1 posição do quadro B: o 1º PUT (já com o papel) volta
+ * 422 MOVE_REASON_REQUIRED e a tela abre o diálogo de motivo. O humano escolhe o motivo por click
+ * e confirma; o board reenvia o MESMO movimento com `reasonCategory`.
+ * Mesmos testids do e2e de tela da F4 (`funil-vacante-motivo.integration.e2e.ts`).
+ */
+async function escolherMotivoDoSalto(page: Page): Promise<void> {
+  const modal = page.getByTestId('move-reason-modal');
+  await expect(modal, 'o salto de etapa pergunta o MOTIVO antes de gravar').toBeVisible();
+  await modal.getByTestId('move-reason-option-encuadre-antecipado').click();
+  await modal.getByTestId('move-reason-confirm').click();
 }
 
 /** O funil pela API — fonte independente do que a tela pintou. */
@@ -255,8 +271,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     // ── is_test ANTES de qualquer passo que possa enfileirar ──────────────────
     // Marcar depois de enfileirar seria apostar numa corrida contra o processador.
     //
-    // ⚠️ POR QUE É UM POLL, e não um PATCH direto: a `qualified-interview-invite` marca
-    // DEPOIS do `completeCaregiverRegistration`, e o intervalo daquelas chamadas esconde
+    // ⚠️ POR QUE É UM POLL, e não um PATCH direto: o intervalo entre chamadas esconde
     // o problema. Chamando `test-flag` imediatamente após o `init`, prod devolve **500**
     // — medido em 31/08, na primeira execução deste spec, e reproduzido em 2 tentativas
     // seguidas. Minutos depois o MESMO PATCH devolve 200: é o lag de read-replica que o
@@ -297,6 +312,9 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
         case_number: patient.caseNumber ?? 0,
         patient_id: patient.id,
         is_test: true,
+        // Desde 26/09 a vaga nasce rascunho e o detalhe redireciona para /borrador (sem Kanban).
+        // `is_draft:false` só vale com is_test=true (vacancyCrudHelpers.ts:383) e NÃO passa pelo Talentum.
+        is_draft: false,
         required_professions: ['CAREGIVER'],
         worker_attributes: ATTRS,
         age_range_min: 25,
@@ -344,7 +362,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     expect(
       coluna,
       'postulação manual nasce na coluna INICIADO (deriveKanbanColumn: INVITED + manual)',
-    ).toBe(colunaEsperada('INVITED', 'manual'));
+    ).toBe(colunaEsperada('INVITED', 'manual', null));
   });
 
   test('[@route:PUT /api/admin/encuadres/:id/move @depth:happy] 1.1 — mover a tarjeta para SELECIONADOS (pelo menu, respondendo o modal de papel): a etapa persiste, o evento nasce, e a coluna derivada bate', async ({ browser }) => {
@@ -353,12 +371,16 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
       // PRE_SCREENING é o destino de propósito: muda de etapa (logo emite evento) e
       // NÃO é QUALIFIED (que é o built-in do convite). O que se prova aqui é o
       // movimento; o convite tem spec próprio.
-      const esperaMove = page.waitForResponse(
-        (r) => r.request().method() === 'PUT' && r.url().includes(`/encuadres/${kanban.encuadreId}/move`),
-      );
+      const esMovePut = (r: Response) =>
+        r.request().method() === 'PUT' && r.url().includes(`/encuadres/${kanban.encuadreId}/move`);
+      const esperaPrimeiro = page.waitForResponse(esMovePut);
       await moverTarjetaParaSelecionados(page);
+      expect((await esperaPrimeiro).status(), '1º PUT (salto sem motivo) responde 422').toBe(422);
+
+      const esperaMove = page.waitForResponse(esMovePut);
+      await escolherMotivoDoSalto(page);
       const moveRes = await esperaMove;
-      expect(moveRes.status(), 'mover pelo menu disparou o PUT /encuadres/:id/move e ele respondeu 200').toBe(200);
+      expect(moveRes.status(), 'mover pelo menu, com o motivo do salto, reenviou o PUT /encuadres/:id/move e ele respondeu 200').toBe(200);
 
       // ── a etapa PERSISTE (fonte independente: a API, não o DOM otimista) ────
       const { card, coluna } = await lerFunil(adminCtx!);
@@ -366,7 +388,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
       expect(
         coluna,
         'a coluna DERIVADA bate com o internalStage — a tela não pode inventar classificação',
-      ).toBe(colunaEsperada('SELECTED', 'manual'));
+      ).toBe(colunaEsperada('SELECTED', 'manual', null));
 
       // ── o EVENTO nasceu, com autoria ───────────────────────────────────────
       // O `StageMessageHandler` registra a decisão (enviada OU pulada) no log
@@ -398,7 +420,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     test.fixme(
       true,
       '1.2 pendente: o reenvio não enfileirou na outbox nesta jornada (delivery-status devolve ' +
-        'outbox=null após 90 s). O convite POR ARRASTO já é provado pela `qualified-interview-invite`; ' +
+        'outbox=null após 90 s). O convite por arrasto saiu na spec 052; ' +
         'falta entender por que o botão "Reenviar" a partir de SELECIONADOS não enfileira. Ver tasks.md.',
     );
     const { page, fechar } = await abrirVaga(browser);
@@ -466,8 +488,8 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     const page = await ctx.newPage();
     try {
       await page.goto(`/admin/vacancies/${kanban.vacancyId}`);
-      // Mesma troca de visão do `abrirVaga`: o funil nasce em `list` e o Kanban só
-      // renderiza depois do clique (a preferência é por vaga, no localStorage).
+      // Mesma troca de visão do `abrirVaga`: desde a 054 o funil já nasce em `kanban`; o
+      // clique é por garantia (a preferência é por vaga, no localStorage).
       const alternador = page.getByRole('button', { name: 'Kanban' });
       await expect(alternador).toBeVisible({ timeout: 30_000 });
       await alternador.click();

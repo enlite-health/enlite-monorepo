@@ -19,7 +19,7 @@ const EncuadreMoveBody = z.object({
     .enum(MOVABLE_FUNNEL_STAGES)
     .openapi({
       description: 'Etapa de destino no funil (coluna do Kanban). Inclui QUICK_RESPONSE_TEAM (Fase 4) — movível, sem mensagem.',
-      example: 'CONFIRMED',
+      example: 'SELECTED',
     }),
   role: z.enum(['TITULAR', 'RAPID_RESPONSE']).optional().openapi({
     description: 'Papel do prestador. Só aceito ao mover para SELECTED.',
@@ -82,8 +82,7 @@ registry.registerPath({
   description:
     'Move a candidatura para outra etapa do funil, gravando `application_funnel_stage` e ' +
     'sincronizando `encuadres.resultado` nos estados terminais (SELECTED/REJECTED). ' +
-    'Ao mover para CONFIRMED, aceita data e hora da entrevista — é o único ponto em que o ' +
-    'sistema registra QUANDO a entrevista acontece, o que alimenta lembretes e marcação de falta. ' +
+    'O estágio Confirmado saiu do funil (spec 052): destino com esse valor responde 400. ' +
     'A descrição anterior ("transfere um encuadre de uma vaga para outra", body `jobPostingId`) ' +
     'nunca correspondeu ao comportamento real desta rota. Fase 4 (D430/D434): salto de etapa e ' +
     'entrar/sair de Rejeitados exigem `reasonCategory` — sem ele, ou fora da lista do tipo de ' +

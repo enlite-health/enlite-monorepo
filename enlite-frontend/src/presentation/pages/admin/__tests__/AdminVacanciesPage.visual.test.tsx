@@ -21,9 +21,8 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
     vacancies: [
       {
         id: '1',
-        caso: 'Caso 100',
+        caseNumber: 100, caseOrdinal: 1,
         status: 'Activo',
-        priority: 'URGENT',
         diasAberto: '05',
         convidados: '10',
         postulados: '5',
@@ -33,9 +32,8 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
       },
       {
         id: '2',
-        caso: 'Caso 200',
+        caseNumber: 200, caseOrdinal: 1,
         status: 'En Espera',
-        priority: 'NORMAL',
         diasAberto: '12',
         convidados: '20',
         postulados: '8',

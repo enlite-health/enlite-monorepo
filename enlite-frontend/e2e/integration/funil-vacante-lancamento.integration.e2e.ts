@@ -44,7 +44,7 @@ import {
   type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi, countOutboundSince, chooseReasonInModal } from '../helpers/funnel-move-e2e-helper';
-import { readFunnelApi, switchToKanban, gotoVacancyDetail, readStageCount } from '../helpers/compativeis-e2e-helper';
+import { runMatchApi, readFunnelApi, switchToKanban, gotoVacancyDetail, readStageCount } from '../helpers/compativeis-e2e-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
@@ -147,6 +147,10 @@ test.describe('funil-vacante lancamento @integration', () => {
       });
 
       // ── Critério 5: match sem convite, sem tocar canal real ──────────────────────
+      // D466 (main): o lançamento só move o paciente; o match roda pela rota.
+      const matchRes = await runMatchApi(request, token, vacancyId, { radiusKm: 1, topN: 200 });
+      expect(matchRes.status, 'POST /match (pela rota)').toBe(200);
+
       // readPatientKanbanColumn navegou para /admin/patients/kanban — voltar à vaga.
       await gotoVacancyDetail(page, vacancyId);
       await switchToKanban(page, vacancyId);

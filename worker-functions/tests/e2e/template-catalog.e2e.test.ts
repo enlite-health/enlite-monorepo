@@ -65,7 +65,7 @@ describe('Catálogo de plantillas (spec 010 F1) @integration', () => {
     // trazer só a ligada.
     await pool.query(
       `INSERT INTO funnel_stage_messages (country, stage, template_slug, enabled)
-       VALUES ('AR','SELECTED',$1,true), ('AR','CONFIRMED',$1,false)`,
+       VALUES ('AR','SELECTED',$1,true), ('AR','IN_DOUBT',$1,false)`,
       [SLUG_OK],
     );
   });

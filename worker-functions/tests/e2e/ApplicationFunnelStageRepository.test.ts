@@ -133,14 +133,13 @@ describe('AF2 — UPDATE para cada um dos stages válidos', () => {
   // Stages válidos pós-migration 264 (fase-2): INITIATED saiu do CHECK definitivamente
   // (230 fez o backfill INITIATED→PRE_SCREENING; 264 removeu do CHECK e da precedence).
   // Stages atuais: INVITED, PRE_SCREENING, IN_PROGRESS, COMPLETED, QUALIFIED,
-  //                IN_DOUBT, CONFIRMED, SELECTED, REJECTED
+  //                IN_DOUBT, SELECTED, REJECTED (o estágio Confirmado saiu do produto na spec 052; o CHECK do banco o fecha na 521)
   const VALID_STAGES = [
     'PRE_SCREENING',
     'IN_PROGRESS',
     'COMPLETED',
     'QUALIFIED',
     'IN_DOUBT',
-    'CONFIRMED',
     'SELECTED',
     'REJECTED',
   ] as const;

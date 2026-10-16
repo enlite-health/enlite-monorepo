@@ -219,6 +219,8 @@ test.describe('Contact notes — delete rules (author + 2h) @integration', () =>
     await loginAsAdmin(page);
 
     await page.goto(`/admin/vacancies/${vacancyId}`);
+    // 054: a tela abre no Kanban; `funnel-notes-button` é da Lista — entra clicando "Lista".
+    await page.getByRole('group', { name: 'Cambiar vista' }).getByRole('button', { name: 'Lista' }).click();
 
     // Abre o modal de notas pela coluna (agora a primeira, à esquerda).
     const notesButton = page.locator('[data-testid="funnel-notes-button"]').first();

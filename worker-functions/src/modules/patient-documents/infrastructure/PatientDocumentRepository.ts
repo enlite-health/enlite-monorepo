@@ -36,6 +36,10 @@ export interface InsertTabDocumentParams {
   createdByUid: string;
 }
 
+export interface InsertAdmissionDocumentParams extends InsertTabDocumentParams {
+  appointmentId: string;
+}
+
 export interface InsertChatDocumentsParams {
   conversationId: string;
   messageId: string;
@@ -113,6 +117,34 @@ export class PatientDocumentRepository {
   }
 
   /**
+   * Resumo da admissão (spec 049 F6): origem `admission`, ligado à reunião que o gerou. `UNIQUE(source_appointment_id)` +
+   * `ON CONFLICT DO NOTHING` são a segunda trava anti-duplicata (a primeira é o cofre): rodar a importação 2× não cria 2º
+   * documento. `null` = já existia um para esta reunião (nada foi gravado).
+   */
+  async insertAdmissionDocument(params: InsertAdmissionDocumentParams, client: PoolClient): Promise<{ id: string } | null> {
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO patient_documents
+         (patient_id, origin, label_encrypted, file_path_encrypted, original_name_encrypted,
+          content_type, size_bytes, sha256, created_by_uid, source_appointment_id)
+       VALUES ($1, 'admission', $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (source_appointment_id) WHERE source_appointment_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [
+        params.patientId,
+        params.labelEncrypted,
+        params.filePathEncrypted,
+        params.originalNameEncrypted,
+        params.contentType,
+        params.sizeBytes,
+        params.sha256,
+        params.createdByUid,
+        params.appointmentId,
+      ],
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
    * Anexar no chat É criar documento (D456/D463, Q12): um documento por arquivo anexado, na MESMA
    * transação da mensagem (o `client` é o do `PostMessageUseCase`). Rótulo = nome original do
    * arquivo (ciphertext copiado, nunca decifrado aqui); autor = o do envio e data = `created_at` da
@@ -166,8 +198,9 @@ export class PatientDocumentRepository {
     );
     if (rows.length === 0) return null;
     const row = rows[0];
-    if (row.origin === 'tab') {
-      return { origin: 'tab', storedFileId: null, pathEncrypted: row.filePathEncrypted };
+    // `tab` e `admission` são donas do arquivo no bucket (caminho cifrado na própria linha); só `chat` aponta para `stored_files`.
+    if (row.origin === 'tab' || row.origin === 'admission') {
+      return { origin: row.origin, storedFileId: null, pathEncrypted: row.filePathEncrypted };
     }
 
     const marked = await client.query<{ pathEncrypted: string }>(

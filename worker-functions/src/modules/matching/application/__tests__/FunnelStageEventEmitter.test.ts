@@ -12,7 +12,7 @@ describe('funnelStageEventName', () => {
   it('é funnel_stage.<etapa minúscula> — QUALIFIED bate com o evento do webhook da Talentum', () => {
     expect(funnelStageEventName('QUALIFIED')).toBe('funnel_stage.qualified');
     expect(funnelStageEventName('PRE_SCREENING')).toBe('funnel_stage.pre_screening');
-    expect(FUNNEL_STAGES).toHaveLength(9);
+    expect(FUNNEL_STAGES).toHaveLength(8);
   });
 
   it('isFunnelStage: a MESMA lista vale para o moveEncuadre, a config por etapa e o OpenAPI', () => {
@@ -35,12 +35,12 @@ describe('funnelStageEventName', () => {
 });
 
 describe('MOVABLE_FUNNEL_STAGES / isMovableFunnelStage (Fase 4, DX-4.7)', () => {
-  it('é FUNNEL_STAGES + QUICK_RESPONSE_TEAM — 10 etapas', () => {
-    expect(MOVABLE_FUNNEL_STAGES).toHaveLength(10);
+  it('é FUNNEL_STAGES + QUICK_RESPONSE_TEAM — 9 etapas', () => {
+    expect(MOVABLE_FUNNEL_STAGES).toHaveLength(9);
     expect(MOVABLE_FUNNEL_STAGES).toEqual([...FUNNEL_STAGES, 'QUICK_RESPONSE_TEAM']);
   });
 
-  it('isMovableFunnelStage aceita todas as 9 com mensagem + QUICK_RESPONSE_TEAM', () => {
+  it('isMovableFunnelStage aceita todas as 8 com mensagem + QUICK_RESPONSE_TEAM', () => {
     for (const s of MOVABLE_FUNNEL_STAGES) expect(isMovableFunnelStage(s)).toBe(true);
   });
 

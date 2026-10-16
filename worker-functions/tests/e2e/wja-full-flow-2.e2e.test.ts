@@ -2,7 +2,7 @@
  * wja-full-flow-2.e2e.test.ts  (Part 2 of 2)
  *
  * Smoke E2E — WJA Full Flow (Fase A do gate de regressão do core).
- * Steps 6-9: REPROGRAMAR + RECHAZAR (auto + manual) + invariantes.
+ * Steps 7-9: RECHAZAR (auto + manual) + invariantes (o REPROGRAMAR automático saiu, spec 052).
  *
  * Depende do estado deixado no banco por wja-full-flow-1.e2e.test.ts (Part 1).
  * Lê IDs do arquivo de estado .wja-full-flow-state.json gerado por part1.
@@ -34,7 +34,6 @@ interface SharedState {
   workerBId: string;
   workerCId: string;
   jobPostingId: string;
-  inviteSidA: string;
 }
 
 function loadState(): SharedState {
@@ -46,7 +45,7 @@ const PROF_C = 'wff-prof-c-fixed';
 
 // ── Suite part2 ───────────────────────────────────────────────────────────
 
-describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integration', () => {
+describe('WJA Full Flow Part 2 — RECHAZAR + Invariantes @integration', () => {
   const api = createApiClient();
   let pool: Pool;
 
@@ -55,8 +54,6 @@ describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integra
   let workerCId: string;
   let jobPostingId: string;
 
-  let reprogramReminderSid: string;
-  let reprogramRescheduleSid: string;
 
   beforeAll(async () => {
     await waitForBackend(api);
@@ -121,89 +118,6 @@ describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integra
     if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
 
     await pool.end();
-  });
-
-  // ── Step 6: REPROGRAMAR ───────────────────────────────────────────────────
-
-  describe('Step 6 — REPROGRAMAR: Worker A pede reschedule (F7.b)', () => {
-    beforeAll(async () => {
-      // Simular reminder com SID para correlação
-      reprogramReminderSid = 'SM_WFF_REMINDER_A_P2';
-      await pool.query(
-        `INSERT INTO messaging_outbox
-           (worker_id, template_slug, variables, status, twilio_sid, attempts)
-         VALUES ($1, 'qualified_reminder_confirm', $2::jsonb, 'sent', $3, 1)`,
-        [workerAId, JSON.stringify({ job_posting_id: jobPostingId }), reprogramReminderSid],
-      );
-    });
-
-    it('confirm_no → interview_response=awaiting_reschedule, funnel_stage permanece CONFIRMED', async () => {
-      const res = await api.post(
-        '/api/webhooks/twilio/inbound',
-        new URLSearchParams({
-          From: `whatsapp:${PHONE_A}`,
-          ButtonPayload: 'confirm_no',
-          OriginalRepliedMessageSid: reprogramReminderSid,
-        }).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-      expect(res.status).toBe(200);
-
-      const { rows } = await pool.query(
-        `SELECT application_funnel_stage, interview_response
-         FROM worker_job_applications
-         WHERE worker_id = $1 AND job_posting_id = $2`,
-        [workerAId, jobPostingId],
-      );
-      expect(rows[0].interview_response).toBe('awaiting_reschedule');
-      // F7.b: permanece CONFIRMED (não existe REPROGRAM no schema)
-      expect(rows[0].application_funnel_stage).toBe('CONFIRMED');
-    });
-
-    it('reschedule_yes → meet_link=NULL + interview_response=awaiting_reschedule (self-loop F7.b)', async () => {
-      // Atribuir SID ao outbox de reschedule gerado pelo confirm_no
-      reprogramRescheduleSid = 'SM_WFF_RESCHED_A_P2';
-      await pool.query(
-        `UPDATE messaging_outbox SET twilio_sid = $1
-         WHERE worker_id = $2 AND template_slug = 'qualified_reminder_reschedule'
-           AND twilio_sid IS NULL`,
-        [reprogramRescheduleSid, workerAId],
-      );
-
-      const res = await api.post(
-        '/api/webhooks/twilio/inbound',
-        new URLSearchParams({
-          From: `whatsapp:${PHONE_A}`,
-          ButtonPayload: 'reschedule_yes',
-          OriginalRepliedMessageSid: reprogramRescheduleSid,
-        }).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-      expect(res.status).toBe(200);
-
-      const { rows } = await pool.query(
-        `SELECT application_funnel_stage, interview_response,
-                interview_meet_link, interview_datetime
-         FROM worker_job_applications
-         WHERE worker_id = $1 AND job_posting_id = $2`,
-        [workerAId, jobPostingId],
-      );
-      // ADR-003 F7.b: REPROGRAM removido — fica CONFIRMED+awaiting_reschedule+meet_link=NULL
-      expect(rows[0].application_funnel_stage).toBe('CONFIRMED');
-      expect(rows[0].interview_response).toBe('awaiting_reschedule');
-      expect(rows[0].interview_meet_link).toBeNull();
-      expect(rows[0].interview_datetime).toBeNull();
-    });
-
-    it('WJA continua em CONFIRMED (estado REPROGRAM não existe no schema)', async () => {
-      const { rows } = await pool.query(
-        `SELECT application_funnel_stage FROM worker_job_applications
-         WHERE worker_id = $1 AND job_posting_id = $2`,
-        [workerAId, jobPostingId],
-      );
-      expect(rows[0].application_funnel_stage).not.toBe('REPROGRAM');
-      expect(rows[0].application_funnel_stage).toBe('CONFIRMED');
-    });
   });
 
   // ── Step 7: RECHAZAR auto — Worker C com NOT_QUALIFIED ────────────────────
@@ -337,7 +251,7 @@ describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integra
     });
 
     it('Stage history: transições de Worker A foram registradas em stage_history', async () => {
-      // Worker A passou por: INVITED → PRE_SCREENING → IN_PROGRESS → COMPLETED → QUALIFIED → CONFIRMED
+      // Worker A passou por: INVITED → PRE_SCREENING → IN_PROGRESS → COMPLETED → QUALIFIED
       // (migration 230: subtype INITIATED do Talentum → PRE_SCREENING no banco)
       const { rows } = await pool.query(
         `SELECT sh.old_value, sh.new_value
@@ -347,14 +261,13 @@ describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integra
          ORDER BY sh.created_at ASC`,
         [workerAId, jobPostingId],
       );
-      expect(rows.length).toBeGreaterThanOrEqual(5);
+      expect(rows.length).toBeGreaterThanOrEqual(4);
 
       const stages = rows.map(r => r.new_value as string);
       expect(stages).toContain('PRE_SCREENING'); // migration 230: INITIATED → PRE_SCREENING
       expect(stages).toContain('IN_PROGRESS');
       expect(stages).toContain('COMPLETED');
       expect(stages).toContain('QUALIFIED');
-      expect(stages).toContain('CONFIRMED');
     });
 
     it('Encuadres: trigger 189 criou 1 encuadre por WJA (3 workers = 3 encuadres)', async () => {

@@ -157,6 +157,9 @@ async function abrirFicha(browser: Browser): Promise<{ page: Page; fechar: () =>
   return { page, fechar: async () => { await ctx.close(); } };
 }
 
+/** Espera máxima pelo refetch da ficha depois do PATCH (não é timeout global). */
+const REFETCH_MS = 15_000;
+
 /**
  * Abre o drawer, aplica `preencher`, salva e devolve o CORPO que o front mandou.
  *
@@ -301,10 +304,17 @@ test.describe.serial('Spec 009 · Fase 2 — ficha do paciente pela tela do staf
         OBS_LONGA,
       );
 
-      const naTela = await page.getByTestId('general-notes-text').innerText();
+      // O drawer fecha e a página refaz o GET depois do PATCH: ler o DOM uma vez só pega o valor anterior ao
+      // refetch. Asserção web-first com nova tentativa; se o produto de fato seguir mostrando o valor velho,
+      // continua VERMELHO, com a mensagem de que a tela não refletiu o gravado.
+      const notasTela = page.getByTestId('general-notes-text');
       for (const linha of OBS_LONGA.split('\n').filter(Boolean)) {
-        expect(naTela, `a linha "${linha.slice(0, 24)}…" está na tela`).toContain(linha);
+        await expect(
+          notasTela,
+          `a tela não refletiu o valor gravado em ${REFETCH_MS / 1000} s: linha "${linha.slice(0, 24)}…" ausente`,
+        ).toContainText(linha, { timeout: REFETCH_MS });
       }
+      const naTela = await notasTela.innerText();
       expect(
         naTela.replace(/\r\n/g, '\n'),
         'as quebras de linha sobreviveram na renderização (whitespace-pre-wrap), não viraram um parágrafo só',
@@ -409,10 +419,15 @@ test.describe.serial('Spec 009 · Fase 2 — ficha do paciente pela tela do staf
       ).toBe(ficha.obsCarimboAntesDaEmergencia);
       expect(naApi.additionalComments, 'e o texto das observações continua intacto').toBe(OBS_LONGA);
 
-      const naTela = await page.getByTestId('emergency-instructions-text').innerText();
-      expect(naTela, 'a tela mostra a instrução gravada').toContain(`E2E-EMERG-EDITADA-${STAMP}`);
-      const linhaEdicao = await page.getByTestId('emergency-instructions-edited').innerText();
-      expect(linhaEdicao, 'com a autoria resolvida ao lado').toContain(ficha.autorNaApi!);
+      // Mesmo motivo da 2.2: a tela só reflete o valor depois do refetch pós-PATCH.
+      await expect(
+        page.getByTestId('emergency-instructions-text'),
+        `a tela não refletiu o valor gravado em ${REFETCH_MS / 1000} s (instrução de emergência)`,
+      ).toContainText(`E2E-EMERG-EDITADA-${STAMP}`, { timeout: REFETCH_MS });
+      await expect(
+        page.getByTestId('emergency-instructions-edited'),
+        `a tela não mostrou a autoria resolvida em ${REFETCH_MS / 1000} s`,
+      ).toContainText(ficha.autorNaApi!, { timeout: REFETCH_MS });
     } finally {
       await fechar();
     }

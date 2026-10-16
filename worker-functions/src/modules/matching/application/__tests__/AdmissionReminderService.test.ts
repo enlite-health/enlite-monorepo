@@ -1,60 +1,14 @@
 /**
- * AdmissionReminderService.test.ts — endpoint de lembrete 30min.
- *
- * Cobertura:
- *  - envia quando status='booked' e não enviado ainda + grava reminder_30min_sent_at
- *  - idempotente: reminder_30min_sent_at preenchido → não reenvia
- *  - status != 'booked' → não envia
- *
- * I/O mockado (Twilio + Postgres). Envio real exige creds + template aprovado.
+ * AdmissionReminderService.test.ts — lembrete 30 min (spec 049 F2: idempotência é o CLAIM, não o carimbo depois do envio).
+ * Dublês das fronteiras e armazém em memória; a corrida de 2 entregas com Postgres real está em
+ * `tests/e2e/admission-049-mensageria.e2e.test.ts`.
  */
-
-import { Pool } from 'pg';
-import { Result } from '@shared/utils/Result';
-import { MessageSentResult } from '@modules/notification/domain/IMessagingService';
-import type { AdmissionWhatsAppSender } from '../../infrastructure/admissionTemplates';
 import { AdmissionReminderService } from '../AdmissionReminderService';
+import { buildAdmissionKit, KIT_PHONE, type FakeAppointment, type FakePatient } from '../../infrastructure/doubles/admissionTestKit';
 
 const APPT_ID = 'appt-777';
-const PHONE = '+5491122334455';
 
-interface ApptRow {
-  patient_id: string;
-  country: string;
-  host_display_name: string | null;
-  slot_start: Date;
-  meet_link: string | null;
-  status: string;
-  reminder_30min_sent_at: Date | null;
-}
-
-function makeService(apptRow: ApptRow | null, hasConsent = true) {
-  const query = jest.fn(async (sql: string, _params?: unknown[]) => {
-    if (sql.includes('FROM admission_appointments')) {
-      return { rows: apptRow ? [apptRow] : [] };
-    }
-    if (sql.includes('FROM patients')) {
-      return { rows: [{ phone_whatsapp: PHONE, has_consent: hasConsent }] };
-    }
-    return { rows: [] }; // UPDATE
-  });
-  const db = { query } as unknown as Pool;
-
-  const sendWithContentSid = jest.fn(
-    async (
-      _to: string,
-      _contentSid: string,
-      _vars: Record<string, string>,
-    ): Promise<Result<MessageSentResult>> =>
-      Result.ok<MessageSentResult>({ externalId: 'SM9', status: 'queued', to: PHONE }),
-  );
-  const whatsapp: AdmissionWhatsAppSender = { sendWithContentSid };
-
-  const service = new AdmissionReminderService(whatsapp, db);
-  return { service, query, sendWithContentSid };
-}
-
-function bookedRow(overrides: Partial<ApptRow> = {}): ApptRow {
+function bookedRow(overrides: Partial<FakeAppointment> = {}): FakeAppointment {
   return {
     patient_id: '11111111-1111-1111-1111-111111111111',
     country: 'AR',
@@ -62,81 +16,116 @@ function bookedRow(overrides: Partial<ApptRow> = {}): ApptRow {
     slot_start: new Date('2026-08-03T13:00:00Z'), // 10:00 AR
     meet_link: 'https://meet.google.com/abc-defg-hij',
     status: 'booked',
-    reminder_30min_sent_at: null,
     ...overrides,
   };
 }
 
+function makeService(appointment: FakeAppointment | null, patient?: FakePatient | null) {
+  const kit = buildAdmissionKit({ patient, appointment });
+  const service = new AdmissionReminderService(kit.messaging, kit.content, kit.db, kit.logs.log);
+  return { ...kit, service };
+}
+
 describe('AdmissionReminderService.send30MinReminder', () => {
   const OLD_ENV = process.env;
-
   beforeEach(() => {
-    process.env = { ...OLD_ENV };
-    process.env.TWILIO_TEMPLATE_ADMISSION_REMINDER_ES = 'SID_REM_ES';
+    process.env = { ...OLD_ENV, TWILIO_TEMPLATE_ADMISSION_REMINDER_ES: 'SID_REM_ES' };
   });
-
   afterEach(() => {
     process.env = OLD_ENV;
-    jest.clearAllMocks();
   });
 
-  it('envia quando booked e grava reminder_30min_sent_at', async () => {
-    const { service, sendWithContentSid, query } = makeService(bookedRow());
+  it('envia quando booked, com as vars certas, e deixa a linha reminder_30min `sent` + evento reminder_sent', async () => {
+    const { service, whatsapp, store } = makeService(bookedRow());
 
-    const result = await service.send30MinReminder(APPT_ID);
+    expect(await service.send30MinReminder(APPT_ID)).toEqual({ sent: true });
 
-    expect(result).toEqual({ sent: true });
-    expect(sendWithContentSid).toHaveBeenCalledTimes(1);
-    const [to, contentSid, vars] = sendWithContentSid.mock.calls[0];
-    expect(to).toBe(PHONE);
+    expect(whatsapp.calls).toHaveLength(1);
+    const { to, contentSid, vars } = whatsapp.calls[0];
+    expect(to).toBe(KIT_PHONE);
     expect(contentSid).toBe('SID_REM_ES');
-    expect(vars['1']).toBe('Ana'); // host
-    expect(vars['2']).toBe('10:00'); // hora AR
-    expect(vars['3']).toBe('https://meet.google.com/abc-defg-hij');
-
-    const updateCall = query.mock.calls.find((c) => String(c[0]).includes('UPDATE admission_appointments'));
-    expect(updateCall).toBeTruthy();
-    expect(updateCall![0]).toContain('reminder_30min_sent_at');
-    expect(updateCall![1]).toEqual([APPT_ID]);
+    expect(vars).toEqual({ '1': 'Ana', '2': '10:00', '3': 'https://meet.google.com/abc-defg-hij' });
+    expect(store.messages[0]).toMatchObject({ kind: 'reminder_30min', attempt: 0, status: 'sent' });
+    expect(store.kinds()).toContain('reminder_sent');
   });
 
-  it('sem consentimento (has_consent=false): não envia o lembrete', async () => {
-    const { service, sendWithContentSid } = makeService(bookedRow(), false);
+  it('2ª entrega do Cloud Tasks (at-least-once) perde o claim → NÃO reenvia, grava duplicate_blocked', async () => {
+    const { service, whatsapp, store } = makeService(bookedRow());
 
-    const result = await service.send30MinReminder(APPT_ID);
+    await service.send30MinReminder(APPT_ID);
+    const second = await service.send30MinReminder(APPT_ID);
 
-    expect(result).toEqual({ sent: false, reason: 'no_consent' });
-    expect(sendWithContentSid).not.toHaveBeenCalled();
+    expect(second).toEqual({ sent: false, reason: 'already_sent' });
+    expect(whatsapp.calls).toHaveLength(1);
+    expect(store.kinds().filter((k) => k === 'duplicate_blocked')).toHaveLength(1);
   });
 
-  it('idempotente: já enviado (reminder_30min_sent_at preenchido) → não reenvia', async () => {
-    const { service, sendWithContentSid, query } = makeService(
-      bookedRow({ reminder_30min_sent_at: new Date('2026-08-03T12:31:00Z') }),
-    );
-
-    const result = await service.send30MinReminder(APPT_ID);
-
-    expect(result).toEqual({ sent: false, reason: 'already_sent' });
-    expect(sendWithContentSid).not.toHaveBeenCalled();
-    const updateCall = query.mock.calls.find((c) => String(c[0]).includes('UPDATE admission_appointments'));
-    expect(updateCall).toBeUndefined();
+  it('2 entregas SIMULTÂNEAS → 1 envio', async () => {
+    const { service, whatsapp } = makeService(bookedRow());
+    await Promise.all([service.send30MinReminder(APPT_ID), service.send30MinReminder(APPT_ID)]);
+    expect(whatsapp.calls).toHaveLength(1);
   });
 
-  it('status != booked (cancelled) → não envia', async () => {
-    const { service, sendWithContentSid } = makeService(bookedRow({ status: 'cancelled' }));
-
-    const result = await service.send30MinReminder(APPT_ID);
-
-    expect(result).toEqual({ sent: false, reason: 'status_cancelled' });
-    expect(sendWithContentSid).not.toHaveBeenCalled();
+  it('sem consentimento → não envia, linha skipped_no_consent', async () => {
+    const { service, whatsapp, store } = makeService(bookedRow(), { phone_whatsapp: KIT_PHONE, first_name: 'Carla', has_consent: false, is_test: false });
+    expect(await service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'no_consent' });
+    expect(whatsapp.calls).toHaveLength(0);
+    expect(store.messages[0].status).toBe('skipped_no_consent');
   });
 
-  it('appointment inexistente → not_found', async () => {
-    const { service, sendWithContentSid } = makeService(null);
+  it('paciente is_test → não envia, linha skipped_test', async () => {
+    const { service, whatsapp, store } = makeService(bookedRow(), { phone_whatsapp: KIT_PHONE, first_name: 'Carla', has_consent: true, is_test: true });
+    expect(await service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'test_patient' });
+    expect(whatsapp.calls).toHaveLength(0);
+    expect(store.messages[0].status).toBe('skipped_test');
+  });
 
-    const result = await service.send30MinReminder(APPT_ID);
+  it('sem telefone → skipped_no_phone; sem template → skipped_no_template', async () => {
+    const noPhone = makeService(bookedRow(), { phone_whatsapp: null, first_name: 'Carla', has_consent: true, is_test: false });
+    expect(await noPhone.service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'no_phone' });
+    expect(noPhone.store.messages[0].status).toBe('skipped_no_phone');
 
-    expect(result).toEqual({ sent: false, reason: 'not_found' });
-    expect(sendWithContentSid).not.toHaveBeenCalled();
+    delete process.env.TWILIO_TEMPLATE_ADMISSION_REMINDER_ES;
+    const noTpl = makeService(bookedRow());
+    expect(await noTpl.service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'no_template' });
+    expect(noTpl.store.messages[0].status).toBe('skipped_no_template');
+  });
+
+  it('status != booked (cancelled) → não envia; a linha fica `cancelled` e a trilha registra', async () => {
+    const { service, whatsapp, store } = makeService(bookedRow({ status: 'cancelled' }));
+    expect(await service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'status_cancelled' });
+    expect(whatsapp.calls).toHaveLength(0);
+    expect(store.messages[0].status).toBe('cancelled');
+    expect(store.kinds()).toContain('cancelled');
+  });
+
+  it('falha do envio → send_failed, sem nova tentativa automática', async () => {
+    const { service, whatsapp, store } = makeService(bookedRow());
+    whatsapp.failWith = 'canal fora';
+    expect(await service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'send_failed' });
+    await service.send30MinReminder(APPT_ID); // a Cloud Task re-entrega: o claim já existe
+    expect(whatsapp.calls).toHaveLength(1);
+    expect(store.messages[0].status).toBe('send_failed');
+    expect(store.kinds()).toContain('reminder_failed');
+  });
+
+  it('appointment inexistente → not_found; país inválido → bad_country (sem linha, sem envio)', async () => {
+    const missing = makeService(null);
+    expect(await missing.service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'not_found' });
+    const bad = makeService(bookedRow({ country: 'XX' }));
+    expect(await bad.service.send30MinReminder(APPT_ID)).toEqual({ sent: false, reason: 'bad_country' });
+    expect(missing.whatsapp.calls).toHaveLength(0);
+    expect(bad.whatsapp.calls).toHaveLength(0);
+  });
+
+  it('A2-8: a saída do logger do lembrete não contém telefone nem nome', async () => {
+    const { service, logs, whatsapp } = makeService(bookedRow());
+    await service.send30MinReminder(APPT_ID);
+    await service.send30MinReminder(APPT_ID);
+    whatsapp.failWith = `x ${KIT_PHONE}`;
+    const out = logs.output();
+    expect(out).toContain('admission.reminder_sent');
+    expect(out).not.toContain(KIT_PHONE);
+    expect(out).not.toContain('Carla');
   });
 });

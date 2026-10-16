@@ -5,10 +5,10 @@
  * entrevista a partir de worker_job_applications.interview_datetime /
  * interview_meet_link quando o agendamento aconteceu via WhatsApp
  * (BookSlotFromWhatsAppUseCase escreve só em worker_job_applications,
- * deixando encuadres.interview_date / meet_link nulos).
+ * deixando encuadres.interview_date / meet_link nulos; fluxo retirado na spec 052, o dado antigo continua legível).
  *
- * Esse cenário cobre regressão do bug em que o card aparecia em CONFIRMED
- * com data vazia.
+ * Esse cenário cobre regressão do bug em que o card aparecia com data vazia.
+ * Semeado em COMPLETED: o estágio Confirmado saiu do produto.
  */
 
 import { Pool } from 'pg';
@@ -60,7 +60,7 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage,
           interview_datetime, interview_meet_link, interview_response, source)
-       VALUES ($1, $2, 'CONFIRMED', '2026-06-01 14:30:00+00', 'https://meet.google.com/abc-defg-hij', 'confirmed', 'talentum')`,
+       VALUES ($1, $2, 'COMPLETED', '2026-06-01 14:30:00+00', 'https://meet.google.com/abc-defg-hij', 'confirmed', 'talentum')`,
       [workerId, vacancyId],
     );
 
@@ -93,7 +93,7 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
       { headers: { Authorization: `Bearer ${adminToken}` } },
     );
     expect(res.status).toBe(200);
-    const confirmed = res.data.data.stages.CONFIRMED as Array<Record<string, unknown>>;
+    const confirmed = res.data.data.stages.COMPLETED as Array<Record<string, unknown>>;
 
     // Phase 1 fix: card.id is now wja.id; card.encuadreId holds the encuadre id.
     // Match by encuadreId (the encuadre created in beforeAll).

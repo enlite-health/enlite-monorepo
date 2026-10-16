@@ -26,15 +26,16 @@ import { PatientItineraryTab } from '@presentation/components/features/admin/Pat
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 import { PatientConversationHandle } from '@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle';
 import { PatientDocumentsSection } from '@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection';
+import { AdmissionTab } from '@presentation/components/features/admin/PatientDetail/admission/AdmissionTab';
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { ContainerGate } from '@presentation/components/features/access';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
+import { tabsVisibleFor, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { screenById } from '@presentation/config/screenRegistry';
-import { PATIENT_TABS } from '@presentation/components/features/admin/PatientDetail/patientTabs';
+import { PATIENT_TABS, parsePatientTab } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 import type { PatientCompletenessCode } from '@domain/entities/PatientDetail';
 import { ACTIVATABLE_STATUSES } from '@domain/entities/PatientCompleteness';
 
@@ -63,13 +64,13 @@ export default function PatientDetailPage() {
   const location = useLocation();
   const { t } = useTranslation();
   const { patient, isLoading, error, refetch } = usePatientDetail(id);
-  const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
-  // Spec 041 R4: `?tab=<aba>` abre a ficha já nessa aba (atalho vacante → itinerário). Valor fora de
-  // PATIENT_TABS (ou sem query) cai no default de sempre.
-  const [activeTab, setActiveTab] = useState<PatientTab>(() => {
-    const requested = new URLSearchParams(location.search ?? '').get('tab');
-    return PATIENT_TABS.find((tab) => tab === requested) ?? 'clinicalData';
-  });
+  // Spec 047 (A4): sem `vacancy:read` o bloco não existe e a lista de vagas nem é pedida (a rota exigiria a célula).
+  const vacancyAccess = useContainerAccess('vacancy');
+  const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id, vacancyAccess.visible);
+  // `?tab=` (link da vaga e do wizard): lido só na inicialização, validado contra a união; inválido/ausente → `clinicalData`.
+  const [activeTab, setActiveTab] = useState<PatientTab>(
+    () => parsePatientTab(new URLSearchParams(location.search).get('tab')) ?? 'clinicalData',
+  );
   // D286: uma aba só existe se ALGUM container dela for legível (registro de telas + contrato de
   // authz). A ativa é a primeira visível quando a atual sumiu; sem enforcement, todas existem.
   const permissions = useAdminAuthStore((s) => s.authz?.permissions);
@@ -318,6 +319,16 @@ export default function PatientDetailPage() {
             <PatientDocumentsSection patientId={patient.id} />
           </ContainerGate>
         )}
+        {/* Spec 049 (F7): reuniões de admissão (painel + site) com selos, "Nueva agenda", cancelar e reenviar. */}
+        {shownTab === 'admission' && (
+          <ContainerGate resource="patient_admission">
+            <AdmissionTab
+              patientId={patient.id}
+              country={patient.country}
+              onOpenDocuments={visibleTabs.includes('documents') ? () => changeTab('documents') : undefined}
+            />
+          </ContainerGate>
+        )}
         {shownTab === 'contractedService' && (
           <>
             <ContainerGate resource="patient_coverage">
@@ -333,17 +344,16 @@ export default function PatientDetailPage() {
                 focusRequest={focusRequest}
               />
             </ContainerGate>
+            {/* Spec 047 (F1): a vacante mora aqui, ABAIXO dos serviços; permissão própria (`vacancy:read`). */}
+            <ContainerGate resource="vacancy">
+              <PatientVacanciesCard
+                patientId={patient.id}
+                vacancies={vacancies}
+                isLoading={vacanciesLoading}
+                error={vacanciesError}
+              />
+            </ContainerGate>
           </>
-        )}
-        {shownTab === 'vacancies' && (
-          <ContainerGate resource="vacancy">
-            <PatientVacanciesCard
-              patientId={patient.id}
-              vacancies={vacancies}
-              isLoading={vacanciesLoading}
-              error={vacanciesError}
-            />
-          </ContainerGate>
         )}
         {shownTab === 'itinerary' && (
           <ContainerGate resource="patient_services">
@@ -351,7 +361,7 @@ export default function PatientDetailPage() {
           </ContainerGate>
         )}
         {shownTab === 'history' && (
-          <PatientStatusHistoryCard patientId={patient.id} />
+          <PatientStatusHistoryCard patientId={patient.id} refreshKey={patient.status} />
         )}
       </div>
     </div>

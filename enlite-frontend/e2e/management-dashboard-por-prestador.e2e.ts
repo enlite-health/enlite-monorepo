@@ -19,6 +19,8 @@
  * `agendadosEstaSemana: 0` — combinação que o backend NÃO consegue emitir (os dois campos
  * recebem a mesma variável), ou seja, nunca foi literal de fato. Reconciliado com a invariante
  * real e com a config vigente. Todo o resto do payload segue intocado, literal de 30/07.
+ * 052 (13/10/2026): as 27 pessoas do estágio retirado foram somadas a COMPLETED (como faz a migration),
+ * e `funnel.agendados` e `encuadres.semDataRegistrada` saíram do payload.
  *
  * Auth: Firebase Identity Toolkit interceptado localmente (mesma técnica de
  * management-dashboard-visual.e2e.ts) — sem emulador, sem conta real.
@@ -75,26 +77,26 @@ const PROD_PAYLOAD = {
       somavel: false,
       colunas: {
         INVITED: 466, INICIADO: 182, PRE_SCREENING: 49, IN_PROGRESS: 1347,
-        COMPLETED: 604, CONFIRMED: 27, SELECTED: 10, REJECTED: 626,
+        COMPLETED: 631, SELECTED: 10, REJECTED: 626,
       },
     },
     consolidado: {
       somavel: true,
       colunas: {
         INVITED: 303, INICIADO: 84, PRE_SCREENING: 23, IN_PROGRESS: 1173,
-        COMPLETED: 585, CONFIRMED: 27, SELECTED: 10, REJECTED: 371,
+        COMPLETED: 612, SELECTED: 10, REJECTED: 371,
       },
     },
   },
   funnel: {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
-    agendados: 37, seleccionados: 10, rechazados: 2557,
+    seleccionados: 10, rechazados: 2557,
   },
   // INVARIANTE do backend: no bloco `encuadres` do payload, `pctCapacidadeSemana.agendados` e
   // `agendadosEstaSemana` recebem a MESMA variável `encuadre` (GetManagementDashboardUseCase,
   // montagem de `encuadres`) — produção nunca emite os dois diferentes. Semana zerada: 0/30 = 0%.
   // (Citação por símbolo, não por linha: este próprio PR já deslocou os números uma vez.)
-  encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 0, capacidade: 30, pct: 0 } },
+  encuadres: { agendadosEstaSemana: 0, pctCapacidadeSemana: { agendados: 0, capacidade: 30, pct: 0 } },
   cadastros: {
     leads: 7029, completos: 293, alocados: 61, alocadosActivos: 49,
     alocadosCubriendoGuardias: 12, incompletos: 6735, nuevosCompletosMes: 41,
@@ -103,7 +105,7 @@ const PROD_PAYLOAD = {
 
 /**
  * Mesmo funil DEPOIS de a recrutadora trabalhar: um prestador saiu de "En progreso"
- * para "Agendados", e uma entrevista foi marcada para esta semana.
+ * para "Completos", e uma entrevista foi marcada para esta semana.
  */
 const PROD_PAYLOAD_DEPOIS = {
   ...PROD_PAYLOAD,
@@ -111,15 +113,15 @@ const PROD_PAYLOAD_DEPOIS = {
     ...PROD_PAYLOAD.funnelPorPrestador,
     porEtapa: {
       somavel: false,
-      colunas: { ...PROD_PAYLOAD.funnelPorPrestador.porEtapa.colunas, IN_PROGRESS: 1346, CONFIRMED: 28 },
+      colunas: { ...PROD_PAYLOAD.funnelPorPrestador.porEtapa.colunas, IN_PROGRESS: 1346, COMPLETED: 632 },
     },
     consolidado: {
       somavel: true,
-      colunas: { ...PROD_PAYLOAD.funnelPorPrestador.consolidado.colunas, IN_PROGRESS: 1172, CONFIRMED: 28 },
+      colunas: { ...PROD_PAYLOAD.funnelPorPrestador.consolidado.colunas, IN_PROGRESS: 1172, COMPLETED: 613 },
     },
   },
   // A entrevista marcada nesta semana move os DOIS campos juntos (ver invariante acima): 1/30 = 3,3%.
-  encuadres: { agendadosEstaSemana: 1, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 1, capacidade: 30, pct: 3.3 } },
+  encuadres: { agendadosEstaSemana: 1, pctCapacidadeSemana: { agendados: 1, capacidade: 30, pct: 3.3 } },
 };
 
 const MOCK_ZONE_ANALYTICS = { zones: [], unresolvedCount: 0 };
@@ -243,8 +245,8 @@ test.describe('Gestión a la Vista — funil por prestador (prova visual)', () =
     // Pacientes activos sem os apagados (era 192).
     await expect(page.getByTestId('mgmt-big-numbers')).toContainText('190');
 
-    // A lacuna da agenda aparece como lacuna, não como zero mudo.
-    await expect(page.getByTestId('mgmt-encuadres-sem-data')).toContainText('36');
+    // O indicador "sem data" saiu do painel (052).
+    await expect(page.getByTestId('mgmt-encuadres-sem-data')).toHaveCount(0);
 
     // A página rola num contêiner interno: `fullPage` para no topo. Print da SEÇÃO.
     await page.getByTestId('mgmt-funnel').scrollIntoViewIfNeeded();
@@ -322,7 +324,7 @@ test.describe('Gestión a la Vista — funil por prestador (prova visual)', () =
 
     // ANTES
     await expect(page.getByTestId('mgmt-funnel-consolidado-IN_PROGRESS')).toContainText('1173');
-    await expect(page.getByTestId('mgmt-funnel-consolidado-CONFIRMED')).toContainText('27');
+    await expect(page.getByTestId('mgmt-funnel-consolidado-COMPLETED')).toContainText('612');
     await page.getByTestId('mgmt-funnel').scrollIntoViewIfNeeded();
     await page.getByTestId('mgmt-funnel').screenshot({
       path: 'e2e/__screenshots__/gestao-a-vista-antes-do-movimento.png',
@@ -336,7 +338,7 @@ test.describe('Gestión a la Vista — funil por prestador (prova visual)', () =
     });
 
     // DEPOIS — sem reload, sem clique: o número mudou na tela.
-    await expect(page.getByTestId('mgmt-funnel-consolidado-CONFIRMED')).toContainText('28', {
+    await expect(page.getByTestId('mgmt-funnel-consolidado-COMPLETED')).toContainText('613', {
       timeout: 15000,
     });
     await expect(page.getByTestId('mgmt-funnel-consolidado-IN_PROGRESS')).toContainText('1172');
@@ -362,14 +364,14 @@ test.describe('Gestión a la Vista — funil por prestador (prova visual)', () =
           somavel: true,
           colunas: {
             INVITED: 80, INICIADO: 20, PRE_SCREENING: 10, IN_PROGRESS: 74,
-            COMPLETED: 18, CONFIRMED: 7, SELECTED: 2, REJECTED: 3,
+            COMPLETED: 25, SELECTED: 2, REJECTED: 3,
           },
         },
         porEtapa: {
           somavel: false,
           colunas: {
             INVITED: 90, INICIADO: 22, PRE_SCREENING: 11, IN_PROGRESS: 80,
-            COMPLETED: 20, CONFIRMED: 7, SELECTED: 2, REJECTED: 5,
+            COMPLETED: 27, SELECTED: 2, REJECTED: 5,
           },
         },
       },

@@ -17,8 +17,8 @@ const TAB_I18N_KEYS: Record<PatientTab, string> = {
   clinicalData: 'admin.patients.detail.tabs.clinicalData',
   supportNetwork: 'admin.patients.detail.tabs.supportNetwork',
   documents: 'admin.patients.detail.tabs.documents',
+  admission: 'admin.patients.detail.tabs.admission',
   contractedService: 'admin.patients.detail.tabs.contractedService',
-  vacancies: 'admin.patients.detail.tabs.vacancies',
   itinerary: 'admin.patients.detail.tabs.itinerary',
   history: 'admin.patients.detail.tabs.history',
 };

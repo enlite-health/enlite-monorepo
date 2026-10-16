@@ -7,9 +7,8 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     const realApiData: VacancyRow[] = [
       {
         id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
-        caso: 'Caso 349',
+        caseNumber: 349, caseOrdinal: 1,
         status: 'Esperando Ativação',
-        priority: 'URGENT',
         diasAberto: '05',
         stageCounts: {
           COMPATIBLE: 6,
@@ -17,7 +16,6 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
           INICIADO: 9,
           PRE_SCREENING: 5,
           COMPLETED: 3,
-          CONFIRMED: 43,
           SELECTED: 27,
           QUICK_RESPONSE_TEAM: 7,
           REJECTED: 2,
@@ -26,13 +24,11 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         faltantes: '00',
         isDraft: false,
         lastActionAt: null,
-        daysWithoutDivulgation: null,
       },
       {
         id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
-        caso: 'Caso 348',
+        caseNumber: 348, caseOrdinal: 1,
         status: 'Esperando Ativação',
-        priority: 'NORMAL',
         diasAberto: '03',
         stageCounts: {
           COMPATIBLE: 8,
@@ -40,7 +36,6 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
           INICIADO: 41,
           PRE_SCREENING: 18,
           COMPLETED: 11,
-          CONFIRMED: 19,
           SELECTED: 61,
           QUICK_RESPONSE_TEAM: 4,
           REJECTED: 10,
@@ -49,32 +44,29 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         faltantes: '01',
         isDraft: false,
         lastActionAt: null,
-        daysWithoutDivulgation: null,
       },
     ];
 
     const { container } = render(<VacanciesTable vacancies={realApiData} />);
 
     // GARANTIA 1: Casos visíveis
-    expect(screen.getByText('Caso 349')).toBeVisible();
-    expect(screen.getByText('Caso 348')).toBeVisible();
+    expect(screen.getByText('349#01')).toBeVisible();
+    expect(screen.getByText('348#01')).toBeVisible();
 
     // GARANTIA 2: Status visível (aparece 2x)
     const statusElements = screen.getAllByText('Esperando Ativação');
     expect(statusElements).toHaveLength(2);
     statusElements.forEach((el) => expect(el).toBeVisible());
 
-    // GARANTIA 3: Priority badge renderizado
-    expect(screen.getByText('admin.vacancies.priorityOptions.urgent')).toBeVisible();
-    expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeVisible();
+    // GARANTIA 3: sem coluna de prioridade (spec 046 F1)
+    expect(screen.queryByText('admin.vacancies.priorityOptions.urgent')).not.toBeInTheDocument();
 
-    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
+    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 8 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
     expect(screen.getByText('06')).toBeVisible();
     expect(screen.getByText('32')).toBeVisible();
     expect(screen.getByText('09')).toBeVisible();
     expect(screen.getByText('05')).toBeVisible();
     expect(screen.getByText('03')).toBeVisible();
-    expect(screen.getByText('43')).toBeVisible();
     expect(screen.getByText('27')).toBeVisible();
     expect(screen.getByText('07')).toBeVisible();
     expect(screen.getByText('02')).toBeVisible();
@@ -90,13 +82,13 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
 
     // GARANTIA 7: textContent OK
     const allText = container.textContent;
-    expect(allText).toContain('Caso 349');
-    expect(allText).toContain('Caso 348');
+    expect(allText).toContain('349#01');
+    expect(allText).toContain('348#01');
   });
 
   it('CRITICAL: should NOT render when vacancies array is empty', () => {
     render(<VacanciesTable vacancies={[]} />);
-    expect(screen.queryByText('Caso 349')).not.toBeInTheDocument();
+    expect(screen.queryByText('349#01')).not.toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.noVacancies')).toBeInTheDocument();
   });
 

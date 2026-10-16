@@ -58,6 +58,7 @@
  * nunca escrevem nada, só leem.
  */
 import { test, expect } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import {
   ABAC_API_URL,
   grantCell,
@@ -144,7 +145,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     // dos campos que sustentam o "≥ N Sin completar" do teste 2 (contagem justificada lá).
     const svcRes = await request.post(`${ABAC_API_URL}/api/admin/patients/${patientId}/contracted-services`, {
       headers: AUTH_HEADERS(SETUP),
-      data: { serviceCode: 'CAREGIVER', providersNeeded: 2, weeklyHours: 32, careLocation: 'HOME', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '14:00' }] },
+      data: { serviceCode: 'CAREGIVER', providersNeeded: 2, weeklyHours: 32, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E, addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '14:00' }] },
     });
     expect(svcRes.ok(), `POST contracted-services (draft) falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);
     draftServiceId = (await svcRes.json()).data.id as string;
@@ -157,7 +158,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     // pro redirect (Alt 2).
     const svcRes2 = await request.post(`${ABAC_API_URL}/api/admin/patients/${patientId}/contracted-services`, {
       headers: AUTH_HEADERS(SETUP),
-      data: { serviceCode: 'AT', providersNeeded: 1, weeklyHours: 20, careLocation: 'HOME', addressId, schedule: [{ dayOfWeek: 2, startTime: '09:00', endTime: '13:00' }] },
+      data: { serviceCode: 'AT', providersNeeded: 1, weeklyHours: 20, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E, addressId, schedule: [{ dayOfWeek: 2, startTime: '09:00', endTime: '13:00' }] },
     });
     expect(svcRes2.ok(), `POST contracted-services (published) falhou: ${svcRes2.status()} ${await svcRes2.text()}`).toBe(true);
     const publishedServiceId = (await svcRes2.json()).data.id as string;
@@ -222,7 +223,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     await expect(page.getByTestId('draft-vacancy-callout')).toHaveCount(0);
   });
 
-  test('4. ficha do paciente — "Ver vacante" no serviço em rascunho leva a /borrador (F16)', async ({ page }) => {
+  test('4. ficha do paciente — o código da vacante no serviço em rascunho leva a /borrador (F16; spec 047: o ícone "Ver vacante" virou o código clicável)', async ({ page }) => {
     await loginAs(page, COM_CELULA);
     await page.goto(`/admin/patients/${patientId}`);
     // A ficha abre em "Datos Clínicos" por padrão (`PatientDetailPage.tsx:63`,
@@ -231,7 +232,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     // Contratado" do fallback `visibleTabs[0]`). Clicar a aba certa em vez de confiar na
     // primeira visível.
     await page.getByTestId('patient-profile-tabs').getByText('Servicio Contratado').click();
-    const verVacante = page.getByTestId(`contracted-service-view-vacancy-${draftServiceId}`);
+    const verVacante = page.getByTestId(`contracted-service-vacancy-link-${draftServiceId}`);
     await expect(verVacante).toBeVisible();
     await verVacante.click();
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/borrador$`));

@@ -152,7 +152,10 @@ BEGIN
       -- (318/319) entram nominalmente mesmo as sem texto/valor a excluir: GRANT por coluna (em vez
       -- do "ALL TABLES" implícito) garante que coluna nova nasça invisível também aqui (mesma razão
       -- do C6 para tabela nova).
-      ('patient_contracted_services', ARRAY['professional_profile','hourly_value']),
+      -- spec 027 Fase 3 (lex T.2, migration 518): 4 colunas de TEXTO LIVRE novas escritas dentro da ficha do
+      -- paciente (`required_experience`, `worker_attributes`, `payment_day`, `daily_obs`) nascem invisíveis ao LLM.
+      -- `required_professions`, `required_sex` e `work_schedule` são codificados (catálogo/enum) e seguem legíveis.
+      ('patient_contracted_services', ARRAY['professional_profile','hourly_value','required_experience','worker_attributes','payment_day','daily_obs']),
       ('contracted_service_providers', ARRAY[]::text[]),
       ('contracted_service_devices',   ARRAY[]::text[]),
       ('service_types',                ARRAY[]::text[])
@@ -201,6 +204,9 @@ BEGIN
   -- 497 (spec 031, OP-22): patient_documents guarda rótulo/caminho/nome cifrados + tipo/tamanho/sha256 de
   -- documento de saúde do paciente e a ligação com a mensagem do chat — sem coluna segura, revogada
   -- inteira no MESMO commit da migration 497 (o `GRANT SELECT ON ALL TABLES` do topo a cobria por omissão).
+  -- 502 (spec 048): patient_therapeutic_project_contact_status revela "família/cobertura/equipe não informada" do
+  -- paciente; patient_tp_contact_reminder_cycles/_reminders são a outbox desse estado (quem, quando, qual notificação).
+  -- Sem coluna segura — revogadas inteiras no MESMO commit da migration 502.
   -- 426 (spec 018, PR-4; lex-pr4-foto.md #11, lex-pr4-documentos.md #11 TRAVA): foto e documento
   -- (prova de consentimento) do paciente. patient_documents guarda PDF/JPEG de prova (sem coluna
   -- segura), patient_image_consents e patient_photos referenciam o consentimento/objeto — as 3
@@ -223,7 +229,10 @@ BEGIN
     'therapeutic_segments',
     'patient_photos',
     'patient_photo_orphans',
-    'patient_documents'
+    'patient_documents',
+    'patient_therapeutic_project_contact_status',
+    'patient_tp_contact_reminder_cycles',
+    'patient_tp_contact_reminders'
   ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
@@ -243,7 +252,9 @@ BEGIN
                                   'patient_professionals','patient_external_contacts',
                                   'therapeutic_specific_objectives','therapeutic_activities','pathology_types',
                                   'patient_therapeutic_project_contacts','therapeutic_segments',
-                                  'patient_photos','patient_photo_orphans','patient_documents']) AS tabela LOOP
+                                  'patient_photos','patient_photo_orphans','patient_documents',
+                                  'patient_therapeutic_project_contact_status','patient_tp_contact_reminder_cycles',
+                                  'patient_tp_contact_reminders']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;

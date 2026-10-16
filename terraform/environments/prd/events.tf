@@ -165,8 +165,8 @@ resource "google_cloud_scheduler_job" "events_sweep_safe" {
     # deliberado: segura o lote por ciclo. Sem ele o schema cai no default de
     # 100, triplicando o trabalho de cada execução do cron. Declarado aqui para
     # o apply não silenciar um ajuste de operação que ninguém pediu para desfazer.
-    uri         = "${var.events_api_base_url}/api/internal/events/sweep-safe?limit=20"
-    body        = base64encode("{}")
+    uri  = "${var.events_api_base_url}/api/internal/events/sweep-safe?limit=20"
+    body = base64encode("{}")
     headers = {
       "Content-Type"      = "application/json"
       "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_token.secret_data
@@ -222,6 +222,51 @@ resource "google_cloud_scheduler_job" "messaging_retention" {
 }
 
 # ---------------------------------------------------------------------------
+# Lembretes de contato pendente do PT (spec 048) — AINDA NÃO APLICADO
+# ---------------------------------------------------------------------------
+# "Todavía no hay registro" nos 4 campos de contato do Projeto Terapêutico: a versão grava uma OUTBOX
+# (`patient_tp_contact_reminders`, migration 502) com os lembretes dos dias 2, 5 e 12; este job diário a varre
+# (`SweepTherapeuticContactRemindersUseCase`) e grava o aviso no sino (in-app, sem e-mail/WhatsApp). Sem Cloud Tasks:
+# a stage não tem a API e a fila `admission-reminders` de prd foi criada à mão — a linha da outbox nasce na MESMA
+# transação da versão, então não há "dual-write" a perder.
+#
+# Mesmo padrão dos jobs acima (Cloud Scheduler -> X-Internal-Secret -> /api/internal). Diário 12:00 UTC = 09:00 em
+# Buenos Aires (AR não tem horário de verão): início do expediente, e "dia N" é dia CIVIL local — um PT criado às 18h
+# do dia D tem o "dia 2" em D+2, não em D+3. Idempotente (carimbo `sent_at` na transação do evento do sino; SKIP LOCKED
+# entre execuções) — o Scheduler é "at least once", então o retry de 2 tentativas é inofensivo.
+#
+# ⚠️ ESTES RECURSOS NÃO FORAM APLICADOS. Escritos aqui para revisão — falta `terraform plan` + apply em prd por quem
+# tem autorização (regra do CLAUDE.md: mudança de infra de prd para, autorização nomeada antes de aplicar). Recursos
+# NOVOS, sem import. Até o apply os lembretes NÃO saem — e o alarme `pt_contact_reminders_overdue` abaixo (se aplicado
+# antes) acusa em 1 dia, que é o comportamento desejado.
+resource "google_cloud_scheduler_job" "pt_contact_reminders_sweep" {
+  project          = var.project_id
+  region           = var.scheduler_region
+  name             = "pt-contact-reminders-sweep"
+  schedule         = "0 12 * * *"
+  time_zone        = "Etc/UTC"
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count          = 2
+    max_backoff_duration = "3600s"
+    max_doublings        = 5
+    max_retry_duration   = "0s"
+    min_backoff_duration = "5s"
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${var.events_api_base_url}/api/internal/therapeutic-projects/contact-reminders/sweep?limit=50"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type"      = "application/json"
+      "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_token.secret_data
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Log-based metrics
 # ---------------------------------------------------------------------------
 resource "google_logging_metric" "domain_event_delivery_failure" {
@@ -235,7 +280,7 @@ resource "google_logging_metric" "domain_event_delivery_failure" {
   # ao HCL. Como o recurso também não estava no state, o desvio ficou invisível
   # até o import de 11/08/2026: o `plan` queria REMOVER a cláusula e cegar o
   # alerta de novo. Mantida aqui para que código e produção digam a mesma coisa.
-  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND (jsonPayload.msg:\"Pub/Sub publish failed\" OR jsonPayload.msg:\"No handler registered for event\" OR jsonPayload.source=\"[MirrorWorkerService]:mirrorOne\")"
+  filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND (jsonPayload.msg:\"Pub/Sub publish failed\" OR jsonPayload.msg:\"No handler registered for event\" OR jsonPayload.source=\"[MirrorWorkerService]:mirrorOne\")"
 
   metric_descriptor {
     metric_kind = "DELTA"
@@ -288,6 +333,25 @@ resource "google_logging_metric" "anacare_mirror_stuck" {
   name        = "anacare_mirror_stuck"
   description = "Existe prestador REGISTERED sem ana_care_id além do limite. Sinal de ESTADO reemitido a cada ciclo do cron enquanto o espelho estiver quebrado."
   filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND jsonPayload.msg=\"[mirror/health] anacare mirror stuck\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Lembretes de contato pendente do PT (spec 048): métrica de ESTADO — AINDA NÃO APLICADA
+# ---------------------------------------------------------------------------
+# Emitida pelo health check (GET /api/internal/events/health, cron a cada 5min — já existe e NÃO depende do job novo)
+# a CADA ciclo em que houver lembrete aberto vencido há mais de 1 dia (`sent_at` e `cancelled_at` nulos). Heartbeat de
+# estado, no molde do espelho Ana Care: não auto-resolve com o job parado/não aplicado.
+resource "google_logging_metric" "pt_contact_reminders_overdue" {
+  project     = var.project_id
+  name        = "pt_contact_reminders_overdue"
+  description = "Existe lembrete de contato pendente do PT vencido há mais de 1 dia sem envio nem cancelamento. Sinal de ESTADO reemitido a cada ciclo do cron."
+  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND jsonPayload.msg=\"[pt-contact-reminders/health] overdue\""
 
   metric_descriptor {
     metric_kind = "DELTA"
@@ -516,6 +580,74 @@ resource "google_monitoring_alert_policy" "anacare_mirror_stuck" {
   }
 
   depends_on = [google_logging_metric.anacare_mirror_stuck]
+}
+
+# ---------------------------------------------------------------------------
+# Lembretes de contato pendente do PT (spec 048): alerta de ESTADO — AINDA NÃO APLICADO
+# ---------------------------------------------------------------------------
+resource "google_monitoring_alert_policy" "pt_contact_reminders_overdue" {
+  project      = var.project_id
+  display_name = "[ATENÇÃO] Lembretes de contato pendente do PT atrasados (job pt-contact-reminders-sweep)"
+  combiner     = "OR"
+  enabled      = true
+  severity     = "WARNING"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "Lembretes do Projeto Terapêutico atrasados: o aviso de contato pendente não está saindo"
+    content   = <<-EOT
+      ## Impacto
+      Um paciente tem campo de contato do Projeto Terapêutico marcado "Todavía no hay registro" e o lembrete
+      (dia 2, 5 ou 12) **venceu há mais de 1 dia sem ser enviado nem cancelado**. O operador e, no dia 12, os
+      gestores **não são avisados no sino** de que o cadastro está incompleto.
+
+      ## O que este alerta afirma
+      Existe **pelo menos um** `patient_tp_contact_reminders` com `sent_at IS NULL AND cancelled_at IS NULL` e
+      `due_at < now() - 1 dia`. É sinal de **ESTADO**: o health check (`GET /api/internal/events/health`, a cada
+      5 min) reemite a linha `[pt-contact-reminders/health] overdue` enquanto houver atraso; só apaga quando a fila drena.
+
+      ## Modos de falha (em ordem de probabilidade)
+      1. **Job não aplicado / pausado** — `pt-contact-reminders-sweep` (Cloud Scheduler, 12:00 UTC diário) não existe ou
+         está `PAUSED`. Conferir: `gcloud scheduler jobs describe pt-contact-reminders-sweep --location=southamerica-east1`.
+      2. **Job rodando com erro** — olhar o corpo da resposta (`failed > 0`) e o `reportError` com
+         `source=SweepTherapeuticContactRemindersUseCase` (traz só `cycleId`, nunca dado do paciente).
+      3. **Sem destinatário vivo** — o lembrete sai carimbado `skipped_reason='NO_ACTIVE_RECIPIENT'` (não conta como atraso).
+
+      ## Correção
+      Aplicar/despausar o job e disparar uma vez à mão (idempotente):
+      `curl -X POST -H "X-Internal-Secret: $SEGREDO" "$BASE/api/internal/therapeutic-projects/contact-reminders/sweep?limit=50"`.
+      Com vários lembretes vencidos do mesmo ciclo, sai UMA notificação pelo maior dia e os menores viram `SUPERSEDED`.
+    EOT
+  }
+
+  # 7 dias: não fecha por decurso de prazo enquanto o heartbeat renovar; se o heartbeat sumir fechar em silêncio seria mentira.
+  alert_strategy {
+    auto_close = "604800s"
+  }
+
+  conditions {
+    display_name = "existe lembrete de contato pendente do PT vencido há mais de 1 dia"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/pt_contact_reminders_overdue\" AND resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "1800s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  depends_on = [google_logging_metric.pt_contact_reminders_overdue]
 }
 
 # ---------------------------------------------------------------------------

@@ -25,7 +25,6 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 
 import { Request, Response } from 'express';
 import { VacanciesController } from '../VacanciesController';
-import { RecruitmentAnalyticsController } from '../RecruitmentAnalyticsController';
 import { buildListVacanciesQuery } from '../vacancyListHelpers';
 import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
 
@@ -89,15 +88,6 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     expect((res.json as jest.Mock).mock.calls[0][0].success).toBe(true);
   });
 
-  it('GET /recruitment/case/:caseNumber: o irmão do mesmo defeito também não pede', async () => {
-    mockQuery.mockResolvedValue({ rows: [] });
-
-    const [req, res] = reqRes({ caseNumber: '442' });
-    await new RecruitmentAnalyticsController().getCaseAnalysis(req, res);
-
-    expect(sqlDeTodasAsQueries()).not.toMatch(VOCABULARIO_CLINICO);
-  });
-
   it('o corpo é EXATAMENTE o que a query trouxe — por isso a guarda é sobre a query', async () => {
     // ⚠️ `getVacancyById` faz `{ ...row }`: a rota não tem allowlist de campo,
     // ela devolve o que o `SELECT` trouxer. Duas consequências, e as duas
@@ -159,19 +149,11 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
    * ainda funciona", é a mais FRACA, e é essa que faltava.
    *
    * ⚠️ E a allow-list de `p.` não é zelo: deny-list de nome de coluna não
-   * alcança projeção que não NOMEIA coluna. Medido na rota irmã de zonas —
+   * alcança projeção que não NOMEIA coluna. Medido numa rota irmã (análise de zonas, já removida) —
    * `json_build_object(…)::jsonb || to_jsonb(p)` passava com a guarda verde
    * arrastando `diagnosis` inteiro. Aqui a mesma classe entraria por `p.*`.
    */
-  /**
-   * ⚠️ O alias `p` está SOBRECARREGADO neste código: no `getCaseAnalysis` a 2ª
-   * query usa `p` para `publications` (`p.channel`, `p.recruiter_name`,
-   * `p.observations`). Uma allow-list sobre a UNIÃO das queries conflaria duas
-   * tabelas e aceitaria coluna de `patients` só porque `publications` tem uma
-   * homônima. Por isso o recorte é a query que de fato faz `JOIN patients p`.
-   *
-   * (O alias duplo é dívida do arquivo, não deste PR — anotado no handoff.)
-   */
+  /** Recorte: a query que de fato faz `JOIN patients p`. */
   const queryDePacientes = (): string => {
     const q = mockQuery.mock.calls
       .map((c) => String(c[0]))
@@ -207,25 +189,6 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     );
   });
 
-  it('🔴 GET /recruitment/case/:n idem — positivo e allow-list de `patients`', async () => {
-    mockQuery.mockResolvedValue({ rows: [] });
-    const [req, res] = reqRes({ caseNumber: '442' });
-
-    await new RecruitmentAnalyticsController().getCaseAnalysis(req, res);
-    const sql = queryDePacientes();
-
-    expect(sql).toMatch(/p\.first_name as patient_first_name/);
-    expect(sql).toMatch(/p\.dependency_level/);
-    expect(sql).not.toMatch(/to_jsonb\s*\(\s*p\b|row_to_json\s*\(\s*p\b|\bp\.\*/i);
-    // Conjunto MENOR que o do `getVacancyById`, e é assim mesmo: esta rota não
-    // pede `service_type`/`insurance_verified`/`city_locality`. Duas rotas, duas
-    // allow-lists — uma lista compartilhada aceitaria em uma o que só a outra
-    // tem direito de ver.
-    expect(colunasDePacientes()).toEqual(
-      new Set(['first_name', 'last_name', 'dependency_level', 'zone_neighborhood', 'id']),
-    );
-  });
-
   /**
    * A ROTA DE LISTA (`GET /api/admin/vacancies`) é o 3º ponto que embute o paciente — e o único
    * que NÃO passa pelo bulkhead de `loadVacancyPatientDiagnoses` (ela não lista diagnóstico
@@ -250,7 +213,7 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     // Conjunto EXATO — `id` vem só do `LEFT JOIN patients p ON jp.patient_id = p.id` (mesmo
     // artefato do JOIN que `colunasDePacientes()` acima também inclui), não de uma coluna
     // projetada nova. Fora ele, a lista de hoje não precisa de mais nada do paciente além das
-    // 3 usadas para exibir/buscar por nome e zona.
-    expect(colunasDaLista).toEqual(new Set(['zone_neighborhood', 'first_name', 'last_name', 'id']));
+    // 3 usadas para exibir/buscar por nome e zona + `case_number` (spec 046 F2: o número do caso vem do paciente).
+    expect(colunasDaLista).toEqual(new Set(['zone_neighborhood', 'first_name', 'last_name', 'id', 'case_number']));
   });
 });

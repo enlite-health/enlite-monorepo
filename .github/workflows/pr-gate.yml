@@ -61,6 +61,13 @@ jobs:
             BACKEND=true; FRONTEND=true
           fi
 
+          # Spec 050 (R-16): a guarda de rede e os controles moram em `scripts/rede-bloqueada-*` e são usados pelos DOIS pacotes
+          # (jest, vitest, Playwright, contêineres). Sem isto, um PR que só altere a guarda não rodaria suíte nenhuma — a guarda
+          # poderia ser desligada sem que o controle dela fosse executado.
+          if grep -qE '^scripts/rede-bloqueada-' <<< "$ALTERADOS"; then
+            BACKEND=true; FRONTEND=true
+          fi
+
           echo "backend=$BACKEND"   >> "$GITHUB_OUTPUT"
           echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
 
@@ -119,10 +126,11 @@ jobs:
       # PR #512, blocker 4/D354 — e2e de tela pro `EN####` (spec 027 fase 6): as 7
       # superfícies ganharam asserção DENTRO dos 2 specs 027 já listados acima (login
       # mock já provado neste job), sem precisar de arquivo novo no filtro.
-      # `patient-status-aguardando-financeiro` foi cogitado e DESCARTADO (não é seu):
-      # medido no run 36002913871 — falha no PRÓPRIO login (`expect(page).not.toHaveURL(/login/)`
-      # nunca sai de `/admin/login`), sem relação com case_number. Rot pré-existente de
-      # arquivo nunca executado neste job — fora de escopo do blocker 4, ver relatório.
+      # `patient-status-aguardando-financeiro` ENTROU (spec 038, item 11): antes era
+      # descartado como "rot" porque o login real (`fill()` no emulador) nunca saía de
+      # `/admin/login` neste job (run 36002913871). Passou a usar `loginComoStaffMock`,
+      # o mesmo login do irmão `patient-status-suspendido-saida-motivo`; banco e API
+      # continuam reais.
       # `027-vacancy-case-select` FICA: o `--grep` do Playwright casa contra a
       # linha inteira do reporter (describe + título + CAMINHO do arquivo),
       # não só o título — `027-vacancy-case-select.integration.e2e.ts` casa
@@ -141,12 +149,6 @@ jobs:
       # sem linha em `users` — sob engine ABAC ligado bate em 403
       # `account_not_active` em qualquer rota `admin.patients` (medido,
       # commit anterior). Pertence ao job padrão (engine OFF), 5 testes.
-      # `kanban-pacientes` ENTROU (cadeia paciente→vacante→itinerário, Fase 1):
-      # 5 testes (o `--grep` casa 6: o health check do describe entra junto) do
-      # Kanban de pacientes com 8 colunas lendo `patients.status` (ordem,
-      # totalizador == API, baja fora de activo, alta por arrasto de cada
-      # coluna viva, transição recusada). Token mock, sem linha em `users`
-      # — job padrão, como `draft-wizard-locked`.
       # `funil-vacante` ENTROU (cadeia, Fase 2): 4 testes do quadro B — os 3 lugares == API, Pre Screening
       # une 2 valores, tentativa negada em Rejeitados, vaga vazia. Token mock + linha em `users`; job padrão.
       # `lista-vacantes` ENTROU (cadeia, Fase 3): 4 testes — anotação pela tela, última ação ≠ updated_at, ordem
@@ -162,10 +164,12 @@ jobs:
       # `testLoader.js`/`test.js` do pacote `playwright`, sem precisar subir a stack). 3 testes
       # (página pública `/vacantes/:id` sem auth: vaga DE_BAJA não oferece candidatura, vaga
       # publicável oferece, vaga inexistente cai no 404 legítimo).
-      # `patient-itinerary` ENTROU (itinerario-trocas-motivos-e-figma, Fase 0): o e2e de tela do itinerário do Figma
-      # (`patient-itinerary.integration.e2e.ts`: feliz + 2 alternativos, 3 testes) passa a rodar no CI, job padrão.
-      # `patient-status-aguardando-financeiro` ENTROU (spec 038, item 11): o login real no emulador nunca saía de
-      # `/admin/login` neste job; passou a `loginComoStaffMock` (o mesmo do irmão `patient-status-suspendido-saida-motivo`).
+      # `kanban-pacientes` ENTROU (cadeia paciente→vacante→itinerário, Fase 1):
+      # 5 testes (o `--grep` casa 6: o health check do describe entra junto) do
+      # Kanban de pacientes com 8 colunas lendo `patients.status` (ordem,
+      # totalizador == API, baja fora de activo, alta por arrasto de cada
+      # coluna viva, transição recusada). Token mock, sem linha em `users`
+      # — job padrão, como `draft-wizard-locked`.
       # `postularse-iniciado-043` ENTROU (spec 043): o gate do PR achou os specs
       # `postularse-iniciado-043`, `kanban-iniciado-blocked-columns` e
       # `kanban-blocked-live-missing-fields` na lista "NÃO exercitados" — o `--grep` casa
@@ -175,7 +179,28 @@ jobs:
       # "NÃO exercitados" — o `--grep` casa pelo caminho do arquivo, na mesma convenção do
       # `027-vacancy-case-select`. Login pelo mock do CI (`loginComoStaffMock`), como o irmão
       # `patient-status-aguardando-financeiro`.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes|funil-vacante|lista-vacantes|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-kanban-suspendido-saida-motivo|patient-itinerary|patient-status-aguardando-financeiro|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044'
+      # `vacancy-servico-horario-link` ENTROU (change vaga-le-do-servico-contratado, F4): o spec
+      # nasceu no commit `1d4ad016` e o CI verde daquele commit NÃO o exercitou — ele saiu na lista
+      # "NÃO exercitados" dos dois shards. 3 testes (lápis do horário leva à aba Servicio Contratado,
+      # `?tab=` inválido cai na aba inicial, faixa de aviso some após "marcar como atendido"). Login
+      # pelo mock do CI (`loginComoStaffMock`), job padrão, como `draft-wizard-locked`.
+      # `vaga-le-servico-fecho` ENTROU (change vaga-le-do-servico-contratado, F8): o spec de fecho por TELA
+      # (horário, aviso + "marcar como atendido", erro ao apagar o horário com vaga viva, quantidade, faixa etária e
+      # vaga manual: 6 testes). O `--grep` casa pelo caminho do arquivo, na mesma convenção do
+      # `vacancy-servico-horario-link` (o furo da F4: spec fora da lista nunca roda). Login pelo mock do CI
+      # (`loginComoStaffMock`), job padrão, engine OFF.
+      # `servico-dados-recrutamento` ENTROU (spec 027 Fase 3, D508): o spec novo da T030 (feliz lendo da tela, sexo faltando
+      # desabilita com o motivo, opcionais vazios habilitam e não atravessam) nasceu fora da lista e o gate o achou em
+      # "NÃO exercitados" (o mesmo furo da F4). Login pelo mock do CI (`loginComoStaffMock`), job padrão, engine OFF.
+      # NÃO entram (medido no CI do #690): `admission-a6-franja-prestador`, `admission-b-campos`,
+      # `admission-c-servico-contratado`(-humano) e `servico-horario-obrigatorio-humano` fazem login REAL no emulador do
+      # Firebase, que não existe neste job (`login-mock-staff.ts`); `vacancy-draft-page` e `draft-vacancy-choice-dialog`
+      # usam o `abac-stack-helper` (Postgres na 5439), que só existe no job do ABAC (`_frontend-integration.yml:753`).
+      # `patient-itinerary` ENTROU (itinerario-trocas-motivos-e-figma, Fase 0): o e2e de tela do itinerário do Figma
+      # (`patient-itinerary.integration.e2e.ts`: feliz + 2 alternativos, 3 testes) passa a rodar no CI, job padrão.
+      # `patient-status-aguardando-financeiro` ENTROU (spec 038, item 11): o login real no emulador nunca saía de
+      # `/admin/login` neste job; passou a `loginComoStaffMock` (o mesmo do irmão `patient-status-suspendido-saida-motivo`).
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-servico-horario-link|vaga-le-servico-fecho|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-status-aguardando-financeiro|kanban-pacientes|funil-vacante|lista-vacantes|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044|servico-dados-recrutamento|patient-kanban-suspendido-saida-motivo|patient-itinerary'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo

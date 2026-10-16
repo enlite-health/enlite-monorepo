@@ -3,12 +3,11 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { logger } from '@shared/logging';
 import {
-  AdmissionCalendarPort,
+  admissionCalendarService,
   BusyInterval,
   computeFreeSlots,
   sumBusyMinutesInWeek,
 } from '../infrastructure/AdmissionCalendarService';
-import { admissionCalendar } from '../infrastructure/AdmissionCalendarFactory';
 import {
   InterviewHost,
   InterviewHostRepository,
@@ -18,6 +17,7 @@ import {
   ADMISSION_COUNTRIES,
   AdmissionCountry,
   getAdmissionCountryConfig,
+  isAdmissionCountry,
   resolveLineName,
   resolveTeamDisplayName,
 } from '../domain/admissionCountries';
@@ -26,35 +26,25 @@ import {
   resolveMinLeadMinutes,
   resolveSlotMinutes,
 } from '../domain/admissionSchedulingConfig';
+import { generateAdmissionCode } from '../domain/admissionCode';
 import {
   AdmissionNotifier,
   LoggingAdmissionNotifier,
 } from './AdmissionNotifier';
+import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
+import { TactiqLinkRequiredError, type TactiqLinkGate } from './ports/TactiqPorts';
+import { isHostApt } from './admissionHostEligibility';
+import {
+  HostNotInRosterError,
+  InvalidSlotError,
+  PatientNotFoundError,
+  SlotInPastError,
+  SlotTakenError,
+} from './AdmissionSchedulingErrors';
+import { CalendarCreateFailedError, createEventWithRetry, releaseReservationWithoutEvent } from './admissionCalendarCreate';
+import { readHostsBusy } from './admissionHostBusy';
 
-// ─── Errors ────────────────────────────────────────────────────────────────
-
-/**
- * O horário pedido não pode mais ser reservado: ninguém livre depois do
- * re-check, corrida perdida na trava do banco, ou pedido dentro da janela de
- * antecedência mínima. Um código só porque, para o paciente, a saída é a mesma
- * nos três casos — escolher outro horário.
- */
-export class SlotTakenError extends Error {
-  readonly code = 'SLOT_TAKEN';
-  constructor(message = 'Slot no longer available') {
-    super(message);
-    this.name = 'SlotTakenError';
-  }
-}
-
-/** Patient not found, or not in the requested country. */
-export class PatientNotFoundError extends Error {
-  readonly code = 'PATIENT_NOT_FOUND';
-  constructor(message = 'Patient not found') {
-    super(message);
-    this.name = 'PatientNotFoundError';
-  }
-}
+export { HostNotInRosterError, InvalidSlotError, PatientNotFoundError, SlotInPastError, SlotTakenError };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +67,18 @@ export interface BookResult {
   meetLink: string;
 }
 
+/** Pedido de agenda feito pelo PAINEL: o responsável é escolhido por quem agenda (não há ranking). */
+export interface PanelBookParams {
+  patientId: string;
+  hostEmail: string;
+  slotStartISO: string;
+  actorUid: string;
+}
+
+export interface PanelBookResult extends BookResult {
+  admissionCode: string;
+}
+
 interface PatientRow {
   id: string;
   country: string;
@@ -96,6 +98,18 @@ interface RankedHost {
   host: InterviewHost;
   busyMinutesInWeek: number;
 }
+
+const PATIENT_SELECT = `SELECT p.id, p.country, p.contact_email_encrypted,
+              (SELECT r.email_encrypted
+                 FROM patient_responsibles r
+                WHERE r.patient_id = p.id AND r.email_encrypted IS NOT NULL AND r.active
+                ORDER BY r.is_primary DESC, r.display_order ASC
+                LIMIT 1) AS responsible_email_encrypted
+         FROM patients p
+        WHERE p.id = $1 AND p.deleted_at IS NULL`;
+
+/** Quantas vezes sorteia outro código ADM se o índice único acusar colisão (36^6 ≈ 2 bi: na prática 1). */
+const MAX_CODE_ATTEMPTS = 5;
 
 /** Quantos dias à frente a janela de leitura cobre (a fn pura corta no horizonte). */
 const READ_HORIZON_DAYS = 21;
@@ -126,12 +140,18 @@ const READ_HORIZON_DAYS = 21;
  */
 export class AdmissionSchedulingService {
   constructor(
-    private readonly calendar: AdmissionCalendarPort = admissionCalendar,
+    private readonly calendar: AdmissionCalendarPort = admissionCalendarService,
     private readonly notifier: AdmissionNotifier = new LoggingAdmissionNotifier(),
     private readonly encryption: KMSEncryptionService = new KMSEncryptionService(),
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
     private readonly hosts: InterviewHostRepository = interviewHostRepository,
+    /**
+     * A trava do vínculo do Tactiq (spec 049 F4, passo 3): o PAINEL só agenda com responsável de vínculo `linked`.
+     * Sem o gate o `bookForHost` RECUSA (falha alta) — um gate ausente que deixasse passar seria a trava desligada
+     * em silêncio. O fluxo do site (atribuição automática) não passa por aqui.
+     */
+    private readonly tactiqGate?: TactiqLinkGate,
   ) {}
 
   private resolveCalendarId(country: AdmissionCountry): string {
@@ -188,7 +208,7 @@ export class AdmissionSchedulingService {
     // ou fuso: o spec manda responder "zero horários, sem erro", e um país que
     // ainda não tem agenda configurada não pode virar 500 na tela pública.
     const activeHosts = isHostRosterEnabled()
-      ? await this.hosts.listActiveByCountry(country)
+      ? await this.hosts.listActiveByCountry(country, 'admission')
       : null;
     if (activeHosts && activeHosts.length === 0) {
       logger.warn(
@@ -313,56 +333,29 @@ export class AdmissionSchedulingService {
 
       // 3b) Reserva o nosso lado ANTES do evento, sob UNIQUE(host_email,
       //     slot_start). Perder a corrida aqui não é erro: é a próxima candidata.
-      let appointmentId: string;
-      try {
-        appointmentId = await this.insertAppointment({
-          patientId,
-          country,
-          hostEmail: host.email,
-          hostDisplayName: teamName,
-          slotStartISO: startISO,
-          slotEndISO: endISO,
-        });
-      } catch (err) {
-        if (isUniqueViolation(err)) continue;
-        throw err;
-      }
-
-      const { eventId, meetLink } = await this.calendar.createEventWithMeet({
-        calendarId,
-        impersonateEmail: this.impersonateEmail,
-        summary: `Entrevista de admisión — ${eventLabel}`,
-        description: `Entrevista de admisión Enlite (${country}).`,
-        startISO,
-        endISO,
-        timezone,
-        coHostEmail: host.email,
-        patientEmail,
-      });
-
-      await this.attachCalendarRefs(appointmentId, eventId, meetLink);
-
-      this.logAssignment({
-        country,
-        appointmentId,
-        mode: 'roster',
-        candidatesConsidered: ranked.length,
-        attemptsBeforeSuccess: ranked.findIndex((r) => r.host.email === host.email),
-      });
-
-      await this.notifier.onBooked({
-        appointmentId,
+      const reserved = await this.reserveAndCreateEvent({
         patientId,
         country,
+        calendarId,
+        timezone,
         hostEmail: host.email,
-        hostDisplayName: teamName,
-        slotStartISO: startISO,
-        slotEndISO: endISO,
-        meetLink,
+        coHostEmail: host.email,
+        teamName,
+        eventLabel,
+        startISO,
+        endISO,
         patientEmail,
-      });
+        createdVia: 'site',
+        createdByUid: null,
+        assignment: {
+          mode: 'roster',
+          candidatesConsidered: ranked.length,
+          attemptsBeforeSuccess: ranked.findIndex((r) => r.host.email === host.email),
+        },
+      }).catch(nextHostOnCalendarFailure);
+      if (!reserved) continue;
 
-      return { appointmentId, hostDisplayName: teamName, slotStartISO: startISO, meetLink };
+      return { appointmentId: reserved.appointmentId, hostDisplayName: teamName, slotStartISO: startISO, meetLink: reserved.meetLink };
     }
 
     // Todas as candidatas caíram no re-check ou na trava.
@@ -410,26 +403,7 @@ export class AdmissionSchedulingService {
     timezone: string,
     country: AdmissionCountry,
   ): Promise<Record<string, BusyInterval[]>> {
-    const results = await this.calendar.getFreeBusyByCalendar(
-      emails,
-      this.impersonateEmail,
-      fromISO,
-      toISO,
-      timezone,
-    );
-
-    const byHost: Record<string, BusyInterval[]> = {};
-    for (const r of results) {
-      if (r.error) {
-        logger.error(
-          { country, calendarId: r.calendarId, reason: r.error },
-          '[admission] agenda de atendente ilegível: fica fora do cálculo (fail-closed)',
-        );
-        continue;
-      }
-      byHost[r.calendarId] = r.busy;
-    }
-    return byHost;
+    return readHostsBusy(this.calendar, this.impersonateEmail, emails, fromISO, toISO, timezone, country);
   }
 
   /**
@@ -448,9 +422,8 @@ export class AdmissionSchedulingService {
     timezone: string,
   ): Promise<RankedHost[]> {
     const cfg = getAdmissionCountryConfig(country);
-    const hosts = await this.hosts.listActiveByCountry(country);
+    const hosts = await this.hosts.listActiveByCountry(country, 'admission');
     if (hosts.length === 0) return [];
-
     const weekStart = slotStart.startOf('week');
     const weekEnd = weekStart.plus({ days: 7 });
     const busyByHost = await this.readHostsBusy(
@@ -536,47 +509,107 @@ export class AdmissionSchedulingService {
       throw new SlotTakenError();
     }
 
-    let appointmentId: string;
-    try {
-      appointmentId = await this.insertAppointment({
-        patientId,
-        country,
-        hostEmail: calendarId,
-        hostDisplayName: teamName,
-        slotStartISO: startISO,
-        slotEndISO: endISO,
-      });
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new SlotTakenError();
-      throw err;
-    }
-
-    const { eventId, meetLink } = await this.calendar.createEventWithMeet({
+    const reserved = await this.reserveAndCreateEvent({
+      patientId,
+      country,
       calendarId,
-      impersonateEmail: this.impersonateEmail,
-      summary: `Entrevista de admisión — ${eventLabel}`,
-      description: `Entrevista de admisión Enlite (${country}).`,
+      timezone,
+      hostEmail: calendarId,
+      teamName,
+      eventLabel,
       startISO,
       endISO,
-      timezone,
       patientEmail: input.patientEmail,
-    });
+      createdVia: 'site',
+      createdByUid: null,
+      assignment: { mode: 'country_calendar', candidatesConsidered: 1, attemptsBeforeSuccess: 0 },
+    }).catch(nextHostOnCalendarFailure);
+    if (!reserved) throw new SlotTakenError();
+
+    return { appointmentId: reserved.appointmentId, hostDisplayName: teamName, slotStartISO: startISO, meetLink: reserved.meetLink };
+  }
+
+  /**
+   * O NÚCLEO DA RESERVA, um só para o site e para o painel (spec 049 F3): INSERT sob a trava
+   * `UNIQUE(host_email, slot_start)` → evento no Google (título com o código `ADM-XXXXXX`) → refs → trilha de
+   * atribuição → `notifier.onBooked`. Devolve `null` quando perdeu a corrida da trava (quem chamou decide: o roster
+   * tenta a próxima candidata, o resto vira `SlotTakenError`). Colisão do CÓDIGO (índice único próprio) gera outro
+   * código e tenta de novo — não é perda de horário.
+   */
+  private async reserveAndCreateEvent(input: {
+    patientId: string;
+    country: AdmissionCountry;
+    calendarId: string;
+    timezone: string;
+    hostEmail: string;
+    coHostEmail?: string;
+    teamName: string;
+    eventLabel: string;
+    startISO: string;
+    endISO: string;
+    patientEmail?: string;
+    createdVia: 'site' | 'panel';
+    createdByUid: string | null;
+    assignment: { mode: 'roster' | 'country_calendar'; candidatesConsidered: number; attemptsBeforeSuccess: number };
+  }): Promise<{ appointmentId: string; meetLink: string; admissionCode: string } | null> {
+    const { patientId, country, calendarId, timezone, teamName, startISO, endISO } = input;
+
+    let appointmentId: string | null = null;
+    let admissionCode = '';
+    for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS && !appointmentId; attempt += 1) {
+      admissionCode = generateAdmissionCode();
+      try {
+        appointmentId = await this.insertAppointment({
+          patientId,
+          country,
+          hostEmail: input.hostEmail,
+          hostDisplayName: teamName,
+          slotStartISO: startISO,
+          slotEndISO: endISO,
+          admissionCode,
+          createdVia: input.createdVia,
+          createdByUid: input.createdByUid,
+        });
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+        if (isCodeCollision(err)) continue;
+        return null;
+      }
+    }
+    if (!appointmentId) throw new Error('[AdmissionSchedulingService] não gerou um código ADM único');
+
+    let created: { eventId: string; meetLink: string };
+    try {
+      created = await createEventWithRetry(
+        this.calendar,
+        {
+          calendarId,
+          impersonateEmail: this.impersonateEmail,
+          summary: `Entrevista de admisión — ${input.eventLabel} · ${admissionCode}`,
+          description: `Entrevista de admisión Enlite (${country}).`,
+          startISO,
+          endISO,
+          timezone,
+          ...(input.coHostEmail ? { coHostEmail: input.coHostEmail } : {}),
+          patientEmail: input.patientEmail,
+        },
+        appointmentId,
+      );
+    } catch (err) {
+      if (err instanceof CalendarCreateFailedError) await releaseReservationWithoutEvent(appointmentId, err.reason);
+      throw err;
+    }
+    const { eventId, meetLink } = created;
 
     await this.attachCalendarRefs(appointmentId, eventId, meetLink);
 
-    this.logAssignment({
-      country,
-      appointmentId,
-      mode: 'country_calendar',
-      candidatesConsidered: 1,
-      attemptsBeforeSuccess: 0,
-    });
+    this.logAssignment({ country, appointmentId, ...input.assignment });
 
     await this.notifier.onBooked({
       appointmentId,
       patientId,
       country,
-      hostEmail: calendarId,
+      hostEmail: input.hostEmail,
       hostDisplayName: teamName,
       slotStartISO: startISO,
       slotEndISO: endISO,
@@ -584,7 +617,83 @@ export class AdmissionSchedulingService {
       patientEmail: input.patientEmail,
     });
 
-    return { appointmentId, hostDisplayName: teamName, slotStartISO: startISO, meetLink };
+    return { appointmentId, meetLink, admissionCode };
+  }
+
+  /**
+   * Agenda feita pelo PAINEL (spec 049 F3, `POST /patients/:id/admission-appointments`). Mesmas travas do site —
+   * re-check ao vivo da agenda do responsável, `UNIQUE(host_email, slot_start)` — e o mesmo núcleo de reserva; muda a
+   * regra de ENTRADA: o responsável é escolhido por quem agenda (precisa estar no roster ativo do país do paciente) e a
+   * antecedência mínima é só "horário futuro" (a de 4 h do site não vale: admissão marca "daqui a 1 h" com a família
+   * ao telefone). `created_via='panel'` + `created_by_uid`.
+   */
+  async bookForHost(params: PanelBookParams, now: Date = new Date()): Promise<PanelBookResult> {
+    const { patientId, actorUid } = params;
+    const patient = await this.loadPatient(patientId);
+    const country = patient.country as AdmissionCountry;
+
+    const calendarId = this.resolveCalendarId(country);
+    const teamName = resolveTeamDisplayName(country);
+    const eventLabel = isHostRosterEnabled() ? resolveLineName(country) : teamName;
+    const timezone = await this.resolveTimezone(country, calendarId);
+
+    const slotStart = DateTime.fromISO(params.slotStartISO, { zone: timezone });
+    if (!slotStart.isValid) throw new InvalidSlotError();
+    if (slotStart.toMillis() <= now.getTime()) throw new SlotInPastError();
+    const slotEnd = slotStart.plus({ minutes: resolveSlotMinutes() });
+    const startISO = slotStart.toISO() as string;
+    const endISO = slotEnd.toISO() as string;
+
+    const wanted = params.hostEmail.trim().toLowerCase();
+    const roster = await this.hosts.listActiveByCountry(country, 'admission');
+    const host = roster.find((h) => h.email.toLowerCase() === wanted);
+    if (!host) throw new HostNotInRosterError();
+    await this.assertTactiqLinked(host.email);
+
+    if (!(await this.isHostFreeAt(host.email, startISO, endISO, timezone))) throw new SlotTakenError();
+
+    const patientEmail = await this.resolveRequesterEmail(patient);
+    const reserved = await this.reserveAndCreateEvent({
+      patientId,
+      country,
+      calendarId,
+      timezone,
+      hostEmail: host.email,
+      coHostEmail: host.email,
+      teamName,
+      eventLabel,
+      startISO,
+      endISO,
+      patientEmail,
+      createdVia: 'panel',
+      createdByUid: actorUid,
+      assignment: { mode: 'roster', candidatesConsidered: 1, attemptsBeforeSuccess: 0 },
+    });
+    if (!reserved) throw new SlotTakenError();
+
+    return {
+      appointmentId: reserved.appointmentId,
+      hostDisplayName: teamName,
+      slotStartISO: startISO,
+      meetLink: reserved.meetLink,
+      admissionCode: reserved.admissionCode,
+    };
+  }
+
+  /** Passo 3 do §3.0.1, NO SERVIDOR: responsável sem vínculo `linked` → 409 `TACTIQ_LINK_REQUIRED` (nada é criado). */
+  private async assertTactiqLinked(hostEmail: string): Promise<void> {
+    if (!this.tactiqGate) throw new Error('AdmissionSchedulingService: bookForHost exige o gate do vínculo do Tactiq (spec 049 F4)');
+    const states = await this.tactiqGate.statesFor([hostEmail]);
+    const state = states.get(hostEmail.toLowerCase()) ?? 'missing';
+    if (!isHostApt(state)) throw new TactiqLinkRequiredError(state);
+  }
+
+  private async loadPatient(patientId: string): Promise<PatientRow> {
+    const db = DatabaseConnection.getInstance().getPool();
+    const res = await db.query<PatientRow>(PATIENT_SELECT, [patientId]);
+    const row = res.rows[0];
+    if (!row || !isAdmissionCountry(row.country)) throw new PatientNotFoundError();
+    return row;
   }
 
   private async loadPatientForCountry(
@@ -592,17 +701,7 @@ export class AdmissionSchedulingService {
     country: AdmissionCountry,
   ): Promise<PatientRow> {
     const db = DatabaseConnection.getInstance().getPool();
-    const res = await db.query<PatientRow>(
-      `SELECT p.id, p.country, p.contact_email_encrypted,
-              (SELECT r.email_encrypted
-                 FROM patient_responsibles r
-                WHERE r.patient_id = p.id AND r.email_encrypted IS NOT NULL AND r.active
-                ORDER BY r.is_primary DESC, r.display_order ASC
-                LIMIT 1) AS responsible_email_encrypted
-         FROM patients p
-        WHERE p.id = $1 AND p.deleted_at IS NULL`,
-      [patientId],
-    );
+    const res = await db.query<PatientRow>(PATIENT_SELECT, [patientId]);
     const row = res.rows[0];
     if (!row) throw new PatientNotFoundError();
     if (row.country !== country) {
@@ -653,12 +752,16 @@ export class AdmissionSchedulingService {
     hostDisplayName: string | null;
     slotStartISO: string;
     slotEndISO: string;
+    admissionCode: string;
+    createdVia: 'site' | 'panel';
+    createdByUid: string | null;
   }): Promise<string> {
     const db = DatabaseConnection.getInstance().getPool();
     const res = await db.query<{ id: string }>(
       `INSERT INTO admission_appointments
-         (patient_id, country, host_email, host_display_name, slot_start, slot_end, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'booked')
+         (patient_id, country, host_email, host_display_name, slot_start, slot_end, status,
+          admission_code, created_via, created_by_uid)
+       VALUES ($1, $2, $3, $4, $5, $6, 'booked', $7, $8, $9)
        RETURNING id`,
       [
         input.patientId,
@@ -667,6 +770,9 @@ export class AdmissionSchedulingService {
         input.hostDisplayName,
         input.slotStartISO,
         input.slotEndISO,
+        input.admissionCode,
+        input.createdVia,
+        input.createdByUid,
       ],
     );
     return res.rows[0].id;
@@ -687,9 +793,20 @@ export class AdmissionSchedulingService {
   }
 }
 
+/** Site: a falha do Google na criação não é erro para a família — esta responsável sai da disputa (null) e o horário foi liberado. */
+function nextHostOnCalendarFailure(err: unknown): null {
+  if (err instanceof CalendarCreateFailedError) return null;
+  throw err;
+}
+
 /** Postgres unique_violation. */
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+}
+
+/** A violação foi no índice do CÓDIGO ADM (não na trava host+horário). */
+function isCodeCollision(err: unknown): boolean {
+  return (err as { constraint?: string }).constraint === 'uq_admission_appointments_code';
 }
 
 export const admissionSchedulingService = new AdmissionSchedulingService();

@@ -36,6 +36,7 @@ import type { AdminNotification } from '@infrastructure/http/AdminNotificationAp
 import { MessageAvatar } from '@presentation/components/features/admin/PatientDetail/conversation/MessageAvatar';
 import { formatMessageDateTime } from '@presentation/components/features/admin/PatientDetail/conversation/messageDateFormat';
 import { buildNotificationText } from './notificationText';
+import { getNotificationTypeHandler } from './notificationTypeRegistry';
 
 export interface NotificationCardProps {
   notification: AdminNotification;
@@ -49,8 +50,13 @@ export function NotificationCard({ notification, onClick }: NotificationCardProp
     i18n.language.toLowerCase().startsWith('pt') ? 'às' : 'a las',
   );
   const dateLabel = formatMessageDateTime(notification.createdAt, i18n.language, connector);
-  const authorName = notification.actorDisplayName ?? notification.actorUid;
-  const patientName = notification.patientDisplayName ?? t('admin.notifications.unknownPatient');
+  // spec 048: tipo de SISTEMA (sem autor humano) pede ao registry as linhas 1-3 — nunca mostra o uid sentinela
+  // nem o nome do paciente. Os tipos de conversa não declaram nada disso e seguem exatamente como antes.
+  const handler = getNotificationTypeHandler(notification.typeCode);
+  const authorName = handler.actorLabel?.(notification, t) ?? notification.actorDisplayName ?? notification.actorUid;
+  const contextLine = handler.contextLine?.(notification, t)
+    ?? t('admin.notifications.inPatient', { patient: notification.patientDisplayName ?? t('admin.notifications.unknownPatient') });
+  const detailLine = notification.messageExcerpt ?? handler.detailLine?.(notification, t) ?? null;
 
   return (
     <button
@@ -100,11 +106,11 @@ export function NotificationCard({ notification, onClick }: NotificationCardProp
         data-testid={`notification-patient-${notification.id}`}
         className="pl-9 truncate"
       >
-        {t('admin.notifications.inPatient', { patient: patientName })}
+        {contextLine}
       </Text>
 
       {/* Linha 3: trecho — até 2 linhas antes de cortar (nunca 1 linha só). */}
-      {notification.messageExcerpt && (
+      {detailLine && (
         <Text
           as="p"
           size="xs"
@@ -112,7 +118,7 @@ export function NotificationCard({ notification, onClick }: NotificationCardProp
           data-testid={`notification-excerpt-${notification.id}`}
           className="pl-9 line-clamp-2"
         >
-          {notification.messageExcerpt}
+          {detailLine}
         </Text>
       )}
     </button>

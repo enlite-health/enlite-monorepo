@@ -11,8 +11,8 @@ import type { PoolClient } from 'pg';
  *   - só quando a etapa MUDA (mover para a mesma coluna não é evento);
  *   - o INSERT roda no MESMO client da transação do movimento — se a etapa
  *     não gravar, o evento não nasce; se nascer, a etapa gravou;
- *   - nome do evento = `funnel_stage.<etapa em minúsculas>` — QUALIFIED cai no
- *     `QualifiedInterviewHandler` existente, as demais no `StageMessageHandler`;
+ *   - nome do evento = `funnel_stage.<etapa em minúsculas>` — todas caem no
+ *     `StageMessageHandler`;
  *   - o payload leva quem moveu (`actorUid`) e a origem: é a autoria que a
  *     trilha (funnel_stage_message_log) registra.
  * A publicação no Pub/Sub é feita DEPOIS do COMMIT por quem chamou (o evento
@@ -20,7 +20,7 @@ import type { PoolClient } from 'pg';
  */
 
 /**
- * As 9 etapas COM MENSAGEM — registra um `StageMessageHandler` por etapa
+ * As 8 etapas COM MENSAGEM — registra um `StageMessageHandler` por etapa
  * (`src/index.ts:616`) e é a lista que a tela de plantillas edita
  * (`FunnelStageMessagesController.ts`). `QUICK_RESPONSE_TEAM` (Fase 4, DX-4.7)
  * fica de fora DE PROPÓSITO: é o destino do arrasto do quadro B que não vira
@@ -29,7 +29,7 @@ import type { PoolClient } from 'pg';
  * 292), não um `if` espalhado pelo código.
  */
 export const FUNNEL_STAGES = [
-  'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED',
+  'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'REJECTED',
 ] as const;
 
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];
@@ -62,7 +62,7 @@ export interface EmitFunnelStageEventInput {
   previousStage: string | null;
   targetStage: FunnelStage;
   actorUid: string | null;
-  source: 'kanban';
+  source: 'kanban' | 'enquadre';
 }
 
 /**

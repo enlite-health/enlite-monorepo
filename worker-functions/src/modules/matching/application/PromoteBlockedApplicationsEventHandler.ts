@@ -13,7 +13,7 @@ const TAG = '[PromoteBlockedApplicationsEventHandler]';
  * promover tentativas bloqueadas do worker (worker_blocked_applications →
  * worker_job_applications). Nunca lança para o DomainEventProcessor — o use
  * case já é tolerante por linha; o handler apenas propaga erros de payload
- * inválido (mesmo padrão de AnaCareMirrorEventHandler / QualifiedInterviewHandler).
+ * inválido (mesmo padrão de AnaCareMirrorEventHandler / VacancyAutoInviteHandler).
  */
 export function createPromoteBlockedApplicationsHandler(db: Pool): DomainEventHandler {
   return async (payload: Record<string, unknown>): Promise<void> => {

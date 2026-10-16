@@ -94,9 +94,7 @@ describe('PreviewAiPromptUseCase — FR-026 sem Talentum', () => {
   it('zero chamadas ao Talentum nos tres slugs', async () => {
     const query = jest.fn().mockResolvedValue({ rows: [CASE_ROW], rowCount: 1 });
     const descService = new TalentumDescriptionService();
-    jest.spyOn(descService as never, 'loadInput' as never).mockResolvedValue(
-      { caseNumber: '7', title: 'Caso 7', requiredProfessions: ['AT'] } as never,
-    );
+    (descService as any).db = { query: jest.fn().mockResolvedValue({ rows: [CASE_ROW], rowCount: 1 }) };
     const useCase = new PreviewAiPromptUseCase({
       db: { query, connect: jest.fn() } as unknown as Pool,
       descService,

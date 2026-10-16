@@ -23,10 +23,9 @@ const SERVICO: PatientContractedServiceDetail = {
   taxCondition: 'IVA_EXEMPT',
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
-  providerAgeBand: 'AGE_30_45',
+  providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,
-  liveVacancyId: null,
-  requiredSex: null,
+  liveVacancy: null, liveVacancyRedacted: false,
   schedule: null,
   active: true,
   endedAt: null,
@@ -112,7 +111,7 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     render(<DiagnosticoCard patient={patientDetailFixture} onSaved={() => {}} />);
     render(<FamiliaresCard responsibles={[]} patientId="p1" onSaved={() => {}} />);
     expect(screen.queryByTestId('edit-clinical-btn')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-add')).not.toBeInTheDocument();
   });
 
   it('🔴 DiagnosticoCard: enforcement=on, sem patient:write → edit-clinical-btn SOME', () => {
@@ -127,38 +126,36 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     expect(screen.getByTestId('edit-clinical-btn')).toBeInTheDocument();
   });
 
-  it('🔴 FamiliaresCard: enforcement=on, sem patient:write → edit-support-btn SOME', () => {
+  it('🔴 FamiliaresCard: enforcement=on, sem células → "Nuevo", lápis e lixeira SOMEM', () => {
     comEnforcement([], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.queryByTestId('familiares-add')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-edit-r1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-deactivate-r1')).not.toBeInTheDocument();
   });
 
-  it('FamiliaresCard: enforcement=on, com patient_family:create (PR-8b) → edit-support-btn existe (e não desabilitado, com patientId)', () => {
+  it('FamiliaresCard: só patient_family:create → "Nuevo" existe (e habilitado); lápis e lixeira SOMEM', () => {
     comEnforcement(['patient_family:create'], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    const btn = screen.getByTestId('edit-support-btn');
-    expect(btn).toBeInTheDocument();
-    expect(btn).not.toBeDisabled();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.getByTestId('familiares-add')).not.toBeDisabled();
+    expect(screen.queryByTestId('familiares-edit-r1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-deactivate-r1')).not.toBeInTheDocument();
   });
 
-  // Gate `canCreateRow || canUpdateRow` (PR-8b rodada B) — os 4 casos, FamiliaresCard e
-  // ExternalContactsCard (mesma célula `patient_family`, mesmo componente de gate).
-  it('FamiliaresCard: só patient_family:update → edit-support-btn existe (a outra metade do OR)', () => {
+  it('FamiliaresCard: só patient_family:update → lápis e lixeira existem; "Nuevo" SOME', () => {
     comEnforcement(['patient_family:update'], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.queryByTestId('familiares-add')).not.toBeInTheDocument();
+    expect(screen.getByTestId('familiares-edit-r1')).toBeInTheDocument();
+    expect(screen.getByTestId('familiares-deactivate-r1')).toBeInTheDocument();
   });
 
-  it('FamiliaresCard: as duas células (create + update) → edit-support-btn existe', () => {
+  it('FamiliaresCard: as duas células → "Nuevo", lápis e lixeira existem', () => {
     comEnforcement(['patient_family:create', 'patient_family:update'], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
-  });
-
-  it('🔴 FamiliaresCard: nenhuma das duas células → edit-support-btn SOME', () => {
-    comEnforcement([], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.getByTestId('familiares-add')).toBeInTheDocument();
+    expect(screen.getByTestId('familiares-edit-r1')).toBeInTheDocument();
+    expect(screen.getByTestId('familiares-deactivate-r1')).toBeInTheDocument();
   });
 
   it('ExternalContactsCard: só patient_family:create → edit-external-contacts-btn existe', () => {
@@ -237,16 +234,23 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
       expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
     });
 
-    // Achado do coordenador (12/09): o gate das duas células é só do BOTÃO de ativar. O "Ver
-    // vacante" (serviço já com vaga viva) não tinha NENHUM gate na `origin/stage` — é um `<a>`
-    // simples, sem `useActionGate`/`ActionButton` — e continua assim, mesmo sem nenhuma célula.
-    it('"Ver vacante" (serviço COM liveVacancyId) continua visível SEM nenhuma célula — igual à stage, que não gateava esse link', () => {
+    // Spec 047 (F3): o ícone "Ver vacante" SAIU (o código da vacante, na coluna, é o caminho — e a coluna só
+    // existe com `vacancy:read`). Sem nenhuma célula: serviço com vaga viva não oferece ativar, não mostra o ícone
+    // antigo e não mostra as colunas da vaga.
+    it('serviço COM vaga viva e SEM células: nem o ícone "Ver vacante" (removido) nem as colunas da vaga; ativar continua fora', () => {
       comEnforcement([], 'on');
-      const comVagaViva = { ...SERVICO, liveVacancyId: 'vac-gate-1' };
+      const comVagaViva = { ...SERVICO, liveVacancy: { id: 'vac-gate-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' }, liveVacancyRedacted: false };
       render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [comVagaViva] }} />);
       expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
-      const link = screen.getByTestId('contracted-service-view-vacancy-svc-gate');
-      expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-gate-1');
+      expect(screen.queryByTestId('contracted-service-view-vacancy-svc-gate')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contracted-service-vacancy-code-svc-gate')).not.toBeInTheDocument();
+    });
+
+    it('com vacancy:read: as colunas da vaga aparecem', () => {
+      comEnforcement(['vacancy:read'], 'on');
+      const comVagaViva = { ...SERVICO, liveVacancy: { id: 'vac-gate-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' }, liveVacancyRedacted: false };
+      render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [comVagaViva] }} />);
+      expect(screen.getByTestId('contracted-service-vacancy-link-svc-gate').getAttribute('href')).toBe('/admin/vacancies/vac-gate-1');
     });
   });
 });

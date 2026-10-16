@@ -79,7 +79,7 @@ describe('PR-8b (8b.1/8b.4) — fixture nominal create/update contra o inventár
     porChave = new Map(inventario.governedRoutes.map((r) => [`${r.method} ${r.path}`, r]));
   });
 
-  it('cada rota da fixture (99) está no inventário e declara a AÇÃO PRIMÁRIA certa', () => {
+  it('cada rota da fixture está no inventário e declara a AÇÃO PRIMÁRIA certa', () => {
     const divergentes = PR8B_ROTAS_CREATE_UPDATE.map((rota) => {
       const chave = `${rota.method} ${rota.path}`;
       const encontrada = porChave.get(chave);

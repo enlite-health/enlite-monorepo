@@ -119,7 +119,9 @@
     "expandMenu": "Expandir menu",
     "collapseMenu": "Recolher menu",
     "logoAlt": "Enlite",
-    "userAvatarAlt": "Avatar do usuário"
+    "userAvatarAlt": "Avatar do usuário",
+    "profileLink": "Meu perfil",
+    "profileAria": "Meu perfil — {{name}}"
   },
   "topNavbar": {
     "greeting": "Olá",
@@ -949,10 +951,10 @@
         },
         "pctCapacidadEncuadres": {
           "title": "% da agenda de encuadres usada",
-          "que": "Quantas entrevistas (encuadres) estão agendadas nesta semana, comparado com a capacidade semanal contratada da coordenação. 100% = semana cheia.",
-          "origen": "• Numerador: encuadres com data dentro da semana em curso (segunda a domingo, hora de Buenos Aires).\n• Denominador: a capacidade semanal contratada — é uma configuração do sistema; se o contrato mudar, atualiza sem mexer em código.",
-          "cambia": "• Agendar uma entrevista preenchendo a data ao mover o card para Agendados: sobe.\n• Virada de semana: reinicia na segunda.",
-          "ojo": "Se a data não for preenchida ao agendar, a entrevista não conta aqui. O contador \"sem data\" mede exatamente isso: enquanto estiver alto, este percentual subestima."
+          "que": "Quantos encuadres há nesta semana (pessoas convocadas para um evento de encuadre aberto, mais as entrevistas com data preenchida antes), comparado com a capacidade semanal contratada da coordenação. 100% = semana cheia.",
+          "origen": "• Numerador: pessoas distintas por vaga com participação ativa em um evento de encuadre aberto que cai na semana em curso, somadas às entrevistas com data da semana preenchidas pelo caminho antigo (segunda a domingo, hora de Buenos Aires). Quem está nas duas fontes conta uma vez só.\n• Denominador: a capacidade semanal contratada — é uma configuração do sistema; se o contrato mudar, atualiza sem mexer em código.",
+          "cambia": "• Convocar alguém para um evento de encuadre da semana: sobe.\n• Tirar a pessoa do evento ou fechar o evento: desce.\n• Virada de semana: reinicia na segunda.",
+          "ojo": "Desde 13/10/2026 o número mudou de significado (conta convocados de eventos abertos, além das datas antigas): não é comparável com o de semanas anteriores. O contador \"sem data\" não existe mais."
         },
         "pacientesActivos": {
           "title": "Pacientes ativos",
@@ -1111,10 +1113,10 @@
         },
         "agendadosSemana": {
           "title": "Encuadres agendados esta semana",
-          "que": "Quantas entrevistas (encuadres) estão marcadas para a semana em curso.",
-          "origen": "• Ao mover o card para Agendados no Kanban, o sistema pergunta quando é a entrevista (dá para responder \"ainda não sei\").\n• O painel conta os encuadres com data entre segunda e domingo desta semana (hora de Buenos Aires).",
-          "cambia": "• Agendar com data: sobe.\n• Virada de semana: reinicia.",
-          "ojo": "A captura da data é recente: o contador \"sem data\" ao lado mede quantos agendados não a têm. Enquanto estiver alto, este número subestima — e isso fica à vista em vez de virar um zero mudo."
+          "que": "Quantos encuadres há na semana em curso: pessoas convocadas para um evento de encuadre aberto, mais as entrevistas com data preenchida antes.",
+          "origen": "• Pessoas com participação ativa em um evento de encuadre aberto que cai entre segunda e domingo desta semana (hora de Buenos Aires).\n• Somam-se as entrevistas com data da semana preenchidas pelo caminho antigo (ao mover o card para a coluna Agendados, que não existe mais).\n• Quem está nas duas fontes, na mesma vaga, conta uma vez só.",
+          "cambia": "• Convocar alguém para um evento da semana: sobe.\n• Tirar a pessoa do evento ou fechar o evento: desce.\n• Virada de semana: reinicia.",
+          "ojo": "Desde 13/10/2026 o número conta convocados de eventos abertos, além das datas antigas: não é comparável com o de semanas anteriores. O contador \"sem data\" não existe mais."
         },
         "stage_INVITED": {
           "title": "Invitados (coluna)",
@@ -1145,13 +1147,7 @@
           "title": "Completos (coluna)",
           "que": "Prestadores que terminaram a triagem e estão prontos para a próxima etapa. A coluna agrupa três situações internas: completo, qualificado e em dúvida (por exemplo, falta na entrevista).",
           "origen": "• É a mesma agregação da coluna Completos do Kanban — painel e Kanban contam igual.",
-          "cambia": "• A triagem qualifica alguém: entra.\n• Agendar entrevista, selecionar ou rejeitar: sai.\n• Uma falta na entrevista traz o card de volta para cá (\"em dúvida\")."
-        },
-        "stage_CONFIRMED": {
-          "title": "Agendados (coluna)",
-          "que": "Prestadores com entrevista (encuadre) marcada.",
-          "origen": "• A recrutadora arrasta o card para Agendados no Kanban — e o sistema também pergunta quando é a entrevista.",
-          "cambia": "• Agendar: sobe.\n• Selecionar ou rejeitar: desce.\n• Falta na entrevista: o card vai para \"em dúvida\" (coluna Completos)."
+          "cambia": "• A triagem qualifica alguém: entra.\n• Selecionar ou rejeitar: sai.\n• Uma falta na entrevista traz o card de volta para cá (\"em dúvida\")."
         },
         "stage_SELECTED": {
           "title": "Seleccionados (coluna)",
@@ -1307,15 +1303,12 @@
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "Em progresso",
           "COMPLETED": "Completos",
-          "CONFIRMED": "Agendados",
           "SELECTED": "Selecionados",
           "REJECTED": "Rejeitados"
         },
         "periodLabel": "Entrada no funil:",
         "periodAll": "Tudo",
         "periodDays": "Últimos {{count}} dias",
-        "semData": "{{count}} agendados sem data registrada",
-        "semDataSub": "O número acima deixa esses de fora. Ao mover o card para \"Agendados\", informe data e hora.",
         "bloqueados": "Bloqueados",
         "bloqueadosSub": "Tentaram se candidatar e o cadastro incompleto barrou — vagas ativas"
       },
@@ -1361,10 +1354,8 @@
       "users": "Usuários",
       "vacancies": "Vagas",
       "workers": "Prestadores",
-      "recruitment": "Recrutamento",
       "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
-      "apiDocs": "API Docs",
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
@@ -1380,7 +1371,8 @@
       "catalogActivities": "Rotina e atividades",
       "catalogSegments": "Segmentos (Ana Care)",
       "catalogServiceExitReasons": "Motivos de saída",
-      "aiPrompts": "Prompts de IA"
+      "aiPrompts": "Prompts de IA",
+      "interviewHosts": "Entrevistadores"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -1614,10 +1606,6 @@
         }
       }
     },
-    "apiDocs": {
-      "title": "Documentação da API",
-      "subtitle": "Referência completa do worker-functions. Todas as chamadas usam seu token de staff atual automaticamente."
-    },
     "login": {
       "title": "Painel Administrativo",
       "description": "Insira suas credenciais de administrador",
@@ -1655,66 +1643,10 @@
       "invitationFallbackDesc": "Já enviamos um email com o link para definir a senha. Se não chegar, você pode copiá-lo abaixo e enviá-lo manualmente.",
       "done": "Pronto"
     },
-    "recruitment": {
-      "title": "Dashboard de Recrutamento",
-      "loading": "Carregando dados do dashboard...",
-      "errorLoading": "Erro ao carregar dados",
-      "tabs": {
-        "global": "Painel Global",
-        "case": "Análise por Caso",
-        "zone": "Análise por Zona"
-      },
-      "filters": {
-        "period": "Período",
-        "all": "Todo o tempo",
-        "today": "Hoje",
-        "yesterday": "Ontem",
-        "lastWeek": "Última Semana",
-        "lastMonth": "Último Mês",
-        "custom": "Personalizado"
-      },
-      "metrics": {
-        "globalMetrics": "Métricas Globais",
-        "activeCases": "Casos em Busca/Substituição",
-        "search": "Busca",
-        "replacements": "Substituições",
-        "candidates": "Candidatos",
-        "candidatesSubtitle": "Não terminaram Talentum",
-        "applicants": "Postulantes no Talentum",
-        "applicantsSubtitle": "Para casos ativos",
-        "frameworks": "Quantidade de Enquadramentos",
-        "frameworksSubtitle": "Presença confirmada",
-        "publicationsByChannel": "Publicações por Canal",
-        "total": "Total",
-        "activeCasesList": "Lista de Casos Ativos"
-      },
-      "caseAnalysis": {
-        "title": "Análise por Caso",
-        "searchLabel": "Buscar Número do Caso",
-        "searchPlaceholder": "Ex. 442",
-        "noCase": "Digite um número de caso para ver a análise detalhada",
-        "candidatesInProgress": "Em NãoTerminaramTalentum",
-        "applicantsInTalentum": "No Talentum",
-        "invited": "Convidados",
-        "invitedSubtitle": "Para enquadramento"
-      },
-      "zoneAnalysis": {
-        "title": "Análise por Zona",
-        "comingSoon": "A análise geográfica e mapa de calor de zonas será implementada na próxima fase"
-      },
-      "table": {
-        "caseNumber": "Número do Caso",
-        "taskName": "Nome da Tarefa",
-        "status": "Status",
-        "startDate": "Início da Busca",
-        "viewAnalysis": "Ver análise"
-      }
-    },
     "blockedAttempts": {
       "title": "Tentativas de candidatura bloqueadas",
       "subtitle": "Registros de workers que tentaram se candidatar e foram bloqueados",
       "refresh": "Atualizar",
-      "linkFromRecruitment": "Ver tentativas bloqueadas",
       "loading": "Carregando tentativas bloqueadas...",
       "loadError": "Erro ao carregar as tentativas bloqueadas",
       "retry": "Tentar novamente",
@@ -1785,32 +1717,6 @@
         "page": "Página {{page}} de {{total}}"
       }
     },
-    "recruitmentHealth": {
-      "title": "Saúde do recrutamento",
-      "refresh": "Atualizar",
-      "autoInvite": {
-        "title": "Convites automáticos (últimas 24h)",
-        "vacanciesCreated": "Vagas criadas",
-        "invitesEnqueued": "Convites enfileirados",
-        "sent": "Enviados",
-        "delivered": "Entregues",
-        "failed": "Falhas"
-      },
-      "bulkIncomplete": {
-        "title": "Lembrete de cadastro incompleto (última execução)"
-      },
-      "bulkTalentum": {
-        "title": "Lembrete de Talentum incompleto (última execução)"
-      },
-      "noRuns": "Sem execuções ainda",
-      "batchId": "Batch ID",
-      "total": "Total",
-      "errors": "Erros",
-      "startedAt": "Início",
-      "finishedAt": "Fim",
-      "loadError": "Erro ao carregar as métricas",
-      "retry": "Tentar novamente"
-    },
     "kanban": {
       "columns": {
         "COMPATIBLE": "Compatíveis",
@@ -1818,12 +1724,12 @@
         "BLOQUEADO": "Bloqueados",
         "IN_PROGRESS": "Em Progresso",
         "COMPLETED": "Completado",
-        "CONFIRMED": "Confirmados",
         "SELECTED": "Selecionados",
         "QUICK_RESPONSE_TEAM": "Equipe de Resposta Rápida",
         "REJECTED": "Rejeitados",
         "INICIADO": "Iniciados",
-        "PRE_SCREENING": "Pré-triagem"
+        "PRE_SCREENING": "Pré-triagem",
+        "CONVOKED": "Convocados"
       },
       "talentumStatus": {
         "INITIATED": "Talentum: Iniciado",
@@ -1923,16 +1829,6 @@
       "blockedBadge": "BLOQUEADO",
       "blockedAttemptCount_one": "Tentou {{count}} vez",
       "blockedAttemptCount_other": "Tentou {{count}} vezes",
-      "scheduleModal": {
-        "title": "Quando é a entrevista?",
-        "subtitle": "Com data e hora o sistema consegue lembrar o prestador e avisar se ele não aparecer.",
-        "dateLabel": "Data",
-        "timeLabel": "Hora",
-        "meetLabel": "Link da videochamada (opcional)",
-        "confirm": "Agendar",
-        "cancel": "Cancelar",
-        "unknown": "Ainda não sei a data — mover assim mesmo"
-      },
       "stageLastMessage": "Mensagem de etapa ({{stage}}): {{date}}",
       "eligibleBadge": "ELEGÍVEL AGORA",
       "promote": {
@@ -2157,7 +2053,6 @@
         "daysOpen": "Dias Aberto",
         "invited": "Convidados",
         "applicants": "Postulados",
-        "confirmed": "Confirmados",
         "selected": "Selecionados",
         "missing": "Faltantes",
         "view": "Ver",
@@ -2311,6 +2206,18 @@
       "case": "Caso",
       "vacancy": "Vaga",
       "publishedRedirectBanner": "Esta vaga já foi publicada. Edite horário pelo lápis ao lado de \"Días y Horarios\" e o estado clicando no badge — não é preciso abrir o formulário completo.",
+      "sourceChangeNotice": {
+        "title": "O serviço contratado mudou e esta vaga já está publicada",
+        "message": {
+          "schedule": "O horário do serviço contratado mudou: a vaga já mostra o horário novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "providers_needed": "A quantidade de profissionais do serviço contratado mudou: a vaga já mostra o valor novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "age_range": "A faixa etária do serviço contratado mudou: a vaga já mostra o valor novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "generic": "O serviço contratado mudou: a publicação e os candidatos convidados não se atualizam sozinhos."
+        },
+        "changedAt": "Mudança registrada em {{date}}",
+        "acknowledge": "Marcar como atendido",
+        "error": "Não foi possível marcar como atendido. Tente de novo."
+      },
       "dismissBanner": "Fechar aviso",
       "statusCard": {
         "title": "Status da Vaga",
@@ -2333,15 +2240,6 @@
       },
       "scheduleCard": {
         "title": "Horário"
-      },
-      "meetLinksCard": {
-        "title": "Link do Google Meet para a entrevista de Enquadramento Terapêutico",
-        "invalidLink": "Link inválido. Use o formato https://meet.google.com/xxx-xxxx-xxx",
-        "saveSuccess": "Links salvos com sucesso.",
-        "saveError": "Erro ao salvar links.",
-        "openLink": "Abrir link",
-        "saving": "Salvando…",
-        "saveLinks": "Salvar links"
       },
       "encuadresCard": {
         "title": "Enquadramentos recentes",
@@ -2383,7 +2281,8 @@
         "CLOSED": "Encerrado"
       },
       "tabs": {
-        "encuadres": "Encuadres",
+        "encuadres": "Recrutamento",
+        "enquadre": "Enquadre",
         "talentum": "Talentum",
         "links": "Links",
         "notes": "Anotações"
@@ -2435,29 +2334,27 @@
           }
         }
       },
-      "funnelTabs": {
-        "ariaLabel": "Filtros do funil",
-        "all": "Todos",
-        "invited": "Convidados",
-        "postulated": "Postulados",
-        "preSelected": "Pré Selecionados",
-        "rejected": "Rejeitados",
-        "withdrew": "Desistentes"
-      },
       "funnelTable": {
         "headers": {
           "name": "NOME",
-          "origin": "Origem",
           "phone": "TELEFONE",
           "inviteDate": "DATA DO CONVITE",
           "whatsapp": "WHATSAPP",
-          "accepted": "ACEITOU",
           "registration": "CADASTRO",
+          "stage": "ETAPA",
           "notes": "NOTAS"
         },
-        "acceptedYes": "Sim",
-        "acceptedNo": "Não",
-        "emptyState": "Nenhum candidato neste estágio ainda.",
+        "emptyState": "Sem candidatos nesta vaga",
+        "emptyFiltered": "Nenhum candidato corresponde à busca.",
+        "loadError": "Não foi possível carregar a lista de candidatos.",
+        "retry": "Tentar novamente",
+        "ariaLabel": "Tabela do funil da vaga",
+        "filters": {
+          "searchPlaceholder": "Buscar por nome ou telefone",
+          "searchLabel": "Buscar candidato",
+          "registrationLabel": "Cadastro",
+          "registrationAll": "Todos"
+        },
         "registration": {
           "complete": "Completo",
           "incomplete": "Incompleto"
@@ -2654,6 +2551,8 @@
         "daysAndHours": "Dias e Horários:",
         "edit": "Editar",
         "editSchedule": "Editar horários",
+        "editScheduleInService": "Editar o horário no serviço contratado do paciente",
+        "scheduleFromService": "O horário é editado no serviço contratado do paciente",
         "editDescription": "Editar descrição",
         "weekdays": {
           "sunday": "Domingo:",
@@ -2664,9 +2563,6 @@
           "friday": "Sexta-feira:",
           "saturday": "Sábado:"
         }
-      },
-      "meetLinksRow": {
-        "title": "Datas para entrevista:"
       },
       "statusEditor": {
         "editLabel": "Editar estado da vaga"
@@ -2690,35 +2586,152 @@
         "close": "Fechar",
         "errorEmpty": "A descrição não pode ficar vazia."
       },
-      "meetRecurring": {
-        "title": "Horário recorrente (reunião de apresentação)",
-        "hint": "Toda semana, no mesmo dia e hora, na mesma sala. O convite oferece as próximas datas automaticamente.",
-        "weekday": "Dia",
-        "time": "Hora (Argentina)",
-        "link": "Sala do Meet",
-        "none": "Sem horário recorrente",
-        "clear": "Remover",
-        "every": "Toda(o) {{day}} às {{time}}",
-        "invalidTime": "Hora inválida (HH:MM)",
-        "incomplete": "Preencha dia, hora e sala",
-        "days": {
-          "0": "domingo",
-          "1": "segunda",
-          "2": "terça",
-          "3": "quarta",
-          "4": "quinta",
-          "5": "sexta",
-          "6": "sábado"
+      "enquadre": {
+        "errors": {
+          "generic": "Não conseguimos concluir a ação. Tente novamente.",
+          "tactiqLinkRequired": "Esse entrevistador não tem Tactiq vinculado. Escolha outra pessoa.",
+          "hostNotInRoster": "Essa pessoa não está na equipe de entrevistadores deste país.",
+          "workerNotAvailable": "Algum prestador não está mais disponível (mudou de etapa ou já está em outro evento). Atualizamos a lista.",
+          "workerEmailInvalid": "Algum prestador não tem e-mail válido: não dá para convocá-lo.",
+          "guestNotAllowed": "Esse convite não é permitido para este evento.",
+          "configInvalid": "A agenda de enquadres não está configurada. Avise a equipe técnica.",
+          "slotInPast": "Escolha um horário futuro.",
+          "calendarUpdateFailed": "Não foi possível atualizar o evento no Google Calendar. Nada foi salvo. Tente novamente.",
+          "eventNotOpen": "Este evento não está mais aberto. Atualizamos os dados.",
+          "eventNotEnded": "O evento ainda não terminou: dá para encerrar quando o horário acabar.",
+          "participantAlreadyMarked": "Esse convocado já tem uma marcação e não pode ser removido do evento.",
+          "eventNotFound": "Não encontramos este evento."
         },
-        "daysShort": {
-          "0": "Domingo",
-          "1": "Segunda",
-          "2": "Terça",
-          "3": "Quarta",
-          "4": "Quinta",
-          "5": "Sexta",
-          "6": "Sábado"
-        }
+        "title": "Eventos de enquadre",
+        "newButton": "Criar evento",
+        "loading": "Carregando eventos…",
+        "loadError": "Não foi possível carregar os eventos.",
+        "empty": "Ainda não há eventos",
+        "columns": {
+          "date": "Data",
+          "time": "Hora",
+          "host": "Entrevistador",
+          "convoked": "Convocados",
+          "outcome": "Resultado",
+          "status": "Estado"
+        },
+        "phase": {
+          "scheduled": "Agendado",
+          "pending_close": "Pendente de encerramento",
+          "closed": "Encerrado",
+          "cancelled": "Cancelado"
+        },
+        "outcome": {
+          "none": "—",
+          "selected": "Selecionados: {{count}}",
+          "quickResponse": "Resposta rápida: {{count}}",
+          "rejected": "Rejeitados: {{count}}",
+          "returned": "Devolvidos: {{count}}",
+          "partial": "{{marked}} marcados de {{total}}"
+        },
+        "row": {
+          "meet": "Abrir Meet"
+        },
+        "create": {
+          "title": "Criar evento",
+          "host": "Entrevistador",
+          "hostPlaceholder": "Escolha um entrevistador",
+          "date": "Data",
+          "time": "Hora",
+          "duration": "Duração (minutos)",
+          "freeSlots": "Horários livres",
+          "workers": "Prestadores a convocar",
+          "noEmail": "Sem e-mail válido: não é possível convocar",
+          "googleError": "Não foi possível criar o evento no Google Calendar. Nada foi gravado.",
+          "submit": "Criar",
+          "submitting": "Criando…",
+          "close": "Fechar",
+          "hostReason": {
+            "unlinked": "Sem vínculo com o Google Calendar: não é possível agendar"
+          },
+          "hostsLoading": "Carregando entrevistadores…",
+          "hostsError": "Não foi possível carregar os entrevistadores.",
+          "hostsEmpty": "Não há entrevistadores disponíveis.",
+          "retry": "Tentar de novo",
+          "workersLoading": "Carregando prestadores…",
+          "workersError": "Não foi possível carregar os prestadores.",
+          "timezoneNote": "Horário de {{country}} (agora são {{now}}).",
+          "selectedCount_one": "{{count}} prestador selecionado",
+          "selectedCount_other": "{{count}} prestadores selecionados",
+          "slotsIdle": "Escolha um entrevistador e uma data para ver os horários livres.",
+          "slotsLoading": "Buscando horários livres…",
+          "slotsError": "Não foi possível carregar os horários livres. Você pode digitar a hora à mão.",
+          "slotsEmpty": "Não há horários livres nesse dia. Você pode digitar a hora à mão."
+        },
+        "kanban": {
+          "back": "Eventos",
+          "openMeet": "Abrir Meet",
+          "close": "Encerrar evento",
+          "closeBlocked": "Disponível quando o horário do evento terminar",
+          "closeConfirm": {
+            "title": "Encerrar evento",
+            "body_one": "{{count}} convocado sem marcação volta para Completado",
+            "body_other": "{{count}} convocados sem marcação voltam para Completado",
+            "confirm": "Encerrar evento",
+            "busy": "Encerrando…"
+          },
+          "convoked": "Convocado · {{date}}",
+          "readOnly": "Evento terminado: somente leitura",
+          "returned": "Devolvido",
+          "closeError": "Não foi possível encerrar o evento.",
+          "title": "Evento de {{date}} · {{start}}–{{end}}",
+          "moveError": "Não foi possível mover o convocado.",
+          "originSelected": "Selecionado em: {{code}}",
+          "originQuickResponse": "Resposta rápida em: {{code}}"
+        },
+        "cancel": {
+          "button": "Cancelar evento",
+          "title": "Cancelar evento",
+          "body_one": "O evento será cancelado no Google e o convocado ficará livre",
+          "body_other": "O evento será cancelado no Google e os {{count}} convocados ficarão livres",
+          "confirm": "Cancelar evento",
+          "busy": "Cancelando…",
+          "error": "Não foi possível cancelar o evento."
+        },
+        "convoked": {
+          "title": "Gerenciar convocados",
+          "manage": "Gerenciar convocados",
+          "remove": "Retirar",
+          "removeConfirm": {
+            "title": "Tirar {{name}}",
+            "body": "Sairá do evento e do convite do Google e voltará para Completado",
+            "confirm": "Retirar",
+            "busy": "Retirando…"
+          },
+          "add": "Acrescentar ({{count}})",
+          "noneAvailable": "Não há completados disponíveis para acrescentar",
+          "addError": "Não foi possível acrescentar aos convocados.",
+          "removeError": "Não foi possível retirar o convocado.",
+          "removeMarked": "Já foi marcado no evento. Devolva para Convocados para poder tirar.",
+          "current": "Convocados atuais",
+          "available": "Completados disponíveis",
+          "currentEmpty": "Não há convocados."
+        },
+        "seals": {
+          "summary": "Resumo",
+          "summaryReady": "Resumo pronto",
+          "summaryUnavailable": "Resumo indisponível",
+          "blockedWhy": "Motivo: {{reason}}",
+          "blockedReasons": {
+            "no_link": "O responsável não vinculou a conta do Tactiq",
+            "wrong_account": "A reunião está em outra conta do Tactiq",
+            "meet_scope_missing": "Falta a permissão do Google Meet",
+            "no_meet_link": "O evento não tem link do Meet",
+            "summary_attempts_exhausted": "As tentativas de gerar o resumo se esgotaram",
+            "unauthorized": "O Tactiq recusou o acesso"
+          },
+          "download": "Baixar resumo",
+          "downloadError": "Não foi possível abrir o resumo. Tente de novo.",
+          "popupBlocked": "O navegador bloqueou a nova aba. Libere e tente de novo.",
+          "unidentified": "Convocados não identificados: {{count}}"
+        },
+        "unassignedCount_one": "{{count}} completado sem evento",
+        "unassignedCount_other": "{{count}} completados sem evento"
       }
     },
     "vacancyModal": {
@@ -3178,7 +3191,6 @@
       "editDrawer": {
         "generalTitle": "Editar informações gerais",
         "clinicalTitle": "Editar diagnóstico",
-        "supportTitle": "Editar familiares",
         "serviceTitle": "Editar serviços contratados",
         "save": "Salvar",
         "close": "Fechar",
@@ -3222,9 +3234,6 @@
           "genericError": "Não foi possível concluir a ação. Tente novamente."
         },
         "hasConsent": "Consentimento",
-        "responsible": "Familiar",
-        "addResponsible": "Adicionar familiar",
-        "removeResponsible": "Remover",
         "isPrimary": "Contato principal",
         "firstName": "Nome",
         "lastName": "Sobrenome",
@@ -3254,6 +3263,20 @@
         "deactivateServiceConfirm": "Dar baixa neste serviço? Os prestadores associados também ficam inativos para novas vagas.",
         "professionalProfile": "Perfil do profissional buscado",
         "professionalProfileHint": "Texto livre para uso interno da equipe — não aparece na vaga pública.",
+        "recruitmentSection": "Dados para a vaga",
+        "recruitmentSectionHint": "São copiados para a vaga ao ativar o recrutamento. A vaga nasce em rascunho e dá para corrigi-los lá.",
+        "requiredProfessions": "Tipo de prestador",
+        "requiredSex": "Sexo requerido do prestador",
+        "requiredSexHint": "Requisito de segurança do paciente. O motivo não é registrado em nenhum campo.",
+        "requiredExperience": "Experiência requerida",
+        "requiredExperienceHint": "Não incluir informação de saúde do paciente nem o motivo dos requisitos.",
+        "workSchedule": "Jornada",
+        "paymentDay": "Dia de pagamento ao prestador",
+        "paymentDayHint": "O dia em que a Enlite paga o prestador (não o prazo de pagamento da família ou do plano). Não incluir informação de saúde do paciente.",
+        "workerAttributes": "Atributos do prestador",
+        "dailyObs": "Observações",
+        "onlyFichaNote": "Somente ficha: não é copiado para a vaga.",
+        "freeTextHint": "Não incluir informação de saúde do paciente nem o motivo dos requisitos.",
         "providersNeeded": "Prestadores necessários",
         "authorizedHours": "Horas autorizadas",
         "weeklyHours": "Horas semanais",
@@ -3338,13 +3361,9 @@
           "confirm": "Confirmar e mover"
         },
         "moveErrorCodes": {
-          "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Essa mudança de estado não é permitida.",
-          "ON_HOLD_REASON_REQUIRED": "Para colocar em espera é preciso indicar o motivo.",
           "SUSPENSION_EXIT_REASON_REQUIRED": "É preciso indicar o motivo de saída de Suspenso.",
-          "PATIENT_STATUS_NOT_READY": "Não é possível mover: faltam dados obrigatórios na ficha.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para ativar, use \"Ativar recrutamento\" no serviço contratado da ficha do paciente."
         },
-        "moveNotReady": "Não é possível mover: falta {{items}}.",
         "subcard": {
           "weeklyUnit": "h/sem",
           "pairAria": "{{covered}} de {{contracted}} horas semanais cobertas",
@@ -3488,12 +3507,12 @@
           "supportNetwork": "Rede de Apoio",
           "documents": "Documentos",
           "contractedService": "Serviço Contratado",
-          "vacancies": "Vagas",
           "itinerary": "Itinerário",
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
           "appointments": "Agendamentos",
-          "history": "Histórico"
+          "history": "Histórico",
+          "admission": "Admissão"
         },
         "documentsTab": {
           "title": "Documentos",
@@ -3525,7 +3544,8 @@
           "deleteConfirmCancel": "Cancelar",
           "deleteConfirmYes": "Excluir",
           "deleteConfirmBusy": "Excluindo…",
-          "deleteFailed": "Não conseguimos excluir o documento. Tente de novo."
+          "deleteFailed": "Não conseguimos excluir o documento. Tente de novo.",
+          "originAdmission": "Entrevista de admissão"
         },
         "comingSoon": "Em breve",
         "noData": "Sem dados cadastrados",
@@ -3747,7 +3767,16 @@
           "tableRelationship": "Tipo de Familiar",
           "tableIdentification": "Identificação",
           "tableName": "Nome",
-          "tablePhone": "Telefone"
+          "tablePhone": "Telefone",
+          "newTitle": "Novo familiar",
+          "editTitle": "Editar familiar",
+          "editResponsible": "Editar familiar",
+          "deactivateResponsible": "Desativar familiar",
+          "deactivateConfirmTitle": "Desativar familiar",
+          "deactivateConfirmBody": "O familiar deixa de aparecer na ficha do paciente. O histórico não é apagado.",
+          "deactivateConfirmCancel": "Cancelar",
+          "deactivateConfirmYes": "Desativar",
+          "deactivateConfirmBusy": "Desativando…"
         },
         "externalContactsCard": {
           "title": "Rede de contatos",
@@ -3814,6 +3843,7 @@
           "tableQuantity": "Quant.",
           "tableAddress": "Endereço",
           "tableSchedule": "Horários",
+          "tableVacancyCode": "Vaga",
           "noAddressLinked": "Sem endereço vinculado",
           "noSchedule": "Sem horário",
           "detailTitle": "Detalhe do serviço contratado",
@@ -3872,7 +3902,6 @@
           "detailEdit": "Editar",
           "activateRecruitmentAria": "Ativar recrutamento para {{service}}",
           "activateRecruitmentTooltip": "Falta: {{items}}",
-          "viewVacancyAria": "Ver vaga de {{service}}",
           "viewVacancy": "Ver vaga",
           "activateRecruitmentToast": "Vaga em rascunho criada",
           "activateRecruitmentPatientNotMoved": "Vaga criada. O paciente continua em Admissão: falta {{items}} em um serviço ativo.",
@@ -4110,6 +4139,7 @@
             "CONTRACTED_SERVICE": "Serviço contratado",
             "SERVICE_ADDRESS": "Endereço do serviço",
             "SERVICE_SCHEDULE": "Horário do serviço",
+            "SERVICE_RECRUITMENT_FIELDS": "Dados de recrutamento do serviço (tipo de prestador, sexo, experiência, jornada e dia de pagamento)",
             "CONSENT": "Consentimento"
           }
         },
@@ -4152,7 +4182,20 @@
           "responsibles": "Responsáveis",
           "externalContacts": "Contatos externos",
           "coverageContacts": "Contatos da cobertura",
-          "careTeam": "Equipe tratante"
+          "careTeam": "Equipe tratante",
+          "contactPending": "Ainda não há registro",
+          "contactNotNeeded": "Não precisa",
+          "contactPendingDeadline": "Você tem 15 dias para completar este campo.",
+          "contactPendingUntil": "Você tem até {{date}} para completar este campo.",
+          "contactDueOn": "vence em {{date}}",
+          "pendingConfirm": {
+            "title": "Campos sem registro",
+            "body": "Estes campos ficam marcados como \"Ainda não há registro\":",
+            "item": "{{field}} — vence em {{date}}",
+            "reminders": "Vamos lembrar você no sino de notificações em {{dates}}. No dia 12 os gestores também são avisados.",
+            "back": "Voltar",
+            "confirm": "Criar mesmo assim"
+          }
         },
         "conversation": {
           "errors": {
@@ -4217,6 +4260,135 @@
             "mentionListLabel": "Mencionar alguém",
             "mentionShowAll": "Mostrar todos"
           }
+        },
+        "admissionTab": {
+          "title": "Admissão",
+          "newButton": "Nova agenda",
+          "loading": "Carregando reuniões…",
+          "loadError": "Não conseguimos carregar as reuniões de admissão. Tente novamente.",
+          "empty": "Ainda não há reuniões de admissão para este paciente.",
+          "row": {
+            "host": "Responsável",
+            "meet": "Entrar no Meet",
+            "cancel": "Cancelar",
+            "viaSite": "Agendada pela família no site",
+            "calendarEventPending": "Cancelada, evento do Google pendente",
+            "conferenceStart": "Início real",
+            "conferenceEnd": "Fim real",
+            "callInProgress": "Em andamento desde",
+            "callEnded": "Terminou às",
+            "summaryPreparing": "Resumo em preparação",
+            "summaryReady": "Resumo pronto às",
+            "reopenedAfterSummary": "Voltou a abrir depois do resumo"
+          },
+          "status": {
+            "booked": "Agendada",
+            "cancelled": "Cancelada",
+            "completed": "Realizada",
+            "no_show": "Não compareceu"
+          },
+          "seal": {
+            "confirmation": "Confirmação",
+            "reminder": "Lembrete",
+            "import": "Importação",
+            "document": "Documento",
+            "documentReady": "Ver resumo",
+            "documentNone": "Sem resumo",
+            "message": {
+              "none": "Sem envio",
+              "scheduled": "Programado",
+              "pending": "Enviando",
+              "sent": "Enviado",
+              "delivered": "Entregue",
+              "failed": "Falhou",
+              "no_consent": "Sem consentimento",
+              "skipped": "Não é enviado",
+              "cancelled": "Cancelado"
+            },
+            "importStatus": {
+              "none": "—",
+              "pending": "Pendente",
+              "waiting": "Aguardando",
+              "done": "Importada",
+              "rejected": "Rejeitada",
+              "ambiguous": "Ambígua",
+              "expired": "Expirou",
+              "blocked": "Bloqueada",
+              "no_show": "Não compareceu"
+            }
+          },
+          "newModal": {
+            "title": "Nova agenda de admissão",
+            "host": "Responsável",
+            "hostsLoading": "Carregando responsáveis…",
+            "hostsError": "Não conseguimos carregar os responsáveis.",
+            "hostsEmpty": "Não há responsáveis de admissão ativos neste país.",
+            "retry": "Tentar novamente",
+            "date": "Data",
+            "time": "Hora de início",
+            "timezoneNote": "Horário de {{country}} (agora são {{now}}). A reunião dura 60 minutos.",
+            "submit": "Agendar",
+            "submitting": "Agendando…"
+          },
+          "hostReason": {
+            "missing": "Sem Tactiq vinculado",
+            "revoked": "Sem Tactiq vinculado",
+            "broken": "Sem Tactiq vinculado: o vínculo caiu e precisa ser refeito",
+            "wrong_account": "Sem Tactiq vinculado: a conta vinculada não corresponde a esta pessoa"
+          },
+          "slotProblem": {
+            "outside_window": "O horário de início deve estar entre {{first}} e {{last}}.",
+            "in_past": "Escolha um horário futuro."
+          },
+          "dialog": {
+            "back": "Voltar"
+          },
+          "cancel": {
+            "title": "Cancelar esta reunião?",
+            "body": "O evento é apagado do calendário e a família recebe o aviso de cancelamento do Google. O lembrete programado também é cancelado.",
+            "confirm": "Cancelar reunião",
+            "busy": "Cancelando…"
+          },
+          "resend": {
+            "button": "Reenviar",
+            "title": "Reenviar o WhatsApp?",
+            "bodyConfirmation": "Vamos enviar de novo à família o WhatsApp de confirmação que falhou. Cada mensagem pode ser reenviada até 2 vezes.",
+            "bodyReminder": "Vamos enviar de novo à família o WhatsApp de lembrete que falhou. Cada mensagem pode ser reenviada até 2 vezes.",
+            "confirm": "Reenviar",
+            "busy": "Reenviando…",
+            "sent": "Mensagem reenviada.",
+            "notSent": "O reenvio não pôde ser enviado. Confira o estado da mensagem na reunião."
+          },
+          "retry": {
+            "button": "Reprocessar resumo",
+            "title": "Reprocessar o resumo?",
+            "bodyExhausted": "As 3 chamadas pagas do resumo desta reunião se esgotaram. Se você confirmar, autoriza uma nova rodada de até 3 chamadas pagas (têm custo) e a reunião volta à fila de importação. Cada reunião aceita até 2 autorizações.",
+            "bodyNow": "Vamos tentar gerar o resumo agora. Isso não consome uma autorização nova.",
+            "confirm": "Reprocessar",
+            "busy": "Reprocessando…",
+            "authorized": "Nova rodada autorizada: o resumo será gerado na próxima importação.",
+            "ranDone": "Resumo gerado.",
+            "ranNotDone": "Ainda não foi possível gerar o resumo. Confira o estado da importação na reunião.",
+            "limit": "Limite de reprocessamentos atingido"
+          },
+          "errors": {
+            "slotTaken": "Esse horário já está ocupado para o responsável. Escolha outro.",
+            "tactiqLinkRequired": "Esse responsável não tem Tactiq vinculado. Escolha outra pessoa.",
+            "slotInPast": "Escolha um horário futuro.",
+            "hostNotInRoster": "Essa pessoa não está na equipe de admissão deste país.",
+            "invalidSlot": "A data ou a hora não são válidas.",
+            "calendarCreateFailed": "Não conseguimos criar a reunião no Google. Nada foi agendado. Tente novamente.",
+            "bookFailed": "Não conseguimos agendar a reunião. Tente novamente.",
+            "cancelNotAllowed": "Esta reunião não pode mais ser cancelada.",
+            "cancelFailed": "Não conseguimos cancelar a reunião. Tente novamente.",
+            "resendNotAllowed": "Esta mensagem não pode mais ser reenviada (foi entregue, a reunião começou ou foi cancelada).",
+            "resendLimitReached": "Esta mensagem já foi reenviada 2 vezes: não dá para reenviar mais.",
+            "resendInProgress": "Já há um reenvio em andamento para esta mensagem.",
+            "resendFailed": "Não conseguimos reenviar a mensagem. Tente novamente.",
+            "retryNotAllowed": "Esta reunião não aceita mais reprocessar o resumo (já foi gerado ou foi cancelada).",
+            "retryLimitReached": "Esta reunião já usou as 2 autorizações de reprocessamento: não dá para reprocessar mais por aqui.",
+            "retryFailed": "Não conseguimos reprocessar o resumo. Tente novamente."
+          }
         }
       },
       "statusOptions": {
@@ -4257,10 +4429,7 @@
         "note": "Nota",
         "notePlaceholder": "Por que o serviço está em espera?",
         "noteRedacted": "Você não tem permissão para ver a nota.",
-        "transitionNotAllowed": "Transição não permitida: {{from}} → {{to}}",
-        "reasonRequired": "Informe o motivo da espera",
         "suspensionExitReason": "Motivo de saída",
-        "suspensionExitReasonRequired": "Informe o motivo de saída de Suspenso",
         "error": "Não foi possível mudar o estado",
         "sources": {
           "admin_panel": "Painel",
@@ -4269,7 +4438,9 @@
           "backfill": "Carga inicial",
           "activate": "Ativação",
           "system": "Sistema",
-          "recruitment_activation": "Ativação do recrutamento"
+          "recruitment_activation": "Ativação do recrutamento",
+          "admin_panel_override": "Painel (fora do fluxo)",
+          "kanban_override": "Kanban (fora do fluxo)"
         },
         "historyCard": {
           "title": "Histórico de estados",
@@ -4281,8 +4452,19 @@
           "actor": "Autor",
           "error": "Não foi possível carregar o histórico"
         },
-        "notReady": "Não é possível passar para {{status}}: falta {{items}}.",
-        "notReadyGeneric": "Não é possível mudar o estado: faltam dados obrigatórios na ficha."
+        "blockedOption": "{{status}} (falta: {{items}})",
+        "optionsLoadError": "Não foi possível carregar os estados disponíveis.",
+        "optionsRetry": "Tentar de novo",
+        "friendly": {
+          "forbidden": "Você não tem permissão para passar este paciente para «{{status}}». Peça a quem administra os acessos que habilite.",
+          "notReadySearching": "Para passar para «{{status}}», o serviço contratado precisa estar completo. Falta: {{items}}.",
+          "notReady": "Para passar para «{{status}}» faltam dados do paciente: {{items}}.",
+          "notReadyGeneric": "Para passar para «{{status}}» faltam dados obrigatórios na ficha.",
+          "onHoldReasonRequired": "Para deixar o paciente «Em espera», informe o motivo (escola, convênio ou outro).",
+          "suspensionExitReasonRequired": "Para tirar o paciente de «Suspenso», escolha o motivo.",
+          "notAvailable": "Esta mudança de estado não está disponível.",
+          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente."
+        }
       },
       "insuranceProviderOptions": {
         "API": "API",
@@ -4608,7 +4790,19 @@
             "execute": "Executar",
             "send": "Enviar",
             "disable": "Dar baixa",
-            "write": "Criar e editar"
+            "write": "Criar e editar",
+            "incomplete_alert": "Aviso dia 12",
+            "waive_contact": "Não precisa",
+            "resend_message": "Reenviar mensagem",
+            "move_to_searching": "Para busca",
+            "move_to_active": "Para ativo",
+            "move_to_replacement": "Para reposição",
+            "move_to_on_hold": "Para em espera",
+            "move_to_suspended": "Para suspenso",
+            "move_to_alta": "Para alta",
+            "move_to_discharged": "Para baixa",
+            "release_paid_rehearsal": "Liberar ensaio pago",
+            "retry_summary": "Reprocessar resumo"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",
@@ -4676,7 +4870,14 @@
             "staff_directory": "Diretório da equipe",
             "patient_service_team": "Encuadre do serviço contratado (rejeitar/reverter)",
             "patient_itinerary": "Itinerário do paciente (montar)",
-            "patient_document": "Documentos do paciente"
+            "patient_document": "Documentos do paciente",
+            "patient_admission": "Admissão do paciente (reuniões e mensagens)",
+            "own_tactiq_link": "Meu vínculo com o Tactiq",
+            "patient_status": "Status do paciente: troca fora do fluxo",
+            "enquadre_event": "Eventos de enquadre (criar, convocados e cancelar)",
+            "enquadre_result": "Resultado do enquadre (marcar e encerrar)",
+            "enquadre_summary": "Resumo do enquadre (ver e baixar)",
+            "interview_host": "Entrevistadores de enquadre e admissão"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -5048,7 +5249,8 @@
             "operational": "Status, ativação e histórico",
             "therapeuticProject": "Projeto terapêutico",
             "conversation": "Conversa",
-            "documents": "Documentos"
+            "documents": "Documentos",
+            "admission": "Admissão"
           }
         },
         "patients.chatRoles": {
@@ -5102,14 +5304,14 @@
             "invites": "Convites por WhatsApp",
             "prescreening": "Pré-seleção",
             "talentum": "Publicação no Talentum",
-            "patient": "Paciente (nome)"
+            "patient": "Paciente (nome)",
+            "enquadreEvent": "Eventos de enquadre",
+            "enquadreResult": "Resultado do enquadre",
+            "enquadreSummary": "Resumo do enquadre"
           }
         },
         "recruitment": {
           "label": "Recrutamento",
-          "health": {
-            "label": "Recrutamento: Saúde"
-          },
           "blocked": {
             "label": "Candidaturas bloqueadas"
           }
@@ -5149,6 +5351,12 @@
         },
         "patients.catalogServiceExitReasons": {
           "label": "Pacientes: Catálogo de motivos de saída"
+        },
+        "account.tactiq": {
+          "label": "Meu perfil: Tactiq"
+        },
+        "interviewHosts": {
+          "label": "Entrevistadores"
         }
       }
     },
@@ -5766,6 +5974,11 @@
       "mentioned": "{{actor}} mencionou você em {{patient}}",
       "replied": "{{actor}} respondeu na conversa de {{patient}}",
       "generic": "{{actor}} tem uma atualização para você",
+      "ptContactsPendingActor": "Enlite",
+      "ptContactsPendingCase": "Caso {{number}}",
+      "ptContactsPendingNoCase": "Caso sem número",
+      "ptContactsPendingFields": "Projeto terapêutico: faltam {{fields}}",
+      "ptContactsPendingText": "{{case}}: no projeto terapêutico faltam {{fields}}",
       "inPatient": "em {{patient}}",
       "markAllRead": "Marcar todas como lidas",
       "unknownPatient": "um paciente",
@@ -5778,7 +5991,162 @@
       "close": "Fechar notificações",
       "loadError": "Não conseguimos carregar suas notificações. Tente de novo.",
       "retry": "Tentar novamente",
-      "markAllReadError": "Não conseguimos marcar todas como lidas. Tente de novo."
+      "markAllReadError": "Não conseguimos marcar todas como lidas. Tente de novo.",
+      "tactiq": {
+        "action": "Vincular Tactiq",
+        "missing": "Seu usuário não está vinculado ao Tactiq. Até vincular, você não poderá ser responsável por agendas de admissão.",
+        "broken": "Seu usuário não está vinculado ao Tactiq. Até vincular, você não poderá ser responsável por agendas de admissão.",
+        "wrong_account": "A conta do Tactiq vinculada não corresponde ao seu usuário. Vincule novamente para continuar recebendo agendas."
+      },
+      "tactiqExtension": {
+        "installed": "A extensão do Tactiq está instalada no seu Chrome. Para ficar apta a receber agendas, falta fazer a reunião de prova.",
+        "missing": "A extensão do Tactiq não está ativa no seu Chrome. Instale-a para continuar recebendo agendas de admissão.",
+        "disabled": "A extensão do Tactiq está desativada no seu Chrome. Ative-a de novo para continuar recebendo agendas de admissão."
+      }
+    },
+    "profile": {
+      "title": "Meu perfil",
+      "subtitle": "Sua conta no painel: quem você é, sua conexão com o Tactiq, o idioma e a que você tem acesso.",
+      "identity": {
+        "title": "Identidade",
+        "googleNote": "Seu nome e sua foto vêm da sua conta Google.",
+        "googleLink": "Alterar no Google",
+        "lastLogin": "Último acesso"
+      },
+      "tactiq": {
+        "title": "Tactiq",
+        "subtitle": "Sua conta do Tactiq e a extensão do Chrome que registra as reuniões de admissão.",
+        "extension": {
+          "label": "Extensão do Chrome",
+          "reportedAt": "Último relatório",
+          "state": {
+            "sem_relatorio": "Sem informação",
+            "ausente": "Não instalada",
+            "desativada": "Desativada",
+            "instalada": "Instalada"
+          },
+          "help": {
+            "sem_relatorio": "A extensão ainda não nos reportou nada. Abra o Tactiq no Chrome e aguarde alguns minutos.",
+            "ausente": "Não encontramos a extensão do Tactiq no seu Chrome. Instale-a para que suas reuniões sejam registradas.",
+            "desativada": "A extensão está instalada, mas desativada. Ative-a no Chrome para que suas reuniões sejam registradas.",
+            "instalada": "A extensão do Tactiq está instalada e ativa no seu Chrome."
+          }
+        }
+      },
+      "language": {
+        "title": "Idioma",
+        "subtitle": "É o idioma de todo o painel. Fica salvo neste navegador.",
+        "options": {
+          "es": "Español",
+          "pt-BR": "Português (Brasil)"
+        }
+      },
+      "access": {
+        "title": "Meus acessos",
+        "subtitle": "Os grupos de que você faz parte e os países que você vê. Se precisar de mais, peça a quem gerencia os acessos.",
+        "groups": "Grupos",
+        "noGroups": "Você não faz parte de nenhum grupo.",
+        "countries": "Países",
+        "noCountries": "Sem países atribuídos.",
+        "countryNames": {
+          "AR": "Argentina",
+          "BR": "Brasil"
+        }
+      },
+      "session": {
+        "logout": "Sair"
+      }
+    },
+    "tactiqLink": {
+      "loading": "Carregando o estado do seu vínculo…",
+      "loadError": "Não conseguimos carregar o estado do seu vínculo.",
+      "retry": "Tentar novamente",
+      "stateLabel": "Estado",
+      "state": {
+        "linked": "Vinculado",
+        "missing": "Não vinculado",
+        "broken": "Vínculo caído",
+        "wrong_account": "Conta incorreta",
+        "revoked": "Vínculo revogado"
+      },
+      "stateHelp": {
+        "linked": "Sua conta do Tactiq está vinculada. Você pode ser responsável por agendas de admissão.",
+        "missing": "Você ainda não vinculou sua conta do Tactiq. Até fazer isso, não poderá ser responsável por agendas de admissão.",
+        "broken": "O vínculo com o Tactiq caiu. Vincule novamente para continuar recebendo agendas.",
+        "wrong_account": "A conta do Tactiq vinculada não corresponde ao seu usuário. Vincule novamente para continuar recebendo agendas.",
+        "revoked": "O vínculo foi revogado. Vincule sua conta novamente para continuar recebendo agendas."
+      },
+      "linkedAt": "Vinculado em",
+      "lastCheckAt": "Última verificação",
+      "link": "Vincular Tactiq",
+      "relink": "Vincular novamente",
+      "starting": "Abrindo o Tactiq…",
+      "startError": "Não conseguimos iniciar a vinculação. Tente novamente.",
+      "returnLinked": "Pronto: sua conta do Tactiq foi vinculada.",
+      "returnError": "Não conseguimos concluir a vinculação com o Tactiq. Tente novamente."
+    },
+    "interviewHosts": {
+      "title": "Entrevistadores de enquadre e admissão",
+      "subtitle": "Só usuários da equipe podem ser entrevistadores. O vínculo com o Tactiq é feito por cada pessoa em “Meu perfil”.",
+      "add": "Adicionar entrevistador",
+      "filterCountry": "País",
+      "filterAll": "Todos",
+      "loadError": "Não conseguimos carregar os entrevistadores.",
+      "retry": "Tentar de novo",
+      "empty": "Ainda não há entrevistadores cadastrados.",
+      "emptyFiltered": "Nenhum entrevistador atende neste país.",
+      "table": {
+        "name": "Nome",
+        "email": "E-mail",
+        "country": "País",
+        "encuadre": "Enquadre",
+        "admission": "Admissão",
+        "tactiq": "Tactiq",
+        "actions": "Ações"
+      },
+      "userInactive": "Usuário inativo",
+      "userMissing": "Sem usuário no sistema",
+      "userMissingHelp": "Não tem usuário na equipe: não aparece para agendar. Crie o usuário em Usuários e adicione de novo, ou remova.",
+      "switchLabel": "{{flow}} — {{name}}",
+      "edit": "Editar",
+      "quit": "Remover",
+      "tactiqLinked": "Vinculado",
+      "tactiqUnlinked": "Sem vínculo",
+      "tactiqTip": "A pessoa vincula a conta dela em Meu perfil",
+      "saveError": "Não conseguimos salvar a alteração.",
+      "errors": {
+        "INTERVIEW_HOST_USER_NOT_ELIGIBLE": "Essa pessoa não é um usuário ativo da equipe.",
+        "INTERVIEW_HOST_NOT_FOUND": "O entrevistador não existe mais.",
+        "INTERVIEW_HOST_ALREADY_ACTIVE": "Essa pessoa já está na lista.",
+        "INVALID_REQUEST": "Revise os dados: é preciso ao menos um país e um tipo de agenda."
+      },
+      "panel": {
+        "titleAdd": "Adicionar entrevistador",
+        "titleEdit": "Editar entrevistador",
+        "close": "Fechar",
+        "user": "Usuário",
+        "searchPlaceholder": "Busque por nome ou e-mail",
+        "onlyActive": "Aparecem só usuários ativos da equipe.",
+        "noResults": "Nenhum usuário da equipe corresponde a “{{query}}”.",
+        "searching": "Buscando…",
+        "searchError": "Não conseguimos buscar usuários.",
+        "change": "Trocar",
+        "countries": "Países",
+        "countriesRequired": "Escolha ao menos um país.",
+        "attends": "Atende",
+        "encuadre": "Enquadre",
+        "admission": "Admissão",
+        "flowRequired": "Escolha ao menos um tipo de agenda: enquadre ou admissão.",
+        "cancel": "Cancelar",
+        "add": "Adicionar",
+        "save": "Salvar"
+      },
+      "quitModal": {
+        "title": "Remover entrevistador",
+        "body": "Remover {{name}} de enquadre e admissão? Deixa de aparecer para agendar.",
+        "cancel": "Cancelar",
+        "confirm": "Remover"
+      }
     },
     "aiPrompts": {
       "title": "Prompts de IA",

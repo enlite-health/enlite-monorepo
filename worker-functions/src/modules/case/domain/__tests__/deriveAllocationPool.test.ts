@@ -26,7 +26,7 @@ describe('deriveAllocationPool', () => {
           cand('w-qrt', 'QUICK_RESPONSE_TEAM'),
           cand('w-atendendo', 'QUICK_RESPONSE_TEAM'),
           cand('w-rej', 'SELECTED'),
-          cand('w-confirmado', 'CONFIRMED'),
+          cand('w-confirmado', 'QUALIFIED'),
           cand('w-outra-vaga', 'SELECTED', 'vac-velha'),
         ],
         assignments: [alloc('w-atendendo')],

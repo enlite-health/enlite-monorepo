@@ -8,7 +8,7 @@ import type { PatientContractedServiceDetail, PatientDetail } from '@domain/enti
 import type { ResolvedTherapeuticContact, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from '../../contractedServiceScheduleText';
-import { ageFromBirthDate, type PdfContact, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
+import { ageFromBirthDate, formatIsoDateEsAr, type PdfContact, type PdfContactStatusLines, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
 import { getInstantParts } from '@presentation/utils/dateTimeFormat';
 
 export interface PdfContainerReads {
@@ -61,6 +61,26 @@ function toPdfCoverageContact(c: ResolvedTherapeuticContact, tEs: EsTranslate): 
   if ('redacted' in c) return { status: 'redacted' };
   const kind = c.relation ?? '';
   return { status: 'resolved', kindLabel: tEs(`${COVERAGE_CONTACT_KIND_KEY}.${kind}`, kind), name: c.name, phone: c.phone ?? '' };
+}
+
+const FORM_KEY = 'admin.patients.detail.therapeuticProjectForm';
+const STATUS_LABEL_KEY: Record<string, string> = { RESPONSIBLE: 'responsibles', EXTERNAL: 'externalContacts', COVERAGE: 'coverageContacts', CARE_TEAM: 'careTeam' };
+
+/**
+ * spec 048: o estado explícito dos campos de contato, em espanhol fixo, por bloco do documento. Bloco com 2 campos
+ * (familiar = Responsables + Contactos externos) prefixa o nome do campo; bloco de 1 campo imprime só o estado.
+ */
+function contactStatusLines(version: TherapeuticProjectVersion, tEs: EsTranslate): PdfContactStatusLines {
+  const entries = version.contactStatus ?? [];
+  const textOf = (e: (typeof entries)[number]): string =>
+    e.status === 'PENDING'
+      ? `${tEs(`${FORM_KEY}.contactPending`, 'Todavía no hay registro')}${e.deadlineDate ? ` — ${tEs(`${FORM_KEY}.contactDueOn`, 'vence el {{date}}').replace('{{date}}', (formatIsoDateEsAr(e.deadlineDate) ?? e.deadlineDate).slice(0, 5))}` : ''}`
+      : tEs(`${FORM_KEY}.contactNotNeeded`, 'No necesita');
+  const block = (kinds: string[], prefix: boolean): string | null => {
+    const lines = entries.filter((e) => kinds.includes(e.kind)).map((e) => (prefix ? `${tEs(`${FORM_KEY}.${STATUS_LABEL_KEY[e.kind]}`, e.kind)}: ${textOf(e)}` : textOf(e)));
+    return lines.length > 0 ? lines.join('. ') : null;
+  };
+  return { family: block(['RESPONSIBLE', 'EXTERNAL'], true), coverage: block(['COVERAGE'], false), careTeam: block(['CARE_TEAM'], false) };
 }
 
 export function buildTherapeuticProjectPdfInput(args: {
@@ -153,6 +173,7 @@ export function buildTherapeuticProjectPdfInput(args: {
     fixedSectionsServiceCode: version.contractedServiceCode,
     modalityLabel: version.modality ? tEs(`${MODALITY_KEY}.${version.modality}`, version.modality) : null,
     careTeam,
+    contactStatusLines: contactStatusLines(version, tEs),
     issuedAtText: formatIssuedAt(now),
     logoSrc,
   };

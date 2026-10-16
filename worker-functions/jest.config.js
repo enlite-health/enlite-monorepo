@@ -1,6 +1,8 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // R-16 (spec 050): a guarda de rede entra ANTES de qualquer teste; terceiro não conecta. Controle: tests/unit/__tests__/rede-bloqueada.controle.test.ts
+  setupFiles: ['<rootDir>/../scripts/rede-bloqueada-em-teste.cjs'],
   // `scripts` entra aqui porque script que escreve em produção (o sync de
   // templates) precisa de teste como qualquer código — a pasta inteira estava
   // fora do alcance do runner, e por isso a 0%.
@@ -226,7 +228,7 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    // Spec 018, PR-6: `liveVacancyId` (JOIN batched com `job_postings`) e `activateRecruitment`
+    // Spec 018, PR-6: `liveVacancy` (JOIN batched com `job_postings`) e `activateRecruitment`
     // TOCARAM os dois arquivos abaixo — medidos a 100 antes de entrar no piso.
     'src/modules/case/infrastructure/ContractedServiceDetailMapper.ts': {
       statements: 100,

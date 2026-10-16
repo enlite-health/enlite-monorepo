@@ -441,7 +441,7 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
     montarFamilia(
       'admin.recruitment',
       '/api',
-      createRecruitmentRoutes(controllerStub('recruitment') as never, auth, permissions),
+      createRecruitmentRoutes(auth, permissions),
     );
 
     // ── admin.test_fixtures ──────────────────────────────────────────────

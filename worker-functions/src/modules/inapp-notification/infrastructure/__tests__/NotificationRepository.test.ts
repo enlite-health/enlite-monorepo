@@ -55,6 +55,21 @@ describe('NotificationRepository', () => {
       expect(sql).not.toMatch(/payload/i); // nunca escreve em payload — usa o DEFAULT '{}'::jsonb da migration 461
       expect(params).toEqual(['CONVERSATION_MENTIONED', 'a1', 'p1', 'c1', 'm1']);
     });
+
+    it('spec 048: o aviso de sistema do PT grava o payload tipado (6º param), e só ele', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [{ id: 'evt-2' }] });
+      const repo = new NotificationRepository(poolWith(jest.fn()));
+      const payload = { cycleId: 'c', versionId: 'v', dayOffset: 2, fields: ['CARE_TEAM'] };
+
+      await repo.insertEvent(
+        { typeCode: 'THERAPEUTIC_PROJECT_CONTACTS_PENDING', actorUid: 'system:pt-contact-reminders', patientId: 'p1', conversationId: null, messageId: null, payload },
+        clientWith(query),
+      );
+
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toMatch(/payload/);
+      expect(params).toEqual(['THERAPEUTIC_PROJECT_CONTACTS_PENDING', 'system:pt-contact-reminders', 'p1', null, null, JSON.stringify(payload)]);
+    });
   });
 
   describe('insertNotifications — 1 linha por destinatário, lote único', () => {

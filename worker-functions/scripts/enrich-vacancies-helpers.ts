@@ -288,7 +288,7 @@ export async function applyEnrichment(
       payment_day         = COALESCE(payment_day, $9),
       enriched_at         = NOW(),
       updated_at          = NOW()
-    WHERE id = $10`,
+    WHERE id = $10 AND contracted_service_id IS NULL`,
     UPDATE_PARAMS(id, patch),
   );
 }
@@ -310,7 +310,7 @@ export async function applyEnrichmentForce(
       payment_day          = $9,
       enriched_at          = NOW(),
       updated_at           = NOW()
-    WHERE id = $10`,
+    WHERE id = $10 AND contracted_service_id IS NULL`,
     UPDATE_PARAMS(id, patch),
   );
 }

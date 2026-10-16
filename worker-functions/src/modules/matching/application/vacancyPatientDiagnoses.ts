@@ -1,7 +1,7 @@
 /**
  * vacancyPatientDiagnoses — o mesmo bulkhead já usado em
- * `AdminPatientsController.getPatientById` (spec 016 F2, D263), aplicado às DUAS rotas de vaga que
- * embutem o paciente (`VacanciesController.getVacancyById`, `RecruitmentAnalyticsController.getCaseAnalysis`).
+ * `AdminPatientsController.getPatientById` (spec 016 F2, D263), aplicado às rotas de vaga que
+ * embutem o paciente (`VacanciesController.getVacancyById`).
  * Ponto ÚNICO que decide os dois campos — `diagnoses`/`diagnosesUnavailable` — para as duas rotas
  * irmãs não divergirem no formato (o mesmo raciocínio de `patientContainerAccess.ts`).
  *

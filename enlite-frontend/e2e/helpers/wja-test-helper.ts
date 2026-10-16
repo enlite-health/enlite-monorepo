@@ -43,7 +43,7 @@ function extractUUID(psqlOutput: string): string | null {
 export interface InsertWJAOpts {
   workerId: string;
   jobPostingId: string;
-  /** application_funnel_stage — ex: 'INVITED', 'CONFIRMED', 'REJECTED' */
+  /** application_funnel_stage — ex: 'INVITED', 'SELECTED', 'REJECTED' */
   funnelStage: string;
   /** source — ex: 'system', 'manual', 'talentum' */
   source?: string;

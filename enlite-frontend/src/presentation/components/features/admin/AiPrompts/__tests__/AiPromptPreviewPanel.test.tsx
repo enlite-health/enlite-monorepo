@@ -41,8 +41,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   listVacancies().mockResolvedValue({
     data: [
-      { id: CASE_ID, caso: 'Caso 101', isDraft: false },
-      { id: 'rascunho-id', caso: 'Caso 999', isDraft: true },
+      { id: CASE_ID, caseNumber: 101, caseOrdinal: null, isDraft: false },
+      { id: 'rascunho-id', caseNumber: 999, caseOrdinal: null, isDraft: true },
     ],
     total: 2,
   });
@@ -61,8 +61,8 @@ async function pickCaseAndRun(): Promise<void> {
 describe('AiPromptPreviewPanel', () => {
   it('lista os casos da listagem de vacantes, sem rascunhos', async () => {
     render(<AiPromptPreviewPanel slug="VACANCY_DESCRIPTION" body="texto" />);
-    expect(await screen.findByRole('option', { name: 'Caso 101' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Caso 999' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '101' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '999' })).not.toBeInTheDocument();
   });
 
   it('só habilita simular com caso escolhido', async () => {

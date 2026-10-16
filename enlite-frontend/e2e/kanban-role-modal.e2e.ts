@@ -86,7 +86,7 @@ test.describe('Kanban — modal de papel ao selecionar (auth real)', () => {
 
     await page.addInitScript(
       ([key]) => window.localStorage.setItem(key, 'kanban'),
-      [`vacancy-funnel-view-${VACANCY_ID}`],
+      [`vacancy-funnel-view-v2-${VACANCY_ID}`],
     );
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}`);

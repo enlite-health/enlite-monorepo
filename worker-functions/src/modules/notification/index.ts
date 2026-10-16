@@ -17,8 +17,6 @@ export type {
   BookSlotResult,
   SlotInput,
 } from './domain/InterviewSlot';
-export type { InterviewResponse } from './domain/InterviewStateMachine';
-export { canTransition } from './domain/InterviewStateMachine';
 export type {
   IMessagingService,
   SendWhatsAppOptions,
@@ -37,7 +35,6 @@ export { ChatwootClient } from './infrastructure/ChatwootClient';
 export type { ChatwootClientConfig, MirrorOutgoingOptions } from './infrastructure/ChatwootClient';
 export { OutboxProcessor } from './infrastructure/OutboxProcessor';
 export { BulkDispatchScheduler } from './infrastructure/BulkDispatchScheduler';
-export { ReminderScheduler } from './infrastructure/ReminderScheduler';
 export { LegacyEncuadreReminderService } from './infrastructure/LegacyEncuadreReminderService';
 export { TokenService } from './infrastructure/TokenService';
 export { InterviewSchedulingService } from './infrastructure/InterviewSchedulingService';
@@ -51,10 +48,6 @@ export type {
   BulkDispatchDetail,
   BulkDispatchOptions,
 } from './application/BulkDispatchIncompleteWorkersUseCase';
-export { BookSlotFromWhatsAppUseCase } from './application/BookSlotFromWhatsAppUseCase';
-export { HandleReminderResponseUseCase } from './application/HandleReminderResponseUseCase';
-export { MarkNoShowUseCase } from './application/MarkNoShowUseCase';
-export type { NoShowResult } from './application/MarkNoShowUseCase';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
 export { MessagingController } from './interfaces/controllers/MessagingController';

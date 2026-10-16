@@ -29,27 +29,24 @@ describe('MoveToMenu', () => {
     expect(screen.getByTestId('move-to-menu')).toBeInTheDocument();
   });
 
-  it('lista os 3 destinos manuais numa coluna não-target (COMPLETED)', () => {
+  it('lista os 2 destinos manuais numa coluna não-target (COMPLETED)', () => {
     render(<MoveToMenu currentStage="COMPLETED" onMove={vi.fn()} />);
     fireEvent.click(screen.getByTestId('move-to-button'));
     expect(screen.getByTestId('move-to-option-INVITED')).toBeInTheDocument();
-    expect(screen.getByTestId('move-to-option-CONFIRMED')).toBeInTheDocument();
     expect(screen.getByTestId('move-to-option-SELECTED')).toBeInTheDocument();
   });
 
-  it('exclui o destino atual (CONFIRMED some se o card já está em CONFIRMED)', () => {
-    render(<MoveToMenu currentStage="CONFIRMED" onMove={vi.fn()} />);
+  it('exclui o destino atual (SELECTED some se o card já está em SELECTED)', () => {
+    render(<MoveToMenu currentStage="SELECTED" onMove={vi.fn()} />);
     fireEvent.click(screen.getByTestId('move-to-button'));
-    expect(screen.queryByTestId('move-to-option-CONFIRMED')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('move-to-option-SELECTED')).not.toBeInTheDocument();
     expect(screen.getByTestId('move-to-option-INVITED')).toBeInTheDocument();
-    expect(screen.getByTestId('move-to-option-SELECTED')).toBeInTheDocument();
   });
 
   it('trata INICIADO como INVITED efetivo (não oferece Invitados)', () => {
     render(<MoveToMenu currentStage="INICIADO" onMove={vi.fn()} />);
     fireEvent.click(screen.getByTestId('move-to-button'));
     expect(screen.queryByTestId('move-to-option-INVITED')).not.toBeInTheDocument();
-    expect(screen.getByTestId('move-to-option-CONFIRMED')).toBeInTheDocument();
     expect(screen.getByTestId('move-to-option-SELECTED')).toBeInTheDocument();
   });
 

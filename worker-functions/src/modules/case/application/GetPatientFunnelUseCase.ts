@@ -78,6 +78,7 @@ export class GetPatientFunnelUseCase {
         `SELECT COUNT(DISTINCT aa.patient_id)::int AS n
            FROM admission_appointments aa
           WHERE aa.patient_id IS NOT NULL
+            AND aa.status <> 'calendar_failed'
             AND aa.created_at >= $1 AND aa.created_at < $2
             AND aa.country = ANY($3::bpchar[])`,
         p,

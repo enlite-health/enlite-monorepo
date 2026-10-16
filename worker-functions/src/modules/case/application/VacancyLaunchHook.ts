@@ -3,42 +3,23 @@ import { reportError } from '@shared/logging';
 import { inPatientTransaction } from './patientTransaction';
 import { movePatientStatus, PatientStatusNotReadyError } from './PatientStatusWriter';
 import { isAdmissionFunnelStatus } from '../domain/enums/PatientStatus';
-// Caminho RELATIVO de propósito (DX-6.1): `matching` já importa `@modules/integration`
-// (VacancyTalentumController.ts:4-13) — importar `matching` pelo barril `@modules/matching`
-// fecharia um ciclo de módulo. Mesmo molde de PublishVacancyToTalentumUseCase.ts:21-24.
-import {
-  MatchmakingService,
-  type MatchOptions,
-  type MatchResult,
-} from '../../matching/infrastructure/MatchmakingService';
 
 /**
  * VacancyLaunchHook — o LANÇAMENTO da vaga (envio à Talentum) tira o paciente do funil de
- * Admissão e dispara o match SEM convite (invariante 7, D434; cadeia Fase 6, DX-6.1).
+ * Admissão (invariante 7, D434; cadeia Fase 6, DX-6.1).
+ *
+ * NESTA ROTA o gancho SÓ move o paciente (Admisión → Búsqueda). O match do lançamento volta na
+ * rota (a), junto com Compatíveis (D466): gravar `worker_job_applications` `'INVITED','system'`
+ * aqui faria o convite automático (`VacancyAutoInviteHandler`) pular quem já tem linha.
  *
  * Chamado por `PublishVacancyToTalentumUseCase` DEPOIS do COMMIT do envio — nunca antes. Nenhum
  * evento novo é emitido; o convite (`vacancy.created` → `VacancyAutoInviteHandler`) é outro
  * gatilho e NÃO é ligado aqui.
  *
  * `onVacancyLaunched` NUNCA lança (DX-6.2): o envio à Talentum já está commitado e desfazer
- * exigiria um DELETE compensatório no canal externo — pior que o defeito. Cada metade (mover o
- * paciente / rodar o match) tem o seu próprio try/catch; uma falhar não impede a outra. Sem retry
- * automático: as duas metades são re-disparáveis manualmente e de forma idempotente
- * (despublicar/publicar de novo refaz o gancho inteiro; o match tem botão manual em
- * `POST /vacancies/:id/match`).
+ * exigiria um DELETE compensatório no canal externo — pior que o defeito. Sem retry automático:
+ * o gancho é re-disparável de forma idempotente (despublicar/publicar de novo refaz tudo).
  */
-
-/**
- * Raio e topo do match do lançamento (DX-6.5, visível: sim — define quantos candidatos caem em
- * Compatíveis na hora do lançamento).
- *
- * `2026-09-23a#DEC-28`: candidatos = documentação completa, até 50 km, preferência humana pelos
- * mais próximos; o "5 km" do texto da fase não está na ata — Q-6.1.
- */
-export const LAUNCH_MATCH_RADIUS_KM = 50;
-
-/** Mesmo teto que a leitura de match-results já usa (`VacancyMatchController.getMatchResults`). */
-export const LAUNCH_MATCH_TOP_N = 200;
 
 /** Alvo do lançamento: paciente da vaga (se houver) e a coordenada do serviço. */
 export interface LaunchTarget {
@@ -48,26 +29,13 @@ export interface LaunchTarget {
   lng: number | null;
 }
 
-/**
- * `'skipped_no_target'` — a leitura do alvo não achou a vaga (inexistente/rascunho/apagada);
- * `'skipped_no_location'` — vaga sem coordenada de serviço (sem centro, o hard filter varreria a
- * base inteira); `{ candidates }` — o match rodou; `'failed'` — o match lançou (nunca propagado).
- */
-export type VacancyLaunchMatchOutcome =
-  | 'skipped_no_target'
-  | 'skipped_no_location'
-  | 'failed'
-  | { candidates: number };
-
 export interface VacancyLaunchOutcome {
   jobPostingId: string;
   patient: 'no_target' | 'no_patient' | 'patient_not_visible' | 'unchanged' | 'moved' | 'not_ready' | 'failed';
-  match: VacancyLaunchMatchOutcome;
 }
 
 export interface VacancyLaunchDeps {
   moveStatus: typeof movePatientStatus;
-  runMatch: (jobPostingId: string, options: MatchOptions) => Promise<MatchResult>;
   readLaunchTarget: (jobPostingId: string) => Promise<LaunchTarget | null>;
 }
 
@@ -106,11 +74,10 @@ export async function readLaunchTarget(jobPostingId: string): Promise<LaunchTarg
 
 const defaultLaunchDeps: VacancyLaunchDeps = {
   moveStatus: movePatientStatus,
-  runMatch: (jobPostingId, options) => new MatchmakingService().matchWorkersForJob(jobPostingId, options),
   readLaunchTarget,
 };
 
-/** Metade 1: mover o paciente para SEARCHING se (e só se) ele estiver no funil de Admissão. */
+/** Mover o paciente para SEARCHING se (e só se) ele estiver no funil de Admissão. */
 async function movePatientIfInFunnel(
   jobPostingId: string,
   target: LaunchTarget,
@@ -147,30 +114,6 @@ async function movePatientIfInFunnel(
   }
 }
 
-/** Metade 2: rodar o match sem convite (DX-6.5) — roda mesmo que a metade 1 não tenha movido. */
-async function runLaunchMatch(
-  jobPostingId: string,
-  target: LaunchTarget,
-  deps: VacancyLaunchDeps,
-): Promise<VacancyLaunchMatchOutcome> {
-  if (target.lat === null || target.lng === null) return 'skipped_no_location';
-
-  try {
-    const result = await deps.runMatch(jobPostingId, {
-      radiusKm: LAUNCH_MATCH_RADIUS_KM,
-      topN: LAUNCH_MATCH_TOP_N,
-      includeIncompleteRegister: false,
-      excludeWithActiveCases: false,
-    });
-    return { candidates: result.candidates.length };
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    functions.logger.error('vacancy_launch.failed', { jobPostingId, step: 'match', error: error.message });
-    reportError(error, { source: 'VacancyLaunchHook:match' });
-    return 'failed';
-  }
-}
-
 export async function onVacancyLaunched(
   jobPostingId: string,
   deps: VacancyLaunchDeps = defaultLaunchDeps,
@@ -178,14 +121,13 @@ export async function onVacancyLaunched(
   const target = await deps.readLaunchTarget(jobPostingId);
   if (!target) {
     functions.logger.warn('vacancy_launch.no_target', { jobPostingId });
-    const outcome: VacancyLaunchOutcome = { jobPostingId, patient: 'no_target', match: 'skipped_no_target' };
-    functions.logger.info('vacancy_launch.done', { jobPostingId, patient: outcome.patient, match: outcome.match });
+    const outcome: VacancyLaunchOutcome = { jobPostingId, patient: 'no_target' };
+    functions.logger.info('vacancy_launch.done', { jobPostingId, patient: outcome.patient });
     return outcome;
   }
 
   const patient = await movePatientIfInFunnel(jobPostingId, target, deps);
-  const match = await runLaunchMatch(jobPostingId, target, deps);
 
-  functions.logger.info('vacancy_launch.done', { jobPostingId, patient, match });
-  return { jobPostingId, patient, match };
+  functions.logger.info('vacancy_launch.done', { jobPostingId, patient });
+  return { jobPostingId, patient };
 }

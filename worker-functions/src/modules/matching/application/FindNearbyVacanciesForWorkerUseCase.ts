@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /** Um slot do schedule da vaga (mesmo formato de worker_availability). */
 export interface VacancyScheduleSlot {
@@ -64,16 +65,18 @@ export class FindNearbyVacanciesForWorkerUseCase {
                 jp.case_number,
                 jp.patient_zone,
                 jp.timezone,
-                jp.schedule,
+                ${vacancyEffectiveScheduleSql('jp')} AS schedule,
                 (
                   SELECT COALESCE(array_agg(DISTINCT vd."dayOfWeek" ORDER BY vd."dayOfWeek"), '{}')
-                  FROM jsonb_to_recordset(COALESCE(jp.schedule, '[]'::jsonb)) AS vd("dayOfWeek" int)
+                  FROM jsonb_to_recordset(COALESCE(${vacancyEffectiveScheduleSql('jp')}, '[]'::jsonb)) AS vd("dayOfWeek" int)
                   WHERE NOT EXISTS (
                     SELECT 1 FROM worker_availability wa
                     WHERE wa.worker_id = $1 AND wa.day_of_week = vd."dayOfWeek"
                   )
                 ) AS missing_days
-         FROM job_postings jp, w
+         FROM job_postings jp
+         ${vacancyEffectiveJoinSql('jp')}
+         CROSS JOIN w
          WHERE jp.deleted_at IS NULL
            AND jp.is_covered = false
            AND jp.status = ANY($2::text[])
@@ -92,7 +95,7 @@ export class FindNearbyVacanciesForWorkerUseCase {
                 ))) <= $3
            )
        )
-       SELECT id, case_number, patient_zone, timezone, schedule, missing_days
+       SELECT missing.id, missing.case_number, missing.patient_zone, missing.timezone, missing.schedule, missing.missing_days
        FROM missing
        WHERE cardinality(missing_days) BETWEEN 1 AND $4
        ORDER BY cardinality(missing_days) ASC, case_number DESC

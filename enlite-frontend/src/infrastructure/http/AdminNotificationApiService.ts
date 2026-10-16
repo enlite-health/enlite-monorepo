@@ -11,7 +11,32 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { ApiError, type ApiErrorResponse, type ApiResponse, type ApiSuccessResponse } from './ApiError';
 
-export type NotificationTypeCode = 'CONVERSATION_MENTIONED' | 'CONVERSATION_REPLIED';
+export type NotificationTypeCode =
+  | 'CONVERSATION_MENTIONED'
+  | 'CONVERSATION_REPLIED'
+  | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
+  | 'ADMISSION_TACTIQ_LINK_REQUIRED'
+  | 'ADMISSION_TACTIQ_EXTENSION_CHANGED';
+
+/** spec 049: SÓ o motivo (nunca e-mail nem token) — o TEXTO vive no cliente (ES/PT na i18n). */
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
+export interface AdmissionTactiqLinkPayload {
+  reason: AdmissionTactiqLinkReason;
+}
+
+/** spec 050 F15: SÓ o estado novo da extensão (nunca e-mail nem id de perfil) — o TEXTO vive no cliente. */
+export type AdmissionTactiqExtensionState = 'installed' | 'missing' | 'disabled';
+export interface AdmissionTactiqExtensionPayload {
+  state: AdmissionTactiqExtensionState;
+}
+
+/** spec 048: SÓ ids e nome de campo (nunca nome do paciente, nº de caso ou data) — o texto é montado no cliente. */
+export interface PtContactsPendingPayload {
+  cycleId: string;
+  versionId: string;
+  dayOffset: number;
+  fields: Array<'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEAM'>;
+}
 
 export interface AdminNotification {
   id: string;
@@ -31,6 +56,10 @@ export interface AdminNotification {
    * `patient_conversation:read`, sem `messageId`, ou se a decifra falhar. Nunca texto clínico
    * fora da resposta HTTP autenticada (regra dura). */
   messageExcerpt: string | null;
+  /** spec 048/049: o payload do tipo (`THERAPEUTIC_PROJECT_CONTACTS_PENDING` ou `ADMISSION_TACTIQ_LINK_REQUIRED`); `null` nos de conversa. */
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | null;
+  /** spec 048: número do Caso do paciente (o sino do PT NUNCA mostra o nome); `null` = paciente sem número. */
+  patientCaseNumber?: number | null;
   createdAt: string;
   readAt: string | null;
 }

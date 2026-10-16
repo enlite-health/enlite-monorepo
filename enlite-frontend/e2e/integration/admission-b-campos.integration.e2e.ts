@@ -14,6 +14,7 @@
  *  B10 — o card do Kanban identifica o solicitante pelo nome (sem telefone)
  */
 import { test, expect, type Page } from '@playwright/test';
+import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import {
   seedActivePatient, seedAdmissionPatient, readPatientStatus, readHistoryTop, readAddresses, readInsuranceCodes,
   readDeviceTypes, readRelationship, readBirthAndServiceStart, findPatientIdByFirstName, countVacancies,
@@ -137,13 +138,14 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     expect(await history.textContent()).not.toContain(NOTE);
     await expect(history).toHaveScreenshot('bloco-b-historial.png', { maxDiffPixelRatio: 0.05 });
 
-    // Transição PROIBIDA (ON_HOLD → REPLACEMENT não está na 315): 422 com código → mensagem traduzida
-    await page.getByTestId('patient-status-select').selectOption('REPLACEMENT');
-    const put = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url()));
-    await page.getByTestId('patient-status-save').click();
-    expect((await put).status()).toBe(422);
-    await expect(page.getByTestId('patient-status-error')).toHaveText('Transición no permitida: En espera → Reemplazo');
-    await expect(page.getByTestId('patient-status-control')).toHaveScreenshot('bloco-b-transicion-prohibida.png', { maxDiffPixelRatio: 0.05 });
+    // Transição PROIBIDA (ON_HOLD → REPLACEMENT não está na 315): desde a spec 051 o select oferece SÓ o que o
+    // servidor devolve (GET status-options) — o destino proibido nem aparece, em vez de falhar no clique. O 422
+    // continua sendo a rede de segurança no servidor (coberto no unit e no e2e de API).
+    const select = page.getByTestId('patient-status-select');
+    await expect(select).toBeEnabled({ timeout: 20_000 });
+    await expect(select.locator('option[value="ON_HOLD"]')).toHaveCount(1); // controle positivo: o select tem opções
+    await expect(select.locator('option[value="ACTIVE"]')).toHaveCount(1); // ON_HOLD → ACTIVE está na FSM
+    await expect(select.locator('option[value="REPLACEMENT"]')).toHaveCount(0);
     expect(readPatientStatus(active.patientId).status).toBe('ON_HOLD');
   });
 
@@ -208,6 +210,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     ).trim();
     await page.getByTestId('svc-addressId-1').selectOption(enderecoRecemCriadoId);
     await page.getByTestId('day-schedule-add-monday').click();
+    await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await page.getByTestId('contracted-service-new-save').click();
     const svcBody = (await (await createService).json()) as { data: { id: string } };
@@ -219,7 +222,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()));
     await page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`).click();
     expect((await activated).status()).toBe(201);
-    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`contracted-service-vacancy-link-${serviceId}`)).toBeVisible({ timeout: 15_000 });
     expect(readPatientStatus(admission.patientId).status).toBe('SEARCHING');
 
     await expect(page.getByTestId('patient-status-control')).toBeVisible({ timeout: 15_000 });
@@ -359,13 +362,14 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await loginAsRealStaff(page);
     await openDetail(page, active.patientId);
     await page.getByRole('button', { name: /Red de Apoyo/i }).click();
-    await page.getByTestId('edit-support-btn').click();
-    const rel = page.getByTestId('psn-rel-0');
+    // Lápis da linha do responsável (só há um) — abre o drawer de UM familiar.
+    await page.getByTestId('familiares-card').locator('[data-testid^="familiares-edit-"]').first().click();
+    const rel = page.getByTestId('responsible-rel');
     await expect(rel).toHaveValue('OTHER');
     expect(await rel.evaluate((el) => (el as HTMLSelectElement).tagName)).toBe('SELECT');
     await rel.selectOption('PARENT');
-    await page.getByTestId('psn-save').click();
-    await expect(page.getByTestId('patient-support-edit-drawer')).toHaveCount(0, { timeout: 15_000 });
+    await page.getByTestId('responsible-save').click();
+    await expect(page.getByTestId('responsible-edit-drawer')).toHaveCount(0, { timeout: 15_000 });
     const card = page.getByTestId('familiares-card');
     await expect(card).toContainText('Madre / Padre', { timeout: 20_000 });
     testInfo.annotations.push({ type: 'evidência', description: `B5 — relationship: ${readRelationship(active.patientId)}` });

@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   ContactNote,
@@ -42,6 +42,9 @@ function mapRow(row: ContactNoteRow): ContactNote {
     createdAt: row.created_at,
   };
 }
+
+/** Autor das anotações AUTOMÁTICAS do evento de enquadre (spec 052): id estável, nome "Sistema", sem e-mail. */
+export const ENQUADRE_SYSTEM_NOTE_AUTHOR = { id: 'system:enquadre', name: 'Sistema' } as const;
 
 /**
  * ContactNoteRepository
@@ -88,6 +91,28 @@ export class ContactNoteRepository {
     );
 
     return mapRow(result.rows[0]);
+  }
+
+  /**
+   * Anotação AUTOMÁTICA do evento de enquadre (spec 052), gravada no `client` da TRANSAÇÃO de quem chama — nasce e morre junto
+   * com a mudança que a motivou. Estático de propósito: não usa o pool da instância. Autor fixo (`ENQUADRE_SYSTEM_NOTE_AUTHOR`),
+   * e-mail nulo; o texto é fixo, sem conteúdo livre. O par resolve `worker_job_application_id` como em `insert`.
+   */
+  static async insertSystemNote(
+    client: PoolClient,
+    input: { workerId: string; jobPostingId: string; noteText: string },
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO wja_contact_notes
+         (worker_id, job_posting_id, worker_job_application_id,
+          note_text, created_by_admin_id, created_by_admin_name, created_by_admin_email)
+       VALUES (
+         $1, $2,
+         (SELECT id FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2),
+         $3, $4, $5, NULL
+       )`,
+      [input.workerId, input.jobPostingId, input.noteText, ENQUADRE_SYSTEM_NOTE_AUTHOR.id, ENQUADRE_SYSTEM_NOTE_AUTHOR.name],
+    );
   }
 
   async findByWorkerAndVacancy(workerId: string, vacancyId: string): Promise<ContactNote[]> {

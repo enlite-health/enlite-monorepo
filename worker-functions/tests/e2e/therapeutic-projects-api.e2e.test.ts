@@ -130,6 +130,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     activityIds: activityIds.slice(0, 3),
     startDate: '2026-09-01',
     endDate: '2026-12-31',
+    contactStatus: {},
     ...over,
   });
 

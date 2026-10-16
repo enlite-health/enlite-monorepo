@@ -114,8 +114,9 @@ test.describe('Funil da vaga → perfil do prestador em NOVA ABA (real) @integra
   test('lista e Kanban: o nome é link, abre o perfil em nova aba e a vaga fica atrás', async ({ page, context }, testInfo) => {
     await loginAsRealStaff(page);
 
-    // ── LISTA (vista padrão do funil) ──────────────────────────────────────
+    // ── LISTA (054: a vista padrão agora é o Kanban — entra clicando "Lista") ──
     await page.goto(`/admin/vacancies/${vacancyId}`);
+    await page.getByRole('group', { name: 'Cambiar vista' }).getByRole('button', { name: 'Lista' }).click();
     const listLink = page.getByTestId('funnel-worker-link').filter({ hasText: WORKER_FULL });
     await expect(listLink).toBeVisible({ timeout: 30_000 });
     await expect(listLink).toHaveAttribute('href', `/admin/workers/${workerId}`);

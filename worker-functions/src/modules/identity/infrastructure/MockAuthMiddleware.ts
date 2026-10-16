@@ -19,11 +19,13 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
   // Rotas públicas que não precisam de auth (incluindo webhooks com autenticação própria)
   // /api/admin/setup é público também em prod (bootstrap): o que barra lá é o
   // gate ADMIN_SETUP_ENABLED + countAdmins(), e o e2e afirma exatamente isso.
+  // `/api/admin/me/tactiq-link/callback` (spec 049 F4): o Tactiq redireciona o NAVEGADOR para cá, sem Bearer — a prova de
+  // identidade é o `state` single-use criado pelo POST autenticado. Em produção o mock nem roda (USE_MOCK_AUTH off).
   // `/.well-known` entra aqui pelo MESMO motivo de `/api/internal/`: são rotas
   // de serviço com guard próprio (`X-Internal-Secret`/OIDC). Sem isso o mock
   // devolveria 401 antes do guard real rodar — e o e2e não conseguiria ler o
   // catálogo nem o inventário de rotas do app de pé.
-  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/init', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/.well-known'];
+  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/init', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/api/admin/me/tactiq-link/callback', '/.well-known'];
   if (publicPaths.some(path => req.path === path || req.path.startsWith(path))) {
     return next();
   }

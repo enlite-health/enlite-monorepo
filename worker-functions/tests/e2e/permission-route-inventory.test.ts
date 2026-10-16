@@ -248,6 +248,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/:id/publish-talentum → talentum:update',
         'POST /api/admin/vacancies/:id/resolve-address-review → vacancy:update',
         'POST /api/admin/vacancies/:id/social-links → vacancy:create',
+        // F3 (vaga-le-do-servico): "marcar como atendido" o aviso de vaga publicada — a MESMA célula do PUT da vaga.
+        'POST /api/admin/vacancies/:id/source-change-notices/:field/ack → vacancy:update',
         'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:create',
         // "Promover" (D300, merge main→stage 19/09/2026): entrou junto com
         // reject/restore, mesma célula (escrita no funil).
@@ -261,7 +263,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/vacancies/:id → vacancy:update',
         'PUT /api/admin/vacancies/:id/meet-links → vacancy:update',
         'PUT /api/admin/vacancies/:id/talentum-description → talentum:update',
-        // ── admin.analytics (15) + admin.recruitment (11) — a 5ª e a 6ª
+        // ── admin.analytics (15) + admin.recruitment (hoje só blocked-attempts; as outras 10 saíram com o dashboard) — a 5ª e a 6ª
         'GET /analytics/dashboard/cases/:caseNumber → dashboard:read',
         'GET /analytics/dashboard/global → dashboard:read',
         'GET /analytics/dashboard/management → dashboard:read',
@@ -278,17 +280,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/workers/missing-documents → analytics:read',
         // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria.
         'GET /api/admin/recruitment/blocked-attempts → recruitment_blocked:read',
-        'GET /api/admin/recruitment/case/:caseNumber → recruitment:read',
-        'GET /api/admin/recruitment/clickup-cases → recruitment:read',
-        'GET /api/admin/recruitment/encuadres → match:read',
-        'GET /api/admin/recruitment/global-metrics → recruitment:read',
-        'GET /api/admin/recruitment/health → messaging:read',
-        'GET /api/admin/recruitment/progreso → recruitment:read',
-        'GET /api/admin/recruitment/publications → recruitment:read',
-        'GET /api/admin/recruitment/talentum-workers → talentum:read',
-        'GET /api/admin/recruitment/zones → recruitment:read',
         'POST /analytics/dedup/run → dedup:execute',
-        'POST /api/admin/recruitment/calculate-reemplazos → recruitment:create+recruitment:update',
         // ── A4: admin.messaging (7) + admin.integrations (1) + admin.test_fixtures (1)
         'POST /api/admin/messaging/whatsapp/vacancy-match → messaging:send',
         'POST /api/admin/messaging/whatsapp/direct → messaging:send',
@@ -332,6 +324,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/contracted-services → patient_services:read',
         'GET /api/admin/patients/:id/diagnoses → patient_clinical:read',
         'GET /api/admin/patients/:id/status-history → patient:read',
+        // Spec 051 (F3): a lista de destinos de estado — a MESMA célula do PUT /status.
+        'GET /api/admin/patients/:id/status-options → patient:update',
         'GET /api/admin/presentation-invite/last → messaging:read',
         'GET /api/admin/presentation-invite/settings → messaging:read',
         'GET /api/admin/presentation-invite/stats → messaging:read',
@@ -443,11 +437,42 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // família `admin.users`, célula NOVA `own_presence:update` (nasce concedida a todo
         // staff, mesma regra de `own_notifications`, D-07; migration 466).
         'POST /api/admin/me/presence → own_presence:update',
+        // spec 049 F3 (aba Admissão): família admin.patients, 4 células literais nas 5 rotas (+1 da 050 F3 abaixo) (PR-8b: create/update, sem write).
+        'GET /api/admin/patients/:id/admission-appointments → patient_admission:read',
+        'GET /api/admin/admission/hosts → patient_admission:create',
+        'POST /api/admin/patients/:id/admission-appointments → patient_admission:create',
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/cancel → patient_admission:update',
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/messages/:kind/resend → patient_admission:resend_message',
+        // spec 050 F3 (ensaio pago, R-19): célula própria, só do Acesso Master.
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/paid-rehearsal → patient_admission:release_paid_rehearsal',
+        // spec 050 F11 (reprocesso do resumo, R-38): célula própria, Master + Admisión y Supervisión.
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/summary-retry → patient_admission:retry_summary',
+        // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
+        'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
+        'POST /api/admin/me/tactiq-link → own_tactiq_link:create',
+        // spec 052 (eventos de enquadre, `adminEnquadreEventRoutes.ts`): família admin.vacancies, células enquadre_event/enquadre_summary/enquadre_result.
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events → enquadre_event:read',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/:eventId → enquadre_event:read',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/summary/url → enquadre_summary:read',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/available-workers → enquadre_event:create',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/hosts → enquadre_event:create',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/hosts/:hostId/free-slots → enquadre_event:create',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events → enquadre_event:create',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/cancel → enquadre_event:update',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/close → enquadre_result:update',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants → enquadre_event:update',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/remove → enquadre_event:update',
+        'PUT /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/move → enquadre_result:update',
+        // spec 055 (tela Entrevistadores, `adminInterviewHostRoutes.ts`): família admin.users, células interview_host:read|update (só Acesso Master).
+        'GET /api/admin/interview-hosts → interview_host:read',
+        'GET /api/admin/interview-hosts/candidates → interview_host:update',
+        'POST /api/admin/interview-hosts → interview_host:update',
+        'PATCH /api/admin/interview-hosts/:id → interview_host:update',
       ].sort(),
     );
   });
 
-  it('as isentas são as NOVE decididas, e nenhuma a mais', () => {
+  it('as isentas são as DEZ decididas, e nenhuma a mais', () => {
     // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
@@ -467,10 +492,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // — self, versionado, fora dos `GOVERNED_PREFIXES`. O gate real de "só o
     // Acesso Master simula" mora no banco (`iam.start_group_simulation`, mig 458),
     // não numa célula desta lista.
+    // `GET /api/admin/me/tactiq-link/callback` entrou na spec 049 (F4): o Tactiq redireciona o NAVEGADOR para o callback,
+    // que não carrega Bearer. A isenção é a MARCA da montagem (`exemptHandler` em `tactiqLinkRoutes.ts`); a prova de
+    // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:create`), 10 min, ligado ao uid.
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'DELETE /v1/me/simulation',
       'GET /api/admin/auth/profile',
+      'GET /api/admin/me/tactiq-link/callback',
       'GET /v1/me/authz',
       'GET /v1/me/simulation/groups',
       'PATCH /api/admin/patients/:id/support-network',

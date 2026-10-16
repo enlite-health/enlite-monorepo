@@ -18,7 +18,6 @@ export interface VacancyListFilters {
   search?: string;
   client?: string;
   status?: string;
-  priority?: string;
   limit?: string;
   offset?: string;
   worker_type?: string;
@@ -29,6 +28,9 @@ export interface VacancyListFilters {
   days?: string;
   time_from?: string;
   time_to?: string;
+  /** Chave da allowlist do backend (spec 046 F3). */
+  sort?: string;
+  order?: string;
 }
 
 export interface VacancyFilterOptions {

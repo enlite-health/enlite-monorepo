@@ -1,8 +1,11 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { Check, Pencil } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { usePatientServiceTabAccess } from '@presentation/hooks/usePatientServiceTabAccess';
+import { patientTabPath } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
 
@@ -132,6 +135,12 @@ interface VacancyProfessionCardProps {
   serviceType: string[] | null;
   schedule: Record<string, TimeSlot[]> | null;
   onEditSchedule?: () => void;
+  /**
+   * Preenchido quando o horário é do SERVIÇO contratado (`locked_fields` traz `schedule`): o lápis deixa
+   * de abrir o modal e vira link para a ficha deste paciente, aba "Servicio Contratado". Ausente = vaga
+   * manual, o lápis segue abrindo `onEditSchedule`.
+   */
+  scheduleServicePatientId?: string | null;
   onEditDescription?: () => void;
 }
 
@@ -148,6 +157,7 @@ export function VacancyProfessionCard({
   serviceType,
   schedule,
   onEditSchedule,
+  scheduleServicePatientId,
   onEditDescription,
 }: VacancyProfessionCardProps) {
   const { t } = useTranslation();
@@ -158,6 +168,7 @@ export function VacancyProfessionCard({
   // PR-8b, #391) — PR-8b, ADR-2.
   const { allowed: podeEditarDescricao } = useActionGate('talentum', 'update');
   const { allowed: podeEditarHorario } = useActionGate('vacancy', 'update');
+  const podeAbrirServico = usePatientServiceTabAccess();
 
   const isCaregiver =
     profession?.toUpperCase() === 'CAREGIVER' ||
@@ -298,7 +309,23 @@ export function VacancyProfessionCard({
               label={t('admin.vacancyDetail.professionCard.daysAndHours')}
               value={null}
             />
-            {onEditSchedule && podeEditarHorario && (
+            {scheduleServicePatientId ? (
+              podeAbrirServico ? (
+                <Link
+                  to={patientTabPath(scheduleServicePatientId, 'contractedService')}
+                  aria-label={t('admin.vacancyDetail.professionCard.editScheduleInService')}
+                  title={t('admin.vacancyDetail.professionCard.editScheduleInService')}
+                  data-testid="vacancy-schedule-service-link"
+                  className="text-primary hover:text-primary/70 transition-colors p-1 rounded"
+                >
+                  <Pencil className="w-4 h-4" strokeWidth={2} />
+                </Link>
+              ) : (
+                <Text as="span" size="xs" color="secondary" data-testid="vacancy-schedule-service-note">
+                  {t('admin.vacancyDetail.professionCard.scheduleFromService')}
+                </Text>
+              )
+            ) : onEditSchedule && podeEditarHorario && (
               <button
                 type="button"
                 onClick={onEditSchedule}

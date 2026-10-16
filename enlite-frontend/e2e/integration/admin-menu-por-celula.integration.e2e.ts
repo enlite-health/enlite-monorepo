@@ -92,10 +92,9 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
 
   test('1. com só `patient:read`: o menu mostra Pacientes (e o que essa célula abre) e NENHUM dos outros itens de topo', async ({ page }) => {
     await loginAs(page, STAFF);
-    // `/admin` (Usuarios) é onde o login cai — sem célula, a rota nega e a tela mostra erro; o
-    // que importa aqui é o MENU. `patient:read` também abre "Roles de grupos" (D269); é bloco de
+    // O login cai em `/admin/dashboard` (Gestión a la Vista) — sem `dashboard:read`, a API nega e a tela mostra
+    // erro; o que importa aqui é o MENU. `patient:read` também abre "Roles de grupos" (D269); é bloco de
     // Gestión a la Vista, mas abrir essa tela é `dashboard:read` — sem ela, o item não aparece.
-    // API Docs é staff-only no back (sem célula na rota) e por isso fica.
     await expect(link(page, 'Pacientes')).toBeVisible({ timeout: 15_000 });
 
     const visiveis = await menuVisivel(page);
@@ -107,7 +106,7 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
       await expect(link(page, nome), `"${nome}" apareceu sem célula`).toHaveCount(0);
     }
     await expect(link(page, 'Roles de grupos')).toBeVisible();
-    await expect(link(page, 'API Docs')).toBeVisible();
+    await expect(link(page, 'API Docs')).toHaveCount(0);
     await foto(page, '1-so-patient-read');
 
     await abreDoMenu(page, 'Pacientes', '/admin/patients', '/api/admin/patients', '1b-pacientes-abre');

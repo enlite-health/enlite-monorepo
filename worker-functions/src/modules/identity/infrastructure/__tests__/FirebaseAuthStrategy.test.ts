@@ -90,6 +90,15 @@ describe('FirebaseAuthStrategy — produção (verifyIdToken)', () => {
     expect(ctx?.principal.accountType).toBe('worker');
   });
 
+  it('o e-mail do token VERIFICADO vai para o principal (sem chamada extra); sem e-mail no token, o campo não existe', async () => {
+    mockVerifyIdToken.mockResolvedValue({ uid: 'u1', email: 'Op@Example.test', role: 'admin', account_type: 'staff' });
+    const comEmail = await new FirebaseAuthStrategy(true).authenticate(credentials, metadata);
+    expect(comEmail?.principal.email).toBe('Op@Example.test');
+    mockVerifyIdToken.mockResolvedValue({ uid: 'u2', role: 'admin', account_type: 'staff' });
+    const semEmail = await new FirebaseAuthStrategy(true).authenticate(credentials, metadata);
+    expect(semEmail?.principal).not.toHaveProperty('email');
+  });
+
   it('sem pool: não consulta e segue só com os claims', async () => {
     mockVerifyIdToken.mockResolvedValue({ uid: 'u1' });
     const ctx = await new FirebaseAuthStrategy(true).authenticate(credentials, metadata);
@@ -112,6 +121,13 @@ describe('FirebaseAuthStrategy — produção (verifyIdToken)', () => {
 describe('FirebaseAuthStrategy — emulador (payload do JWT)', () => {
   beforeEach(() => { process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099'; });
   afterEach(() => { delete process.env.FIREBASE_AUTH_EMULATOR_HOST; });
+
+  it('lê o e-mail do payload do JWT; sem e-mail, o campo não existe', async () => {
+    const com = await new FirebaseAuthStrategy(true).authenticate({ ...credentials, token: jwt({ user_id: 'e1', email: 'op@example.test', role: 'admin' }) }, metadata);
+    expect(com?.principal.email).toBe('op@example.test');
+    const sem = await new FirebaseAuthStrategy(true).authenticate({ ...credentials, token: jwt({ user_id: 'e2', role: 'admin' }) }, metadata);
+    expect(sem?.principal).not.toHaveProperty('email');
+  });
 
   it('lê role, account_type e country do payload', async () => {
     const ctx = await new FirebaseAuthStrategy(true).authenticate({ ...credentials, token: jwt({ user_id: 'e1', role: 'admin', account_type: 'staff', country: 'BR' }) }, metadata);

@@ -75,6 +75,6 @@ export function readContractedServices(patientId: string): Array<{ serviceCode: 
 }
 
 export function readVacanciesByService(patientId: string): Array<{ serviceCode: string | null; providersNeeded: number | null }> {
-  const out = runSQL(`SELECT string_agg(COALESCE(pcs.service_code,'<NULL>') || ':' || COALESCE(jp.providers_needed::text,'<NULL>'), ',') FROM job_postings jp LEFT JOIN patient_contracted_services pcs ON pcs.id = jp.contracted_service_id WHERE jp.patient_id = '${patientId}' AND jp.deleted_at IS NULL`);
+  const out = runSQL(`SELECT string_agg(COALESCE(pcs.service_code,'<NULL>') || ':' || COALESCE(CASE WHEN jp.contracted_service_id IS NOT NULL THEN pcs.providers_needed::text ELSE jp.providers_needed END,'<NULL>'), ',') FROM job_postings jp LEFT JOIN patient_contracted_services pcs ON pcs.id = jp.contracted_service_id WHERE jp.patient_id = '${patientId}' AND jp.deleted_at IS NULL`);
   return out ? out.split(',').map((l) => { const [serviceCode, providersNeeded] = l.split(':'); return { serviceCode: serviceCode === '<NULL>' ? null : serviceCode, providersNeeded: providersNeeded === '<NULL>' ? null : Number(providersNeeded) }; }) : [];
 }

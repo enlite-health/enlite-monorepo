@@ -29,3 +29,18 @@ services:
       # PDF. Sem esta env o upload devolve 503 (fail-closed, sem fallback — D-15). O bucket é criado
       # pelo workflow no fake-gcs (`GCS_EMULATOR_HOST` já vem do docker-compose.test.yml); nome só de CI.
       PATIENT_DOCUMENTS_BUCKET: "enlite-patient-documents-ci"
+      # Spec 049 (aba Admissão, F9): o e2e de TELA `admissao-049-*` agenda de verdade pelo painel. `ADMISSION_EXTERNALS=fake`
+      # troca Calendar, Meet, Twilio, Cloud Tasks, Tactiq, Vertex e cofre por DUBLÊS (nada sai da máquina; a fábrica LANÇA se o
+      # modo for `fake` com NODE_ENV=production). `NODE_ENV=test` sozinho também dá dublê (R-17, spec 050), mas o de `docker-compose.test.yml` FALHA de propósito (`ADMISSION_CALENDAR_DOUBLE=unavailable`);
+      # `fake` vence e dá o dublê que responde — por isso a env é explícita.
+      # O dublê do Calendar trata e-mail `ocupado.*` como agenda ocupada. Calendário e templates são valores só de CI.
+      ADMISSION_EXTERNALS: "fake"
+      ADMISSION_CALENDAR_ID_AR: "cal-ar-e2e049@example.test"
+      TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_ES: "HX_CONF_ES_E2E"
+      TWILIO_TEMPLATE_ADMISSION_REMINDER_ES: "HX_REM_ES_E2E"
+      # Spec 052 (aba Encuadre, T-32): o e2e de TELA `enquadre-052-*` cria o evento de enquadre de verdade pelo painel. O Calendar é o
+      # MESMO dublê da admissão (`ADMISSION_EXTERNALS=fake`; e-mail de entrevistadora com prefixo `falha.` faz a criação falhar). Sem estas
+      # duas envs o serviço RECUSA criar (fail-closed): agenda dedicada do enquadre por país e trava de canal real nos convidados —
+      # só o domínio `example.test` (o das sementes) recebe convite. Valores só de CI.
+      ENQUADRE_CALENDAR_ID_AR: "cal-enq-ar-e2e052@example.test"
+      ENQUADRE_GUEST_POLICY: "allowlist:example.test"

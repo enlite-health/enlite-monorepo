@@ -52,14 +52,13 @@ const MOCK_STAFF: MockUser = {
 };
 const MOCK_TOKEN = tokenFor(MOCK_STAFF);
 
-/** As 9 colunas do quadro B (molde `funil-vacante-compativeis.integration.e2e.ts`, P17). */
+/** As 8 colunas do quadro B (molde `funil-vacante-compativeis.integration.e2e.ts`, P17). */
 const ALL_COLUMN_IDS = [
   'COMPATIBLE',
   'INVITED',
   'INICIADO',
   'PRE_SCREENING',
   'COMPLETED',
-  'CONFIRMED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM',
   'REJECTED',

@@ -658,19 +658,30 @@ export class ClickUpPatientMapper {
 
     const professionals: PatientProfessional[] = [];
     for (const slot of slots) {
-      const name = this.asString(cf[slot.nameCf]);
-      if (!name?.trim()) continue;
+      const name = this.asMeaningfulString(cf[slot.nameCf]);
+      if (!name) continue;
 
       professionals.push({
-        name:         name.trim(),
-        phone:        this.cleanPhone(this.asString(cf[slot.phoneCf])),
-        email:        this.asString(cf[slot.emailCf]),
+        name,
+        phone:        this.cleanPhone(this.asMeaningfulString(cf[slot.phoneCf])),
+        email:        this.asMeaningfulString(cf[slot.emailCf]),
         displayOrder: slot.order,
         isTeam:       slot.order === 1 ? isTeam : false,
       } as PatientProfessional);
     }
 
     return professionals;
+  }
+
+  /**
+   * Como `asString`, mas também descarta placeholders digitados à mão no ClickUp
+   * ("null", "n/a", "-"...) — sem diferenciar maiúsculas. Usado só em `buildProfessionals`:
+   * em prd, short_text com a string "null" virava profissional de nome "null".
+   */
+  private asMeaningfulString(value: unknown): string | null {
+    const str = this.asString(value);
+    if (str === null) return null;
+    return PLACEHOLDER_STRINGS.has(str.toLowerCase()) ? null : str;
   }
 
   /** Returns null for phone-only placeholders (just country code or < 10 digits). */
@@ -740,6 +751,11 @@ export class ClickUpPatientMapper {
     return typeof loc['formatted_address'] === 'string' ? loc['formatted_address'] : null;
   }
 }
+
+/** Textos que operadores digitam em campos short_text no lugar de "vazio". */
+const PLACEHOLDER_STRINGS: ReadonlySet<string> = new Set([
+  'null', 'undefined', 'n/a', 'na', '-', '--', 'none', 'ninguno', 'sin dato', 's/d',
+]);
 
 /**
  * Extracts the operational case number from the ClickUp "Caso Número" custom field.

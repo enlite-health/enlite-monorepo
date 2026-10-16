@@ -13,6 +13,7 @@ const EMPTY_FIELD_CLASS: TherapeuticFieldClass = { macro: [], micro: [] };
 export function useTherapeuticProjects(patientId: string | undefined, enabled = true) {
   const [versions, setVersions] = useState<TherapeuticProjectVersion[]>([]);
   const [fieldClass, setFieldClass] = useState<TherapeuticFieldClass>(EMPTY_FIELD_CLASS);
+  const [contactReminderDates, setContactReminderDates] = useState<string[] | null>(null);
   const [isLoading, setIsLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   // Só a ÚLTIMA busca escreve: dois `refetch` seguidos (salvar duas versões com o drawer aberto)
@@ -28,10 +29,11 @@ export function useTherapeuticProjects(patientId: string | undefined, enabled = 
     setIsLoading(true);
     setError(null);
     try {
-      const { versions: list, fieldClass: fc } = await AdminTherapeuticProjectsApiService.listVersions(patientId);
+      const { versions: list, fieldClass: fc, contactReminderDates: reminders } = await AdminTherapeuticProjectsApiService.listVersions(patientId);
       if (mine === seq.current) {
         setVersions(list);
         setFieldClass(fc);
+        setContactReminderDates(reminders ?? null);
       }
     } catch (err: unknown) {
       if (mine === seq.current) setError(err instanceof Error ? err.message : String(err));
@@ -42,7 +44,7 @@ export function useTherapeuticProjects(patientId: string | undefined, enabled = 
 
   useEffect(() => { fetchVersions(); }, [fetchVersions]);
 
-  return { versions, fieldClass, isLoading, error, refetch: fetchVersions };
+  return { versions, fieldClass, contactReminderDates, isLoading, error, refetch: fetchVersions };
 }
 
 export type TherapeuticCatalogs = Record<TherapeuticCatalogKind, TherapeuticCatalogItem[]>;

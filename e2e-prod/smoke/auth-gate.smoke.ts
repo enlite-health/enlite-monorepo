@@ -35,7 +35,6 @@ const ENDPOINTS: readonly ProtectedEndpoint[] = [
   { tag: '[@route:GET /api/admin/patients @depth:auth]', method: 'get', path: '/api/admin/patients' },
   { tag: '[@route:GET /api/admin/vacancies @depth:auth]', method: 'get', path: '/api/admin/vacancies' },
   { tag: '[@route:GET /api/admin/dedup/groups @depth:auth]', method: 'get', path: '/api/admin/dedup/groups' },
-  { tag: '[@route:GET /api/admin/recruitment/health @depth:auth]', method: 'get', path: '/api/admin/recruitment/health' },
   { tag: '[@route:GET /api/admin/users @depth:auth]', method: 'get', path: '/api/admin/users' },
   { tag: '[@route:GET /analytics/workers @depth:auth]', method: 'get', path: '/analytics/workers' },
   { tag: '[@route:GET /analytics/dashboard/global @depth:auth]', method: 'get', path: '/analytics/dashboard/global' },
@@ -55,7 +54,6 @@ const ENDPOINTS: readonly ProtectedEndpoint[] = [
   { tag: '[@route:GET /api/admin/messaging/templates @depth:auth]', method: 'get', path: '/api/admin/messaging/templates' },
   { tag: '[@route:GET /api/admin/dedup/history @depth:auth]', method: 'get', path: '/api/admin/dedup/history' },
   { tag: '[@route:GET /api/workers/me/availability @depth:auth]', method: 'get', path: '/api/workers/me/availability' },
-  { tag: '[@route:GET /api/admin/recruitment/progreso @depth:auth]', method: 'get', path: '/api/admin/recruitment/progreso' },
 ];
 
 let api: APIRequestContext;

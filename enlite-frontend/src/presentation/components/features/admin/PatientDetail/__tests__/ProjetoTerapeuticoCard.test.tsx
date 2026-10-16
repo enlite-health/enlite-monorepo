@@ -80,10 +80,9 @@ const SERVICO: PatientContractedServiceDetail = {
   taxCondition: null,
   supervisionFrequency: null,
   guardShift: null,
-  providerAgeBand: null,
+  providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,
-  liveVacancyId: null,
-  requiredSex: null,
+  liveVacancy: null, liveVacancyRedacted: false,
   schedule: null,
   active: true,
   endedAt: null,
@@ -124,6 +123,7 @@ const versao = (over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
   ...over,
 });
 

@@ -30,11 +30,6 @@ vi.mock('../RoleSelect', () => ({
     <button data-testid="role-submit" onClick={() => onSubmit('TITULAR')}>papel</button>
   ),
 }));
-vi.mock('../InterviewScheduleSelect', () => ({
-  InterviewScheduleSelect: ({ onSubmit }: { onSubmit: (s: null) => void }) => (
-    <button data-testid="schedule-submit" onClick={() => onSubmit(null)}>agendar</button>
-  ),
-}));
 vi.mock('../KanbanCard', () => ({ KanbanCard: ({ id }: { id: string }) => <div data-testid={`card-${id}`} /> }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal', () => ({ ContactNotesModal: () => null }));
 // RejectionReasonSelect NÃO é mockado aqui: é o componente real, generalizado (DX-4.10/DX-4.11),
@@ -52,7 +47,7 @@ function card(overrides: Partial<Card> = {}): Card {
 function stagesWith(c: Card): FunnelStages {
   return {
     INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], COMPLETED: [c],
-    CONFIRMED: [], SELECTED: [], QUICK_RESPONSE_TEAM: [], REJECTED: [],
+    SELECTED: [], QUICK_RESPONSE_TEAM: [], REJECTED: [],
   } as unknown as FunnelStages;
 }
 const drop = (c: Card, to: string) =>
@@ -111,12 +106,12 @@ describe('KanbanBoard — motivo do movimento (Fase 4, DX-4.6/DX-4.10)', () => {
     fireEvent.click(screen.getByTestId('move-reason-confirm'));
 
     await waitFor(() => expect(onMove).toHaveBeenCalledTimes(2));
-    expect(onMove).toHaveBeenNthCalledWith(1, 'uuid-1', 'INVITED', undefined, undefined, undefined);
-    expect(onMove).toHaveBeenNthCalledWith(2, 'uuid-1', 'INVITED', 'OTHER', undefined, undefined);
+    expect(onMove).toHaveBeenNthCalledWith(1, 'uuid-1', 'INVITED', undefined, undefined);
+    expect(onMove).toHaveBeenNthCalledWith(2, 'uuid-1', 'INVITED', 'OTHER', undefined);
     expect(screen.queryByTestId('move-reason-modal')).not.toBeInTheDocument();
   });
 
-  it('confirmar o motivo do salto QUANDO havia papel/agendamento pendente: reenvia com role/schedule preservados', async () => {
+  it('confirmar o motivo do salto QUANDO havia papel pendente: reenvia com o role preservado', async () => {
     onMove.mockResolvedValueOnce(JUMP_REQUIRED).mockResolvedValueOnce(null);
     renderBoard(card());
     drop(card(), 'SELECTED');
@@ -127,8 +122,8 @@ describe('KanbanBoard — motivo do movimento (Fase 4, DX-4.6/DX-4.10)', () => {
     fireEvent.click(screen.getByTestId('move-reason-confirm'));
 
     await waitFor(() => expect(onMove).toHaveBeenCalledTimes(2));
-    expect(onMove).toHaveBeenNthCalledWith(1, 'uuid-1', 'SELECTED', undefined, 'TITULAR', undefined);
-    expect(onMove).toHaveBeenNthCalledWith(2, 'uuid-1', 'SELECTED', 'OTHER', 'TITULAR', undefined);
+    expect(onMove).toHaveBeenNthCalledWith(1, 'uuid-1', 'SELECTED', undefined, 'TITULAR');
+    expect(onMove).toHaveBeenNthCalledWith(2, 'uuid-1', 'SELECTED', 'OTHER', 'TITULAR');
   });
 
   it('cancelar o motivo do salto: nenhuma 2ª chamada, e o card continua na origem', async () => {

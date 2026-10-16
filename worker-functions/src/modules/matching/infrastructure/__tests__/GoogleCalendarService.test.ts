@@ -6,7 +6,7 @@
  *   - :99  "Found event" — organizerEmail
  *   - :114 "Could not get organizer token" — organizerEmail
  *   - :123 "PATCH success: added" — normalized (o guestEmail passado por
- *     BookInterviewSlotUseCase)
+ *     reserva de horário, hoje removida)
  *   - :128 catch geral — `msg` do erro (pode ecoar o e-mail inválido que o
  *     Google rejeitou)
  *
@@ -122,7 +122,7 @@ describe('GoogleCalendarService.addGuestToMeeting — PII guard (C1, 11/09)', ()
     expect(lines).toContain('"errorName":"Error"');
     expect(lines).toContain('"code":"EINVAL"');
     // N1 (lex, 11/09): o log ficou seguro mas o valor saía pelo RETORNO — o
-    // chamador (BookInterviewSlotUseCase) imprime `detail`. Agora `detail` leva
+    // chamador imprimia `detail`. Agora `detail` leva
     // só errorName + código.
     expect(JSON.stringify(result)).not.toContain(GUEST_EMAIL);
     expect(JSON.stringify(result)).not.toContain(sensitiveMessage);

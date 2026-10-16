@@ -7,7 +7,7 @@
  */
 export const DOCUMENT_LABEL_MAX_LENGTH = 255;
 
-export type PatientDocumentOrigin = 'tab' | 'chat';
+export type PatientDocumentOrigin = 'tab' | 'chat' | 'admission';
 
 /** Forma da lista (contrato da rota GET). `label` é `null` só se a decifra falhar para ESTE item. */
 export interface PatientDocumentDto {

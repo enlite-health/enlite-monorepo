@@ -4,15 +4,13 @@
  * --allow-hardcoded-delete seja passado.
  *
  * Manter sincronizado com:
- *   - src/modules/notification/application/HandleReminderResponseUseCase.ts
  *   - src/modules/notification/application/BulkDispatchIncompleteWorkersUseCase.ts
  *   - src/modules/notification/application/BulkDispatchTalentumIncompleteUseCase.ts
- *   - src/modules/notification/application/BookSlotFromWhatsAppUseCase.ts
  *   - src/modules/notification/interfaces/controllers/MessagingController.ts
  *   - src/modules/notification/interfaces/controllers/InboundWhatsAppController.ts
  *
  * NÃO incluir slugs que aparecem apenas em queries de leitura de
- * `whatsapp_bulk_dispatch_logs` (RecruitmentHealthController) — esses logs
+ * `whatsapp_bulk_dispatch_logs` (antiga tela de saúde do recrutamento, removida) — esses logs
  * guardam o slug como string solta, não exigem o template em
  * `message_templates`. Exemplo: `vacancy_invited_auto` foi desativado
  * pela migration 178 e substituído por `ar_vacancy_match_*`; só é lido

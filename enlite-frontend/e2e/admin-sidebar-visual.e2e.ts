@@ -34,7 +34,7 @@ const MOCK_ADMIN = {
 
 /** As células de leitura de TODOS os itens da seção Administración. */
 const CELULAS_SECAO_ADMIN = [
-  'worker:read', 'dedup:read', 'patient:read', 'recruitment:read', 'messaging:read',
+  'worker:read', 'dedup:read', 'patient:read', 'recruitment_blocked:read', 'messaging:read',
 ];
 
 const FAKE_ID_TOKEN =
@@ -221,7 +221,7 @@ test.describe('AppSidebar — visão sem as células da seção Administración'
 
     // Itens base seguem visíveis
     await expect(sidebar.getByText('Usuarios')).toBeVisible({ timeout: 15000 });
-    await expect(sidebar.getByText('API Docs')).toBeVisible({ timeout: 10000 });
+    await expect(sidebar.getByText('API Docs')).toHaveCount(0);
 
     // Itens admin-only ausentes
     await expect(sidebar.getByText('Postulaciones bloqueadas')).toHaveCount(0);
@@ -233,14 +233,14 @@ test.describe('AppSidebar — visão sem as células da seção Administración'
     });
   });
 
-  test('SEM recruitment:read: URL direta de blocked-attempts redireciona pra /admin', async ({ page }) => {
+  test('SEM recruitment_blocked:read: URL direta de blocked-attempts redireciona pra /admin', async ({ page }) => {
     await loginAsAdmin(page, []);
     mockAdminListEndpoints(page);
 
     await page.goto(`${BASE}/admin/recruitment/blocked-attempts`);
 
     // Guard da page redireciona sem renderizar conteúdo da tela bloqueada
-    await expect(page).toHaveURL(`${BASE}/admin`, { timeout: 15000 });
+    await expect(page).toHaveURL(`${BASE}/admin/dashboard`, { timeout: 15000 });
     await expect(page.locator('[data-testid="blocked-content"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="blocked-skeleton"]')).toHaveCount(0);
 
@@ -250,27 +250,14 @@ test.describe('AppSidebar — visão sem as células da seção Administración'
     });
   });
 
-  test('SEM recruitment:read: header do Reclutamiento NÃO mostra o link de postulaciones bloqueadas', async ({ page }) => {
+  test('o dashboard de Reclutamiento saiu: o menu lateral não tem o item e /admin/recruitment cai no catch-all', async ({ page }) => {
     await loginAsAdmin(page, []);
     mockAdminListEndpoints(page);
-    // Dados do dashboard vazios → página renderiza estável
-    await page.route('**/api/admin/recruitment/**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: [] }),
-      }),
-    );
 
     await page.goto(`${BASE}/admin/recruitment`);
 
-    // Página renderizada, mas sem o link admin-only no header
-    await expect(page.locator('aside').first().getByText('Reclutamiento')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('[data-testid="blocked-attempts-link"]')).toHaveCount(0);
-
-    await expect(page).toHaveScreenshot('recruitment-header-sem-celula-no-link.png', {
-      fullPage: false,
-      maxDiffPixelRatio: 0.03,
-    });
+    // Rota removida: o catch-all redireciona para a home; o item "Reclutamiento" não existe no menu.
+    await expect(page).not.toHaveURL(/\/admin\/recruitment/, { timeout: 15000 });
+    await expect(page.locator('aside').first().getByText('Reclutamiento')).toHaveCount(0);
   });
 });

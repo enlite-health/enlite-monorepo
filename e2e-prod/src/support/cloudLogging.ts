@@ -8,7 +8,7 @@
  *
  * Formato confirmado contra prod (não presumido):
  *   logName  = projects/enlite-prd/logs/run.googleapis.com%2Fstdout
- *   jsonPayload.message = 'admission.notifier.confirmation.sent'
+ *   jsonPayload.message = 'admission.confirmation_sent'
  *   + campos soltos no mesmo jsonPayload (appointmentId, externalId, ...)
  *
  * Permissão: a SA do runner precisa de `roles/logging.viewer` no projeto.
@@ -36,7 +36,7 @@ export interface QueryLogsParams {
    * Valor exato de `jsonPayload.message`.
    *
    * OPCIONAL desde 30/08, e a razão importa: o backend loga o nome do evento em DOIS
-   * lugares diferentes. `functions.logger.info('admission.notifier...', {...})` deixa o
+   * lugares diferentes. `functions.logger.info('admission.confirmation_sent', {...})` deixa o
    * nome em `jsonPayload.message`; já `logger.info({ msg, ... })` (pino, usado pela
    * trilha dos mapas) o deixa em `jsonPayload.msg` — medido contra prod em 30/08, onde
    * `jsonPayload.message="workers.map.read"` devolve 0 e `jsonPayload.msg=` devolve 2.

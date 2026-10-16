@@ -38,9 +38,9 @@ function concretizar(path: string): string {
 }
 
 /**
- * As 9 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
+ * As 10 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
  * devolve dado de staff. O que se afirma aqui é o status EXATO de cada uma, para
- * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 10ª).
+ * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 11ª).
  */
 const ISENTAS_ESPERADO: Record<string, number> = {
   'POST /api/admin/setup': 403, // bootstrap desligado por env
@@ -63,6 +63,11 @@ const ISENTAS_ESPERADO: Record<string, number> = {
   'GET /v1/me/simulation/groups': 403,
   'POST /v1/me/simulation': 403,
   'DELETE /v1/me/simulation': 403,
+  // GET /me/tactiq-link/callback (spec 049, F4) — navegação do browser, SEM Bearer: o `staffOnly` NÃO está
+  // na rota; a prova de identidade é o `state` single-use. Sem query, o Zod do controller (`callbackQuery`)
+  // rejeita ANTES de tocar o service/banco: 400 TACTIQ_CALLBACK_INVALID, nada gravado, nada de staff devolvido.
+  // O token do prestador é ignorado (a rota não lê identidade).
+  'GET /api/admin/me/tactiq-link/callback': 400,
 };
 
 describe('prestador com token REAL nunca entra no painel (account_type, D294)', () => {
@@ -142,7 +147,7 @@ describe('prestador com token REAL nunca entra no painel (account_type, D294)', 
     expect(declaradas.length).toBeGreaterThan(150);
   });
 
-  it('as rotas ISENTAS são exatamente 9 e cada uma responde ao prestador o que o contrato diz', async () => {
+  it('as rotas ISENTAS são exatamente 10 e cada uma responde ao prestador o que o contrato diz', async () => {
     const isentas = rotas.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual(Object.keys(ISENTAS_ESPERADO).sort());
     for (const rota of isentas) {

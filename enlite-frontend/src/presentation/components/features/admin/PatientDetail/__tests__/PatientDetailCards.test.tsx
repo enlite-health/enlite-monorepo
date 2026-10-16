@@ -866,17 +866,19 @@ describe('RelatoriosAtendimentosCard', () => {
 describe('PatientProfileTabs', () => {
   // Spec 014 US-D2: "Dados Financeiros" e "Agendamentos" SAÍRAM do tab bar — só tinham o
   // placeholder genérico "Em breve" atrás, nenhum card real (decisão Gabriel 03/09, item 9).
-  // 05/09 (decisão do Gabriel): a antiga "Enquadre" saiu. 29/09: voltou com o quadro C. 05/10 (spec 041
-  // R3): saiu de novo — o enquadre será remodelado na vacante. A tab bar tem 7 abas, nenhuma "Enquadre".
-  it('renders the 7 tabs with real content — "Dados Financeiros"/"Agendamentos"/"Enquadre" não existem', () => {
+  // 05/09 (decisão do Gabriel): "Enquadre" também saiu — era a tabela de serviços duplicada +
+  // placeholder; o encuadre do paciente É o serviço contratado (endereço + horário).
+  // Sync main→stage 16/10 (decisão C2): spec 049 (+ Admissão) + cadeia do itinerário (+ Itinerário), sem "Vagas" (spec 047) — 7 abas.
+  it('renders the 7 tabs with real content (spec 049: + Admissão; cadeia: + Itinerário) — "Dados Financeiros"/"Agendamentos"/"Enquadre"/"Vagas" (spec 047) não existem mais', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
     expect(screen.getByText('Rede de Apoio')).toBeInTheDocument();
     expect(screen.getByText('Documentos')).toBeInTheDocument();
+    expect(screen.getByText('Admissão')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
-    expect(screen.getByText('Vagas')).toBeInTheDocument();
     expect(screen.getByText('Itinerário')).toBeInTheDocument();
+    expect(screen.queryByText('Vagas')).not.toBeInTheDocument();
     expect(screen.getByText('Histórico')).toBeInTheDocument();
     expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
     expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
@@ -983,14 +985,14 @@ describe('FamiliaresCard', () => {
   });
 
   // Spec 018, PR-2 (D-A): a coluna de emergência — só existe COM patientId.
-  it('com patientId: mostra o botão de marcar emergência; a linha marcada mostra "quitar"', () => {
+  it('com patientId: mostra o botão de marcar emergência; a linha marcada mostra só o ✕ (aria-label "quitar")', () => {
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" emergencyContactRef={{ kind: 'RESPONSIBLE', id: patientDetailFixture.responsibles[0].id }} />);
-    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
   });
 
-  it('sem emergencyContactRef (ou apontando para outro kind/id): mostra "marcar"', () => {
+  it('sem emergencyContactRef (ou apontando para outro kind/id): mostra a sirene (aria-label "marcar")', () => {
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" />);
-    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.markEmergencyContact'));
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveAttribute('aria-label', t('admin.patients.editDrawer.markEmergencyContact'));
   });
 
   it('clicar no botão de emergência chama a API e o onSaved do card (refetch)', async () => {
@@ -1037,7 +1039,7 @@ describe('FamiliaresCard — coluna Emergencia é informação, não ação (D26
     expect(screen.queryByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).not.toBeInTheDocument();
   });
 
-  it('enforcement "on" COM patient_family:update (PR-8b): mostra o indicador E o botão de ação juntos na linha marcada', () => {
+  it('enforcement "on" COM patient_family:update (PR-8b): mostra SÓ o botão-toggle (preenchido) na linha marcada, sem a etiqueta', () => {
     useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:read', 'patient_family:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(
       <FamiliaresCard
@@ -1046,8 +1048,8 @@ describe('FamiliaresCard — coluna Emergencia é informação, não ação (D26
         emergencyContactRef={{ kind: 'RESPONSIBLE', id: patientDetailFixture.responsibles[0].id }}
       />,
     );
-    expect(screen.getByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).toBeInTheDocument();
-    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
+    expect(screen.queryByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
   });
 });
 

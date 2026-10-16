@@ -1,6 +1,6 @@
 import { useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Plus, Rocket, ExternalLink } from 'lucide-react';
+import { Pencil, Plus, Rocket } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -12,13 +12,14 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 import { ActionButton } from '@presentation/components/features/access';
-import { useActionGate, useCanActivateRecruitment } from '@presentation/hooks/useCellAccess';
+import { useActionGate, useCanActivateRecruitment, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { useToast } from '@presentation/hooks/useToast';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
 import { runActivateRecruitmentClick } from './activateRecruitmentClick';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
+import { ServiceVacancyCells } from './ServiceVacancyCells';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -62,19 +63,9 @@ function ActivateRecruitmentAction({
   // Kanban de pacientes (PatientKanbanSubcards.tsx) — gate fecho N3.
   const podeAtivar = useCanActivateRecruitment();
 
-  if (service.liveVacancyId) {
-    return (
-      <a
-        href={`/admin/vacancies/${service.liveVacancyId}`}
-        onClick={(e) => e.stopPropagation()}
-        aria-label={tc('viewVacancyAria', { service: serviceLabel })}
-        data-testid={`contracted-service-view-vacancy-${service.id}`}
-        className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary inline-flex items-center gap-1"
-      >
-        <ExternalLink className="w-4 h-4" strokeWidth={2} />
-      </a>
-    );
-  }
+  // Spec 047 (F3): o ícone "Ver vacante" saiu — o código da vacante (coluna) é o caminho. Com vaga viva não há o que
+  // ativar; com `liveVacancyRedacted` o ator não lê vagas, então "tem vaga ou não" é desconhecido — nunca oferecer.
+  if (service.liveVacancy || service.liveVacancyRedacted) return null;
 
   // Regra do Gabriel (12/09, PR-8b 15/09): a rota de ativação (POST .../activate-recruitment) exige
   // patient_services:update E vacancy:update JUNTAS (contracts/permissions-split.md — "ação sobre
@@ -117,6 +108,7 @@ function ServiceRow({
   onEdit,
   onActivated,
   podeEditar,
+  verVagas,
   t,
 }: {
   patientId: string;
@@ -130,6 +122,8 @@ function ServiceRow({
   onActivated: () => void;
   /** A MESMA régua do "+ Nuevo" e do "Editar" do detalhe, lida uma vez no card. */
   podeEditar: boolean;
+  /** Spec 047: o ator lê vagas (`vacancy:read`) — só então as 2 colunas da vaga existem. */
+  verVagas: boolean;
   t: (k: string, o?: any) => string;
 }) {
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
@@ -208,6 +202,7 @@ function ServiceRow({
           </Text>
         )}
       </TableCell>
+      {verVagas && <ServiceVacancyCells service={service} />}
       {/* Lápis na linha (Gabriel, 06/09): a tabela É a lista — editar abre SÓ este serviço, sem
           passar por um drawer-lista. `stopPropagation` para o clique não abrir o detalhe junto. */}
       <TableCell unwrapped align="right">
@@ -224,6 +219,7 @@ function ServiceRow({
                 serviceHasSchedule: Array.isArray(service.schedule) && service.schedule.length > 0,
                 insuranceInformed,
                 hasVerifiedActiveCoverage,
+                serviceRecruitmentFields: service,
               })}
               onActivated={onActivated}
               t={t}
@@ -254,7 +250,11 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
   // D269/D286: as TRÊS portas para o PATCH (+ Nuevo, lápis da linha, "Editar" do detalhe) seguem a
   // mesma célula — o gate do sync main→stage (08/09) achou a terceira aberta.
   const { allowed: podeEditar } = useActionGate('patient_services', 'update');
+  const { visible: podeLerVagas } = useContainerAccess('vacancy');
   const services = patient.contractedServices;
+  // Spec 047 (F3): as 2 colunas da vaga só existem para quem lê vagas. Duas fontes, as duas valem: a célula no
+  // front (`vacancy:read`) e o flag do back (`liveVacancyRedacted`) — com o engine fora do enforcement só o back sabe.
+  const verVagas = podeLerVagas && !services.some((s) => s.liveVacancyRedacted);
   // Checklist "falta serviço" → formulário de um serviço NOVO.
   useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing({ kind: 'new' }));
   // Migration 330: "falta endereço no serviço" → abre o PRIMEIRO serviço ativo sem endereço vivo
@@ -322,12 +322,13 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           <TableHead align="center">{t('admin.patients.detail.contractedServicesCard.tableQuantity')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableLocation')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableSchedule')}</TableHead>
+          {verVagas && <TableHead>{t('admin.patients.detail.contractedServicesCard.tableVacancyCode')}</TableHead>}
           <TableHead unwrapped><span className="sr-only">{t('admin.patients.detail.contractedServicesCard.tableActions')}</span></TableHead>
         </TableHeader>
         <TableBody>
           {services.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={6} className="py-6 text-center">
+              <TableCell unwrapped colSpan={verVagas ? 7 : 6} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>
@@ -346,6 +347,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
                 onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}
                 onActivated={() => onSaved?.()}
                 podeEditar={podeEditar}
+                verVagas={verVagas}
                 t={t}
               />
             ))

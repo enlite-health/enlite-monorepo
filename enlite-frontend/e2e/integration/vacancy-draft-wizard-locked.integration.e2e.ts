@@ -18,6 +18,7 @@
  * `contracted_service_id` setado, então `locked_fields` do GET traz os 8 nomes.
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient, backdateVacancyUpdatedAt } from '../helpers/db-test-helper';
 
 const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:8080';
@@ -218,7 +219,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
         serviceCode: 'AT',
         providersNeeded: 1,
         weeklyHours: 20,
-        careLocation: 'HOME',
+        careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
         schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
       },
@@ -275,14 +276,16 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await expect(page.getByTestId('locked-field-link-providers')).toBeVisible();
     await expect(page.getByTestId('vacancy-schedule-add-lun')).toBeDisabled();
     await expect(page.getByTestId('locked-field-link-schedule')).toBeVisible();
+    // F4 (vaga-le-do-servico-contratado): os 4 links abrem a ficha JÁ na aba "Servicio Contratado" (`?tab=`), o
+    // mesmo href do lápis do detalhe da vaga (um componente só, `LockedFieldBadgeLink`).
+    for (const id of ['address', 'age-range', 'providers', 'schedule']) {
+      await expect(page.getByTestId(`locked-field-link-${id}`)).toHaveAttribute('href', `/admin/patients/${patientId}?tab=contractedService`);
+    }
 
     // Dependia do fix de `buildScheduleFromVacancy` (#526, na stage).
 
-    // Preenche profissão + valor por hora — os dois campos livres que o recrutamento completa.
-    // O input real é `sr-only` (Checkbox atom): quem recebe o clique de um humano de verdade é o
-    // `<label for="profession-AT">` que envolve o box visível + o texto — clicar nele, não no
-    // input escondido, é o mesmo alvo que um dedo/mouse acertaria na tela.
-    await page.locator('label[for="profession-AT"]').click();
+    // Spec 027 Fase 3 (D508): a profissão chega PRÉ-PREENCHIDA do serviço contratado (RECRUITMENT_FIELDS_E2E → ['AT']);
+    // a recrutadora só confere — clicar de novo a DESMARCARIA. Falta completar o valor por hora (o campo livre).
     await expect(page.getByTestId('profession-checkbox-AT')).toBeChecked();
     // salary_text já vem "A convenir" (F2: é o "vazio" que o foguete grava, nunca NULL) — um
     // humano que for trocar o valor seleciona tudo e digita por cima, não faz `.fill('')`.
@@ -395,6 +398,9 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
 
     const before = await request.get(`${BACKEND_URL}/api/admin/vacancies/${draftVacancyId}`, { headers: AUTH_HEADERS });
     const scheduleBefore = (await before.json()).data.schedule;
+    // F2/F4: a coluna da vaga é NULL; o GET devolve o horário do SERVIÇO no formato da vaga. O "antes" tem de ser um
+    // horário DE VERDADE — senão "antes == depois" provaria só que dois vazios são iguais.
+    expect(scheduleBefore).toEqual({ lunes: [{ start: '08:00', end: '12:00' }] });
 
     await page.goto(`/admin/vacancies/${draftVacancyId}/edit`);
     await expect(page.getByTestId('create-vacancy-save-btn')).toBeEnabled({ timeout: 15_000 });

@@ -12,7 +12,7 @@
  *   `npx vite --port 5173 --strictPort &` e
  *   `npx playwright test --config=playwright.mocked.config.ts e2e/fsm-picker-visual.e2e.ts`
  *
- * Auth pelo Firebase Emulator real (mesmo padrão do admin-api-docs). O payload
+ * Auth pelo Firebase Emulator real (mesmo padrão dos demais e2e admin). O payload
  * de `/api/admin/funnel-stage-messages` é fixado aqui com os DADOS REAIS de
  * produção lidos em 31/08/2026 — inclusive o corpo aprovado que veio da Content
  * API — para fotografar os três estados que importam:
@@ -32,7 +32,7 @@ const REPROGRAM_BODY =
   'de día y horario para que puedas elegir el que más te convenga.\n\n' +
   '¡Gracias por tu interés y por seguir siendo parte de este proceso! 💛';
 
-const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'REJECTED'];
 
 const tpl = (slug: string, body: string | null, bodyTwilio: string | null, category: string, eligible: boolean, reason: string | null) =>
   ({ slug, name: slug, body, bodyTwilio, category, eligible, reason, placeholders: [], unsupported: [] });

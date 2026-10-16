@@ -8,7 +8,7 @@ import { parseScheduleString, LABEL_TO_KEY } from './vacancyScheduleUtils';
 
 /**
  * Google Meet URL pattern (canonical, with scheme): https://meet.google.com/xxx-xxxx-xxx
- * Same regex used by VacancyMeetLinksCard for the detail page.
+ * (O card de links da página de detalhe, que usava a mesma regex, saiu na spec 052.)
  */
 export const MEET_LINK_REGEX = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
 

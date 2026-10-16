@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { ADMIN_HOME_PATH } from '@presentation/config/adminHome';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField, InputWithIcon, PasswordInput } from '@presentation/components/molecules';
@@ -47,8 +48,8 @@ export function AdminLoginPage() {
         return;
       }
 
-      trace.step('redirect', { to: '/admin' });
-      navigate('/admin');
+      trace.step('redirect', { to: ADMIN_HOME_PATH });
+      navigate(ADMIN_HOME_PATH);
       trace.end('success');
     } catch (err) {
       trace.fail('login-flow', err);
@@ -99,8 +100,8 @@ export function AdminLoginPage() {
       }
 
       // Admin válido, redireciona
-      trace.step('redirect', { to: '/admin' });
-      navigate('/admin');
+      trace.step('redirect', { to: ADMIN_HOME_PATH });
+      navigate(ADMIN_HOME_PATH);
       trace.end('success');
     } catch (err) {
       trace.fail('login-flow', err);

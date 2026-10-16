@@ -10,7 +10,13 @@
  * sempre o mesmo dentro de uma resposta — não é mais por ator), sem cache entre requests
  * (decisão em tempo real).
  */
-import { NotificationRepository, type NotificationTypeCode } from '../infrastructure/NotificationRepository';
+import {
+  NotificationRepository,
+  type AdmissionTactiqLinkPayload,
+  type AdmissionTactiqExtensionPayload,
+  type NotificationTypeCode,
+  type PtContactsPendingPayload,
+} from '../infrastructure/NotificationRepository';
 import type { ActorPatientConversationAccessChecker } from './ports';
 
 export interface GetNotificationsParams {
@@ -32,6 +38,10 @@ export interface NotificationDto {
    *  leitura do paciente (a UI decide "sem acesso" separadamente). `null` quando a mensagem de
    *  origem É o root, ou quando não há `messageId` no evento. */
   rootMessageId: string | null;
+  /** spec 048: SÓ no tipo `THERAPEUTIC_PROJECT_CONTACTS_PENDING` (4 chaves, ids + nome de campo); `null` nos de conversa. */
+  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | null;
+  /** spec 048: número do Caso (`patients.case_number`) do tipo do PT — o sino NUNCA mostra o nome do paciente nele. */
+  patientCaseNumber: number | null;
   /** Item 2 (card com trecho, F7/F8): MESMO gate de `patientDisplayName` — só resolvido quando o
    *  destinatário tem `patient_conversation:read` para o paciente da conversa. `null` sem célula,
    *  sem `messageId`, ou se a decifra falhar. */
@@ -61,7 +71,7 @@ export class GetNotificationsUseCase {
     // mesmo cache já existente, agora também usado para gatear o trecho (item 2).
     let recipientAllowed: boolean | undefined;
     for (const row of rows) {
-      if (row.patientId && this.accessChecker) {
+      if (row.patientId && this.accessChecker && !isSystemPtType(row.typeCode)) {
         if (recipientAllowed === undefined) {
           recipientAllowed = await this.accessChecker.canReadPatientConversation(params.recipientUid);
         }
@@ -72,7 +82,7 @@ export class GetNotificationsUseCase {
     // messageExcerpt (item 2) É gated: só para linhas com patientId E recipientAllowed — MESMO
     // conjunto que teria patientDisplayName resolvido, decifrado em LOTE (F8).
     const eligibleMessageIds = recipientAllowed
-      ? dedupNonNull(rows.filter((row) => row.patientId).map((row) => row.messageId))
+      ? dedupNonNull(rows.filter((row) => row.patientId && !isSystemPtType(row.typeCode)).map((row) => row.messageId))
       : [];
     const excerpts = await this.repository.findMessageExcerpts(eligibleMessageIds);
 
@@ -81,18 +91,60 @@ export class GetNotificationsUseCase {
       let patientDisplayName: string | null = null;
       let messageExcerpt: string | null = null;
 
-      if (row.patientId && this.accessChecker && recipientAllowed) {
+      // spec 048 (Gabriel, 08/10): o aviso do PT NUNCA leva o nome do paciente, mesmo para quem tem a célula de
+      // conversa — só o número do Caso. Por isso o tipo de sistema nem entra na resolução do nome/trecho.
+      if (row.patientId && this.accessChecker && recipientAllowed && !isSystemPtType(row.typeCode)) {
         patientDisplayName = await this.repository.findPatientDisplayName(row.patientId);
         if (row.messageId) messageExcerpt = excerpts.get(row.messageId) ?? null;
       }
 
       const rootMessageId = row.messageId ? rootMessageIds.get(row.messageId) ?? null : null;
 
-      results.push({ ...row, patientDisplayName, rootMessageId, messageExcerpt });
+      const { payload: rawPayload, ...rest } = row;
+      results.push({
+        ...rest,
+        patientDisplayName,
+        rootMessageId,
+        messageExcerpt,
+        payload: payloadOf(row.typeCode, rawPayload),
+        patientCaseNumber: isSystemPtType(row.typeCode) ? row.patientCaseNumber : null,
+      });
     }
 
     return results;
   }
+}
+
+const isSystemPtType = (code: NotificationTypeCode): boolean => code === 'THERAPEUTIC_PROJECT_CONTACTS_PENDING';
+
+/** Payload por tipo: o do PT (4 chaves) ou o da admissão (`reason`); conversa não tem payload. */
+function payloadOf(
+  code: NotificationTypeCode,
+  raw: Record<string, unknown> | null,
+): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | null {
+  if (isSystemPtType(code)) return ptPayloadOf(raw);
+  if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
+    const reason = raw?.reason;
+    return reason === 'missing' || reason === 'broken' || reason === 'wrong_account' ? { reason } : null;
+  }
+  if (code === 'ADMISSION_TACTIQ_EXTENSION_CHANGED') {
+    const state = raw?.state;
+    return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
+  }
+  return null;
+}
+
+/** Filtra o payload bruto às 4 chaves do contrato — nunca devolve chave extra que alguém tenha gravado. */
+function ptPayloadOf(raw: Record<string, unknown> | null): PtContactsPendingPayload | null {
+  if (!raw || typeof raw.cycleId !== 'string' || typeof raw.versionId !== 'string' || typeof raw.dayOffset !== 'number' || !Array.isArray(raw.fields)) {
+    return null;
+  }
+  return {
+    cycleId: raw.cycleId,
+    versionId: raw.versionId,
+    dayOffset: raw.dayOffset,
+    fields: raw.fields.filter((f): f is string => typeof f === 'string'),
+  };
 }
 
 /** uids/ids não-nulos, sem repetição, na ordem de 1ª aparição — evita decifrar/ler o MESMO

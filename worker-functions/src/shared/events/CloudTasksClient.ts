@@ -6,6 +6,12 @@ export interface ScheduleTaskOptions {
   body: Record<string, unknown>;
   /** ISO 8601 timestamp for when the task should execute */
   scheduleTime?: string;
+  /**
+   * Nome determinístico da task (só o id: `queuePath/tasks/<taskId>` é montado aqui). O Cloud Tasks recusa um
+   * segundo `createTask` com o mesmo nome (gRPC ALREADY_EXISTS, código 6) — é a deduplicação nativa. Omitido, o
+   * Google gera o nome (comportamento dos demais chamadores).
+   */
+  taskId?: string;
 }
 
 export class CloudTasksClient {
@@ -26,7 +32,7 @@ export class CloudTasksClient {
   }
 
   async schedule(options: ScheduleTaskOptions): Promise<string | null> {
-    const { queue, url, body, scheduleTime } = options;
+    const { queue, url, body, scheduleTime, taskId } = options;
 
     if (!this.enabled) {
       console.log(`[CloudTasksClient] Mock schedule queue="${queue}" url="${url}" scheduleTime=${scheduleTime || 'now'}:`, JSON.stringify(body));
@@ -47,6 +53,10 @@ export class CloudTasksClient {
         body: Buffer.from(JSON.stringify(body)).toString('base64'),
       },
     };
+
+    if (taskId) {
+      task.name = `${parent}/tasks/${taskId}`;
+    }
 
     if (scheduleTime) {
       const timestamp = new Date(scheduleTime);

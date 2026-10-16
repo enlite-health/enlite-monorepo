@@ -20,7 +20,6 @@ export type KanbanColumn =
   | 'PRE_SCREENING'
   | 'IN_PROGRESS'
   | 'COMPLETED'
-  | 'CONFIRMED'
   | 'SELECTED'
   | 'QUICK_RESPONSE_TEAM'
   | 'REJECTED';
@@ -95,7 +94,6 @@ const KANBAN_COLUMN_ADVANCEMENT: readonly KanbanColumn[] = [
   'PRE_SCREENING',
   'IN_PROGRESS',
   'COMPLETED',
-  'CONFIRMED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM', // entrada do quadro C, invariante 1 (Fase 4) — mais avançada que SELECTED
 ];
@@ -124,6 +122,9 @@ export function mostAdvancedColumn(a: KanbanColumn, b: KanbanColumn): KanbanColu
   return kanbanColumnRank(a) >= kanbanColumnRank(b) ? a : b;
 }
 
+/** Estágios que o quadro B colapsa na coluna Completado (spec 052 os lê para listar quem pode ser convocado). */
+export const COMPLETED_COLUMN_STAGES: readonly string[] = ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'];
+
 /**
  * Derives the Kanban column for a WJA row from its funnel stage + source.
  * Mirrors the classification chain in WJAFunnelController.getEncuadreFunnel.
@@ -142,8 +143,7 @@ export function deriveKanbanColumn(
   if (stage === 'SELECTED') return 'SELECTED';
   if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
-  if (stage === 'CONFIRMED') return 'CONFIRMED';
-  if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
+  if (stage !== null && COMPLETED_COLUMN_STAGES.includes(stage)) return 'COMPLETED';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
   if (stage === 'PRE_SCREENING') return 'PRE_SCREENING';
   // INVITED+manual = clicou em postularse manualmente → coluna INICIADO.
@@ -194,10 +194,10 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
  * IN_PROGRESS mora dentro de PRE_SCREENING no quadro; COMPLETED/QUALIFIED/IN_DOUBT já
  * chegam colapsados em COMPLETED por `deriveKanbanColumn`. BLOQUEADO fica de fora — não
  * tem posição própria no quadro (vira card em INICIADO, ou REJECTED se dispensado, D474).
- * 9 colunas; Compatíveis é derivada, destino proibido — DX-5.5.
+ * 8 colunas; Compatíveis é derivada, destino proibido — DX-5.5.
  */
 export const VACANCY_BOARD_COLUMNS = [
-  'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+  'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
 ] as const satisfies readonly KanbanColumn[];
 
 /**

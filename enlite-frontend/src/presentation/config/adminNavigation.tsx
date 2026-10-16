@@ -5,6 +5,7 @@ import { screenByRoute } from '@presentation/config/screenRegistry';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
+import { ADMIN_USERS_PATH } from './adminHome';
 import { MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
@@ -43,12 +44,8 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   for (const [chave, entrada] of Object.entries(SCREEN_FEATURE_MAP)) {
     if (entrada.navHref && chave in valorPorChave) featureByHref[entrada.navHref] = valorPorChave[chave];
   }
-  // `/admin/recruitment/blocked-attempts` (item admin-only, ver `adminItems`
-  // abaixo) não é o `navHref` de nenhuma chave — é sub-rota de `screen:funnel`
-  // (ver `routes` de `screen:funnel` em screenFeatureMap.ts). Sem esta linha
-  // o item ficava morto no menu quando `screen:funnel` está off: a ROTA nega
-  // (App.tsx já gateia), mas o link continuava visível.
-  featureByHref['/admin/recruitment/blocked-attempts'] = valorPorChave['screen:funnel'];
+  // `/admin/recruitment/blocked-attempts` (item admin-only, ver `adminItems`) é o `navHref` de
+  // `screen:funnel`: some do menu junto com a rota quando a chave está off no país do ator.
 
   const baseItems: AppSidebarNavItem[] = [
     {
@@ -67,7 +64,7 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
         </svg>
       ),
       label: t('admin.nav.users', 'Usuarios'),
-      href: '/admin',
+      href: ADMIN_USERS_PATH,
     },
     {
       icon: (
@@ -109,24 +106,6 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.anacareHours', 'Horas Ana Care'),
       href: '/admin/anacare/horas',
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      ),
-      label: t('admin.nav.recruitment', 'Reclutamiento'),
-      href: '/admin/recruitment',
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-        </svg>
-      ),
-      label: t('admin.nav.apiDocs', 'API Docs'),
-      href: '/admin/api-docs',
     },
   ];
 
@@ -177,6 +156,15 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.patientChatRoles', 'Roles de grupos'),
       href: '/admin/patient-chat-roles',
+    },
+    {
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      ),
+      label: t('admin.nav.interviewHosts', 'Entrevistadores'),
+      href: '/admin/entrevistadores',
     },
     {
       icon: (
@@ -246,8 +234,7 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   // só passavam pelo filtro de PAÍS (`semFeatureDesligada`, abaixo) — nunca por célula — e
   // apareciam para quem não tinha nenhuma. Regra: o item existe para quem tem QUALQUER célula da
   // tela que ele abre (própria ou de container), a mesma régua das abas (`tabsVisibleFor`); a tela
-  // vem do registro pela rota, sem lista à mão. Href sem tela no registro (API Docs) fica: a rota
-  // do back exige só staff, e o menu não inventa célula que a rota não cobra. Engine OFF → `true`.
+  // vem do registro pela rota, sem lista à mão. Href sem tela no registro (célula própria fora do registro de telas) fica: o menu não inventa célula que a rota não cobra. Engine OFF → `true`.
   const comAlgumaCelulaDaTela = (item: AppSidebarNavItem): boolean => {
     const screen = screenByRoute(item.href);
     return screen === undefined || screenVisibleFor(screen, permissions, enforcement);

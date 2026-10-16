@@ -302,6 +302,7 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
           endDate: '2026-12-31',
           contactRefs: [],
           careTeamIds: [],
+          contactStatus: {},
         },
       },
     });
@@ -496,6 +497,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
     endDate: '2026-12-31',
     contactRefs: [{ kind: 'EXTERNAL', id: familiarId }],
     careTeamIds: [profissionalId],
+    contactStatus: {},
     ...over,
   });
 

@@ -14,7 +14,6 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { loginAsStaffOffline } from './helpers/kanban-notes-e2e-helper';
-import { PATIENT_TABS } from '../src/presentation/components/features/admin/PatientDetail/patientTabs';
 
 const PATIENT_ID = 'bbbbbbbb-2222-2222-2222-000000000002';
 
@@ -188,6 +187,12 @@ test.describe('PatientDetailPage — happy path', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_PATIENT_DETAIL) }),
     );
 
+    // A aba Serviço Contratado também monta `PatientVacanciesCard` (spec 047); o catch-all do login offline
+    // (`/api/admin/**` → `data: null`) a derrubaria no `.length`. Rota registrada depois ganha do catch-all.
+    await page.route(`**/api/admin/patients/${PATIENT_ID}/vacancies`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
+    );
+
     await page.goto(`/admin/patients/${PATIENT_ID}`);
     await expect(page.getByText('Francisco Alomon')).toBeVisible({ timeout: 15000 });
 
@@ -202,7 +207,7 @@ test.describe('PatientDetailPage — happy path', () => {
   // 05/09 (decisão do Gabriel): a aba "Encuadre" saiu — era a tabela de serviços contratados
   // duplicada (montada sem `onSaved`) + placeholder. O encuadre do paciente É o serviço contratado.
   // (O teste anterior já estava morto: asseria `enquadre-column-*`, removidas na spec 014.)
-  test('a aba Encuadre não existe mais — o tab bar tem as abas de PATIENT_TABS e "Servicio Contratado" é a única casa do card', async ({ page }) => {
+  test('a aba Encuadre não existe mais — o tab bar tem 7 abas (spec 049: + Admisión; cadeia do itinerário: + Itinerario; sem Vacantes, spec 047) e "Servicio Contratado" é a única casa do card', async ({ page }) => {
     await seedAdminAndLogin(page);
 
     await page.route(`**/api/admin/patients/${PATIENT_ID}`, (route) =>
@@ -213,7 +218,7 @@ test.describe('PatientDetailPage — happy path', () => {
     await expect(page.getByText('Francisco Alomon')).toBeVisible({ timeout: 15000 });
 
     const tabs = page.getByTestId('patient-profile-tabs');
-    await expect(tabs.getByRole('button')).toHaveCount(PATIENT_TABS.length);
+    await expect(tabs.getByRole('button')).toHaveCount(7); // spec 049 (F7): + "Admisión"; cadeia do itinerário (D442): + "Itinerario" — sync 16/10, decisão C2
     await expect(tabs.getByRole('button', { name: /^(Encuadre|Enquadre)$/i })).toHaveCount(0);
     await expect(page.getByTestId('enquadre-terapeutico-card')).toHaveCount(0);
     await expect(tabs).toHaveScreenshot('patient-profile-tabs-sem-encuadre.png');

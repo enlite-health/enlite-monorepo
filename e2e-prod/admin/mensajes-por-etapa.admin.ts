@@ -94,13 +94,13 @@ test('[@route:/admin/mensajes-por-etapa @depth:smoke] a modal mostra o TEXTO da 
   await expect(page.getByTestId('fsm-modal')).toHaveCount(0);
 });
 
-test('[@route:GET /api/admin/funnel-stage-messages @depth:smoke] contrato: 9 etapas, e todo elegível tem texto aprovado com os slots batendo', async () => {
+test('[@route:GET /api/admin/funnel-stage-messages @depth:smoke] contrato: 8 etapas, e todo elegível tem texto aprovado com os slots batendo', async () => {
   const res = await api.get('/api/admin/funnel-stage-messages');
   expect(res.status()).toBe(200);
   const { data } = (await res.json()) as { data: { country: string; stages: StageRow[]; templates: TemplateOption[] } };
 
   expect(data.country).toBe('AR');
-  expect(data.stages).toHaveLength(9);
+  expect(data.stages).toHaveLength(8);
   expect(data.stages.find((s) => s.stage === 'QUALIFIED')?.builtin).toBe('interview_invite');
 
   // Os dois textos chegam à tela (sem eles não existe prévia).

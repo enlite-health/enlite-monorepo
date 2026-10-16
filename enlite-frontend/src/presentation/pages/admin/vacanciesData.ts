@@ -18,10 +18,3 @@ export const getStatusOptions = (t: TFunction): SelectOption[] => [
   { value: 'SUSPENDED',             label: t('admin.vacancies.statusOptions.suspended') },
   { value: 'CLOSED',                label: t('admin.vacancies.statusOptions.closed') },
 ];
-
-export const getPriorityOptions = (t: TFunction): SelectOption[] => [
-  { value: 'URGENT', label: t('admin.vacancies.priorityOptions.urgent') },
-  { value: 'HIGH',   label: t('admin.vacancies.priorityOptions.high') },
-  { value: 'NORMAL', label: t('admin.vacancies.priorityOptions.normal') },
-  { value: 'LOW',    label: t('admin.vacancies.priorityOptions.low') },
-];

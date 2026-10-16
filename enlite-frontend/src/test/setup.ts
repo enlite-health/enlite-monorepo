@@ -1,8 +1,14 @@
+import { createRequire } from 'node:module';
 import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+
+// R-16 (spec 050): teste NUNCA alcança terceiro. A guarda de rede é um módulo único do monorepo
+// (`scripts/rede-bloqueada-em-teste.cjs`, também usado pelo jest do backend e pelo Playwright); ela se instala ao ser carregada.
+// Controle: src/test/rede-bloqueada.controle.test.ts. `createRequire` e não `import`: o arquivo é CommonJS e fica fora de `src`.
+createRequire(import.meta.url)('../../../scripts/rede-bloqueada-em-teste.cjs');
 
 // Inicializa i18n para que componentes que usam useTranslation não emitam
 // o warning "NO_I18NEXT_INSTANCE" no stderr durante os testes.

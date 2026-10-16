@@ -63,6 +63,15 @@ export interface PublicVacancyDetail {
 /** Extended fields for the admin vacancy detail view.
  *  Fields marked optional may not yet be returned by the backend.
  */
+/** Campos do serviço contratado que, ao mudar com a vaga publicada, abrem um aviso (F3 de `vaga-le-do-servico-contratado`). */
+export type SourceChangeField = 'schedule' | 'providers_needed' | 'age_range';
+
+/** Aviso ABERTO: só o campo e o instante — o backend nunca devolve valor antigo nem novo. */
+export interface VacancySourceChangeNotice {
+  field: SourceChangeField;
+  changed_at: string;
+}
+
 export interface AdminVacancyDetail {
   id: string;
   title: string | null;
@@ -152,6 +161,8 @@ export interface AdminVacancyDetail {
    *  `SOURCE_LOCKED_FIELDS` no backend (`vacancyCrudHelpers.ts`). `[]`/ausente quando a vaga foi
    *  criada direto. Fase 4 usa isto para desabilitar os campos correspondentes do form. */
   locked_fields?: string[];
+  /** Avisos abertos de "o serviço contratado mudou com a vaga publicada"; `[]` quando não há. */
+  source_change_notices?: VacancySourceChangeNotice[];
   /** Timestamp da última gravação (coluna `updated_at`). Já consumido por `DraftVacancyPage`
    *  ("Última edición", fase 2); Fase 4 também confirma que o PUT do passo 1 o atualiza. */
   updated_at?: string | null;

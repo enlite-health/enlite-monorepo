@@ -12,6 +12,7 @@ import { test, expect } from '@playwright/test';
 import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { seedMockStaff, cleanupMockStaff, seedVacancyWithCandidatesAtKm } from '../helpers/vacancy-notes-e2e-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
+import { gotoVacancyDetail, switchToKanban, switchToLista } from '../helpers/compativeis-e2e-helper';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
 
@@ -75,18 +76,11 @@ test.describe('funil da vacante — ordem por km @integration', () => {
       expect(byId(wja40)!.distanceKm as number, 'wja40.distanceKm').toBeCloseTo(40, 0);
       expect(byId(wjaNull)?.distanceKm, 'wjaNull.distanceKm').toBeNull();
 
-      // 2. loginAs; abre a vaga (modo lista, aba Invitados padrão).
+      // 2. loginAs; abre a vaga (Kanban, padrão) e entra na Lista clicando "Lista".
       await loginAs(page, MOCK_ADMIN);
-      await page
-        .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), seed.vacancyId)
-        .catch(() => {});
-      const funnelTableRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel-table(\\?|$)`);
-      const [funnelTableResponse] = await Promise.all([
-        page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-        page.goto(`/admin/vacancies/${seed.vacancyId}`),
-      ]);
-      expect(funnelTableResponse.ok(), 'GET funnel-table falhou').toBe(true);
-      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+      await gotoVacancyDetail(page, seed.vacancyId);
+      await switchToLista(page, seed.vacancyId);
+      await expect(page.locator('[data-testid^="funnel-row-"]').first()).toBeVisible({ timeout: 15_000 });
 
       const listIds = await page
         .locator('[data-testid^="funnel-row-"]')
@@ -94,16 +88,7 @@ test.describe('funil da vacante — ordem por km @integration', () => {
       expect(listIds, 'ordem modo lista').toEqual(expectedOrder.map((id) => `funnel-row-${id}`));
 
       // 3. Kanban — mesma ordem.
-      const funnelRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel(\\?|$)`);
-      const [kanbanResponse] = await Promise.all([
-        page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-        page
-          .getByRole('group', { name: 'Cambiar vista' })
-          .getByRole('button', { name: /Kanban/i })
-          .click(),
-      ]);
-      expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
-      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+      await switchToKanban(page, seed.vacancyId);
 
       // Primeira linha depois da navegação ao Kanban: o print.
       if (process.env.PRINT_DIR) {
@@ -137,16 +122,9 @@ test.describe('funil da vacante — ordem por km @integration', () => {
 
       // 2. Tela — modo lista: os 2 aparecem (ordem do backend, sem erro).
       await loginAs(page, MOCK_ADMIN);
-      await page
-        .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), seed.vacancyId)
-        .catch(() => {});
-      const funnelTableRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel-table(\\?|$)`);
-      const [funnelTableResponse] = await Promise.all([
-        page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-        page.goto(`/admin/vacancies/${seed.vacancyId}`),
-      ]);
-      expect(funnelTableResponse.ok(), 'GET funnel-table falhou').toBe(true);
-      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+      await gotoVacancyDetail(page, seed.vacancyId);
+      await switchToLista(page, seed.vacancyId);
+      await expect(page.locator('[data-testid^="funnel-row-"]').first()).toBeVisible({ timeout: 15_000 });
 
       const listIds = await page
         .locator('[data-testid^="funnel-row-"]')
@@ -157,16 +135,7 @@ test.describe('funil da vacante — ordem por km @integration', () => {
       expect(listIds.length, 'nenhum a mais nem a menos').toBe(2);
 
       // 3. Kanban — os 2 aparecem também.
-      const funnelRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel(\\?|$)`);
-      const [kanbanResponse] = await Promise.all([
-        page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-        page
-          .getByRole('group', { name: 'Cambiar vista' })
-          .getByRole('button', { name: /Kanban/i })
-          .click(),
-      ]);
-      expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
-      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+      await switchToKanban(page, seed.vacancyId);
 
       const kanbanIds = await page
         .locator('[data-testid="kanban-column-INVITED"] [data-testid^="kanban-card-"][data-stage]')
@@ -188,30 +157,11 @@ test.describe('funil da vacante — ordem por km @integration', () => {
     const workerId40 = seed.workerIds[2];
 
     try {
-      // 1. loginAs; abre a vaga (modo lista padrão) e muda pro Kanban — ordem
+      // 1. loginAs; abre a vaga (054: abre no Kanban, o padrão) — ordem
       // inicial das distâncias semeadas: 3, 12, 40.
       await loginAs(page, MOCK_ADMIN);
-      await page
-        .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), seed.vacancyId)
-        .catch(() => {});
-      const funnelTableRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel-table(\\?|$)`);
-      const [funnelTableResponse] = await Promise.all([
-        page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-        page.goto(`/admin/vacancies/${seed.vacancyId}`),
-      ]);
-      expect(funnelTableResponse.ok(), 'GET funnel-table falhou').toBe(true);
-      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-
+      await gotoVacancyDetail(page, seed.vacancyId);
       const funnelRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel(\\?|$)`);
-      const [kanbanResponse] = await Promise.all([
-        page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-        page
-          .getByRole('group', { name: 'Cambiar vista' })
-          .getByRole('button', { name: /Kanban/i })
-          .click(),
-      ]);
-      expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
-      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
 
       const kanbanIdsBefore = await page
         .locator('[data-testid="kanban-column-INVITED"] [data-testid^="kanban-card-"][data-stage]')
@@ -233,7 +183,7 @@ test.describe('funil da vacante — ordem por km @integration', () => {
           `WHERE worker_id = '${workerId40}' AND deleted_at IS NULL`,
       );
 
-      // 3. Reload — a view Kanban persiste (localStorage); a ordem lida vira
+      // 3. Reload — a vista continua o Kanban (padrão); a ordem lida vira
       // 1 (ex-40) · 3 · 12, pela ordem de ids, nunca por texto.
       const [kanbanResponseAfter] = await Promise.all([
         page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
@@ -250,15 +200,8 @@ test.describe('funil da vacante — ordem por km @integration', () => {
       );
 
       // 4. Modo lista — mesma ordem nova, lida pelas linhas.
-      const [funnelTableResponseAfter] = await Promise.all([
-        page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-        page
-          .getByRole('group', { name: 'Cambiar vista' })
-          .getByRole('button', { name: 'Lista' })
-          .click(),
-      ]);
-      expect(funnelTableResponseAfter.ok(), 'GET funnel-table pós-mudança falhou').toBe(true);
-      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+      await switchToLista(page, seed.vacancyId);
+      await expect(page.locator('[data-testid^="funnel-row-"]').first()).toBeVisible({ timeout: 15_000 });
 
       const listIdsAfter = await page
         .locator('[data-testid^="funnel-row-"]')
