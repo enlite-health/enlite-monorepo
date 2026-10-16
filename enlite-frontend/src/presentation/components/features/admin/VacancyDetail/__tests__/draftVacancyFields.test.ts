@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   DRAFT_TODO_FIELDS,
   DRAFT_TODO_TOTAL,
@@ -84,8 +84,12 @@ describe('draftVacancyFields — a lista fixa e a contagem derivada (fase 2, F3)
     }
   });
 
-  it('assertKnownLockedFields aceita os 8 campos de SOURCE_LOCKED_FIELDS (paridade com o backend)', () => {
+  it('assertKnownLockedFields aceita os 13 campos de SOURCE_LOCKED_FIELDS (paridade com o backend), sem warn', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(KNOWN_LOCKED_FIELDS).toHaveLength(13);
     expect(() => assertKnownLockedFields([...KNOWN_LOCKED_FIELDS])).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('assertKnownLockedFields aceita lista vazia (vaga sem `contracted_service_id` — F6 do backend)', () => {
@@ -94,7 +98,11 @@ describe('draftVacancyFields — a lista fixa e a contagem derivada (fase 2, F3)
     expect(() => assertKnownLockedFields(undefined)).not.toThrow();
   });
 
-  it('🔴 sabotagem: locked_fields com um nome fora da lista conhecida FALHA nomeando o campo', () => {
-    expect(() => assertKnownLockedFields(['case_number', 'daily_obs'])).toThrowError(/daily_obs/);
+  it('🔴 sabotagem: locked_fields com um nome fora da lista conhecida avisa 1x nomeando o campo e NÃO lança', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => assertKnownLockedFields(['case_number', 'xpto'])).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/xpto/);
+    warn.mockRestore();
   });
 });
