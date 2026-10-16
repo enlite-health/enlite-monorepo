@@ -5,11 +5,11 @@
  * E2E DE TELA, sem mock de resposta: navegador + API + Postgres reais, engine ABAC LIGADO, staff REAL em grupo
  * (células por SQL), login e arrasto como uma pessoa faz, valor lido da TELA e do BANCO. Nenhum canal externo.
  *
- *  feliz       — conta com `patient:update` + `patient_status:move_to_searching`, paciente ACTIVE com serviço completo:
- *                a ficha oferece Búsqueda (ACTIVE→SEARCHING não está na FSM), a troca sai, a tela mostra o novo estado;
+ *  feliz       — conta com `patient:update` + `patient_status:move_to_searching`, paciente DISCHARGED com serviço completo:
+ *                a ficha oferece Búsqueda (DISCHARGED→SEARCHING não está na FSM), a troca sai, a tela mostra o novo estado;
  *                banco: `status='SEARCHING'` e +1 linha no histórico `admin_panel_override` com `actor_uid`; o Historial
  *                mostra a origem traduzida ("fuera del flujo").
- *  sem célula  — conta só com `patient:update`: a opção Búsqueda NÃO existe no select (controle positivo: En espera existe);
+ *  sem célula  — conta só com `patient:update`: a opção Búsqueda NÃO existe no select (controle positivo: Alta existe);
  *                o PUT cru leva 403 `PATIENT_STATUS_MOVE_NOT_PERMITTED` com `details.cell`; banco inalterado.
  *  integridade — conta COM a célula, serviço ativo sem horário: Búsqueda aparece DESABILITADA com o motivo; o PUT cru leva
  *                422 `PATIENT_STATUS_NOT_READY` com o que falta; banco inalterado.
@@ -39,10 +39,10 @@ const operadora = { uid: operadoraUid, email: `${operadoraUid}@e2e.test`, role: 
 const semCelula = { uid: semCelulaUid, email: `${semCelulaUid}@e2e.test`, role: 'admin', country: 'AR' };
 const CELULAS_BASE: Array<[string, string]> = [['patient', 'read'], ['patient', 'update'], ['patient_identity', 'read']];
 
-/** Paciente ACTIVE com 1 endereço e 1 serviço ativo; `horario` NULL = serviço sem horário (a integridade de Búsqueda). */
+/** Paciente DISCHARGED com 1 endereço e 1 serviço ativo; `horario` NULL = serviço sem horário (a integridade de Búsqueda). */
 function seedPaciente(tag: string, horario: boolean): string {
   const { patientId, addressId } = insertTestPatient({
-    status: 'ACTIVE', firstName: 'E2E051', lastName: `${tag}${RUN_ID}`.slice(0, 40),
+    status: 'DISCHARGED', firstName: 'E2E051', lastName: `${tag}${RUN_ID}`.slice(0, 40),
     withAddress: true, hasConsent: true, insuranceInformed: 'OSDE',
   });
   if (!addressId) throw new Error('seedPaciente: insertTestPatient não devolveu addressId');
@@ -77,6 +77,8 @@ async function abrirKanban(page: Page, patientId: string): Promise<{ card: Locat
   return { card, coluna: (s) => page.getByTestId(`kanban-column-${s}`) };
 }
 
+// Par de exemplo trocado no sync main→stage (16/10): a migration 485 da stage pôs ACTIVE→SEARCHING no fluxo;
+// DISCHARGED→SEARCHING está fora do fluxo nos dois lados.
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on' });
 
 test.describe('transicao-estado-051 — troca manual de estado com permissão por destino (spec 051) @integration', () => {
@@ -100,16 +102,16 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name LIKE 'Est051 % ${RUN_ID}'`);
   });
 
-  test('feliz: com patient_status:move_to_searching a ficha troca ACTIVE → Búsqueda; tela, banco e Historial concordam', async ({ page }) => {
+  test('feliz: com patient_status:move_to_searching a ficha troca DISCHARGED → Búsqueda; tela, banco e Historial concordam', async ({ page }) => {
     const patientId = seedPaciente('Feliz', true);
     try {
       await loginAs(page, operadora);
       const select = await abrirFicha(page, patientId);
       const antes = linhasHistorico(patientId);
-      expect(statusDe(patientId)).toBe('ACTIVE');
+      expect(statusDe(patientId)).toBe('DISCHARGED');
 
-      // A lista do servidor traz Búsqueda (fora da FSM, liberada pela célula) sem marca nem aviso, e traz a FSM (En espera).
-      await expect(opcao(select, 'ON_HOLD')).toHaveCount(1);
+      // A lista do servidor traz Búsqueda (fora da FSM, liberada pela célula) sem marca nem aviso, e traz a FSM (Alta).
+      await expect(opcao(select, 'ALTA')).toHaveCount(1);
       await expect(opcao(select, 'SEARCHING')).toHaveCount(1);
       await expect(opcao(select, 'SEARCHING')).toBeEnabled();
       await expect(opcao(select, 'SEARCHING')).toHaveText('Búsqueda');
@@ -127,7 +129,7 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       // banco: o estado mudou e há UMA linha nova, marcada como troca fora do fluxo, com o ator.
       await expect.poll(() => statusDe(patientId)).toBe('SEARCHING');
       expect(linhasHistorico(patientId)).toBe(antes + 1);
-      expect(ultimaLinha(patientId)).toBe(`ACTIVE|SEARCHING|admin_panel_override|${operadoraUid}`);
+      expect(ultimaLinha(patientId)).toBe(`DISCHARGED|SEARCHING|admin_panel_override|${operadoraUid}`);
 
       // Historial EM TELA: a origem traduzida deixa claro que foi fora do fluxo (nunca o valor cru do banco).
       await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Historial' }).click();
@@ -147,7 +149,7 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       await loginAs(page, semCelula);
       const select = await abrirFicha(page, patientId);
       // Controle positivo: o select TEM opções (a FSM) — a ausência de Búsqueda não é lista vazia nem tela quebrada.
-      await expect(opcao(select, 'ON_HOLD')).toHaveCount(1);
+      await expect(opcao(select, 'ALTA')).toHaveCount(1);
       await expect(opcao(select, 'SEARCHING')).toHaveCount(0);
       const values = await select.locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
       expect(values).not.toContain('SEARCHING');
@@ -160,9 +162,9 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       });
       expect(direto.status()).toBe(403);
       const corpo = await direto.json();
-      expect(corpo).toMatchObject({ code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', details: { from: 'ACTIVE', to: 'SEARCHING', cell: 'patient_status:move_to_searching' } });
+      expect(corpo).toMatchObject({ code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', details: { from: 'DISCHARGED', to: 'SEARCHING', cell: 'patient_status:move_to_searching' } });
 
-      expect(statusDe(patientId), 'banco inalterado').toBe('ACTIVE');
+      expect(statusDe(patientId), 'banco inalterado').toBe('DISCHARGED');
       expect(linhasHistorico(patientId), 'histórico inalterado').toBe(antes);
     } finally {
       cleanupTestPatient(patientId);
@@ -178,7 +180,7 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       await expect(busqueda).toHaveCount(1); // a célula a libera...
       await expect(busqueda).toBeDisabled(); // ...mas a integridade a trava, em vez de falhar no clique
       await expect(busqueda).toHaveText(/Búsqueda \(falta: .*horario del servicio/);
-      await expect(opcao(select, 'ON_HOLD')).toBeEnabled(); // controle positivo: o bloqueio é só deste destino
+      await expect(opcao(select, 'ALTA')).toBeEnabled(); // controle positivo: o bloqueio é só deste destino
 
       const antes = linhasHistorico(patientId);
       const direto = await request.put(`${ABAC_API_URL}/api/admin/patients/${patientId}/status`, {
@@ -191,14 +193,14 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       expect(corpo.code).toBe('PATIENT_STATUS_NOT_READY');
       expect(corpo.details.missing).toContain('SERVICE_SCHEDULE');
 
-      expect(statusDe(patientId), 'banco inalterado').toBe('ACTIVE');
+      expect(statusDe(patientId), 'banco inalterado').toBe('DISCHARGED');
       expect(linhasHistorico(patientId), 'histórico inalterado').toBe(antes);
     } finally {
       cleanupTestPatient(patientId);
     }
   });
 
-  test('Kanban com a célula: arrastar ACTIVE → Búsqueda fica no lugar e o histórico grava kanban_override', async ({ page }) => {
+  test('Kanban com a célula: arrastar DISCHARGED → Búsqueda fica no lugar e o histórico grava kanban_override', async ({ page }) => {
     const patientId = seedPaciente('KanbanCom', true);
     try {
       await loginAs(page, operadora);
@@ -210,10 +212,10 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       expect((await put).status()).toBe(200);
 
       await expect(coluna('SEARCHING').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(1, { timeout: 15_000 });
-      await expect(coluna('ACTIVE').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(0);
+      await expect(coluna('DISCHARGED').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(0);
       await expect.poll(() => statusDe(patientId)).toBe('SEARCHING');
       expect(linhasHistorico(patientId)).toBe(antes + 1);
-      expect(ultimaLinha(patientId)).toBe(`ACTIVE|SEARCHING|kanban_override|${operadoraUid}`);
+      expect(ultimaLinha(patientId)).toBe(`DISCHARGED|SEARCHING|kanban_override|${operadoraUid}`);
     } finally {
       cleanupTestPatient(patientId);
     }
@@ -234,10 +236,10 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       expect((await lista).status()).toBe(200);
 
       await expect(page.getByText('Este cambio de estado no está disponible.')).toBeVisible({ timeout: 8_000 });
-      await expect(coluna('ACTIVE').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(1); // o card voltou (nunca saiu)
+      await expect(coluna('DISCHARGED').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(1); // o card voltou (nunca saiu)
       await expect(coluna('SEARCHING').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(0);
       expect(putSaiu, 'a tela recusa antes do PUT').toBe(false);
-      expect(statusDe(patientId), 'banco inalterado').toBe('ACTIVE');
+      expect(statusDe(patientId), 'banco inalterado').toBe('DISCHARGED');
       expect(linhasHistorico(patientId), 'histórico inalterado').toBe(antes);
     } finally {
       cleanupTestPatient(patientId);

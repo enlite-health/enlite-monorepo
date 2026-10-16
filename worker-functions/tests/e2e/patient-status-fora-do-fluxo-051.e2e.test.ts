@@ -207,10 +207,12 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     expect(outros.rows).toEqual([]);
   });
 
-  it('A2. patient:update + move_to_searching: ACTIVE → SEARCHING (fora do fluxo) = 200; banco e histórico lidos de volta; serviço intacto', async () => {
-    const id = await paciente('a2', 'ACTIVE', 'completo');
+  // Par de exemplo trocado no sync main→stage (16/10): a migration 485 da stage pôs ACTIVE→SEARCHING no fluxo;
+  // DISCHARGED→SEARCHING está fora do fluxo nos dois lados.
+  it('A2. patient:update + move_to_searching: DISCHARGED → SEARCHING (fora do fluxo) = 200; banco e histórico lidos de volta; serviço intacto', async () => {
+    const id = await paciente('a2', 'DISCHARGED', 'completo');
     const servicoAntes = (await admin.query(`SELECT updated_at FROM patient_contracted_services WHERE patient_id = $1`, [id])).rows;
-    const fsm = await admin.query(`SELECT 1 FROM patient_status_transitions WHERE from_status = 'ACTIVE' AND to_status = 'SEARCHING'`);
+    const fsm = await admin.query(`SELECT 1 FROM patient_status_transitions WHERE from_status = 'DISCHARGED' AND to_status = 'SEARCHING'`);
     expect(fsm.rowCount).toBe(0); // premissa: o par está FORA do fluxo nesta base
 
     const r = await http('PUT', `/api/admin/patients/${id}/status`, U.operadora, { status: 'SEARCHING' });
@@ -218,19 +220,19 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     expect(r.body.data).toEqual({ id, status: 'SEARCHING' });
     expect(await estado(id)).toBe('SEARCHING');
     expect(await historico(id)).toEqual([
-      { old_value: 'ACTIVE', new_value: 'SEARCHING', change_source: 'admin_panel_override', actor_uid: U.operadora },
+      { old_value: 'DISCHARGED', new_value: 'SEARCHING', change_source: 'admin_panel_override', actor_uid: U.operadora },
     ]);
     const servicoDepois = (await admin.query(`SELECT updated_at FROM patient_contracted_services WHERE patient_id = $1`, [id])).rows;
     expect(servicoDepois).toEqual(servicoAntes);
   });
 
   it('A3. a conta SEM a célula: 403 com details.cell; status e histórico inalterados', async () => {
-    const id = await paciente('a3', 'ACTIVE', 'completo');
+    const id = await paciente('a3', 'DISCHARGED', 'completo');
     const r = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING' });
     expect(r.status).toBe(403);
     expect(r.body.code).toBe('PATIENT_STATUS_MOVE_NOT_PERMITTED');
-    expect(r.body.details).toEqual({ from: 'ACTIVE', to: 'SEARCHING', cell: 'patient_status:move_to_searching' });
-    expect(await estado(id)).toBe('ACTIVE');
+    expect(r.body.details).toEqual({ from: 'DISCHARGED', to: 'SEARCHING', cell: 'patient_status:move_to_searching' });
+    expect(await estado(id)).toBe('DISCHARGED');
     expect(await historico(id)).toEqual([]);
   });
 
@@ -262,21 +264,22 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
   });
 
   it('F3. status-options: coerente com as duas contas; blockedBy nos destinos que o PUT recusaria; exige patient:update', async () => {
-    const id = await paciente('f3', 'ACTIVE', 'completo');
-    const fsmDeActive = (await admin.query<{ to_status: string }>(
-      `SELECT to_status FROM patient_status_transitions WHERE from_status = 'ACTIVE'`,
+    const id = await paciente('f3', 'DISCHARGED', 'completo');
+    const fsmDeDischarged = (await admin.query<{ to_status: string }>(
+      `SELECT to_status FROM patient_status_transitions WHERE from_status = 'DISCHARGED'`,
     )).rows.map((r) => r.to_status).sort();
 
     const com = await http('GET', `/api/admin/patients/${id}/status-options`, U.operadora);
     expect(com.status).toBe(200);
-    expect(com.body.data.current).toBe('ACTIVE');
+    expect(com.body.data.current).toBe('DISCHARGED');
     const viaPermissao = (com.body.data.options as Array<{ status: string; via: string }>).filter((o) => o.via === 'permissao').map((o) => o.status).sort();
-    expect(viaPermissao).toEqual(['SEARCHING'].filter((s) => !fsmDeActive.includes(s)));
-    expect(com.body.data.options.map((o: { status: string }) => o.status)).not.toContain('ACTIVE');
+    // as duas células da operadora (move_to_searching, move_to_on_hold) dão destinos que o fluxo de DISCHARGED não dá
+    expect(viaPermissao).toEqual(['ON_HOLD', 'SEARCHING'].filter((s) => !fsmDeDischarged.includes(s)));
+    expect(com.body.data.options.map((o: { status: string }) => o.status)).not.toContain('DISCHARGED');
 
     const sem = await http('GET', `/api/admin/patients/${id}/status-options`, U.semCelula);
     expect(sem.status).toBe(200);
-    expect((sem.body.data.options as Array<{ status: string }>).map((o) => o.status).sort()).toEqual(fsmDeActive);
+    expect((sem.body.data.options as Array<{ status: string }>).map((o) => o.status).sort()).toEqual(fsmDeDischarged);
     expect((sem.body.data.options as Array<{ via: string }>).every((o) => o.via === 'fluxo')).toBe(true);
 
     // o que a lista oferece o PUT aceita; o que não oferece o PUT recusa (A6, no nível do HTTP)
