@@ -5,12 +5,14 @@ jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
   loggingAls: { getStore: () => undefined },
   reportError: jest.fn(),
+  safeErrorFields: jest.requireActual('../../../../../shared/logging/safeErrorFields').safeErrorFields,
 }));
 jest.mock('@modules/conversation/interfaces/controllers/ConversationActor', () => {
   class MissingActorError extends Error {}
   return { MissingActorError, actorUid: () => 'staff-1' };
 });
 
+import { reportError } from '@shared/logging';
 import { InterviewHostController } from '../InterviewHostController';
 import {
   InterviewHostAlreadyActiveError,
@@ -86,5 +88,27 @@ describe('InterviewHostController', () => {
     const out = await call(c.list.bind(c), {});
     expect(out.status).toBe(500);
     expect(JSON.stringify(out.body)).not.toContain('segredo');
+  });
+
+  it('POST que perde a corrida no UNIQUE (pg 23505 com e-mail no detail) → 409 já ativa, sem reportar o erro cru', async () => {
+    const pgErr = Object.assign(new Error('duplicate key value violates unique constraint "interview_hosts_email_key"'), {
+      code: '23505',
+      detail: 'Key (email)=(staff@enlite.health) already exists.',
+    });
+    service.create.mockRejectedValueOnce(pgErr);
+    const out = await call(c.create.bind(c), { body: { userUid: 'u', countries: ['AR'], doesEnquadre: true, doesAdmission: true } });
+    expect(out).toMatchObject({ status: 409, body: { code: 'INTERVIEW_HOST_ALREADY_ACTIVE' } });
+    expect(JSON.stringify(out.body)).not.toContain('staff@enlite.health');
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('erro inesperado do pg: o que vai para o reportError não contém o e-mail do detail', async () => {
+    const pgErr = Object.assign(new Error('boom Key (email)=(staff@enlite.health)'), { code: '23503', detail: 'Key (email)=(staff@enlite.health)' });
+    service.list.mockRejectedValueOnce(pgErr);
+    await call(c.list.bind(c), {});
+    expect(reportError).toHaveBeenCalledTimes(1);
+    const [reported, ctx] = (reportError as jest.Mock).mock.calls[0];
+    expect(JSON.stringify({ ...reported, message: reported.message, stack: reported.stack, ctx })).not.toContain('staff@enlite.health');
+    expect(reported.code).toBe('23503');
   });
 });

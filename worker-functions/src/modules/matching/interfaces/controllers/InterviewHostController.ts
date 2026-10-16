@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import { reportError } from '@shared/logging';
+import { reportError, safeErrorFields } from '@shared/logging';
 import { actorUid, MissingActorError } from '@modules/conversation/interfaces/controllers/ConversationActor';
 import {
   InterviewHostAlreadyActiveError,
@@ -90,7 +90,15 @@ export class InterviewHostController {
         res.status(hit[1]).json({ success: false, error: (err as Error).message, code });
         return;
       }
-      reportError(err instanceof Error ? err : new Error(String(err)), { source: `InterviewHostController:${op}` });
+      // 23505 em POST = dois cadastros simultâneos da mesma pessoa perderam a corrida no UNIQUE(email)/user_uid: é "já ativa".
+      if (op === 'create' && safeErrorFields(err).code === '23505') {
+        const dup = new InterviewHostAlreadyActiveError();
+        res.status(409).json({ success: false, error: dup.message, code: dup.code });
+        return;
+      }
+      // O erro cru do pg carrega `detail: Key (email)=(...)` e o serializer do pino o copia: reporta só nome e SQLSTATE.
+      const { errorName, code } = safeErrorFields(err);
+      reportError(Object.assign(new Error(errorName), { code }), { source: `InterviewHostController:${op}` });
       res.status(500).json({ success: false, error: 'Internal error', code: 'INTERNAL_ERROR' });
     }
   }
