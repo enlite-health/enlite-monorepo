@@ -187,6 +187,12 @@ test.describe('PatientDetailPage — happy path', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_PATIENT_DETAIL) }),
     );
 
+    // A aba Serviço Contratado também monta `PatientVacanciesCard` (spec 047); o catch-all do login offline
+    // (`/api/admin/**` → `data: null`) a derrubaria no `.length`. Rota registrada depois ganha do catch-all.
+    await page.route(`**/api/admin/patients/${PATIENT_ID}/vacancies`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
+    );
+
     await page.goto(`/admin/patients/${PATIENT_ID}`);
     await expect(page.getByText('Francisco Alomon')).toBeVisible({ timeout: 15000 });
 
