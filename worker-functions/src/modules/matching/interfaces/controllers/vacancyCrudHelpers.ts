@@ -114,6 +114,13 @@ export const SOURCE_LOCKED_FIELDS = [
   'age_range_max',
   'schedule',
   'providers_needed',
+  // 057/D523 (F3): os 5 campos de recrutamento também moram no serviço contratado (`patient_contracted_services`);
+  // a vaga com serviço não os guarda nem edita (os leitores buscam pela peça de campos efetivos, F2).
+  'required_sex',
+  'required_professions',
+  'required_experience',
+  'work_schedule',
+  'payment_day',
 ] as const satisfies readonly (keyof VacancyInsertParams)[];
 
 export type SourceLockedField = (typeof SOURCE_LOCKED_FIELDS)[number];
@@ -122,7 +129,7 @@ export type SourceLockedField = (typeof SOURCE_LOCKED_FIELDS)[number];
  * Extrai de `p` só os campos travados pela origem (`SOURCE_LOCKED_FIELDS`).
  * `buildInsertParams` consome isto para montar as colunas do INSERT que vêm
  * do serviço — nunca lê `p.case_number`/`p.patient_id`/etc. direto para
- * essas 8 colunas. O tipo de retorno (`Pick<VacancyInsertParams,
+ * essas 13 colunas. O tipo de retorno (`Pick<VacancyInsertParams,
  * SourceLockedField>`) é o que faz uma coluna nova "não compilar" sem
  * entrar na constante: não dá para ler `locked.<campo>` se `<campo>` não
  * está em `SOURCE_LOCKED_FIELDS`.
@@ -418,7 +425,7 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
   // fixture de E2E precisa nascer publicável sem tocar Talentum/Groq.
   const isDraft = !(p.is_test === true && p.is_draft === false);
 
-  // As 8 colunas que vêm do paciente/serviço (SOURCE_LOCKED_FIELDS) são lidas
+  // As 13 colunas que vêm do paciente/serviço (SOURCE_LOCKED_FIELDS) são lidas
   // SÓ daqui — nunca de `p.<campo>` direto — para que o INSERT e o `locked_fields`
   // do GET/PUT nunca divirjam (fonte única, teste de paridade).
   const locked = pickSourceLockedFields(p);
@@ -428,25 +435,27 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     locked.case_number,
     p.computedTitle,
     locked.patient_id,
-    p.required_professions ?? [],
-    p.required_sex ?? null,
+    // 057/D523: vaga COM serviço grava NULL nos 5 de recrutamento (o valor mora no serviço; `required_professions`
+    // é NULL, não `[]`); vaga manual segue gravando os próprios.
+    locked.contracted_service_id == null ? locked.required_professions ?? [] : null,
+    locked.contracted_service_id == null ? locked.required_sex ?? null : null,
     // F6: idem para a faixa etária — vaga COM serviço grava NULL (a faixa é derivada de `provider_age_band` do serviço
     // por `applyEffectiveAgeRange`); vaga manual segue gravando a própria faixa.
     locked.contracted_service_id == null ? locked.age_range_min ?? null : null,
     locked.contracted_service_id == null ? locked.age_range_max ?? null : null,
     p.worker_profile_sought ?? null,
-    p.required_experience ?? null,
+    locked.contracted_service_id == null ? locked.required_experience ?? null : null,
     p.worker_attributes ?? null,
     // F2 (vaga-le-do-servico-contratado): vaga COM serviço não grava o horário — o valor mora no serviço
     // (`patient_contracted_services.schedule`) e os leitores o buscam pela peça de campos efetivos.
     // Vaga manual (sem serviço) segue gravando o próprio horário.
     locked.contracted_service_id == null && locked.schedule ? JSON.stringify(locked.schedule) : null,
-    p.work_schedule ?? null,
+    locked.contracted_service_id == null ? locked.work_schedule ?? null : null,
     // F5: idem para a quantidade de prestadores — vaga COM serviço grava NULL (o valor mora em
     // `patient_contracted_services.providers_needed`); vaga manual segue gravando o próprio valor.
     locked.contracted_service_id == null ? locked.providers_needed : null,
     p.salary_text ?? 'A convenir',
-    p.payment_day ?? null,
+    locked.contracted_service_id == null ? locked.payment_day ?? null : null,
     p.daily_obs ?? null,
     locked.patient_address_id ?? null,
     status,
