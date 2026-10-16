@@ -29,7 +29,17 @@ import {
   JobPostingAuditRepository,
   type AuditActorType,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
-import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveAgeRangeSql,
+  vacancyEffectiveJoinSql,
+  vacancyEffectivePaymentDaySql,
+  vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveRequiredExperienceSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+  vacancyEffectiveScheduleSql,
+  vacancyEffectiveWorkScheduleSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 export interface DescriptionAuditActor {
@@ -86,11 +96,13 @@ export async function loadVacancyDescriptionInput(db: Pool, jobPostingId: string
   const result = await db.query(
     `SELECT
        jp.case_number, jp.title,
-       jp.required_professions, jp.required_sex,
-       jp.required_experience, jp.worker_attributes,
+       ${vacancyEffectiveRequiredProfessionsSql('jp')} AS required_professions,
+       ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex,
+       ${vacancyEffectiveRequiredExperienceSql('jp')} AS required_experience, jp.worker_attributes,
        ${vacancyEffectiveAgeRangeSql('jp')},
-       ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule,
-       jp.salary_text, jp.payment_day,
+       ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, ${vacancyEffectiveScheduleSql('jp')} AS schedule,
+       ${vacancyEffectiveWorkScheduleSql('jp')} AS work_schedule,
+       jp.salary_text, ${vacancyEffectivePaymentDaySql('jp')} AS payment_day,
        pa.city, pa.state, pa.neighborhood,
        p.diagnosis AS pathology_types,
        p.dependency_level,
