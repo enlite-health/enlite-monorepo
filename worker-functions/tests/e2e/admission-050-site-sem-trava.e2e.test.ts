@@ -15,6 +15,7 @@ import { TactiqLinkRequiredError } from '../../src/modules/matching/application/
 import { AdmissionSchedulingController } from '../../src/modules/matching/interfaces/controllers/AdmissionSchedulingController';
 import { interviewHostRepository } from '../../src/modules/matching/infrastructure/InterviewHostRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -48,7 +49,7 @@ describe('site sem a trava do vínculo Tactiq; painel segue travado (spec 050, D
     admin = new Pool({ connectionString: DATABASE_URL });
     setEnv('ADMISSION_HOST_ROSTER_ENABLED', 'true');
     setEnv('ADMISSION_CALENDAR_ID_AR', CAL_AR);
-    await admin.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Sem','AR',true)`, [SEM]);
+    await insertInterviewHost(admin, { email: SEM, displayName: 'Sem' });
     await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = $1', [SEM]); // SEM linha em tactiq_links
     const p = await admin.query(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, is_test, has_consent, contact_email_encrypted)
@@ -67,7 +68,7 @@ describe('site sem a trava do vínculo Tactiq; painel segue travado (spec 050, D
   afterAll(async () => {
     await admin.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
     await admin.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
-    await admin.query('DELETE FROM interview_hosts WHERE email = $1', [SEM]);
+    await deleteInterviewHosts(admin, [SEM]);
     await admin.end();
     await DatabaseConnection.getInstance().close();
     for (const [k, v] of Object.entries(envAnterior)) {

@@ -29,6 +29,7 @@ import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infra
 import { AdmissionMessageRepository } from '../../src/modules/matching/infrastructure/AdmissionMessageRepository';
 import { admissionReminderTaskId } from '../../src/modules/matching/infrastructure/RealAdmissionNotifier';
 import type { AdmissionMessageKind } from '../../src/modules/matching/application/ports/AdmissionMessagingPorts';
+import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -151,7 +152,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
   beforeAll(async () => {
     admin = new Pool({ connectionString: DATABASE_URL });
     await limparIam();
-    await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [[ANA, OCUPADA]]);
+    await deleteInterviewHosts(admin, [ANA, OCUPADA]);
     await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)', [[ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]]);
 
     setEnv('USE_MOCK_AUTH', 'true');
@@ -176,11 +177,9 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
     await grupoComCelulas(admin, { nome: GRUPOS.chefe, uid: U.chefe, celulas: [['patient_admission', 'read'], ['patient_admission', 'create'], ['patient_admission', 'update'], ['patient_admission', 'resend_message']] });
     await grupoComCelulas(admin, { nome: GRUPOS.agendadora, uid: U.agendadora, celulas: [['patient_admission', 'read'], ['patient_admission', 'create'], ['patient_admission', 'update']] });
     await grupoComCelulas(admin, { nome: GRUPOS.leitora, uid: U.leitora, celulas: [['patient_admission', 'read']] });
-    await admin.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true), ($2,'Mari','AR',true),
-         ($3,'Sem','AR',true), ($4,'Quebrado','AR',true), ($5,'Outra','AR',true)`,
-      [ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA],
-    );
+    for (const [email, displayName] of [[ANA, 'Ana'], [OCUPADA, 'Mari'], [SEM_VINCULO, 'Sem'], [QUEBRADO, 'Quebrado'], [OUTRA_CONTA, 'Outra']]) {
+      await insertInterviewHost(admin, { email, displayName });
+    }
     // Vínculo do Tactiq (F4). O token (tabela à parte, 505) o teste nunca usa.
     await admin.query(
       `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES
@@ -245,7 +244,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       await admin.query(`DELETE FROM admission_appointments WHERE patient_id = ANY($1)`, [patients]);
       await admin.query(`DELETE FROM patients WHERE id = ANY($1)`, [patients]);
     }
-    await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [[ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]]);
+    await deleteInterviewHosts(admin, [ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]);
     await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)', [[ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]]);
     await limparIam();
     await admin.end();
@@ -674,7 +673,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
     await limparIamFixtures(pool, { uids: Object.values(uids), grupos: Object.values(grupos) });
-    await pool.query('DELETE FROM interview_hosts WHERE email = $1', [ANA]);
+    await deleteInterviewHosts(pool, [ANA]);
     await pool.query(
       `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES
          ($1,'adm049-c-sem@e2e.local','admin','ACTIVE',true,$3), ($2,'adm049-c-com@e2e.local','admin','ACTIVE',true,$3)`,
@@ -682,7 +681,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
     );
     await grupoComCelulas(pool, { nome: grupos.sem, uid: uids.sem, celulas: [['patient_admission', 'read']] });
     await grupoComCelulas(pool, { nome: grupos.com, uid: uids.com, celulas: [['patient_admission', 'read'], ['patient_admission', 'create'], ['patient_admission', 'update']] });
-    await pool.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true)`, [ANA]);
+    await insertInterviewHost(pool, { email: ANA, displayName: 'Ana' });
     await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = $1`, [ANA]);
     await pool.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,'tq-ana-c','linked')`, [ANA]);
     const { rows } = await pool.query(
@@ -695,7 +694,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
   afterAll(async () => {
     await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
     await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
-    await pool.query('DELETE FROM interview_hosts WHERE email = $1', [ANA]);
+    await deleteInterviewHosts(pool, [ANA]);
     await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = $1`, [ANA]);
     await limparIamFixtures(pool, { uids: Object.values(uids), grupos: Object.values(grupos) });
     await pool.end();

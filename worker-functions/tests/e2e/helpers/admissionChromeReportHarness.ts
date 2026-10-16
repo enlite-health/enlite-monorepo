@@ -17,6 +17,7 @@ import { criarEscopoDeEnv, configurarConexaoRls, montarAuthDeProducao } from './
 import { FakeChromeReport } from '../../../src/modules/matching/infrastructure/doubles/FakeChromeReport';
 import { TACTIQ_EXTENSION_ID, type ChromeReportPort } from '../../../src/modules/matching/application/ports/ChromeReportPort';
 import { capturingLogger } from '../../../src/modules/matching/infrastructure/doubles/admissionTestKit';
+import { insertInterviewHost, deleteInterviewHosts } from './interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -58,10 +59,9 @@ export function definirCenariosRelatorioChrome(conexao: ConexaoChrome, sufixo: s
       seq += 1;
       const email = `chr${seq}.${RUN}@example.test`;
       const uid = `chr050-${seq}-${RUN}`;
-      await admin.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Operadora Sintetica','AR',true)`, [email]);
+      await insertInterviewHost(admin, { email, displayName: 'Operadora Sintetica', withUser: opts.user !== false, uid });
       hostEmails.push(email);
       if (opts.user !== false) {
-        await admin.query(`INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,$2,'admin','ACTIVE',true,$3)`, [uid, email, TENANT]);
         hostUids.push(uid);
       }
       return { email, uid };
@@ -144,7 +144,7 @@ export function definirCenariosRelatorioChrome(conexao: ConexaoChrome, sufixo: s
       await admin.query(`DELETE FROM notification_events e WHERE e.type_code = 'ADMISSION_TACTIQ_EXTENSION_CHANGED' AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.event_id = e.id)`);
       // o job varre o roster inteiro do banco: as linhas das operadoras alheias criadas durante este arquivo também saem
       await admin.query(`DELETE FROM admission_chrome_reports WHERE created_at >= $1`, [inicio]);
-      await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [hostEmails]);
+      await deleteInterviewHosts(admin, hostEmails);
       await admin.query('DELETE FROM users WHERE firebase_uid = ANY($1)', [hostUids]);
       await dropLoginRoles(admin, [RUNTIME_USER, SYSTEM_USER]);
       await admin.end();
