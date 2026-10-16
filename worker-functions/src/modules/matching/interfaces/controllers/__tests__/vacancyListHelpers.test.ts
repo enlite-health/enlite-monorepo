@@ -7,7 +7,11 @@
  */
 
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
-import { vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts, loadVacancyActivity, mapVacancyListRow, VacancyListRow } from '../vacancyListHelpers';
 
 // Minimal filters that satisfy the required fields
@@ -120,13 +124,13 @@ describe('coluna Caso — número lido do paciente (spec 046 F2, A5-A7)', () => 
 describe('buildListVacanciesQuery — workerType filter', () => {
   it('appends ANY(required_professions) clause for "AT"', () => {
     const { baseQuery, params } = buildListVacanciesQuery(base({ workerType: 'AT' }));
-    expect(baseQuery).toContain('= ANY(jp.required_professions)');
+    expect(baseQuery).toContain(`= ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})`);
     expect(params[0]).toBe('AT');
   });
 
   it('appends clause for "CAREGIVER"', () => {
     const { baseQuery, params } = buildListVacanciesQuery(base({ workerType: 'CAREGIVER' }));
-    expect(baseQuery).toContain('= ANY(jp.required_professions)');
+    expect(baseQuery).toContain(`= ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})`);
     expect(params[0]).toBe('CAREGIVER');
   });
 
@@ -180,7 +184,7 @@ describe('buildListVacanciesQuery — city filter', () => {
 describe('buildListVacanciesQuery — requiredSex filter', () => {
   it('appends jp.required_sex = clause for "F"', () => {
     const { baseQuery, params } = buildListVacanciesQuery(base({ requiredSex: 'F' }));
-    expect(baseQuery).toContain('jp.required_sex = $1');
+    expect(baseQuery).toContain(`${vacancyEffectiveRequiredSexSql('jp')} = $1`);
     expect(params[0]).toBe('F');
   });
 
