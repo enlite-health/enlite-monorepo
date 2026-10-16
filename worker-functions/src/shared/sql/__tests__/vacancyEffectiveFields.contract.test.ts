@@ -244,8 +244,9 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
       expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.schedule('jp', 'e')} AS schedule`);
       expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.age_range_min('jp', 'e')} AS age_range_min`);
       expect(cols.endsWith(`${vacancyEffectiveAgeBandSql('jp', 'e')} AS ${EFFECTIVE_AGE_BAND_ALIAS}`)).toBe(true);
-      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length + 1);
-      expect(cols).toContain('jp.work_schedule');
+      // +1 da banda; +1 da vírgula interna do COALESCE de required_professions (057)
+      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length + 2);
+      expect(cols).toContain('jp.schedule_days_hours'); // 057: work_schedule agora é efetivo
       expect(new Set(JOB_POSTING_COLUMNS).size).toBe(JOB_POSTING_COLUMNS.length);
       expect(vacancyRawColumnsSql().split(', ')).toEqual([...JOB_POSTING_COLUMNS]);
     });
