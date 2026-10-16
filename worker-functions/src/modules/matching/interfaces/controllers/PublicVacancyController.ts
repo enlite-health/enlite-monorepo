@@ -7,7 +7,13 @@ import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastru
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { loadPublicVacancyDiagnosisLabel } from '../../application/publicVacancyDiagnosisLabel';
-import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveAgeRangeSql,
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+  vacancyEffectiveScheduleSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 /**
@@ -161,8 +167,8 @@ export class PublicVacancyController {
           -- service_type FICA: e profissao buscada (AT / CAREGIVER / PSYCHOLOGIST), nao saude.
           -- (sem crases aqui: este SQL vive dentro de um template literal, e crase o encerra.)
           p.service_type AS service_type,
-          jp.required_professions,
-          jp.required_sex,
+          ${vacancyEffectiveRequiredProfessionsSql('jp')} AS required_professions,
+          ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex,
           ${vacancyEffectiveAgeRangeSql('jp')},
           jp.worker_attributes,
           ${vacancyEffectiveScheduleSql('jp')} AS schedule,
