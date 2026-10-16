@@ -112,11 +112,12 @@ function build(script: Script, opts: { tactiq?: TactiqLinkState; env?: Record<st
   const db = fakeDb(script);
   const calendar = new FakeAdmissionCalendar();
   const hostEmail = opts.hostEmail ?? HOST_EMAIL;
+  const listHostsMock = jest.fn(async (_country: string, _flow: string) => [{ id: HOST_ID, email: hostEmail, displayName: 'Entrevistadora Ficticia A' }]);
   const tactiqState = opts.tactiq ?? 'linked';
   const deps: EnquadreEventServiceDeps = {
     db: db.pool as never,
     calendar,
-    hosts: { listActiveWithIdByCountry: async () => [{ id: HOST_ID, email: hostEmail, displayName: 'Entrevistadora Ficticia A' }] },
+    hosts: { listActiveWithIdByCountry: listHostsMock },
     tactiq: { statesFor: async (emails: string[]) => new Map(emails.map((e) => [e.toLowerCase(), tactiqState])) },
     decryptor: { decrypt: async (c) => c ?? '' },
     env: opts.env ?? { ENQUADRE_CALENDAR_ID_AR: 'cal-ar@group.example.test', ENQUADRE_GUEST_POLICY: 'all' },
@@ -124,7 +125,7 @@ function build(script: Script, opts: { tactiq?: TactiqLinkState; env?: Record<st
     now: () => opts.now ?? new Date('2026-10-14T12:00:00.000Z'),
     calendarRetryDelaysMs: [],
   };
-  return { service: new EnquadreEventService(deps), calendar, db };
+  return { service: new EnquadreEventService(deps), calendar, db, listHostsMock };
 }
 
 const INPUT = { hostId: HOST_ID, startsAt: '2026-10-16T14:00', durationMinutes: 60, workerIds: [W1, W2] };
@@ -408,7 +409,10 @@ describe('leitura', () => {
   });
 
   it('listHosts: linked só quando apto; senão unlinked; id estável; sem e-mail na resposta', async () => {
-    const linked = await build({ available: [] }).service.listHosts(VACANCY_ID);
+    const built = build({ available: [] });
+    const linked = await built.service.listHosts(VACANCY_ID);
+    // spec 055: o enquadre lê o roster do FLUXO enquadre (nunca o da admissão).
+    expect(built.listHostsMock).toHaveBeenCalledWith(expect.any(String), 'enquadre');
     expect(linked).toEqual([{ id: HOST_ID, name: 'Entrevistadora Ficticia A', linkState: 'linked' }]);
     const broken = await build({ available: [] }, { tactiq: 'broken' }).service.listHosts(VACANCY_ID);
     expect(broken[0].linkState).toBe('unlinked');

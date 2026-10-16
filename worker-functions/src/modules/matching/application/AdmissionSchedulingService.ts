@@ -208,7 +208,7 @@ export class AdmissionSchedulingService {
     // ou fuso: o spec manda responder "zero horários, sem erro", e um país que
     // ainda não tem agenda configurada não pode virar 500 na tela pública.
     const activeHosts = isHostRosterEnabled()
-      ? await this.hosts.listActiveByCountry(country)
+      ? await this.hosts.listActiveByCountry(country, 'admission')
       : null;
     if (activeHosts && activeHosts.length === 0) {
       logger.warn(
@@ -422,7 +422,7 @@ export class AdmissionSchedulingService {
     timezone: string,
   ): Promise<RankedHost[]> {
     const cfg = getAdmissionCountryConfig(country);
-    const hosts = await this.hosts.listActiveByCountry(country);
+    const hosts = await this.hosts.listActiveByCountry(country, 'admission');
     if (hosts.length === 0) return [];
     const weekStart = slotStart.startOf('week');
     const weekEnd = weekStart.plus({ days: 7 });
@@ -645,7 +645,7 @@ export class AdmissionSchedulingService {
     const endISO = slotEnd.toISO() as string;
 
     const wanted = params.hostEmail.trim().toLowerCase();
-    const roster = await this.hosts.listActiveByCountry(country);
+    const roster = await this.hosts.listActiveByCountry(country, 'admission');
     const host = roster.find((h) => h.email.toLowerCase() === wanted);
     if (!host) throw new HostNotInRosterError();
     await this.assertTactiqLinked(host.email);
