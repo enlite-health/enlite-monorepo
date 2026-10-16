@@ -219,6 +219,10 @@ describe('Kanban do evento (E9-E11)', () => {
     expect(screen.getAllByTestId('move-to-button')).toHaveLength(5);
     expect(screen.getAllByTestId('reject-button')).toHaveLength(5);
     expect(screen.getAllByTestId('notes-button')).toHaveLength(5);
+    for (const b of screen.getAllByTestId('notes-button')) {
+      expect(b.getAttribute('aria-label')).toBeTruthy();
+      expect(b.textContent).toBe('');
+    }
   });
 
   it('E9 "Mover a…" oferece Seleccionados e Respuesta rápida (o atual some; sem Rechazados)', async () => {
@@ -272,6 +276,9 @@ describe('Kanban do evento (E9-E11)', () => {
     expect(document.querySelectorAll('[data-drag-disabled="true"]')).toHaveLength(5);
     expect(screen.queryByTestId('move-to-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('reject-button')).not.toBeInTheDocument();
+    // Comentários seguem no evento encerrado (somente leitura): é onde mora a anotação do Sistema.
+    expect(screen.getAllByTestId('notes-button')).toHaveLength(5);
+    for (const b of screen.getAllByTestId('notes-button')) expect(b.getAttribute('aria-label')).toBeTruthy();
     expect(screen.queryByTestId('enquadre-kanban-actions')).not.toBeInTheDocument();
     expect(screen.queryByTestId('enquadre-kanban-manage')).not.toBeInTheDocument();
     expect(screen.queryByTestId('enquadre-kanban-cancel')).not.toBeInTheDocument();
