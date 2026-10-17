@@ -18,7 +18,12 @@ import {
 } from './vacancyScheduleFilter';
 import type { Pool } from 'pg';
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
-import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 import {
@@ -203,7 +208,7 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
   }
 
   if (typeof filters.workerType === 'string' && VALID_WORKER_TYPES.has(filters.workerType)) {
-    baseQuery += ` AND $${paramIndex} = ANY(jp.required_professions)`;
+    baseQuery += ` AND $${paramIndex} = ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})`;
     params.push(filters.workerType);
     paramIndex++;
   }
@@ -221,7 +226,7 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
   }
 
   if (typeof filters.requiredSex === 'string' && VALID_REQUIRED_SEX.has(filters.requiredSex)) {
-    baseQuery += ` AND jp.required_sex = $${paramIndex}`;
+    baseQuery += ` AND ${vacancyEffectiveRequiredSexSql('jp')} = $${paramIndex}`;
     params.push(filters.requiredSex);
     paramIndex++;
   }

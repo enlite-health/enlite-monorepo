@@ -31,7 +31,11 @@ const ROOT = path.resolve(__dirname, '../../../..'); // worker-functions/
 const PIECE = 'src/shared/sql/vacancyEffectiveFieldsSql.ts';
 
 /** Campos da vaga que passam a ser lidos do serviço. */
-const PROTECTED_FIELDS = ['schedule', 'providers_needed', 'age_range_min', 'age_range_max'];
+const PROTECTED_FIELDS = [
+  'schedule', 'providers_needed', 'age_range_min', 'age_range_max',
+  // 057 (D523): os 5 campos de recrutamento são do serviço contratado.
+  'required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day',
+];
 
 type RuleId = `${string}:alias` | `${string}:bare` | 'star' | 'raw-export';
 
@@ -46,16 +50,22 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
     motivo: 'LEITOR 13 em client cru (connect() sem identidade): SELECT/RETURNING com lista explícita SEM join, só para auditar o que foi gravado; a resposta traz o efetivo via withEffectiveSchedule.',
   },
   'src/modules/matching/interfaces/controllers/vacancyCrudHelpers.ts': {
-    rules: ['schedule:bare', 'providers_needed:bare', 'age_range_min:bare', 'age_range_max:bare', 'raw-export'],
-    motivo: 'ESCRITOR (F2/F5/F6): o INSERT único ainda NOMEIA as colunas `schedule`, `providers_needed` e `age_range_min/max` (vaga manual, sem serviço), mas `buildInsertParams` grava NULL nelas quando há `contracted_service_id`; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
+    rules: [
+      'schedule:bare', 'providers_needed:bare', 'age_range_min:bare', 'age_range_max:bare', 'raw-export',
+      'required_sex:bare', 'required_professions:bare', 'required_experience:bare', 'work_schedule:bare', 'payment_day:bare',
+    ],
+    motivo: 'ESCRITOR (F2/F5/F6): o INSERT único ainda NOMEIA as colunas `schedule`, `providers_needed`, `age_range_min/max` e, desde a 057, `required_sex/professions/experience`, `work_schedule` e `payment_day` (vaga manual, sem serviço), mas `buildInsertParams` grava NULL nelas quando há `contracted_service_id`; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
   },
   'src/modules/matching/infrastructure/JobPostingARRepository.ts': {
     rules: ['providers_needed:bare'],
     motivo: 'ESCRITOR (F5, código sem chamador vivo): upsertFromClickUp só é chamado por scripts/import-vacancies-from-clickup.ts (manual, ClickUp depreciado), que NUNCA passa `providersNeeded` (grava NULL); escreve, não lê.',
   },
   'scripts/enrich-vacancies-helpers.ts': {
-    rules: ['schedule:bare', 'age_range_min:bare', 'age_range_max:bare'],
-    motivo: 'ESCRITOR (F2/F6): UPDATE do enrichment, sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
+    rules: [
+      'schedule:bare', 'age_range_min:bare', 'age_range_max:bare',
+      'required_sex:bare', 'required_professions:bare', 'required_experience:bare', 'payment_day:bare',
+    ],
+    motivo: 'ESCRITOR (F2/F6/057): UPDATE do enrichment (inclui required_sex/professions/experience e payment_day), sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
   },
 };
 
@@ -178,6 +188,8 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
         ["'SELECT age_range_max FROM job_postings'", 'age_range_max:bare'],
         ['`SELECT providers_needed FROM job_postings WHERE id = $1`', 'providers_needed:bare'],
         ["'SELECT providers_needed FROM job_postings'", 'providers_needed:bare'],
+        ['`SELECT jp.required_sex FROM job_postings jp WHERE jp.id = $1`', 'required_sex:alias'],
+        ['`SELECT jp.payment_day FROM job_postings jp`', 'payment_day:alias'],
         ['`SELECT * FROM job_postings WHERE id = $1`', 'star'],
         ['import { vacancyRawColumnsSql } from \'@shared/sql/vacancyEffectiveFieldsSql\';', 'raw-export'],
         ['const c = JOB_POSTING_COLUMNS;', 'raw-export'],
@@ -191,7 +203,7 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
     it('APROVA o que passa pela peça, colunas irmãs e outras tabelas', () => {
       const bons = [
         '`SELECT ${vacancyEffectiveScheduleSql(\'jp\')} AS schedule FROM job_postings jp ${vacancyEffectiveJoinSql(\'jp\')}`',
-        '`SELECT jp.schedule_days_hours, jp.work_schedule FROM job_postings jp`',
+        '`SELECT jp.schedule_days_hours, jp.worker_attributes FROM job_postings jp`',
         '`SELECT pcs.schedule FROM patient_contracted_services pcs`',
         '`SELECT ${vacancyEffectiveProvidersNeededSql(\'jp\')} AS providers_needed FROM job_postings jp ${vacancyEffectiveJoinSql(\'jp\')}`',
         '`SELECT pcs.providers_needed FROM patient_contracted_services pcs`',
@@ -244,8 +256,9 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
       expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.schedule('jp', 'e')} AS schedule`);
       expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.age_range_min('jp', 'e')} AS age_range_min`);
       expect(cols.endsWith(`${vacancyEffectiveAgeBandSql('jp', 'e')} AS ${EFFECTIVE_AGE_BAND_ALIAS}`)).toBe(true);
-      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length + 1);
-      expect(cols).toContain('jp.work_schedule');
+      // +1 da banda; +1 da vírgula interna do COALESCE de required_professions (057)
+      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length + 2);
+      expect(cols).toContain('jp.schedule_days_hours'); // 057: work_schedule agora é efetivo
       expect(new Set(JOB_POSTING_COLUMNS).size).toBe(JOB_POSTING_COLUMNS.length);
       expect(vacancyRawColumnsSql().split(', ')).toEqual([...JOB_POSTING_COLUMNS]);
     });

@@ -9,6 +9,11 @@ import { JobPostingNotFoundError } from '../infrastructure/TalentumDescriptionSe
 import {
   vacancyEffectiveJoinSql,
   vacancyEffectiveScheduleSql,
+  vacancyEffectiveRequiredSexSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredExperienceSql,
+  vacancyEffectiveWorkScheduleSql,
+  vacancyEffectivePaymentDaySql,
   vacancyEffectiveProvidersNeededSql,
   vacancyEffectiveAgeRangeSql,
 } from '@shared/sql/vacancyEffectiveFieldsSql';
@@ -16,11 +21,12 @@ import {
 export async function loadVacancyCase(db: Pool, jobPostingId: string) {
   const result = await db.query(
     `SELECT
-         jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
-         ${vacancyEffectiveAgeRangeSql('jp')}, jp.required_experience, jp.worker_attributes,
-         ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule,
+         jp.id, jp.title, jp.case_number, ${vacancyEffectiveRequiredProfessionsSql('jp')} AS required_professions,
+         ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex,
+         ${vacancyEffectiveAgeRangeSql('jp')}, ${vacancyEffectiveRequiredExperienceSql('jp')} AS required_experience, jp.worker_attributes,
+         ${vacancyEffectiveScheduleSql('jp')} AS schedule, ${vacancyEffectiveWorkScheduleSql('jp')} AS work_schedule,
          ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, jp.salary_text,
-         jp.payment_day, jp.daily_obs,
+         ${vacancyEffectivePaymentDaySql('jp')} AS payment_day, jp.daily_obs,
          pa.address_formatted, pa.city, pa.state,
          p.diagnosis, p.dependency_level, p.service_type
        FROM job_postings jp

@@ -1,9 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   DRAFT_TODO_FIELDS,
   DRAFT_TODO_TOTAL,
   KNOWN_LOCKED_FIELDS,
   assertKnownLockedFields,
+  draftTodoFields,
+  draftTodoTotal,
   missingDraftFieldsCount,
   type DraftVacancyLike,
 } from '../draftVacancyFields';
@@ -84,8 +86,12 @@ describe('draftVacancyFields — a lista fixa e a contagem derivada (fase 2, F3)
     }
   });
 
-  it('assertKnownLockedFields aceita os 8 campos de SOURCE_LOCKED_FIELDS (paridade com o backend)', () => {
+  it('assertKnownLockedFields aceita os 13 campos de SOURCE_LOCKED_FIELDS (paridade com o backend), sem warn', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(KNOWN_LOCKED_FIELDS).toHaveLength(13);
     expect(() => assertKnownLockedFields([...KNOWN_LOCKED_FIELDS])).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('assertKnownLockedFields aceita lista vazia (vaga sem `contracted_service_id` — F6 do backend)', () => {
@@ -94,7 +100,46 @@ describe('draftVacancyFields — a lista fixa e a contagem derivada (fase 2, F3)
     expect(() => assertKnownLockedFields(undefined)).not.toThrow();
   });
 
-  it('🔴 sabotagem: locked_fields com um nome fora da lista conhecida FALHA nomeando o campo', () => {
-    expect(() => assertKnownLockedFields(['case_number', 'daily_obs'])).toThrowError(/daily_obs/);
+  it('🔴 sabotagem: locked_fields com um nome fora da lista conhecida avisa 1x nomeando o campo e NÃO lança', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => assertKnownLockedFields(['case_number', 'xpto'])).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/xpto/);
+    warn.mockRestore();
+  });
+});
+
+describe('draftVacancyFields — vaga com serviço contratado (057/T4.4)', () => {
+  const comServico = (o: Partial<DraftVacancyLike> = {}) =>
+    fullVacancy({ contracted_service_id: 'svc-1', work_schedule: 'L-V', ...o });
+
+  it('com serviço: os 4 itens saem e entra 1 item único; total 5 e a contagem do item = campos vazios dos 5', () => {
+    const v = comServico({ required_sex: null, payment_day: null, work_schedule: null });
+    const keys = draftTodoFields(v).map((f) => f.key);
+    expect(keys).toEqual([
+      'service_recruitment_fields',
+      'worker_profile_sought',
+      'worker_attributes',
+      'closes_at',
+      'meet_links',
+    ]);
+    expect(draftTodoTotal(v)).toBe(5);
+    const item = draftTodoFields(v)[0];
+    expect(item.labelParams?.(v)).toEqual({ count: 3 });
+    expect(item.isEmpty(v)).toBe(true);
+    expect(missingDraftFieldsCount(v)).toBe(1);
+  });
+
+  it('com serviço e os 5 já preenchidos: o item aparece feito (isEmpty=false), faltam 0', () => {
+    const v = comServico();
+    expect(draftTodoFields(v)[0].isEmpty(v)).toBe(false);
+    expect(missingDraftFieldsCount(v)).toBe(0);
+  });
+
+  it('sem serviço: os 8 itens de sempre, inalterado', () => {
+    const v = fullVacancy({ contracted_service_id: null });
+    expect(draftTodoFields(v)).toBe(DRAFT_TODO_FIELDS);
+    expect(draftTodoTotal(v)).toBe(8);
+    expect(draftTodoFields(v).map((f) => f.key)).not.toContain('service_recruitment_fields');
   });
 });

@@ -8,9 +8,9 @@
  *
  * Cobre F3: paciente + serviço contratado (API) → dispara o foguete
  * (`POST .../activate-recruitment`, o endpoint que o botão "Lançar" usa) → a vaga nasce com
- * `contracted_service_id` → `GET` devolve `locked_fields` (os 8 campos que vieram do serviço) →
+ * `contracted_service_id` → `GET` devolve `locked_fields` (os 13 campos que vieram do serviço — 057/D523) →
  * `PUT` num campo travado (`schedule`) recusa com 422 e o banco não muda → `PUT` num campo livre
- * (`required_professions`) aceita e persiste.
+ * (`worker_profile_sought`) aceita e persiste; `required_professions` passou a travado (057/D523) → 422.
  */
 import { test, expect } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
@@ -93,7 +93,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
 
   test.afterAll(() => cleanupTestPatient(patientId));
 
-  test('GET devolve locked_fields com os 8 campos travados (contracted_service_id setado pelo foguete) e updated_at presente', async ({ request }) => {
+  test('GET devolve locked_fields com os 13 campos travados (contracted_service_id setado pelo foguete) e updated_at presente', async ({ request }) => {
     expect(vacancyId, 'foguete não criou vacancyId no beforeAll — ver falha do POST activate-recruitment acima').toBeTruthy();
 
     const res = await request.get(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, { headers: AUTH_HEADERS });
@@ -105,9 +105,11 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
       new Set([
         'case_number', 'patient_id', 'patient_address_id', 'contracted_service_id',
         'age_range_min', 'age_range_max', 'schedule', 'providers_needed',
+        // 057/D523: 13 — os 5 campos de recrutamento que a vaga lê do serviço contratado.
+        'required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day',
       ]),
     );
-    expect(body.locked_fields).toHaveLength(8);
+    expect(body.locked_fields).toHaveLength(13);
     expect(body.updated_at).toBeTruthy();
 
     // F2 (vaga-le-do-servico-contratado): o foguete NÃO copia o horário — a coluna da vaga fica NULL e o GET
@@ -121,7 +123,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     expect(String(body.providers_needed)).toBe('1');
   });
 
-  test('PUT em campo travado (schedule) → 422 com locked_fields e o banco não muda; PUT em campo livre (required_professions) → 200 e persiste', async ({ request }) => {
+  test('PUT em campo travado (schedule) → 422 com locked_fields e o banco não muda; PUT em campo livre (worker_profile_sought) → 200 e persiste; PUT em required_professions (D523) → 422', async ({ request }) => {
     expect(vacancyId, 'foguete não criou vacancyId no beforeAll — ver falha do POST activate-recruitment acima').toBeTruthy();
 
     // `locked_fields` do GET — a comparação abaixo é contra ELE, na mesma execução, não contra
@@ -150,12 +152,20 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
 
     const putFree = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
-      data: { required_professions: ['AT'] },
+      data: { worker_profile_sought: 'perfil e2e livre' },
     });
     expect(putFree.ok(), `PUT campo livre falhou: ${putFree.status()} ${await putFree.text()}`).toBe(true);
 
-    const professionsAfter = runSQL(`SELECT required_professions::text FROM job_postings WHERE id='${vacancyId}'`);
-    expect(professionsAfter).toBe('{AT}');
+    const profileAfter = runSQL(`SELECT worker_profile_sought FROM job_postings WHERE id='${vacancyId}'`);
+    expect(profileAfter).toContain('perfil e2e livre');
+
+    // 057/D523: `required_professions` agora é do serviço → 422 (antes era o "campo livre" deste caso).
+    const putProf = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
+      headers: AUTH_HEADERS,
+      data: { required_professions: ['AT'] },
+    });
+    expect(putProf.status()).toBe(422);
+    expect((await putProf.json()).locked_fields).toEqual(['required_professions']);
   });
 
   test('vaga PUBLICADA (is_draft=false, sem Talentum) → PUT em schedule AINDA 422 — a origem não muda de dono ao publicar', async ({ request }) => {

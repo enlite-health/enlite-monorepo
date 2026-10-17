@@ -91,6 +91,9 @@ export function VacancyFormLeftColumn({
   const tf = (k: string) => t(`admin.vacancyDetail.vacancyForm.${k}`);
 
   const isAgeRangeLocked = lockedFields?.has('age_range_min') ?? false;
+  // 057 (D523): com serviço contratado, profissão e sexo vêm do serviço.
+  const isProfessionsLocked = lockedFields?.has('required_professions') ?? false;
+  const isSexLocked = lockedFields?.has('required_sex') ?? false;
 
   const [cases, setCases] = useState<CaseOption[]>([]);
   const [isLoadingCases, setIsLoadingCases] = useState(mode === 'create');
@@ -190,6 +193,7 @@ export function VacancyFormLeftColumn({
         <FormField
           label={tp('professionalType')}
           required
+          labelExtra={isProfessionsLocked ? <LockedFieldBadgeLink patientId={selectedPatientId} testId="locked-field-link-professions" /> : null}
           error={
             errors.required_professions
               ? tf('validation.requiredProfessionsMin')
@@ -214,6 +218,7 @@ export function VacancyFormLeftColumn({
                       id={`profession-${p}`}
                       label={tf(`professionOptions.${p}`)}
                       checked={checked}
+                      disabled={isProfessionsLocked}
                       onChange={() => {
                         const current = field.value ?? [];
                         field.onChange(
@@ -254,14 +259,19 @@ export function VacancyFormLeftColumn({
 
       {/* 6. Available for (sex) */}
       <div className={patientDis}>
-        <FormField label={tp('availableFor')}>
+        <FormField
+          label={tp('availableFor')}
+          labelExtra={isSexLocked ? <LockedFieldBadgeLink patientId={selectedPatientId} testId="locked-field-link-sex" /> : null}
+        >
           <Controller
             name="required_sex"
             control={control}
             render={({ field }) => (
               <SelectField
                 value={field.value ?? ''}
+                disabled={isSexLocked}
                 onChange={(v) => field.onChange(v)}
+                data-testid="required-sex-select"
                 options={SEX_OPTIONS.map((o) => ({
                   value: o,
                   label: tf(`sexOptions.${o}`),

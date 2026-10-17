@@ -14,13 +14,15 @@
  */
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
-import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
+import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveRequiredSexSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
 import { fetchPatientDetail } from '../../src/modules/case/infrastructure/PatientDetailQueryHelper';
 import { loadVacancyDescriptionInput } from '../../src/modules/integration/infrastructure/TalentumDescriptionService';
 import { loadVacancyForAiContent } from '../../src/modules/matching/interfaces/controllers/vacancyAiContentQuery';
 import { FindNearbyVacanciesForWorkerUseCase } from '../../src/modules/matching/application/FindNearbyVacanciesForWorkerUseCase';
+import { GetZoneAnalyticsUseCase } from '../../src/modules/matching/application/GetZoneAnalyticsUseCase';
+import { MatchmakingService } from '../../src/modules/matching/infrastructure/MatchmakingService';
 import { GetArmedCasesUseCase } from '../../src/modules/matching/application/GetArmedCasesUseCase';
 import { horasAtivasQuery } from '../../src/modules/matching/application/managementDashboardQueries';
 import { runHardFilter } from '../../src/modules/matching/infrastructure/MatchmakingHardFilterQuery';
@@ -128,7 +130,7 @@ async function seed(opts: {
     `INSERT INTO job_postings (id, title, case_number, patient_id, patient_address_id, contracted_service_id, schedule,
                                status, is_draft, required_professions, country, is_test, providers_needed, social_short_links,
                                age_range_min, age_range_max)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ARRAY['AT'], 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb, $11, $12)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ${withService ? `'{}'::text[]` : `ARRAY['AT']`}, 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb, $11, $12)`,
     [vacancyId, `CASO ${caseNumber}`, caseNumber, patientId, addressId, withService ? serviceId : null,
       withService ? null : JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft,
       withService ? null : opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders,
@@ -730,6 +732,221 @@ describe('vacancyEffectiveFields.singleSource — F6: o leitor deriva a FAIXA ET
         [ctx.vacancyId],
       );
       expect(rows[0]).toEqual({ age_range_min: null, age_range_max: null, effective_provider_age_band: 'AGE_20_30' });
+    });
+  });
+});
+
+/**
+ * 057 (D523): os 5 campos de RECRUTAMENTO (`required_sex`, `required_professions`, `required_experience`, `work_schedule`,
+ * `payment_day`) da vaga com serviço são lidos de `patient_contracted_services`; a vaga os guarda NULL. Mesmo molde dos grupos
+ * acima: serviço semeado com A, vaga com os 5 NULL, controle positivo (o leitor devolve A), `UPDATE` direto no serviço SEM tocar
+ * a vaga, o leitor devolve X e o SELECT direto da vaga segue NULL. Vaga MANUAL (sem serviço) segue dona dos próprios valores.
+ */
+type Campo = 'sex' | 'profs' | 'exp' | 'ws' | 'pay';
+type Obs = Partial<Record<Campo, string | string[] | null>>;
+const REC_A = { sex: 'F', profs: ['AT'], exp: 'EXP-A', ws: 'part-time', pay: 'DIA-A' } as const;
+// X usa CAREGIVER (não NURSE): é um dos dois valores que o filtro `worker_type` da lista admin aceita (VALID_WORKER_TYPES).
+const REC_X = { sex: 'M', profs: ['CAREGIVER'], exp: 'EXP-X', ws: 'full-time', pay: 'DIA-X' } as const;
+const ZONA_057 = 'Zona 057';
+const pick = (src: Record<string, unknown>, campos: readonly Campo[]): Obs => Object.fromEntries(campos.map((c) => [c, src[c]]));
+
+const setServiceRecruitment = (ctx: Ctx, v: typeof REC_A | typeof REC_X) =>
+  admin.query(
+    `UPDATE patient_contracted_services SET required_sex = $2, required_professions = $3::text[], required_experience = $4,
+            work_schedule = $5, payment_day = $6 WHERE id = $1`,
+    [ctx.serviceId, v.sex, v.profs, v.exp, v.ws, v.pay],
+  );
+
+/** Vaga COM serviço: serviço com A e os 5 da vaga NULL (D523). Endereço numa zona própria, para o leitor de zona achar só esta vaga. */
+async function seedRec(opts: { draft?: boolean } = {}): Promise<Ctx> {
+  const ctx = await seed({ draft: opts.draft });
+  await setServiceRecruitment(ctx, REC_A);
+  await admin.query(
+    `UPDATE job_postings SET required_sex = NULL, required_professions = NULL, required_experience = NULL, work_schedule = NULL, payment_day = NULL WHERE id = $1`,
+    [ctx.vacancyId],
+  );
+  await admin.query(`UPDATE patient_addresses SET state = $2, city = $2 WHERE id = $1`, [ctx.addressId, ZONA_057]);
+  return ctx;
+}
+
+/** Vaga MANUAL (sem serviço): os 5 são da PRÓPRIA vaga. */
+async function seedRecManual(opts: { draft?: boolean } = {}): Promise<Ctx> {
+  const ctx = await seed({ withService: false, draft: opts.draft });
+  await admin.query(
+    `UPDATE job_postings SET required_sex = $2, required_professions = $3::text[], required_experience = $4, work_schedule = $5, payment_day = $6 WHERE id = $1`,
+    [ctx.vacancyId, REC_A.sex, REC_A.profs, REC_A.exp, REC_A.ws, REC_A.pay],
+  );
+  await admin.query(`UPDATE patient_addresses SET state = $2, city = $2 WHERE id = $1`, [ctx.addressId, ZONA_057]);
+  return ctx;
+}
+
+interface LeitorRec {
+  nome: string;
+  campos: readonly Campo[];
+  draft?: boolean;
+  probe: (ctx: Ctx) => Promise<Obs>;
+}
+
+/** Lista admin / feed filtrado: em vez de ler o campo, descobre qual valor o FILTRO casa com a vaga. */
+const matchedBy = async <T,>(values: readonly T[], hit: (v: T) => Promise<boolean>): Promise<T[]> => {
+  const out: T[] = [];
+  for (const v of values) if (await hit(v)) out.push(v);
+  return out;
+};
+const adminListHits = async (ctx: Ctx, query: Record<string, string>): Promise<boolean> => {
+  const res = mockRes();
+  await new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { limit: '50', offset: '0', ...query } }), asRes(res));
+  expect(res.statusCode).toBe(200);
+  return JSON.stringify(res.body).includes(ctx.vacancyId);
+};
+const publicFeedHits = async (ctx: Ctx, filters: Record<string, string>): Promise<boolean> => {
+  const rows = await new JobPostingARRepository().findActivePublic({ country: 'AR', ...filters } as never);
+  return rows.some((r) => r.id === ctx.vacancyId);
+};
+const zoneDemand = async (profession: string): Promise<number> => {
+  const blind = { generateValueBidx: async () => Buffer.from('x') } as never;
+  const out = await new GetZoneAnalyticsUseCase(identityPool, blind).execute({ profession });
+  return out.zones.filter((z) => z.zone.includes(ZONA_057)).reduce((n, z) => n + z.demand, 0);
+};
+
+const LEITORES_REC: LeitorRec[] = [
+  {
+    nome: 'MatchmakingService.loadJob (carrega a vaga do matching: sexo e profissões)',
+    campos: ['sex', 'profs'],
+    probe: async (ctx) => {
+      const job = await (new MatchmakingService() as unknown as { loadJob(id: string): Promise<{ requiredSex: string | null; requiredProfessions: string[] | null }> }).loadJob(ctx.vacancyId);
+      return { sex: job.requiredSex, profs: job.requiredProfessions };
+    },
+  },
+  {
+    nome: 'JobPostingARRepository.findActivePublic (feed público: worker_sex / worker_type)',
+    campos: ['sex', 'profs'],
+    probe: async (ctx) => {
+      const row = (await new JobPostingARRepository().findActivePublic({ country: 'AR' } as never)).find((r) => r.id === ctx.vacancyId)!;
+      return { sex: row.worker_sex as string | null, profs: row.worker_type as unknown as string[] };
+    },
+  },
+  {
+    nome: 'PublicJobsQueryBuilder via findActivePublic (filtros worker_sex e worker_type do feed)',
+    campos: ['sex', 'profs'],
+    probe: async (ctx) => ({
+      sex: (await matchedBy(['F', 'M'], (v) => publicFeedHits(ctx, { worker_sex: v })))[0] ?? null,
+      profs: await matchedBy(['AT', 'CAREGIVER'], (v) => publicFeedHits(ctx, { worker_type: v })),
+    }),
+  },
+  {
+    nome: 'PublicVacancyController.getById (detalhe público)',
+    campos: ['sex', 'profs'],
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new PublicVacancyController(diagnosisStub).getById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const d = (res.body as { data: Record<string, unknown> }).data;
+      return { sex: d.required_sex as string | null, profs: d.required_professions as string[] };
+    },
+  },
+  {
+    nome: 'VacanciesController.getVacancyById (GET admin, os 5)',
+    campos: ['sex', 'profs', 'exp', 'ws', 'pay'],
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const d = (res.body as { data: Record<string, unknown> }).data;
+      return { sex: d.required_sex as string, profs: d.required_professions as string[], exp: d.required_experience as string, ws: d.work_schedule as string, pay: d.payment_day as string };
+    },
+  },
+  {
+    nome: 'vacancyListHelpers via VacanciesController.listVacancies (filtros required_sex e worker_type)',
+    campos: ['sex', 'profs'],
+    probe: async (ctx) => ({
+      sex: (await matchedBy(['F', 'M'], (v) => adminListHits(ctx, { required_sex: v })))[0] ?? null,
+      profs: await matchedBy(['AT', 'CAREGIVER'], (v) => adminListHits(ctx, { worker_type: v })),
+    }),
+  },
+  {
+    nome: 'loadVacancyForAiContent (payload do parser de IA, os 5; sem Gemini)',
+    campos: ['sex', 'profs', 'exp', 'ws', 'pay'],
+    probe: async (ctx) => {
+      const loaded = await loadVacancyForAiContent(identityPool, ctx.vacancyId);
+      expect(loaded).not.toBeNull();
+      const v = loaded!.vacancyData;
+      return { sex: v.required_sex, profs: v.required_professions, exp: v.required_experience, ws: v.work_schedule, pay: v.payment_day };
+    },
+  },
+  {
+    nome: 'loadVacancyDescriptionInput (prompt do Talentum, os 5; sem Gemini)',
+    campos: ['sex', 'profs', 'exp', 'ws', 'pay'],
+    probe: async (ctx) => {
+      const i = await loadVacancyDescriptionInput(identityPool, ctx.vacancyId);
+      return { sex: i.requiredSex ?? null, profs: i.requiredProfessions, exp: i.requiredExperience ?? null, ws: i.workSchedule ?? null, pay: i.paymentDay ?? null };
+    },
+  },
+  {
+    nome: 'GetZoneAnalyticsUseCase.execute (filtro de profissão na demanda por zona)',
+    campos: ['profs'],
+    probe: async () => ({ profs: await matchedBy(['AT', 'CAREGIVER'], async (p) => (await zoneDemand(p)) > 0) }),
+  },
+  // VacancyCrudController.updateVacancy NÃO entra: `withEffectiveFields` só troca schedule/providers_needed/faixa, então a RESPOSTA do PUT
+  // de vaga com serviço devolve os 5 de recrutamento crus (NULL). Achado da F5 registrado para o orquestrador; sem teste que cristalize o defeito.
+];
+
+describe('vacancyEffectiveFields.singleSource — 057: o leitor lê os 5 campos de RECRUTAMENTO do SERVIÇO (app_runtime, banco real)', () => {
+  it('são 9 leitores cobertos; FindNearbyVacanciesForWorkerUseCase tem o caso próprio abaixo', () => {
+    expect(LEITORES_REC).toHaveLength(9);
+  });
+
+  describe.each(LEITORES_REC.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {
+    it('UPDATE no serviço (vaga intocada) -> a saída passa de A para X, e a coluna da vaga segue NULL', async () => {
+      const ctx = await seedRec({ draft: leitor.draft });
+      expect(await leitor.probe(ctx)).toEqual(pick(REC_A, leitor.campos)); // controle positivo: o instrumento enxerga A
+      await setServiceRecruitment(ctx, REC_X);
+      const vaga = await admin.query(
+        `SELECT required_sex, required_professions, required_experience, work_schedule, payment_day FROM job_postings WHERE id = $1`,
+        [ctx.vacancyId],
+      );
+      expect(vaga.rows[0]).toEqual({ required_sex: null, required_professions: null, required_experience: null, work_schedule: null, payment_day: null });
+      expect(await leitor.probe(ctx)).toEqual(pick(REC_X, leitor.campos));
+    });
+
+    it('vaga MANUAL (sem serviço) segue dona dos próprios valores', async () => {
+      const ctx = await seedRecManual({ draft: leitor.draft });
+      expect(await leitor.probe(ctx)).toEqual(pick(REC_A, leitor.campos));
+    });
+  });
+
+  describe('casos adicionais', () => {
+    it('FindNearbyVacanciesForWorkerUseCase (profissão efetiva) segue QUEBRADO pelo defeito anterior (jp.patient_zone); sem observação possível', async () => {
+      // O mesmo defeito do leitor 4 do grupo F1: a query seleciona `jp.patient_zone`, coluna dropada na migration 039. A troca da
+      // profissão pela peça (`w.occupation = ANY(efetiva)`) está no código, mas não é exercível até alguém consertar o leitor.
+      await seedRec();
+      const workerId = await seedWorker([1]);
+      await expect(new FindNearbyVacanciesForWorkerUseCase(identityPool).execute(workerId, 1, 30, 5)).rejects.toThrow(/column jp\.patient_zone does not exist/);
+    });
+
+    it('serviço com sexo NULL e profissões NULL -> o leitor devolve NULL e [] (a peça não inventa valor)', async () => {
+      const ctx = await seedRec();
+      await admin.query(`UPDATE patient_contracted_services SET required_sex = NULL, required_professions = NULL WHERE id = $1`, [ctx.serviceId]);
+      const res = mockRes();
+      await new PublicVacancyController(diagnosisStub).getById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      const d = (res.body as { data: Record<string, unknown> }).data;
+      expect(d.required_sex ?? null).toBeNull();
+      expect(d.required_professions).toEqual([]);
+    });
+
+    it('controle positivo de RLS: sessão de OUTRO país (BR) não lê o serviço — o sexo efetivo some, e o teste afirma isso', async () => {
+      const ctx = await seedRec();
+      const br = new Pool({ connectionString: ADMIN_URL, options: runtimeOptions('-c app.user_country=BR -c app.user_uid=vls-057-br'), max: 2 });
+      try {
+        const efetivo = (pool: Pool) => pool.query(
+          `SELECT ${vacancyEffectiveRequiredSexSql('jp')} AS sex FROM job_postings jp ${vacancyEffectiveJoinSql('jp')} WHERE jp.id = $1`,
+          [ctx.vacancyId],
+        );
+        expect((await efetivo(identityPool)).rows[0].sex).toBe('F'); // AR vê o serviço
+        expect((await efetivo(br)).rows[0].sex).toBeNull(); // BR não vê: NULL calado
+      } finally {
+        await br.end();
+      }
     });
   });
 });

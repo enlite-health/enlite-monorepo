@@ -1,3 +1,5 @@
+import { vacancyEffectiveJoinSql, vacancyEffectiveRequiredSexSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+
 /**
  * liveVacancySql — fonte ÚNICA do fragmento SQL da "vaga viva" de um serviço contratado
  * (Spec 018, PR-6): 1 vaga por serviço (`DISTINCT ON`), nunca deletada (`deleted_at IS NULL`),
@@ -19,8 +21,9 @@
  * usa o campo (`PatientKanbanServicesReader.ts`) simplesmente ignora a coluna extra no resultado.
  */
 export function liveVacancySelect(whereExtra: string): string {
-  return `SELECT DISTINCT ON (jp.contracted_service_id) jp.contracted_service_id, jp.id, jp.required_sex
+  return `SELECT DISTINCT ON (jp.contracted_service_id) jp.contracted_service_id, jp.id, ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex
             FROM job_postings jp
+            ${vacancyEffectiveJoinSql('jp')}
            WHERE jp.deleted_at IS NULL AND ${whereExtra}
            ORDER BY jp.contracted_service_id, jp.created_at ASC`;
 }
