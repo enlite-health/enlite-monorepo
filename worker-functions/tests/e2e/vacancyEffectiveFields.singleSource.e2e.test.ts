@@ -130,7 +130,7 @@ async function seed(opts: {
     `INSERT INTO job_postings (id, title, case_number, patient_id, patient_address_id, contracted_service_id, schedule,
                                status, is_draft, required_professions, country, is_test, providers_needed, social_short_links,
                                age_range_min, age_range_max)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ARRAY['AT'], 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb, $11, $12)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ${withService ? `'{}'::text[]` : `ARRAY['AT']`}, 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb, $11, $12)`,
     [vacancyId, `CASO ${caseNumber}`, caseNumber, patientId, addressId, withService ? serviceId : null,
       withService ? null : JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft,
       withService ? null : opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders,
