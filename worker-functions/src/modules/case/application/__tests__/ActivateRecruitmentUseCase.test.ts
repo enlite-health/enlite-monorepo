@@ -320,7 +320,7 @@ describe('ActivateRecruitmentUseCase', () => {
       await expect(ok.promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
     });
 
-    it('os 5 campos copiados são IGUAIS aos do serviço, literais (S.5)', async () => {
+    it('os 5 campos de recrutamento NÃO são copiados: a vaga com serviço nasce com null (057/D523; required_professions null, não [])', async () => {
       const service = {
         ...READY_SERVICE,
         required_professions: ['AT', 'CAREGIVER'],
@@ -331,15 +331,12 @@ describe('ActivateRecruitmentUseCase', () => {
       };
       const { promise } = run({ patientRow: ADMISSION_PATIENT, serviceRow: service });
       await promise;
-      expect(mockBuildInsertParams).toHaveBeenCalledWith(
-        expect.objectContaining({
-          required_professions: ['AT', 'CAREGIVER'],
-          required_sex: 'BOTH',
-          required_experience: 'EXP-TEXTO-2',
-          work_schedule: 'full-time',
-          payment_day: 'dia 10',
-        }),
-      );
+      const arg = mockBuildInsertParams.mock.calls[0][0];
+      expect(arg.required_sex).toBeNull();
+      expect(arg.required_professions).toBeNull();
+      expect(arg.required_experience).toBeNull();
+      expect(arg.work_schedule).toBeNull();
+      expect(arg.payment_day).toBeNull();
     });
 
     it('worker_attributes, daily_obs e worker_profile_sought são null no INSERT, mesmo com texto nos dois primeiros do serviço (D508 a)', async () => {

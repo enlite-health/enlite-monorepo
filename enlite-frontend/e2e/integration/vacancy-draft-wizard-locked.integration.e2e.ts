@@ -15,7 +15,7 @@
  *
  * Fixture: 1 paciente + endereço, 1 serviço contratado ativado pelo foguete (mesmo caminho de
  * `vacancy-locked-fields.integration.e2e.ts`, fase 1) — a vaga nasce `is_draft=true` com
- * `contracted_service_id` setado, então `locked_fields` do GET traz os 8 nomes.
+ * `contracted_service_id` setado, então `locked_fields` do GET traz os 13 nomes (057/D523).
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
@@ -212,7 +212,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     expect(addressId, 'insertTestPatient não devolveu addressId').toBeTruthy();
 
     // Serviço contratado pela API real + foguete real (mesmo endpoint que "Lançar" chama) — a
-    // vaga nasce com contracted_service_id setado, então locked_fields traz os 8 nomes (F3).
+    // vaga nasce com contracted_service_id setado, então locked_fields traz os 13 nomes (057/D523) (F3).
     const svcRes = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services`, {
       headers: AUTH_HEADERS,
       data: {
@@ -263,7 +263,9 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     const lockedFields: string[] = getData.locked_fields;
     const updatedAtBefore: string = getData.updated_at;
     expect(new Set(lockedFields)).toEqual(
-      new Set(['case_number', 'patient_id', 'patient_address_id', 'contracted_service_id', 'age_range_min', 'age_range_max', 'schedule', 'providers_needed']),
+      new Set(['case_number', 'patient_id', 'patient_address_id', 'contracted_service_id', 'age_range_min', 'age_range_max', 'schedule', 'providers_needed',
+        // 057/D523: 13 — os 5 campos de recrutamento vindos do serviço.
+        'required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day']),
     );
 
     // Os 4 grupos com campo de FORM (patient_address_id, age_range_*, schedule, providers_needed)

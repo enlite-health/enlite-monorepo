@@ -40,11 +40,16 @@ const meetLinkSlot = z
   .transform((v) => (v ? normalizeMeetLink(v) : v))
   .refine((v) => !v || MEET_LINK_REGEX.test(v), { message: 'invalidMeetLink' });
 
-export const vacancyFormSchema = z
+/**
+ * `professionsLocked` (057/A6): com `required_professions` em `locked_fields` o campo é do serviço, está
+ * `disabled` e some do PUT (`stripLockedFields`) — a regra `min(1)` não pode barrar o save dos outros campos.
+ */
+export function buildVacancyFormSchema(professionsLocked = false) {
+  return z
   .object({
     title: z.string().min(3),
     status: z.string().optional(),
-    required_professions: z.array(z.string()).min(1),
+    required_professions: professionsLocked ? z.array(z.string()) : z.array(z.string()).min(1),
     required_sex: z.string().optional(),
     age_range_min: z.number().min(18).optional(),
     age_range_max: z.number().optional(),
@@ -80,6 +85,9 @@ export const vacancyFormSchema = z
     (d) => d.meet_links.some((l) => !!l && MEET_LINK_REGEX.test(l)),
     { message: 'meetLinkRequired', path: ['meet_links'] },
   );
+}
+
+export const vacancyFormSchema = buildVacancyFormSchema();
 
 export type VacancyFormData = z.infer<typeof vacancyFormSchema>;
 

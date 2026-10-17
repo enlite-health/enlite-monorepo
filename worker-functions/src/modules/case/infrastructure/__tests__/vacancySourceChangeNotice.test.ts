@@ -29,9 +29,10 @@ function cli(rows: unknown[] = []) {
 beforeEach(() => jest.clearAllMocks());
 
 describe('vacancySourceChangeNotice — conjunto fechado de campos', () => {
-  it('são exatamente schedule | providers_needed | age_range', () => {
-    expect([...SOURCE_CHANGE_FIELDS]).toEqual(['schedule', 'providers_needed', 'age_range']);
-    expect(['schedule', 'providers_needed', 'age_range'].every(isSourceChangeField)).toBe(true);
+  it('são exatamente schedule | providers_needed | age_range + os 5 de recrutamento (057)', () => {
+    const todos = ['schedule', 'providers_needed', 'age_range', 'required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day'];
+    expect([...SOURCE_CHANGE_FIELDS]).toEqual(todos);
+    expect(todos.every(isSourceChangeField)).toBe(true);
     expect(isSourceChangeField('address')).toBe(false);
     expect(isSourceChangeField('')).toBe(false);
   });
@@ -147,7 +148,69 @@ describe('providers_needed (F5) — captura, decisão de gravar e o que conta co
   });
 
   it('os campos vigiados são colunas reais do serviço, em conjunto fechado', () => {
-    expect({ ...GUARDED_SERVICE_COLUMNS }).toEqual({ schedule: 'schedule', providers_needed: 'providers_needed', age_range: 'provider_age_band' });
+    expect({ ...GUARDED_SERVICE_COLUMNS }).toEqual({
+      schedule: 'schedule', providers_needed: 'providers_needed', age_range: 'provider_age_band',
+      required_sex: 'required_sex', required_professions: 'required_professions', required_experience: 'required_experience',
+      work_schedule: 'work_schedule', payment_day: 'payment_day',
+    });
+  });
+});
+
+describe('os 5 campos de recrutamento (057/D523) — apagar, mudar, igual, BOTH', () => {
+  it.each(['required_sex', 'required_experience', 'work_schedule', 'payment_day'] as const)('isClearedValue(%s): null e "" apagam; valor e ausente não', (f) => {
+    expect(isClearedValue(f, null)).toBe(true);
+    expect(isClearedValue(f, '')).toBe(true);
+    expect(isClearedValue(f, 'x')).toBe(false);
+    expect(isClearedValue(f, undefined)).toBe(false);
+  });
+
+  it('isClearedValue(required_professions): null e [] apagam; lista e ausente não', () => {
+    expect(isClearedValue('required_professions', null)).toBe(true);
+    expect(isClearedValue('required_professions', [])).toBe(true);
+    expect(isClearedValue('required_professions', ['AT'])).toBe(false);
+    expect(isClearedValue('required_professions', undefined)).toBe(false);
+  });
+
+  it('BOTH é valor (não é "limpo")', () => {
+    expect(isClearedValue('required_sex', 'BOTH')).toBe(false);
+  });
+
+  it.each([
+    ['required_sex', 'M', 'F'], ['required_sex', 'F', 'BOTH'], ['required_sex', null, 'BOTH'],
+    ['required_experience', 'a', 'b'], ['work_schedule', 'full-time', 'part-time'], ['payment_day', 'dia 5', 'dia 10'],
+  ] as const)('%s: %p → %p muda → grava o aviso com o field certo', async (field, before, patched) => {
+    const z = cli([{ job_posting_id: 'vac-1' }]);
+    await recordFieldChange(z, 'svc-1', field, before, patched);
+    expect(z.query).toHaveBeenCalledTimes(1);
+    expect(z.query.mock.calls[0][1]).toEqual(['svc-1', field]);
+  });
+
+  it.each([['required_sex', 'BOTH', 'BOTH'], ['required_sex', 'M', ' M '], ['work_schedule', 'flexible', 'flexible'], ['payment_day', null, '']])(
+    '%s: %p → %p é igual → 0 gravações',
+    async (field, before, patched) => {
+      const z = cli();
+      await recordFieldChange(z, 'svc-1', field as 'required_sex', before, patched);
+      expect(z.query).not.toHaveBeenCalled();
+    },
+  );
+
+  it('required_professions compara como conjunto ordenado: outra ordem = igual; item a mais, a menos ou null → [AT] = muda', async () => {
+    const igual = cli();
+    await recordFieldChange(igual, 'svc-1', 'required_professions', ['AT', 'CAREGIVER'], ['CAREGIVER', 'AT']);
+    expect(igual.query).not.toHaveBeenCalled();
+    for (const [b, p] of [[['AT'], ['AT', 'CAREGIVER']], [['AT', 'CAREGIVER'], ['AT']], [null, ['AT']], [['AT'], []]] as const) {
+      const z = cli([{ job_posting_id: 'vac-1' }]);
+      await recordFieldChange(z, 'svc-1', 'required_professions', b, p);
+      expect(z.query).toHaveBeenCalledTimes(1);
+      expect(z.query.mock.calls[0][1]).toEqual(['svc-1', 'required_professions']);
+    }
+  });
+
+  it('recordFieldChange(required_sex) insere aviso field=required_sex (INSERT em vacancy_source_change_notices)', async () => {
+    const z = cli([{ job_posting_id: 'vac-1' }]);
+    await recordFieldChange(z, 'svc-1', 'required_sex', 'M', 'F');
+    expect(String(z.query.mock.calls[0][0])).toContain('INSERT INTO vacancy_source_change_notices');
+    expect(z.query.mock.calls[0][1][1]).toBe('required_sex');
   });
 });
 

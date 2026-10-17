@@ -146,10 +146,21 @@ export interface CreateContractedServiceInput extends ContractedServiceWriteInpu
 }
 
 /** Campo vigiado de `GUARDED_SERVICE_COLUMNS` → chave do corpo do PATCH. */
-const GUARDED_FIELDS: ReadonlyArray<readonly [GuardedServiceField, 'schedule' | 'providersNeeded' | 'providerAgeBand']> = [
+const GUARDED_FIELDS: ReadonlyArray<
+  readonly [
+    GuardedServiceField,
+    'schedule' | 'providersNeeded' | 'providerAgeBand' | 'requiredSex' | 'requiredProfessions' | 'requiredExperience' | 'workSchedule' | 'paymentDay',
+  ]
+> = [
   ['schedule', 'schedule'],
   ['providers_needed', 'providersNeeded'],
   ['age_range', 'providerAgeBand'],
+  // 057/D523: os 5 de recrutamento que a vaga lê do serviço.
+  ['required_sex', 'requiredSex'],
+  ['required_professions', 'requiredProfessions'],
+  ['required_experience', 'requiredExperience'],
+  ['work_schedule', 'workSchedule'],
+  ['payment_day', 'paymentDay'],
 ];
 
 const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
@@ -416,13 +427,16 @@ export class PatientContractedServiceRepository {
     try {
       // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
       const row = await withActorContext(this.pool, async (cli) => {
-        // F2/F5: apagar um campo que a vaga viva lê → recusa (um campo por vez, na ordem de GUARDED_FIELDS).
-        for (const [field, key] of GUARDED_FIELDS) {
-          if (isClearedValue(field, patch[key])) await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
-        }
         // F3/F5: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o campo.
         const before = new Map<GuardedServiceField, unknown>();
         for (const [field, key] of GUARDED_FIELDS) before.set(field, await captureFieldBefore(cli, serviceId, field, patch[key]));
+        // F2/F5: apagar um campo que a vaga viva lê → recusa (um campo por vez, na ordem de GUARDED_FIELDS).
+        // 057 gate A1: só recusa se o PATCH realmente LIMPA (antes preenchido); reenviar `null` num campo já vazio não é apagar.
+        for (const [field, key] of GUARDED_FIELDS) {
+          if (isClearedValue(field, patch[key]) && !isClearedValue(field, before.get(field))) {
+            await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
+          }
+        }
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
