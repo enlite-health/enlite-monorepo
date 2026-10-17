@@ -7,6 +7,7 @@
 --   Faz: (1) guarda; (2) zera os 5 campos nas vagas com contracted_service_id; (3) amplia o CHECK da 511
 --   (job_postings_service_owns_fields_chk) de 4 para 9 colunas. Vaga MANUAL (sem serviço) segue dona dos 9 campos.
 --   Re-rodável: UPDATE só toca o que ainda tem valor; DROP IF EXISTS + ADD. Tudo em UM bloco DO (atômico).
+--   LIMITAÇÃO: a guarda só olha vagas vivas (deleted_at IS NULL), mas o UPDATE zera também as soft-deleted; dado só na cópia de vaga apagada volta só pelo backup.
 --   Rollback: migrations/pending/ROLLBACK_525_vaga_sem_copia_dos_campos_de_recrutamento.sql
 DO $m525$
 BEGIN
@@ -15,7 +16,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM job_postings jp JOIN patient_contracted_services pcs ON pcs.id = jp.contracted_service_id
              WHERE jp.deleted_at IS NULL AND (
                (jp.required_sex IS NOT NULL AND pcs.required_sex IS NULL) OR
-               (cardinality(jp.required_professions) > 0 AND pcs.required_professions IS NULL) OR
+               (cardinality(jp.required_professions) > 0 AND (pcs.required_professions IS NULL OR cardinality(pcs.required_professions) = 0)) OR
                (jp.required_experience IS NOT NULL AND pcs.required_experience IS NULL) OR
                (jp.work_schedule IS NOT NULL AND pcs.work_schedule IS NULL) OR
                (jp.payment_day IS NOT NULL AND pcs.payment_day IS NULL)))
