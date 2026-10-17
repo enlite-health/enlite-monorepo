@@ -12,6 +12,7 @@ import {
   DEFAULT_FORM_VALUES,
   buildVacancyPayload,
   vacancyFormSchema,
+  buildVacancyFormSchema,
   buildScheduleFromVacancy,
   type VacancyFormData,
 } from '../vacancy-form-schema';
@@ -152,6 +153,20 @@ describe('vacancyFormSchema — patientAddressId obrigatório (US-D6)', () => {
 // aceitava array, então toda edição de vaga com horário abria com o horário
 // vazio e não persistia (achado 25/09).
 // ---------------------------------------------------------------------------
+
+describe('vacancyFormSchema — profissões travadas pelo serviço (057/A6)', () => {
+  it('travado + [] -> válido (o campo não vai no PUT; não pode barrar os outros)', () => {
+    const r = buildVacancyFormSchema(true).safeParse({ ...minimalFormData, required_professions: [] });
+    expect(r.success).toBe(true);
+  });
+
+  it('não travado + [] -> inválido em required_professions (regra atual)', () => {
+    const r = buildVacancyFormSchema(false).safeParse({ ...minimalFormData, required_professions: [] });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues.some((i) => i.path[0] === 'required_professions')).toBe(true);
+    expect(vacancyFormSchema.safeParse({ ...minimalFormData, required_professions: [] }).success).toBe(false);
+  });
+});
 
 describe('buildScheduleFromVacancy — aceita schedule como objeto (forma do GET)', () => {
   it('(a) schedule como objeto normalizado (forma exata do scheduleNormalizer) → ScheduleValue com dias e horas corretos', () => {

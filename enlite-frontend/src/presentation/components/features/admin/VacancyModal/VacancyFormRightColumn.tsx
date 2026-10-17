@@ -84,6 +84,7 @@ export function VacancyFormRightColumn({
   const isAddressLocked = lockedFields?.has('patientAddressId') ?? false;
   const isProvidersLocked = lockedFields?.has('providers_needed') ?? false;
   const isScheduleLocked = lockedFields?.has('schedule') ?? false;
+  const isPaymentDayLocked = lockedFields?.has('payment_day') ?? false; // 057 (D523)
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
@@ -239,8 +240,11 @@ export function VacancyFormRightColumn({
       </Heading>
 
       {/* 7. Payment day */}
-      <FormField label={tp('paymentDeadline')}>
-        <InputWithIcon type="text" {...register('payment_day')} />
+      <FormField
+        label={tp('paymentDeadline')}
+        labelExtra={isPaymentDayLocked ? <LockedFieldBadgeLink patientId={patientId} testId="locked-field-link-payment-day" /> : null}
+      >
+        <InputWithIcon type="text" disabled={isPaymentDayLocked} data-testid="payment-day-input" {...register('payment_day')} />
       </FormField>
 
       {/* 8. Providers needed */}

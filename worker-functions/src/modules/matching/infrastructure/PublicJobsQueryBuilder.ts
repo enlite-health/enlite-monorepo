@@ -1,4 +1,8 @@
 import type { PublicJobsFilters } from '../domain/PublicJobsFilters';
+import {
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * Builds the parameterised WHERE clauses and value array for findActivePublic.
@@ -64,11 +68,12 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
   // recusa o parametro com 400 em vez de aceita-lo em silencio.
 
   if (filters.worker_sex) {
-    conditions.push(`jp.required_sex = ${push(filters.worker_sex)}`);
+    // 057: sexo/profissão efetivos (vaga com serviço lê do serviço); exige `vacancyEffectiveJoinSql('jp')` no FROM do chamador.
+    conditions.push(`${vacancyEffectiveRequiredSexSql('jp')} = ${push(filters.worker_sex)}`);
   }
 
   if (filters.worker_type) {
-    conditions.push(`${push(filters.worker_type)} = ANY(jp.required_professions)`);
+    conditions.push(`${push(filters.worker_type)} = ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})`);
   }
 
   if (filters.q) {

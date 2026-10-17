@@ -1,5 +1,9 @@
 import { Pool } from 'pg';
-import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveScheduleSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /** Um slot do schedule da vaga (mesmo formato de worker_availability). */
 export interface VacancyScheduleSlot {
@@ -80,7 +84,7 @@ export class FindNearbyVacanciesForWorkerUseCase {
          WHERE jp.deleted_at IS NULL
            AND jp.is_covered = false
            AND jp.status = ANY($2::text[])
-           AND w.occupation = ANY(jp.required_professions)
+           AND w.occupation = ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})
            AND NOT EXISTS (
              SELECT 1 FROM worker_job_applications wja
              WHERE wja.worker_id = $1 AND wja.job_posting_id = jp.id

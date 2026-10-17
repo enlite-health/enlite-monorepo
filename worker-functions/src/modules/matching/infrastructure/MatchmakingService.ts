@@ -18,6 +18,11 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
+import {
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { systemActor } from '@shared/audit/actorSource';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { DataRealm } from '@shared/domain/DataRealm';
@@ -75,9 +80,11 @@ export class MatchmakingService {
     const result = await this.db.query(
       `SELECT jp.id, jp.worker_profile_sought, jp.schedule_days_hours, jp.is_test,
               pa.lat  AS service_lat, pa.lng  AS service_lng,
-              jp.required_sex, jp.required_professions,
+              ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex,
+              ${vacancyEffectiveRequiredProfessionsSql('jp')} AS required_professions,
               p.diagnosis, p.zone_neighborhood AS patient_zone
        FROM job_postings jp
+       ${vacancyEffectiveJoinSql('jp')}
        LEFT JOIN patients p ON jp.patient_id = p.id
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
        WHERE jp.id = $1`,

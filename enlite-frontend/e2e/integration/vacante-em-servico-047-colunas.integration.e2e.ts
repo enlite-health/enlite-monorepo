@@ -41,7 +41,7 @@ function vaga(patientId: string, serviceId: string, ordinal: number, isDraft: bo
   return scalar(`INSERT INTO job_postings (vacancy_number, case_number, title, description, patient_id, contracted_service_id, case_ordinal,
         required_professions, status, is_draft, is_test, country, social_short_links, created_at, updated_at)
       VALUES (nextval('job_postings_vacancy_number_seq'), ${caseNumber ?? 'NULL'}, 'CASO E2E 047 col ${ordinal}', '', '${patientId}', '${serviceId}', ${ordinal},
-        ARRAY['AT']::varchar[], 'SEARCHING', ${isDraft}, true, 'AR', '${links}'::jsonb, NOW(), NOW()) RETURNING id`);
+        '{}'::text[], 'SEARCHING', ${isDraft}, true, 'AR', '${links}'::jsonb, NOW(), NOW()) RETURNING id`);
 }
 
 /** Paciente (com `case_number` próprio) + 3 serviços (vaga publicada / vaga em rascunho / sem vaga) + staff com as células. */

@@ -36,6 +36,14 @@ export const LOCKED_COLUMN_TO_FORM_FIELD: Record<SourceLockedField, keyof Vacanc
   age_range_max: 'age_range_max',
   schedule: 'schedule',
   providers_needed: 'providers_needed',
+  // 057 (D523): campos de recrutamento vindos do serviço. `required_experience` e `work_schedule`
+  // existem no schema do form (`vacancy-form-schema.ts`) mas NÃO têm input nas colunas hoje —
+  // o mapa os reconhece para o dia em que tiverem.
+  required_sex: 'required_sex',
+  required_professions: 'required_professions',
+  required_experience: 'required_experience',
+  work_schedule: 'work_schedule',
+  payment_day: 'payment_day',
 };
 
 /** As colunas travadas sem campo de form — só para o teste de paridade nomear o que fica de

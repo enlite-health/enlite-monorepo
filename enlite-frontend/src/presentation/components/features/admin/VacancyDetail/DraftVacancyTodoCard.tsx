@@ -2,7 +2,9 @@ import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { DRAFT_TODO_FIELDS, type DraftVacancyLike } from './draftVacancyFields';
+import { Link } from 'react-router-dom';
+import { patientTabPath } from '@presentation/components/features/admin/PatientDetail/patientTabs';
+import { draftTodoFields, type DraftVacancyLike } from './draftVacancyFields';
 
 /**
  * "Lo que falta" (protótipo v3, F24) — extraído de `DraftVacancyPage.tsx` (gate parcial 25/09,
@@ -24,7 +26,7 @@ export function DraftVacancyTodoCard({ vacancy, missing }: { vacancy: DraftVacan
         </Text>
       </Heading>
       <ul className="flex flex-col">
-        {DRAFT_TODO_FIELDS.map((field) => {
+        {draftTodoFields(vacancy).map((field) => {
           const done = !field.isEmpty(vacancy);
           return (
             <li key={field.key} className="flex items-center gap-3 py-2.5 border-b border-gray-600 last:border-b-0">
@@ -38,8 +40,17 @@ export function DraftVacancyTodoCard({ vacancy, missing }: { vacancy: DraftVacan
                 {done && <Check className="w-[11px] h-[11px] text-white" aria-hidden="true" />}
               </span>
               <Text as="span" size="sm" color={done ? 'muted' : 'secondary'}>
-                {t(`admin.draftVacancy.todo.${field.labelKey}`)}
+                {t(`admin.draftVacancy.todo.${field.labelKey}`, field.labelParams?.(vacancy))}
               </Text>
+              {field.linksToPatient && vacancy.patient_id && (
+                <Link
+                  to={patientTabPath(vacancy.patient_id, 'contractedService')}
+                  data-testid="draft-todo-service-link"
+                  className="ml-auto text-xs underline"
+                >
+                  {t('admin.draftVacancy.knownNoteLink')}
+                </Link>
+              )}
               {field.asideKey && (
                 <Text as="span" size="xs" color="tertiary" className="ml-auto">
                   {t(`admin.draftVacancy.todo.${field.asideKey}`)}

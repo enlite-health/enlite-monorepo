@@ -254,6 +254,13 @@ export class ActivateRecruitmentUseCase {
       schedule: null,
       // F5: a quantidade também NÃO é copiada — a vaga lê `patient_contracted_services.providers_needed` pela peça.
       providers_needed: null,
+      // 057/D523: os 5 de recrutamento NÃO são copiados — a vaga com serviço lê de `patient_contracted_services`
+      // (`service.*` só serve ao PORTÃO de prontidão acima, que continua exigindo os 5 preenchidos).
+      required_sex: null,
+      required_professions: null,
+      required_experience: null,
+      work_schedule: null,
+      payment_day: null,
     };
     // Tipado com o MESMO `Omit` que sobra de `fromOrigin` (+`vacancyNumber`/`computedTitle`, que não
     // são nem origem nem recrutamento) — sem isto, uma chave travada repetida aqui (ex.:
@@ -262,14 +269,6 @@ export class ActivateRecruitmentUseCase {
     // as duas juntas: o tipo host barra a chave errada AQUI, e a ordem barra a chave certa perdendo
     // se alguém escapar o tipo.
     const fromRecruitment: Omit<VacancyInsertParams, SourceLockedField | 'vacancyNumber' | 'computedTitle'> = {
-      // Spec 027 Fase 3 (D508): estes 5 vêm do serviço, LITERAIS (lex S.5: nunca derivados de dado do
-      // paciente). Ficam FORA de `SOURCE_LOCKED_FIELDS` de propósito (D508 item 4): a vaga nasce rascunho
-      // (T.6) e a recrutadora corrige na vaga.
-      required_professions: service.required_professions,
-      required_sex: service.required_sex,
-      required_experience: service.required_experience,
-      work_schedule: service.work_schedule,
-      payment_day: service.payment_day,
       // NÃO COPIAR (D508 a; vedação lex C-b2/C-c.3): a vaga continua com estes digitados pela recrutadora.
       // `worker_attributes`/`daily_obs` ficam só na ficha; `salary_text` cai no default 'A convenir'.
       worker_profile_sought: null,

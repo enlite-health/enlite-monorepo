@@ -11,7 +11,7 @@
  *   Right → status/conditions + address + schedule + payment
  */
 
-import { useState, useEffect, useRef, RefObject } from 'react';
+import { useState, useEffect, useMemo, useRef, RefObject } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, useWatch, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,7 +24,7 @@ import { handlePublishedVacancyForbidden } from './vacancyFormDefense';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import {
-  vacancyFormSchema,
+  buildVacancyFormSchema,
   type VacancyFormData,
   DEFAULT_FORM_VALUES,
   buildVacancyPayload,
@@ -111,6 +111,11 @@ export function VacancyFormSection({
   // rápido da lista de vagas), que não passa essa prop e não tinha banner nenhum antes.
   const [invalidFields, setInvalidFields] = useState<string[]>([]);
 
+  // Fase 4: campos do form travados pela origem, derivados de `locked_fields` do GET.
+  const lockedFields = mode === 'edit' ? lockedFormFields(existingVacancy?.locked_fields) : new Set<keyof VacancyFormData>();
+  const professionsLocked = lockedFields.has('required_professions');
+  const schema = useMemo(() => buildVacancyFormSchema(professionsLocked), [professionsLocked]);
+
   const {
     register,
     handleSubmit,
@@ -119,7 +124,7 @@ export function VacancyFormSection({
     setValue,
     formState: { errors, isDirty },
   } = useForm<VacancyFormData>({
-    resolver: zodResolver(vacancyFormSchema),
+    resolver: zodResolver(schema),
     defaultValues: DEFAULT_FORM_VALUES,
   });
 
@@ -128,9 +133,6 @@ export function VacancyFormSection({
 
   // Fase 4 (F27): alimenta `useUnsavedChangesGuard` em `CreateVacancyPage`.
   useNotifyOnChange(isDirty, onDirtyChange);
-
-  // Fase 4: campos do form travados pela origem, derivados de `locked_fields` do GET.
-  const lockedFields = mode === 'edit' ? lockedFormFields(existingVacancy?.locked_fields) : new Set<keyof VacancyFormData>();
 
   // Watch the minimum invariants required by the schema so the parent can
   // gate the "Continuar" button without triggering a full RHF validation pass.
