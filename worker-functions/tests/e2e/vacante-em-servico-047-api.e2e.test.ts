@@ -68,7 +68,7 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     (await pool.query<{ id: string }>(
       `INSERT INTO job_postings (vacancy_number, title, description, patient_id, contracted_service_id, case_ordinal,
           required_professions, status, is_draft, is_test, country, social_short_links, created_at, updated_at)
-       VALUES (nextval('job_postings_vacancy_number_seq'), $1, '', $2, $3, $4, ARRAY['AT']::varchar[], $5, false, true, 'AR', $6::jsonb,
+       VALUES (nextval('job_postings_vacancy_number_seq'), $1, '', $2, $3, $4, '{}'::text[], $5, false, true, 'AR', $6::jsonb,
           NOW() - $7::interval, NOW() - $7::interval) RETURNING id`,
       [`CASO E2E 047 ${ordinal}`, patientId, serviceId, ordinal, status, links, idade],
     )).rows[0].id;
