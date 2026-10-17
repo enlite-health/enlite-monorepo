@@ -27,6 +27,9 @@
  * entrega min/max do serviço: entrega a BANDA efetiva (`effective_provider_age_band`) e devolve `age_range_min/max`
  * NULL para vaga com serviço (nunca a cópia). Todo leitor aplica `applyEffectiveAgeRange(row)` à linha lida: serviço →
  * mapeamento da banda; manual → as colunas da própria vaga.
+ *
+ * 057 (D523): `required_sex`, `required_professions`, `required_experience`, `work_schedule` e `payment_day` também são do
+ * serviço contratado; a vaga com serviço não os edita (só a ficha do paciente). Vaga manual segue dona dos campos.
  */
 
 /** Alias padrão do serviço contratado na query do leitor. */
@@ -57,7 +60,7 @@ export const JOB_POSTING_COLUMNS = [
 /** Nome de saída da banda efetiva; `applyEffectiveAgeRange` a consome e a REMOVE da linha (o consumidor não a vê). */
 export const EFFECTIVE_AGE_BAND_ALIAS = 'effective_provider_age_band';
 
-/** Colunas que a vaga LÊ do serviço: `schedule` (F1), `providers_needed` (F5) e a faixa etária (F6). */
+/** Colunas que a vaga LÊ do serviço: `schedule` (F1), `providers_needed` (F5), a faixa etária (F6) e os 5 de recrutamento (057). */
 export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: string) => string> = {
   schedule: (jp, eff) =>
     `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.schedule ELSE ${jp}.schedule END`,
@@ -69,6 +72,18 @@ export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: strin
   // F6: vaga com serviço devolve NULL (a faixa é derivada da banda em TS, sem cair na cópia); manual lê o próprio valor.
   age_range_min: (jp) => `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN NULL ELSE ${jp}.age_range_min END`,
   age_range_max: (jp) => `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN NULL ELSE ${jp}.age_range_max END`,
+  // 057 (D523): os 5 campos de recrutamento. `jp.required_professions` tem DEFAULT '{}' e a cópia pode ser NULL no
+  // serviço; os leitores fazem `ANY(...)`/`cardinality`, então a vaga com serviço devolve '{}' (nunca NULL).
+  required_sex: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.required_sex ELSE ${jp}.required_sex END`,
+  required_professions: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN COALESCE(${eff}.required_professions, '{}'::text[]) ELSE ${jp}.required_professions END`,
+  required_experience: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.required_experience ELSE ${jp}.required_experience END`,
+  work_schedule: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.work_schedule ELSE ${jp}.work_schedule END`,
+  payment_day: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.payment_day ELSE ${jp}.payment_day END`,
 };
 
 /** `LEFT JOIN` do serviço contratado da vaga (join por PK: no máximo 1 linha, não multiplica a vaga). */
@@ -90,6 +105,46 @@ export function vacancyEffectiveScheduleSql(
   eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
 ): string {
   return EFFECTIVE_FIELD_EXPRESSIONS.schedule(jp, eff);
+}
+
+/** Sexo requerido efetivo (057) (sem alias de saída; o leitor escreve `AS required_sex`). */
+export function vacancyEffectiveRequiredSexSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.required_sex(jp, eff);
+}
+
+/** Profissões requeridas efetivas, nunca NULL para vaga com serviço (057) (sem alias de saída; o leitor escreve `AS required_professions`). */
+export function vacancyEffectiveRequiredProfessionsSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.required_professions(jp, eff);
+}
+
+/** Experiência requerida efetiva (057) (sem alias de saída; o leitor escreve `AS required_experience`). */
+export function vacancyEffectiveRequiredExperienceSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.required_experience(jp, eff);
+}
+
+/** Modalidade/escala de trabalho efetiva (057) (sem alias de saída; o leitor escreve `AS work_schedule`). */
+export function vacancyEffectiveWorkScheduleSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.work_schedule(jp, eff);
+}
+
+/** Dia de pagamento efetivo (057) (sem alias de saída; o leitor escreve `AS payment_day`). */
+export function vacancyEffectivePaymentDaySql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.payment_day(jp, eff);
 }
 
 /** Expressão da quantidade de prestadores efetiva, sempre TEXT (sem alias de saída; o leitor escreve `AS providers_needed`). */

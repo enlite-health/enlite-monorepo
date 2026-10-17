@@ -22,6 +22,13 @@ describe('LOCKED_COLUMN_TO_FORM_FIELD — inversão do mapa coluna → campo do 
     );
   });
 
+  it('as 5 colunas de recrutamento do serviço (057) resolvem para o campo de form homônimo', () => {
+    for (const c of ['required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day'] as const) {
+      expect(LOCKED_COLUMN_TO_FORM_FIELD[c]).toBe(c);
+    }
+    expect(KNOWN_LOCKED_FIELDS).toHaveLength(13);
+  });
+
   it('as demais 5 colunas resolvem para o campo de form que buildVacancyPayload usa para montar o PUT', () => {
     expect(LOCKED_COLUMN_TO_FORM_FIELD.patient_address_id).toBe('patientAddressId');
     expect(LOCKED_COLUMN_TO_FORM_FIELD.age_range_min).toBe('age_range_min');

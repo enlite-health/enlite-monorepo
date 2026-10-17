@@ -144,7 +144,8 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(vacancy.status).toBe('PENDING_ACTIVATION');
     expect(vacancy.is_draft).toBe(true);
 
-    // Spec 027 Fase 3 (D508): a vaga nasce com os 5 campos do serviço e SEM os dois de ficha.
+    // Spec 057 (D523): a vaga com serviço NÃO guarda os 5 (nasce NULL; o leitor lê do serviço) e SEM os dois de ficha;
+    // o valor vive no serviço.
     const { rows: [copied] } = await pool.query(
       `SELECT required_professions, required_sex, required_experience, work_schedule, payment_day,
               worker_attributes, daily_obs, worker_profile_sought
@@ -152,9 +153,18 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       [r.data.data.vacancyId],
     );
     expect(copied).toMatchObject({
+      required_professions: null, required_sex: null, required_experience: null,
+      work_schedule: null, payment_day: null,
+      worker_attributes: null, daily_obs: null, worker_profile_sought: null,
+    });
+    const { rows: [svcRow] } = await pool.query(
+      `SELECT required_professions, required_sex, required_experience, work_schedule, payment_day
+         FROM patient_contracted_services WHERE id = $1`,
+      [serviceId],
+    );
+    expect(svcRow).toMatchObject({
       required_professions: ['AT'], required_sex: 'F', required_experience: 'EXP-E2E-1',
       work_schedule: 'part-time', payment_day: 'DIA-E2E-5',
-      worker_attributes: null, daily_obs: null, worker_profile_sought: null,
     });
 
     const { rows: [patient] } = await pool.query<{ status: string }>(
@@ -414,6 +424,9 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       'SELECT required_sex, worker_attributes, daily_obs, is_draft FROM job_postings WHERE id = $1',
       [ok.data.data.vacancyId],
     );
-    expect(v).toEqual({ required_sex: 'BOTH', worker_attributes: null, daily_obs: null, is_draft: true });
+    // D523: a vaga não guarda o sexo; o serviço guarda BOTH.
+    expect(v).toEqual({ required_sex: null, worker_attributes: null, daily_obs: null, is_draft: true });
+    const { rows: [svcSex] } = await pool.query('SELECT required_sex FROM patient_contracted_services WHERE id = $1', [serviceId]);
+    expect(svcSex.required_sex).toBe('BOTH');
   });
 });

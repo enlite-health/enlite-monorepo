@@ -4,7 +4,13 @@ import type { PublicJobRow } from '../domain/PublicJobDto';
 import type { PublicJobsFilters } from '../domain/PublicJobsFilters';
 import { buildPublicJobsWhere } from './PublicJobsQueryBuilder';
 import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
-import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveAgeRangeSql,
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+  vacancyEffectiveScheduleSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 // ─── Helper: resolve coordinator_name → coordinator_id (findOrCreate) ──────────
@@ -310,8 +316,8 @@ export class JobPostingARRepository {
          pa.state                             AS state,
          pa.city                              AS city,
          jp.social_short_links->>'site'       AS detail_link,
-         jp.required_professions              AS worker_type,
-         jp.required_sex                      AS worker_sex,
+         ${vacancyEffectiveRequiredProfessionsSql('jp')} AS worker_type,
+         ${vacancyEffectiveRequiredSexSql('jp')} AS worker_sex,
          jp.inferred_zone                     AS job_zone,
          COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood,
          NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city,

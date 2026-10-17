@@ -47,7 +47,7 @@ function baseRow(overrides: Record<string, unknown> = {}) {
 describe('GET /vacancies/:id — locked_fields (F3, fase 1)', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('contracted_service_id preenchido (vaga do foguete) → locked_fields = SOURCE_LOCKED_FIELDS (os 8 nomes)', async () => {
+  it('contracted_service_id preenchido (vaga do foguete) → locked_fields = SOURCE_LOCKED_FIELDS (os 13 nomes, incl. os 5 de recrutamento — 057/D523)', async () => {
     mockQuery.mockResolvedValue({ rows: [baseRow({ contracted_service_id: 'svc-1' })] });
     const [req, res] = reqRes();
 
@@ -55,7 +55,10 @@ describe('GET /vacancies/:id — locked_fields (F3, fase 1)', () => {
 
     const data = (res.json as jest.Mock).mock.calls[0][0].data;
     expect(data.locked_fields).toEqual([...SOURCE_LOCKED_FIELDS]);
-    expect(data.locked_fields).toHaveLength(8);
+    expect(data.locked_fields).toHaveLength(13);
+    for (const f of ['required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day']) {
+      expect(data.locked_fields).toContain(f);
+    }
   });
 
   it('contracted_service_id NULL (vaga criada direto, sem serviço) → locked_fields = []', async () => {

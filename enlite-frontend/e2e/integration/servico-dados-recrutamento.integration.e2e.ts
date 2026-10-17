@@ -80,7 +80,7 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
   }
 
-  test('1. feliz — preenche os campos do serviço como humano, guarda, ativa: a vaga nasce rascunho com os 5 valores e sem os de ficha', async ({ page, request }) => {
+  test('1. feliz — preenche os campos do serviço como humano, guarda, ativa: a vaga nasce rascunho lendo os 5 do serviço, sem cópia, e sem os de ficha', async ({ page, request }) => {
     const { patientId, serviceId } = await semear(request, {});
     await loginComoStaffMock(page, STAFF, 'E2E Servico Recrutamento');
     await abrirCardDoServico(page, patientId, serviceId);
@@ -119,9 +119,13 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     await expect.poll(() => page.locator('input[type="text"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toContain(DIA_PAGO);
     // Os dois de ficha NÃO atravessam: o textarea de atributos da vaga está vazio.
     await expect(page.getByTestId('worker-attributes-textarea')).toHaveValue('');
-    // Experiência e jornada não têm campo em nenhuma tela da vaga: conferidos no banco (os 7 valores, sem texto clínico).
-    const linha = runSQL(`SELECT required_experience, work_schedule, coalesce(worker_attributes,'<null>'), coalesce(daily_obs,'<null>') FROM job_postings WHERE id = '${vacancyId}'`).split('\n')[0].trim();
-    expect(linha).toBe(`${EXPERIENCIA}|full-time|<null>|<null>`);
+    // D523 (057): a vaga com serviço NÃO copia os 5 — as colunas de `job_postings` ficam NULL (e as de ficha também);
+    // quem guarda os valores é o SERVIÇO. Experiência e jornada não têm campo de tela na vaga: conferidos no banco.
+    const linha = runSQL(`SELECT coalesce(required_experience,'<null>'), coalesce(work_schedule,'<null>'), coalesce(payment_day,'<null>'), coalesce(required_sex,'<null>'), coalesce(required_professions::text,'<null>'), coalesce(worker_attributes,'<null>'), coalesce(daily_obs,'<null>') FROM job_postings WHERE id = '${vacancyId}'`).split('\n')[0].trim();
+    expect(linha).toBe('<null>|<null>|<null>|<null>|<null>|<null>|<null>');
+    // O serviço guarda os valores digitados na ficha.
+    const noServico = runSQL(`SELECT required_experience, work_schedule, payment_day, required_sex FROM patient_contracted_services WHERE id = '${serviceId}'`).split('\n')[0].trim();
+    expect(noServico).toBe(`${EXPERIENCIA}|full-time|${DIA_PAGO}|F`);
   });
 
   test('2. alternativo — faltando o sexo: "Activar reclutamiento" desabilitado e o motivo traduzido aparece', async ({ page, request }) => {

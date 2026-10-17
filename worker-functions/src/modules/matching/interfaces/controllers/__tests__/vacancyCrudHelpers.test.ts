@@ -52,10 +52,17 @@ describe('authorizeVacancyUpdate — 422 de SOURCE_LOCKED_FIELDS (F3, fase 1)', 
     }
   });
 
-  it('vaga COM contracted_service_id → body só com campo LIVRE (required_professions) → segue (kind=ok), não é 422', async () => {
+  it('vaga COM contracted_service_id → body só com campo LIVRE (salary_text) → segue (kind=ok), não é 422', async () => {
     const db = makeDb({ contracted_service_id: 'svc-1', is_draft: true });
-    const result = await authorizeVacancyUpdate(db, 'jp-1', { required_professions: ['AT'] });
+    const result = await authorizeVacancyUpdate(db, 'jp-1', { salary_text: 'A convenir' });
     expect(result.kind).toBe('ok');
+  });
+
+  it('057/D523: PUT com required_sex em vaga COM serviço → 422 + locked_fields=[required_sex]; SEM serviço → aceita', async () => {
+    const com = await authorizeVacancyUpdate(makeDb({ contracted_service_id: 'svc-1', is_draft: true }), 'jp-1', { required_sex: 'F' });
+    expect(com).toMatchObject({ kind: 'error', status: 422, lockedFields: ['required_sex'] });
+    const sem = await authorizeVacancyUpdate(makeDb({ contracted_service_id: null, is_draft: true }), 'jp-1', { required_sex: 'F' });
+    expect(sem.kind).toBe('ok');
   });
 
   it('vaga COM contracted_service_id, PUBLICADA (is_draft=false) → campo travado AINDA 422 (a origem não muda de dono ao publicar)', async () => {
@@ -64,7 +71,7 @@ describe('authorizeVacancyUpdate — 422 de SOURCE_LOCKED_FIELDS (F3, fase 1)', 
     expect(result).toMatchObject({ kind: 'error', status: 422, lockedFields: ['schedule'] });
   });
 
-  it('todos os 8 campos de SOURCE_LOCKED_FIELDS, um de cada vez, disparam 422 quando há contracted_service_id', async () => {
+  it('todos os 13 campos de SOURCE_LOCKED_FIELDS, um de cada vez, disparam 422 quando há contracted_service_id', async () => {
     for (const field of SOURCE_LOCKED_FIELDS) {
       const db = makeDb({ contracted_service_id: 'svc-1' });
       const result = await authorizeVacancyUpdate(db, 'jp-1', { [field]: 'qualquer valor' });
@@ -79,26 +86,28 @@ describe('authorizeVacancyUpdate — 422 de SOURCE_LOCKED_FIELDS (F3, fase 1)', 
   });
 });
 
- // Spec 027 Fase 3 (T035, D508 item 4, lex T.5): a ficha é o DEFAULT, não espelho vivo. Os 5 campos que o botão copia do
-// serviço ficam FORA de SOURCE_LOCKED_FIELDS, para a recrutadora corrigir na vaga rascunho. Sabotagem: acrescentar
-// `payment_day` a SOURCE_LOCKED_FIELDS deixa os dois primeiros `it`s vermelhos.
-describe('SOURCE_LOCKED_FIELDS — os 5 campos copiados do serviço continuam editáveis no rascunho (T035)', () => {
-  const COPIED_FROM_SERVICE = ['required_professions', 'required_sex', 'required_experience', 'work_schedule', 'payment_day'] as const;
+// 057/D523 (substitui a T035 da spec 027): os 5 campos de recrutamento agora moram no serviço — a vaga COM serviço os recusa (422);
+// a vaga SEM serviço (manual) continua editando-os. Continuam em FULL_ALLOWED_UPDATE_FIELDS (a vaga manual os grava).
+describe('SOURCE_LOCKED_FIELDS — os 5 campos de recrutamento (057/D523)', () => {
+  const RECRUITMENT = ['required_professions', 'required_sex', 'required_experience', 'work_schedule', 'payment_day'] as const;
 
-  it('nenhum dos 5 está em SOURCE_LOCKED_FIELDS', () => {
-    for (const f of COPIED_FROM_SERVICE) expect(SOURCE_LOCKED_FIELDS as readonly string[]).not.toContain(f);
+  it('os 5 estão em SOURCE_LOCKED_FIELDS (13 no total)', () => {
+    for (const f of RECRUITMENT) expect(SOURCE_LOCKED_FIELDS as readonly string[]).toContain(f);
+    expect(SOURCE_LOCKED_FIELDS).toHaveLength(13);
   });
 
-  it('o PUT de vaga rascunho nascida do botão (com contracted_service_id) com CADA uma das 5 chaves NÃO dá 422 (autoriza)', async () => {
-    for (const field of COPIED_FROM_SERVICE) {
-      const db = makeDb({ contracted_service_id: 'svc-1', is_draft: true });
-      const result = await authorizeVacancyUpdate(db, 'jp-1', { [field]: field === 'required_professions' ? ['AT'] : 'novo-valor' });
-      expect({ field, kind: result.kind }).toEqual({ field, kind: 'ok' });
+  it('PUT com CADA uma das 5 chaves: vaga COM serviço → 422; vaga manual (sem serviço) → autoriza', async () => {
+    for (const field of RECRUITMENT) {
+      const value = field === 'required_professions' ? ['AT'] : 'novo-valor';
+      const com = await authorizeVacancyUpdate(makeDb({ contracted_service_id: 'svc-1', is_draft: true }), 'jp-1', { [field]: value });
+      expect(com).toMatchObject({ kind: 'error', status: 422, lockedFields: [field] });
+      const sem = await authorizeVacancyUpdate(makeDb({ contracted_service_id: null, is_draft: true }), 'jp-1', { [field]: value });
+      expect({ field, kind: sem.kind }).toEqual({ field, kind: 'ok' });
     }
   });
 
-  it('as 5 chaves entram no UPDATE (estão em FULL_ALLOWED_UPDATE_FIELDS): o valor novo é gravado na vaga', () => {
-    for (const f of COPIED_FROM_SERVICE) expect(FULL_ALLOWED_UPDATE_FIELDS as readonly string[]).toContain(f);
+  it('as 5 chaves seguem em FULL_ALLOWED_UPDATE_FIELDS (a vaga manual as grava)', () => {
+    for (const f of RECRUITMENT) expect(FULL_ALLOWED_UPDATE_FIELDS as readonly string[]).toContain(f);
   });
 });
 
@@ -122,6 +131,23 @@ describe('buildInsertParams — F2/F5 (vaga-le-do-servico-contratado): vaga com 
     expect(params[6]).toBeNull(); // age_range_min (F6: derivada da banda do serviço)
     expect(params[7]).toBeNull(); // age_range_max
     expect(params[PROVIDERS_IDX]).toBeNull();
+  });
+
+  it('057/D523 — COM contracted_service_id: os 5 de recrutamento viram NULL no INSERT (required_professions null, não [])', () => {
+    const params = buildInsertParams({
+      ...base, schedule: SLOT, contracted_service_id: 'svc-1',
+      required_professions: ['AT'], required_sex: 'F', required_experience: 'x', work_schedule: 'full-time', payment_day: 'dia 10',
+    });
+    for (const idx of [4, 5, 9, 12, 15]) expect(params[idx]).toBeNull();
+  });
+
+  it('057/D523 — SEM contracted_service_id (vaga manual): os 5 seguem gravando os próprios; required_professions ausente vira []', () => {
+    const params = buildInsertParams({
+      ...base, schedule: SLOT, contracted_service_id: null,
+      required_professions: ['AT'], required_sex: 'F', required_experience: 'x', work_schedule: 'full-time', payment_day: 'dia 10',
+    });
+    expect([params[4], params[5], params[9], params[12], params[15]]).toEqual([['AT'], 'F', 'x', 'full-time', 'dia 10']);
+    expect(buildInsertParams({ ...base, schedule: SLOT, contracted_service_id: null })[4]).toEqual([]);
   });
 
   it('SEM contracted_service_id (vaga manual): a faixa etária segue gravando a própria (F6)', () => {
@@ -160,6 +186,21 @@ describe('withEffectiveFields — F5: a resposta traz horário e quantidade EFET
     expect(out).toEqual({ id: 'jp-1', schedule: null, providers_needed: null, age_range_min: 30, age_range_max: 44 });
     expect(out).not.toHaveProperty('effective_provider_age_band');
     expect(String(query.mock.calls[0][0])).toContain('pcs_eff.provider_age_band');
+  });
+
+  it('057: vaga com serviço → a resposta traz os 5 de recrutamento do SERVIÇO; vaga manual → os próprios', async () => {
+    const eff = { required_sex: 'F', required_professions: ['AT'], required_experience: '2 anos', work_schedule: 'Fixo', payment_day: '5' };
+    const query = jest.fn().mockResolvedValue({ rows: [{ schedule: null, providers_needed: null, ...eff }] });
+    const cru = { id: 'jp-1', required_sex: null, required_professions: null, required_experience: null, work_schedule: null, payment_day: null };
+    const out = await withEffectiveFields({ query } as unknown as Pool, cru);
+    expect(out).toMatchObject(eff);
+    const sql = String(query.mock.calls[0][0]);
+    for (const a of ['required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day']) expect(sql).toContain(`AS ${a}`);
+    expect(sql).toContain("COALESCE(pcs_eff.required_professions, '{}'::text[])");
+
+    const manual = { required_sex: 'M', required_professions: ['CAREGIVER'], required_experience: 'x', work_schedule: 'y', payment_day: '10' };
+    query.mockResolvedValue({ rows: [{ schedule: null, providers_needed: null, ...manual }] });
+    expect(await withEffectiveFields({ query } as unknown as Pool, { id: 'jp-2' })).toMatchObject(manual);
   });
 
   it('vaga que a sessão não enxerga (0 linhas) → devolve a linha como veio', async () => {

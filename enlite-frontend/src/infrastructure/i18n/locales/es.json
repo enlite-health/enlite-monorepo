@@ -2194,7 +2194,8 @@
         "paymentDay": "Plazo de pago",
         "closesAt": "Fecha de cierre",
         "meetLinks": "Links de Google Meet",
-        "meetLinksAside": "para las entrevistas"
+        "meetLinksAside": "para las entrevistas",
+        "serviceRecruitmentFields": "Completar {{count}} campos en la ficha del paciente"
       },
       "lastUpdated": "Última edición: {{date}}"
     },
