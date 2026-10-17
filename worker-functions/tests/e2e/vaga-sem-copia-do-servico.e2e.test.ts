@@ -56,7 +56,7 @@ async function insertVaga(opts: { withService: boolean; own?: keyof typeof OWN_V
   if (opts.own) params.push(OWN_VALUE[opts.own].param);
   const err = await pgError(
     `INSERT INTO job_postings (id, title, contracted_service_id, status, is_draft, required_professions, country, is_test${extraCols})
-     VALUES ($1, $2, $3, 'SEARCHING', false, ARRAY['AT'], 'AR', true${extraVal})`,
+     VALUES ($1, $2, $3, 'SEARCHING', false, ${opts.withService ? `'{}'::text[]` : `ARRAY['AT']`}, 'AR', true${extraVal})`,
     params,
   );
   return { id, err };
