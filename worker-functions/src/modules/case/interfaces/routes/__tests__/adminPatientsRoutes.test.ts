@@ -23,6 +23,7 @@ import type { AdminInsuranceProvidersController } from '../../controllers/AdminI
 import type { AdminPatientContractedServicesController } from '../../controllers/AdminPatientContractedServicesController';
 import type { AdminPatientItineraryController } from '../../controllers/AdminPatientItineraryController';
 import type { AdminPatientKanbanServicesController } from '../../controllers/AdminPatientKanbanServicesController';
+import type { AdminContractedServiceAuthorizationController } from '../../controllers/AdminContractedServiceAuthorizationController';
 import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import type { AdminPatientContactRowsController } from '../../controllers/AdminPatientContactRowsController';
@@ -205,6 +206,12 @@ function pecas() {
   const itinerary = { get: responde('itinerary.get'), events: responde('itinerary.events') } as unknown as AdminPatientItineraryController;
   // Fase 8 (DX-8.16, A-contrato): mesmo molde, 16º argumento — agregado do subcard do Kanban.
   const kanbanServices = { list: responde('kanbanServices.list') } as unknown as AdminPatientKanbanServicesController;
+  // Spec 056 (T2.2): autorização de horas do serviço — 17º argumento, mesmo molde.
+  const authorization = {
+    list: responde('auth.list'),
+    create: responde('auth.create'),
+    supersede: responde('auth.supersede'),
+  } as unknown as AdminContractedServiceAuthorizationController;
   const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
   const contactRows = {
     createResponsible: responde('rows.createResponsible'),
@@ -230,7 +237,7 @@ function pecas() {
 
   return {
     controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology, contactRows,
-    externalContacts, emergencyContact, itinerary, kanbanServices,
+    externalContacts, emergencyContact, itinerary, kanbanServices, authorization,
     auth: authDouble(), permissions: permissionsDouble(),
   };
 }
@@ -241,7 +248,7 @@ function build() {
   return createAdminPatientsRoutes(
     p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
     p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology, p.contactRows,
-    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices,
+    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices, p.authorization,
   );
 }
 
@@ -345,6 +352,9 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
     ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],
+    ['get', '/api/admin/patients/abc-123/contracted-services/s1/authorizations', 'auth.list'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/authorizations', 'auth.create'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/authorizations/a1/supersede', 'auth.supersede'],
     ['get', '/api/admin/patients/abc-123/itinerary', 'itinerary.get'],
     ['get', '/api/admin/patients/abc-123/itinerary/events?from=2026-09-01&to=2026-09-07', 'itinerary.events'],
     ['get', '/api/admin/patients/abc-123/diagnoses', 'diag.list'],
