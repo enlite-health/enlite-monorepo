@@ -22,15 +22,19 @@ import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
-import { syncItinerarySlots } from './PatientItinerarySlotSync';
+import { replaceServiceSlots } from './ServiceSlotWriter';
 
 /**
- * Slot de horário do encuadre — o MESMO formato que `scheduleToJsonb` persiste em
- * `job_postings.schedule` (array; `normalizeSchedule` já lê). `dayOfWeek`: 0 = domingo.
+ * Turno do horário na ESCRITA (spec 056): início + duração; o fim nunca é gravado. `dayOfWeek`: 0 = domingo.
  */
 export interface ContractedServiceScheduleSlot {
   dayOfWeek: number;
   startTime: string;
+  durationMinutes: number;
+}
+
+/** Turno do horário na LEITURA: `horario_do_servico(id, CURRENT_DATE)` — o `endTime` é derivado (início + duração). */
+export interface ContractedServiceScheduleView extends ContractedServiceScheduleSlot {
   endTime: string;
 }
 
@@ -86,7 +90,7 @@ export interface ContractedServiceDetail {
   /** Endereço do paciente onde o serviço é prestado (migration 330) — null = ainda não vinculado. */
   addressId: string | null;
   /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
-  schedule: ContractedServiceScheduleSlot[] | null;
+  schedule: ContractedServiceScheduleView[] | null;
   /**
    * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros são COPIADOS para a vaga na ativação;
    * `workerAttributes` e `dailyObs` são SÓ FICHA (nunca copiados). Texto livre: nunca em log (lex T.4).
@@ -179,7 +183,6 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['guardShift', 'guard_shift'],
   ['providerAgeBand', 'provider_age_band'],
   ['addressId', 'address_id'],
-  ['schedule', 'schedule'],
   ['requiredProfessions', 'required_professions'],
   ['requiredSex', 'required_sex'],
   ['requiredExperience', 'required_experience'],
@@ -188,15 +191,6 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['paymentDay', 'payment_day'],
   ['dailyObs', 'daily_obs'],
 ];
-
-/**
- * `schedule` é JSONB e chega como ARRAY JS: o driver `pg` serializa objeto como JSON, mas array
- * JS vira ARRAY Postgres (`{...}`), que o JSONB recusa. Só esta coluna precisa do stringify.
- */
-function toColumnValue(key: keyof ContractedServiceWriteInput, value: unknown): unknown {
-  if (key === 'schedule' && value != null) return JSON.stringify(value);
-  return value;
-}
 
 interface ServiceRow {
   id: string;
@@ -215,7 +209,6 @@ interface ServiceRow {
   guard_shift: string | null;
   provider_age_band: string | null;
   address_id: string | null;
-  schedule: ContractedServiceScheduleSlot[] | null;
   required_professions: string[] | null;
   required_sex: string | null;
   required_experience: string | null;
@@ -238,9 +231,8 @@ export class PatientContractedServiceRepository {
 
   constructor(
     private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
-    /** Injeção só para o unitário (`PatientItinerarySlotSync.test.ts`, DX-7.5); os call sites de
-     * produção não mudam — o default é a derivação real. */
-    private readonly syncSlots: typeof syncItinerarySlots = syncItinerarySlots,
+    /** Injeção só para o unitário; os call sites de produção não mudam — o default é o escritor real das faixas. */
+    private readonly replaceSlots: typeof replaceServiceSlots = replaceServiceSlots,
   ) {}
 
   private get pool(): Pool {
@@ -260,6 +252,12 @@ export class PatientContractedServiceRepository {
     const providers = await this.providerRepo.listForService(row.id);
     // Spec 018 PR-6 / spec 047 F2: a MESMA leitura do mapper da ficha (`fetchLiveVacancies`) — um dono só.
     const liveVacancy = (await fetchLiveVacancies(cli, [row.id])).get(row.id) ?? null;
+    // Spec 056: o horário NÃO é a coluna `pcs.schedule` (morta) — é a leitura derivada das faixas vigentes hoje.
+    const sched = await cli.query<{ schedule: ContractedServiceScheduleView[] | null }>(
+      `SELECT horario_do_servico($1, CURRENT_DATE) AS schedule`,
+      [row.id],
+    );
+    const schedule = sched.rows[0]?.schedule ?? null;
     return {
       id: row.id,
       liveVacancy,
@@ -278,7 +276,7 @@ export class PatientContractedServiceRepository {
       guardShift: row.guard_shift,
       providerAgeBand: row.provider_age_band,
       addressId: row.address_id,
-      schedule: row.schedule,
+      schedule,
       requiredProfessions: row.required_professions,
       requiredSex: row.required_sex,
       requiredExperience: row.required_experience,
@@ -356,7 +354,7 @@ export class PatientContractedServiceRepository {
           const value = input[key];
           if (value !== undefined) {
             cols.push(col);
-            values.push(toColumnValue(key, value));
+            values.push(value);
           }
         }
         const placeholders = cols.map((_, i) => `$${i + 1}`);
@@ -368,11 +366,11 @@ export class PatientContractedServiceRepository {
         if (input.deviceTypeCodes && input.deviceTypeCodes.length > 0) {
           await this.replaceDevices(serviceId, input.deviceTypeCodes, cli);
         }
-        // DX-7.5: a derivação roda na MESMA transação, só quando o corpo manda `schedule`
-        // (chave ausente = nada a sincronizar). Falhar aqui desfaz o INSERT acima (uma
-        // transação só; nada de slot sem serviço nem serviço com slot velho).
+        // Spec 056: as faixas são o dono do horário — gravadas na MESMA transação, só quando o corpo manda
+        // `schedule` (chave ausente = nada a fazer). Falhar aqui desfaz o INSERT acima (nada de faixa sem
+        // serviço nem serviço com faixa velha).
         if (input.schedule !== undefined) {
-          await this.syncSlots(cli, serviceId, input.schedule ?? null, input.actorUid);
+          await this.replaceSlots(cli, serviceId, input.schedule ?? null, input.actorUid);
         }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0];
@@ -455,7 +453,7 @@ export class PatientContractedServiceRepository {
         };
         for (const [key, col] of WRITABLE_COLUMNS) {
           const value = patch[key];
-          if (value !== undefined) push(col, toColumnValue(key, value));
+          if (value !== undefined) push(col, value);
         }
         if (patch.active !== undefined) {
           push('active', patch.active);
@@ -464,7 +462,8 @@ export class PatientContractedServiceRepository {
         if (patch.deviceTypeCodes !== undefined) {
           await this.replaceDevices(serviceId, patch.deviceTypeCodes, cli);
         }
-        if (sets.length > 0) {
+        // `schedule` não é coluna: PATCH só com horário ainda carimba autoria/`updated_at` (e detecta serviço inexistente).
+        if (sets.length > 0 || patch.schedule !== undefined) {
           params.push(patch.actorUid);
           sets.push(`updated_by = $${params.length}`);
           sets.push('updated_at = NOW()');
@@ -475,10 +474,9 @@ export class PatientContractedServiceRepository {
         // F3/F5: valor mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
         for (const [field, key] of GUARDED_FIELDS) await recordFieldChange(cli, serviceId, field, before.get(field), patch[key]);
         await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
-        // DX-7.5: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch:
-        // chave ausente não sincroniza nada).
+        // Spec 056: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch: chave ausente não toca).
         if (patch.schedule !== undefined) {
-          await this.syncSlots(cli, serviceId, patch.schedule ?? null, patch.actorUid);
+          await this.replaceSlots(cli, serviceId, patch.schedule ?? null, patch.actorUid);
         }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0] ?? null;

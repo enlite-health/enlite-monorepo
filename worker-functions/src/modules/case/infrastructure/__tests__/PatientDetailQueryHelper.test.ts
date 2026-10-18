@@ -232,6 +232,10 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           },
         ],
       }) // providers
+      // Spec 056: o horário vem de `horario_do_servico(id, CURRENT_DATE)`, não da coluna `pcs.schedule`.
+      .mockResolvedValueOnce({
+        rows: [{ id: 'svc-1', schedule: [{ dayOfWeek: 1, startTime: '20:00', endTime: '08:00', durationMinutes: 720 }] }],
+      }) // schedules
       // Spec 018, PR-6 / spec 047 F2: vaga viva DESTE serviço (id, caso, ordinal, status, link) — exercita
       // o Map de `fetchLiveVacancies` (o outro teste da suíte cobre o caso "nenhuma vaga viva").
       .mockResolvedValueOnce({
@@ -245,7 +249,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const enc = makeEncryptionService();
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
-    expect(queryImpl).toHaveBeenCalledTimes(11);
+    expect(queryImpl).toHaveBeenCalledTimes(12);
     expect(result!.contractedServices).toHaveLength(1);
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
@@ -259,7 +263,9 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     });
     expect(Object.keys(svc.liveVacancy!).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'status']);
     // O SQL lê o caso do fragmento com dono (046) e só vagas vivas — e NÃO toca social_short_links.
-    const sqlVaga = String(queryImpl.mock.calls[10][0]);
+    const sqlVaga = String(queryImpl.mock.calls[11][0]);
+    expect(String(queryImpl.mock.calls[10][0])).toContain('horario_do_servico(id, CURRENT_DATE)');
+    expect(svc.schedule).toEqual([{ dayOfWeek: 1, startTime: '20:00', endTime: '08:00', durationMinutes: 720 }]);
     expect(sqlVaga).toContain(`${VACANCY_CASE_NUMBER_SQL} AS case_number`);
     expect(sqlVaga).not.toContain('social_short_links');
     expect(sqlVaga).toContain('jp.deleted_at IS NULL');
@@ -301,6 +307,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [{ id: 'svc-1', schedule: null }] }) // schedules (056)
       .mockResolvedValueOnce({ rows: [] }); // live vacancies (spec 018, PR-6) — nenhuma
 
     const pool = makePool(queryImpl);

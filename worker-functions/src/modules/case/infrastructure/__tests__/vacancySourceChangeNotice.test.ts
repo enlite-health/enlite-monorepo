@@ -19,8 +19,8 @@ import {
   recordSourceChange,
 } from '../vacancySourceChangeNotice';
 
-const A = { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' };
-const B = { dayOfWeek: 3, startTime: '14:00', endTime: '18:00' };
+const A = { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 };
+const B = { dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 };
 
 function cli(rows: unknown[] = []) {
   return { query: jest.fn().mockResolvedValue({ rows, rowCount: rows.length }) } as unknown as PoolClient & { query: jest.Mock };
@@ -48,13 +48,25 @@ describe('captureFieldBefore — schedule', () => {
   it('lê o horário atual travando a linha (FOR UPDATE)', async () => {
     const c = cli([{ schedule: [A] }]);
     expect(await captureFieldBefore(c, 'svc-1', 'schedule', [B])).toEqual([A]);
-    expect(c.query.mock.calls[0][0]).toMatch(/^SELECT schedule FROM patient_contracted_services WHERE id = \$1 FOR UPDATE$/);
+    expect(c.query.mock.calls[0][0]).toMatch(/^SELECT horario_do_servico\(\$1, CURRENT_DATE\) AS schedule FROM patient_contracted_services WHERE id = \$1 FOR UPDATE$/);
+    expect(c.query.mock.calls[0][0]).not.toMatch(/SELECT schedule FROM/);
     expect(c.query.mock.calls[0][1]).toEqual(['svc-1']);
   });
 
   it('serviço sem horário (NULL) ou inexistente (0 linhas) → null', async () => {
     expect(await captureFieldBefore(cli([{ schedule: null }]), 'svc-1', 'schedule', [A])).toBeNull();
     expect(await captureFieldBefore(cli([]), 'svc-1', 'schedule', [A])).toBeNull();
+  });
+});
+
+describe('recordFieldChange (schedule) — duração', () => {
+  it('mesma lista em outra ordem não é mudança; 720→600 é mudança', async () => {
+    const N720 = { dayOfWeek: 6, startTime: '20:00', durationMinutes: 720 };
+    const c = cli();
+    await recordFieldChange(c, 'svc-1', 'schedule', [A, N720], [N720, { ...A }]);
+    expect(c.query).not.toHaveBeenCalled();
+    await recordFieldChange(c, 'svc-1', 'schedule', [N720], [{ ...N720, durationMinutes: 600 }]);
+    expect(c.query).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -75,8 +87,8 @@ describe('recordFieldChange (schedule) — só grava quando o valor NORMALIZADO 
   it('mesmo conteúdo com os slots em OUTRA ordem (e chaves em outra ordem) → 0 gravações', async () => {
     const c = cli();
     await recordFieldChange(c, 'svc-1', 'schedule', [A, B], [
-      { endTime: '18:00', startTime: '14:00', dayOfWeek: 3 },
-      { endTime: '12:00', startTime: '08:00', dayOfWeek: 1 },
+      { durationMinutes: 240, startTime: '14:00', dayOfWeek: 3 },
+      { durationMinutes: 240, startTime: '08:00', dayOfWeek: 1 },
     ]);
     expect(c.query).not.toHaveBeenCalled();
   });
@@ -98,7 +110,7 @@ describe('recordFieldChange (schedule) — só grava quando o valor NORMALIZADO 
   it('um slot a mais ou um horário diferente no mesmo dia → grava', async () => {
     const c = cli();
     await recordFieldChange(c, 'svc-1', 'schedule', [A], [A, B]);
-    await recordFieldChange(c, 'svc-1', 'schedule', [A], [{ ...A, endTime: '12:30' }]);
+    await recordFieldChange(c, 'svc-1', 'schedule', [A], [{ ...A, durationMinutes: 270 }]);
     expect(c.query).toHaveBeenCalledTimes(2);
   });
 });

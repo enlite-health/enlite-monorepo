@@ -6,6 +6,7 @@ import { PatientContractedServiceRepository, type ContractedServiceDetail } from
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../infrastructure/PatientContractedServiceRepository';
 import { SlotHasActiveAllocationError } from '../../application/ItinerarySlotWriteUseCase';
+import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
 import {
   createContractedServiceSchema,
   updateContractedServiceSchema,
@@ -94,6 +95,11 @@ export class AdminPatientContractedServicesController {
       const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) });
       res.status(201).json({ success: true, data: this.project(req, created) });
     } catch (err: unknown) {
+      // Spec 056: faixas do próprio corpo que se sobrepõem — 409, a criação inteira desfez.
+      if (err instanceof ServiceSlotOverlapError) {
+        res.status(409).json({ success: false, error: 'itinerary slot overlaps another slot of the service', code: 'SLOT_OVERLAP' });
+        return;
+      }
       if (err instanceof DeviceTypeUnknownError) {
         res.status(422).json({ success: false, error: 'Unknown device type code(s)', code: err.code, details: { codes: err.codes } });
         return;
@@ -151,6 +157,11 @@ export class AdminPatientContractedServicesController {
       // o MESMO código da rota do itinerário; a transação inteira desfez.
       if (err instanceof SlotHasActiveAllocationError) {
         res.status(422).json({ success: false, error: 'itinerary slot has an active allocation — end it first', code: 'SLOT_HAS_ACTIVE_ALLOCATION', details: { slotId: err.slotId } });
+        return;
+      }
+      // Spec 056: a faixa nova sobrepõe outra do mesmo serviço (constraint `pis_sem_sobreposicao`) — 409; a transação desfez.
+      if (err instanceof ServiceSlotOverlapError) {
+        res.status(409).json({ success: false, error: 'itinerary slot overlaps another slot of the service', code: 'SLOT_OVERLAP' });
         return;
       }
       // F2/F5: apagar horário ou quantidade com vaga viva — a vaga lê esses campos do serviço (vaga-le-do-servico-contratado).

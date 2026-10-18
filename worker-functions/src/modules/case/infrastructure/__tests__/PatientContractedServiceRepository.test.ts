@@ -116,29 +116,59 @@ describe('PatientContractedServiceRepository', () => {
   });
 
   // ── Migration 330: endereço (ponteiro) e horário ─────────────────────────────────────────
-  it('create: schedule vai como JSON string (array JS viraria ARRAY Postgres, que o JSONB recusa); addressId vai cru', async () => {
+  it('create: schedule NÃO entra no INSERT (o dono é a faixa); addressId vai cru', async () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
-    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const schedule = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+    const replaceSlots = jest.fn(async () => ({ opened: 1, closed: 0 }));
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), replaceSlots);
+    const schedule = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
     await repo.create({ patientId: 'pat-1', serviceCode: 'AT', addressId: 'addr-1', schedule, actorUid: 'uid-1' });
     const ins = chamadas.find((c) => /^INSERT INTO patient_contracted_services/.test(c.sql))!;
     expect(ins.sql).toMatch(/address_id/);
-    expect(ins.sql).toMatch(/schedule/);
+    expect(ins.sql).not.toMatch(/schedule/);
     expect(ins.params).toContain('addr-1');
-    expect(ins.params).toContain(JSON.stringify(schedule));
     expect(ins.params).not.toContainEqual(schedule);
+    expect(ins.params).not.toContain(JSON.stringify(schedule));
   });
 
-  it('update: schedule:null e addressId:null vão como null (limpar é caminho válido), sem stringify', async () => {
+  it('update: addressId:null vai como null; schedule:null NÃO vira SET schedule', async () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
-    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), jest.fn(async () => ({ opened: 0, closed: 0 })));
     await repo.update('svc-1', { schedule: null, addressId: null, actorUid: 'uid-1' });
     const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql))!;
     expect(upd.sql).toMatch(/address_id = \$2/);
-    expect(upd.sql).toMatch(/schedule = \$3/);
-    expect(upd.params.slice(1, 3)).toEqual([null, null]);
+    expect(upd.sql).not.toMatch(/schedule =/);
+  });
+
+  it('PATCH com schedule chama replaceServiceSlots no mesmo client e NÃO escreve a coluna schedule', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const replaceSlots = jest.fn(async () => {
+      chamadas.push({ sql: 'REPLACE_SLOTS', params: [] });
+      return { opened: 1, closed: 1 };
+    });
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), replaceSlots);
+    const schedule = [{ dayOfWeek: 1, startTime: '20:00', durationMinutes: 720 }];
+    await repo.update('svc-1', { schedule, weeklyHours: 25, actorUid: 'uid-9' });
+    expect(replaceSlots).toHaveBeenCalledTimes(1);
+    expect(replaceSlots).toHaveBeenCalledWith(cli, 'svc-1', schedule, 'uid-9');
+    expect(chamadas.some((c) => /schedule =/.test(c.sql))).toBe(false);
+    expect(chamadas.some((c) => /SET[^;]*\bschedule\b/.test(c.sql))).toBe(false);
+    // ordem: UPDATE do serviço → replaceServiceSlots → releitura
+    const upd = chamadas.findIndex((c) => /^UPDATE patient_contracted_services SET/.test(c.sql));
+    const rep = chamadas.findIndex((c) => c.sql === 'REPLACE_SLOTS');
+    expect(upd).toBeGreaterThanOrEqual(0);
+    expect(rep).toBeGreaterThan(upd);
+  });
+
+  it('PATCH só com schedule: ainda faz o UPDATE de autoria (updated_at) — linha inexistente → null, sem replaceServiceSlots', async () => {
+    const { cli } = cliente({ updateRowCount: 0 });
+    mockConnect.mockResolvedValue(cli);
+    const replaceSlots = jest.fn();
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), replaceSlots);
+    expect(await repo.update('svc-x', { schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 60 }], actorUid: 'u' })).toBeNull();
+    expect(replaceSlots).not.toHaveBeenCalled();
   });
 
   // ── DX-7.5: a derivação de slots roda na MESMA transação, injetada como jest.fn() ──────────
@@ -146,11 +176,11 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     const syncSlots = jest.fn(async () => {
       chamadas.push({ sql: 'SYNC_SLOTS', params: [] });
-      return { upserted: 1, deactivated: 0 };
+      return { opened: 1, closed: 0 };
     });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);
-    const schedule = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+    const schedule = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
     await repo.create({ patientId: 'pat-1', serviceCode: 'AT', schedule, actorUid: 'uid-1' });
     expect(syncSlots).toHaveBeenCalledTimes(1);
     expect(syncSlots).toHaveBeenCalledWith(cli, 'svc-1', schedule, 'uid-1');
@@ -164,7 +194,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     const syncSlots = jest.fn(async () => {
       chamadas.push({ sql: 'SYNC_SLOTS', params: [] });
-      return { upserted: 0, deactivated: 0 };
+      return { opened: 0, closed: 0 };
     });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);
@@ -186,7 +216,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     const syncSlots = jest.fn(async () => {
       chamadas.push({ sql: 'SYNC_SLOTS', params: [] });
-      return { upserted: 0, deactivated: 3 };
+      return { opened: 0, closed: 3 };
     });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);

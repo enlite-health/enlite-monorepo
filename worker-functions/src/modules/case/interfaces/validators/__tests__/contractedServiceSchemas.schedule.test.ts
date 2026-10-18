@@ -4,7 +4,7 @@
  */
 import { createContractedServiceSchema, updateContractedServiceSchema } from '../contractedServiceSchemas';
 
-const SLOT = { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' };
+const SLOT = { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 };
 
 describe('contractedServiceSchemas — addressId e schedule (migration 330)', () => {
   it('POST aceita addressId uuid + schedule válido; PATCH aceita os dois como null (limpar)', () => {
@@ -26,15 +26,30 @@ describe('contractedServiceSchemas — addressId e schedule (migration 330)', ()
     expect('schedule' in updateContractedServiceSchema.parse({})).toBe(false);
   });
 
+  it('aceita durationMinutes 720 (turno noturno) e 1440 (24 h)', () => {
+    for (const durationMinutes of [720, 1440]) {
+      const r = updateContractedServiceSchema.safeParse({ schedule: [{ dayOfWeek: 1, startTime: '20:00', durationMinutes }] });
+      expect(r.success).toBe(true);
+    }
+  });
+
+  it('recusa endTime (.strict): o fim nunca entra pela API', () => {
+    const slot = { dayOfWeek: 1, startTime: '20:00', durationMinutes: 720, endTime: '08:00' };
+    expect(updateContractedServiceSchema.safeParse({ schedule: [slot] }).success).toBe(false);
+    expect(createContractedServiceSchema.safeParse({ serviceCode: 'AT', schedule: [slot] }).success).toBe(false);
+  });
+
   it('addressId que não é uuid → recusado', () => {
     expect(createContractedServiceSchema.safeParse({ serviceCode: 'AT', addressId: 'nao-uuid' }).success).toBe(false);
   });
 
   it.each([
     ['hora fora de HH:MM', { ...SLOT, startTime: '8h' }],
-    ['24:00 não existe', { ...SLOT, endTime: '24:00' }],
-    ['início depois do fim', { ...SLOT, startTime: '14:00', endTime: '12:00' }],
-    ['início igual ao fim', { ...SLOT, startTime: '12:00', endTime: '12:00' }],
+    ['24:00 não existe', { ...SLOT, startTime: '24:00' }],
+    ['duração 0', { ...SLOT, durationMinutes: 0 }],
+    ['duração 1441', { ...SLOT, durationMinutes: 1441 }],
+    ['duração fracionária', { ...SLOT, durationMinutes: 90.5 }],
+    ['sem durationMinutes', { dayOfWeek: 1, startTime: '08:00' }],
     ['dia 7', { ...SLOT, dayOfWeek: 7 }],
     ['dia negativo', { ...SLOT, dayOfWeek: -1 }],
     ['dia fracionário', { ...SLOT, dayOfWeek: 1.5 }],
@@ -45,7 +60,7 @@ describe('contractedServiceSchemas — addressId e schedule (migration 330)', ()
   });
 
   it('mais de 50 slots → recusado (teto)', () => {
-    const many = Array.from({ length: 51 }, (_, i) => ({ dayOfWeek: i % 7, startTime: '08:00', endTime: '09:00' }));
+    const many = Array.from({ length: 51 }, (_, i) => ({ dayOfWeek: i % 7, startTime: '08:00', durationMinutes: 60 }));
     expect(updateContractedServiceSchema.safeParse({ schedule: many }).success).toBe(false);
   });
 });
