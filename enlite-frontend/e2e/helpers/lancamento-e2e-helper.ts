@@ -281,7 +281,6 @@ export async function loginAndMockAi(page: Page, user: MockUser): Promise<void> 
 export interface ContractedServiceBody {
   serviceCode: 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST';
   providersNeeded: number;
-  weeklyHours: number;
   careLocation: string;
   addressId: string;
   schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
@@ -355,7 +354,6 @@ export async function seedLaunchablePatient(
   const serviceId = await postContractedServiceViaApi(request, token, patientId, {
     serviceCode: 'AT',
     providersNeeded: 1,
-    weeklyHours: 20,
     careLocation: 'HOME',
     addressId,
     schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],

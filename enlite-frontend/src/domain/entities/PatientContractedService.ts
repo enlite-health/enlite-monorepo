@@ -87,7 +87,6 @@ export interface PatientContractedServiceProvider {
   workerId: string;
   /** Nome descriptografado (KMS) — null quando o worker não tem nome cadastrado. */
   workerName: string | null;
-  weeklyHours: number | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -135,7 +134,8 @@ export interface PatientContractedServiceDetail {
   authorization: ContractedServiceAuthorization | null;
   /** Valor antigo da coluna sem vigência (só leitura, "Valor anterior, sin vigencia"); `null` = não havia. */
   legacyAuthorizedHours: number | null;
-  weeklyHours: number | null;
+  /** Soma das faixas do horário vigente (horas/semana) — derivada pela API; o serviço não grava mais as horas semanais. */
+  scheduleHours: number;
   careLocation: string | null;
   /**
    * Preço do CONTRATO cobrado à família/obra social (lex C-c.2 — não é remuneração do
@@ -193,7 +193,6 @@ export interface CreateContractedServiceBody {
   serviceCode: ServiceCode;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  weeklyHours?: number | null;
   careLocation?: CareLocation | null;
   hourlyValue?: number | null;
   startDate?: string | null;

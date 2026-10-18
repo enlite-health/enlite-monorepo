@@ -44,7 +44,6 @@ import { tokenFor } from './abac-stack-helper';
 export const DERIVACAO_MARK = 'DerivacaoE2E';
 
 export interface DerivableServiceSpec {
-  weeklyHours: number;
   schedule: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
   /** `true` = o serviço vai para um 2º endereço do MESMO paciente (`insertSecondAddress`). */
   secondAddress?: boolean;
@@ -115,7 +114,6 @@ export async function seedDerivablePatient(
     for (const spec of opts.services) {
       if (spec.secondAddress && !secondAddressId) secondAddressId = insertSecondAddress(patientId);
       const serviceId = await createServiceViaApi(request, patientId, {
-        weeklyHours: spec.weeklyHours,
         addressId: spec.secondAddress && secondAddressId ? secondAddressId : addressId,
         schedule: spec.schedule,
       });

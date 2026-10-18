@@ -14,7 +14,7 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import { SelectField } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { ServiceShiftEditor } from './ServiceShiftEditor';
-import { shiftsToSlots, slotsToShifts } from '@domain/scheduleHours';
+import { shiftsToSlots, slotsToShifts, weeklyHoursOf } from '@domain/scheduleHours';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
 import { AvisoAmbar } from './AvisoAmbar';
 import { ServiceAuthorizationBlock } from './ServiceAuthorizationBlock';
@@ -58,7 +58,6 @@ const schema = z.object({
   serviceCode: z.string().min(1, 'admin.patients.editDrawer.requiredField'),
   professionalProfile: z.string(),
   providersNeeded: numericString,
-  weeklyHours: numericString,
   careLocation: z.string(),
   hourlyValue: numericString,
   startDate: z.string(),
@@ -131,13 +130,12 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
   const [shiftsValid, setShiftsValid] = useState(true);
   const [overlap, setOverlap] = useState(false);
 
-  const { register, handleSubmit, control, reset, formState: { isDirty } } = useForm<FormValues>({
+  const { register, handleSubmit, control, reset, watch, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       serviceCode: service?.serviceCode ?? '',
       professionalProfile: service?.professionalProfile ?? '',
       providersNeeded: empty(service?.providersNeeded),
-      weeklyHours: empty(service?.weeklyHours),
       careLocation: service?.careLocation ?? '',
       hourlyValue: empty(service?.hourlyValue),
       startDate: service?.startDate ? service.startDate.slice(0, 10) : '',
@@ -155,6 +153,11 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       ...recruitmentDefaults(service),
     },
   });
+
+  // Total do horário (056): só leitura, calculado do valor ATUAL do editor de turnos — a mesma conta do back.
+  const scheduleTotal = weeklyHoursOf(
+    watch('schedule').map((x) => (x.allDay ? { startTime: x.startTime, durationMinutes: 1440 } : { startTime: x.startTime, endTime: x.endTime })),
+  );
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -179,7 +182,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           serviceCode: values.serviceCode as never,
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
-          weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
           hourlyValue: numOrNull(values.hourlyValue),
           startDate: nz(values.startDate),
@@ -197,7 +199,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         saved = await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
-          weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
           // Campo desabilitado (redigido) nunca entra no submit — ver `disabled` abaixo; quando
           // habilitado, envia o que o operador digitou (inclusive limpar → null).
@@ -270,7 +271,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           )} />
         </FormField>
         <NumericField id={`svc-providersNeeded-${index}`} label={te('providersNeeded')} testId={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
-        <NumericField id={`svc-weeklyHours-${index}`} label={te('weeklyHours')} testId={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
         <FormField label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
           <Controller control={control} name="careLocation" render={({ field }) => (
             <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
@@ -354,6 +354,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
                 </div>
               )}
               <ServiceShiftEditor index={index} value={field.value} onChange={field.onChange} onValidityChange={setShiftsValid} disabled={busy} />
+              <Text size="sm" color="secondary" data-testid={`svc-schedule-total-${index}`}>{t('admin.patients.editDrawer.scheduleTotal', { hours: scheduleTotal })}</Text>
               {overlap && <Text size="sm" className="text-red-600" data-testid={`svc-schedule-overlap-${index}`}>{te('scheduleOverlap')}</Text>}
             </>
           )} />

@@ -40,7 +40,6 @@ import {
 } from '../helpers/derivacao-e2e-helper';
 
 const OITO_HORAS: DerivableServiceSpec = {
-  weeklyHours: 8,
   schedule: [
     { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
     { dayOfWeek: 3, startTime: '08:00', durationMinutes: 240 },
@@ -149,7 +148,6 @@ test.describe('derivacao @integration', () => {
       services: [
         OITO_HORAS,
         {
-          weeklyHours: 8,
           secondAddress: true,
           schedule: [
             { dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 },
@@ -288,7 +286,7 @@ test.describe('derivacao @integration', () => {
   test('derivacao-substituicao-nao-move', async ({ request }) => {
     const seed = await seedDerivablePatient(request, {
       status: 'SEARCHING',
-      services: [{ weeklyHours: 4, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] }],
+      services: [{ schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] }],
     });
     try {
       const token = derivacaoToken();

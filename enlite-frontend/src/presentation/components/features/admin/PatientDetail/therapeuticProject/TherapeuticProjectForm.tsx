@@ -264,7 +264,7 @@ export function TherapeuticProjectForm({
                     placeholder={tf('servicePlaceholder')}
                     options={activeServices.map((s) => ({
                       value: s.id,
-                      label: `${t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s.serviceCode}`, s.serviceCode)}${s.weeklyHours != null ? ` · ${s.weeklyHours} h/sem` : ''}`,
+                      label: `${t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s.serviceCode}`, s.serviceCode)}${s.scheduleHours > 0 ? ` · ${s.scheduleHours} h/sem` : ''}`,
                     }))}
                     data-testid="tp-service"
                   />

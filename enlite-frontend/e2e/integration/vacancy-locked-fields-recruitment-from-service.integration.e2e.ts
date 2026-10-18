@@ -52,7 +52,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
     const svc = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services`, {
       headers: AUTH_HEADERS,
       data: {
-        serviceCode: 'AT', providersNeeded: 1, weeklyHours: 20, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
+        serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
       },
     });

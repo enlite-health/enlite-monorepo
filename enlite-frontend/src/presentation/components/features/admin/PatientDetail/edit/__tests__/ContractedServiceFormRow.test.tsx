@@ -39,7 +39,7 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
-  providersNeeded: 2, authorization: null, legacyAuthorizedHours: null, weeklyHours: 20, careLocation: 'HOME',
+  providersNeeded: 2, authorization: null, legacyAuthorizedHours: null, scheduleHours: 20, careLocation: 'HOME',
   hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
   contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
@@ -130,7 +130,7 @@ describe('ContractedServiceFormRow', () => {
 
   it('modo EXISTENTE com linha antiga → a seção só leitura aparece', () => {
     const legacy = {
-      id: 'p1', serviceId: 's1', workerId: 'w1', workerName: null, weeklyHours: 10, active: true, endedAt: null,
+      id: 'p1', serviceId: 's1', workerId: 'w1', workerName: null, active: true, endedAt: null,
       country: 'AR', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, providers: [legacy] }} index={1} onSaved={vi.fn()} />);
@@ -143,9 +143,10 @@ describe('ContractedServiceFormRow', () => {
     mockUpdate.mockResolvedValue(SERVICE);
     const onSaved = vi.fn();
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={onSaved} />);
-    fireEvent.change(screen.getByTestId('svc-weeklyHours-1'), { target: { value: '25' } });
+    fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '5' } });
     fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ weeklyHours: 25 })));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ providersNeeded: 5 })));
+    expect(mockUpdate.mock.calls[0][2]).not.toHaveProperty('weeklyHours');
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
@@ -371,7 +372,7 @@ describe('ContractedServiceFormRow', () => {
     it('a dica "Solo números" fica ABAIXO do campo (hintBelow) — rótulo → campo → dica, para as colunas alinharem (gate 06/09)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
       const precede = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-hourlyValue-1']) {
+      for (const id of ['svc-providersNeeded-1', 'svc-hourlyValue-1']) {
         const campo = screen.getByTestId(id);
         const label = document.querySelector(`label[for="${id}"]`) as HTMLElement;
         const raiz = label.parentElement as HTMLElement; // o FormField
@@ -410,13 +411,13 @@ describe('ContractedServiceFormRow', () => {
       await waitFor(() => expect(onSaved2).toHaveBeenCalledWith(atualizado));
     });
 
-    it('campos numéricos avisam ao receber letra (NumericField nos 3: prestadores, hs semanais, valor)', () => {
+    it('campos numéricos avisam ao receber letra (NumericField nos 2: prestadores, valor)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-hourlyValue-1']) {
+      for (const id of ['svc-providersNeeded-1', 'svc-hourlyValue-1']) {
         fireEvent.keyDown(screen.getByTestId(id), { key: 'a' });
       }
-      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(3);
-      expect(screen.getAllByText('Solo números')).toHaveLength(3);
+      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(2);
+      expect(screen.getAllByText('Solo números')).toHaveLength(2);
     });
 
     it('modo NOVO: escolher o endereço envia addressId; sem escolher envia null (nunca string vazia)', async () => {
@@ -558,6 +559,18 @@ describe('ContractedServiceFormRow', () => {
       fill('30', '2026-11-01', '2026-11-30');
       fireEvent.click(screen.getByTestId('svc-auth-save-1'));
       expect((await screen.findByTestId('svc-auth-error-1')).textContent).toContain('necesita fecha de fin');
+    });
+  });
+
+  describe('total do horário (spec 056 T3.6)', () => {
+    it('não existe svc-weeklyHours-*; total muda ao trocar o Fin', () => {
+      const svc = { ...SERVICE, schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '16:00', durationMinutes: 480 }, { dayOfWeek: 3, startTime: '08:00', endTime: '16:00', durationMinutes: 480 }] };
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
+      expect(screen.queryByTestId('svc-weeklyHours-1')).toBeNull();
+      expect(screen.getByTestId('svc-schedule-total-1').textContent).toBe('Total del horario: 16 h por semana');
+      fireEvent.click(screen.getByTestId('svc-shift-end-1-2-0'));
+      fireEvent.click(screen.getByTestId('svc-shift-end-1-2-0-option-12:00'));
+      expect(screen.getByTestId('svc-schedule-total-1').textContent).toBe('Total del horario: 12 h por semana');
     });
   });
 });

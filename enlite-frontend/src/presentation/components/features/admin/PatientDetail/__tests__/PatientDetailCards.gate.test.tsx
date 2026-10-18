@@ -14,7 +14,7 @@ const SERVICO: PatientContractedServiceDetail = {
   professionalProfile: null,
   providersNeeded: 1,
   authorization: null, legacyAuthorizedHours: 10,
-  weeklyHours: 10,
+  scheduleHours: 10,
   careLocation: 'HOME',
   hourlyValue: null,
   hourlyValueRedacted: false,

@@ -24,7 +24,7 @@ beforeAll(async () => {
 
 const BASE: PatientContractedServiceDetail = {
   id: 'svc-1', patientId: 'pat-1', serviceCode: 'CAREGIVER', professionalProfile: null,
-  providersNeeded: null, authorization: null, legacyAuthorizedHours: null, weeklyHours: null, careLocation: null,
+  providersNeeded: null, authorization: null, legacyAuthorizedHours: null, scheduleHours: 0, careLocation: null,
   hourlyValue: null, hourlyValueRedacted: false, startDate: null,
   contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, liveVacancy: null, liveVacancyRedacted: false,
@@ -58,9 +58,9 @@ describe('ContractedServiceDetailDrawer', () => {
       startDate: '2026-09-01T00:00:00.000Z',
       hourlyValue: 1200,
       providers: [
-        { id: 'p1', serviceId: 'svc-1', workerId: 'w1', workerName: null, weeklyHours: 10, active: true, endedAt: null, country: 'AR', createdAt: '', updatedAt: '' },
-        { id: 'p2', serviceId: 'svc-1', workerId: 'w2', workerName: 'Beto', weeklyHours: null, active: true, endedAt: null, country: 'AR', createdAt: '', updatedAt: '' },
-        { id: 'p3', serviceId: 'svc-1', workerId: 'w3', workerName: 'Fora', weeklyHours: 5, active: false, endedAt: '2026-09-01', country: 'AR', createdAt: '', updatedAt: '' },
+        { id: 'p1', serviceId: 'svc-1', workerId: 'w1', workerName: null, active: true, endedAt: null, country: 'AR', createdAt: '', updatedAt: '' },
+        { id: 'p2', serviceId: 'svc-1', workerId: 'w2', workerName: 'Beto', active: true, endedAt: null, country: 'AR', createdAt: '', updatedAt: '' },
+        { id: 'p3', serviceId: 'svc-1', workerId: 'w3', workerName: 'Fora', active: false, endedAt: '2026-09-01', country: 'AR', createdAt: '', updatedAt: '' },
       ],
     };
     const { container } = render(<ContractedServiceDetailDrawer service={svc} addresses={[]} onClose={vi.fn()} />);
@@ -71,7 +71,10 @@ describe('ContractedServiceDetailDrawer', () => {
     expect(screen.getByTestId('svc-detail-start').textContent).not.toContain('—');
     const providers = screen.getByTestId('svc-detail-providers');
     expect(providers.textContent).toContain('(2 / 2)'); // 2 ativos de 2 necessários — o inativo não conta
-    expect(providers.textContent).toContain('10 h');
+    expect(providers.textContent).not.toContain('h/sem'); // 056: sem horas por prestador
+    expect(providers.textContent).not.toContain('10 h');
+    expect(screen.queryByTestId('svc-detail-weekly-hours')).toBeNull();
+    expect(screen.getByTestId('svc-detail-schedule-hours').textContent).toContain('0');
     expect(providers.textContent).toContain('Beto');
     expect(providers.textContent).not.toContain('Fora');
     expectNoRawEnumLeaks(container);

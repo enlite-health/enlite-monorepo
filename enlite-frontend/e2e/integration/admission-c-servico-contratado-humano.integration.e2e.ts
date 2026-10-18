@@ -57,12 +57,12 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await expect.poll(async () => { const b = await drawer.boundingBox(); return b ? Math.round(b.x + b.width) : 0; }, { timeout: 5_000 }).toBe(1600);
     // Colunas alinhadas (06/09): os campos numéricos de uma mesma linha da grade ficam na mesma altura,
     // mesmo com a dica "Solo números" (que agora fica embaixo do campo).
-    // 056: o bloco Autorización só existe no serviço já criado (salva sozinho) — a medição usa o par da mesma linha da grade.
-    const [hsSem, local] = await Promise.all([
-      page.getByTestId('svc-weeklyHours-1').boundingBox(),
-      page.getByTestId('svc-careLocation-1').boundingBox(),
+    // 056: sem "Horas semanales" e com o bloco Autorización só no serviço já criado — a medição usa o par da 1ª linha da grade.
+    const [codigo, prestadores] = await Promise.all([
+      page.getByTestId('svc-code-1').boundingBox(),
+      page.getByTestId('svc-providersNeeded-1').boundingBox(),
     ]);
-    expect(Math.abs((hsSem?.y ?? 0) - (local?.y ?? 1e9))).toBeLessThan(2);
+    expect(Math.abs((codigo?.y ?? 0) - (prestadores?.y ?? 1e9))).toBeLessThan(2);
     // Largura (06/09): a legenda "Franja etaria solicitada del prestador" cabe numa linha só.
     const franja = page.locator('label[for="svc-providerAgeBand-1"]');
     const box = await franja.boundingBox();
@@ -99,13 +99,13 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
 
     // ── Texto/número: clique + teclado, e o valor que FICOU ──
     expect(await digitar(page, 'svc-providersNeeded-1', '2')).toBe('2');
-    expect(await digitar(page, 'svc-weeklyHours-1', '20')).toBe('20');
     expect(await digitar(page, 'svc-hourlyValue-1', '1500')).toBe('1500');
     expect(await digitar(page, 'svc-profile-1', 'perfil digitado por humano')).toBe('perfil digitado por humano');
 
     // ── Horário: o "+" de segunda-feira cria um turno 09:00–17:00 (480 min) ──
     await page.getByTestId('svc-shift-add-1-1').click();
     await expect(page.getByTestId('svc-shift-remove-1-1-0')).toBeVisible();
+    await expect(page.getByTestId('svc-schedule-total-1')).toContainText('Total del horario: 8 h por semana'); // 09:00–17:00, só leitura
 
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toHaveScreenshot('humano-drawer-preenchido.png', {
       mask: [page.locator('.firebase-emulator-warning')],

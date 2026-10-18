@@ -249,7 +249,6 @@ test.describe('kanban-pacientes itinerario leitura @integration', () => {
     try {
       const newServiceId = await createServiceViaApi(request, patient.patientId, {
         serviceCode: 'AT',
-        weeklyHours: 12,
         addressId: patient.addressId,
       });
 

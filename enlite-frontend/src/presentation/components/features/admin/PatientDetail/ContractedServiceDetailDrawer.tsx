@@ -133,7 +133,7 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose, onE
             <div className="sm:col-span-2">
               <Field label={tc('tableSchedule')} testId="svc-detail-schedule" value={contractedServiceScheduleText(service.schedule) ?? tc('noSchedule')} />
             </div>
-            <Field label={tc('tableWeeklyHours')} testId="svc-detail-weekly-hours" value={num(service.weeklyHours)} />
+            <Field label={tc('tableWeeklyHours')} testId="svc-detail-schedule-hours" value={`${service.scheduleHours} h`} />
             <Field label={tc('tableAuthorizedHours')} testId="svc-detail-authorized-hours" value={num(service.authorization?.hours ?? service.legacyAuthorizedHours)} />
             <Field label={tc('tableValue')} testId="svc-detail-value" value={valueText} />
             <Field label={tc('tableStart')} testId="svc-detail-start" value={formatCalendarDate(service.startDate, {}) ?? EMPTY} />
@@ -162,7 +162,6 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose, onE
                 {activeProviders.map((p) => (
                   <li key={p.id} className="flex items-center justify-between border-b border-gray-100 py-1 last:border-b-0">
                     <Text as="span" size="sm" weight="medium">{p.workerName ?? EMPTY}</Text>
-                    <Text as="span" size="sm" color="secondary">{p.weeklyHours != null ? `${p.weeklyHours} h` : EMPTY}</Text>
                   </li>
                 ))}
               </ul>

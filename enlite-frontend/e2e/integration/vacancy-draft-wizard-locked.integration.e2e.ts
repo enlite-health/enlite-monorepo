@@ -218,7 +218,6 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
       data: {
         serviceCode: 'AT',
         providersNeeded: 1,
-        weeklyHours: 20,
         careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
         schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],

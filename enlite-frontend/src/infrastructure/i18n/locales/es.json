@@ -3422,6 +3422,7 @@
           "remove": "Quitar turno"
         },
         "scheduleOverlap": "Dos turnos del mismo servicio se superponen.",
+        "scheduleTotal": "Total del horario: {{hours}} h por semana",
         "authorization": {
           "title": "Autorización",
           "hours": "Horas autorizadas (total del período)",

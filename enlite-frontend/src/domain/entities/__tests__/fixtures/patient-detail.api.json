@@ -180,7 +180,7 @@
       "providersNeeded": 2,
       "authorization": null,
       "legacyAuthorizedHours": 20,
-      "weeklyHours": 20,
+      "scheduleHours": 20,
       "careLocation": "HOME",
       "hourlyValue": 1500,
       "startDate": "2026-09-01T00:00:00.000Z",

@@ -126,7 +126,6 @@ export async function activateRecruitmentViaApi(
 
 export interface CreateServiceViaApiOpts {
   serviceCode?: 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST';
-  weeklyHours?: number;
   addressId: string;
   schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
 }
@@ -134,7 +133,7 @@ export interface CreateServiceViaApiOpts {
 /**
  * `POST /patients/:id/contracted-services` — wrapper de `postContractedServiceViaApi`
  * (`lancamento-e2e-helper.ts`, G2: fonte única do POST, antes duplicado aqui). Mesmos defaults
- * de antes (`serviceCode` AT, `providersNeeded` 1, `weeklyHours` 20, `careLocation` HOME),
+ * de antes (`serviceCode` AT, `providersNeeded` 1, `careLocation` HOME),
  * `schedule` opcional.
  */
 export async function createServiceViaApi(
@@ -146,7 +145,6 @@ export async function createServiceViaApi(
   return postContractedServiceViaApi(request, token, patientId, {
     serviceCode: opts.serviceCode ?? 'AT',
     providersNeeded: 1,
-    weeklyHours: opts.weeklyHours ?? 20,
     careLocation: 'HOME',
     addressId: opts.addressId,
     ...(opts.schedule ? { schedule: opts.schedule } : {}),

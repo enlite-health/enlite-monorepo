@@ -60,7 +60,6 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
       data: {
         serviceCode: 'AT',
         providersNeeded: 2,
-        weeklyHours: 20,
         careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         providerAgeBand: 'AGE_20_30', // → vaga 20 - 29
         addressId,

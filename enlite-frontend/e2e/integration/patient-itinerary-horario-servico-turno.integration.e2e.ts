@@ -32,7 +32,7 @@ async function seedServicoSemHorario(request: APIRequestContext): Promise<{ pati
   if (!addressId) throw new Error('patient-itinerary-horario-servico-turno: insertTestPatient sem addressId');
   try {
     const serviceId = await postContractedServiceViaApi(request, tokenFor(STAFF), patientId, {
-      serviceCode: 'AT', providersNeeded: 1, weeklyHours: 20, careLocation: 'HOME', addressId,
+      serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', addressId,
     });
     return { patientId, serviceId };
   } catch (err) {

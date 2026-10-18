@@ -199,7 +199,6 @@ async function seedMassa(request: APIRequestContext): Promise<DsTableMassa> {
   const serviceId = await postContractedServiceViaApi(request, token, patientId, {
     serviceCode: 'AT',
     providersNeeded: 1,
-    weeklyHours: 20,
     careLocation: 'HOME',
     addressId,
     schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],

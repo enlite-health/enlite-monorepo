@@ -52,7 +52,6 @@ test.describe('vacancy-servico-horario-link — F4 (vaga-le-do-servico-contratad
       data: {
         serviceCode: 'AT',
         providersNeeded: 1,
-        weeklyHours: 20,
         careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
         schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],

@@ -140,7 +140,6 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
     await forceSelect(page.getByTestId('svc-code-1'), 'AT');
     await forceFill(page.getByTestId('svc-providersNeeded-1'), '2');
-    await forceFill(page.getByTestId('svc-weeklyHours-1'), '20');
     await forceSelect(page.getByTestId('svc-careLocation-1'), 'HOME');
     // Migration 330: o serviço aponta para UM endereço da ficha (o seed cria 1) — sem isso o
     // checklist acusa SERVICE_ADDRESS e o activate recusa (422), em vez de multiplicar vagas.
@@ -177,7 +176,6 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceClick(page.getByTestId('new-service-btn'));
     // O índice visual conta os existentes: com 1 serviço na ficha o form novo é "Servicio 2".
     await forceSelect(page.getByTestId('svc-code-2'), 'CAREGIVER');
-    await forceFill(page.getByTestId('svc-weeklyHours-2'), '10');
     await forceSelect(page.getByTestId('svc-careLocation-2'), 'SCHOOL');
     await forceSelect(page.getByTestId('svc-addressId-2'), seed.addressId);
     await forceClick(page.getByTestId('svc-shift-add-2-3'));

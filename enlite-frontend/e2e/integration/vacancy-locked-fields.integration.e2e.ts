@@ -70,7 +70,6 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
         data: {
           serviceCode: 'AT',
           providersNeeded: 1,
-          weeklyHours: 20,
           careLocation: 'HOME',
           ...RECRUITMENT_FIELDS_E2E,
           addressId,
