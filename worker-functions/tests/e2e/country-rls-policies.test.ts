@@ -449,8 +449,8 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
 
       // 1 slot por serviço.
       await pool.query(
-        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, $2, 1, '08:00', '09:00', $3, $3), ($4, $5, 2, '08:00', '09:00', $3, $3)`,
+        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, $2, 1, '08:00', 60, '[2026-01-01,)', $3, $3), ($4, $5, 2, '08:00', 60, '[2026-01-01,)', $3, $3)`,
         [IDS.slotAR, IDS.serviceAR, CREATED_BY, IDS.slotBR, IDS.serviceBR],
       );
 
@@ -518,8 +518,8 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       await expect(
         asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
           await c.query(
-            `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, country, created_by, updated_by)
-             VALUES ($1, 6, '07:00', '08:00', 'AR', $2, $2)`,
+            `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, country, created_by, updated_by)
+             VALUES ($1, 6, '07:00', 60, '[2026-01-01,)', 'AR', $2, $2)`,
             [IDS.serviceBR, CREATED_BY],
           );
         }),
@@ -655,8 +655,8 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       // 1 slot por serviço (endereços diferentes — AR e BR nunca são o mesmo endereço — a 30min de
       // folga entre o fim do BR e o início do AR, abaixo da folga mínima de 60min).
       await pool.query(
-        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, $2, 3, '09:30', '10:30', $3, $3), ($4, $5, 3, '08:00', '09:00', $3, $3)`,
+        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, $2, 3, '09:30', 60, '[2026-01-01,)', $3, $3), ($4, $5, 3, '08:00', 60, '[2026-01-01,)', $3, $3)`,
         [IDS.itin11SlotAR, IDS.itin11ServiceAR, CREATED_BY, IDS.itin11SlotBR, IDS.itin11ServiceBR],
       );
 
@@ -807,8 +807,8 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       // 1 slot por serviço, segunda, endereços diferentes (AR/BR nunca são o mesmo endereço) e
       // apenas 15min de folga entre os dois — abaixo da folga mínima de 60min.
       await pool.query(
-        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, $2, 1, '09:00', '10:00', $3, $3), ($4, $5, 1, '09:15', '10:15', $3, $3)`,
+        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, $2, 1, '09:00', 60, '[2026-01-01,)', $3, $3), ($4, $5, 1, '09:15', 60, '[2026-01-01,)', $3, $3)`,
         [IDS.absSlotAR, IDS.absSvcAR, CREATED_BY, IDS.absSlotBR, IDS.absSvcBR],
       );
 

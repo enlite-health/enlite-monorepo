@@ -95,8 +95,8 @@ describe('allocation-options e gate de alocação — pool do step final da vaca
     ).rows[0].id;
     slotId = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 1, '08:00', '12:00', $2, $2) RETURNING id`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 1, '08:00', 240, '[2026-01-01,)', $2, $2) RETURNING id`,
         [serviceId, TASK_PREFIX],
       )
     ).rows[0].id;

@@ -59,6 +59,9 @@ describe('ausência, validação e trava por data — migration 484 @integration
   let serviceZ = '';
   let jobX = '';
   let jobY = '';
+  let jobX2 = ''; // X2: mesmo endereço de X, serviço próprio (a 527 proíbe faixas sobrepostas no MESMO serviço)
+  let jobY2 = ''; // Y2: idem, mesmo endereço de Y
+  let jobY3 = ''; // Y3: idem, mesmo endereço de Y
   let jobZ = '';
 
   // referências de VALIDAÇÃO (não testam sobreposição)
@@ -68,10 +71,10 @@ describe('ausência, validação e trava por data — migration 484 @integration
   let slotBaseX = ''; // X, seg, 08:00-12:00 (o "semanal" do substituto)
   let slotX1216 = ''; // X, seg, 12:00-16:00 (mesmo endereço X, toca)
   let slotY1014 = ''; // Y, seg, 10:00-14:00
-  let slotY12301600 = ''; // Y, seg, 12:30-16:00
-  let slotY13001600 = ''; // Y, seg, 13:00-16:00
+  let slotY12301600 = ''; // Y2 (mesmo endereço de Y), seg, 12:30-16:00
+  let slotY13001600 = ''; // Y3 (mesmo endereço de Y), seg, 13:00-16:00
   let slotYter0812 = ''; // Y, terça, 08:00-12:00
-  let slotCrossA = ''; // X, seg, 08:00-09:00
+  let slotCrossA = ''; // X2 (mesmo endereço de X), seg, 08:00-09:00
   let slotCrossB = ''; // Y, seg, 08:30-09:30
 
   // datas (DATA-F13 — sempre do banco, nunca do relógio do runner)
@@ -193,6 +196,12 @@ describe('ausência, validação e trava por data — migration 484 @integration
     serviceX = await mkService(patientX, addressX);
     serviceY = await mkService(patientY, addressY);
     serviceZ = await mkService(patientZ, addressZ);
+    // slotCrossA (sobrepõe slotBaseX) e slotY12301600/slotY13001600 (sobrepõem slotY1014 e entre si) vão para serviços
+    // próprios no MESMO endereço (pis_sem_sobreposicao); a candidatura passa a ser da vaga desse serviço
+    // (piab_candidatura_de_outra_vaga / pia_candidatura_de_outra_vaga).
+    const serviceX2 = await mkService(patientX, addressX);
+    const serviceY2 = await mkService(patientY, addressY);
+    const serviceY3 = await mkService(patientY, addressY);
 
     const mkJob = async (serviceId: string, patientId: string, label: string) => {
       const id = (
@@ -208,13 +217,20 @@ describe('ausência, validação e trava por data — migration 484 @integration
     jobX = await mkJob(serviceX, patientX, 'vagaX');
     jobY = await mkJob(serviceY, patientY, 'vagaY');
     jobZ = await mkJob(serviceZ, patientZ, 'vagaZ');
+    jobX2 = await mkJob(serviceX2, patientX, 'vagaX2');
+    jobY2 = await mkJob(serviceY2, patientY, 'vagaY2');
+    jobY3 = await mkJob(serviceY3, patientY, 'vagaY3');
 
+    const minutesBetween = (start: string, end: string): number => {
+      const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+      return toMin(end) - toMin(start);
+    };
     const mkSlot = async (serviceId: string, weekday: number, start: string, end: string) =>
       (
         await pool.query<{ id: string }>(
-          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
-          [serviceId, weekday, start, end, TASK_PREFIX],
+          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+           VALUES ($1, $2, $3, $4, '[2026-01-01,)', $5, $5) RETURNING id`,
+          [serviceId, weekday, start, minutesBetween(start, end), TASK_PREFIX],
         )
       ).rows[0].id;
 
@@ -223,10 +239,10 @@ describe('ausência, validação e trava por data — migration 484 @integration
     slotBaseX = await mkSlot(serviceX, SEGUNDA, '08:00', '12:00');
     slotX1216 = await mkSlot(serviceX, SEGUNDA, '12:00', '16:00');
     slotY1014 = await mkSlot(serviceY, SEGUNDA, '10:00', '14:00');
-    slotY12301600 = await mkSlot(serviceY, SEGUNDA, '12:30', '16:00');
-    slotY13001600 = await mkSlot(serviceY, SEGUNDA, '13:00', '16:00');
+    slotY12301600 = await mkSlot(serviceY2, SEGUNDA, '12:30', '16:00');
+    slotY13001600 = await mkSlot(serviceY3, SEGUNDA, '13:00', '16:00');
     slotYter0812 = await mkSlot(serviceY, TERCA, '08:00', '12:00');
-    slotCrossA = await mkSlot(serviceX, SEGUNDA, '08:00', '09:00');
+    slotCrossA = await mkSlot(serviceX2, SEGUNDA, '08:00', '09:00');
     slotCrossB = await mkSlot(serviceY, SEGUNDA, '08:30', '09:30');
   });
 
@@ -513,8 +529,8 @@ describe('ausência, validação e trava por data — migration 484 @integration
     console.log('[13.17]', 'trava por data — folga curta + DETAIL sem PII');
     const w = await mkWorkerWithWja(jobX, 'w-17-sub');
     await insertAssignment(slotBaseX, w.workerId, w.wjaId, '2026-01-01');
-    const subApp = await addWja(w.workerId, jobY);
-    const titular = await mkWorkerWithWja(jobY, 'w-17-titular');
+    const subApp = await addWja(w.workerId, jobY2);
+    const titular = await mkWorkerWithWja(jobY2, 'w-17-titular');
     const assignment = (
       await insertAssignment(slotY12301600, titular.workerId, titular.wjaId, '2026-01-01')
     ).rows[0].id;
@@ -536,8 +552,8 @@ describe('ausência, validação e trava por data — migration 484 @integration
     console.log('[13.18]', 'trava por data — folga exata aceita');
     const w = await mkWorkerWithWja(jobX, 'w-18-sub');
     await insertAssignment(slotBaseX, w.workerId, w.wjaId, '2026-01-01');
-    const subApp = await addWja(w.workerId, jobY);
-    const titular = await mkWorkerWithWja(jobY, 'w-18-titular');
+    const subApp = await addWja(w.workerId, jobY3);
+    const titular = await mkWorkerWithWja(jobY3, 'w-18-titular');
     const assignment = (
       await insertAssignment(slotY13001600, titular.workerId, titular.wjaId, '2026-01-01')
     ).rows[0].id;
@@ -582,11 +598,11 @@ describe('ausência, validação e trava por data — migration 484 @integration
   // ── 2ª substituição em D que cruza a 1ª (mesmo substituto, dois titulares) ───────────────
   it('[13.21] 2ª substituição em D que cruza a 1ª (mesmo W) → 23P01', async () => {
     console.log('[13.21]', 'trava por data — 2ª substituição cruza a 1ª');
-    const w = await mkWorkerWithWja(jobX, 'w-21-sub');
+    const w = await mkWorkerWithWja(jobX2, 'w-21-sub');
     const subAppA = w.wjaId;
     const subAppB = await addWja(w.workerId, jobY);
 
-    const titularA = await mkWorkerWithWja(jobX, 'w-21-titularA');
+    const titularA = await mkWorkerWithWja(jobX2, 'w-21-titularA');
     const assignmentA = (
       await insertAssignment(slotCrossA, titularA.workerId, titularA.wjaId, '2026-01-01')
     ).rows[0].id;
@@ -610,7 +626,7 @@ describe('ausência, validação e trava por data — migration 484 @integration
   // ── D fora da vigência da semanal do substituto → aceita ─────────────────────────────────
   it('[13.22] D fora da vigência da semanal do substituto → aceita', async () => {
     console.log('[13.22]', 'trava por data — vigência do substituto não cobre D, aceita');
-    const w = await mkWorkerWithWja(jobX, 'w-22-sub');
+    const w = await mkWorkerWithWja(jobX2, 'w-22-sub');
     // a alocação semanal do substituto TERMINA antes de nextMonday — fora de vigência naquela data.
     await insertAssignment(slotCrossA, w.workerId, w.wjaId, pastMonday, { validTo: pastMonday });
     const subApp = await addWja(w.workerId, jobY);
@@ -627,9 +643,9 @@ describe('ausência, validação e trava por data — migration 484 @integration
   // ── o outro sentido: alocação SEMANAL nova por cima de uma substituição datada vigente ────
   it('[13.23] alocação SEMANAL nova por cima de uma substituição datada vigente → 23P01', async () => {
     console.log('[13.23]', 'trava por data — outro sentido: semanal sobre substituição');
-    const w = await mkWorkerWithWja(jobX, 'w-23-sub');
+    const w = await mkWorkerWithWja(jobX2, 'w-23-sub');
     const subApp = w.wjaId;
-    const titular = await mkWorkerWithWja(jobX, 'w-23-titular');
+    const titular = await mkWorkerWithWja(jobX2, 'w-23-titular');
     const assignmentTitular = (
       await insertAssignment(slotCrossA, titular.workerId, titular.wjaId, '2026-01-01')
     ).rows[0].id;
@@ -648,7 +664,7 @@ describe('ausência, validação e trava por data — migration 484 @integration
   // ── Q-S2: o titular ausente continua bloqueando o horário dele ───────────────────────────
   it('[13.24] Q-S2: titular ausente em D, alocado (como substituto) noutro serviço em D no mesmo horário → 23P01', async () => {
     console.log('[13.24]', 'Q-S2 — titular ausente continua bloqueando');
-    const titular = await mkWorkerWithWja(jobX, 'w-24-titular');
+    const titular = await mkWorkerWithWja(jobX2, 'w-24-titular');
     const assignmentOwn = (
       await insertAssignment(slotCrossA, titular.workerId, titular.wjaId, '2026-01-01')
     ).rows[0].id;
@@ -672,11 +688,11 @@ describe('ausência, validação e trava por data — migration 484 @integration
   // ── concorrência: duas substituições do mesmo W em D, cruzando ───────────────────────────
   it('[13.25] concorrência: duas substituições do mesmo W em D cruzando → conjunto ordenado [23P01, ok], 1 linha aberta', async () => {
     console.log('[13.25]', 'trava por data — concorrência');
-    const w = await mkWorkerWithWja(jobX, 'w-25-sub');
+    const w = await mkWorkerWithWja(jobX2, 'w-25-sub');
     const subAppA = w.wjaId;
     const subAppB = await addWja(w.workerId, jobY);
 
-    const titularA = await mkWorkerWithWja(jobX, 'w-25-titularA');
+    const titularA = await mkWorkerWithWja(jobX2, 'w-25-titularA');
     const assignmentA = (
       await insertAssignment(slotCrossA, titularA.workerId, titularA.wjaId, '2026-01-01')
     ).rows[0].id;
@@ -739,8 +755,8 @@ describe('ausência, validação e trava por data — migration 484 @integration
   // (nextMonday) do titular A e depois ENCERRA a alocação de A antes dessa data (valid_to =
   // pastMonday) — o mesmo efeito do `end` da Fase 11.
   async function absenceOnEndedAllocation(label: string) {
-    const w = await mkWorkerWithWja(jobX, `${label}-sub`);
-    const titularA = await mkWorkerWithWja(jobX, `${label}-titularA`);
+    const w = await mkWorkerWithWja(jobX2, `${label}-sub`);
+    const titularA = await mkWorkerWithWja(jobX2, `${label}-titularA`);
     const assignmentA = (
       await insertAssignment(slotCrossA, titularA.workerId, titularA.wjaId, '2026-01-01')
     ).rows[0].id;

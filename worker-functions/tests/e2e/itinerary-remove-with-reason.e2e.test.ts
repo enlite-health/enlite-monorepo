@@ -117,8 +117,8 @@ describe('POST .../allocations/:id/end com motivo e destino — API real (Fase 4
     const mkSlot = async (weekday: number) =>
       (
         await pool.query<{ id: string }>(
-          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-           VALUES ($1, $2, '08:00', '12:00', $3, $3) RETURNING id`,
+          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+           VALUES ($1, $2, '08:00', 240, '[2026-01-01,)', $3, $3) RETURNING id`,
           [serviceId, weekday, TASK_PREFIX],
         )
       ).rows[0].id;

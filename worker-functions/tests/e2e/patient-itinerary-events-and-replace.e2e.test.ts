@@ -45,6 +45,10 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
   let secondMonday = '';
 
   const workerIds: string[] = [];
+  // Serviços extras no MESMO endereço (a 527 proíbe faixas sobrepostas no MESMO serviço): slotConflito e slotAlvo
+  // sobrepõem-se entre si e ao slot-base, então cada um vai para um serviço próprio, com vaga própria.
+  const extraServiceIds: string[] = [];
+  const extraJobIds: string[] = [];
 
   beforeAll(async () => {
     await waitForBackend(api);
@@ -99,8 +103,8 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
 
     slotId = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 1, '08:00', '12:00', $2, $2) RETURNING id`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 1, '08:00', 240, '[2026-01-01,)', $2, $2) RETURNING id`,
         [serviceId, TASK_PREFIX],
       )
     ).rows[0].id;
@@ -121,14 +125,15 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     // alocação já leva a ausência junto, sem passo à parte.
     // O registro de trocas (494) referencia alocação/ausência/prestador sem cascata e é append-only para
     // a app — o dono do banco o apaga ANTES (Fase 2).
-    await pool.query(`DELETE FROM patient_itinerary_change_log WHERE contracted_service_id = $1`, [serviceId]);
+    const allServiceIds = [serviceId, ...extraServiceIds];
+    await pool.query(`DELETE FROM patient_itinerary_change_log WHERE contracted_service_id = ANY($1::uuid[])`, [allServiceIds]);
     await pool.query(
       `DELETE FROM patient_itinerary_assignment a
          USING patient_itinerary_slot s
-        WHERE a.slot_id = s.id AND s.contracted_service_id = $1`,
-      [serviceId],
+        WHERE a.slot_id = s.id AND s.contracted_service_id = ANY($1::uuid[])`,
+      [allServiceIds],
     );
-    await pool.query(`DELETE FROM job_postings WHERE id = $1`, [jobId]);
+    await pool.query(`DELETE FROM job_postings WHERE id = ANY($1::uuid[])`, [[jobId, ...extraJobIds]]);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [`${TASK_PREFIX}%`]);
     await pool.query(`DELETE FROM workers WHERE auth_uid LIKE $1`, [`${TASK_PREFIX}%`]);
     await pool.end();
@@ -153,6 +158,34 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
   function workerIdOf(label: 'titular' | 'substituto' | 'novoTitular' | 'conflitante' | 'titularAlvo'): string {
     const idx = { titular: 0, substituto: 1, novoTitular: 2, conflitante: 3, titularAlvo: 4 }[label];
     return workerIds[idx];
+  }
+
+  // Serviço extra no MESMO endereço do principal + vaga própria + candidatura dos workers dados nessa vaga
+  // (a candidatura de uma alocação é sempre da vaga do serviço do slot).
+  async function mkExtraService(label: string, candidates: string[]): Promise<string> {
+    const svc = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, address_id, country, created_by, updated_by)
+         VALUES ($1, 'AT', $2, 'AR', $3, $3) RETURNING id`,
+        [patientId, addressId, TASK_PREFIX],
+      )
+    ).rows[0].id;
+    extraServiceIds.push(svc);
+    const job = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO job_postings (title, contracted_service_id, patient_id, country) VALUES ($1, $2, $3, 'AR') RETURNING id`,
+        [`${TASK_PREFIX}vaga-${label}`, svc, patientId],
+      )
+    ).rows[0].id;
+    extraJobIds.push(job);
+    for (const workerId of candidates) {
+      await pool.query(
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'QUICK_RESPONSE_TEAM', 'import')`,
+        [workerId, job],
+      );
+    }
+    return svc;
   }
 
   it('feliz: allocate pela API real → GET events mostra covered; registrar ausência com substituto → substituted', async () => {
@@ -220,8 +253,8 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     const titular = workerIdOf('titular');
     const slotSemMotivo = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 1, '17:00', '18:00', $2, $2) RETURNING id`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 1, '17:00', 60, '[2026-01-01,)', $2, $2) RETURNING id`,
         [serviceId, TASK_PREFIX],
       )
     ).rows[0].id;
@@ -270,8 +303,8 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     // Novo slot dedicado (não reusa o allocationId da 1ª it, que a essa altura pode já ter mudado).
     const slot2 = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 1, '14:00', '16:00', $2, $2) RETURNING id`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 1, '14:00', 120, '[2026-01-01,)', $2, $2) RETURNING id`,
         [serviceId, TASK_PREFIX],
       )
     ).rows[0].id;
@@ -343,28 +376,31 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
   });
 
   it('alternativo 2: reemplazo com conflito de horário → recusado (409), e nada muda', async () => {
-    // 3º slot, MESMO horário/endereço do 1º (para colidir de propósito com o conflitante).
+    // 3º slot, MESMO horário/endereço do 1º (para colidir de propósito com o conflitante) — em serviço próprio.
+    const conflitante = workerIdOf('conflitante');
+    const titularAlvo = workerIdOf('titularAlvo');
+    // serviços próprios (mesmo endereço): conflitante cobre o do slotConflito; titularAlvo cobre o do slotAlvo e o
+    // conflitante também é candidato dele (é o substituto do reemplazo).
+    const serviceConflito = await mkExtraService('conflito', [conflitante]);
+    const serviceAlvo = await mkExtraService('alvo', [titularAlvo, conflitante]);
     const slotConflito = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 1, '09:00', '11:00', $2, $2) RETURNING id`,
-        [serviceId, TASK_PREFIX],
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 1, '09:00', 120, '[2026-01-01,)', $2, $2) RETURNING id`,
+        [serviceConflito, TASK_PREFIX],
       )
     ).rows[0].id;
     const slotAlvo = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 1, '10:00', '12:00', $2, $2) RETURNING id`,
-        [serviceId, TASK_PREFIX],
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 1, '10:00', 120, '[2026-01-01,)', $2, $2) RETURNING id`,
+        [serviceAlvo, TASK_PREFIX],
       )
     ).rows[0].id;
 
-    const conflitante = workerIdOf('conflitante');
-    const titularAlvo = workerIdOf('titularAlvo');
-
-    // O conflitante já cobre `slotConflito` (mesmo endereço — o MESMO serviço, então mesmo address_id).
+    // O conflitante já cobre `slotConflito` (serviço próprio, MESMO endereço do serviço do slotAlvo).
     const allocConflitante = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/slots/${slotConflito}/allocations`,
+      `/api/admin/patients/${patientId}/contracted-services/${serviceConflito}/itinerary/slots/${slotConflito}/allocations`,
       { workerId: conflitante },
       { headers: asAdmin.headers },
     );
@@ -373,7 +409,7 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     // `titularAlvo` cobre `slotAlvo` (horário que se sobrepõe a `slotConflito`) — worker DEDICADO
     // a esta regra, para não colidir com a alocação de `titular` deixada ACTIVE pela 1ª `it`.
     const allocAlvo = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/slots/${slotAlvo}/allocations`,
+      `/api/admin/patients/${patientId}/contracted-services/${serviceAlvo}/itinerary/slots/${slotAlvo}/allocations`,
       { workerId: titularAlvo },
       { headers: asAdmin.headers },
     );
@@ -381,7 +417,7 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     const allocationIdAlvo = allocAlvo.data.data.allocationId as string;
 
     const replaceRes = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationIdAlvo}/replace`,
+      `/api/admin/patients/${patientId}/contracted-services/${serviceAlvo}/itinerary/allocations/${allocationIdAlvo}/replace`,
       { newWorkerId: conflitante, fromDate: nextMonday },
       { headers: asAdmin.headers },
     );
@@ -390,7 +426,7 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
 
     // Nada mudou: o titularAlvo original ainda cobre `slotAlvo` em `nextMonday`.
     const itinerarioDepois = await api.get(`/api/admin/patients/${patientId}/itinerary`, { headers: asAdmin.headers });
-    const service = itinerarioDepois.data.data.services.find((s: { contractedServiceId: string }) => s.contractedServiceId === serviceId);
+    const service = itinerarioDepois.data.data.services.find((s: { contractedServiceId: string }) => s.contractedServiceId === serviceAlvo);
     const slotAlvoView = service.slots.find((s: { id: string }) => s.id === slotAlvo);
     const vigente = slotAlvoView.assignments.find((a: { status: string }) => a.status === 'ACTIVE');
     expect(vigente.workerId).toBe(titularAlvo);

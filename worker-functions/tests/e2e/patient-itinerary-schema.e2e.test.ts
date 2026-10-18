@@ -3,7 +3,7 @@
  *
  * Prova, contra Postgres real, as regras de `patient_itinerary_slot` / `patient_itinerary_assignment`
  * escritas na migration 480 (DX-7.1):
- *   (a) CHECKs e UNIQUE do slot — pis_weekday_range, pis_time_order, pis_service_slot_uq — e o
+ *   (a) CHECKs e UNIQUE do slot — pis_weekday_range, pis_duration_range, pis_sem_sobreposicao — e o
  *       trigger que herda `country` do serviço.
  *   (b) NOT NULL / FK / CHECKs da alocação, o trigger de candidatura (invariante 5 —
  *       "candidato DAQUELA vaga") e `uq_pia_open_pair` (o mesmo prestador não abre duas vezes o
@@ -182,8 +182,8 @@ describe('patient_itinerary_slot / patient_itinerary_assignment — regras do ba
   it('(a) slot com weekday fora de 0-6 → 23514 pis_weekday_range', async () => {
     const err = await expectPgError(
       pool.query(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 7, '08:00', '09:00', $2, $2)`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 7, '08:00', 60, '[2026-01-01,)', $2, $2)`,
         [service1, TASK_PREFIX],
       ),
     );
@@ -191,41 +191,41 @@ describe('patient_itinerary_slot / patient_itinerary_assignment — regras do ba
     expect(err.constraint).toBe('pis_weekday_range');
   });
 
-  it('(a) slot com end_time = start_time → 23514 pis_time_order', async () => {
+  it('(a) slot com duration_minutes = 0 → 23514 pis_duration_range', async () => {
     const err = await expectPgError(
       pool.query(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 2, '09:00', '09:00', $2, $2)`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 2, '09:00', 0, '[2026-01-01,)', $2, $2)`,
         [service1, TASK_PREFIX],
       ),
     );
     expect(err.code).toBe('23514');
-    expect(err.constraint).toBe('pis_time_order');
+    expect(err.constraint).toBe('pis_duration_range');
   });
 
-  it('(a) o mesmo (service, weekday, start, end) 2x → 23505 pis_service_slot_uq', async () => {
+  it('(a) a mesma faixa (service, weekday, start, duração) 2x na mesma vigência → 23P01 pis_sem_sobreposicao', async () => {
     const first = await pool.query<{ id: string }>(
-      `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-       VALUES ($1, 1, '08:00', '09:00', $2, $2) RETURNING id`,
+      `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+       VALUES ($1, 1, '08:00', 60, '[2026-01-01,)', $2, $2) RETURNING id`,
       [service1, TASK_PREFIX],
     );
     slot1 = first.rows[0].id;
 
     const err = await expectPgError(
       pool.query(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 1, '08:00', '09:00', $2, $2)`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 1, '08:00', 60, '[2026-01-01,)', $2, $2)`,
         [service1, TASK_PREFIX],
       ),
     );
-    expect(err.code).toBe('23505');
-    expect(err.constraint).toBe('pis_service_slot_uq');
+    expect(err.code).toBe('23P01');
+    expect(err.constraint).toBe('pis_sem_sobreposicao');
   });
 
   it('(a) country do slot é herdado do serviço pelo trigger', async () => {
     const r = await pool.query<{ id: string; country: string }>(
-      `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-       VALUES ($1, 3, '08:00', '10:00', $2, $2) RETURNING id, country`,
+      `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+       VALUES ($1, 3, '08:00', 120, '[2026-01-01,)', $2, $2) RETURNING id, country`,
       [service2, TASK_PREFIX],
     );
     slot2 = r.rows[0].id;
