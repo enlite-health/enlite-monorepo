@@ -1,4 +1,13 @@
 import { GetArmedCasesUseCase } from '../GetArmedCasesUseCase';
+import type { ServiceHoursSummary, ServiceHoursSummaryPort } from '../ServiceHoursSummaryPort';
+
+/** Porta stub: as horas vêm do SERVIÇO (spec 056), nunca do schedule da vaga. */
+function hoursStub(partial: Partial<ServiceHoursSummary> = {}): ServiceHoursSummaryPort {
+  const summary: ServiceHoursSummary = {
+    total: 0, cobertas: 0, servicesWithSchedule: 0, servicesWithoutSchedule: 0, ...partial,
+  };
+  return { readServiceHours: jest.fn().mockResolvedValue(summary) };
+}
 
 interface Row {
   id: string;
@@ -44,7 +53,7 @@ describe('GetArmedCasesUseCase', () => {
       row({ providers_needed: null }),
     ]);
 
-    const result = await new GetArmedCasesUseCase(db as never).execute();
+    const result = await new GetArmedCasesUseCase(db as never, hoursStub()).execute();
 
     expect(result.armados).toBe(1);
     expect(result.porArmar).toBe(2);
@@ -53,29 +62,35 @@ describe('GetArmedCasesUseCase', () => {
     expect(db.query).toHaveBeenCalledTimes(1);
   });
 
-  it('soma horas do JSONB e reporta cobertura; horasAPreencher só de POR_ARMAR', async () => {
-    const scheduleArmada = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }]; // 4h
-    const schedulePorArmar = [{ dayOfWeek: 5, startTime: '22:00', endTime: '06:00' }]; // 8h overnight
-
+  it('horas vêm do serviço: horasTotais = total, horasAPreencher = total − cobertas', async () => {
     const db = mockDb([
-      // ARMADA com schedule 4h
-      row({ providers_needed: '1', sel_total: 11, sel_with_role: 11, sel_titular: 1, sel_substituto: 10, schedule: scheduleArmada }),
-      // POR_ARMAR com schedule 8h
-      row({ providers_needed: '2', sel_total: 2, sel_with_role: 2, sel_titular: 1, sel_substituto: 1, schedule: schedulePorArmar }),
-      // POR_ARMAR SEM schedule
+      // o schedule da vaga NÃO conta mais (4h + 8h aqui seriam 12)
+      row({ providers_needed: '1', sel_total: 11, sel_with_role: 11, sel_titular: 1, sel_substituto: 10, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] }),
       row({ providers_needed: '1', sel_total: 0, sel_with_role: 0, schedule: null }),
     ]);
+    const hours = hoursStub({ total: 40, cobertas: 20, servicesWithSchedule: 3, servicesWithoutSchedule: 1 });
 
-    const result = await new GetArmedCasesUseCase(db as never).execute();
+    const result = await new GetArmedCasesUseCase(db as never, hours).execute(['AR']);
 
-    expect(result.horasTotais).toBeCloseTo(12, 5); // 4 + 8
-    expect(result.horasAPreencher).toBeCloseTo(8, 5); // só o POR_ARMAR com schedule
-    expect(result.coberturaConSchedule).toBe(2);
+    expect(result.horasTotais).toBe(40);
+    expect(result.horasAPreencher).toBe(20);
+    expect(result.coberturaConSchedule).toBe(3);
     expect(result.coberturaSinSchedule).toBe(1);
+    expect(hours.readServiceHours).toHaveBeenCalledWith(['AR']);
+  });
+
+  it('usa o resumo já lido quando o chamador o fornece (sem 2ª leitura)', async () => {
+    const hours = hoursStub({ total: 99 });
+    const result = await new GetArmedCasesUseCase(mockDb([]) as never, hours).execute(['AR'], {
+      total: 10, cobertas: 4, servicesWithSchedule: 1, servicesWithoutSchedule: 0,
+    });
+    expect(result.horasTotais).toBe(10);
+    expect(result.horasAPreencher).toBe(6);
+    expect(hours.readServiceHours).not.toHaveBeenCalled();
   });
 
   it('zera tudo quando não há casos', async () => {
-    const result = await new GetArmedCasesUseCase(mockDb([]) as never).execute();
+    const result = await new GetArmedCasesUseCase(mockDb([]) as never, hoursStub()).execute();
     expect(result).toEqual({
       armados: 0,
       porArmar: 0,
@@ -102,7 +117,7 @@ describe('GetArmedCasesUseCase', () => {
       row({ id: 'jp-pendente', providers_needed: '1', sel_total: 3, sel_with_role: 0 }),
       row({ id: 'jp-sem-config', providers_needed: null }),
     ];
-    const result = await new GetArmedCasesUseCase(mockDb(rows) as never).execute();
+    const result = await new GetArmedCasesUseCase(mockDb(rows) as never, hoursStub()).execute();
 
     expect(result.respostaRapida).toEqual({ num: 2, den: 3, excluidos: 2 });
     expect(result.armadaCaseIds).toEqual(['jp-armada']);
@@ -125,7 +140,7 @@ describe('GetArmedCasesUseCase', () => {
    */
   it('🔒 país vira predicado explícito na query de armados, e o escopo pedido chega em $1', async () => {
     const db = mockDb([]);
-    await new GetArmedCasesUseCase(db as never).execute(['AR']);
+    await new GetArmedCasesUseCase(db as never, hoursStub()).execute(['AR']);
 
     const [sql, params] = db.query.mock.calls[0];
     expect(sql).toContain('jp.country = ANY($1::bpchar[])');

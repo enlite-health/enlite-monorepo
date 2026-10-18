@@ -32,7 +32,6 @@ import {
   CURRENT_WEEK_START_SQL,
 } from '../domain/interviewSchedule';
 import type { CountryCode } from '@shared/domain/countryCodes';
-import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /** Linha de contagem simples chave→valor. */
 export interface CountRow {
@@ -124,20 +123,6 @@ export function ubicacionesActivasQuery(db: Pool, countries: CountryCode[]) {
          AND ${countryPredicateSql('p', 1)}
          AND COALESCE(NULLIF(TRIM(pa.address_formatted), ''), NULLIF(TRIM(pa.address_raw), '')) IS NOT NULL
      ) u`,
-    [countries],
-  );
-}
-
-/** Horas EM ATENDIMENTO (linha RODANDO, D2): vagas `status='ACTIVE'`. */
-export function horasAtivasQuery(db: Pool, countries: CountryCode[]) {
-  return db.query<{ schedule: unknown }>(
-    `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule
-       FROM job_postings jp
-       ${vacancyEffectiveJoinSql('jp')}
-       JOIN patients p ON p.id = jp.patient_id
-      WHERE jp.deleted_at IS NULL AND jp.is_draft = false AND jp.status = 'ACTIVE'
-        AND p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false
-        AND ${countryPredicateSql('jp', 1)}`,
     [countries],
   );
 }

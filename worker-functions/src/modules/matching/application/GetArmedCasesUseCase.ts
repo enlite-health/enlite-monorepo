@@ -4,20 +4,16 @@ import {
   REQUIRED_SUBSTITUTES,
   type ArmedCaseBucket,
 } from '../domain/armedCases';
-import {
-  computeScheduleWeeklyHours,
-  hasStructuredSchedule,
-} from '../domain/scheduleHours';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import { countryPredicateSql } from '@shared/database/countryScopeSql';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
-import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import type { ServiceHoursSummary, ServiceHoursSummaryPort } from './ServiceHoursSummaryPort';
+import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /** Linha por job_posting (não-draft, não deletado) com contagens de seleção. */
 interface JobPostingArmedRow {
   id: string;
   providers_needed: string | null;
-  schedule: unknown;
   sel_total: number;
   sel_with_role: number;
   sel_titular: number;
@@ -71,19 +67,24 @@ export interface ArmedCasesResult {
  * são demanda a cobrir. Mesmo recorte do funil por prestador (decisão do Diego, 30/07).
  */
 export class GetArmedCasesUseCase {
-  constructor(private readonly db: Pool) {}
+  constructor(
+    private readonly db: Pool,
+    private readonly hours: ServiceHoursSummaryPort,
+  ) {}
 
   /**
    * @param countries países que a agregação deve enxergar (PR-9, FR-732).
    *   Default = os dois países (universo inteiro de hoje) — o predicado
    *   continua na query mesmo assim (nunca depende de a RLS estar ligada).
    */
-  async execute(countries: CountryCode[] = [...COUNTRY_CODES]): Promise<ArmedCasesResult> {
+  async execute(
+    countries: CountryCode[] = [...COUNTRY_CODES],
+    hoursSummary?: ServiceHoursSummary,
+  ): Promise<ArmedCasesResult> {
     const { rows } = await this.db.query<JobPostingArmedRow>(
       `SELECT
          jp.id,
          ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed,
-         ${vacancyEffectiveScheduleSql('jp')} AS schedule,
          COALESCE(s.sel_total, 0)::int      AS sel_total,
          COALESCE(s.sel_with_role, 0)::int  AS sel_with_role,
          COALESCE(s.sel_titular, 0)::int    AS sel_titular,
@@ -112,10 +113,6 @@ export class GetArmedCasesUseCase {
       SEM_CONFIG: 0,
       PENDENTE_CLASSIFICACAO: 0,
     };
-    let horasTotais = 0;
-    let horasAPreencher = 0;
-    let coberturaConSchedule = 0;
-    let coberturaSinSchedule = 0;
     let respostaRapidaArmada = 0;
     const armadaCaseIds: string[] = [];
 
@@ -137,24 +134,21 @@ export class GetArmedCasesUseCase {
       ) {
         respostaRapidaArmada += 1;
       }
-
-      const hours = computeScheduleWeeklyHours(row.schedule);
-      horasTotais += hours;
-      if (bucket === 'POR_ARMAR') horasAPreencher += hours;
-
-      if (hasStructuredSchedule(row.schedule)) coberturaConSchedule += 1;
-      else coberturaSinSchedule += 1;
     }
+
+    // Horas = horário do SERVIÇO contratado (spec 056 §8); a vaga não é fonte. Vaga legada sem
+    // serviço fica fora das horas (⚑14).
+    const summary = hoursSummary ?? (await this.hours.readServiceHours(countries));
 
     return {
       armados: buckets.ARMADA,
       porArmar: buckets.POR_ARMAR,
       semConfig: buckets.SEM_CONFIG,
       pendenteClasificacao: buckets.PENDENTE_CLASSIFICACAO,
-      horasTotais: round1(horasTotais),
-      horasAPreencher: round1(horasAPreencher),
-      coberturaConSchedule,
-      coberturaSinSchedule,
+      horasTotais: round1(summary.total),
+      horasAPreencher: round1(summary.total - summary.cobertas),
+      coberturaConSchedule: summary.servicesWithSchedule,
+      coberturaSinSchedule: summary.servicesWithoutSchedule,
       respostaRapida: {
         num: respostaRapidaArmada,
         den: buckets.ARMADA + buckets.POR_ARMAR,

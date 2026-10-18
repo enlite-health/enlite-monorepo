@@ -19,6 +19,7 @@
  * total exato — outra suíte rodando em paralelo não pode derrubar este teste.
  */
 
+import { ServiceHoursSummaryReader } from '../../src/modules/case/infrastructure/ServiceHoursSummaryReader';
 import { Pool } from 'pg';
 import { GetManagementDashboardUseCase } from '../../src/modules/matching/application/GetManagementDashboardUseCase';
 import { REQUIRED_SUBSTITUTES } from '../../src/modules/matching/domain/armedCases';
@@ -153,7 +154,7 @@ afterAll(async () => {
 
 describe('GetManagementDashboardUseCase — Equipe Armada (integration)', () => {
   it('classifica os casos semeados nos buckets corretos', async () => {
-    const data = await new GetManagementDashboardUseCase(pool).execute();
+    const data = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute();
 
     // Cada bucket tem pelo menos o caso que semeamos (o banco pode ter outros).
     expect(data.equipoArmada.armados).toBeGreaterThanOrEqual(1);
@@ -178,7 +179,7 @@ describe('GetManagementDashboardUseCase — Equipe Armada (integration)', () => 
   });
 
   it('mantém o contrato: inteiros >= 0 (horas podem ser decimais >= 0)', async () => {
-    const data = await new GetManagementDashboardUseCase(pool).execute();
+    const data = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute();
 
     // Percorre RECURSIVAMENTE: funnelPorPrestador tem objetos aninhados (porEtapa/
     // consolidado) e campos não-numéricos legítimos (recorte: 'vagas-vivas',
@@ -249,7 +250,7 @@ describe('GetManagementDashboardUseCase — % de capacidade semanal (integration
 
   it('usa ENCUADRE_WEEKLY_CAPACITY como denominador e mantém pct coerente', async () => {
     process.env.ENCUADRE_WEEKLY_CAPACITY = String(CAPACIDADE_A);
-    const dataA = await new GetManagementDashboardUseCase(pool).execute();
+    const dataA = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute();
     const pctA = dataA.encuadres.pctCapacidadeSemana;
 
     expect(pctA).toBeDefined();
@@ -262,7 +263,7 @@ describe('GetManagementDashboardUseCase — % de capacidade semanal (integration
 
     // Trocar só a config muda o denominador (e o pct) sem tocar o numerador.
     process.env.ENCUADRE_WEEKLY_CAPACITY = String(CAPACIDADE_B);
-    const dataB = await new GetManagementDashboardUseCase(pool).execute();
+    const dataB = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute();
     const pctB = dataB.encuadres.pctCapacidadeSemana;
 
     expect(pctB).toBeDefined();
@@ -274,7 +275,7 @@ describe('GetManagementDashboardUseCase — % de capacidade semanal (integration
 
   it('omite o bloco quando a capacidade é inválida (nunca divisão por zero)', async () => {
     process.env.ENCUADRE_WEEKLY_CAPACITY = '0';
-    const data = await new GetManagementDashboardUseCase(pool).execute();
+    const data = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute();
 
     expect(data.encuadres.pctCapacidadeSemana).toBeUndefined();
     // O card cru continua sendo publicado — some o percentual, não o número.
@@ -320,7 +321,7 @@ describe('GetManagementDashboardUseCase — bloqueados conta o motivo de HOJE', 
   });
 
   it('NÃO conta quem já completou o cadastro, mesmo com o snapshot congelado', async () => {
-    const useCase = new GetManagementDashboardUseCase(pool);
+    const useCase = new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader());
 
     const antes = (await useCase.execute()).funnel.bloqueados;
 
@@ -346,7 +347,7 @@ describe('GetManagementDashboardUseCase — bloqueados conta o motivo de HOJE', 
   });
 
   it('CONTA quem hoje está incompleto, mesmo com o snapshot dizendo outra coisa', async () => {
-    const useCase = new GetManagementDashboardUseCase(pool);
+    const useCase = new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader());
 
     const antes = (await useCase.execute()).funnel.bloqueados;
 

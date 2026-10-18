@@ -12,6 +12,7 @@
  * prompt/payload a partir da linha é provada nos unitários (TalentumDescriptionService.test.ts, VacancyTalentumController.test.ts).
  * Roda no CI pelo `npm run test:e2e` (jest.config.e2e.js, `tests/e2e/**.test.ts`, backend-e2e.yml).
  */
+import { ServiceHoursSummaryReader } from '../../src/modules/case/infrastructure/ServiceHoursSummaryReader';
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
 import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveRequiredSexSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
@@ -24,7 +25,6 @@ import { FindNearbyVacanciesForWorkerUseCase } from '../../src/modules/matching/
 import { GetZoneAnalyticsUseCase } from '../../src/modules/matching/application/GetZoneAnalyticsUseCase';
 import { MatchmakingService } from '../../src/modules/matching/infrastructure/MatchmakingService';
 import { GetArmedCasesUseCase } from '../../src/modules/matching/application/GetArmedCasesUseCase';
-import { horasAtivasQuery } from '../../src/modules/matching/application/managementDashboardQueries';
 import { runHardFilter } from '../../src/modules/matching/infrastructure/MatchmakingHardFilterQuery';
 import { JobPostingARRepository } from '../../src/modules/matching/infrastructure/JobPostingARRepository';
 import { PublicVacancyController } from '../../src/modules/matching/interfaces/controllers/PublicVacancyController';
@@ -46,14 +46,13 @@ const SCHEDULE_X_VIEW = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45', d
 const VAGA_MANUAL_A = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
 const VAGA_MANUAL_X = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45' }];
 
-/** A lista F1 do `fatos-medidos.md`, na ordem. O teste afirma que são 12 (eram 13; o 11 saiu) e que o corpo cobre cada um. */
+/** A lista F1 do `fatos-medidos.md`, na ordem. O teste afirma que são 10 (eram 13; o 5, o 6 e o 11 saíram) e que o corpo cobre cada um. */
 const LEITORES_F1 = [
   '1 case/infrastructure/PatientDetailQueryHelper.ts (-> AddressAvailabilityCalculator)',
   '2 integration/infrastructure/TalentumDescriptionService.ts',
   '3 matching/interfaces/controllers/VacancyTalentumController.ts',
   '4 matching/application/FindNearbyVacanciesForWorkerUseCase.ts',
-  '5 matching/application/GetArmedCasesUseCase.ts',
-  '6 matching/application/managementDashboardQueries.ts',
+  // 5 (GetArmedCasesUseCase, horas) e 6 (leitor das horas ativas) saíram na 056/T4.2: as horas vêm do serviço (ServiceHoursSummaryReader); a numeração dos demais foi mantida.
   '7 matching/infrastructure/MatchmakingHardFilterQuery.ts',
   '8 matching/infrastructure/JobPostingARRepository.ts (findActivePublic)',
   '9 matching/interfaces/controllers/PublicVacancyController.ts',
@@ -254,21 +253,6 @@ const LEITORES: Leitor[] = [
     },
   },
   {
-    n: 5, nome: 'GetArmedCasesUseCase.execute (horas totais)',
-    probe: async () => {
-      const r = await new GetArmedCasesUseCase(identityPool).execute(['AR']);
-      return { sawA: r.horasTotais === 4, sawX: r.horasTotais === 4.5 };
-    },
-  },
-  {
-    n: 6, nome: 'horasAtivasQuery (dashboard de gestão)',
-    seed: () => seed({ status: 'ACTIVE' }),
-    probe: async () => {
-      const { rows } = await horasAtivasQuery(identityPool, ['AR']);
-      return probeJson(rows);
-    },
-  },
-  {
     n: 7, nome: 'runHardFilter (subselect COVERAGE, MATCHING_RESPECT_AVAILABILITY=true)',
     probe: async (ctx) => {
       // O worker só cobre o dia 1: com A (dia 1) ele passa; com X (dia 3) fica descoberto e sai do filtro.
@@ -374,7 +358,7 @@ const LEITORES_QTD: LeitorQtd[] = [
   {
     nome: 'GetArmedCasesUseCase.execute (serviço NULL = SEM_CONFIG; com valor = POR_ARMAR)',
     probe: async () => {
-      const r = await new GetArmedCasesUseCase(identityPool).execute(['AR']);
+      const r = await new GetArmedCasesUseCase(identityPool, new ServiceHoursSummaryReader()).execute(['AR']);
       if (r.porArmar === 1 && r.semConfig === 0) return '2';
       if (r.porArmar === 0 && r.semConfig === 1) return '7';
       return `porArmar=${r.porArmar} semConfig=${r.semConfig}`;
@@ -445,10 +429,10 @@ afterAll(async () => {
 beforeEach(wipe);
 
 describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SERVIÇO (app_runtime, banco real)', () => {
-  it('são 12 leitores, na mesma ordem e nomes da lista F1', () => {
-    expect(LEITORES_F1).toHaveLength(12);
+  it('são 10 leitores, na mesma ordem e nomes da lista F1', () => {
+    expect(LEITORES_F1).toHaveLength(10);
     expect(LEITORES.map((l) => l.n)).toEqual(LEITORES_F1.map((s) => Number(s.split(' ')[0])));
-    expect(LEITORES).toHaveLength(12);
+    expect(LEITORES).toHaveLength(10);
   });
 
   it('a sessão do leitor é app_runtime (e a "crua" também), não a dona', async () => {
