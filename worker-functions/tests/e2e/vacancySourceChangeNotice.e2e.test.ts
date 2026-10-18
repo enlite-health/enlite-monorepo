@@ -8,6 +8,7 @@
  */
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
 import { PatientContractedServiceRepository } from '../../src/modules/case/infrastructure/PatientContractedServiceRepository';
 import { VacanciesController } from '../../src/modules/matching/interfaces/controllers/VacanciesController';
@@ -17,16 +18,17 @@ const ADMIN_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_
 const UID = 'vls-f3-staff-uid';
 const TAG = 'vls-f3';
 
-const SCHEDULE_A = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+// spec 056: o horário do serviço = faixas com durationMinutes (08:00+240=12:00; 14:00+240=18:00; 14:15+270=18:45)
+const SCHEDULE_A = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
 const SCHEDULE_AB = [
-  { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-  { dayOfWeek: 3, startTime: '14:00', endTime: '18:00' },
+  { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+  { dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 },
 ];
 const SCHEDULE_AB_REORDERED = [
-  { endTime: '18:00', startTime: '14:00', dayOfWeek: 3 },
-  { endTime: '12:00', startTime: '08:00', dayOfWeek: 1 },
+  { durationMinutes: 240, startTime: '14:00', dayOfWeek: 3 },
+  { durationMinutes: 240, startTime: '08:00', dayOfWeek: 1 },
 ];
-const SCHEDULE_X = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45' }];
+const SCHEDULE_X = [{ dayOfWeek: 3, startTime: '14:15', durationMinutes: 270 }];
 
 let admin: Pool;
 let identityPool: Pool;
@@ -69,10 +71,11 @@ async function seed(vacancies: VacancyOpts[], serviceSchedule: unknown = SCHEDUL
     [addressId, patientId],
   );
   await admin.query(
-    `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, schedule, providers_needed, address_id)
-     VALUES ($1, $2, 'AT', 'AR', $3, $3, $4::jsonb, 1, $5)`,
-    [serviceId, patientId, TAG, JSON.stringify(serviceSchedule), addressId],
+    `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, providers_needed, address_id)
+     VALUES ($1, $2, 'AT', 'AR', $3, $3, 1, $4)`,
+    [serviceId, patientId, TAG, addressId],
   );
+  await semearFaixas(admin, serviceId, serviceSchedule as typeof SCHEDULE_A, TAG);
   const vacancyIds: string[] = [];
   for (const [i, v] of vacancies.entries()) {
     const id = randomUUID();
@@ -176,8 +179,8 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
     const ctx = await seed([]);
     await patchSchedule(ctx, SCHEDULE_X);
     expect((await notices()).rows).toHaveLength(0);
-    const svc = await admin.query(`SELECT schedule FROM patient_contracted_services WHERE id = $1`, [ctx.serviceId]);
-    expect(svc.rows[0].schedule).toEqual(SCHEDULE_X);
+    const svc = await admin.query(`SELECT horario_do_servico($1::uuid, CURRENT_DATE) AS schedule`, [ctx.serviceId]);
+    expect(svc.rows[0].schedule).toEqual([{ ...SCHEDULE_X[0], endTime: '18:45' }]);
   });
 
   it.each([

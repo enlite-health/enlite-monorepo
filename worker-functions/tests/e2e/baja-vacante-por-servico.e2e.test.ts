@@ -25,7 +25,7 @@ import { staffAuth } from './helpers/staffAuth';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const TAG = 'baja-vacante-e2e-%';
-const HORARIO = '[{"dayOfWeek":2,"startTime":"09:00","endTime":"13:00"}]';
+const HORARIO = '[{"dayOfWeek":2,"startTime":"09:00","durationMinutes":240}]';
 
 describe('Baja do serviço contratado desativa a vaga ligada (change baja-vacante-por-servico) @integration', () => {
   const api = createApiClient();

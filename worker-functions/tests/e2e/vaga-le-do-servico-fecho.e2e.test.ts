@@ -30,9 +30,9 @@ const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?
 const TAG = 'vls-fecho-e2e';
 
 // dayOfWeek: 1 = lunes, 3 = miercoles, 5 = viernes (DAY_KEYS_ES, dateFormatters.ts)
-const SCHEDULE_V1 = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
-const SCHEDULE_V2 = [{ dayOfWeek: 3, startTime: '14:00', endTime: '18:00' }];
-const SCHEDULE_V3 = [{ dayOfWeek: 5, startTime: '09:00', endTime: '13:00' }];
+const SCHEDULE_V1 = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
+const SCHEDULE_V2 = [{ dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 }];
+const SCHEDULE_V3 = [{ dayOfWeek: 5, startTime: '09:00', endTime: '13:00' }]; // vaga MANUAL: formato da vaga (coluna própria)
 // O GET admin e o detalhe público devolvem o horário no formato da VAGA (`normalizeSchedule`), não o do serviço.
 const GET_V1 = { lunes: [{ start: '08:00', end: '12:00' }] };
 const GET_V2 = { miercoles: [{ start: '14:00', end: '18:00' }] };
@@ -246,8 +246,10 @@ describe('Vaga lê do serviço contratado — fecho por API (vaga-le-do-servico-
     expect(semQuantidade.data.details.field).toBe('providers_needed');
 
     // A recusa não escreveu nada: nem no serviço, nem aviso, e a vaga segue lendo o valor original.
-    const svc = (await pool.query(`SELECT schedule, providers_needed FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
-    expect(svc).toEqual({ schedule: SCHEDULE_V1, providers_needed: 2 });
+    const svc = (await pool.query(
+      `SELECT horario_do_servico(id, CURRENT_DATE) AS schedule, providers_needed FROM patient_contracted_services WHERE id = $1`, [serviceId],
+    )).rows[0];
+    expect(svc).toEqual({ schedule: [{ ...SCHEDULE_V1[0], endTime: '12:00' }], providers_needed: 2 });
     const intacta = await getAdmin(vacancyId);
     expect(intacta.schedule).toEqual(GET_V1);
     expect(intacta.providers_needed).toBe('2');

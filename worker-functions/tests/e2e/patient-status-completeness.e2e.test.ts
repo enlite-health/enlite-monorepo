@@ -15,12 +15,14 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
+import { semearFaixas, type FaixaSemente } from './helpers/seedFaixaDoServico';
 import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const UID = 'sched-gate-e2e-admin';
 const TAG = 'sched-gate-e2e-%';
-const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]';
+// spec 056: o horário do serviço = faixas em patient_itinerary_slot (08:00 + 240 min = 12:00)
+const HORARIO: FaixaSemente[] = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
 
 describe('Horário do serviço trava a mudança de status (07/09) @integration', () => {
   const api = createApiClient();
@@ -31,7 +33,7 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
   async function criarPaciente(opts: {
     tag: string;
     status: string;
-    schedule: string | null;
+    schedule: readonly FaixaSemente[] | null;
     comServico?: boolean;
     comEndereco?: boolean;
     /** `health_insurance_name` — só usado pelos testes de `activate-recruitment` (RECRUITMENT_BLOCKING_CODES cobra COVERAGE). */
@@ -52,15 +54,16 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
       )).rows[0].id;
     }
     if (opts.comServico !== false) {
-      await pool.query(
+      const sid = (await pool.query<{ id: string }>(
         `INSERT INTO patient_contracted_services
-           (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule,
+           (patient_id, service_code, active, country, created_by, updated_by, address_id,
             required_professions, required_sex, required_experience, work_schedule, payment_day)
          -- spec 027 Fase 3: os 5 campos do portão "ativar recrutamento" (D508 c) vêm preenchidos por padrão
-         VALUES ($1,'AT',true,'AR','sched-gate-e2e','sched-gate-e2e',$2,$3::jsonb,
-                 ARRAY['AT'],'BOTH','EXP-E2E','part-time','DIA-E2E')`,
-        [id, addr, opts.schedule],
-      );
+         VALUES ($1,'AT',true,'AR','sched-gate-e2e','sched-gate-e2e',$2,
+                 ARRAY['AT'],'BOTH','EXP-E2E','part-time','DIA-E2E') RETURNING id`,
+        [id, addr],
+      )).rows[0].id;
+      await semearFaixas(pool, sid, opts.schedule ?? [], 'sched-gate-e2e');
     }
     return id;
   }
@@ -115,15 +118,17 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(rows[0].status).toBe('SEARCHING');
   });
 
-  it('2. ARRAY VAZIO gravado por SQL conta como sem horário — o CHECK do banco o aceita, o predicado tem de pegá-lo', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-2', status: 'SEARCHING', schedule: '[]' });
+  it('2. serviço com ZERO faixas conta como sem horário — o serviço existe, a lista de faixas é vazia, o predicado tem de pegá-lo', async () => {
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-2', status: 'SEARCHING', schedule: [] });
 
-    // controle positivo: o `[]` REALMENTE está gravado (se o CHECK o tivesse recusado, o teste
-    // estaria medindo um NULL e passaria pelo motivo errado)
-    const { rows } = await pool.query<{ schedule: unknown }>(
-      `SELECT schedule FROM patient_contracted_services WHERE patient_id = $1`, [id],
+    // controle positivo: o serviço REALMENTE existe e tem 0 faixas (senão o teste mediria "sem serviço")
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(s.id) AS n FROM patient_contracted_services pcs
+         LEFT JOIN patient_itinerary_slot s ON s.contracted_service_id = pcs.id
+        WHERE pcs.patient_id = $1 GROUP BY pcs.id`, [id],
     );
-    expect(rows[0].schedule).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].n)).toBe(0);
 
     const r = await put(id, { status: 'ACTIVE' });
     expect(r.status).toBe(422);
@@ -286,6 +291,6 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(rows).toHaveLength(1);
     expect(rows[0].contracted_service_id).toBe(sid);
     expect(rows[0].copia).toBeNull();
-    expect(rows[0].efetivo).toEqual([{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }]);
+    expect(rows[0].efetivo).toEqual([{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 }]);
   });
 });

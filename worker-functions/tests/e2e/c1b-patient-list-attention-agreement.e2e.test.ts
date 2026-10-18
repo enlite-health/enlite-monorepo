@@ -15,6 +15,7 @@ import { Pool } from 'pg';
 import { PatientQueryRepository } from '@modules/case/infrastructure/PatientQueryRepository';
 import { computePatientCompleteness, ACTIVATABLE_STATUSES, patientNeedsAttentionSql } from '@modules/case/domain/PatientCompleteness';
 import type { AdminPatientsListParams } from '@modules/case/interfaces/validators/adminPatientsListSchema';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'C1B-attention-%';
@@ -74,11 +75,12 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         }
         // Migration 330: "completo" exige o serviço APONTANDO para o endereço; o cenário
         // `servicoSemEndereco` deixa address_id NULL de propósito.
-        await pool.query(
-          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE).
-          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2,'[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
+        const sid = (await pool.query<{ id: string }>(
+          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE) — spec 056: faixa em patient_itinerary_slot.
+          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2) RETURNING id`,
           [id, 'servicoSemEndereco' in c && c.servicoSemEndereco ? null : addr],
-        );
+        )).rows[0].id;
+        await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'c1b-e2e');
       }
     }
     // CR-3 (achado do gate revisao-pr): o controle positivo do teste 'g' precisa de uma linha
