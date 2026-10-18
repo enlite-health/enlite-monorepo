@@ -413,8 +413,8 @@ export class PatientContractedServiceRepository {
   }
 
   /**
-   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada e
-   * status fora de `DE_BAJA`/`CLOSED`). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
+   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada,
+   * `deleted_at IS NULL`, qualquer status — vaga CLOSED/DE_BAJA ainda ocupa o serviço; spec 056 ⚑E). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
    * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
    * depois enxerga o commit do outro. Client = `withActorContext` (com identidade), nunca `connect()` cru.
    */

@@ -264,7 +264,8 @@ describe('recordSourceChange — o ponto reutilizável (F5/F6 chamam com outro f
     const [sql, params] = c.query.mock.calls[0];
     const norm = String(sql).replace(/\s+/g, ' ');
     expect(norm).toContain('jp.is_draft = false');
-    expect(norm).toContain("jp.deleted_at IS NULL AND COALESCE(jp.status, '') NOT IN ('DE_BAJA', 'CLOSED')");
+    expect(norm).toContain('jp.deleted_at IS NULL');
+    expect(norm).not.toMatch(/NOT IN|DE_BAJA|CLOSED/);
     expect(norm).toContain('ON CONFLICT (job_posting_id, field) WHERE acknowledged_at IS NULL DO UPDATE SET changed_at = now()');
     expect(params).toEqual(['svc-1', 'providers_needed']);
   });

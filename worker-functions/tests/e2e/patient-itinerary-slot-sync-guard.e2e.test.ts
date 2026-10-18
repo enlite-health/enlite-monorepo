@@ -272,6 +272,26 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
     }
   });
 
+  it('(h) vaga CLOSED não apagada + schedule null → 422 SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY, nenhuma faixa fecha (⚑E, spec 056)', async () => {
+    const seed = await seedService('h');
+    try {
+      // Vaga FECHADA mas não apagada (deleted_at IS NULL): continua ocupando o serviço — o predicado de vaga viva é um só.
+      await pool.query(
+        `INSERT INTO job_postings (title, contracted_service_id, patient_id, country, status) VALUES ($1, $2, $3, 'AR', 'CLOSED')`,
+        [`${TASK_PREFIX}${seq}-vaga-closed`, seed.serviceId, seed.patientId],
+      );
+      const r = await patchService(seed, { schedule: null });
+      console.log('[056 T3.8] (h) status', r.status, 'code', r.data?.code);
+      expect(r.status).toBe(422);
+      expect(r.data.code).toBe('SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY');
+      const after = await slotsOf(seed.serviceId);
+      expect(after.every((s) => s.active)).toBe(true);
+      expect(after).toHaveLength(2);
+    } finally {
+      await cleanupPatient(seed.patientId);
+    }
+  });
+
   it('(f) PATCH só de providersNeeded com alocação vigente → 200, slots intocados', async () => {
     const seed = await seedService('f');
     try {

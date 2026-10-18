@@ -78,7 +78,10 @@ describe('PatientContractedServiceRepository.update — refuseClear (F2)', () =>
     const iJob = chamadas.findIndex((c) => /^SELECT id FROM job_postings .* FOR UPDATE$/.test(c));
     expect(iSvc).toBeGreaterThanOrEqual(0);
     expect(iJob).toBeGreaterThan(iSvc);
-    expect(chamadas[iJob]).toContain("NOT IN ('DE_BAJA', 'CLOSED')");
+    // ⚑E (spec 056): UM predicado de vaga viva, o largo — vaga CLOSED/DE_BAJA não apagada ainda ocupa o serviço.
+    // Morre se o `NOT IN ('DE_BAJA','CLOSED')` voltar.
+    expect(chamadas[iJob]).toContain('deleted_at IS NULL');
+    expect(chamadas[iJob]).not.toMatch(/NOT IN|DE_BAJA|CLOSED/);
   });
 
   it('schedule=null SEM vaga viva → 200 (UPDATE roda, devolve o serviço)', async () => {

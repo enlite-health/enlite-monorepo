@@ -20,12 +20,13 @@ export interface LiveVacancy {
 }
 
 /**
- * "Viva" no vocabulário da F2/F3 (vaga-le-do-servico-contratado): não apagada e fora de `DE_BAJA`/`CLOSED`.
- * UM dono só — a recusa de apagar o horário (`refuseClearWhenLiveVacancy`) e o aviso de vaga publicada
- * (`recordSourceChange`) montam a condição por aqui, nunca copiada. `columnPrefix`: `''` ou `'jp.'`.
+ * "Viva" = não apagada (`deleted_at IS NULL`) — o MESMO predicado de `liveVacancySelect` (`liveVacancySql.ts`: Kanban,
+ * régua, pool) e do 409 de `ActivateRecruitmentUseCase` (spec 056, ⚑E: um predicado só). Vaga `CLOSED`/`DE_BAJA` não
+ * apagada continua ocupando o serviço. A recusa de apagar o horário (`refuseClearWhenLiveVacancy`) e o aviso de vaga
+ * publicada (`recordSourceChange`) montam a condição por aqui, nunca copiada. `columnPrefix`: `''` ou `'jp.'`.
  */
 export function liveVacancySql(columnPrefix: string): string {
-  return `${columnPrefix}deleted_at IS NULL AND COALESCE(${columnPrefix}status, '') NOT IN ('DE_BAJA', 'CLOSED')`;
+  return `${columnPrefix}deleted_at IS NULL`;
 }
 
 /**
