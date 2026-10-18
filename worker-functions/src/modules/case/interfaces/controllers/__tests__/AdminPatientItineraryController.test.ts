@@ -40,6 +40,7 @@ const FELIZ = {
       contractedServiceId: SERVICE_ID,
       scheduleHours: 20,
       cobertas: 4,
+      reserve: { count: 3, minimum: 10 },
       slots: [
         {
           id: SLOT_ID,

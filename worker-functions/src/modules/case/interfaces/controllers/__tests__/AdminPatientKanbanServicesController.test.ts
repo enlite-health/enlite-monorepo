@@ -36,6 +36,7 @@ const FELIZ = {
           scheduleHours: 20,
           cobertas: 4,
           liveVacancyId: VACANCY_ID,
+          reserve: { count: 3, minimum: 10 },
         },
       ],
     },

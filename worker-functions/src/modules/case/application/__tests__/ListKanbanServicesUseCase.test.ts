@@ -9,6 +9,9 @@
 import { ListKanbanServicesUseCase, type KanbanServicesReaderPort } from '../ListKanbanServicesUseCase';
 import type { KanbanServicesRows } from '../../infrastructure/PatientKanbanServicesReader';
 
+/** Dublê do leitor do quadro C (056 §9): nenhum serviço com equipe. */
+const noTeam = { readMany: jest.fn().mockResolvedValue([]) };
+
 function readerWith(rows: KanbanServicesRows[]): KanbanServicesReaderPort {
   return { readKanbanServices: jest.fn().mockResolvedValue(rows) };
 }
@@ -42,7 +45,7 @@ describe('ListKanbanServicesUseCase', () => {
         ],
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows));
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
     const result = await useCase.execute('AR', new Date('2026-09-27T15:00:00Z'));
 
@@ -56,6 +59,7 @@ describe('ListKanbanServicesUseCase', () => {
       cobertas: 4,
       liveVacancyId: 'v',
       uncoveredDays: 0,
+      reserve: null,
     });
     expect(result.patients[0].services[1].cobertas).toBe(0);
   });
@@ -74,7 +78,7 @@ describe('ListKanbanServicesUseCase', () => {
         ],
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows));
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
     const result = await useCase.execute('AR', new Date('2026-09-27T15:00:00Z'));
 
@@ -100,7 +104,7 @@ describe('ListKanbanServicesUseCase', () => {
       },
     ];
 
-    const semAusencia = new ListKanbanServicesUseCase(readerWith(baseRows));
+    const semAusencia = new ListKanbanServicesUseCase(readerWith(baseRows), noTeam);
     const resultSemAusencia = await semAusencia.execute('AR', asOf);
 
     const comAusencia = new ListKanbanServicesUseCase(
@@ -114,6 +118,7 @@ describe('ListKanbanServicesUseCase', () => {
           ],
         },
       ]),
+      noTeam,
     );
     const resultComAusencia = await comAusencia.execute('AR', asOf);
 
@@ -148,7 +153,7 @@ describe('ListKanbanServicesUseCase', () => {
         ],
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows));
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
     const result = await useCase.execute('AR', asOf);
 
@@ -160,7 +165,7 @@ describe('ListKanbanServicesUseCase', () => {
       { patientId: 'p-ar', country: 'AR', services: [], slots: [] },
       { patientId: 'p-br', country: 'BR', services: [], slots: [] },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows));
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
     const result = await useCase.execute(null, new Date('2026-09-28T02:30:00Z'));
 
@@ -169,7 +174,7 @@ describe('ListKanbanServicesUseCase', () => {
   });
 
   it('leitor devolve [] → { patients: [] }', async () => {
-    const useCase = new ListKanbanServicesUseCase(readerWith([]));
+    const useCase = new ListKanbanServicesUseCase(readerWith([]), noTeam);
 
     const result = await useCase.execute('AR');
 
@@ -190,10 +195,38 @@ describe('ListKanbanServicesUseCase', () => {
         ],
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows));
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
     const result = await useCase.execute('AR', new Date('2026-09-27T15:00:00Z'));
 
     assertNoForbiddenKeys(result, ['slots', 'workerId', 'applicationId']);
+  });
+
+  it('056 §9: reserve só dos serviços com vaga viva (leitura em lote só deles); sem vaga viva → null', async () => {
+    const rows: KanbanServicesRows[] = [
+      { patientId: 'p-1', country: 'AR', services: [{ id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v-a' }, { id: 'svc-b', serviceCode: 'FA', liveVacancyId: null }], slots: [] },
+    ];
+    const teamReader = {
+      readMany: jest.fn().mockResolvedValue([
+        {
+          serviceId: 'svc-a', country: 'AR', liveVacancyId: 'v-a',
+          candidacies: [
+            { workerId: 'w1', vacancyId: 'v-a', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null },
+            { workerId: 'w2', vacancyId: 'v-a', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null },
+            { workerId: 'w3', vacancyId: 'v-a', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null },
+          ],
+          assignments: [],
+          marks: [{ workerId: 'w3', serviceId: 'svc-a', rejectReasonCategory: 'OTHER', firstNameEncrypted: null, lastNameEncrypted: null }],
+        },
+      ]),
+    };
+
+    const result = await new ListKanbanServicesUseCase(readerWith(rows), teamReader).execute('AR', new Date('2026-09-27T15:00:00Z'));
+
+    expect(teamReader.readMany).toHaveBeenCalledWith(['svc-a']);
+    expect(result.patients[0].services.map((sv) => [sv.contractedServiceId, sv.reserve])).toEqual([
+      ['svc-a', { count: 2, minimum: 10 }],
+      ['svc-b', null],
+    ]);
   });
 });

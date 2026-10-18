@@ -38,6 +38,8 @@ export const patientItineraryServiceSchema = z.object({
   contractedServiceId: z.string().uuid(),
   scheduleHours: z.number().nonnegative(),
   cobertas: z.number().nonnegative(),
+  /** 056 §9: `null` = serviço sem vaga viva ("sin vacante"). */
+  reserve: z.object({ count: z.number().int().nonnegative(), minimum: z.number().int().positive() }).nullable(),
   slots: z.array(patientItinerarySlotSchema),
 }).strict();
 

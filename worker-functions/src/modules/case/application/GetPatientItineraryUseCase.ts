@@ -18,6 +18,9 @@ import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
 import { uncoveredDayAlerts } from '../domain/itineraryAlerts';
 import { withAssignmentIdentity, workerIdsToName, type PatientItineraryServiceView } from './itineraryAssignmentView';
 import { projectWorkerDisplayNames } from './workerDisplayNames';
+import type { ServiceReserve } from '../domain/deriveServiceTeam';
+import { ServiceTeamReader } from '../infrastructure/ServiceTeamReader';
+import { reservesByServiceId, type ServiceReserveReaderPort } from './serviceReserve';
 import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
@@ -55,6 +58,9 @@ export interface PatientItineraryService {
   slots: PatientItinerarySlot[];
 }
 
+/** O serviço da resposta: a cobertura + a reserva da Equipe de Resposta Rápida (056 §9; `null` = sem vaga viva). */
+export type PatientItineraryServiceWithReserve = PatientItineraryServiceView & { reserve: ServiceReserve | null };
+
 /** Ausência sem substituto, `date >= asOf` — a mesma regra do Kanban (DX-13.9/13.10). Sem `workerId`/nome. */
 export interface PatientItineraryAlert {
   serviceId: string;
@@ -66,7 +72,7 @@ export interface PatientItineraryAlert {
 export interface PatientItineraryResult {
   patientId: string;
   asOf: string;
-  services: PatientItineraryServiceView[];
+  services: PatientItineraryServiceWithReserve[];
   alerts: PatientItineraryAlert[];
   /** `max(assembled_at)` da montagem (ISO UTC) ou `null` se nunca montado (Fase 3, C8). */
   assembledAt: string | null;
@@ -80,6 +86,7 @@ export class GetPatientItineraryUseCase {
   constructor(
     private readonly reader: PatientItineraryReaderPort = new PatientItineraryReader(),
     private readonly kms: Decryptor = new KMSEncryptionService(),
+    private readonly teamReader: ServiceReserveReaderPort = new ServiceTeamReader(),
   ) {}
 
   async execute(patientId: string, now: Date = new Date(), cells: string[] | null = null): Promise<PatientItineraryResult> {
@@ -89,7 +96,9 @@ export class GetPatientItineraryUseCase {
     const asOf = operationDateOf(rows.country, now);
     const coverages = buildServiceCoverages(rows, asOf);
     const displayNameByWorkerId = await projectWorkerDisplayNames(workerIdsToName(rows.slots, coverages, asOf), cells, this.kms);
-    const services = withAssignmentIdentity(coverages, rows.slots, asOf, displayNameByWorkerId);
+    const withIdentity = withAssignmentIdentity(coverages, rows.slots, asOf, displayNameByWorkerId);
+    const reserves = reservesByServiceId(await this.teamReader.readMany(withIdentity.map((s) => s.contractedServiceId)), asOf);
+    const services = withIdentity.map((service) => ({ ...service, reserve: reserves.get(service.contractedServiceId) ?? null }));
     const alerts = uncoveredDayAlerts(rows.uncoveredAbsences ?? [], asOf);
 
     return { patientId, asOf, services, alerts, assembledAt: rows.assembledAt ?? null };

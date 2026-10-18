@@ -190,6 +190,24 @@ export function deriveServiceTeam(input: DeriveServiceTeamInput): DeriveServiceT
   return { selected, inService, rejected };
 }
 
+// ── Reserva da Equipe de Resposta Rápida (056 §9, D516) ────────────────────────────────────────
+// A reserva é LEITURA do quadro C: nada é gravado. `count` = `selected` de `deriveServiceTeam`
+// (QUICK_RESPONSE_TEAM da vaga viva, menos alocado vigente, menos rejeitado — ⚑9: alocado não conta).
+
+/** Mínimo de reserva por serviço (D516) — constante única; o front só lê `minimum` da resposta. */
+export const SERVICE_RESERVE_MINIMUM = 10;
+
+export interface ServiceReserve {
+  count: number;
+  minimum: number;
+}
+
+/** `null` = serviço sem vaga viva ("sin vacante", nunca 0). */
+export function deriveServiceReserve(input: DeriveServiceTeamInput): ServiceReserve | null {
+  if (input.liveVacancyId === null) return null;
+  return { count: deriveServiceTeam(input).selected.length, minimum: SERVICE_RESERVE_MINIMUM };
+}
+
 // ── Pool de alocação (041 R1, DEC-04/DEC-05) ───────────────────────────────────────────────────
 // As opções do itinerário e o gate de alocação vêm do STEP FINAL DA VACANTE: quem está nas colunas
 // "Selecionados" (`SELECTED`) e "Equipe de Resposta Rápida" (`QUICK_RESPONSE_TEAM`) da vaga viva,
