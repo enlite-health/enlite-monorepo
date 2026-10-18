@@ -1,6 +1,6 @@
 import { normalizeSchedule } from './scheduleNormalizer';
 import { DAY_ORDER } from './formatScheduleToText';
-import { durationHours } from '../domain/scheduleHours';
+import { computeScheduleWeeklyHours, durationHours } from '../domain/scheduleHours';
 import type { ScheduleWeekDto } from '../domain/PublicJobDto';
 
 /**
@@ -58,7 +58,7 @@ export function buildScheduleWeek(schedule: unknown): ScheduleWeekDto | null {
   if (!normalized || typeof normalized !== 'object') return null;
 
   const days = emptyDays();
-  let totalHours = 0;
+  const flattened: Array<{ startTime: string; endTime: string }> = [];
   let hasAnyShift = false;
   let coverageByShiftsPerDay = false;
   let coverageByFullDaySlot = false;
@@ -77,7 +77,7 @@ export function buildScheduleWeek(schedule: unknown): ScheduleWeekDto | null {
       if (duration === null) continue;
 
       days[day].push({ start, end });
-      totalHours += duration;
+      flattened.push({ startTime: start, endTime: end });
       dayShiftCount += 1;
       hasAnyShift = true;
 
@@ -89,7 +89,7 @@ export function buildScheduleWeek(schedule: unknown): ScheduleWeekDto | null {
 
   if (!hasAnyShift) return null;
 
-  const weeklyHours = Math.round(totalHours * 100) / 100;
+  const weeklyHours = Math.round(computeScheduleWeeklyHours(flattened) * 100) / 100;
   const isCoverage = coverageByShiftsPerDay || coverageByFullDaySlot;
 
   return { days, weekly_hours: weeklyHours, is_coverage: isCoverage };

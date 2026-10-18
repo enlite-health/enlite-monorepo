@@ -16,6 +16,7 @@ interface ScheduleEntry {
   dayOfWeek?: unknown;
   startTime?: unknown;
   endTime?: unknown;
+  durationMinutes?: unknown;
 }
 
 /** "HH:MM" ou "HH:MM:SS" → horas decimais desde meia-noite; null se inválido. */
@@ -44,23 +45,37 @@ export function durationHours(start: string, end: string): number | null {
 }
 
 /**
- * Soma das horas/semana do schedule. Entradas inválidas são ignoradas.
- * Retorna 0 para schedule ausente, não-array ou vazio.
+ * Minutos de UMA entrada: `durationMinutes` inteiro 1..1440 vence; senão
+ * (startTime, endTime) pela regra de `durationHours` (end <= start → vira o dia).
+ * null = entrada inválida (ignorada pela soma).
+ */
+function entryMinutes(raw: unknown): number | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const entry = raw as ScheduleEntry;
+
+  const minutes = entry.durationMinutes;
+  if (typeof minutes === 'number' && Number.isInteger(minutes) && minutes > 0 && minutes <= 1440) {
+    return minutes;
+  }
+
+  if (typeof entry.startTime !== 'string' || typeof entry.endTime !== 'string') return null;
+  const hours = durationHours(entry.startTime, entry.endTime);
+  return hours === null ? null : hours * 60;
+}
+
+/**
+ * Soma das horas/semana do schedule (única soma do back). Entradas inválidas
+ * são ignoradas. Retorna 0 para schedule ausente, não-array ou vazio.
  */
 export function computeScheduleWeeklyHours(schedule: unknown): number {
   if (!Array.isArray(schedule)) return 0;
 
-  let total = 0;
+  let totalMinutes = 0;
   for (const raw of schedule) {
-    if (!raw || typeof raw !== 'object') continue;
-    const entry = raw as ScheduleEntry;
-    if (typeof entry.startTime !== 'string' || typeof entry.endTime !== 'string') continue;
-
-    const duration = durationHours(entry.startTime, entry.endTime);
-    if (duration === null) continue;
-    total += duration;
+    const minutes = entryMinutes(raw);
+    if (minutes !== null) totalMinutes += minutes;
   }
-  return total;
+  return totalMinutes / 60;
 }
 
 /** Um caso "tem schedule" quando o JSONB é um array não-vazio. */
