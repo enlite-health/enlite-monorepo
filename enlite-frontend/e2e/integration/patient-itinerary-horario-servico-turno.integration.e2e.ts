@@ -65,12 +65,12 @@ async function escolherHora(page: Page, testId: string, hora: string): Promise<v
 }
 
 /** `GET …/contracted-services` real — o schedule do serviço como a API o devolve. */
-async function lerSchedule(request: APIRequestContext, patientId: string, serviceId: string): Promise<Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }> | null> {
+async function lerSchedule(request: APIRequestContext, patientId: string, serviceId: string): Promise<Array<{ dayOfWeek: number; startTime: string; durationMinutes: number; endTime: string }> | null> {
   const res = await request.get(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
     headers: { Authorization: `Bearer ${tokenFor(STAFF)}` },
   });
   expect(res.status()).toBe(200);
-  const json = (await res.json()) as { data?: { services: Array<{ id: string; schedule: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }> | null }> }; services?: Array<{ id: string; schedule: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }> | null }> };
+  const json = (await res.json()) as { data?: { services: Array<{ id: string; schedule: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number; endTime: string }> | null }> }; services?: Array<{ id: string; schedule: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number; endTime: string }> | null }> };
   const services = json.data?.services ?? json.services ?? [];
   const svc = services.find((s) => s.id === serviceId);
   if (!svc) throw new Error('patient-itinerary-horario-servico-turno: serviço ausente no GET');
@@ -101,7 +101,7 @@ test.describe('patient-itinerary-horario-servico-turno: turno Inicio/Fin/Todo el
         page.getByTestId(`contracted-service-save-${serviceId}`).click(),
       ]);
       expect(patch.status()).toBe(200);
-      expect(await lerSchedule(request, patientId, serviceId)).toEqual([{ dayOfWeek: 1, startTime: '20:00', durationMinutes: 720 }]);
+      expect(await lerSchedule(request, patientId, serviceId)).toEqual([{ dayOfWeek: 1, startTime: '20:00', durationMinutes: 720, endTime: '08:00' }]);
 
       // Recarregar e reabrir: a tela hidrata o MESMO turno (12 h) — leitura da API, não estado local.
       await page.reload();
@@ -158,6 +158,9 @@ test.describe('patient-itinerary-horario-servico-turno: turno Inicio/Fin/Todo el
   test('ALTERNATIVO 3: 409 SLOT_OVERLAP aparece na tela e o horário não muda', async ({ page, request }) => {
     const faixaOriginal = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }]; // seg 08:00–12:00
     const { patientId, serviceId } = await seedServicoSemHorario(request, faixaOriginal);
+    // A API devolve `endTime` DERIVADO: a referência é lida DEPOIS do POST, não a que foi enviada.
+    const faixaLida = await lerSchedule(request, patientId, serviceId);
+    expect(faixaLida).toEqual([{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00' }]);
     try {
       await loginAs(page, STAFF);
       await page.goto(`/admin/patients/${patientId}`);
@@ -180,7 +183,7 @@ test.describe('patient-itinerary-horario-servico-turno: turno Inicio/Fin/Todo el
       await expect(aviso).toBeVisible();
       await expect(aviso).toContainText('Dos turnos del mismo servicio se superponen.');
 
-      expect(await lerSchedule(request, patientId, serviceId)).toEqual(faixaOriginal); // nada gravado
+      expect(await lerSchedule(request, patientId, serviceId)).toEqual(faixaLida); // nada gravado
     } finally {
       cleanupPatientDeep(patientId);
     }

@@ -76,9 +76,9 @@ test.describe('kanban-pacientes itinerario leitura @integration', () => {
       expect(slot.endTime).toBe('12:00');
       expect(slot.durationMinutes).toBe(240);
       expect(slot.assignments).toEqual([]);
-      // Nenhum campo de PII (nome/telefone) no corpo — só os 4 campos do contrato.
+      // Nenhum campo de PII (nome/telefone) no corpo — só os 5 campos do contrato.
       expect(Object.keys(serviceBefore).sort()).toEqual(
-        ['cobertas', 'contractedServiceId', 'scheduleHours', 'slots'].sort(),
+        ['cobertas', 'contractedServiceId', 'reserve', 'scheduleHours', 'slots'].sort(),
       );
 
       vacancyId = await activateRecruitmentViaApi(request, patient.patientId, patient.serviceId);

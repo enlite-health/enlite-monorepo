@@ -317,6 +317,8 @@ export interface SeedLaunchablePatientOpts {
   status: string;
   lat: number;
   lng: number;
+  /** Faixas do serviço semeado (default: 1 faixa seg 08:00, 240 min = 4 h). Vivem em `patient_itinerary_slot`. */
+  schedule?: ContractedServiceBody['schedule'];
 }
 
 export interface SeedLaunchablePatientResult {
@@ -328,7 +330,7 @@ export interface SeedLaunchablePatientResult {
 }
 
 /**
- * Paciente com endereço (status/lat/lng dados) + 1 serviço contratado (AT, 20h, 1 faixa) criado
+ * Paciente com endereço (status/lat/lng dados) + 1 serviço contratado (AT, 1 faixa seg 08-12 = 4 h, ou `opts.schedule`) criado
  * pela API real com token de `tokenFor` (molde `vacancy-draft-wizard-locked...:212-224` /
  * `_prints-antes-fase-6...:86-98`). `cleanup()` chama `cleanupPatientDeep`, que já apaga
  * `job_postings`/`patient_contracted_services`/`patient_addresses` do paciente.
@@ -337,7 +339,7 @@ export async function seedLaunchablePatient(
   request: APIRequestContext,
   opts: SeedLaunchablePatientOpts,
 ): Promise<SeedLaunchablePatientResult> {
-  const { status, lat, lng } = opts;
+  const { status, lat, lng, schedule } = opts;
   const { patientId, addressId } = insertTestPatient({
     status,
     withAddress: true,
@@ -356,7 +358,7 @@ export async function seedLaunchablePatient(
     providersNeeded: 1,
     careLocation: 'HOME',
     addressId,
-    schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
+    schedule: schedule ?? [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
   });
 
   const cleanup = (): void => {

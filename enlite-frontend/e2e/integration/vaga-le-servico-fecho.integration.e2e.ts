@@ -174,7 +174,7 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
     await expect(erro).toContainText('No se pudo actualizar el servicio');
 
     // Nada foi apagado: o serviço segue com os 2 turnos, a vaga segue lendo o horário.
-    expect(runSQL(`SELECT jsonb_array_length(schedule) FROM patient_contracted_services WHERE id = '${serviceId}'`)).toBe('2');
+    expect(runSQL(`SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = '${serviceId}' AND valid @> CURRENT_DATE`)).toBe('2');
     await abrirVaga(page, vacancyId);
     await expect(page.getByTestId('vacancy-profession-card')).toContainText('09:00h - 17:00h');
   });
