@@ -38,7 +38,7 @@ const FELIZ = {
   services: [
     {
       contractedServiceId: SERVICE_ID,
-      contratadas: { weekly: 20, authorized: null },
+      scheduleHours: 20,
       cobertas: 4,
       slots: [
         {

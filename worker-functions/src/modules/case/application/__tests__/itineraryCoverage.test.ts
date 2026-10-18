@@ -33,8 +33,8 @@ describe('buildServiceCoverages', () => {
     const services = buildServiceCoverages(rows, '2026-09-27');
 
     expect(services).toHaveLength(2);
-    expect(services[0]).toMatchObject({ contractedServiceId: 'svc-a', contratadas: { weekly: 20, authorized: null }, cobertas: 4 });
-    expect(services[1]).toMatchObject({ contractedServiceId: 'svc-b', contratadas: { weekly: null, authorized: 10 }, cobertas: 0 });
+    expect(services[0]).toMatchObject({ contractedServiceId: 'svc-a', scheduleHours: 4, cobertas: 4 });
+    expect(services[1]).toMatchObject({ contractedServiceId: 'svc-b', scheduleHours: 0, cobertas: 0 });
     expect(services[1].slots).toEqual([]);
   });
 });

@@ -14,7 +14,7 @@ import { uncoveredDayAlerts, uncoveredDayCount } from '../domain/itineraryAlerts
 export interface KanbanServiceSummary {
   contractedServiceId: string;
   serviceCode: string;
-  contratadas: { weekly: number | null; authorized: number | null };
+  scheduleHours: number;
   cobertas: number;
   liveVacancyId: string | null;
   /** DX-13.10: quantos dias vigentes (`date >= asOf`) o serviço tem ausência sem substituto. Leitura — nada de A muda. */
@@ -53,7 +53,7 @@ export class ListKanbanServicesUseCase {
         return {
           contractedServiceId: coverage.contractedServiceId,
           serviceCode: service.serviceCode,
-          contratadas: coverage.contratadas,
+          scheduleHours: coverage.scheduleHours,
           cobertas: coverage.cobertas,
           liveVacancyId: service.liveVacancyId,
           // L2: DIAS, não alertas — dedupe por `date` (2 faixas descobertas no mesmo dia = 1 dia).

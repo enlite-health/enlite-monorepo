@@ -49,7 +49,8 @@ export interface PatientItinerarySlot {
 
 export interface PatientItineraryService {
   contractedServiceId: string;
-  contratadas: { weekly: number | null; authorized: number | null };
+  /** Σ durationMinutes/60 das faixas vigentes (spec 056 §6.1). */
+  scheduleHours: number;
   cobertas: number;
   slots: PatientItinerarySlot[];
 }

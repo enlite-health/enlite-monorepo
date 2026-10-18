@@ -36,13 +36,10 @@ export const patientItinerarySlotSchema = z.object({
 
 export const patientItineraryServiceSchema = z.object({
   contractedServiceId: z.string().uuid(),
-  contratadas: z.object({
-    weekly: z.number().nullable(),
-    authorized: z.number().nullable(),
-  }),
+  scheduleHours: z.number().nonnegative(),
   cobertas: z.number().nonnegative(),
   slots: z.array(patientItinerarySlotSchema),
-});
+}).strict();
 
 export const patientItineraryResponseSchema = z.object({
   patientId: z.string().uuid(),

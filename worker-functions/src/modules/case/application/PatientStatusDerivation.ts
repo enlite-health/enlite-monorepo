@@ -7,7 +7,7 @@
  *   - o sujeito (status travado, país, montado) sai de `PatientStatusDerivationReader`;
  *   - os serviços saem da MESMA leitura do Kanban (`readForPatientWith` — a vaga viva do quadro;
  *     serviço sem vacante viva não conta);
- *   - `cobertas`/`contratadas` são a conta da Fase 7 (`buildServiceCoverages`) na data de operação
+ *   - `cobertas`/`scheduleHours` são a conta da Fase 7 (`buildServiceCoverages`) na data de operação
  *     do país; a ausência datada não entra na conta;
  *   - move por `movePatientStatus` com `changeSource: 'system'` e o client recebido (nenhum
  *     BEGIN/COMMIT próprio — comitaria a alocação no meio).
@@ -64,7 +64,7 @@ export class PatientStatusDerivation implements PatientStatusDerivationPort {
     const servicos: ServicoParaDerivar[] = buildServiceCoverages(rows, asOf).map((coverage, index) => ({
       temVacanteViva: rows.services[index].liveVacancyId !== null,
       cobertas: coverage.cobertas,
-      contratadas: coverage.contratadas.weekly,
+      total: coverage.scheduleHours,
     }));
 
     const alvo = derivarEstadoPaciente({ status: subject.status, montado: subject.montado, servicos });

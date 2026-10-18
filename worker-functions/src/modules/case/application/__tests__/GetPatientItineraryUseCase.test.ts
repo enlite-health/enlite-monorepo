@@ -98,7 +98,7 @@ describe('GetPatientItineraryUseCase', () => {
     expect(result.services).toHaveLength(2);
     expect(result.services[0]).toMatchObject({
       contractedServiceId: 'svc-a',
-      contratadas: { weekly: 20, authorized: null },
+      scheduleHours: 6,
       cobertas: 4,
     });
     expect(result.services[0].slots).toHaveLength(2);
@@ -110,7 +110,7 @@ describe('GetPatientItineraryUseCase', () => {
     ]);
     expect(result.services[1]).toMatchObject({
       contractedServiceId: 'svc-b',
-      contratadas: { weekly: null, authorized: 10 },
+      scheduleHours: 1,
       cobertas: 0,
     });
     expect(result.services[1].slots).toHaveLength(1);
@@ -127,7 +127,7 @@ describe('GetPatientItineraryUseCase', () => {
     const result = await useCase.execute(PID, new Date('2026-09-27T15:00:00Z'));
 
     expect(result.services).toEqual([
-      { contractedServiceId: 'svc-c', contratadas: { weekly: 5, authorized: null }, cobertas: 0, slots: [] },
+      { contractedServiceId: 'svc-c', scheduleHours: 0, cobertas: 0, slots: [] },
     ]);
   });
 

@@ -20,10 +20,7 @@ export const kanbanServicesQuerySchema = adminPatientsListSchema.pick({ country:
 export const kanbanServiceSummarySchema = z.object({
   contractedServiceId: z.string().uuid(),
   serviceCode: z.string(),
-  contratadas: z.object({
-    weekly: z.number().nullable(),
-    authorized: z.number().nullable(),
-  }),
+  scheduleHours: z.number().nonnegative(),
   cobertas: z.number().nonnegative(),
   liveVacancyId: z.string().uuid().nullable(),
 });

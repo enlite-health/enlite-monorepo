@@ -33,7 +33,7 @@ const FELIZ = {
         {
           contractedServiceId: SERVICE_ID,
           serviceCode: 'AT',
-          contratadas: { weekly: 20, authorized: null },
+          scheduleHours: 20,
           cobertas: 4,
           liveVacancyId: VACANCY_ID,
         },

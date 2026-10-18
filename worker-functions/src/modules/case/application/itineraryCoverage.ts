@@ -73,13 +73,12 @@ export function buildServiceCoverages(
       assignments: slot.assignments,
     }));
     const coverage = computeServiceCoverage({
-      contractedHours: { weekly: service.weeklyHours, authorized: service.authorizedHours },
       slots: input,
       asOf,
     });
     return {
       contractedServiceId: service.id,
-      contratadas: coverage.contratadas,
+      scheduleHours: coverage.total,
       cobertas: coverage.cobertas,
       slots,
     };

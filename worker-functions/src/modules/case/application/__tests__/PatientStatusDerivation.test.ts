@@ -84,6 +84,19 @@ describe('PatientStatusDerivation', () => {
     expect(functions.logger.info).not.toHaveBeenCalled();
   });
 
+  it('usa scheduleHours, não weekly_hours: faixas 40 h, 20 h cobertas, weekly_hours 20 → REPLACEMENT', async () => {
+    const longa = (id: string, weekday: number, alocadaDesde: string | null): ItinerarySlotRow => ({
+      ...faixa('s1', id, weekday, alocadaDesde), durationMinutes: 1200, endTime: '04:00',
+    });
+    const rows = linhas({
+      services: [{ id: 's1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v-s1' }],
+      slots: [longa('s1-a', 1, '2026-01-01'), longa('s1-b', 3, null)],
+    });
+    const { derivation, moveStatus } = montar({ rows });
+    await expect(derivation.run(client, PID, NOW)).resolves.toBe('moved');
+    expect(moveStatus.mock.calls[0].slice(0, 2)).toEqual([PID, 'REPLACEMENT']);
+  });
+
   it("ACTIVE coberto (8/8) → 'unchanged', mover 0×", async () => {
     const { derivation, moveStatus } = montar({
       subject: { status: 'ACTIVE', country: 'AR', montado: true }, rows: linhas(servico('s1', 2)),

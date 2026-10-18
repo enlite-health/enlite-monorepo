@@ -52,7 +52,7 @@ describe('ListKanbanServicesUseCase', () => {
     expect(result.patients[0].services[0]).toEqual({
       contractedServiceId: 'svc-a',
       serviceCode: 'AT',
-      contratadas: { weekly: 20, authorized: null },
+      scheduleHours: 4,
       cobertas: 4,
       liveVacancyId: 'v',
       uncoveredDays: 0,
