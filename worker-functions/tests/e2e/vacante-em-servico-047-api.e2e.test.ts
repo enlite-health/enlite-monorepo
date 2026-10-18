@@ -3,8 +3,9 @@
  * chega à ficha com código e estado, REDIGIDA por `vacancy:read`.
  *
  * Postgres real, SQL real, sem mock. O paciente tem 3 serviços:
- *   A — 2 vagas vivas (a mais ANTIGA é a que vale), com link do site NO FORMATO REAL DE PRD (objeto `{id,url}`);
- *   B — sem vaga;
+ *   A — 1 vaga viva, com link do site NO FORMATO REAL DE PRD (objeto `{id,url}`);
+ *   B — sem vaga VIVA (só uma vaga CLOSED, que não conta como viva — e o índice 530, uma vaga não apagada por
+ *       serviço, impede de pô-la ao lado da viva de A);
  *   C — 1 vaga viva SEM link do site (`social_short_links` vazio).
  * A vaga nunca é lida de `jp.case_number` (a coluna fica NULL de propósito): o caso vem do PACIENTE
  * (fragmento com dono, spec 046) — se alguém voltar a ler a cópia, o `caseNumber` do teste vira null.
@@ -91,7 +92,8 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     svc.B = await seedService();
     svc.C = await seedService();
     vaga.Aold = await seedVaga(svc.A, 1, 'SEARCHING', '2 days', linkPrd(SITE));
-    vaga.Ayoung = await seedVaga(svc.A, 2, 'CLOSED', '1 hour', linkPrd('https://exemplo.test/outra'));
+    // CLOSED em OUTRO serviço (B): a mig. 530 só admite UMA vaga não apagada por serviço, CLOSED conta.
+    vaga.Ayoung = await seedVaga(svc.B, 2, 'CLOSED', '1 hour', linkPrd('https://exemplo.test/outra'));
     vaga.C = await seedVaga(svc.C, 3, 'SEARCHING', '1 day', '{}');
   });
 
