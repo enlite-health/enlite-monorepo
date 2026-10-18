@@ -10,6 +10,7 @@ import {
 import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
 import { SortParamError } from '@shared/utils/parseSort';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
+import { computeScheduleWeeklyHours, hasStructuredSchedule } from '../../domain/scheduleHours';
 import { SOURCE_LOCKED_FIELDS } from './vacancyCrudHelpers';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
@@ -349,8 +350,17 @@ export class VacanciesController {
         'VacanciesController:getVacancyById:diagnoses',
       );
 
+      // 056 T4.3: `weekly_hours` é DERIVADO do horário efetivo (o do serviço, com `durationMinutes`)
+      // quando há schedule estruturado; a vaga legada sem schedule segue com a coluna (sem outra fonte).
+      // `authorized_period` não sai da API (⚑15: fica no banco).
+      const { authorized_period: _authorizedPeriod, ...rowWithoutAuthorizedPeriod } = row;
+      const weeklyHours = hasStructuredSchedule(row.schedule)
+        ? Math.round(computeScheduleWeeklyHours(row.schedule) * 100) / 100
+        : row.weekly_hours;
+
       const normalized = projectPatientInVacancy({
-        ...row,
+        ...rowWithoutAuthorizedPeriod,
+        weekly_hours: weeklyHours,
         encuadres,
         schedule: normalizeSchedule(row.schedule),
         locked_fields: lockedFields,
