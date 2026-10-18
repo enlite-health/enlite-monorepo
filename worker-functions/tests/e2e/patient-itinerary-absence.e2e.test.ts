@@ -492,7 +492,7 @@ describe('ausência, validação e trava por data — migration 484 @integration
       await client.query('SET LOCAL ROLE app_runtime');
       const err = await expectPgError(
         client.query(
-          `SELECT * FROM itinerary_worker_conflict($1::uuid, 1::smallint, 480, 720, $1::uuid, '2026-01-01'::date, NULL::date, NULL::uuid, NULL::uuid, NULL::uuid)`,
+          `SELECT * FROM itinerary_worker_conflict($1::uuid, int4multirange(int4range(1 * 1440 + 480, 1 * 1440 + 720)), $1::uuid, '2026-01-01'::date, NULL::date, NULL::uuid, NULL::uuid, NULL::uuid)`,
           ['00000000-0000-0000-0000-000000000000'],
         ),
       );

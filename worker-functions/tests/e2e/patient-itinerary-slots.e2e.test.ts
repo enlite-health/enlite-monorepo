@@ -9,8 +9,8 @@
  *
  *   (a) POST com 3 faixas idênticas → dedup, 1 slot ativo (roteiro (a) do P8).
  *   (b) GET /itinerary logo depois do POST → `contratadas`/`cobertas`/`slots` (roteiro (b) do P8).
- *   (c) PATCH schedule seg→ter→seg: a reativação reusa a MESMA linha, nunca DELETE/INSERT novo
- *       (roteiro (c) do P8).
+ *   (c) PATCH schedule seg→ter→seg: a reabertura abre linha NOVA e a antiga fica como histórico
+ *       (056: nunca reativa, nunca DELETE; roteiro (c) do P8).
  *   + POST sem `schedule` → 0 slot.
  *   + PATCH `schedule: null` → todos os ativos ficam inativos; nenhuma linha é apagada.
  *   + PATCH de outro campo (`weeklyHours`) sem a chave `schedule` → slots intocados, `updated_at`
@@ -76,7 +76,8 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
 
   async function slotsOf(serviceId: string): Promise<SlotRow[]> {
     const r = await pool.query<SlotRow>(
-      `SELECT id, weekday, active, updated_at FROM patient_itinerary_slot WHERE contracted_service_id = $1 ORDER BY weekday`,
+      `SELECT id, weekday, (valid @> (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date) AS active, updated_at
+         FROM patient_itinerary_slot WHERE contracted_service_id = $1 ORDER BY weekday, created_at`,
       [serviceId],
     );
     return r.rows;
@@ -91,9 +92,9 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
         weeklyHours: 20,
         addressId,
         schedule: [
-          { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-          { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-          { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
+          { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+          { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+          { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
         ],
       },
       asAdmin,
@@ -109,7 +110,7 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
     const { patientId, addressId } = await seedPatient('b');
     const created = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', weeklyHours: 20, addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] },
+      { serviceCode: 'AT', weeklyHours: 20, addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     expect(created.status).toBe(201);
@@ -123,14 +124,14 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
     expect(svc.contratadas).toEqual({ weekly: 20, authorized: null });
     expect(svc.cobertas).toBe(0);
     expect(svc.slots).toHaveLength(1);
-    expect(svc.slots[0]).toMatchObject({ weekday: 1, startTime: '08:00', endTime: '12:00', active: true, assignments: [] });
+    expect(svc.slots[0]).toMatchObject({ weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] });
   });
 
-  it('(c) PATCH schedule seg→ter→seg: a reativação reusa a MESMA linha', async () => {
+  it('(c) PATCH schedule seg→ter→seg: a reabertura abre linha NOVA e a antiga fica como histórico (056: nunca reativa)', async () => {
     const { patientId, addressId } = await seedPatient('c');
     const created = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] },
+      { serviceCode: 'AT', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     const serviceId = created.data.data.id as string;
@@ -140,7 +141,7 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
 
     const toTuesday = await api.patch(
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}`,
-      { schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '12:00' }] },
+      { schedule: [{ dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     expect(toTuesday.status).toBe(200);
@@ -154,15 +155,17 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
 
     const backToMonday = await api.patch(
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}`,
-      { schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] },
+      { schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     expect(backToMonday.status).toBe(200);
     const afterSecondPatch = await slotsOf(serviceId);
-    expect(afterSecondPatch).toHaveLength(2);
-    const mondayAgain = afterSecondPatch.find((s) => s.weekday === 1)!;
+    expect(afterSecondPatch).toHaveLength(3); // seg antiga (histórico) + ter (fechada) + seg nova
+    const mondayRows = afterSecondPatch.filter((s) => s.weekday === 1);
     const tuesdayAgain = afterSecondPatch.find((s) => s.weekday === 2)!;
-    expect(mondayAgain.id).toBe(mondaySlotId); // MESMA linha, nunca DELETE/INSERT novo
+    expect(mondayRows).toHaveLength(2);
+    expect(mondayRows.find((s) => s.id === mondaySlotId)?.active).toBe(false); // a antiga NÃO é reativada, nunca DELETE
+    const mondayAgain = mondayRows.find((s) => s.id !== mondaySlotId)!; // linha NOVA
     expect(mondayAgain.active).toBe(true);
     expect(tuesdayAgain.active).toBe(false);
   });
@@ -188,8 +191,8 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
         serviceCode: 'AT',
         addressId,
         schedule: [
-          { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-          { dayOfWeek: 3, startTime: '14:00', endTime: '18:00' },
+          { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+          { dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 },
         ],
       },
       asAdmin,
@@ -215,7 +218,7 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
     const { patientId, addressId } = await seedPatient('outro-campo');
     const created = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', weeklyHours: 10, addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] },
+      { serviceCode: 'AT', weeklyHours: 10, addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     const serviceId = created.data.data.id as string;
@@ -234,11 +237,11 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
     expect(after).toEqual(before); // id, weekday, active E updated_at idênticos — chave ausente não chamou o sync
   });
 
-  it('PATCH com `schedule` fora da forma (endTime < startTime) → 400, slots intocados', async () => {
+  it('PATCH com `schedule` fora da forma (durationMinutes fora de 1..1440) → 400, slots intocados', async () => {
     const { patientId, addressId } = await seedPatient('invalido');
     const created = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] },
+      { serviceCode: 'AT', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     const serviceId = created.data.data.id as string;
@@ -246,7 +249,7 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
 
     const invalid = await api.patch(
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}`,
-      { schedule: [{ dayOfWeek: 1, startTime: '12:00', endTime: '08:00' }] },
+      { schedule: [{ dayOfWeek: 1, startTime: '12:00', durationMinutes: 0 }] },
       asAdmin,
     );
     expect(invalid.status).toBe(400);
@@ -259,7 +262,7 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
     const { patientId, addressId } = await seedPatient('baixa');
     const created = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] },
+      { serviceCode: 'AT', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     const serviceId = created.data.data.id as string;
@@ -282,7 +285,7 @@ describe('patient_itinerary_slot — derivação schedule → slots pela API rea
     const { patientId, addressId } = await seedPatient('dois-servicos');
     const withSchedule = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, weeklyHours: 20, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] },
+      { serviceCode: 'AT', addressId, weeklyHours: 20, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] },
       asAdmin,
     );
     const withoutSchedule = await api.post(

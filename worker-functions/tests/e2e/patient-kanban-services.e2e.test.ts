@@ -125,7 +125,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
   async function createServiceViaApi(
     patientId: string,
     addressId: string,
-    opts: { serviceCode: string; weeklyHours?: number; schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>; withRecruitmentFields?: boolean },
+    opts: { serviceCode: string; weeklyHours?: number; schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>; withRecruitmentFields?: boolean },
   ): Promise<string> {
     const r = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
@@ -198,12 +198,12 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const serviceAr = await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     const serviceBr = await createServiceViaApi(br.patientId, br.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     expect(serviceAr).toBeTruthy();
     expect(serviceBr).toBeTruthy();
@@ -215,12 +215,12 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const serviceAr = await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     await createServiceViaApi(br.patientId, br.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
 
     const res = await getKanbanServices('AR');
@@ -240,12 +240,12 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     const serviceBr = await createServiceViaApi(br.patientId, br.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
 
     const res = await getKanbanServices('BR');
@@ -267,7 +267,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const serviceAr = await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       withRecruitmentFields: true,
     });
     // Gate de completude (COVERAGE lê `insurance_informed` do PACIENTE, não do serviço — molde P6).
@@ -294,7 +294,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const serviceAr = await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     const slotId = await slotIdOf(serviceAr);
     await seedActiveAssignment('f', serviceAr, slotId);
@@ -311,7 +311,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const serviceComHorario = await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     const slotId = await slotIdOf(serviceComHorario);
     await seedActiveAssignment('g', serviceComHorario, slotId);
@@ -336,7 +336,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const serviceAr = await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     const before = await getKanbanServices('AR');
     expect(before.data.data.patients.some((p: { patientId: string }) => p.patientId === ar.patientId)).toBe(true);
@@ -359,7 +359,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     await createServiceViaApi(ar.patientId, ar.addressId, {
       serviceCode: 'AT',
       weeklyHours: 20,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
     const before = await getKanbanServices('AR');
     expect(before.data.data.patients.some((p: { patientId: string }) => p.patientId === ar.patientId)).toBe(true);

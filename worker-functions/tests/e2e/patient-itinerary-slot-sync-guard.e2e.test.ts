@@ -27,8 +27,8 @@ const DATABASE_URL =
 const RUN = Date.now();
 const TASK_PREFIX = `pisg-e2e-${RUN}-`;
 
-const MONDAY = { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' };
-const WEDNESDAY = { dayOfWeek: 3, startTime: '14:00', endTime: '18:00' };
+const MONDAY = { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 };
+const WEDNESDAY = { dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 };
 
 interface SlotRow {
   id: string;
@@ -114,7 +114,9 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
 
   async function slotsOf(serviceId: string): Promise<SlotRow[]> {
     const r = await pool.query<SlotRow>(
-      `SELECT id, weekday, active FROM patient_itinerary_slot WHERE contracted_service_id = $1 ORDER BY weekday`,
+      // `active` = faixa vigente hoje (dia local de Buenos Aires); fechada/anulada não é vigente.
+      `SELECT id, weekday, (valid @> (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date) AS active
+         FROM patient_itinerary_slot WHERE contracted_service_id = $1 ORDER BY weekday`,
       [serviceId],
     );
     return r.rows;
@@ -293,7 +295,7 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
       await allocate(seed, seed.mondaySlotId, { validFrom: semanaAtras, validTo: null, status: 'ACTIVE' });
       const r = await api.patch(
         `/api/admin/patients/${seed.patientId}/contracted-services/${seed.serviceId}/itinerary/slots/${seed.mondaySlotId}`,
-        { weekday: 1, startTime: '09:00', endTime: '12:00' },
+        { weekday: 1, startTime: '09:00', durationMinutes: 180 },
         asAdmin,
       );
       console.log('[12.5] (g) status', r.status, 'code', r.data?.code);
