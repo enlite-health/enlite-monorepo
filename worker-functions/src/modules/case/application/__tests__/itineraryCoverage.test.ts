@@ -19,8 +19,8 @@ describe('buildServiceCoverages', () => {
   it('2 serviços — um com slot + alocação vigente de 08-12, outro sem slot: cobertas 4 e 0, ordem de rows.services', () => {
     const rows: Pick<ItineraryRows, 'services' | 'slots'> = {
       services: [
-        { id: 'svc-a', weeklyHours: 20, authorizedHours: null },
-        { id: 'svc-b', weeklyHours: null, authorizedHours: 10 },
+        { id: 'svc-a' },
+        { id: 'svc-b', },
       ],
       slots: [
         {

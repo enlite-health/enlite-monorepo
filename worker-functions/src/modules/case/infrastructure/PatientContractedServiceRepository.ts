@@ -22,6 +22,7 @@ import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
+import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours';
 import { replaceServiceSlots } from './ServiceSlotWriter';
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
 import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
@@ -81,7 +82,8 @@ export interface ContractedServiceDetail {
   authorization: CurrentAuthorization | null;
   /** `pcs.authorized_hours` (coluna legada, só exibição; não é mais escrita pela API — spec 056 §8). */
   legacyAuthorizedHours: number | null;
-  weeklyHours: number | null;
+  /** Σ das faixas vigentes hoje (`computeScheduleWeeklyHours(schedule)`) — o horário é das faixas, não de coluna (spec 056). */
+  scheduleHours: number;
   careLocation: string | null;
   /** Preço do contrato (lex C-c) — a REDAÇÃO por papel acontece no controller, nunca aqui. */
   hourlyValue: number | null;
@@ -124,7 +126,6 @@ export interface ContractedServiceWriteInput {
   serviceCode?: string;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  weeklyHours?: number | null;
   careLocation?: string | null;
   hourlyValue?: number | null;
   startDate?: string | null;
@@ -176,7 +177,6 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['serviceCode', 'service_code'],
   ['professionalProfile', 'professional_profile'],
   ['providersNeeded', 'providers_needed'],
-  ['weeklyHours', 'weekly_hours'],
   ['careLocation', 'care_location'],
   ['hourlyValue', 'hourly_value'],
   ['startDate', 'start_date'],
@@ -202,7 +202,6 @@ interface ServiceRow {
   professional_profile: string | null;
   providers_needed: number | null;
   authorized_hours: string | null;
-  weekly_hours: string | null;
   care_location: string | null;
   hourly_value: string | null;
   start_date: string | null;
@@ -273,7 +272,7 @@ export class PatientContractedServiceRepository {
       providersNeeded: row.providers_needed,
       authorization,
       legacyAuthorizedHours: row.authorized_hours != null ? Number(row.authorized_hours) : null,
-      weeklyHours: row.weekly_hours != null ? Number(row.weekly_hours) : null,
+      scheduleHours: computeScheduleWeeklyHours(schedule),
       careLocation: row.care_location,
       hourlyValue: row.hourly_value != null ? Number(row.hourly_value) : null,
       startDate: row.start_date,

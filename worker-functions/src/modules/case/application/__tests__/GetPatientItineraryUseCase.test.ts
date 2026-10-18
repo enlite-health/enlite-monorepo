@@ -69,8 +69,8 @@ describe('GetPatientItineraryUseCase', () => {
     const rows: ItineraryRows = {
       country: 'AR',
       services: [
-        { id: 'svc-a', weeklyHours: 20, authorizedHours: null },
-        { id: 'svc-b', weeklyHours: null, authorizedHours: 10 },
+        { id: 'svc-a' },
+        { id: 'svc-b', },
       ],
       slots: [
         // svc-a, slot coberto: alocação ACTIVE vigente em 2026-09-27 (validFrom passado, sem fim).
@@ -119,7 +119,7 @@ describe('GetPatientItineraryUseCase', () => {
   it('serviço sem slot algum → slots: [], cobertas: 0 (nenhuma linha de slot para ele no leitor)', async () => {
     const rows: ItineraryRows = {
       country: 'AR',
-      services: [{ id: 'svc-c', weeklyHours: 5, authorizedHours: null }],
+      services: [{ id: 'svc-c', }],
       slots: [],
     };
     const useCase = new GetPatientItineraryUseCase(readerWith(rows), kmsDouble());
@@ -134,7 +134,7 @@ describe('GetPatientItineraryUseCase', () => {
   it('alerts: a ausência de HOJE entra, a de ONTEM sai (asOf AR); cobertas IGUAL com ou sem ausência (mesma linha de services)', async () => {
     const baseRows: ItineraryRows = {
       country: 'AR',
-      services: [{ id: 'svc-a', weeklyHours: 20, authorizedHours: null }],
+      services: [{ id: 'svc-a' }],
       slots: [
         {
           id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
@@ -170,7 +170,7 @@ describe('GetPatientItineraryUseCase', () => {
   describe('[12.9] nome do prestador por célula', () => {
     const rowsComNome: ItineraryRows = {
       country: 'AR',
-      services: [{ id: 'svc-a', weeklyHours: 20, authorizedHours: null }],
+      services: [{ id: 'svc-a' }],
       slots: [
         {
           id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',

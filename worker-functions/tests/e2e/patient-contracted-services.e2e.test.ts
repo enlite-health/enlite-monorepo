@@ -92,11 +92,11 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const r = await api.post(
       `/api/admin/patients/${patientAR}/contracted-services`,
       // Spec 015 (US-A6.1): providerAgeBand no POST — round-trip na resposta E na coluna nova.
-      { serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, deviceTypeCodes: ['HOME'], providerAgeBand: 'AGE_30_45' },
+      { serviceCode: 'AT', providersNeeded: 2, careLocation: 'HOME', hourlyValue: 1500, deviceTypeCodes: ['HOME'], providerAgeBand: 'AGE_30_45' },
       asAdmin,
     );
     expect(r.status).toBe(201);
-    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, country: 'AR', active: true, deviceTypes: ['HOME'], providerAgeBand: 'AGE_30_45' });
+    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, scheduleHours: 0, careLocation: 'HOME', hourlyValue: 1500, country: 'AR', active: true, deviceTypes: ['HOME'], providerAgeBand: 'AGE_30_45' });
     serviceId = r.data.data.id;
     const { rows: [row] } = await pool.query(`SELECT country, created_by, updated_by, provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId]);
     expect(row.country).toBe('AR');
@@ -125,17 +125,17 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
   });
 
   it('2. PATCH é Merge Patch: só o campo enviado muda', async () => {
-    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { weeklyHours: 25 }, asAdmin);
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { hourlyValue: 1600 }, asAdmin);
     expect(r.status).toBe(200);
-    expect(r.data.data).toMatchObject({ weeklyHours: 25, providersNeeded: 2, careLocation: 'HOME' });
+    expect(r.data.data).toMatchObject({ hourlyValue: 1600, providersNeeded: 2, careLocation: 'HOME' });
   });
 
   it('4. device_type_codes fora do catálogo → 422, nada escrito', async () => {
-    const before = (await pool.query(`SELECT weekly_hours FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
-    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { deviceTypeCodes: ['NAO_EXISTE'], weeklyHours: 99 }, asAdmin);
+    const before = (await pool.query(`SELECT hourly_value FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { deviceTypeCodes: ['NAO_EXISTE'], hourlyValue: 99 }, asAdmin);
     expect(r.status).toBe(422);
     expect(r.data.code).toBe('DEVICE_TYPE_UNKNOWN');
-    const after = (await pool.query(`SELECT weekly_hours FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    const after = (await pool.query(`SELECT hourly_value FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
     expect(after).toEqual(before);
   });
 
@@ -155,7 +155,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
   });
 
   it('8. guarda de posse: :sid de OUTRO paciente → 404, nunca edita cross-patient', async () => {
-    const r = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${serviceId}`, { weeklyHours: 1 }, asAdmin);
+    const r = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${serviceId}`, { hourlyValue: 1 }, asAdmin);
     expect(r.status).toBe(404);
     const stillAR = (await pool.query(`SELECT patient_id FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
     expect(stillAR.patient_id).toBe(patientAR);
@@ -209,9 +209,9 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const list = await api.get(`/api/admin/patients/${patientBR}/contracted-services`, asAdmin);
     expect(list.status).toBe(200);
     const listed = (list.data.data.services as Array<{ id: string; providers: unknown[] }>).find((s) => s.id === svcId);
-    expect(listed?.providers).toMatchObject([{ workerId, weeklyHours: 10, active: true, country: 'BR' }]);
+    expect(listed?.providers).toMatchObject([{ workerId, active: true, country: 'BR' }]);
 
-    const post = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId, weeklyHours: 5 }, asAdmin);
+    const post = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId }, asAdmin);
     expect(post.status).toBe(404);
     const patch = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers/${legacy.id}`, { active: false }, asAdmin);
     expect(patch.status).toBe(404);

@@ -16,7 +16,7 @@ import type { ContractedServiceProviderRepository } from '../ContractedServicePr
 
 const SERVICE_ROW = {
   id: 'svc-1', patient_id: 'pat-1', service_code: 'AT', professional_profile: null, providers_needed: 2,
-  authorized_hours: '20', weekly_hours: '20', care_location: 'HOME', hourly_value: '1500', start_date: null,
+  authorized_hours: '20', care_location: 'HOME', hourly_value: '1500', start_date: null,
   contract_type: null, tax_condition: null, supervision_frequency: null, guard_shift: null,
   provider_age_band: null, address_id: null,
   schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
@@ -202,7 +202,7 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
 
     const semCampo = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(semCampo.cli);
-    await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' });
+    await repo.update('svc-1', { hourlyValue: 10, actorUid: 'u-1' });
     expect(semCampo.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
     expect(semCampo.chamadas.some((c) => c.startsWith('SELECT providers_needed FROM'))).toBe(false);
   });
@@ -241,7 +241,7 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
 
     const semCampo = cliente([{ id: 'vac-1' }], 1, 'AGE_30_45');
     mockConnect.mockResolvedValue(semCampo.cli);
-    await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' });
+    await repo.update('svc-1', { hourlyValue: 10, actorUid: 'u-1' });
     expect(semCampo.chamadas.some((c) => c.startsWith('SELECT provider_age_band FROM'))).toBe(false);
   });
 });

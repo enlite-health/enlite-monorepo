@@ -65,7 +65,6 @@ export const createContractedServiceSchema = z
     serviceCode: z.enum(SERVICE_CODES),
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
     hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -94,7 +93,6 @@ export const updateContractedServiceSchema = z
   .object({
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
     hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),

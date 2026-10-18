@@ -216,7 +216,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(null) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -224,7 +224,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, patientId: 'outro-paciente' }) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -282,7 +282,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
@@ -300,7 +300,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(null) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -316,7 +316,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new Error('boom')) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
 
@@ -324,7 +324,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue('x') };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
   });
@@ -371,7 +371,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 10 }, user: naoAdmin }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 10 }, user: naoAdmin }), res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(repo.update).toHaveBeenCalled();
     });

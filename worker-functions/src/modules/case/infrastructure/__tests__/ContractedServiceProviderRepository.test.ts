@@ -19,7 +19,6 @@ const ROW = {
   id: 'prov-1',
   service_id: 'svc-1',
   worker_id: 'w-1',
-  weekly_hours: '10',
   active: true,
   ended_at: null,
   country: 'BR',
@@ -32,13 +31,13 @@ const ROW = {
 describe('ContractedServiceProviderRepository', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('listForService: decripta o nome via KMS, weeklyHours vira Number', async () => {
+  it('listForService: decripta o nome via KMS (sem weeklyHours no contrato)', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [ROW] });
     const repo = new ContractedServiceProviderRepository(fakeEnc());
     const out = await repo.listForService('svc-1');
     expect(out).toEqual([{
       id: 'prov-1', serviceId: 'svc-1', workerId: 'w-1', workerName: 'dec(enc-first) dec(enc-last)',
-      weeklyHours: 10, active: true, endedAt: null, country: 'BR',
+      active: true, endedAt: null, country: 'BR',
       createdAt: '2026-09-03T00:00:00Z', updatedAt: '2026-09-03T00:00:00Z',
     }]);
   });
@@ -48,12 +47,5 @@ describe('ContractedServiceProviderRepository', () => {
     const repo = new ContractedServiceProviderRepository(fakeEnc());
     const out = await repo.listForService('svc-1');
     expect(out[0].workerName).toBeNull();
-  });
-
-  it('listForService: weeklyHours null passa como null (não 0)', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ ...ROW, weekly_hours: null }] });
-    const repo = new ContractedServiceProviderRepository(fakeEnc());
-    const out = await repo.listForService('svc-1');
-    expect(out[0].weeklyHours).toBeNull();
   });
 });

@@ -25,8 +25,6 @@ export type { ItineraryAssignmentStatus };
 
 export interface ItineraryServiceRow {
   id: string;
-  weeklyHours: number | null;
-  authorizedHours: number | null;
 }
 
 /**
@@ -83,8 +81,6 @@ interface PatientCountryRow {
 
 interface ServiceRow {
   id: string;
-  weekly_hours: string | null;
-  authorized_hours: string | null;
 }
 
 interface SlotJoinRow {
@@ -131,7 +127,7 @@ export class PatientItineraryReader {
 
     // Só serviço ATIVO: serviço baixado não tem cobertura a medir.
     const servicesRes = await client.query<ServiceRow>(
-      `SELECT id, weekly_hours, authorized_hours
+      `SELECT id
          FROM patient_contracted_services
         WHERE patient_id = $1 AND active
         ORDER BY created_at, id`,
@@ -178,8 +174,6 @@ export class PatientItineraryReader {
       country,
       services: servicesRes.rows.map((r) => ({
         id: r.id,
-        weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
-        authorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
       })),
       slots: slotsRes.rows.map((r) => ({
         id: r.id,

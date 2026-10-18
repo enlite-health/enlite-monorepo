@@ -211,7 +211,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           {
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT',
             professional_profile: 'perfil sintético', providers_needed: 2,
-            authorized_hours: '20', weekly_hours: '20', care_location: 'HOME',
+            authorized_hours: '20', care_location: 'HOME',
             hourly_value: '1500', start_date: '2026-09-01',
             contract_type: 'OBRA_SOCIAL', tax_condition: 'IVA_EXEMPT',
             supervision_frequency: 'DAYS_30', guard_shift: 'MORNING',
@@ -225,7 +225,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       .mockResolvedValueOnce({
         rows: [
           {
-            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1', weekly_hours: '20',
+            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1',
             active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
             first_name_encrypted: 'enc-first', last_name_encrypted: 'enc-last',
@@ -258,7 +258,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
       id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
-      legacyAuthorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
+      legacyAuthorizedHours: 20, scheduleHours: 12, hourlyValue: 1500, // string → Number
       authorization: { id: 'auth-1', hours: 120, validFrom: '2026-01-01', validTo: '2026-12-31' },
       deviceTypes: ['HOME'],
     });
@@ -276,7 +276,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     expect(sqlVaga).toContain('jp.deleted_at IS NULL');
     expect(svc.providers).toHaveLength(1);
     expect(svc.providers[0]).toMatchObject({
-      id: 'prov-1', workerId: 'w-1', workerName: 'dec(enc-first) dec(enc-last)', weeklyHours: 20,
+      id: 'prov-1', workerId: 'w-1', workerName: 'dec(enc-first) dec(enc-last)',
     });
   });
 
@@ -293,7 +293,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
         rows: [
           {
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT', professional_profile: null,
-            providers_needed: null, authorized_hours: null, weekly_hours: null, care_location: null,
+            providers_needed: null, authorized_hours: null, care_location: null,
             hourly_value: null, start_date: null, contract_type: null, tax_condition: null,
             supervision_frequency: null, guard_shift: null, active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
@@ -305,7 +305,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       .mockResolvedValueOnce({
         rows: [
           {
-            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1', weekly_hours: null,
+            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1',
             active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
             first_name_encrypted: null, last_name_encrypted: null,
@@ -323,7 +323,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const svc = result!.contractedServices[0];
     expect(svc.deviceTypes).toEqual([]); // device de OUTRO serviço não vaza
     expect(svc.providers[0].workerName).toBeNull();
-    expect(svc.providers[0].weeklyHours).toBeNull();
+    expect(svc.providers[0]).not.toHaveProperty('weeklyHours');
     expect(svc.hourlyValue).toBeNull();
     expect(svc.legacyAuthorizedHours).toBeNull();
     expect(svc.authorization).toBeNull();

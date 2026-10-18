@@ -279,9 +279,9 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
     expect(await get()).toEqual([]);
   });
 
-  it('PATCH sem o campo schedule (ex.: só weeklyHours) = 0 aviso', async () => {
+  it('PATCH sem o campo schedule (ex.: só providersNeeded) = 0 aviso', async () => {
     const ctx = await seed([{}]);
-    await repo().update(ctx.serviceId, { weeklyHours: 12, actorUid: UID } as never);
+    await repo().update(ctx.serviceId, { providersNeeded: 3, actorUid: UID } as never);
     expect((await notices()).rows).toHaveLength(0);
   });
 

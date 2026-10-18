@@ -486,7 +486,7 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     it('staff AR cria serviço no SEU paciente → 201, e a LINHA nasce com o país do paciente', async () => {
       const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/contracted-services`, {
         method: 'POST',
-        body: JSON.stringify({ serviceCode: 'CAREGIVER', weeklyHours: 10 }),
+        body: JSON.stringify({ serviceCode: 'CAREGIVER', providersNeeded: 2 }),
       });
       const body = (await res.json()) as { success?: boolean; data?: { id?: string } };
       expect({ status: res.status, success: body.success }).toEqual({ status: 201, success: true });
@@ -503,11 +503,11 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     it('PATCH no mesmo serviço → 200, mesma transação com país', async () => {
       const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/contracted-services/${servicoId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ weeklyHours: 12 }),
+        body: JSON.stringify({ providersNeeded: 3 }),
       });
       expect(res.status).toBe(200);
-      const row = await adminPool.query(`SELECT weekly_hours FROM patient_contracted_services WHERE id = $1`, [servicoId]);
-      expect(Number(row.rows[0]?.weekly_hours)).toBe(12);
+      const row = await adminPool.query(`SELECT providers_needed FROM patient_contracted_services WHERE id = $1`, [servicoId]);
+      expect(Number(row.rows[0]?.providers_needed)).toBe(3);
     });
 
     it('staff AR no paciente BR → recusado e NADA gravado (a policy follow_patient da 413 barra o INSERT)', async () => {

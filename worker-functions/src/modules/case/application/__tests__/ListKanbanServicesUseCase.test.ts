@@ -29,8 +29,8 @@ describe('ListKanbanServicesUseCase', () => {
         patientId: 'p-1',
         country: 'AR',
         services: [
-          { id: 'svc-a', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v' },
-          { id: 'svc-b', serviceCode: 'FA', weeklyHours: null, authorizedHours: 10, liveVacancyId: null },
+          { id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v' },
+          { id: 'svc-b', serviceCode: 'FA', liveVacancyId: null },
         ],
         slots: [
           // svc-a: slot seg 08-12 com alocação ACTIVE vigente (validFrom passado, sem fim).
@@ -65,7 +65,7 @@ describe('ListKanbanServicesUseCase', () => {
       {
         patientId: 'p-2',
         country: 'AR',
-        services: [{ id: 'svc-a', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v' }],
+        services: [{ id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v' }],
         slots: [
           {
             id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
@@ -88,8 +88,8 @@ describe('ListKanbanServicesUseCase', () => {
         patientId: 'p-1',
         country: 'AR',
         services: [
-          { id: 'svc-1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: null },
-          { id: 'svc-2', serviceCode: 'FA', weeklyHours: 10, authorizedHours: null, liveVacancyId: null },
+          { id: 'svc-1', serviceCode: 'AT', liveVacancyId: null },
+          { id: 'svc-2', serviceCode: 'FA', liveVacancyId: null },
         ],
         slots: [
           {
@@ -135,7 +135,7 @@ describe('ListKanbanServicesUseCase', () => {
       {
         patientId: 'p-1',
         country: 'AR',
-        services: [{ id: 'svc-1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: null }],
+        services: [{ id: 'svc-1', serviceCode: 'AT', liveVacancyId: null }],
         slots: [
           {
             id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
@@ -181,7 +181,7 @@ describe('ListKanbanServicesUseCase', () => {
       {
         patientId: 'p-1',
         country: 'AR',
-        services: [{ id: 'svc-a', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v' }],
+        services: [{ id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v' }],
         slots: [
           {
             id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',

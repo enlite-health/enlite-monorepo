@@ -301,8 +301,8 @@ export function createAdminPatientsRoutes(
 
   // ── Itinerário — leitura (fase 7, DX-7.6/7.7/D433/D434) ────────────────────
   // Sob `patient_services:read` (Q-7.3, padrão fixado na DX-7.7): a resposta carrega os mesmos
-  // `weeklyHours`/`authorizedHours` do GET .../contracted-services, que já sobre essa célula
-  // (linha `:240` acima); sob `patient:read` a rota abriria esses números a quem hoje não os lê.
+  // `scheduleHours` (soma das faixas) do GET .../contracted-services, que já sai sob essa célula
+  // (linha `:240` acima); sob `patient:read` a rota abriria esse número a quem hoje não o lê.
   // Literal GET, sem colidir com o PATCH dinâmico /:id/:section (é outro método).
   router.get('/patients/:id/itinerary', staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
     itineraryController.get(req, res),

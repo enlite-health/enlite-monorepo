@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours';
 import type { ContractedServiceDetail, ContractedServiceScheduleView } from './PatientContractedServiceRepository';
 import { fetchLiveVacancies } from './liveVacancyOfService';
 import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
@@ -29,7 +30,7 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) 
       [serviceIds],
     ),
     pool.query(
-      `SELECT csp.id, csp.service_id, csp.worker_id, csp.weekly_hours, csp.active, csp.ended_at,
+      `SELECT csp.id, csp.service_id, csp.worker_id, csp.active, csp.ended_at,
               csp.country, csp.created_at, csp.updated_at,
               w.first_name_encrypted, w.last_name_encrypted
          FROM contracted_service_providers csp
@@ -68,7 +69,6 @@ export async function mapContractedServices(
         serviceId: p.service_id,
         workerId: p.worker_id,
         workerName,
-        weeklyHours: p.weekly_hours != null ? Number(p.weekly_hours) : null,
         active: p.active,
         endedAt: p.ended_at,
         country: p.country,
@@ -85,7 +85,7 @@ export async function mapContractedServices(
     providersNeeded: r.providers_needed,
     authorization: authorizations.get(r.id) ?? null,
     legacyAuthorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
-    weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
+    scheduleHours: computeScheduleWeeklyHours(scheduleById.get(r.id) ?? null),
     careLocation: r.care_location,
     hourlyValue: r.hourly_value != null ? Number(r.hourly_value) : null,
     startDate: r.start_date,

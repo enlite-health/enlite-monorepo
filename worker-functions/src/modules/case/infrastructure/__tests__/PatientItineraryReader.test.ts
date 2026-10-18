@@ -54,7 +54,7 @@ describe('PatientItineraryReader', () => {
     queryImpl = async (sql) => {
       if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
       if (/FROM patient_contracted_services/.test(sql)) {
-        return { rows: [{ id: 'svc-1', weekly_hours: '20', authorized_hours: null }], rowCount: 1 };
+        return { rows: [{ id: 'svc-1' }], rowCount: 1 };
       }
       if (/FROM patient_itinerary_absence/.test(sql)) {
         return {
@@ -94,7 +94,7 @@ describe('PatientItineraryReader', () => {
 
     expect(result).toEqual({
       country: 'AR',
-      services: [{ id: 'svc-1', weeklyHours: 20, authorizedHours: null }],
+      services: [{ id: 'svc-1', }],
       slots: [
         {
           id: 'slot-1',
@@ -166,7 +166,7 @@ describe('PatientItineraryReader', () => {
     queryImpl = async (sql) => {
       if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
       if (/FROM patient_contracted_services/.test(sql)) {
-        return { rows: [{ id: 'svc-1', weekly_hours: null, authorized_hours: null }], rowCount: 1 };
+        return { rows: [{ id: 'svc-1' }], rowCount: 1 };
       }
       if (/FROM patient_itinerary_slot/.test(sql)) {
         return {

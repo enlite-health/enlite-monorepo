@@ -104,8 +104,6 @@ describe('PatientKanbanServicesReader', () => {
           country: 'AR',
           service_id: 's1',
           service_code: 'AT',
-          weekly_hours: '20',
-          authorized_hours: null,
           live_vacancy_id: 'v-1',
           slot_id: 'slot-1',
           weekday: 1,
@@ -125,8 +123,6 @@ describe('PatientKanbanServicesReader', () => {
           country: 'AR',
           service_id: 's2',
           service_code: 'FISIO',
-          weekly_hours: '10',
-          authorized_hours: '8',
           live_vacancy_id: null,
           slot_id: null,
           weekday: null,
@@ -146,8 +142,6 @@ describe('PatientKanbanServicesReader', () => {
           country: 'BR',
           service_id: 's3',
           service_code: 'AT',
-          weekly_hours: '15',
-          authorized_hours: null,
           live_vacancy_id: null,
           slot_id: null,
           weekday: null,
@@ -188,14 +182,14 @@ describe('PatientKanbanServicesReader', () => {
     expect(p1!.slots).toHaveLength(1); // só s1 gera slot; s2 não.
 
     const s1 = p1!.services.find((s) => s.id === 's1');
-    expect(s1).toEqual({ id: 's1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v-1' });
+    expect(s1).toEqual({ id: 's1', serviceCode: 'AT', liveVacancyId: 'v-1' });
     const s2 = p1!.services.find((s) => s.id === 's2');
-    expect(s2).toEqual({ id: 's2', serviceCode: 'FISIO', weeklyHours: 10, authorizedHours: 8, liveVacancyId: null });
+    expect(s2).toEqual({ id: 's2', serviceCode: 'FISIO', liveVacancyId: null });
     expect(p1!.slots[0]).toMatchObject({ id: 'slot-1', contractedServiceId: 's1', status: 'ACTIVE' });
 
     expect(p2!.country).toBe('BR');
     expect(p2!.services).toEqual([
-      { id: 's3', serviceCode: 'AT', weeklyHours: 15, authorizedHours: null, liveVacancyId: null },
+      { id: 's3', serviceCode: 'AT', liveVacancyId: null },
     ]);
     expect(p2!.slots).toHaveLength(0);
 
@@ -227,7 +221,7 @@ describe('PatientKanbanServicesReader', () => {
         if (/WITH svc AS/.test(sql)) {
           return {
             rows: [{
-              patient_id: PID, country: 'AR', service_id: 's1', service_code: 'AT', weekly_hours: '8', authorized_hours: null,
+              patient_id: PID, country: 'AR', service_id: 's1', service_code: 'AT',
               live_vacancy_id: 'v1', slot_id: null, weekday: null, start_time: null, duration_minutes: null, slot_end: null,
               assignment_id: null, worker_id: null, application_id: null, valid_from: null, valid_to: null, status: null,
             }],
@@ -242,7 +236,7 @@ describe('PatientKanbanServicesReader', () => {
 
       expect(r).toEqual({
         patientId: PID, country: 'AR', slots: [],
-        services: [{ id: 's1', serviceCode: 'AT', weeklyHours: 8, authorizedHours: null, liveVacancyId: 'v1' }],
+        services: [{ id: 's1', serviceCode: 'AT', liveVacancyId: 'v1' }],
       });
       const c = txCalls(q);
       expect(c).toHaveLength(1);

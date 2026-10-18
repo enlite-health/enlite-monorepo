@@ -15,7 +15,7 @@
  *   (d) alocação ACTIVE vencida (fim ontem) → 200.
  *   (e) `schedule: null` com alocação vigente → 422 (o caminho "desativa tudo"); a main recusa antes, com
  *       `SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY` (há vaga viva); o invariante "nenhum slot desativa" segue.
- *   (f) PATCH só de `weeklyHours` com alocação vigente → 200 (sem a chave `schedule` o sync não roda).
+ *   (f) PATCH só de `providersNeeded` com alocação vigente → 200 (sem a chave `schedule` o sync não roda).
  *   (g) a rota da Fase 11 (PATCH do slot) com o slot alocado segue 422.
  */
 import { Pool } from 'pg';
@@ -140,7 +140,7 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
     ).rows[0].id;
     const created = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', weeklyHours: 8, addressId, schedule: [MONDAY, WEDNESDAY] },
+      { serviceCode: 'AT', addressId, schedule: [MONDAY, WEDNESDAY] },
       asAdmin,
     );
     expect(created.status).toBe(201);
@@ -272,11 +272,11 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
     }
   });
 
-  it('(f) PATCH só de weeklyHours com alocação vigente → 200, slots intocados', async () => {
+  it('(f) PATCH só de providersNeeded com alocação vigente → 200, slots intocados', async () => {
     const seed = await seedService('f');
     try {
       await allocate(seed, seed.mondaySlotId, { validFrom: semanaAtras, validTo: null, status: 'ACTIVE' });
-      const r = await patchService(seed, { weeklyHours: 12 });
+      const r = await patchService(seed, { providersNeeded: 3 });
       console.log('[12.5] (f) status', r.status);
       expect(r.status).toBe(200);
       const after = await slotsOf(seed.serviceId);
