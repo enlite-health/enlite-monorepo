@@ -74,23 +74,16 @@ export function parseScheduleString(raw: string): ScheduleValue | null {
 }
 
 /**
- * Calcula o total de horas semanais cobertas por um ScheduleValue.
- * Soma (endTime - startTime) × número de dias para cada entry. Trata virada
- * de meia-noite (endTime < startTime → (24 - startHour) + endHour). Entries
- * incompletos (sem dias ou sem horário válido) contribuem 0.
+ * Achata um ScheduleValue (dias × horário) em `{ startTime, endTime }[]` — uma entrada por dia —,
+ * a forma que `weeklyHoursOf` (`@domain/scheduleHours`, a ÚNICA soma de horas; spec 056 §4.8) soma.
+ * Entries incompletos (sem dias ou sem horário) não geram turno.
  */
-export function computeWeeklyHours(value: ScheduleValue): number {
-  let total = 0;
-  for (const entry of value) {
-    if (!entry.days.length || !entry.timeFrom || !entry.timeTo) continue;
-    const fromMin = parseTimeToMinutes(entry.timeFrom);
-    const toMin = parseTimeToMinutes(entry.timeTo);
-    if (fromMin === null || toMin === null) continue;
-    const slotMinutes = toMin > fromMin ? toMin - fromMin : 24 * 60 - fromMin + toMin;
-    total += (slotMinutes / 60) * entry.days.length;
-  }
-  // Round to 2 decimals to avoid floating-point noise.
-  return Math.round(total * 100) / 100;
+export function scheduleValueToShifts(value: ScheduleValue): Array<{ startTime: string; endTime: string }> {
+  return value.flatMap((entry) =>
+    !entry.days.length || !entry.timeFrom || !entry.timeTo
+      ? []
+      : entry.days.map(() => ({ startTime: entry.timeFrom, endTime: entry.timeTo })),
+  );
 }
 
 function parseTimeToMinutes(value: string): number | null {
