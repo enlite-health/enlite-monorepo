@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveRequiredSexSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
+import { withSystemDbContext } from '../../src/shared/database/requestDbSession';
 import { fetchPatientDetail } from '../../src/modules/case/infrastructure/PatientDetailQueryHelper';
 import { loadVacancyDescriptionInput } from '../../src/modules/integration/infrastructure/TalentumDescriptionService';
 import { loadVacancyForAiContent } from '../../src/modules/matching/interfaces/controllers/vacancyAiContentQuery';
@@ -358,7 +359,11 @@ const LEITORES_QTD: LeitorQtd[] = [
   {
     nome: 'GetArmedCasesUseCase.execute (serviço NULL = SEM_CONFIG; com valor = POR_ARMAR)',
     probe: async () => {
-      const r = await new GetArmedCasesUseCase(identityPool, new ServiceHoursSummaryReader()).execute(['AR']);
+      // As horas vêm do `PatientKanbanServicesReader`/`inPatientTransaction`, que em produção rodam sob o contexto da request
+      // (ALS: uid+país → GUCs na transação). Aqui o `connect()` é CRU de propósito (ver o Proxy do beforeAll) e não há request:
+      // o contexto de sistema declarado entrega a identidade que a policy de país de `patients` exige.
+      const r = await withSystemDbContext('job:test-armed-cases', () =>
+        new GetArmedCasesUseCase(identityPool, new ServiceHoursSummaryReader()).execute(['AR']));
       if (r.porArmar === 1 && r.semConfig === 0) return '2';
       if (r.porArmar === 0 && r.semConfig === 1) return '7';
       return `porArmar=${r.porArmar} semConfig=${r.semConfig}`;
