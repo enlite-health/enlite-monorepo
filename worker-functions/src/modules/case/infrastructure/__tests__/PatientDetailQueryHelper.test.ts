@@ -243,18 +243,23 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           contracted_service_id: 'svc-1', id: 'vac-live-1', case_number: 1234, case_ordinal: 1,
           status: 'SEARCHING',
         }],
-      });
+      }) // live vacancies
+      // Spec 056: a autorização corrente (vigente hoje) — validTo da API é inclusivo (upper − 1 dia).
+      .mockResolvedValueOnce({
+        rows: [{ contracted_service_id: 'svc-1', id: 'auth-1', hours: '120', valid_from: '2026-01-01', valid_upper: '2027-01-01' }],
+      }); // authorizations
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
-    expect(queryImpl).toHaveBeenCalledTimes(12);
+    expect(queryImpl).toHaveBeenCalledTimes(13);
     expect(result!.contractedServices).toHaveLength(1);
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
       id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
-      authorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
+      legacyAuthorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
+      authorization: { id: 'auth-1', hours: 120, validFrom: '2026-01-01', validTo: '2026-12-31' },
       deviceTypes: ['HOME'],
     });
     // A1 (047): o objeto INTEIRO, com as 4 chaves e nenhuma a mais.
@@ -308,7 +313,8 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
         ],
       })
       .mockResolvedValueOnce({ rows: [{ id: 'svc-1', schedule: null }] }) // schedules (056)
-      .mockResolvedValueOnce({ rows: [] }); // live vacancies (spec 018, PR-6) — nenhuma
+      .mockResolvedValueOnce({ rows: [] }) // live vacancies (spec 018, PR-6) — nenhuma
+      .mockResolvedValueOnce({ rows: [] }); // authorizations (056) — nenhuma
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
@@ -319,7 +325,8 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     expect(svc.providers[0].workerName).toBeNull();
     expect(svc.providers[0].weeklyHours).toBeNull();
     expect(svc.hourlyValue).toBeNull();
-    expect(svc.authorizedHours).toBeNull();
+    expect(svc.legacyAuthorizedHours).toBeNull();
+    expect(svc.authorization).toBeNull();
   });
 });
 

@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { ContractedServiceDetail, ContractedServiceScheduleView } from './PatientContractedServiceRepository';
 import { fetchLiveVacancies } from './liveVacancyOfService';
+import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
 
 /**
  * ContractedServiceDetailMapper — a SUBÁRVORE de serviços contratados da ficha do paciente.
@@ -17,8 +18,8 @@ import { fetchLiveVacancies } from './liveVacancyOfService';
  */
 
 async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) {
-  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[], schedules: [] as any[], liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>> };
-  const [devices, providers, schedules, liveVacancies] = await Promise.all([
+  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[], schedules: [] as any[], liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>>, authorizations: new Map<string, CurrentAuthorization>() };
+  const [devices, providers, schedules, liveVacancies, authorizations] = await Promise.all([
     pool.query(
       `SELECT csd.service_id, csd.device_type
          FROM contracted_service_devices csd
@@ -44,8 +45,10 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) 
     ),
     // Spec 018 PR-6 / spec 047 F2: a vaga viva do serviço (id + código + estado + link) — dono: `fetchLiveVacancies`.
     fetchLiveVacancies(pool, serviceIds),
+    // Spec 056: a autorização corrente (vigente hoje) — dono: `contracted_service_authorization`.
+    fetchCurrentAuthorizations(pool, serviceIds),
   ]);
-  return { devices: devices.rows, providers: providers.rows, schedules: schedules.rows, liveVacancies };
+  return { devices: devices.rows, providers: providers.rows, schedules: schedules.rows, liveVacancies, authorizations };
 }
 
 export async function mapContractedServices(
@@ -54,7 +57,7 @@ export async function mapContractedServices(
   enc: KMSEncryptionService,
 ): Promise<ContractedServiceDetail[]> {
   const ids = serviceRows.map((r) => r.id);
-  const { devices, providers, schedules, liveVacancies } = await fetchContractedServiceChildren(pool, ids);
+  const { devices, providers, schedules, liveVacancies, authorizations } = await fetchContractedServiceChildren(pool, ids);
   const scheduleById = new Map<string, ContractedServiceScheduleView[] | null>(schedules.map((s) => [s.id, s.schedule ?? null]));
   const decryptedProviders = await Promise.all(
     providers.map(async (p) => {
@@ -80,7 +83,8 @@ export async function mapContractedServices(
     serviceCode: r.service_code,
     professionalProfile: r.professional_profile,
     providersNeeded: r.providers_needed,
-    authorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
+    authorization: authorizations.get(r.id) ?? null,
+    legacyAuthorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
     weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
     careLocation: r.care_location,
     hourlyValue: r.hourly_value != null ? Number(r.hourly_value) : null,

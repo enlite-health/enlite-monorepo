@@ -23,6 +23,7 @@ import {
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
 import { replaceServiceSlots } from './ServiceSlotWriter';
+import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
 
 /**
  * Turno do horário na ESCRITA (spec 056): início + duração; o fim nunca é gravado. `dayOfWeek`: 0 = domingo.
@@ -75,7 +76,10 @@ export interface ContractedServiceDetail {
   serviceCode: string;
   professionalProfile: string | null;
   providersNeeded: number | null;
-  authorizedHours: number | null;
+  /** Autorização corrente e vigente hoje (spec 056, dono: `contracted_service_authorization`) — null = nenhuma. */
+  authorization: CurrentAuthorization | null;
+  /** `pcs.authorized_hours` (coluna legada, só exibição; não é mais escrita pela API — spec 056 §8). */
+  legacyAuthorizedHours: number | null;
   weeklyHours: number | null;
   careLocation: string | null;
   /** Preço do contrato (lex C-c) — a REDAÇÃO por papel acontece no controller, nunca aqui. */
@@ -119,7 +123,6 @@ export interface ContractedServiceWriteInput {
   serviceCode?: string;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  authorizedHours?: number | null;
   weeklyHours?: number | null;
   careLocation?: string | null;
   hourlyValue?: number | null;
@@ -172,7 +175,6 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['serviceCode', 'service_code'],
   ['professionalProfile', 'professional_profile'],
   ['providersNeeded', 'providers_needed'],
-  ['authorizedHours', 'authorized_hours'],
   ['weeklyHours', 'weekly_hours'],
   ['careLocation', 'care_location'],
   ['hourlyValue', 'hourly_value'],
@@ -258,6 +260,7 @@ export class PatientContractedServiceRepository {
       [row.id],
     );
     const schedule = sched.rows[0]?.schedule ?? null;
+    const authorization = (await fetchCurrentAuthorizations(cli, [row.id])).get(row.id) ?? null;
     return {
       id: row.id,
       liveVacancy,
@@ -265,7 +268,8 @@ export class PatientContractedServiceRepository {
       serviceCode: row.service_code,
       professionalProfile: row.professional_profile,
       providersNeeded: row.providers_needed,
-      authorizedHours: row.authorized_hours != null ? Number(row.authorized_hours) : null,
+      authorization,
+      legacyAuthorizedHours: row.authorized_hours != null ? Number(row.authorized_hours) : null,
       weeklyHours: row.weekly_hours != null ? Number(row.weekly_hours) : null,
       careLocation: row.care_location,
       hourlyValue: row.hourly_value != null ? Number(row.hourly_value) : null,

@@ -505,12 +505,47 @@ describe('PatientContractedServiceRepository', () => {
     expect(mockPoolQuery).toHaveBeenCalledTimes(2);
   });
 
-  it('listForPatient: authorizedHours/weeklyHours/hourlyValue nulos permanecem null (não 0)', async () => {
+  it('decorate devolve authorization null e legacyAuthorizedHours 20 quando só há a coluna', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] }); // listForPatient; o resto cai no default { rows: [] }
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const out = await repo.listForPatient('pat-1');
+    expect(out[0].authorization).toBeNull();
+    expect(out[0].legacyAuthorizedHours).toBe(20);
+    expect(out[0]).not.toHaveProperty('authorizedHours');
+  });
+
+  it('decorate devolve a autorização corrente e vigente (validTo inclusivo) e lê só superseded_at IS NULL', async () => {
+    mockPoolQuery.mockImplementation(async (sql: string) => {
+      if (/FROM patient_contracted_services WHERE patient_id/.test(sql)) return { rows: [SERVICE_ROW] };
+      if (/FROM contracted_service_authorization/.test(sql)) {
+        return { rows: [{ contracted_service_id: 'svc-1', id: 'auth-1', hours: '120', valid_from: '2026-01-01', valid_upper: '2027-01-01' }] };
+      }
+      return { rows: [] };
+    });
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const out = await repo.listForPatient('pat-1');
+    expect(out[0].authorization).toEqual({ id: 'auth-1', hours: 120, validFrom: '2026-01-01', validTo: '2026-12-31' });
+    const sql = mockPoolQuery.mock.calls.map((c) => String(c[0])).find((q) => /FROM contracted_service_authorization/.test(q));
+    expect(sql).toContain('superseded_at IS NULL');
+    expect(sql).toContain('valid @> CURRENT_DATE');
+  });
+
+  it('update/create: authorizedHours NÃO é coluna gravável (some do INSERT mesmo se vier no objeto)', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', actorUid: 'uid-1', ...({ authorizedHours: 99 } as object) });
+    const ins = chamadas.find((c) => /^INSERT INTO patient_contracted_services/.test(c.sql));
+    expect(ins?.sql).not.toContain('authorized_hours');
+    expect(ins?.params).not.toContain(99);
+  });
+
+  it('listForPatient: legacyAuthorizedHours/weeklyHours/hourlyValue nulos permanecem null (não 0)', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [{ ...SERVICE_ROW, authorized_hours: null, weekly_hours: null, hourly_value: null }] });
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
     const out = await repo.listForPatient('pat-1');
-    expect(out[0]).toMatchObject({ authorizedHours: null, weeklyHours: null, hourlyValue: null });
+    expect(out[0]).toMatchObject({ legacyAuthorizedHours: null, authorization: null, weeklyHours: null, hourlyValue: null });
   });
 
   it('update: erro genérico durante o UPDATE → propaga, ROLLBACK, client liberado', async () => {
