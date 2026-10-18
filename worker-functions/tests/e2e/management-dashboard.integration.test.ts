@@ -21,6 +21,7 @@
 
 import { ServiceHoursSummaryReader } from '../../src/modules/case/infrastructure/ServiceHoursSummaryReader';
 import { Pool } from 'pg';
+import { randomUUID } from 'crypto';
 import { GetManagementDashboardUseCase } from '../../src/modules/matching/application/GetManagementDashboardUseCase';
 import { REQUIRED_SUBSTITUTES } from '../../src/modules/matching/domain/armedCases';
 import { CURRENT_WEEK_START_SQL } from '../../src/modules/matching/domain/interviewSchedule';
@@ -34,6 +35,7 @@ const SUFFIX = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
 const WORKER_IDS: string[] = [];
 const JOB_POSTING_IDS: string[] = [];
+const PATIENT_IDS: string[] = [];
 let INCOMPLETE_WORKER_ID: string;
 let REGISTERED_WORKER_ID: string;
 let SEARCHING_JOB_ID: string;
@@ -82,6 +84,55 @@ async function makeSelectedEncuadre(
     `INSERT INTO encuadres (worker_id, job_posting_id, resultado, role, dedup_hash)
      VALUES ($1, $2, 'SELECCIONADO', $3, $4)`,
     [workerId, jobPostingId, role, `dedup-${SUFFIX}-${tag}`],
+  );
+}
+
+/**
+ * Spec 056: as horas do painel vêm do SERVIÇO contratado (faixas vigentes + alocação vigente),
+ * só de serviço com vaga viva. Semeia: paciente + serviço + 1 faixa de 4h (sem sobreposição)
+ * + vaga viva ligada ao serviço (4 colunas próprias NULL, regra F7) + opcionalmente 1 alocação
+ * vigente cobrindo a faixa (prestador + candidatura na vaga).
+ */
+async function makeServiceWithLiveVacancy(tag: string, covered: boolean): Promise<void> {
+  const patientId = randomUUID();
+  const serviceId = randomUUID();
+  const jobId = randomUUID();
+  const caseNumber = 8_000_000 + Math.floor(Math.random() * 1_000_000);
+  const seedTag = `mgmt-${SUFFIX}-${tag}`;
+  await pool.query(
+    `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, case_number)
+     VALUES ($1, $2, 'Paciente', 'Painel Horas', 'AR', $3)`,
+    [patientId, seedTag, caseNumber],
+  );
+  PATIENT_IDS.push(patientId);
+  await pool.query(
+    `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, providers_needed)
+     VALUES ($1, $2, 'AT', 'AR', $3, $3, 1)`,
+    [serviceId, patientId, seedTag],
+  );
+  const { rows: slotRows } = await pool.query<{ id: string }>(
+    `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+     VALUES ($1, 1, '08:00', 240, daterange(CURRENT_DATE - 1, NULL, '[)'), $2, $2) RETURNING id`,
+    [serviceId, seedTag],
+  );
+  await pool.query(
+    `INSERT INTO job_postings (id, title, case_number, patient_id, contracted_service_id, status, is_draft,
+                               required_professions, country, is_test)
+     VALUES ($1, $2, $3, $4, $5, 'SEARCHING', false, '{}'::text[], 'AR', false)`,
+    [jobId, `Caso mgmt servico ${tag} ${SUFFIX}`, caseNumber, patientId, serviceId],
+  );
+  JOB_POSTING_IDS.push(jobId);
+  if (!covered) return;
+  const workerId = await makeWorker('REGISTERED', `svc-${tag}`);
+  const { rows: appRows } = await pool.query<{ id: string }>(
+    `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
+     VALUES ($1, $2, 'SELECTED') RETURNING id`,
+    [workerId, jobId],
+  );
+  await pool.query(
+    `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, status, created_by, updated_by)
+     VALUES ($1, $2, $3, CURRENT_DATE - 1, 'ACTIVE', $4, $4)`,
+    [slotRows[0].id, workerId, appRows[0].id, seedTag],
   );
 }
 
@@ -137,14 +188,26 @@ beforeAll(async () => {
   PENDENTE_JOB_ID = await makeJob('SEARCHING', '1', null, 'pendente');
   const pendWorker = await makeWorker('REGISTERED', 'pendente');
   await makeSelectedEncuadre(pendWorker, PENDENTE_JOB_ID, null, 'pendente');
+
+  // Horas do painel = serviço: 2 serviços com faixa de 4h e vaga viva; 1 deles coberto (total 8, cobertas 4).
+  await makeServiceWithLiveVacancy('cob', true);
+  await makeServiceWithLiveVacancy('desc', false);
 });
 
 afterAll(async () => {
   if (JOB_POSTING_IDS.length) {
+    await pool.query(
+      `DELETE FROM patient_itinerary_assignment WHERE application_id IN
+         (SELECT id FROM worker_job_applications WHERE job_posting_id = ANY($1::uuid[]))`,
+      [JOB_POSTING_IDS],
+    );
     await pool.query(`DELETE FROM encuadres WHERE job_posting_id = ANY($1::uuid[])`, [JOB_POSTING_IDS]);
     await pool.query(`DELETE FROM worker_blocked_applications WHERE job_posting_id = ANY($1::uuid[])`, [JOB_POSTING_IDS]);
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = ANY($1::uuid[])`, [JOB_POSTING_IDS]);
     await pool.query(`DELETE FROM job_postings WHERE id = ANY($1::uuid[])`, [JOB_POSTING_IDS]);
+  }
+  if (PATIENT_IDS.length) {
+    await pool.query(`DELETE FROM patients WHERE id = ANY($1::uuid[])`, [PATIENT_IDS]); // cascata: serviços e faixas
   }
   if (WORKER_IDS.length) {
     await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [WORKER_IDS]);
@@ -166,7 +229,7 @@ describe('GetManagementDashboardUseCase — Equipe Armada (integration)', () => 
     expect(data.bigNumbers.equiposArmados).toBe(data.equipoArmada.armados);
     expect(data.bigNumbers.equiposPorArmar).toBe(data.equipoArmada.porArmar);
 
-    // Horas: ARMADA(4h) + POR_ARMAR(4h) semeados; aPreencher inclui o POR_ARMAR.
+    // Horas (spec 056): vêm do SERVIÇO — 2 serviços de 4h com vaga viva, 1 coberto (total 8, a preencher 4).
     expect(data.horas.totais).toBeGreaterThanOrEqual(8);
     expect(data.horas.aPreencher).toBeGreaterThanOrEqual(4);
     expect(data.horas.coberturaConSchedule).toBeGreaterThanOrEqual(2);

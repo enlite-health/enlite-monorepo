@@ -1,6 +1,7 @@
 import { ServiceHoursSummaryReader } from '../ServiceHoursSummaryReader';
 import type { KanbanServicesRows } from '../PatientKanbanServicesReader';
 
+const NO_TEST = async () => new Set<string>();
 const NOW = new Date('2026-10-14T15:00:00Z'); // AR/BR: 2026-10-14
 
 function slot(id: string, svc: string, minutes: number, assigned: boolean) {
@@ -35,7 +36,7 @@ describe('ServiceHoursSummaryReader', () => {
           : [],
       ),
     };
-    const out = await new ServiceHoursSummaryReader(reader).readServiceHours(['AR', 'BR'], NOW);
+    const out = await new ServiceHoursSummaryReader(reader, NO_TEST).readServiceHours(['AR', 'BR'], NOW);
     expect(out).toEqual({ total: 40, cobertas: 20, servicesWithSchedule: 1, servicesWithoutSchedule: 1 });
     expect(reader.readKanbanServices).toHaveBeenCalledTimes(2);
     expect(reader.readKanbanServices).toHaveBeenCalledWith('AR');
@@ -44,8 +45,21 @@ describe('ServiceHoursSummaryReader', () => {
 
   it('sem países → tudo zero e nenhuma leitura', async () => {
     const reader = { readKanbanServices: jest.fn() };
-    const out = await new ServiceHoursSummaryReader(reader).readServiceHours([], NOW);
+    const out = await new ServiceHoursSummaryReader(reader, NO_TEST).readServiceHours([], NOW);
     expect(out).toEqual({ total: 0, cobertas: 0, servicesWithSchedule: 0, servicesWithoutSchedule: 0 });
     expect(reader.readKanbanServices).not.toHaveBeenCalled();
+  });
+
+  it('paciente is_test não entra no resumo', async () => {
+    const reader = {
+      readKanbanServices: jest.fn(async () => [
+        patient('AR', [{ id: 's1', live: 'v1' }], [slot('x1', 's1', 240, true)]), // paciente p-s1: de teste
+        patient('AR', [{ id: 's2', live: 'v2' }], [slot('x2', 's2', 600, false)]),
+      ]),
+    };
+    const testIds = jest.fn(async () => new Set(['p-s1']));
+    const out = await new ServiceHoursSummaryReader(reader, testIds).readServiceHours(['AR'], NOW);
+    expect(out).toEqual({ total: 10, cobertas: 0, servicesWithSchedule: 1, servicesWithoutSchedule: 0 });
+    expect(testIds).toHaveBeenCalledWith(['AR']);
   });
 });
