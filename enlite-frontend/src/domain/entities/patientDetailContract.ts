@@ -129,7 +129,10 @@ const contractedServiceSchema = z
     serviceCode: z.string(),
     professionalProfile: z.string().nullable(),
     providersNeeded: z.number().nullable(),
-    authorizedHours: z.number().nullable(),
+    authorization: z
+      .object({ id: z.string(), hours: z.number(), validFrom: isoDate, validTo: isoDate })
+      .nullable(),
+    legacyAuthorizedHours: z.number().nullable(),
     weeklyHours: z.number().nullable(),
     careLocation: z.string().nullable(),
     // lex C-c.4: redigido (null) para quem não é admin — hourlyValueRedacted diz qual dos dois.

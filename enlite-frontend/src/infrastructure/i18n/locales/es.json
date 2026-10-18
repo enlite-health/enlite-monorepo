@@ -3421,7 +3421,20 @@
           "add": "Agregar turno",
           "remove": "Quitar turno"
         },
-        "scheduleOverlap": "Dos turnos del mismo servicio se superponen."
+        "scheduleOverlap": "Dos turnos del mismo servicio se superponen.",
+        "authorization": {
+          "title": "Autorización",
+          "hours": "Horas autorizadas (total del período)",
+          "from": "Desde",
+          "to": "Hasta",
+          "save": "Guardar autorización",
+          "current": "Vigente: {{hours}} h del {{from}} al {{to}}",
+          "none": "Sin autorización vigente",
+          "legacy": "Valor anterior, sin vigencia: {{hours}} h",
+          "overlaps": "Ya hay una autorización vigente que se superpone con ese período.",
+          "needsEnd": "La autorización necesita fecha de fin.",
+          "saveError": "No se pudo guardar la autorización."
+        }
       },
       "kanban": {
         "title": "Pacientes — Kanban",

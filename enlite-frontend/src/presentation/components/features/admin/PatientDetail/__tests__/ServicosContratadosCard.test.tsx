@@ -64,7 +64,7 @@ const SERVICE: PatientContractedServiceDetail = {
   serviceCode: 'AT',
   professionalProfile: 'Perfil sintético — busca AT con experiencia en movilidad reducida.',
   providersNeeded: 2,
-  authorizedHours: 20,
+  authorization: null, legacyAuthorizedHours: 20,
   weeklyHours: 20,
   careLocation: 'HOME',
   hourlyValue: 1500,
@@ -190,7 +190,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
   it('serviço mínimo (tudo null): dispositivo e lugar viram "—", quantidade "—", badge de baixa aparece, nunca quebra', () => {
     const minimal: PatientContractedServiceDetail = {
       id: 'svc-min', patientId: patientDetailFixture.id, serviceCode: 'CAREGIVER', professionalProfile: null,
-      providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
+      providersNeeded: null, authorization: null, legacyAuthorizedHours: null, weeklyHours: null, careLocation: null,
       hourlyValue: null, hourlyValueRedacted: false, startDate: null,
       contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
       providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,

@@ -103,6 +103,21 @@ export interface PatientContractedServiceLiveVacancy {
   status: string | null;
 }
 
+/** Autorização de horas do serviço; `validTo` INCLUSIVO ('YYYY-MM-DD'). */
+export interface ContractedServiceAuthorization {
+  id: string;
+  hours: number;
+  validFrom: string;
+  validTo: string;
+}
+
+/** Corpo de POST .../authorizations e .../:aid/supersede. */
+export interface AuthorizationWriteBody {
+  hours: number;
+  validFrom: string;
+  validTo: string;
+}
+
 export interface PatientContractedServiceDetail {
   id: string;
   patientId: string;
@@ -116,7 +131,10 @@ export interface PatientContractedServiceDetail {
   /** Texto livre — perfil do profissional buscado. NUNCA alimenta a vaga pública (lex C-b2). */
   professionalProfile: string | null;
   providersNeeded: number | null;
-  authorizedHours: number | null;
+  /** Autorização VIGENTE hoje (spec 056 §5.2) — dono único das horas autorizadas; `null` = sem vigente. */
+  authorization: ContractedServiceAuthorization | null;
+  /** Valor antigo da coluna sem vigência (só leitura, "Valor anterior, sin vigencia"); `null` = não havia. */
+  legacyAuthorizedHours: number | null;
   weeklyHours: number | null;
   careLocation: string | null;
   /**
@@ -175,7 +193,6 @@ export interface CreateContractedServiceBody {
   serviceCode: ServiceCode;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  authorizedHours?: number | null;
   weeklyHours?: number | null;
   careLocation?: CareLocation | null;
   hourlyValue?: number | null;

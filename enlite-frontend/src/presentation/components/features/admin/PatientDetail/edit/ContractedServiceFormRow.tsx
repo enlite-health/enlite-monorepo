@@ -17,6 +17,7 @@ import { ServiceShiftEditor } from './ServiceShiftEditor';
 import { shiftsToSlots, slotsToShifts } from '@domain/scheduleHours';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
 import { AvisoAmbar } from './AvisoAmbar';
+import { ServiceAuthorizationBlock } from './ServiceAuthorizationBlock';
 import { NumericField } from './NumericField';
 import { ContractedServiceRecruitmentFields } from './ContractedServiceRecruitmentFields';
 import { recruitmentFormSchema, recruitmentDefaults, recruitmentBody, type RecruitmentFormValues } from './contractedServiceRecruitmentForm';
@@ -57,7 +58,6 @@ const schema = z.object({
   serviceCode: z.string().min(1, 'admin.patients.editDrawer.requiredField'),
   professionalProfile: z.string(),
   providersNeeded: numericString,
-  authorizedHours: numericString,
   weeklyHours: numericString,
   careLocation: z.string(),
   hourlyValue: numericString,
@@ -137,7 +137,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       serviceCode: service?.serviceCode ?? '',
       professionalProfile: service?.professionalProfile ?? '',
       providersNeeded: empty(service?.providersNeeded),
-      authorizedHours: empty(service?.authorizedHours),
       weeklyHours: empty(service?.weeklyHours),
       careLocation: service?.careLocation ?? '',
       hourlyValue: empty(service?.hourlyValue),
@@ -180,7 +179,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           serviceCode: values.serviceCode as never,
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
-          authorizedHours: numOrNull(values.authorizedHours),
           weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
           hourlyValue: numOrNull(values.hourlyValue),
@@ -199,7 +197,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         saved = await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
-          authorizedHours: numOrNull(values.authorizedHours),
           weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
           // Campo desabilitado (redigido) nunca entra no submit — ver `disabled` abaixo; quando
@@ -274,7 +271,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         </FormField>
         <NumericField id={`svc-providersNeeded-${index}`} label={te('providersNeeded')} testId={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
         <NumericField id={`svc-weeklyHours-${index}`} label={te('weeklyHours')} testId={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
-        <NumericField id={`svc-authorizedHours-${index}`} label={te('authorizedHours')} testId={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
         <FormField label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
           <Controller control={control} name="careLocation" render={({ field }) => (
             <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
@@ -363,6 +359,8 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           )} />
         </div>
       </FormField>
+
+      {!isNew && <ServiceAuthorizationBlock patientId={patientId} service={service} index={index} />}
 
       <FormField label={te('deviceTypes')} htmlFor={`svc-devices-${index}`} optional>
         <Controller control={control} name="deviceTypeCodes" render={({ field }) => (

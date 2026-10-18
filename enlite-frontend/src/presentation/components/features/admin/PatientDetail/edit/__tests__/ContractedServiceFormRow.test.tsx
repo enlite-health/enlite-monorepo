@@ -13,10 +13,14 @@ import type { PatientContractedServiceDetail } from '@domain/entities/PatientDet
 
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
+const mockCreateAuth = vi.fn();
+const mockSupersedeAuth = vi.fn();
 vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
   AdminContractedServicesApiService: {
     createContractedService: (...a: unknown[]) => mockCreate(...a),
     updateContractedService: (...a: unknown[]) => mockUpdate(...a),
+    createAuthorization: (...a: unknown[]) => mockCreateAuth(...a),
+    supersedeAuthorization: (...a: unknown[]) => mockSupersedeAuth(...a),
   },
 }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({
@@ -35,7 +39,7 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
-  providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
+  providersNeeded: 2, authorization: null, legacyAuthorizedHours: null, weeklyHours: 20, careLocation: 'HOME',
   hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
   contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
@@ -367,7 +371,7 @@ describe('ContractedServiceFormRow', () => {
     it('a dica "Solo números" fica ABAIXO do campo (hintBelow) — rótulo → campo → dica, para as colunas alinharem (gate 06/09)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
       const precede = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-authorizedHours-1', 'svc-hourlyValue-1']) {
+      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-hourlyValue-1']) {
         const campo = screen.getByTestId(id);
         const label = document.querySelector(`label[for="${id}"]`) as HTMLElement;
         const raiz = label.parentElement as HTMLElement; // o FormField
@@ -406,13 +410,13 @@ describe('ContractedServiceFormRow', () => {
       await waitFor(() => expect(onSaved2).toHaveBeenCalledWith(atualizado));
     });
 
-    it('campos numéricos avisam ao receber letra (NumericField nos 4: prestadores, hs semanais, hs autorizadas, valor)', () => {
+    it('campos numéricos avisam ao receber letra (NumericField nos 3: prestadores, hs semanais, valor)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-authorizedHours-1', 'svc-hourlyValue-1']) {
+      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-hourlyValue-1']) {
         fireEvent.keyDown(screen.getByTestId(id), { key: 'a' });
       }
-      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(4);
-      expect(screen.getAllByText('Solo números')).toHaveLength(4);
+      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(3);
+      expect(screen.getAllByText('Solo números')).toHaveLength(3);
     });
 
     it('modo NOVO: escolher o endereço envia addressId; sem escolher envia null (nunca string vazia)', async () => {
@@ -493,6 +497,67 @@ describe('ContractedServiceFormRow', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       expect((await screen.findByTestId('svc-schedule-overlap-1')).textContent).toContain('se superponen');
+    });
+  });
+
+  describe('bloco Autorización (spec 056 T2.5)', () => {
+    const AUTH = { id: 'a1', hours: 40, validFrom: '2026-10-01', validTo: '2026-10-31' };
+    const fill = (hours: string, from: string, to: string) => {
+      fireEvent.change(screen.getByTestId('svc-auth-hours-1'), { target: { value: hours } });
+      fireEvent.change(screen.getByTestId('svc-auth-from-1'), { target: { value: from } });
+      fireEvent.change(screen.getByTestId('svc-auth-to-1'), { target: { value: to } });
+    };
+
+    it('o NumericField authorizedHours saiu', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      expect(screen.queryByTestId('svc-authorizedHours-1')).toBeNull();
+    });
+
+    it('mostra a vigente em svc-auth-current', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, authorization: AUTH }} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-auth-current-1').textContent).toContain('Vigente: 40 h del 2026-10-01 al 2026-10-31');
+      expect(screen.queryByTestId('svc-auth-legacy-1')).toBeNull();
+    });
+
+    it('mostra legado quando authorization null', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, legacyAuthorizedHours: 20 }} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-auth-legacy-1').textContent).toBe('Valor anterior, sin vigencia: 20 h');
+      expect(screen.queryByTestId('svc-auth-current-1')).toBeNull();
+    });
+
+    it('salvar chama createAuthorization com validTo inclusivo', async () => {
+      mockCreateAuth.mockResolvedValue({ ...AUTH, id: 'a2', hours: 30, validFrom: '2026-11-01', validTo: '2026-11-30' });
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fill('30', '2026-11-01', '2026-11-30');
+      fireEvent.click(screen.getByTestId('svc-auth-save-1'));
+      await waitFor(() => expect(mockCreateAuth).toHaveBeenCalledWith('pat1', 's1', { hours: 30, validFrom: '2026-11-01', validTo: '2026-11-30' }));
+      expect((await screen.findByTestId('svc-auth-current-1')).textContent).toContain('30 h');
+      expect(mockSupersedeAuth).not.toHaveBeenCalled();
+    });
+
+    it('com vigente, salvar chama supersedeAuthorization', async () => {
+      mockSupersedeAuth.mockResolvedValue({ ...AUTH, id: 'a2', hours: 50 });
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, authorization: AUTH }} index={1} onSaved={vi.fn()} />);
+      fill('50', '2026-10-01', '2026-10-31');
+      fireEvent.click(screen.getByTestId('svc-auth-save-1'));
+      await waitFor(() => expect(mockSupersedeAuth).toHaveBeenCalledWith('pat1', 's1', 'a1', { hours: 50, validFrom: '2026-10-01', validTo: '2026-10-31' }));
+      expect(mockCreateAuth).not.toHaveBeenCalled();
+    });
+
+    it('409 mostra overlaps', async () => {
+      mockCreateAuth.mockRejectedValue(Object.assign(new Error('x'), { status: 409, code: 'AUTHORIZATION_OVERLAPS' }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fill('30', '2026-11-01', '2026-11-30');
+      fireEvent.click(screen.getByTestId('svc-auth-save-1'));
+      expect((await screen.findByTestId('svc-auth-error-1')).textContent).toContain('Ya hay una autorización vigente que se superpone');
+    });
+
+    it('422 mostra needsEnd', async () => {
+      mockCreateAuth.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'AUTHORIZATION_NEEDS_END' }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fill('30', '2026-11-01', '2026-11-30');
+      fireEvent.click(screen.getByTestId('svc-auth-save-1'));
+      expect((await screen.findByTestId('svc-auth-error-1')).textContent).toContain('necesita fecha de fin');
     });
   });
 });

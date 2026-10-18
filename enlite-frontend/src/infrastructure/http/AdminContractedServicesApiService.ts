@@ -5,6 +5,8 @@
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import type {
+  AuthorizationWriteBody,
+  ContractedServiceAuthorization,
   PatientContractedServiceDetail,
   CreateContractedServiceBody,
   UpdateContractedServiceBody,
@@ -120,6 +122,42 @@ class AdminContractedServicesApiServiceClass {
     return this.request<PatientContractedServiceDetail>(
       'PATCH',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}`,
+      body,
+    );
+  }
+
+  /** GET .../contracted-services/:sid/authorizations — histórico de autorizações (spec 056 §5.2). */
+  async listAuthorizations(patientId: string, serviceId: string): Promise<ContractedServiceAuthorization[]> {
+    const { authorizations } = await this.request<{ authorizations: ContractedServiceAuthorization[] }>(
+      'GET',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/authorizations`,
+    );
+    return authorizations;
+  }
+
+  /** POST .../authorizations — 201 com a linha; `validTo` INCLUSIVO. 409 `AUTHORIZATION_OVERLAPS` / 422 `AUTHORIZATION_NEEDS_END` viram `err.code`. */
+  async createAuthorization(
+    patientId: string,
+    serviceId: string,
+    body: AuthorizationWriteBody,
+  ): Promise<ContractedServiceAuthorization> {
+    return this.request<ContractedServiceAuthorization>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/authorizations`,
+      body,
+    );
+  }
+
+  /** POST .../authorizations/:aid/supersede — substitui a vigente (mesmo corpo e mesmos erros do create). */
+  async supersedeAuthorization(
+    patientId: string,
+    serviceId: string,
+    authorizationId: string,
+    body: AuthorizationWriteBody,
+  ): Promise<ContractedServiceAuthorization> {
+    return this.request<ContractedServiceAuthorization>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/authorizations/${authorizationId}/supersede`,
       body,
     );
   }

@@ -13,7 +13,7 @@ const SERVICO: PatientContractedServiceDetail = {
   serviceCode: 'AT',
   professionalProfile: null,
   providersNeeded: 1,
-  authorizedHours: 10,
+  authorization: null, legacyAuthorizedHours: 10,
   weeklyHours: 10,
   careLocation: 'HOME',
   hourlyValue: null,
