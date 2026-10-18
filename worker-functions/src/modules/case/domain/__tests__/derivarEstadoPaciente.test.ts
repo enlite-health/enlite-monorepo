@@ -8,8 +8,8 @@ import {
 import { PATIENT_STATUSES } from '../enums/PatientStatus';
 
 // Um serviço de 8 h/semana com vacante viva, coberto em `cobertas` horas.
-function servico(cobertas: number, contratadas: number | null = 8, temVacanteViva = true): ServicoParaDerivar {
-  return { temVacanteViva, cobertas, contratadas };
+function servico(cobertas: number, total: number = 8, temVacanteViva = true): ServicoParaDerivar {
+  return { temVacanteViva, cobertas, total };
 }
 
 function entrada(status: string | null, servicos: ServicoParaDerivar[], montado = true): EntradaDerivacao {
@@ -76,8 +76,8 @@ describe('derivarEstadoPaciente', () => {
 
   it('borda 7 — cheio + serviço sem vacante viva → ACTIVE (Q-D3)', () => {
     expect(derivarEstadoPaciente(entrada('SEARCHING', [servico(8), servico(0, 8, false)]))).toBe('ACTIVE');
-    // o sem-vacante é ignorado mesmo com a régua nula
-    expect(derivarEstadoPaciente(entrada('SEARCHING', [servico(8), servico(0, null, false)]))).toBe('ACTIVE');
+    // o sem-vacante é ignorado mesmo sem faixa (total 0)
+    expect(derivarEstadoPaciente(entrada('SEARCHING', [servico(8), servico(0, 0, false)]))).toBe('ACTIVE');
   });
 
   it('borda 8 — seleção/Equipe/C sem alocação não muda horas: devolve o estado atual', () => {
@@ -112,8 +112,22 @@ describe('derivarEstadoPaciente', () => {
     expect(derivarEstadoPaciente(entrada('ACTIVE', [servico(0, 8, false)]))).toBeNull();
   });
 
-  it('serviço com vacante viva e contratadas nulo → null (Q-15.3)', () => {
-    expect(derivarEstadoPaciente(entrada('ACTIVE', [servico(8), servico(0, null)]))).toBeNull();
+  it('régua morre se weekly_hours voltar: 20 cobertas de 40 de faixa → REPLACEMENT', () => {
+    const e: EntradaDerivacao = {
+      status: 'SEARCHING',
+      montado: true,
+      servicos: [{ temVacanteViva: true, cobertas: 20, total: 40 }],
+    };
+    expect(derivarEstadoPaciente(e)).toBe('REPLACEMENT');
+  });
+
+  it('serviço vivo com total 0 → null', () => {
+    const e: EntradaDerivacao = {
+      status: 'SEARCHING',
+      montado: true,
+      servicos: [{ temVacanteViva: true, cobertas: 0, total: 0 }],
+    };
+    expect(derivarEstadoPaciente(e)).toBeNull();
   });
 
   it('horas acima do contratado → ACTIVE', () => {
