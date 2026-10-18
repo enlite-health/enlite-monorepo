@@ -9,11 +9,13 @@
  * Side-effect outbound mapeado: semear paciente/serviço/vaga e alocar escrevem só em Postgres (mesma
  * cadeia de `patient-itinerary-montar`); nenhum canal real — o teste exige isso pelos hosts pedidos.
  *
- * Os 2 testes (o nome do arquivo casa o `--grep patient-itinerary`):
+ * Os 4 testes (o nome do arquivo casa o `--grep patient-itinerary`):
  *   1. FELIZ — serviço com faixas de 40 h (4 × 10 h) e 20 h cobertas: subcard e aba mostram 20/40;
  *   2. ALTERNATIVO (a) — turno sábado 20:00 → domingo 08:00 conta 12 h: o card de sábado mostra "12 h" e o
  *      par sobe 12 ao alocar.
- * (O alternativo (b), reserva, é da T6.4.)
+ *   3. ALTERNATIVO (estado muda por fora) — alocação encerrada pela API baixa o par de 20/40 para 10/40;
+ *   4. ALTERNATIVO (estado muda por fora) — faixa NÃO coberta encerrada pela API baixa o denominador: 20/40 → 20/30.
+ * (A reserva é do `kanban-pacientes-reserva`, T6.4.)
  */
 import { test, expect, type Page } from '@playwright/test';
 import { mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
@@ -22,8 +24,9 @@ import { readItineraryApi } from '../helpers/itinerario-e2e-helper';
 import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
 import { openPatientKanban, readSubcardPair } from '../helpers/kanban-subcard-e2e-helper';
 import {
-  seedDerivablePatient, selectedWorker, allocateWorker, coveredHours, type DerivableSeed,
+  seedDerivablePatient, selectedWorker, allocateWorker, coveredHours, derivacaoToken, type DerivableSeed,
 } from '../helpers/derivacao-e2e-helper';
+import { endAllocationApi, endSlotApi } from '../helpers/itinerario-escrita-e2e-helper';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
 
 const STAFF = mockAdminUserFor('itinerario-horas-dono-unico');
@@ -44,13 +47,24 @@ function vigiarHosts(page: Page): () => string[] {
 }
 
 /** Aloca um prestador Selecionado em cada slot dado, pela API (o 201 é conferido). */
-async function alocar(request: Parameters<typeof allocateWorker>[0], seed: DerivableSeed, slotIds: string[]): Promise<void> {
+async function alocar(request: Parameters<typeof allocateWorker>[0], seed: DerivableSeed, slotIds: string[]): Promise<string[]> {
   const [svc] = seed.services;
   const workerId = selectedWorker(seed, svc.vacancyId);
+  const allocationIds: string[] = [];
   for (const slotId of slotIds) {
     const r = await allocateWorker(request, seed.patientId, svc.serviceId, slotId, workerId);
     expect(r.status, `alocar no slot ${slotId}: ${r.code ?? ''}`).toBe(201);
+    allocationIds.push(r.allocationId as string);
   }
+  return allocationIds;
+}
+
+/** Subcard do Kanban e aba Itinerario (recarregadas do zero) mostram o MESMO par `X/Y`. */
+async function expectParNasDuasTelas(page: Page, patientId: string, serviceId: string, par: string): Promise<void> {
+  await openItineraryTab(page, patientId);
+  await expect(page.getByTestId(`itinerario-servico-par-${serviceId}`)).toContainText(par);
+  await openPatientKanban(page);
+  expect(await readSubcardPair(page, serviceId)).toBe(par);
 }
 
 test.describe('patient-itinerary-horas-dono-unico: o par cobertas/horário vem das faixas @integration', () => {
@@ -117,6 +131,53 @@ test.describe('patient-itinerary-horas-dono-unico: o par cobertas/horário vem d
       await openPatientKanban(page);
       expect(await readSubcardPair(page, svc.serviceId)).toBe('12/12');
 
+      expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
+    } finally {
+      seed.cleanup();
+    }
+  });
+
+  test('alocação encerrada por fora baixa o par: 20/40 → 10/40 no subcard e na aba', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const seed = await seedDerivablePatient(request, { status: 'SEARCHING', services: [QUARENTA_HORAS] });
+    try {
+      const [svc] = seed.services;
+      const [alocacaoA] = await alocar(request, seed, svc.slotIds.slice(0, 2)); // 2 × 10 h = 20 h cobertas
+
+      await loginAs(page, STAFF);
+      await expectParNasDuasTelas(page, seed.patientId, svc.serviceId, '20/40');
+
+      // Por fora da tela: a API encerra UMA alocação (motivo do catálogo, o prestador segue na reserva).
+      const fim = await endAllocationApi(request, derivacaoToken(), seed.patientId, svc.serviceId, alocacaoA);
+      expect(fim.status, `end da alocação: ${fim.body.code ?? ''}`).toBeLessThan(300);
+      expect(await coveredHours(request, seed.patientId)).toBe(10);
+
+      await page.reload();
+      await expectParNasDuasTelas(page, seed.patientId, svc.serviceId, '10/40');
+      expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
+    } finally {
+      seed.cleanup();
+    }
+  });
+
+  test('faixa fechada por fora baixa o total: 20/40 → 20/30 no subcard e na aba', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const seed = await seedDerivablePatient(request, { status: 'SEARCHING', services: [QUARENTA_HORAS] });
+    try {
+      const [svc] = seed.services;
+      await alocar(request, seed, svc.slotIds.slice(0, 2)); // 20 h cobertas; as faixas 3 e 4 ficam sem prestador
+
+      await loginAs(page, STAFF);
+      await expectParNasDuasTelas(page, seed.patientId, svc.serviceId, '20/40');
+
+      // Por fora da tela: a API fecha uma faixa NÃO coberta (10 h) — o horário do serviço passa a 30 h.
+      const fim = await endSlotApi(request, derivacaoToken(), seed.patientId, svc.serviceId, svc.slotIds[3]);
+      expect(fim.status, `end da faixa: ${fim.body.code ?? ''}`).toBeLessThan(300);
+      const itin = await readItineraryApi(request, seed.patientId);
+      expect(itin.body.data?.services.find((s) => s.contractedServiceId === svc.serviceId)?.scheduleHours).toBe(30);
+
+      await page.reload();
+      await expectParNasDuasTelas(page, seed.patientId, svc.serviceId, '20/30');
       expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
     } finally {
       seed.cleanup();

@@ -10,11 +10,13 @@
  * paciente, nada de Talentum/Twilio/Periskope/e-mail). O serviço nasce SEM horário (POST pela API real) e
  * o turno é montado pela tela.
  *
- * Os 3 testes (o nome do arquivo casa o `--grep patient-itinerary` do job padrão do `pr-gate.yml`):
+ * Os 4 testes (o nome do arquivo casa o `--grep patient-itinerary` do job padrão do `pr-gate.yml`):
  *   1. FELIZ — 20:00 → 08:00 mostra "12 h (+1)", grava durationMinutes 720 e a API devolve 720;
  *   2. ALTERNATIVO 1 — "Todo el día" desabilita Fin, mostra "24 h" e grava 1440;
  *   3. ALTERNATIVO 2 — Fin = Inicio é recusado com "Para 24 h use 'Todo el día'": Guardar bloqueado e
- *      nenhum PATCH sai (2 s de observação).
+ *      nenhum PATCH sai (2 s de observação);
+ *   4. ALTERNATIVO 3 — o servidor recusa: serviço já com seg 08:00 (240 min); adicionar seg 10:00 → 12:00 na tela
+ *      e Guardar → 409 SLOT_OVERLAP aparece em `svc-schedule-overlap-1` e o GET confirma que o horário não mudou.
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import {
@@ -27,12 +29,16 @@ import { cleanupPatientDeep } from '../helpers/patient-detail-a-helper';
 const STAFF = mockAdminUserFor('horario-servico-turno');
 
 /** Paciente com endereço + 1 serviço AT SEM horário (POST real); a tela monta o turno. */
-async function seedServicoSemHorario(request: APIRequestContext): Promise<{ patientId: string; serviceId: string }> {
+async function seedServicoSemHorario(
+  request: APIRequestContext,
+  schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>,
+): Promise<{ patientId: string; serviceId: string }> {
   const { patientId, addressId } = insertTestPatient({ status: 'SEARCHING', withAddress: true, hasConsent: true, insuranceInformed: 'OSDE' });
   if (!addressId) throw new Error('patient-itinerary-horario-servico-turno: insertTestPatient sem addressId');
   try {
     const serviceId = await postContractedServiceViaApi(request, tokenFor(STAFF), patientId, {
       serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', addressId,
+      ...(schedule ? { schedule } : {}),
     });
     return { patientId, serviceId };
   } catch (err) {
@@ -144,6 +150,37 @@ test.describe('patient-itinerary-horario-servico-turno: turno Inicio/Fin/Todo el
       await salvar.click({ force: true });
       expect(await saiuPatch).toBe(false);
       expect(await lerSchedule(request, patientId, serviceId)).toBeNull();
+    } finally {
+      cleanupPatientDeep(patientId);
+    }
+  });
+
+  test('ALTERNATIVO 3: 409 SLOT_OVERLAP aparece na tela e o horário não muda', async ({ page, request }) => {
+    const faixaOriginal = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }]; // seg 08:00–12:00
+    const { patientId, serviceId } = await seedServicoSemHorario(request, faixaOriginal);
+    try {
+      await loginAs(page, STAFF);
+      await page.goto(`/admin/patients/${patientId}`);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+      await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
+      await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible();
+      await expect(page.getByTestId('svc-shift-start-1-1-0')).toContainText('08:00'); // a faixa do servidor chegou na tela
+
+      await page.getByTestId('svc-shift-add-1-1').click(); // 2º turno de segunda
+      await expect(page.getByTestId('svc-shift-start-1-1-1')).toBeVisible();
+      await escolherHora(page, 'svc-shift-start-1-1-1', '10:00');
+      await escolherHora(page, 'svc-shift-end-1-1-1', '12:00'); // 10:00–12:00 cruza 08:00–12:00
+
+      const [patch] = await Promise.all([
+        page.waitForResponse((r) => ehPatchDoServico(serviceId)(r.request())),
+        page.getByTestId(`contracted-service-save-${serviceId}`).click(),
+      ]);
+      expect(patch.status()).toBe(409);
+      const aviso = page.getByTestId('svc-schedule-overlap-1');
+      await expect(aviso).toBeVisible();
+      await expect(aviso).toContainText('Dos turnos del mismo servicio se superponen.');
+
+      expect(await lerSchedule(request, patientId, serviceId)).toEqual(faixaOriginal); // nada gravado
     } finally {
       cleanupPatientDeep(patientId);
     }
