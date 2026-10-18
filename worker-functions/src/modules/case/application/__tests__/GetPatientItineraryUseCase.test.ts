@@ -75,17 +75,17 @@ describe('GetPatientItineraryUseCase', () => {
       slots: [
         // svc-a, slot coberto: alocação ACTIVE vigente em 2026-09-27 (validFrom passado, sem fim).
         {
-          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
           assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
         },
         // svc-a, slot ativo mas sem alocação → não coberto.
         {
-          id: 's2', contractedServiceId: 'svc-a', weekday: 2, startTime: '08:00', endTime: '10:00', active: true,
+          id: 's2', contractedServiceId: 'svc-a', weekday: 2, startTime: '08:00', durationMinutes: 120, endTime: '10:00',
           assignmentId: null, workerId: null, applicationId: null, validFrom: null, validTo: null, status: null,
         },
         // svc-b, único slot, sem alocação → não coberto, cobertas = 0.
         {
-          id: 's3', contractedServiceId: 'svc-b', weekday: 3, startTime: '08:00', endTime: '09:00', active: true,
+          id: 's3', contractedServiceId: 'svc-b', weekday: 3, startTime: '08:00', durationMinutes: 60, endTime: '09:00',
           assignmentId: null, workerId: null, applicationId: null, validFrom: null, validTo: null, status: null,
         },
       ],
@@ -137,7 +137,7 @@ describe('GetPatientItineraryUseCase', () => {
       services: [{ id: 'svc-a', weeklyHours: 20, authorizedHours: null }],
       slots: [
         {
-          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
           assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
         },
       ],
@@ -173,12 +173,12 @@ describe('GetPatientItineraryUseCase', () => {
       services: [{ id: 'svc-a', weeklyHours: 20, authorizedHours: null }],
       slots: [
         {
-          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
           assignmentId: 'asg-old', workerId: 'w-old', applicationId: 'wja-0', validFrom: '2026-01-01', validTo: '2026-06-30', status: 'ENDED',
           firstNameEncrypted: 'old-f', lastNameEncrypted: 'old-l',
         },
         {
-          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
           assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
           firstNameEncrypted: 'f1', lastNameEncrypted: 'l1',
         },

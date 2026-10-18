@@ -19,6 +19,7 @@ import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
 import { uncoveredAbsenceSelect } from './absenceSql';
+import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
 
 export type { ItineraryAssignmentStatus };
 
@@ -37,8 +38,9 @@ export interface ItinerarySlotRow {
   contractedServiceId: string;
   weekday: number;
   startTime: string;
+  durationMinutes: number;
+  /** DERIVADO (início + duração; nunca gravado). */
   endTime: string;
-  active: boolean;
   assignmentId: string | null;
   workerId: string | null;
   applicationId: string | null;
@@ -90,8 +92,8 @@ interface SlotJoinRow {
   contracted_service_id: string;
   weekday: number;
   start_time: string;
+  duration_minutes: number;
   end_time: string;
-  active: boolean;
   assignment_id: string | null;
   worker_id: string | null;
   application_id: string | null;
@@ -139,8 +141,8 @@ export class PatientItineraryReader {
     const slotsRes = await client.query<SlotJoinRow>(
       `SELECT s.id, s.contracted_service_id, s.weekday,
               to_char(s.start_time, 'HH24:MI') AS start_time,
-              to_char(s.end_time, 'HH24:MI') AS end_time,
-              s.active,
+              s.duration_minutes,
+              ${slotEndTimeSql('s')} AS end_time,
               a.id AS assignment_id, a.worker_id, a.application_id,
               to_char(a.valid_from, 'YYYY-MM-DD') AS valid_from,
               to_char(a.valid_to, 'YYYY-MM-DD') AS valid_to,
@@ -150,7 +152,7 @@ export class PatientItineraryReader {
          JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
          LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
          LEFT JOIN workers w ON w.id = a.worker_id
-        WHERE pcs.patient_id = $1 AND pcs.active
+        WHERE pcs.patient_id = $1 AND pcs.active AND ${slotVigenteSql('s')}
         ORDER BY s.contracted_service_id, s.weekday, s.start_time, a.valid_from`,
       [patientId],
     );
@@ -184,8 +186,8 @@ export class PatientItineraryReader {
         contractedServiceId: r.contracted_service_id,
         weekday: r.weekday,
         startTime: r.start_time,
+        durationMinutes: r.duration_minutes,
         endTime: r.end_time,
-        active: r.active,
         assignmentId: r.assignment_id,
         workerId: r.worker_id,
         applicationId: r.application_id,

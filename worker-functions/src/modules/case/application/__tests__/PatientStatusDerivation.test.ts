@@ -17,7 +17,7 @@ const NOW = new Date('2026-09-29T15:00:00Z');
 /** Faixa de 4 h (08-12); `alocadaDesde` = vigência da alocação ACTIVE, `null` = sem alocação. */
 function faixa(serviceId: string, id: string, weekday: number, alocadaDesde: string | null): ItinerarySlotRow {
   return {
-    id, contractedServiceId: serviceId, weekday, startTime: '08:00', endTime: '12:00', active: true,
+    id, contractedServiceId: serviceId, weekday, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
     assignmentId: alocadaDesde ? `as-${id}` : null, workerId: alocadaDesde ? 'w1' : null, applicationId: alocadaDesde ? 'app1' : null,
     validFrom: alocadaDesde, validTo: null, status: alocadaDesde ? 'ACTIVE' : null,
   } as ItinerarySlotRow;

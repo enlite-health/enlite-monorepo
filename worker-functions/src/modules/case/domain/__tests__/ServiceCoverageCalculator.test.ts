@@ -20,16 +20,14 @@ import {
 const FATO06_WEEKDAY_SLOTS: ServiceCoverageSlot[] = [1, 2, 3, 4, 5].map((weekday) => ({
   weekday,
   startTime: '08:00',
-  endTime: '20:00',
-  active: true,
+  durationMinutes: 720,
   assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' as const }],
 }));
 
 const FATO06_WEEKEND_SLOTS: ServiceCoverageSlot[] = [6, 0].map((weekday) => ({
   weekday,
   startTime: '08:00',
-  endTime: '20:00',
-  active: true,
+  durationMinutes: 720,
   assignments: [],
 }));
 
@@ -41,8 +39,7 @@ describe('computeServiceCoverage', () => {
       {
         weekday: 1,
         startTime: '08:00',
-        endTime: '12:00',
-        active: true,
+        durationMinutes: 240,
         assignments: [
           { validFrom: '2026-09-01', validTo: '2026-10-04', status: 'ACTIVE' },
           { validFrom: '2026-10-05', validTo: null, status: 'ACTIVE' },
@@ -74,7 +71,7 @@ describe('computeServiceCoverage', () => {
     const result = computeServiceCoverage({
       contractedHours: { weekly: 120, authorized: null },
       slots: [
-        { weekday: 1, startTime: '08:00', endTime: '20:00', active: true, assignments: [] },
+        { weekday: 1, startTime: '08:00', durationMinutes: 720, assignments: [] },
       ],
       asOf: '2026-09-28',
     });
@@ -86,8 +83,7 @@ describe('computeServiceCoverage', () => {
     const slotWith = (validFrom: string, validTo: string | null, status: ItineraryAssignmentStatus): ServiceCoverageSlot => ({
       weekday: 1,
       startTime: '08:00',
-      endTime: '12:00',
-      active: true,
+      durationMinutes: 240,
       assignments: [{ validFrom, validTo, status }],
     });
 
@@ -153,8 +149,7 @@ describe('computeServiceCoverage', () => {
         {
           weekday: 1,
           startTime: '08:00',
-          endTime: '12:00',
-          active: true,
+          durationMinutes: 240,
           assignments: [
             { validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
             { validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
@@ -166,31 +161,28 @@ describe('computeServiceCoverage', () => {
     expect(r.cobertas).toBe(4);
   });
 
-  it('slot active:false com alocação vigente pendurada → NÃO conta, mas aparece em slots[] com covered:false', () => {
+  it('soma durationMinutes, não fim − início', () => {
     const r = computeServiceCoverage({
       contractedHours: { weekly: null, authorized: null },
       slots: [
         {
-          weekday: 1,
-          startTime: '08:00',
-          endTime: '12:00',
-          active: false,
+          weekday: 6,
+          startTime: '20:00',
+          durationMinutes: 720, // turno noturno: 20:00 → 08:00 do dia seguinte (fim − início daria negativo)
           assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
         },
       ],
       asOf: '2026-09-28',
     });
-    expect(r.cobertas).toBe(0);
-    expect(r.slots).toHaveLength(1);
-    expect(r.slots[0]!.covered).toBe(false);
+    expect(r.cobertas).toBe(12);
+    expect(r.slots[0]!.hours).toBe(12);
   });
 
   it('frações: 08:00-08:20 × 3 slots vigentes → 1 (exato, sem deriva de ponto flutuante)', () => {
     const slot = (weekday: number): ServiceCoverageSlot => ({
       weekday,
       startTime: '08:00',
-      endTime: '08:20',
-      active: true,
+      durationMinutes: 20,
       assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
     });
     const r = computeServiceCoverage({
@@ -208,8 +200,7 @@ describe('computeServiceCoverage', () => {
         {
           weekday: 1,
           startTime: '08:00',
-          endTime: '12:00',
-          active: true,
+          durationMinutes: 240,
           assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
         },
       ],
@@ -273,8 +264,7 @@ describe('DX-7.4 — ServiceCoverageCalculator não se confunde com AddressAvail
       slots: [1, 2, 3, 4, 5].map((weekday) => ({
         weekday,
         startTime: '08:00',
-        endTime: '16:00',
-        active: true,
+        durationMinutes: 480,
         assignments: [], // 0 alocação: a vaga existe (ocupa o endereço), ninguém está alocado ainda
       })),
       asOf: '2026-09-28',

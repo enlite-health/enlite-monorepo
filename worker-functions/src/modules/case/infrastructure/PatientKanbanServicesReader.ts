@@ -20,6 +20,7 @@ import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow, ItineraryUncoveredAbsenceRow } from './PatientItineraryReader';
 import { liveVacancySelect } from './liveVacancySql';
 import { uncoveredAbsenceSelect } from './absenceSql';
+import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
 
 export interface KanbanServiceRow {
   id: string;
@@ -50,8 +51,8 @@ interface KanbanJoinRow {
   slot_id: string | null;
   weekday: number | null;
   start_time: string | null;
+  duration_minutes: number | null;
   end_time: string | null;
-  active: boolean | null;
   assignment_id: string | null;
   worker_id: string | null;
   application_id: string | null;
@@ -99,12 +100,12 @@ export class PatientKanbanServicesReader {
        )
        SELECT svc.patient_id, svc.country, svc.id AS service_id, svc.service_code, svc.weekly_hours, svc.authorized_hours,
               live.id AS live_vacancy_id,
-              s.id AS slot_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, to_char(s.end_time,'HH24:MI') AS end_time, s.active,
+              s.id AS slot_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, s.duration_minutes, ${slotEndTimeSql('s')} AS end_time,
               a.id AS assignment_id, a.worker_id, a.application_id,
               to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to, a.status
          FROM svc
          LEFT JOIN live ON live.contracted_service_id = svc.id
-         LEFT JOIN patient_itinerary_slot s ON s.contracted_service_id = svc.id
+         LEFT JOIN patient_itinerary_slot s ON s.contracted_service_id = svc.id AND ${slotVigenteSql('s')}
          LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
         ORDER BY svc.patient_id, svc.created_at, svc.id, s.weekday, s.start_time, a.valid_from`,
       [country, patientId],
@@ -133,8 +134,8 @@ export class PatientKanbanServicesReader {
           contractedServiceId: r.service_id,
           weekday: r.weekday as number,
           startTime: r.start_time as string,
+          durationMinutes: r.duration_minutes as number,
           endTime: r.end_time as string,
-          active: r.active as boolean,
           assignmentId: r.assignment_id,
           workerId: r.worker_id,
           applicationId: r.application_id,

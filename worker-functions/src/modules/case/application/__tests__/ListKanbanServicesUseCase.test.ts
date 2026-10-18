@@ -35,7 +35,7 @@ describe('ListKanbanServicesUseCase', () => {
         slots: [
           // svc-a: slot seg 08-12 com alocação ACTIVE vigente (validFrom passado, sem fim).
           {
-            id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
             assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
           },
           // svc-b: nenhuma linha de slot (serviço sem faixa nenhuma).
@@ -68,7 +68,7 @@ describe('ListKanbanServicesUseCase', () => {
         services: [{ id: 'svc-a', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v' }],
         slots: [
           {
-            id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
             assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: '2026-09-10', status: 'ENDED',
           },
         ],
@@ -93,7 +93,7 @@ describe('ListKanbanServicesUseCase', () => {
         ],
         slots: [
           {
-            id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
             assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
           },
         ],
@@ -138,7 +138,7 @@ describe('ListKanbanServicesUseCase', () => {
         services: [{ id: 'svc-1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: null }],
         slots: [
           {
-            id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
             assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
           },
         ],
@@ -184,7 +184,7 @@ describe('ListKanbanServicesUseCase', () => {
         services: [{ id: 'svc-a', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v' }],
         slots: [
           {
-            id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
             assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
           },
         ],

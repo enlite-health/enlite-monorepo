@@ -41,8 +41,9 @@ export interface PatientItinerarySlot {
   id: string;
   weekday: number;
   startTime: string;
+  durationMinutes: number;
+  /** DERIVADO (início + duração). */
   endTime: string;
-  active: boolean;
   assignments: PatientItineraryAssignment[];
 }
 

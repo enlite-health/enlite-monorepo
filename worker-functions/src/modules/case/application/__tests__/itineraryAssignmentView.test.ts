@@ -11,7 +11,7 @@ const AS_OF = '2026-09-27';
 
 function slotRow(over: Partial<ItinerarySlotRow> & { id: string }): ItinerarySlotRow {
   return {
-    contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+    contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
     assignmentId: null, workerId: null, applicationId: null, validFrom: null, validTo: null, status: null,
     ...over,
   };

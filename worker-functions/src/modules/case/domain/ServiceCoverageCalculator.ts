@@ -10,8 +10,6 @@
  * não declara período — por isso `contratadas` é copiado, nunca calculado, e esta função não
  * compara os dois nem devolve "faltam" (quem monta o par é a Fase 8, depois da rota).
  */
-import { slotMinutes } from './ItinerarySchedule';
-
 /**
  * Tipo nominal: o valor só nasce dentro de `computeServiceCoverage` (`as ServiceWeeklyCoveredHours`
  * num lugar só). Impede que outra grandeza (ex: a ocupação por endereço, `number` cru) seja
@@ -37,11 +35,11 @@ export interface ServiceCoverageAssignment {
 export interface ServiceCoverageSlot {
   weekday: number;
   startTime: string;
-  endTime: string;
-  active: boolean;
+  durationMinutes: number;
   assignments: readonly ServiceCoverageAssignment[];
 }
 
+/** PRÉ-CONDIÇÃO: `slots` são as faixas VIGENTES em `asOf` (o leitor filtra com `slotVigenteSql`). */
 export interface ServiceCoverageInput {
   contractedHours: { weekly: number | null; authorized: number | null };
   slots: readonly ServiceCoverageSlot[];
@@ -69,7 +67,7 @@ export function isVigente(assignment: ServiceCoverageAssignment, asOf: string): 
 }
 
 /**
- * `covered` = slot `active` e ≥ 1 alocação vigente (N prestadores vigentes no mesmo slot contam o
+ * `covered` = ≥ 1 alocação vigente (N prestadores vigentes no mesmo slot contam o
  * slot uma vez só — P2, não multiplica horas). `cobertas` = soma dos MINUTOS dos slots `covered`,
  * dividida por 60 uma vez no fim (sem deriva de ponto flutuante por soma de frações).
  */
@@ -78,10 +76,10 @@ export function computeServiceCoverage(input: ServiceCoverageInput): ServiceCove
 
   let coveredMinutes = 0;
   const resultSlots: ServiceCoverageSlotResult[] = slots.map((slot) => {
-    const minutes = slotMinutes(slot.startTime, slot.endTime);
+    const minutes = slot.durationMinutes;
     const hours = minutes / 60;
     const hasVigente = slot.assignments.some((assignment) => isVigente(assignment, asOf));
-    const covered = slot.active && hasVigente;
+    const covered = hasVigente;
     if (covered) coveredMinutes += minutes;
     return { ...slot, hours, covered };
   });

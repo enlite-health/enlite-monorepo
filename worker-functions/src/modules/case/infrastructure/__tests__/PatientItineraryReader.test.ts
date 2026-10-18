@@ -72,8 +72,8 @@ describe('PatientItineraryReader', () => {
               contracted_service_id: 'svc-1',
               weekday: 1,
               start_time: '08:00',
+              duration_minutes: 240,
               end_time: '12:00',
-              active: true,
               assignment_id: 'asg-1',
               worker_id: 'w-1',
               application_id: 'wja-1',
@@ -101,8 +101,8 @@ describe('PatientItineraryReader', () => {
           contractedServiceId: 'svc-1',
           weekday: 1,
           startTime: '08:00',
+          durationMinutes: 240,
           endTime: '12:00',
-          active: true,
           assignmentId: 'asg-1',
           workerId: 'w-1',
           applicationId: 'wja-1',
@@ -172,7 +172,7 @@ describe('PatientItineraryReader', () => {
         return {
           rows: [
             {
-              id: 'slot-1', contracted_service_id: 'svc-1', weekday: 2, start_time: '08:00', end_time: '12:00', active: true,
+              id: 'slot-1', contracted_service_id: 'svc-1', weekday: 2, start_time: '08:00', duration_minutes: 240, end_time: '12:00',
               assignment_id: null, worker_id: null, application_id: null, valid_from: null, valid_to: null, status: null,
               first_name_encrypted: null, last_name_encrypted: null,
             },
@@ -188,6 +188,21 @@ describe('PatientItineraryReader', () => {
     console.log('[12.7]', 'slots', result?.slots.length);
     expect(result?.slots).toHaveLength(1);
     expect(result?.slots[0]).toMatchObject({ assignmentId: null, firstNameEncrypted: null, lastNameEncrypted: null });
+  });
+
+  it('filtra por vigência', async () => {
+    queryImpl = async (sql) => {
+      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    };
+
+    await reader.readPatientItinerary(PID);
+
+    const slotsQuery = calls().find((x) => /FROM patient_itinerary_slot/.test(x.sql));
+    expect(slotsQuery?.sql).toContain('valid @> CURRENT_DATE');
+    expect(slotsQuery?.sql).not.toMatch(/\bs\.active/); // pcs.active (serviço) segue; s.active (faixa) não existe mais
+    expect(slotsQuery?.sql).not.toMatch(/\bs\.end_time/);
+    expect(slotsQuery?.sql).toContain('s.duration_minutes');
   });
 
   it('gate parcial #1: a ausência descoberta só conta sobre alocação ACTIVE e vigente na data (fragmento único absenceSql)', async () => {
