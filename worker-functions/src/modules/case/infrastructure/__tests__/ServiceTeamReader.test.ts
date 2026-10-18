@@ -123,7 +123,7 @@ describe('ServiceTeamReader', () => {
               allocation_id: 'alloc-2',
               weekday: 1,
               start_time: '08:00',
-              end_time: '12:00',
+              slot_end: '12:00',
             },
           ],
           marks: [

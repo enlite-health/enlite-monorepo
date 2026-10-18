@@ -14,7 +14,8 @@ registry.registerPath({
     'Horas cobertas por serviço contratado, do itinerário semanal (`patient_itinerary_slot` + ' +
     '`patient_itinerary_assignment`). `cobertas` em horas/semana; `contratadas.authorized` não ' +
     'declara período (é copiado, nunca calculado). Sem backfill: serviço cujo horário não foi ' +
-    'salvo depois da migration 480 aparece com `slots: []`. `alerts: [{ serviceId, date, ' +
+    'salvo depois da migration 480 aparece com `slots: []`. `slots[]` traz só faixas vigentes: ' +
+    '`{ id, weekday, startTime, endTime, durationMinutes, assignments }` (`endTime` derivado de início + duração; sem `active`). `alerts: [{ serviceId, date, ' +
     'startTime, endTime }]` (fase 13): ausência sem substituto, data ≥ hoje (Buenos Aires); sem nome. ' +
     '`assembledAt` (ISO UTC, `null` = nunca montado): `max(assembled_at)` de `patient_itinerary_assembly`. ' +
     'Fase 12: cada alocação traz `allocationId` e `displayName` (só vigente; `null` sem `worker_contact:read`).',

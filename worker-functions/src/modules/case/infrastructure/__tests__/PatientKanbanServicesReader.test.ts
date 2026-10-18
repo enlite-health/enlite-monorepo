@@ -168,7 +168,7 @@ describe('PatientKanbanServicesReader', () => {
       if (/FROM patient_itinerary_absence/.test(sql)) {
         // Só p-1 tem ausência sem substituto; p-2 fica sem a chave.
         return {
-          rows: [{ patient_id: 'p-1', contracted_service_id: 's1', on_date: '2026-10-05', start_time: '08:00', end_time: '12:00' }],
+          rows: [{ patient_id: 'p-1', contracted_service_id: 's1', on_date: '2026-10-05', start_time: '08:00', slot_end: '12:00' }],
           rowCount: 1,
         };
       }

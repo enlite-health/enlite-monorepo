@@ -46,7 +46,7 @@ const FELIZ = {
           weekday: 1,
           startTime: '08:00',
           endTime: '12:00',
-          active: true,
+          durationMinutes: 240,
           assignments: [
             {
               workerId: WORKER_ID,

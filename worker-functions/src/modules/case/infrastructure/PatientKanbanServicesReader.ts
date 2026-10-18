@@ -66,7 +66,7 @@ interface UncoveredAbsenceJoinRow {
   contracted_service_id: string;
   on_date: string;
   start_time: string;
-  end_time: string;
+  slot_end: string;
 }
 
 export class PatientKanbanServicesReader {
@@ -167,7 +167,7 @@ export class PatientKanbanServicesReader {
         serviceId: r.contracted_service_id,
         date: r.on_date,
         startTime: r.start_time,
-        endTime: r.end_time,
+        endTime: r.slot_end,
       });
     }
 

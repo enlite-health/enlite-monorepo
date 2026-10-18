@@ -25,6 +25,7 @@ import { inPatientTransaction } from '../application/patientTransaction';
 import { liveVacancySelect } from './liveVacancySql';
 import { liveAbsencePredicate } from './absenceSql';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { slotEndTimeSql } from '@shared/sql/serviceScheduleSql';
 import { ALLOCATION_POOL_STAGES } from '../domain/deriveServiceTeam';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
 
@@ -114,7 +115,7 @@ interface AllocJson {
   allocation_id: string;
   weekday: number;
   start_time: string;
-  end_time: string;
+  slot_end: string;
 }
 
 interface MarkJson {
@@ -167,7 +168,7 @@ export class ServiceTeamReader {
          SELECT a.worker_id, s.contracted_service_id AS service_id, wja.job_posting_id AS vacancy_id,
                 to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to, a.status,
                 w.first_name_encrypted, w.last_name_encrypted,
-                a.id AS allocation_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, to_char(s.end_time,'HH24:MI') AS end_time
+                a.id AS allocation_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, ${slotEndTimeSql('s')} AS slot_end
            FROM patient_itinerary_assignment a
            JOIN patient_itinerary_slot s ON s.id = a.slot_id AND s.contracted_service_id = $2
            JOIN worker_job_applications wja ON wja.id = a.application_id
@@ -224,7 +225,7 @@ export class ServiceTeamReader {
         allocationId: a.allocation_id,
         weekday: a.weekday,
         startTime: a.start_time,
-        endTime: a.end_time,
+        endTime: a.slot_end,
       })),
       marks: row.marks.map((m) => ({
         workerId: m.worker_id,

@@ -30,9 +30,9 @@ export const patientItinerarySlotSchema = z.object({
   weekday: z.number().int().min(0).max(6),
   startTime: z.string(),
   endTime: z.string(),
-  active: z.boolean(),
+  durationMinutes: z.number().int().min(1).max(1440),
   assignments: z.array(patientItineraryAssignmentSchema),
-});
+}).strict();
 
 export const patientItineraryServiceSchema = z.object({
   contractedServiceId: z.string().uuid(),
