@@ -54,7 +54,7 @@ test.describe('vacancy-servico-horario-link — F4 (vaga-le-do-servico-contratad
         providersNeeded: 1,
         careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
-        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       },
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);
@@ -105,7 +105,7 @@ test.describe('vacancy-servico-horario-link — F4 (vaga-le-do-servico-contratad
   test('3. serviço muda o horário com a vaga publicada → faixa de aviso; "marcar como atendido" fecha e a faixa some', async ({ page, request }) => {
     const patch = await request.patch(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}`, {
       headers: AUTH_HEADERS,
-      data: { schedule: [{ dayOfWeek: 3, startTime: '09:00', endTime: '13:00' }] },
+      data: { schedule: [{ dayOfWeek: 3, startTime: '09:00', durationMinutes: 240 }] },
     });
     expect(patch.ok(), `PATCH do serviço falhou: ${patch.status()} ${await patch.text()}`).toBe(true);
 

@@ -220,7 +220,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
         providersNeeded: 1,
         careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
-        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       },
     });
     expect(svcRes.ok(), `POST contracted-services falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);

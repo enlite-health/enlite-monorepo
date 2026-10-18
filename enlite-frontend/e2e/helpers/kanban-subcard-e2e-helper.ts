@@ -3,7 +3,7 @@
  *
  * Helpers do e2e de TELA do subcard do Kanban de pacientes (Fase 8, change
  * cadeia-paciente-vacante-itinerario, P15 — DX-8.12): abrir o board, ler o par
- * `cobertas/contratadas` do DOM por serviço, montar o MESMO par a partir do corpo
+ * `cobertas/horário` do DOM por serviço, montar o MESMO par a partir do corpo
  * de `GET /patients/:id/itinerary` (o par do subcard vem do itinerário, e só dele —
  * DX-8.17) e contar as requisições de dados por carga do board (DX-8.14, "sem N+1").
  *
@@ -39,7 +39,7 @@ export async function readSubcardPair(page: Page, serviceId: string): Promise<st
 /**
  * O MESMO par `X/Y` que o subcard mostra, calculado a partir do corpo de
  * `GET /patients/:id/itinerary` — a régua da DX-8.17: "o par da tela vem do
- * itinerário, e só dele". `contratadas.weekly` null vira `—`, igual ao componente
+ * itinerário, e só dele". o denominador é `scheduleHours` (soma das faixas), igual ao componente
  * (`PatientKanbanSubcards.tsx`).
  */
 export function pairFromItinerary(body: ItineraryResponseDto, serviceId: string): string {
@@ -47,7 +47,7 @@ export function pairFromItinerary(body: ItineraryResponseDto, serviceId: string)
   if (!service) {
     throw new Error(`pairFromItinerary: serviço ${serviceId} não encontrado no itinerário`);
   }
-  return `${service.cobertas}/${service.contratadas.weekly ?? '—'}`;
+  return `${service.cobertas}/${service.scheduleHours}`;
 }
 
 /**

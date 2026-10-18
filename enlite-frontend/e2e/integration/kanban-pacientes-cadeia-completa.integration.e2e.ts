@@ -431,7 +431,7 @@ test.describe('cadeia-completa @integration', () => {
         console.log('[16.p7]', early.status(), body.code, body.minGapMinutes !== null, late.status(), active);
       });
 
-      await test.step('passo 8 — na tela do Kanban de X: o par cobertas/contratadas do subcard do serviço 1 e a coluna mudaram por causa do passo 6, sem ninguém arrastar card (invariante 3)', async () => {
+      await test.step('passo 8 — na tela do Kanban de X: o par cobertas/horário do subcard do serviço 1 e a coluna mudaram por causa do passo 6, sem ninguém arrastar card (invariante 3)', async () => {
         const state = await readKanbanState(page, X.patientId, X.service1Id);
         const s2Pair = await readSubcardPair(page, X.service2Id);
         par1 = pairFromItinerary(itineraryData(await readItineraryApi(request, X.patientId)), X.service1Id);

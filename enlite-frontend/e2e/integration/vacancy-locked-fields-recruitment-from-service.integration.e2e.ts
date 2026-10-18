@@ -53,7 +53,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
       headers: AUTH_HEADERS,
       data: {
         serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
-        addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+        addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       },
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);

@@ -55,7 +55,8 @@ export interface ItinerarySlotDto {
 
 export interface ItineraryServiceDto {
   contractedServiceId: string;
-  contratadas: { weekly: number | null; authorized: number | null };
+  /** Soma das faixas do serviço (horas/semana) — spec 056; `contratadas` não existe mais. */
+  scheduleHours: number;
   cobertas: number;
   slots: ItinerarySlotDto[];
 }

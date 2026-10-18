@@ -196,7 +196,7 @@ export function collectRequests(page: Page): () => CadeiaRequestTally {
   return () => ({ forbidden: [...forbidden], observedHits, apiHits, dataRequests: dataRequests() });
 }
 
-/** Coluna do card do paciente no Kanban + o par `cobertas/contratadas` do subcard do serviço. */
+/** Coluna do card do paciente no Kanban + o par `cobertas/horário` do subcard do serviço. */
 export async function readKanbanState(page: Page, patientId: string, serviceId: string): Promise<{ column: string; pair: string }> {
   return { column: await readPatientKanbanColumn(page, patientId), pair: await readSubcardPair(page, serviceId) };
 }

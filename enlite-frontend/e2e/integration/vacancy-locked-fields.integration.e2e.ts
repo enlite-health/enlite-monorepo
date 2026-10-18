@@ -28,7 +28,7 @@ const MOCK_ADMIN = {
 };
 const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
 // Horário do serviço contratado — a ÚNICA fonte do horário da vaga (F2: o foguete não o copia).
-const SERVICE_SCHEDULE = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+const SERVICE_SCHEDULE = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
 // O GET da vaga devolve o horário no formato da VAGA (`normalizeSchedule`: dayOfWeek 1 → 'lunes'), não no do serviço.
 const EXPECTED_VACANCY_SCHEDULE = { lunes: [{ start: '08:00', end: '12:00' }] };
 const AUTH_HEADERS = {
