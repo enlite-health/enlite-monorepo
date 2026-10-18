@@ -16,6 +16,7 @@ import { PatientQueryRepository } from '@modules/case/infrastructure/PatientQuer
 import { computePatientCompleteness, ACTIVATABLE_STATUSES, patientNeedsAttentionSql } from '@modules/case/domain/PatientCompleteness';
 import type { AdminPatientsListParams } from '@modules/case/interfaces/validators/adminPatientsListSchema';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'C1B-attention-%';
@@ -180,10 +181,10 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                         LEFT JOIN patient_addresses sa ON sa.id = s.address_id AND sa.archived_at IS NULL
                        WHERE s.patient_id = p.id AND s.active AND sa.id IS NULL))::int AS svc_noaddr,
-             -- Decisão do Gabriel 07/09: serviço ativo sem horário (NULL ou array vazio).
+             -- Decisão do Gabriel 07/09: serviço ativo sem horário — spec 056: nenhuma faixa vigente (mesmo fragmento de produção).
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                        WHERE s.patient_id = p.id AND s.active
-                         AND (s.schedule IS NULL OR jsonb_array_length(s.schedule) = 0)))::int AS svc_nosched,
+                         AND ${serviceWithoutScheduleSql('s')}))::int AS svc_nosched,
              ${patientNeedsAttentionSql('p')} AS sql_flag
         FROM patients p
        WHERE p.deleted_at IS NULL`);

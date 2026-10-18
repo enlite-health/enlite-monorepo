@@ -3,9 +3,10 @@
  * chega à ficha com código e estado, REDIGIDA por `vacancy:read`.
  *
  * Postgres real, SQL real, sem mock. O paciente tem 3 serviços:
- *   A — 1 vaga viva, com link do site NO FORMATO REAL DE PRD (objeto `{id,url}`);
- *   B — sem vaga VIVA (só uma vaga CLOSED, que não conta como viva — e o índice 530, uma vaga não apagada por
- *       serviço, impede de pô-la ao lado da viva de A);
+ *   A — 1 vaga viva (SEARCHING), com link do site NO FORMATO REAL DE PRD (objeto `{id,url}`), mais uma vaga CLOSED
+ *       APAGADA (`deleted_at`) que não conta. A intenção antiga "a mais antiga entre DUAS vivas do mesmo serviço" não
+ *       existe mais: o índice 530 (⚑E/056) admite uma vaga não apagada por serviço, e CLOSED não apagada conta como viva;
+ *   B — sem nenhuma vaga não apagada;
  *   C — 1 vaga viva SEM link do site (`social_short_links` vazio).
  * A vaga nunca é lida de `jp.case_number` (a coluna fica NULL de propósito): o caso vem do PACIENTE
  * (fragmento com dono, spec 046) — se alguém voltar a ler a cópia, o `caseNumber` do teste vira null.
@@ -65,13 +66,13 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     await pool.query(`DELETE FROM patient_contracted_services WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id = $1)`, [TASK]);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id = $1`, [TASK]);
   };
-  const seedVaga = async (serviceId: string, ordinal: number, status: string, idade: string, links: string): Promise<string> =>
+  const seedVaga = async (serviceId: string, ordinal: number, status: string, idade: string, links: string, apagada = false): Promise<string> =>
     (await pool.query<{ id: string }>(
       `INSERT INTO job_postings (vacancy_number, title, description, patient_id, contracted_service_id, case_ordinal,
-          required_professions, status, is_draft, is_test, country, social_short_links, created_at, updated_at)
+          required_professions, status, is_draft, is_test, country, social_short_links, created_at, updated_at, deleted_at)
        VALUES (nextval('job_postings_vacancy_number_seq'), $1, '', $2, $3, $4, '{}'::text[], $5, false, true, 'AR', $6::jsonb,
-          NOW() - $7::interval, NOW() - $7::interval) RETURNING id`,
-      [`CASO E2E 047 ${ordinal}`, patientId, serviceId, ordinal, status, links, idade],
+          NOW() - $7::interval, NOW() - $7::interval, CASE WHEN $8::boolean THEN NOW() ELSE NULL END) RETURNING id`,
+      [`CASO E2E 047 ${ordinal}`, patientId, serviceId, ordinal, status, links, idade, apagada],
     )).rows[0].id;
   const seedService = async (): Promise<string> =>
     (await pool.query<{ id: string }>(
@@ -92,8 +93,8 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     svc.B = await seedService();
     svc.C = await seedService();
     vaga.Aold = await seedVaga(svc.A, 1, 'SEARCHING', '2 days', linkPrd(SITE));
-    // CLOSED em OUTRO serviço (B): a mig. 530 só admite UMA vaga não apagada por serviço, CLOSED conta.
-    vaga.Ayoung = await seedVaga(svc.B, 2, 'CLOSED', '1 hour', linkPrd('https://exemplo.test/outra'));
+    // CLOSED APAGADA no mesmo serviço A: a mig. 530 só admite UMA vaga não apagada por serviço (CLOSED não apagada conta).
+    vaga.Ayoung = await seedVaga(svc.A, 2, 'CLOSED', '1 hour', linkPrd('https://exemplo.test/outra'), true);
     vaga.C = await seedVaga(svc.C, 3, 'SEARCHING', '1 day', '{}');
   });
 
