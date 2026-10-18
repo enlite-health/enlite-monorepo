@@ -24,6 +24,7 @@ import {
   type ItinerarySlotLookup,
 } from '../infrastructure/ItinerarySlotWriter';
 import type { VigentSlot } from '../infrastructure/ServiceSlotWriter';
+import { PatientStatusDerivation, type PatientStatusDerivationPort } from './PatientStatusDerivation';
 
 /** Serviço inexistente, de outro paciente, ou inativo — o controller mapeia para 404. */
 export class ItineraryServiceNotFoundError extends Error {
@@ -133,6 +134,8 @@ export class ItinerarySlotWriteUseCase {
   constructor(
     private readonly writer: ItinerarySlotWriterPort = new ItinerarySlotWriter(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    /** ⚑13 (spec 056): o denominador da régua mudou → o estado do paciente é recalculado na MESMA transação. */
+    private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
   ) {}
 
   async create(input: ItinerarySlotCreateInput): Promise<ItinerarySlotRow> {
@@ -146,7 +149,9 @@ export class ItinerarySlotWriteUseCase {
       if (vigentes.some((v) => sameKey(v, key))) throw new SlotAlreadyExistsError(serviceId, key);
 
       const newId = await this.writer.openSlot(client, serviceId, key, hoje, actorUid);
-      return this.mustFind(client, serviceId, newId, hoje);
+      const created = await this.mustFind(client, serviceId, newId, hoje);
+      await this.derivation.run(client, patientId, now);
+      return created;
     });
   }
 
@@ -168,7 +173,9 @@ export class ItinerarySlotWriteUseCase {
       // Fechar ANTES de abrir; 23P01 no `openSlot` propaga e a transação desfaz o fechamento.
       await this.writer.closeSlot(client, slotId, hoje, actorUid);
       const newId = await this.writer.openSlot(client, serviceId, newKey, hoje, actorUid);
-      return this.mustFind(client, serviceId, newId, hoje);
+      const updated = await this.mustFind(client, serviceId, newId, hoje);
+      await this.derivation.run(client, patientId, now);
+      return updated;
     });
   }
 
@@ -179,6 +186,7 @@ export class ItinerarySlotWriteUseCase {
       const hoje = operationDateOf(service.country, now);
       await this.resolveSlot(client, serviceId, slotId, hoje);
       await this.writer.closeSlot(client, slotId, hoje, actorUid);
+      await this.derivation.run(client, patientId, now);
     });
   }
 

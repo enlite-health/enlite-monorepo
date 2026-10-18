@@ -23,6 +23,7 @@ import {
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
 import { replaceServiceSlots } from './ServiceSlotWriter';
+import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
 import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
 
 /**
@@ -235,6 +236,8 @@ export class PatientContractedServiceRepository {
     private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
     /** Injeção só para o unitário; os call sites de produção não mudam — o default é o escritor real das faixas. */
     private readonly replaceSlots: typeof replaceServiceSlots = replaceServiceSlots,
+    /** ⚑13 (spec 056): editar o horário muda o denominador da régua → recalcula o estado na MESMA transação. */
+    private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
   ) {}
 
   private get pool(): Pool {
@@ -483,7 +486,12 @@ export class PatientContractedServiceRepository {
           await this.replaceSlots(cli, serviceId, patch.schedule ?? null, patch.actorUid);
         }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
-        return sel.rows[0] ?? null;
+        const updated = sel.rows[0] ?? null;
+        // Passo 7 (P§6): derivação no fim da transação. Erro (≠ NotReady, absorvido pela própria classe) desfaz tudo.
+        if (patch.schedule !== undefined && updated !== null) {
+          await this.derivation.run(cli, updated.patient_id, new Date());
+        }
+        return updated;
       });
       if (row === null) return null;
       return this.decorate(row, this.pool);
