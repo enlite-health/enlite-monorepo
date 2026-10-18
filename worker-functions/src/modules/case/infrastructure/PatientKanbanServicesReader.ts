@@ -52,7 +52,7 @@ interface KanbanJoinRow {
   weekday: number | null;
   start_time: string | null;
   duration_minutes: number | null;
-  end_time: string | null;
+  slot_end: string | null;
   assignment_id: string | null;
   worker_id: string | null;
   application_id: string | null;
@@ -100,7 +100,7 @@ export class PatientKanbanServicesReader {
        )
        SELECT svc.patient_id, svc.country, svc.id AS service_id, svc.service_code, svc.weekly_hours, svc.authorized_hours,
               live.id AS live_vacancy_id,
-              s.id AS slot_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, s.duration_minutes, ${slotEndTimeSql('s')} AS end_time,
+              s.id AS slot_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, s.duration_minutes, ${slotEndTimeSql('s')} AS slot_end,
               a.id AS assignment_id, a.worker_id, a.application_id,
               to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to, a.status
          FROM svc
@@ -135,7 +135,7 @@ export class PatientKanbanServicesReader {
           weekday: r.weekday as number,
           startTime: r.start_time as string,
           durationMinutes: r.duration_minutes as number,
-          endTime: r.end_time as string,
+          endTime: r.slot_end as string,
           assignmentId: r.assignment_id,
           workerId: r.worker_id,
           applicationId: r.application_id,

@@ -1,6 +1,6 @@
 /**
  * ServiceSlotWriter — ÚNICO escritor das faixas semanais do serviço contratado (spec 056, plan.md §6;
- * substitui `PatientItinerarySlotSync`). `patient_itinerary_slot` é o dono do horário: mudar o horário
+ * substitui o antigo sync por `schedule`). `patient_itinerary_slot` é o dono do horário: mudar o horário
  * = FECHAR a faixa que sai (`valid = daterange(lower, hoje)`) e ABRIR a nova (`[hoje, )`), na MESMA
  * transação do chamador. Nunca `DELETE` (a alocação aponta para a faixa; REVOKE DELETE da 480) e
  * nunca reativa linha: a faixa fechada fica como histórico.

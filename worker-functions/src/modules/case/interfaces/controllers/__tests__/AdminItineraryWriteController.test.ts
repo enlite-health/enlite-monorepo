@@ -8,6 +8,7 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn(), logger: { info: je
 jest.mock('@shared/audit/contactAccessFromRequest', () => ({ emitirTrilhaDeContato: jest.fn() }));
 jest.mock('@modules/identity', () => ({ AuthMiddleware: { getAuthContext: jest.fn() } }));
 
+import { ServiceSlotOverlapError } from '../../../infrastructure/ServiceSlotWriter';
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
@@ -46,7 +47,7 @@ const SERVICE_ID = '22222222-2222-2222-2222-222222222222';
 const SLOT_ID = '33333333-3333-3333-3333-333333333333';
 const ALLOCATION_ID = '44444444-4444-4444-4444-444444444444';
 const WORKER_ID = '55555555-5555-5555-5555-555555555555';
-const SLOT_BODY = { weekday: 1, startTime: '08:00', endTime: '12:00' };
+const SLOT_BODY = { weekday: 1, startTime: '08:00', durationMinutes: 240 };
 
 function reqRes(params: Record<string, unknown> = {}, body: Record<string, unknown> = {}, actorId: string | null = 'staff-1'): [Request, Response] {
   const json = jest.fn().mockReturnThis();
@@ -133,7 +134,10 @@ describe('AdminItineraryWriteController', () => {
     it.each([
       ['dia 7', { ...SLOT_BODY, weekday: 7 }],
       ['hora sem 2 dígitos', { ...SLOT_BODY, startTime: '8:00' }],
-      ['fim = início', { ...SLOT_BODY, endTime: SLOT_BODY.startTime }],
+      ['duração 0', { ...SLOT_BODY, durationMinutes: 0 }],
+      ['duração 1441', { ...SLOT_BODY, durationMinutes: 1441 }],
+      ['endTime no corpo (.strict)', { ...SLOT_BODY, endTime: '12:00' }],
+      ['sem durationMinutes', { weekday: 1, startTime: '08:00' }],
     ])('corpo inválido (%s) → 400', async (_titulo, body) => {
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, body);
       await ctrl.createSlot(req, res);
@@ -150,7 +154,7 @@ describe('AdminItineraryWriteController', () => {
     });
 
     it('feliz → 201 { success:true, data }, chama o caso de uso com o ator', async () => {
-      const slotRow = { id: SLOT_ID, ...SLOT_BODY, active: true };
+      const slotRow = { id: SLOT_ID, ...SLOT_BODY, endTime: '12:00' };
       slotUseCase.create.mockResolvedValueOnce(slotRow);
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, SLOT_BODY);
       await ctrl.createSlot(req, res);
@@ -161,6 +165,7 @@ describe('AdminItineraryWriteController', () => {
 
     it.each([
       [new SlotAlreadyExistsError(SERVICE_ID, SLOT_BODY), 409, { success: false, code: 'SLOT_ALREADY_EXISTS' }],
+      [new ServiceSlotOverlapError(SERVICE_ID), 409, { success: false, code: 'SLOT_OVERLAP' }],
       [new ServiceWithoutAddressError(SERVICE_ID), 422, { success: false, code: 'SERVICE_WITHOUT_ADDRESS' }],
       [new ItineraryServiceNotFoundError(PATIENT_ID, SERVICE_ID), 404, { success: false, code: 'NOT_FOUND' }],
     ])('%p → status %i', async (err, status, body) => {
@@ -203,19 +208,20 @@ describe('AdminItineraryWriteController', () => {
     });
 
     it('feliz → 200 { success:true, data }', async () => {
-      const slotRow = { id: SLOT_ID, weekday: 2, startTime: '09:00', endTime: '13:00', active: true };
+      const slotRow = { id: SLOT_ID, weekday: 2, startTime: '09:00', durationMinutes: 240, endTime: '13:00' };
       slotUseCase.update.mockResolvedValueOnce(slotRow);
-      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, slotId: SLOT_ID }, { weekday: 2, startTime: '09:00', endTime: '13:00' });
+      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, slotId: SLOT_ID }, { weekday: 2, startTime: '09:00', durationMinutes: 240 });
       await ctrl.updateSlot(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(jsonOf(res)).toHaveBeenCalledWith({ success: true, data: slotRow });
-      expect(slotUseCase.update).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, slotId: SLOT_ID, weekday: 2, startTime: '09:00', endTime: '13:00', actorUid: 'staff-1' });
+      expect(slotUseCase.update).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, slotId: SLOT_ID, weekday: 2, startTime: '09:00', durationMinutes: 240, actorUid: 'staff-1' });
     });
 
     it.each([
       [new SlotNotFoundError(SERVICE_ID, SLOT_ID), 404, { success: false, code: 'NOT_FOUND' }],
       [new SlotInactiveError(SERVICE_ID, SLOT_ID), 422, { success: false, code: 'SLOT_INACTIVE' }],
       [new SlotHasActiveAllocationError(SERVICE_ID, SLOT_ID), 422, { success: false, code: 'SLOT_HAS_ACTIVE_ALLOCATION' }],
+      [new ServiceSlotOverlapError(SERVICE_ID), 409, { success: false, code: 'SLOT_OVERLAP' }],
     ])('%p → status %i (SlotNotFoundError: classe própria de ItinerarySlotWriteUseCase, fora da lista literal da DX — mesma família)', async (err, status, body) => {
       slotUseCase.update.mockRejectedValueOnce(err);
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, slotId: SLOT_ID }, SLOT_BODY);

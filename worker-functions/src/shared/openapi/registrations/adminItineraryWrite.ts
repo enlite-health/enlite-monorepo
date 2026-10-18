@@ -14,11 +14,13 @@ const allocationParams = serviceParams.extend({ allocationId: z.string().uuid() 
 const patientParams = z.object({ id: z.string().uuid() });
 const substituteParams = serviceParams.extend({ absenceId: z.string().uuid() });
 
-const slotBody = z.object({
-  weekday: z.number().int().min(0).max(6),
-  startTime: z.string(),
-  endTime: z.string(),
-});
+const slotBody = z
+  .object({
+    weekday: z.number().int().min(0).max(6),
+    startTime: z.string().describe('HH:MM'),
+    durationMinutes: z.number().int().min(1).max(1440).describe('Duração do turno em minutos (1..1440). O fim é derivado: início + duração.'),
+  })
+  .strict();
 
 const allocationBody = z.object({ workerId: z.string().uuid() });
 
@@ -131,8 +133,9 @@ registry.registerPath({
   tags: ['Admin · Patients'],
   summary: 'Criar uma faixa semanal (slot) do itinerário do serviço',
   description:
-    'Edita o `schedule` do serviço e reusa `syncItinerarySlots` na mesma transação — a trava de sobreposição é do ' +
-    'banco; 409 traz os dois horários e, entre endereços, a folga mínima. Não move o paciente.',
+    'Abre uma faixa vigente a partir de hoje (`patient_itinerary_slot` é o dono do horário). Corpo: `weekday`, `startTime`, ' +
+    '`durationMinutes` (o fim é derivado). 409 `SLOT_ALREADY_EXISTS` (chave vigente igual) ou `SLOT_OVERLAP` (sobrepõe outra ' +
+    'faixa do serviço); entre prestadores, 409 traz os dois horários e a folga mínima. Não move o paciente.',
   security: [{ firebaseAuth: [] }],
   request: { params: serviceParams, body: { content: { 'application/json': { schema: slotBody } } } },
   responses: createResponses,
@@ -144,8 +147,8 @@ registry.registerPath({
   tags: ['Admin · Patients'],
   summary: 'Editar a faixa semanal (slot) do itinerário',
   description:
-    'Troca a chave (dia/horário) do slot pela nova, reescrevendo o `schedule`. Recusa se o slot tiver alocação ' +
-    'ativa vigente (encerre-a primeiro). A trava de sobreposição é do banco; não move o paciente.',
+    'Fecha a faixa vigente (vigente até ontem) e abre a nova a partir de hoje, na mesma transação. Recusa se a faixa ' +
+    'tiver alocação ativa vigente (encerre-a primeiro) ou já estiver fechada. 409 `SLOT_OVERLAP` desfaz tudo; não move o paciente.',
   security: [{ firebaseAuth: [] }],
   request: { params: slotParams, body: { content: { 'application/json': { schema: slotBody } } } },
   responses: actionResponses,
@@ -156,7 +159,7 @@ registry.registerPath({
   path: '/api/admin/patients/{id}/contracted-services/{sid}/itinerary/slots/{slotId}/end',
   tags: ['Admin · Patients'],
   summary: 'Encerrar a faixa semanal (slot) do itinerário',
-  description: 'Remove a chave do `schedule` do serviço. Recusa se o slot tiver alocação ativa vigente. Não move o paciente.',
+  description: 'Fecha a faixa (vigente até ontem); o histórico fica. Recusa se a faixa tiver alocação ativa vigente ou já estiver fechada. Não move o paciente.',
   security: [{ firebaseAuth: [] }],
   request: { params: slotParams },
   responses: actionResponses,

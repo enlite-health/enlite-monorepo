@@ -93,7 +93,7 @@ interface SlotJoinRow {
   weekday: number;
   start_time: string;
   duration_minutes: number;
-  end_time: string;
+  slot_end: string;
   assignment_id: string | null;
   worker_id: string | null;
   application_id: string | null;
@@ -142,7 +142,7 @@ export class PatientItineraryReader {
       `SELECT s.id, s.contracted_service_id, s.weekday,
               to_char(s.start_time, 'HH24:MI') AS start_time,
               s.duration_minutes,
-              ${slotEndTimeSql('s')} AS end_time,
+              ${slotEndTimeSql('s')} AS slot_end,
               a.id AS assignment_id, a.worker_id, a.application_id,
               to_char(a.valid_from, 'YYYY-MM-DD') AS valid_from,
               to_char(a.valid_to, 'YYYY-MM-DD') AS valid_to,
@@ -187,7 +187,7 @@ export class PatientItineraryReader {
         weekday: r.weekday,
         startTime: r.start_time,
         durationMinutes: r.duration_minutes,
-        endTime: r.end_time,
+        endTime: r.slot_end,
         assignmentId: r.assignment_id,
         workerId: r.worker_id,
         applicationId: r.application_id,

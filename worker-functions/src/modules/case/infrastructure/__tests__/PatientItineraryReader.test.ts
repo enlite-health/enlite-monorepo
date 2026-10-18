@@ -73,7 +73,7 @@ describe('PatientItineraryReader', () => {
               weekday: 1,
               start_time: '08:00',
               duration_minutes: 240,
-              end_time: '12:00',
+              slot_end: '12:00',
               assignment_id: 'asg-1',
               worker_id: 'w-1',
               application_id: 'wja-1',
@@ -172,7 +172,7 @@ describe('PatientItineraryReader', () => {
         return {
           rows: [
             {
-              id: 'slot-1', contracted_service_id: 'svc-1', weekday: 2, start_time: '08:00', duration_minutes: 240, end_time: '12:00',
+              id: 'slot-1', contracted_service_id: 'svc-1', weekday: 2, start_time: '08:00', duration_minutes: 240, slot_end: '12:00',
               assignment_id: null, worker_id: null, application_id: null, valid_from: null, valid_to: null, status: null,
               first_name_encrypted: null, last_name_encrypted: null,
             },

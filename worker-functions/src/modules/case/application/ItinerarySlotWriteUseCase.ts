@@ -1,24 +1,29 @@
 /**
- * ItinerarySlotWriteUseCase — Fase 11, DX-11.5 (caso de uso). Criar/editar/encerrar slot, tudo em
- * `inPatientTransaction` (molde `ServiceTeamMarkUseCase.ts`): serviço inexistente/de outro
- * paciente/inativo → `ItineraryServiceNotFoundError`; sem endereço → `ServiceWithoutAddressError`
- * (invariante 8, nas TRÊS ações); a chave já ATIVA no serviço (`create`, e `update` para a chave de
- * OUTRO slot) → `SlotAlreadyExistsError`;
- * slot inexistente/de outro serviço (`update`/`end`) → `SlotNotFoundError`; inativo →
- * `SlotInactiveError`; com alocação `ACTIVE` vigente em `hoje` → `SlotHasActiveAllocationError`
- * ("encerre a alocação primeiro" — editar/encerrar por baixo de alguém alocado mudaria o
- * compromisso sem passar pela trava do banco).
+ * ItinerarySlotWriteUseCase — Fase 11, DX-11.5 (caso de uso), reescrito na spec 056 (T1.7). Criar/editar/encerrar
+ * FAIXA do horário, tudo em `inPatientTransaction` (molde `ServiceTeamMarkUseCase.ts`): `patient_itinerary_slot` é o
+ * dono do horário, então escrever = abrir/fechar faixa (vigência `valid`), nunca reescrever `pcs.schedule`.
+ *   create — recusa chave vigente igual (`SlotAlreadyExistsError`) → `openSlot`.
+ *   update — `resolveSlot` (existe, vigente em hoje, sem alocação vigente) → `closeSlot` → `openSlot`.
+ *   end    — `resolveSlot` → `closeSlot`.
+ * Serviço inexistente/de outro paciente/inativo → `ItineraryServiceNotFoundError`; sem endereço →
+ * `ServiceWithoutAddressError` (invariante 8, nas TRÊS ações); faixa inexistente/de outro serviço →
+ * `SlotNotFoundError`; faixa fechada → `SlotInactiveError`; alocação `ACTIVE` vigente em `hoje` →
+ * `SlotHasActiveAllocationError` ("encerre a alocação primeiro"). A sobreposição é da constraint
+ * `pis_sem_sobreposicao` (23P01 → `ServiceSlotOverlapError`, 409 `SLOT_OVERLAP`); a transação desfaz o fechamento.
  *
- * `hoje = operationDateOf(country, now)` — nunca `Date`/`now()` do banco (a vigência da alocação
- * compara datas locais do país do paciente). `scheduleToSlots` (`CASE/domain/ItinerarySchedule.ts`)
- * é a ÚNICA fonte de "chave já ativa" e do dedup ao trocar a chave — nenhuma forma validada aqui
- * além dele (a forma é do zod, na borda).
+ * `hoje = operationDateOf(country, now)` — nunca `Date`/`now()` do banco. A forma da chave é do zod, na borda.
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { operationDateOf } from './itineraryCoverage';
-import { scheduleToSlots, type ScheduleEntry, type ItinerarySlotKey } from '../domain/ItinerarySchedule';
-import { ItinerarySlotWriter, type ServiceForWrite, type ItinerarySlotRow } from '../infrastructure/ItinerarySlotWriter';
+import type { ItinerarySlotKey } from '../domain/ItinerarySchedule';
+import {
+  ItinerarySlotWriter,
+  type ServiceForWrite,
+  type ItinerarySlotRow,
+  type ItinerarySlotLookup,
+} from '../infrastructure/ItinerarySlotWriter';
+import type { VigentSlot } from '../infrastructure/ServiceSlotWriter';
 
 /** Serviço inexistente, de outro paciente, ou inativo — o controller mapeia para 404. */
 export class ItineraryServiceNotFoundError extends Error {
@@ -39,7 +44,7 @@ export class ServiceWithoutAddressError extends Error {
   }
 }
 
-/** `create` com a MESMA chave (weekday, startTime, endTime) já ativa no schedule do serviço. */
+/** `create` (ou `update` para a chave de OUTRA faixa) com a MESMA chave (weekday, startTime, durationMinutes) já vigente no serviço. */
 export class SlotAlreadyExistsError extends Error {
   constructor(
     readonly serviceId: string,
@@ -61,7 +66,7 @@ export class SlotNotFoundError extends Error {
   }
 }
 
-/** Slot já `active = false` — `update`/`end` recusam (o slot já saiu do schedule). */
+/** Faixa já fechada (`valid` não contém hoje) — `update`/`end`/alocação recusam. */
 export class SlotInactiveError extends Error {
   constructor(
     readonly serviceId: string,
@@ -85,10 +90,11 @@ export class SlotHasActiveAllocationError extends Error {
 
 export interface ItinerarySlotWriterPort {
   findServiceForWrite(client: PoolClient, patientId: string, serviceId: string): Promise<ServiceForWrite | null>;
-  findSlot(client: PoolClient, serviceId: string, slotId: string): Promise<ItinerarySlotRow | null>;
+  findSlot(client: PoolClient, serviceId: string, slotId: string, hoje: string): Promise<ItinerarySlotLookup | null>;
   slotHasActiveAllocation(client: PoolClient, slotId: string, hoje: string): Promise<boolean>;
-  writeSchedule(client: PoolClient, serviceId: string, schedule: ScheduleEntry[] | null, actorUid: string): Promise<void>;
-  findSlotByKey(client: PoolClient, serviceId: string, key: ItinerarySlotKey): Promise<ItinerarySlotRow | null>;
+  readVigentSlots(client: PoolClient, serviceId: string, hoje: string): Promise<VigentSlot[]>;
+  openSlot(client: PoolClient, serviceId: string, key: ItinerarySlotKey, hoje: string, actorUid: string): Promise<string>;
+  closeSlot(client: PoolClient, slotId: string, hoje: string, actorUid: string): Promise<void>;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -98,20 +104,13 @@ export interface ItinerarySlotCreateInput {
   serviceId: string;
   weekday: number;
   startTime: string;
-  endTime: string;
+  durationMinutes: number;
   actorUid: string;
   now?: Date;
 }
 
-export interface ItinerarySlotUpdateInput {
-  patientId: string;
-  serviceId: string;
+export interface ItinerarySlotUpdateInput extends ItinerarySlotCreateInput {
   slotId: string;
-  weekday: number;
-  startTime: string;
-  endTime: string;
-  actorUid: string;
-  now?: Date;
 }
 
 export interface ItinerarySlotEndInput {
@@ -122,11 +121,11 @@ export interface ItinerarySlotEndInput {
   now?: Date;
 }
 
-/** A linha que `writeSchedule` gravou não veio de volta — invariante quebrada da derivação, não erro de negócio. */
-class ItinerarySlotSyncInvariantError extends Error {
-  constructor(serviceId: string, key: ItinerarySlotKey) {
-    super(`syncItinerarySlots did not produce the expected key: ${serviceId} ${JSON.stringify(key)}`);
-    this.name = 'ItinerarySlotSyncInvariantError';
+/** A faixa que acabou de ser aberta não veio de volta — invariante quebrada, não erro de negócio. */
+class ItinerarySlotOpenInvariantError extends Error {
+  constructor(serviceId: string, slotId: string) {
+    super(`opened itinerary slot not found: ${slotId} (serviceId=${serviceId})`);
+    this.name = 'ItinerarySlotOpenInvariantError';
   }
 }
 
@@ -137,46 +136,39 @@ export class ItinerarySlotWriteUseCase {
   ) {}
 
   async create(input: ItinerarySlotCreateInput): Promise<ItinerarySlotRow> {
-    const { patientId, serviceId, weekday, startTime, endTime, actorUid, now = new Date() } = input;
+    const { patientId, serviceId, weekday, startTime, durationMinutes, actorUid, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
       const service = await this.resolveService(client, patientId, serviceId);
+      const hoje = operationDateOf(service.country, now);
+      const key: ItinerarySlotKey = { weekday, startTime, durationMinutes };
 
-      const activeKeys = scheduleToSlots(service.schedule);
-      const key: ItinerarySlotKey = { weekday, startTime, endTime };
-      if (activeKeys.some((k) => sameKey(k, key))) {
-        throw new SlotAlreadyExistsError(serviceId, key);
-      }
+      const vigentes = await this.writer.readVigentSlots(client, serviceId, hoje);
+      if (vigentes.some((v) => sameKey(v, key))) throw new SlotAlreadyExistsError(serviceId, key);
 
-      const nextSchedule: ScheduleEntry[] = [...(service.schedule ?? []), { dayOfWeek: weekday, startTime, endTime }];
-      await this.writer.writeSchedule(client, serviceId, nextSchedule, actorUid);
-      return this.mustFindByKey(client, serviceId, key);
+      const newId = await this.writer.openSlot(client, serviceId, key, hoje, actorUid);
+      return this.mustFind(client, serviceId, newId, hoje);
     });
   }
 
   async update(input: ItinerarySlotUpdateInput): Promise<ItinerarySlotRow> {
-    const { patientId, serviceId, slotId, weekday, startTime, endTime, actorUid, now = new Date() } = input;
+    const { patientId, serviceId, slotId, weekday, startTime, durationMinutes, actorUid, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
       const service = await this.resolveService(client, patientId, serviceId);
       const hoje = operationDateOf(service.country, now);
       const oldSlot = await this.resolveSlot(client, serviceId, slotId, hoje);
+      const newKey: ItinerarySlotKey = { weekday, startTime, durationMinutes };
 
-      const oldKey: ItinerarySlotKey = { weekday: oldSlot.weekday, startTime: oldSlot.startTime, endTime: oldSlot.endTime };
-      const newKey: ItinerarySlotKey = { weekday, startTime, endTime };
-      // Toda entrada da chave VELHA sai; as outras ficam intactas (scheduleToSlots dedupa o resto).
-      const withoutOld = (service.schedule ?? []).filter((e) => !sameKey({ weekday: e.dayOfWeek, startTime: e.startTime, endTime: e.endTime }, oldKey));
+      // Chave igual à da própria faixa: nada muda — sem fechar/abrir à toa (não vira histórico vazio).
+      if (sameKey(oldSlot, newKey)) return toRow(oldSlot);
 
-      // A chave NOVA já ativa em OUTRO slot do mesmo serviço → mesmo erro do `create` (SLOT_ALREADY_EXISTS):
-      // sem esta trava, `scheduleToSlots` dedupava as duas entradas em silêncio e a resposta 200 devolvia o
-      // OUTRO slot (que pode ter alocação viva de outro prestador) — nenhum sinal de que A desativou.
-      const remainingActiveKeys = scheduleToSlots(withoutOld);
-      if (remainingActiveKeys.some((k) => sameKey(k, newKey))) {
-        throw new SlotAlreadyExistsError(serviceId, newKey);
-      }
+      // A chave NOVA já vigente em OUTRA faixa do serviço → mesmo erro do `create` (SLOT_ALREADY_EXISTS).
+      const vigentes = await this.writer.readVigentSlots(client, serviceId, hoje);
+      if (vigentes.some((v) => v.id !== slotId && sameKey(v, newKey))) throw new SlotAlreadyExistsError(serviceId, newKey);
 
-      const nextSchedule: ScheduleEntry[] = [...withoutOld, { dayOfWeek: weekday, startTime, endTime }];
-
-      await this.writer.writeSchedule(client, serviceId, nextSchedule, actorUid);
-      return this.mustFindByKey(client, serviceId, newKey);
+      // Fechar ANTES de abrir; 23P01 no `openSlot` propaga e a transação desfaz o fechamento.
+      await this.writer.closeSlot(client, slotId, hoje, actorUid);
+      const newId = await this.writer.openSlot(client, serviceId, newKey, hoje, actorUid);
+      return this.mustFind(client, serviceId, newId, hoje);
     });
   }
 
@@ -185,12 +177,8 @@ export class ItinerarySlotWriteUseCase {
     return this.runInTransaction(async (client) => {
       const service = await this.resolveService(client, patientId, serviceId);
       const hoje = operationDateOf(service.country, now);
-      const oldSlot = await this.resolveSlot(client, serviceId, slotId, hoje);
-
-      const oldKey: ItinerarySlotKey = { weekday: oldSlot.weekday, startTime: oldSlot.startTime, endTime: oldSlot.endTime };
-      const withoutOld = (service.schedule ?? []).filter((e) => !sameKey({ weekday: e.dayOfWeek, startTime: e.startTime, endTime: e.endTime }, oldKey));
-
-      await this.writer.writeSchedule(client, serviceId, withoutOld, actorUid);
+      await this.resolveSlot(client, serviceId, slotId, hoje);
+      await this.writer.closeSlot(client, slotId, hoje, actorUid);
     });
   }
 
@@ -202,23 +190,30 @@ export class ItinerarySlotWriteUseCase {
     return service;
   }
 
-  /** Slot existe (deste serviço), está ativo e sem alocação vigente — comum a `update`/`end`. */
-  private async resolveSlot(client: PoolClient, serviceId: string, slotId: string, hoje: string): Promise<ItinerarySlotRow> {
-    const slot = await this.writer.findSlot(client, serviceId, slotId);
+  /** Faixa existe (deste serviço), vigente em `hoje` e sem alocação vigente — comum a `update`/`end`. */
+  private async resolveSlot(client: PoolClient, serviceId: string, slotId: string, hoje: string): Promise<ItinerarySlotLookup> {
+    const slot = await this.writer.findSlot(client, serviceId, slotId, hoje);
     if (slot === null) throw new SlotNotFoundError(serviceId, slotId);
-    if (!slot.active) throw new SlotInactiveError(serviceId, slotId);
+    if (!slot.vigente) throw new SlotInactiveError(serviceId, slotId);
     const hasActive = await this.writer.slotHasActiveAllocation(client, slotId, hoje);
     if (hasActive) throw new SlotHasActiveAllocationError(serviceId, slotId);
     return slot;
   }
 
-  private async mustFindByKey(client: PoolClient, serviceId: string, key: ItinerarySlotKey): Promise<ItinerarySlotRow> {
-    const slot = await this.writer.findSlotByKey(client, serviceId, key);
-    if (slot === null) throw new ItinerarySlotSyncInvariantError(serviceId, key);
-    return slot;
+  private async mustFind(client: PoolClient, serviceId: string, slotId: string, hoje: string): Promise<ItinerarySlotRow> {
+    const slot = await this.writer.findSlot(client, serviceId, slotId, hoje);
+    if (slot === null) throw new ItinerarySlotOpenInvariantError(serviceId, slotId);
+    return toRow(slot);
   }
 }
 
-function sameKey(a: ItinerarySlotKey, b: ItinerarySlotKey): boolean {
-  return a.weekday === b.weekday && a.startTime === b.startTime && a.endTime === b.endTime;
+function toRow(slot: ItinerarySlotLookup): ItinerarySlotRow {
+  return { id: slot.id, weekday: slot.weekday, startTime: slot.startTime, durationMinutes: slot.durationMinutes, endTime: slot.endTime };
+}
+
+function sameKey(
+  a: { weekday: number; startTime: string; durationMinutes: number },
+  b: { weekday: number; startTime: string; durationMinutes: number },
+): boolean {
+  return a.weekday === b.weekday && a.startTime === b.startTime && a.durationMinutes === b.durationMinutes;
 }

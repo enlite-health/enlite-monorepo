@@ -18,7 +18,7 @@ describe('ItineraryAllocationWriter', () => {
   });
 
   it('findSlotForAllocation: 1 query, junção slot→serviço→paciente pelos 3 ids', async () => {
-    const client = clientStub({ rows: [{ id: 'slot-1', active: true, address_id: 'addr-1' }], rowCount: 1 });
+    const client = clientStub({ rows: [{ id: 'slot-1', vigente: true, address_id: 'addr-1' }], rowCount: 1 });
 
     const result = await writer.findSlotForAllocation(client as never, 'p-1', 's-1', 'slot-1');
 
@@ -27,8 +27,9 @@ describe('ItineraryAllocationWriter', () => {
     expect(String(sql)).toMatch(/FROM patient_itinerary_slot s/);
     expect(String(sql)).toMatch(/JOIN patient_contracted_services pcs ON pcs\.id = s\.contracted_service_id/);
     expect(String(sql)).toMatch(/WHERE pcs\.patient_id = \$1 AND s\.contracted_service_id = \$2 AND s\.id = \$3/);
+    expect(String(sql)).toContain('s.valid @> CURRENT_DATE');
     expect(params).toEqual(['p-1', 's-1', 'slot-1']);
-    expect(result).toEqual({ slotId: 'slot-1', active: true, addressId: 'addr-1' });
+    expect(result).toEqual({ slotId: 'slot-1', vigente: true, addressId: 'addr-1' });
   });
 
   it('findSlotForAllocation: rowCount 0 → null', async () => {

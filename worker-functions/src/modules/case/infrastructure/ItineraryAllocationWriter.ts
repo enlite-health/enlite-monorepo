@@ -18,11 +18,13 @@
  * (invariante 6/14).
  */
 import type { PoolClient } from 'pg';
+import { slotVigenteSql } from '@shared/sql/serviceScheduleSql';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
 
 export interface AllocationSlot {
   slotId: string;
-  active: boolean;
+  /** Faixa vigente hoje (`valid @> CURRENT_DATE`, P§1.3). */
+  vigente: boolean;
   addressId: string | null;
 }
 
@@ -57,8 +59,8 @@ export class ItineraryAllocationWriter {
     serviceId: string,
     slotId: string,
   ): Promise<AllocationSlot | null> {
-    const res = await client.query<{ id: string; active: boolean; address_id: string | null }>(
-      `SELECT s.id, s.active, pcs.address_id
+    const res = await client.query<{ id: string; vigente: boolean; address_id: string | null }>(
+      `SELECT s.id, ${slotVigenteSql('s')} AS vigente, pcs.address_id
          FROM patient_itinerary_slot s
          JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
         WHERE pcs.patient_id = $1 AND s.contracted_service_id = $2 AND s.id = $3`,
@@ -66,7 +68,7 @@ export class ItineraryAllocationWriter {
     );
     if (res.rowCount === 0) return null;
     const row = res.rows[0];
-    return { slotId: row.id, active: row.active, addressId: row.address_id };
+    return { slotId: row.id, vigente: row.vigente, addressId: row.address_id };
   }
 
   /** Candidatura do prestador na vaga — SEM filtro de etapa (o gate de Selecionado já decidiu). */
