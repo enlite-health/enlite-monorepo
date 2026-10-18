@@ -88,7 +88,6 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
 
   const newSubstitutionServices: NewSubstitutionServiceOption[] = itinerary.services.map((service) => {
     const allocations: ServiceTeamAllocation[] = service.slots
-      .filter((slot) => slot.active)
       .flatMap((slot) =>
         slot.assignments
           .filter((a) => isVigenteAt(a, itinerary.asOf))

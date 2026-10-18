@@ -48,7 +48,7 @@ function assignment(over: Partial<PatientItineraryAssignment> = {}): PatientItin
 }
 
 function slot(over: Partial<PatientItinerarySlot> = {}): PatientItinerarySlot {
-  return { id: 'slot-1', weekday: 1, startTime: '08:00', endTime: '12:00', active: true, assignments: [], ...over };
+  return { id: 'slot-1', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [], ...over };
 }
 
 function renderCard(slots: PatientItinerarySlot[], onEditSlot = vi.fn()) {
@@ -120,10 +120,20 @@ describe('ItineraryDayCard — o card de um dia da agenda (D445.3)', () => {
     expect(screen.getByTestId('itinerario-slot-sem-prestador-slot-1')).toBeInTheDocument();
   });
 
-  it('slot active: false não aparece — o dia vira vazio', () => {
-    renderCard([slot({ active: false })]);
-    expect(screen.queryByTestId('itinerario-slot-horario-slot-1')).toBeNull();
-    expect(screen.getByTestId('itinerario-dia-vazio-svc-1-1')).toBeInTheDocument();
+  it('turno noturno aparece só no dia em que começa, com (+1) e 12 h', () => {
+    renderCard([slot({ startTime: '20:00', endTime: '08:00', durationMinutes: 720 })]);
+    expect(screen.getByTestId('itinerario-slot-horario-slot-1').textContent).toContain('20:00');
+    expect(screen.getByTestId('itinerario-slot-horario-slot-1').textContent).toContain('08:00');
+    expect(screen.getByTestId('itinerario-slot-horario-slot-1').textContent).toContain('(+1)');
+    expect(screen.getByTestId('itinerario-slot-duracao-slot-1').textContent).toBe('12 h');
+    // dia seguinte (terça) NÃO recebe bloco "continúa de ayer": o card de terça sem slots é vazio.
+    render(<ItineraryDayCard serviceId="svc-2" weekday={2} slots={[]} asOf={ASOF} addressLabel={ADDRESS} onEditSlot={vi.fn()} />);
+    expect(screen.getByTestId('itinerario-dia-vazio-svc-2-2')).toBeInTheDocument();
+  });
+
+  it('24 h mostra 24 h', () => {
+    renderCard([slot({ startTime: '08:00', endTime: '08:00', durationMinutes: 1440 })]);
+    expect(screen.getByTestId('itinerario-slot-duracao-slot-1').textContent).toBe('24 h');
   });
 
   it('toggle colapsa e esconde as faixas', () => {

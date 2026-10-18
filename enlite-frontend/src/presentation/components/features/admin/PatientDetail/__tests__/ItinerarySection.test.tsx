@@ -30,8 +30,8 @@ const SERVICE: PatientItineraryService = {
   contratadas: { weekly: 20, authorized: 20 },
   cobertas: 4,
   slots: [
-    { id: 'slot-mon', weekday: 1, startTime: '08:00', endTime: '12:00', active: true, assignments: [] },
-    { id: 'slot-wed', weekday: 3, startTime: '14:00', endTime: '18:00', active: true, assignments: [] },
+    { id: 'slot-mon', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] },
+    { id: 'slot-wed', weekday: 3, startTime: '14:00', endTime: '18:00', durationMinutes: 240, assignments: [] },
   ],
 };
 

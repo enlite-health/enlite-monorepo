@@ -24,7 +24,8 @@ export interface PatientItinerarySlot {
   weekday: number;
   startTime: string;
   endTime: string;
-  active: boolean;
+  /** Duração em minutos (1..1440) — a fonte; `endTime` é derivado. */
+  durationMinutes: number;
   assignments: PatientItineraryAssignment[];
 }
 
