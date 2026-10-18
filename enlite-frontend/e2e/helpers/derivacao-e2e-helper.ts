@@ -45,7 +45,7 @@ export const DERIVACAO_MARK = 'DerivacaoE2E';
 
 export interface DerivableServiceSpec {
   weeklyHours: number;
-  schedule: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  schedule: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
   /** `true` = o serviço vai para um 2º endereço do MESMO paciente (`insertSecondAddress`). */
   secondAddress?: boolean;
 }

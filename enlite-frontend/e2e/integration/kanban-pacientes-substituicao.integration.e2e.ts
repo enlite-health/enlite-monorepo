@@ -141,8 +141,8 @@ test.describe('substituicao @integration', () => {
     const sY = await createServiceViaApi(request, seedY.patientId, {
       addressId: seedY.addressId,
       schedule: [
-        { dayOfWeek: 1, startTime: '10:00', endTime: '14:00' },
-        { dayOfWeek: 1, startTime: '12:30', endTime: '16:00' },
+        { dayOfWeek: 1, startTime: '10:00', durationMinutes: 240 },
+        { dayOfWeek: 1, startTime: '12:30', durationMinutes: 210 },
       ],
     });
     // Critério 8 isolado (gate parcial, G1-9): o 3º caso só pode conflitar com a 1ª SUBSTITUIÇÃO,
@@ -152,12 +152,12 @@ test.describe('substituicao @integration', () => {
     // 2h de folga, então só o ramo das substituições da função de conflito a recusa.
     const sY2 = await createServiceViaApi(request, seedY.patientId, {
       addressId: seedY.addressId,
-      schedule: [{ dayOfWeek: 1, startTime: '13:00', endTime: '16:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '13:00', durationMinutes: 180 }],
     });
     const seedZ = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.63, lng: -58.43 });
     const sZ = await createServiceViaApi(request, seedZ.patientId, {
       addressId: seedZ.addressId,
-      schedule: [{ dayOfWeek: 1, startTime: '14:00', endTime: '17:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '14:00', durationMinutes: 180 }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);
@@ -279,13 +279,13 @@ test.describe('substituicao @integration', () => {
     const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.64, lng: -58.44 });
     const sY = await createServiceViaApi(request, seedY.patientId, {
-      addressId: seedY.addressId, schedule: [{ dayOfWeek: 1, startTime: '13:00', endTime: '16:00' }],
+      addressId: seedY.addressId, schedule: [{ dayOfWeek: 1, startTime: '13:00', durationMinutes: 180 }],
     });
     const s2X = await createServiceViaApi(request, seedX.patientId, {
-      addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '12:00', endTime: '16:00' }],
+      addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '12:00', durationMinutes: 240 }],
     });
     const s3Y = await createServiceViaApi(request, seedY.patientId, {
-      addressId: seedY.addressId, schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '12:00' }],
+      addressId: seedY.addressId, schedule: [{ dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);

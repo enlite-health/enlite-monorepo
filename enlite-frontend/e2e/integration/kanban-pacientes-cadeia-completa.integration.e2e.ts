@@ -151,7 +151,7 @@ test.describe('cadeia-completa @integration', () => {
         const services = itin.body.data?.services ?? [];
         expect(services.map((s) => s.contractedServiceId).sort()).toEqual([X.service1Id, X.service2Id].sort());
         for (const s of services) {
-          expect(s.slots.filter((slot) => slot.active).length).toBeGreaterThanOrEqual(1);
+          expect(s.slots.length).toBeGreaterThanOrEqual(1);
         }
         const distinctAddresses = Number(
           runSQL(`SELECT count(DISTINCT address_id) FROM patient_contracted_services WHERE patient_id = '${X.patientId}'`),

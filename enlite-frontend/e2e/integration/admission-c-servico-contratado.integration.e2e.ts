@@ -147,7 +147,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
     // Decisão do Gabriel 07/09: serviço ativo SEM horário bloqueia o activate (SERVICE_SCHEDULE).
     // Este spec ativa o paciente mais abaixo e espera 200 — então os serviços nascem com horário.
-    await forceClick(page.getByTestId('day-schedule-add-monday'));
+    await forceClick(page.getByTestId('svc-shift-add-1-1'));
     await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService1 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
@@ -180,7 +180,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceFill(page.getByTestId('svc-weeklyHours-2'), '10');
     await forceSelect(page.getByTestId('svc-careLocation-2'), 'SCHOOL');
     await forceSelect(page.getByTestId('svc-addressId-2'), seed.addressId);
-    await forceClick(page.getByTestId('day-schedule-add-wednesday'));
+    await forceClick(page.getByTestId('svc-shift-add-2-3'));
     await preencherRecrutamentoPelaTela(page, 2); // spec 027 Fase 3: o portão exige os 5 campos
     const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));

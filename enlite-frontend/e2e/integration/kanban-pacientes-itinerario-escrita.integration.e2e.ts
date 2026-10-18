@@ -184,11 +184,11 @@ test.describe('itinerario-escrita @integration', () => {
     const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const addressB = insertSecondAddress(seedX.patientId);
     const s2 = await createServiceViaApi(request, seedX.patientId, {
-      addressId: addressB, schedule: [{ dayOfWeek: 1, startTime: '10:00', endTime: '14:00' }],
+      addressId: addressB, schedule: [{ dayOfWeek: 1, startTime: '10:00', durationMinutes: 240 }],
     });
     const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.61, lng: -58.41 });
     const sY = await createServiceViaApi(request, seedY.patientId, {
-      addressId: seedY.addressId, schedule: [{ dayOfWeek: 1, startTime: '10:00', endTime: '14:00' }],
+      addressId: seedY.addressId, schedule: [{ dayOfWeek: 1, startTime: '10:00', durationMinutes: 240 }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);
@@ -260,8 +260,8 @@ test.describe('itinerario-escrita @integration', () => {
     const sY = await createServiceViaApi(request, seedY.patientId, {
       addressId: seedY.addressId,
       schedule: [
-        { dayOfWeek: 1, startTime: '12:30', endTime: '16:00' },
-        { dayOfWeek: 1, startTime: '12:00', endTime: '16:00' },
+        { dayOfWeek: 1, startTime: '12:30', durationMinutes: 210 },
+        { dayOfWeek: 1, startTime: '12:00', durationMinutes: 240 },
       ],
     });
 
@@ -313,13 +313,13 @@ test.describe('itinerario-escrita @integration', () => {
     const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.63, lng: -58.43 });
     const s3 = await createServiceViaApi(request, seedX.patientId, {
-      addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '17:00', endTime: '20:00' }],
+      addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '17:00', durationMinutes: 180 }],
     });
     const s2 = await createServiceViaApi(request, seedY.patientId, {
       addressId: seedY.addressId,
       schedule: [
-        { dayOfWeek: 1, startTime: '13:00', endTime: '16:00' },
-        { dayOfWeek: 2, startTime: '08:00', endTime: '12:00' },
+        { dayOfWeek: 1, startTime: '13:00', durationMinutes: 180 },
+        { dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 },
       ],
     });
 
@@ -366,7 +366,7 @@ test.describe('itinerario-escrita @integration', () => {
       // ENTRE endereços diferentes). Não reusa slot1/slot3 do worker W (acima) — outro prestador no
       // mesmo slot pode (uq_pia_open_pair é por par slot+worker); e S3 ganha uma 2ª faixa própria.
       const slot3Encostado = await postSlotApi(request, token, seedX.patientId, s3, {
-        weekday: 1, startTime: '12:00', endTime: '16:00',
+        weekday: 1, startTime: '12:00', durationMinutes: 240,
       });
       expect(slot3Encostado.status).toBe(201);
       const slot3EncostadoId = (slot3Encostado.body.data as { id?: string } | undefined)?.id;
@@ -398,7 +398,7 @@ test.describe('itinerario-escrita @integration', () => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const addressB = insertSecondAddress(seed.patientId);
     const s2 = await createServiceViaApi(request, seed.patientId, {
-      addressId: addressB, schedule: [{ dayOfWeek: 1, startTime: '10:00', endTime: '14:00' }],
+      addressId: addressB, schedule: [{ dayOfWeek: 1, startTime: '10:00', durationMinutes: 240 }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);
@@ -447,7 +447,7 @@ test.describe('itinerario-escrita @integration', () => {
     // só para poder ativar a vaga, e o slot único é encerrado logo abaixo: vaga viva SEM slot ativo
     // é o cenário do critério 15 (serviço sem slot não é "serviço sem schedule nunca criado").
     const s2 = await createServiceViaApi(request, seed.patientId, {
-      addressId: addressB, schedule: [{ dayOfWeek: 5, startTime: '09:00', endTime: '11:00' }],
+      addressId: addressB, schedule: [{ dayOfWeek: 5, startTime: '09:00', durationMinutes: 120 }],
     });
     const token = tokenFor(ITINERARIO_STAFF);
     await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
@@ -469,7 +469,7 @@ test.describe('itinerario-escrita @integration', () => {
       expect(missingIds).not.toContain(seed.serviceId);
 
       const slot = await postSlotApi(request, token, seed.patientId, s2, {
-        weekday: 5, startTime: '09:00', endTime: '11:00',
+        weekday: 5, startTime: '09:00', durationMinutes: 120,
       });
       expect(slot.status).toBe(201);
 
@@ -496,7 +496,7 @@ test.describe('itinerario-escrita @integration', () => {
       insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       const create = await postSlotApi(request, token, seed.patientId, seed.serviceId, {
-        weekday: 3, startTime: '14:00', endTime: '18:00',
+        weekday: 3, startTime: '14:00', durationMinutes: 240,
       });
       expect(create.status).toBe(201);
       const createdId = (create.body.data as { id?: string } | undefined)?.id;
@@ -507,10 +507,10 @@ test.describe('itinerario-escrita @integration', () => {
         (s) => s.contractedServiceId === seed.serviceId,
       );
       const foundCreated = svcAfterCreate?.slots.find((sl) => sl.id === createdId);
-      expect(foundCreated?.active).toBe(true);
+      expect(foundCreated).toBeDefined(); // a API só devolve faixa vigente (spec 056)
 
       const duplicate = await postSlotApi(request, token, seed.patientId, seed.serviceId, {
-        weekday: 3, startTime: '14:00', endTime: '18:00',
+        weekday: 3, startTime: '14:00', durationMinutes: 240,
       });
       expect(duplicate.status).toBe(409);
       expect(duplicate.body.code).toBe('SLOT_ALREADY_EXISTS');
@@ -518,14 +518,14 @@ test.describe('itinerario-escrita @integration', () => {
       // Gate fecho N4: o mesmo 409 SLOT_ALREADY_EXISTS agora também no PATCH — um 2º slot ativo
       // (B, dia diferente) tenta migrar pela chave que A já ocupa. Nenhum dos dois muda de estado.
       const slotB = await postSlotApi(request, token, seed.patientId, seed.serviceId, {
-        weekday: 5, startTime: '09:00', endTime: '11:00',
+        weekday: 5, startTime: '09:00', durationMinutes: 120,
       });
       expect(slotB.status).toBe(201);
       const slotBId = (slotB.body.data as { id?: string } | undefined)?.id;
       if (!slotBId) throw new Error('itinerario-slot-cria-edita-encerra: slot B sem id');
 
       const patchCollision = await patchSlotApi(request, token, seed.patientId, seed.serviceId, slotBId, {
-        weekday: 3, startTime: '14:00', endTime: '18:00',
+        weekday: 3, startTime: '14:00', durationMinutes: 240,
       });
       console.log('[11.slot-colisao]', patchCollision.status, patchCollision.body.code);
       expect(patchCollision.status).toBe(409);
@@ -537,28 +537,28 @@ test.describe('itinerario-escrita @integration', () => {
       );
       const slotAAfterCollision = svcAfterCollision?.slots.find((sl) => sl.id === createdId);
       const slotBAfterCollision = svcAfterCollision?.slots.find((sl) => sl.id === slotBId);
-      expect(slotAAfterCollision?.active).toBe(true);
+      expect(slotAAfterCollision).toBeDefined(); // a API só devolve faixa vigente (spec 056)
       expect(slotAAfterCollision).toMatchObject({ weekday: 3, startTime: '14:00', endTime: '18:00' });
-      expect(slotBAfterCollision?.active).toBe(true);
+      expect(slotBAfterCollision).toBeDefined(); // a API só devolve faixa vigente (spec 056)
       expect(slotBAfterCollision).toMatchObject({ weekday: 5, startTime: '09:00', endTime: '11:00' });
       const scheduleAfterCollision = runSQL(
-        `SELECT schedule::text FROM patient_contracted_services WHERE id = '${seed.serviceId}'`,
+        `SELECT COALESCE(string_agg(start_time::text, ','), '') FROM patient_itinerary_slot WHERE contracted_service_id = '${seed.serviceId}' AND upper_inf(valid)`,
       );
       expect(scheduleAfterCollision).toContain('14:00');
       expect(scheduleAfterCollision).toContain('09:00');
 
       const patch = await patchSlotApi(request, token, seed.patientId, seed.serviceId, createdId, {
-        weekday: 3, startTime: '16:00', endTime: '20:00',
+        weekday: 3, startTime: '16:00', durationMinutes: 240,
       });
       expect(patch.status).toBe(200);
       const patchedId = (patch.body.data as { id?: string } | undefined)?.id;
       if (!patchedId) throw new Error('itinerario-slot-cria-edita-encerra: slot editado sem id');
 
       const oldActive = runSQL(
-        `SELECT active::text FROM patient_itinerary_slot WHERE contracted_service_id = '${seed.serviceId}' ` +
+        `SELECT upper_inf(valid)::text FROM patient_itinerary_slot WHERE contracted_service_id = '${seed.serviceId}' ` +
           `AND weekday = 3 AND start_time = '14:00'`,
       );
-      const newActive = runSQL(`SELECT active::text FROM patient_itinerary_slot WHERE id = '${patchedId}'`);
+      const newActive = runSQL(`SELECT upper_inf(valid)::text FROM patient_itinerary_slot WHERE id = '${patchedId}'`);
       expect(oldActive).toBe('false');
       expect(newActive).toBe('true');
 
@@ -568,7 +568,7 @@ test.describe('itinerario-escrita @integration', () => {
       if (!allocationId) throw new Error('itinerario-slot-cria-edita-encerra: alocação sem id');
 
       const patchBlocked = await patchSlotApi(request, token, seed.patientId, seed.serviceId, patchedId, {
-        weekday: 3, startTime: '17:00', endTime: '21:00',
+        weekday: 3, startTime: '17:00', durationMinutes: 240,
       });
       expect(patchBlocked.status).toBe(422);
       expect(patchBlocked.body.code).toBe('SLOT_HAS_ACTIVE_ALLOCATION');
@@ -583,9 +583,9 @@ test.describe('itinerario-escrita @integration', () => {
       const endSlot = await endSlotApi(request, token, seed.patientId, seed.serviceId, patchedId);
       expect(endSlot.status).toBe(200);
 
-      const endedActive = runSQL(`SELECT active::text FROM patient_itinerary_slot WHERE id = '${patchedId}'`);
+      const endedActive = runSQL(`SELECT upper_inf(valid)::text FROM patient_itinerary_slot WHERE id = '${patchedId}'`);
       const scheduleText = runSQL(
-        `SELECT schedule::text FROM patient_contracted_services WHERE id = '${seed.serviceId}'`,
+        `SELECT COALESCE(string_agg(start_time::text, ','), '') FROM patient_itinerary_slot WHERE contracted_service_id = '${seed.serviceId}' AND upper_inf(valid)`,
       );
 
       console.log(
@@ -609,20 +609,20 @@ test.describe('itinerario-escrita @integration', () => {
     const w = insertTestWorker({ occupation: 'AT' });
     try {
       const create = await postSlotApi(request, token, seed.patientId, serviceNoAddr, {
-        weekday: 4, startTime: '09:00', endTime: '11:00',
+        weekday: 4, startTime: '09:00', durationMinutes: 120,
       });
       expect(create.status).toBe(422);
       expect(create.body.code).toBe('SERVICE_WITHOUT_ADDRESS');
 
       const slotId = extractUuid(
         runSQL(
-          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by) ` +
-            `VALUES ('${serviceNoAddr}', 4, '09:00', '11:00', 'e2e-itinerario-p27', 'e2e-itinerario-p27') RETURNING id`,
+          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by) ` +
+            `VALUES ('${serviceNoAddr}', 4, '09:00', 120, '[2026-01-01,)'::daterange, 'e2e-itinerario-p27', 'e2e-itinerario-p27') RETURNING id`,
         ),
       );
 
       const patch = await patchSlotApi(request, token, seed.patientId, serviceNoAddr, slotId, {
-        weekday: 4, startTime: '10:00', endTime: '12:00',
+        weekday: 4, startTime: '10:00', durationMinutes: 120,
       });
       const end = await endSlotApi(request, token, seed.patientId, serviceNoAddr, slotId);
       const alloc = await allocateApi(request, token, seed.patientId, serviceNoAddr, slotId, { workerId: w });

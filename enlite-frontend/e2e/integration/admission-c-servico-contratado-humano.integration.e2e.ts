@@ -103,9 +103,9 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     expect(await digitar(page, 'svc-hourlyValue-1', '1500')).toBe('1500');
     expect(await digitar(page, 'svc-profile-1', 'perfil digitado por humano')).toBe('perfil digitado por humano');
 
-    // ── Horário: o "+" de segunda-feira cria um slot 09:00–17:00 ──
-    await page.getByTestId('day-schedule-add-monday').click();
-    await expect(page.getByTestId('day-schedule-remove-monday-0')).toBeVisible();
+    // ── Horário: o "+" de segunda-feira cria um turno 09:00–17:00 (480 min) ──
+    await page.getByTestId('svc-shift-add-1-1').click();
+    await expect(page.getByTestId('svc-shift-remove-1-1-0')).toBeVisible();
 
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toHaveScreenshot('humano-drawer-preenchido.png', {
       mask: [page.locator('.firebase-emulator-warning')],
@@ -116,7 +116,7 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await page.getByTestId('contracted-service-new-save').click();
     const body = (await (await created).json()) as { data: { id: string; addressId: string; schedule: unknown[]; providersNeeded: number; hourlyValue: number } };
     expect(body.data.addressId).toBe(seed.addressId);
-    expect(body.data.schedule).toEqual([{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }]);
+    expect(body.data.schedule).toMatchObject([{ dayOfWeek: 1, startTime: '09:00', durationMinutes: 480 }]);
     expect(body.data.providersNeeded).toBe(2);
     expect(body.data.hourlyValue).toBe(1500);
 

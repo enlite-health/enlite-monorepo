@@ -113,7 +113,7 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
     // Decisão do Gabriel 07/09: sem horário o activate também recusa (SERVICE_SCHEDULE) — este
     // spec ativa mais abaixo esperando 200, então o serviço nasce com horário.
-    await forceClick(page.getByTestId('day-schedule-add-monday'));
+    await forceClick(page.getByTestId('svc-shift-add-1-1'));
     await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));

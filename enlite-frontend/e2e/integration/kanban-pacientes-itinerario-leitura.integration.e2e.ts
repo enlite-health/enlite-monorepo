@@ -77,7 +77,7 @@ test.describe('kanban-pacientes itinerario leitura @integration', () => {
       expect(slot.weekday, 'weekday 1 (segunda)').toBe(1);
       expect(slot.startTime).toBe('08:00');
       expect(slot.endTime).toBe('12:00');
-      expect(slot.active).toBe(true);
+      expect(slot.durationMinutes).toBe(240);
       expect(slot.assignments).toEqual([]);
       // Nenhum campo de PII (nome/telefone) no corpo — só os 4 campos do contrato.
       expect(Object.keys(serviceBefore).sort()).toEqual(

@@ -31,7 +31,10 @@ import {
 } from '../helpers/abac-stack-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]';
+/** Horário do serviço = 1 faixa vigente em `patient_itinerary_slot` (spec 056: `pcs.schedule` não é lido). */
+const FAIXA_SQL = (serviceId: string) =>
+  `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+   VALUES ('${serviceId}', 1, '08:00', 240, '[2026-01-01,)'::daterange, 'e2e051', 'e2e051')`;
 
 const operadoraUid = `e2e-051-operadora-${RUN_ID}`;
 const semCelulaUid = `e2e-051-sem-celula-${RUN_ID}`;
@@ -46,8 +49,9 @@ function seedPaciente(tag: string, horario: boolean): string {
     withAddress: true, hasConsent: true, insuranceInformed: 'OSDE',
   });
   if (!addressId) throw new Error('seedPaciente: insertTestPatient não devolveu addressId');
-  scalar(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
-          VALUES ('${patientId}', 'AT', true, 'AR', 'e2e051', 'e2e051', '${addressId}', ${horario ? `'${HORARIO}'::jsonb` : 'NULL'}) RETURNING id`);
+  const serviceId = scalar(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
+          VALUES ('${patientId}', 'AT', true, 'AR', 'e2e051', 'e2e051', '${addressId}', NULL) RETURNING id`).split('\n')[0].trim();
+  if (horario) safeSql(FAIXA_SQL(serviceId));
   return patientId;
 }
 

@@ -284,7 +284,7 @@ export interface ContractedServiceBody {
   weeklyHours: number;
   careLocation: string;
   addressId: string;
-  schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
 }
 
 /**
@@ -358,7 +358,7 @@ export async function seedLaunchablePatient(
     weeklyHours: 20,
     careLocation: 'HOME',
     addressId,
-    schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+    schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
   });
 
   const cleanup = (): void => {

@@ -202,7 +202,7 @@ async function seedMassa(request: APIRequestContext): Promise<DsTableMassa> {
     weeklyHours: 20,
     careLocation: 'HOME',
     addressId,
-    schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+    schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
   });
 
   // Profissional / responsável / contato externo (t12/t13) — nenhum helper existente semeia.

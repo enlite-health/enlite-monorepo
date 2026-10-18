@@ -70,7 +70,7 @@ export async function seedPatientX(request: APIRequestContext): Promise<CadeiaPa
     const address2Id = insertSecondAddress(seed.patientId);
     const service2Id = await createServiceViaApi(request, seed.patientId, {
       addressId: address2Id,
-      schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 }],
     });
     return {
       patientId: seed.patientId, addressId: seed.addressId, address2Id,
@@ -86,8 +86,8 @@ export async function seedPatientY(request: APIRequestContext): Promise<CadeiaPa
     const serviceId = await createServiceViaApi(request, seed.patientId, {
       addressId: seed.addressId,
       schedule: [
-        { dayOfWeek: 1, startTime: '12:30', endTime: '16:00' },
-        { dayOfWeek: 1, startTime: '13:00', endTime: '16:00' },
+        { dayOfWeek: 1, startTime: '12:30', durationMinutes: 210 },
+        { dayOfWeek: 1, startTime: '13:00', durationMinutes: 180 },
       ],
     });
     const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, serviceId);

@@ -42,8 +42,8 @@ import {
 const OITO_HORAS: DerivableServiceSpec = {
   weeklyHours: 8,
   schedule: [
-    { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-    { dayOfWeek: 3, startTime: '08:00', endTime: '12:00' },
+    { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+    { dayOfWeek: 3, startTime: '08:00', durationMinutes: 240 },
   ],
 };
 
@@ -152,8 +152,8 @@ test.describe('derivacao @integration', () => {
           weeklyHours: 8,
           secondAddress: true,
           schedule: [
-            { dayOfWeek: 2, startTime: '08:00', endTime: '12:00' },
-            { dayOfWeek: 4, startTime: '08:00', endTime: '12:00' },
+            { dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 },
+            { dayOfWeek: 4, startTime: '08:00', durationMinutes: 240 },
           ],
         },
       ],
@@ -288,7 +288,7 @@ test.describe('derivacao @integration', () => {
   test('derivacao-substituicao-nao-move', async ({ request }) => {
     const seed = await seedDerivablePatient(request, {
       status: 'SEARCHING',
-      services: [{ weeklyHours: 4, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] }],
+      services: [{ weeklyHours: 4, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] }],
     });
     try {
       const token = derivacaoToken();
@@ -357,7 +357,7 @@ test.describe('derivacao @integration', () => {
       const itin = await readItineraryApi(request, seed.patientId);
       const team = await readServiceTeamApi(request, seed.patientId, svc.serviceId);
       const slot = await postSlotApi(request, token, seed.patientId, svc.serviceId, {
-        weekday: 6, startTime: '08:00', endTime: '09:00',
+        weekday: 6, startTime: '08:00', durationMinutes: 60,
       });
       const newSlotId = (slot.body.data as { id?: string } | undefined)?.id;
       if (!newSlotId) throw new Error('derivacao-silencio: faixa nova sem id');

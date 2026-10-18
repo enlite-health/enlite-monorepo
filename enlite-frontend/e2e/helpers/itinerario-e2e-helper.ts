@@ -49,7 +49,7 @@ export interface ItinerarySlotDto {
   weekday: number;
   startTime: string;
   endTime: string;
-  active: boolean;
+  durationMinutes: number;
   assignments: ItineraryAssignmentDto[];
 }
 
@@ -128,7 +128,7 @@ export interface CreateServiceViaApiOpts {
   serviceCode?: 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST';
   weeklyHours?: number;
   addressId: string;
-  schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
 }
 
 /**

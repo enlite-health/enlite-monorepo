@@ -97,8 +97,8 @@ export function seedItinerary(): ItinerarySeed {
   const jobId = firstLine(runSQL(`SELECT id FROM job_postings WHERE contracted_service_id = '${serviceId}' LIMIT 1`));
 
   runSQL(`
-    INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-    VALUES ('${serviceId}', 1, '09:00', '11:00', '${TASK_PREFIX}', '${TASK_PREFIX}')
+    INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+    VALUES ('${serviceId}', 1, '09:00', 120, '[2026-01-01,)'::daterange, '${TASK_PREFIX}', '${TASK_PREFIX}')
   `);
   const slotId = firstLine(
     runSQL(`SELECT id FROM patient_itinerary_slot WHERE contracted_service_id = '${serviceId}' LIMIT 1`),
@@ -169,8 +169,8 @@ export function seedConflictForSubstitute(seed: ItinerarySeed): void {
   const job2Id = firstLine(runSQL(`SELECT id FROM job_postings WHERE contracted_service_id = '${service2Id}' LIMIT 1`));
 
   runSQL(`
-    INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-    VALUES ('${service2Id}', 1, '09:00', '11:00', '${TASK_PREFIX}', '${TASK_PREFIX}')
+    INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+    VALUES ('${service2Id}', 1, '09:00', 120, '[2026-01-01,)'::daterange, '${TASK_PREFIX}', '${TASK_PREFIX}')
   `);
   const slot2Id = firstLine(runSQL(`SELECT id FROM patient_itinerary_slot WHERE contracted_service_id = '${service2Id}' LIMIT 1`));
 

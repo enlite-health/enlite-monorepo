@@ -40,7 +40,7 @@ import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
 const STAFF = mockAdminUserFor('itinerario-quitar');
 
 /** 1 serviço de 4 h/semana com UMA faixa de 4 h: 1 prestador cobre 100% (cobertura total → ACTIVE). */
-const QUATRO_HORAS = { weeklyHours: 4, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] };
+const QUATRO_HORAS = { weeklyHours: 4, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] };
 const MOTIVO_DESISTENCIA = 'El prestador desistió'; // DESISTENCIA_DO_PRESTADOR
 const MOTIVO_PERFIL = 'Perfil no adecuado al servicio'; // PERFIL_INADEQUADO_AO_SERVICO
 
