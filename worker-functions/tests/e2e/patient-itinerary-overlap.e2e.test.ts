@@ -60,16 +60,22 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
   let jobS2 = '';
   let jobS3 = '';
   let jobS4 = '';
+  let jobS5 = '';
+  let jobS6 = '';
 
   // slots de referência, reusados entre regras (worker novo em cada regra)
   let slotA1 = ''; // S1, seg, 08:00-12:00 (endereço A)
-  let slotA2 = ''; // S1, seg, 10:00-14:00 (endereço A — sobrepõe slotA1)
+  let slotA2 = ''; // S5, seg, 10:00-14:00 (endereço A — sobrepõe slotA1 por prestador)
   let slotA3 = ''; // S1, ter, 08:00-12:00 (endereço A — outro dia da semana)
   let slotA_S3 = ''; // S3, seg, 12:00-16:00 (endereço A, serviço diferente)
   let slotB1 = ''; // S2, seg, 12:00-16:00 (endereço B — adjacente, sem folga)
   let slotB2 = ''; // S2, seg, 12:30-16:00 (endereço B — folga de 30min)
   let slotC1 = ''; // S4, seg, 13:00-16:00 (endereço C — folga de exatos 60min)
   let slotImmutable = ''; // S1, sex, 08:00-09:00 (dedicado — nunca alocado)
+  let slotNightA = ''; // S1(A), sáb 20:00 + 720 min
+  let slotSunB = ''; // S2(B), dom 07:00 + 120
+  let slotSunC = ''; // S4(C), dom 08:30 + 120
+  let slotSunA = ''; // S3(A), dom 08:00 + 120
 
   const jobIds: string[] = [];
 
@@ -89,6 +95,16 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
       )
     ).rows[0].id;
     return { workerId, wjaId };
+  }
+
+  async function mkWja(workerId: string, jobId: string): Promise<string> {
+    return (
+      await pool.query<{ id: string }>(
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'import') RETURNING id`,
+        [workerId, jobId],
+      )
+    ).rows[0].id;
   }
 
   function insertAssignment(
@@ -155,6 +171,10 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
     serviceS2 = await mkService(patient2, addressB);
     serviceS3 = await mkService(patient1, addressA);
     serviceS4 = await mkService(patient2, addressC);
+    // S5/S6: a 527 proíbe faixas sobrepostas no MESMO serviço (pis_sem_sobreposicao); slotA2 e slotB2 vão para
+    // serviços próprios no MESMO endereço de S1 (A) e S2 (B) — a trava por prestador lê o endereço pelo serviço.
+    const serviceS5 = await mkService(patient1, addressA);
+    const serviceS6 = await mkService(patient2, addressB);
 
     const mkJob = async (serviceId: string, patientId: string, label: string) => {
       const id = (
@@ -171,24 +191,30 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
     jobS2 = await mkJob(serviceS2, patient2, 'vagaS2');
     jobS3 = await mkJob(serviceS3, patient1, 'vagaS3');
     jobS4 = await mkJob(serviceS4, patient2, 'vagaS4');
+    jobS5 = await mkJob(serviceS5, patient1, 'vagaS5');
+    jobS6 = await mkJob(serviceS6, patient2, 'vagaS6');
 
-    const mkSlot = async (serviceId: string, weekday: number, start: string, end: string) =>
+    const mkSlot = async (serviceId: string, weekday: number, start: string, durationMinutes: number) =>
       (
         await pool.query<{ id: string }>(
-          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
-          [serviceId, weekday, start, end, TASK_PREFIX],
+          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+           VALUES ($1, $2, $3, $4, '[2026-01-01,)'::daterange, $5, $5) RETURNING id`,
+          [serviceId, weekday, start, durationMinutes, TASK_PREFIX],
         )
       ).rows[0].id;
 
-    slotA1 = await mkSlot(serviceS1, 1, '08:00', '12:00');
-    slotA2 = await mkSlot(serviceS1, 1, '10:00', '14:00');
-    slotA3 = await mkSlot(serviceS1, 2, '08:00', '12:00');
-    slotA_S3 = await mkSlot(serviceS3, 1, '12:00', '16:00');
-    slotB1 = await mkSlot(serviceS2, 1, '12:00', '16:00');
-    slotB2 = await mkSlot(serviceS2, 1, '12:30', '16:00');
-    slotC1 = await mkSlot(serviceS4, 1, '13:00', '16:00');
-    slotImmutable = await mkSlot(serviceS1, 5, '08:00', '09:00');
+    slotA1 = await mkSlot(serviceS1, 1, '08:00', 240);
+    slotA2 = await mkSlot(serviceS5, 1, '10:00', 240);
+    slotA3 = await mkSlot(serviceS1, 2, '08:00', 240);
+    slotA_S3 = await mkSlot(serviceS3, 1, '12:00', 240);
+    slotB1 = await mkSlot(serviceS2, 1, '12:00', 240);
+    slotB2 = await mkSlot(serviceS6, 1, '12:30', 210);
+    slotC1 = await mkSlot(serviceS4, 1, '13:00', 180);
+    slotImmutable = await mkSlot(serviceS1, 5, '08:00', 60);
+    slotNightA = await mkSlot(serviceS1, 6, '20:00', 720); // sáb 20:00 + 12 h (termina dom 08:00), endereço A
+    slotSunB = await mkSlot(serviceS2, 0, '07:00', 120); // dom 07:00-09:00, endereço B
+    slotSunC = await mkSlot(serviceS4, 0, '08:30', 120); // dom 08:30-10:30, endereço C
+    slotSunA = await mkSlot(serviceS3, 0, '08:00', 120); // dom 08:00-10:00, endereço A (serviço S3)
   });
 
   afterAll(async () => {
@@ -233,7 +259,7 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
   it('mesmo endereço, 08-12 e 10-14 sobrepostos → 23P01', async () => {
     const { workerId, wjaId } = await mkWorkerWithWja(jobS1, 'w-mesmo-endereco-sobrepoe');
     await insertAssignment(slotA1, workerId, wjaId, '2026-01-01');
-    const err = await expectPgError(insertAssignment(slotA2, workerId, wjaId, '2026-01-01'));
+    const err = await expectPgError(insertAssignment(slotA2, workerId, await mkWja(workerId, jobS5), '2026-01-01'));
     expect(err.code).toBe('23P01');
   });
 
@@ -272,7 +298,7 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
       await pool.query<{ id: string }>(
         `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
          VALUES ($1, $2, 'INVITED', 'import') RETURNING id`,
-        [workerId, jobS2],
+        [workerId, jobS6],
       )
     ).rows[0].id;
     const err = await expectPgError(insertAssignment(slotB2, workerId, wjaS2, '2026-01-01'));
@@ -307,21 +333,21 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
   it('a alocação existente ENCERRADA (ENDED) não bloqueia → aceita', async () => {
     const { workerId, wjaId } = await mkWorkerWithWja(jobS1, 'w-existente-ended');
     await insertAssignment(slotA1, workerId, wjaId, '2026-01-01', { validTo: '2026-01-15', status: 'ENDED' });
-    const r = await insertAssignment(slotA2, workerId, wjaId, '2026-01-01');
+    const r = await insertAssignment(slotA2, workerId, await mkWja(workerId, jobS5), '2026-01-01');
     expect(r.rows[0].id).toBeTruthy();
   });
 
   it('datas disjuntas (a existente termina antes da nova começar) → aceita', async () => {
     const { workerId, wjaId } = await mkWorkerWithWja(jobS1, 'w-datas-disjuntas');
     await insertAssignment(slotA1, workerId, wjaId, '2026-01-01', { validTo: '2026-01-31' });
-    const r = await insertAssignment(slotA2, workerId, wjaId, '2026-03-01');
+    const r = await insertAssignment(slotA2, workerId, await mkWja(workerId, jobS5), '2026-03-01');
     expect(r.rows[0].id).toBeTruthy();
   });
 
   it('UPDATE de CANCELLED para ACTIVE que sobrepõe uma alocação viva → 23P01', async () => {
     const { workerId, wjaId } = await mkWorkerWithWja(jobS1, 'w-update-cancelled');
     await insertAssignment(slotA1, workerId, wjaId, '2026-01-01');
-    const cancelled = await insertAssignment(slotA2, workerId, wjaId, '2026-01-01', { status: 'CANCELLED' });
+    const cancelled = await insertAssignment(slotA2, workerId, await mkWja(workerId, jobS5), '2026-01-01', { status: 'CANCELLED' });
     const err = await expectPgError(
       pool.query(`UPDATE patient_itinerary_assignment SET status = 'ACTIVE' WHERE id = $1`, [cancelled.rows[0].id]),
     );
@@ -352,7 +378,7 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
       await pool.query<{ id: string }>(
         `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
          VALUES ($1, $2, 'INVITED', 'import') RETURNING id`,
-        [workerId, jobS2],
+        [workerId, jobS6],
       )
     ).rows[0].id;
     const err = await expectPgError(insertAssignment(slotB2, workerId, wjaS2, '2026-01-01'));
@@ -370,6 +396,7 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
 
   it('concorrência: a 2ª transação só decide depois do COMMIT da 1ª, e perde', async () => {
     const { workerId, wjaId } = await mkWorkerWithWja(jobS1, 'w-concorrencia');
+    const wjaS5 = await mkWja(workerId, jobS5);
 
     const c1: PoolClient = await pool.connect();
     const c2: PoolClient = await pool.connect();
@@ -386,7 +413,7 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
       const p2 = c2.query(
         `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, status, created_by, updated_by)
          VALUES ($1, $2, $3, '2026-01-01', 'ACTIVE', $4, $4)`,
-        [slotA2, workerId, wjaId, TASK_PREFIX],
+        [slotA2, workerId, wjaS5, TASK_PREFIX],
       );
 
       // dá tempo do 2º realmente entrar na fila do advisory lock antes do COMMIT do 1º.
@@ -407,17 +434,62 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
     expect(active.rows[0].n).toBe(1);
   });
 
-  it('UPDATE da chave do slot (start_time) → 23514 pis_chave_imutavel; UPDATE de active → aceita', async () => {
+  it('UPDATE da chave do slot (start_time) → 23514 pis_chave_imutavel; fechar a vigência → aceita', async () => {
     const err = await expectPgError(
       pool.query(`UPDATE patient_itinerary_slot SET start_time = '07:00' WHERE id = $1`, [slotImmutable]),
     );
     expect(err.code).toBe('23514');
     expect(err.message).toContain('pis_chave_imutavel');
 
-    const r = await pool.query(`UPDATE patient_itinerary_slot SET active = false WHERE id = $1 RETURNING active`, [
-      slotImmutable,
-    ]);
-    expect(r.rows[0].active).toBe(false);
+    const r = await pool.query(
+      `UPDATE patient_itinerary_slot SET valid = daterange('2026-01-01', '2026-06-01') WHERE id = $1 RETURNING valid::text AS valid`,
+      [slotImmutable],
+    );
+    expect(r.rows[0].valid).toBe('[2026-01-01,2026-06-01)');
+  });
+
+  it('noturno sáb 20:00+12h em A × dom 07:00 em B → 23P01', async () => {
+    const { workerId, wjaId: wjaS1 } = await mkWorkerWithWja(jobS1, 'w-noturno-sobrepoe');
+    await insertAssignment(slotNightA, workerId, wjaS1, '2026-01-01');
+    const wjaS2 = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'import') RETURNING id`,
+        [workerId, jobS2],
+      )
+    ).rows[0].id;
+    const err = await expectPgError(insertAssignment(slotSunB, workerId, wjaS2, '2026-01-01'));
+    expect(err.code).toBe('23P01');
+    expect(JSON.parse(err.detail as string).existingEnd).toBe('08:00');
+  });
+
+  it('noturno termina 08:00 em A × dom 08:30 em C → 23P01 pela folga', async () => {
+    const { workerId, wjaId: wjaS1 } = await mkWorkerWithWja(jobS1, 'w-noturno-folga');
+    await insertAssignment(slotNightA, workerId, wjaS1, '2026-01-01');
+    const wjaS4 = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'import') RETURNING id`,
+        [workerId, jobS4],
+      )
+    ).rows[0].id;
+    const err = await expectPgError(insertAssignment(slotSunC, workerId, wjaS4, '2026-01-01'));
+    expect(err.code).toBe('23P01');
+    expect(JSON.parse(err.detail as string).minGapMinutes).toBe(60);
+  });
+
+  it('noturno termina 08:00 em A × dom 08:00 no mesmo endereço (S3) → aceita', async () => {
+    const { workerId, wjaId: wjaS1 } = await mkWorkerWithWja(jobS1, 'w-noturno-mesmo-endereco');
+    await insertAssignment(slotNightA, workerId, wjaS1, '2026-01-01');
+    const wjaS3 = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, 'INVITED', 'import') RETURNING id`,
+        [workerId, jobS3],
+      )
+    ).rows[0].id;
+    const r = await insertAssignment(slotSunA, workerId, wjaS3, '2026-01-01');
+    expect(r.rows[0].id).toBeTruthy();
   });
 
   it('patient_itinerary_assembly: country herdado; grants só SELECT/INSERT; sem coluna de texto livre', async () => {
@@ -481,8 +553,8 @@ describe('trava de sobreposição, folga entre endereços e montado — migratio
     ).rows[0].id;
     const slotCascade = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-         VALUES ($1, 4, '08:00', '09:00', $2, $2) RETURNING id`,
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, 4, '08:00', 60, '[2026-01-01,)'::daterange, $2, $2) RETURNING id`,
         [serviceCascade, TASK_PREFIX],
       )
     ).rows[0].id;
