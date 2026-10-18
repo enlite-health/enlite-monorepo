@@ -224,7 +224,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const patientAr = res.data.data.patients.find((p: { patientId: string }) => p.patientId === ar.patientId);
     expect(patientAr).toBeTruthy();
     expect(patientAr.services).toEqual([
-      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays: 0 },
+      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays: 0, reserve: null },
     ]);
     expect(res.data.data.patients.some((p: { patientId: string }) => p.patientId === br.patientId)).toBe(false);
   });
