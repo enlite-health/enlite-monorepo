@@ -27,7 +27,7 @@ const ASOF = '2026-09-28';
 
 const SERVICE: PatientItineraryService = {
   contractedServiceId: 'svc-1',
-  contratadas: { weekly: 20, authorized: 20 },
+  scheduleHours: 20,
   cobertas: 4,
   slots: [
     { id: 'slot-mon', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] },
@@ -79,13 +79,13 @@ describe('ItinerarySection — a agenda de um serviço', () => {
   it('o par de horas sai de coverageHoursPair', () => {
     renderSection();
     expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent(
-      `Horas cubiertas/contratadas: ${coverageHoursPair(4, 20)}`,
+      `Horas cubiertas/del horario: ${coverageHoursPair(4, 20)}`,
     );
   });
 
-  it('sem horas semanais contratadas → "4/—"', () => {
-    renderSection({ service: { ...SERVICE, contratadas: { weekly: null, authorized: null } } });
-    expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent('Horas cubiertas/contratadas: 4/—');
+  it('mostra 20/40 lendo scheduleHours', () => {
+    renderSection({ service: { ...SERVICE, cobertas: 20, scheduleHours: 40 } });
+    expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent('Horas cubiertas/del horario: 20/40');
   });
 
   it('clicar numa faixa repassa o slotId (D445.3: a linha inteira abre "Editar agendamiento")', () => {

@@ -31,7 +31,8 @@ export interface PatientItinerarySlot {
 
 export interface PatientItineraryService {
   contractedServiceId: string;
-  contratadas: { weekly: number | null; authorized: number | null };
+  /** Soma das faixas do serviço (horas/semana) — dono único, vem da API (spec 056). */
+  scheduleHours: number;
   cobertas: number;
   slots: PatientItinerarySlot[];
 }
@@ -83,9 +84,9 @@ export function isVigenteAt(assignment: PatientItineraryAssignment, asOf: string
   );
 }
 
-/** "cobertas/contratadas" do serviço — `—` quando o serviço não tem horas semanais contratadas. */
-export function coverageHoursPair(cobertas: number, weekly: number | null): string {
-  return `${cobertas}/${weekly ?? '—'}`;
+/** "cobertas/horário" do serviço (ex.: "20/40") — `scheduleHours` é a soma das faixas, sempre número. */
+export function coverageHoursPair(cobertas: number, scheduleHours: number): string {
+  return `${cobertas}/${scheduleHours}`;
 }
 
 // ── "Próximos eventos/Substituição" (D445.3) — GET .../itinerary/events ─────────────────────

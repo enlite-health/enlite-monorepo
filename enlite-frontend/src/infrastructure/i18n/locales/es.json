@@ -4046,7 +4046,7 @@
               "generic": "No se pudo marcar el itinerario como listo. Probá de nuevo."
             }
           },
-          "hoursPair": "Horas cubiertas/contratadas: {{pair}}",
+          "hoursPair": "Horas cubiertas/del horario: {{pair}}",
           "noServices": "Este paciente no tiene servicios contratados activos.",
           "emptyDay": "Sin atención",
           "assign": "Asignar prestador",

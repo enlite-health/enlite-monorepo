@@ -17,7 +17,7 @@ const ICON_ACTION_CLASS =
 
 /**
  * Subcards do card do Kanban de pacientes (fase 8, DX-8.7): uma linha por serviço
- * contratado ATIVO, `nome · cobertas/contratadas · ícone`. Invariante 3 do "O que
+ * contratado ATIVO, `nome · cobertas/horário · ícone`. Invariante 3 do "O que
  * implementa": este componente só MOSTRA — nenhum clique aqui dispara
  * `updatePatientStatus` nem `activateRecruitment` (DX-8.8). O foguete NAVEGA para a
  * ficha, onde a guarda de completude decide se a ativação é possível.
@@ -41,11 +41,10 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
           `admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`,
           service.serviceCode,
         );
-        const contracted = service.contratadas.weekly;
-        const pairText = coverageHoursPair(service.cobertas, contracted);
+        const pairText = coverageHoursPair(service.cobertas, service.scheduleHours);
         const pairAria = t('admin.patients.kanban.subcard.pairAria', {
           covered: service.cobertas,
-          contracted: contracted ?? '—',
+          contracted: service.scheduleHours,
         });
 
         return (

@@ -60,7 +60,11 @@ describe('coverageHoursPair', () => {
     expect(coverageHoursPair(4, 20)).toBe('4/20');
   });
 
-  it('(0, null) → "0/—"', () => {
-    expect(coverageHoursPair(0, null)).toBe('0/—');
+  it('(20, 40) → "20/40"', () => {
+    expect(coverageHoursPair(20, 40)).toBe('20/40');
+  });
+
+  it('(0, 0) → "0/0" (serviço sem horário não vira traço)', () => {
+    expect(coverageHoursPair(0, 0)).toBe('0/0');
   });
 });

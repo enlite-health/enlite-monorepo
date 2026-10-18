@@ -23,7 +23,7 @@ const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 
 /**
  * Uma seção por serviço contratado na aba "Itinerario" (Fase 12, DX-12.10): o MESMO rótulo do
- * quadro C (`serviceTypes.<code>`), o par cobertas/contratadas (`coverageHoursPair`, fonte única),
+ * quadro C (`serviceTypes.<code>`), o par cobertas/horário (`coverageHoursPair`, fonte única),
  * a recusa DITA da última ação (o 409 de sobreposição mostra os 2 horários e, quando a API manda
  * `minGapMinutes`, a folga — o número vem sempre da API) e os 7 cards de dia. Só desenha: o estado
  * mora na aba.
@@ -42,7 +42,7 @@ export function ItinerarySection({ service, serviceCode, addressLabel, asOf, act
         {serviceLabel}
       </Heading>
       <Text data-testid={`itinerario-servico-par-${serviceId}`} size="sm" color="secondary">
-        {ti('hoursPair', { pair: coverageHoursPair(service.cobertas, service.contratadas.weekly) })}
+        {ti('hoursPair', { pair: coverageHoursPair(service.cobertas, service.scheduleHours) })}
       </Text>
 
       {overlap && (

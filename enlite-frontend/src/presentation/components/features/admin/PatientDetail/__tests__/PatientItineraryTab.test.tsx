@@ -85,13 +85,13 @@ const ITINERARY: PatientItinerary = {
   services: [
     {
       contractedServiceId: 'svc-1',
-      contratadas: { weekly: 20, authorized: 20 },
+      scheduleHours: 20,
       cobertas: 0,
       slots: [{ id: 'slot-1', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] }],
     },
     {
       contractedServiceId: 'svc-2',
-      contratadas: { weekly: 10, authorized: 10 },
+      scheduleHours: 10,
       cobertas: 0,
       slots: [{ id: 'slot-2', weekday: 2, startTime: '09:00', endTime: '11:00', durationMinutes: 120, assignments: [] }],
     },
