@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 import {
   computePatientCompleteness,
   type PatientCompletenessResult,
@@ -49,11 +50,10 @@ export async function loadPatientCompleteness(
                  ON pa.id = pcs.address_id AND pa.archived_at IS NULL
          WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
                                                                      AS services_without_address_count,
-       -- serviço ativo sem horário: NULL ou array vazio (decisão do Gabriel 07/09). O
-       -- jsonb_array_length não é redundante — o CHECK pcs_schedule_is_array aceita '[]'.
+       -- serviço ativo sem horário: nenhuma faixa vigente hoje (decisão do Gabriel 07/09; spec 056: fragmento único).
        (SELECT COUNT(*) FROM patient_contracted_services pcs
          WHERE pcs.patient_id = p.id AND pcs.active
-           AND (pcs.schedule IS NULL OR jsonb_array_length(pcs.schedule) = 0))
+           AND ${serviceWithoutScheduleSql('pcs')})
                                                                      AS services_without_schedule_count
      FROM patients p
     WHERE p.id = $1 AND p.deleted_at IS NULL`,

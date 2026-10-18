@@ -325,7 +325,8 @@ describe('PatientQueryRepository.list', () => {
     expect(rows[0].attentionReasons).toContain('INCOMPLETE_ADMISSION');
     const sql = mockPoolQuery.mock.calls[0][0] as string;
     expect(sql).toMatch(/hasActiveServiceWithoutSchedule/);
-    expect(sql).toMatch(/pcs\.schedule IS NULL OR jsonb_array_length\(pcs\.schedule\) = 0/);
+    expect(sql).toMatch(/NOT EXISTS \(SELECT 1 FROM patient_itinerary_slot s_ws WHERE s_ws\.contracted_service_id = pcs\.id AND s_ws\.valid @> CURRENT_DATE\)/);
+    expect(sql).not.toMatch(/pcs\.schedule|jsonb_array_length/);
   });
 
   it('a14. status PENDING_ADMISSION + checklist COMPLETO → needsAttention false, sem INCOMPLETE_ADMISSION', async () => {

@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { CountryCode } from '@shared/domain/countryCodes';
+import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { fetchPatientDetail } from './PatientDetailQueryHelper';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
@@ -169,10 +170,10 @@ export class PatientQueryRepository {
                         ON pa.id = pcs.address_id AND pa.archived_at IS NULL
                  WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
                                AS "hasActiveServiceWithoutAddress",
-        -- Decisão do Gabriel 07/09: serviço ativo sem horário (NULL ou array vazio) → SERVICE_SCHEDULE.
+        -- Decisão do Gabriel 07/09: serviço ativo sem horário (nenhuma faixa vigente hoje; spec 056) → SERVICE_SCHEDULE.
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  WHERE pcs.patient_id = p.id AND pcs.active
-                   AND (pcs.schedule IS NULL OR jsonb_array_length(pcs.schedule) = 0))
+                   AND ${serviceWithoutScheduleSql('pcs')})
                                AS "hasActiveServiceWithoutSchedule",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",

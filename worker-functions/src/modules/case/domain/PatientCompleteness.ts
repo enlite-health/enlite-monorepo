@@ -12,6 +12,8 @@
  * única lida pelos dois lados) não.
  */
 
+import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+
 export const PATIENT_COMPLETENESS_CODES = [
   'ADDRESS',
   'RESPONSIBLE',
@@ -361,12 +363,11 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
   SERVICE_ADDRESS: (p) => `EXISTS (SELECT 1 FROM patient_contracted_services pcs
         LEFT JOIN patient_addresses pa ON pa.id = pcs.address_id AND pa.archived_at IS NULL
         WHERE pcs.patient_id = ${p}.id AND pcs.active AND pa.id IS NULL)`,
-  // activeContractedServicesWithoutScheduleCount > 0 — serviço ativo com `schedule` NULL ou array
-  // vazio (migration 330). `jsonb_array_length(...) = 0` NÃO é redundante: o CHECK
-  // `pcs_schedule_is_array` aceita `'[]'::jsonb`, e o `[] → null` só existe na borda zod.
+  // activeContractedServicesWithoutScheduleCount > 0 — serviço ativo SEM nenhuma faixa vigente hoje
+  // (spec 056: o horário mora em `patient_itinerary_slot`; fragmento único `serviceWithoutScheduleSql`).
   SERVICE_SCHEDULE: (p) => `EXISTS (SELECT 1 FROM patient_contracted_services pcs
         WHERE pcs.patient_id = ${p}.id AND pcs.active
-          AND (pcs.schedule IS NULL OR jsonb_array_length(pcs.schedule) = 0))`,
+          AND ${serviceWithoutScheduleSql('pcs')})`,
   // !hasConsent — `null` e `false` contam como ausente, igual ao JS.
   CONSENT: (p) => `${p}.has_consent IS NOT TRUE`,
 };

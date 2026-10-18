@@ -2,12 +2,12 @@
  * Campos EFETIVOS da vaga (change `vaga-le-do-servico-contratado`, F1).
  *
  * Vaga nascida de um serviço contratado (`contracted_service_id IS NOT NULL`) NÃO é dona do horário: o
- * dono é `patient_contracted_services.schedule`. A cópia em `job_postings.schedule` continua no banco
+ * dono são as faixas vigentes do serviço (`patient_itinerary_slot`, lidas por `horario_do_servico`; spec 056). A cópia em `job_postings.schedule` continua no banco
  * (os escritores seguem copiando até a F7), mas NENHUM leitor a lê: todo leitor obtém o valor por esta
  * peça. O teste `vacancyEffectiveFields.contract.test.ts` reprova o arquivo que ler a coluna crua.
  *
  * Regra do valor efetivo (nunca `COALESCE(serviço, vaga)`):
- *   CASE WHEN jp.contracted_service_id IS NOT NULL THEN <alias_eff>.schedule ELSE jp.schedule END
+ *   CASE WHEN jp.contracted_service_id IS NOT NULL THEN horario_do_servico(jp.contracted_service_id, CURRENT_DATE) ELSE jp.schedule END
  * Serviço com horário NULL = "vaga sem horário"; não cai na cópia velha (vazio ambíguo ≠ ausência).
  * Vaga sem serviço lê o próprio `jp.schedule`.
  *
@@ -62,8 +62,10 @@ export const EFFECTIVE_AGE_BAND_ALIAS = 'effective_provider_age_band';
 
 /** Colunas que a vaga LÊ do serviço: `schedule` (F1), `providers_needed` (F5), a faixa etária (F6) e os 5 de recrutamento (057). */
 export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: string) => string> = {
-  schedule: (jp, eff) =>
-    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.schedule ELSE ${jp}.schedule END`,
+  // Spec 056: o horário do serviço NÃO é mais coluna (`pcs.schedule` morta) — vem das faixas vigentes hoje, em SQL
+  // (`horario_do_servico`, migration 527), no formato do antigo schedule + `durationMinutes`. `eff` não entra no horário.
+  schedule: (jp) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN horario_do_servico(${jp}.contracted_service_id, CURRENT_DATE) ELSE ${jp}.schedule END`,
   // `job_postings.providers_needed` é TEXT e `patient_contracted_services.providers_needed` é INT: os dois
   // ramos do CASE precisam do MESMO tipo (Postgres recusa o contrário) e os leitores esperam TEXT
   // (`~ '^[0-9]+$'`, `::INTEGER`). O cast mora AQUI, uma vez; leitor nenhum faz cast próprio.

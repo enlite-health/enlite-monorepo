@@ -65,7 +65,8 @@ interface DispatchOpts {
     id: string;
     providers_needed?: number | null;
     provider_age_band?: string | null;
-    schedule?: unknown;
+    /** Spec 056: `EXISTS (faixa vigente hoje) AS has_schedule` — o use case não lê mais `pcs.schedule`. */
+    has_schedule?: boolean;
     live_address_id?: string | null;
     // Spec 027 Fase 3 (D508): os 5 campos que a vaga copia + os 2 de ficha (que o use case NÃO lê).
     required_professions?: string[] | null;
@@ -113,14 +114,14 @@ function makeClient(opts: DispatchOpts) {
     if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
       if (!opts.serviceRow) return { rowCount: 0, rows: [] };
       const {
-        id, providers_needed = null, provider_age_band = null, schedule = null, live_address_id = null,
+        id, providers_needed = null, provider_age_band = null, has_schedule = false, live_address_id = null,
         required_professions = null, required_sex = null, required_experience = null, work_schedule = null, payment_day = null,
         worker_attributes = null, daily_obs = null,
       } = opts.serviceRow;
       return {
         rowCount: 1,
         rows: [{
-          id, providers_needed, provider_age_band, schedule, live_address_id,
+          id, providers_needed, provider_age_band, has_schedule, live_address_id,
           required_professions, required_sex, required_experience, work_schedule, payment_day,
           // O use case não seleciona estes dois; se um dia selecionar e copiar, os `it`s da T029 morrem.
           worker_attributes, daily_obs,
@@ -160,7 +161,7 @@ const READY_SERVICE = {
   id: SERVICE_ID,
   providers_needed: 2,
   provider_age_band: 'AGE_20_30',
-  schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+  has_schedule: true,
   live_address_id: 'addr-1',
   // Spec 027 Fase 3: os 5 campos do portão preenchidos (valores sintéticos, sem texto clínico).
   required_professions: ['AT'],
@@ -426,17 +427,22 @@ describe('ActivateRecruitmentUseCase', () => {
   it('422 — SERVICE_SCHEDULE: schedule null conta como ausente', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
-      serviceRow: { ...READY_SERVICE, schedule: null },
+      serviceRow: { ...READY_SERVICE, has_schedule: false },
     });
     await expect(promise).rejects.toMatchObject({ missing: ['SERVICE_SCHEDULE'] });
   });
 
-  it('422 — SERVICE_SCHEDULE: schedule [] (array vazio) TAMBÉM conta como ausente — não só null', async () => {
-    const { promise } = run({
+  it('serviço sem faixa vigente → RecruitmentNotReadyError(SERVICE_SCHEDULE); a consulta pergunta pela faixa vigente e não lê pcs.schedule', async () => {
+    const { promise, client } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
-      serviceRow: { ...READY_SERVICE, schedule: [] },
+      serviceRow: { ...READY_SERVICE, has_schedule: false },
     });
+    await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
     await expect(promise).rejects.toMatchObject({ missing: ['SERVICE_SCHEDULE'] });
+    const svcSql = String(client.query.mock.calls.map((c: unknown[]) => c[0]).find((q: unknown) => String(q).includes('FOR UPDATE OF pcs')));
+    expect(svcSql).toContain('s.valid @> CURRENT_DATE');
+    expect(svcSql).toContain('AS has_schedule');
+    expect(svcSql).not.toMatch(/pcs\.schedule/);
   });
 
   it('422 — COVERAGE: placeholder (FR-122) conta como ausente; "Particular" (FR-121) passa', async () => {
@@ -484,7 +490,7 @@ describe('ActivateRecruitmentUseCase', () => {
   it('422 — os TRÊS códigos juntos, na ordem SERVICE_ADDRESS, SERVICE_SCHEDULE, COVERAGE', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: null },
-      serviceRow: { ...READY_SERVICE, live_address_id: null, schedule: null },
+      serviceRow: { ...READY_SERVICE, live_address_id: null, has_schedule: false },
     });
     await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
     await expect(promise).rejects.toMatchObject({
@@ -506,7 +512,7 @@ describe('ActivateRecruitmentUseCase', () => {
         insurance_informed: null,
         has_verified_active_coverage: true,
       },
-      serviceRow: { ...READY_SERVICE, live_address_id: null, schedule: null },
+      serviceRow: { ...READY_SERVICE, live_address_id: null, has_schedule: false },
     });
     await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
     await expect(promise).rejects.toMatchObject({

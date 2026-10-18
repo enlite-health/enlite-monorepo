@@ -226,10 +226,17 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
       expect(vacancyEffectiveColumnsSql('jp', 'e')).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.providers_needed('jp', 'e')} AS providers_needed`);
     });
 
-    it('o horário efetivo é CASE (serviço manda quando há serviço), nunca COALESCE(serviço, vaga)', () => {
+    it('horário da vaga de serviço vem de horario_do_servico', () => {
       expect(vacancyEffectiveScheduleSql('jp', 'e')).toBe(
-        'CASE WHEN jp.contracted_service_id IS NOT NULL THEN e.schedule ELSE jp.schedule END',
+        'CASE WHEN jp.contracted_service_id IS NOT NULL THEN horario_do_servico(jp.contracted_service_id, CURRENT_DATE) ELSE jp.schedule END',
       );
+      // nunca a coluna morta do serviço (`pcs.schedule`), em qualquer alias
+      expect(vacancyEffectiveScheduleSql('jp', 'e')).not.toMatch(/\be\.schedule\b/);
+      expect(EFFECTIVE_FIELD_EXPRESSIONS.schedule('jp', 'pcs_eff')).not.toMatch(/pcs_eff\.schedule/);
+    });
+
+    it('o horário efetivo é CASE (serviço manda quando há serviço), nunca COALESCE(serviço, vaga)', () => {
+      expect(vacancyEffectiveScheduleSql('jp', 'e')).toMatch(/^CASE WHEN jp\.contracted_service_id IS NOT NULL THEN .+ ELSE jp\.schedule END$/);
       expect(vacancyEffectiveScheduleSql()).not.toMatch(/COALESCE/i);
       expect(vacancyEffectiveJoinSql('jp', 'e')).toBe('LEFT JOIN patient_contracted_services e ON e.id = jp.contracted_service_id');
     });
@@ -256,8 +263,8 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
       expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.schedule('jp', 'e')} AS schedule`);
       expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.age_range_min('jp', 'e')} AS age_range_min`);
       expect(cols.endsWith(`${vacancyEffectiveAgeBandSql('jp', 'e')} AS ${EFFECTIVE_AGE_BAND_ALIAS}`)).toBe(true);
-      // +1 da banda; +1 da vírgula interna do COALESCE de required_professions (057)
-      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length + 2);
+      // +1 da banda; +1 da vírgula interna do COALESCE de required_professions (057); +1 da vírgula de horario_do_servico(…, CURRENT_DATE) (056)
+      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length + 3);
       expect(cols).toContain('jp.schedule_days_hours'); // 057: work_schedule agora é efetivo
       expect(new Set(JOB_POSTING_COLUMNS).size).toBe(JOB_POSTING_COLUMNS.length);
       expect(vacancyRawColumnsSql().split(', ')).toEqual([...JOB_POSTING_COLUMNS]);
