@@ -71,6 +71,17 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
                   <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
                 </span>
               ) : null}
+              <span
+                data-testid={`subcard-reserva-${service.contractedServiceId}`}
+                data-alert={service.reserve !== null && service.reserve.count < service.reserve.minimum ? 'true' : 'false'}
+                className={service.reserve !== null && service.reserve.count < service.reserve.minimum ? 'text-cancelled' : 'text-gray-500'}
+              >
+                <Text as="span" size="xs" color="inherit">
+                  {service.reserve === null
+                    ? t('admin.patients.kanban.subcard.reserveNoVacancy')
+                    : t('admin.patients.kanban.subcard.reserve', { count: service.reserve.count, minimum: service.reserve.minimum })}
+                </Text>
+              </span>
               <Text
                 as="span"
                 size="xs"

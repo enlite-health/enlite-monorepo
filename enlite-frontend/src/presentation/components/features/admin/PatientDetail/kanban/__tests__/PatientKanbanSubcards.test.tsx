@@ -38,6 +38,7 @@ function service(overrides: Partial<PatientKanbanServiceSummary> = {}): PatientK
     contractedServiceId: 's-1',
     serviceCode: 'AT',
     scheduleHours: 20,
+    reserve: { count: 10, minimum: 10 },
     cobertas: 4,
     liveVacancyId: null,
     ...overrides,
@@ -172,6 +173,30 @@ describe('PatientKanbanSubcards (es)', () => {
       renderSubcards([service({ uncoveredDays: 3, cobertas: 4, scheduleHours: 20 })]);
       expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
     });
+  });
+});
+
+describe('PatientKanbanSubcards — selo de reserva (spec 056 T6.3)', () => {
+  it('reserva 7 → alerta', () => {
+    renderSubcards([service({ reserve: { count: 7, minimum: 10 } })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('Reserva 7/10');
+    expect(selo).toHaveAttribute('data-alert', 'true');
+  });
+
+  it('reserva 10 → sem alerta', () => {
+    renderSubcards([service({ reserve: { count: 10, minimum: 10 } })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('Reserva 10/10');
+    expect(selo).toHaveAttribute('data-alert', 'false');
+  });
+
+  it('null → sin vacante (nunca 0/10), sem alerta', () => {
+    renderSubcards([service({ reserve: null })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('sin vacante');
+    expect(selo).not.toHaveTextContent('0/10');
+    expect(selo).toHaveAttribute('data-alert', 'false');
   });
 });
 

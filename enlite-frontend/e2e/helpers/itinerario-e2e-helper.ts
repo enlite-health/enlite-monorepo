@@ -58,6 +58,8 @@ export interface ItineraryServiceDto {
   /** Soma das faixas do serviço (horas/semana) — spec 056; `contratadas` não existe mais. */
   scheduleHours: number;
   cobertas: number;
+  /** Reserva da vaga viva (spec 056 T6.2); `null` = sin vacante. */
+  reserve?: { count: number; minimum: number } | null;
   slots: ItinerarySlotDto[];
 }
 

@@ -29,11 +29,19 @@ export interface PatientItinerarySlot {
   assignments: PatientItineraryAssignment[];
 }
 
+/** Reserva da vaga viva do serviço (Equipo de Respuesta Rápida, spec 056 §6): `null` = sem vaga viva ("sin vacante", nunca 0). */
+export interface ServiceReserve {
+  count: number;
+  /** Sempre 10 hoje; vem da API, nunca fixado no cliente. */
+  minimum: number;
+}
+
 export interface PatientItineraryService {
   contractedServiceId: string;
   /** Soma das faixas do serviço (horas/semana) — dono único, vem da API (spec 056). */
   scheduleHours: number;
   cobertas: number;
+  reserve: ServiceReserve | null;
   slots: PatientItinerarySlot[];
 }
 

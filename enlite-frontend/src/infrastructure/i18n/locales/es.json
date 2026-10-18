@@ -3472,6 +3472,8 @@
         "subcard": {
           "weeklyUnit": "hs/sem",
           "pairAria": "{{covered}} de {{contracted}} horas semanales cubiertas",
+          "reserve": "Reserva {{count}}/{{minimum}}",
+          "reserveNoVacancy": "sin vacante",
           "openToActivate": "Abrir ficha para activar {{service}}",
           "loadError": "No se pudieron cargar los servicios de los pacientes.",
           "uncoveredDayAria_one": "{{count}} día sin cobertura",
@@ -4048,6 +4050,8 @@
             }
           },
           "hoursPair": "Horas cubiertas/del horario: {{pair}}",
+          "reserve": "Equipo de Respuesta Rápida: {{count}} de {{minimum}}",
+          "reserveNoVacancy": "Equipo de Respuesta Rápida: sin vacante",
           "noServices": "Este paciente no tiene servicios contratados activos.",
           "emptyDay": "Sin atención",
           "assign": "Asignar prestador",

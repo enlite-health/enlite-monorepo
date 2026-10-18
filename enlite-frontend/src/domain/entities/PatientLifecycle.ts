@@ -1,4 +1,5 @@
 import type { PatientStatus } from './patientEnums';
+import type { ServiceReserve } from './PatientItinerary';
 import type { PatientCompletenessCode } from './PatientCompleteness';
 
 /**
@@ -65,6 +66,8 @@ export interface PatientKanbanServiceSummary {
   serviceCode: string;
   /** Soma das faixas do serviço (horas/semana), da API. */
   scheduleHours: number;
+  /** Reserva da vaga viva (`null` = sin vacante); alerta quando `count < minimum`. */
+  reserve: ServiceReserve | null;
   /** Horas cobertas do itinerário (mesma conta do detalhe, `computeServiceCoverage`). */
   cobertas: number;
   /** Vaga viva (a mesma condição do `liveVacancyId` da ficha) — presente = já existe vacante. */

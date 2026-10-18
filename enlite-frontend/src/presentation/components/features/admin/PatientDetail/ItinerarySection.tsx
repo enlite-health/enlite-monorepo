@@ -45,6 +45,12 @@ export function ItinerarySection({ service, serviceCode, addressLabel, asOf, act
         {ti('hoursPair', { pair: coverageHoursPair(service.cobertas, service.scheduleHours) })}
       </Text>
 
+      <Text data-testid={`itinerario-reserva-${serviceId}`} size="sm" color="secondary">
+        {service.reserve === null
+          ? ti('reserveNoVacancy')
+          : ti('reserve', { count: service.reserve.count, minimum: service.reserve.minimum })}
+      </Text>
+
       {overlap && (
         <Text as="p" size="sm" role="alert" color="inherit" className="text-red-600" data-testid="itinerario-sobreposicao-erro">
           {ti('overlap', { existing: sideLabel(overlap.existing), requested: sideLabel(overlap.requested) })}
