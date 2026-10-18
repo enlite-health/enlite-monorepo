@@ -9,7 +9,13 @@
  */
 
 import type { SourceShiftDTO } from './AnaCareShiftsSource';
+import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from './AnaCarePatientMonth';
+
+/** Leitura em lote das validações por `sourceShiftId` (056 T5.1) — `ShiftHoursValidationRepository` a satisfaz estruturalmente. */
+export interface ShiftValidationReader {
+  getByShiftIds(sourceShiftIds: readonly string[]): Promise<Map<string, ValidationRow>>;
+}
 
 export interface EnliteDirectoryEntry {
   reservationId: string;
