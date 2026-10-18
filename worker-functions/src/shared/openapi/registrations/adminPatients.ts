@@ -1,6 +1,7 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
 import { PATIENT_CHAT_ROLE_PATTERN, updatePatientAddressSchema } from '@modules/case';
+import { authorizationBodySchema } from '@modules/case/interfaces/validators/contractedServiceAuthorizationSchemas';
 
 const AdminPatientsListQuery = z.object({
   status: z.string().optional().openapi({ description: 'Filtro por status do paciente.', example: 'ACTIVE' }),
@@ -432,5 +433,72 @@ registry.registerPath({
     502: { description: 'Periskope indisponível — diferente de "achei zero".', content: { 'application/json': { schema: ErrorResponseSchema } } },
     503: { description: 'Funcionalidade desligada (PATIENT_CHAT_LOOKUP_ENABLED).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+// ── Autorização de horas do serviço contratado, com vigência (spec 056 §5.2). `validTo` é INCLUSIVO. ──
+const AUTHORIZATION_PARAMS = z.object({ id: UuidParam, sid: UuidParam });
+const AUTHORIZATION_ERRORS = {
+  400: { description: 'params ou corpo inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  403: { description: 'Sem a célula patient_services exigida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/patients/{id}/contracted-services/{sid}/authorizations',
+  tags: ['Admin · Patients'],
+  summary: 'Horas autorizadas do serviço, com vigência',
+  description:
+    'Envelope `{ success, data: { authorizations } }`, ordem `lower(valid) DESC, recorded_at DESC`. Cada item: ' +
+    '`{ id, hours, validFrom, validTo (inclusivo), recordedAt, recordedBy, supersededAt }`; `supersededAt` preenchido = linha corrigida.',
+  security: [{ firebaseAuth: [] }],
+  request: { params: AUTHORIZATION_PARAMS },
+  responses: {
+    200: { description: 'Autorizações do serviço.', content: { 'application/json': { schema: OkMessage } } },
+    404: { description: 'Serviço inexistente ou de outro paciente.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    ...AUTHORIZATION_ERRORS,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/patients/{id}/contracted-services/{sid}/authorizations',
+  tags: ['Admin · Patients'],
+  summary: 'Registra horas autorizadas (vigência inteira, com fim)',
+  description:
+    '`hours` = total da vigência inteira (o mês é recorte na leitura). `validTo` inclusivo e obrigatório: `null` → 422 ' +
+    '`AUTHORIZATION_NEEDS_END`. Período sobreposto a outra autorização corrente → 409 `AUTHORIZATION_OVERLAPS`. Sem DELETE.',
+  security: [{ firebaseAuth: [] }],
+  request: { params: AUTHORIZATION_PARAMS, body: { content: { 'application/json': { schema: authorizationBodySchema } } } },
+  responses: {
+    201: { description: 'Autorização criada (`data` = AuthorizationView).', content: { 'application/json': { schema: OkMessage } } },
+    404: { description: 'Serviço inexistente ou de outro paciente.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'AUTHORIZATION_OVERLAPS.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    422: { description: 'AUTHORIZATION_NEEDS_END.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    ...AUTHORIZATION_ERRORS,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/patients/{id}/contracted-services/{sid}/authorizations/{aid}/supersede',
+  tags: ['Admin · Patients'],
+  summary: 'Corrige uma autorização (nova linha; a antiga ganha supersededAt)',
+  description:
+    'Mesmo corpo do POST. Na mesma transação a corrente `aid` é marcada `supersededAt` e a nova é gravada; devolve a NOVA. ' +
+    '`aid` inexistente ou já substituída → 404 `AUTHORIZATION_NOT_FOUND`.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: AUTHORIZATION_PARAMS.extend({ aid: UuidParam }),
+    body: { content: { 'application/json': { schema: authorizationBodySchema } } },
+  },
+  responses: {
+    201: { description: 'A linha nova (`data` = AuthorizationView).', content: { 'application/json': { schema: OkMessage } } },
+    404: { description: 'AUTHORIZATION_NOT_FOUND (ou serviço alheio).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'AUTHORIZATION_OVERLAPS.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    422: { description: 'AUTHORIZATION_NEEDS_END.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    ...AUTHORIZATION_ERRORS,
   },
 });
