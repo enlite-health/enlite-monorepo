@@ -4,6 +4,10 @@
  * `PatientContractedServiceRepository.update` (PATCH do serviço) → `vacancy_source_change_notices`
  * → `VacanciesController.getVacancyById` (GET) → `VacancySourceChangeNoticeController.acknowledge` (ack).
  *
+ * ⚑E/530 (056): um predicado só de vaga viva = `deleted_at IS NULL` (decisão do Gabriel, 16/10, plan §12). Vaga CLOSED/DE_BAJA
+ * NÃO apagada CONTA como viva — para o aviso de mudança e para a recusa de apagar (`refuseClear`). Sem vaga viva = vaga com
+ * `deleted_at`. O índice 530 admite UMA vaga não apagada por serviço: várias vagas "ao lado" = um serviço por vaga.
+ *
  * Roda no CI pelo `npm run test:e2e` (jest.config.e2e.js). Nenhum canal real: nada aqui chama Gemini/Talentum/WhatsApp.
  */
 import { Pool } from 'pg';
@@ -34,7 +38,7 @@ let admin: Pool;
 let identityPool: Pool;
 let caseSeq = 930000;
 
-interface Ctx { patientId: string; serviceId: string; vacancyIds: string[] }
+interface Ctx { patientId: string; addressId: string; serviceId: string; vacancyIds: string[] }
 
 const repo = () => new PatientContractedServiceRepository({ listForService: async () => [] } as never);
 const patchSchedule = (ctx: Ctx, schedule: unknown) =>
@@ -55,21 +59,24 @@ const asRes = (r: unknown) => r as never;
 interface VacancyOpts { draft?: boolean; status?: string; deleted?: boolean }
 
 /** Paciente + serviço (horário A) + N vagas vinculadas. Sem `vacancies` = serviço sem nenhuma vaga. */
-async function seed(vacancies: VacancyOpts[], serviceSchedule: unknown = SCHEDULE_A): Promise<Ctx> {
-  const patientId = randomUUID();
-  const addressId = randomUUID();
+async function seed(vacancies: VacancyOpts[], serviceSchedule: unknown = SCHEDULE_A, base?: Ctx): Promise<Ctx> {
+  // `base`: outro serviço do MESMO paciente (o 530 admite uma vaga não apagada por serviço).
+  const patientId = base?.patientId ?? randomUUID();
+  const addressId = base?.addressId ?? randomUUID();
   const serviceId = randomUUID();
   const caseNumber = caseSeq++;
-  await admin.query(
-    `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, case_number)
-     VALUES ($1, $2, 'Paciente', 'Aviso Vaga', 'AR', $3)`,
-    [patientId, `${TAG}-${patientId}`, caseNumber],
-  );
-  await admin.query(
-    `INSERT INTO patient_addresses (id, patient_id, country, address_formatted, city, state)
-     VALUES ($1, $2, 'AR', 'Av. Corrientes 1234, CABA', 'CABA', 'Buenos Aires')`,
-    [addressId, patientId],
-  );
+  if (!base) {
+    await admin.query(
+      `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, case_number)
+       VALUES ($1, $2, 'Paciente', 'Aviso Vaga', 'AR', $3)`,
+      [patientId, `${TAG}-${patientId}`, caseNumber],
+    );
+    await admin.query(
+      `INSERT INTO patient_addresses (id, patient_id, country, address_formatted, city, state)
+       VALUES ($1, $2, 'AR', 'Av. Corrientes 1234, CABA', 'CABA', 'Buenos Aires')`,
+      [addressId, patientId],
+    );
+  }
   await admin.query(
     `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, providers_needed, address_id)
      VALUES ($1, $2, 'AT', 'AR', $3, $3, 1, $4)`,
@@ -88,7 +95,7 @@ async function seed(vacancies: VacancyOpts[], serviceSchedule: unknown = SCHEDUL
         v.status ?? 'SEARCHING', v.draft ?? false, v.deleted ? new Date() : null],
     );
   }
-  return { patientId, serviceId, vacancyIds };
+  return { patientId, addressId, serviceId, vacancyIds };
 }
 
 const notices = (jobPostingId?: string) =>
@@ -150,11 +157,9 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
     expect(cols.rows.map((c) => c.column_name)).toEqual(['acknowledged_at', 'acknowledged_by', 'changed_at', 'field', 'id', 'job_posting_id']);
   });
 
-  it('uma linha por vaga publicada viva (2 vivas = 2 avisos)', async () => {
-    const ctx = await seed([{}, { status: 'ACTIVE' }]);
-    await patchSchedule(ctx, SCHEDULE_X);
-    const n = await notices();
-    expect(n.rows.map((r) => r.job_posting_id).sort()).toEqual([...ctx.vacancyIds].sort());
+  // Prova negativa: "2 vagas vivas do MESMO serviço" não existe mais — o 530 barra a 2ª ao semear.
+  it('2 vagas vivas do MESMO serviço não existem mais (530): a 2ª é recusada com 23505', async () => {
+    await expect(seed([{}, { status: 'ACTIVE' }])).rejects.toMatchObject({ code: '23505', constraint: 'uq_job_postings_vaga_viva_por_servico' });
   });
 
   it('valor igual = 0 aviso (mesmo conteúdo reenviado)', async () => {
@@ -183,21 +188,27 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
     expect(svc.rows[0].schedule).toEqual([{ ...SCHEDULE_X[0], endTime: '18:45' }]);
   });
 
+  // ⚑E: CLOSED/DE_BAJA não apagada CONTA como viva (1 aviso); só `deleted_at` tira a vaga de cena (0 aviso).
   it.each([
-    ['CLOSED', { status: 'CLOSED' }],
-    ['DE_BAJA', { status: 'DE_BAJA' }],
-    ['apagada (deleted_at)', { deleted: true }],
-  ] as const)('vaga encerrada (%s) = 0 aviso', async (_nome, opts) => {
+    ['CLOSED', { status: 'CLOSED' }, 1],
+    ['DE_BAJA', { status: 'DE_BAJA' }, 1],
+    ['apagada (deleted_at)', { deleted: true }, 0],
+  ] as const)('vaga encerrada (%s) segue o predicado único (⚑E): %i aviso(s)', async (_nome, opts, esperado) => {
     const ctx = await seed([opts]);
     await patchSchedule(ctx, SCHEDULE_X);
-    expect((await notices()).rows).toHaveLength(0);
+    expect((await notices()).rows).toHaveLength(esperado);
   });
 
-  it('mistura: só a vaga publicada viva recebe aviso (rascunho e encerrada ao lado ficam sem)', async () => {
-    const ctx = await seed([{ draft: true }, {}, { status: 'CLOSED' }]);
-    await patchSchedule(ctx, SCHEDULE_X);
+  // Um serviço por vaga (530), todos do mesmo paciente; o PATCH vai a cada serviço. Rascunho = sem aviso; publicada e
+  // CLOSED não apagada (viva, ⚑E) = aviso; apagada = sem aviso.
+  it('mistura (um serviço por vaga): rascunho e apagada ficam sem aviso; publicada e encerrada não apagada recebem', async () => {
+    const rascunho = await seed([{ draft: true }]);
+    const publicada = await seed([{}], SCHEDULE_A, rascunho);
+    const encerrada = await seed([{ status: 'CLOSED' }], SCHEDULE_A, rascunho);
+    const apagada = await seed([{ deleted: true }], SCHEDULE_A, rascunho);
+    for (const c of [rascunho, publicada, encerrada, apagada]) await patchSchedule(c, SCHEDULE_X);
     const n = await notices();
-    expect(n.rows.map((r) => r.job_posting_id)).toEqual([ctx.vacancyIds[1]]);
+    expect(n.rows.map((r) => r.job_posting_id).sort()).toEqual([publicada.vacancyIds[0], encerrada.vacancyIds[0]].sort());
   });
 
   it('2ª mudança com aviso aberto atualiza o MESMO aviso (1 linha, changed_at avança)', async () => {
@@ -282,10 +293,10 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
     expect(await get()).toEqual([]);
   });
 
-  it('PATCH sem o campo schedule (ex.: só providersNeeded) = 0 aviso', async () => {
+  it('PATCH sem o campo schedule (ex.: só providersNeeded) = 0 aviso de `schedule` (só o de providers_needed, que mudou)', async () => {
     const ctx = await seed([{}]);
     await repo().update(ctx.serviceId, { providersNeeded: 3, actorUid: UID } as never);
-    expect((await notices()).rows).toHaveLength(0);
+    expect((await notices()).rows.map((r) => r.field)).toEqual(['providers_needed']);
   });
 
   describe('F5 — quantidade de prestadores (providers_needed)', () => {
@@ -309,12 +320,13 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
       expect((await notices()).rows).toHaveLength(0);
     });
 
-    it('só rascunho, só encerrada ou sem vaga = 0 aviso', async () => {
-      for (const vagas of [[{ draft: true }], [{ status: 'CLOSED' }], []] as VacancyOpts[][]) {
+    it('só rascunho, só apagada ou sem vaga = 0 aviso; CLOSED não apagada conta como viva (⚑E) = 1 aviso', async () => {
+      const casos: Array<[VacancyOpts[], number]> = [[[{ draft: true }], 0], [[{ deleted: true }], 0], [[], 0], [[{ status: 'CLOSED' }], 1]];
+      for (const [vagas, esperado] of casos) {
         await wipe();
         const ctx = await seed(vagas);
         await patchProviders(ctx, 3);
-        expect((await notices()).rows).toHaveLength(0);
+        expect((await notices()).rows).toHaveLength(esperado);
       }
     });
 
@@ -326,11 +338,16 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
       expect((await notices()).rows).toHaveLength(0);
     });
 
-    it('apagar (null) SEM vaga viva (só encerrada) → grava NULL no serviço, sem aviso', async () => {
-      const ctx = await seed([{ status: 'CLOSED' }]);
+    it('apagar (null) SEM vaga viva (só apagada) → grava NULL, sem aviso; com CLOSED não apagada (viva, ⚑E) → recusa', async () => {
+      const ctx = await seed([{ deleted: true }]);
       await patchProviders(ctx, null);
       expect(await providersOf(ctx.serviceId)).toBeNull();
       expect((await notices()).rows).toHaveLength(0);
+
+      const ctxClosed = await seed([{ status: 'CLOSED' }], SCHEDULE_A, ctx);
+      const err = await patchProviders(ctxClosed, null).catch((e) => e);
+      expect(err).toMatchObject({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', field: 'providers_needed', vacancyIds: [ctxClosed.vacancyIds[0]] });
+      expect(await providersOf(ctxClosed.serviceId)).toBe(1);
     });
   });
 
@@ -362,12 +379,13 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
       expect((await notices()).rows).toHaveLength(0);
     });
 
-    it('só rascunho, só encerrada ou sem vaga = 0 aviso', async () => {
-      for (const vagas of [[{ draft: true }], [{ status: 'CLOSED' }], []] as VacancyOpts[][]) {
+    it('só rascunho, só apagada ou sem vaga = 0 aviso; CLOSED não apagada conta como viva (⚑E) = 1 aviso', async () => {
+      const casos: Array<[VacancyOpts[], number]> = [[[{ draft: true }], 0], [[{ deleted: true }], 0], [[], 0], [[{ status: 'CLOSED' }], 1]];
+      for (const [vagas, esperado] of casos) {
         await wipe();
         const ctx = await seed(vagas);
         await patchBand(ctx, 'AGE_45_PLUS');
-        expect((await notices()).rows).toHaveLength(0);
+        expect((await notices()).rows).toHaveLength(esperado);
       }
     });
 
