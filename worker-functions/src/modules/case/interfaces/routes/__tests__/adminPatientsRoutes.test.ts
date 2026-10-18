@@ -101,6 +101,9 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/:id/contracted-services': 'patient_services:read',
   'POST /patients/:id/contracted-services': 'patient_services:create',
   'PATCH /patients/:id/contracted-services/:sid': 'patient_services:update',
+  'GET /patients/:id/contracted-services/:sid/authorizations': 'patient_services:read',
+  'POST /patients/:id/contracted-services/:sid/authorizations': 'patient_services:update',
+  'POST /patients/:id/contracted-services/:sid/authorizations/:aid/supersede': 'patient_services:update',
   // Itinerário — leitura (fase 7, DX-7.7, Q-7.3): mesma célula do GET de serviços contratados,
   // porque a resposta carrega os mesmos weeklyHours/authorizedHours.
   'GET /patients/:id/itinerary': 'patient_services:read',
@@ -257,8 +260,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 57 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(57);
+  it('a família declara exatamente 60 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051) + as 3 da autorização de horas do serviço (spec 056)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(60);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -282,7 +285,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(57);
+      expect(scanExpressRouter(router)).toHaveLength(60);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
