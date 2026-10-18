@@ -251,9 +251,9 @@ export function seedServiceWithLiveVacancySql(patientId: string, addressId: stri
     status: 'SEARCHING',
     isDraft: false,
   });
-  // CHECK job_postings_service_owns_fields_chk (mig 511): vaga com serviço NÃO guarda as 4 colunas do serviço.
+  // CHECK job_postings_service_owns_fields_chk (mig 525): vaga com serviço NÃO guarda as 9 colunas do serviço.
   runSQL(
-    `UPDATE job_postings SET contracted_service_id = '${serviceId}', schedule = NULL, providers_needed = NULL, age_range_min = NULL, age_range_max = NULL WHERE id = '${vacancyId}'`,
+    `UPDATE job_postings SET contracted_service_id = '${serviceId}', schedule = NULL, providers_needed = NULL, age_range_min = NULL, age_range_max = NULL, required_sex = NULL, required_professions = '{}', required_experience = NULL, work_schedule = NULL, payment_day = NULL WHERE id = '${vacancyId}'`,
   );
   return { serviceId, vacancyId };
 }
