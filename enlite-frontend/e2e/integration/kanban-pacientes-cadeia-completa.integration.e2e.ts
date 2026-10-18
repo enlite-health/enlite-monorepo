@@ -50,7 +50,7 @@ import {
 } from '../helpers/quadro-c-e2e-helper';
 import {
   seedCadeia, seedRoleWorkers, seedPatientZ, seedMarkedWorker, countPatients, residueByIds, cleanupCadeia, collectRequests, readKanbanState,
-  lastStatusChangeSource, printPath, type CadeiaPatientX, type CadeiaPatientWithVacancy,
+  lastStatusChangeSource, printPath, type CadeiaPatientX, type CadeiaPatientY,
 } from '../helpers/cadeia-completa-e2e-helper';
 
 const STAFF = mockAdminUserFor('cadeia-completa');
@@ -127,7 +127,7 @@ test.describe('cadeia-completa @integration', () => {
     const seeds: Array<{ cleanup: () => void }> = [];
 
     let x: CadeiaPatientX | null = null;
-    let y: CadeiaPatientWithVacancy | null = null;
+    let y: CadeiaPatientY | null = null;
     let m = '';
     let v = '';
     let wjaM = '';
@@ -398,12 +398,13 @@ test.describe('cadeia-completa @integration', () => {
 
       insertWJA({ workerId: wa, jobPostingId: Y.vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
       workerVacancyPairs.push({ workerId: wa, vacancyId: Y.vacancyId });
+      insertWJA({ workerId: wa, jobPostingId: Y.vacancyLateId, funnelStage: 'QUICK_RESPONSE_TEAM' }); // a faixa 13:00 é de um serviço próprio (spec 056)
+      workerVacancyPairs.push({ workerId: wa, vacancyId: Y.vacancyLateId });
 
       await test.step('passo 7 — pela tela, WA no paciente Y em outro endereço no mesmo dia: 30 min depois do fim do passo 6 → recusado e dito; 1h depois → aceito (invariante 4)', async () => {
-        const slotsY = itineraryData(await readItineraryApi(request, Y.patientId))
-          .services.find((s) => s.contractedServiceId === Y.serviceId)?.slots ?? [];
-        const slotEarly = slotsY.find((s) => s.startTime.startsWith('12:30'));
-        const slotLate = slotsY.find((s) => s.startTime.startsWith('13:00'));
+        const servicesY = itineraryData(await readItineraryApi(request, Y.patientId)).services;
+        const slotEarly = servicesY.find((s) => s.contractedServiceId === Y.serviceId)?.slots.find((s) => s.startTime.startsWith('12:30'));
+        const slotLate = servicesY.find((s) => s.contractedServiceId === Y.serviceLateId)?.slots.find((s) => s.startTime.startsWith('13:00'));
         if (!slotEarly || !slotLate) throw new Error('passo 7: slots 12:30/13:00 de Y ausentes');
         const optsY = await allocationOptionsApi(request, token, Y.patientId, Y.serviceId);
         const waLabelY = ((optsY.body.data as { options: OptionDto[] } | undefined)?.options ?? []).find((o) => o.workerId === wa)?.displayName;

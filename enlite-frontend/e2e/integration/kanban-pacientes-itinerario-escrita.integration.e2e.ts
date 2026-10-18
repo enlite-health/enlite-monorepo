@@ -259,22 +259,25 @@ test.describe('itinerario-escrita @integration', () => {
     const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.62, lng: -58.42 });
     const sY = await createServiceViaApi(request, seedY.patientId, {
       addressId: seedY.addressId,
-      schedule: [
-        { dayOfWeek: 1, startTime: '12:30', durationMinutes: 210 },
-        { dayOfWeek: 1, startTime: '12:00', durationMinutes: 240 },
-      ],
+      schedule: [{ dayOfWeek: 1, startTime: '12:30', durationMinutes: 210 }],
+    });
+    // Spec 056: a faixa 12:00-16:00 sobrepõe a de 12:30 — não cabe no mesmo serviço (409 SLOT_OVERLAP); vai para um
+    // serviço PRÓPRIO do mesmo paciente, no MESMO endereço, e a vaga/candidatura dela é desse serviço.
+    const sYc = await createServiceViaApi(request, seedY.patientId, {
+      addressId: seedY.addressId,
+      schedule: [{ dayOfWeek: 1, startTime: '12:00', durationMinutes: 240 }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);
     const v1 = await activateRecruitmentViaApi(request, seedX.patientId, seedX.serviceId);
     const vY = await activateRecruitmentViaApi(request, seedY.patientId, sY);
+    const vYc = await activateRecruitmentViaApi(request, seedY.patientId, sYc);
 
     const itinX = await readItineraryApi(request, seedX.patientId);
     const slot1 = itinX.body.data?.services.find((s) => s.contractedServiceId === seedX.serviceId)?.slots[0]?.id;
     const itinY = await readItineraryApi(request, seedY.patientId);
-    const svcY = itinY.body.data?.services.find((s) => s.contractedServiceId === sY);
-    const slotY1230 = svcY?.slots.find((sl) => sl.startTime === '12:30')?.id;
-    const slotY1200 = svcY?.slots.find((sl) => sl.startTime === '12:00')?.id;
+    const slotY1230 = itinY.body.data?.services.find((s) => s.contractedServiceId === sY)?.slots[0]?.id;
+    const slotY1200 = itinY.body.data?.services.find((s) => s.contractedServiceId === sYc)?.slots[0]?.id;
     if (!slot1 || !slotY1230 || !slotY1200) {
       throw new Error('itinerario-folga-recusa: slot ausente na semente');
     }
@@ -283,6 +286,7 @@ test.describe('itinerario-escrita @integration', () => {
     try {
       insertWJA({ workerId: w, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: w, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: vYc, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       const r1 = await allocateApi(request, token, seedX.patientId, seedX.serviceId, slot1, { workerId: w });
       expect(r1.status).toBe(201);
@@ -292,7 +296,7 @@ test.describe('itinerario-escrita @integration', () => {
       expect(r2.body.minGapMinutes).not.toBeNull();
       expect(r2.body.minGapMinutes).not.toBeUndefined();
 
-      const r3 = await allocateApi(request, token, seedY.patientId, sY, slotY1200, { workerId: w });
+      const r3 = await allocateApi(request, token, seedY.patientId, sYc, slotY1200, { workerId: w });
       expect(r3.status).toBe(409);
 
       const activeCount = countActiveAllocations(w);
@@ -303,6 +307,7 @@ test.describe('itinerario-escrita @integration', () => {
       cleanupItineraryWrite(seedY.patientId);
       cleanupWJAAndEncuadre(w, v1);
       cleanupWJAAndEncuadre(w, vY);
+      cleanupWJAAndEncuadre(w, vYc);
       cleanupTestWorker(w);
       seedX.cleanup();
       seedY.cleanup();
