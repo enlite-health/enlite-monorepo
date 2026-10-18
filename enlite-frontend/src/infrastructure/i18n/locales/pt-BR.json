@@ -3331,7 +3331,18 @@
         "coverageContactRemove": "Remover contato",
         "coverageContactEmpty": "Sem contatos de emergência da cobertura.",
         "coverageContactNotice": "Estes dados ficam registrados na ficha do paciente e são impressos no Projeto Terapêutico entregue à família e à cobertura. Se cadastrar um profissional, avise-o de que o contato dele consta aqui.",
-        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui."
+        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui.",
+        "shift": {
+          "start": "Início",
+          "end": "Fim",
+          "allDay": "Dia inteiro",
+          "equalUseAllDay": "Para 24 h use 'Dia inteiro'",
+          "hours": "{{hours}} h",
+          "nextDay": "(+1)",
+          "add": "Adicionar turno",
+          "remove": "Remover turno"
+        },
+        "scheduleOverlap": "Dois turnos do mesmo serviço se sobrepõem."
       },
       "kanban": {
         "title": "Pacientes — Kanban",

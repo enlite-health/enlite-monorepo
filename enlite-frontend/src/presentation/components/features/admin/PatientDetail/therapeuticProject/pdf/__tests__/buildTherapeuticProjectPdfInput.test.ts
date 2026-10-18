@@ -42,7 +42,7 @@ const SERVICO: PatientContractedServiceDetail = {
   providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: 'addr1',
   liveVacancy: null, liveVacancyRedacted: false,
-  schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+  schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 }],
   active: true,
   endedAt: null,
   country: 'AR',

@@ -145,7 +145,7 @@ const contractedServiceSchema = z
     // Migration 330: ponteiro para o endereço + horário do encuadre (array do DayScheduleEditor).
     addressId: z.string().nullable(),
     schedule: z
-      .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() }))
+      .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), durationMinutes: z.number(), endTime: z.string() }))
       .nullable(),
     // Spec 047 (F2): vaga viva do serviço — allow-list de 4 chaves (`.strict()`: campo a mais quebra o parse).
     // `null` + `liveVacancyRedacted: false` = sem vaga; `null` + `true` = o ator não lê vagas (não é "sem vaga").

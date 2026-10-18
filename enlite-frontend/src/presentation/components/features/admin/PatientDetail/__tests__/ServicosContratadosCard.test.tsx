@@ -94,8 +94,8 @@ const SERVICE: PatientContractedServiceDetail = {
 const ADDRESS_HOME = { ...patientDetailFixture.addresses[0], id: 'addr-home', addressFormatted: 'Rua Augusta, 975 - Centro', addressRaw: null };
 const ADDRESS_SCHOOL = { ...patientDetailFixture.addresses[0], id: 'addr-school', addressFormatted: null, addressRaw: 'Av. Cruzeiro do Sul, 1212' };
 const SCHEDULE = [
-  { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-  { dayOfWeek: 3, startTime: '08:00', endTime: '12:00' },
+  { dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
+  { dayOfWeek: 3, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
 ];
 
 /**

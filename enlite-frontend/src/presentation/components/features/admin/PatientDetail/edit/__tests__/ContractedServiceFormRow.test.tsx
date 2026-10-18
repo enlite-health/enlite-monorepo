@@ -337,7 +337,7 @@ describe('ContractedServiceFormRow', () => {
     });
 
     it('serviço COM horário: o aviso âmbar some', () => {
-      const svc = { ...SERVICE, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] };
+      const svc = { ...SERVICE, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 }] };
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
       expect(screen.queryByTestId('svc-schedule-none-1')).toBeNull();
     });
@@ -432,19 +432,18 @@ describe('ContractedServiceFormRow', () => {
 
     it('modo EXISTENTE: hidrata o endereço e o horário do serviço; trocar o endereço e salvar envia o novo addressId', async () => {
       mockUpdate.mockResolvedValue(SERVICE);
-      const svc = { ...SERVICE, addressId: 'addr-home', schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] };
+      const svc = { ...SERVICE, addressId: 'addr-home', schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 }] };
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
       expect((screen.getByTestId('svc-addressId-1') as HTMLSelectElement).value).toBe('addr-home');
-      // O editor de horário (o MESMO da vaga, `DayScheduleEditor`) mostra o slot hidratado na
-      // segunda-feira (dayOfWeek 1 → 'monday'): existe o botão de remover do slot 0.
-      expect(screen.getByTestId('day-schedule-remove-monday-0')).toBeTruthy();
+      // O editor de turnos (spec 056) mostra o turno hidratado na segunda-feira (dayOfWeek 1).
+      expect(screen.getByTestId('svc-shift-remove-1-1-0')).toBeTruthy();
 
       fireEvent.change(screen.getByTestId('svc-addressId-1'), { target: { value: 'addr-school' } });
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
       expect(mockUpdate.mock.calls[0][2]).toMatchObject({
         addressId: 'addr-school',
-        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       });
     });
 
@@ -460,16 +459,40 @@ describe('ContractedServiceFormRow', () => {
       expect(mockUpdate.mock.calls[0][2]).toMatchObject({ addressId: null });
     });
 
-    it('adicionar um slot no editor de horário e salvar envia o array no formato da vaga ({dayOfWeek, startTime, endTime})', async () => {
+    it('adicionar um turno no editor e salvar envia {dayOfWeek, startTime, durationMinutes}', async () => {
       mockUpdate.mockResolvedValue(SERVICE);
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
-      // O DayScheduleEditor expõe um "+" por dia; domingo é dayOfWeek 0 e nasce 09:00-17:00.
-      fireEvent.click(screen.getByTestId('day-schedule-add-sunday'));
+      // O editor expõe um "+" por dia; domingo é dayOfWeek 0 e nasce 09:00-17:00 (480 min).
+      fireEvent.click(screen.getByTestId('svc-shift-add-1-0'));
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
       const sent = mockUpdate.mock.calls[0][2].schedule;
       expect(Array.isArray(sent)).toBe(true);
-      expect(sent[0]).toMatchObject({ dayOfWeek: 0, startTime: '09:00', endTime: '17:00' });
+      expect(sent[0]).toEqual({ dayOfWeek: 0, startTime: '09:00', durationMinutes: 480 });
+    });
+
+    it('submit envia durationMinutes 720 (20:00 → 08:00), sem endTime', async () => {
+      mockUpdate.mockResolvedValue(SERVICE);
+      const svc = { ...SERVICE, schedule: [{ dayOfWeek: 2, startTime: '20:00', endTime: '08:00', durationMinutes: 720 }] };
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-shift-duration-1-2-0').textContent).toContain('12 h');
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+      expect(mockUpdate.mock.calls[0][2].schedule).toEqual([{ dayOfWeek: 2, startTime: '20:00', durationMinutes: 720 }]);
+    });
+
+    it('Fin = Inicio bloqueia o Guardar', () => {
+      const svc = { ...SERVICE, schedule: [{ dayOfWeek: 2, startTime: '20:00', endTime: '20:00', durationMinutes: 720 }] };
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-shift-error-1-2-0')).toBeTruthy();
+      expect(screen.getByTestId('contracted-service-save-s1')).toBeDisabled();
+    });
+
+    it('409 SLOT_OVERLAP mostra svc-schedule-overlap-1', async () => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('overlap'), { status: 409, code: 'SLOT_OVERLAP' }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      expect((await screen.findByTestId('svc-schedule-overlap-1')).textContent).toContain('se superponen');
     });
   });
 });

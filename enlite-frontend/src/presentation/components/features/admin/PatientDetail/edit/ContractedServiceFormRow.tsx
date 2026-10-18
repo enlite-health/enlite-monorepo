@@ -13,7 +13,8 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
-import { DayScheduleEditor } from '@presentation/components/molecules/DayScheduleEditor';
+import { ServiceShiftEditor } from './ServiceShiftEditor';
+import { shiftsToSlots, slotsToShifts } from '@domain/scheduleHours';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
 import { AvisoAmbar } from './AvisoAmbar';
 import { NumericField } from './NumericField';
@@ -69,8 +70,8 @@ const schema = z.object({
   // Migration 330: '' = sem endereço (o checklist acusa SERVICE_ADDRESS; não é erro de form —
   // a operadora pode salvar o serviço antes de ter o domicílio e vincular depois).
   addressId: z.string(),
-  // Horário do encuadre — o mesmo slot do DayScheduleEditor. [] = "ainda sem horário" → null.
-  schedule: z.array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() })),
+  // Horário do encuadre (spec 056): turnos Inicio/Fin/Todo el día; viaja como durationMinutes. [] = "ainda sem horário" → null.
+  schedule: z.array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string(), allDay: z.boolean() })),
   deviceTypeCodes: z.array(z.string()),
   ...recruitmentFormSchema, // spec 027 Fase 3
 });
@@ -127,6 +128,8 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
   const isNew = service === null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shiftsValid, setShiftsValid] = useState(true);
+  const [overlap, setOverlap] = useState(false);
 
   const { register, handleSubmit, control, reset, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -148,7 +151,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       // aparece no select e, se ficasse no form, o PATCH reenviaria o UUID morto que a tela
       // mostra como "vazio" (gate, 06/09). Fora da lista → '' → salvar sem escolher manda null.
       addressId: addresses.some((a) => a.id === service?.addressId) ? String(service?.addressId) : '',
-      schedule: service?.schedule ?? [],
+      schedule: slotsToShifts(service?.schedule ?? []),
       deviceTypeCodes: service?.deviceTypes ?? [],
       ...recruitmentDefaults(service),
     },
@@ -166,6 +169,8 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setError(null);
+    setOverlap(false);
+    if (!shiftsValid) return;
     setBusy(true);
     const nz = (v: string): string | null => (v.trim() ? v.trim() : null);
     try {
@@ -186,7 +191,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           guardShift: nz(values.guardShift) as never,
           providerAgeBand: nz(values.providerAgeBand) as never,
           addressId: nz(values.addressId),
-          schedule: scheduleOrNull(values.schedule),
+          schedule: scheduleOrNull(shiftsToSlots(values.schedule)),
           deviceTypeCodes: values.deviceTypeCodes,
           ...recruitmentBody(values),
         });
@@ -207,7 +212,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           guardShift: nz(values.guardShift) as never,
           providerAgeBand: nz(values.providerAgeBand) as never,
           addressId: nz(values.addressId),
-          schedule: scheduleOrNull(values.schedule),
+          schedule: scheduleOrNull(shiftsToSlots(values.schedule)),
           deviceTypeCodes: values.deviceTypeCodes,
           ...recruitmentBody(values),
         });
@@ -218,8 +223,10 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       // cambios" apareceria ao fechar mesmo sem NADA pendente).
       reset(values);
       onSaved(saved);
-    } catch {
-      setError(isNew ? te('createServiceError') : te('updateServiceError'));
+    } catch (e) {
+      // Duck-typing no `code` (409 SLOT_OVERLAP do back): sem depender da classe de erro do service.
+      if ((e as { code?: string } | null)?.code === 'SLOT_OVERLAP') setOverlap(true);
+      else setError(isNew ? te('createServiceError') : te('updateServiceError'));
     } finally {
       setBusy(false);
     }
@@ -337,13 +344,8 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         </FormField>
       </div>
 
-      {/* Migration 330: horário do encuadre — o MESMO editor da vaga (DayScheduleEditor). Salvar
-          vazio continua legítimo (Gabriel 05/09: "o operador pode criar uma vacante sem ter
-          horário ainda") — o campo segue `optional`, sem asterisco e sem barrar o Guardar.
-          O que mudou em 07/09 é a CONSEQUÊNCIA: sem horário o paciente não muda de status para
-          activo/búsqueda/reemplazo. Por isso o aviso âmbar aparece enquanto está vazio, no mesmo
-          molde do "sem domicílio" acima — avisar na hora da carga é mais barato que descobrir na
-          hora de ativar. */}
+      {/* Horário do encuadre: opcional (salvar vazio é legítimo, Gabriel 05/09); sem horário o paciente não
+          muda de status (07/09) — daí o aviso âmbar. Spec 056: turnos Inicio/Fin/Todo el día. */}
       <FormField label={te('serviceSchedule')} htmlFor={`svc-schedule-${index}`} optional hint={te('serviceScheduleHint')} hintBelow>
         <div id={`svc-schedule-${index}`} data-testid={`svc-schedule-${index}`}>
           <Controller control={control} name="schedule" render={({ field }) => (
@@ -355,7 +357,8 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
                   <AvisoAmbar testId={`svc-schedule-none-${index}`}>{te('serviceScheduleNone')}</AvisoAmbar>
                 </div>
               )}
-              <DayScheduleEditor value={field.value} onChange={field.onChange} disabled={busy} />
+              <ServiceShiftEditor index={index} value={field.value} onChange={field.onChange} onValidityChange={setShiftsValid} disabled={busy} />
+              {overlap && <Text size="sm" className="text-red-600" data-testid={`svc-schedule-overlap-${index}`}>{te('scheduleOverlap')}</Text>}
             </>
           )} />
         </div>
@@ -376,7 +379,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       </FormField>
 
       <div className="flex items-center justify-between">
-        <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} className="w-32" data-testid={isNew ? 'contracted-service-new-save' : `contracted-service-save-${service.id}`}>
+        <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} disabled={!shiftsValid} className="w-32" data-testid={isNew ? 'contracted-service-new-save' : `contracted-service-save-${service.id}`}>
           {te('save')}
         </Button>
         {error && <Text size="sm" className="text-red-600" data-testid={isNew ? 'contracted-service-new-error' : `contracted-service-error-${service?.id}`}>{error}</Text>}
