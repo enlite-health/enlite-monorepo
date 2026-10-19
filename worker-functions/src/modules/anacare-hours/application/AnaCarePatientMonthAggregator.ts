@@ -9,7 +9,7 @@
  * Regras (espelham o que a lista já mostra hoje, `AnaCareHoursMapper`/`selectors.ts` do front):
  *   - `shiftsCount` = nº de turnos.
  *   - `providersCount` = nº de `anaCareNurseId` DISTINTOS.
- *   - `hoursActualSum` = soma de `computeActualHours` (mesma função do mapper — só turnos com
+ *   - `hoursActualSum` = soma de `horaDoTurno` (mesma função do mapper, 056 T5.1: validado => aprovada — só turnos com
  *     check-in E checkout entram na soma; `null` não soma nada).
  *   - `hoursScheduledSumMissingActual` = soma de `hoursScheduledOf` (mesma função do mapper) SÓ
  *     dos turnos sem hora real — as duas colunas existem porque a lista tem um alternador de modo
@@ -22,7 +22,8 @@
  *     turnos diferentes).
  */
 
-import { computeActualHours, hoursScheduledOf } from './AnaCareHoursMapper';
+import { horaDoTurno, hoursScheduledOf } from './AnaCareHoursMapper';
+import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
 import type { SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { AnaCarePatientMonthAggregate } from '../domain/AnaCarePatientMonth';
 
@@ -35,7 +36,12 @@ function nonEmpty(value: string | null | undefined): string | undefined {
  * Agrega os turnos de UM ÚNICO paciente (já filtrados pelo chamador) — ver `aggregateByPatient`
  * para agrupar uma lista mista de vários pacientes antes de chamar esta função.
  */
-export function aggregatePatientMonth(anaCarePatientId: string, shifts: readonly SourceShiftDTO[]): AnaCarePatientMonthAggregate {
+export function aggregatePatientMonth(
+  anaCarePatientId: string,
+  shifts: readonly SourceShiftDTO[],
+  /** Validações por `sourceShiftId` — turno validado soma `approvedHours` (mesma `horaDoTurno` do detalhe). */
+  validations: ReadonlyMap<string, ValidationRow> = new Map(),
+): AnaCarePatientMonthAggregate {
   const nurseIds = new Set<string>();
   let hoursActualSum = 0;
   let hoursScheduledSumMissingActual = 0;
@@ -49,7 +55,7 @@ export function aggregatePatientMonth(anaCarePatientId: string, shifts: readonly
   for (const s of shifts) {
     nurseIds.add(s.anaCareNurseId);
 
-    const actual = computeActualHours(s);
+    const actual = horaDoTurno(s, validations.get(s.sourceShiftId));
     if (actual !== null) {
       hoursActualSum += actual;
     } else {
@@ -92,11 +98,11 @@ export function aggregatePatientMonth(anaCarePatientId: string, shifts: readonly
  * `anaCarePatientId` e agrega cada grupo — usada pelo runner, que não sabe a priori quantos
  * pacientes vieram numa chamada a `source.listShifts`.
  */
-export function aggregateByPatient(shifts: readonly SourceShiftDTO[]): AnaCarePatientMonthAggregate[] {
+export function aggregateByPatient(shifts: readonly SourceShiftDTO[], validations: ReadonlyMap<string, ValidationRow> = new Map()): AnaCarePatientMonthAggregate[] {
   const byPatient = new Map<string, SourceShiftDTO[]>();
   for (const s of shifts) {
     if (!byPatient.has(s.anaCarePatientId)) byPatient.set(s.anaCarePatientId, []);
     byPatient.get(s.anaCarePatientId)!.push(s);
   }
-  return [...byPatient.entries()].map(([anaCarePatientId, patientShifts]) => aggregatePatientMonth(anaCarePatientId, patientShifts));
+  return [...byPatient.entries()].map(([anaCarePatientId, patientShifts]) => aggregatePatientMonth(anaCarePatientId, patientShifts, validations));
 }

@@ -273,3 +273,4 @@ export {
   LEAD_SERVICE_TO_PROFESSION,
 } from './interfaces/validators/publicLeadSchema';
 export type { PublicLeadBody, LeadServiceSlug } from './interfaces/validators/publicLeadSchema';
+export { ServiceHoursSummaryReader } from './infrastructure/ServiceHoursSummaryReader';

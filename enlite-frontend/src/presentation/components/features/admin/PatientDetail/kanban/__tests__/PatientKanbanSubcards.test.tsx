@@ -1,7 +1,7 @@
 /**
  * PatientKanbanSubcards.test.tsx — Fase 8 (change cadeia-paciente-vacante-itinerario), DX-8.6/8.7/8.8.
  *
- * O subcard é a linha `nome · cobertas/contratadas · ícone` dentro do card do Kanban de
+ * O subcard é a linha `nome · cobertas/horário · ícone` dentro do card do Kanban de
  * pacientes. Invariante 3 ("o subcard só MOSTRA"): nenhum clique aqui pode disparar
  * `updatePatientStatus`/`activateRecruitment` — o foguete só NAVEGA para a ficha (DX-8.8).
  */
@@ -37,7 +37,8 @@ function service(overrides: Partial<PatientKanbanServiceSummary> = {}): PatientK
   return {
     contractedServiceId: 's-1',
     serviceCode: 'AT',
-    contratadas: { weekly: 20, authorized: 20 },
+    scheduleHours: 20,
+    reserve: { count: 10, minimum: 10 },
     cobertas: 4,
     liveVacancyId: null,
     ...overrides,
@@ -76,14 +77,14 @@ describe('PatientKanbanSubcards (es)', () => {
     expect(rows[1]).toHaveAttribute('data-service-id', 's-2');
   });
 
-  it('par 4/20 (cobertas do itinerário / contratadas.weekly)', () => {
-    renderSubcards([service({ cobertas: 4, contratadas: { weekly: 20, authorized: 20 } })]);
-    expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
+  it('mostra 20/40 lendo scheduleHours', () => {
+    renderSubcards([service({ cobertas: 20, scheduleHours: 40 })]);
+    expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('20/40');
   });
 
-  it('contratadas.weekly null → 4/—', () => {
-    renderSubcards([service({ cobertas: 4, contratadas: { weekly: null, authorized: 20 } })]);
-    expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/—');
+  it('serviço sem horário → 4/0 (nunca traço)', () => {
+    renderSubcards([service({ cobertas: 4, scheduleHours: 0 })]);
+    expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/0');
   });
 
   it('o nome do serviço vem de serviceTypes.<code> (a mesma chave da ficha)', () => {
@@ -165,13 +166,37 @@ describe('PatientKanbanSubcards (es)', () => {
       expect(onCardClick).toHaveBeenCalledTimes(1);
     });
 
-    it('o par cobertas/contratadas é o MESMO com e sem o sinal', () => {
-      renderSubcards([service({ uncoveredDays: 0, cobertas: 4, contratadas: { weekly: 20, authorized: 20 } })]);
+    it('o par cobertas/horário é o MESMO com e sem o sinal', () => {
+      renderSubcards([service({ uncoveredDays: 0, cobertas: 4, scheduleHours: 20 })]);
       expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
       cleanup();
-      renderSubcards([service({ uncoveredDays: 3, cobertas: 4, contratadas: { weekly: 20, authorized: 20 } })]);
+      renderSubcards([service({ uncoveredDays: 3, cobertas: 4, scheduleHours: 20 })]);
       expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
     });
+  });
+});
+
+describe('PatientKanbanSubcards — selo de reserva (spec 056 T6.3)', () => {
+  it('reserva 7 → alerta', () => {
+    renderSubcards([service({ reserve: { count: 7, minimum: 10 } })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('Reserva 7/10');
+    expect(selo).toHaveAttribute('data-alert', 'true');
+  });
+
+  it('reserva 10 → sem alerta', () => {
+    renderSubcards([service({ reserve: { count: 10, minimum: 10 } })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('Reserva 10/10');
+    expect(selo).toHaveAttribute('data-alert', 'false');
+  });
+
+  it('null → sin vacante (nunca 0/10), sem alerta', () => {
+    renderSubcards([service({ reserve: null })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('sin vacante');
+    expect(selo).not.toHaveTextContent('0/10');
+    expect(selo).toHaveAttribute('data-alert', 'false');
   });
 });
 
@@ -179,7 +204,7 @@ describe('PatientKanbanSubcards (pt-BR)', () => {
   beforeAll(() => { i18n.changeLanguage('pt-BR'); });
 
   it('par e nome do serviço em pt-BR', () => {
-    renderSubcards([service({ serviceCode: 'AT', cobertas: 4, contratadas: { weekly: 20, authorized: 20 } })]);
+    renderSubcards([service({ serviceCode: 'AT', cobertas: 4, scheduleHours: 20 })]);
     expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
     expect(screen.getByTestId('patient-kanban-subcard')).toHaveTextContent('Acompanhante Terapêutico');
   });

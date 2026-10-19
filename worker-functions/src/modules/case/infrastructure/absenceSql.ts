@@ -1,3 +1,5 @@
+import { slotEndTimeSql } from '@shared/sql/serviceScheduleSql';
+
 /**
  * absenceSql — fonte ÚNICA dos fragmentos SQL da ausência pontual do titular (Fase 13; gate
  * parcial #1, molde `liveVacancySql.ts`).
@@ -23,7 +25,7 @@ export function uncoveredAbsenceSelect(whereExtra: string, extraJoin = ''): stri
   return `SELECT pcs.patient_id, s.contracted_service_id,
               to_char(ab.on_date, 'YYYY-MM-DD') AS on_date,
               to_char(s.start_time, 'HH24:MI') AS start_time,
-              to_char(s.end_time, 'HH24:MI') AS end_time
+              ${slotEndTimeSql('s')} AS slot_end
          FROM patient_itinerary_absence ab
          JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
          JOIN patient_itinerary_slot s ON s.id = a.slot_id

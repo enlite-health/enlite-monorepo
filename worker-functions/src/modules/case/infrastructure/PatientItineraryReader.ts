@@ -19,13 +19,12 @@ import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
 import { uncoveredAbsenceSelect } from './absenceSql';
+import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
 
 export type { ItineraryAssignmentStatus };
 
 export interface ItineraryServiceRow {
   id: string;
-  weeklyHours: number | null;
-  authorizedHours: number | null;
 }
 
 /**
@@ -37,8 +36,9 @@ export interface ItinerarySlotRow {
   contractedServiceId: string;
   weekday: number;
   startTime: string;
+  durationMinutes: number;
+  /** DERIVADO (início + duração; nunca gravado). */
   endTime: string;
-  active: boolean;
   assignmentId: string | null;
   workerId: string | null;
   applicationId: string | null;
@@ -81,8 +81,6 @@ interface PatientCountryRow {
 
 interface ServiceRow {
   id: string;
-  weekly_hours: string | null;
-  authorized_hours: string | null;
 }
 
 interface SlotJoinRow {
@@ -90,8 +88,8 @@ interface SlotJoinRow {
   contracted_service_id: string;
   weekday: number;
   start_time: string;
-  end_time: string;
-  active: boolean;
+  duration_minutes: number;
+  slot_end: string;
   assignment_id: string | null;
   worker_id: string | null;
   application_id: string | null;
@@ -110,7 +108,7 @@ interface UncoveredAbsenceJoinRow {
   contracted_service_id: string;
   on_date: string;
   start_time: string;
-  end_time: string;
+  slot_end: string;
 }
 
 export class PatientItineraryReader {
@@ -129,7 +127,7 @@ export class PatientItineraryReader {
 
     // Só serviço ATIVO: serviço baixado não tem cobertura a medir.
     const servicesRes = await client.query<ServiceRow>(
-      `SELECT id, weekly_hours, authorized_hours
+      `SELECT id
          FROM patient_contracted_services
         WHERE patient_id = $1 AND active
         ORDER BY created_at, id`,
@@ -139,8 +137,8 @@ export class PatientItineraryReader {
     const slotsRes = await client.query<SlotJoinRow>(
       `SELECT s.id, s.contracted_service_id, s.weekday,
               to_char(s.start_time, 'HH24:MI') AS start_time,
-              to_char(s.end_time, 'HH24:MI') AS end_time,
-              s.active,
+              s.duration_minutes,
+              ${slotEndTimeSql('s')} AS slot_end,
               a.id AS assignment_id, a.worker_id, a.application_id,
               to_char(a.valid_from, 'YYYY-MM-DD') AS valid_from,
               to_char(a.valid_to, 'YYYY-MM-DD') AS valid_to,
@@ -150,7 +148,7 @@ export class PatientItineraryReader {
          JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
          LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
          LEFT JOIN workers w ON w.id = a.worker_id
-        WHERE pcs.patient_id = $1 AND pcs.active
+        WHERE pcs.patient_id = $1 AND pcs.active AND ${slotVigenteSql('s')}
         ORDER BY s.contracted_service_id, s.weekday, s.start_time, a.valid_from`,
       [patientId],
     );
@@ -176,16 +174,14 @@ export class PatientItineraryReader {
       country,
       services: servicesRes.rows.map((r) => ({
         id: r.id,
-        weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
-        authorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
       })),
       slots: slotsRes.rows.map((r) => ({
         id: r.id,
         contractedServiceId: r.contracted_service_id,
         weekday: r.weekday,
         startTime: r.start_time,
-        endTime: r.end_time,
-        active: r.active,
+        durationMinutes: r.duration_minutes,
+        endTime: r.slot_end,
         assignmentId: r.assignment_id,
         workerId: r.worker_id,
         applicationId: r.application_id,
@@ -199,7 +195,7 @@ export class PatientItineraryReader {
         serviceId: r.contracted_service_id,
         date: r.on_date,
         startTime: r.start_time,
-        endTime: r.end_time,
+        endTime: r.slot_end,
       })),
       assembledAt: assembledRes.rows[0]?.assembled_at ?? null,
     };

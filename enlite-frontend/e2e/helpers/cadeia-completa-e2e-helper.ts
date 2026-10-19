@@ -54,6 +54,11 @@ export interface CadeiaPatientWithVacancy {
   patientId: string; addressId: string; serviceId: string; vacancyId: string; cleanup: () => void;
 }
 
+/** Y expõe o serviço EXTRA da faixa 13:00 (spec 056: faixas que se sobrepõem não cabem no mesmo serviço). */
+export interface CadeiaPatientY extends CadeiaPatientWithVacancy {
+  serviceLateId: string; vacancyLateId: string;
+}
+
 /** Falha no meio da semente desmonta o que já nasceu (mesma ordem da limpeza) e relança. */
 function orUndo<T>(patientId: string, cleanup: () => void, build: () => Promise<T>): Promise<T> {
   return build().catch((err: unknown) => {
@@ -70,7 +75,7 @@ export async function seedPatientX(request: APIRequestContext): Promise<CadeiaPa
     const address2Id = insertSecondAddress(seed.patientId);
     const service2Id = await createServiceViaApi(request, seed.patientId, {
       addressId: address2Id,
-      schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '12:00' }],
+      schedule: [{ dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 }],
     });
     return {
       patientId: seed.patientId, addressId: seed.addressId, address2Id,
@@ -79,19 +84,21 @@ export async function seedPatientX(request: APIRequestContext): Promise<CadeiaPa
   });
 }
 
-/** Y: outro endereço; serviço com 2 faixas na seg (12:30 e 13:00 até 16:00) e a vaga ativa (WJA de WA, passo 7). */
-export async function seedPatientY(request: APIRequestContext): Promise<CadeiaPatientWithVacancy> {
+/** Y: outro endereço; seg 12:30–16:00 num serviço e 13:00–16:00 num SEGUNDO serviço (mesmo endereço, spec 056), cada um com a vaga ativa (WJA de WA, passo 7). */
+export async function seedPatientY(request: APIRequestContext): Promise<CadeiaPatientY> {
   const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', ...CADEIA_COORDS.Y });
   return orUndo(seed.patientId, seed.cleanup, async () => {
     const serviceId = await createServiceViaApi(request, seed.patientId, {
       addressId: seed.addressId,
-      schedule: [
-        { dayOfWeek: 1, startTime: '12:30', endTime: '16:00' },
-        { dayOfWeek: 1, startTime: '13:00', endTime: '16:00' },
-      ],
+      schedule: [{ dayOfWeek: 1, startTime: '12:30', durationMinutes: 210 }],
+    });
+    const serviceLateId = await createServiceViaApi(request, seed.patientId, {
+      addressId: seed.addressId,
+      schedule: [{ dayOfWeek: 1, startTime: '13:00', durationMinutes: 180 }],
     });
     const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, serviceId);
-    return { patientId: seed.patientId, addressId: seed.addressId, serviceId, vacancyId, cleanup: seed.cleanup };
+    const vacancyLateId = await activateRecruitmentViaApi(request, seed.patientId, serviceLateId);
+    return { patientId: seed.patientId, addressId: seed.addressId, serviceId, vacancyId, serviceLateId, vacancyLateId, cleanup: seed.cleanup };
   });
 }
 
@@ -105,7 +112,7 @@ export async function seedPatientZ(request: APIRequestContext): Promise<CadeiaPa
 }
 
 /** X + Y + M (o único worker perto de X — é quem prova o match). Os de papel vêm depois do publish. */
-export async function seedCadeia(request: APIRequestContext): Promise<{ x: CadeiaPatientX; y: CadeiaPatientWithVacancy; m: string }> {
+export async function seedCadeia(request: APIRequestContext): Promise<{ x: CadeiaPatientX; y: CadeiaPatientY; m: string }> {
   const x = await seedPatientX(request);
   const y = await orUndo(x.patientId, x.cleanup, () => seedPatientY(request));
   const [m] = seedWorkersNear(CADEIA_COORDS.X.lat, CADEIA_COORDS.X.lng, 1);
@@ -189,7 +196,7 @@ export function collectRequests(page: Page): () => CadeiaRequestTally {
   return () => ({ forbidden: [...forbidden], observedHits, apiHits, dataRequests: dataRequests() });
 }
 
-/** Coluna do card do paciente no Kanban + o par `cobertas/contratadas` do subcard do serviço. */
+/** Coluna do card do paciente no Kanban + o par `cobertas/horário` do subcard do serviço. */
 export async function readKanbanState(page: Page, patientId: string, serviceId: string): Promise<{ column: string; pair: string }> {
   return { column: await readPatientKanbanColumn(page, patientId), pair: await readSubcardPair(page, serviceId) };
 }

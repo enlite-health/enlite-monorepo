@@ -21,6 +21,7 @@
  *          11/09) que impunha `reason` obrigatório valia para o padrão
  *          antigo; não foi reaberto, só alinhado ao teto novo da coluna.
  */
+import { ServiceHoursSummaryReader } from '../../src/modules/case/infrastructure/ServiceHoursSummaryReader';
 import { Pool } from 'pg';
 import { resolveCountryScope, CountryScopeError } from '../../src/modules/identity/application/resolveCountryScope';
 import { GetManagementDashboardUseCase } from '../../src/modules/matching/application/GetManagementDashboardUseCase';
@@ -178,7 +179,7 @@ describe('filtro de país na Gestão à Vista — banco real (L9-2, L9-3, L9-5)'
       const scope = await resolveCountryScope(pool, STAFF_AR_ONLY, 'ALL');
       expect(scope).toEqual({ countries: ['AR'], requested: 'ALL' });
 
-      const data = await new GetManagementDashboardUseCase(pool).execute({
+      const data = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute({
         countries: scope.countries,
         requested: scope.requested,
       });
@@ -220,7 +221,7 @@ describe('filtro de país na Gestão à Vista — banco real (L9-2, L9-3, L9-5)'
       });
 
       const scope = await resolveCountryScope(pool, STAFF_AR_ONLY, 'ALL');
-      const data = await new GetManagementDashboardUseCase(pool).execute({ countries: scope.countries });
+      const data = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute({ countries: scope.countries });
       expect(data.bigNumbers.pacientesActivos).toBe(await directCount(['AR']));
     });
   });
@@ -230,7 +231,7 @@ describe('filtro de país na Gestão à Vista — banco real (L9-2, L9-3, L9-5)'
       const scope = await resolveCountryScope(pool, STAFF_MULTI_DOCUMENTED, 'ALL');
       expect(scope.countries.sort()).toEqual(['AR', 'BR']);
 
-      const data = await new GetManagementDashboardUseCase(pool).execute({ countries: scope.countries });
+      const data = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute({ countries: scope.countries });
       expect(data.bigNumbers.pacientesActivos).toBe(await directCount(['AR', 'BR']));
     });
 
@@ -238,7 +239,7 @@ describe('filtro de país na Gestão à Vista — banco real (L9-2, L9-3, L9-5)'
       const scope = await resolveCountryScope(pool, STAFF_MULTI_UNDOCUMENTED, 'ALL');
       expect(scope.countries.sort()).toEqual(['AR', 'BR']);
 
-      const data = await new GetManagementDashboardUseCase(pool).execute({ countries: scope.countries });
+      const data = await new GetManagementDashboardUseCase(pool, new ServiceHoursSummaryReader()).execute({ countries: scope.countries });
       expect(data.bigNumbers.pacientesActivos).toBe(await directCount(['AR', 'BR']));
     });
 

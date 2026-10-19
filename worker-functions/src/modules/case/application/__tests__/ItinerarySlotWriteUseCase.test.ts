@@ -1,7 +1,8 @@
 /**
- * ItinerarySlotWriteUseCase — Fase 11, DX-11.5 (caso de uso). `writer` e a TRANSAÇÃO
+ * ItinerarySlotWriteUseCase — Fase 11, DX-11.5 + spec 056 T1.7. `writer` e a TRANSAÇÃO
  * (`runInTransaction`) injetados — sem banco real (molde `ServiceTeamMarkUseCase.test.ts`). A
- * transação injetada só chama `fn` direto no client dublê.
+ * transação injetada só chama `fn` direto no client dublê. Escrever horário = fechar/abrir FAIXA
+ * (vigência `valid`); nenhuma escrita em `pcs.schedule`.
  */
 import {
   ItinerarySlotWriteUseCase,
@@ -13,8 +14,10 @@ import {
   SlotHasActiveAllocationError,
   type ItinerarySlotWriterPort,
 } from '../ItinerarySlotWriteUseCase';
-import type { ServiceForWrite, ItinerarySlotRow } from '../../infrastructure/ItinerarySlotWriter';
+import type { ServiceForWrite, ItinerarySlotLookup } from '../../infrastructure/ItinerarySlotWriter';
+import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
 
+const NO_DERIVATION = { run: jest.fn().mockResolvedValue('unchanged') };
 const FAKE_CLIENT = { marker: 'fake-client' } as never;
 
 type RunInTransaction = ConstructorParameters<typeof ItinerarySlotWriteUseCase>[1];
@@ -24,290 +27,276 @@ function runInTransactionStub(): RunInTransaction & jest.Mock {
   return fn as unknown as RunInTransaction & jest.Mock;
 }
 
-function writerStub(overrides: Partial<ItinerarySlotWriterPort> = {}): ItinerarySlotWriterPort & {
+type WriterStub = ItinerarySlotWriterPort & {
   findServiceForWrite: jest.Mock;
   findSlot: jest.Mock;
   slotHasActiveAllocation: jest.Mock;
-  writeSchedule: jest.Mock;
-  findSlotByKey: jest.Mock;
-} {
+  readVigentSlots: jest.Mock;
+  openSlot: jest.Mock;
+  closeSlot: jest.Mock;
+};
+
+function writerStub(overrides: Partial<ItinerarySlotWriterPort> = {}): WriterStub {
   return {
     findServiceForWrite: jest.fn(),
     findSlot: jest.fn(),
-    slotHasActiveAllocation: jest.fn(),
-    writeSchedule: jest.fn(),
-    findSlotByKey: jest.fn(),
+    slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
+    readVigentSlots: jest.fn().mockResolvedValue([]),
+    openSlot: jest.fn().mockResolvedValue('slot-new'),
+    closeSlot: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } as never;
 }
 
-const SERVICE_WITH_ADDRESS: ServiceForWrite = {
-  id: 's-1',
-  addressId: 'addr-1',
-  schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }],
-  country: 'AR',
+const SERVICE_WITH_ADDRESS: ServiceForWrite = { id: 's-1', addressId: 'addr-1', country: 'AR' };
+const SERVICE_WITHOUT_ADDRESS: ServiceForWrite = { id: 's-1', addressId: null, country: 'AR' };
+
+const NEW_SLOT: ItinerarySlotLookup = { id: 'slot-new', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00', vigente: true };
+const OLD_SLOT: ItinerarySlotLookup = { id: 'slot-1', weekday: 2, startTime: '08:00', durationMinutes: 120, endTime: '10:00', vigente: true };
+
+const CREATE = { patientId: 'p-1', serviceId: 's-1', weekday: 1, startTime: '08:00', durationMinutes: 240, actorUid: 'u-1' };
+const UPDATE = { patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 3, startTime: '09:00', durationMinutes: 120, actorUid: 'u-1' };
+const END = { patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', actorUid: 'u-1' };
+
+const semEscrita = (w: WriterStub) => {
+  expect(w.openSlot).not.toHaveBeenCalled();
+  expect(w.closeSlot).not.toHaveBeenCalled();
 };
-
-const SERVICE_WITHOUT_ADDRESS: ServiceForWrite = { id: 's-1', addressId: null, schedule: null, country: 'AR' };
-
-const NEW_SLOT: ItinerarySlotRow = { id: 'slot-new', weekday: 1, startTime: '08:00', endTime: '12:00', active: true };
 
 describe('ItinerarySlotWriteUseCase', () => {
   describe('create', () => {
-    it('serviço inexistente → ItineraryServiceNotFoundError; 0 writeSchedule', async () => {
+    it('serviço inexistente → ItineraryServiceNotFoundError; nenhuma escrita', async () => {
       const writer = writerStub({ findServiceForWrite: jest.fn().mockResolvedValue(null) });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(
-        useCase.create({ patientId: 'p-1', serviceId: 's-1', weekday: 1, startTime: '08:00', endTime: '12:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(ItineraryServiceNotFoundError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).create(CREATE)).rejects.toThrow(ItineraryServiceNotFoundError);
+      semEscrita(writer);
     });
 
-    it('sem endereço → ServiceWithoutAddressError; 0 writeSchedule', async () => {
+    it('sem endereço → ServiceWithoutAddressError; nenhuma escrita', async () => {
       const writer = writerStub({ findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITHOUT_ADDRESS) });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(
-        useCase.create({ patientId: 'p-1', serviceId: 's-1', weekday: 1, startTime: '08:00', endTime: '12:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(ServiceWithoutAddressError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).create(CREATE)).rejects.toThrow(ServiceWithoutAddressError);
+      semEscrita(writer);
     });
 
-    it('chave já ativa no schedule → SlotAlreadyExistsError; 0 writeSchedule', async () => {
-      const service: ServiceForWrite = { id: 's-1', addressId: 'addr-1', schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }], country: 'AR' };
-      const writer = writerStub({ findServiceForWrite: jest.fn().mockResolvedValue(service) });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(
-        useCase.create({ patientId: 'p-1', serviceId: 's-1', weekday: 1, startTime: '08:00', endTime: '12:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(SlotAlreadyExistsError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
-    });
-
-    it('feliz → schedule\' = antigo + a entrada nova; devolve o slot achado por chave', async () => {
+    it('chave vigente igual → SlotAlreadyExistsError; nenhuma escrita', async () => {
       const writer = writerStub({
         findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
-        writeSchedule: jest.fn().mockResolvedValue(undefined),
-        findSlotByKey: jest.fn().mockResolvedValue(NEW_SLOT),
+        readVigentSlots: jest.fn().mockResolvedValue([{ id: 'x', weekday: 1, startTime: '08:00', durationMinutes: 240 }]),
       });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).create(CREATE)).rejects.toThrow(SlotAlreadyExistsError);
+      semEscrita(writer);
+    });
 
-      const slot = await useCase.create({ patientId: 'p-1', serviceId: 's-1', weekday: 1, startTime: '08:00', endTime: '12:00', actorUid: 'u-1' });
+    it('mesmo início com duração diferente NÃO é a mesma chave', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        readVigentSlots: jest.fn().mockResolvedValue([{ id: 'x', weekday: 1, startTime: '08:00', durationMinutes: 300 }]),
+        findSlot: jest.fn().mockResolvedValue(NEW_SLOT),
+      });
+      await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).create(CREATE);
+      expect(writer.openSlot).toHaveBeenCalledTimes(1);
+    });
 
-      expect(writer.writeSchedule).toHaveBeenCalledTimes(1);
-      const [client, serviceId, schedule, actorUid] = writer.writeSchedule.mock.calls[0];
-      expect(client).toBe(FAKE_CLIENT);
-      expect(serviceId).toBe('s-1');
-      expect(schedule).toEqual([
-        { dayOfWeek: 2, startTime: '08:00', endTime: '10:00' },
-        { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-      ]);
-      expect(actorUid).toBe('u-1');
-      expect(slot).toEqual(NEW_SLOT);
+    it('feliz → openSlot 1× com a chave + hoje do país; devolve a faixa sem o campo interno `vigente`', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue(NEW_SLOT),
+      });
+      const slot = await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).create({ ...CREATE, now: new Date('2026-01-01T02:00:00Z') });
+
+      expect(writer.openSlot).toHaveBeenCalledWith(FAKE_CLIENT, 's-1', { weekday: 1, startTime: '08:00', durationMinutes: 240 }, '2025-12-31', 'u-1');
+      expect(writer.closeSlot).not.toHaveBeenCalled();
+      expect(slot).toEqual({ id: 'slot-new', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00' });
+    });
+
+    it('23P01 no openSlot (ServiceSlotOverlapError) propaga', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        openSlot: jest.fn().mockRejectedValue(new ServiceSlotOverlapError('s-1')),
+      });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).create(CREATE)).rejects.toThrow(ServiceSlotOverlapError);
     });
   });
 
   describe('update', () => {
-    const OLD_SLOT: ItinerarySlotRow = { id: 'slot-1', weekday: 2, startTime: '08:00', endTime: '10:00', active: true };
-
-    it('slot inexistente/de outro serviço → SlotNotFoundError; 0 writeSchedule', async () => {
-      const writer = writerStub({
+    const base = (over: Partial<ItinerarySlotWriterPort> = {}) =>
+      writerStub({
         findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
-        findSlot: jest.fn().mockResolvedValue(null),
+        findSlot: jest.fn().mockResolvedValueOnce(OLD_SLOT).mockResolvedValue({ ...NEW_SLOT, id: 'slot-new', weekday: 3, startTime: '09:00', durationMinutes: 120, endTime: '11:00' }),
+        ...over,
       });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
 
-      await expect(
-        useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 3, startTime: '09:00', endTime: '11:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(SlotNotFoundError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+    it('update fecha a antiga e abre a nova (ordem)', async () => {
+      const ordem: string[] = [];
+      const writer = base({
+        closeSlot: jest.fn(async () => { ordem.push('close'); }),
+        openSlot: jest.fn(async () => { ordem.push('open'); return 'slot-new'; }),
+      });
+      const slot = await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update({ ...UPDATE, now: new Date('2026-10-18T15:00:00Z') });
+
+      expect(ordem).toEqual(['close', 'open']);
+      expect(writer.closeSlot).toHaveBeenCalledWith(FAKE_CLIENT, 'slot-1', '2026-10-18', 'u-1');
+      expect(writer.openSlot).toHaveBeenCalledWith(FAKE_CLIENT, 's-1', { weekday: 3, startTime: '09:00', durationMinutes: 120 }, '2026-10-18', 'u-1');
+      expect(slot).toEqual({ id: 'slot-new', weekday: 3, startTime: '09:00', durationMinutes: 120, endTime: '11:00' });
     });
 
-    it('slot inativo → SlotInactiveError; 0 writeSchedule', async () => {
-      const writer = writerStub({
-        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
-        findSlot: jest.fn().mockResolvedValue({ ...OLD_SLOT, active: false }),
-      });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(
-        useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 3, startTime: '09:00', endTime: '11:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(SlotInactiveError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+    it('slot inexistente/de outro serviço → SlotNotFoundError; nenhuma escrita', async () => {
+      const writer = base({ findSlot: jest.fn().mockResolvedValue(null) });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update(UPDATE)).rejects.toThrow(SlotNotFoundError);
+      semEscrita(writer);
     });
 
-    it('com alocação ACTIVE vigente → SlotHasActiveAllocationError; 0 writeSchedule', async () => {
-      const writer = writerStub({
-        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
-        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
-        slotHasActiveAllocation: jest.fn().mockResolvedValue(true),
-      });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(
-        useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 3, startTime: '09:00', endTime: '11:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(SlotHasActiveAllocationError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+    it('faixa fechada → SlotInactiveError; nenhuma escrita', async () => {
+      const writer = base({ findSlot: jest.fn().mockResolvedValue({ ...OLD_SLOT, vigente: false }) });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update(UPDATE)).rejects.toThrow(SlotInactiveError);
+      semEscrita(writer);
     });
 
-    it('sem endereço → ServiceWithoutAddressError; 0 writeSchedule (as 3 ações)', async () => {
-      const writer = writerStub({ findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITHOUT_ADDRESS) });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(
-        useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 3, startTime: '09:00', endTime: '11:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(ServiceWithoutAddressError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+    it('alocação vigente → SlotHasActiveAllocationError sem escrita', async () => {
+      const writer = base({ slotHasActiveAllocation: jest.fn().mockResolvedValue(true) });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update(UPDATE)).rejects.toThrow(SlotHasActiveAllocationError);
+      semEscrita(writer);
     });
 
-    it('chave nova já ativa em OUTRO slot do mesmo serviço → SlotAlreadyExistsError; 0 writeSchedule', async () => {
-      const service: ServiceForWrite = {
-        id: 's-1',
-        addressId: 'addr-1',
-        schedule: [
-          { dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }, // OLD_SLOT (o que está sendo editado)
-          { dayOfWeek: 4, startTime: '14:00', endTime: '16:00' }, // outro slot ATIVO — é a chave alvo do update
-        ],
-        country: 'AR',
-      };
-      const writer = writerStub({
-        findServiceForWrite: jest.fn().mockResolvedValue(service),
-        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
-        slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
-      });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(
-        useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 4, startTime: '14:00', endTime: '16:00', actorUid: 'u-1' }),
-      ).rejects.toThrow(SlotAlreadyExistsError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+    it('sem endereço → ServiceWithoutAddressError; nenhuma escrita', async () => {
+      const writer = base({ findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITHOUT_ADDRESS) });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update(UPDATE)).rejects.toThrow(ServiceWithoutAddressError);
+      semEscrita(writer);
     });
 
-    it('chave nova IGUAL à velha (sem mudança de horário) → não é SlotAlreadyExistsError; grava normal', async () => {
-      const service: ServiceForWrite = {
-        id: 's-1',
-        addressId: 'addr-1',
-        schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }],
-        country: 'AR',
-      };
-      const writer = writerStub({
-        findServiceForWrite: jest.fn().mockResolvedValue(service),
-        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
-        slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
-        writeSchedule: jest.fn().mockResolvedValue(undefined),
-        findSlotByKey: jest.fn().mockResolvedValue(OLD_SLOT),
-      });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 2, startTime: '08:00', endTime: '10:00', actorUid: 'u-1' });
-
-      expect(writer.writeSchedule).toHaveBeenCalledTimes(1);
+    it('chave nova já vigente em OUTRA faixa do serviço → SlotAlreadyExistsError; nenhuma escrita', async () => {
+      const writer = base({ readVigentSlots: jest.fn().mockResolvedValue([
+        { id: 'slot-1', weekday: 2, startTime: '08:00', durationMinutes: 120 },
+        { id: 'outra', weekday: 3, startTime: '09:00', durationMinutes: 120 },
+      ]) });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update(UPDATE)).rejects.toThrow(SlotAlreadyExistsError);
+      semEscrita(writer);
     });
 
-    it('feliz → toda entrada da chave velha trocada pela nova; as outras entradas intactas', async () => {
-      const service: ServiceForWrite = {
-        id: 's-1',
-        addressId: 'addr-1',
-        schedule: [
-          { dayOfWeek: 2, startTime: '08:00', endTime: '10:00' },
-          { dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }, // duplicata exata — some junto
-          { dayOfWeek: 4, startTime: '14:00', endTime: '16:00' }, // outra chave — intacta
-        ],
-        country: 'AR',
-      };
-      const newSlot: ItinerarySlotRow = { id: 'slot-1', weekday: 3, startTime: '09:00', endTime: '11:00', active: true };
-      const writer = writerStub({
-        findServiceForWrite: jest.fn().mockResolvedValue(service),
-        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
-        slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
-        writeSchedule: jest.fn().mockResolvedValue(undefined),
-        findSlotByKey: jest.fn().mockResolvedValue(newSlot),
-      });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
+    it('chave nova IGUAL à velha (sem mudança) → devolve a faixa, nenhuma escrita', async () => {
+      const writer = base({ readVigentSlots: jest.fn().mockResolvedValue([{ id: 'slot-1', weekday: 2, startTime: '08:00', durationMinutes: 120 }]) });
+      const slot = await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update({ ...UPDATE, weekday: 2, startTime: '08:00', durationMinutes: 120 });
+      semEscrita(writer);
+      expect(slot).toEqual({ id: 'slot-1', weekday: 2, startTime: '08:00', durationMinutes: 120, endTime: '10:00' });
+    });
 
-      const slot = await useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 3, startTime: '09:00', endTime: '11:00', actorUid: 'u-1' });
-
-      const [, , schedule] = writer.writeSchedule.mock.calls[0];
-      expect(schedule).toEqual([
-        { dayOfWeek: 4, startTime: '14:00', endTime: '16:00' },
-        { dayOfWeek: 3, startTime: '09:00', endTime: '11:00' },
-      ]);
-      expect(slot).toEqual(newSlot);
+    it('23P01 ao abrir (ServiceSlotOverlapError) propaga — a transação do chamador desfaz o fechamento', async () => {
+      const writer = base({ openSlot: jest.fn().mockRejectedValue(new ServiceSlotOverlapError('s-1')) });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).update(UPDATE)).rejects.toThrow(ServiceSlotOverlapError);
     });
   });
 
   describe('end', () => {
-    const OLD_SLOT: ItinerarySlotRow = { id: 'slot-1', weekday: 2, startTime: '08:00', endTime: '10:00', active: true };
-
-    it('slot inexistente → SlotNotFoundError; 0 writeSchedule', async () => {
+    it('end fecha', async () => {
       const writer = writerStub({
         findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
-        findSlot: jest.fn().mockResolvedValue(null),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
       });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(useCase.end({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', actorUid: 'u-1' })).rejects.toThrow(SlotNotFoundError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
+      await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).end({ ...END, now: new Date('2026-10-18T15:00:00Z') });
+      expect(writer.closeSlot).toHaveBeenCalledTimes(1);
+      expect(writer.closeSlot).toHaveBeenCalledWith(FAKE_CLIENT, 'slot-1', '2026-10-18', 'u-1');
+      expect(writer.openSlot).not.toHaveBeenCalled();
     });
 
-    it('com alocação ACTIVE vigente → SlotHasActiveAllocationError; 0 writeSchedule', async () => {
+    it('slot inexistente → SlotNotFoundError; nenhuma escrita', async () => {
+      const writer = writerStub({ findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS), findSlot: jest.fn().mockResolvedValue(null) });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).end(END)).rejects.toThrow(SlotNotFoundError);
+      semEscrita(writer);
+    });
+
+    it('faixa fechada → SlotInactiveError; nenhuma escrita', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue({ ...OLD_SLOT, vigente: false }),
+      });
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).end(END)).rejects.toThrow(SlotInactiveError);
+      semEscrita(writer);
+    });
+
+    it('alocação vigente → SlotHasActiveAllocationError sem escrita', async () => {
       const writer = writerStub({
         findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
         findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
         slotHasActiveAllocation: jest.fn().mockResolvedValue(true),
       });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await expect(useCase.end({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', actorUid: 'u-1' })).rejects.toThrow(SlotHasActiveAllocationError);
-      expect(writer.writeSchedule).not.toHaveBeenCalled();
-    });
-
-    it('feliz → a chave some do schedule; writeSchedule 1x sem a entrada removida', async () => {
-      const service: ServiceForWrite = {
-        id: 's-1',
-        addressId: 'addr-1',
-        schedule: [
-          { dayOfWeek: 2, startTime: '08:00', endTime: '10:00' },
-          { dayOfWeek: 4, startTime: '14:00', endTime: '16:00' },
-        ],
-        country: 'AR',
-      };
-      const writer = writerStub({
-        findServiceForWrite: jest.fn().mockResolvedValue(service),
-        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
-        slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
-        writeSchedule: jest.fn().mockResolvedValue(undefined),
-      });
-      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
-
-      await useCase.end({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', actorUid: 'u-1' });
-
-      expect(writer.writeSchedule).toHaveBeenCalledTimes(1);
-      const [client, serviceId, schedule, actorUid] = writer.writeSchedule.mock.calls[0];
-      expect(client).toBe(FAKE_CLIENT);
-      expect(serviceId).toBe('s-1');
-      expect(schedule).toEqual([{ dayOfWeek: 4, startTime: '14:00', endTime: '16:00' }]);
-      expect(actorUid).toBe('u-1');
+      await expect(new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).end(END)).rejects.toThrow(SlotHasActiveAllocationError);
+      semEscrita(writer);
     });
   });
 
-  it('hoje = operationDateOf(country, now) — slotHasActiveAllocation recebe a data derivada do país, não now() do processo', async () => {
-    const service: ServiceForWrite = { id: 's-1', addressId: 'addr-1', schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }], country: 'AR' };
-    const oldSlot: ItinerarySlotRow = { id: 'slot-1', weekday: 2, startTime: '08:00', endTime: '10:00', active: true };
+  it('hoje = operationDateOf(country, now) — findSlot e slotHasActiveAllocation recebem a data do país, não now() do processo', async () => {
     const writer = writerStub({
-      findServiceForWrite: jest.fn().mockResolvedValue(service),
-      findSlot: jest.fn().mockResolvedValue(oldSlot),
-      slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
-      writeSchedule: jest.fn().mockResolvedValue(undefined),
+      findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+      findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
     });
-    const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
     // 2026-01-01T02:00:00Z é 2025-12-31 no fuso de Buenos Aires (UTC-3) — prova que `hoje` não é o UTC do runner.
-    const now = new Date('2026-01-01T02:00:00Z');
+    await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).end({ ...END, now: new Date('2026-01-01T02:00:00Z') });
+    expect(writer.findSlot.mock.calls[0][3]).toBe('2025-12-31');
+    expect(writer.slotHasActiveAllocation.mock.calls[0][2]).toBe('2025-12-31');
+  });
 
-    await useCase.end({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', actorUid: 'u-1', now });
+  describe('derivação do estado do paciente (T3.3, ⚑13) — no fim da MESMA transação', () => {
+    const NOW = new Date('2026-09-29T15:00:00Z');
+    const derivacao = () => ({ run: jest.fn().mockResolvedValue('unchanged') });
 
-    const [, , hoje] = writer.slotHasActiveAllocation.mock.calls[0];
-    expect(hoje).toBe('2025-12-31');
+    it('create → derivation.run(client, patientId, now) 1×, DEPOIS do openSlot', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue(NEW_SLOT),
+      });
+      const d = derivacao();
+      await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), d).create({ ...CREATE, now: NOW });
+      expect(d.run).toHaveBeenCalledTimes(1);
+      expect(d.run).toHaveBeenCalledWith(FAKE_CLIENT, 'p-1', NOW);
+      expect(d.run.mock.invocationCallOrder[0]).toBeGreaterThan(writer.openSlot.mock.invocationCallOrder[0]);
+    });
+
+    it('update (chave muda) → derivation.run 1×, DEPOIS de close+open; chave igual (no-op) → não deriva', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValueOnce(OLD_SLOT).mockResolvedValue(NEW_SLOT),
+      });
+      const d = derivacao();
+      await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), d).update({ ...UPDATE, now: NOW });
+      expect(d.run).toHaveBeenCalledTimes(1);
+      expect(d.run).toHaveBeenCalledWith(FAKE_CLIENT, 'p-1', NOW);
+      expect(d.run.mock.invocationCallOrder[0]).toBeGreaterThan(writer.openSlot.mock.invocationCallOrder[0]);
+
+      const w2 = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
+      });
+      const d2 = derivacao();
+      await new ItinerarySlotWriteUseCase(w2, runInTransactionStub(), d2).update({ ...UPDATE, weekday: 2, startTime: '08:00', durationMinutes: 120, now: NOW });
+      expect(d2.run).not.toHaveBeenCalled();
+    });
+
+    it('end → derivation.run 1×, DEPOIS do closeSlot', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
+      });
+      const d = derivacao();
+      await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), d).end({ ...END, now: NOW });
+      expect(d.run).toHaveBeenCalledTimes(1);
+      expect(d.run).toHaveBeenCalledWith(FAKE_CLIENT, 'p-1', NOW);
+      expect(d.run.mock.invocationCallOrder[0]).toBeGreaterThan(writer.closeSlot.mock.invocationCallOrder[0]);
+    });
+
+    it('recusa de negócio (SlotAlreadyExistsError) → não deriva; erro da derivação propaga (desfaz a transação)', async () => {
+      const w1 = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        readVigentSlots: jest.fn().mockResolvedValue([{ id: 'x', weekday: 1, startTime: '08:00', durationMinutes: 240 }]),
+      });
+      const d1 = derivacao();
+      await expect(new ItinerarySlotWriteUseCase(w1, runInTransactionStub(), d1).create(CREATE)).rejects.toThrow(SlotAlreadyExistsError);
+      expect(d1.run).not.toHaveBeenCalled();
+
+      const w2 = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
+      });
+      const d2 = { run: jest.fn().mockRejectedValue(new Error('boom')) };
+      await expect(new ItinerarySlotWriteUseCase(w2, runInTransactionStub(), d2).end(END)).rejects.toThrow('boom');
+    });
   });
 });

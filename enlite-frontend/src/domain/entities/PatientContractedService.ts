@@ -61,14 +61,18 @@ export const PROVIDER_AGE_BANDS = ['ANY', 'AGE_20_30', 'AGE_30_45', 'AGE_45_PLUS
 export type ProviderAgeBand = (typeof PROVIDER_AGE_BANDS)[number];
 
 /**
- * Slot de horário do encuadre (migration 330) — o MESMO `DayScheduleSlot` do
- * `DayScheduleEditor`/`scheduleToJsonb` que a vaga persiste em `job_postings.schedule`.
- * `dayOfWeek`: 0 = domingo. Na ativação, o array é copiado tal qual para a vaga nascida deste
- * serviço; `null` = "ainda sem horário" (a vaga nasce sem e o operador preenche nela).
+ * Turno do horário do encuadre (spec 056): `{dayOfWeek, startTime, durationMinutes}` — o que a API
+ * aceita e persiste. `dayOfWeek`: 0 = domingo. O turno pode atravessar a meia-noite (20:00 + 720 min).
+ * `null` no serviço = "ainda sem horário" (a vaga nasce sem e o operador preenche nela).
  */
 export interface ContractedServiceScheduleSlot {
   dayOfWeek: number;
   startTime: string;
+  durationMinutes: number;
+}
+
+/** O que a API DEVOLVE: o mesmo turno com o `endTime` derivado (início + duração, módulo 24 h). */
+export interface ContractedServiceScheduleSlotDetail extends ContractedServiceScheduleSlot {
   endTime: string;
 }
 
@@ -83,7 +87,6 @@ export interface PatientContractedServiceProvider {
   workerId: string;
   /** Nome descriptografado (KMS) — null quando o worker não tem nome cadastrado. */
   workerName: string | null;
-  weeklyHours: number | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -99,6 +102,21 @@ export interface PatientContractedServiceLiveVacancy {
   status: string | null;
 }
 
+/** Autorização de horas do serviço; `validTo` INCLUSIVO ('YYYY-MM-DD'). */
+export interface ContractedServiceAuthorization {
+  id: string;
+  hours: number;
+  validFrom: string;
+  validTo: string;
+}
+
+/** Corpo de POST .../authorizations e .../:aid/supersede. */
+export interface AuthorizationWriteBody {
+  hours: number;
+  validFrom: string;
+  validTo: string;
+}
+
 export interface PatientContractedServiceDetail {
   id: string;
   patientId: string;
@@ -112,8 +130,12 @@ export interface PatientContractedServiceDetail {
   /** Texto livre — perfil do profissional buscado. NUNCA alimenta a vaga pública (lex C-b2). */
   professionalProfile: string | null;
   providersNeeded: number | null;
-  authorizedHours: number | null;
-  weeklyHours: number | null;
+  /** Autorização VIGENTE hoje (spec 056 §5.2) — dono único das horas autorizadas; `null` = sem vigente. */
+  authorization: ContractedServiceAuthorization | null;
+  /** Valor antigo da coluna sem vigência (só leitura, "Valor anterior, sin vigencia"); `null` = não havia. */
+  legacyAuthorizedHours: number | null;
+  /** Soma das faixas do horário vigente (horas/semana) — derivada pela API; o serviço não grava mais as horas semanais. */
+  scheduleHours: number;
   careLocation: string | null;
   /**
    * Preço do CONTRATO cobrado à família/obra social (lex C-c.2 — não é remuneração do
@@ -136,7 +158,7 @@ export interface PatientContractedServiceDetail {
    */
   addressId: string | null;
   /** Horário do encuadre (migration 330) — `null` = ainda sem horário. */
-  schedule: ContractedServiceScheduleSlot[] | null;
+  schedule: ContractedServiceScheduleSlotDetail[] | null;
   /**
    * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros (profissões, sexo, experiência, jornada, dia de
    * pago) são COPIADOS para a vaga ao ativar recrutamento; `workerAttributes` e `dailyObs` são SÓ FICHA.
@@ -171,8 +193,6 @@ export interface CreateContractedServiceBody {
   serviceCode: ServiceCode;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  authorizedHours?: number | null;
-  weeklyHours?: number | null;
   careLocation?: CareLocation | null;
   hourlyValue?: number | null;
   startDate?: string | null;

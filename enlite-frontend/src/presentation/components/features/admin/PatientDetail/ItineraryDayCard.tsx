@@ -12,7 +12,7 @@ interface ItineraryDayCardProps {
   serviceId: string;
   /** 0 = domingo … 6 = sábado (a convenção do `weekday` do slot). */
   weekday: number;
-  /** Os slots do serviço NESTE dia — os inativos são descartados aqui. */
+  /** Os slots do serviço NESTE dia (a API só manda os vigentes; turno noturno aparece só no dia em que COMEÇA). */
   slots: PatientItinerarySlot[];
   /** Data de operação vinda da API — a vigência se mede contra ela, nunca contra o relógio. */
   asOf: string;
@@ -34,8 +34,7 @@ interface ItineraryDayCardProps {
 export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel, onEditSlot }: ItineraryDayCardProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const ti = (key: string) => t(`admin.patients.detail.itinerary.${key}`);
-  const activeSlots = slots.filter((slot) => slot.active);
-  const isEmpty = activeSlots.length === 0;
+  const isEmpty = slots.length === 0;
   const [expanded, setExpanded] = useState(!isEmpty);
   // A régua D269 (hide, não disable): sem a célula, a faixa fica só de LEITURA — sem swap, sem
   // clique — mas o dado (endereço/prestador) continua visível (é `patient_services:read`, já
@@ -66,7 +65,8 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel
         )}
 
         {expanded &&
-          activeSlots.map((slot) => {
+          slots.map((slot) => {
+            const nextDay = slot.endTime <= slot.startTime;
             const covering = slot.assignments.find((a) => isVigenteAt(a, asOf)) ?? null;
             const rowContent = (
               <>
@@ -75,7 +75,10 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel
                     {slot.startTime}
                   </Text>
                   <Text as="span" size="sm" weight="medium" color="inherit">
-                    {slot.endTime}
+                    {`→ ${slot.endTime}`}{nextDay ? ` ${t('admin.patients.editDrawer.shift.nextDay')}` : ''}
+                  </Text>
+                  <Text as="span" size="xs" color="inherit" data-testid={`itinerario-slot-duracao-${slot.id}`}>
+                    {t('admin.patients.editDrawer.shift.hours', { hours: Number((slot.durationMinutes / 60).toFixed(2)) })}
                   </Text>
                 </div>
                 <div className="flex items-center gap-2 min-w-0 flex-1">

@@ -1,7 +1,9 @@
 import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import type { ContractedServiceDetail } from './PatientContractedServiceRepository';
+import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours';
+import type { ContractedServiceDetail, ContractedServiceScheduleView } from './PatientContractedServiceRepository';
 import { fetchLiveVacancies } from './liveVacancyOfService';
+import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
 
 /**
  * ContractedServiceDetailMapper — a SUBÁRVORE de serviços contratados da ficha do paciente.
@@ -17,8 +19,8 @@ import { fetchLiveVacancies } from './liveVacancyOfService';
  */
 
 async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) {
-  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[], liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>> };
-  const [devices, providers, liveVacancies] = await Promise.all([
+  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[], schedules: [] as any[], liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>>, authorizations: new Map<string, CurrentAuthorization>() };
+  const [devices, providers, schedules, liveVacancies, authorizations] = await Promise.all([
     pool.query(
       `SELECT csd.service_id, csd.device_type
          FROM contracted_service_devices csd
@@ -28,7 +30,7 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) 
       [serviceIds],
     ),
     pool.query(
-      `SELECT csp.id, csp.service_id, csp.worker_id, csp.weekly_hours, csp.active, csp.ended_at,
+      `SELECT csp.id, csp.service_id, csp.worker_id, csp.active, csp.ended_at,
               csp.country, csp.created_at, csp.updated_at,
               w.first_name_encrypted, w.last_name_encrypted
          FROM contracted_service_providers csp
@@ -37,10 +39,17 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) 
         ORDER BY csp.active DESC, csp.created_at ASC`,
       [serviceIds],
     ),
+    // Spec 056: o horário NÃO é a coluna `pcs.schedule` — é `horario_do_servico(id, CURRENT_DATE)` (faixas vigentes hoje).
+    pool.query(
+      `SELECT id, horario_do_servico(id, CURRENT_DATE) AS schedule FROM patient_contracted_services WHERE id = ANY($1::uuid[])`,
+      [serviceIds],
+    ),
     // Spec 018 PR-6 / spec 047 F2: a vaga viva do serviço (id + código + estado + link) — dono: `fetchLiveVacancies`.
     fetchLiveVacancies(pool, serviceIds),
+    // Spec 056: a autorização corrente (vigente hoje) — dono: `contracted_service_authorization`.
+    fetchCurrentAuthorizations(pool, serviceIds),
   ]);
-  return { devices: devices.rows, providers: providers.rows, liveVacancies };
+  return { devices: devices.rows, providers: providers.rows, schedules: schedules.rows, liveVacancies, authorizations };
 }
 
 export async function mapContractedServices(
@@ -49,7 +58,8 @@ export async function mapContractedServices(
   enc: KMSEncryptionService,
 ): Promise<ContractedServiceDetail[]> {
   const ids = serviceRows.map((r) => r.id);
-  const { devices, providers, liveVacancies } = await fetchContractedServiceChildren(pool, ids);
+  const { devices, providers, schedules, liveVacancies, authorizations } = await fetchContractedServiceChildren(pool, ids);
+  const scheduleById = new Map<string, ContractedServiceScheduleView[] | null>(schedules.map((s) => [s.id, s.schedule ?? null]));
   const decryptedProviders = await Promise.all(
     providers.map(async (p) => {
       const [first, last] = await Promise.all([enc.decrypt(p.first_name_encrypted ?? ''), enc.decrypt(p.last_name_encrypted ?? '')]);
@@ -59,7 +69,6 @@ export async function mapContractedServices(
         serviceId: p.service_id,
         workerId: p.worker_id,
         workerName,
-        weeklyHours: p.weekly_hours != null ? Number(p.weekly_hours) : null,
         active: p.active,
         endedAt: p.ended_at,
         country: p.country,
@@ -74,8 +83,9 @@ export async function mapContractedServices(
     serviceCode: r.service_code,
     professionalProfile: r.professional_profile,
     providersNeeded: r.providers_needed,
-    authorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
-    weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
+    authorization: authorizations.get(r.id) ?? null,
+    legacyAuthorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
+    scheduleHours: computeScheduleWeeklyHours(scheduleById.get(r.id) ?? null),
     careLocation: r.care_location,
     hourlyValue: r.hourly_value != null ? Number(r.hourly_value) : null,
     startDate: r.start_date,
@@ -86,10 +96,9 @@ export async function mapContractedServices(
     // Spec 015 (US-A6.1, migration 322): franja etária solicitada do prestador. `SELECT *`
     // (fetchRelated) já traz a coluna nova — só falta espelhar no shape decorado.
     providerAgeBand: r.provider_age_band,
-    // Migration 330: ponteiro para o endereço do paciente + horário do encuadre (array, mesmo
-    // formato de job_postings.schedule). `SELECT *` já traz as duas colunas.
+    // Migration 330: ponteiro para o endereço do paciente. O horário (spec 056) vem de `horario_do_servico`, não da coluna.
     addressId: r.address_id,
-    schedule: r.schedule,
+    schedule: scheduleById.get(r.id) ?? null,
     // Spec 027 Fase 3 (D507/D508): `SELECT *` já traz as 7 colunas. `worker_attributes`/`daily_obs` são SÓ FICHA.
     requiredProfessions: r.required_professions,
     requiredSex: r.required_sex,

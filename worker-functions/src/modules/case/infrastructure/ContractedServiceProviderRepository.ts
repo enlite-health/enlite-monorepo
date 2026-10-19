@@ -13,7 +13,6 @@ export interface ContractedServiceProviderDetail {
   workerId: string;
   /** Nome descriptografado (KMS) — exibição na ficha do serviço, mesmo nível de acesso de staff. */
   workerName: string | null;
-  weeklyHours: number | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -25,7 +24,6 @@ interface ProviderRow {
   id: string;
   service_id: string;
   worker_id: string;
-  weekly_hours: string | null;
   active: boolean;
   ended_at: string | null;
   country: string;
@@ -58,7 +56,6 @@ export class ContractedServiceProviderRepository {
           serviceId: r.service_id,
           workerId: r.worker_id,
           workerName,
-          weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
           active: r.active,
           endedAt: r.ended_at,
           country: r.country,
@@ -72,7 +69,7 @@ export class ContractedServiceProviderRepository {
   /** Todos os prestadores (ativos e inativos — histórico) de um serviço, ativos primeiro. */
   async listForService(serviceId: string): Promise<ContractedServiceProviderDetail[]> {
     const { rows } = await this.pool.query<ProviderRow>(
-      `SELECT csp.id, csp.service_id, csp.worker_id, csp.weekly_hours, csp.active, csp.ended_at,
+      `SELECT csp.id, csp.service_id, csp.worker_id, csp.active, csp.ended_at,
               csp.country, csp.created_at, csp.updated_at,
               w.first_name_encrypted, w.last_name_encrypted
          FROM contracted_service_providers csp

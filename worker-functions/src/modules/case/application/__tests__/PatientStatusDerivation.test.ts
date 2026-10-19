@@ -17,7 +17,7 @@ const NOW = new Date('2026-09-29T15:00:00Z');
 /** Faixa de 4 h (08-12); `alocadaDesde` = vigência da alocação ACTIVE, `null` = sem alocação. */
 function faixa(serviceId: string, id: string, weekday: number, alocadaDesde: string | null): ItinerarySlotRow {
   return {
-    id, contractedServiceId: serviceId, weekday, startTime: '08:00', endTime: '12:00', active: true,
+    id, contractedServiceId: serviceId, weekday, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
     assignmentId: alocadaDesde ? `as-${id}` : null, workerId: alocadaDesde ? 'w1' : null, applicationId: alocadaDesde ? 'app1' : null,
     validFrom: alocadaDesde, validTo: null, status: alocadaDesde ? 'ACTIVE' : null,
   } as ItinerarySlotRow;
@@ -26,7 +26,7 @@ function faixa(serviceId: string, id: string, weekday: number, alocadaDesde: str
 /** Serviço de 8 h com 2 faixas de 4 h; `alocadas` quantas estão cobertas (desde 2026-01-01). */
 function servico(id: string, alocadas: 0 | 1 | 2, liveVacancyId: string | null = `v-${id}`): Pick<KanbanServicesRows, 'services' | 'slots'> {
   return {
-    services: [{ id, serviceCode: 'AT', weeklyHours: 8, authorizedHours: null, liveVacancyId }],
+    services: [{ id, serviceCode: 'AT', liveVacancyId }],
     slots: [faixa(id, `${id}-a`, 1, alocadas >= 1 ? '2026-01-01' : null), faixa(id, `${id}-b`, 3, alocadas >= 2 ? '2026-01-01' : null)],
   };
 }
@@ -82,6 +82,19 @@ describe('PatientStatusDerivation', () => {
     expect((servicesReader.readForPatientWith.mock.calls[0] as unknown[])[0]).toBe(client);
     expect((servicesReader.readForPatientWith.mock.calls[0] as unknown[])[1]).toBe(PID);
     expect(functions.logger.info).not.toHaveBeenCalled();
+  });
+
+  it('usa scheduleHours, não weekly_hours: faixas 40 h, 20 h cobertas, weekly_hours 20 → REPLACEMENT', async () => {
+    const longa = (id: string, weekday: number, alocadaDesde: string | null): ItinerarySlotRow => ({
+      ...faixa('s1', id, weekday, alocadaDesde), durationMinutes: 1200, endTime: '04:00',
+    });
+    const rows = linhas({
+      services: [{ id: 's1', serviceCode: 'AT', liveVacancyId: 'v-s1' }],
+      slots: [longa('s1-a', 1, '2026-01-01'), longa('s1-b', 3, null)],
+    });
+    const { derivation, moveStatus } = montar({ rows });
+    await expect(derivation.run(client, PID, NOW)).resolves.toBe('moved');
+    expect(moveStatus.mock.calls[0].slice(0, 2)).toEqual([PID, 'REPLACEMENT']);
   });
 
   it("ACTIVE coberto (8/8) → 'unchanged', mover 0×", async () => {
@@ -145,7 +158,7 @@ describe('PatientStatusDerivation', () => {
     const now = new Date('2026-10-06T02:30:00Z');
     expect(now.toISOString().slice(0, 10)).toBe('2026-10-06'); // sanidade: em UTC já é 06/10
     const rows = linhas({
-      services: [{ id: 's1', serviceCode: 'AT', weeklyHours: 8, authorizedHours: null, liveVacancyId: 'v-s1' }],
+      services: [{ id: 's1', serviceCode: 'AT', liveVacancyId: 'v-s1' }],
       slots: [faixa('s1', 's1-a', 1, '2026-10-06'), faixa('s1', 's1-b', 3, null)],
     });
     const { derivation, moveStatus } = montar({ subject: { status: 'REPLACEMENT', country: 'AR', montado: true }, rows });

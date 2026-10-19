@@ -12,6 +12,7 @@
  *   GET /analytics/dashboard/zone-analytics?profession=
  */
 
+import { ServiceHoursSummaryReader } from '../../../case/infrastructure/ServiceHoursSummaryReader';
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -132,7 +133,7 @@ export class AnalyticsDashboardController {
         throw err;
       }
 
-      const useCase = new GetManagementDashboardUseCase(this.db);
+      const useCase = new GetManagementDashboardUseCase(this.db, new ServiceHoursSummaryReader());
       const data = await useCase.execute({
         funnelPeriodDays,
         countries: scope.countries,

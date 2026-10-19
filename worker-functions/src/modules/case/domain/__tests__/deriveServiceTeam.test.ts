@@ -1,4 +1,4 @@
-import { deriveServiceTeam, SERVICE_TEAM_ENTRY_STAGE } from '../deriveServiceTeam';
+import { deriveServiceTeam, deriveServiceReserve, SERVICE_RESERVE_MINIMUM, SERVICE_TEAM_ENTRY_STAGE } from '../deriveServiceTeam';
 
 /**
  * deriveServiceTeam — um `it(` por caso nomeado do critério 1 (DX-10.4, P6), mais os de
@@ -418,5 +418,66 @@ describe('deriveServiceTeam — quem substitui num dia (DX-13.3)', () => {
     expect(result.selected).toEqual([{ workerId: 'w1', vacancyId: VACANCY_ID }]);
     expect(result.inService).toEqual([]);
     expect(result.rejected).toEqual([]);
+  });
+});
+
+describe('deriveServiceReserve (056, T6.2)', () => {
+  const SERVICE_ID = 'service-1';
+  const VACANCY_ID = 'vacancy-1';
+  const ASOF = '2026-09-28';
+  const qrt = (workerId: string) => ({ workerId, vacancyId: VACANCY_ID, stage: SERVICE_TEAM_ENTRY_STAGE });
+
+  it('o mínimo é 10 (D516, constante única)', () => {
+    expect(SERVICE_RESERVE_MINIMUM).toBe(10);
+  });
+
+  it('alocado não conta: 3 em QRT, 1 alocado vigente → 2', () => {
+    const reserve = deriveServiceReserve({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [qrt('w1'), qrt('w2'), qrt('w3')],
+      assignments: [
+        { workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
+      ],
+      marks: [],
+    });
+    expect(reserve).toEqual({ count: 2, minimum: 10 });
+  });
+
+  it('rejeitado não conta: 3 em QRT, 1 com marca ativa → 2', () => {
+    const reserve = deriveServiceReserve({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [qrt('w1'), qrt('w2'), qrt('w3')],
+      assignments: [],
+      marks: [{ workerId: 'w2', serviceId: SERVICE_ID, rejectReasonCategory: 'OTHER' }],
+    });
+    expect(reserve).toEqual({ count: 2, minimum: 10 });
+  });
+
+  it('sem vaga viva → null (não 0), mesmo com candidatura de vaga antiga', () => {
+    const reserve = deriveServiceReserve({
+      serviceId: SERVICE_ID,
+      liveVacancyId: null,
+      asOf: ASOF,
+      candidacies: [qrt('w1')],
+      assignments: [],
+      marks: [],
+    });
+    expect(reserve).toBeNull();
+  });
+
+  it('vaga viva sem ninguém em QRT → count 0 (sin equipo ≠ sin vacante)', () => {
+    const reserve = deriveServiceReserve({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [],
+      marks: [],
+    });
+    expect(reserve).toEqual({ count: 0, minimum: 10 });
   });
 });

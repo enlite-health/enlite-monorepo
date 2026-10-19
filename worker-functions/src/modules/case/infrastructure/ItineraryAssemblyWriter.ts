@@ -11,6 +11,7 @@
  */
 import type { PoolClient } from 'pg';
 import { liveVacancySelect } from './liveVacancySql';
+import { slotVigenteSql } from '@shared/sql/serviceScheduleSql';
 
 export interface ServiceMissingSlot {
   serviceId: string;
@@ -56,7 +57,7 @@ export class ItineraryAssemblyWriter {
        SELECT pcs.id AS service_id, pcs.service_code,
               COUNT(*) OVER () AS count_with_live_vacancy,
               NOT EXISTS (
-                SELECT 1 FROM patient_itinerary_slot s WHERE s.contracted_service_id = pcs.id AND s.active
+                SELECT 1 FROM patient_itinerary_slot s WHERE s.contracted_service_id = pcs.id AND ${slotVigenteSql('s')}
               ) AS missing_slot
          FROM patient_contracted_services pcs
          JOIN live_vacancy lv ON lv.contracted_service_id = pcs.id

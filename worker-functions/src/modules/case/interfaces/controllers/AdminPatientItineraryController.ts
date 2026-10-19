@@ -23,9 +23,8 @@ const patientParamsSchema = z.object({ id: z.string().uuid() });
  *   GET /api/admin/patients/:id/itinerary
  *
  * Sob `patient_services:read` (Q-7.3, padrão fixado na DX-7.7): a resposta carrega os mesmos
- * `weeklyHours`/`authorizedHours` (rotulados `contratadas.weekly`/`.authorized`) que hoje só saem
- * por essa célula (`adminPatientsRoutes.ts:240`, GET .../contracted-services) — sob `patient:read`
- * a rota abriria esses números a quem hoje não os lê (memória `vazamento-existente-nao-e-regua`).
+ * `scheduleHours` (soma das faixas) que o GET .../contracted-services já entrega só sob essa
+ * célula — sob `patient:read` a rota abriria esse número a quem hoje não o lê (memória `vazamento-existente-nao-e-regua`).
  * Sem log de acesso a recurso do paciente: o corpo não devolve nome/telefone do paciente, nem telefone do prestador.
  * Fase 12 (DX-12.5 (5)): cada alocação traz `allocationId` e `displayName` — o nome do prestador SÓ
  * de alocação vigente, projetado por `worker_contact:read` (`req.permissionCells`, decidido antes

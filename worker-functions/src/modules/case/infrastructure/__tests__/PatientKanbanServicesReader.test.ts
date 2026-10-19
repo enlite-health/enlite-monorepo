@@ -104,14 +104,12 @@ describe('PatientKanbanServicesReader', () => {
           country: 'AR',
           service_id: 's1',
           service_code: 'AT',
-          weekly_hours: '20',
-          authorized_hours: null,
           live_vacancy_id: 'v-1',
           slot_id: 'slot-1',
           weekday: 1,
           start_time: '08:00',
-          end_time: '12:00',
-          active: true,
+          duration_minutes: 240,
+          slot_end: '12:00',
           assignment_id: 'asg-1',
           worker_id: 'w-1',
           application_id: 'wja-1',
@@ -125,14 +123,12 @@ describe('PatientKanbanServicesReader', () => {
           country: 'AR',
           service_id: 's2',
           service_code: 'FISIO',
-          weekly_hours: '10',
-          authorized_hours: '8',
           live_vacancy_id: null,
           slot_id: null,
           weekday: null,
           start_time: null,
-          end_time: null,
-          active: null,
+          duration_minutes: null,
+          slot_end: null,
           assignment_id: null,
           worker_id: null,
           application_id: null,
@@ -146,14 +142,12 @@ describe('PatientKanbanServicesReader', () => {
           country: 'BR',
           service_id: 's3',
           service_code: 'AT',
-          weekly_hours: '15',
-          authorized_hours: null,
           live_vacancy_id: null,
           slot_id: null,
           weekday: null,
           start_time: null,
-          end_time: null,
-          active: null,
+          duration_minutes: null,
+          slot_end: null,
           assignment_id: null,
           worker_id: null,
           application_id: null,
@@ -168,7 +162,7 @@ describe('PatientKanbanServicesReader', () => {
       if (/FROM patient_itinerary_absence/.test(sql)) {
         // Só p-1 tem ausência sem substituto; p-2 fica sem a chave.
         return {
-          rows: [{ patient_id: 'p-1', contracted_service_id: 's1', on_date: '2026-10-05', start_time: '08:00', end_time: '12:00' }],
+          rows: [{ patient_id: 'p-1', contracted_service_id: 's1', on_date: '2026-10-05', start_time: '08:00', slot_end: '12:00' }],
           rowCount: 1,
         };
       }
@@ -188,14 +182,14 @@ describe('PatientKanbanServicesReader', () => {
     expect(p1!.slots).toHaveLength(1); // só s1 gera slot; s2 não.
 
     const s1 = p1!.services.find((s) => s.id === 's1');
-    expect(s1).toEqual({ id: 's1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: 'v-1' });
+    expect(s1).toEqual({ id: 's1', serviceCode: 'AT', liveVacancyId: 'v-1' });
     const s2 = p1!.services.find((s) => s.id === 's2');
-    expect(s2).toEqual({ id: 's2', serviceCode: 'FISIO', weeklyHours: 10, authorizedHours: 8, liveVacancyId: null });
+    expect(s2).toEqual({ id: 's2', serviceCode: 'FISIO', liveVacancyId: null });
     expect(p1!.slots[0]).toMatchObject({ id: 'slot-1', contractedServiceId: 's1', status: 'ACTIVE' });
 
     expect(p2!.country).toBe('BR');
     expect(p2!.services).toEqual([
-      { id: 's3', serviceCode: 'AT', weeklyHours: 15, authorizedHours: null, liveVacancyId: null },
+      { id: 's3', serviceCode: 'AT', liveVacancyId: null },
     ]);
     expect(p2!.slots).toHaveLength(0);
 
@@ -227,8 +221,8 @@ describe('PatientKanbanServicesReader', () => {
         if (/WITH svc AS/.test(sql)) {
           return {
             rows: [{
-              patient_id: PID, country: 'AR', service_id: 's1', service_code: 'AT', weekly_hours: '8', authorized_hours: null,
-              live_vacancy_id: 'v1', slot_id: null, weekday: null, start_time: null, end_time: null, active: null,
+              patient_id: PID, country: 'AR', service_id: 's1', service_code: 'AT',
+              live_vacancy_id: 'v1', slot_id: null, weekday: null, start_time: null, duration_minutes: null, slot_end: null,
               assignment_id: null, worker_id: null, application_id: null, valid_from: null, valid_to: null, status: null,
             }],
             rowCount: 1,
@@ -242,7 +236,7 @@ describe('PatientKanbanServicesReader', () => {
 
       expect(r).toEqual({
         patientId: PID, country: 'AR', slots: [],
-        services: [{ id: 's1', serviceCode: 'AT', weeklyHours: 8, authorizedHours: null, liveVacancyId: 'v1' }],
+        services: [{ id: 's1', serviceCode: 'AT', liveVacancyId: 'v1' }],
       });
       const c = txCalls(q);
       expect(c).toHaveLength(1);

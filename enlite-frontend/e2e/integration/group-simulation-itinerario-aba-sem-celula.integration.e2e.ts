@@ -93,7 +93,7 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
       insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       const slot = await postSlotApi(request, tokenFor(STAFF_COM), patientId, svc.serviceId, {
-        weekday: 1, startTime: '08:00', endTime: '12:00',
+        weekday: 1, startTime: '08:00', durationMinutes: 240,
       });
       expect(slot.status, 'semente: POST slot com COM').toBe(201);
       const slotId = (slot.body.data as SlotData | undefined)?.id;

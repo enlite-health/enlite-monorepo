@@ -13,10 +13,11 @@ registry.registerPath({
   summary: 'Agregado do subcard do Kanban: uma linha por serviço ativo por paciente',
   description:
     'Uma linha por serviço ATIVO por paciente para o subcard do Kanban de pacientes (fase 8, ' +
-    'Plano B). `cobertas` vem do itinerário, em horas/semana; `contratadas.authorized` não ' +
-    'declara período — copiado, nunca calculado (P1). Só pacientes com >= 1 serviço ativo. Uma ' +
+    'Plano B). `cobertas` vem do itinerário, em horas/semana; `scheduleHours` = Σ duração das ' +
+    'faixas vigentes, horas/semana (D516: autorização não entra). Só pacientes com >= 1 serviço ativo. Uma ' +
     'chamada por carga do board inteiro, nunca uma por card (sem N+1). `uncoveredDays: integer` ' +
-    '(fase 13): dias vigentes (data ≥ hoje, Buenos Aires) com ausência sem substituto no serviço.',
+    '(fase 13): dias vigentes (data ≥ hoje, Buenos Aires) com ausência sem substituto no serviço. ' +
+    '`reserve: { count, minimum } | null` (056): Equipe de Resposta Rápida da vaga viva, sem alocados nem rejeitados; `null` = sem vaga viva.',
   security: [{ firebaseAuth: [] }],
   request: { query: z.object({ country: z.enum(['AR', 'BR']).optional() }) },
   responses: {

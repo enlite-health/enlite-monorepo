@@ -390,7 +390,7 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       CONTRACTED_SERVICE: /NOT EXISTS \(SELECT 1 FROM patient_contracted_services/,
       SERVICE_ADDRESS: /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+LEFT JOIN patient_addresses pa ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/,
       SERVICE_SCHEDULE:
-        /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\s+AND \(pcs\.schedule IS NULL OR jsonb_array_length\(pcs\.schedule\) = 0\)\)/,
+        /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\s+AND NOT EXISTS \(SELECT 1 FROM patient_itinerary_slot s_ws WHERE s_ws\.contracted_service_id = pcs\.id AND s_ws\.valid @> CURRENT_DATE\)\)/,
       CONSENT: /p\.has_consent IS NOT TRUE/,
     };
     for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);

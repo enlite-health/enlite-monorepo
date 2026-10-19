@@ -60,7 +60,7 @@ const NOT_SELECTED_ROW: ServiceTeamRows = {
   marks: [],
 };
 
-const ACTIVE_SLOT = { slotId: 'slot-1', active: true, addressId: 'addr-1' };
+const ACTIVE_SLOT = { slotId: 'slot-1', vigente: true, addressId: 'addr-1' };
 
 /** Dublê da derivação do estado (cadeia Fase 15, DX-15.15): os casos da Fase 11 não medem a derivação. */
 const semDerivacao = { run: jest.fn(async () => 'unchanged' as const) };
@@ -86,7 +86,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
   it('sem endereço → ServiceWithoutAddressError (422), ANTES do leitor', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn() };
     const writer = writerStub({
-      findSlotForAllocation: jest.fn().mockResolvedValue({ slotId: 'slot-1', active: true, addressId: null }),
+      findSlotForAllocation: jest.fn().mockResolvedValue({ slotId: 'slot-1', vigente: true, addressId: null }),
     });
     const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
@@ -97,10 +97,10 @@ describe('ItineraryAllocationUseCase.allocate', () => {
     expect(reader.readWith).not.toHaveBeenCalled();
   });
 
-  it('slot inativo → SlotInactiveError (422), ANTES do leitor', async () => {
+  it('slot com valid fechado → SlotInactiveError (422), ANTES do leitor', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn() };
     const writer = writerStub({
-      findSlotForAllocation: jest.fn().mockResolvedValue({ slotId: 'slot-1', active: false, addressId: 'addr-1' }),
+      findSlotForAllocation: jest.fn().mockResolvedValue({ slotId: 'slot-1', vigente: false, addressId: 'addr-1' }),
     });
     const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 

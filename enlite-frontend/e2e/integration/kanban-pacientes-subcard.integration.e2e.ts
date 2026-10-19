@@ -56,7 +56,10 @@ test.describe('kanban de pacientes — subcard (fase 8) @integration', () => {
   // ── critérios 1 e 8: o par lido do DOM == o par do itinerário, antes e depois
   //    da alocação; a queda pra 0/20 sem alocação (DX-8.17) ────────────────────
   test('kanban-paciente-subcard', async ({ page, request }) => {
-    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -53.74, lng: -67.74 });
+    // 20 h = 5 faixas de 240 min (seg a sex 08:00), sem sobreposição: o horário vive em
+    // `patient_itinerary_slot` e `scheduleHours` é a soma das faixas (a semente default dá 4 h).
+    const faixas20h = [1, 2, 3, 4, 5].map((dayOfWeek) => ({ dayOfWeek, startTime: '08:00', durationMinutes: 240 }));
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -53.74, lng: -67.74, schedule: faixas20h });
     const { patientId, serviceId } = seed;
     const vacancyId = await activateRecruitmentViaApi(request, patientId, serviceId);
     const workerId = insertTestWorker({ occupation: 'AT' });

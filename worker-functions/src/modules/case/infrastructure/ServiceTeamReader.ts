@@ -25,6 +25,7 @@ import { inPatientTransaction } from '../application/patientTransaction';
 import { liveVacancySelect } from './liveVacancySql';
 import { liveAbsencePredicate } from './absenceSql';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { slotEndTimeSql } from '@shared/sql/serviceScheduleSql';
 import { ALLOCATION_POOL_STAGES } from '../domain/deriveServiceTeam';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
 
@@ -114,7 +115,7 @@ interface AllocJson {
   allocation_id: string;
   weekday: number;
   start_time: string;
-  end_time: string;
+  slot_end: string;
 }
 
 interface MarkJson {
@@ -150,16 +151,32 @@ export class ServiceTeamReader {
     return inPatientTransaction((client) => this.readWith(client, patientId, serviceId));
   }
 
+  /** `read` de VÁRIOS serviços numa transação própria (RLS de país) — Kanban/itinerário (056 §9). */
+  async readMany(serviceIds: string[]): Promise<ServiceTeamRows[]> {
+    if (serviceIds.length === 0) return [];
+    return inPatientTransaction((client) => this.readManyWith(client, serviceIds));
+  }
+
   async readWith(client: PoolClient, patientId: string, serviceId: string): Promise<ServiceTeamRows | null> {
+    const rows = await this.readManyWith(client, [serviceId], patientId);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * A MESMA query de `readWith`, com `svc` por `ANY($2::uuid[])` e cada CTE devolvendo `service_id` para
+   * o agrupamento. `patientId` (`$1`) é opcional: `null` = sem escopo de paciente (Kanban); com ele, o
+   * serviço de outro paciente some (404 sem vazar existência). Uma linha por serviço encontrado.
+   */
+  async readManyWith(client: PoolClient, serviceIds: string[], patientId: string | null = null): Promise<ServiceTeamRows[]> {
     const res = await client.query<ServiceTeamJoinRow>(
       `WITH svc AS (
          SELECT pcs.id, p.country FROM patient_contracted_services pcs
            JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
-          WHERE pcs.id = $2 AND pcs.patient_id = $1
+          WHERE pcs.id = ANY($2::uuid[]) AND ($1::uuid IS NULL OR pcs.patient_id = $1)
        ), live AS (
-         ${liveVacancySelect('jp.contracted_service_id = $2')}
+         ${liveVacancySelect('jp.contracted_service_id = ANY($2::uuid[])')}
        ), cand AS (
-         SELECT wja.worker_id, wja.job_posting_id AS vacancy_id, wja.application_funnel_stage AS stage,
+         SELECT live.contracted_service_id AS service_id, wja.worker_id, wja.job_posting_id AS vacancy_id, wja.application_funnel_stage AS stage,
                 w.first_name_encrypted, w.last_name_encrypted, w.occupation
            FROM worker_job_applications wja JOIN live ON live.id = wja.job_posting_id JOIN workers w ON w.id = wja.worker_id
           WHERE wja.application_funnel_stage = ANY($3::text[]) AND ${excludeDisabledWorkersSql('w')}
@@ -167,9 +184,9 @@ export class ServiceTeamReader {
          SELECT a.worker_id, s.contracted_service_id AS service_id, wja.job_posting_id AS vacancy_id,
                 to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to, a.status,
                 w.first_name_encrypted, w.last_name_encrypted,
-                a.id AS allocation_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, to_char(s.end_time,'HH24:MI') AS end_time
+                a.id AS allocation_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, ${slotEndTimeSql('s')} AS slot_end
            FROM patient_itinerary_assignment a
-           JOIN patient_itinerary_slot s ON s.id = a.slot_id AND s.contracted_service_id = $2
+           JOIN patient_itinerary_slot s ON s.id = a.slot_id AND s.contracted_service_id = ANY($2::uuid[])
            JOIN worker_job_applications wja ON wja.id = a.application_id
            JOIN workers w ON w.id = a.worker_id
        ), marks AS (
@@ -177,29 +194,31 @@ export class ServiceTeamReader {
                 w.first_name_encrypted, w.last_name_encrypted
            FROM contracted_service_rejections r JOIN workers w ON w.id = r.worker_id
            LEFT JOIN service_exit_reasons ser ON ser.code = r.reject_reason_category
-          WHERE r.service_id = $2 AND r.reverted_at IS NULL
+          WHERE r.service_id = ANY($2::uuid[]) AND r.reverted_at IS NULL
        ), subs AS (
          SELECT ab.substitute_worker_id AS worker_id, s.contracted_service_id AS service_id, wja.job_posting_id AS vacancy_id,
                 to_char(ab.on_date, 'YYYY-MM-DD') AS date, w.first_name_encrypted, w.last_name_encrypted
            FROM patient_itinerary_absence ab
            JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
-           JOIN patient_itinerary_slot s ON s.id = a.slot_id AND s.contracted_service_id = $2
+           JOIN patient_itinerary_slot s ON s.id = a.slot_id AND s.contracted_service_id = ANY($2::uuid[])
            JOIN worker_job_applications wja ON wja.id = ab.substitute_application_id
            JOIN workers w ON w.id = ab.substitute_worker_id
           WHERE ${liveAbsencePredicate('ab', 'a')} AND ab.substitute_worker_id IS NOT NULL
        )
-       SELECT svc.id AS service_id, svc.country, (SELECT id FROM live) AS live_vacancy_id,
-              COALESCE((SELECT json_agg(cand) FROM cand), '[]'::json) AS candidacies,
-              COALESCE((SELECT json_agg(alloc) FROM alloc), '[]'::json) AS assignments,
-              COALESCE((SELECT json_agg(marks) FROM marks), '[]'::json) AS marks,
-              COALESCE((SELECT json_agg(subs) FROM subs), '[]'::json) AS substitutions
+       SELECT svc.id AS service_id, svc.country,
+              (SELECT live.id FROM live WHERE live.contracted_service_id = svc.id) AS live_vacancy_id,
+              COALESCE((SELECT json_agg(cand) FROM cand WHERE cand.service_id = svc.id), '[]'::json) AS candidacies,
+              COALESCE((SELECT json_agg(alloc) FROM alloc WHERE alloc.service_id = svc.id), '[]'::json) AS assignments,
+              COALESCE((SELECT json_agg(marks) FROM marks WHERE marks.service_id = svc.id), '[]'::json) AS marks,
+              COALESCE((SELECT json_agg(subs) FROM subs WHERE subs.service_id = svc.id), '[]'::json) AS substitutions
          FROM svc`,
-      [patientId, serviceId, [...ALLOCATION_POOL_STAGES]],
+      [patientId, serviceIds, [...ALLOCATION_POOL_STAGES]],
     );
 
-    if ((res.rowCount ?? 0) === 0) return null;
-    const row = res.rows[0];
+    return res.rows.map((row) => this.toRows(row));
+  }
 
+  private toRows(row: ServiceTeamJoinRow): ServiceTeamRows {
     return {
       serviceId: row.service_id,
       country: row.country,
@@ -224,7 +243,7 @@ export class ServiceTeamReader {
         allocationId: a.allocation_id,
         weekday: a.weekday,
         startTime: a.start_time,
-        endTime: a.end_time,
+        endTime: a.slot_end,
       })),
       marks: row.marks.map((m) => ({
         workerId: m.worker_id,

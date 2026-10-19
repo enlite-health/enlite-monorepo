@@ -38,15 +38,16 @@ const FELIZ = {
   services: [
     {
       contractedServiceId: SERVICE_ID,
-      contratadas: { weekly: 20, authorized: null },
+      scheduleHours: 20,
       cobertas: 4,
+      reserve: { count: 3, minimum: 10 },
       slots: [
         {
           id: SLOT_ID,
           weekday: 1,
           startTime: '08:00',
           endTime: '12:00',
-          active: true,
+          durationMinutes: 240,
           assignments: [
             {
               workerId: WORKER_ID,

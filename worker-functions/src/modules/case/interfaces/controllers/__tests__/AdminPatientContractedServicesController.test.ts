@@ -17,6 +17,7 @@ import { AdminPatientContractedServicesController } from '../AdminPatientContrac
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../../infrastructure/PatientContractedServiceRepository';
 import { SlotHasActiveAllocationError } from '../../../application/ItinerarySlotWriteUseCase';
+import { ServiceSlotOverlapError } from '../../../infrastructure/ServiceSlotWriter';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import type { Response } from 'express';
@@ -215,7 +216,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(null) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -223,7 +224,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, patientId: 'outro-paciente' }) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -249,6 +250,25 @@ describe('AdminPatientContractedServicesController', () => {
       console.log('[12.P4]', 'status', res.status.mock.calls[0][0], 'code', res.json.mock.calls[0][0].code);
     });
 
+    it('ServiceSlotOverlapError → 409 SLOT_OVERLAP (PATCH e POST), sem reportError', async () => {
+      const body = { schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] };
+      const repo = {
+        findById: jest.fn().mockResolvedValue(SERVICE),
+        update: jest.fn().mockRejectedValue(new ServiceSlotOverlapError('svc')),
+        create: jest.fn().mockRejectedValue(new ServiceSlotOverlapError('svc')),
+      };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'SLOT_OVERLAP' }));
+      const res2 = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { serviceCode: 'AT', ...body } }), res2);
+      expect(res2.status).toHaveBeenCalledWith(409);
+      expect(res2.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SLOT_OVERLAP' }));
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('422 SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY quando o repo recusa apagar o horário com vaga viva (F2)', async () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new ServiceFieldRequiredByLiveVacancyError('schedule', ['vac-1'])) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
@@ -262,7 +282,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
@@ -280,7 +300,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(null) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -296,7 +316,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new Error('boom')) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
 
@@ -304,7 +324,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue('x') };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
   });
@@ -351,7 +371,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 10 }, user: naoAdmin }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 10 }, user: naoAdmin }), res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(repo.update).toHaveBeenCalled();
     });

@@ -49,14 +49,17 @@ export interface ItinerarySlotDto {
   weekday: number;
   startTime: string;
   endTime: string;
-  active: boolean;
+  durationMinutes: number;
   assignments: ItineraryAssignmentDto[];
 }
 
 export interface ItineraryServiceDto {
   contractedServiceId: string;
-  contratadas: { weekly: number | null; authorized: number | null };
+  /** Soma das faixas do serviço (horas/semana) — spec 056; `contratadas` não existe mais. */
+  scheduleHours: number;
   cobertas: number;
+  /** Reserva da vaga viva (spec 056 T6.2); `null` = sin vacante. */
+  reserve?: { count: number; minimum: number } | null;
   slots: ItinerarySlotDto[];
 }
 
@@ -126,15 +129,14 @@ export async function activateRecruitmentViaApi(
 
 export interface CreateServiceViaApiOpts {
   serviceCode?: 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST';
-  weeklyHours?: number;
   addressId: string;
-  schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
 }
 
 /**
  * `POST /patients/:id/contracted-services` — wrapper de `postContractedServiceViaApi`
  * (`lancamento-e2e-helper.ts`, G2: fonte única do POST, antes duplicado aqui). Mesmos defaults
- * de antes (`serviceCode` AT, `providersNeeded` 1, `weeklyHours` 20, `careLocation` HOME),
+ * de antes (`serviceCode` AT, `providersNeeded` 1, `careLocation` HOME),
  * `schedule` opcional.
  */
 export async function createServiceViaApi(
@@ -146,7 +148,6 @@ export async function createServiceViaApi(
   return postContractedServiceViaApi(request, token, patientId, {
     serviceCode: opts.serviceCode ?? 'AT',
     providersNeeded: 1,
-    weeklyHours: opts.weeklyHours ?? 20,
     careLocation: 'HOME',
     addressId: opts.addressId,
     ...(opts.schedule ? { schedule: opts.schedule } : {}),

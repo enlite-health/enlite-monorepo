@@ -91,7 +91,7 @@ describe('POST .../allocations/:id/end com motivo e destino — API real (Fase 4
    * Paciente AR (estado inicial `status`), serviço AT com a grade dada, vaga viva, `titulares` prestadores em
    * Selecionado (C) com alocação vigente (desde hoje) na faixa de segunda, itinerário montado.
    */
-  async function seed(status: string, opts: { weeklyHours: number; schedule: string; titulares: number }): Promise<Seeded> {
+  async function seed(status: string, opts: { schedule: string; titulares: number }): Promise<Seeded> {
     seq += 1;
     const tag = `${TASK_PREFIX}${seq}`;
     const patientId = (
@@ -109,16 +109,16 @@ describe('POST .../allocations/:id/end com motivo e destino — API real (Fase 4
     ).rows[0].id;
     const serviceId = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patient_contracted_services (patient_id, service_code, address_id, weekly_hours, schedule, country, created_by, updated_by)
-         VALUES ($1, 'AT', $2, $3, $4::jsonb, 'AR', $5, $5) RETURNING id`,
-        [patientId, addressId, opts.weeklyHours, opts.schedule, TASK_PREFIX],
+        `INSERT INTO patient_contracted_services (patient_id, service_code, address_id, schedule, country, created_by, updated_by)
+         VALUES ($1, 'AT', $2, $3::jsonb, 'AR', $4, $4) RETURNING id`,
+        [patientId, addressId, opts.schedule, TASK_PREFIX],
       )
     ).rows[0].id;
     const mkSlot = async (weekday: number) =>
       (
         await pool.query<{ id: string }>(
-          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
-           VALUES ($1, $2, '08:00', '12:00', $3, $3) RETURNING id`,
+          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+           VALUES ($1, $2, '08:00', 240, '[2026-01-01,)', $3, $3) RETURNING id`,
           [serviceId, weekday, TASK_PREFIX],
         )
       ).rows[0].id;
@@ -180,7 +180,7 @@ describe('POST .../allocations/:id/end com motivo e destino — API real (Fase 4
   }
 
   it('(1) única titular com itinerário montado → tirar (RESERVE) → SEARCHING, 1 linha REMOVE, nenhuma marca', async () => {
-    const s = await seed('REPLACEMENT', { weeklyHours: 4, schedule: SCHEDULE_ONE, titulares: 1 });
+    const s = await seed('REPLACEMENT', { schedule: SCHEDULE_ONE, titulares: 1 });
     const res = await api.post(endUrl(s, s.allocationIds[0]), { reasonCategory: REASON, destination: 'RESERVE' }, { headers: asAdmin.headers });
     expect(res.status).toBe(200);
     expect(res.data.data).toMatchObject({ allocationId: s.allocationIds[0], status: 'ENDED', validTo: hoje, destination: 'RESERVE' });
@@ -198,7 +198,7 @@ describe('POST .../allocations/:id/end com motivo e destino — API real (Fase 4
   });
 
   it('(2) faixa com 2 titulares (semeadas por SQL) → tirar 1 → REPLACEMENT; a outra segue vigente', async () => {
-    const s = await seed('ACTIVE', { weeklyHours: 8, schedule: SCHEDULE_TWO, titulares: 2 });
+    const s = await seed('ACTIVE', { schedule: SCHEDULE_TWO, titulares: 2 });
     const res = await api.post(endUrl(s, s.allocationIds[0]), { reasonCategory: REASON, destination: 'RESERVE' }, { headers: asAdmin.headers });
     expect(res.status).toBe(200);
 
@@ -209,7 +209,7 @@ describe('POST .../allocations/:id/end com motivo e destino — API real (Fase 4
   });
 
   it('(3) LEAVE_SERVICE → marca em contracted_service_rejections com o MESMO código do motivo', async () => {
-    const s = await seed('REPLACEMENT', { weeklyHours: 4, schedule: SCHEDULE_ONE, titulares: 1 });
+    const s = await seed('REPLACEMENT', { schedule: SCHEDULE_ONE, titulares: 1 });
     const res = await api.post(endUrl(s, s.allocationIds[0]), { reasonCategory: REASON, destination: 'LEAVE_SERVICE' }, { headers: asAdmin.headers });
     expect(res.status).toBe(200);
     expect(res.data.data.destination).toBe('LEAVE_SERVICE');
@@ -225,7 +225,7 @@ describe('POST .../allocations/:id/end com motivo e destino — API real (Fase 4
   });
 
   it('(4) sem motivo → 422 REASON_REQUIRED; sem destino → 422 DESTINATION_REQUIRED; motivo fora do catálogo → 422 REASON_INVALID; 0 escritas (contagem por id antes = depois)', async () => {
-    const s = await seed('REPLACEMENT', { weeklyHours: 4, schedule: SCHEDULE_ONE, titulares: 1 });
+    const s = await seed('REPLACEMENT', { schedule: SCHEDULE_ONE, titulares: 1 });
     const before = await snapshot(s, s.allocationIds[0]);
     expect(before).toMatchObject({ status: 'REPLACEMENT', alloc: 'ACTIVE', vigente: 1, registros: 0, marcas: 0 });
 

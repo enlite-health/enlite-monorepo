@@ -241,10 +241,10 @@ describe('usePatientKanban — patients.status', () => {
   // agregado (ou o agregado não trouxe) recebe `[]`, nunca `undefined`, quando servicesStatus é 'ok'.
   it('casa os serviços do agregado por patientId; paciente com 2 serviços mostra os 2, os demais ficam com []', async () => {
     const svcA1: PatientKanbanServiceSummary = {
-      contractedServiceId: 's1', serviceCode: 'AT', contratadas: { weekly: 20, authorized: 20 }, cobertas: 4, liveVacancyId: null,
+      contractedServiceId: 's1', serviceCode: 'AT', scheduleHours: 20, cobertas: 4, reserve: null, liveVacancyId: null,
     };
     const svcA2: PatientKanbanServiceSummary = {
-      contractedServiceId: 's2', serviceCode: 'ENF', contratadas: { weekly: 10, authorized: 10 }, cobertas: 0, liveVacancyId: 'v1',
+      contractedServiceId: 's2', serviceCode: 'ENF', scheduleHours: 10, cobertas: 0, reserve: null, liveVacancyId: 'v1',
     };
     listKanbanServices.mockResolvedValueOnce({
       patients: [{ patientId: 'a', asOf: '2026-09-27', services: [svcA1, svcA2] }],
@@ -285,7 +285,7 @@ describe('usePatientKanban — patients.status', () => {
   // anda com o card sem refetch do agregado.
   it('moveStatus otimista preserva os `services` do card movido', async () => {
     const svc: PatientKanbanServiceSummary = {
-      contractedServiceId: 's1', serviceCode: 'AT', contratadas: { weekly: 20, authorized: 20 }, cobertas: 4, liveVacancyId: null,
+      contractedServiceId: 's1', serviceCode: 'AT', scheduleHours: 20, cobertas: 4, reserve: null, liveVacancyId: null,
     };
     listKanbanServices.mockReset().mockResolvedValueOnce({
       patients: [{ patientId: 'a', asOf: '2026-09-27', services: [svc] }],

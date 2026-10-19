@@ -12,6 +12,7 @@
  * com a célula, como o GET do itinerário (DX-12.5).
  */
 import type { PoolClient } from 'pg';
+import { slotEndTimeSql } from '@shared/sql/serviceScheduleSql';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItineraryEventAssignmentRow, ItineraryEventAbsenceRow } from '../domain/itineraryEvents';
 
@@ -34,7 +35,7 @@ interface AssignmentJoinRow {
   contracted_service_id: string;
   weekday: number;
   start_time: string;
-  end_time: string;
+  slot_end: string;
   worker_id: string;
   valid_from: string;
   valid_to: string | null;
@@ -76,7 +77,7 @@ export class PatientItineraryEventsReader {
     const assignmentsRes = await client.query<AssignmentJoinRow>(
       `SELECT a.id AS assignment_id, a.slot_id, s.contracted_service_id, s.weekday,
               to_char(s.start_time, 'HH24:MI') AS start_time,
-              to_char(s.end_time, 'HH24:MI') AS end_time,
+              ${slotEndTimeSql('s')} AS slot_end,
               a.worker_id,
               to_char(a.valid_from, 'YYYY-MM-DD') AS valid_from,
               to_char(a.valid_to, 'YYYY-MM-DD') AS valid_to,
@@ -136,7 +137,7 @@ export class PatientItineraryEventsReader {
         serviceId: r.contracted_service_id,
         weekday: r.weekday,
         startTime: r.start_time,
-        endTime: r.end_time,
+        endTime: r.slot_end,
         workerId: r.worker_id,
         validFrom: r.valid_from,
         validTo: r.valid_to,

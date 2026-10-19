@@ -112,7 +112,7 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
       insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       const slot = await postSlotApi(request, comToken, patientId, serviceId, {
-        weekday: 2, startTime: '09:00', endTime: '11:00',
+        weekday: 2, startTime: '09:00', durationMinutes: 120,
       });
       expect(slot.status, 'POST slot com patient_itinerary:update').toBe(201);
       const slotId = (slot.body.data as SlotData | undefined)?.id;
@@ -150,7 +150,7 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
       // Alvo REAL para os 403 de PATCH/encerrar/alocar/encerrar-alocação — semeado pela API da
       // própria fase, com a conta COM (não é a rota sob teste; é insumo).
       const seedSlot = await postSlotApi(request, comToken, patientId, serviceId, {
-        weekday: 3, startTime: '09:00', endTime: '11:00',
+        weekday: 3, startTime: '09:00', durationMinutes: 120,
       });
       expect(seedSlot.status, 'semente: POST slot com COM').toBe(201);
       const slotId = (seedSlot.body.data as SlotData | undefined)?.id;
@@ -162,7 +162,7 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
       if (!allocationId) throw new Error('itinerario-celula-sem: alocação semente sem id');
 
       const slotsBefore = scalar(
-        `select count(*) from patient_itinerary_slot where contracted_service_id = '${serviceId}' and active = true`,
+        `select count(*) from patient_itinerary_slot where contracted_service_id = '${serviceId}' and upper_inf(valid)`,
       );
       const allocsBefore = scalar(
         `select count(*) from patient_itinerary_assignment where slot_id = '${slotId}' and status = 'ACTIVE'`,
@@ -170,10 +170,10 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
       const montadoBefore = scalar(`select count(*) from patient_itinerary_assembly where patient_id = '${patientId}'`);
 
       const rPost = await postSlotApi(request, semToken, patientId, serviceId, {
-        weekday: 4, startTime: '09:00', endTime: '11:00',
+        weekday: 4, startTime: '09:00', durationMinutes: 120,
       });
       const rPatch = await patchSlotApi(request, semToken, patientId, serviceId, slotId, {
-        weekday: 3, startTime: '10:00', endTime: '12:00',
+        weekday: 3, startTime: '10:00', durationMinutes: 120,
       });
       const rEnd = await endSlotApi(request, semToken, patientId, serviceId, slotId);
       const rAlloc = await allocateApi(request, semToken, patientId, serviceId, slotId, { workerId: workerId2 });
@@ -209,7 +209,7 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
       expect(rControl.status, 'GET allocation-options com patient_services:read').toBe(200);
 
       const slotsAfter = scalar(
-        `select count(*) from patient_itinerary_slot where contracted_service_id = '${serviceId}' and active = true`,
+        `select count(*) from patient_itinerary_slot where contracted_service_id = '${serviceId}' and upper_inf(valid)`,
       );
       const allocsAfter = scalar(
         `select count(*) from patient_itinerary_assignment where slot_id = '${slotId}' and status = 'ACTIVE'`,

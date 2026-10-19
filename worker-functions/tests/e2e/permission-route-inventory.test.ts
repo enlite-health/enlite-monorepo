@@ -333,6 +333,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/template-drafts → messaging:read',
         'GET /api/admin/terminology/search → patient_clinical:read',
         'PATCH /api/admin/patients/:id/contracted-services/:sid → patient_services:update',
+        'GET /api/admin/patients/:id/contracted-services/:sid/authorizations → patient_services:read', // spec 056 — horas autorizadas com vigência
+        'POST /api/admin/patients/:id/contracted-services/:sid/authorizations → patient_services:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/authorizations/:aid/supersede → patient_services:update',
         'PATCH /api/admin/patients/:id/diagnoses/:did → patient_clinical:update',
         'PATCH /api/admin/patients/:patientId/addresses/:addressId → patient_address:update',
         'POST /api/admin/catalogs/insurance-providers → patient:create',

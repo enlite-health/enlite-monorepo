@@ -186,7 +186,7 @@ export class ItineraryAllocationUseCase {
       const slot = await this.writer.findSlotForAllocation(client, patientId, serviceId, slotId);
       if (slot === null) throw new SlotNotFoundError(serviceId, slotId);
       if (slot.addressId === null) throw new ServiceWithoutAddressError(serviceId);
-      if (!slot.active) throw new SlotInactiveError(serviceId, slotId);
+      if (!slot.vigente) throw new SlotInactiveError(serviceId, slotId);
 
       const row = await this.reader.readWith(client, patientId, serviceId);
       if (row === null) throw new SlotNotFoundError(serviceId, slotId);

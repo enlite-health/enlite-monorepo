@@ -30,6 +30,7 @@ import {
   limparTrilhaDrenada,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -41,7 +42,8 @@ const CELULAS = [
   'searching', 'active', 'replacement', 'on_hold', 'suspended', 'alta', 'discharged',
 ].map((d) => ['patient_status', `move_to_${d}`] as [string, string]);
 const TAG = 'fora-fluxo-051-';
-const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]';
+// spec 056: o horário do serviço = faixas em patient_itinerary_slot (08:00 + 240 min = 12:00)
+const HORARIO = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
 
 const U = {
   operadora: 'ff051-operadora', // patient:read+update + a célula move_to_searching (e move_to_on_hold)
@@ -79,11 +81,12 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
         `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1, 'Calle Fluxo 1', 1) RETURNING id`,
         [id],
       )).rows[0].id;
-      await admin.query(
-        `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
-         VALUES ($1, 'CAREGIVER', true, 'AR', 'ff051', 'ff051', $2, $3::jsonb)`,
-        [id, addr, servico === 'completo' ? HORARIO : null],
-      );
+      const sid = (await admin.query<{ id: string }>(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id)
+         VALUES ($1, 'CAREGIVER', true, 'AR', 'ff051', 'ff051', $2) RETURNING id`,
+        [id, addr],
+      )).rows[0].id;
+      await semearFaixas(admin, sid, servico === 'completo' ? HORARIO : [], 'ff051');
     }
     return id;
   }

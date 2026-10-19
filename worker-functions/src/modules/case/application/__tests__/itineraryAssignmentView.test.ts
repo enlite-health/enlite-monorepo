@@ -11,7 +11,7 @@ const AS_OF = '2026-09-27';
 
 function slotRow(over: Partial<ItinerarySlotRow> & { id: string }): ItinerarySlotRow {
   return {
-    contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+    contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
     assignmentId: null, workerId: null, applicationId: null, validFrom: null, validTo: null, status: null,
     ...over,
   };
@@ -32,7 +32,7 @@ function build(rows: Pick<ItineraryRows, 'services' | 'slots'>) {
 describe('withAssignmentIdentity', () => {
   it('1 slot, ENDED antiga + ACTIVE vigente (ordem do leitor) → allocationId certo em cada uma, displayName só na vigente', () => {
     const rows = {
-      services: [{ id: 'svc-a', weeklyHours: 4, authorizedHours: null }],
+      services: [{ id: 'svc-a' }],
       slots: [
         alloc('asg-old', 's1', 'w-old', { validFrom: '2026-01-01', validTo: '2026-06-30', status: 'ENDED' }),
         alloc('asg-new', 's1', 'w-new'),
@@ -53,7 +53,7 @@ describe('withAssignmentIdentity', () => {
 
   it('slot sem alocação → assignments: []', () => {
     const rows = {
-      services: [{ id: 'svc-a', weeklyHours: null, authorizedHours: null }],
+      services: [{ id: 'svc-a' }],
       slots: [slotRow({ id: 's1' })],
     };
 
@@ -66,8 +66,8 @@ describe('withAssignmentIdentity', () => {
   it('2 serviços → cada allocationId no seu slot', () => {
     const rows = {
       services: [
-        { id: 'svc-a', weeklyHours: null, authorizedHours: null },
-        { id: 'svc-b', weeklyHours: null, authorizedHours: null },
+        { id: 'svc-a' },
+        { id: 'svc-b', },
       ],
       slots: [alloc('asg-a', 's-a', 'w-1'), alloc('asg-b', 's-b', 'w-2', { contractedServiceId: 'svc-b' })],
     };
@@ -81,7 +81,7 @@ describe('withAssignmentIdentity', () => {
   });
 
   it('vigente sem nome no mapa (célula negada / sem fonte) → displayName null', () => {
-    const rows = { services: [{ id: 'svc-a', weeklyHours: null, authorizedHours: null }], slots: [alloc('asg-1', 's1', 'w-1')] };
+    const rows = { services: [{ id: 'svc-a' }], slots: [alloc('asg-1', 's1', 'w-1')] };
 
     const view = withAssignmentIdentity(build(rows), rows.slots, AS_OF, new Map());
 
@@ -89,7 +89,7 @@ describe('withAssignmentIdentity', () => {
   });
 
   it('contagem divergente (linha a mais no mesmo slot) → lança, nunca pareia errado', () => {
-    const rows = { services: [{ id: 'svc-a', weeklyHours: null, authorizedHours: null }], slots: [alloc('asg-1', 's1', 'w-1')] };
+    const rows = { services: [{ id: 'svc-a' }], slots: [alloc('asg-1', 's1', 'w-1')] };
     const services = build(rows);
 
     expect(() => withAssignmentIdentity(services, [...rows.slots, alloc('asg-extra', 's1', 'w-9')], AS_OF, new Map())).toThrow(
@@ -98,7 +98,7 @@ describe('withAssignmentIdentity', () => {
   });
 
   it('mesma contagem, prestador trocado na posição → lança', () => {
-    const rows = { services: [{ id: 'svc-a', weeklyHours: null, authorizedHours: null }], slots: [alloc('asg-1', 's1', 'w-1')] };
+    const rows = { services: [{ id: 'svc-a' }], slots: [alloc('asg-1', 's1', 'w-1')] };
     const services = build(rows);
 
     expect(() => withAssignmentIdentity(services, [alloc('asg-1', 's1', 'w-outro')], AS_OF, new Map())).toThrow(
@@ -108,7 +108,7 @@ describe('withAssignmentIdentity', () => {
 
   it('asOf no limite: validTo === asOf → vigente (nome); validFrom > asOf → não', () => {
     const rows = {
-      services: [{ id: 'svc-a', weeklyHours: null, authorizedHours: null }],
+      services: [{ id: 'svc-a' }],
       slots: [
         alloc('asg-fim-hoje', 's1', 'w-1', { validTo: AS_OF }),
         alloc('asg-futura', 's2', 'w-2', { validFrom: '2026-09-28' }),
@@ -124,7 +124,7 @@ describe('withAssignmentIdentity', () => {
 describe('workerIdsToName', () => {
   it('só os vigentes, sem repetição, com a fonte cifrada; serviço fora da lista e linha sem alocação não entram', () => {
     const rows = {
-      services: [{ id: 'svc-a', weeklyHours: null, authorizedHours: null }],
+      services: [{ id: 'svc-a' }],
       slots: [
         slotRow({ id: 's0' }),
         alloc('asg-1', 's1', 'w-1'),
@@ -147,7 +147,7 @@ describe('workerIdsToName', () => {
 
   it('validFrom > asOf → fora; validTo === asOf → dentro', () => {
     const rows = {
-      services: [{ id: 'svc-a', weeklyHours: null, authorizedHours: null }],
+      services: [{ id: 'svc-a' }],
       slots: [alloc('asg-1', 's1', 'w-futuro', { validFrom: '2026-09-28' }), alloc('asg-2', 's2', 'w-hoje', { validTo: AS_OF })],
     };
 

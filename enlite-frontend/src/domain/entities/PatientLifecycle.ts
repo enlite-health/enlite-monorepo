@@ -1,4 +1,5 @@
 import type { PatientStatus } from './patientEnums';
+import type { ServiceReserve } from './PatientItinerary';
 import type { PatientCompletenessCode } from './PatientCompleteness';
 
 /**
@@ -57,13 +58,16 @@ export interface PatientStatusHistoryEntry {
 
 /**
  * Uma linha do subcard do Kanban (fase 8, DX-8.1/8.5): um serviço contratado ativo do
- * paciente, com o par `cobertas`/`contratadas` (ambos do agregado `GET
+ * paciente, com o par `cobertas`/`scheduleHours` (ambos do agregado `GET
  * /patients/kanban/services`, nunca calculado no cliente) e o sinal de vaga viva.
  */
 export interface PatientKanbanServiceSummary {
   contractedServiceId: string;
   serviceCode: string;
-  contratadas: { weekly: number | null; authorized: number | null };
+  /** Soma das faixas do serviço (horas/semana), da API. */
+  scheduleHours: number;
+  /** Reserva da vaga viva (`null` = sin vacante); alerta quando `count < minimum`. */
+  reserve: ServiceReserve | null;
   /** Horas cobertas do itinerário (mesma conta do detalhe, `computeServiceCoverage`). */
   cobertas: number;
   /** Vaga viva (a mesma condição do `liveVacancyId` da ficha) — presente = já existe vacante. */

@@ -36,7 +36,7 @@ import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
 const STAFF = mockAdminUserFor('itinerario-montar');
 
 /** 1 serviço de 4 h/semana com UMA faixa de 4 h: 1 prestador cobre 100% (cobertura total → ACTIVE). */
-const QUATRO_HORAS = { weeklyHours: 4, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] };
+const QUATRO_HORAS = { schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] };
 const UUID_CRU = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 interface OptionDto { workerId: string; displayName: string | null }

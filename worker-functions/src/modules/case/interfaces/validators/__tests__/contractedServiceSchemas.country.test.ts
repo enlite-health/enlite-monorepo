@@ -23,13 +23,18 @@ describe('contractedServiceSchemas — country não vem do cliente (C7)', () => 
   });
 
   it('POST sem `country` continua válido — e o corpo aceito não tem a chave', () => {
-    const r = createContractedServiceSchema.safeParse({ serviceCode: 'AT', weeklyHours: 12 });
+    const r = createContractedServiceSchema.safeParse({ serviceCode: 'AT', hourlyValue: 12 });
     expect(r.success).toBe(true);
     if (r.success) expect(Object.prototype.hasOwnProperty.call(r.data, 'country')).toBe(false);
   });
 
   it('PATCH nunca teve `country` e segue sem (controle positivo do mesmo `.strict()`)', () => {
     expect(updateContractedServiceSchema.safeParse({ country: 'BR' }).success).toBe(false);
-    expect(updateContractedServiceSchema.safeParse({ weeklyHours: 12 }).success).toBe(true);
+    expect(updateContractedServiceSchema.safeParse({ hourlyValue: 12 }).success).toBe(true);
+  });
+
+  it('weeklyHours (spec 056): o horário é das faixas — POST e PATCH com a chave são recusados (.strict → 400)', () => {
+    expect(createContractedServiceSchema.safeParse({ serviceCode: 'AT', weeklyHours: 12 }).success).toBe(false);
+    expect(updateContractedServiceSchema.safeParse({ weeklyHours: 12 }).success).toBe(false);
   });
 });

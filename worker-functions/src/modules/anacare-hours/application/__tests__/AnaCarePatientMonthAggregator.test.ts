@@ -15,6 +15,8 @@ import {
   rawPatientRealShape,
 } from '@modules/integration/infrastructure/anacare/__fixtures__/rawShiftRealShape';
 import { aggregatePatientMonth, aggregateByPatient } from '../AnaCarePatientMonthAggregator';
+import { mapShift } from '../AnaCareHoursMapper';
+import type { ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
 
 const PATIENT_ID = String(rawPatientRealShape().id);
 
@@ -117,5 +119,34 @@ describe('aggregateByPatient', () => {
     const byId = new Map(result.map((r) => [r.anaCarePatientId, r]));
     expect(byId.get(PATIENT_ID)?.shiftsCount).toBe(1);
     expect(byId.get('AC-PAT-OUTRO')?.shiftsCount).toBe(1);
+  });
+});
+
+describe('lista = detalhe (056 T5.1)', () => {
+  it('lista = detalhe para turno validado com aprovada ≠ realizada', () => {
+    const dto = {
+      ...minimizeShiftDTO(rawShiftNoturnoCruzaMeiaNoite()),
+      actualStart: '2026-08-10T08:00:00Z',
+      actualEnd: '2026-08-10T16:00:00Z',
+    };
+    const validation: ValidationRow = {
+      sourceShiftId: dto.sourceShiftId,
+      status: 'validado',
+      approvedHours: 6,
+      approvedCheckinAt: null,
+      approvedCheckoutAt: null,
+      approvedCheckinSource: null,
+      validatedBy: 'uid-1',
+      validatedByName: 'Fulano',
+      validatedAt: '2026-08-11T10:00:00Z',
+      reason: null,
+      noteEncrypted: null,
+    };
+
+    const lista = aggregatePatientMonth(PATIENT_ID, [dto], new Map([[dto.sourceShiftId, validation]])).hoursActualSum;
+    const detalhe = mapShift(dto, validation, false, null).hoursActual;
+
+    expect(lista).toBe(6);
+    expect(detalhe).toBe(6);
   });
 });

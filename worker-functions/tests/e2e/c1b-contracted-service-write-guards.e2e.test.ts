@@ -76,7 +76,7 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
   });
 
   it('C4-c. `recruiter` editando OUTRO campo passa, e o preço que ele não vê continua intacto', async () => {
-    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 20 }, ['recruiter']);
+    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { providersNeeded: 2 }, ['recruiter']);
     await controller.update(req, res);
     expect(out.status).toBe(200);
     // Spec 047 (F2): sem decisão do engine o papel `recruiter` também não lê a vaga — `null` + redigida:true.
@@ -102,7 +102,7 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
     expect(out.status).toBe(403);
     expect(Number((await svc()).hourly_value)).toBe(PRECO);
 
-    const [req2, res2, out2] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 10 }, ['admin'], ['patient_services:write']);
+    const [req2, res2, out2] = reqRes({ id: patientId, sid: serviceId }, { providersNeeded: 2 }, ['admin'], ['patient_services:write']);
     await controller.update(req2, res2);
     expect(out2.status).toBe(200);
     expect((out2.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean; liveVacancyRedacted: boolean } }).data)

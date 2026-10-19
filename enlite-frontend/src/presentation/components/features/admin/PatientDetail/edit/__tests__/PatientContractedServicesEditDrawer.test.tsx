@@ -36,7 +36,7 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: patientDetailFixture.id, serviceCode: 'AT', professionalProfile: null,
-  providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
+  providersNeeded: 2, authorization: null, legacyAuthorizedHours: 20, scheduleHours: 20, careLocation: 'HOME',
   hourlyValue: 1500, hourlyValueRedacted: false, startDate: null,
   contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,

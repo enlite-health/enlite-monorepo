@@ -36,18 +36,17 @@ const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
- * Horário do encuadre (migration 330) — o MESMO slot que o form da vaga persiste em
- * `job_postings.schedule` (`scheduleToJsonb`): `{ dayOfWeek 0-6, startTime, endTime }` em HH:MM.
+ * Horário do serviço (spec 056, plan.md §5.1): turno = `{ dayOfWeek 0-6, startTime HH:MM, durationMinutes 1..1440 }`.
+ * O fim NUNCA entra pela API (`.strict()`): é derivado (início + duração). Inicio/Fin → duração é conta só do front.
  * `null` = "ainda sem horário" (decisão do Gabriel 05/09: a vacante pode nascer sem horário).
  */
 const scheduleSlotSchema = z
   .object({
     dayOfWeek: z.number().int().min(0).max(6),
     startTime: z.string().regex(HHMM),
-    endTime: z.string().regex(HHMM),
+    durationMinutes: z.number().int().min(1).max(1440),
   })
-  .strict()
-  .refine((s) => s.startTime < s.endTime, { message: 'startTime must be before endTime' });
+  .strict();
 
 // `[]` vira `null` AQUI, na borda: "sem horário" tem UMA representação no banco (NULL), não
 // duas (NULL e '[]') — o `null` que significa duas coisas já apagou dado nesta casa (D167).
@@ -66,8 +65,6 @@ export const createContractedServiceSchema = z
     serviceCode: z.enum(SERVICE_CODES),
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
-    authorizedHours: z.number().nonnegative().nullable().optional(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
     hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -96,8 +93,6 @@ export const updateContractedServiceSchema = z
   .object({
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
-    authorizedHours: z.number().nonnegative().nullable().optional(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
     hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),

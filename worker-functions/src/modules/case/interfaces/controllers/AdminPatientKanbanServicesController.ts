@@ -10,9 +10,9 @@ import { kanbanServicesQuerySchema } from '../validators/kanbanServicesSchemas';
  *   GET /api/admin/patients/kanban/services?country=AR|BR
  *
  * Uma chamada por carga do board (nunca uma por card, critério 6): devolve, por paciente com >= 1
- * serviço ATIVO, o par cobertas/contratadas de cada serviço contratado + o `liveVacancyId` (a
+ * serviço ATIVO, o par cobertas/`scheduleHours` de cada serviço contratado + o `liveVacancyId` (a
  * mesma condição de `ContractedServiceDetailMapper.ts`). Sob `patient_services:read` (DX-8.2, a
- * mesma célula do GET .../itinerary): a resposta carrega `weekly`/`authorized`, que hoje só saem
+ * mesma célula do GET .../itinerary): a resposta carrega `scheduleHours`, que hoje só sai
  * sob essa célula (memória `vazamento-existente-nao-e-regua`). Sem `logResourceAccess`: nenhum id
  * de paciente sai em log — só ids, código de serviço, horas e `liveVacancyId` no corpo.
  */

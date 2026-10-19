@@ -9,6 +9,7 @@ import { AdminPatientsMapController } from '../controllers/AdminPatientsMapContr
 import { AdminPatientAddressesController } from '../controllers/AdminPatientAddressesController';
 import { AdminInsuranceProvidersController } from '../controllers/AdminInsuranceProvidersController';
 import { AdminPatientContractedServicesController } from '../controllers/AdminPatientContractedServicesController';
+import { AdminContractedServiceAuthorizationController } from '../controllers/AdminContractedServiceAuthorizationController';
 import { AdminPatientItineraryController } from '../controllers/AdminPatientItineraryController';
 import { AdminPatientKanbanServicesController } from '../controllers/AdminPatientKanbanServicesController';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
@@ -81,6 +82,8 @@ export function createAdminPatientsRoutes(
   itineraryController: AdminPatientItineraryController = new AdminPatientItineraryController(),
   // Agregado do subcard (fase 8, DX-8.1) — default, mesmo molde; o construtor não abre banco.
   kanbanServicesController: AdminPatientKanbanServicesController = new AdminPatientKanbanServicesController(),
+  // Autorização de horas do serviço (spec 056 T2.2) — default, mesmo molde; o construtor não abre banco.
+  authorizationController: AdminContractedServiceAuthorizationController = new AdminContractedServiceAuthorizationController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -268,6 +271,20 @@ export function createAdminPatientsRoutes(
   router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
     contractedServicesController.update(req, res),
   );
+  // Autorização de horas do serviço, com vigência (spec 056 §5.2). REUSO das células `patient_services` (decidido: célula nova
+  // pediria sync de catálogo antes de enforçar). Sem DELETE: corrigir = supersede.
+  router.get('/patients/:id/contracted-services/:sid/authorizations', staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
+    authorizationController.list(req, res),
+  );
+  router.post('/patients/:id/contracted-services/:sid/authorizations', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
+    authorizationController.create(req, res),
+  );
+  router.post(
+    '/patients/:id/contracted-services/:sid/authorizations/:aid/supersede',
+    staffOnly,
+    perm.require('patient_services', 'update'),
+    (req: Request, res: Response) => authorizationController.supersede(req, res),
+  );
   // POST /patients/:id/contracted-services/:sid/activate-recruitment (spec 018, PR-6, ADR-5,
   // contracts/activation.md). Guardas na ORDEM do contrato: staffOnly → patient_services:update →
   // vacancy:update (SUP-19: a vaga nasce daqui, mesmo em rascunho; era ':write' literal — SPLIT_RESOURCES
@@ -284,8 +301,8 @@ export function createAdminPatientsRoutes(
 
   // ── Itinerário — leitura (fase 7, DX-7.6/7.7/D433/D434) ────────────────────
   // Sob `patient_services:read` (Q-7.3, padrão fixado na DX-7.7): a resposta carrega os mesmos
-  // `weeklyHours`/`authorizedHours` do GET .../contracted-services, que já sobre essa célula
-  // (linha `:240` acima); sob `patient:read` a rota abriria esses números a quem hoje não os lê.
+  // `scheduleHours` (soma das faixas) do GET .../contracted-services, que já sai sob essa célula
+  // (linha `:240` acima); sob `patient:read` a rota abriria esse número a quem hoje não o lê.
   // Literal GET, sem colidir com o PATCH dinâmico /:id/:section (é outro método).
   router.get('/patients/:id/itinerary', staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
     itineraryController.get(req, res),

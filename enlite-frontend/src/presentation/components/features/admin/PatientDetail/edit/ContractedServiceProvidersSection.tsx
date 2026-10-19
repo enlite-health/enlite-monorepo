@@ -26,7 +26,7 @@ export function ContractedServiceProvidersSection({ serviceId, providers }: Prop
         {providers.map((p) => (
           <li key={p.id} className="flex items-center justify-between gap-2 text-sm" data-testid={`provider-row-${p.id}`}>
             <Text as="span" size="sm">
-              {workerLabel(t, p.workerId, p.workerName)} ·{p.weeklyHours ?? '—'}h/sem ·{' '}
+              {workerLabel(t, p.workerId, p.workerName)} ·{' '}
               {p.active ? te('providerActive') : te('providerInactive')}
             </Text>
           </li>

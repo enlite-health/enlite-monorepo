@@ -25,10 +25,10 @@
 
 import { logger } from '@shared/logging';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
-import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository, ShiftValidationReader, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
 import { AnaCareHoursSyncGuard } from './AnaCareHoursSyncGuard';
 import { emitAnaCareHoursSyncMetric, type AnaCareHoursSyncMetricEmitter } from '../infrastructure/AnaCareHoursSyncMetrics';
-import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository, FakeAnaCareSyncRunRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
+import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository, FakeAnaCareSyncRunRepository, FakeShiftValidationReader } from '../infrastructure/FakeAnaCareSyncDependencies';
 import { aggregateByPatient } from './AnaCarePatientMonthAggregator';
 
 export interface AnaCareHoursSyncTrigger {
@@ -147,6 +147,8 @@ export class AnaCareHoursSyncRunner {
      * `Date.now()`. Ver `resolveRunStartedAt`.
      */
     private readonly syncRunRepository: SyncRunRepository = new FakeAnaCareSyncRunRepository(),
+    /** 056 T5.1: validações dos turnos da reserva, carregadas ANTES de agregar (agregado = detalhe). */
+    private readonly shiftValidationReader: ShiftValidationReader = new FakeShiftValidationReader(),
   ) {}
 
   static currentMonth(): string {
@@ -221,7 +223,8 @@ export class AnaCareHoursSyncRunner {
         // cabeçalho do arquivo e `AnaCarePatientMonthCollisionError`. Passo 3 (regressão do passo
         // 1): `shifts` também vai junto — é dali que `upsertReplacingForRun` grava o par
         // paciente×prestador (`anacare_patient_month_provider`) na MESMA chamada.
-        const aggregates = aggregateByPatient(shifts);
+        const validations = await this.shiftValidationReader.getByShiftIds(shifts.map((s) => s.sourceShiftId));
+        const aggregates = aggregateByPatient(shifts, validations);
         const { written } = await this.patientMonthRepository.upsertReplacingForRun(aggregates, month, runStartedAt, shifts);
         shiftsWritten += written;
       }

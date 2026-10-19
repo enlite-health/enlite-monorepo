@@ -348,4 +348,38 @@ describe('AdminContractedServicesApiService', () => {
       expect(err.overlap).toBeUndefined();
     });
   });
+
+  it('listAuthorizations: GET, devolve o array authorizations', async () => {
+    const f = mockFetch({ success: true, data: { authorizations: [{ id: 'a1' }] } });
+    const out = await AdminContractedServicesApiService.listAuthorizations(PATIENT_ID, SERVICE_ID);
+    expect(out).toEqual([{ id: 'a1' }]);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/authorizations`);
+    expect(init.method).toBe('GET');
+  });
+
+  it('createAuthorization: POST com o corpo (validTo inclusivo)', async () => {
+    const f = mockFetch({ success: true, data: { id: 'a1' } }, 201);
+    const body = { hours: 40, validFrom: '2026-10-01', validTo: '2026-10-31' };
+    await AdminContractedServicesApiService.createAuthorization(PATIENT_ID, SERVICE_ID, body);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/contracted-services/${SERVICE_ID}/authorizations`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it('supersedeAuthorization: POST em /authorizations/:aid/supersede', async () => {
+    const f = mockFetch({ success: true, data: { id: 'a2' } }, 201);
+    await AdminContractedServicesApiService.supersedeAuthorization(PATIENT_ID, SERVICE_ID, 'a1', { hours: 1, validFrom: '2026-10-01', validTo: '2026-10-02' });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/authorizations/a1/supersede`);
+    expect(init.method).toBe('POST');
+  });
+
+  it('createAuthorization: 409 vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'overlap', code: 'AUTHORIZATION_OVERLAPS' }, 409);
+    await expect(
+      AdminContractedServicesApiService.createAuthorization(PATIENT_ID, SERVICE_ID, { hours: 1, validFrom: '2026-10-01', validTo: '2026-10-02' }),
+    ).rejects.toMatchObject({ status: 409, code: 'AUTHORIZATION_OVERLAPS' });
+  });
 });

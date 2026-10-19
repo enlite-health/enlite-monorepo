@@ -57,11 +57,12 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await expect.poll(async () => { const b = await drawer.boundingBox(); return b ? Math.round(b.x + b.width) : 0; }, { timeout: 5_000 }).toBe(1600);
     // Colunas alinhadas (06/09): os campos numéricos de uma mesma linha da grade ficam na mesma altura,
     // mesmo com a dica "Solo números" (que agora fica embaixo do campo).
-    const [hsSem, hsAut] = await Promise.all([
-      page.getByTestId('svc-weeklyHours-1').boundingBox(),
-      page.getByTestId('svc-authorizedHours-1').boundingBox(),
+    // 056: sem "Horas semanales" e com o bloco Autorización só no serviço já criado — a medição usa o par da 1ª linha da grade.
+    const [codigo, prestadores] = await Promise.all([
+      page.getByTestId('svc-code-1').boundingBox(),
+      page.getByTestId('svc-providersNeeded-1').boundingBox(),
     ]);
-    expect(Math.abs((hsSem?.y ?? 0) - (hsAut?.y ?? 1e9))).toBeLessThan(2);
+    expect(Math.abs((codigo?.y ?? 0) - (prestadores?.y ?? 1e9))).toBeLessThan(2);
     // Largura (06/09): a legenda "Franja etaria solicitada del prestador" cabe numa linha só.
     const franja = page.locator('label[for="svc-providerAgeBand-1"]');
     const box = await franja.boundingBox();
@@ -98,14 +99,13 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
 
     // ── Texto/número: clique + teclado, e o valor que FICOU ──
     expect(await digitar(page, 'svc-providersNeeded-1', '2')).toBe('2');
-    expect(await digitar(page, 'svc-weeklyHours-1', '20')).toBe('20');
-    expect(await digitar(page, 'svc-authorizedHours-1', '24')).toBe('24');
     expect(await digitar(page, 'svc-hourlyValue-1', '1500')).toBe('1500');
     expect(await digitar(page, 'svc-profile-1', 'perfil digitado por humano')).toBe('perfil digitado por humano');
 
-    // ── Horário: o "+" de segunda-feira cria um slot 09:00–17:00 ──
-    await page.getByTestId('day-schedule-add-monday').click();
-    await expect(page.getByTestId('day-schedule-remove-monday-0')).toBeVisible();
+    // ── Horário: o "+" de segunda-feira cria um turno 09:00–17:00 (480 min) ──
+    await page.getByTestId('svc-shift-add-1-1').click();
+    await expect(page.getByTestId('svc-shift-remove-1-1-0')).toBeVisible();
+    await expect(page.getByTestId('svc-schedule-total-1')).toContainText('Total del horario: 8 h por semana'); // 09:00–17:00, só leitura
 
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toHaveScreenshot('humano-drawer-preenchido.png', {
       mask: [page.locator('.firebase-emulator-warning')],
@@ -116,7 +116,7 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await page.getByTestId('contracted-service-new-save').click();
     const body = (await (await created).json()) as { data: { id: string; addressId: string; schedule: unknown[]; providersNeeded: number; hourlyValue: number } };
     expect(body.data.addressId).toBe(seed.addressId);
-    expect(body.data.schedule).toEqual([{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }]);
+    expect(body.data.schedule).toMatchObject([{ dayOfWeek: 1, startTime: '09:00', durationMinutes: 480 }]);
     expect(body.data.providersNeeded).toBe(2);
     expect(body.data.hourlyValue).toBe(1500);
 
@@ -124,6 +124,17 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     // seção de prestadores existe. Esperar a troca também tira de cena a lixeira do form novo.
     await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible();
     await expect(page.getByTestId(`contracted-service-form-${body.data.id}`)).toBeVisible();
+
+    // ── Autorización (spec 056): bloco do serviço já criado; salva sozinho. Datas com dia = mês
+    //    (11/11, 12/12) para o teclado valer em qualquer ordem de segmentos do locale; o valor lido é ISO. ──
+    expect(await digitar(page, 'svc-auth-hours-1', '24')).toBe('24');
+    expect(await digitar(page, 'svc-auth-from-1', '11112026')).toBe('2026-11-11');
+    expect(await digitar(page, 'svc-auth-to-1', '12122026')).toBe('2026-12-12');
+    const authCreated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/authorizations$/.test(r.url()));
+    await page.getByTestId('svc-auth-save-1').click();
+    const authBody = (await (await authCreated).json()) as { data: { hours: number; validFrom: string; validTo: string } };
+    expect(authBody.data).toMatchObject({ hours: 24, validFrom: '2026-11-11', validTo: '2026-12-12' });
+    await expect(page.getByTestId('svc-auth-current-1')).toContainText('24 h');
 
     // ── Fechar pelo X e ler a tabela como um humano lê ──
     await page.getByLabel('Cerrar').click();
@@ -152,6 +163,8 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await page.getByTestId(`contracted-service-edit-${body.data.id}`).click();
     await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible();
     await expect(page.getByTestId('contracted-service-detail-drawer')).toHaveCount(0);
+    // Releitura pelo GET de serviços: a vigente (`authorization.hours`) chega ao bloco.
+    await expect(page.getByTestId('svc-auth-current-1')).toContainText('24 h');
     await page.getByLabel('Cerrar').click();
   });
 

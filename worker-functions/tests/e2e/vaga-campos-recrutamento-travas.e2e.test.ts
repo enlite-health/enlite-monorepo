@@ -22,7 +22,7 @@ const CINCO = ['required_sex', 'required_professions', 'required_experience', 'w
 /** `SOURCE_LOCKED_FIELDS` (spec 057): as 8 que já eram + os 5 de recrutamento. */
 const TREZE = 13;
 
-const SCHEDULE_V1 = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+const SCHEDULE_V1 = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
 const PUT_BODY: Record<(typeof CINCO)[number], unknown> = {
   required_sex: 'M',
   required_professions: ['CAREGIVER'],

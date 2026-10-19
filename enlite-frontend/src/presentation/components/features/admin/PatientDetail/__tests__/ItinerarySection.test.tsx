@@ -4,7 +4,7 @@
  * i18n real (es).
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -27,11 +27,12 @@ const ASOF = '2026-09-28';
 
 const SERVICE: PatientItineraryService = {
   contractedServiceId: 'svc-1',
-  contratadas: { weekly: 20, authorized: 20 },
+  scheduleHours: 20,
+  reserve: null,
   cobertas: 4,
   slots: [
-    { id: 'slot-mon', weekday: 1, startTime: '08:00', endTime: '12:00', active: true, assignments: [] },
-    { id: 'slot-wed', weekday: 3, startTime: '14:00', endTime: '18:00', active: true, assignments: [] },
+    { id: 'slot-mon', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] },
+    { id: 'slot-wed', weekday: 3, startTime: '14:00', endTime: '18:00', durationMinutes: 240, assignments: [] },
   ],
 };
 
@@ -79,13 +80,21 @@ describe('ItinerarySection — a agenda de um serviço', () => {
   it('o par de horas sai de coverageHoursPair', () => {
     renderSection();
     expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent(
-      `Horas cubiertas/contratadas: ${coverageHoursPair(4, 20)}`,
+      `Horas cubiertas/del horario: ${coverageHoursPair(4, 20)}`,
     );
   });
 
-  it('sem horas semanais contratadas → "4/—"', () => {
-    renderSection({ service: { ...SERVICE, contratadas: { weekly: null, authorized: null } } });
-    expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent('Horas cubiertas/contratadas: 4/—');
+  it('mostra 20/40 lendo scheduleHours', () => {
+    renderSection({ service: { ...SERVICE, cobertas: 20, scheduleHours: 40 } });
+    expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent('Horas cubiertas/del horario: 20/40');
+  });
+
+  it('linha da reserva: 7 de 10, sem vacante', () => {
+    renderSection({ service: { ...SERVICE, reserve: { count: 7, minimum: 10 } } });
+    expect(screen.getByTestId('itinerario-reserva-svc-1')).toHaveTextContent('Equipo de Respuesta Rápida: 7 de 10');
+    cleanup();
+    renderSection({ service: { ...SERVICE, reserve: null } });
+    expect(screen.getByTestId('itinerario-reserva-svc-1')).toHaveTextContent('Equipo de Respuesta Rápida: sin vacante');
   });
 
   it('clicar numa faixa repassa o slotId (D445.3: a linha inteira abre "Editar agendamiento")', () => {

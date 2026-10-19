@@ -48,12 +48,12 @@ describe('ServiceTeamReader', () => {
     expect(rawPoolQuery).not.toHaveBeenCalled();
   });
 
-  it('parâmetros [patientId, serviceId, [SELECTED, QUICK_RESPONSE_TEAM]] (041 R1)', async () => {
+  it('parâmetros [patientId, [serviceId], [SELECTED, QUICK_RESPONSE_TEAM]] (041 R1; 056: serviços por ANY)', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.read('p-1', 's-1');
 
-    expect(svcCalls()[0].params).toEqual(['p-1', 's-1', ['SELECTED', 'QUICK_RESPONSE_TEAM']]);
+    expect(svcCalls()[0].params).toEqual(['p-1', ['s-1'], ['SELECTED', 'QUICK_RESPONSE_TEAM']]);
   });
 
   it('a SQL contém a vaga viva, reverted_at IS NULL, to_char da data, o escopo do paciente e a exclusão de desativados; nada de capacidade/alocação antiga/encuadres/telefone/clínico/endereço', async () => {
@@ -71,7 +71,7 @@ describe('ServiceTeamReader', () => {
     expect(/contracted_service_providers|encuadres|phone|diagnos|address/i.test(sql)).toBe(false);
   });
 
-  it('DX-13.5: o CTE subs — patient_itinerary_absence, cancelled_at IS NULL, substitute_worker_id IS NOT NULL, contracted_service_id = $2, to_char da data e a.id AS allocation_id no alloc; ainda 1 client.query', async () => {
+  it('DX-13.5: o CTE subs — patient_itinerary_absence, cancelled_at IS NULL, substitute_worker_id IS NOT NULL, contracted_service_id = ANY($2), to_char da data e a.id AS allocation_id no alloc; ainda 1 client.query', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.read('p-1', 's-1');
@@ -80,7 +80,7 @@ describe('ServiceTeamReader', () => {
     expect(sql).toMatch(/patient_itinerary_absence/);
     expect(sql).toMatch(/ab\.cancelled_at IS NULL/);
     expect(sql).toMatch(/ab\.substitute_worker_id IS NOT NULL/);
-    expect(sql).toMatch(/s\.contracted_service_id = \$2/);
+    expect(sql).toMatch(/s\.contracted_service_id = ANY\(\$2::uuid\[\]\)/);
     expect(sql).toMatch(/to_char\(ab\.on_date/);
     expect(sql).toMatch(/a\.id AS allocation_id/);
     expect(svcCalls()).toHaveLength(1);
@@ -123,7 +123,7 @@ describe('ServiceTeamReader', () => {
               allocation_id: 'alloc-2',
               weekday: 1,
               start_time: '08:00',
-              end_time: '12:00',
+              slot_end: '12:00',
             },
           ],
           marks: [
@@ -255,5 +255,28 @@ describe('ServiceTeamReader', () => {
       ['w-3', 'NOVO', 'Cambio de disponibilidad'],
       ['w-4', 'OTHER', null],
     ]);
+  });
+
+  it('056 §9: readManyWith — svc por ANY($2::uuid[]), sem escopo de paciente ($1 = null), uma linha por serviço', async () => {
+    queryImpl = async () => ({
+      rows: [
+        { service_id: 's-1', country: 'AR', live_vacancy_id: 'v-1', candidacies: [], assignments: [], marks: [], substitutions: [] },
+        { service_id: 's-2', country: 'AR', live_vacancy_id: null, candidacies: [], assignments: [], marks: [], substitutions: [] },
+      ],
+      rowCount: 2,
+    });
+
+    const result = await reader.readMany(['s-1', 's-2']);
+
+    const call = svcCalls()[0];
+    expect(call.params).toEqual([null, ['s-1', 's-2'], ['SELECTED', 'QUICK_RESPONSE_TEAM']]);
+    expect(call.sql).toMatch(/pcs\.id = ANY\(\$2::uuid\[\]\)/);
+    expect(call.sql).toMatch(/cand\.service_id = svc\.id/);
+    expect(result.map((r) => [r.serviceId, r.liveVacancyId])).toEqual([['s-1', 'v-1'], ['s-2', null]]);
+  });
+
+  it('056 §9: readMany([]) não consulta o banco', async () => {
+    expect(await reader.readMany([])).toEqual([]);
+    expect(svcCalls()).toHaveLength(0);
   });
 });

@@ -20,11 +20,11 @@ beforeAll(async () => {
 });
 
 const ACTIVE: PatientContractedServiceProvider = {
-  id: 'p1', serviceId: 's1', workerId: 'w1', workerName: 'Ana Fixture', weeklyHours: 10,
+  id: 'p1', serviceId: 's1', workerId: 'w1', workerName: 'Ana Fixture',
   active: true, endedAt: null, country: 'AR', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
 };
 const ENDED: PatientContractedServiceProvider = {
-  ...ACTIVE, id: 'p2', workerId: 'w2', workerName: null, weeklyHours: null, active: false, endedAt: '2026-09-10T00:00:00Z',
+  ...ACTIVE, id: 'p2', workerId: 'w2', workerName: null, active: false, endedAt: '2026-09-10T00:00:00Z',
 };
 
 describe('ContractedServiceProvidersSection (só leitura)', () => {
@@ -41,19 +41,19 @@ describe('ContractedServiceProvidersSection (só leitura)', () => {
     expect(screen.getByText('Asignación anterior al itinerario (solo lectura)')).toBeTruthy();
     const active = screen.getByTestId('provider-row-p1').textContent ?? '';
     expect(active).toContain('Ana Fixture');
-    expect(active).toContain('10h/sem');
+    expect(active).not.toContain('h/sem');
     expect(active).toContain('Activo');
     const ended = screen.getByTestId('provider-row-p2').textContent ?? '';
     expect(ended).toContain('Dado de baja');
   });
 
-  it('sem nome cai no rótulo único do prestador (workerLabel: 8 últimos do id); sem horas mostra —', () => {
+  it('sem nome cai no rótulo único do prestador (workerLabel: 8 últimos do id)', () => {
     const noName = { ...ENDED, workerId: 'aaaaaaaa-0000-4000-8000-00001234abcd' };
     render(<ContractedServiceProvidersSection serviceId="s1" providers={[noName]} />);
     const row = screen.getByTestId('provider-row-p2').textContent ?? '';
     expect(row).toContain('Prestador sin nombre · 1234abcd');
     expect(row).not.toContain(noName.workerId);
-    expect(row).toContain('—h/sem');
+    expect(row).not.toContain('h/sem');
   });
 
   it('nenhum botão, nenhum input, nenhum testid de ação', () => {

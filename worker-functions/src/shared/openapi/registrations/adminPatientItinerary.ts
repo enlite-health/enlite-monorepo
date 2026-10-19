@@ -12,11 +12,13 @@ registry.registerPath({
   summary: 'Itinerário e horas cobertas por serviço contratado',
   description:
     'Horas cobertas por serviço contratado, do itinerário semanal (`patient_itinerary_slot` + ' +
-    '`patient_itinerary_assignment`). `cobertas` em horas/semana; `contratadas.authorized` não ' +
-    'declara período (é copiado, nunca calculado). Sem backfill: serviço cujo horário não foi ' +
-    'salvo depois da migration 480 aparece com `slots: []`. `alerts: [{ serviceId, date, ' +
+    '`patient_itinerary_assignment`). `cobertas` em horas/semana; `scheduleHours` = Σ duração das ' +
+    'faixas vigentes, horas/semana (D516: autorização não entra). Sem backfill: serviço cujo horário não foi ' +
+    'salvo depois da migration 480 aparece com `slots: []`. `slots[]` traz só faixas vigentes: ' +
+    '`{ id, weekday, startTime, endTime, durationMinutes, assignments }` (`endTime` derivado de início + duração; sem `active`). `alerts: [{ serviceId, date, ' +
     'startTime, endTime }]` (fase 13): ausência sem substituto, data ≥ hoje (Buenos Aires); sem nome. ' +
     '`assembledAt` (ISO UTC, `null` = nunca montado): `max(assembled_at)` de `patient_itinerary_assembly`. ' +
+    '`services[].reserve: { count, minimum } | null` (056): Equipe de Resposta Rápida da vaga viva, sem alocados nem rejeitados; `null` = sem vaga viva. ' +
     'Fase 12: cada alocação traz `allocationId` e `displayName` (só vigente; `null` sem `worker_contact:read`).',
   security: [{ firebaseAuth: [] }],
   request: { params: z.object({ id: UuidParam }) },

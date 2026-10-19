@@ -23,7 +23,7 @@ describe('ItineraryAssemblyWriter', () => {
     expect(exists).toBe(true);
   });
 
-  it('servicesMissingSlot: 1 query só, contém DISTINCT ON (jp.contracted_service_id), s.active, pcs.active, patient_id = $1', async () => {
+  it('servicesMissingSlot: 1 query só, contém DISTINCT ON (jp.contracted_service_id), valid @> (vigência, não s.active), pcs.active, patient_id = $1', async () => {
     const client = clientStub([
       { service_id: 's-1', service_code: 'AT', count_with_live_vacancy: '2', missing_slot: true },
       { service_id: 's-2', service_code: 'FISIO', count_with_live_vacancy: '2', missing_slot: false },
@@ -35,7 +35,8 @@ describe('ItineraryAssemblyWriter', () => {
     expect(client.query).toHaveBeenCalledTimes(1);
     const [sql, params] = client.query.mock.calls[0];
     expect(String(sql)).toMatch(/DISTINCT ON \(jp\.contracted_service_id\)/);
-    expect(String(sql)).toMatch(/s\.active/);
+    expect(String(sql)).toMatch(/s\.valid @> CURRENT_DATE/);
+    expect(String(sql)).not.toMatch(/\bs\.active/);
     expect(String(sql)).toMatch(/pcs\.active/);
     expect(String(sql)).toMatch(/pcs\.patient_id = \$1/);
     expect(params).toEqual(['p-1']);

@@ -244,7 +244,7 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     await loginAsAdmin(page);
     await openItinerarioTab(page, seed.patientId);
 
-    // ANTES: horas cobertas (texto do par cobertas/contratadas) e estado do paciente.
+    // ANTES: horas cobertas (texto do par cobertas/horário) e estado do paciente.
     const parLocator = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
     await expect(page.getByTestId(`itinerario-slot-prestador-${seed.slotId}-${seed.titularWorkerId}`)).toBeVisible();
     const parAntes = await parLocator.innerText();

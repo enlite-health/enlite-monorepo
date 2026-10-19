@@ -45,9 +45,9 @@ interface OverlapBody {
 const STAFF = mockAdminUserFor('itinerario-aba');
 const CLINICAL = /diagnos|clinic/gi;
 
-/** O par da seção como a tela o monta (`cobertas/contratadas`, `—` sem horas semanais) — oráculo lido da ROTA. */
-function expectedPair(cobertas: number, weekly: number | null): string {
-  return `${cobertas}/${weekly ?? '—'}`;
+/** O par da seção como a tela o monta (`cobertas/horário`; denominador = `scheduleHours`) — oráculo lido da ROTA. */
+function expectedPair(cobertas: number, scheduleHours: number): string {
+  return `${cobertas}/${scheduleHours}`;
 }
 
 test.describe('itinerario-aba @integration', () => {
@@ -102,7 +102,7 @@ test.describe('itinerario-aba @integration', () => {
       await expect(page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Encuadre', exact: true })).toHaveCount(0);
 
       const par = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
-      await expect(par).toContainText(expectedPair(svcBefore.cobertas, svcBefore.contratadas.weekly));
+      await expect(par).toContainText(expectedPair(svcBefore.cobertas, svcBefore.scheduleHours));
       await expect(slotAllocationsInDom(page, slotId)).toHaveCount(0);
 
       // Alocar pela TELA.
@@ -129,14 +129,14 @@ test.describe('itinerario-aba @integration', () => {
       const vigentes = (slotAfter?.assignments ?? []).filter((a) => a.status === 'ACTIVE' && a.workerId === w);
       expect(vigentes).toHaveLength(1);
       expect(svcAfter.cobertas).toBeGreaterThan(svcBefore.cobertas);
-      await expect(par).toContainText(expectedPair(svcAfter.cobertas, svcAfter.contratadas.weekly));
+      await expect(par).toContainText(expectedPair(svcAfter.cobertas, svcAfter.scheduleHours));
       await expect(page.getByTestId(`itinerario-slot-prestador-${slotId}-${w}`)).toBeVisible();
       await expect(slotAllocationsInDom(page, slotId)).toHaveCount(1);
       // D445.3 (rodada 2): a faixa continua clicável mesmo coberta — "Editar agendamiento" também
       // serve para TROCAR quem cobre, não só para alocar; o testid NÃO some mais (molde antigo).
       await expect(page.getByTestId(`itinerario-slot-editar-${slotId}`)).toBeVisible();
       const domCount = await countSlotAllocationsInDom(page, slotId);
-      console.log('[12.1]', postResp.status(), itinAfterResp.status(), svcBefore.cobertas, svcAfter.cobertas, svcAfter.contratadas.weekly, vigentes.length, domCount);
+      console.log('[12.1]', postResp.status(), itinAfterResp.status(), svcBefore.cobertas, svcAfter.cobertas, svcAfter.scheduleHours, vigentes.length, domCount);
       console.log('[12.10]', await tabButtons.count(), 5);
 
       // Prints DEPOIS (DX-12.17) e baseline da seção com o slot coberto.

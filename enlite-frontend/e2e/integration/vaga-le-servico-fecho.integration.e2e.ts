@@ -60,11 +60,10 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
       data: {
         serviceCode: 'AT',
         providersNeeded: 2,
-        weeklyHours: 20,
         careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         providerAgeBand: 'AGE_20_30', // → vaga 20 - 29
         addressId,
-        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       },
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);
@@ -123,7 +122,7 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
 
     // O operador inclui um turno na quarta (clique no "+" do dia: nasce 09:00-17:00) e guarda.
     await abrirFormularioDoServico(page);
-    await page.getByTestId('day-schedule-add-wednesday').click();
+    await page.getByTestId('svc-shift-add-1-3').click();
     expect(await guardarServico(page)).toBe(200);
 
     // Abre a vaga: o horário novo está lá, o antigo continua (era segunda), e a vaga não guardou cópia nenhuma.
@@ -164,7 +163,7 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
     await abrirFormularioDoServico(page);
 
     // Remove, um clique de cada vez, todos os turnos que o serviço tem (segunda e quarta).
-    const remover = page.locator('[data-testid^="day-schedule-remove-"]');
+    const remover = page.locator('[data-testid^="svc-shift-remove-"]');
     await expect(remover.first()).toBeVisible();
     while ((await remover.count()) > 0) await remover.first().click();
     await expect(page.getByTestId('svc-schedule-none-1')).toBeVisible(); // o aviso âmbar de "sem horário" acende
@@ -175,7 +174,7 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
     await expect(erro).toContainText('No se pudo actualizar el servicio');
 
     // Nada foi apagado: o serviço segue com os 2 turnos, a vaga segue lendo o horário.
-    expect(runSQL(`SELECT jsonb_array_length(schedule) FROM patient_contracted_services WHERE id = '${serviceId}'`)).toBe('2');
+    expect(runSQL(`SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = '${serviceId}' AND valid @> CURRENT_DATE`)).toBe('2');
     await abrirVaga(page, vacancyId);
     await expect(page.getByTestId('vacancy-profession-card')).toContainText('09:00h - 17:00h');
   });
@@ -253,7 +252,7 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
     // O serviço do paciente muda o horário: a vaga manual não é vaga dele — nada muda nela, nem aviso.
     const patch = await request.patch(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}`, {
       headers: AUTH_HEADERS,
-      data: { schedule: [{ dayOfWeek: 6, startTime: '10:00', endTime: '14:00' }] },
+      data: { schedule: [{ dayOfWeek: 6, startTime: '10:00', durationMinutes: 240 }] },
     });
     expect(patch.ok(), `PATCH do serviço falhou: ${patch.status()} ${await patch.text()}`).toBe(true);
     await page.reload();

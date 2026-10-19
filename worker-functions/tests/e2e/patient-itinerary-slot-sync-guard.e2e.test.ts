@@ -15,7 +15,7 @@
  *   (d) alocação ACTIVE vencida (fim ontem) → 200.
  *   (e) `schedule: null` com alocação vigente → 422 (o caminho "desativa tudo"); a main recusa antes, com
  *       `SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY` (há vaga viva); o invariante "nenhum slot desativa" segue.
- *   (f) PATCH só de `weeklyHours` com alocação vigente → 200 (sem a chave `schedule` o sync não roda).
+ *   (f) PATCH só de `providersNeeded` com alocação vigente → 200 (sem a chave `schedule` o sync não roda).
  *   (g) a rota da Fase 11 (PATCH do slot) com o slot alocado segue 422.
  */
 import { Pool } from 'pg';
@@ -27,8 +27,8 @@ const DATABASE_URL =
 const RUN = Date.now();
 const TASK_PREFIX = `pisg-e2e-${RUN}-`;
 
-const MONDAY = { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' };
-const WEDNESDAY = { dayOfWeek: 3, startTime: '14:00', endTime: '18:00' };
+const MONDAY = { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 };
+const WEDNESDAY = { dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 };
 
 interface SlotRow {
   id: string;
@@ -114,7 +114,9 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
 
   async function slotsOf(serviceId: string): Promise<SlotRow[]> {
     const r = await pool.query<SlotRow>(
-      `SELECT id, weekday, active FROM patient_itinerary_slot WHERE contracted_service_id = $1 ORDER BY weekday`,
+      // `active` = faixa vigente hoje (dia local de Buenos Aires); fechada/anulada não é vigente.
+      `SELECT id, weekday, (valid @> (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date) AS active
+         FROM patient_itinerary_slot WHERE contracted_service_id = $1 ORDER BY weekday`,
       [serviceId],
     );
     return r.rows;
@@ -138,7 +140,7 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
     ).rows[0].id;
     const created = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', weeklyHours: 8, addressId, schedule: [MONDAY, WEDNESDAY] },
+      { serviceCode: 'AT', addressId, schedule: [MONDAY, WEDNESDAY] },
       asAdmin,
     );
     expect(created.status).toBe(201);
@@ -270,11 +272,31 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
     }
   });
 
-  it('(f) PATCH só de weeklyHours com alocação vigente → 200, slots intocados', async () => {
+  it('(h) vaga CLOSED não apagada + schedule null → 422 SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY, nenhuma faixa fecha (⚑E, spec 056)', async () => {
+    const seed = await seedService('h');
+    try {
+      // Vaga FECHADA mas não apagada (deleted_at IS NULL): continua ocupando o serviço — o predicado de vaga viva é um só.
+      await pool.query(
+        `INSERT INTO job_postings (title, contracted_service_id, patient_id, country, status) VALUES ($1, $2, $3, 'AR', 'CLOSED')`,
+        [`${TASK_PREFIX}${seq}-vaga-closed`, seed.serviceId, seed.patientId],
+      );
+      const r = await patchService(seed, { schedule: null });
+      console.log('[056 T3.8] (h) status', r.status, 'code', r.data?.code);
+      expect(r.status).toBe(422);
+      expect(r.data.code).toBe('SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY');
+      const after = await slotsOf(seed.serviceId);
+      expect(after.every((s) => s.active)).toBe(true);
+      expect(after).toHaveLength(2);
+    } finally {
+      await cleanupPatient(seed.patientId);
+    }
+  });
+
+  it('(f) PATCH só de providersNeeded com alocação vigente → 200, slots intocados', async () => {
     const seed = await seedService('f');
     try {
       await allocate(seed, seed.mondaySlotId, { validFrom: semanaAtras, validTo: null, status: 'ACTIVE' });
-      const r = await patchService(seed, { weeklyHours: 12 });
+      const r = await patchService(seed, { providersNeeded: 3 });
       console.log('[12.5] (f) status', r.status);
       expect(r.status).toBe(200);
       const after = await slotsOf(seed.serviceId);
@@ -293,7 +315,7 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
       await allocate(seed, seed.mondaySlotId, { validFrom: semanaAtras, validTo: null, status: 'ACTIVE' });
       const r = await api.patch(
         `/api/admin/patients/${seed.patientId}/contracted-services/${seed.serviceId}/itinerary/slots/${seed.mondaySlotId}`,
-        { weekday: 1, startTime: '09:00', endTime: '12:00' },
+        { weekday: 1, startTime: '09:00', durationMinutes: 180 },
         asAdmin,
       );
       console.log('[12.5] (g) status', r.status, 'code', r.data?.code);

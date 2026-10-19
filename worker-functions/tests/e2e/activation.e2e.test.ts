@@ -21,7 +21,7 @@ import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const TAG = 'activation-e2e-%';
-const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]';
+const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","durationMinutes":240}]';
 // Spec 027 Fase 3 (D508 c): os 5 campos que o portão exige e que a vaga copia. Valores sintéticos.
 const RECRUITMENT_FIELDS = {
   requiredProfessions: ['AT'],

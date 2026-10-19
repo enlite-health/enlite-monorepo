@@ -30,19 +30,18 @@ export const patientItinerarySlotSchema = z.object({
   weekday: z.number().int().min(0).max(6),
   startTime: z.string(),
   endTime: z.string(),
-  active: z.boolean(),
+  durationMinutes: z.number().int().min(1).max(1440),
   assignments: z.array(patientItineraryAssignmentSchema),
-});
+}).strict();
 
 export const patientItineraryServiceSchema = z.object({
   contractedServiceId: z.string().uuid(),
-  contratadas: z.object({
-    weekly: z.number().nullable(),
-    authorized: z.number().nullable(),
-  }),
+  scheduleHours: z.number().nonnegative(),
   cobertas: z.number().nonnegative(),
+  /** 056 §9: `null` = serviço sem vaga viva ("sin vacante"). */
+  reserve: z.object({ count: z.number().int().nonnegative(), minimum: z.number().int().positive() }).nullable(),
   slots: z.array(patientItinerarySlotSchema),
-});
+}).strict();
 
 export const patientItineraryResponseSchema = z.object({
   patientId: z.string().uuid(),

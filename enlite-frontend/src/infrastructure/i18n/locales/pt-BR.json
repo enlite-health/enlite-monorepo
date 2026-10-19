@@ -3331,7 +3331,32 @@
         "coverageContactRemove": "Remover contato",
         "coverageContactEmpty": "Sem contatos de emergência da cobertura.",
         "coverageContactNotice": "Estes dados ficam registrados na ficha do paciente e são impressos no Projeto Terapêutico entregue à família e à cobertura. Se cadastrar um profissional, avise-o de que o contato dele consta aqui.",
-        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui."
+        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui.",
+        "shift": {
+          "start": "Início",
+          "end": "Fim",
+          "allDay": "Dia inteiro",
+          "equalUseAllDay": "Para 24 h use 'Dia inteiro'",
+          "hours": "{{hours}} h",
+          "nextDay": "(+1)",
+          "add": "Adicionar turno",
+          "remove": "Remover turno"
+        },
+        "scheduleOverlap": "Dois turnos do mesmo serviço se sobrepõem.",
+        "scheduleTotal": "Total do horário: {{hours}} h por semana",
+        "authorization": {
+          "title": "Autorização",
+          "hours": "Horas autorizadas (total do período)",
+          "from": "De",
+          "to": "Até",
+          "save": "Salvar autorização",
+          "current": "Vigente: {{hours}} h de {{from}} a {{to}}",
+          "none": "Sem autorização vigente",
+          "legacy": "Valor anterior, sem vigência: {{hours}} h",
+          "overlaps": "Já existe uma autorização vigente que se sobrepõe a esse período.",
+          "needsEnd": "A autorização precisa de data de fim.",
+          "saveError": "Não foi possível salvar a autorização."
+        }
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3368,6 +3393,8 @@
         "subcard": {
           "weeklyUnit": "h/sem",
           "pairAria": "{{covered}} de {{contracted}} horas semanais cobertas",
+          "reserve": "Reserva {{count}}/{{minimum}}",
+          "reserveNoVacancy": "sem vaga",
           "openToActivate": "Abrir ficha para ativar {{service}}",
           "loadError": "Não foi possível carregar os serviços dos pacientes.",
           "uncoveredDayAria_one": "{{count}} dia sem cobertura",
@@ -3943,7 +3970,9 @@
               "generic": "Não foi possível marcar o itinerário como pronto. Tente de novo."
             }
           },
-          "hoursPair": "Horas cobertas/contratadas: {{pair}}",
+          "hoursPair": "Horas cobertas/do horário: {{pair}}",
+          "reserve": "Equipe de Resposta Rápida: {{count}} de {{minimum}}",
+          "reserveNoVacancy": "Equipe de Resposta Rápida: sem vaga",
           "noServices": "Este paciente não tem serviços contratados ativos.",
           "emptyDay": "Sem atendimento",
           "assign": "Atribuir prestador",

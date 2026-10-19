@@ -20,12 +20,11 @@ export const kanbanServicesQuerySchema = adminPatientsListSchema.pick({ country:
 export const kanbanServiceSummarySchema = z.object({
   contractedServiceId: z.string().uuid(),
   serviceCode: z.string(),
-  contratadas: z.object({
-    weekly: z.number().nullable(),
-    authorized: z.number().nullable(),
-  }),
+  scheduleHours: z.number().nonnegative(),
   cobertas: z.number().nonnegative(),
   liveVacancyId: z.string().uuid().nullable(),
+  /** 056 §9: `null` = serviço sem vaga viva ("sin vacante"). */
+  reserve: z.object({ count: z.number().int().nonnegative(), minimum: z.number().int().positive() }).nullable(),
 });
 
 export const kanbanPatientServicesSchema = z.object({

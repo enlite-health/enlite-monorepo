@@ -35,6 +35,7 @@ import {
 import { ServiceTeamReasonRequiredError, ServiceTeamReasonInvalidError } from '../../domain/serviceTeamReason';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../domain/serviceExitReason';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
+import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
 import {
   itineraryPatientParamsSchema,
   itineraryServiceParamsSchema,
@@ -307,6 +308,11 @@ export class AdminItineraryWriteController {
     }
     if (err instanceof SlotAlreadyExistsError) {
       res.status(409).json({ success: false, code: 'SLOT_ALREADY_EXISTS' });
+      return;
+    }
+    // Spec 056: a faixa nova sobrepõe outra do mesmo serviço (constraint `pis_sem_sobreposicao`, 23P01) — a transação desfez.
+    if (err instanceof ServiceSlotOverlapError) {
+      res.status(409).json({ success: false, code: 'SLOT_OVERLAP' });
       return;
     }
     if (err instanceof NotSelectedForServiceError) {

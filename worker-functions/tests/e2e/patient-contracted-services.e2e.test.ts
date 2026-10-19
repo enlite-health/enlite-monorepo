@@ -92,11 +92,11 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const r = await api.post(
       `/api/admin/patients/${patientAR}/contracted-services`,
       // Spec 015 (US-A6.1): providerAgeBand no POST — round-trip na resposta E na coluna nova.
-      { serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, deviceTypeCodes: ['HOME'], providerAgeBand: 'AGE_30_45' },
+      { serviceCode: 'AT', providersNeeded: 2, careLocation: 'HOME', hourlyValue: 1500, deviceTypeCodes: ['HOME'], providerAgeBand: 'AGE_30_45' },
       asAdmin,
     );
     expect(r.status).toBe(201);
-    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, weeklyHours: 20, careLocation: 'HOME', hourlyValue: 1500, country: 'AR', active: true, deviceTypes: ['HOME'], providerAgeBand: 'AGE_30_45' });
+    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, scheduleHours: 0, careLocation: 'HOME', hourlyValue: 1500, country: 'AR', active: true, deviceTypes: ['HOME'], providerAgeBand: 'AGE_30_45' });
     serviceId = r.data.data.id;
     const { rows: [row] } = await pool.query(`SELECT country, created_by, updated_by, provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId]);
     expect(row.country).toBe('AR');
@@ -125,17 +125,19 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
   });
 
   it('2. PATCH é Merge Patch: só o campo enviado muda', async () => {
-    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { weeklyHours: 25 }, asAdmin);
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { hourlyValue: 1600 }, asAdmin);
     expect(r.status).toBe(200);
-    expect(r.data.data).toMatchObject({ weeklyHours: 25, providersNeeded: 2, careLocation: 'HOME' });
+    expect(r.data.data).toMatchObject({ hourlyValue: 1600, providersNeeded: 2, careLocation: 'HOME' });
+    // Restaura o valor semeado no caso 1 (o caso 7 lê 1500): os casos não dependem da ordem.
+    await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { hourlyValue: 1500 }, asAdmin);
   });
 
   it('4. device_type_codes fora do catálogo → 422, nada escrito', async () => {
-    const before = (await pool.query(`SELECT weekly_hours FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
-    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { deviceTypeCodes: ['NAO_EXISTE'], weeklyHours: 99 }, asAdmin);
+    const before = (await pool.query(`SELECT hourly_value FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { deviceTypeCodes: ['NAO_EXISTE'], hourlyValue: 99 }, asAdmin);
     expect(r.status).toBe(422);
     expect(r.data.code).toBe('DEVICE_TYPE_UNKNOWN');
-    const after = (await pool.query(`SELECT weekly_hours FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    const after = (await pool.query(`SELECT hourly_value FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
     expect(after).toEqual(before);
   });
 
@@ -155,7 +157,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
   });
 
   it('8. guarda de posse: :sid de OUTRO paciente → 404, nunca edita cross-patient', async () => {
-    const r = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${serviceId}`, { weeklyHours: 1 }, asAdmin);
+    const r = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${serviceId}`, { hourlyValue: 1 }, asAdmin);
     expect(r.status).toBe(404);
     const stillAR = (await pool.query(`SELECT patient_id FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
     expect(stillAR.patient_id).toBe(patientAR);
@@ -209,9 +211,9 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const list = await api.get(`/api/admin/patients/${patientBR}/contracted-services`, asAdmin);
     expect(list.status).toBe(200);
     const listed = (list.data.data.services as Array<{ id: string; providers: unknown[] }>).find((s) => s.id === svcId);
-    expect(listed?.providers).toMatchObject([{ workerId, weeklyHours: 10, active: true, country: 'BR' }]);
+    expect(listed?.providers).toMatchObject([{ workerId, active: true, country: 'BR' }]);
 
-    const post = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId, weeklyHours: 5 }, asAdmin);
+    const post = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId }, asAdmin);
     expect(post.status).toBe(404);
     const patch = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers/${legacy.id}`, { active: false }, asAdmin);
     expect(patch.status).toBe(404);
@@ -251,9 +253,14 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
       `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Ajena 1',1) RETURNING id`,
       [patientBR],
     )).rows[0].id;
+    // spec 056: a entrada é início + duração; o `endTime` só existe na LEITURA (derivado das faixas)
     const schedule = [
-      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 3, startTime: '14:00', endTime: '18:00' },
+      { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+      { dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 },
+    ];
+    const scheduleView = [
+      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
+      { dayOfWeek: 3, startTime: '14:00', endTime: '18:00', durationMinutes: 240 },
     ];
 
     const ok = await api.post(
@@ -262,18 +269,19 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
       asAdmin,
     );
     expect(ok.status).toBe(201);
-    expect(ok.data.data).toMatchObject({ addressId: own, schedule });
+    expect(ok.data.data).toMatchObject({ addressId: own, schedule: scheduleView });
     const sid = ok.data.data.id;
-    // Persistido como JSONB array (não como ARRAY Postgres — o driver serializa array JS errado
-    // sem o stringify explícito do repositório).
-    const { rows: [row] } = await pool.query(`SELECT address_id, schedule, jsonb_typeof(schedule) AS t FROM patient_contracted_services WHERE id = $1`, [sid]);
+    // Persistido como FAIXAS (patient_itinerary_slot), lidas por horario_do_servico — não mais a coluna pcs.schedule.
+    const { rows: [row] } = await pool.query(
+      `SELECT address_id, horario_do_servico(id, CURRENT_DATE) AS schedule, jsonb_typeof(horario_do_servico(id, CURRENT_DATE)) AS t
+         FROM patient_contracted_services WHERE id = $1`, [sid]);
     expect(row.address_id).toBe(own);
     expect(row.t).toBe('array');
-    expect(row.schedule).toEqual(schedule);
+    expect(row.schedule).toEqual(scheduleView);
     // E volta no GET /patients/:id embutido (o caminho da ficha usa OUTRO mapper).
     const detail = await api.get(`/api/admin/patients/${patientAR}`, asAdmin);
     const embedded = detail.data.data.contractedServices.find((x: { id: string }) => x.id === sid);
-    expect(embedded).toMatchObject({ addressId: own, schedule });
+    expect(embedded).toMatchObject({ addressId: own, schedule: scheduleView });
 
     // Endereço de OUTRO paciente: a FK composta (address_id, patient_id) recusa → 422, nada muda.
     const bad = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${sid}`, { addressId: foreign }, asAdmin);
@@ -286,16 +294,17 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     expect(badPost.status).toBe(422);
     expect(badPost.data.code).toBe('ADDRESS_NOT_OF_PATIENT');
 
-    // schedule inválido (hora fora de HH:MM / início depois do fim / dia 7) → 400, nada escrito.
+    // schedule inválido (hora fora de HH:MM / duração 0 / dia 7 / `endTime` no corpo — o fim nunca é gravado) → 400, nada escrito.
     for (const invalid of [
-      [{ dayOfWeek: 1, startTime: '8h', endTime: '12:00' }],
-      [{ dayOfWeek: 1, startTime: '14:00', endTime: '12:00' }],
-      [{ dayOfWeek: 7, startTime: '08:00', endTime: '12:00' }],
+      [{ dayOfWeek: 1, startTime: '8h', durationMinutes: 240 }],
+      [{ dayOfWeek: 1, startTime: '14:00', durationMinutes: 0 }],
+      [{ dayOfWeek: 7, startTime: '08:00', durationMinutes: 240 }],
+      [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
     ]) {
       const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${sid}`, { schedule: invalid }, asAdmin);
       expect(r.status).toBe(400);
     }
-    expect((await pool.query(`SELECT schedule FROM patient_contracted_services WHERE id = $1`, [sid])).rows[0].schedule).toEqual(schedule);
+    expect((await pool.query(`SELECT horario_do_servico($1::uuid, CURRENT_DATE) AS schedule`, [sid])).rows[0].schedule).toEqual(scheduleView);
 
     // null limpa ("ainda sem horário" é estado legítimo).
     const cleared = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${sid}`, { schedule: null, addressId: null }, asAdmin);

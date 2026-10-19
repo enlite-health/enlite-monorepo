@@ -47,8 +47,8 @@ export function buildServiceCoverages(
         id: row.id,
         weekday: row.weekday,
         startTime: row.startTime,
+        durationMinutes: row.durationMinutes,
         endTime: row.endTime,
-        active: row.active,
         assignments: [],
       };
       slotsForService.set(row.id, slot);
@@ -69,18 +69,16 @@ export function buildServiceCoverages(
     const input: ServiceCoverageSlot[] = slots.map((slot) => ({
       weekday: slot.weekday,
       startTime: slot.startTime,
-      endTime: slot.endTime,
-      active: slot.active,
+      durationMinutes: slot.durationMinutes,
       assignments: slot.assignments,
     }));
     const coverage = computeServiceCoverage({
-      contractedHours: { weekly: service.weeklyHours, authorized: service.authorizedHours },
       slots: input,
       asOf,
     });
     return {
       contractedServiceId: service.id,
-      contratadas: coverage.contratadas,
+      scheduleHours: coverage.total,
       cobertas: coverage.cobertas,
       slots,
     };

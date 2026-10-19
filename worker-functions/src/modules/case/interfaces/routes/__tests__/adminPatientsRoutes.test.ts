@@ -23,6 +23,7 @@ import type { AdminInsuranceProvidersController } from '../../controllers/AdminI
 import type { AdminPatientContractedServicesController } from '../../controllers/AdminPatientContractedServicesController';
 import type { AdminPatientItineraryController } from '../../controllers/AdminPatientItineraryController';
 import type { AdminPatientKanbanServicesController } from '../../controllers/AdminPatientKanbanServicesController';
+import type { AdminContractedServiceAuthorizationController } from '../../controllers/AdminContractedServiceAuthorizationController';
 import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import type { AdminPatientContactRowsController } from '../../controllers/AdminPatientContactRowsController';
@@ -101,6 +102,9 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/:id/contracted-services': 'patient_services:read',
   'POST /patients/:id/contracted-services': 'patient_services:create',
   'PATCH /patients/:id/contracted-services/:sid': 'patient_services:update',
+  'GET /patients/:id/contracted-services/:sid/authorizations': 'patient_services:read',
+  'POST /patients/:id/contracted-services/:sid/authorizations': 'patient_services:update',
+  'POST /patients/:id/contracted-services/:sid/authorizations/:aid/supersede': 'patient_services:update',
   // Itinerário — leitura (fase 7, DX-7.7, Q-7.3): mesma célula do GET de serviços contratados,
   // porque a resposta carrega os mesmos weeklyHours/authorizedHours.
   'GET /patients/:id/itinerary': 'patient_services:read',
@@ -202,6 +206,12 @@ function pecas() {
   const itinerary = { get: responde('itinerary.get'), events: responde('itinerary.events') } as unknown as AdminPatientItineraryController;
   // Fase 8 (DX-8.16, A-contrato): mesmo molde, 16º argumento — agregado do subcard do Kanban.
   const kanbanServices = { list: responde('kanbanServices.list') } as unknown as AdminPatientKanbanServicesController;
+  // Spec 056 (T2.2): autorização de horas do serviço — 17º argumento, mesmo molde.
+  const authorization = {
+    list: responde('auth.list'),
+    create: responde('auth.create'),
+    supersede: responde('auth.supersede'),
+  } as unknown as AdminContractedServiceAuthorizationController;
   const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
   const contactRows = {
     createResponsible: responde('rows.createResponsible'),
@@ -227,7 +237,7 @@ function pecas() {
 
   return {
     controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology, contactRows,
-    externalContacts, emergencyContact, itinerary, kanbanServices,
+    externalContacts, emergencyContact, itinerary, kanbanServices, authorization,
     auth: authDouble(), permissions: permissionsDouble(),
   };
 }
@@ -238,7 +248,7 @@ function build() {
   return createAdminPatientsRoutes(
     p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
     p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology, p.contactRows,
-    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices,
+    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices, p.authorization,
   );
 }
 
@@ -257,8 +267,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 57 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(57);
+  it('a família declara exatamente 60 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051) + as 3 da autorização de horas do serviço (spec 056)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(60);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -282,7 +292,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(57);
+      expect(scanExpressRouter(router)).toHaveLength(60);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -342,6 +352,9 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
     ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],
+    ['get', '/api/admin/patients/abc-123/contracted-services/s1/authorizations', 'auth.list'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/authorizations', 'auth.create'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/authorizations/a1/supersede', 'auth.supersede'],
     ['get', '/api/admin/patients/abc-123/itinerary', 'itinerary.get'],
     ['get', '/api/admin/patients/abc-123/itinerary/events?from=2026-09-01&to=2026-09-07', 'itinerary.events'],
     ['get', '/api/admin/patients/abc-123/diagnoses', 'diag.list'],

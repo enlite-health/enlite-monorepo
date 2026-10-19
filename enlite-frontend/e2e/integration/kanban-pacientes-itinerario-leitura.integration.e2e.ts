@@ -5,7 +5,7 @@
  * `describe.serial`, todos com `itinerario-leitura` no título (o caminho `kanban-pacientes`
  * já casa o `--grep` do job padrão, `pr-gate.yml:142` — nenhuma mudança de workflow):
  *
- *   `itinerario-leitura` (feliz, critério 6): 1 serviço, `contratadas.weekly=20`/`.authorized=null`,
+ *   `itinerario-leitura` (feliz, critério 6): 1 serviço, `scheduleHours=4` (soma da única faixa, spec 056),
  *      `cobertas=0`, 1 slot vindo da DERIVAÇÃO (nunca de SQL); depois de gravar 1 alocação `ACTIVE`
  *      (foguete real → worker+WJA por SQL → alocação por SQL, Q-EX-7.6), `cobertas=4` e o slot
  *      devolve o assignment.
@@ -67,21 +67,18 @@ test.describe('kanban-pacientes itinerario leitura @integration', () => {
       const servicesBefore = before.body.data!.services;
       expect(servicesBefore.length, '1 serviço').toBe(1);
       const serviceBefore = servicesBefore[0];
-      expect(serviceBefore.contratadas, 'contratadas: weekly=20, authorized=null').toEqual({
-        weekly: 20,
-        authorized: null,
-      });
+      expect(serviceBefore.scheduleHours, 'scheduleHours: soma das faixas do serviço (1 faixa de 4 h)').toBe(4);
       expect(serviceBefore.cobertas, 'cobertas antes de qualquer alocação').toBe(0);
       expect(serviceBefore.slots.length, '1 slot — veio da DERIVAÇÃO, não de SQL').toBe(1);
       const slot = serviceBefore.slots[0];
       expect(slot.weekday, 'weekday 1 (segunda)').toBe(1);
       expect(slot.startTime).toBe('08:00');
       expect(slot.endTime).toBe('12:00');
-      expect(slot.active).toBe(true);
+      expect(slot.durationMinutes).toBe(240);
       expect(slot.assignments).toEqual([]);
-      // Nenhum campo de PII (nome/telefone) no corpo — só os 4 campos do contrato.
+      // Nenhum campo de PII (nome/telefone) no corpo — só os 5 campos do contrato.
       expect(Object.keys(serviceBefore).sort()).toEqual(
-        ['cobertas', 'contractedServiceId', 'contratadas', 'slots'].sort(),
+        ['cobertas', 'contractedServiceId', 'reserve', 'scheduleHours', 'slots'].sort(),
       );
 
       vacancyId = await activateRecruitmentViaApi(request, patient.patientId, patient.serviceId);
@@ -249,7 +246,6 @@ test.describe('kanban-pacientes itinerario leitura @integration', () => {
     try {
       const newServiceId = await createServiceViaApi(request, patient.patientId, {
         serviceCode: 'AT',
-        weeklyHours: 12,
         addressId: patient.addressId,
       });
 

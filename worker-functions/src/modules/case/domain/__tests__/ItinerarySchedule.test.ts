@@ -1,71 +1,60 @@
-import { scheduleToSlots, slotMinutes, InvalidScheduleEntryError, type ScheduleEntry } from '../ItinerarySchedule';
+import { shiftsToSlotKeys, InvalidScheduleEntryError, type ShiftEntry } from '../ItinerarySchedule';
 
-describe('scheduleToSlots', () => {
-  it('null/undefined/[] → []', () => {
-    expect(scheduleToSlots(null)).toEqual([]);
-    expect(scheduleToSlots(undefined)).toEqual([]);
-    expect(scheduleToSlots([])).toEqual([]);
+describe('shiftsToSlotKeys', () => {
+  it('null / undefined / [] → []', () => {
+    expect(shiftsToSlotKeys(null)).toEqual([]);
+    expect(shiftsToSlotKeys(undefined)).toEqual([]);
+    expect(shiftsToSlotKeys([])).toEqual([]);
   });
 
-  it('3 faixas idênticas (o schedule real da stage, passo-0.md:709) → 1 slot', () => {
-    const schedule: ScheduleEntry[] = [
-      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-    ];
-    expect(scheduleToSlots(schedule)).toEqual([{ weekday: 1, startTime: '08:00', endTime: '12:00' }]);
-  });
-
-  it('ordem estável (weekday, startTime, endTime) mesmo com entrada embaralhada', () => {
-    const schedule: ScheduleEntry[] = [
-      { dayOfWeek: 3, startTime: '14:00', endTime: '18:00' },
-      { dayOfWeek: 1, startTime: '10:00', endTime: '12:00' },
-      { dayOfWeek: 1, startTime: '08:00', endTime: '09:00' },
-      { dayOfWeek: 0, startTime: '08:00', endTime: '10:00' },
-    ];
-    expect(scheduleToSlots(schedule)).toEqual([
-      { weekday: 0, startTime: '08:00', endTime: '10:00' },
-      { weekday: 1, startTime: '08:00', endTime: '09:00' },
-      { weekday: 1, startTime: '10:00', endTime: '12:00' },
-      { weekday: 3, startTime: '14:00', endTime: '18:00' },
+  it('aceita 720 e 1440', () => {
+    expect(shiftsToSlotKeys([{ dayOfWeek: 1, startTime: '20:00', durationMinutes: 720 }])).toEqual([
+      { weekday: 1, startTime: '20:00', durationMinutes: 720 },
+    ]);
+    expect(shiftsToSlotKeys([{ dayOfWeek: 0, startTime: '00:00', durationMinutes: 1440 }])).toEqual([
+      { weekday: 0, startTime: '00:00', durationMinutes: 1440 },
     ]);
   });
 
-  it('faixas sobrepostas e distintas do mesmo serviço (08-12 e 10-14) NÃO se fundem — 2 slots (Q-7.4)', () => {
-    const schedule: ScheduleEntry[] = [
-      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 1, startTime: '10:00', endTime: '14:00' },
-    ];
-    expect(scheduleToSlots(schedule)).toEqual([
-      { weekday: 1, startTime: '08:00', endTime: '12:00' },
-      { weekday: 1, startTime: '10:00', endTime: '14:00' },
+  it("recusa 0, 1441, dia 7, '24:00'", () => {
+    const base: ShiftEntry = { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 };
+    for (const bad of [
+      { ...base, durationMinutes: 0 },
+      { ...base, durationMinutes: 1441 },
+      { ...base, durationMinutes: 90.5 },
+      { ...base, dayOfWeek: 7 },
+      { ...base, dayOfWeek: -1 },
+      { ...base, startTime: '24:00' },
+      { ...base, startTime: '8:00' },
+    ]) {
+      expect(() => shiftsToSlotKeys([bad])).toThrow(InvalidScheduleEntryError);
+    }
+  });
+
+  it('deduplica chave igual', () => {
+    const e: ShiftEntry = { dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 };
+    expect(shiftsToSlotKeys([e, { ...e }, { ...e }])).toHaveLength(1);
+  });
+
+  it('mesmo dia/início com durações distintas são chaves distintas; ordena por dia, início, duração', () => {
+    const r = shiftsToSlotKeys([
+      { dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 },
+      { dayOfWeek: 1, startTime: '08:00', durationMinutes: 300 },
+      { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+    ]);
+    expect(r.map((k) => `${k.weekday}|${k.startTime}|${k.durationMinutes}`)).toEqual([
+      '1|08:00|240',
+      '1|08:00|300',
+      '3|14:00|240',
     ]);
   });
 
-  it('endTime <= startTime → InvalidScheduleEntryError', () => {
+  it('uma entrada inválida lança mesmo entre válidas (nada parcial)', () => {
     expect(() =>
-      scheduleToSlots([{ dayOfWeek: 1, startTime: '12:00', endTime: '12:00' }]),
+      shiftsToSlotKeys([
+        { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
+        { dayOfWeek: 9, startTime: '08:00', durationMinutes: 240 },
+      ]),
     ).toThrow(InvalidScheduleEntryError);
-    expect(() =>
-      scheduleToSlots([{ dayOfWeek: 1, startTime: '12:00', endTime: '08:00' }]),
-    ).toThrow(InvalidScheduleEntryError);
-  });
-
-  it('dia fora de 0-6 → InvalidScheduleEntryError', () => {
-    expect(() =>
-      scheduleToSlots([{ dayOfWeek: 7, startTime: '08:00', endTime: '12:00' }]),
-    ).toThrow(InvalidScheduleEntryError);
-  });
-
-  it("'HH:MM' sem zero à esquerda ('8:00') → InvalidScheduleEntryError", () => {
-    expect(() =>
-      scheduleToSlots([{ dayOfWeek: 1, startTime: '8:00', endTime: '12:00' }]),
-    ).toThrow(InvalidScheduleEntryError);
-  });
-});
-
-describe('slotMinutes', () => {
-  it("('08:00', '12:30') → 270", () => {
-    expect(slotMinutes('08:00', '12:30')).toBe(270);
   });
 });

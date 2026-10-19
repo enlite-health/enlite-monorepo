@@ -20,12 +20,11 @@ import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow, ItineraryUncoveredAbsenceRow } from './PatientItineraryReader';
 import { liveVacancySelect } from './liveVacancySql';
 import { uncoveredAbsenceSelect } from './absenceSql';
+import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
 
 export interface KanbanServiceRow {
   id: string;
   serviceCode: string;
-  weeklyHours: number | null;
-  authorizedHours: number | null;
   liveVacancyId: string | null;
 }
 
@@ -44,14 +43,12 @@ interface KanbanJoinRow {
   country: string;
   service_id: string;
   service_code: string;
-  weekly_hours: string | null;
-  authorized_hours: string | null;
   live_vacancy_id: string | null;
   slot_id: string | null;
   weekday: number | null;
   start_time: string | null;
-  end_time: string | null;
-  active: boolean | null;
+  duration_minutes: number | null;
+  slot_end: string | null;
   assignment_id: string | null;
   worker_id: string | null;
   application_id: string | null;
@@ -65,7 +62,7 @@ interface UncoveredAbsenceJoinRow {
   contracted_service_id: string;
   on_date: string;
   start_time: string;
-  end_time: string;
+  slot_end: string;
 }
 
 export class PatientKanbanServicesReader {
@@ -90,21 +87,21 @@ export class PatientKanbanServicesReader {
   ): Promise<KanbanServicesRows[]> {
     const res = await client.query<KanbanJoinRow>(
       `WITH svc AS (
-         SELECT pcs.id, pcs.patient_id, pcs.service_code, pcs.weekly_hours, pcs.authorized_hours, pcs.created_at, p.country
+         SELECT pcs.id, pcs.patient_id, pcs.service_code, pcs.created_at, p.country
            FROM patient_contracted_services pcs
            JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
           WHERE pcs.active AND ($1::text IS NULL OR p.country = $1) AND ($2::uuid IS NULL OR p.id = $2)
        ), live AS (
          ${liveVacancySelect('jp.contracted_service_id IN (SELECT id FROM svc)')}
        )
-       SELECT svc.patient_id, svc.country, svc.id AS service_id, svc.service_code, svc.weekly_hours, svc.authorized_hours,
+       SELECT svc.patient_id, svc.country, svc.id AS service_id, svc.service_code,
               live.id AS live_vacancy_id,
-              s.id AS slot_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, to_char(s.end_time,'HH24:MI') AS end_time, s.active,
+              s.id AS slot_id, s.weekday, to_char(s.start_time,'HH24:MI') AS start_time, s.duration_minutes, ${slotEndTimeSql('s')} AS slot_end,
               a.id AS assignment_id, a.worker_id, a.application_id,
               to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to, a.status
          FROM svc
          LEFT JOIN live ON live.contracted_service_id = svc.id
-         LEFT JOIN patient_itinerary_slot s ON s.contracted_service_id = svc.id
+         LEFT JOIN patient_itinerary_slot s ON s.contracted_service_id = svc.id AND ${slotVigenteSql('s')}
          LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
         ORDER BY svc.patient_id, svc.created_at, svc.id, s.weekday, s.start_time, a.valid_from`,
       [country, patientId],
@@ -121,8 +118,6 @@ export class PatientKanbanServicesReader {
         patient.services.push({
           id: r.service_id,
           serviceCode: r.service_code,
-          weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
-          authorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
           liveVacancyId: r.live_vacancy_id,
         });
       }
@@ -133,8 +128,8 @@ export class PatientKanbanServicesReader {
           contractedServiceId: r.service_id,
           weekday: r.weekday as number,
           startTime: r.start_time as string,
-          endTime: r.end_time as string,
-          active: r.active as boolean,
+          durationMinutes: r.duration_minutes as number,
+          endTime: r.slot_end as string,
           assignmentId: r.assignment_id,
           workerId: r.worker_id,
           applicationId: r.application_id,
@@ -166,7 +161,7 @@ export class PatientKanbanServicesReader {
         serviceId: r.contracted_service_id,
         date: r.on_date,
         startTime: r.start_time,
-        endTime: r.end_time,
+        endTime: r.slot_end,
       });
     }
 

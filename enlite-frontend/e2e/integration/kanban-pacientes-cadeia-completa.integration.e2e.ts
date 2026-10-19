@@ -50,7 +50,7 @@ import {
 } from '../helpers/quadro-c-e2e-helper';
 import {
   seedCadeia, seedRoleWorkers, seedPatientZ, seedMarkedWorker, countPatients, residueByIds, cleanupCadeia, collectRequests, readKanbanState,
-  lastStatusChangeSource, printPath, type CadeiaPatientX, type CadeiaPatientWithVacancy,
+  lastStatusChangeSource, printPath, type CadeiaPatientX, type CadeiaPatientY,
 } from '../helpers/cadeia-completa-e2e-helper';
 
 const STAFF = mockAdminUserFor('cadeia-completa');
@@ -127,7 +127,7 @@ test.describe('cadeia-completa @integration', () => {
     const seeds: Array<{ cleanup: () => void }> = [];
 
     let x: CadeiaPatientX | null = null;
-    let y: CadeiaPatientWithVacancy | null = null;
+    let y: CadeiaPatientY | null = null;
     let m = '';
     let v = '';
     let wjaM = '';
@@ -151,7 +151,7 @@ test.describe('cadeia-completa @integration', () => {
         const services = itin.body.data?.services ?? [];
         expect(services.map((s) => s.contractedServiceId).sort()).toEqual([X.service1Id, X.service2Id].sort());
         for (const s of services) {
-          expect(s.slots.filter((slot) => slot.active).length).toBeGreaterThanOrEqual(1);
+          expect(s.slots.length).toBeGreaterThanOrEqual(1);
         }
         const distinctAddresses = Number(
           runSQL(`SELECT count(DISTINCT address_id) FROM patient_contracted_services WHERE patient_id = '${X.patientId}'`),
@@ -398,12 +398,13 @@ test.describe('cadeia-completa @integration', () => {
 
       insertWJA({ workerId: wa, jobPostingId: Y.vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
       workerVacancyPairs.push({ workerId: wa, vacancyId: Y.vacancyId });
+      insertWJA({ workerId: wa, jobPostingId: Y.vacancyLateId, funnelStage: 'QUICK_RESPONSE_TEAM' }); // a faixa 13:00 é de um serviço próprio (spec 056)
+      workerVacancyPairs.push({ workerId: wa, vacancyId: Y.vacancyLateId });
 
       await test.step('passo 7 — pela tela, WA no paciente Y em outro endereço no mesmo dia: 30 min depois do fim do passo 6 → recusado e dito; 1h depois → aceito (invariante 4)', async () => {
-        const slotsY = itineraryData(await readItineraryApi(request, Y.patientId))
-          .services.find((s) => s.contractedServiceId === Y.serviceId)?.slots ?? [];
-        const slotEarly = slotsY.find((s) => s.startTime.startsWith('12:30'));
-        const slotLate = slotsY.find((s) => s.startTime.startsWith('13:00'));
+        const servicesY = itineraryData(await readItineraryApi(request, Y.patientId)).services;
+        const slotEarly = servicesY.find((s) => s.contractedServiceId === Y.serviceId)?.slots.find((s) => s.startTime.startsWith('12:30'));
+        const slotLate = servicesY.find((s) => s.contractedServiceId === Y.serviceLateId)?.slots.find((s) => s.startTime.startsWith('13:00'));
         if (!slotEarly || !slotLate) throw new Error('passo 7: slots 12:30/13:00 de Y ausentes');
         const optsY = await allocationOptionsApi(request, token, Y.patientId, Y.serviceId);
         const waLabelY = ((optsY.body.data as { options: OptionDto[] } | undefined)?.options ?? []).find((o) => o.workerId === wa)?.displayName;
@@ -430,7 +431,7 @@ test.describe('cadeia-completa @integration', () => {
         console.log('[16.p7]', early.status(), body.code, body.minGapMinutes !== null, late.status(), active);
       });
 
-      await test.step('passo 8 — na tela do Kanban de X: o par cobertas/contratadas do subcard do serviço 1 e a coluna mudaram por causa do passo 6, sem ninguém arrastar card (invariante 3)', async () => {
+      await test.step('passo 8 — na tela do Kanban de X: o par cobertas/horário do subcard do serviço 1 e a coluna mudaram por causa do passo 6, sem ninguém arrastar card (invariante 3)', async () => {
         const state = await readKanbanState(page, X.patientId, X.service1Id);
         const s2Pair = await readSubcardPair(page, X.service2Id);
         par1 = pairFromItinerary(itineraryData(await readItineraryApi(request, X.patientId)), X.service1Id);

@@ -140,10 +140,13 @@ test.describe('substituicao @integration', () => {
     const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.62, lng: -58.42 });
     const sY = await createServiceViaApi(request, seedY.patientId, {
       addressId: seedY.addressId,
-      schedule: [
-        { dayOfWeek: 1, startTime: '10:00', endTime: '14:00' },
-        { dayOfWeek: 1, startTime: '12:30', endTime: '16:00' },
-      ],
+      schedule: [{ dayOfWeek: 1, startTime: '10:00', durationMinutes: 240 }],
+    });
+    // Spec 056: duas faixas que se sobrepõem NÃO cabem no mesmo serviço (409 SLOT_OVERLAP) — a de 12:30-16:00
+    // vira um serviço PRÓPRIO do mesmo paciente, no MESMO endereço; vaga e candidaturas dela são desse serviço.
+    const sYb = await createServiceViaApi(request, seedY.patientId, {
+      addressId: seedY.addressId,
+      schedule: [{ dayOfWeek: 1, startTime: '12:30', durationMinutes: 210 }],
     });
     // Critério 8 isolado (gate parcial, G1-9): o 3º caso só pode conflitar com a 1ª SUBSTITUIÇÃO,
     // nunca com a alocação semanal de W (X, segunda 08-12). 1ª substituição: 2º serviço de Y
@@ -152,26 +155,26 @@ test.describe('substituicao @integration', () => {
     // 2h de folga, então só o ramo das substituições da função de conflito a recusa.
     const sY2 = await createServiceViaApi(request, seedY.patientId, {
       addressId: seedY.addressId,
-      schedule: [{ dayOfWeek: 1, startTime: '13:00', endTime: '16:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '13:00', durationMinutes: 180 }],
     });
     const seedZ = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.63, lng: -58.43 });
     const sZ = await createServiceViaApi(request, seedZ.patientId, {
       addressId: seedZ.addressId,
-      schedule: [{ dayOfWeek: 1, startTime: '14:00', endTime: '17:00' }],
+      schedule: [{ dayOfWeek: 1, startTime: '14:00', durationMinutes: 180 }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);
     const vX = await activateRecruitmentViaApi(request, seedX.patientId, seedX.serviceId);
     const vY = await activateRecruitmentViaApi(request, seedY.patientId, sY);
+    const vYb = await activateRecruitmentViaApi(request, seedY.patientId, sYb);
     const vY2 = await activateRecruitmentViaApi(request, seedY.patientId, sY2);
     const vZ = await activateRecruitmentViaApi(request, seedZ.patientId, sZ);
 
     const itinX = await readItineraryApi(request, seedX.patientId);
     const slotX = itinX.body.data?.services.find((s) => s.contractedServiceId === seedX.serviceId)?.slots[0]?.id;
     const itinY = await readItineraryApi(request, seedY.patientId);
-    const svcY = itinY.body.data?.services.find((s) => s.contractedServiceId === sY);
-    const slotY1000 = svcY?.slots.find((sl) => sl.startTime === '10:00')?.id;
-    const slotY1230 = svcY?.slots.find((sl) => sl.startTime === '12:30')?.id;
+    const slotY1000 = itinY.body.data?.services.find((s) => s.contractedServiceId === sY)?.slots[0]?.id;
+    const slotY1230 = itinY.body.data?.services.find((s) => s.contractedServiceId === sYb)?.slots[0]?.id;
     const slotY2 = itinY.body.data?.services.find((s) => s.contractedServiceId === sY2)?.slots[0]?.id;
     const itinZ = await readItineraryApi(request, seedZ.patientId);
     const slotZ = itinZ.body.data?.services.find((s) => s.contractedServiceId === sZ)?.slots[0]?.id;
@@ -180,7 +183,7 @@ test.describe('substituicao @integration', () => {
     }
 
     const w = insertTestWorker({ occupation: 'AT' }); // substituto candidato às 4 vagas
-    const t2a = insertTestWorker({ occupation: 'AT' }); // titular de Y 10-14 (2 titulares — as 2 faixas de Y se sobrepõem entre si)
+    const t2a = insertTestWorker({ occupation: 'AT' }); // titular de Y 10-14 (2 titulares — as faixas de Y 10-14 e 12:30-16 se sobrepõem entre si, em 2 serviços do mesmo endereço)
     const t2b = insertTestWorker({ occupation: 'AT' }); // titular de Y 12:30-16
     const t3 = insertTestWorker({ occupation: 'AT' }); // titular do 2º serviço de Y 13-16
     const t4 = insertTestWorker({ occupation: 'AT' }); // titular de Z 14-17
@@ -191,7 +194,8 @@ test.describe('substituicao @integration', () => {
       insertWJA({ workerId: w, jobPostingId: vY2, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: w, jobPostingId: vZ, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: t2a, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
-      insertWJA({ workerId: t2b, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: t2b, jobPostingId: vYb, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: vYb, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: t3, jobPostingId: vY2, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: t4, jobPostingId: vZ, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
@@ -200,7 +204,7 @@ test.describe('substituicao @integration', () => {
       expect(allocW.status).toBe(201);
 
       const allocT2a = await allocateApi(request, token, seedY.patientId, sY, slotY1000, { workerId: t2a });
-      const allocT2b = await allocateApi(request, token, seedY.patientId, sY, slotY1230, { workerId: t2b });
+      const allocT2b = await allocateApi(request, token, seedY.patientId, sYb, slotY1230, { workerId: t2b });
       expect(allocT2a.status).toBe(201);
       expect(allocT2b.status).toBe(201);
       const allocIdT2a = (allocT2a.body.data as AllocateData | undefined)?.allocationId;
@@ -208,7 +212,7 @@ test.describe('substituicao @integration', () => {
       if (!allocIdT2a || !allocIdT2b) throw new Error('substituicao-sobreposicao-recusa: alocação de T2 sem id');
 
       const absT2a = await registerAbsenceApi(request, token, seedY.patientId, sY, allocIdT2a, { date: d });
-      const absT2b = await registerAbsenceApi(request, token, seedY.patientId, sY, allocIdT2b, { date: d });
+      const absT2b = await registerAbsenceApi(request, token, seedY.patientId, sYb, allocIdT2b, { date: d });
       expect(absT2a.status).toBe(201);
       expect(absT2b.status).toBe(201);
       const absIdT2a = absT2a.body.data?.absenceId;
@@ -219,7 +223,7 @@ test.describe('substituicao @integration', () => {
       expect(rOverlap.status).toBe(409);
       expect(rOverlap.body.code).toBe('ITINERARY_OVERLAP');
 
-      const rGap = await setAbsenceSubstituteApi(request, token, seedY.patientId, sY, absIdT2b, { substituteWorkerId: w });
+      const rGap = await setAbsenceSubstituteApi(request, token, seedY.patientId, sYb, absIdT2b, { substituteWorkerId: w });
       expect(rGap.status).toBe(409);
       expect(rGap.body.minGapMinutes).not.toBeNull();
       expect(rGap.body.minGapMinutes).not.toBeUndefined();
@@ -259,9 +263,10 @@ test.describe('substituicao @integration', () => {
       cleanupWJAAndEncuadre(w, vX);
       cleanupWJAAndEncuadre(w, vY);
       cleanupWJAAndEncuadre(w, vY2);
+      cleanupWJAAndEncuadre(w, vYb);
       cleanupWJAAndEncuadre(w, vZ);
       cleanupWJAAndEncuadre(t2a, vY);
-      cleanupWJAAndEncuadre(t2b, vY);
+      cleanupWJAAndEncuadre(t2b, vYb);
       cleanupWJAAndEncuadre(t3, vY2);
       cleanupWJAAndEncuadre(t4, vZ);
       cleanupTestWorker(w);
@@ -279,13 +284,13 @@ test.describe('substituicao @integration', () => {
     const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.64, lng: -58.44 });
     const sY = await createServiceViaApi(request, seedY.patientId, {
-      addressId: seedY.addressId, schedule: [{ dayOfWeek: 1, startTime: '13:00', endTime: '16:00' }],
+      addressId: seedY.addressId, schedule: [{ dayOfWeek: 1, startTime: '13:00', durationMinutes: 180 }],
     });
     const s2X = await createServiceViaApi(request, seedX.patientId, {
-      addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '12:00', endTime: '16:00' }],
+      addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '12:00', durationMinutes: 240 }],
     });
     const s3Y = await createServiceViaApi(request, seedY.patientId, {
-      addressId: seedY.addressId, schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '12:00' }],
+      addressId: seedY.addressId, schedule: [{ dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);

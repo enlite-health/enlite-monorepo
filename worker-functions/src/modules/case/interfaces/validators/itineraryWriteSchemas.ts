@@ -24,9 +24,9 @@ export const itinerarySlotBodySchema = z
   .object({
     weekday: z.number().int().min(0).max(6),
     startTime: z.string().regex(HHMM),
-    endTime: z.string().regex(HHMM),
+    durationMinutes: z.number().int().min(1).max(1440),
   })
-  .refine((body) => body.endTime > body.startTime, { message: 'endTime must be after startTime' });
+  .strict(); // o fim nunca entra pela API: é início + duração (spec 056)
 
 export type ItinerarySlotBody = z.infer<typeof itinerarySlotBodySchema>;
 
