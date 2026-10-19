@@ -8,7 +8,8 @@
  *   `-t "T6′ recusa"` · `-t "CHECK PRIVATE"` · `-t "CHECK OTHER"` · `-t "assert de nomes"` · `-t "rastro"` · `-t "T5 recusa"` · `-t "T5 × T6′"`.
  * (Os testes de T5 e de concorrência não levam "T5" no mesmo prefixo, para o `-t` de um não pegar o outro.)
  *
- * Parte API/HTTP (PATCH `payerKind` com `withActorContext`, 422 `PAYER_KIND_CANNOT_UNSET`): fora desta rodada.
+ * Parte API/HTTP (A1.4, rotas reais): PATCH `payerKind` em `withActorContext` (rastro com o uid do ator), 422 `PAYER_KIND_CANNOT_UNSET`
+ * e `PAYER_KIND_REQUIRED` na criação de contrato — bloco `API/HTTP` no fim.
  */
 import fs from 'fs';
 import path from 'path';
@@ -16,6 +17,8 @@ import { Pool } from 'pg';
 import {
   criarContrato, criarPagador, emTransacaoRevertida, erroDe, limpar, novoPool, PREFIXO_PAGADOR,
 } from './helpers/contrato058aDb';
+import { api, atores, BASE } from './helpers/contrato058aApi';
+import type { StaffAuth } from './helpers/staffAuth';
 
 const MIGRATION_532 = path.resolve(__dirname, '../../migrations/532_insurance_providers_cadastro.sql');
 
@@ -234,9 +237,57 @@ describe('058a payer_kind — travas de banco (532/533/535) @integration', () =>
     });
   });
 
-  describe('API/HTTP — TODO rodada futura (A1.3/A1.4)', () => {
-    it.todo('PATCH /catalogs/insurance-providers/:code { payerKind: null } num classificado → 422 PAYER_KIND_CANNOT_UNSET');
-    it.todo('PATCH de payerKind roda em withActorContext: o rastro sai com changed_by = uid do admin');
-    it.todo('POST de contrato para pagador sem tipo → 422 PAYER_KIND_REQUIRED');
+  describe('API/HTTP — rotas reais (A1.4)', () => {
+    let admin: StaffAuth;
+    let recrutadora: StaffAuth;
+    beforeAll(async () => { ({ admin, recrutadora } = await atores()); });
+
+    it('PATCH /insurance-providers/:code { payerKind: null } num classificado → 422 PAYER_KIND_CANNOT_UNSET e o tipo não muda', async () => {
+      const code = await criarPagador(pool, 'PREPAGA');
+      const r = await api.patch(`${BASE}/insurance-providers/${code}`, { payerKind: null }, admin);
+      expect(r.status).toBe(422);
+      expect(r.data.code).toBe('PAYER_KIND_CANNOT_UNSET');
+      expect(await kindDe(code)).toBe('PREPAGA');
+      // controle: ausente não toca, e a recrutadora (sem a célula; engine desligado => só admin) leva 403
+      expect((await api.patch(`${BASE}/insurance-providers/${code}`, { address: 'Av. Siempre Viva 742' }, admin)).status).toBe(200);
+      expect(await kindDe(code)).toBe('PREPAGA');
+      expect((await api.patch(`${BASE}/insurance-providers/${code}`, { payerKind: 'OBRA_SOCIAL' }, recrutadora)).status).toBe(403);
+    });
+
+    it('PATCH de payerKind roda em withActorContext: o rastro sai com changed_by = staff:<uid do admin> (e a 1ª classificação também)', async () => {
+      const code = await criarPagador(pool, null);
+      expect((await api.patch(`${BASE}/insurance-providers/${code}`, { payerKind: 'OBRA_SOCIAL' }, admin)).status).toBe(200);
+      expect((await api.patch(`${BASE}/insurance-providers/${code}`, { payerKind: 'PREPAGA' }, admin)).status).toBe(200);
+      const { rows } = await pool.query<{ old_kind: string | null; new_kind: string; changed_by: string }>(
+        `SELECT old_kind, new_kind, changed_by FROM insurance_provider_payer_kind_history WHERE provider_code = $1 ORDER BY changed_at, id`, [code]);
+      expect(rows).toEqual([
+        { old_kind: null, new_kind: 'OBRA_SOCIAL', changed_by: `staff:${admin.uid}` }, // convenção do app.current_uid (resolveActor)
+        { old_kind: 'OBRA_SOCIAL', new_kind: 'PREPAGA', changed_by: `staff:${admin.uid}` },
+      ]);
+    });
+
+    it('PATCH: o CHECK de PRIVATE chega como 422 INVALID_<constraint>; código inexistente é 404; `code` no corpo é 422', async () => {
+      const r = await api.patch(`${BASE}/insurance-providers/PRIVATE`, { payerKind: 'PREPAGA' }, admin);
+      expect(r.status).toBe(422);
+      expect(r.data.code).toBe('INVALID_insurance_providers_private_kind_chk');
+      expect((await api.patch(`${BASE}/insurance-providers/NAO_EXISTE_058`, { active: false }, admin)).status).toBe(404);
+      const code = await criarPagador(pool, 'OBRA_SOCIAL');
+      expect((await api.patch(`${BASE}/insurance-providers/${code}`, { code: 'OUTRO' }, admin)).data.code).toBe('CODE_IMMUTABLE');
+    });
+
+    it('POST de contrato para pagador sem tipo → 422 PAYER_KIND_REQUIRED, e nenhum contrato nasce (nem o termo)', async () => {
+      const code = await criarPagador(pool, null);
+      const body = { name: 'Plan sin tipo', country: 'AR', firstTerm: { hourlyRate: 1500, taxRatePercent: 0, validFrom: '2026-01-01' } };
+      const r = await api.post(`${BASE}/insurance-providers/${code}/contracts`, body, admin);
+      expect(r.status).toBe(422);
+      expect(r.data.code).toBe('PAYER_KIND_REQUIRED');
+      expect((await pool.query('SELECT count(*)::int AS n FROM insurance_contracts WHERE provider_code = $1', [code])).rows[0].n).toBe(0);
+      // classificado: o mesmo corpo passa (controle positivo) e o 1º termo nasce na MESMA transação
+      expect((await api.patch(`${BASE}/insurance-providers/${code}`, { payerKind: 'OBRA_SOCIAL' }, admin)).status).toBe(200);
+      const ok = await api.post(`${BASE}/insurance-providers/${code}/contracts`, body, admin);
+      expect(ok.status).toBe(201);
+      expect(ok.data.data.currentTerm).toMatchObject({ state: 'OK', taxRatePercent: 0, price: { state: 'OK', hourlyRate: 1500, currency: 'ARS' } });
+      expect((await pool.query('SELECT count(*)::int AS n FROM insurance_contract_terms WHERE contract_id = $1', [ok.data.data.id])).rows[0].n).toBe(1);
+    });
   });
 });

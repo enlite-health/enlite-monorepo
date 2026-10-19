@@ -54,14 +54,18 @@ describe('Cobertura por catálogo (spec 012 US-B3) @integration', () => {
   });
 
   it('2. POST é admin-only; cria; duplicado → 409; aparece no GET sem deploy', async () => {
-    expect((await api.post('/api/admin/catalogs/insurance-providers', { code: NEW_CODE }, asRecruiter)).status).toBe(403);
-    const created = await api.post('/api/admin/catalogs/insurance-providers', { code: NEW_CODE, aliases: ['Nueva OS e2e'] }, asAdmin);
+    // Spec 058: o POST pede `name` (o código é derivado se faltar) e o duplicado vem por NOME de constraint.
+    expect((await api.post('/api/admin/catalogs/insurance-providers', { name: 'Nueva OS e2e', code: NEW_CODE }, asRecruiter)).status).toBe(403);
+    const created = await api.post('/api/admin/catalogs/insurance-providers', { name: 'Nueva OS e2e', code: NEW_CODE, aliases: ['Nueva OS e2e'] }, asAdmin);
     expect(created.status).toBe(201);
-    expect(created.data.data).toMatchObject({ code: NEW_CODE, active: true });
-    const dup = await api.post('/api/admin/catalogs/insurance-providers', { code: NEW_CODE }, asAdmin);
+    expect(created.data.data).toMatchObject({ code: NEW_CODE, name: 'Nueva OS e2e', active: true });
+    const dup = await api.post('/api/admin/catalogs/insurance-providers', { name: 'Otro nombre e2e', code: NEW_CODE }, asAdmin);
     expect(dup.status).toBe(409);
-    expect(dup.data.code).toBe('INSURANCE_PROVIDER_ALREADY_EXISTS');
-    expect((await api.post('/api/admin/catalogs/insurance-providers', { code: 'minúsculas' }, asAdmin)).status).toBe(400);
+    expect(dup.data.code).toBe('INSURANCE_PROVIDER_CODE_EXISTS');
+    const dupName = await api.post('/api/admin/catalogs/insurance-providers', { name: ' nueva os E2E ', code: `${NEW_CODE}_2` }, asAdmin);
+    expect(dupName.status).toBe(409);
+    expect(dupName.data.code).toBe('INSURANCE_PROVIDER_NAME_EXISTS');
+    expect((await api.post('/api/admin/catalogs/insurance-providers', { name: 'Minúsculas', code: 'minúsculas' }, asAdmin)).status).toBe(400);
     const list = await api.get('/api/admin/catalogs/insurance-providers', asAdmin);
     expect((list.data.data.providers as Array<{ code: string }>).map((p) => p.code)).toContain(NEW_CODE);
   });

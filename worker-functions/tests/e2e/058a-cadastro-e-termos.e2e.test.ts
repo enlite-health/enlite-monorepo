@@ -5,13 +5,15 @@
  *   `-t "par do documento"` · `-t "retire"` · `-t "retire sem sentinela"` · `-t "E3"` · `-t "imposto"` ·
  *   `-t "sobreposição de termos"` · `-t "marcar trio"` · `-t "termo imutável"` · teste de contrato "vocabulário do documento".
  *
- * Parte API/HTTP (rotas de contato/contrato/termo, KMS, zod, mapa constraint → 409): fora desta rodada.
+ * Parte API/HTTP (A1.4, rotas reais de contato/contrato/termo, zod, mapa constraint → 409): bloco `API/HTTP` no fim.
  */
 import { Pool } from 'pg';
 import { DOCUMENT_TYPES } from '@modules/case/domain/enums/DocumentType';
 import {
   criarContrato, criarPagador, emTransacaoRevertida, erroDe, limpar, novoPool,
 } from './helpers/contrato058aDb';
+import { api, atores, BASE } from './helpers/contrato058aApi';
+import type { StaffAuth } from './helpers/staffAuth';
 
 describe('058a cadastro e termos — travas de banco (534/535/536) @integration', () => {
   let pool: Pool;
@@ -211,9 +213,110 @@ describe('058a cadastro e termos — travas de banco (534/535/536) @integration'
     });
   });
 
-  describe('API/HTTP — TODO rodada futura (A1.3/A1.4)', () => {
-    it.todo('PATCH de contato só com documentType → 422 DOCUMENT_PAIR_INCOMPLETE; email: null limpa e ausente não toca');
-    it.todo('POST de termo sem taxRatePercent → 422 do zod (formulário vazio não vira 0)');
-    it.todo('23505 de insurance_contracts_name_uq e 23P01 de …_sem_sobreposicao → 409 com código por constraint');
+  describe('API/HTTP — rotas reais (A1.4)', () => {
+    let admin: StaffAuth;
+    beforeAll(async () => { ({ admin } = await atores()); });
+
+    const contatoBase = { fullName: 'Maria Gomez', roleTitle: 'Auditora', phone: '+54 11 5555-0000' };
+
+    it('PATCH de contato só com documentType → 422 DOCUMENT_PAIR_INCOMPLETE; email: null limpa e ausente não toca', async () => {
+      const criado = await api.post(`${BASE}/insurance-providers/${provider}/contacts`, { ...contatoBase, email: 'maria@osde.example', documentType: 'DNI', documentNumber: '30123456' }, admin);
+      expect(criado.status).toBe(201);
+      const id = criado.data.data.id as string;
+      expect(criado.data.data).toMatchObject({ phone: contatoBase.phone, email: 'maria@osde.example', document: { type: 'DNI', number: '30123456' }, redacted: false });
+      // cifrado em repouso: o que está na tabela NÃO é o texto
+      const crua = (await pool.query('SELECT phone_encrypted, email_encrypted, document_number_encrypted FROM insurance_provider_contacts WHERE id = $1', [id])).rows[0];
+      expect(JSON.stringify(crua)).not.toMatch(/5555-0000|maria@osde|30123456/);
+
+      const par = await api.patch(`${BASE}/insurance-providers/${provider}/contacts/${id}`, { documentType: 'PASSPORT' }, admin);
+      expect(par.status).toBe(422);
+      expect(par.data.code).toBe('DOCUMENT_PAIR_INCOMPLETE');
+
+      const ausente = await api.patch(`${BASE}/insurance-providers/${provider}/contacts/${id}`, { roleTitle: 'Chefa de auditoria' }, admin);
+      expect(ausente.status).toBe(200);
+      expect(ausente.data.data).toMatchObject({ roleTitle: 'Chefa de auditoria', email: 'maria@osde.example', document: { type: 'DNI', number: '30123456' } });
+
+      const limpa = await api.patch(`${BASE}/insurance-providers/${provider}/contacts/${id}`, { email: null, documentType: null, documentNumber: null }, admin);
+      expect(limpa.status).toBe(200);
+      expect(limpa.data.data).toMatchObject({ email: null, document: null });
+      const linha = (await pool.query('SELECT email_encrypted, document_type, document_number_encrypted FROM insurance_provider_contacts WHERE id = $1', [id])).rows[0];
+      expect(linha).toEqual({ email_encrypted: null, document_type: null, document_number_encrypted: null });
+      expect((await api.patch(`${BASE}/insurance-providers/${provider}/contacts/${id}`, { phone: null }, admin)).status).toBe(422);
+    });
+
+    it('contato: aposentar (retire) nunca apaga; a lista padrão some com ele e includeRetired traz de volta', async () => {
+      const id = (await api.post(`${BASE}/insurance-providers/${provider}/contacts`, contatoBase, admin)).data.data.id as string;
+      const retire = await api.post(`${BASE}/insurance-providers/${provider}/contacts/${id}/retire`, {}, admin);
+      expect(retire.status).toBe(200);
+      expect(retire.data.data.retired).toBe(true);
+      expect(Number((await pool.query('SELECT count(*) FROM insurance_provider_contacts WHERE id = $1 AND retired_at IS NOT NULL AND retired_at <> \'infinity\'', [id])).rows[0].count)).toBe(1);
+      expect((await api.get(`${BASE}/insurance-providers/${provider}/contacts`, admin)).data.data.items).toEqual([]);
+      expect((await api.get(`${BASE}/insurance-providers/${provider}/contacts?includeRetired=true`, admin)).data.data.items).toHaveLength(1);
+      expect((await api.post(`${BASE}/insurance-providers/${provider}/contacts/${id}/retire`, {}, admin)).status).toBe(409);
+    });
+
+    const contratoBody = (name: string, extra: Record<string, unknown> = {}) => ({
+      name, country: 'AR', firstTerm: { hourlyRate: 1500, taxRatePercent: 21, validFrom: '2026-01-01', validTo: '2026-12-31', ...extra },
+    });
+
+    it('POST de termo sem taxRatePercent → 422 do zod (formulário vazio não vira 0); com 0 ("isento") grava 0', async () => {
+      const criado = await api.post(`${BASE}/insurance-providers/${provider}/contracts`, contratoBody('Plan Termos'), admin);
+      expect(criado.status).toBe(201);
+      const id = criado.data.data.id as string;
+      const termos = async (): Promise<number> => (await pool.query('SELECT count(*)::int AS n FROM insurance_contract_terms WHERE contract_id = $1', [id])).rows[0].n;
+      expect(await termos()).toBe(1);
+      for (const corpo of [{ hourlyRate: 1700, validFrom: '2027-01-01' }, { hourlyRate: 1700, taxRatePercent: '', validFrom: '2027-01-01' }, { hourlyRate: 1700, taxRatePercent: null, validFrom: '2027-01-01' }]) {
+        const r = await api.post(`${BASE}/insurance-contracts/${id}/terms`, corpo, admin);
+        expect(r.status).toBe(422);
+        expect(r.data.code).toBe('VALIDATION_FAILED');
+        expect(r.data.details.fields).toContain('taxRatePercent');
+      }
+      expect(await termos()).toBe(1);
+      const isento = await api.post(`${BASE}/insurance-contracts/${id}/terms`, { hourlyRate: 1700, taxRatePercent: 0, validFrom: '2027-01-01' }, admin);
+      expect(isento.status).toBe(201);
+      expect((await pool.query('SELECT tax_rate_percent FROM insurance_contract_terms WHERE contract_id = $1 AND valid @> \'2027-02-01\'::date', [id])).rows.map((x) => Number(x.tax_rate_percent))).toEqual([0]);
+      expect(isento.data.data.futureTerms).toEqual(expect.any(Array));
+    });
+
+    it('23505 de insurance_contracts_name_uq e 23P01 de …_sem_sobreposicao → 409 com código por constraint', async () => {
+      const a = await api.post(`${BASE}/insurance-providers/${provider}/contracts`, contratoBody('Plan Duplicado'), admin);
+      expect(a.status).toBe(201);
+      const dup = await api.post(`${BASE}/insurance-providers/${provider}/contracts`, contratoBody('  plan DUPLICADO '), admin);
+      expect(dup.status).toBe(409);
+      expect(dup.data.code).toBe('INSURANCE_CONTRACT_NAME_EXISTS');
+      // sobreposição: o 1º termo vai até 2026-12-31; um termo que invade 2026 é recusado pelo EXCLUDE
+      const sobre = await api.post(`${BASE}/insurance-contracts/${a.data.data.id}/terms`, { hourlyRate: 1800, taxRatePercent: 21, validFrom: '2026-06-01' }, admin);
+      expect(sobre.status).toBe(409);
+      expect(sobre.data.code).toBe('RANGE_OVERLAP');
+      expect(sobre.data.details.constraint).toBe('insurance_contract_terms_sem_sobreposicao');
+      // nome igual em OUTRA obra social é permitido (a unicidade é por pagador)
+      const outro = await criarPagador(pool, 'PREPAGA');
+      expect((await api.post(`${BASE}/insurance-providers/${outro}/contracts`, contratoBody('Plan Duplicado'), admin)).status).toBe(201);
+    });
+
+    it('REPRICED / CORRECTION: reajuste fecha o trecho anterior, mesmo início → 422 SAME_START_USE_CORRECTION, termo antigo nunca é editado', async () => {
+      const c = await api.post(`${BASE}/insurance-providers/${provider}/contracts`, contratoBody('Plan Reajuste', { validTo: null }), admin);
+      const id = c.data.data.id as string;
+      const termoId = c.data.data.currentTerm.termId as string;
+      const mesmoInicio = await api.post(`${BASE}/insurance-contracts/${id}/terms/${termoId}/supersede`, { reason: 'REPRICED', hourlyRate: 1600, taxRatePercent: 21, validFrom: '2026-01-01' }, admin);
+      expect(mesmoInicio.status).toBe(422);
+      expect(mesmoInicio.data.code).toBe('SAME_START_USE_CORRECTION');
+      const reajuste = await api.post(`${BASE}/insurance-contracts/${id}/terms/${termoId}/supersede`, { reason: 'REPRICED', hourlyRate: 1600, taxRatePercent: 21, validFrom: '2026-07-01' }, admin);
+      expect(reajuste.status).toBe(200);
+      const vivos = (await pool.query<{ hourly_rate: string; valid: string }>(
+        'SELECT hourly_rate, valid::text AS valid FROM insurance_contract_terms WHERE contract_id = $1 AND superseded_at IS NULL ORDER BY valid', [id])).rows;
+      expect(vivos.map((v) => [Number(v.hourly_rate), v.valid])).toEqual([[1500, '[2026-01-01,2026-07-01)'], [1600, '[2026-07-01,)']]);
+      const velho = (await pool.query('SELECT superseded_reason, superseded_at IS NOT NULL AS carimbado FROM insurance_contract_terms WHERE id = $1', [termoId])).rows[0];
+      expect(velho).toEqual({ superseded_reason: 'REPRICED', carimbado: true });
+      expect((await api.post(`${BASE}/insurance-contracts/${id}/terms/${termoId}/supersede`, { reason: 'CORRECTION', hourlyRate: 1, taxRatePercent: 0, validFrom: '2026-01-01' }, admin)).status).toBe(409);
+    });
+
+    it('PATCH de contrato: país e pagador imutáveis (422), name/scopeDescription editam; null limpa a abrangência', async () => {
+      const c = await api.post(`${BASE}/insurance-providers/${provider}/contracts`, { ...contratoBody('Plan Edita'), scopeDescription: 'CABA' }, admin);
+      const id = c.data.data.id as string;
+      expect((await api.patch(`${BASE}/insurance-contracts/${id}`, { country: 'BR' }, admin)).data.code).toBe('IMMUTABLE_FIELD');
+      expect((await api.patch(`${BASE}/insurance-contracts/${id}`, { name: 'Plan Editado', scopeDescription: null }, admin)).data.data).toMatchObject({ name: 'Plan Editado', scopeDescription: null });
+      expect((await api.patch(`${BASE}/insurance-contracts/${id}`, { name: '' }, admin)).status).toBe(422);
+    });
   });
 });
