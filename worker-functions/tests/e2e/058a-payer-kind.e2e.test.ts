@@ -132,11 +132,11 @@ describe('058a payer_kind — travas de banco (532/533/535) @integration', () =>
       expect((await pool.query(`SELECT name FROM insurance_providers WHERE code = 'OGORMAN'`)).rows[0].name).toBe("O'Gorman");
     });
 
-    it('nomes: dois pagadores com o mesmo nome (caixa/espaço) são recusados (EXCLUDE insurance_providers_name_uq, 23P01)', async () => {
+    it('nomes: dois pagadores com o mesmo nome (caixa/espaço) são recusados (índice único insurance_providers_name_uq, 23505)', async () => {
       const a = await criarPagador(pool, null);
       const e = await erroDe(() => pool.query(
         `INSERT INTO insurance_providers (code, name, sort_order) VALUES ($1, '  ' || upper($2) || ' ', 32001)`, [`${PREFIXO_PAGADOR}DUP`, `QA058 ${a}`]));
-      expect(e?.code).toBe('23P01');
+      expect(e?.code).toBe('23505');
       expect(e?.constraint).toBe('insurance_providers_name_uq');
     });
   });

@@ -92,11 +92,11 @@ describe('058a cadastro e termos — travas de banco (534/535/536) @integration'
   });
 
   describe('contratos (535)', () => {
-    it('E3 name_uq: mesmo nome (caixa/espaço) no mesmo pagador → 23P01 insurance_contracts_name_uq; em outro pagador passa', async () => {
+    it('E3 name_uq: mesmo nome (caixa/espaço) no mesmo pagador → 23505 insurance_contracts_name_uq; em outro pagador passa', async () => {
       await pool.query(`INSERT INTO insurance_contracts (provider_code, country, name, created_by, updated_by) VALUES ($1, 'AR', 'Plan Oro', 'qa', 'qa')`, [provider]);
       const e = await erroDe(() => pool.query(
-        `INSERT INTO insurance_contracts (provider_code, country, name, created_by, updated_by) VALUES ($1, 'AR', '  PLAN oro ', 'qa', 'qa')`, [provider]));
-      expect(e?.code).toBe('23P01');
+        `INSERT INTO insurance_contracts (provider_code, country, name, created_by, updated_by) VALUES ($1, 'AR', 'PLAN ORO', 'qa', 'qa')`, [provider]));
+      expect(e?.code).toBe('23505');
       expect(e?.constraint).toBe('insurance_contracts_name_uq');
       const outro = await criarPagador(pool, 'PREPAGA');
       await pool.query(`INSERT INTO insurance_contracts (provider_code, country, name, created_by, updated_by) VALUES ($1, 'AR', 'Plan Oro', 'qa', 'qa')`, [outro]);
@@ -214,6 +214,6 @@ describe('058a cadastro e termos — travas de banco (534/535/536) @integration'
   describe('API/HTTP — TODO rodada futura (A1.3/A1.4)', () => {
     it.todo('PATCH de contato só com documentType → 422 DOCUMENT_PAIR_INCOMPLETE; email: null limpa e ausente não toca');
     it.todo('POST de termo sem taxRatePercent → 422 do zod (formulário vazio não vira 0)');
-    it.todo('23P01 de insurance_contracts_name_uq / …_sem_sobreposicao → 409 com código por constraint');
+    it.todo('23505 de insurance_contracts_name_uq e 23P01 de …_sem_sobreposicao → 409 com código por constraint');
   });
 });

@@ -7,9 +7,8 @@
 -- TABELA INTEIRA (`count(*) = count(name) = count(distinct lower(btrim(name)))`), não sobre o literal 33: prd pode ter códigos
 -- criados depois da 311 (medido em prd: 33 provedores / 33 códigos distintos).
 --
--- `…_name_uq` e `insurance_providers_tax_id_uq`: `name_uq` é EXCLUDE btree (`lower(btrim(name)) WITH =`) — unicidade por expressão que
--- ainda aparece em pg_constraint (um índice único por expressão não aparece); recusa com 23P01. `tax_id` é UNIQUE simples (vários NULL
--- convivem, que é o "parcial" da spec) e recusa com 23505.
+-- `…_name_uq` é UNIQUE INDEX por expressão `(lower(btrim(name)))` (não aparece em pg_constraint: confere-se em pg_indexes); `tax_id_uq` é UNIQUE
+-- simples (vários NULL convivem, que é o "parcial" da spec). Ambos recusam com 23505.
 --
 -- T6′ (`trg_058_a_payer_kind_no_unset`, BEFORE UPDATE OF payer_kind): classificado não volta a NULL — numa linha só, sem ler outra
 -- tabela (por isso o T5 da 535 não precisa de lock). Pega PATCH, `INSERT … ON CONFLICT DO UPDATE SET payer_kind = NULL` e UPDATE em lote.
@@ -56,10 +55,6 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'insurance_providers_name_not_blank' AND conrelid = 'insurance_providers'::regclass) THEN
     ALTER TABLE insurance_providers ADD CONSTRAINT insurance_providers_name_not_blank CHECK (btrim(name) <> '');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'insurance_providers_name_uq' AND conrelid = 'insurance_providers'::regclass) THEN
-    ALTER TABLE insurance_providers ADD CONSTRAINT insurance_providers_name_uq
-      EXCLUDE USING btree ((lower(btrim(name))) WITH =);
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'insurance_providers_tax_id_uq' AND conrelid = 'insurance_providers'::regclass) THEN
     ALTER TABLE insurance_providers ADD CONSTRAINT insurance_providers_tax_id_uq UNIQUE (tax_id);
   END IF;
@@ -81,6 +76,8 @@ BEGIN
   END IF;
 END
 $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS insurance_providers_name_uq ON insurance_providers (lower(btrim(name)));
 
 COMMENT ON COLUMN insurance_providers.payer_kind IS
   'classificação corrente, sem histórico; correção vale retroativamente; NULL = ainda não classificado';

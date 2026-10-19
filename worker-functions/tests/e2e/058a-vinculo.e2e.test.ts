@@ -296,7 +296,7 @@ describe('058a vínculo serviço → contrato — travas de banco (537) @integra
 
   describe('API/HTTP — TODO rodada futura (A1.3/A1.4)', () => {
     it.todo('POST/PUT /contracted-services/:sid/contract: SAME_START_USE_CORRECTION recusado antes do banco (isSameStart)');
-    it.todo('5 casos de 23505/23P01 por constraint (pkey, sort_order_unico, name_uq, tax_id_uq, contracts_name_uq) → 409 com código');
+    it.todo('5 casos de 23505 por constraint (pkey, sort_order_unico, name_uq, tax_id_uq, contracts_name_uq) → 409 com código');
     it.todo('retry de 40P01/40001 em withSerializationRetry → 409 depois de 3 tentativas');
     it.todo('mapa de erro: REQUIRES_NEW_SERVICE / USE_CORRECTION / TWO_PAYERS_OVERLAP / COUNTRY_MISMATCH → 409/422 do §K');
   });

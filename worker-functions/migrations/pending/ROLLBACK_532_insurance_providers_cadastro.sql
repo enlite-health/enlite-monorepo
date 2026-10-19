@@ -6,13 +6,13 @@ DROP TRIGGER IF EXISTS trg_058_a_providers_retired_at ON insurance_providers;
 DROP TRIGGER IF EXISTS trg_058_a_payer_kind_no_unset ON insurance_providers;
 DROP FUNCTION IF EXISTS fn_058_a_providers_retired_at();
 DROP FUNCTION IF EXISTS fn_058_a_payer_kind_no_unset();
+DROP INDEX IF EXISTS insurance_providers_name_uq;
 ALTER TABLE insurance_providers
   DROP CONSTRAINT IF EXISTS insurance_providers_other_unclassified_chk,
   DROP CONSTRAINT IF EXISTS insurance_providers_private_kind_chk,
   DROP CONSTRAINT IF EXISTS insurance_providers_payer_kind_check,
   DROP CONSTRAINT IF EXISTS insurance_providers_management_chat_id_not_blank,
   DROP CONSTRAINT IF EXISTS insurance_providers_tax_id_uq,
-  DROP CONSTRAINT IF EXISTS insurance_providers_name_uq,
   DROP CONSTRAINT IF EXISTS insurance_providers_name_not_blank,
   DROP COLUMN IF EXISTS payer_kind,
   DROP COLUMN IF EXISTS management_chat_id,

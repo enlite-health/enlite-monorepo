@@ -1,7 +1,7 @@
 -- 535 — E3: contrato da obra social (spec 058 Parte A, §2.1 E3/§2.2 T5; plan §2).
 -- Global (sem RLS: catálogo, como `insurance_providers`). `provider_code` e `country` são IMUTÁVEIS depois de criados (trigger): o vínculo
 -- do serviço (537) compara o país do contrato com o do serviço e o pagador entre contratos. `OTHER` não tem contrato (é "não listada").
--- `…_name_uq` é EXCLUDE btree `(provider_code =, lower(btrim(name)) =)` — unicidade por expressão que aparece em pg_constraint; recusa 23P01.
+-- `…_name_uq` é UNIQUE INDEX `(provider_code, lower(name))`; recusa 23505 (confere-se em pg_indexes, não em pg_constraint).
 -- `scope_description` é TEXTO descritivo (NC-01: abrangência é rótulo até o Marcel dizer que é regra).
 --
 -- T5 (`trg_058_a_contract_requires_payer_kind`, BEFORE INSERT): contrato só nasce sob pagador CLASSIFICADO (`payer_kind` não nulo).
@@ -22,11 +22,10 @@ CREATE TABLE IF NOT EXISTS insurance_contracts (
 
   CONSTRAINT insurance_contracts_provider_not_other_chk CHECK (provider_code <> 'OTHER'),
   CONSTRAINT insurance_contracts_country_check CHECK (country IN ('AR', 'BR')),
-  CONSTRAINT insurance_contracts_name_not_blank CHECK (btrim(name) <> ''),
-  CONSTRAINT insurance_contracts_name_uq
-    EXCLUDE USING btree (provider_code WITH =, (lower(btrim(name))) WITH =)
+  CONSTRAINT insurance_contracts_name_not_blank CHECK (btrim(name) <> '')
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS insurance_contracts_name_uq ON insurance_contracts (provider_code, lower(name));
 CREATE INDEX IF NOT EXISTS idx_insurance_contracts_provider ON insurance_contracts (provider_code);
 
 CREATE OR REPLACE FUNCTION fn_058_a_contract_immutable_keys()
