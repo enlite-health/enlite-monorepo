@@ -74,6 +74,12 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
   patient_contract_value: 'Pacientes',
+  // Spec 058 (Parte A): cadastro de obra social, contatos, contratos/termos e a lista de pacientes por obra social.
+  // Escritas de E1/E2/E3 só admin (sem célula nova além destas); o valor-hora/imposto de contrato é `patient_contract_value`.
+  catalog_insurance_providers: 'Administração',
+  insurance_provider_contacts: 'Administração',
+  insurance_contracts: 'Administração',
+  insurance_provider_patients: 'Pacientes',
   // patient_consent_documents (spec 018, PR-4) foi REMOVIDA por completo
   // (fix/018-remover-documentos-consentimento) — documento (prova) e consentimento de imagem
   // saíram; só a foto fica, sob patient_identity:read/write, sem célula própria.
@@ -236,7 +242,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // F8/F9): órfã — coberta por `patient_chat:create`/`update` explícitos nos grupos que a tinham.
   'patient_coverage:read':
     'Ver a COBERTURA médica do paciente: obra social ou plano informado, número de afiliado e a '
-    + 'verificação de cobertura.',
+    + 'verificação de cobertura. Também decide quem vê QUAL obra social e contrato paga cada serviço contratado, '
+    + 'o tipo do pagador (obra social, prepaga ou particular) e se ele coincide com a cobertura verificada.',
   // `patient_coverage:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
   // F8/F9): órfã — coberta por `patient_coverage:create`/`update` explícitos nos grupos que a tinham.
   'patient_address:read':
@@ -398,6 +405,28 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_coverage:create': 'Cadastrar a cobertura do paciente ou um contato de emergência da cobertura novo.',
   'patient_coverage:update': 'Editar a cobertura do paciente ou dar baixa em contato de emergência da cobertura já cadastrado.',
   'patient_services:create': 'Contratar um serviço novo para o paciente.',
+  // ── Spec 058 (Parte A): cadastro de obra social por cartões ──
+  'catalog_insurance_providers:read':
+    'Ver o cadastro das OBRAS SOCIAIS (Dados gerais): nome, razão social, CUIT/CNPJ, endereço, chat de gestão e o tipo do pagador '
+    + '(obra social, prepaga ou particular).',
+  'catalog_insurance_providers:create': 'Cadastrar uma obra social nova no catálogo (vale para o select de todos os pacientes).',
+  'catalog_insurance_providers:update':
+    'Editar os Dados gerais de uma obra social, classificar ou reclassificar o tipo do pagador e aposentar a obra social.',
+  'insurance_provider_contacts:read':
+    'Ver as PESSOAS DE CONTATO da obra social (cartão Empregados): telefone, e-mail e número do documento — dado pessoal de terceiro. '
+    + 'Sem esta célula o contato aparece sem esses campos.',
+  'insurance_provider_contacts:create': 'Cadastrar uma pessoa de contato nova numa obra social.',
+  'insurance_provider_contacts:update': 'Editar ou aposentar uma pessoa de contato já cadastrada numa obra social.',
+  'insurance_contracts:read':
+    'Ver os CONTRATOS de uma obra social (nome, país, abrangência) e a vigência dos termos. O valor-hora só sai com `patient_contract_value:read`; '
+    + 'o imposto em % é visível a quem lê o contrato. Também alimenta a escolha do contrato no serviço contratado.',
+  'insurance_contracts:create': 'Cadastrar um contrato novo numa obra social. Exige também `patient_contract_value:create` (a rota grava o 1º valor-hora e imposto).',
+  'insurance_contracts:update': 'Renomear um contrato ou editar a abrangência dele (país e obra social não mudam).',
+  'patient_contract_value:create':
+    'Registrar o VALOR-HORA e o imposto de um contrato da obra social: contrato novo com o 1º termo, termo novo, reajuste ou correção de termo.',
+  'insurance_provider_patients:read':
+    'Ver quais PACIENTES têm vínculo vigente com uma obra social (nº do caso, serviço contratado e contrato). Lista identificadora: '
+    + 'revela quem tem cobertura naquela obra social.',
   'patient_services:update':
     'Editar serviço contratado já existente, ativar recrutamento e associar/editar prestadores do serviço.',
   'patient_therapeutic_project:create':

@@ -42,6 +42,8 @@ export class AdminPatientContractedServicesController {
     private readonly repo: PatientContractedServiceRepository = new PatientContractedServiceRepository(),
     private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
     private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = new ActivateRecruitmentUseCase(),
+    /** `requestNow` único por requisição (spec 058 §H): é dele que o repositório tira o `asOf` do país do serviço. */
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   private project(req: Request, service: ContractedServiceDetail) {
@@ -60,7 +62,7 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const services = await this.repo.listForPatient(params.data.id, new Date());
+      const services = await this.repo.listForPatient(params.data.id, this.now());
       res.status(200).json({ success: true, data: { services: services.map((s) => this.project(req, s)) } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -83,7 +85,7 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) }, new Date());
+      const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) }, this.now());
       res.status(201).json({ success: true, data: this.project(req, created) });
     } catch (err: unknown) {
       if (err instanceof DeviceTypeUnknownError) {
@@ -115,7 +117,7 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const requestNow = new Date();
+      const requestNow = this.now();
       const existing = await this.repo.findById(params.data.sid, requestNow);
       // Guarda de posse: um :sid válido de OUTRO paciente não pode ser editado por este :id.
       if (!existing || existing.patientId !== params.data.id) {
@@ -212,7 +214,7 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const service = await this.repo.findById(params.data.sid, new Date());
+      const service = await this.repo.findById(params.data.sid, this.now());
       if (!service || service.patientId !== params.data.id) {
         res.status(404).json({ success: false, error: 'Contracted service not found' });
         return;
@@ -249,7 +251,7 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const service = await this.repo.findById(params.data.sid, new Date());
+      const service = await this.repo.findById(params.data.sid, this.now());
       if (!service || service.patientId !== params.data.id) {
         res.status(404).json({ success: false, error: 'Contracted service not found' });
         return;

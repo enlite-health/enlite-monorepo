@@ -113,18 +113,36 @@ export async function termsOfContracts(q: Queryable, contractIds: readonly strin
   return out;
 }
 
+/** Predicado único do "oferecido": o contrato `contractAlias` tem ao menos 1 termo vivo vigente ou futuro em `param` (`$n`, AAAA-MM-DD). */
+export function offeredTermExistsSql(contractAlias: string, param: string): string {
+  return `EXISTS (SELECT 1 FROM insurance_contract_terms ot
+                   WHERE ot.contract_id = ${contractAlias}.id AND ot.superseded_at IS NULL AND ot.valid && daterange(${param}::date, NULL))`;
+}
+
 /** Contratos "oferecidos" do pagador no país: ao menos 1 termo vivo vigente ou futuro (ver cabeçalho). */
 export async function offeredContractsOf(q: Queryable, providerCode: string, country: string, asOf: string): Promise<OfferedContract[]> {
   const { rows } = await q.query<{ id: string; name: string; country: string; scope_description: string | null }>(
     `SELECT c.id, c.name, c.country, c.scope_description
        FROM insurance_contracts c
       WHERE c.provider_code = $1 AND c.country = $2
-        AND EXISTS (SELECT 1 FROM insurance_contract_terms t
-                     WHERE t.contract_id = c.id AND t.superseded_at IS NULL AND t.valid && daterange($3::date, NULL))
+        AND ${offeredTermExistsSql('c', '$3')}
       ORDER BY lower(c.name), c.id`,
     [providerCode, country, asOf],
   );
   return rows.map((r) => ({ id: r.id, name: r.name, country: r.country, scopeDescription: r.scope_description }));
+}
+
+/** Códigos dos pagadores ATIVOS com ao menos 1 contrato "oferecido" no país (cascata do serviço contratado). */
+export async function providersWithOfferedContract(q: Queryable, country: string, asOf: string): Promise<string[]> {
+  const { rows } = await q.query<{ code: string }>(
+    `SELECT p.code
+       FROM insurance_providers p
+      WHERE p.active
+        AND EXISTS (SELECT 1 FROM insurance_contracts c WHERE c.provider_code = p.code AND c.country = $1 AND ${offeredTermExistsSql('c', '$2')})
+      ORDER BY p.sort_order, p.code`,
+    [country, asOf],
+  );
+  return rows.map((r) => r.code);
 }
 
 /** Quantos termos vivos começam depois de `asOf`, por contrato, em LOTE. Todo id pedido aparece (0 = nenhum). */
