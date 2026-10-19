@@ -18,6 +18,8 @@ import type { EmergencyMarkTarget } from './PatientEmergencyMarkRepository';
 import { reportError } from '@shared/logging';
 import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
+import { operationDateOf } from '@shared/locale/operationDate';
+import { buildCoverage, coverageEntriesSql, type CoverageEntry } from './patientCoverageRead';
 import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 const PATIENT_DETAIL_SQL = `
@@ -83,7 +85,6 @@ const PATIENT_DETAIL_SQL = `
     -- mover a escrita para lá faria o próximo webhook apagá-la. A ficha lê as
     -- duas; a coluna de origem (ClickUp) tem precedência quando existe.
     COALESCE(p.insurance_informed, p.health_insurance_name) AS "insuranceInformed",
-    insurance_verified       AS "insuranceVerified",
     city_locality            AS "cityLocality",
     province,
     zone_neighborhood        AS "zoneNeighborhood",
@@ -108,18 +109,10 @@ const PATIENT_DETAIL_SQL = `
                         JOIN insurance_providers ip ON ip.code = piv.provider_code
                        WHERE piv.patient_id = p.id AND piv.provider_code IS NOT NULL) x), '{}'::text[])
                              AS "insuranceVerifiedCodes",
-    -- QA 3 (SUP-B5): a MESMA união, com source -- o drawer usa para travar o chip do ClickUp
-    -- (não removível ali) e restringir o multi-select ao que o painel gravou. DISTINCT
-    -- (provider_code, source) colapsa 2 raw_labels da MESMA origem que mapeiam pro mesmo
-    -- código; a mesma cobertura em origens diferentes vira 2 entradas (é o par que a tela precisa
-    -- distinguir).
-    COALESCE((SELECT jsonb_agg(jsonb_build_object('code', x.provider_code, 'source', x.source)
-                                ORDER BY x.sort_order, x.provider_code, x.source)
-                FROM (SELECT DISTINCT piv.provider_code, piv.source, ip.sort_order
-                        FROM patient_insurance_verified piv
-                        JOIN insurance_providers ip ON ip.code = piv.provider_code
-                       WHERE piv.patient_id = p.id AND piv.provider_code IS NOT NULL) x), '[]'::jsonb)
-                             AS "insuranceVerifiedEntries",
+    -- Spec 058 §C: as coberturas verificadas COM nome do catálogo, origem e mapped (rótulo sem código entra com mapped:false). A
+    -- ficha monta coverage e a divergência dos serviços a partir DESTA coluna -- uma leitura só (dono: coverageEntriesSql).
+    ${coverageEntriesSql('p.id')}
+                             AS "coverageEntries",
     -- Hotfix gate-cobertura-verificada-vacante (28/09): mesmo critério "provider ativo" que
     -- ActivateRecruitmentUseCase usa no gate real — o checklist da tela não pode divergir do 422.
     EXISTS (SELECT 1 FROM patient_insurance_verified piv
@@ -325,11 +318,15 @@ export async function fetchPatientDetail(
    * ele (mesma regra da C3 de prestador). Default = tudo (engine não decidiu → como antes).
    */
   reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
+  /** Instante da requisição, capturado UMA vez por `GetPatientByIdUseCase.execute`: dele sai o `asOf` (dia de operação do país do paciente). */
+  requestNow: Date = new Date(),
 ): Promise<PatientDetailRow | null> {
   const patientResult = await pool.query(PATIENT_DETAIL_SQL, [id]);
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
+  const asOf = operationDateOf(p.country, requestNow);
+  const coverageEntries: CoverageEntry[] = p.coverageEntries ?? [];
   const [responsibleRows, addressRows, professionalRows, externalContactRows, vacancyRows, contractedServiceRows, coverageContactRows] = await fetchRelated(pool, id, encryptionService);
 
   const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
@@ -353,7 +350,7 @@ export async function fetchPatientDetail(
     // decifra o e-mail de contato acima.
     reads.identity && p.genderEncrypted ? encryptionService.decrypt(p.genderEncrypted) : Promise.resolve(null),
     reads.identity && p.languagesEncrypted ? encryptionService.decrypt(p.languagesEncrypted) : Promise.resolve(null),
-    reads.services ? mapContractedServices(contractedServiceRows.rows, pool, encryptionService) : Promise.resolve([]),
+    reads.services ? mapContractedServices(contractedServiceRows.rows, pool, encryptionService, asOf, coverageEntries) : Promise.resolve([]),
     // 417 (D301): mesma régua dos responsáveis — sem a célula do container, o KMS não roda. lex C3: o
     // profissional direto é o MESMO dado da equipe tratante (`patient_care_team`): só sai (e só decifra)
     // quando o ator lê os DOIS containers — cobertura e equipe.
@@ -426,7 +423,6 @@ export async function fetchPatientDetail(
     hasCud: p.hasCud,
     hasConsent: p.hasConsent,
     insuranceInformed: p.insuranceInformed,
-    insuranceVerified: p.insuranceVerified,
     cityLocality: p.cityLocality,
     province: p.province,
     zoneNeighborhood: p.zoneNeighborhood,
@@ -439,7 +435,7 @@ export async function fetchPatientDetail(
     onHoldNote: p.onHoldNote ?? null,
     serviceStartDate: p.serviceStartDate ?? null,
     insuranceVerifiedCodes: p.insuranceVerifiedCodes ?? [],
-    insuranceVerifiedEntries: p.insuranceVerifiedEntries ?? [],
+    coverage: buildCoverage({ informed: p.insuranceInformed, entries: coverageEntries }),
     hasVerifiedActiveCoverage: p.hasVerifiedActiveCoverage ?? false,
     deviceTypes: p.deviceTypes ?? [],
     needsAttention: p.needsAttention,

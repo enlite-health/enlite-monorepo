@@ -378,7 +378,11 @@ export class PatientQueryRepository {
   }
 
   /** Full patient detail with decrypted PII. Delegates to PatientDetailQueryHelper. */
-  async findDetailById(id: string, reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE): Promise<PatientDetailRow | null> {
-    return fetchPatientDetail(this.pool, this.encryptionService, id, reads);
+  async findDetailById(
+    id: string,
+    reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
+    requestNow: Date = new Date(),
+  ): Promise<PatientDetailRow | null> {
+    return fetchPatientDetail(this.pool, this.encryptionService, id, reads, requestNow);
   }
 }

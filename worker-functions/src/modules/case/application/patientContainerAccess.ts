@@ -100,7 +100,7 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
   // externalContacts/emergencyContactRef: spec 018, PR-2 (contatos externos + marca de emergência).
   family: ['responsibles', 'phoneMatchesResponsible', 'externalContacts', 'emergencyContactRef'],
   chat: ['chatIds', 'familyChatId', 'providersChatId'],
-  coverage: ['affiliateId', 'insuranceInformed', 'insuranceVerified', 'insuranceVerifiedCodes', 'insuranceVerifiedEntries', 'coverageEmergencyContacts', 'coverageDirectProfessionalRedacted', 'coverageEmergencyContactsUnavailable'],
+  coverage: ['affiliateId', 'insuranceInformed', 'insuranceVerifiedCodes', 'coverage', 'coverageEmergencyContacts', 'coverageDirectProfessionalRedacted', 'coverageEmergencyContactsUnavailable'],
   address: ['addresses', 'cityLocality', 'province', 'zoneNeighborhood'],
   services: ['contractedServices', 'serviceType', 'serviceStartDate'],
   // Nenhum campo na ficha: as versões saem pela rota própria. O marcador `redacted.therapeuticProject`

@@ -14,6 +14,9 @@ import {
 } from '../PatientContractedServiceRepository';
 import type { ContractedServiceProviderRepository } from '../ContractedServiceProviderRepository';
 
+/** O relógio da requisição (asOf do serviço AR = 2026-09-03). */
+const NOW = new Date('2026-09-03T15:00:00Z');
+
 const SERVICE_ROW = {
   id: 'svc-1', patient_id: 'pat-1', service_code: 'AT', professional_profile: null, providers_needed: 2,
   authorized_hours: '20', weekly_hours: '20', care_location: 'HOME', hourly_value: '1500', start_date: null,
@@ -68,7 +71,7 @@ describe('PatientContractedServiceRepository.update — refuseClear (F2)', () =>
     const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const err = await repo.update('svc-1', { schedule, actorUid: 'u-1' }).catch((e) => e);
+    const err = await repo.update('svc-1', { schedule, actorUid: 'u-1' }, NOW).catch((e) => e);
     expect(err).toBeInstanceOf(ServiceFieldRequiredByLiveVacancyError);
     expect(err).toMatchObject({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', field: 'schedule', vacancyIds: ['vac-1'] });
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(false);
@@ -84,7 +87,7 @@ describe('PatientContractedServiceRepository.update — refuseClear (F2)', () =>
     const { cli, chamadas } = cliente([]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { schedule: null, actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { schedule: null, actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
   });
@@ -93,7 +96,7 @@ describe('PatientContractedServiceRepository.update — refuseClear (F2)', () =>
     const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { schedule: [SLOT], actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { schedule: [SLOT], actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
@@ -103,14 +106,14 @@ describe('PatientContractedServiceRepository.update — refuseClear (F2)', () =>
     const viva = cliente([{ id: 'vac-9' }], null);
     mockConnect.mockResolvedValue(viva.cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const err = await repo.update('svc-1', { schedule: [], actorUid: 'u-1' }).catch((e) => e);
+    const err = await repo.update('svc-1', { schedule: [], actorUid: 'u-1' }, NOW).catch((e) => e);
     expect(err).toBeInstanceOf(ServiceFieldRequiredByLiveVacancyError);
     expect(err).toMatchObject({ field: 'schedule', vacancyIds: ['vac-9'] });
     expect(viva.chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(false);
 
     const livre = cliente([], null);
     mockConnect.mockResolvedValue(livre.cli);
-    const out = await repo.update('svc-1', { schedule: [], actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { schedule: [], actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(livre.chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
   });
@@ -126,7 +129,7 @@ describe('PatientContractedServiceRepository.update — só recusa o que realmen
     const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, null, { ...ATUAL, required_experience: null });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { requiredExperience: null, actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { requiredExperience: null, actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
@@ -136,7 +139,7 @@ describe('PatientContractedServiceRepository.update — só recusa o que realmen
     const { cli } = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const err = await repo.update('svc-1', { requiredExperience: null, actorUid: 'u-1' }).catch((e) => e);
+    const err = await repo.update('svc-1', { requiredExperience: null, actorUid: 'u-1' }, NOW).catch((e) => e);
     expect(err).toBeInstanceOf(ServiceFieldRequiredByLiveVacancyError);
     expect(err).toMatchObject({ field: 'required_experience', vacancyIds: ['vac-1'] });
   });
@@ -145,7 +148,7 @@ describe('PatientContractedServiceRepository.update — só recusa o que realmen
     const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, null, { ...ATUAL, required_professions: atualProf });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { requiredProfessions: [], actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { requiredProfessions: [], actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
   });
@@ -164,7 +167,7 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const err = await repo.update('svc-1', { providersNeeded, actorUid: 'u-1' }).catch((e) => e);
+    const err = await repo.update('svc-1', { providersNeeded, actorUid: 'u-1' }, NOW).catch((e) => e);
     expect(err).toBeInstanceOf(ServiceFieldRequiredByLiveVacancyError);
     expect(err).toMatchObject({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', field: 'providers_needed', vacancyIds: ['vac-1'] });
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(false);
@@ -175,7 +178,7 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     const { cli, chamadas } = cliente([]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { providersNeeded: null, actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { providersNeeded: null, actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
   });
@@ -184,7 +187,7 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { providersNeeded: 3, actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { providersNeeded: 3, actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
     const avisos = (cli.query as jest.Mock).mock.calls.filter((c) => /^INSERT INTO vacancy_source_change_notices/.test(String(c[0]).trim()));
@@ -196,12 +199,12 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     const igual = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(igual.cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { providersNeeded: 2, actorUid: 'u-1' });
+    await repo.update('svc-1', { providersNeeded: 2, actorUid: 'u-1' }, NOW);
     expect(igual.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
 
     const semCampo = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(semCampo.cli);
-    await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' });
+    await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' }, NOW);
     expect(semCampo.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
     expect(semCampo.chamadas.some((c) => c.startsWith('SELECT providers_needed FROM'))).toBe(false);
   });
@@ -209,7 +212,7 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, 'AGE_20_30');
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    expect(await repo.update('svc-1', { providerAgeBand: 'AGE_30_45', actorUid: 'u-1' })).not.toBeNull();
+    expect(await repo.update('svc-1', { providerAgeBand: 'AGE_30_45', actorUid: 'u-1' }, NOW)).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
     const avisos = (cli.query as jest.Mock).mock.calls.filter((c) => /^INSERT INTO vacancy_source_change_notices/.test(String(c[0]).trim()));
     expect(avisos).toHaveLength(1);
@@ -220,7 +223,7 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, 'AGE_45_PLUS');
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    expect(await repo.update('svc-1', { providerAgeBand: null, actorUid: 'u-1' })).not.toBeNull();
+    expect(await repo.update('svc-1', { providerAgeBand: null, actorUid: 'u-1' }, NOW)).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false); // nenhuma consulta de recusa
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
     expect(chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(true);
@@ -230,17 +233,17 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     const mesma = cliente([{ id: 'vac-1' }], 1, 'AGE_30_45');
     mockConnect.mockResolvedValue(mesma.cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { providerAgeBand: 'AGE_30_45', actorUid: 'u-1' });
+    await repo.update('svc-1', { providerAgeBand: 'AGE_30_45', actorUid: 'u-1' }, NOW);
     expect(mesma.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
 
     const nulaParaAny = cliente([{ id: 'vac-1' }], 1, null);
     mockConnect.mockResolvedValue(nulaParaAny.cli);
-    await repo.update('svc-1', { providerAgeBand: 'ANY', actorUid: 'u-1' });
+    await repo.update('svc-1', { providerAgeBand: 'ANY', actorUid: 'u-1' }, NOW);
     expect(nulaParaAny.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
 
     const semCampo = cliente([{ id: 'vac-1' }], 1, 'AGE_30_45');
     mockConnect.mockResolvedValue(semCampo.cli);
-    await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' });
+    await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' }, NOW);
     expect(semCampo.chamadas.some((c) => c.startsWith('SELECT provider_age_band FROM'))).toBe(false);
   });
 });
@@ -263,7 +266,7 @@ describe('PatientContractedServiceRepository.update — os 5 campos de recrutame
     const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const err = await repo.update('svc-1', { ...patch, actorUid: 'u-1' }).catch((e) => e);
+    const err = await repo.update('svc-1', { ...patch, actorUid: 'u-1' }, NOW).catch((e) => e);
     expect(err).toBeInstanceOf(ServiceFieldRequiredByLiveVacancyError);
     expect(err).toMatchObject({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', field, vacancyIds: ['vac-1'] });
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(false);
@@ -273,7 +276,7 @@ describe('PatientContractedServiceRepository.update — os 5 campos de recrutame
     const { cli, chamadas } = cliente([]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { ...patch, actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { ...patch, actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
   });
@@ -282,7 +285,7 @@ describe('PatientContractedServiceRepository.update — os 5 campos de recrutame
     const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { requiredSex: 'BOTH', actorUid: 'u-1' });
+    const out = await repo.update('svc-1', { requiredSex: 'BOTH', actorUid: 'u-1' }, NOW);
     expect(out).not.toBeNull();
     expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
     expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);

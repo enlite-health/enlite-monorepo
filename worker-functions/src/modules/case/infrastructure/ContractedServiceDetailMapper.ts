@@ -2,6 +2,9 @@ import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { ContractedServiceDetail } from './PatientContractedServiceRepository';
 import { fetchLiveVacancies } from './liveVacancyOfService';
+import { batchEntry, derivePayerCoverageMatch, payerAtMany, payerHistoryMany } from './contractedServicePayerRead';
+import { priceStateMany } from './contractedServicePriceRead';
+import type { CoverageEntry } from './patientCoverageRead';
 
 /**
  * ContractedServiceDetailMapper — a SUBÁRVORE de serviços contratados da ficha do paciente.
@@ -13,12 +16,26 @@ import { fetchLiveVacancies } from './liveVacancyOfService';
  *
  * Responsabilidade única: dado o conjunto de linhas de `patient_contracted_services`, buscar
  * os filhos (`contracted_service_devices`, `contracted_service_providers`) e devolver o shape
- * decorado. `hourlyValue` sai CRU daqui — a redação por papel (lex C-c.4) é do controller.
+ * decorado. Preço, nomes do pagador e divergência saem CRUS daqui — a redação por ator (lex C-c.4, spec 058 §0) é de
+ * `projectContractedServiceForActor`.
+ *
+ * Spec 058 (D-44): `payer`/`payerHistory`/`price`/`tax`/`coverageMatch` saem das MESMAS funções em lote que o `decorate` da rota
+ * (`PatientContractedServiceRepository`) chama — `payerAtMany`, `payerHistoryMany`, `priceStateMany`, `derivePayerCoverageMatch` —
+ * com o `asOf` da ficha: +3 queries por ficha, qualquer que seja o nº de serviços.
  */
 
-async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) {
-  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[], liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>> };
-  const [devices, providers, liveVacancies] = await Promise.all([
+async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[], asOf: string) {
+  if (serviceIds.length === 0) {
+    return {
+        devices: [] as any[],
+        providers: [] as any[],
+        liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>>,
+        payers: new Map() as Awaited<ReturnType<typeof payerAtMany>>,
+        histories: new Map() as Awaited<ReturnType<typeof payerHistoryMany>>,
+        prices: new Map() as Awaited<ReturnType<typeof priceStateMany>>,
+    };
+  }
+  const [devices, providers, liveVacancies, payers, histories, prices] = await Promise.all([
     pool.query(
       `SELECT csd.service_id, csd.device_type
          FROM contracted_service_devices csd
@@ -39,17 +56,24 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) 
     ),
     // Spec 018 PR-6 / spec 047 F2: a vaga viva do serviço (id + código + estado + link) — dono: `fetchLiveVacancies`.
     fetchLiveVacancies(pool, serviceIds),
+    payerAtMany(pool, serviceIds, asOf),
+    payerHistoryMany(pool, serviceIds),
+    priceStateMany(pool, serviceIds, asOf),
   ]);
-  return { devices: devices.rows, providers: providers.rows, liveVacancies };
+  return { devices: devices.rows, providers: providers.rows, liveVacancies, payers, histories, prices };
 }
 
 export async function mapContractedServices(
   serviceRows: any[],
   pool: Pool,
   enc: KMSEncryptionService,
+  /** Dia de operação do país do paciente (`operationDateOf(patient.country, requestNow)`). */
+  asOf: string,
+  /** As coberturas verificadas do paciente, já montadas pela ficha (`coverageEntriesSql`): alimentam a divergência sem query a mais. */
+  coverageEntries: readonly CoverageEntry[],
 ): Promise<ContractedServiceDetail[]> {
   const ids = serviceRows.map((r) => r.id);
-  const { devices, providers, liveVacancies } = await fetchContractedServiceChildren(pool, ids);
+  const { devices, providers, liveVacancies, payers, histories, prices } = await fetchContractedServiceChildren(pool, ids, asOf);
   const decryptedProviders = await Promise.all(
     providers.map(async (p) => {
       const [first, last] = await Promise.all([enc.decrypt(p.first_name_encrypted ?? ''), enc.decrypt(p.last_name_encrypted ?? '')]);
@@ -68,7 +92,10 @@ export async function mapContractedServices(
       };
     }),
   );
-  return serviceRows.map((r) => ({
+  return serviceRows.map((r) => {
+    const payer = batchEntry(payers, r.id);
+    const priceTax = batchEntry(prices, r.id);
+    return {
     id: r.id,
     patientId: r.patient_id,
     serviceCode: r.service_code,
@@ -77,10 +104,7 @@ export async function mapContractedServices(
     authorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
     weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
     careLocation: r.care_location,
-    hourlyValue: r.hourly_value != null ? Number(r.hourly_value) : null,
     startDate: r.start_date,
-    contractType: r.contract_type,
-    taxCondition: r.tax_condition,
     supervisionFrequency: r.supervision_frequency,
     guardShift: r.guard_shift,
     // Spec 015 (US-A6.1, migration 322): franja etária solicitada do prestador. `SELECT *`
@@ -104,7 +128,14 @@ export async function mapContractedServices(
     country: r.country,
     deviceTypes: devices.filter((d) => d.service_id === r.id).map((d) => d.device_type),
     providers: decryptedProviders.filter((p) => p.serviceId === r.id),
+    asOf,
+    payer,
+    payerHistory: batchEntry(histories, r.id),
+    price: priceTax.price,
+    tax: priceTax.tax,
+    coverageMatch: derivePayerCoverageMatch(payer, coverageEntries),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-  }));
+    };
+  });
 }

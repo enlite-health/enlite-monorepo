@@ -13,6 +13,9 @@ import { PatientContractedServiceRepository, AddressNotOfPatientError } from '..
 import { DeviceTypeUnknownError } from '../PatientDeviceTypeRepository';
 import type { ContractedServiceProviderRepository } from '../ContractedServiceProviderRepository';
 
+/** O relógio da requisição (asOf do serviço AR = 2026-09-03). */
+const NOW = new Date('2026-09-03T15:00:00Z');
+
 const SERVICE_ROW = {
   id: 'svc-1',
   patient_id: 'pat-1',
@@ -79,11 +82,10 @@ describe('PatientContractedServiceRepository', () => {
       providersNeeded: 2,
       weeklyHours: 20,
       careLocation: 'HOME',
-      hourlyValue: 1500,
       country: 'AR',
       deviceTypeCodes: ['HOME'],
       actorUid: 'uid-1',
-    });
+    }, NOW);
     expect(out.id).toBe('svc-1');
     expect(out.serviceCode).toBe('AT');
     expect(out.deviceTypes).toEqual([]); // a query de devices está mockada vazia neste teste
@@ -100,7 +102,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', actorUid: 'uid-1' });
+    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', actorUid: 'uid-1' }, NOW);
     const ins = chamadas.find((c) => /^INSERT INTO patient_contracted_services/.test(c.sql));
     expect(ins?.sql).not.toContain('country');
   });
@@ -110,7 +112,7 @@ describe('PatientContractedServiceRepository', () => {
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
     await expect(
-      repo.create({ patientId: 'pat-1', serviceCode: 'AT', deviceTypeCodes: ['NAO_EXISTE'], actorUid: 'uid-1' }),
+      repo.create({ patientId: 'pat-1', serviceCode: 'AT', deviceTypeCodes: ['NAO_EXISTE'], actorUid: 'uid-1' }, NOW),
     ).rejects.toBeInstanceOf(DeviceTypeUnknownError);
     expect(chamadas[chamadas.length - 1].sql).toBe('ROLLBACK');
   });
@@ -121,7 +123,7 @@ describe('PatientContractedServiceRepository', () => {
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
     const schedule = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
-    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', addressId: 'addr-1', schedule, actorUid: 'uid-1' });
+    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', addressId: 'addr-1', schedule, actorUid: 'uid-1' }, NOW);
     const ins = chamadas.find((c) => /^INSERT INTO patient_contracted_services/.test(c.sql))!;
     expect(ins.sql).toMatch(/address_id/);
     expect(ins.sql).toMatch(/schedule/);
@@ -134,7 +136,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { schedule: null, addressId: null, actorUid: 'uid-1' });
+    await repo.update('svc-1', { schedule: null, addressId: null, actorUid: 'uid-1' }, NOW);
     const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql))!;
     expect(upd.sql).toMatch(/address_id = \$2/);
     expect(upd.sql).toMatch(/schedule = \$3/);
@@ -154,8 +156,8 @@ describe('PatientContractedServiceRepository', () => {
       mockConnect.mockResolvedValue(cli);
       const repo = new PatientContractedServiceRepository(fakeProviderRepo());
       const run = op === 'create'
-        ? repo.create({ patientId: 'pat-1', serviceCode: 'AT', addressId: 'addr-alheio', actorUid: 'uid-1' })
-        : repo.update('svc-1', { addressId: 'addr-alheio', actorUid: 'uid-1' });
+        ? repo.create({ patientId: 'pat-1', serviceCode: 'AT', addressId: 'addr-alheio', actorUid: 'uid-1' }, NOW)
+        : repo.update('svc-1', { addressId: 'addr-alheio', actorUid: 'uid-1' }, NOW);
       const err = await run.catch((e) => e);
       expect(err).toBeInstanceOf(AddressNotOfPatientError);
       expect((err as AddressNotOfPatientError).code).toBe('ADDRESS_NOT_OF_PATIENT');
@@ -174,7 +176,7 @@ describe('PatientContractedServiceRepository', () => {
     });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await expect(repo.update('svc-1', { addressId: 'x', actorUid: 'uid-1' })).rejects.toBe(other);
+    await expect(repo.update('svc-1', { addressId: 'x', actorUid: 'uid-1' }, NOW)).rejects.toBe(other);
   });
 
   it('create: erro genérico → propaga, ROLLBACK', async () => {
@@ -183,14 +185,14 @@ describe('PatientContractedServiceRepository', () => {
       .mockImplementationOnce(async () => { throw new Error('boom'); });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await expect(repo.create({ patientId: 'pat-1', serviceCode: 'AT', actorUid: 'uid-1' })).rejects.toThrow('boom');
+    await expect(repo.create({ patientId: 'pat-1', serviceCode: 'AT', actorUid: 'uid-1' }, NOW)).rejects.toThrow('boom');
   });
 
   it('update: Merge Patch parcial — só os campos presentes entram no SET', async () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-1', { weeklyHours: 25, actorUid: 'uid-2' });
+    const out = await repo.update('svc-1', { weeklyHours: 25, actorUid: 'uid-2' }, NOW);
     expect(out?.id).toBe('svc-1');
     const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql));
     expect(upd?.sql).toContain('weekly_hours');
@@ -202,7 +204,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { active: false, actorUid: 'uid-2' });
+    await repo.update('svc-1', { active: false, actorUid: 'uid-2' }, NOW);
     const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql));
     expect(upd?.sql).toContain('ended_at = NOW()');
   });
@@ -211,7 +213,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { active: true, actorUid: 'uid-2' });
+    await repo.update('svc-1', { active: true, actorUid: 'uid-2' }, NOW);
     const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql));
     expect(upd?.sql).toContain('ended_at = NULL');
   });
@@ -227,7 +229,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { active: false, actorUid: 'uid-2' });
+    await repo.update('svc-1', { active: false, actorUid: 'uid-2' }, NOW);
     const jobUpd = chamadas.find((c) => /^UPDATE job_postings/.test(c.sql));
     expect(jobUpd).toBeDefined();
     expect(jobUpd?.sql).toContain('status_before_baja = status');
@@ -245,7 +247,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { active: true, actorUid: 'uid-2' });
+    await repo.update('svc-1', { active: true, actorUid: 'uid-2' }, NOW);
     const jobUpd = chamadas.find((c) => /^UPDATE job_postings/.test(c.sql));
     expect(jobUpd).toBeDefined();
     expect(jobUpd?.sql).toContain(`status = COALESCE(status_before_baja, 'SEARCHING')`);
@@ -259,7 +261,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { weeklyHours: 30, actorUid: 'uid-2' });
+    await repo.update('svc-1', { weeklyHours: 30, actorUid: 'uid-2' }, NOW);
     const jobUpd = chamadas.find((c) => /^UPDATE job_postings/.test(c.sql));
     expect(jobUpd).toBeUndefined();
   });
@@ -268,7 +270,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { deviceTypeCodes: ['HOME', 'SCHOOL'], actorUid: 'uid-2' });
+    await repo.update('svc-1', { deviceTypeCodes: ['HOME', 'SCHOOL'], actorUid: 'uid-2' }, NOW);
     expect(chamadas.some((c) => /^DELETE FROM contracted_service_devices/.test(c.sql))).toBe(true);
     expect(chamadas.filter((c) => /^INSERT INTO contracted_service_devices/.test(c.sql))).toHaveLength(2);
   });
@@ -277,7 +279,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli } = cliente({ updateRowCount: 0 });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.update('svc-inexistente', { weeklyHours: 1, actorUid: 'uid-2' });
+    const out = await repo.update('svc-inexistente', { weeklyHours: 1, actorUid: 'uid-2' }, NOW);
     expect(out).toBeNull();
   });
 
@@ -285,7 +287,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { actorUid: 'uid-2' });
+    await repo.update('svc-1', { actorUid: 'uid-2' }, NOW);
     expect(chamadas.some((c) => /^UPDATE patient_contracted_services SET/.test(c.sql))).toBe(false);
   });
 
@@ -294,10 +296,12 @@ describe('PatientContractedServiceRepository', () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [] }); // devices (decorate)
     const providerRepo = fakeProviderRepo();
     const repo = new PatientContractedServiceRepository(providerRepo);
-    const out = await repo.listForPatient('pat-1');
+    const out = await repo.listForPatient('pat-1', NOW);
     expect(out).toHaveLength(1);
     expect(out[0].weeklyHours).toBe(20);
-    expect(out[0].hourlyValue).toBe(1500);
+    // Spec 058: sem vínculo -> NO_CONTRACT, sem preço (o legado `hourlyValue` saiu do contrato).
+    expect(out[0]).toMatchObject({ asOf: '2026-09-03', payer: { state: 'NO_CONTRACT' }, price: { state: 'NO_CONTRACT' }, tax: { state: 'NO_CONTRACT' }, coverageMatch: { state: 'NO_PAYER' } });
+    expect(out[0]).not.toHaveProperty('hourlyValue');
     expect(providerRepo.listForService).toHaveBeenCalledWith('svc-1');
   });
 
@@ -308,27 +312,27 @@ describe('PatientContractedServiceRepository', () => {
       rows: [{ contracted_service_id: 'svc-1', id: 'vac-1', case_number: 77, case_ordinal: 3, status: 'DRAFT' }],
     }); // fetchLiveVacancies
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const [com] = await repo.listForPatient('pat-1');
+    const [com] = await repo.listForPatient('pat-1', NOW);
     expect(com.liveVacancy).toEqual({ id: 'vac-1', caseNumber: 77, caseOrdinal: 3, status: 'DRAFT' });
 
     mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] });
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-    const [sem] = await repo.listForPatient('pat-1');
+    const [sem] = await repo.listForPatient('pat-1', NOW);
     expect(sem.liveVacancy).toBeNull();
   });
 
   it('findById: sem linha → null', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    expect(await repo.findById('nope')).toBeNull();
+    expect(await repo.findById('nope', NOW)).toBeNull();
   });
 
   it('findById: com linha → decorado', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] }); // main
     mockPoolQuery.mockResolvedValueOnce({ rows: [] }); // devices (decorate)
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.findById('svc-1');
+    const out = await repo.findById('svc-1', NOW);
     expect(out?.id).toBe('svc-1');
   });
 
@@ -336,7 +340,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente({ service: { ...SERVICE_ROW, provider_age_band: 'AGE_30_45' } });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.create({ patientId: 'pat-1', serviceCode: 'AT', providerAgeBand: 'AGE_30_45', actorUid: 'uid-1' });
+    const out = await repo.create({ patientId: 'pat-1', serviceCode: 'AT', providerAgeBand: 'AGE_30_45', actorUid: 'uid-1' }, NOW);
     const ins = chamadas.find((c) => /^INSERT INTO patient_contracted_services/.test(c.sql));
     expect(ins?.sql).toContain('provider_age_band');
     expect(ins?.params).toContain('AGE_30_45');
@@ -347,7 +351,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { providerAgeBand: 'ANY', actorUid: 'uid-2' });
+    await repo.update('svc-1', { providerAgeBand: 'ANY', actorUid: 'uid-2' }, NOW);
     const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql));
     expect(upd?.sql).toContain('provider_age_band');
   });
@@ -356,7 +360,7 @@ describe('PatientContractedServiceRepository', () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] });
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.listForPatient('pat-1');
+    const out = await repo.listForPatient('pat-1', NOW);
     expect(out[0].providerAgeBand).toBeNull();
   });
 
@@ -364,7 +368,7 @@ describe('PatientContractedServiceRepository', () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] }); // main
     mockPoolQuery.mockResolvedValueOnce({ rows: [{ device_type: 'HOME' }, { device_type: 'SCHOOL' }] }); // devices (decorate)
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const [svc] = await repo.listForPatient('pat-1');
+    const [svc] = await repo.listForPatient('pat-1', NOW);
     expect(svc.deviceTypes).toEqual(['HOME', 'SCHOOL']);
   });
 
@@ -379,7 +383,7 @@ describe('PatientContractedServiceRepository', () => {
     sobrescreve(cli, /^UPDATE patient_contracted_services SET/, async () => ({ rows: [], rowCount: null }));
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    expect(await repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' })).toBeNull();
+    expect(await repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' }, NOW)).toBeNull();
     expect(chamadas.some((c) => c.sql.trim() === 'ROLLBACK')).toBe(true);
   });
 
@@ -388,7 +392,7 @@ describe('PatientContractedServiceRepository', () => {
     sobrescreve(cli, /^SELECT \* FROM patient_contracted_services WHERE id/, async () => ({ rows: [], rowCount: 0 }));
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    expect(await repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' })).toBeNull();
+    expect(await repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' }, NOW)).toBeNull();
   });
 
   it('update: erro genérico → ROLLBACK e propaga', async () => {
@@ -396,7 +400,7 @@ describe('PatientContractedServiceRepository', () => {
     sobrescreve(cli, /^UPDATE patient_contracted_services SET/, async () => { throw new Error('boom-update'); });
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await expect(repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' })).rejects.toThrow('boom-update');
+    await expect(repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' }, NOW)).rejects.toThrow('boom-update');
     expect(chamadas.some((c) => c.sql.trim() === 'ROLLBACK')).toBe(true);
     expect(cli.release).toHaveBeenCalled();
   });
@@ -404,17 +408,17 @@ describe('PatientContractedServiceRepository', () => {
   it('construtor padrão (providerRepo real) e pool memoizado entre chamadas', async () => {
     const repo = new PatientContractedServiceRepository();
     mockPoolQuery.mockResolvedValue({ rows: [] });
-    expect(await repo.findById('svc-x')).toBeNull();
-    expect(await repo.findById('svc-y')).toBeNull();
+    expect(await repo.findById('svc-x', NOW)).toBeNull();
+    expect(await repo.findById('svc-y', NOW)).toBeNull();
     expect(mockPoolQuery).toHaveBeenCalledTimes(2);
   });
 
-  it('listForPatient: authorizedHours/weeklyHours/hourlyValue nulos permanecem null (não 0)', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ ...SERVICE_ROW, authorized_hours: null, weekly_hours: null, hourly_value: null }] });
+  it('listForPatient: authorizedHours/weeklyHours nulos permanecem null (não 0)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [{ ...SERVICE_ROW, authorized_hours: null, weekly_hours: null }] });
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.listForPatient('pat-1');
-    expect(out[0]).toMatchObject({ authorizedHours: null, weeklyHours: null, hourlyValue: null });
+    const out = await repo.listForPatient('pat-1', NOW);
+    expect(out[0]).toMatchObject({ authorizedHours: null, weeklyHours: null });
   });
 
   it('update: erro genérico durante o UPDATE → propaga, ROLLBACK, client liberado', async () => {
@@ -424,7 +428,7 @@ describe('PatientContractedServiceRepository', () => {
       .mockImplementationOnce(async () => { throw new Error('boom-update'); }); // UPDATE
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await expect(repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' })).rejects.toThrow('boom-update');
+    await expect(repo.update('svc-1', { weeklyHours: 1, actorUid: 'uid-2' }, NOW)).rejects.toThrow('boom-update');
     expect(cli.release).toHaveBeenCalled();
   });
 
@@ -432,7 +436,7 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { deviceTypeCodes: [], actorUid: 'uid-2' });
+    await repo.update('svc-1', { deviceTypeCodes: [], actorUid: 'uid-2' }, NOW);
     expect(chamadas.some((c) => /^SELECT code FROM device_types WHERE active/.test(c.sql))).toBe(false);
     expect(chamadas.some((c) => /^DELETE FROM contracted_service_devices/.test(c.sql))).toBe(true);
   });

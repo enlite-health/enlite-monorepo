@@ -36,7 +36,7 @@ interface Ctx { patientId: string; serviceId: string; vacancyIds: string[] }
 
 const repo = () => new PatientContractedServiceRepository({ listForService: async () => [] } as never);
 const patchSchedule = (ctx: Ctx, schedule: unknown) =>
-  repo().update(ctx.serviceId, { schedule: schedule as never, actorUid: UID });
+  repo().update(ctx.serviceId, { schedule: schedule as never, actorUid: UID }, new Date());
 
 function mockRes() {
   const res: { statusCode: number; body: unknown; status: (c: number) => typeof res; json: (b: unknown) => typeof res } = {
@@ -281,13 +281,13 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
 
   it('PATCH sem o campo schedule (ex.: só weeklyHours) = 0 aviso', async () => {
     const ctx = await seed([{}]);
-    await repo().update(ctx.serviceId, { weeklyHours: 12, actorUid: UID } as never);
+    await repo().update(ctx.serviceId, { weeklyHours: 12, actorUid: UID } as never, new Date());
     expect((await notices()).rows).toHaveLength(0);
   });
 
   describe('F5 — quantidade de prestadores (providers_needed)', () => {
     const patchProviders = (ctx: Ctx, providersNeeded: number | null) =>
-      repo().update(ctx.serviceId, { providersNeeded, actorUid: UID } as never);
+      repo().update(ctx.serviceId, { providersNeeded, actorUid: UID } as never, new Date());
     const providersOf = async (serviceId: string) =>
       (await admin.query(`SELECT providers_needed FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0].providers_needed;
 
@@ -333,7 +333,7 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
 
   describe('F6 — faixa etária (aviso `age_range`; coluna do serviço = provider_age_band)', () => {
     const patchBand = (ctx: Ctx, providerAgeBand: string | null) =>
-      repo().update(ctx.serviceId, { providerAgeBand, actorUid: UID } as never);
+      repo().update(ctx.serviceId, { providerAgeBand, actorUid: UID } as never, new Date());
     const bandOf = async (serviceId: string) =>
       (await admin.query(`SELECT provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0].provider_age_band;
     const setBand = (ctx: Ctx, band: string | null) =>

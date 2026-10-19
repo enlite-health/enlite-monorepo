@@ -25,6 +25,9 @@
 import type { Request } from 'express';
 import { clinicalCellsOf } from './patientClinicalAccess';
 import { projectLiveVacancyForActor } from './contractedServiceVacancyAccess';
+import { canReadPatientContainer } from './patientContainerAccess';
+import type { PayerHistoryItem, PayerCoverageMatch, Payer } from '../infrastructure/contractedServicePayerRead';
+import type { PriceState } from '../infrastructure/contractedServicePriceRead';
 
 export const PATIENT_CONTRACT_VALUE_READ_CELL = 'patient_contract_value:read';
 
@@ -51,29 +54,51 @@ export function hourlyValueActorOf(req: Request): HourlyValueActor {
 }
 
 /**
- * Projeta um serviço contratado para o ator, as DUAS redações na mesma passada:
- *   - `hourlyValue` vira `null` + `hourlyValueRedacted: true` quando o ator não lê o preço;
- *   - `liveVacancy` vira `null` + `liveVacancyRedacted: true` quando o ator não lê vagas
- *     (`contractedServiceVacancyAccess`, spec 047).
- * Quem lê tudo recebe os valores crus, com os dois flags `false`.
+ * Spec 058 §0 (D-34, D-54): o preço do contrato agora vem do TERMO (`price`), e a redação dele é UMA função — `redactTermForActor` —
+ * chamada em exatamente 2 lugares: `projectContractedServiceForActor` (preço do serviço) e o handler da lista de contratos
+ * (`AdminInsuranceContractsController`, `currentTerm.price`). Os leitores (§T/§G/§P) não recebem o ator.
+ * Só o valor `OK` é redigido: `NO_CONTRACT`/`NO_TERM` são o portão `patient_services:read` (o vínculo existe ou não) e passam. O IMPOSTO não é redigido.
  */
-export function projectContractedServiceForActor<T extends { hourlyValue: number | null; liveVacancy: unknown }>(
-  service: T,
-  actor: HourlyValueActor,
-): T & { hourlyValueRedacted: boolean; liveVacancyRedacted: boolean } {
-  const withVacancy = projectLiveVacancyForActor(service, actor);
-  if (canReadHourlyValue(actor)) return { ...withVacancy, hourlyValueRedacted: false };
-  return { ...withVacancy, hourlyValue: null, hourlyValueRedacted: true };
+export type RedactedPrice = { state: 'REDACTED' };
+
+export function redactTermForActor<P extends { state: string }>(price: P, actor: HourlyValueActor): P | RedactedPrice {
+  if (price.state !== 'OK' || canReadHourlyValue(actor)) return price;
+  return { state: 'REDACTED' };
 }
 
+/** `coverage` decide quem é o pagador e o tipo dele (§0 decisor 2): mesma regra do container `coverage` da ficha; `cells === null` lê (como o container). */
+export function canReadPayerNames(actor: HourlyValueActor): boolean {
+  return canReadPatientContainer(actor.cells, 'coverage');
+}
+
+/** O que a projeção exige do serviço montado (ficha e rota produzem exatamente isto). */
+export interface ProjectableService {
+  liveVacancy: unknown;
+  payer: Payer;
+  payerHistory: PayerHistoryItem[];
+  price: PriceState;
+  coverageMatch: PayerCoverageMatch;
+}
+
+type Projected<T extends ProjectableService> = Omit<T, 'price' | 'coverageMatch'> & {
+  price: PriceState | RedactedPrice;
+  coverageMatch: { state: PayerCoverageMatch['state'] | 'REDACTED' };
+  liveVacancyRedacted: boolean;
+};
+
 /**
- * A chave `hourlyValue` está PRESENTE no corpo da requisição?
- *
- * Pela CHAVE, não pelo valor: `hourlyValue: null` é ESCRITA (apaga o preço do contrato). Quem não
- * pode LER o campo não pode escrevê-lo — é a mesma régua que `AdminPatientsController` aplica a
- * `emergencyInstructions` e `onHoldNote` (patientClinicalAccess), e o que
- * `ContractedServiceFormRow` já faz na tela ao mandar `undefined` quando o campo vem redigido.
+ * Projeta um serviço contratado para o ator, as redações na MESMA passada:
+ *   - `price`: `OK` vira `{ state: 'REDACTED' }` quando o ator não lê o preço (`redactTermForActor`); `tax` sai cru;
+ *   - `payer.names` (inclui `payerKind`) e `payerHistory[].names` viram `null`, e `coverageMatch` vira `REDACTED`, quando o ator não lê o
+ *     container `coverage`; `payer.state`, `isPrivate` e a vigência continuam visíveis (decisor 1);
+ *   - `liveVacancy` vira `null` + `liveVacancyRedacted: true` quando o ator não lê vagas (`contractedServiceVacancyAccess`, spec 047).
+ * Quem lê tudo recebe os valores crus. `hourlyValue`/`hourlyValueRedacted` não existem mais.
  */
-export function bodyWritesHourlyValue(body: unknown): boolean {
-  return typeof body === 'object' && body !== null && Object.prototype.hasOwnProperty.call(body, 'hourlyValue');
+export function projectContractedServiceForActor<T extends ProjectableService>(service: T, actor: HourlyValueActor): Projected<T> {
+  const withVacancy = projectLiveVacancyForActor(service, actor);
+  const price = redactTermForActor(service.price, actor);
+  if (canReadPayerNames(actor)) return { ...withVacancy, price } as unknown as Projected<T>;
+  const payer: Payer = service.payer.state === 'LINKED' ? { ...service.payer, names: null } : service.payer;
+  const payerHistory = service.payerHistory.map((h) => ({ ...h, names: null }));
+  return { ...withVacancy, price, payer, payerHistory, coverageMatch: { state: 'REDACTED' } } as unknown as Projected<T>;
 }

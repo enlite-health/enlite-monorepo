@@ -135,6 +135,16 @@ function makePatientDetail(overrides: Record<string, unknown> = {}) {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
+/** Spec 058: todo serviço montado traz pagador/preço/divergência (a projeção os lê); estes são os de um serviço SEM vínculo. */
+const SEM_VINCULO = {
+  liveVacancy: null,
+  payer: { state: 'NO_CONTRACT' },
+  payerHistory: [],
+  price: { state: 'NO_CONTRACT' },
+  tax: { state: 'NO_CONTRACT' },
+  coverageMatch: { state: 'NO_PAYER' },
+};
+
 describe('AdminPatientsController.getPatientById', () => {
   let controller: AdminPatientsController;
 
@@ -330,7 +340,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('serviço ativo sem endereço vinculado → SERVICE_ADDRESS em missing e blocking, canActivate false', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: null, schedule: HORARIO_OK }],
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: null, schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -346,7 +356,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('serviço ativo apontando para endereço que NÃO está na ficha (arquivado) → SERVICE_ADDRESS', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a-arquivado', schedule: HORARIO_OK }],
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a-arquivado', schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -360,7 +370,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('serviço ativo sem horário → SERVICE_SCHEDULE em missing E em blocking, canActivate false', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1', schedule: null }],
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: null }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -376,7 +386,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('horário ARRAY VAZIO na ficha também acusa SERVICE_SCHEDULE (`[]` não é horário)', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1', schedule: [] }],
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: [] }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -390,8 +400,8 @@ describe('AdminPatientsController.getPatientById', () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
         contractedServices: [
-          { active: true, addressId: 'a1', schedule: HORARIO_OK },
-          { active: false, addressId: 'a1', schedule: null },
+          { ...SEM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK },
+          { ...SEM_VINCULO, active: false, addressId: 'a1', schedule: null },
         ],
       });
       mockFindDetailById.mockResolvedValue(patient);
@@ -405,7 +415,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('todos os critérios satisfeitos → ready:true, missing:[]', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1', schedule: HORARIO_OK }],
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -423,7 +433,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('serviço contratado INATIVO não conta — CONTRACTED_SERVICE continua em missing', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: false }],
+        contractedServices: [{ ...SEM_VINCULO, active: false }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -437,7 +447,7 @@ describe('AdminPatientsController.getPatientById', () => {
       const patient = makePatientDetail({
         birthDate: new Date(new Date().getFullYear() - 5, 0, 1), // 5 anos
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1', schedule: HORARIO_OK }],
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
         responsibles: [],
       });
       mockFindDetailById.mockResolvedValue(patient);
@@ -451,7 +461,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('sem consentimento (hasConsent false) → CONSENT em missing', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1', schedule: HORARIO_OK }],
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
         hasConsent: false,
       } as never);
       mockFindDetailById.mockResolvedValue(patient);
