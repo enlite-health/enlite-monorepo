@@ -129,4 +129,47 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
       m.seed.cleanup();
     }
   });
+
+  test('ALTERNATIVO 1 (UI): o aviso aparece e "Volver" não envia nada — nenhum POST com cancelScheduled; banco intacto', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const posts: Array<{ cancelScheduled?: boolean }> = [];
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && ehEnd(r.url())) posts.push(r.postDataJSON() as { cancelScheduled?: boolean });
+    });
+    const m = await semearSubstituto(request);
+    try {
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, m.seed.patientId);
+      await page.getByTestId(`itinerario-slot-editar-${m.slotSegunda}`).click();
+      await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
+      await page.getByTestId(`itinerario-quitar-${m.c}`).click();
+      await page.getByTestId('itinerario-quitar-motivo').selectOption({ label: MOTIVO_DESISTENCIA });
+      await page.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE').click();
+      const [r1] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && ehEnd(r.url())),
+        page.getByTestId('itinerario-quitar-confirmar').click(),
+      ]);
+      expect(r1.status()).toBe(409);
+      await expect(page.getByTestId('aviso-agendados')).toBeVisible();
+
+      await page.getByTestId('aviso-agendados-cancelar').click();
+      await expect(page.getByTestId('aviso-agendados')).toHaveCount(0);
+      await page.waitForTimeout(1_000);
+
+      // Só o POST que devolveu 409 saiu; nenhum com cancelScheduled.
+      expect(posts).toHaveLength(1);
+      expect(posts.filter((p) => p.cancelScheduled === true)).toHaveLength(0);
+      expect(
+        Number(sqlComVars("SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = :'s'::uuid", { s: m.serviceId })),
+      ).toBe(0);
+      expect(
+        Number(sqlComVars("SELECT count(*) FROM patient_itinerary_absence WHERE assignment_id = :'a'::uuid AND substitute_worker_id = :'c'::uuid AND cancelled_at IS NULL", { a: m.alocA, c: m.c })),
+      ).toBe(2);
+      expect(sqlComVars("SELECT status FROM patient_itinerary_assignment WHERE id = :'id'::uuid", { id: m.alocC })).toBe('ACTIVE');
+
+      expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
+    } finally {
+      m.seed.cleanup();
+    }
+  });
 });
