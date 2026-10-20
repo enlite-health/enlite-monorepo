@@ -7,7 +7,7 @@
  * string `YYYY-MM-DD`. Nenhum import além de tipos locais (`ItinerarySchedule`, mesmo domínio).
  *
  * Unidade: `total` e `cobertas` são horas/semana, somadas no MESMO laço sobre as mesmas faixas
- * (spec 056 §6.1): não podem divergir. Autorização (`authorized_hours`) não entra.
+ * (spec 056 §6.1): não podem divergir. A autorização de horas não entra.
  */
 /**
  * Tipo nominal: o valor só nasce dentro de `computeServiceCoverage` (`as ServiceWeeklyCoveredHours`

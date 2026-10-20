@@ -107,7 +107,7 @@ const ESPERADO: Record<string, string | null> = {
   'POST /patients/:id/contracted-services/:sid/authorizations': 'patient_services:update',
   'POST /patients/:id/contracted-services/:sid/authorizations/:aid/supersede': 'patient_services:update',
   // Itinerário — leitura (fase 7, DX-7.7, Q-7.3): mesma célula do GET de serviços contratados,
-  // porque a resposta carrega os mesmos weeklyHours/authorizedHours.
+  // porque a resposta carrega os mesmos horários e a autorização corrente.
   'GET /patients/:id/itinerary': 'patient_services:read',
   // D445.3 — "Próximos eventos/Substitución": a MESMA célula do GET acima, é a mesma leitura
   // expandida no tempo.

@@ -8,7 +8,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { ler, NOVOS_A1_SRC, REPO, semComentarios, WF } from './helpers058a';
+import { fontesSrc, ler, NOVOS_A1_SRC, REPO, semComentarios, WF } from './helpers058a';
 
 const LEGADO = /(?<![a-z_])(hourly_value|tax_condition|contract_type|insurance_verified|health_insurance_name|health_insurance_member_id)(?![a-z_])/;
 const FR26 = /approved_hours|montante/i;
@@ -115,5 +115,21 @@ describe('grep-teste T083-6 FR-26: arquivos novos de A não citam approved_hours
   it.each(NOVOS_A1_SRC)('%s não cita approved_hours/montante (FR-26)', (arquivo) => {
     const linhas = semComentarios(ler(arquivo)).split('\n').filter((l) => FR26.test(l));
     expect(linhas).toEqual([]);
+  });
+});
+
+/** P7 (058 B): `pcs.authorized_hours` vira snapshot e sai do P2(B). Nenhuma fonte de produção de `src` o lê (7ª coluna legada), nem em comentário. */
+const COLUNA_7 = /authorized_hours|authorizedHours|legacyAuthorizedHours/i;
+describe('grep-teste P7 (058 B): authorized_hours fora de src de produção (7ª coluna legada)', () => {
+  const todas = fontesSrc();
+  it('o scanner enxerga src inteiro e lê o conteúdo (contagem zero seria "não medi")', () => {
+    expect(todas.length).toBeGreaterThan(300);
+    expect(todas.some((f) => /export function operationDateOf/.test(ler(f)))).toBe(true);
+  });
+  it('o padrão casa nas 3 grafias (controle positivo)', () => {
+    for (const ruim of ['SELECT authorized_hours FROM x', 'service.authorizedHours', 'legacyAuthorizedHours: 20']) expect(COLUNA_7.test(ruim)).toBe(true);
+  });
+  it('nenhuma fonte de produção de src cita a 7ª coluna', () => {
+    expect(todas.filter((f) => COLUNA_7.test(ler(f)))).toEqual([]);
   });
 });
