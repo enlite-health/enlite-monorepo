@@ -61,8 +61,8 @@ describe('guarda do DELETE de vaga sob RLS (app_runtime) e lock do serviço (058
   });
 
   it('app_runtime SEM contexto (leitura fora do contexto do ator): a probe conta 0 — é exatamente o buraco que a guarda dentro do withActorContext evita', async () => {
-    const n = await asRole('app_runtime', {}, (c) => countVigenteForVacancy(c, s.vacancyId, new Date()));
-    expect(n).toBe(0);
+    // Fail-closed: sem identidade a sessão nem lê (o guard de país levanta `rls_session_without_identity`) — o resultado nunca é "1".
+    await expect(asRole('app_runtime', {}, (c) => countVigenteForVacancy(c, s.vacancyId, new Date()))).rejects.toThrow(/rls_session_without_identity/);
   });
 
   it("a probe segura o lock do serviço até o fim da transação: um 2º client não toma pg_try_advisory_xact_lock(hashtext('itinerary:service:' || serviceId)) enquanto o 1º não commita", async () => {
