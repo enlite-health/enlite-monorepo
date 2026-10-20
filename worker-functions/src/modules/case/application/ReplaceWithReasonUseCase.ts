@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { ItineraryAllocationUseCase, type ItineraryReplaceInput, type ItineraryReplaceWithOptions, type ItineraryReplaceWithResult } from './ItineraryAllocationUseCase';
+import { ServiceTeamMarkUseCase, type ServiceTeamMarkInput } from './ServiceTeamMarkUseCase';
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from './PatientStatusDerivation';
 import { ItineraryChangeLogWriter, type InsertItineraryChangeInput, type ItineraryChangeDestination } from '../infrastructure/ItineraryChangeLogWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
@@ -11,6 +12,7 @@ export interface ReplaceWithReasonAllocationPort {
 }
 export interface ReplaceWithReasonCatalogPort { findActiveByCode(client: PoolClient, code: string): Promise<ServiceExitReasonOption | null> }
 export interface ReplaceWithReasonChangeLogPort { insert(client: PoolClient, input: InsertItineraryChangeInput): Promise<{ id: string }> }
+export interface ReplaceWithReasonRejectPort { rejectWith(client: PoolClient, input: ServiceTeamMarkInput): Promise<unknown> }
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
 export interface ReplaceWithReasonInput extends Omit<ItineraryReplaceInput, 'actorUid'> {
@@ -33,6 +35,7 @@ export class ReplaceWithReasonUseCase {
     private readonly changeLog: ReplaceWithReasonChangeLogPort = new ItineraryChangeLogWriter(),
     private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    private readonly marks: ReplaceWithReasonRejectPort = new ServiceTeamMarkUseCase(),
   ) {}
 
   async execute(input: ReplaceWithReasonInput): Promise<ReplaceWithReasonResult> {
@@ -58,6 +61,10 @@ export class ReplaceWithReasonUseCase {
         assignmentId: input.allocationId, newAssignmentId: replaced.newAllocationId, effectiveDate: replaced.validFrom,
         reasonCode: reasonCategory, destination: dest, actorUid: input.actorUid,
       });
+      // Caso A (D = hoje) + LEAVE_SERVICE: o titular com `valid_to` = ontem (ou cancelado) já não é vigente, então a marca passa; o motivo é o MESMO código.
+      if (dest === 'LEAVE_SERVICE') {
+        await this.marks.rejectWith(client, { patientId: input.patientId, serviceId: input.serviceId, workerId: replaced.outgoingWorkerId, reasonCategory, actorUid: input.actorUid, cells: null, now });
+      }
       await this.derivation.run(client, input.patientId, now);
       return {
         endedAllocationId: replaced.endedAllocationId, endedValidTo: replaced.endedValidTo, newAllocationId: replaced.newAllocationId,

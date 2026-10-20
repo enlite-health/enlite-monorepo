@@ -11,7 +11,7 @@ const NOW = new Date('2026-09-30T15:00:00Z');
 
 type RunInTransaction = ConstructorParameters<typeof ReplaceWithReasonUseCase>[4];
 
-function build(opts: { catalogHit?: boolean; changeLogError?: Error } = {}) {
+function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError?: Error } = {}) {
   const log: string[] = [];
   const writes: string[] = [];
   const allocations = {
@@ -38,6 +38,13 @@ function build(opts: { catalogHit?: boolean; changeLogError?: Error } = {}) {
       return { id: 'cl-1' };
     }),
   };
+  const marks = {
+    rejectWith: jest.fn(async () => {
+      log.push('reject');
+      if (opts.rejectError) throw opts.rejectError;
+      return {};
+    }),
+  };
   const derivation = {
     run: jest.fn(async () => {
       log.push('derive');
@@ -48,8 +55,8 @@ function build(opts: { catalogHit?: boolean; changeLogError?: Error } = {}) {
     log.push('tx');
     return cb(FAKE_CLIENT);
   }) as unknown as RunInTransaction & jest.Mock;
-  const useCase = new ReplaceWithReasonUseCase(allocations, reasonCatalog, changeLog, derivation, runInTransaction);
-  return { useCase, log, writes, allocations, reasonCatalog, changeLog, derivation, runInTransaction };
+  const useCase = new ReplaceWithReasonUseCase(allocations, reasonCatalog, changeLog, derivation, runInTransaction, marks);
+  return { useCase, log, writes, marks, allocations, reasonCatalog, changeLog, derivation, runInTransaction };
 }
 
 const INPUT: ReplaceWithReasonInput = {
@@ -120,5 +127,32 @@ describe('ReplaceWithReasonUseCase', () => {
 
     expect(result.destination).toBe('RESERVE');
     expect(t.writes).toEqual(['write']);
+  });
+
+  it('Caso A LEAVE_SERVICE: replaceWith → log → rejectWith (mesmo motivo, mesmo client) → derivação por ÚLTIMO', async () => {
+    const t = build();
+
+    await t.useCase.execute({ ...INPUT, destination: 'LEAVE_SERVICE' });
+
+    expect(t.log).toEqual(['tx', 'catalog', 'replace(derive=false)', 'log', 'reject', 'derive']);
+    expect(t.marks.rejectWith).toHaveBeenCalledWith(
+      FAKE_CLIENT,
+      expect.objectContaining({ workerId: 'w-1', reasonCategory: 'DESISTENCIA_DO_PRESTADOR', cells: null }),
+    );
+  });
+
+  it('Caso A RESERVE: não chama rejectWith', async () => {
+    const t = build();
+
+    await t.useCase.execute(INPUT);
+
+    expect(t.marks.rejectWith).not.toHaveBeenCalled();
+  });
+
+  it('rejectWith falha → rejeita, NÃO deriva (a transação desfaz tudo)', async () => {
+    const t = build({ rejectError: new Error('mark-boom') });
+
+    await expect(t.useCase.execute({ ...INPUT, destination: 'LEAVE_SERVICE' })).rejects.toThrow('mark-boom');
+    expect(t.derivation.run).not.toHaveBeenCalled();
   });
 });
