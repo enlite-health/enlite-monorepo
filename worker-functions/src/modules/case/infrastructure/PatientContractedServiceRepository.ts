@@ -79,6 +79,18 @@ export class ServiceFieldRequiredByLiveVacancyError extends Error {
   }
 }
 
+/** 058 REGRA-05 (041): `addressId` diferente do atual com vaga viva ou alocação vigente — mudou o local = serviço novo. 422 via `insuranceErrorBody`. */
+export class ServiceAddressLockedError extends Error {
+  readonly httpStatus = 422;
+  readonly code = 'SERVICE_ADDRESS_LOCKED';
+  readonly details: { reason: 'LIVE_VACANCY' | 'ALLOCATION' };
+  constructor(reason: 'LIVE_VACANCY' | 'ALLOCATION') {
+    super(`service address cannot change: ${reason}`);
+    this.name = 'ServiceAddressLockedError';
+    this.details = { reason };
+  }
+}
+
 const ADDRESS_FK = 'pcs_address_same_patient_fk';
 
 function isAddressFkViolation(err: unknown): boolean {
