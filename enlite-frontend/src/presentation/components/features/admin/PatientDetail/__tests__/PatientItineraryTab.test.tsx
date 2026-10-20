@@ -314,6 +314,74 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  describe('058 — reemplazo Entero com motivo e destino', () => {
+    const WITH_ALLOC: PatientItinerary = {
+      ...ITINERARY,
+      services: [
+        {
+          ...ITINERARY.services[0],
+          slots: [
+            {
+              ...ITINERARY.services[0].slots[0],
+              assignments: [
+                { workerId: 'w-titular', applicationId: 'app-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', allocationId: 'alloc-1', displayName: 'Ana Fixture' },
+              ],
+            },
+          ],
+        },
+        ITINERARY.services[1],
+      ],
+    };
+
+    async function confirmarEntero() {
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_ALLOC }));
+      renderTab();
+      fireEvent.click(screen.getByTestId('itinerario-novo-btn'));
+      fireEvent.change(await screen.findByTestId('itinerario-novo-servico'), { target: { value: 'svc-1' } });
+      fireEvent.click(await screen.findByTestId('substitution-mode-permanent'));
+      fireEvent.change(screen.getByTestId('substitution-slot'), { target: { value: 'alloc-1' } });
+      fireEvent.click(screen.getByTestId('substitution-worker'));
+      fireEvent.click(within(await screen.findByRole('listbox')).getByText('Dana Fixture'));
+      fireEvent.change(screen.getByTestId('substitution-reason'), { target: { value: 'NOVO_DO_ADMIN' } });
+      fireEvent.click(screen.getByTestId('substitution-destination-RESERVE'));
+      fireEvent.click(screen.getByTestId('substitution-confirm'));
+    }
+
+    it('Entero: confirmar chama replaceAllocation(paciente, serviço, alocação, { newWorkerId, fromDate, reasonCategory, destination }) e fecha', async () => {
+      mockReplaceAllocation.mockResolvedValue({});
+      await confirmarEntero();
+      await waitFor(() => expect(mockReplaceAllocation).toHaveBeenCalledTimes(1));
+      expect(mockReplaceAllocation).toHaveBeenCalledWith(PATIENT.id, 'svc-1', 'alloc-1', {
+        newWorkerId: 'w-opt-1',
+        fromDate: ITINERARY.asOf,
+        reasonCategory: 'NOVO_DO_ADMIN',
+        destination: 'RESERVE',
+      });
+      await waitFor(() => expect(screen.queryByTestId('substitution-modal')).toBeNull());
+    });
+
+    it('Entero: 409 ITINERARY_OVERLAP → mensagem de produto em itinerario-novo-erro-submit (sem código cru) e o modal continua', async () => {
+      mockReplaceAllocation.mockRejectedValue(Object.assign(new Error('x'), { code: 'ITINERARY_OVERLAP', status: 409 }));
+      await confirmarEntero();
+      const erro = await screen.findByTestId('itinerario-novo-erro-submit');
+      expect(erro).toHaveTextContent('El prestador ya tiene otra franja que se superpone');
+      expect(erro.textContent).not.toMatch(/ITINERARY_OVERLAP/);
+      expect(screen.getByTestId('substitution-modal')).toBeInTheDocument();
+    });
+
+    it('Entero: 422 ALLOCATION_NOT_ACTIVE → "Esa asignación ya no está activa"', async () => {
+      mockReplaceAllocation.mockRejectedValue(Object.assign(new Error('x'), { code: 'ALLOCATION_NOT_ACTIVE', status: 422 }));
+      await confirmarEntero();
+      expect(await screen.findByTestId('itinerario-novo-erro-submit')).toHaveTextContent('Esa asignación ya no está activa');
+    });
+
+    it('Entero: erro sem código → mensagem genérica (submitError)', async () => {
+      mockReplaceAllocation.mockRejectedValue(new Error('rede'));
+      await confirmarEntero();
+      expect(await screen.findByTestId('itinerario-novo-erro-submit')).toHaveTextContent('No se pudo guardar la sustitución');
+    });
+  });
+
   describe('Fase 4 — "Quitar del itinerario"', () => {
     const WITH_TITULAR: PatientItinerary = {
       ...ITINERARY,

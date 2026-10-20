@@ -187,13 +187,14 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
     }
   }
 
-  async function submitPermanent(serviceId: string, allocationId: string, newWorkerId: string, fromDate: string): Promise<void> {
+  async function submitPermanent(serviceId: string, allocationId: string, newWorkerId: string, fromDate: string, reasonCategory: string, destination: ExitDestination): Promise<void> {
     setNewSubstitutionError(null);
     try {
-      await AdminContractedServicesApiService.replaceAllocation(patient.id, serviceId, allocationId, newWorkerId, fromDate);
+      await AdminContractedServicesApiService.replaceAllocation(patient.id, serviceId, allocationId, { newWorkerId, fromDate, reasonCategory, destination });
       setShowNew(false);
-    } catch {
-      setNewSubstitutionError(ti('newSubstitutionModal.submitError'));
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      setNewSubstitutionError(code ? t(`admin.patients.detail.itinerary.actionErrors.${code}`, ti('newSubstitutionModal.submitError')) : ti('newSubstitutionModal.submitError'));
       return;
     } finally {
       refresh();
@@ -290,7 +291,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
             asOf={itinerary.asOf}
             loadOptions={loadOptions}
             onSubmitComplementary={(sid, aid, date, wid, reason) => void submitComplementary(sid, aid, date, wid, reason)}
-            onSubmitPermanent={(sid, aid, wid, date) => void submitPermanent(sid, aid, wid, date)}
+            onSubmitPermanent={(sid, aid, wid, date, reason, destination) => void submitPermanent(sid, aid, wid, date, reason, destination)}
             onCancel={() => {
               setShowNew(false);
               setNewSubstitutionError(null);
