@@ -128,4 +128,87 @@ describe('POST …/allocations/:id/replace — Caso A/B (058) @integration', () 
     );
     expect(log.rows).toEqual([{ kind: 'REPLACE', destination: 'LEAVE_SERVICE' }]);
   });
+
+  describe('Caso B e os 4xx', () => {
+    const seedAntigo = () => seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, selecionados: 1, desdeDias: -7 });
+
+    it('Caso B RESERVE: titular ACTIVE até D-1, substituto desde D (hoje+7); a Trava A aceita a troca 1-por-1 com limite 1; log REPLACE com effective_date = D', async () => {
+      const s = await seedAntigo();
+      const D = await somaDias(pool, hoje, 7);
+      const antesDeD = await somaDias(pool, D, -1);
+      const res = await api.post(
+        replaceUrl(s, s.segAllocations[0]),
+        { newWorkerId: s.selecionados[0], fromDate: D, reasonCategory: REASON, destination: 'RESERVE' },
+        { headers: asAdmin.headers },
+      );
+      expect(res.status).toBe(200);
+      expect(await alloc(s.segAllocations[0])).toMatchObject({ status: 'ACTIVE', vt: antesDeD });
+      const novaId = await allocationOf(s.serviceId, s.selecionados[0]);
+      expect(await alloc(novaId)).toEqual({ status: 'ACTIVE', vf: D, vt: null });
+      const log = await pool.query(
+        `SELECT kind, destination, to_char(effective_date,'YYYY-MM-DD') AS d FROM patient_itinerary_change_log WHERE contracted_service_id = $1`,
+        [s.serviceId],
+      );
+      expect(log.rows).toEqual([{ kind: 'REPLACE', destination: 'RESERVE', d: D }]);
+    });
+
+    it('Caso B LEAVE_SERVICE: 422 DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED e o snapshot antes = depois (0 escritas)', async () => {
+      const s = await seedAntigo();
+      const before = await snapshot(s.serviceId);
+      const res = await api.post(
+        replaceUrl(s, s.segAllocations[0]),
+        { newWorkerId: s.selecionados[0], fromDate: await somaDias(pool, hoje, 7), reasonCategory: REASON, destination: 'LEAVE_SERVICE' },
+        { headers: asAdmin.headers },
+      );
+      expect(res.status).toBe(422);
+      expect(res.data.code).toBe('DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED');
+      expect(await snapshot(s.serviceId)).toEqual(before);
+    });
+
+    it('sem substituto (corpo sem newWorkerId) → 400, snapshot igual', async () => {
+      const s = await seedAntigo();
+      const before = await snapshot(s.serviceId);
+      const res = await api.post(
+        replaceUrl(s, s.segAllocations[0]),
+        { fromDate: hoje, reasonCategory: REASON, destination: 'RESERVE' },
+        { headers: asAdmin.headers },
+      );
+      expect(res.status).toBe(400);
+      expect(await snapshot(s.serviceId)).toEqual(before);
+    });
+
+    it('fromDate ontem → 422 REPLACEMENT_DATE_IN_PAST, snapshot igual', async () => {
+      const s = await seedAntigo();
+      const before = await snapshot(s.serviceId);
+      const res = await api.post(
+        replaceUrl(s, s.segAllocations[0]),
+        { newWorkerId: s.selecionados[0], fromDate: await somaDias(pool, hoje, -1), reasonCategory: REASON, destination: 'RESERVE' },
+        { headers: asAdmin.headers },
+      );
+      expect(res.status).toBe(422);
+      expect(res.data.code).toBe('REPLACEMENT_DATE_IN_PAST');
+      expect(await snapshot(s.serviceId)).toEqual(before);
+    });
+
+    it('sem motivo → 422 REASON_REQUIRED; sem destino → 422 DESTINATION_REQUIRED; snapshot igual nos dois', async () => {
+      const s = await seedAntigo();
+      const before = await snapshot(s.serviceId);
+      const semMotivo = await api.post(
+        replaceUrl(s, s.segAllocations[0]),
+        { newWorkerId: s.selecionados[0], fromDate: hoje, destination: 'RESERVE' },
+        { headers: asAdmin.headers },
+      );
+      expect(semMotivo.status).toBe(422);
+      expect(semMotivo.data.code).toBe('REASON_REQUIRED');
+      expect(await snapshot(s.serviceId)).toEqual(before);
+      const semDestino = await api.post(
+        replaceUrl(s, s.segAllocations[0]),
+        { newWorkerId: s.selecionados[0], fromDate: hoje, reasonCategory: REASON },
+        { headers: asAdmin.headers },
+      );
+      expect(semDestino.status).toBe(422);
+      expect(semDestino.data.code).toBe('DESTINATION_REQUIRED');
+      expect(await snapshot(s.serviceId)).toEqual(before);
+    });
+  });
 });
