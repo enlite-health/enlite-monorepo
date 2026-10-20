@@ -8,23 +8,8 @@
  */
 import type { ItineraryRows, ItineraryAssignmentStatus } from '../infrastructure/PatientItineraryReader';
 import { computeServiceCoverage, type ServiceCoverageSlot } from '../domain/ServiceCoverageCalculator';
-import { localParts } from '../../matching/domain/interviewSlotResolver';
-import { countryToTimezone } from '@shared/locale/CountryTimezone';
 import type { PatientItineraryService, PatientItinerarySlot } from './GetPatientItineraryUseCase';
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-/** `YYYY-MM-DD` a partir das partes locais (`localParts`) — nunca `Date`/`Intl` direto aqui. */
-function toDateString(parts: { year: number; month: number; day: number }): string {
-  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
-}
-
-/** Data LOCAL da operação do paciente (fuso do PAÍS, nunca o relógio do processo). */
-export function operationDateOf(country: string, now: Date): string {
-  return toDateString(localParts(now, countryToTimezone(country)));
-}
+export { operationDateOf } from '@shared/locale/operationDate';
 
 /**
  * Agrupamento linhas → serviços → `computeServiceCoverage`, uma vez por serviço ativo, na ordem
