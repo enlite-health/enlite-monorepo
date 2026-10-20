@@ -34,10 +34,12 @@ const PREFIXO_GRUPO = 'QA058 e2e ';
  */
 export async function concederPaises(pool: Pool, uid: string, countries: string[]): Promise<() => Promise<void>> {
   const groupId = randomUUID();
-  await pool.query(
+  // O usuário também é nosso: staff ACTIVE sem grupo vivo reprova a pré-condição do F12 (iam-config-export-import) em suítes que rodam DEPOIS —
+  // então a limpeza apaga o que ESTA chamada criou (um usuário que já existia não é tocado).
+  const criou = (await pool.query(
     `INSERT INTO users (firebase_uid, email, role, tenant_id) VALUES ($1, $2, 'admin', $3) ON CONFLICT (firebase_uid) DO NOTHING`,
     [uid, `${uid}@e2e.local`, TENANT],
-  );
+  )).rowCount === 1;
   await pool.query(`INSERT INTO permission_groups (id, tenant_id, name) VALUES ($1, $2, $3)`, [groupId, TENANT, `${PREFIXO_GRUPO}${uid} ${countries.join('+')}`]);
   await pool.query(`INSERT INTO user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [uid, groupId, TENANT]);
   for (const country of countries) {
@@ -47,5 +49,6 @@ export async function concederPaises(pool: Pool, uid: string, countries: string[
     await pool.query(`DELETE FROM group_country_scopes WHERE group_id = $1`, [groupId]);
     await pool.query(`DELETE FROM user_groups WHERE group_id = $1`, [groupId]);
     await pool.query(`DELETE FROM permission_groups WHERE id = $1`, [groupId]);
+    if (criou) await pool.query(`DELETE FROM users WHERE firebase_uid = $1`, [uid]);
   };
 }
