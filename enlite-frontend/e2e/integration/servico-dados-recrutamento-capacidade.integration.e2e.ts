@@ -76,4 +76,18 @@ test.describe('servico-dados-recrutamento-capacidade — Trava B no formulário 
     expect(resp.status()).toBe(200);
     expect(sqlComVars(`SELECT coalesce(providers_needed::text, '<null>') FROM patient_contracted_services WHERE id = :'sid'`, { sid: seed.serviceId })).toBe('4');
   });
+
+  test('2. alt (servidor recusa) — baixar de 3 para 2 com 3 alocações: 422 PROVIDERS_NEEDED_BELOW_OCCUPANCY com mensagem; o banco segue 3', async ({ page }) => {
+    await loginComoStaffMock(page, STAFF, 'E2E Capacidade');
+    await abrirFormularioDoServico(page, seed);
+    await trocarQuantidade(page, '2');
+    const [resp] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${seed.serviceId}$`).test(r.url())),
+      page.getByTestId(`contracted-service-save-${seed.serviceId}`).click(),
+    ]);
+    expect(resp.status()).toBe(422);
+    expect(((await resp.json()) as { code?: string }).code).toBe('PROVIDERS_NEEDED_BELOW_OCCUPANCY');
+    await expect(page.getByTestId(`contracted-service-error-${seed.serviceId}`)).toContainText('por debajo de los ya asignados');
+    expect(sqlComVars(`SELECT coalesce(providers_needed::text, '<null>') FROM patient_contracted_services WHERE id = :'sid'`, { sid: seed.serviceId })).toBe('3');
+  });
 });
