@@ -224,6 +224,22 @@ describe('AdminContractedServicesApiService', () => {
     ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code });
   });
 
+  it('endAllocation (058): com cancelScheduled true o corpo viaja inteiro', async () => {
+    const f = mockFetch({ success: true, data: { allocationId: ALLOCATION_ID, status: 'ENDED', validTo: '2026-09-30', destination: 'LEAVE_SERVICE' } });
+    const body = { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE' as const, cancelScheduled: true };
+    await AdminContractedServicesApiService.endAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, body);
+    const [, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it('endAllocation (058): 409 WORKER_HAS_SCHEDULED_ATTENDANCES expõe code e details (datas)', async () => {
+    const details = { substitutionDates: ['2026-10-26'], futureEntryFrom: null };
+    mockFetch({ success: false, error: 'x', code: 'WORKER_HAS_SCHEDULED_ATTENDANCES', details }, 409);
+    await expect(
+      AdminContractedServicesApiService.endAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 409, code: 'WORKER_HAS_SCHEDULED_ATTENDANCES', details });
+  });
+
   it('setAbsenceSubstitute: PATCH em /itinerary/absences/:absenceId/substitute com { substituteWorkerId }', async () => {
     const f = mockFetch({ success: true, data: ABSENCE_OPEN });
     const out = await AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, 'w2');

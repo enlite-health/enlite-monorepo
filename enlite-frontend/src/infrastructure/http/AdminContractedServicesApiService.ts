@@ -273,12 +273,14 @@ class AdminContractedServicesApiServiceClass {
    * motivo (código do catálogo) e destino (`RESERVE` segue como reserva; `LEAVE_SERVICE` sai do encuadre
    * do serviço). 422 vira `ContractedServiceApiError` com o `code` (`REASON_REQUIRED`, `REASON_INVALID`,
    * `DESTINATION_REQUIRED`, `ALLOCATION_NOT_ACTIVE`, `SERVICE_TEAM_WORKER_ALLOCATED` …).
+   * 409 `WORKER_HAS_SCHEDULED_ATTENDANCES` traz `err.details = { substitutionDates: string[]; futureEntryFrom: string | null }`
+   * (só com `LEAVE_SERVICE` e sem `cancelScheduled: true`).
    */
   async endAllocation(
     patientId: string,
     serviceId: string,
     allocationId: string,
-    body: { reasonCategory: string; destination: ExitDestination },
+    body: { reasonCategory: string; destination: ExitDestination; cancelScheduled?: boolean },
   ): Promise<ItineraryRemoveResult> {
     return this.request<ItineraryRemoveResult>(
       'POST',
