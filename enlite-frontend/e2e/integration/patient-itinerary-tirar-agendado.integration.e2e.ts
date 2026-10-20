@@ -20,6 +20,7 @@ import { sqlComVars } from '../helpers/sql-com-vars';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
 
 const STAFF = mockAdminUserFor('itinerario-tirar-agendado');
+const RUN = String(Date.now());
 const MOTIVO_DESISTENCIA = 'El prestador desistió'; // DESISTENCIA_DO_PRESTADOR
 
 /** Segunda e quarta, 4 h cada. */
@@ -170,6 +171,46 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
       expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
     } finally {
       m.seed.cleanup();
+    }
+  });
+
+  test('ALTERNATIVO 2 (estado muda por fora): o motivo escolhido é desativado antes de confirmar → 422 REASON_INVALID com mensagem; nada é gravado', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const code = `E2E_TIRAR_${RUN}`;
+    const label = `Motivo e2e ${RUN}`;
+    sqlComVars("INSERT INTO service_exit_reasons (code, label, sort_order) VALUES (:'code', :'label', 999)", { code, label });
+    let m: Awaited<ReturnType<typeof semearSubstituto>> | null = null;
+    try {
+      m = await semearSubstituto(request);
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, m.seed.patientId);
+      await page.getByTestId(`itinerario-slot-editar-${m.slotSegunda}`).click();
+      await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
+      await page.getByTestId(`itinerario-quitar-${m.c}`).click();
+      await page.getByTestId('itinerario-quitar-motivo').selectOption({ label });
+      await page.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE').click();
+
+      // Por fora: o motivo é desativado antes do Confirmar.
+      sqlComVars("UPDATE service_exit_reasons SET active = false, deactivated_at = now() WHERE code = :'code'", { code });
+
+      const [resp] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && ehEnd(r.url())),
+        page.getByTestId('itinerario-quitar-confirmar').click(),
+      ]);
+      expect(resp.status()).toBe(422);
+      expect((await resp.json()).code).toBe('REASON_INVALID');
+      await expect(page.getByTestId('itinerario-quitar-erro')).toContainText('Ese motivo no es válido');
+      await expect(page.getByTestId('itinerario-quitar-painel')).toBeVisible();
+
+      expect(
+        Number(sqlComVars("SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = :'s'::uuid", { s: m.serviceId })),
+      ).toBe(0);
+      expect(sqlComVars("SELECT status FROM patient_itinerary_assignment WHERE id = :'id'::uuid", { id: m.alocC })).toBe('ACTIVE');
+
+      expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
+    } finally {
+      m?.seed.cleanup();
+      sqlComVars("DELETE FROM service_exit_reasons WHERE code = :'code'", { code });
     }
   });
 });
