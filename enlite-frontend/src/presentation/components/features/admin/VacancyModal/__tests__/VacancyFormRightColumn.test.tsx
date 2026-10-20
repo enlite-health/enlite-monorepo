@@ -3,10 +3,11 @@
  * (a ÚNICA régua de horas do front), não de uma conta própria da coluna.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 import { VacancyFormRightColumn } from '../VacancyFormRightColumn';
 import { DEFAULT_FORM_VALUES, type VacancyFormData } from '../../vacancy-form-schema';
+import { lockedFormFields } from '../../vacancyLockedFields';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({ ServiceAreaMap: () => null }));
@@ -44,5 +45,39 @@ describe('VacancyFormRightColumn — horas semanais', () => {
   it('sem horário: traço', () => {
     render(<Harness schedule={[]} />);
     expect(screen.getByTestId('weekly-hours-display').textContent).toBe('—');
+  });
+});
+
+function ProvidersHarness({ onReady }: { onReady: (getValues: () => VacancyFormData) => void }) {
+  const { register, control, getValues, formState: { errors } } = useForm<VacancyFormData>({
+    defaultValues: { ...DEFAULT_FORM_VALUES, providers_needed: 2 },
+  });
+  onReady(getValues);
+  return (
+    <VacancyFormRightColumn
+      register={register}
+      control={control}
+      errors={errors}
+      patientSelected
+      addresses={[]}
+      selectedAddressId={null}
+      isLoadingPatient={false}
+      patientError={null}
+      selectAddress={vi.fn()}
+      lockedFields={lockedFormFields([])}
+      patientId="p-1"
+    />
+  );
+}
+
+describe('VacancyFormRightColumn — quantidade de prestadores (058 B)', () => {
+  it('setValueAs: campo vazio vira null (não NaN) e "3" vira 3', () => {
+    let getValues!: () => VacancyFormData;
+    render(<ProvidersHarness onReady={(g) => { getValues = g; }} />);
+    const input = screen.getByTestId('providers-needed-input');
+    fireEvent.change(input, { target: { value: '' } });
+    expect(getValues().providers_needed).toBeNull();
+    fireEvent.change(input, { target: { value: '3' } });
+    expect(getValues().providers_needed).toBe(3);
   });
 });
