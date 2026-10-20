@@ -85,4 +85,28 @@ test.describe('vacancy-locked-fields — quantidade de prestadores sem padrão 1
     expect(JSON.parse(resp.request().postData() ?? '{}')).not.toHaveProperty('providers_needed');
     expect(sqlComVars(`SELECT coalesce(providers_needed::text, '<null>') FROM patient_contracted_services WHERE id = :'sid'`, { sid: serviceId })).toBe('<null>');
   });
+
+  test('2. alt (validação, conta 1) — vaga MANUAL com a quantidade vazia: recusa com "Debe haber al menos 1 prestador" e nenhum PUT sai', async ({ page }) => {
+    const { patientId, addressId } = semearPaciente('ProvidersManual');
+    const caseNumber = 970_000 + Math.floor(Math.random() * 9999);
+    sqlComVars(`UPDATE patients SET case_number = :'cn'::int WHERE id = :'pid'`, { cn: String(caseNumber), pid: patientId });
+    const vacancyId = insertBaseVacancy({ patientId, patientAddressId: addressId, caseNumber, status: 'PENDING_ACTIVATION', isDraft: true });
+    vagas.push(vacancyId);
+    sqlComVars(`UPDATE job_postings SET providers_needed = NULL, schedule = '[{"dayOfWeek": 1, "startTime": "08:00", "endTime": "12:00"}]'::jsonb WHERE id = :'vid'`, { vid: vacancyId });
+    const puts: string[] = [];
+    page.on('request', (r) => { if (r.method() === 'PUT' && /\/vacancies\//.test(r.url())) puts.push(r.url()); });
+
+    await loginComoStaffMock(page, STAFF, 'E2E Providers Manual');
+    await page.goto(`/admin/vacancies/${vacancyId}/edit`);
+    await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByTestId('providers-needed-input')).toBeEnabled();
+    await expect(page.getByTestId('providers-needed-input')).toHaveValue('');
+    const meetInput = page.getByTestId('meet-link-0');
+    await meetInput.click();
+    await page.keyboard.type('meet.google.com/abc-defg-hij');
+    await meetInput.blur();
+    await page.getByTestId('create-vacancy-save-btn').click({ timeout: 5_000 }).catch(() => undefined); // desabilitado por validação também vale (conta 1)
+    await expect(page.getByText('Debe haber al menos 1 prestador')).toBeVisible();
+    expect(puts).toHaveLength(0);
+  });
 });
