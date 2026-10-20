@@ -25,4 +25,19 @@ describe('itinerário B2 — i18n', () => {
     expect(get(esJson, `${ITIN}.editModal.addWorker`)).toBe('Agregar profesional');
     expect(get(esJson, `${ITIN}.actionErrors.ITINERARY_SLOT_CAPACITY_EXCEEDED`)).toBe('La franja ya tiene todos los prestadores que necesita el servicio. Actualizamos la pantalla.');
   });
+
+  it('Caso A/B: chaves de substitution e actionErrors existem em es e pt-BR (texto literal em es)', () => {
+    const SUB = 'admin.patients.detail.serviceTeam.substitution';
+    const paths = [
+      ...['startLabel', 'startNow', 'startScheduled', 'scheduledDate', 'scheduledReserveOnly'].map((k) => `${SUB}.${k}`),
+      ...['ITINERARY_OVERLAP', 'ALLOCATION_NOT_ACTIVE', 'REPLACEMENT_DATE_IN_PAST', 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED'].map((k) => `${ITIN}.actionErrors.${k}`),
+    ];
+    for (const p of paths) {
+      expect(typeof get(esJson, p) === 'string' && (get(esJson, p) as string).length > 0, `es ${p}`).toBe(true);
+      expect(typeof get(ptBRJson, p) === 'string' && (get(ptBRJson, p) as string).length > 0, `pt-BR ${p}`).toBe(true);
+    }
+    expect(get(esJson, `${SUB}.scheduledReserveOnly`)).toContain('{{date}}');
+    expect(get(esJson, `${SUB}.startNow`)).toBe('Ahora');
+    expect(get(esJson, `${SUB}.startScheduled`)).toBe('Programada');
+  });
 });

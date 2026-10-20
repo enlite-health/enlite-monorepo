@@ -4000,7 +4000,12 @@
             "reason": "Motivo",
             "reasonPlaceholder": "Motivo da troca",
             "reasonLoadError": "Não foi possível carregar os motivos.",
-            "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente."
+            "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente.",
+            "startLabel": "Início da substituição",
+            "startNow": "Agora",
+            "startScheduled": "Programada",
+            "scheduledDate": "Data de início",
+            "scheduledReserveOnly": "Com início programado o prestador atual segue até o dia anterior, por isso só pode ficar como reserva. Para tirá-lo do encuadre, remova-o do itinerário a partir de {{date}}."
           }
         },
         "itinerary": {
@@ -4106,6 +4111,10 @@
             "SLOT_INACTIVE": "Esta faixa não está mais ativa.",
             "SERVICE_WITHOUT_ADDRESS": "Este serviço não tem endereço cadastrado.",
             "ITINERARY_SLOT_CAPACITY_EXCEEDED": "A faixa já tem todos os prestadores que o serviço precisa. Atualizamos a tela.",
+            "ITINERARY_OVERLAP": "O prestador já tem outra faixa que se sobrepõe a este horário.",
+            "ALLOCATION_NOT_ACTIVE": "Essa alocação não está mais ativa. Atualizamos a tela.",
+            "REPLACEMENT_DATE_IN_PAST": "A data de início já passou. Escolha hoje ou uma data futura.",
+            "DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED": "Com início programado o prestador só pode ficar como reserva.",
             "NOT_FOUND": "A faixa ou o serviço não foi encontrado.",
             "generic": "Não foi possível atribuir o prestador."
           }

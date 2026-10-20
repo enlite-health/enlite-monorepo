@@ -4079,7 +4079,12 @@
             "reason": "Motivo",
             "reasonPlaceholder": "Motivo del cambio",
             "reasonLoadError": "No se pudieron cargar los motivos.",
-            "anaCareNotice": "Recordá cargar este cambio a mano en Ana Care — no se envía automáticamente."
+            "anaCareNotice": "Recordá cargar este cambio a mano en Ana Care — no se envía automáticamente.",
+            "startLabel": "Inicio del reemplazo",
+            "startNow": "Ahora",
+            "startScheduled": "Programada",
+            "scheduledDate": "Fecha de inicio",
+            "scheduledReserveOnly": "Con inicio programado el prestador actual sigue hasta el día anterior, por eso solo se puede dejar como reserva. Para sacarlo del encuadre, quitalo del itinerario desde el {{date}}."
           }
         },
         "itinerary": {
@@ -4185,6 +4190,10 @@
             "SLOT_INACTIVE": "Esta franja ya no está activa.",
             "SERVICE_WITHOUT_ADDRESS": "Este servicio no tiene dirección cargada.",
             "ITINERARY_SLOT_CAPACITY_EXCEEDED": "La franja ya tiene todos los prestadores que necesita el servicio. Actualizamos la pantalla.",
+            "ITINERARY_OVERLAP": "El prestador ya tiene otra franja que se superpone con este horario.",
+            "ALLOCATION_NOT_ACTIVE": "Esa asignación ya no está activa. Actualizamos la pantalla.",
+            "REPLACEMENT_DATE_IN_PAST": "La fecha de inicio ya pasó. Elegí hoy o una fecha futura.",
+            "DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED": "Con inicio programado solo se puede dejar al prestador como reserva.",
             "NOT_FOUND": "No se encontró la franja o el servicio.",
             "generic": "No se pudo asignar el prestador."
           }
