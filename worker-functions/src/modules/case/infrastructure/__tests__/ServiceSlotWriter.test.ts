@@ -38,7 +38,7 @@ function cliente(o: Opts = {}) {
 }
 
 const NOW = new Date('2026-10-18T15:00:00Z'); // 12:00 em Buenos Aires → hoje = 2026-10-18
-const escritas = (c: Array<{ sql: string }>) => c.filter((x) => /^\s*(UPDATE|INSERT)/.test(x.sql));
+const escritas = <T extends { sql: string }>(c: T[]): T[] => c.filter((x) => /^\s*(UPDATE|INSERT)/.test(x.sql));
 
 describe('replaceServiceSlots', () => {
   it('fecha antes de abrir: seg 08-12 vira seg 08-13 → SELECT país, SELECT vigentes, SELECT alocação, SELECT FOR UPDATE, UPDATE valid, INSERT', async () => {
@@ -72,6 +72,15 @@ describe('replaceServiceSlots', () => {
     await replaceServiceSlots(cli, 'svc-1', [{ dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 }], 'actor-1', NOW);
     const upd = chamadas.find((c) => /^\s*UPDATE patient_itinerary_slot/.test(c.sql))!;
     expect(upd.params).toEqual(['slot-hoje', 'empty', 'actor-1']);
+  });
+
+  it('equivalência: com o relógio às 01:30 UTC (22:30 do dia anterior em AR) o limite gravado é o dia LOCAL, nunca a data UTC', async () => {
+    const AGORA_UTC = new Date('2026-10-19T01:30:00Z'); // 22:30 de 18/10 em Buenos Aires; a data UTC já é 19/10
+    const { cli, chamadas } = cliente({ vigentes: [{ id: 'slot-old', weekday: 1, start_time: '08:00', duration_minutes: 240 }], validAtual: '[2026-10-01,)' });
+    await replaceServiceSlots(cli, 'svc-1', [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 300 }], 'actor-1', AGORA_UTC);
+    const [fecha, abre] = escritas(chamadas);
+    expect(fecha.params[1]).toBe('[2026-10-01,2026-10-18)'); // ≤ dia local (18), nunca 19
+    expect(abre.params[4]).toBe('[2026-10-18,)');
   });
 
   it('alocação vigente na faixa que sai → SlotHasActiveAllocationError e NENHUM UPDATE/INSERT', async () => {
