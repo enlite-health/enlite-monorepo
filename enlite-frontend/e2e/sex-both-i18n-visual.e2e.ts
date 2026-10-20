@@ -26,7 +26,6 @@ const MOCK_VACANCY = {
   patient_zone: 'Palermo',
   patient_city: 'Buenos Aires',
   patient_neighborhood: 'Palermo',
-  insurance_verified: false,
   required_professions: ['Acompañante Terapéutico'],
   required_sex: 'BOTH',
   pathology_types: null,

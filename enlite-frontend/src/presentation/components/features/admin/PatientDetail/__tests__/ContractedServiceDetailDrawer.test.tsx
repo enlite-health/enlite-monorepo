@@ -3,6 +3,7 @@
  * do Gabriel: a tabela mostra o essencial; o clique na linha mostra tudo). i18n REAL (molde
  * `sex-both-i18n.test.tsx`) + guard de enum cru.
  */
+import { CONTRACT_058_DEFAULTS, LINKED_058 } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import i18n from 'i18next';
@@ -25,8 +26,7 @@ beforeAll(async () => {
 const BASE: PatientContractedServiceDetail = {
   id: 'svc-1', patientId: 'pat-1', serviceCode: 'CAREGIVER', professionalProfile: null,
   providersNeeded: null, authorization: null, legacyAuthorizedHours: null, scheduleHours: 0, careLocation: null,
-  hourlyValue: null, hourlyValueRedacted: false, startDate: null,
-  contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
+  ...CONTRACT_058_DEFAULTS, startDate: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, liveVacancy: null, liveVacancyRedacted: false,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
@@ -40,7 +40,11 @@ describe('ContractedServiceDetailDrawer', () => {
     expect(screen.getByTestId('svc-detail-location').textContent).toContain('—');
     expect(screen.getByTestId('svc-detail-address').textContent).toContain('Sin domicilio vinculado');
     expect(screen.getByTestId('svc-detail-schedule').textContent).toContain('Sin horario');
-    expect(screen.getByTestId('svc-detail-value').textContent).toContain('—');
+    // Sem vínculo (todo serviço de hoje): preço/imposto/pagador dizem que NÃO há contrato — não um "—" que pareça preço vazio.
+    expect(screen.getByTestId('svc-detail-value').textContent).toContain('Sin contrato vinculado');
+    expect(screen.getByTestId('svc-detail-contract').textContent).toContain('Sin contrato vinculado');
+    expect(screen.getByTestId('svc-detail-iva').textContent).toContain('Sin contrato vinculado');
+    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('NO_PAYER');
     expect(screen.getByTestId('svc-detail-start').textContent).toContain('—');
     expect(screen.getByTestId('svc-detail-providers').textContent).toContain('(0)');
     expect(screen.queryByText('Baja')).toBeNull();
@@ -56,7 +60,8 @@ describe('ContractedServiceDetailDrawer', () => {
       deviceTypes: ['HOME', 'SCHOOL'],
       providersNeeded: 2,
       startDate: '2026-09-01T00:00:00.000Z',
-      hourlyValue: 1200,
+      ...LINKED_058,
+      price: { state: 'OK', hourlyRate: 1200, currency: 'ARS' },
       providers: [
         { id: 'p1', serviceId: 'svc-1', workerId: 'w1', workerName: null, active: true, endedAt: null, country: 'AR', createdAt: '', updatedAt: '' },
         { id: 'p2', serviceId: 'svc-1', workerId: 'w2', workerName: 'Beto', active: true, endedAt: null, country: 'AR', createdAt: '', updatedAt: '' },
@@ -67,7 +72,7 @@ describe('ContractedServiceDetailDrawer', () => {
     expect(screen.getByText('Baja')).toBeTruthy();
     expect(screen.getByTestId('svc-detail-devices').textContent).toContain('Domiciliario');
     expect(screen.getByTestId('svc-detail-devices').textContent).not.toContain('HOME');
-    expect(screen.getByTestId('svc-detail-value').textContent).toContain('1200');
+    expect(screen.getByTestId('svc-detail-value').textContent).toMatch(/1\.?200/);
     expect(screen.getByTestId('svc-detail-start').textContent).not.toContain('—');
     const providers = screen.getByTestId('svc-detail-providers');
     expect(providers.textContent).toContain('(2 / 2)'); // 2 ativos de 2 necessários — o inativo não conta
@@ -78,6 +83,43 @@ describe('ContractedServiceDetailDrawer', () => {
     expect(providers.textContent).toContain('Beto');
     expect(providers.textContent).not.toContain('Fora');
     expectNoRawEnumLeaks(container);
+  });
+
+  // ── Spec 058: pagador, preço, imposto e divergência vêm do VÍNCULO e do termo vigente (somente leitura) ─────────────
+  it('serviço VINCULADO: obra social — contrato, preço e imposto do termo (0 = isento) e a divergência, tudo traduzido', () => {
+    const svc = { ...BASE, ...LINKED_058, tax: { state: 'OK', taxRatePercent: 0 } } as PatientContractedServiceDetail;
+    const { container } = render(<ContractedServiceDetailDrawer service={svc} addresses={[]} onClose={vi.fn()} />);
+    expect(screen.getByTestId('svc-detail-contract').textContent).toContain('OSDE — Plan 210');
+    expect(screen.getByTestId('svc-detail-value').textContent).toMatch(/1\.?500/);
+    expect(screen.getByTestId('svc-detail-iva').textContent).toContain('Exento (0 %)');
+    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('MATCH');
+    expectNoRawEnumLeaks(container);
+  });
+
+  it('sem a célula de preço: cadeado, nunca o número; o imposto continua; sem `coverage` os nomes somem e a divergência é REDACTED', () => {
+    const svc = {
+      ...BASE, ...LINKED_058,
+      payer: { state: 'LINKED', isPrivate: false, validFrom: '2026-09-01', validTo: null, names: null },
+      price: { state: 'REDACTED' }, coverageMatch: { state: 'REDACTED' },
+    } as PatientContractedServiceDetail;
+    render(<ContractedServiceDetailDrawer service={svc} addresses={[]} onClose={vi.fn()} />);
+    expect(screen.getByTestId('svc-detail-value').textContent).toContain('🔒');
+    expect(screen.getByTestId('svc-detail-value').textContent).not.toMatch(/1\.?500/);
+    expect(screen.getByTestId('svc-detail-iva').textContent).toContain('21');
+    expect(screen.getByTestId('svc-detail-contract').textContent).toContain('no visible con tu permiso');
+    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('REDACTED');
+  });
+
+  it('pagador particular sem permissão de nomes: "Particular"; termo ausente: a frase de "sem término vigente"', () => {
+    const svc = {
+      ...BASE, ...LINKED_058,
+      payer: { state: 'LINKED', isPrivate: true, validFrom: '2026-09-01', validTo: null, names: null },
+      price: { state: 'NO_TERM' }, tax: { state: 'NO_TERM' }, coverageMatch: { state: 'REDACTED' },
+    } as PatientContractedServiceDetail;
+    render(<ContractedServiceDetailDrawer service={svc} addresses={[]} onClose={vi.fn()} />);
+    expect(screen.getByTestId('svc-detail-contract').textContent).toContain('Particular');
+    expect(screen.getByTestId('svc-detail-value').textContent).toContain('Sin término vigente hoy');
+    expect(screen.getByTestId('svc-detail-iva').textContent).toContain('Sin término vigente hoy');
   });
 
   it('desmontar durante a animação de fechar cancela o timer — onClose NÃO dispara órfão (gate 06/09)', () => {

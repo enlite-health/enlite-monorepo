@@ -386,7 +386,7 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       ADDRESS: /NOT EXISTS \(SELECT 1 FROM patient_addresses/,
       RESPONSIBLE: /NOT EXISTS \(SELECT 1 FROM patient_responsibles/,
       // FR-122 (spec 018, PR-6): placeholder — < 2 caracteres alfanuméricos, ou só zeros.
-      COVERAGE: /LENGTH\(REGEXP_REPLACE\(COALESCE\(p\.insurance_informed, p\.health_insurance_name, ''\)/,
+      COVERAGE: /LENGTH\(REGEXP_REPLACE\(COALESCE\(p\.insurance_informed, ''\)/,
       CONTRACTED_SERVICE: /NOT EXISTS \(SELECT 1 FROM patient_contracted_services/,
       SERVICE_ADDRESS: /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+LEFT JOIN patient_addresses pa ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/,
       SERVICE_SCHEDULE:

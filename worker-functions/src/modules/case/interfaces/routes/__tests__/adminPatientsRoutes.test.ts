@@ -65,7 +65,8 @@ const ESPERADO: Record<string, string | null> = {
   'DELETE /patient-chat-roles/:code': 'patient:update',
   // Catálogo de coberturas (mig 311, spec 012): mesma régua dos papéis de chat.
   'GET /catalogs/insurance-providers': 'patient_coverage:read',
-  'POST /catalogs/insurance-providers': 'patient:create',
+  // Spec 058: o POST muda o catálogo de TODOS os pacientes — célula própria (só admin) no lugar de `patient:create`. O GET segue `patient_coverage:read` (C4).
+  'POST /catalogs/insurance-providers': 'catalog_insurance_providers:create',
   'GET /chat-groups': 'messaging:read',
   'GET /patients/stats': 'patient:read',
   'GET /patients/funnel': 'patient:read',

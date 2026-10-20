@@ -34,7 +34,6 @@ export const createPatientSchema = z.object({
   documentType: z.enum(DOCUMENT_TYPES as unknown as [string, ...string[]]).optional(),
   documentNumber: z.string().trim().min(1).optional(),
   healthInsuranceName: z.string().trim().min(1).optional(),
-  healthInsuranceMemberId: z.string().trim().min(1).optional(),
   serviceType: z.array(z.enum(PROFESSIONS as unknown as [string, ...string[]])).optional(),
 });
 

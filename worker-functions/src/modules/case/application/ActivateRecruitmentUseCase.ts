@@ -149,10 +149,10 @@ export class ActivateRecruitmentUseCase {
       has_verified_active_coverage: boolean;
     }>(
       `SELECT id, status, case_number,
-                COALESCE(insurance_informed, health_insurance_name) AS insurance_informed,
+                insurance_informed,
                 -- Hotfix gate-cobertura-verificada-vacante (28/09): caminho NOVO da cobertura
                 -- (patient_insurance_verified, migration 305/312) — o gate deixa de conhecer só
-                -- o legado insurance_informed/health_insurance_name. Mesmo critério "provider
+                -- o escalar insurance_informed. Mesmo critério "provider
                 -- ativo" medido em produção antes deste hotfix.
                 EXISTS (
                   SELECT 1 FROM patient_insurance_verified piv

@@ -17,7 +17,7 @@
  * que o Javier ligar uma etapa, ele passaria a DESLIGÁ-LA todo dia às 3h.
  *
  * ── O QUE ESTE SPEC PROVA ───────────────────────────────────────────────────
- *  1. a tela renderiza as 9 etapas e a coluna da mensagem;
+ *  1. a tela renderiza as 8 etapas e a coluna da mensagem;
  *  2. a modal abre e mostra o TEXTO da mensagem (não o slug) — que é a razão de
  *     a modal existir; e mostra os bloqueados agrupados pelo motivo;
  *  3. o contrato da rota: `body` e `bodyTwilio` chegam, e a elegibilidade é
@@ -62,12 +62,12 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await api.dispose(); });
 
-test('[@route:/admin/mensajes-por-etapa @depth:smoke] a tela lista as 9 etapas do Kanban', async ({ page }) => {
+test('[@route:/admin/mensajes-por-etapa @depth:smoke] a tela lista as 8 etapas do Kanban', async ({ page }) => {
   await page.goto('/admin/mensajes-por-etapa');
   await expect(page.getByTestId('fsm-table')).toBeVisible({ timeout: 30_000 });
 
   const linhas = page.locator('[data-testid^="fsm-row-"]');
-  await expect(linhas).toHaveCount(9);
+  await expect(linhas).toHaveCount(8);
   // QUALIFIED é built-in (convite de entrevista) e não se configura aqui.
   await expect(page.getByTestId('fsm-row-QUALIFIED')).toContainText(/Incorporada/i);
 });

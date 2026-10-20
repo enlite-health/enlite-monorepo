@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CARE_LOCATIONS, CONTRACT_TYPES, TAX_CONDITIONS, SUPERVISION_FREQUENCIES, GUARD_SHIFTS, PROVIDER_AGE_BANDS } from '../../domain/enums/ContractedService';
+import { CARE_LOCATIONS, SUPERVISION_FREQUENCIES, GUARD_SHIFTS, PROVIDER_AGE_BANDS } from '../../domain/enums/ContractedService';
 
 const SERVICE_CODES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 
@@ -66,10 +66,7 @@ export const createContractedServiceSchema = z
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
-    hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-    contractType: optionalEnum(CONTRACT_TYPES as unknown as [string, ...string[]]),
-    taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
     supervisionFrequency: optionalEnum(SUPERVISION_FREQUENCIES as unknown as [string, ...string[]]),
     guardShift: optionalEnum(GUARD_SHIFTS as unknown as [string, ...string[]]),
     // Spec 015 (US-A6.1, D191/D254/D256): franja etária solicitada do PRESTADOR para este
@@ -80,6 +77,8 @@ export const createContractedServiceSchema = z
     schedule: optionalSchedule,
     ...recruitmentFields,
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
+    // `hourlyValue`/`contractType`/`taxCondition` SAÍRAM (spec 058): preço e imposto vêm do termo do contrato, o pagador do vínculo. A rota recusa
+    // essas chaves com 422 `LEGACY_FIELD_REMOVED` ANTES do ABAC (`rejectLegacyKeys`); o `.strict()` abaixo é a rede de segurança (400).
     // `country` NÃO entra aqui de propósito (C7): a jurisdição é do PACIENTE e nasce do trigger da
     // migration 319, que só preenche quando a coluna vem NULL — valor explícito do cliente vencia
     // o trigger e carimbava `POST {country:'BR'}` num paciente AR. É a fronteira para a qual a
@@ -94,10 +93,7 @@ export const updateContractedServiceSchema = z
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
-    hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-    contractType: optionalEnum(CONTRACT_TYPES as unknown as [string, ...string[]]),
-    taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
     supervisionFrequency: optionalEnum(SUPERVISION_FREQUENCIES as unknown as [string, ...string[]]),
     guardShift: optionalEnum(GUARD_SHIFTS as unknown as [string, ...string[]]),
     providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),

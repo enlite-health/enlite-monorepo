@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AdminPatientContactRowsApiService } from '@infrastructure/http/AdminPatientContactRowsApiService';
-import type { PatientDetail, PatientCoverageSectionPayload } from '@domain/entities/PatientDetail';
-import { INSURANCE_PROVIDER_CODES } from '@domain/entities/patientEnums';
+import type { PatientDetail, PatientCoverageSectionPayload, InsuranceProvider } from '@domain/entities/PatientDetail';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -30,8 +29,8 @@ const LOCKED_SOURCE = 'clickup';
 
 /**
  * Drawer "Cobertura Médica" (spec 012, US-B3): cobertura informada (texto), verificadas por
- * CÓDIGO do catálogo (multi-select — o catálogo é lido do endpoint, editável sem deploy; cai no
- * seed dos 33 se a leitura falhar) e nº de afiliado. Salva por PATCH /:id/coverage, só o que
+ * CÓDIGO do catálogo (multi-select — o catálogo, COM o nome, é lido do endpoint e é editável sem deploy; spec 058 C3: o nome
+ * vem do banco, não há mais seed no front nem tradução por código) e nº de afiliado. Salva por PATCH /:id/coverage, só o que
  * mudou. IVA e tipo de contratação NÃO estão aqui (lex C3.3 → bloco C).
  *
  * QA 🟡3 (SUP-B5): o multi-select edita SÓ as coberturas gravadas pelo PAINEL
@@ -39,26 +38,29 @@ const LOCKED_SOURCE = 'clickup';
  * `source='admin_manual'`, então desmarcar um código de origem ClickUp aqui nunca o removia de
  * verdade: o operador via "sucesso" e a cobertura voltava no próximo GET (união das origens).
  * As de origem ClickUp aparecem como chips travados (sem controle de remoção), rotulados
- * `te('coverageFromClickup')`. Fallback: se a API não mandar `insuranceVerifiedEntries` (contrato
- * anterior a esta rodada), trata todo `insuranceVerifiedCodes` como editável — mesmo
- * comportamento de antes, sem quebrar quem ainda não fez deploy do backend novo.
+ * `te('coverageFromClickup')`. A origem de cada chip vem de `coverage.entries[].source` (spec 058 §C); a entrada SEM mapeamento
+ * ao catálogo (`mapped: false`) não tem código: aparece travada, como "sem mapeamento", e não entra no payload. Sem `coverage`
+ * (ator sem leitura), cai em `insuranceVerifiedCodes` como editável.
  */
 export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
-  const tc = (k: string) => t(`admin.patients.detail.coverageCard.${k}`);
+  const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.coverageCard.${k}`, o);
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
 
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [codes, setCodes] = useState<string[]>([...INSURANCE_PROVIDER_CODES]);
+  const [catalog, setCatalog] = useState<InsuranceProvider[]>([]);
   const [name, setName] = useState(patient.insuranceInformed ?? '');
   const [affiliate, setAffiliate] = useState(patient.affiliateId ?? '');
 
-  const entries = patient.insuranceVerifiedEntries
-    ?? (patient.insuranceVerifiedCodes ?? []).map((code) => ({ code, source: 'admin_manual' }));
-  const lockedEntries = entries.filter((e) => e.source === LOCKED_SOURCE);
-  const editableInitialCodes = entries.filter((e) => e.source !== LOCKED_SOURCE).map((e) => e.code);
+  const coverageEntries = patient.coverage?.entries
+    ?? (patient.insuranceVerifiedCodes ?? []).map((code) => ({ code, name: null, mapped: true, source: 'admin_manual' }));
+  // Só as MAPEADAS têm código editável; as sem mapeamento são rótulo cru (travado, sem controle).
+  const mappedEntries = coverageEntries.filter((e): e is typeof e & { code: string } => e.mapped && e.code !== null);
+  const unmappedCount = coverageEntries.filter((e) => !e.mapped).length;
+  const lockedEntries = mappedEntries.filter((e) => e.source === LOCKED_SOURCE);
+  const editableInitialCodes = mappedEntries.filter((e) => e.source !== LOCKED_SOURCE).map((e) => e.code);
 
   const [selected, setSelected] = useState<string[]>(editableInitialCodes);
   // 417/PR-1 (spec 018, ADR-1): contatos de emergência da cobertura — escrita POR LINHA. `id`
@@ -78,8 +80,8 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   useEffect(() => {
     let cancelled = false;
     AdminApiService.listInsuranceProviders()
-      .then((rows) => { if (!cancelled) setCodes(rows.map((r) => r.code)); })
-      .catch(() => { /* seed dos 33 já está no estado */ });
+      .then((rows) => { if (!cancelled) setCatalog(rows); })
+      .catch(() => { /* sem catálogo: os rótulos caem no nome que a ficha já trouxe (coverage.entries) ou no código */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -106,8 +108,14 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  const labelOf = (code: string) => t(`admin.patients.insuranceProviderOptions.${code}`, code);
-  const options: SelectOption[] = codes.map((code) => ({ value: code, label: labelOf(code) }));
+  // O nome é do banco: catálogo vivo > nome que a ficha trouxe na entrada > o próprio código (nunca quebra o chip).
+  const labelOf = (code: string): string =>
+    catalog.find((p) => p.code === code)?.name ?? mappedEntries.find((e) => e.code === code)?.name ?? code;
+  // Opções = catálogo vivo (fonte do dropdown) + o que já está marcado e ainda não veio na lista (leitura lenta/falha).
+  const options: SelectOption[] = [
+    ...catalog.map((p) => ({ value: p.code, label: p.name })),
+    ...selected.filter((c) => !catalog.some((p) => p.code === c)).map((c) => ({ value: c, label: labelOf(c) })),
+  ];
 
   const onSubmit = async (): Promise<void> => {
     setSubmitError(null);
@@ -197,20 +205,25 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
-          <FormField label={tc('providerName')} htmlFor="pcv-name" optional>
+          <FormField label={tc('informed')} htmlFor="pcv-name" optional>
             <InputWithIcon id="pcv-name" inputSize="compact" value={name} onChange={(e) => setName(e.target.value)} data-testid="pcv-name" />
           </FormField>
           <FormField label={tc('verified')} htmlFor="pcv-codes" optional>
-            {lockedEntries.length > 0 && (
+            {(lockedEntries.length > 0 || unmappedCount > 0) && (
               // QA 🟡3: origem ClickUp — chip SEM controle de remoção (não faz parte do
               // multi-select nem do payload). Ver o comentário da função para o porquê.
               <div className="flex flex-wrap gap-1 mb-2" data-testid="pcv-codes-locked">
                 {lockedEntries.map(({ code }) => (
-                  <span key={code} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                  <span key={code} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" data-testid={`pcv-locked-${code}`} data-source={LOCKED_SOURCE}>
                     <Text as="span" size="xs" weight="medium" color="inherit">{labelOf(code)}</Text>
                     <Text as="span" size="xs" color="muted">{te('coverageFromClickup')}</Text>
                   </span>
                 ))}
+                {unmappedCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" data-testid="pcv-unmapped">
+                    <Text as="span" size="xs" weight="medium" color="inherit">{tc('unmapped', { count: unmappedCount })}</Text>
+                  </span>
+                )}
               </div>
             )}
             <MultiSelect id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('selectPlaceholder')} />

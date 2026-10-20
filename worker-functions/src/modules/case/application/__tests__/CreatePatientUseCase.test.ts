@@ -33,7 +33,6 @@ describe('CreatePatientUseCase', () => {
       documentType: 'DNI',
       documentNumber: '12345678',
       healthInsuranceName: 'OSDE',
-      healthInsuranceMemberId: 'A-9',
       serviceType: ['CAREGIVER', 'NURSE'],
     });
 
@@ -55,10 +54,12 @@ describe('CreatePatientUseCase', () => {
       phoneWhatsapp: '+5491100000000',
       documentType: 'DNI',
       documentNumber: '12345678',
-      healthInsuranceName: 'OSDE',
-      healthInsuranceMemberId: 'A-9',
+      insuranceInformed: 'OSDE',
       serviceType: ['CAREGIVER', 'NURSE'],
     });
+    // Spec 058: a chave do fio `healthInsuranceName` grava no dono `insurance_informed`; as legadas não viajam.
+    expect(nativeInput).not.toHaveProperty('healthInsuranceName');
+    expect(nativeInput).not.toHaveProperty('healthInsuranceMemberId');
   });
 
   it('a2. US-B6 (spec 012): birthDate do modal vai para o paciente nativo; ausente → null', async () => {

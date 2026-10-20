@@ -13,7 +13,8 @@ export type { PatientCompleteness, PatientCompletenessCode } from './PatientComp
 // batia no teto de 400 linhas do validador.
 export type { PatientCoverageSectionPayload } from './PatientCoverage';
 export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry, PatientStatusOptions, PatientStatusOption, PatientStatusChangeSource } from './PatientLifecycle';
-export type { InsuranceProvider } from './PatientCoverage';
+export type { InsuranceProvider, PatientCoverageView, CoverageEntryView } from './PatientCoverage';
+import type { PatientCoverageView } from './PatientCoverage';
 export type { PatientCoverageEmergencyContact, PatientCoverageEmergencyContactInput, CoverageEmergencyContactKind } from './PatientCoverage';
 import type { PatientCoverageEmergencyContact } from './PatientCoverage';
 export type { PatientAddressLogisticsPayload } from './PatientAddress';
@@ -222,8 +223,8 @@ export interface PatientDetail {
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;
+  /** Cobertura INFORMADA (texto livre; `insurance_informed`, dono único). `null` também quando o ator não lê `coverage`. */
   insuranceInformed: string | null;
-  insuranceVerified: string | null;
   cityLocality: string | null;
   province: string | null;
   zoneNeighborhood: string | null;
@@ -242,11 +243,11 @@ export interface PatientDetail {
   /** Coberturas verificadas por CÓDIGO do catálogo (mig 312), ordem do catálogo. */
   insuranceVerifiedCodes: string[];
   /**
-   * As mesmas coberturas, COM origem (QA 🟡3/SUP-B5) — o drawer usa `source` para travar o chip
-   * do ClickUp (não removível) e restringir o multi-select ao que o painel gravou
-   * (`source: 'admin_manual'`). Opcional: API anterior a esta rodada não manda o campo.
+   * Spec 058 §C: a cobertura em UM objeto — `display`/`displaySource` (só o PDF) e `entries[]` com
+   * `code`+`name`+`mapped`+`source` (o card mostra os nomes; o drawer trava o chip do ClickUp pela `source`).
+   * `null` = o ator não lê `coverage` (junto com `redacted.coverage`); "sem cobertura" é objeto com `NONE`.
    */
-  insuranceVerifiedEntries?: Array<{ code: string; source: string }>;
+  coverage: PatientCoverageView | null;
   /**
    * Hotfix gate-cobertura-verificada-vacante (28/09): ≥1 cobertura verificada
    * (`insuranceVerifiedCodes`) com provider ATIVO no catálogo — alimenta `recruitmentMissingCodes`
@@ -323,7 +324,6 @@ export interface CreatePatientPayload {
   documentType?: string; // 'DNI'|'PASSPORT'|'CEDULA'|'LE_LC'|'CPF'
   documentNumber?: string;
   healthInsuranceName?: string;
-  healthInsuranceMemberId?: string;
   serviceType?: string[]; // Profession[]: 'AT'|'CAREGIVER'|'NURSE'|'KINESIOLOGIST'|'PSYCHOLOGIST'
 }
 

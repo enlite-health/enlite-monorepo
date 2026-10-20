@@ -14,8 +14,9 @@
  *   6. Alocação antiga (histórico, Fase 14): a linha nasce por SQL; country herda do SERVIÇO
  *      (⇒ paciente), não do worker, por trigger (C-e.1); o GET a lista; POST/PATCH …/providers → 404
  *      e nada escrito (a escrita saiu — DX-14.1).
- *   7. `hourlyValue` redigido para recruiter/community_manager, cru para admin (C-c.4) — no
- *      GET da lista E no GET /patients/:id embutido.
+ *   7. O PREÇO (spec 058: `price`, do termo do contrato vinculado; era `hourlyValue`) redigido para
+ *      recruiter/community_manager, cru para admin (C-c.4) — no GET da lista E no GET /patients/:id embutido.
+ *   1b. (spec 058) hourlyValue/contractType/taxCondition no corpo → 422 LEGACY_FIELD_REMOVED, nada escrito.
  *   8. Guarda de posse: :sid de outro paciente → 404 (nunca edita cross-patient).
  *   9. Purge do paciente de teste (D248) leva as 3 tabelas.
  *  10. Activate (migration 330, decisão do Gabriel 05/09): UMA vaga POR SERVIÇO, no endereço que
@@ -30,6 +31,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
+import { criarContrato, criarPagador, limpar as limpar058a, vincular, vigencia } from './helpers/contrato058aDb';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const RUN = Date.now();
@@ -81,6 +83,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
       `DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`,
       [`${TASK_PREFIX}%`],
     );
+    await limpar058a(pool); // vínculos/termos/contratos QA058_ do teste 7 (antes dos pacientes: FK)
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [`${TASK_PREFIX}%`]);
     await pool.query(`DELETE FROM workers WHERE id = $1`, [workerId]);
     await pool.end();
@@ -92,17 +95,35 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const r = await api.post(
       `/api/admin/patients/${patientAR}/contracted-services`,
       // Spec 015 (US-A6.1): providerAgeBand no POST — round-trip na resposta E na coluna nova.
-      { serviceCode: 'AT', providersNeeded: 2, careLocation: 'HOME', hourlyValue: 1500, deviceTypeCodes: ['HOME'], providerAgeBand: 'AGE_30_45' },
+      { serviceCode: 'AT', providersNeeded: 2, careLocation: 'HOME', deviceTypeCodes: ['HOME'], providerAgeBand: 'AGE_30_45' },
       asAdmin,
     );
     expect(r.status).toBe(201);
-    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, scheduleHours: 0, careLocation: 'HOME', hourlyValue: 1500, country: 'AR', active: true, deviceTypes: ['HOME'], providerAgeBand: 'AGE_30_45' });
+    expect(r.data.data).toMatchObject({ serviceCode: 'AT', providersNeeded: 2, scheduleHours: 0, careLocation: 'HOME', country: 'AR', active: true, deviceTypes: ['HOME'], providerAgeBand: 'AGE_30_45' });
     serviceId = r.data.data.id;
+    // Spec 058: o serviço nasce SEM preço/tipo/imposto (vêm do contrato vinculado) — sem vínculo, `price` é NO_CONTRACT.
+    expect(r.data.data).toMatchObject({ price: { state: 'NO_CONTRACT' }, tax: { state: 'NO_CONTRACT' } });
+    for (const legado of ['hourlyValue', 'contractType', 'taxCondition']) expect(r.data.data).not.toHaveProperty(legado);
     const { rows: [row] } = await pool.query(`SELECT country, created_by, updated_by, provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId]);
     expect(row.country).toBe('AR');
     expect(row.created_by).toBeTruthy();
     expect(row.created_by).toBe(row.updated_by); // C-a.3: autoria na mesma transação
     expect(row.provider_age_band).toBe('AGE_30_45');
+  });
+
+  // Spec 058: as 3 chaves legadas do serviço não são aceitas — 422 `LEGACY_FIELD_REMOVED` (antes do ABAC), nada escrito.
+  it('1b. hourlyValue / contractType / taxCondition no POST e no PATCH → 422 LEGACY_FIELD_REMOVED, nada escrito', async () => {
+    const antes = Number((await pool.query('SELECT COUNT(*)::int AS n FROM patient_contracted_services WHERE patient_id = $1', [patientAR])).rows[0].n);
+    for (const [chave, valor] of [['hourlyValue', 1500], ['contractType', 'PREPAGA'], ['taxCondition', 'IVA_21']] as const) {
+      const post = await api.post(`/api/admin/patients/${patientAR}/contracted-services`, { serviceCode: 'AT', [chave]: valor }, asAdmin);
+      expect({ chave, status: post.status, code: post.data.code, fields: post.data.details?.fields }).toEqual({ chave, status: 422, code: 'LEGACY_FIELD_REMOVED', fields: [chave] });
+      const patch = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { [chave]: valor }, asAdmin);
+      expect({ chave, status: patch.status, code: patch.data.code }).toEqual({ chave, status: 422, code: 'LEGACY_FIELD_REMOVED' });
+    }
+    const depois = Number((await pool.query('SELECT COUNT(*)::int AS n FROM patient_contracted_services WHERE patient_id = $1', [patientAR])).rows[0].n);
+    expect(depois).toBe(antes);
+    const { rows: [legado] } = await pool.query('SELECT hourly_value, contract_type, tax_condition FROM patient_contracted_services WHERE id = $1', [serviceId]);
+    expect(legado).toEqual({ hourly_value: null, contract_type: null, tax_condition: null });
   });
 
   // Spec 015 (US-A6.1): fora do enum → rejeitado pelo schema (convenção viva deste controller:
@@ -125,39 +146,51 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
   });
 
   it('2. PATCH é Merge Patch: só o campo enviado muda', async () => {
-    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { hourlyValue: 1600 }, asAdmin);
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { dailyObs: 'obs-e2e' }, asAdmin);
     expect(r.status).toBe(200);
-    expect(r.data.data).toMatchObject({ hourlyValue: 1600, providersNeeded: 2, careLocation: 'HOME' });
-    // Restaura o valor semeado no caso 1 (o caso 7 lê 1500): os casos não dependem da ordem.
-    await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { hourlyValue: 1500 }, asAdmin);
+    expect(r.data.data).toMatchObject({ dailyObs: 'obs-e2e', providersNeeded: 2, careLocation: 'HOME' });
+    // Restaura o estado semeado no caso 1: os casos não dependem da ordem.
+    await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { dailyObs: null }, asAdmin);
   });
 
   it('4. device_type_codes fora do catálogo → 422, nada escrito', async () => {
-    const before = (await pool.query(`SELECT hourly_value FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
-    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { deviceTypeCodes: ['NAO_EXISTE'], hourlyValue: 99 }, asAdmin);
+    const before = (await pool.query(`SELECT daily_obs FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    const r = await api.patch(`/api/admin/patients/${patientAR}/contracted-services/${serviceId}`, { deviceTypeCodes: ['NAO_EXISTE'], dailyObs: 'nao-grava' }, asAdmin);
     expect(r.status).toBe(422);
     expect(r.data.code).toBe('DEVICE_TYPE_UNKNOWN');
-    const after = (await pool.query(`SELECT hourly_value FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
+    const after = (await pool.query(`SELECT daily_obs FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
     expect(after).toEqual(before);
   });
 
-  it('7. hourlyValue redigido para recruiter, cru para admin — na lista E no GET /patients/:id', async () => {
+  it('7. o preço (do TERMO do contrato vinculado) sai redigido para recruiter, cru para admin — na lista E no GET /patients/:id', async () => {
+    // Spec 058: `hourlyValue` saiu do serviço; o preço é `price`, vindo do termo vigente do contrato vinculado.
+    const contrato = await criarContrato(pool, await criarPagador(pool, 'OBRA_SOCIAL'), 'AR');
+    await pool.query(
+      `INSERT INTO insurance_contract_terms (contract_id, hourly_rate, tax_rate_percent, valid, recorded_by) VALUES ($1, 1500, 21, '[2020-01-01,)', 'e2e-pcs')`,
+      [contrato],
+    );
+    await vincular(pool, serviceId, contrato, vigencia('2020-01-01'));
+    const preco = (svc: { price: { state: string; hourlyRate?: number | string } }) => ({ state: svc.price.state, rate: svc.price.hourlyRate === undefined ? undefined : Number(svc.price.hourlyRate) });
+
     const listAdmin = await api.get(`/api/admin/patients/${patientAR}/contracted-services`, asAdmin);
-    expect(listAdmin.data.data.services[0]).toMatchObject({ hourlyValue: 1500, hourlyValueRedacted: false });
+    expect(preco(listAdmin.data.data.services[0])).toEqual({ state: 'OK', rate: 1500 });
     // Spec 047 (F2): a vaga viva viaja como objeto com o próprio flag — sem vaga, admin lê `null` + redigida:false;
     // recrutador sem `vacancy:read` (papel, engine sem decidir) lê `null` + redigida:true.
     expect(listAdmin.data.data.services[0]).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
     const listRecruiter = await api.get(`/api/admin/patients/${patientAR}/contracted-services`, asRecruiter);
-    expect(listRecruiter.data.data.services[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true });
+    expect(listRecruiter.data.data.services[0]).toMatchObject({ price: { state: 'REDACTED' }, liveVacancy: null, liveVacancyRedacted: true });
+    expect(JSON.stringify(listRecruiter.data.data.services[0])).not.toContain('1500');
 
     const detailAdmin = await api.get(`/api/admin/patients/${patientAR}`, asAdmin);
-    expect(detailAdmin.data.data.contractedServices[0]).toMatchObject({ hourlyValue: 1500, hourlyValueRedacted: false, liveVacancy: null, liveVacancyRedacted: false });
+    expect(preco(detailAdmin.data.data.contractedServices[0])).toEqual({ state: 'OK', rate: 1500 });
+    expect(detailAdmin.data.data.contractedServices[0]).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
     const detailRecruiter = await api.get(`/api/admin/patients/${patientAR}`, asRecruiter);
-    expect(detailRecruiter.data.data.contractedServices[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true });
+    expect(detailRecruiter.data.data.contractedServices[0]).toMatchObject({ price: { state: 'REDACTED' }, liveVacancy: null, liveVacancyRedacted: true });
+    expect(JSON.stringify(detailRecruiter.data.data.contractedServices[0])).not.toContain('1500');
   });
 
   it('8. guarda de posse: :sid de OUTRO paciente → 404, nunca edita cross-patient', async () => {
-    const r = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${serviceId}`, { hourlyValue: 1 }, asAdmin);
+    const r = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${serviceId}`, { providersNeeded: 1 }, asAdmin);
     expect(r.status).toBe(404);
     const stillAR = (await pool.query(`SELECT patient_id FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
     expect(stillAR.patient_id).toBe(patientAR);

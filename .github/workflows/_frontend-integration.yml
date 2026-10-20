@@ -558,7 +558,7 @@ jobs:
   # há cenário de ERRO que exija recriar a API no meio do job.
   integration-e2e-group-simulation:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       E2E_BACKEND_URL: http://localhost:8080
 
@@ -756,6 +756,16 @@ jobs:
       # real: `docker-compose.test.yml` (base, versionado) carrega `vertexInterceptPreload.js` na API,
       # e o próprio spec reprova se a contagem de `[VERTEX-STUB]` não subir. O spec lê o log do
       # container achando-o pela porta 8080 publicada — sem nome fixo.
+      # `058a-` ENTROU (spec 058 Parte A, obra social + contrato: `058a-dados-gerais|empregados|contratos|pacientes-cartao|cascata-servico|cobertura-pdf`,
+      # 21 casos). Quatro casos são (ABAC) e SÓ medem com o engine ligado (com ele OFF `cells===null` mostra tudo e o teste ficaria verde sem medir nada):
+      # `058a-empregados` ALTERNATIVO 2 (sem `insurance_provider_contacts:read` o cartão diz "sem permissão" e o telefone/e-mail não aparece),
+      # `058a-contratos` ALTERNATIVO 3 (sem `patient_contract_value:read` o valor-hora é `REDACTED`), `058a-pacientes-cartao` ALTERNATIVO 2 (sem
+      # `insurance_provider_patients:read`: 403 + "sem permissão") e `058a-cobertura-pdf` ALTERNATIVO 2 (sem `patient_coverage:read` o cartão some e o PDF
+      # diz "sem permissão"); `058a-cascata-servico` ALTERNATIVO 4 (sem `patient_coverage:read` o pagador é `REDACTED` sem nome) é o quinto. Os demais casos
+      # (feliz e alternativos de regra) também entram AQUI e não no `grep:` do `pr-gate.yml`: os 6 arquivos montam o cenário com `abac-stack-helper`
+      # (staff REAL em grupo + `psql` na porta deste job), que o job padrão (engine OFF, token mock sem linha em `users`) não tem. Prefixo `058a-` casa
+      # pelo CAMINHO do arquivo (o `--grep` do Playwright inclui o título do arquivo). Cada arquivo tira `test-results/058a-<tela>.png` + vídeo (T141B):
+      # o passo "Evidências 058a" logo abaixo os publica mesmo com o job verde (o "Relatório" só sobe em falha).
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
@@ -765,7 +775,20 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-"
+
+      # T141B (spec 058): vídeo + print das 6 telas da obra social. Passo 0 medido: o único upload de `test-results/` deste job é o "Relatório (só quando
+      # falha)" — com o job verde nenhum vídeo/print era publicado, então este passo roda SEMPRE (`if: always()`).
+      - name: Evidências 058a — vídeos e prints das telas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-058a-telas
+          path: |
+            enlite-frontend/test-results/**/*.webm
+            enlite-frontend/test-results/058a-*.png
+          retention-days: 14
+          if-no-files-found: warn
 
       # Spec 049 (F9): os e2e de API da aba Admissão têm blocos que só valem com a stack de ENGINE LIGADO + SYNC DO CATÁLOGO +
       # `ADMISSION_EXTERNALS=fake` — exatamente a API deste job. No job `backend-e2e` (sem sync, de propósito: ligá-lo ali

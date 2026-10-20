@@ -157,8 +157,6 @@ export class PatientService {
       ...input,
       needsAttention:          (input.needsAttention ?? false) || flagged,
       attentionReasons:        Array.from(attentionReasons),
-      healthInsuranceName:     input.healthInsuranceName,
-      healthInsuranceMemberId: input.healthInsuranceMemberId,
     };
 
     try {

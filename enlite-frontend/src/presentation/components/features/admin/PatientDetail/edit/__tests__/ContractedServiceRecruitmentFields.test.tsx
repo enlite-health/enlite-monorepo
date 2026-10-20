@@ -3,6 +3,7 @@
  * Prova: pré-carrega; a máscara do Clarity cobre os 4 textos livres (lex T.3); NÃO existe campo de motivo do
  * sexo (lex S.4, D507 item 4); salvar envia os valores; limpar envia `null`.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import i18n from 'i18next';
@@ -36,8 +37,7 @@ beforeAll(async () => {
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
   providersNeeded: 2, authorization: null, legacyAuthorizedHours: 20, scheduleHours: 20, careLocation: 'HOME',
-  hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
-  contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
+  ...CONTRACT_058_DEFAULTS, startDate: '2026-09-01T00:00:00.000Z', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: ['AT'], requiredSex: 'F', requiredExperience: 'exp-sintetica', workerAttributes: 'atrib-sintetico', workSchedule: 'part-time', paymentDay: 'dia 5', dailyObs: 'obs-sintetica',
   addressId: null,
   liveVacancy: null, liveVacancyRedacted: false,

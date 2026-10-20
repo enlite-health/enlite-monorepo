@@ -13,6 +13,7 @@
  * `IcdSearchCombobox` é dublê (REQ-21: o código do CID não passa por aqui); `MultiSelect`/`Select`
  * são os REAIS — a régua é o que o operador consegue fazer na tela, não o que a prop aceita.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within, cleanup } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
@@ -74,11 +75,8 @@ const servico = (over: Partial<PatientContractedServiceDetail> = {}): PatientCon
   authorization: null, legacyAuthorizedHours: 20,
   scheduleHours: 20,
   careLocation: 'HOME',
-  hourlyValue: null,
-  hourlyValueRedacted: false,
+  ...CONTRACT_058_DEFAULTS,
   startDate: null,
-  contractType: null,
-  taxCondition: null,
   supervisionFrequency: null,
   guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,

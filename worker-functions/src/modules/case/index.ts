@@ -175,6 +175,11 @@ export {
 // Spec 012, US-B3: o catálogo de coberturas (migration 311).
 export { InsuranceProviderRepository, InsuranceProviderExistsError,
   InsuranceProviderSortOrderTakenError } from './infrastructure/InsuranceProviderRepository';
+// Spec 058 (Parte A): cadastro de obra social por cartões, contratos/termos e o vínculo serviço -> contrato.
+export { createAdminInsuranceRoutes } from './interfaces/routes/adminInsuranceRoutes';
+export { AdminInsuranceProviderContactsController } from './interfaces/controllers/AdminInsuranceProviderContactsController';
+export { AdminInsuranceContractsController } from './interfaces/controllers/AdminInsuranceContractsController';
+export { AdminContractedServiceContractLinkController } from './interfaces/controllers/AdminContractedServiceContractLinkController';
 export type { InsuranceProviderRow, CreateInsuranceProviderInput } from './infrastructure/InsuranceProviderRepository';
 export type {
   PatientInsuranceVerifiedWriteInput,

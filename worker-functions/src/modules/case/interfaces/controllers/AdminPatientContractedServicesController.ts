@@ -11,7 +11,7 @@ import {
   createContractedServiceSchema,
   updateContractedServiceSchema,
 } from '../validators/contractedServiceSchemas';
-import { hourlyValueActorOf, projectContractedServiceForActor, canReadHourlyValue, bodyWritesHourlyValue } from '../../application/contractedServiceHourlyValueAccess';
+import { hourlyValueActorOf, projectContractedServiceForActor } from '../../application/contractedServiceHourlyValueAccess';
 import {
   ActivateRecruitmentUseCase,
   PatientNotFoundForRecruitmentError,
@@ -30,14 +30,16 @@ const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uu
  *   GET/POST   /api/admin/patients/:id/contracted-services
  *   PATCH      /api/admin/patients/:id/contracted-services/:sid          (sem DELETE — lex C-a.4)
  *
- * `hourlyValue` é redigido para quem não é admin (lex C-c.4) no ÚNICO ponto:
- * `projectContractedServiceForActor`. `professionalProfile` NUNCA entra em log/erro (lex C-b1) —
+ * O preço (`price`) e os nomes do pagador são redigidos por ator (lex C-c.4, spec 058 §0) no ÚNICO ponto:
+ * `projectContractedServiceForActor`. `requestNow` é capturado UMA vez por requisição e repassado ao repositório (dele sai o `asOf`). `professionalProfile` NUNCA entra em log/erro (lex C-b1) —
  * os `reportError` abaixo carregam só ids e nomes de campo, nunca `req.body`.
  */
 export class AdminPatientContractedServicesController {
   constructor(
     private readonly repo: PatientContractedServiceRepository = new PatientContractedServiceRepository(),
     private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = new ActivateRecruitmentUseCase(),
+    /** `requestNow` único por requisição (spec 058 §H): é dele que o repositório tira o `asOf` do país do serviço. */
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   private project(req: Request, service: ContractedServiceDetail) {
@@ -48,18 +50,6 @@ export class AdminPatientContractedServicesController {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
   }
 
-  /**
-   * Recusa (403) quem manda `hourlyValue` sem poder LÊ-LO. Devolve `true` quando já respondeu.
-   * A rota abre com `patient_services:write`, mas o campo é `patient_contract_value:read` — sem
-   * esta guarda quem recebe `hourlyValue: null` em toda leitura gravava 0 por cima do valor.
-   */
-  private refuseHourlyValueWrite(req: Request, res: Response): boolean {
-    if (!bodyWritesHourlyValue(req.body) || canReadHourlyValue(hourlyValueActorOf(req))) return false;
-    // lex C-b1: só o NOME do campo, nunca o valor.
-    res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'hourlyValue' } });
-    return true;
-  }
-
   /** GET /api/admin/patients/:id/contracted-services */
   async list(req: Request, res: Response): Promise<void> {
     const params = patientParamsSchema.safeParse(req.params);
@@ -68,7 +58,7 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const services = await this.repo.listForPatient(params.data.id);
+      const services = await this.repo.listForPatient(params.data.id, this.now());
       res.status(200).json({ success: true, data: { services: services.map((s) => this.project(req, s)) } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -90,9 +80,8 @@ export class AdminPatientContractedServicesController {
       res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
       return;
     }
-    if (this.refuseHourlyValueWrite(req, res)) return;
     try {
-      const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) });
+      const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) }, this.now());
       res.status(201).json({ success: true, data: this.project(req, created) });
     } catch (err: unknown) {
       // Spec 056: faixas do próprio corpo que se sobrepõem — 409, a criação inteira desfez.
@@ -128,15 +117,15 @@ export class AdminPatientContractedServicesController {
       res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
       return;
     }
-    if (this.refuseHourlyValueWrite(req, res)) return;
     try {
-      const existing = await this.repo.findById(params.data.sid);
+      const requestNow = this.now();
+      const existing = await this.repo.findById(params.data.sid, requestNow);
       // Guarda de posse: um :sid válido de OUTRO paciente não pode ser editado por este :id.
       if (!existing || existing.patientId !== params.data.id) {
         res.status(404).json({ success: false, error: 'Contracted service not found' });
         return;
       }
-      const updated = await this.repo.update(params.data.sid, { ...body.data, actorUid: this.actorUid(req) });
+      const updated = await this.repo.update(params.data.sid, { ...body.data, actorUid: this.actorUid(req) }, requestNow);
       if (!updated) {
         res.status(404).json({ success: false, error: 'Contracted service not found' });
         return;

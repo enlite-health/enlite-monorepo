@@ -557,7 +557,7 @@ describe('1.12 (b) — os nomes corrigidos entregam o dado que nunca chegava', (
       const out = mapper.map(tarefa(campos))!;
       const r = out.responsibles![0];
       const linha =
-        `${rotulo} | healthInsuranceName=${JSON.stringify(out.healthInsuranceName)}` +
+        `${rotulo} | insuranceInformed=${JSON.stringify(out.insuranceInformed)}` +
         ` | resp.lastName=${JSON.stringify(r.lastName)}` +
         ` | resp.email=${JSON.stringify(r.email)}` +
         ` | resp.documentNumber=${JSON.stringify(r.documentNumber)}` +
@@ -608,11 +608,11 @@ describe('1.12 (b) — os nomes corrigidos entregam o dado que nunca chegava', (
     ]))!;
 
     console.log(
-      `>>> 1.12/espaço | chave "Cobertura Informada " (viva) → healthInsuranceName=${JSON.stringify(out.healthInsuranceName)}` +
-      ` | controle+ chave "Cobertura Informada XYZ" → ${JSON.stringify(outro.healthInsuranceName)}`,
+      `>>> 1.12/espaço | chave "Cobertura Informada " (viva) → insuranceInformed=${JSON.stringify(out.insuranceInformed)}` +
+      ` | controle+ chave "Cobertura Informada XYZ" → ${JSON.stringify(outro.insuranceInformed)}`,
     );
-    expect(out.healthInsuranceName).toBe('OBRA-SOCIAL-SINTETICA');
-    expect(outro.healthInsuranceName).toBeNull();
+    expect(out.insuranceInformed).toBe('OBRA-SOCIAL-SINTETICA');
+    expect(outro.insuranceInformed).toBeNull();
   });
 
   it('nenhum dos nomes de antes sobrou no fonte do mapper', () => {

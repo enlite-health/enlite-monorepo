@@ -78,15 +78,12 @@ export async function createNativePatient(
     sex:                     input.sex,
     phoneWhatsapp:           input.phoneWhatsapp,
     insuranceInformed:       input.insuranceInformed,
-    insuranceVerified:       input.insuranceVerified,
     cityLocality:            input.cityLocality,
     province:                input.province,
     zoneNeighborhood:        input.zoneNeighborhood,
     country:                 input.country,
     needsAttention:          input.needsAttention,
     attentionReasons:        input.attentionReasons,
-    healthInsuranceName:     input.healthInsuranceName,
-    healthInsuranceMemberId: input.healthInsuranceMemberId,
     caseNumber:              input.caseNumber,
   };
 

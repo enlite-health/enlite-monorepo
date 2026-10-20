@@ -36,11 +36,11 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     schedule: readonly FaixaSemente[] | null;
     comServico?: boolean;
     comEndereco?: boolean;
-    /** `health_insurance_name` — só usado pelos testes de `activate-recruitment` (RECRUITMENT_BLOCKING_CODES cobra COVERAGE). */
+    /** `insurance_informed` — só usado pelos testes de `activate-recruitment` (RECRUITMENT_BLOCKING_CODES cobra COVERAGE). */
     coverage?: string | null;
   }): Promise<string> {
     const id = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, health_insurance_name)
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, insurance_informed)
        VALUES ($1, 'Horario', 'Gate', 'AR', $2, $3) RETURNING id`,
       [opts.tag, opts.status, opts.coverage ?? null],
     )).rows[0].id;

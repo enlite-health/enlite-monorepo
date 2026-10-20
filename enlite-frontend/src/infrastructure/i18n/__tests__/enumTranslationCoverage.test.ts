@@ -12,8 +12,10 @@ import { describe, it, expect } from 'vitest';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
+import { PAYER_KINDS } from '@domain/entities/InsuranceContract';
+import { COVERAGE_MATCH_STATES } from '@domain/entities/PatientContractedService';
 import {
-  PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES, INSURANCE_PROVIDER_CODES,
+  PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES,
   PATIENT_PROFESSIONAL_SPECIALTY_CODES,
   EXTERNAL_CONTACT_RELATION_CODES,
   PATIENT_GENDERS,
@@ -23,8 +25,6 @@ import {
 import {
   SERVICE_CODES,
   CARE_LOCATIONS,
-  CONTRACT_TYPES,
-  TAX_CONDITIONS,
   SUPERVISION_FREQUENCIES,
   GUARD_SHIFTS,
   PROVIDER_AGE_BANDS,
@@ -100,7 +100,6 @@ const PATIENT_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   ['admin.patients.deviceTypeOptions', DEVICE_TYPE_CODES],
   ['admin.patients.detail.relationshipOptions', RELATIONSHIP_CODES],
   ['admin.patients.detail.treatingTeamCard.specialtyOptions', PATIENT_PROFESSIONAL_SPECIALTY_CODES],
-  ['admin.patients.insuranceProviderOptions', INSURANCE_PROVIDER_CODES],
   // Spec 018, PR-2 (`lex` #4): contatos externos sem vínculo familiar (migration 422, SUP-15).
   ['admin.patients.detail.externalContactRelationOptions', EXTERNAL_CONTACT_RELATION_CODES],
   // QA 🟡4: o mapa tinha vocabulário PRÓPRIO (mapPageConfig.ts), desincronizado do estado v2 —
@@ -168,8 +167,11 @@ describe.each([
 const CONTRACTED_SERVICE_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   ['admin.patients.detail.contractedServicesCard.serviceTypes', SERVICE_CODES],
   ['admin.patients.detail.contractedServicesCard.careLocationOptions', CARE_LOCATIONS],
-  ['admin.patients.detail.contractedServicesCard.contractTypeOptions', CONTRACT_TYPES],
-  ['admin.patients.detail.contractedServicesCard.taxConditionOptions', TAX_CONDITIONS],
+  // Spec 058: o tipo do pagador (`payer_kind`) substituiu o `contract_type`; a condição de IVA saiu (o imposto vem do termo).
+  ['admin.patients.detail.contractedServicesCard.payerKindOptions', PAYER_KINDS],
+  // Spec 058: os 6 estados da divergência pagador × cobertura + `REDACTED` (sem a célula `coverage`), e o preço sem valor.
+  ['admin.patients.detail.contractedServicesCard.coverageMatch', COVERAGE_MATCH_STATES],
+  ['admin.patients.detail.contractedServicesCard.priceState', ['NO_CONTRACT', 'NO_TERM', 'REDACTED']],
   ['admin.patients.detail.contractedServicesCard.supervisionFrequencyOptions', SUPERVISION_FREQUENCIES],
   ['admin.patients.detail.contractedServicesCard.guardShiftOptions', GUARD_SHIFTS],
   // Spec 015 (US-A6.1): franja etária solicitada do prestador.
@@ -195,5 +197,47 @@ describe.each([
         expect(get(locale, `${group}.${value}`), `${group}.${value} echoes the raw enum`).not.toBe(value);
       }
     }
+  });
+});
+
+// ── Spec 058: erros do mapa único do back (`insuranceErrorResponse.ts`) — todo código tem frase nos dois idiomas ───────────
+const INSURANCE_ERROR_CODES = [
+  // P0001 (funções de banco)
+  'REQUIRES_NEW_SERVICE', 'USE_CORRECTION', 'TWO_PAYERS_OVERLAP', 'COUNTRY_MISMATCH', 'PAYER_KIND_REQUIRED', 'PAYER_KIND_CANNOT_UNSET', 'SERVICE_HAS_CONTRACT_LINK',
+  // 422 do controller / escritor
+  'SAME_START_USE_CORRECTION', 'TERM_RANGE_INVALID', 'LINK_RANGE_INVALID', 'NAME_NOT_CODIFIABLE', 'CODE_IMMUTABLE', 'IMMUTABLE_FIELD', 'VALIDATION_FAILED',
+  'DOCUMENT_PAIR_INCOMPLETE', 'LEGACY_FIELD_REMOVED', 'UNPROCESSABLE',
+  // 409
+  'INSURANCE_PROVIDER_CODE_EXISTS', 'INSURANCE_PROVIDER_SORT_ORDER_TAKEN', 'INSURANCE_PROVIDER_NAME_EXISTS', 'INSURANCE_PROVIDER_TAX_ID_EXISTS',
+  'INSURANCE_CONTRACT_NAME_EXISTS', 'RANGE_OVERLAP', 'CONCURRENCY_CONFLICT', 'TERM_ALREADY_SUPERSEDED', 'CONTACT_RETIRED',
+  // 404 / 403
+  'PROVIDER_NOT_FOUND', 'CONTRACT_NOT_FOUND', 'TERM_NOT_FOUND', 'SERVICE_NOT_FOUND', 'NO_LIVE_LINK', 'CONTACT_NOT_FOUND', 'COUNTRY_SCOPE_REQUIRED',
+] as const;
+const INSURANCE_CONSTRAINTS = [
+  'insurance_providers_private_kind_chk', 'insurance_providers_other_unclassified_chk',
+  'insurance_provider_contacts_document_pair_chk', 'insurance_contracts_country_check',
+] as const;
+const INSURANCE_OVERLAPS = ['insurance_contract_terms_sem_sobreposicao', 'contracted_service_contract_sem_sobreposicao'] as const;
+
+describe.each([
+  ['es', esJson as Locale],
+  ['pt-BR', ptBRJson as Locale],
+])('insurance error translation coverage — spec 058 (%s)', (_lng, locale) => {
+  it.each([
+    ['admin.insuranceErrors.codes', INSURANCE_ERROR_CODES],
+    ['admin.insuranceErrors.constraints', INSURANCE_CONSTRAINTS],
+    ['admin.insuranceErrors.rangeOverlap', INSURANCE_OVERLAPS],
+    ['admin.insuranceErrors.byStatus', ['400', '403', '404', '409', '422']],
+  ] as Array<[string, readonly string[]]>)('%s cobre todo código do mapa de erros', (group, values) => {
+    for (const value of values) {
+      const text = get(locale, `${group}.${value}`);
+      expect(text, `missing ${group}.${value}`).toBeTypeOf('string');
+      expect(text).not.toBe('');
+      expect(text, `${group}.${value} echoes the raw code`).not.toBe(value);
+    }
+  });
+
+  it('há uma frase genérica de último recurso', () => {
+    expect(get(locale, 'admin.insuranceErrors.generic')).toBeTypeOf('string');
   });
 });

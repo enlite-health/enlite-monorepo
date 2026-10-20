@@ -150,7 +150,6 @@ const MOCK_VACANCY_1 = {
   country: 'AR',
   city: null,
   providers_needed: 1,
-  insurance_verified: null,
   salary_text: null,
   payment_day: null,
   daily_obs: null,

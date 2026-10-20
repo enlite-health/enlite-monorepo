@@ -6,7 +6,7 @@
  * Zero mock — nem de auth, nem de dado. Dados sintéticos; nada de paciente real.
  *
  *  A2 — Equipo Tratante e Localizaciones mostram o que a API devolve (name / addressFormatted)
- *  A3 — cobertura gravada em health_insurance_name aparece na ficha (COALESCE)
+ *  A3 — cobertura informada (`insurance_informed`, dono único — spec 058) aparece na ficha
  *  A4 — e-mail do paciente aparece na identidade e carrega no drawer; editar WhatsApp o mantém
  *  A1 — editar o telefone do responsável mantém documento (tipo + número) e procedência (source)
  */
@@ -207,7 +207,7 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     expect(createdViaModalId).toMatch(/^[0-9a-f-]{36}$/);
     const cols = readPatientCoverageColumns(createdViaModalId);
     testInfo.annotations.push({ type: 'evidência', description: `A3 — colunas do paciente criado pelo modal: ${JSON.stringify(cols)}` });
-    expect(cols.healthInsuranceName).toBe(coverage);
+    expect(cols.insuranceInformed).toBe(coverage); // spec 058: a chave de fio `healthInsuranceName` grava no dono `insurance_informed`
 
     const data = await openDetail(page, createdViaModalId);
     expect(data.insuranceInformed).toBe(coverage);
