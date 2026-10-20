@@ -3,7 +3,6 @@
  * O imposto nasce vazio e obrigatório; o início sugerido e a data mínima são o `asOf` do contrato.
  */
 import { useTranslation } from 'react-i18next';
-import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import type { InsuranceTermBody } from '@domain/entities/InsuranceContract';
 import { FormModal } from './FormModal';
@@ -33,30 +32,14 @@ export function ContractTermForm({ asOf, submitting, error, onSubmit, onCancel, 
       onClose={onCancel}
       busy={submitting}
       testId={`${testIdPrefix}form`}
-      footer={(requestClose) => (<>
-      {error && (
-        <div role="alert" data-testid={`${testIdPrefix}error`} className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
-        </div>
-      )}
-      <div className="flex items-center gap-3 justify-end">
-        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid={`${testIdPrefix}cancel`}>
-          {t('admin.insuranceProviders.detail.cancel')}
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          isLoading={submitting}
-          onClick={() => {
-            const body = state.submit();
-            if (body) onSubmit(body);
-          }}
-          data-testid={`${testIdPrefix}submit`}
-        >
-          {t(correction ? 'admin.insuranceProviders.contracts.termForm.correctSubmit' : 'admin.insuranceProviders.contracts.termForm.submit')}
-        </Button>
-      </div>
-      </>)}
+      saveLabel={t(correction ? 'admin.insuranceProviders.contracts.termForm.correctSubmit' : 'admin.insuranceProviders.contracts.termForm.submit')}
+      onSave={() => {
+        const body = state.submit();
+        if (body) onSubmit(body);
+      }}
+      saving={submitting}
+      saveTestId={`${testIdPrefix}submit`}
+      notice={error && <Text size="sm" className="text-red-600" role="alert" data-testid={`${testIdPrefix}error`}>{error}</Text>}
     >
       <TermFields state={state} asOf={asOf} testIdPrefix={testIdPrefix} enforceMin={!correction} />
     </FormModal>

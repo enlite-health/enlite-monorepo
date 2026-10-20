@@ -9,7 +9,6 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Building2, Plus } from 'lucide-react';
-import { Button } from '@presentation/components/atoms/Button';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Input } from '@presentation/components/atoms/Input';
@@ -117,22 +116,17 @@ export default function InsuranceProvidersPage(): JSX.Element {
           onClose={() => setCreating(false)}
           busy={saving}
           testId="provider-create-form"
-          footer={(requestClose) => (<>
-              {createError && (
-                <div role="alert" data-testid="provider-create-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-                  <Text color="inherit" size="sm" className="text-red-700">{createError}</Text>
-                </div>
-              )}
-              <div className="flex items-center gap-3 justify-end">
-                <Button variant="outline" size="sm" onClick={requestClose} disabled={saving} data-testid="provider-create-cancel">{t(`${NS}.create.cancel`)}</Button>
-                <Button variant="primary" size="sm" isLoading={saving} disabled={name.trim() === ''} onClick={create} data-testid="provider-create-submit">{t(`${NS}.create.submit`)}</Button>
-              </div>
-          </>)}
+          saveLabel={t(`${NS}.create.submit`)}
+          onSave={create}
+          saving={saving}
+          saveDisabled={name.trim() === ''}
+          saveTestId="provider-create-submit"
+          notice={createError && <Text size="sm" className="text-red-600" role="alert" data-testid="provider-create-error">{createError}</Text>}
         >
               <Field label={t(`${NS}.create.nameLabel`)} required hint={t(`${NS}.create.nameHelp`)} htmlFor="provider-create-name">
                 <Input inputSize="compact" id="provider-create-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="provider-create-name" />
               </Field>
-              <Field label={t(`${NS}.create.aliasesLabel`)} hint={t(`${NS}.create.aliasesHelp`)} htmlFor="provider-create-aliases">
+              <Field label={t(`${NS}.create.aliasesLabel`)} optional hint={t(`${NS}.create.aliasesHelp`)} htmlFor="provider-create-aliases">
                 <Input inputSize="compact" id="provider-create-aliases" value={aliases} onChange={(e) => setAliases(e.target.value)} data-testid="provider-create-aliases" />
               </Field>
               {needsCode && (

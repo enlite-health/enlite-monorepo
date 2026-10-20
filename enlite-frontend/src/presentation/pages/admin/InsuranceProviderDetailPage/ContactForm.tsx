@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@presentation/components/atoms/Button';
 import { Input } from '@presentation/components/atoms/Input';
 import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
@@ -38,26 +37,16 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
 
   return (
     <FormModal title={title} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contact-form"
-      footer={(requestClose) => (<>
-      {problem && (
-        <div role="alert" data-testid="contact-problem" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-          <Text color="inherit" size="sm" className="text-red-700">{t(`${NS}.${problem}`)}</Text>
-        </div>
+      saveLabel={t('admin.insuranceProviders.detail.save')}
+      onSave={submit}
+      saving={submitting}
+      saveTestId="contact-save"
+      notice={(problem || error) && (
+        <>
+          {problem && <Text size="sm" className="text-red-600" role="alert" data-testid="contact-problem">{t(`${NS}.${problem}`)}</Text>}
+          {error && <Text size="sm" className="text-red-600" role="alert" data-testid="contact-error">{error}</Text>}
+        </>
       )}
-      {error && (
-        <div role="alert" data-testid="contact-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
-        </div>
-      )}
-      <div className="flex items-center gap-3 justify-end">
-        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contact-cancel">
-          {t('admin.insuranceProviders.detail.cancel')}
-        </Button>
-        <Button variant="primary" size="sm" isLoading={submitting} onClick={submit} data-testid="contact-save">
-          {t('admin.insuranceProviders.detail.save')}
-        </Button>
-      </div>
-      </>)}
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label={t(`${NS}.fullName`)} required htmlFor="contact-fullName">
@@ -69,10 +58,10 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
         <Field label={t(`${NS}.phone`)} required htmlFor="contact-phone">
           <Input inputSize="compact" id="contact-phone" type="tel" value={draft.phone} onChange={(e) => set('phone', e.target.value)} data-testid="contact-phone" />
         </Field>
-        <Field label={t(`${NS}.email`)} htmlFor="contact-email">
+        <Field label={t(`${NS}.email`)} optional htmlFor="contact-email">
           <Input inputSize="compact" id="contact-email" type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} data-testid="contact-email" />
         </Field>
-        <Field label={t(`${NS}.documentType`)} htmlFor="contact-documentType">
+        <Field label={t(`${NS}.documentType`)} optional htmlFor="contact-documentType">
           <Select
             inputSize="compact"
             id="contact-documentType"
@@ -83,7 +72,7 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
             data-testid="contact-documentType"
           />
         </Field>
-        <Field label={t(`${NS}.documentNumber`)} htmlFor="contact-documentNumber">
+        <Field label={t(`${NS}.documentNumber`)} optional htmlFor="contact-documentNumber">
           <Input inputSize="compact" id="contact-documentNumber" value={draft.documentNumber} onChange={(e) => set('documentNumber', e.target.value)} data-testid="contact-documentNumber" />
         </Field>
       </div>

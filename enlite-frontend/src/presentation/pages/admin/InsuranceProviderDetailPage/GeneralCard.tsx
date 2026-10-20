@@ -7,7 +7,6 @@
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@presentation/components/atoms/Button';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Input } from '@presentation/components/atoms/Input';
 import { Select } from '@presentation/components/atoms/Select';
@@ -105,21 +104,12 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
     </ProviderCard>
     {editing && (
       <FormModal title={t(`${NS}.general.title`)} isDirty={dirty} onClose={() => setEditing(false)} busy={saving} testId="provider-general-modal"
-        footer={(requestClose) => (<>
-          {error && (
-            <div role="alert" data-testid="provider-general-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-              <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
-            </div>
-          )}
-          <div className="flex items-center gap-3 justify-end">
-            <Button variant="outline" size="sm" onClick={requestClose} disabled={saving} data-testid="provider-general-cancel">
-              {t(`${NS}.detail.cancel`)}
-            </Button>
-            <Button variant="primary" size="sm" isLoading={saving} disabled={draft.name.trim() === ''} onClick={save} data-testid="provider-general-save">
-              {t(`${NS}.detail.save`)}
-            </Button>
-          </div>
-        </>)}
+        saveLabel={t(`${NS}.detail.save`)}
+        onSave={save}
+        saving={saving}
+        saveDisabled={draft.name.trim() === ''}
+        saveTestId="provider-general-save"
+        notice={error && <Text size="sm" className="text-red-600" role="alert" data-testid="provider-general-error">{error}</Text>}
       >
         <div data-testid="provider-general-form" className="flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -127,11 +117,11 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
               <Input inputSize="compact" id="provider-general-name-input" value={draft.name} onChange={(e) => set('name', e.target.value)} data-testid="provider-general-name-input" />
             </Field>
             {OPTIONAL_FIELDS.map((f) => (
-              <Field key={f} label={t(`${NS}.general.fields.${f}`)} htmlFor={`provider-general-${f}-input`}>
+              <Field key={f} label={t(`${NS}.general.fields.${f}`)} optional htmlFor={`provider-general-${f}-input`}>
                 <Input inputSize="compact" id={`provider-general-${f}-input`} value={draft[f]} onChange={(e) => set(f, e.target.value)} data-testid={`provider-general-${f}-input`} />
               </Field>
             ))}
-            <Field label={t(`${NS}.general.fields.payerKind`)} hint={t(`${NS}.general.payerKindHint`)} htmlFor="provider-general-payerKind-input">
+            <Field label={t(`${NS}.general.fields.payerKind`)} optional hint={t(`${NS}.general.payerKindHint`)} htmlFor="provider-general-payerKind-input">
               <Select
                 inputSize="compact"
                 id="provider-general-payerKind-input"

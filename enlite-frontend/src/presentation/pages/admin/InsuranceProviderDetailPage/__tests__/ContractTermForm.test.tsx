@@ -79,10 +79,10 @@ describe('ContractTermForm', () => {
     expect(screen.getByText('O fim não pode ser antes do início.')).toBeInTheDocument();
   });
 
-  it('mostra a frase de erro do envio anterior e cancela', async () => {
+  it('mostra a frase de erro do envio anterior e o X fecha', async () => {
     const { onCancel } = renderForm({ error: 'Essa vigência se sobrepõe a outro termo.' });
     expect(screen.getByTestId(`${PREFIX}error`)).toHaveTextContent('Essa vigência se sobrepõe');
-    fireEvent.click(screen.getByTestId(`${PREFIX}cancel`));
+    fireEvent.click(screen.getByTestId(`${PREFIX}form-close`));
     await waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 });

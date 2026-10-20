@@ -2,13 +2,15 @@
  * FormModal — UMA modal por container para "novo"/"editar" das telas de obra social (pedido do Gabriel, 058a).
  * Reproduz o molde das modais de FORMULÁRIO da casa (`PatientCreateModal`, `WorkerEditModal`, `VacancyModal`): backdrop `bg-black/50 z-40`
  * com transição de opacidade, painel `max-w-xl` colado à direita (`rounded-l-[32px]`, `shadow-2xl`, desliza), cabeçalho com título + X,
- * corpo rolável (`px-8 py-6`). Diferença pedida: RODAPÉ FIXO com as ações e o erro do envio (sempre visíveis, só o corpo rola).
+ * corpo rolável (`px-8 py-6`). IDÊNTICO ao molde: "Guardar" no cabeçalho ao lado do X (sempre visível), sem rodapé e sem Cancelar; o erro
+ * do envio é texto `text-sm text-red-600` (como o `pc-error` do molde), no topo do corpo para não ficar fora da vista.
  * Aviso de descarte = o dos drawers da ficha (`useConfirmDiscardClose` + `DiscardChangesConfirm`): fechar por X, Esc, fora ou Cancelar
  * com o formulário alterado pergunta; sem alteração fecha direto. Salvar nunca pergunta (o pai desmonta a modal).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from '@presentation/components/features/admin/PatientDetail/edit/DiscardChangesConfirm';
@@ -26,13 +28,20 @@ interface Props {
   /** Durante o envio, nenhuma saída é aceita. */
   busy?: boolean;
   testId: string;
+  /** Rótulo do botão do cabeçalho (Guardar). */
+  saveLabel: string;
+  onSave: () => void;
+  /** Envio em andamento (spinner no botão). */
+  saving?: boolean;
+  saveDisabled?: boolean;
+  saveTestId: string;
+  /** Erro do envio e avisos, no topo do corpo (texto vermelho do molde). */
+  notice?: ReactNode;
   /** Corpo rolável. */
   children: ReactNode;
-  /** Rodapé fixo: erro do envio + Cancelar/Salvar. Recebe `requestClose` para o Cancelar passar pelo mesmo aviso do X/Esc/fora. */
-  footer: (requestClose: () => void) => ReactNode;
 }
 
-export function FormModal({ title, isDirty, onClose, busy = false, testId, children, footer }: Props): JSX.Element {
+export function FormModal({ title, isDirty, onClose, busy = false, testId, saveLabel, onSave, saving = false, saveDisabled = false, saveTestId, notice, children }: Props): JSX.Element {
   const { t } = useTranslation();
   const [show, setShow] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -82,12 +91,16 @@ export function FormModal({ title, isDirty, onClose, busy = false, testId, child
       >
         <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100 shrink-0">
           <Heading level={3} weight="semibold" color="primary">{title}</Heading>
-          <button type="button" onClick={guarded} aria-label={t('admin.insuranceProviders.detail.close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded cursor-pointer" data-testid={`${testId}-close`}>
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-4">
+            <Button type="button" variant="primary" size="sm" onClick={onSave} isLoading={saving} disabled={saveDisabled} className="w-32" data-testid={saveTestId}>
+              {saveLabel}
+            </Button>
+            <button type="button" onClick={guarded} aria-label={t('admin.insuranceProviders.detail.close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded cursor-pointer" data-testid={`${testId}-close`}>
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">{children}</div>
-        <div className="shrink-0 border-t border-slate-100 px-8 py-4 flex flex-col gap-3" data-testid={`${testId}-footer`}>{footer(guarded)}</div>
+        <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5" data-testid={`${testId}-body`}>{notice}{children}</div>
       </div>
     </>
   );

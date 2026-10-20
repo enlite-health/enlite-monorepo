@@ -33,29 +33,27 @@ const change = (id: string, value: string) => fireEvent.change(screen.getByTestI
 const discard = () => screen.queryByTestId('discard-changes-confirm');
 
 /** A mesma bateria para as 6 modais: dialog aberto, limpo fecha direto, sujo pede descarte por TODAS as saídas. */
-function fechamento(opts: { abrir: () => Promise<void>; modal: string; sujar: () => void; cancelar: string }) {
-  it('abre em dialog e fecha direto quando nada mudou (X, Esc, fora, Cancelar)', async () => {
-    for (const how of ['x', 'esc', 'fora', 'cancelar'] as const) {
+function fechamento(opts: { abrir: () => Promise<void>; modal: string; sujar: () => void }) {
+  it('abre em dialog e fecha direto quando nada mudou (X, Esc, fora)', async () => {
+    for (const how of ['x', 'esc', 'fora'] as const) {
       cleanup();
       await opts.abrir();
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       if (how === 'x') fireEvent.click(screen.getByTestId(`${opts.modal}-close`));
       if (how === 'esc') fireEvent.keyDown(document, { key: 'Escape' });
       if (how === 'fora') fireEvent.click(screen.getByTestId(`${opts.modal}-overlay`));
-      if (how === 'cancelar') fireEvent.click(screen.getByTestId(opts.cancelar));
       expect(discard()).not.toBeInTheDocument();
       await waitFor(() => expect(screen.queryByTestId(opts.modal)).not.toBeInTheDocument());
     }
   });
 
-  it('com alteração, cada saída pede descarte; "seguir editando" mantém os dados; "descartar" fecha', async () => {
+  it('com alteração, cada saída (X, Esc, fora) pede descarte; "seguir editando" mantém os dados; "descartar" fecha', async () => {
     await opts.abrir();
     opts.sujar();
-    for (const how of ['x', 'esc', 'fora', 'cancelar'] as const) {
+    for (const how of ['x', 'esc', 'fora'] as const) {
       if (how === 'x') fireEvent.click(screen.getByTestId(`${opts.modal}-close`));
       if (how === 'esc') fireEvent.keyDown(document, { key: 'Escape' });
       if (how === 'fora') fireEvent.click(screen.getByTestId(`${opts.modal}-overlay`));
-      if (how === 'cancelar') fireEvent.click(screen.getByTestId(opts.cancelar));
       expect(discard()).toBeInTheDocument();
       expect(screen.getByTestId(opts.modal)).toBeInTheDocument();
       fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
@@ -69,7 +67,7 @@ function fechamento(opts: { abrir: () => Promise<void>; modal: string; sujar: ()
 
 describe('modal Empregado (novo)', () => {
   const abrir = async () => { render(<EmployeesCard code="OSDE" />); fireEvent.click(await screen.findByTestId('employees-new')); };
-  fechamento({ abrir, modal: 'contact-form', cancelar: 'contact-cancel', sujar: () => change('contact-fullName', 'Fulana') });
+  fechamento({ abrir, modal: 'contact-form', sujar: () => change('contact-fullName', 'Fulana') });
 
   it('salvar fecha a modal e recarrega a lista; a lista nunca ganha formulário inline', async () => {
     api.createContact.mockResolvedValue(contact({ id: 'c2' }));
@@ -93,18 +91,30 @@ describe('modal Empregado (novo)', () => {
   });
 });
 
-describe('rodapé fixo', () => {
-  it('Cancelar/Salvar e o erro do envio ficam no rodapé, fora do corpo rolável', async () => {
+describe('cabeçalho fixo (molde das modais de formulário)', () => {
+  it('Guardar fica no cabeçalho, fora do corpo rolável; não há rodapé nem Cancelar; o erro do envio abre o corpo', async () => {
     api.createContact.mockRejectedValue(apiError(422, 'DOCUMENT_PAIR_INCOMPLETE'));
     render(<EmployeesCard code="OSDE" />);
     fireEvent.click(await screen.findByTestId('employees-new'));
     change('contact-fullName', 'F'); change('contact-roleTitle', 'A'); change('contact-phone', '1');
     fireEvent.click(screen.getByTestId('contact-save'));
-    const footer = screen.getByTestId('contact-form-footer');
-    expect(footer).toContainElement(screen.getByTestId('contact-save'));
-    expect(footer).toContainElement(screen.getByTestId('contact-cancel'));
-    expect(footer).toContainElement(await screen.findByTestId('contact-error'));
-    expect(footer).not.toContainElement(screen.getByTestId('contact-fullName'));
+    const body = screen.getByTestId('contact-form-body');
+    expect(body).not.toContainElement(screen.getByTestId('contact-save'));
+    expect(screen.getByTestId('contact-form')).toContainElement(screen.getByTestId('contact-save'));
+    expect(screen.queryByTestId('contact-form-footer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-cancel')).not.toBeInTheDocument();
+    const err = await screen.findByTestId('contact-error');
+    expect(body).toContainElement(err);
+    expect(body.firstElementChild).toBe(err);
+  });
+
+  it('rótulo opcional usa o sufixo do componente de campo (não texto embutido) e obrigatório leva o asterisco', async () => {
+    render(<EmployeesCard code="OSDE" />);
+    fireEvent.click(await screen.findByTestId('employees-new'));
+    const email = document.querySelector('label[for=contact-email]')!;
+    expect(email.textContent).toContain('(opcional)');
+    expect(email.textContent?.match(/opcional/g)).toHaveLength(1);
+    expect(document.querySelector('label[for=contact-fullName]')!.textContent).toContain('*');
   });
 });
 
@@ -128,7 +138,7 @@ describe('modal Empregado (editar)', () => {
 
 describe('modal Dados gerais (editar)', () => {
   const abrir = async () => { render(<GeneralCard provider={provider()} onSaved={vi.fn()} editRequest={0} />); fireEvent.click(screen.getByTestId('provider-general-edit')); };
-  fechamento({ abrir, modal: 'provider-general-modal', cancelar: 'provider-general-cancel', sujar: () => change('provider-general-taxId-input', '30-1') });
+  fechamento({ abrir, modal: 'provider-general-modal', sujar: () => change('provider-general-taxId-input', '30-1') });
 
   it('salvar fecha a modal e entrega o provider atualizado ao cartão', async () => {
     const onSaved = vi.fn();
@@ -154,7 +164,7 @@ describe('modal Dados gerais (editar)', () => {
 
 describe('modal Contrato + 1º termo (novo)', () => {
   const abrir = async () => { render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />); fireEvent.click(await screen.findByTestId('contracts-new')); };
-  fechamento({ abrir, modal: 'contract-new-form', cancelar: 'contract-new-cancel', sujar: () => change('contract-new-name', 'Novo') });
+  fechamento({ abrir, modal: 'contract-new-form', sujar: () => change('contract-new-name', 'Novo') });
 
   it('PAYER_KIND_REQUIRED: o erro e o botão "Ir para Dados gerais" ficam na modal; o botão avisa o pai e a modal do contrato segue aberta com o que foi digitado', async () => {
     api.createContract.mockRejectedValue(apiError(422, 'PAYER_KIND_REQUIRED'));
@@ -177,7 +187,7 @@ describe('modal Novo termo / Corrigir termo', () => {
   const abrirNovo = async () => { render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />); fireEvent.click(await screen.findByTestId('contract-k1-new-term')); };
   const abrirCorrigir = async () => { render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />); fireEvent.click(await screen.findByTestId('contract-k1-current-correct')); };
   describe('novo termo', () => {
-      fechamento({ abrir: abrirNovo, modal: 'contract-k1-term-form', cancelar: 'contract-k1-term-cancel', sujar: () => change('contract-k1-term-tax-rate', '21') });
+      fechamento({ abrir: abrirNovo, modal: 'contract-k1-term-form', sujar: () => change('contract-k1-term-tax-rate', '21') });
     it('salvar fecha a modal e recarrega os contratos', async () => {
       api.supersedeTerm.mockResolvedValue({});
       await abrirNovo();
@@ -196,13 +206,13 @@ describe('modal Novo termo / Corrigir termo', () => {
     });
   });
   describe('corrigir termo', () => {
-      fechamento({ abrir: abrirCorrigir, modal: 'contract-k1-correct-form', cancelar: 'contract-k1-correct-cancel', sujar: () => change('contract-k1-correct-tax-rate', '10') });
+      fechamento({ abrir: abrirCorrigir, modal: 'contract-k1-correct-form', sujar: () => change('contract-k1-correct-tax-rate', '10') });
   });
 });
 
 describe('modal Nova obra social (lista)', () => {
   const abrir = async () => { render(<MemoryRouter><ProvidersPage /></MemoryRouter>); fireEvent.click(await screen.findByTestId('providers-new')); };
-  fechamento({ abrir, modal: 'provider-create-form', cancelar: 'provider-create-cancel', sujar: () => change('provider-create-name', 'Nova OS') });
+  fechamento({ abrir, modal: 'provider-create-form', sujar: () => change('provider-create-name', 'Nova OS') });
 
   it('NAME_NOT_CODIFIABLE: o pedido do código aparece dentro da modal, que segue aberta', async () => {
     api.createProvider.mockRejectedValue(apiError(422, 'NAME_NOT_CODIFIABLE'));

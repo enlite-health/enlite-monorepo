@@ -80,7 +80,7 @@ export function TermFields({ state, asOf, testIdPrefix, enforceMin = true }: Pro
           </span>
         )}
       </Field>
-      <Field label={t(`${NS}.validTo`)} error={err('validTo')} htmlFor={`${testIdPrefix}valid-to`}>
+      <Field label={t(`${NS}.validTo`)} optional error={err('validTo')} htmlFor={`${testIdPrefix}valid-to`}>
         <Input
           inputSize="compact"
           id={`${testIdPrefix}valid-to`}

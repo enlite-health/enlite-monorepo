@@ -4,7 +4,6 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Input } from '@presentation/components/atoms/Input';
 import { Select } from '@presentation/components/atoms/Select';
@@ -69,25 +68,17 @@ export function ContractForm({ submitting, error, errorAction, onSubmit, onCance
 
   return (
     <FormModal title={t(`${NS}.contractForm.title`)} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contract-new-form"
-      footer={(requestClose) => (<>
-      {missing && (
-        <Text color="inherit" size="sm" className="text-red-700" data-testid="contract-new-required">{t(`${NS}.contractForm.required`)}</Text>
+      saveLabel={t('admin.insuranceProviders.detail.save')}
+      onSave={handleSubmit}
+      saving={submitting}
+      saveTestId="contract-new-submit"
+      notice={(missing || error) && (
+        <>
+          {missing && <Text size="sm" className="text-red-600" role="alert" data-testid="contract-new-required">{t(`${NS}.contractForm.required`)}</Text>}
+          {error && <Text size="sm" className="text-red-600" role="alert" data-testid="contract-new-error">{error}</Text>}
+          {error && errorAction}
+        </>
       )}
-      {error && (
-        <div role="alert" data-testid="contract-new-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
-        </div>
-      )}
-      {error && errorAction}
-      <div className="flex items-center gap-3 justify-end">
-        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contract-new-cancel">
-          {t('admin.insuranceProviders.detail.cancel')}
-        </Button>
-        <Button variant="primary" size="sm" isLoading={submitting} onClick={handleSubmit} data-testid="contract-new-submit">
-          {t('admin.insuranceProviders.detail.save')}
-        </Button>
-      </div>
-      </>)}
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label={t(`${NS}.contractForm.name`)} required htmlFor="contract-new-name">
@@ -104,7 +95,7 @@ export function ContractForm({ submitting, error, errorAction, onSubmit, onCance
             data-testid="contract-new-country"
           />
         </Field>
-        <Field label={t(`${NS}.contractForm.scope`)} hint={t(`${NS}.contractForm.scopeHelp`)} htmlFor="contract-new-scope" className="sm:col-span-2">
+        <Field label={t(`${NS}.contractForm.scope`)} optional hint={t(`${NS}.contractForm.scopeHelp`)} htmlFor="contract-new-scope" className="sm:col-span-2">
           <Textarea inputSize="compact" id="contract-new-scope" rows={2} value={scope} onChange={(e) => setScope(e.target.value)} data-testid="contract-new-scope" />
         </Field>
       </div>
