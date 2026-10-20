@@ -252,10 +252,14 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     await page.getByTestId('itinerario-novo-btn').click();
     await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('substitution-mode-permanent').click();
-    await page.getByTestId('substitution-date').selectOption({ index: 2 });
-    const fromDate = await page.getByTestId('substitution-date').inputValue();
+    await page.getByTestId('substitution-start-scheduled').click();
+    const fromDate = seed.nextMonday; // D > hoje (o helper escolhe a 1ª segunda em hoje+1..hoje+7)
+    await page.getByTestId('substitution-start-date').click();
+    await page.keyboard.type(fromDate.slice(8, 10) + fromDate.slice(5, 7) + fromDate.slice(0, 4)); // dd mm aaaa
     await page.getByTestId('substitution-worker').click();
     await page.getByRole('listbox').getByText(seed.names.permanent).click();
+    await page.getByTestId('substitution-reason').selectOption({ label: 'El prestador desistió' });
+    await page.getByTestId('substitution-destination-RESERVE').click();
     await page.getByTestId('substitution-confirm').click();
 
     await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });
