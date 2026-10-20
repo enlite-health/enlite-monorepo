@@ -60,6 +60,23 @@ test.describe('servico-dados-recrutamento-copiar-turnos — "Copiar a…" do edi
   const faixasVigentes = (serviceId: string): number =>
     Number(sqlComVars("SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = :'id'::uuid AND upper_inf(valid)", { id: serviceId }));
 
+  /** Escolhe a hora no TimeSelect como um humano: abre a lista e clica na opção. */
+  async function escolherHora(page: Page, testId: string, hora: string): Promise<void> {
+    await page.getByTestId(testId).click();
+    await page.getByTestId(`${testId}-option-${hora}`).click();
+    await expect(page.getByTestId(testId)).toContainText(hora);
+  }
+
+  /** `GET …/contracted-services` real — o schedule do serviço como a API o devolve. */
+  async function lerSchedule(request: APIRequestContext, patientId: string, serviceId: string): Promise<Array<Faixa & { endTime: string }> | null> {
+    const res = await request.get(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services`, { headers: AUTH_HEADERS });
+    expect(res.status()).toBe(200);
+    const json = (await res.json()) as { data?: { services: Array<{ id: string; schedule: Array<Faixa & { endTime: string }> | null }> } };
+    const svc = (json.data?.services ?? []).find((x) => x.id === serviceId);
+    if (!svc) throw new Error('copiar-turnos: serviço ausente no GET');
+    return svc.schedule;
+  }
+
   test('FELIZ: copia o turno de segunda para terça–sexta e salva; o horário do serviço mostra os 5 dias', async ({ page, request }) => {
     const { patientId, serviceId } = await semear(request, [{ dayOfWeek: 1, startTime: '09:00', durationMinutes: 480 }]);
     expect(faixasVigentes(serviceId), 'controle: antes de copiar só a segunda').toBe(1);
@@ -88,5 +105,34 @@ test.describe('servico-dados-recrutamento-copiar-turnos — "Copiar a…" do edi
     for (const dia of [1, 2, 3, 4, 5]) {
       await expect(page.getByTestId(`svc-shift-start-1-${dia}-0`)).toContainText('09:00');
     }
+  });
+
+  test('ALTERNATIVO 1 (UI): terça já tem 10:00–12:00 → copiar 09:00–17:00 de segunda mantém o existente e mostra o aviso do dia; salvar grava só o existente', async ({ page, request }) => {
+    const { patientId, serviceId } = await semear(request, [
+      { dayOfWeek: 1, startTime: '09:00', durationMinutes: 480 },
+      { dayOfWeek: 2, startTime: '10:00', durationMinutes: 120 },
+    ]);
+    await loginComoStaffMock(page, STAFF, 'E2E Copiar Turnos');
+    await abrirCardDoServico(page, patientId, serviceId);
+    await abrirEdicao(page, serviceId);
+
+    await page.getByTestId('svc-shift-copy-1-1').click();
+    await page.getByTestId('svc-shift-copy-target-1-tuesday').click();
+    await page.getByTestId('svc-shift-copy-apply-1').click();
+    await expect(page.getByTestId('svc-shift-copy-conflict-1-2')).toContainText('La franja ya existente se mantuvo en: martes');
+    await expect(page.getByTestId('svc-shift-start-1-2-1')).toHaveCount(0);
+
+    const [patch] = await Promise.all([
+      page.waitForResponse((r) => ehPatchDoServico(serviceId)(r.request())),
+      page.getByTestId(`contracted-service-save-${serviceId}`).click(),
+    ]);
+    expect(patch.status()).toBe(200);
+    // Terça: só a faixa existente (120 min), nada copiado por cima.
+    expect(
+      Number(sqlComVars("SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = :'id'::uuid AND weekday = 2 AND upper_inf(valid)", { id: serviceId })),
+    ).toBe(1);
+    expect(
+      Number(sqlComVars("SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = :'id'::uuid AND weekday = 2 AND upper_inf(valid) AND duration_minutes = 120", { id: serviceId })),
+    ).toBe(1);
   });
 });
