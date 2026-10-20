@@ -238,8 +238,11 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       }
       onSaved(saved);
     } catch (e) {
-      // Duck-typing no `code` (409 SLOT_OVERLAP do back): sem depender da classe de erro do service.
-      if ((e as { code?: string } | null)?.code === 'SLOT_OVERLAP') setOverlap(true);
+      // Duck-typing no `code` (409 SLOT_OVERLAP e os 422 da Trava B): sem depender da classe de erro do service.
+      const code = (e as { code?: string } | null)?.code;
+      if (code === 'SLOT_OVERLAP') setOverlap(true);
+      else if (code === 'PROVIDERS_NEEDED_BELOW_OCCUPANCY') setError(te('providersNeededBelowOccupancy'));
+      else if (code === 'PROVIDERS_NEEDED_CANNOT_CLEAR') setError(te('providersNeededCannotClear'));
       else setError(isNew ? te('createServiceError') : te('updateServiceError'));
     } finally {
       setBusy(false);

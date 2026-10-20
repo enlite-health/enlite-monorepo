@@ -511,6 +511,15 @@ describe('ContractedServiceFormRow', () => {
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       expect((await screen.findByTestId('svc-schedule-overlap-1')).textContent).toContain('se superponen');
     });
+
+    it.each([['PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'por debajo de los ya asignados'], ['PROVIDERS_NEEDED_CANNOT_CLEAR', 'no puede quedar vacía']])('422 %s mostra a mensagem própria em contracted-service-error-s1 (não a genérica)', async (code, trecho) => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      const erro = await screen.findByTestId('contracted-service-error-s1');
+      expect(erro.textContent).toContain(trecho);
+      expect(erro.textContent).not.toContain('No se pudo actualizar');
+    });
   });
 
   describe('bloco Autorización (spec 056 T2.5)', () => {
