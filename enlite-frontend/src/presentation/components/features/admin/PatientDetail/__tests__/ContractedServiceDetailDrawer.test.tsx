@@ -33,6 +33,11 @@ const BASE: PatientContractedServiceDetail = {
 };
 
 describe('ContractedServiceDetailDrawer', () => {
+  it('não mostra horas autorizadas (a autorização corrente mora no editor; o legado saiu)', () => {
+    render(<ContractedServiceDetailDrawer service={{ ...BASE, authorization: { id: 'a1', hours: 40, validFrom: '2026-01-01', validTo: '2026-12-31' } }} addresses={[]} onClose={vi.fn()} />);
+    expect(screen.queryByTestId('svc-detail-authorized-hours')).toBeNull();
+  });
+
   it('serviço mínimo: todo campo vazio vira "—"/rótulo; sem badge de baixa; sem perfil', () => {
     const { container } = render(<ContractedServiceDetailDrawer service={BASE} addresses={[]} onClose={vi.fn()} />);
     expect(screen.getByTestId('svc-detail-devices').textContent).toContain('—');
