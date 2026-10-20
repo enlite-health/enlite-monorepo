@@ -41,4 +41,15 @@ describe('058b E6 — autorização e agenda pelo asOf do país @integration', (
     const [depois] = await repo.listForPatient(patient, new Date('2024-03-10T12:00:00Z'));
     expect(depois.authorization).toBeNull();
   });
+
+  it('agenda asOf: faixa FECHADA no passado [2024-03-01, 2024-03-10) é lida em 22h de 09/03 (AR) e some em 10/03', async () => {
+    await pool.query(
+      `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+       VALUES ($1, 1, '08:00', 240, '[2024-03-01,2024-03-10)', 'qa058b', 'qa058b')`, [service]);
+    const [svc] = await repo.listForPatient(patient, AGORA);
+    expect(svc.schedule).toEqual([{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 }]);
+    expect(svc.scheduleHours).toBe(4);
+    const [depois] = await repo.listForPatient(patient, new Date('2024-03-10T12:00:00Z'));
+    expect(depois.schedule).toBeNull();
+  });
 });
