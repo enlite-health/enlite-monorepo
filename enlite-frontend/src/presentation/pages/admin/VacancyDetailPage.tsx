@@ -209,7 +209,6 @@ export default function VacancyDetailPage() {
               firstName={vacancy.patient_first_name ?? null}
               lastName={vacancy.patient_last_name ?? null}
               zone={vacancy.patient_zone ?? null}
-              insuranceVerified={vacancy.insurance_verified ?? null}
             />
           </ContainerGate>
         </div>

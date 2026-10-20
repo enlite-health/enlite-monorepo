@@ -6,6 +6,7 @@
  * horas, local, valor) e falha se qualquer coluna voltar a mostrar placeholder para dado que
  * existe. Usa i18n REAL (molde `sex-both-i18n.test.tsx`) — sem isso o enum cru escaparia.
  */
+import { CONTRACT_058_DEFAULTS, LINKED_058 } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import i18n from 'i18next';
@@ -67,11 +68,8 @@ const SERVICE: PatientContractedServiceDetail = {
   authorizedHours: 20,
   weeklyHours: 20,
   careLocation: 'HOME',
-  hourlyValue: 1500,
-  hourlyValueRedacted: false,
+  ...CONTRACT_058_DEFAULTS,
   startDate: '2026-09-01T00:00:00.000Z',
-  contractType: 'OBRA_SOCIAL',
-  taxCondition: 'IVA_EXEMPT',
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
@@ -191,8 +189,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     const minimal: PatientContractedServiceDetail = {
       id: 'svc-min', patientId: patientDetailFixture.id, serviceCode: 'CAREGIVER', professionalProfile: null,
       providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
-      hourlyValue: null, hourlyValueRedacted: false, startDate: null,
-      contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
+      ...CONTRACT_058_DEFAULTS, startDate: null, supervisionFrequency: null, guardShift: null,
       providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
       addressId: null,
       schedule: null,
@@ -210,14 +207,18 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
   });
 
   it('clique na linha abre o DETALHE completo (só leitura) com valor, franja, IVA, prestadores e endereço; fechar desmonta', () => {
-    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE };
+    const svc: PatientContractedServiceDetail = { ...SERVICE, ...LINKED_058, addressId: 'addr-home', schedule: SCHEDULE };
     const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME], contractedServices: [svc] };
     render(<ServicosContratadosCard patient={patient} />);
 
     expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
     fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
     const drawer = screen.getByTestId('contracted-service-detail-drawer');
-    expect(screen.getByTestId('svc-detail-value').textContent).toContain('1500');
+    // Spec 058: valor e imposto vêm do termo vigente; o pagador, do vínculo (nomes do banco).
+    expect(screen.getByTestId('svc-detail-value').textContent).toMatch(/1\.?500/);
+    expect(screen.getByTestId('svc-detail-iva').textContent).toContain('21');
+    expect(screen.getByTestId('svc-detail-contract').textContent).toContain('OSDE — Plan 210');
+    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('MATCH');
     expect(screen.getByTestId('svc-detail-age-band').textContent).toContain('30 a 45 Años');
     expect(screen.getByTestId('svc-detail-address').textContent).toContain('Rua Augusta, 975 - Centro');
     expect(screen.getByTestId('svc-detail-schedule').textContent).toContain('Lunes, Miércoles 08:00-12:00');
@@ -278,7 +279,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
 
   it('detalhe: valor redigido (lex C-c.4) mostra o cadeado, nunca o número; sem endereço/horário/prestadores mostra os rótulos', () => {
     const redacted: PatientContractedServiceDetail = {
-      ...SERVICE, id: 'svc-2', hourlyValue: null, hourlyValueRedacted: true, professionalProfile: null, providers: [],
+      ...SERVICE, id: 'svc-2', ...LINKED_058, price: { state: 'REDACTED' }, professionalProfile: null, providers: [],
     };
     const patient = { ...patientDetailFixture, contractedServices: [redacted] };
     render(<ServicosContratadosCard patient={patient} />);

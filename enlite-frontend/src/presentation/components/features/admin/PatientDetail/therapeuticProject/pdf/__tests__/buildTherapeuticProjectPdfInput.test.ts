@@ -8,6 +8,7 @@
  *  · `null` (bloco inteiro) ≠ `[]`/`'—'` (tem a célula, dado vazio) — a mesma distinção da D113.
  *  · lex C13 — a `version` que entra aqui é a buscada a cada clique; a função é PURA e não busca nada.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect } from 'vitest';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import type { PatientContractedServiceDetail, PatientDetail } from '@domain/entities/PatientDetail';
@@ -32,11 +33,8 @@ const SERVICO: PatientContractedServiceDetail = {
   authorizedHours: 20,
   weeklyHours: 20,
   careLocation: 'HOME',
-  hourlyValue: null,
-  hourlyValueRedacted: false,
+  ...CONTRACT_058_DEFAULTS,
   startDate: '2026-09-01T00:00:00.000Z',
-  contractType: 'OBRA_SOCIAL',
-  taxCondition: 'IVA_EXEMPT',
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
@@ -181,20 +179,39 @@ describe('identificação', () => {
 // ── Cobertura ────────────────────────────────────────────────────────────────
 
 describe('cobertura', () => {
-  it('prefere a INFORMADA sobre a verificada', () => {
-    const p = paciente({ insuranceInformed: 'OSDE', insuranceVerified: 'Swiss Medical', affiliateId: 'AF-1', contractedServices: [SERVICO] });
+  // Spec 058 §4.5: o PDF lê `coverage.display` (a INFORMADA, ou os NOMES do catálogo); o texto das ausências é do front.
+  const cobertura = (c: NonNullable<PatientDetail['coverage']>) => ({ coverage: c });
+
+  it('INFORMED: o PDF mostra a cobertura informada', () => {
+    const p = paciente({ insuranceInformed: 'OSDE', ...cobertura({ display: 'OSDE', displaySource: 'INFORMED', entries: [] }), affiliateId: 'AF-1', contractedServices: [SERVICO] });
 
     expect(montar({ patient: p }).coverage).toEqual({ insurance: 'OSDE', affiliateId: 'AF-1' });
   });
 
-  it('sem a informada, cai na VERIFICADA', () => {
-    const p = paciente({ insuranceInformed: null, insuranceVerified: 'Swiss Medical', contractedServices: [SERVICO] });
+  it('VERIFIED: sem a informada, o PDF usa os NOMES do catálogo (não o código, não o rótulo cru)', () => {
+    const p = paciente({
+      insuranceInformed: null,
+      ...cobertura({ display: 'Swiss Medical', displaySource: 'VERIFIED', entries: [{ code: 'SWISS_MEDICAL', name: 'Swiss Medical', mapped: true, source: 'admin_manual' }] }),
+      contractedServices: [SERVICO],
+    });
 
     expect(montar({ patient: p }).coverage!.insurance).toBe('Swiss Medical');
   });
 
-  it('sem nenhuma das duas → `null` DENTRO do bloco (o bloco existe, o dado é que falta)', () => {
-    const { coverage } = montar();
+  it('UNMAPPED_ONLY: display null → o PDF diz "sin mapeo" (o front traduz, o back só manda dado)', () => {
+    const p = paciente({ insuranceInformed: null, ...cobertura({ display: null, displaySource: 'UNMAPPED_ONLY', entries: [{ code: null, name: null, mapped: false, source: 'clickup' }] }), contractedServices: [SERVICO] });
+
+    expect(montar({ patient: p }).coverage!.insurance).toBe('Cobertura sin mapeo al catálogo');
+  });
+
+  it('NONE: display null → o PDF diz "no informada"', () => {
+    const p = paciente({ insuranceInformed: null, ...cobertura({ display: null, displaySource: 'NONE', entries: [] }), contractedServices: [SERVICO] });
+
+    expect(montar({ patient: p }).coverage).toEqual({ insurance: 'Cobertura no informada', affiliateId: null });
+  });
+
+  it('sem o objeto `coverage` (backend anterior) → `null` DENTRO do bloco: o dado é que falta, não há frase inventada', () => {
+    const { coverage } = montar({ patient: paciente({ coverage: undefined as never }) });
 
     expect(coverage).toEqual({ insurance: null, affiliateId: null });
   });

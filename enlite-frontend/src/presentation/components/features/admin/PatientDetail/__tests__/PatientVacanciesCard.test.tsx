@@ -2,6 +2,7 @@
  * PatientVacanciesCard — bloco "Vacantes Generadas" (spec 047, F4): o código da vaga é `formatVacancyCase`
  * (`EN1234#01`), o MESMO da coluna "Código de la vacante" da tabela de serviços.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
@@ -55,7 +56,7 @@ describe('PatientVacanciesCard — código da vaga em EN1234#01 (spec 047 F4)', 
   it('A2: para a MESMA vaga o texto do bloco é IGUAL ao da coluna "Código da vacante" da tabela de serviços (um dono só)', () => {
     const servico = {
       id: 'svc-x', patientId: 'p1', serviceCode: 'AT', professionalProfile: null, providersNeeded: 1, authorizedHours: null, weeklyHours: null,
-      careLocation: null, hourlyValue: null, hourlyValueRedacted: false, startDate: null, contractType: null, taxCondition: null,
+      careLocation: null, ...CONTRACT_058_DEFAULTS, startDate: null,
       supervisionFrequency: null, guardShift: null, providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, endedAt: null, country: 'AR',
       deviceTypes: [], providers: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', active: true,
       liveVacancy: { id: 'v-1', caseNumber: VAGA.caseNumber, caseOrdinal: VAGA.caseOrdinal, status: VAGA.status }, liveVacancyRedacted: false,

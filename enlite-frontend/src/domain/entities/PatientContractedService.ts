@@ -2,24 +2,20 @@
  * PatientContractedService — o serviço contratado como entidade (spec 013, bloco C).
  * Mirrors `ContractedServiceDetail`/`ContractedServiceProviderDetail`
  * (worker-functions/src/modules/case/infrastructure/PatientContractedServiceRepository.ts,
- * ContractedServiceProviderRepository.ts) + a redação de `hourlyValue`
- * (contractedServiceHourlyValueAccess.ts, lex C-c.4).
+ * ContractedServiceProviderRepository.ts) + a projeção por ator (contractedServiceHourlyValueAccess.ts):
+ * spec 058 — pagador, preço e imposto vêm do VÍNCULO com o contrato e do termo vigente (read-only no serviço).
  *
  * Extraído para arquivo próprio (molde PatientCoverage.ts/PatientAddress.ts): PatientDetail.ts
  * já batia no teto de 400 linhas do validador.
  */
+
+import type { Currency, PayerKind } from './InsuranceContract';
 
 export const SERVICE_CODES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 export type ServiceCode = (typeof SERVICE_CODES)[number];
 
 export const CARE_LOCATIONS = ['HOME', 'SCHOOL', 'INSTITUTION', 'OTHER'] as const;
 export type CareLocation = (typeof CARE_LOCATIONS)[number];
-
-export const CONTRACT_TYPES = ['OBRA_SOCIAL', 'PREPAGA', 'PRIVATE'] as const;
-export type ContractType = (typeof CONTRACT_TYPES)[number];
-
-export const TAX_CONDITIONS = ['IVA_EXEMPT', 'IVA_10_5', 'IVA_21'] as const;
-export type TaxCondition = (typeof TAX_CONDITIONS)[number];
 
 export const SUPERVISION_FREQUENCIES = ['DAYS_15', 'DAYS_30', 'DAYS_45', 'BIMONTHLY'] as const;
 export type SupervisionFrequency = (typeof SUPERVISION_FREQUENCIES)[number];
@@ -99,6 +95,46 @@ export interface PatientContractedServiceLiveVacancy {
   status: string | null;
 }
 
+/** Nomes do pagador (catálogo). `payerKind` só chega a quem lê o container `coverage` (junto com todo o `names`). */
+export interface ContractedServicePayerNames {
+  providerCode: string;
+  providerName: string;
+  contractId: string;
+  contractName: string;
+  payerKind: PayerKind | null;
+}
+
+/** Pagador vigente na data `asOf` do serviço. `names: null` = o ator não lê `coverage` (redação); `isPrivate` continua visível. */
+export type ContractedServicePayer =
+  | { state: 'NO_CONTRACT' }
+  | { state: 'LINKED'; isPrivate: boolean; validFrom: string; validTo: string | null; names: ContractedServicePayerNames | null };
+
+/** Uma linha do histórico de vínculos (a ficha não escreve nele; só mostra). */
+export interface ContractedServicePayerHistoryItem {
+  linkId: string;
+  isPrivate: boolean;
+  validFrom: string;
+  validTo: string | null;
+  names: ContractedServicePayerNames | null;
+}
+
+/** Preço-hora do contrato na data `asOf`. `REDACTED` = sem `patient_contract_value:read`. */
+export type ContractedServicePrice =
+  | { state: 'NO_CONTRACT' }
+  | { state: 'NO_TERM' }
+  | { state: 'OK'; hourlyRate: number; currency: Currency }
+  | { state: 'REDACTED' };
+
+/** Imposto do termo vigente (nunca redigido). `0` = isento. */
+export type ContractedServiceTax =
+  | { state: 'NO_CONTRACT' }
+  | { state: 'NO_TERM' }
+  | { state: 'OK'; taxRatePercent: number };
+
+/** Os 6 estados da divergência pagador × cobertura verificada (+ `REDACTED` posto só pela projeção, sem `coverage`). */
+export const COVERAGE_MATCH_STATES = ['NO_PAYER', 'PRIVATE_PAYER', 'NO_COVERAGE', 'UNMAPPED_ONLY', 'MATCH', 'MISMATCH', 'REDACTED'] as const;
+export type CoverageMatchState = (typeof COVERAGE_MATCH_STATES)[number];
+
 export interface PatientContractedServiceDetail {
   id: string;
   patientId: string;
@@ -115,16 +151,16 @@ export interface PatientContractedServiceDetail {
   authorizedHours: number | null;
   weeklyHours: number | null;
   careLocation: string | null;
-  /**
-   * Preço do CONTRATO cobrado à família/obra social (lex C-c.2 — não é remuneração do
-   * prestador). `null` quando o backend redigiu (ator não-admin) — ver `hourlyValueRedacted`.
-   */
-  hourlyValue: number | null;
-  /** `true` quando o backend redigiu `hourlyValue` para este ator (lex C-c.4). */
-  hourlyValueRedacted: boolean;
   startDate: string | null;
-  contractType: string | null;
-  taxCondition: string | null;
+  /** Dia de operação (`YYYY-MM-DD`) do país do serviço em que `payer`/`price`/`tax`/`coverageMatch` foram lidos — o front nunca calcula "hoje". */
+  asOf: string;
+  /** Pagador vigente (vínculo serviço → contrato). Serviço sem vínculo = `NO_CONTRACT`. */
+  payer: ContractedServicePayer;
+  payerHistory: ContractedServicePayerHistoryItem[];
+  /** Preço (lex C-c.2: o que se cobra, não a remuneração do prestador) e imposto do termo vigente — SÓ exibidos. */
+  price: ContractedServicePrice;
+  tax: ContractedServiceTax;
+  coverageMatch: { state: CoverageMatchState };
   supervisionFrequency: string | null;
   guardShift: string | null;
   /** Franja etária solicitada do prestador (spec 015) — string frouxa, molde do resto do contrato. */
@@ -174,10 +210,7 @@ export interface CreateContractedServiceBody {
   authorizedHours?: number | null;
   weeklyHours?: number | null;
   careLocation?: CareLocation | null;
-  hourlyValue?: number | null;
   startDate?: string | null;
-  contractType?: ContractType | null;
-  taxCondition?: TaxCondition | null;
   supervisionFrequency?: SupervisionFrequency | null;
   guardShift?: GuardShift | null;
   providerAgeBand?: ProviderAgeBand | null;
@@ -208,4 +241,23 @@ export interface UpdateProviderBody {
   weeklyHours?: number | null;
   /** Só `false` (baixa) — reassociar é um novo POST. */
   active?: false;
+}
+
+/** `POST …/contracted-services/:sid/contract-link` — 1º vínculo. `validTo` é inclusivo. */
+export interface CreateContractLinkBody {
+  contractId: string;
+  validFrom: string;
+  validTo?: string | null;
+}
+
+/** `POST …/contract-link/end` — encerra o vínculo vivo (só encurta). */
+export interface EndContractLinkBody {
+  validTo: string;
+}
+
+export type SupersedeLinkReason = 'SWITCHED' | 'CORRECTION';
+
+/** `POST …/contract-link/supersede` — troca (`SWITCHED`, mesma obra social) ou corrige (`CORRECTION`). */
+export interface SupersedeContractLinkBody extends CreateContractLinkBody {
+  reason: SupersedeLinkReason;
 }

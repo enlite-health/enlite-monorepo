@@ -8,6 +8,7 @@
  *  · D113 — `null` (não decidido/redigido) ≠ `[]` (tem a célula, lista vazia → `—`).
  *  · lex C6 — o texto clínico renderizado carrega `data-clarity-mask` (o Clarity está vivo em PRD).
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
@@ -48,11 +49,8 @@ const SERVICO: PatientContractedServiceDetail = {
   authorizedHours: 20,
   weeklyHours: 20,
   careLocation: 'HOME',
-  hourlyValue: null,
-  hourlyValueRedacted: false,
+  ...CONTRACT_058_DEFAULTS,
   startDate: null,
-  contractType: null,
-  taxCondition: null,
   supervisionFrequency: null,
   guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,

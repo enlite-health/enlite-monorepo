@@ -3345,11 +3345,7 @@
         "authorizedHours": "Horas autorizadas",
         "weeklyHours": "Horas semanales",
         "careLocation": "Lugar de atención",
-        "hourlyValue": "Valor por hora",
-        "hourlyValueRedacted": "🔒 Solo admin",
         "startDate": "Fecha de inicio",
-        "contractType": "Tipo de contratación",
-        "taxCondition": "Condición de IVA",
         "supervisionFrequency": "Frecuencia de supervisión",
         "guardShift": "Turno de guardia",
         "providerAgeBand": "Franja etaria solicitada del prestador",
@@ -3401,7 +3397,8 @@
         "coverageContactRemove": "Quitar contacto",
         "coverageContactEmpty": "Sin contactos de emergencia de la cobertura.",
         "coverageContactNotice": "Estos datos quedan registrados en la ficha del paciente y se imprimen en el Proyecto Terapéutico que se entrega a la familia y a la cobertura. Si cargás a un profesional, informale que su contacto figura acá.",
-        "coverageContactsRedacted": "No podés ver los contactos de emergencia de la cobertura, por eso no se editan acá."
+        "coverageContactsRedacted": "No podés ver los contactos de emergencia de la cobertura, por eso no se editan acá.",
+        "contractRequired": "Elegí el contrato y la fecha de inicio del vínculo, o dejá la obra social vacía."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3482,7 +3479,6 @@
         "documentNumber": "Número de documento",
         "coverageSection": "Cobertura médica",
         "healthInsuranceName": "Nombre de la cobertura",
-        "healthInsuranceMemberId": "Número de afiliado",
         "serviceSection": "Servicio requerido",
         "serviceType": "Tipo de servicio",
         "saveError": "Error al crear el paciente",
@@ -3848,7 +3844,6 @@
         },
         "coverageCard": {
           "title": "Cobertura Médica",
-          "providerName": "Nombre de la Cobertura",
           "plan": "Plan del Paciente",
           "emergencyNumbers": "Números de Emergencia",
           "credential": "Credencial",
@@ -3861,7 +3856,10 @@
             "INSURANCE_EMERGENCY": "Emergencias de la cobertura/plan"
           },
           "emergencyContactsUnavailable": "No disponible ahora — recargá la ficha o avisá a soporte.",
-          "directProfessionalRedacted": "Profesional directo: no visible con tu permiso (hace falta la celda del equipo tratante)."
+          "directProfessionalRedacted": "Profesional directo: no visible con tu permiso (hace falta la celda del equipo tratante).",
+          "informed": "Cobertura informada",
+          "redacted": "Sin permiso para ver la cobertura",
+          "unmapped": "Sin mapeo al catálogo ({{count}})"
         },
         "locationsCard": {
           "title": "Localizaciones",
@@ -3897,8 +3895,8 @@
           "tableValue": "Valor",
           "tableValueRedacted": "🔒",
           "tableStart": "Inicio",
-          "tableContract": "Contratación",
-          "tableIVA": "IVA",
+          "tableContract": "Obra social / contrato",
+          "tableIVA": "Impuesto",
           "tableProviderAgeBand": "Franja etaria prestador",
           "inactiveBadge": "Baja",
           "tableQuantity": "Cant.",
@@ -3926,16 +3924,6 @@
             "SCHOOL": "Escuela",
             "INSTITUTION": "Institución",
             "OTHER": "Otro"
-          },
-          "contractTypeOptions": {
-            "OBRA_SOCIAL": "Obra Social",
-            "PREPAGA": "Prepaga",
-            "PRIVATE": "Privado"
-          },
-          "taxConditionOptions": {
-            "IVA_EXEMPT": "IVA Exento",
-            "IVA_10_5": "IVA 10,5%",
-            "IVA_21": "IVA 21%"
           },
           "supervisionFrequencyOptions": {
             "DAYS_15": "15 Días",
@@ -3967,7 +3955,61 @@
           "activateRecruitmentToast": "Vacante en borrador creada",
           "activateRecruitmentPatientNotMoved": "Vacante creada. El paciente sigue en Admisión: falta {{items}} en un servicio activo.",
           "activateRecruitmentError": "No se pudo activar el reclutamiento",
-          "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso"
+          "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso",
+          "payerKindOptions": {
+            "OBRA_SOCIAL": "Obra Social",
+            "PREPAGA": "Prepaga",
+            "PRIVATE": "Particular"
+          },
+          "payerKind": "Tipo de pagador",
+          "taxExempt": "Exento (0 %)",
+          "priceState": {
+            "NO_CONTRACT": "Sin contrato vinculado",
+            "NO_TERM": "Sin término vigente hoy",
+            "REDACTED": "🔒 Sin permiso para ver el valor"
+          },
+          "payer": {
+            "none": "Sin contrato vinculado",
+            "private": "Particular (sin obra social)",
+            "hidden": "Obra social no visible con tu permiso"
+          },
+          "contractSection": "Obra social y contrato",
+          "coverageMatchLabel": "Cobertura verificada vs. contrato",
+          "coverageMatch": {
+            "NO_PAYER": "Sin contrato vinculado: no hay con qué comparar la cobertura.",
+            "PRIVATE_PAYER": "Pagador particular: no se compara con la cobertura.",
+            "NO_COVERAGE": "El paciente no tiene cobertura verificada.",
+            "UNMAPPED_ONLY": "Solo hay coberturas sin mapeo al catálogo: no se puede comparar.",
+            "MATCH": "La cobertura verificada coincide con la obra social del contrato.",
+            "MISMATCH": "La cobertura verificada NO coincide con la obra social del contrato.",
+            "REDACTED": "No visible con tu permiso (cobertura)."
+          },
+          "cascade": {
+            "provider": "Obra social",
+            "contract": "Contrato",
+            "validFrom": "Vigente desde",
+            "validTo": "Vigente hasta",
+            "validToHint": "Opcional. Vacío = sin fecha de fin; el día indicado se incluye.",
+            "validity": "Vigencia del vínculo",
+            "noEnd": "sin fin",
+            "noCountry": "El servicio no tiene país: no se puede elegir la obra social.",
+            "noProviders": "No hay obras sociales activas con contrato ofrecido en este país."
+          },
+          "modeHint": {
+            "link": "Elegí la obra social y el contrato de este servicio. Después de este primer vínculo la obra social queda fija.",
+            "switch": "Cambio de contrato dentro de la misma obra social: el anterior queda en el historial.",
+            "correct": "Corrección: el vínculo anterior estaba mal cargado. Solo acá se puede cambiar la obra social.",
+            "end": "Terminar el vínculo: elegí el último día vigente."
+          },
+          "actions": {
+            "link": "Vincular contrato",
+            "switch": "Cambiar de contrato",
+            "correct": "Corregir vínculo",
+            "end": "Terminar vínculo",
+            "save": "Guardar vínculo",
+            "cancel": "Cancelar",
+            "newService": "Crear un servicio nuevo"
+          }
         },
         "matchingCard": {
           "title": "Encuadre Terapéutico",
@@ -4401,41 +4443,6 @@
           "notAvailable": "Este cambio de estado no está disponible.",
           "optionsUnavailable": "No se pudieron comprobar los estados disponibles. Intenta de nuevo."
         }
-      },
-      "insuranceProviderOptions": {
-        "API": "API",
-        "ACCORD_SALUD": "Accord Salud",
-        "ASISOC": "ASISOC",
-        "AVALIAN": "Avalian",
-        "BANCARIOS": "Bancarios",
-        "CASA": "CASA",
-        "DAS": "DAS",
-        "GALENO": "Galeno",
-        "MHM": "MHM",
-        "MEDICUS": "Medicus",
-        "HTAL_BRITANICO": "Htal Británico",
-        "OSPJN": "OSPJN",
-        "OSPECOM": "OSPECOM",
-        "OSMECON": "OSMECON",
-        "OSDE": "OSDE",
-        "OMINT": "Omint",
-        "OSPOCE": "OSPOCE",
-        "OGORMAN": "O'Gorman",
-        "OSPATCA": "OSPATCA",
-        "OBSBA": "ObSBA",
-        "OSPELSYM": "Ospelsym",
-        "OSTEE_LUZ_MEDICA": "Ostee Luz Médica",
-        "OSDEPYM": "Osdepym",
-        "OTHER": "Otra",
-        "PFA_SUPERINTENDENCIA": "PFA Superintendencia de Bienestar",
-        "PRIVATE": "Privado",
-        "SANIDAD": "SANIDAD",
-        "SWISS_MEDICAL": "Swiss Medical",
-        "UP": "UP",
-        "OSPICHA": "OSPICHA",
-        "USUOMRA": "USUOMRA",
-        "PREVENCION_SALUD": "Prevención Salud",
-        "IOSCOR": "IOSCOR"
       }
     },
     "pendingAddressReview": {
@@ -6066,6 +6073,61 @@
         "body": "¿Quitar a {{name}} de encuadre y admisión? Deja de aparecer para agendar.",
         "cancel": "Cancelar",
         "confirm": "Quitar"
+      }
+    },
+    "insuranceErrors": {
+      "generic": "No se pudo completar la operación. Probá de nuevo.",
+      "byStatus": {
+        "400": "Hay datos inválidos en el formulario.",
+        "403": "No tenés permiso para esta acción.",
+        "404": "No se encontró lo que buscabas.",
+        "409": "Hay un conflicto con otro dato. Recargá y probá de nuevo.",
+        "422": "Los datos no cumplen las reglas. Revisá el formulario."
+      },
+      "codes": {
+        "REQUIRES_NEW_SERVICE": "Cambiar de obra social es otra admisión: hay que crear un servicio nuevo.",
+        "USE_CORRECTION": "Este servicio ya tiene un contrato vigente y ningún período anterior. Para cambiarlo, corregí el vínculo o creá un servicio nuevo.",
+        "TWO_PAYERS_OVERLAP": "El paciente ya tiene otro pagador vigente en esas fechas. No puede haber dos pagadores a la vez.",
+        "COUNTRY_MISMATCH": "El país del contrato no coincide con el del servicio.",
+        "PAYER_KIND_REQUIRED": "Falta clasificar la obra social (tipo de pagador) antes de usarla en un contrato.",
+        "PAYER_KIND_CANNOT_UNSET": "El tipo de pagador, una vez cargado, no se puede quitar: solo cambiar.",
+        "SERVICE_HAS_CONTRACT_LINK": "El servicio ya tiene un contrato vinculado.",
+        "SAME_START_USE_CORRECTION": "La nueva vigencia empieza el mismo día que la actual. Usá \"Corregir\".",
+        "TERM_RANGE_INVALID": "La vigencia del término es inválida.",
+        "LINK_RANGE_INVALID": "La vigencia está fuera del vínculo vigente.",
+        "NAME_NOT_CODIFIABLE": "Ese nombre no sirve para generar el código. Probá con otro.",
+        "CODE_IMMUTABLE": "El código de la obra social no se puede cambiar.",
+        "IMMUTABLE_FIELD": "Ese dato no se puede cambiar una vez cargado (país y obra social del contrato).",
+        "VALIDATION_FAILED": "Hay datos inválidos o vacíos. Revisá los campos.",
+        "DOCUMENT_PAIR_INCOMPLETE": "Cargá el tipo y el número del documento, o ninguno de los dos.",
+        "LEGACY_FIELD_REMOVED": "Ese campo ya no existe: el valor y el impuesto salen del contrato.",
+        "UNPROCESSABLE": "La operación no se puede procesar con esos datos.",
+        "INSURANCE_PROVIDER_CODE_EXISTS": "Ya existe una obra social con ese código.",
+        "INSURANCE_PROVIDER_SORT_ORDER_TAKEN": "Ese orden ya lo usa otra obra social.",
+        "INSURANCE_PROVIDER_NAME_EXISTS": "Ya existe una obra social con ese nombre.",
+        "INSURANCE_PROVIDER_TAX_ID_EXISTS": "Ya existe una obra social con ese CUIT/CNPJ.",
+        "INSURANCE_CONTRACT_NAME_EXISTS": "Esta obra social ya tiene un contrato con ese nombre.",
+        "RANGE_OVERLAP": "Las fechas se superponen con otro período ya cargado.",
+        "CONCURRENCY_CONFLICT": "Otra persona cambió esto al mismo tiempo. Recargá y probá de nuevo.",
+        "TERM_ALREADY_SUPERSEDED": "Ese término ya fue reemplazado. Recargá la lista.",
+        "CONTACT_RETIRED": "Ese contacto ya fue retirado.",
+        "PROVIDER_NOT_FOUND": "La obra social no existe.",
+        "CONTRACT_NOT_FOUND": "El contrato no existe.",
+        "TERM_NOT_FOUND": "El término de valor no existe.",
+        "SERVICE_NOT_FOUND": "El servicio contratado no existe.",
+        "NO_LIVE_LINK": "El servicio no tiene un contrato vigente.",
+        "CONTACT_NOT_FOUND": "El contacto no existe.",
+        "COUNTRY_SCOPE_REQUIRED": "Tu usuario no tiene un país asignado para esta operación."
+      },
+      "rangeOverlap": {
+        "insurance_contract_terms_sem_sobreposicao": "Esa vigencia se superpone con otro término de valor del mismo contrato.",
+        "contracted_service_contract_sem_sobreposicao": "Esa vigencia se superpone con otro vínculo del mismo servicio."
+      },
+      "constraints": {
+        "insurance_providers_private_kind_chk": "La obra social \"Particular\" solo puede tener el tipo de pagador \"Particular\".",
+        "insurance_providers_other_unclassified_chk": "La obra social \"Otra\" no se puede clasificar.",
+        "insurance_provider_contacts_document_pair_chk": "Cargá el tipo y el número del documento, o ninguno de los dos.",
+        "insurance_contracts_country_check": "El país del contrato debe ser Argentina o Brasil."
       }
     }
   },

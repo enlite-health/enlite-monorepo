@@ -12,6 +12,7 @@
  *  · lex C5 — versão ANULADA não exporta nem vira origem de versão nova.
  *  · A recusa do servidor vira frase de tela por `code` (`saveRefusalMessage`), nunca o corpo cru.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
@@ -106,11 +107,8 @@ const SERVICO: PatientContractedServiceDetail = {
   authorizedHours: 20,
   weeklyHours: 20,
   careLocation: 'HOME',
-  hourlyValue: null,
-  hourlyValueRedacted: false,
+  ...CONTRACT_058_DEFAULTS,
   startDate: null,
-  contractType: null,
-  taxCondition: null,
   supervisionFrequency: null,
   guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
