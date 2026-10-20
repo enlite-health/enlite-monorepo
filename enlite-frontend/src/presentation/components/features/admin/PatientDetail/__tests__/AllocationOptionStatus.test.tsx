@@ -57,7 +57,7 @@ describe('AllocationOptionStatus', () => {
           addressLabel="x"
           options={options}
           vacancyId="v"
-          currentWorkerId={null}
+          vigentes={[]}
           onSubmit={() => undefined}
           onCancel={() => undefined}
         />

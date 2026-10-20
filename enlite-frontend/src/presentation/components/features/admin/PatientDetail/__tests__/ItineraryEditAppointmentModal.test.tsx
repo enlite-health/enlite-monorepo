@@ -42,7 +42,7 @@ function renderModal(props: Partial<Parameters<typeof ItineraryEditAppointmentMo
         addressLabel="Rua Augusta, 975"
         options={OPTIONS}
         vacancyId="vac-1"
-        currentWorkerId={null}
+        vigentes={[]}
         onSubmit={onSubmit}
         onCancel={onCancel}
         {...props}
@@ -89,9 +89,10 @@ describe('ItineraryEditAppointmentModal', () => {
     expect(onSubmit).toHaveBeenCalledWith('w-1');
   });
 
-  it('currentWorkerId pré-seleciona o select (mostra o nome) e o card correspondente', () => {
-    renderModal({ currentWorkerId: 'w-2' });
-    expect(screen.getByTestId('itinerario-editar-prestador')).toHaveTextContent('Elio Fixture');
+  it('vigentes não pré-seleciona ninguém: o select começa vazio e Guardar desabilitado', () => {
+    renderModal({ vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }] });
+    expect(screen.getByTestId('itinerario-editar-prestador')).not.toHaveTextContent('Elio Fixture');
+    expect(screen.getByTestId('itinerario-editar-guardar')).toBeDisabled();
   });
 
   it('clicar num card de "Preseleccionados" escolhe o prestador', () => {
@@ -171,7 +172,7 @@ describe('ItineraryEditAppointmentModal', () => {
 
   describe('Fase 4 — "Quitar del itinerario"', () => {
     it('com prestador atual e onRemove: o botão do prestador atual aparece; o painel só abre ao clicar', () => {
-      renderModal({ currentWorkerId: 'w-2', onRemove: vi.fn() });
+      renderModal({ vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }], onRemove: vi.fn() });
       expect(screen.queryByTestId('itinerario-quitar-painel')).toBeNull();
       fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
       const panel = screen.getByTestId('itinerario-quitar-painel');
@@ -182,33 +183,44 @@ describe('ItineraryEditAppointmentModal', () => {
     });
 
     it('só o prestador ATUAL da faixa tem o botão (nenhum outro Selecionado)', () => {
-      renderModal({ currentWorkerId: 'w-2', onRemove: vi.fn() });
+      renderModal({ vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }], onRemove: vi.fn() });
       expect(screen.getByTestId('itinerario-quitar-w-2')).toBeInTheDocument();
       expect(screen.queryByTestId('itinerario-quitar-w-1')).toBeNull();
     });
 
     it('sem prestador atual, ou sem onRemove: não há ação de quitar', () => {
-      const { unmount } = renderModal({ currentWorkerId: null, onRemove: vi.fn() });
+      const { unmount } = renderModal({ vigentes: [], onRemove: vi.fn() });
       expect(screen.queryByTestId('itinerario-quitar-w-2')).toBeNull();
       unmount();
-      renderModal({ currentWorkerId: 'w-2' });
+      renderModal({ vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }] });
       expect(screen.queryByTestId('itinerario-quitar-w-2')).toBeNull();
     });
 
     it('prestador atual fora da lista de opções (Em Atendimento): o rótulo cai no fallback com o fim do id, sem lançar', () => {
-      renderModal({ currentWorkerId: 'w-12345678-fim', options: [], onRemove: vi.fn() });
+      renderModal({ vigentes: [{ workerId: 'w-12345678-fim', allocationId: 'alloc-x' }], options: [], onRemove: vi.fn() });
       fireEvent.click(screen.getByTestId('itinerario-quitar-w-12345678-fim'));
       expect(screen.getByTestId('itinerario-quitar-prestador').textContent).toContain('5678-fim');
     });
 
     it('confirmar no painel chama onRemove(motivo, destino)', () => {
       const onRemove = vi.fn();
-      renderModal({ currentWorkerId: 'w-2', onRemove });
+      renderModal({ vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }], onRemove });
       fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
       fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
       fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
       fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
-      expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE');
+      expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE', 'alloc-2');
+    });
+
+    it('N=2 vigentes: um "Quitar" por prestador; confirmar o 2º chama onRemove(motivo, destino, allocationId do 2º)', () => {
+      const onRemove = vi.fn();
+      renderModal({ vigentes: [{ workerId: 'w-1', allocationId: 'alloc-1' }, { workerId: 'w-2', allocationId: 'alloc-2' }], onRemove });
+      expect(screen.getByTestId('itinerario-quitar-w-1')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE', 'alloc-2');
     });
   });
 });

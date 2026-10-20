@@ -26,14 +26,15 @@ interface ItineraryEditAppointmentModalProps {
   options: ServiceTeamMember[] | null;
   /** A vaga viva do serviço — link "ir a la vacante" da Búsqueda de Urgência (D445.7). `null` sem vaga. */
   vacancyId: string | null;
-  currentWorkerId: string | null;
+  /** Todos os prestadores vigentes da faixa (N >= 0); cada um tem o seu "Quitar". */
+  vigentes: ReadonlyArray<{ workerId: string; allocationId: string }>;
   onSubmit: (workerId: string) => void;
   onCancel: () => void;
   /**
-   * Fase 4: tirar o prestador ATUAL da faixa, com motivo e destino. Sem ele (ou sem prestador atual) a ação
-   * "Quitar del itinerario" não aparece. A escrita é de quem abre o modal.
+   * Fase 4: tirar UM prestador vigente da faixa, com motivo e destino (e a alocação a encerrar). Sem ele (ou sem
+   * vigentes) a ação "Quitar del itinerario" não aparece. A escrita é de quem abre o modal.
    */
-  onRemove?: (reasonCategory: string, destination: ExitDestination) => void;
+  onRemove?: (reasonCategory: string, destination: ExitDestination, allocationId: string) => void;
   /** Envio do "Quitar" em curso — desabilita o Confirmar do painel. */
   removing?: boolean;
   /** Erro (já traduzido) do último "Quitar"; o painel fica aberto. */
@@ -55,7 +56,7 @@ export function ItineraryEditAppointmentModal({
   addressLabel,
   options,
   vacancyId,
-  currentWorkerId,
+  vigentes,
   onSubmit,
   onCancel,
   onRemove,
@@ -64,9 +65,8 @@ export function ItineraryEditAppointmentModal({
 }: ItineraryEditAppointmentModalProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const tm = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.editModal.${key}`, opts);
-  const [workerId, setWorkerId] = useState(currentWorkerId ?? '');
-  const [showRemove, setShowRemove] = useState(false);
-  const currentMember = currentWorkerId ? (options ?? []).find((m) => m.workerId === currentWorkerId) : undefined;
+  const [workerId, setWorkerId] = useState('');
+  const [removeTarget, setRemoveTarget] = useState<{ workerId: string; allocationId: string } | null>(null);
 
   const workerOptions = (options ?? []).map((member) => ({
     value: member.workerId,
@@ -231,32 +231,32 @@ export function ItineraryEditAppointmentModal({
         )}
       </div>
 
-      {onRemove && currentWorkerId && (
-        <div className="flex flex-col gap-2">
+      {onRemove && vigentes.map((v) => (
+        <div key={v.allocationId} className="flex flex-col gap-2">
           <ActionButton
             resource="patient_itinerary"
             action="update"
             variant="outline"
             size="sm"
             className="self-start"
-            onClick={() => setShowRemove(true)}
-            data-testid={`itinerario-quitar-${currentWorkerId}`}
+            onClick={() => setRemoveTarget(v)}
+            data-testid={`itinerario-quitar-${v.workerId}`}
           >
             {tm('removeFromItinerary')}
           </ActionButton>
         </div>
-      )}
+      ))}
 
       <Text as="p" size="xs" color="secondary" data-testid="itinerario-editar-anacare-aviso">
         {tm('anaCareNotice')}
       </Text>
     </SidePanelShell>
     {/* Irmão do modal, não filho: o modal tem `transform`, que viraria o bloco de contenção do `fixed` do painel. */}
-    {showRemove && onRemove && currentWorkerId && (
+    {removeTarget && onRemove && (
       <RemoveFromItineraryPanel
-        workerLabel={workerLabel(t, currentWorkerId, currentMember?.displayName ?? null)}
-        onConfirm={onRemove}
-        onCancel={() => setShowRemove(false)}
+        workerLabel={workerLabel(t, removeTarget.workerId, (options ?? []).find((m) => m.workerId === removeTarget.workerId)?.displayName ?? null)}
+        onConfirm={(reason, destination) => onRemove(reason, destination, removeTarget.allocationId)}
+        onCancel={() => setRemoveTarget(null)}
         submitting={removing}
         errorMessage={removeError}
       />
