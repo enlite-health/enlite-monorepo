@@ -76,10 +76,23 @@ describe('VacancyFormSection — modo edit, vaga esparsa (só `id`, resto ausent
     await waitFor(() => expect(screen.getByTestId('case-number-display')).toHaveTextContent('—'));
     // required_professions ?? [] → nenhum checkbox marcado.
     expect(screen.getByTestId('profession-checkbox-AT')).not.toBeChecked();
-    // providers_needed ?? 1 → fallback numérico.
-    expect(screen.getByTestId('providers-needed-input')).toHaveValue(1);
+    // providers_needed ausente → campo VAZIO (§N; nunca "1").
+    expect(screen.getByTestId('providers-needed-input')).toHaveValue(null);
     // meet_link_1 ?? '' → vazio.
     expect(screen.getByTestId('meet-link-0')).toHaveValue('');
+  });
+
+  it('vaga com serviço (locked_fields ∋ providers_needed) e quantidade null: campo vazio e desabilitado (nunca 1)', async () => {
+    getVacancyById.mockResolvedValue({ id: 'vac-locked-1', providers_needed: null, locked_fields: ['providers_needed'] });
+    render(
+      <MemoryRouter>
+        <VacancyModal mode="edit" vacancyId="vac-locked-1" isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('vacancy-form')).toBeInTheDocument());
+    expect(screen.getByTestId('providers-needed-input')).toHaveValue(null);
+    expect(screen.getByTestId('providers-needed-input')).toBeDisabled();
   });
 });
 
@@ -256,6 +269,7 @@ describe('VacancyFormSection — submit edit direto com selectedPatientId/Addres
             patient_id: 'p-fallback',
             patient_address_id: 'addr-fallback',
             case_number: 555,
+            providers_needed: 1,
           }}
           selectedCaseNumber={null}
           selectedPatientId={null}
@@ -299,6 +313,7 @@ describe('VacancyFormSection — submit edit direto com selectedPatientId/Addres
             title: 'Vaga sem número de caso',
             patient_id: 'p-no-case',
             patient_address_id: 'addr-no-case',
+            providers_needed: 1,
             // Sem `case_number` — o `??` externo (selectedCaseNumber) e o
             // interno (existingVacancy?.case_number) ficam os dois null.
           }}
@@ -340,6 +355,7 @@ describe('VacancyFormSection — submit create direto: createVacancy resolve str
       </MemoryRouter>,
     );
 
+    await userEvent.type(await screen.findByTestId('providers-needed-input'), '1');
     await fillMinimumAndSubmit(0);
 
     await waitFor(() => expect(updateVacancyMeetLinks).toHaveBeenCalled());
@@ -371,6 +387,7 @@ describe('VacancyFormSection — modo create, caso JÁ selecionado no primeiro m
       </MemoryRouter>,
     );
 
+    await userEvent.type(await screen.findByTestId('providers-needed-input'), '1');
     await fillMinimumAndSubmit(0);
 
     await waitFor(() => expect(AdminApiService.createVacancy).toHaveBeenCalled());

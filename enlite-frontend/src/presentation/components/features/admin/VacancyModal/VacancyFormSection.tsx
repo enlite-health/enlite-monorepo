@@ -114,7 +114,8 @@ export function VacancyFormSection({
   // Fase 4: campos do form travados pela origem, derivados de `locked_fields` do GET.
   const lockedFields = mode === 'edit' ? lockedFormFields(existingVacancy?.locked_fields) : new Set<keyof VacancyFormData>();
   const professionsLocked = lockedFields.has('required_professions');
-  const schema = useMemo(() => buildVacancyFormSchema(professionsLocked), [professionsLocked]);
+  const providersLocked = lockedFields.has('providers_needed');
+  const schema = useMemo(() => buildVacancyFormSchema(professionsLocked, providersLocked), [professionsLocked, providersLocked]);
 
   const {
     register,
@@ -200,7 +201,7 @@ export function VacancyFormSection({
         age_range_max: existingVacancy.age_range_max ?? undefined,
         required_experience: existingVacancy.required_experience ?? '',
         worker_attributes: existingVacancy.worker_attributes ?? '',
-        providers_needed: existingVacancy.providers_needed ?? 1,
+        providers_needed: existingVacancy.providers_needed ?? null,
         patientAddressId: existingVacancy.patient_address_id ?? '',
         work_schedule: existingVacancy.work_schedule ?? '',
         schedule: buildScheduleFromVacancy(existingVacancy),

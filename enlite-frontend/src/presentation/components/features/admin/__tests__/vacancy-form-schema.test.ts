@@ -142,6 +142,10 @@ describe('vacancyFormSchema — patientAddressId obrigatório (US-D6)', () => {
     expect(result.success).toBe(true);
   });
 
+  it('DEFAULT_FORM_VALUES.providers_needed é null (§N: nunca 1)', () => {
+    expect(DEFAULT_FORM_VALUES.providers_needed).toBeNull();
+  });
+
   it('DEFAULT_FORM_VALUES.patientAddressId nasce vazio (sem endereço pré-selecionado)', () => {
     expect(DEFAULT_FORM_VALUES.patientAddressId).toBe('');
   });
@@ -163,6 +167,16 @@ describe('vacancyFormSchema — quantidade de prestadores sem padrão 1 (058 B)'
       const r = buildVacancyFormSchema().safeParse({ ...valido, providers_needed: v });
       expect(r.success).toBe(false);
       if (!r.success) expect(r.error.issues[0].path).toEqual(['providers_needed']);
+    }
+  });
+
+  it('providers_needed null (não travado) é inválido sem abortar o refine de meet_links', () => {
+    const r = buildVacancyFormSchema().safeParse({ ...valido, providers_needed: null, meet_links: ['', '', ''] });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const paths = r.error.issues.map((i) => i.path[0]);
+      expect(paths).toContain('providers_needed');
+      expect(paths).toContain('meet_links');
     }
   });
 

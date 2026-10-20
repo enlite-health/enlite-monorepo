@@ -60,7 +60,13 @@ export function buildVacancyFormSchema(professionsLocked = false, providersLocke
     // some do PUT por `stripLockedFields`) aceita `null` = "não informada" e nunca barra o save dos outros campos.
     providers_needed: providersLocked
       ? z.number().int().min(1).nullable()
-      : z.number({ invalid_type_error: 'required' }).int().min(1),
+      : z
+          .number({ invalid_type_error: 'required' })
+          .int()
+          .min(1)
+          .nullable()
+          // `null` como issue `custom` (não fatal): um `invalid_type` abortaria o `.refine` de `meet_links` do objeto.
+          .refine((v) => v !== null, { message: 'required' }),
     // Spec 014 (US-D6, lex D6.1): "Dirección" (a `patientAddressId` selecionada em
     // `VacancyFormRightColumn`) passa a ser exigida pelo ZOD — inclusive em modo EDIÇÃO. Antes
     // disso o campo era só visualmente `required` (asterisco), sem validação nenhuma: submeter
@@ -301,7 +307,7 @@ export const DEFAULT_FORM_VALUES: VacancyFormData = {
   age_range_max: undefined,
   required_experience: '',
   worker_attributes: '',
-  providers_needed: 1,
+  providers_needed: null, // §N: vaga manual nasce vazia (obrigatório); nunca "1"
   patientAddressId: '',
   work_schedule: '',
   schedule: [{ days: [], timeFrom: '', timeTo: '' }],
