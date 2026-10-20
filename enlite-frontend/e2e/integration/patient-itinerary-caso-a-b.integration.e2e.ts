@@ -192,4 +192,42 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
       m.seed.cleanup();
     }
   });
+
+  test('VALIDAÇÃO: "Programada" desabilita "Sale del encuadre" e mostra a frase da reserva; sem data o Confirmar fica desabilitado; nenhuma requisição …/replace sai', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const m = await semearTroca(request);
+    try {
+      const posts: string[] = [];
+      page.on('request', (r) => {
+        if (r.method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())) posts.push(r.url());
+      });
+      const dataIso = sqlComVars("SELECT to_char((now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date + 7, 'YYYY-MM-DD')");
+
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, m.seed.patientId);
+      await page.getByTestId('itinerario-novo-btn').click();
+      await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
+      await page.getByTestId('substitution-mode-permanent').click();
+      await page.getByTestId('substitution-start-scheduled').click();
+      await expect(page.getByTestId('substitution-destination-LEAVE_SERVICE')).toBeDisabled();
+      await expect(page.getByTestId('substitution-reserve-only')).toContainText('solo se puede dejar como reserva');
+      await page.getByTestId('substitution-worker').click();
+      await page.getByRole('listbox').getByRole('option').first().click();
+      await page.getByTestId('substitution-reason').selectOption({ label: MOTIVO_DESISTENCIA });
+      await page.getByTestId('substitution-destination-RESERVE').click();
+      await expect(page.getByTestId('substitution-confirm')).toBeDisabled(); // sem data
+
+      await page.getByTestId('substitution-start-date').click();
+      await page.keyboard.type(dataIso.slice(8, 10) + dataIso.slice(5, 7) + dataIso.slice(0, 4)); // dd mm aaaa
+      expect(await page.getByTestId('substitution-start-date').inputValue()).toBe(dataIso); // lido da TELA
+      await expect(page.getByTestId('substitution-confirm')).toBeEnabled();
+
+      expect(posts).toHaveLength(0); // não confirmou
+      expect(statusDaAlocacao(m.allocationA)).toBe('ACTIVE');
+      expect(replaces(m.serviceId)).toBe('0');
+      expect(proibidos()).toEqual([]);
+    } finally {
+      m.seed.cleanup();
+    }
+  });
 });
