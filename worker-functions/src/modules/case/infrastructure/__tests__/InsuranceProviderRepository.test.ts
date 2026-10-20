@@ -33,11 +33,12 @@ function pgError(code: string, constraint?: string): Error {
 }
 
 /** Cliente de transação falso. `insertFailures` = erros que os INSERTs sucessivos do provedor levantam (um por tentativa). */
-function cliente(opts: { insertFailures?: unknown[]; erroCru?: unknown } = {}) {
+function cliente(opts: { insertFailures?: unknown[]; erroCru?: unknown; nomeExistente?: boolean } = {}) {
   const chamadas: Array<{ sql: string; params: unknown[] }> = [];
   const falhas = [...(opts.insertFailures ?? [])];
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     chamadas.push({ sql, params });
+    if (/lower\(btrim\(name\)\) = lower\(btrim\(\$1\)\)/.test(sql)) return opts.nomeExistente ? { rows: [{ '?column?': 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
     if (/SELECT COALESCE\(MAX\(sort_order\)/.test(sql)) return { rows: [{ next: 34 + (opts.insertFailures?.length ?? 0) - falhas.length }], rowCount: 1 };
     if (/^INSERT INTO insurance_providers/.test(sql)) {
       if (opts.erroCru !== undefined) throw opts.erroCru;
@@ -156,6 +157,16 @@ describe('InsuranceProviderRepository', () => {
     expect(await new InsuranceProviderRepository().get('OSDE')).toEqual({
       code: 'OSDE', name: 'OSDE', payerKind: 'PREPAGA', active: true, legalName: null, taxId: null, address: null, managementChatId: '120@g.us', sortOrder: 15,
     });
+  });
+
+  it('create: nome já existente (pré-checagem lower(btrim)) → NameExists, ANTES do INSERT — nunca CODE_EXISTS pelo código derivado', async () => {
+    const { cli, chamadas } = cliente({ nomeExistente: true });
+    mockConnect.mockResolvedValue(cli);
+    const err = await new InsuranceProviderRepository().create({ name: '  osde  ' }).catch((e) => e);
+    expect(err).toBeInstanceOf(InsuranceProviderNameExistsError);
+    expect(err.code).toBe('INSURANCE_PROVIDER_NAME_EXISTS');
+    expect(chamadas.some((c) => /^INSERT INTO insurance_providers/.test(c.sql))).toBe(false);
+    expect(chamadas[chamadas.length - 1].sql).toBe('ROLLBACK');
   });
 
   it('create: unique desconhecida propaga o erro CRU (500 + alarme), nunca vira "já existe"', async () => {
