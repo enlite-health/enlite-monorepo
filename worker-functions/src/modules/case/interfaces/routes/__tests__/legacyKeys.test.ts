@@ -45,7 +45,7 @@ function enforced(cells: string[]): PermissionMiddleware {
 
 function build(cells: string[]) {
   const reached = jest.fn((_req: express.Request, res: express.Response) => res.status(200).json({ reached: true }));
-  const controller = { updatePatientSection: reached } as unknown as AdminPatientsController;
+  const controller = { updatePatientSection: reached, createPatient: reached } as unknown as AdminPatientsController;
   const services = { create: reached, update: reached } as unknown as AdminPatientContractedServicesController;
   const router = createAdminPatientsRoutes(
     controller, authDouble(), enforced(cells), {} as never, {} as never, {} as never, {} as never, {} as never, services, {} as never, {} as never,
@@ -62,6 +62,8 @@ const CASOS: Array<{ key: string; method: 'post' | 'patch'; path: string; body: 
   { key: 'contractType', method: 'patch', path: `/api/admin/patients/${PATIENT}/contracted-services/${SERVICE}`, body: { contractType: 'PREPAGA' } },
   { key: 'taxCondition', method: 'post', path: `/api/admin/patients/${PATIENT}/contracted-services`, body: { serviceCode: 'AT', taxCondition: 'IVA_21' } },
   { key: 'healthInsuranceMemberId', method: 'patch', path: `/api/admin/patients/${PATIENT}/coverage`, body: { healthInsuranceMemberId: 'AF-123' } },
+  { key: 'healthInsuranceMemberId', method: 'patch', path: `/api/admin/patients/${PATIENT}/general`, body: { healthInsuranceMemberId: 'AF-123' } },
+  { key: 'healthInsuranceMemberId', method: 'post', path: `/api/admin/patients`, body: { firstName: 'X', country: 'AR', healthInsuranceMemberId: 'AF-123' } },
 ];
 
 describe('chave legada → 422 LEGACY_FIELD_REMOVED antes do ABAC', () => {

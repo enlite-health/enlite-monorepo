@@ -47,7 +47,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     caseNumber?: number;
   }): Promise<string> {
     return (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, health_insurance_name)
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, insurance_informed)
        VALUES ($1, 'Activation', 'E2E', 'AR', 'PENDING_ADMISSION', $2, $3) RETURNING id`,
       [opts.tag, opts.caseNumber ?? null, opts.coverage ?? null],
     )).rows[0].id;
@@ -79,8 +79,8 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     // O provider é INDEPENDENTE do paciente (catálogo global), por isso limpo à parte.
     await pool.query(`DELETE FROM insurance_providers WHERE code = $1`, [COVERAGE_INACTIVE_CODE]);
     await pool.query(
-      `INSERT INTO insurance_providers (code, active, retired_at, sort_order)
-       SELECT $1, false, NOW(), COALESCE(MAX(sort_order), 0) + 1 FROM insurance_providers`,
+      `INSERT INTO insurance_providers (code, name, active, retired_at, sort_order)
+       SELECT $1, 'Obra social inativa E2E activation', false, NOW(), COALESCE(MAX(sort_order), 0) + 1 FROM insurance_providers`,
       [COVERAGE_INACTIVE_CODE],
     );
   });
@@ -118,7 +118,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
 
     // COVERAGE: "Particular" é resposta EXPLÍCITA válida (FR-121/122) — grava depois da criação
     // do paciente para não acoplar este teste ao shape do INSERT de patients acima.
-    await pool.query(`UPDATE patients SET health_insurance_name = 'Particular' WHERE id = $1`, [patientId]);
+    await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [patientId]);
 
     const before = await pool.query<{ n: string }>(
       'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],

@@ -80,8 +80,8 @@ describe('Cobertura por catálogo (spec 012 US-B3) @integration', () => {
       { ordinal: 1000, raw_label: 'SWISS_MEDICAL', provider_code: 'SWISS_MEDICAL', source: 'admin_manual' },
       { ordinal: 1001, raw_label: 'OSDE', provider_code: 'OSDE', source: 'admin_manual' },
     ]);
-    const { rows: [p] } = await pool.query(`SELECT health_insurance_name, affiliate_id FROM patients WHERE id = $1`, [patientId]);
-    expect(p).toEqual({ health_insurance_name: 'OSDE 310 e2e', affiliate_id: 'AF-e2e-1' });
+    const { rows: [p] } = await pool.query(`SELECT insurance_informed, affiliate_id FROM patients WHERE id = $1`, [patientId]);
+    expect(p).toEqual({ insurance_informed: 'OSDE 310 e2e', affiliate_id: 'AF-e2e-1' });
     const g = await api.get(`/api/admin/patients/${patientId}`, asAdmin);
     expect(g.data.data.insuranceVerifiedCodes).toEqual(['OSDE', 'SWISS_MEDICAL']); // ordem do catálogo (15 < 28)
     expect(g.data.data.affiliateId).toBe('AF-e2e-1');
@@ -90,6 +90,12 @@ describe('Cobertura por catálogo (spec 012 US-B3) @integration', () => {
     expect(bad.data.code).toBe('INSURANCE_PROVIDER_UNKNOWN');
     // IVA / contratación NÃO entram (lex C3.3 → bloco C)
     expect((await api.patch(`/api/admin/patients/${patientId}/coverage`, { taxCondition: 'IVA_21' }, asAdmin)).status).toBe(400);
+    // Spec 058: o nº de afiliado legado saiu do fio — 422 com o motivo (o dono é `affiliateId`), em qualquer seção.
+    for (const secao of ['coverage', 'general']) {
+      const legado = await api.patch(`/api/admin/patients/${patientId}/${secao}`, { healthInsuranceMemberId: 'X-1' }, asAdmin);
+      expect(legado.status).toBe(422);
+      expect(legado.data).toMatchObject({ code: 'LEGACY_FIELD_REMOVED', details: { fields: ['healthInsuranceMemberId'] } });
+    }
   });
 
   it('4. sync do ClickUp: alias → provider_code, e as linhas do painel sobrevivem', async () => {
@@ -108,14 +114,21 @@ describe('Cobertura por catálogo (spec 012 US-B3) @integration', () => {
     expect(g.data.data.insuranceVerifiedCodes).toEqual(['GALENO', 'OSDE', 'SWISS_MEDICAL']);
   });
 
-  it('5. GET devolve insuranceVerifiedEntries COM origem (QA 🟡3/SUP-B5) — o drawer trava o chip do ClickUp por isto', async () => {
+  it('5. GET devolve coverage.entries COM origem (QA 🟡3/SUP-B5, spec 058) — o drawer trava o chip do ClickUp por isto; o rótulo sem mapeamento sai sem o texto cru', async () => {
     const g = await api.get(`/api/admin/patients/${patientId}`, asAdmin);
-    expect(g.data.data.insuranceVerifiedEntries).toEqual([
-      { code: 'GALENO', source: 'clickup' },
-      { code: 'OSDE', source: 'admin_manual' },
-      { code: 'SWISS_MEDICAL', source: 'admin_manual' },
+    const { coverage } = g.data.data;
+    // A informada (teste 3) vence o display; as entradas verificadas seguem inteiras, com a origem.
+    expect(coverage).toMatchObject({ display: 'OSDE 310 e2e', displaySource: 'INFORMED' });
+    expect(coverage.entries.map((e: { code: string | null; mapped: boolean; source: string }) => ({ code: e.code, mapped: e.mapped, source: e.source }))).toEqual([
+      { code: 'GALENO', mapped: true, source: 'clickup' },
+      { code: 'OSDE', mapped: true, source: 'admin_manual' },
+      { code: 'SWISS_MEDICAL', mapped: true, source: 'admin_manual' },
+      { code: null, mapped: false, source: 'clickup' },
     ]);
-    // insuranceVerifiedCodes (sem origem) continua existindo, para compat.
+    expect(JSON.stringify(coverage)).not.toContain('Rótulo que ninguém mapeou');
+    // insuranceVerifiedCodes (sem origem) continua existindo, para compat; o campo antigo saiu do fio.
     expect(g.data.data.insuranceVerifiedCodes).toEqual(['GALENO', 'OSDE', 'SWISS_MEDICAL']);
+    expect(g.data.data).not.toHaveProperty('insuranceVerifiedEntries');
+    expect(g.data.data).not.toHaveProperty('insuranceVerified');
   });
 });

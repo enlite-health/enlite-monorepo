@@ -428,11 +428,12 @@ describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4
     return { queryImpl, enc, run: () => fetchPatientDetail(makePool(queryImpl), enc, PATIENT_ID) };
   }
 
-  it('A3 (lex caminho a) — a ficha lê COALESCE(insurance_informed, health_insurance_name): o painel grava na coluna protegida, o sync do ClickUp sobrescreve a outra', async () => {
+  it('spec 058 — a ficha lê SÓ insurance_informed (o dono); health_insurance_name não entra mais', async () => {
     const { queryImpl, run } = runWithRow(basePatientRow());
     await run();
     const mainSql = String(queryImpl.mock.calls[0][0]);
-    expect(mainSql).toMatch(/COALESCE\(\s*p?\.?insurance_informed\s*,\s*p?\.?health_insurance_name\s*\)\s+AS\s+"insuranceInformed"/);
+    expect(mainSql).toMatch(/p\.insurance_informed\s+AS\s+"insuranceInformed"/);
+    expect(mainSql).not.toMatch(/health_insurance_name/);
   });
 
   it('A4 (lex C4.1) — seleciona contact_email_encrypted e descriptografa via KMS: exatamente 1 decrypt a mais, com o ciphertext certo', async () => {

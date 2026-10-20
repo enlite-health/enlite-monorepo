@@ -19,8 +19,8 @@ const NOW = new Date('2026-09-03T15:00:00Z');
 
 const SERVICE_ROW = {
   id: 'svc-1', patient_id: 'pat-1', service_code: 'AT', professional_profile: null, providers_needed: 2,
-  authorized_hours: '20', weekly_hours: '20', care_location: 'HOME', hourly_value: '1500', start_date: null,
-  contract_type: null, tax_condition: null, supervision_frequency: null, guard_shift: null,
+  authorized_hours: '20', weekly_hours: '20', care_location: 'HOME', start_date: null,
+  supervision_frequency: null, guard_shift: null,
   provider_age_band: null, address_id: null,
   schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
   active: true, ended_at: null, country: 'AR', created_at: '2026-09-03T00:00:00Z', updated_at: '2026-09-03T00:00:00Z',

@@ -118,7 +118,7 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
       rows: [{
         id: 'jp-1', vacancy_number: 42, schedule: null,
         patient_first_name: 'Paciente', dependency_level: 'ALTA',
-        patient_zone: 'Palermo', insurance_verified: true,
+        patient_zone: 'Palermo',
         encuadres: null, publications: null,
         service_type: null, required_professions: null, social_short_links: null,
       }],
@@ -129,7 +129,7 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
 
     // `dependency_level` FICA: é grau de dependência operacional, não diagnóstico.
     expect((res.json as jest.Mock).mock.calls[0][0].data).toMatchObject({
-      id: 'jp-1', dependency_level: 'ALTA', patient_zone: 'Palermo', insurance_verified: true,
+      id: 'jp-1', dependency_level: 'ALTA', patient_zone: 'Palermo',
     });
   });
 
@@ -181,11 +181,11 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     expect(sql).not.toMatch(/to_jsonb\s*\(\s*p\b|row_to_json\s*\(\s*p\b|\bp\.\*/i);
     // Conjunto EXATO. Cada membro conferido contra `\\d patients`: `dependency_level`
     // é enum de severidade (SEVERE|VERY_SEVERE|MODERATE|MILD) que o C1 decidiu
-    // manter, `service_type` é array de profissão, `insurance_verified` e
-    // `city_locality` são operacionais. Nenhuma é texto clínico livre.
+    // manter, `service_type` é array de profissão e `city_locality` é
+    // operacional (spec 058: `insurance_verified` saiu do SELECT da vaga). Nenhuma é texto clínico livre.
     expect(colunasDePacientes()).toEqual(
       new Set(['first_name', 'last_name', 'zone_neighborhood', 'dependency_level', 'id',
-               'city_locality', 'insurance_verified', 'service_type']),
+               'city_locality', 'service_type']),
     );
   });
 

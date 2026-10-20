@@ -116,7 +116,6 @@ function makePatientDetail(overrides: Record<string, unknown> = {}) {
     hasCud: true,
     hasConsent: true,
     insuranceInformed: 'OSDE',
-    insuranceVerified: null,
     cityLocality: 'CABA',
     province: 'Buenos Aires',
     zoneNeighborhood: null,
