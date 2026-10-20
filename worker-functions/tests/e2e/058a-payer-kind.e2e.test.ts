@@ -275,6 +275,30 @@ describe('058a payer_kind — travas de banco (532/533/535) @integration', () =>
       expect((await api.patch(`${BASE}/insurance-providers/${code}`, { code: 'OUTRO' }, admin)).data.code).toBe('CODE_IMMUTABLE');
     });
 
+    it('FR-13: managementChatId (grupo de gestão da obra social) — PATCH grava, GET relê, null limpa, string vazia é 422 e nada muda', async () => {
+      const code = await criarPagador(pool, 'OBRA_SOCIAL');
+      const chat = async (): Promise<string | null> =>
+        (await pool.query<{ m: string | null }>('SELECT management_chat_id AS m FROM insurance_providers WHERE code = $1', [code])).rows[0].m;
+      expect(await chat()).toBeNull();
+      const gravou = await api.patch(`${BASE}/insurance-providers/${code}`, { managementChatId: '120363000000000058@g.us' }, admin);
+      expect(gravou.status).toBe(200);
+      expect(await chat()).toBe('120363000000000058@g.us');
+      const lido = await api.get(`${BASE}/insurance-providers/${code}`, admin);
+      expect(lido.status).toBe(200);
+      expect(lido.data.data.managementChatId).toBe('120363000000000058@g.us');
+      for (const vazio of ['', '   ']) {
+        const r = await api.patch(`${BASE}/insurance-providers/${code}`, { managementChatId: vazio }, admin);
+        expect(r.status).toBe(422);
+      }
+      expect(await chat()).toBe('120363000000000058@g.us'); // a recusa não apagou
+      // o CHECK do banco (532) é a 2ª linha de defesa: string em branco direto no banco é 23514
+      const e = await erroDe(() => pool.query(`UPDATE insurance_providers SET management_chat_id = '  ' WHERE code = $1`, [code]));
+      expect(e?.code).toBe('23514');
+      expect((await api.patch(`${BASE}/insurance-providers/${code}`, { managementChatId: null }, admin)).status).toBe(200);
+      expect(await chat()).toBeNull();
+      expect((await api.get(`${BASE}/insurance-providers/${code}`, admin)).data.data.managementChatId).toBeNull();
+    });
+
     it('POST de contrato para pagador sem tipo → 422 PAYER_KIND_REQUIRED, e nenhum contrato nasce (nem o termo)', async () => {
       const code = await criarPagador(pool, null);
       const body = { name: 'Plan sin tipo', country: 'AR', firstTerm: { hourlyRate: 1500, taxRatePercent: 0, validFrom: '2026-01-01' } };
