@@ -1,6 +1,6 @@
 /**
  * GeneralCard — cartão "Dados gerais" da obra social (spec 058 §4.2): nome, razão social, CUIT/CNPJ, endereço, grupo de gestão,
- * tipo do pagador e `active`. `code` é só leitura (imutável). Edição própria do cartão, sem popup.
+ * tipo do pagador e `active`. `code` é só leitura (imutável). Edição em UMA modal própria do cartão (descarte pedido ao fechar alterado).
  *
  * PATCH: ausente = não toca; `null` limpa (só os anuláveis); `''` é 422 — por isso o corpo leva SÓ o que mudou e um campo opcional
  * apagado vai como `null`. O tipo do pagador, depois de informado, não tem opção "sem classificar" (o back recusa: `PAYER_KIND_CANNOT_UNSET`).
@@ -13,6 +13,7 @@ import { Input } from '@presentation/components/atoms/Input';
 import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
 import { Field } from './Field';
+import { FormModal } from './FormModal';
 import { ActionButton } from '@presentation/components/features/access';
 import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
 import { PAYER_KINDS, type PayerKind } from '@domain/entities/InsuranceContract';
@@ -71,16 +72,18 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
     k ? t(`admin.patients.detail.contractedServicesCard.payerKindOptions.${k}`) : t(`${NS}.general.payerKindNone`);
   const notInformed = t(`${NS}.detail.notInformed`);
 
-  const actions = editing ? null : (
+  const actions = (
     <ActionButton resource="catalog_insurance_providers" action="update" variant="primary" size="sm" onClick={startEdit} data-testid="provider-general-edit">
       {t(`${NS}.detail.edit`)}
     </ActionButton>
   );
 
+  const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(provider));
+
   return (
+    <>
     <ProviderCard id="provider-general-card" title={t(`${NS}.general.title`)} actions={actions}>
-      {!editing ? (
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4" data-testid="provider-general-view">
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4" data-testid="provider-general-view">
           {[
             ['name', provider.name],
             ['code', provider.code],
@@ -98,20 +101,24 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
               </dd>
             </div>
           ))}
-        </dl>
-      ) : (
+      </dl>
+    </ProviderCard>
+    {editing && (
+      <FormModal title={t(`${NS}.general.title`)} isDirty={dirty} onClose={() => setEditing(false)} busy={saving} testId="provider-general-modal">
+        {(requestClose) => (
         <div className="flex flex-col gap-4" data-testid="provider-general-form">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label={t(`${NS}.general.fields.name`)} required htmlFor="provider-general-name-input">
-              <Input id="provider-general-name-input" value={draft.name} onChange={(e) => set('name', e.target.value)} data-testid="provider-general-name-input" />
+              <Input inputSize="compact" id="provider-general-name-input" value={draft.name} onChange={(e) => set('name', e.target.value)} data-testid="provider-general-name-input" />
             </Field>
             {OPTIONAL_FIELDS.map((f) => (
               <Field key={f} label={t(`${NS}.general.fields.${f}`)} htmlFor={`provider-general-${f}-input`}>
-                <Input id={`provider-general-${f}-input`} value={draft[f]} onChange={(e) => set(f, e.target.value)} data-testid={`provider-general-${f}-input`} />
+                <Input inputSize="compact" id={`provider-general-${f}-input`} value={draft[f]} onChange={(e) => set(f, e.target.value)} data-testid={`provider-general-${f}-input`} />
               </Field>
             ))}
             <Field label={t(`${NS}.general.fields.payerKind`)} hint={t(`${NS}.general.payerKindHint`)} htmlFor="provider-general-payerKind-input">
               <Select
+                inputSize="compact"
                 id="provider-general-payerKind-input"
                 value={draft.payerKind}
                 placeholder={provider.payerKind === null ? t(`${NS}.general.payerKindNone`) : undefined}
@@ -136,7 +143,7 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
             </div>
           )}
           <div className="flex items-center gap-3 justify-end">
-            <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving} data-testid="provider-general-cancel">
+            <Button variant="outline" size="sm" onClick={requestClose} disabled={saving} data-testid="provider-general-cancel">
               {t(`${NS}.detail.cancel`)}
             </Button>
             <Button variant="primary" size="sm" isLoading={saving} disabled={draft.name.trim() === ''} onClick={save} data-testid="provider-general-save">
@@ -144,7 +151,9 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
             </Button>
           </div>
         </div>
-      )}
-    </ProviderCard>
+        )}
+      </FormModal>
+    )}
+    </>
   );
 }

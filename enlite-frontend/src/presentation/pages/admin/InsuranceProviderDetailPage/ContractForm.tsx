@@ -2,7 +2,7 @@
  * ContractForm — "novo contrato + 1º termo" (spec 058 §1.3/§4.3). O país decide a moeda e é imutável depois; o "hoje" do país
  * (`asOf`) vem da API assim que o país é escolhido (`for-service`) — nunca do relógio do navegador.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -11,6 +11,7 @@ import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { Field } from './Field';
+import { FormModal } from './FormModal';
 import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
 import { CONTRACT_COUNTRIES, type ContractCountry, type CreateInsuranceContractBody } from '@domain/entities/InsuranceContract';
 import { TermFields } from './TermFields';
@@ -19,6 +20,8 @@ import { useTermDraft } from './termDraft';
 interface Props {
   submitting: boolean;
   error: string | null;
+  /** Ação extra logo abaixo do erro (o botão "Ir para Dados gerais" do `PAYER_KIND_REQUIRED`). */
+  errorAction?: ReactNode;
   onSubmit: (body: CreateInsuranceContractBody) => void;
   onCancel: () => void;
 }
@@ -26,7 +29,7 @@ interface Props {
 const NS = 'admin.insuranceProviders.contracts';
 const PREFIX = 'contract-new-';
 
-export function ContractForm({ submitting, error, onSubmit, onCancel }: Props): JSX.Element {
+export function ContractForm({ submitting, error, errorAction, onSubmit, onCancel }: Props): JSX.Element {
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [country, setCountry] = useState<ContractCountry | ''>('');
@@ -62,15 +65,18 @@ export function ContractForm({ submitting, error, onSubmit, onCancel }: Props): 
     });
   }
 
+  const isDirty = name !== '' || country !== '' || scope !== '' || term.dirty;
+
   return (
-    <div className="rounded-xl border border-slate-300 bg-gray-50 p-4 flex flex-col gap-4" data-testid="contract-new-form">
-      <Heading level={3} weight="semibold" color="primary">{t(`${NS}.contractForm.title`)}</Heading>
+    <FormModal title={t(`${NS}.contractForm.title`)} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contract-new-form" widthClassName="max-w-3xl">
+      {(requestClose) => (<>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label={t(`${NS}.contractForm.name`)} required htmlFor="contract-new-name">
-          <Input id="contract-new-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="contract-new-name" />
+          <Input inputSize="compact" id="contract-new-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="contract-new-name" />
         </Field>
         <Field label={t(`${NS}.contractForm.country`)} required htmlFor="contract-new-country">
           <Select
+            inputSize="compact"
             id="contract-new-country"
             value={country}
             placeholder={t(`${NS}.contractForm.countryPlaceholder`)}
@@ -80,7 +86,7 @@ export function ContractForm({ submitting, error, onSubmit, onCancel }: Props): 
           />
         </Field>
         <Field label={t(`${NS}.contractForm.scope`)} hint={t(`${NS}.contractForm.scopeHelp`)} htmlFor="contract-new-scope" className="sm:col-span-2">
-          <Textarea id="contract-new-scope" rows={2} value={scope} onChange={(e) => setScope(e.target.value)} data-testid="contract-new-scope" />
+          <Textarea inputSize="compact" id="contract-new-scope" rows={2} value={scope} onChange={(e) => setScope(e.target.value)} data-testid="contract-new-scope" />
         </Field>
       </div>
       <Heading level={3} weight="semibold" color="primary">{t(`${NS}.contractForm.firstTerm`)}</Heading>
@@ -93,14 +99,16 @@ export function ContractForm({ submitting, error, onSubmit, onCancel }: Props): 
           <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
         </div>
       )}
+      {error && errorAction}
       <div className="flex items-center gap-3 justify-end">
-        <Button variant="outline" size="sm" onClick={onCancel} disabled={submitting} data-testid="contract-new-cancel">
+        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contract-new-cancel">
           {t('admin.insuranceProviders.detail.cancel')}
         </Button>
         <Button variant="primary" size="sm" isLoading={submitting} onClick={handleSubmit} data-testid="contract-new-submit">
           {t('admin.insuranceProviders.detail.save')}
         </Button>
       </div>
-    </div>
+      </>)}
+    </FormModal>
   );
 }

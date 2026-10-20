@@ -81,16 +81,19 @@ export function ContractsCard({ code, onGoToGeneral }: Props): JSX.Element {
       ) : (
         <>
           {formOpen && (
-            <>
-              <ContractForm submitting={submitting} error={formError} onSubmit={create} onCancel={() => setFormOpen(false)} />
-              {payerKindRequired && (
+            <ContractForm
+              submitting={submitting}
+              error={formError}
+              errorAction={payerKindRequired ? (
                 <div data-testid="contracts-payer-kind-required">
                   <Button variant="outline" size="sm" onClick={onGoToGeneral} data-testid="contracts-go-general">
                     {t(`${NS}.contracts.goToGeneral`)}
                   </Button>
                 </div>
-              )}
-            </>
+              ) : undefined}
+              onSubmit={create}
+              onCancel={() => setFormOpen(false)}
+            />
           )}
           {loading ? (
             <TableSkeleton />

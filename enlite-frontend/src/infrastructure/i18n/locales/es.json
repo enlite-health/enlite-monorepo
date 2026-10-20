@@ -6195,7 +6195,8 @@
         "new": "Nuevo",
         "save": "Guardar",
         "saving": "Guardando…",
-        "cancel": "Cancelar"
+        "cancel": "Cancelar",
+        "close": "Cerrar"
       },
       "general": {
         "title": "Datos generales",

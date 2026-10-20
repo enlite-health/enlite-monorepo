@@ -31,6 +31,7 @@ export function TermFields({ state, asOf, testIdPrefix, enforceMin = true }: Pro
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Field label={t(`${NS}.hourlyRate`)} required error={err('hourlyRate')} htmlFor={`${testIdPrefix}hourly-rate`}>
         <Input
+          inputSize="compact"
           id={`${testIdPrefix}hourly-rate`}
           type="number"
           inputMode="decimal"
@@ -45,6 +46,7 @@ export function TermFields({ state, asOf, testIdPrefix, enforceMin = true }: Pro
       <Field label={t(`${NS}.tax`)} required hint={t(`${NS}.taxHelp`)} error={err('taxRatePercent')} htmlFor={`${testIdPrefix}tax-rate`}>
         {/* value="" de propósito: o imposto nasce VAZIO. `0` = isento é uma escolha digitada, nunca um default. */}
         <Input
+          inputSize="compact"
           id={`${testIdPrefix}tax-rate`}
           type="number"
           inputMode="decimal"
@@ -62,6 +64,7 @@ export function TermFields({ state, asOf, testIdPrefix, enforceMin = true }: Pro
           <Text size="xs" color="inherit" className="text-slate-600" data-testid={`${testIdPrefix}as-of-loading`}>{t(`${NS}.asOfLoading`)}</Text>
         ) : (
           <Input
+            inputSize="compact"
             id={`${testIdPrefix}valid-from`}
             type="date"
             min={enforceMin ? asOf : undefined}
@@ -79,6 +82,7 @@ export function TermFields({ state, asOf, testIdPrefix, enforceMin = true }: Pro
       </Field>
       <Field label={t(`${NS}.validTo`)} error={err('validTo')} htmlFor={`${testIdPrefix}valid-to`}>
         <Input
+          inputSize="compact"
           id={`${testIdPrefix}valid-to`}
           type="date"
           min={draft.validFrom || undefined}

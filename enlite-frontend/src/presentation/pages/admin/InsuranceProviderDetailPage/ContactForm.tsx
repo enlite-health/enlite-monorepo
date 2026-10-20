@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
-import { Heading } from '@presentation/components/atoms/Heading';
 import { Input } from '@presentation/components/atoms/Input';
 import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
 import { Field } from './Field';
+import { FormModal } from './FormModal';
 import { WORKER_DOCUMENT_TYPES } from '@domain/entities/Worker';
 import { validateContactDraft, type ContactDraft } from './contactDraft';
 
@@ -21,7 +21,7 @@ interface Props {
 
 const NS = 'admin.insuranceProviders.employees.form';
 
-/** Formulário inline (sem popup, D-48) de um empregado da obra social. Serve ao "Novo" e ao "Editar". */
+/** Modal (uma por container) de um empregado da obra social. Serve ao "Novo" e ao "Editar"; fechar alterado pede descarte. */
 export function ContactForm({ title, initial, submitting, error, onSubmit, onCancel }: Props): JSX.Element {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<ContactDraft>(initial);
@@ -34,24 +34,27 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
     if (!found) onSubmit(draft);
   }
 
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(initial);
+
   return (
-    <div className="rounded-xl border border-slate-300 bg-gray-50 p-4 flex flex-col gap-4" data-testid="contact-form">
-      <Heading level={3} weight="semibold" color="primary">{title}</Heading>
+    <FormModal title={title} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contact-form">
+      {(requestClose) => (<>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label={t(`${NS}.fullName`)} required htmlFor="contact-fullName">
-          <Input id="contact-fullName" value={draft.fullName} onChange={(e) => set('fullName', e.target.value)} data-testid="contact-fullName" />
+          <Input inputSize="compact" id="contact-fullName" value={draft.fullName} onChange={(e) => set('fullName', e.target.value)} data-testid="contact-fullName" />
         </Field>
         <Field label={t(`${NS}.roleTitle`)} required htmlFor="contact-roleTitle">
-          <Input id="contact-roleTitle" value={draft.roleTitle} onChange={(e) => set('roleTitle', e.target.value)} data-testid="contact-roleTitle" />
+          <Input inputSize="compact" id="contact-roleTitle" value={draft.roleTitle} onChange={(e) => set('roleTitle', e.target.value)} data-testid="contact-roleTitle" />
         </Field>
         <Field label={t(`${NS}.phone`)} required htmlFor="contact-phone">
-          <Input id="contact-phone" type="tel" value={draft.phone} onChange={(e) => set('phone', e.target.value)} data-testid="contact-phone" />
+          <Input inputSize="compact" id="contact-phone" type="tel" value={draft.phone} onChange={(e) => set('phone', e.target.value)} data-testid="contact-phone" />
         </Field>
         <Field label={t(`${NS}.email`)} htmlFor="contact-email">
-          <Input id="contact-email" type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} data-testid="contact-email" />
+          <Input inputSize="compact" id="contact-email" type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} data-testid="contact-email" />
         </Field>
         <Field label={t(`${NS}.documentType`)} htmlFor="contact-documentType">
           <Select
+            inputSize="compact"
             id="contact-documentType"
             value={draft.documentType}
             placeholder={t(`${NS}.documentNone`)}
@@ -61,7 +64,7 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
           />
         </Field>
         <Field label={t(`${NS}.documentNumber`)} htmlFor="contact-documentNumber">
-          <Input id="contact-documentNumber" value={draft.documentNumber} onChange={(e) => set('documentNumber', e.target.value)} data-testid="contact-documentNumber" />
+          <Input inputSize="compact" id="contact-documentNumber" value={draft.documentNumber} onChange={(e) => set('documentNumber', e.target.value)} data-testid="contact-documentNumber" />
         </Field>
       </div>
       {problem && (
@@ -75,13 +78,14 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
         </div>
       )}
       <div className="flex items-center gap-3 justify-end">
-        <Button variant="outline" size="sm" onClick={onCancel} disabled={submitting} data-testid="contact-cancel">
+        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contact-cancel">
           {t('admin.insuranceProviders.detail.cancel')}
         </Button>
         <Button variant="primary" size="sm" isLoading={submitting} onClick={submit} data-testid="contact-save">
           {t('admin.insuranceProviders.detail.save')}
         </Button>
       </div>
-    </div>
+      </>)}
+    </FormModal>
   );
 }
