@@ -82,4 +82,24 @@ describe('DELETE /api/admin/vacancies/:id — guarda do itinerário (058 P6) @in
     expect(res.data.code).toBe('VACANCY_HAS_ACTIVE_ALLOCATIONS');
     expect((await vaga(s)).apagada).toBe(false);
   });
+
+  it('saída agendada (valid_to = hoje+7, ACTIVE): DELETE → 409 — saída agendada conta', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    await pool.query(`UPDATE patient_itinerary_assignment SET valid_to = $1::date WHERE id = $2`, [await somaDias(pool, hoje, 7), s.segAllocations[0]]);
+    expect(await vigentes(s)).toBe(1);
+    const res = await apagar(s);
+    expect(res.status).toBe(409);
+    expect(res.data.code).toBe('VACANCY_HAS_ACTIVE_ALLOCATIONS');
+    expect((await vaga(s)).apagada).toBe(false);
+  });
+
+  it('só encerrada ontem (status ENDED, valid_to = ontem): DELETE → 200 e deleted_at preenchido', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    await pool.query(`UPDATE patient_itinerary_assignment SET status = 'ENDED', valid_to = $1::date WHERE id = $2`, [await somaDias(pool, hoje, -1), s.segAllocations[0]]);
+    expect(await vigentes(s)).toBe(0);
+    expect((await vaga(s)).apagada).toBe(false);
+    const res = await apagar(s);
+    expect(res.status).toBe(200);
+    expect((await vaga(s)).apagada).toBe(true);
+  });
 });
