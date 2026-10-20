@@ -20,7 +20,6 @@ const INTERINIDADE_056 = [
   'modules/case/domain/ContractedServiceAuthorization.ts',
   'modules/case/infrastructure/ContractedServiceAuthorizationRepository.ts',
   'modules/case/infrastructure/ServiceSlotWriter.ts',
-  'modules/case/infrastructure/contractedServiceAuthorizationRead.ts',
   'shared/openapi/registrations/adminPatients.ts',
 ];
 
