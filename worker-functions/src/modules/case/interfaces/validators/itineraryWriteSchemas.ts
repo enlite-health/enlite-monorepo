@@ -95,6 +95,8 @@ export type ItineraryReplaceBody = z.infer<typeof itineraryReplaceBodySchema>;
 export const itineraryEndBodySchema = z.object({
   reasonCategory: z.string().nullish(),
   destination: z.string().nullish(),
+  // 058 P5c: confirma o cancelamento dos agendamentos do prestador (aviso). Ausente/false = só avisar (409).
+  cancelScheduled: z.boolean().optional(),
 });
 
 export type ItineraryEndBody = z.infer<typeof itineraryEndBodySchema>;
