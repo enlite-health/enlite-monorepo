@@ -132,7 +132,7 @@ const MOCK_VACANCY_1 = {
   patient_address_formatted: null, patient_address_raw: null, required_sex: null,
   age_range_min: null, age_range_max: null, required_experience: null,
   worker_attributes: null, schedule: null, schedule_days_hours: null, work_schedule: null,
-  city: null, insurance_verified: null, salary_text: null, payment_day: null,
+  city: null, salary_text: null, payment_day: null,
   daily_obs: null, published_at: null, closes_at: null, talentum_description: null,
   talentum_project_id: null, talentum_whatsapp_url: null, talentum_slug: null,
   talentum_published_at: null, meet_link_1: null, meet_datetime_1: null,

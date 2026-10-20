@@ -264,7 +264,8 @@ describe('PatientCreateModal — country selector', () => {
     fireEvent.change(screen.getByTestId('pc-documentType'), { target: { value: 'DNI' } });
     fireEvent.change(screen.getByTestId('pc-documentNumber'), { target: { value: ' 12345678 ' } });
     fireEvent.change(screen.getByTestId('pc-insName'), { target: { value: ' OSDE ' } });
-    fireEvent.change(screen.getByTestId('pc-insMember'), { target: { value: ' 99-1 ' } });
+    // Spec 058: o nº de afiliado saiu do cadastro (o back recusa `healthInsuranceMemberId` com 422); o campo não existe mais.
+    expect(screen.queryByTestId('pc-insMember')).toBeNull();
     submit();
 
     await waitFor(() => expect(mockCreatePatient).toHaveBeenCalledTimes(1));
@@ -277,7 +278,6 @@ describe('PatientCreateModal — country selector', () => {
       documentType: 'DNI',
       documentNumber: '12345678',
       healthInsuranceName: 'OSDE',
-      healthInsuranceMemberId: '99-1',
       // Nothing was picked in the MultiSelect: an empty array is dropped, not sent as [].
       serviceType: undefined,
     });

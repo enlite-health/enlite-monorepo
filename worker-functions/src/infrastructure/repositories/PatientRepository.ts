@@ -72,7 +72,6 @@ export interface PatientClickUpData {
 
   // Insurance
   insuranceInformed?: string | null;
-  insuranceVerified?: string | null;
 
   // General location
   cityLocality?: string | null;
@@ -110,12 +109,12 @@ export class PatientRepository {
         affiliate_id, sex, phone_whatsapp,
         diagnosis, dependency_level, clinical_segments, service_type, device_type,
         additional_comments, has_judicial_protection, has_cud, has_consent,
-        insurance_informed, insurance_verified,
+        insurance_informed,
         city_locality, province, zone_neighborhood,
         country
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+        $15, $16, $17, $18, $19, $20, $21, $22, $23
       )
       ON CONFLICT (clickup_task_id) DO UPDATE SET
         first_name              = EXCLUDED.first_name,
@@ -123,7 +122,9 @@ export class PatientRepository {
         birth_date              = EXCLUDED.birth_date,
         document_type           = EXCLUDED.document_type,
         document_number         = EXCLUDED.document_number,
-        affiliate_id            = EXCLUDED.affiliate_id,
+        -- Spec 058: affiliate_id e insurance_informed são os DONOS (health_insurance_* saiu) e o sync é FILL-ONLY:
+        -- nunca sobrescreve valor existente.
+        affiliate_id            = COALESCE(patients.affiliate_id, EXCLUDED.affiliate_id),
         sex                     = EXCLUDED.sex,
         phone_whatsapp          = EXCLUDED.phone_whatsapp,
         diagnosis               = EXCLUDED.diagnosis,
@@ -135,8 +136,7 @@ export class PatientRepository {
         has_judicial_protection = EXCLUDED.has_judicial_protection,
         has_cud                 = EXCLUDED.has_cud,
         has_consent             = EXCLUDED.has_consent,
-        insurance_informed      = EXCLUDED.insurance_informed,
-        insurance_verified      = EXCLUDED.insurance_verified,
+        insurance_informed      = COALESCE(patients.insurance_informed, EXCLUDED.insurance_informed),
         city_locality           = EXCLUDED.city_locality,
         province                = EXCLUDED.province,
         zone_neighborhood       = EXCLUDED.zone_neighborhood,
@@ -162,7 +162,6 @@ export class PatientRepository {
         data.hasCud                  ?? null,
         data.hasConsent              ?? null,
         data.insuranceInformed       ?? null,
-        data.insuranceVerified       ?? null,
         data.cityLocality            ?? null,
         data.province                ?? null,
         data.zoneNeighborhood        ?? null,

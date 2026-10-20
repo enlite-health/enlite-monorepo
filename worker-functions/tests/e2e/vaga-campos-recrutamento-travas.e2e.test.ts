@@ -59,7 +59,7 @@ describe('Vaga com serviço: travas dos 5 campos de recrutamento (spec 057, F5) 
   async function seedServico(): Promise<{ patientId: string; serviceId: string; caseNumber: number }> {
     const caseNumber = caseSeq++;
     const patientId = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, health_insurance_name)
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, insurance_informed)
        VALUES ($1, 'Travas057', 'E2E', 'AR', 'PENDING_ADMISSION', $2, 'Particular') RETURNING id`,
       [`${TAG}-${caseNumber}`, caseNumber],
     )).rows[0].id;
@@ -130,12 +130,12 @@ describe('Vaga com serviço: travas dos 5 campos de recrutamento (spec 057, F5) 
   it('b2. (057 gate A1) PATCH que reenvia `null` num campo JÁ vazio + muda outro campo, com vaga VIVA -> 200 e o outro persiste', async () => {
     const { patientId, serviceId } = await seedPublicada();
     await pool.query(`UPDATE patient_contracted_services SET required_experience = NULL WHERE id = $1`, [serviceId]); // como os 25 de prd
-    const r = await patchServico(patientId, serviceId, { requiredExperience: null, hourlyValue: 4321 });
-    console.info(`[057 travas] PATCH requiredExperience:null (já NULL) + hourlyValue -> ${r.status}`);
+    const r = await patchServico(patientId, serviceId, { requiredExperience: null, dailyObs: 'obs-b2' });
+    console.info(`[057 travas] PATCH requiredExperience:null (já NULL) + dailyObs -> ${r.status}`);
     expect(r.status).toBe(200);
-    const { rows: [s] } = await pool.query(`SELECT required_experience, hourly_value FROM patient_contracted_services WHERE id = $1`, [serviceId]);
+    const { rows: [s] } = await pool.query(`SELECT required_experience, daily_obs FROM patient_contracted_services WHERE id = $1`, [serviceId]);
     expect(s.required_experience).toBeNull();
-    expect(Number(s.hourly_value)).toBe(4321);
+    expect(s.daily_obs).toBe('obs-b2');
   });
 
   it('c. PATCH F -> M com vaga publicada abre 1 aviso `required_sex`; o ack (rota real) o fecha', async () => {

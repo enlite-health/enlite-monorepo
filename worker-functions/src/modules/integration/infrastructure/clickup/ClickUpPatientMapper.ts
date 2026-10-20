@@ -319,7 +319,7 @@ export class ClickUpPatientMapper {
     // APAGAMENTO (`push('dependency_level', null)`, `sex = EXCLUDED.sex`). Exposição medida no
     // cabeçalho de `dropdownCatalogGuard.ts`: 348 linhas de `dependency_level`, 185 de `sex`.
     // `resolveCatalogValue` separa os dois estados, e a bandeira `*Readable` leva a distinção
-    // até o `UPDATE` — o MESMO desenho já aplicado a `clinical_specialty` e `insurance_verified`.
+    // até o `UPDATE` — o MESMO desenho já aplicado a `clinical_specialty` e a cobertura verificada.
     // ⚠️ 11/09/2026: não existe mais reload de catálogo (o `ClickUpCatalogRefresher` era
     // defesa exclusiva do processo de vida longa do webhook, removido). O script manual busca
     // um catálogo fresco a cada invocação (`ClickUpFieldResolver.fromList`), mas isso não
@@ -350,7 +350,7 @@ export class ClickUpPatientMapper {
     // Task 3.2 — a cobertura VERIFICADA, múltipla (D-D). Mesma leitura do segmento: pelo tipo
     // vivo do catálogo, com a distinção entre "vazio de verdade" e "não consegui ler" (D167).
     // ⚠️ Não confundir com `Cobertura Informada ` (com ESPAÇO no fim, F15), que é texto livre
-    // digitado pela família e segue em `healthInsuranceName`, agora DEPRECADO.
+    // digitado pela família e vai para o dono `insurance_informed` (spec 058).
     const coberturaRead      = resolveCatalogValue(this.resolver, 'Cobertura Verificada', cf['Cobertura Verificada']);
     // Task 4.2 — o `Tipo de Dispositivo`, múltiplo (5 opções no catálogo vivo). Mesma leitura
     // da cobertura: pelo tipo VIVO, preservando a distinção entre "vazio de verdade" e "não
@@ -406,12 +406,8 @@ export class ClickUpPatientMapper {
       dependencyLevelReadable: dependenciaRead.readable,
       clinicalSpecialty:  mapClickUpClinicalSpecialty(specialtyLabel),
       clinicalSpecialtyReadable: specialtyReadable,
-      // Task 3.2/3.3 — o escalar CONTINUA sendo escrito (o 1º rótulo), exatamente como o
-      // derivado da D-B na Fase 2: o múltiplo nasce AO LADO, nunca no lugar. Quem lê
-      // `insurance_verified` hoje não quebra.
-      insuranceVerified:  coberturaRead.readable ? (coberturaRead.labels[0] ?? null) : null,
-      insuranceVerifiedReadable: coberturaRead.readable,
-      // E a lista inteira, para a tabela nova. `readable:false` NÃO vira lista vazia.
+      // Spec 058: o escalar `insurance_verified` (1º rótulo) SAIU — a cobertura verificada vive só na lista
+      // abaixo (`patient_insurance_verified`). `readable:false` NÃO vira lista vazia.
       insuranceVerifiedLabels: coberturaRead.readable
         ? sourceLabelsRead(coberturaRead.labels)
         : sourceLabelsUnreadable(coberturaRead.reason),
@@ -426,12 +422,13 @@ export class ClickUpPatientMapper {
       serviceTypeReadable: servicioRead.readable,
       additionalComments: this.asString(cf['Comentarios Adicionales Paciente']),
 
-      // Health insurance (fill-only via COALESCE in PatientIdentityRepository)
+      // Spec 058: vai direto para os DONOS (`insurance_informed`, `affiliate_id`) — `health_insurance_*` saiu. FILL-ONLY no
+      // `PatientIdentityRepository`; o literal 'null'/vazio vira null AQUI (senão o fill-only recriaria o lixo).
       // ClickUp: "Cobertura Informada " — o nome vivo tem ESPAÇO no fim (F15). Pedimos o nome
       // aparado; o alias de `buildCustomFieldMap` faz os dois casarem (task 1.12).
-      healthInsuranceName:     this.asString(cf['Cobertura Informada']),
+      insuranceInformed:       this.asCoverageText(cf['Cobertura Informada']),
       // ClickUp: "Número ID Afiliado Paciente"
-      healthInsuranceMemberId: this.asString(cf['Número ID Afiliado Paciente']),
+      affiliateId:             this.asCoverageText(cf['Número ID Afiliado Paciente']),
       // ClickUp: "Caso Número" — PII-safe operational identifier. Migration 164.
       caseNumber:              extractCaseNumber(task),
       // Lifecycle status derived from ClickUp task status (migration 143).
@@ -738,6 +735,12 @@ export class ClickUpPatientMapper {
     if (value === null || value === undefined) return null;
     if (typeof value === 'string') return value.trim() || null;
     return null;
+  }
+
+  /** Texto de cobertura: como `asString`, mais o literal `null` (qualquer caixa) que o ClickUp devolve para campo vazio → null (spec 058, plan §4.3). */
+  private asCoverageText(value: unknown): string | null {
+    const s = this.asString(value);
+    return s !== null && s.toLowerCase() === 'null' ? null : s;
   }
 
   // asIndexable() moved to helpers/asIndexable.ts (C5 do parecer do `lex`, 23/08).

@@ -12,9 +12,10 @@
  * (fragmento com dono, spec 046) — se alguém voltar a ler a cópia, o `caseNumber` do teste vira null.
  *
  *  feliz  — admin, pelas DUAS rotas HTTP (`GET /patients/:id` e `/contracted-services`): objeto completo com as 4
- *           chaves (sem `siteUrl`: o link saiu da ficha em 08/10), valor-hora cru, flags false; B → null + false.
+ *           chaves (sem `siteUrl`: o link saiu da ficha em 08/10), preço do TERMO cru (`price.state OK`, spec 058: o
+ *           `hourlyValue` do serviço saiu), flags false; B → null + false.
  *  alt 1  — "recrutador" SEM `patient_contract_value:read`, mas com `vacancy:read` (engine decidiu: células):
- *           valor redigido, vaga VISÍVEL — nas duas projeções reais. As chaves da vaga são EXATAMENTE as 4.
+ *           preço redigido (`price.state REDACTED`), vaga VISÍVEL — nas duas projeções reais. As chaves da vaga são EXATAMENTE as 4.
  *  alt 2  — perfil SEM `vacancy:read` (com o valor-hora): vaga redigida (null + true) no serviço A e C, e no B
  *           (sem vaga) também true — "sem permissão" não se confunde com "sem vaga"; o serviço continua visível.
  *
@@ -25,6 +26,7 @@
 import { Pool } from 'pg';
 import type { Request, Response } from 'express';
 import { createApiClient, waitForBackend } from './helpers';
+import { criarContrato, criarPagador, limpar as limpar058a, vincular, vigencia } from './helpers/contrato058aDb';
 import { staffAuth } from './helpers/staffAuth';
 import { AdminPatientContractedServicesController } from '@modules/case/interfaces/controllers/AdminPatientContractedServicesController';
 import { PatientQueryRepository } from '@modules/case/infrastructure/PatientQueryRepository';
@@ -51,7 +53,7 @@ function reqRes(params: Record<string, string>, roles: string[], cells: string[]
   return [{ params, body: {}, query: {}, user: { roles }, permissionCells: cells } as unknown as Request, res, captured];
 }
 
-type Svc = { id: string; hourlyValue: number | null; hourlyValueRedacted: boolean; liveVacancy: Record<string, unknown> | null; liveVacancyRedacted: boolean };
+type Svc = { id: string; price: { state: string; hourlyRate?: number | string }; liveVacancy: Record<string, unknown> | null; liveVacancyRedacted: boolean };
 
 describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 F2) @integration', () => {
   const api = createApiClient();
@@ -63,6 +65,7 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
 
   const limpar = async (): Promise<void> => {
     await pool.query(`DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id = $1)`, [TASK]);
+    await limpar058a(pool); // vínculos, termos, contratos e pagadores QA058_ deste teste (antes dos serviços: FK)
     await pool.query(`DELETE FROM patient_contracted_services WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id = $1)`, [TASK]);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id = $1`, [TASK]);
   };
@@ -74,11 +77,21 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
           NOW() - $7::interval, NOW() - $7::interval, CASE WHEN $8::boolean THEN NOW() ELSE NULL END) RETURNING id`,
       [`CASO E2E 047 ${ordinal}`, patientId, serviceId, ordinal, status, links, idade, apagada],
     )).rows[0].id;
-  const seedService = async (): Promise<string> =>
-    (await pool.query<{ id: string }>(
-      `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, hourly_value, created_by, updated_by)
-       VALUES ($1, 'AT', true, 'AR', 1500, 'e2e-v047', 'e2e-v047') RETURNING id`, [patientId],
+  /** Só o serviço A é vinculado a um contrato com termo vigente de 1500/h (o preço sai do TERMO, não do serviço); o banco recusa 2 pagadores sobrepostos no mesmo paciente. */
+  const seedService = async (comPreco = false): Promise<string> => {
+    const id = (await pool.query<{ id: string }>(
+      `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by)
+       VALUES ($1, 'AT', true, 'AR', 'e2e-v047', 'e2e-v047') RETURNING id`, [patientId],
     )).rows[0].id;
+    if (!comPreco) return id;
+    const contrato = await criarContrato(pool, await criarPagador(pool, 'OBRA_SOCIAL'), 'AR');
+    await pool.query(
+      `INSERT INTO insurance_contract_terms (contract_id, hourly_rate, tax_rate_percent, valid, recorded_by) VALUES ($1, 1500, 21, '[2020-01-01,)', 'e2e-v047')`,
+      [contrato],
+    );
+    await vincular(pool, id, contrato, vigencia('2020-01-01'));
+    return id;
+  };
 
   beforeAll(async () => {
     await waitForBackend(api);
@@ -89,7 +102,7 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number)
        VALUES ($1, 'Vacante', 'Servicio 047', 'AR', 'ACTIVE', $2) RETURNING id`, [TASK, CASE_NUMBER],
     )).rows[0].id;
-    svc.A = await seedService();
+    svc.A = await seedService(true);
     svc.B = await seedService();
     svc.C = await seedService();
     vaga.Aold = await seedVaga(svc.A, 1, 'SEARCHING', '2 days', linkPrd(SITE));
@@ -123,7 +136,9 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
       const a = porId(rows, svc.A);
       expect(a.liveVacancy).toEqual({ id: vaga.Aold, caseNumber: CASE_NUMBER, caseOrdinal: 1, status: 'SEARCHING' });
       expect(Object.keys(a.liveVacancy!).sort()).toEqual(QUATRO_CHAVES);
-      expect(a).toMatchObject({ liveVacancyRedacted: false, hourlyValue: 1500, hourlyValueRedacted: false });
+      expect(a).toMatchObject({ liveVacancyRedacted: false, price: { state: 'OK' } });
+      expect(Number(a.price.hourlyRate)).toBe(1500);
+      expect(a).not.toHaveProperty('hourlyValue');
       expect(porId(rows, svc.B)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
       expect(porId(rows, svc.C).liveVacancy).toEqual({ id: vaga.C, caseNumber: CASE_NUMBER, caseOrdinal: 3, status: 'SEARCHING' });
     }
@@ -142,7 +157,8 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     const { lista, ficha } = await leituras(['recruiter'], ['patient:read', 'patient_services:read', 'vacancy:read']);
     for (const rows of [lista, ficha]) {
       const a = porId(rows, svc.A);
-      expect(a).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancyRedacted: false });
+      expect(a).toMatchObject({ price: { state: 'REDACTED' }, liveVacancyRedacted: false });
+      expect(JSON.stringify(a)).not.toContain('1500');
       expect(a.liveVacancy).toEqual({ id: vaga.Aold, caseNumber: CASE_NUMBER, caseOrdinal: 1, status: 'SEARCHING' });
       // A3: as chaves da vaga são EXATAMENTE as 4 — nenhum campo de dinheiro entra no objeto.
       expect(Object.keys(a.liveVacancy!).sort()).toEqual(QUATRO_CHAVES);
@@ -157,7 +173,8 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
       for (const id of [svc.A, svc.B, svc.C]) {
         expect(porId(rows, id)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: true });
       }
-      expect(porId(rows, svc.A)).toMatchObject({ hourlyValue: 1500, hourlyValueRedacted: false });
+      expect(porId(rows, svc.A)).toMatchObject({ price: { state: 'OK' } });
+      expect(Number(porId(rows, svc.A).price.hourlyRate)).toBe(1500);
       expect(JSON.stringify(rows)).not.toContain(vaga.Aold);
       expect(JSON.stringify(rows)).not.toContain(SITE);
     }

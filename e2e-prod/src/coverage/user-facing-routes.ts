@@ -90,6 +90,10 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: '/admission-ar', surface: 'public', tier: 'smoke' },
   { route: '/admission-br', surface: 'public', tier: 'smoke' },
   { route: '/admin/dedup', surface: 'admin', tier: 'regression' },
+  // Obras sociales (spec 058 Parte A): lista e detalhe (dados gerais, empregados, contratos, pacientes) — telas novas, entram no
+  // denominador junto com o código que as cria (regra do arquivo: rota nova do app ENTRA aqui, senão fica invisível ao gate).
+  { route: '/admin/obras-sociales', surface: 'admin', tier: 'regression' },
+  { route: '/admin/obras-sociales/:code', surface: 'admin', tier: 'regression' },
 
   // ───────────────────────── FRONTEND · excluídas ──────────────────────────
   {

@@ -195,7 +195,7 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     // pelo catálogo 315 (a 428 nunca tocou essa linha). Funil → SEARCHING pelo Kanban também é
     // permitido (D469) e `admin_panel` recusado — coberto pelo unit `PatientService.moveStatus.v2`
     // e pelo e2e de tela `funil-vacante-lancamento-rascunho`.
-    await pool.query(`UPDATE patients SET health_insurance_name = 'Particular' WHERE id = $1`, [lead]);
+    await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [lead]);
     const activated = await api.post(`/api/admin/patients/${lead}/contracted-services/${leadServiceId}/activate-recruitment`, {}, asAdmin);
     expect(activated.status).toBe(201);
     expect(activated.data.data.patientStatus).toBe('SEARCHING');

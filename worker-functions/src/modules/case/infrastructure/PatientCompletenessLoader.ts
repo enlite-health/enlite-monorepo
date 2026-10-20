@@ -35,7 +35,7 @@ export async function loadPatientCompleteness(
     `SELECT
        p.birth_date,
        p.has_consent,
-       COALESCE(p.insurance_informed, p.health_insurance_name) AS insurance_informed,
+       p.insurance_informed AS insurance_informed,
        (SELECT COUNT(*) FROM patient_addresses pa
          WHERE pa.patient_id = p.id AND pa.archived_at IS NULL)      AS active_address_count,
        -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como

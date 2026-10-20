@@ -251,7 +251,6 @@ export class VacanciesController {
           -- (O ponteiro para a guarda mora no JSDoc do metodo, nao aqui: comentario
           -- de SQL viaja DENTRO da query, e ate o NOME do arquivo de teste casaria
           -- a regex clinica da guarda -- D182.)
-          p.insurance_verified,
           p.service_type,
           -- F3 (vaga-le-do-servico): avisos ABERTOS de "o serviço mudou com a vaga publicada". Mesma query (sessão com
           -- identidade); sem aviso = '[]'. Só campo e instante, nunca valor.

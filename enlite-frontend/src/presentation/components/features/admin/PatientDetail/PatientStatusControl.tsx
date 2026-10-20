@@ -99,8 +99,8 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
       payload.onHoldReason = reason;
       // Redigido para este ator: a CHAVE nem entra no corpo — `onHoldNote: null` é ESCRITA
       // (apaga a nota clínica, sem segunda cópia em lugar nenhum). Mesmo molde dos dois irmãos
-      // desta ficha: PatientClinicalEditDrawer (emergencyInstructions) e ContractedServiceFormRow
-      // (hourlyValue). O textarea nasce vazio e desabilitado — não há valor real para preservar.
+      // desta ficha: PatientClinicalEditDrawer (emergencyInstructions) e, até a spec 058, o valor-hora
+      // do ContractedServiceFormRow (hoje só exibido, vindo do termo do contrato). O textarea nasce vazio e desabilitado — não há valor real para preservar.
       if (!patient.onHoldNoteRedacted) payload.onHoldNote = note.trim() ? note : null;
     }
     if (leavingSuspended) payload.suspensionExitReason = exitReason;

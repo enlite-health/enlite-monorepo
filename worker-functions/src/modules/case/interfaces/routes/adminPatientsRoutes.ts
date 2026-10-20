@@ -48,6 +48,7 @@ import { AdminPatientEmergencyContactController } from '../controllers/AdminPati
  */
 import { ADMIN_PATIENTS_FAMILY, ADMIN_VACANCIES_FAMILY } from '@modules/identity/permissions';
 import { patientDetailTrailOf } from '../../application/patientContainerAccess';
+import { rejectLegacyKeys, LEGACY_SERVICE_KEYS, LEGACY_COVERAGE_KEYS } from '../middleware/rejectLegacyKeys';
 export { ADMIN_PATIENTS_FAMILY };
 export function createAdminPatientsRoutes(
   controller: AdminPatientsController,
@@ -125,7 +126,8 @@ export function createAdminPatientsRoutes(
   router.get('/catalogs/insurance-providers', staffOnly, perm.require('patient_coverage', 'read'), (req: Request, res: Response) =>
     insuranceProvidersController.list(req, res),
   );
-  router.post('/catalogs/insurance-providers', staffOnly, perm.require('patient', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+  // Spec 058: o POST muda o catálogo de TODOS os pacientes — célula própria (só admin), no lugar de `patient:create`.
+  router.post('/catalogs/insurance-providers', staffOnly, perm.require('catalog_insurance_providers', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     insuranceProvidersController.create(req, res),
   );
 
@@ -171,7 +173,9 @@ export function createAdminPatientsRoutes(
 
   // Manual creation of a native patient (admission team). No :id in the path,
   // so it is safe here; POST does not collide with the GET /:id capture.
-  router.post('/patients', staffOnly, perm.require('patient', 'create'), requireCountryScope((req) => req.body?.country), (req: Request, res: Response) =>
+  // Spec 058: `healthInsuranceMemberId` saiu do fio (o dono do afiliado é `affiliateId`) — 422 antes do ABAC; vale também no create e em TODAS as seções.
+  const rejectLegacyCoverageKeys = rejectLegacyKeys(LEGACY_COVERAGE_KEYS);
+  router.post('/patients', staffOnly, rejectLegacyCoverageKeys, perm.require('patient', 'create'), requireCountryScope((req) => req.body?.country), (req: Request, res: Response) =>
     controller.createPatient(req, res),
   );
 
@@ -265,10 +269,12 @@ export function createAdminPatientsRoutes(
   router.get('/patients/:id/contracted-services', staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
     contractedServicesController.list(req, res),
   );
-  router.post('/patients/:id/contracted-services', staffOnly, perm.require('patient_services', 'create'), (req: Request, res: Response) =>
+  // Spec 058: `hourlyValue`/`contractType`/`taxCondition` saíram do fio — 422 `LEGACY_FIELD_REMOVED` ANTES do ABAC (mesma resposta para qualquer ator).
+  const rejectLegacyServiceKeys = rejectLegacyKeys(LEGACY_SERVICE_KEYS);
+  router.post('/patients/:id/contracted-services', staffOnly, rejectLegacyServiceKeys, perm.require('patient_services', 'create'), (req: Request, res: Response) =>
     contractedServicesController.create(req, res),
   );
-  router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/contracted-services/:sid', staffOnly, rejectLegacyServiceKeys, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
     contractedServicesController.update(req, res),
   );
   // Autorização de horas do serviço, com vigência (spec 056 §5.2). REUSO das células `patient_services` (decidido: célula nova
@@ -354,8 +360,9 @@ export function createAdminPatientsRoutes(
     ['coverage', 'patient_coverage'],
     ['service', 'patient_services'],
   ];
+  // Spec 058: `healthInsuranceMemberId` saiu do fio em TODAS as seções (general inclusive) — 422 antes do ABAC.
   for (const [section, resource] of PATIENT_SECTION_CELL) {
-    router.patch(`/patients/:id/${section}`, staffOnly, perm.require(resource, 'update'), (req: Request, res: Response) => {
+    router.patch(`/patients/:id/${section}`, staffOnly, rejectLegacyCoverageKeys, perm.require(resource, 'update'), (req: Request, res: Response) => {
       req.params.section = section;
       return controller.updatePatientSection(req, res);
     });

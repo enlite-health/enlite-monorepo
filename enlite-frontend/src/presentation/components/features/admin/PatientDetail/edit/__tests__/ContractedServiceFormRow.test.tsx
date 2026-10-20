@@ -1,8 +1,9 @@
 /**
  * ContractedServiceFormRow — form de UM serviço contratado (spec 013, bloco C).
  * Cria (POST) quando `service` é null, atualiza (PATCH, Merge Patch) quando existe; baixa
- * (active:false, confirm); hourlyValue desabilitado quando o backend redigiu (lex C-c.4).
+ * (active:false, confirm). Spec 058: valor-hora/tipo/IVA saíram do formulário — o contrato é a cascata Obra social -> Contrato.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import i18n from 'i18next';
@@ -10,6 +11,7 @@ import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import { ContractedServiceFormRow, deactivateService } from '../ContractedServiceFormRow';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { LINKED_058 } from '@domain/entities/__tests__/fixtures/contractedService058';
 
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
@@ -21,6 +23,18 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
     updateContractedService: (...a: unknown[]) => mockUpdate(...a),
     createAuthorization: (...a: unknown[]) => mockCreateAuth(...a),
     supersedeAuthorization: (...a: unknown[]) => mockSupersedeAuth(...a),
+  },
+}));
+const mockForService = vi.fn();
+const mockListContracts = vi.fn();
+const mockCreateLink = vi.fn();
+vi.mock('@infrastructure/http/AdminInsuranceApiService', () => ({
+  AdminInsuranceApiService: {
+    listProvidersForService: (...a: unknown[]) => mockForService(...a),
+    listContracts: (...a: unknown[]) => mockListContracts(...a),
+    createContractLink: (...a: unknown[]) => mockCreateLink(...a),
+    endContractLink: vi.fn(),
+    supersedeContractLink: vi.fn(),
   },
 }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({
@@ -40,8 +54,7 @@ beforeAll(async () => {
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
   providersNeeded: 2, authorization: null, legacyAuthorizedHours: null, scheduleHours: 20, careLocation: 'HOME',
-  hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
-  contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
+  ...CONTRACT_058_DEFAULTS, startDate: '2026-09-01T00:00:00.000Z', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,
   liveVacancy: null, liveVacancyRedacted: false,
@@ -62,7 +75,12 @@ const ADDRESSES = [
 const confirmSpy = vi.spyOn(window, 'confirm');
 
 describe('ContractedServiceFormRow', () => {
-  beforeEach(() => { vi.clearAllMocks(); confirmSpy.mockReturnValue(true); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    confirmSpy.mockReturnValue(true);
+    mockForService.mockResolvedValue({ providers: [{ code: 'OSDE', name: 'OSDE' }], asOf: '2026-10-19' });
+    mockListContracts.mockResolvedValue([]);
+  });
 
   it('modo NOVO: mostra o formulário vazio, sem seção de prestadores, com botão cancelar', () => {
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} onCancelNew={vi.fn()} />);
@@ -158,24 +176,18 @@ describe('ContractedServiceFormRow', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ providerAgeBand: 'AGE_45_PLUS' })));
   });
 
-  it('modo EXISTENTE: hourlyValue redigido (lex C-c.4) fica DESABILITADO e o submit NUNCA envia a chave', async () => {
-    mockUpdate.mockResolvedValue(SERVICE);
-    const redacted = { ...SERVICE, hourlyValue: null, hourlyValueRedacted: true };
-    render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={redacted} index={1} onSaved={vi.fn()} />);
-    const field = screen.getByTestId('svc-hourlyValue-1') as HTMLInputElement;
-    expect(field).toBeDisabled();
-    expect(field.value).toContain('Solo admin');
-    fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
-    expect(mockUpdate.mock.calls[0][2].hourlyValue).toBeUndefined();
+  it('spec 058: NÃO existe mais valor-hora, tipo de contratação nem IVA editáveis no formulário (saíram do fio)', () => {
+    render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+    for (const id of ['svc-hourlyValue-1', 'svc-contractType-1', 'svc-taxCondition-1']) expect(screen.queryByTestId(id)).toBeNull();
   });
 
-  it('modo EXISTENTE: hourlyValue NÃO redigido é editável e o submit envia o número digitado', async () => {
+  it('spec 058: o PATCH do serviço nunca manda as chaves legadas (o back as recusa com 422 LEGACY_FIELD_REMOVED)', async () => {
     mockUpdate.mockResolvedValue(SERVICE);
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('svc-hourlyValue-1'), { target: { value: '2000' } });
     fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ hourlyValue: 2000 })));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    const body = mockUpdate.mock.calls[0][2];
+    for (const legacy of ['hourlyValue', 'contractType', 'taxCondition']) expect(Object.keys(body)).not.toContain(legacy);
   });
 
   it('modo EXISTENTE: limpar um campo numérico envia null (nunca NaN)', async () => {
@@ -372,7 +384,7 @@ describe('ContractedServiceFormRow', () => {
     it('a dica "Solo números" fica ABAIXO do campo (hintBelow) — rótulo → campo → dica, para as colunas alinharem (gate 06/09)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
       const precede = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-      for (const id of ['svc-providersNeeded-1', 'svc-hourlyValue-1']) {
+      for (const id of ['svc-providersNeeded-1']) {
         const campo = screen.getByTestId(id);
         const label = document.querySelector(`label[for="${id}"]`) as HTMLElement;
         const raiz = label.parentElement as HTMLElement; // o FormField
@@ -390,7 +402,7 @@ describe('ContractedServiceFormRow', () => {
 
     it('vírgula num campo numérico é BLOQUEADA com aviso próprio (Chromium descartava e o valor ficava 100× maior)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-      const ev = fireEvent.keyDown(screen.getByTestId('svc-hourlyValue-1'), { key: ',' });
+      const ev = fireEvent.keyDown(screen.getByTestId('svc-providersNeeded-1'), { key: ',' });
       expect(ev).toBe(false); // preventDefault
       expect(screen.getByText('Para decimales usá punto (.), no coma.')).toBeTruthy();
     });
@@ -411,13 +423,13 @@ describe('ContractedServiceFormRow', () => {
       await waitFor(() => expect(onSaved2).toHaveBeenCalledWith(atualizado));
     });
 
-    it('campos numéricos avisam ao receber letra (NumericField nos 2: prestadores, valor)', () => {
+    it('campos numéricos avisam ao receber letra (NumericField no único que sobrou: prestadores)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-      for (const id of ['svc-providersNeeded-1', 'svc-hourlyValue-1']) {
+      for (const id of ['svc-providersNeeded-1']) {
         fireEvent.keyDown(screen.getByTestId(id), { key: 'a' });
       }
-      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(2);
-      expect(screen.getAllByText('Solo números')).toHaveLength(2);
+      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(1);
+      expect(screen.getAllByText('Solo números')).toHaveLength(1);
     });
 
     it('modo NOVO: escolher o endereço envia addressId; sem escolher envia null (nunca string vazia)', async () => {
@@ -571,6 +583,101 @@ describe('ContractedServiceFormRow', () => {
       fireEvent.click(screen.getByTestId('svc-shift-end-1-2-0'));
       fireEvent.click(screen.getByTestId('svc-shift-end-1-2-0-option-12:00'));
       expect(screen.getByTestId('svc-schedule-total-1').textContent).toBe('Total del horario: 12 h por semana');
+    });
+  });
+
+  // ── Spec 058: serviço NOVO escolhe Obra social -> Contrato; o vínculo é gravado depois de criar o serviço ─────────────
+  describe('serviço novo + cascata (spec 058)', () => {
+    const CONTRATO = { id: 'ct-1', name: 'Plan 210', country: 'AR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'NO_TERM' }, futureTerms: [] };
+
+    async function escolherContrato(): Promise<void> {
+      await waitFor(() => expect(mockForService).toHaveBeenCalled());
+      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-provider') as HTMLSelectElement).options).map((o) => o.value)).toContain('OSDE'));
+      fireEvent.change(screen.getByTestId('svc-contract-1-provider'), { target: { value: 'OSDE' } });
+      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-contract') as HTMLSelectElement).options).map((o) => o.value)).toContain('ct-1'));
+      fireEvent.change(screen.getByTestId('svc-contract-1-contract'), { target: { value: 'ct-1' } });
+    }
+
+    it('as obras sociais vêm do banco pelo país do PACIENTE (nome do banco, sem tradução por código) e o início sugerido é o asOf da resposta', async () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={vi.fn()} />);
+      await waitFor(() => expect(mockForService).toHaveBeenCalledWith('AR', undefined));
+      await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+      const labels = Array.from((screen.getByTestId('svc-contract-1-provider') as HTMLSelectElement).options).map((o) => o.textContent);
+      expect(labels).toContain('OSDE');
+    });
+
+    it('escolher a obra social lista só os contratos OFERECIDOS dela no país; trocar a obra social zera o contrato', async () => {
+      mockListContracts.mockResolvedValue([CONTRATO]);
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={vi.fn()} />);
+      await escolherContrato();
+      expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' });
+      fireEvent.change(screen.getByTestId('svc-contract-1-provider'), { target: { value: '' } });
+      await waitFor(() => expect((screen.getByTestId('svc-contract-1-contract') as HTMLSelectElement).value).toBe(''));
+    });
+
+    it('salvar com contrato: cria o serviço (SEM valor/tipo/IVA) e DEPOIS grava o vínculo; onSaved recebe o serviço vinculado', async () => {
+      mockListContracts.mockResolvedValue([CONTRATO]);
+      const criado = { ...SERVICE, id: 'novo' };
+      const vinculado = { ...criado, ...LINKED_058 };
+      mockCreate.mockResolvedValue(criado);
+      mockCreateLink.mockResolvedValue(vinculado);
+      const onSaved = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      await escolherContrato();
+      await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalledWith(vinculado));
+      expect(Object.keys(mockCreate.mock.calls[0][1])).not.toEqual(expect.arrayContaining(['hourlyValue']));
+      expect(mockCreateLink).toHaveBeenCalledWith('pat1', 'novo', { contractId: 'ct-1', validFrom: '2026-10-19', validTo: null });
+      expect(mockCreate.mock.invocationCallOrder[0]).toBeLessThan(mockCreateLink.mock.invocationCallOrder[0]);
+    });
+
+    it('salvar SEM obra social: cria o serviço e não toca o vínculo (a carga pode vir depois)', async () => {
+      mockCreate.mockResolvedValue({ ...SERVICE, id: 'novo' });
+      const onSaved = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(mockCreateLink).not.toHaveBeenCalled();
+    });
+
+    it('obra social escolhida sem contrato: NÃO cria o serviço pela metade — mostra o erro do formulário', async () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-provider') as HTMLSelectElement).options).map((o) => o.value)).toContain('OSDE'));
+      fireEvent.change(screen.getByTestId('svc-contract-1-provider'), { target: { value: 'OSDE' } });
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await waitFor(() => expect(screen.getByTestId('contracted-service-new-error').textContent).toContain('Elegí el contrato'));
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('o serviço foi criado mas o VÍNCULO falhou: onSaved recebe o serviço criado + o linkError (nada se perde em silêncio)', async () => {
+      mockListContracts.mockResolvedValue([CONTRATO]);
+      const criado = { ...SERVICE, id: 'novo' };
+      mockCreate.mockResolvedValue(criado);
+      const erro = Object.assign(new Error('x'), { code: 'COUNTRY_MISMATCH', status: 422 });
+      mockCreateLink.mockRejectedValue(erro);
+      const onSaved = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      await escolherContrato();
+      await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalledWith(criado, { linkError: erro }));
+    });
+
+    it('sem país (paciente sem país): a cascata não chama a API e avisa', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-contract-1-no-country')).toBeTruthy();
+      expect(mockForService).not.toHaveBeenCalled();
+    });
+
+    it('serviço EXISTENTE mostra o painel de contrato (não a cascata solta) — o vínculo tem botões próprios', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-contract-panel-s1')).toBeTruthy();
+      expect(screen.queryByTestId('svc-contract-1-cascade')).toBeNull();
     });
   });
 });

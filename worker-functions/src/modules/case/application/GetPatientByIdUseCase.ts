@@ -28,8 +28,16 @@ export class GetPatientByIdUseCase {
     this.repo = repo ?? new PatientQueryRepository();
   }
 
-  async execute(id: string, reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE): Promise<GetPatientByIdOutput> {
-    const patient = await this.repo.findDetailById(id, reads);
+  /**
+   * `requestNow` é capturado AQUI, uma vez por abertura de ficha (spec 058 §H): dele sai o `asOf` (dia de operação do país do paciente)
+   * que pagador, preço, imposto e divergência dos serviços usam — a ficha inteira responde "hoje" pelo mesmo relógio.
+   */
+  async execute(
+    id: string,
+    reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
+    requestNow: Date = new Date(),
+  ): Promise<GetPatientByIdOutput> {
+    const patient = await this.repo.findDetailById(id, reads, requestNow);
 
     if (patient === null) {
       return { found: false };
