@@ -14,7 +14,7 @@ const NOW = new Date('2026-09-30T15:00:00Z');
 
 type RunInTransaction = ConstructorParameters<typeof RemoveFromItineraryUseCase>[5];
 
-function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError?: Error; scheduled?: ScheduledAttendances; clearResult?: number } = {}) {
+function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError?: Error; scheduled?: ScheduledAttendances; clearResult?: number; cancelResult?: number } = {}) {
   const log: string[] = [];
   const allocations = {
     endWith: jest.fn(async (_c: unknown, input: { allocationId: string }, o: { derive: boolean }): Promise<ItineraryEndWithResult> => {
@@ -55,12 +55,22 @@ function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError
       return opts.clearResult ?? 1;
     }),
   };
+  const schedule = {
+    cancelAllocation: jest.fn(async () => {
+      log.push('entry-cancel');
+      return opts.cancelResult ?? 1;
+    }),
+    clearScheduledEnd: jest.fn(async () => {
+      log.push('end-clear');
+      return 1;
+    }),
+  };
   const runInTransaction = jest.fn((cb: (client: unknown) => Promise<unknown>) => {
     log.push('tx');
     return cb(FAKE_CLIENT);
   }) as unknown as RunInTransaction & jest.Mock;
-  const useCase = new RemoveFromItineraryUseCase(allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction, scheduled, absences);
-  return { useCase, log, absences, scheduled, allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction };
+  const useCase = new RemoveFromItineraryUseCase(allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction, scheduled, absences, schedule);
+  return { useCase, log, schedule, absences, scheduled, allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction };
 }
 
 const INPUT: RemoveFromItineraryInput = {
@@ -232,5 +242,54 @@ describe('RemoveFromItineraryUseCase', () => {
     await t.useCase.execute({ ...INPUT, destination: 'LEAVE_SERVICE', cancelScheduled: true });
 
     expect(t.log).toEqual(['tx', 'catalog', 'end(derive=false)', 'log', 'sub-clear', 'sub-clear', 'reject', 'derive']);
+  });
+
+  const UMA_ENTRADA = (replacesAllocationId: string | null): ScheduledAttendances => ({
+    substitutions: [],
+    futureEntries: [{ allocationId: 'al-9', validFrom: '2026-10-28', replacesAllocationId }],
+  });
+  const REMOVE_TUDO = { ...INPUT, destination: 'LEAVE_SERVICE', cancelScheduled: true };
+
+  it('ordem do cancelamento: entrada futura cancelada ANTES de soltar o fim do titular; registra ENTRY_CANCELLED', async () => {
+    const t = build({ scheduled: UMA_ENTRADA('al-3') });
+
+    await t.useCase.execute(REMOVE_TUDO);
+
+    expect(t.log).toEqual(['tx', 'catalog', 'end(derive=false)', 'log', 'entry-cancel', 'log', 'end-clear', 'reject', 'derive']);
+    expect(t.schedule.cancelAllocation).toHaveBeenCalledWith(FAKE_CLIENT, 'al-9', '2026-10-01', 'u-1');
+    expect(t.schedule.clearScheduledEnd).toHaveBeenCalledWith(FAKE_CLIENT, 'al-3', 'u-1');
+    const chamadas = t.changeLog.insert.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>;
+    const entrada = chamadas.map(([, i]) => i).find((i) => i.kind === 'ENTRY_CANCELLED');
+    expect(entrada).toEqual({
+      serviceId: 's-1', kind: 'ENTRY_CANCELLED', outgoingWorkerId: 'w-1', assignmentId: 'al-9',
+      effectiveDate: '2026-10-28', reasonCode: 'DESISTENCIA_DO_PRESTADOR', actorUid: 'u-1',
+    });
+    expect(entrada).not.toHaveProperty('destination');
+  });
+
+  it('entrada sem alocação substituída (replacesAllocationId null): cancela e NÃO chama clearScheduledEnd', async () => {
+    const t = build({ scheduled: UMA_ENTRADA(null) });
+
+    await t.useCase.execute(REMOVE_TUDO);
+
+    expect(t.schedule.cancelAllocation).toHaveBeenCalledTimes(1);
+    expect(t.schedule.clearScheduledEnd).not.toHaveBeenCalled();
+  });
+
+  it('cancelAllocation → 0 (já começou/cancelada): não registra e não solta o fim', async () => {
+    const t = build({ scheduled: UMA_ENTRADA('al-3'), cancelResult: 0 });
+
+    await t.useCase.execute(REMOVE_TUDO);
+
+    expect(t.log).toEqual(['tx', 'catalog', 'end(derive=false)', 'log', 'entry-cancel', 'reject', 'derive']);
+    expect(t.schedule.clearScheduledEnd).not.toHaveBeenCalled();
+  });
+
+  it('titular vigente com outra alocação: o rejectWith continua recusando (ServiceTeamWorkerAllocatedError) e a transação rejeita', async () => {
+    const refusal = new ServiceTeamWorkerAllocatedError('p-1', 's-1', 'w-1');
+    const t = build({ scheduled: UMA_ENTRADA('al-3'), rejectError: refusal });
+
+    await expect(t.useCase.execute(REMOVE_TUDO)).rejects.toBe(refusal);
+    expect(t.derivation.run).not.toHaveBeenCalled();
   });
 });
