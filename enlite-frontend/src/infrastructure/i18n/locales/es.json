@@ -4138,7 +4138,14 @@
             "worker": "Prestador: {{worker}}",
             "reason": "Motivo",
             "confirm": "Confirmar",
-            "submitError": "No se pudo quitar al prestador del itinerario. Probá de nuevo."
+            "submitError": "No se pudo quitar al prestador del itinerario. Probá de nuevo.",
+            "scheduledWarning": {
+              "title": "Este prestador tiene atenciones agendadas",
+              "substitutions": "Cubre como sustituto: {{dates}}. Si lo quitás del encuadre, se cancelan y esos días quedan sin cobertura.",
+              "entry": "Tiene una entrada agendada desde el {{date}}. Si lo quitás del encuadre, se cancela y el titular actual sigue sin fecha de salida.",
+              "confirm": "Confirmar y cancelar agendamientos",
+              "back": "Volver"
+            }
           },
           "exitDestination": {
             "label": "Destino",
@@ -4191,6 +4198,7 @@
             "SERVICE_WITHOUT_ADDRESS": "Este servicio no tiene dirección cargada.",
             "ITINERARY_SLOT_CAPACITY_EXCEEDED": "La franja ya tiene todos los prestadores que necesita el servicio. Actualizamos la pantalla.",
             "ITINERARY_OVERLAP": "El prestador ya tiene otra franja que se superpone con este horario.",
+            "WORKER_HAS_SCHEDULED_ATTENDANCES": "Este prestador tiene atenciones agendadas.",
             "ALLOCATION_NOT_ACTIVE": "Esa asignación ya no está activa. Actualizamos la pantalla.",
             "REPLACEMENT_DATE_IN_PAST": "La fecha de inicio ya pasó. Elegí hoy o una fecha futura.",
             "DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED": "Con inicio programado solo se puede dejar al prestador como reserva.",

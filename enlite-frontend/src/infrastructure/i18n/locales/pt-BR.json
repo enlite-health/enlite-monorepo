@@ -4059,7 +4059,14 @@
             "worker": "Prestador: {{worker}}",
             "reason": "Motivo",
             "confirm": "Confirmar",
-            "submitError": "Não foi possível tirar o prestador do itinerário. Tente novamente."
+            "submitError": "Não foi possível tirar o prestador do itinerário. Tente novamente.",
+            "scheduledWarning": {
+              "title": "Este prestador tem atendimentos agendados",
+              "substitutions": "Cobre como substituto: {{dates}}. Se você o remover do encuadre, eles são cancelados e esses dias ficam sem cobertura.",
+              "entry": "Tem uma entrada agendada a partir de {{date}}. Se você o remover do encuadre, ela é cancelada e o titular atual segue sem data de saída.",
+              "confirm": "Confirmar e cancelar agendamentos",
+              "back": "Voltar"
+            }
           },
           "exitDestination": {
             "label": "Destino",
@@ -4112,6 +4119,7 @@
             "SERVICE_WITHOUT_ADDRESS": "Este serviço não tem endereço cadastrado.",
             "ITINERARY_SLOT_CAPACITY_EXCEEDED": "A faixa já tem todos os prestadores que o serviço precisa. Atualizamos a tela.",
             "ITINERARY_OVERLAP": "O prestador já tem outra faixa que se sobrepõe a este horário.",
+            "WORKER_HAS_SCHEDULED_ATTENDANCES": "Este prestador tem atendimentos agendados.",
             "ALLOCATION_NOT_ACTIVE": "Essa alocação não está mais ativa. Atualizamos a tela.",
             "REPLACEMENT_DATE_IN_PAST": "A data de início já passou. Escolha hoje ou uma data futura.",
             "DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED": "Com início programado o prestador só pode ficar como reserva.",

@@ -40,4 +40,19 @@ describe('itinerário B2 — i18n', () => {
     expect(get(esJson, `${SUB}.startNow`)).toBe('Ahora');
     expect(get(esJson, `${SUB}.startScheduled`)).toBe('Programada');
   });
+
+  it('aviso de agendamentos: scheduledWarning.* e WORKER_HAS_SCHEDULED_ATTENDANCES existem em es e pt-BR', () => {
+    const SW = `${ITIN}.removePanel.scheduledWarning`;
+    const paths = [
+      ...['title', 'substitutions', 'entry', 'confirm', 'back'].map((k) => `${SW}.${k}`),
+      `${ITIN}.actionErrors.WORKER_HAS_SCHEDULED_ATTENDANCES`,
+    ];
+    for (const p of paths) {
+      expect(typeof get(esJson, p) === 'string' && (get(esJson, p) as string).length > 0, `es ${p}`).toBe(true);
+      expect(typeof get(ptBRJson, p) === 'string' && (get(ptBRJson, p) as string).length > 0, `pt-BR ${p}`).toBe(true);
+    }
+    expect(get(esJson, `${SW}.substitutions`)).toContain('{{dates}}');
+    expect(get(esJson, `${SW}.entry`)).toContain('{{date}}');
+    expect(get(esJson, `${SW}.confirm`)).toBe('Confirmar y cancelar agendamientos');
+  });
 });
