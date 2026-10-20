@@ -563,4 +563,46 @@ describe('ItineraryAllocationUseCase.replace (D445.5 — reemplazo permanente)',
     await expect(useCase.replace(REPLACE_INPUT)).rejects.toBeDefined();
     expect(derivation.run).not.toHaveBeenCalled();
   });
+
+  it('replaceWith(derive:false): não chama a derivação; devolve outgoingWorkerId e today', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const writer = writerStub({
+      findAllocation: jest.fn().mockResolvedValue({ ...ACTIVE_ALLOCATION_WITH_SLOT, workerId: 'w-out' }),
+      scheduleAllocationEnd: jest.fn().mockResolvedValue(1),
+      findApplicationId: jest.fn().mockResolvedValue('wja-1'),
+      insertAllocation: jest.fn().mockResolvedValue({ id: 'alloc-2', validFrom: '2026-09-30' }),
+    });
+    const derivation = { run: jest.fn(async () => 'moved' as const) };
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), derivation);
+    const now = new Date('2026-09-25T12:00:00Z');
+
+    const result = await useCase.replaceWith(FAKE_CLIENT, { ...REPLACE_INPUT, now }, { derive: false });
+
+    expect(derivation.run).not.toHaveBeenCalled();
+    expect(result.outgoingWorkerId).toBe('w-out');
+    expect(result.today).toBe('2026-09-25');
+    expect(result.newAllocationId).toBe('alloc-2');
+  });
+
+  it('replaceWith: beforeWrite roda depois das leituras e antes de scheduleAllocationEnd/insertAllocation; se lança, nenhuma escrita', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const writer = writerStub({
+      findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION_WITH_SLOT),
+      scheduleAllocationEnd: jest.fn().mockResolvedValue(1),
+      findApplicationId: jest.fn().mockResolvedValue('wja-1'),
+      insertAllocation: jest.fn().mockResolvedValue({ id: 'alloc-2', validFrom: '2026-09-30' }),
+    });
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), { run: jest.fn() });
+    const now = new Date('2026-09-25T12:00:00Z');
+    const beforeWrite = jest.fn(() => {
+      throw new Error('stop');
+    });
+
+    await expect(useCase.replaceWith(FAKE_CLIENT, { ...REPLACE_INPUT, now }, { derive: false, beforeWrite })).rejects.toThrow('stop');
+
+    expect(beforeWrite).toHaveBeenCalledWith({ today: '2026-09-25' });
+    expect(writer.findApplicationId).toHaveBeenCalled(); // leituras já rodaram
+    expect(writer.scheduleAllocationEnd).not.toHaveBeenCalled();
+    expect(writer.insertAllocation).not.toHaveBeenCalled();
+  });
 });
