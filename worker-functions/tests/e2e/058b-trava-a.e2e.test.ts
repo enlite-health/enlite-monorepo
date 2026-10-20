@@ -130,19 +130,19 @@ describe('058b Trava A: capacidade da faixa @integration', () => {
     const b: PoolClient = await pool.connect();
     try {
       expect(a).not.toBe(b);
-      await a.query('BEGIN');
-      await b.query('BEGIN');
+      // Cada conexão faz BEGIN … COMMIT por conta própria: a Trava A pega o lock do SERVIÇO (as 2 faixas são do mesmo serviço),
+      // então a 2ª espera a 1ª COMMITAR; esperar as duas antes de commitar seria travar o próprio teste.
       const troca = async (c: PoolClient, velha: string, faixa: string, novo: typeof w2): Promise<void> => {
+        await c.query('BEGIN');
         await c.query(`UPDATE patient_itinerary_assignment SET status = 'ENDED', valid_to = $1::date WHERE id = $2`, [D, velha]);
         await alocar(c, faixa, novo, D1, null);
+        await c.query('COMMIT');
       };
       const rs = await Promise.allSettled([troca(a, a1, cen.faixas[0], w2), troca(b, a3, cen.faixas[1], w4)]);
       for (const r of rs) {
         if (r.status === 'rejected') expect((r.reason as { code?: string }).code).not.toBe('40P01');
         expect(r.status).toBe('fulfilled');
       }
-      await a.query('COMMIT');
-      await b.query('COMMIT');
     } catch (e) {
       await a.query('ROLLBACK').catch(() => undefined);
       await b.query('ROLLBACK').catch(() => undefined);

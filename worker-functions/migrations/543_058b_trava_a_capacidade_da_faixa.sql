@@ -69,3 +69,30 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION fn_058_b_assignment_capacity() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_058_b_assignment_capacity ON patient_itinerary_assignment;
+CREATE TRIGGER trg_058_b_assignment_capacity
+  BEFORE INSERT OR UPDATE OF status, slot_id, worker_id, valid_from, valid_to ON patient_itinerary_assignment
+  FOR EACH ROW EXECUTE FUNCTION fn_058_b_assignment_capacity();
+
+COMMENT ON COLUMN patient_contracted_services.providers_needed IS
+  'Quantidade de profissionais por faixa. NULL = não informada (leitura → CAPACITY_NOT_EVALUATED; nunca padrão). Vigência = vida do serviço (start_date até ended_at): configuração corrente, sem histórico, porque não há leitor histórico (precedente 510:4-5); mudança vale dali em diante e não retroage. Spec 058.';
+
+-- ASSERT 12a: a ativação da Trava A falha se já houver faixa acima do limite (desenho v13:561; spec §12 B0).
+DO $$
+DECLARE
+  v_avaliadas integer;
+  v_acima     integer;
+BEGIN
+  SELECT count(*) INTO v_avaliadas
+    FROM patient_itinerary_slot s
+    JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
+   WHERE pcs.providers_needed IS NOT NULL;
+  SELECT count(*) INTO v_acima FROM fn_058_b_slots_over_capacity();
+  RAISE NOTICE 'faixas_avaliadas=%, faixas_acima=%', v_avaliadas, v_acima;
+  IF v_acima > 0 THEN
+    RAISE EXCEPTION 'TRAVA_A_ATIVACAO_RECUSADA: % faixa(s) com alocações acima de providers_needed (medir com fn_058_b_slots_over_capacity(); decisão do Gabriel)', v_acima
+      USING ERRCODE = 'P0001';
+  END IF;
+END
+$$;
