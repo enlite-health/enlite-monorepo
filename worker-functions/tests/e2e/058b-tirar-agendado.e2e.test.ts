@@ -129,4 +129,73 @@ describe('POST …/allocations/:id/end com agendamento — API real (058 P5c) @i
     const a = await pool.query(`SELECT status FROM patient_itinerary_assignment WHERE id = $1`, [s.quaAllocations[0]]);
     expect(a.rows[0].status).toBe('ACTIVE');
   });
+
+  /** Alocação ACTIVE do prestador C (da segunda) numa faixa extra, mesma candidatura. */
+  async function alocarCNa(s: SeedB2, slotId: string, validFrom: string): Promise<string> {
+    const r = await pool.query<{ id: string }>(
+      `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, status, created_by, updated_by)
+       VALUES ($1, $2, $3, $4::date, 'ACTIVE', 'e2e', 'e2e') RETURNING id`,
+      [slotId, s.segWorkers[0], await applicationOf(s.segAllocations[0]), validFrom],
+    );
+    return r.rows[0].id;
+  }
+
+  it('entrada futura: cancelada ANTES de soltar o fim do titular — entrada CANCELLED, A com valid_to NULL, 1 ENTRY_CANCELLED, C encerrado e rejeitado', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 1, titularesQua: 1, desdeDias: -7 });
+    const d = await somaDias(pool, hoje, 7);
+    await pool.query(`UPDATE patient_itinerary_assignment SET valid_to = $1::date WHERE id = $2`, [await somaDias(pool, hoje, 6), s.quaAllocations[0]]);
+    const entradaId = await alocarCNa(s, s.slotQuaId as string, d);
+
+    const sem = await api.post(endUrl(s, s.segAllocations[0]), { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE' }, { headers: asAdmin.headers });
+    expect(sem.status).toBe(409);
+    expect(sem.data.details.futureEntryFrom).toBe(d);
+    expect(sem.data.details.substitutionDates).toEqual([]);
+
+    const com = await api.post(endUrl(s, s.segAllocations[0]), { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE', cancelScheduled: true }, { headers: asAdmin.headers });
+    expect(com.status).toBe(200);
+
+    const entrada = await pool.query(`SELECT status FROM patient_itinerary_assignment WHERE id = $1`, [entradaId]);
+    expect(entrada.rows[0].status).toBe('CANCELLED');
+    const a = await pool.query(`SELECT status, valid_to IS NULL AS sem_fim FROM patient_itinerary_assignment WHERE id = $1`, [s.quaAllocations[0]]);
+    expect(a.rows[0]).toEqual({ status: 'ACTIVE', sem_fim: true });
+    const kinds = await pool.query(
+      `SELECT kind, count(*)::int AS n FROM patient_itinerary_change_log WHERE contracted_service_id = $1 GROUP BY kind ORDER BY kind`,
+      [s.serviceId],
+    );
+    expect(kinds.rows).toEqual([{ kind: 'ENTRY_CANCELLED', n: 1 }, { kind: 'REMOVE', n: 1 }]);
+    const ec = await pool.query(
+      `SELECT assignment_id, to_char(effective_date,'YYYY-MM-DD') AS d, destination FROM patient_itinerary_change_log
+        WHERE contracted_service_id = $1 AND kind = 'ENTRY_CANCELLED'`,
+      [s.serviceId],
+    );
+    expect(ec.rows).toEqual([{ assignment_id: entradaId, d, destination: null }]);
+    const c = await pool.query(`SELECT status FROM patient_itinerary_assignment WHERE id = $1`, [s.segAllocations[0]]);
+    expect(c.rows[0].status).toBe('ENDED');
+    const marks = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM contracted_service_rejections WHERE service_id = $1 AND worker_id = $2 AND reverted_at IS NULL`,
+      [s.serviceId, s.segWorkers[0]],
+    );
+    expect(marks.rows[0].n).toBe(1);
+  });
+
+  it('titular vigente com outra alocação vigente (segunda E quarta) e LEAVE_SERVICE: continua 422 SERVICE_TEAM_WORKER_ALLOCATED, snapshot igual', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    await alocarCNa(s, s.slotQuaId as string, await somaDias(pool, hoje, -7));
+    const before = await snapshot(s);
+    const res = await api.post(endUrl(s, s.segAllocations[0]), { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE' }, { headers: asAdmin.headers });
+    expect(res.status).toBe(422);
+    expect(res.data.code).toBe('SERVICE_TEAM_WORKER_ALLOCATED');
+    expect(await snapshot(s)).toEqual(before);
+  });
+
+  it('sem agendamento (RESERVE, 1 alocação): 200 direto, 1 REMOVE, nenhum cancelamento', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    const res = await api.post(endUrl(s, s.segAllocations[0]), { reasonCategory: 'OTHER', destination: 'RESERVE' }, { headers: asAdmin.headers });
+    expect(res.status).toBe(200);
+    const kinds = await pool.query(
+      `SELECT kind, count(*)::int AS n FROM patient_itinerary_change_log WHERE contracted_service_id = $1 GROUP BY kind ORDER BY kind`,
+      [s.serviceId],
+    );
+    expect(kinds.rows).toEqual([{ kind: 'REMOVE', n: 1 }]);
+  });
 });
