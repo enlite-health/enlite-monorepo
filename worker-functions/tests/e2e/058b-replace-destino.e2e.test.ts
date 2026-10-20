@@ -102,4 +102,30 @@ describe('POST …/allocations/:id/replace — Caso A/B (058) @integration', () 
     const marcas = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM contracted_service_rejections WHERE service_id = $1`, [s.serviceId]);
     expect(marcas.rows[0].n).toBe(0);
   });
+
+  it('Caso A LEAVE_SERVICE: titular antigo fica ACTIVE até ontem; marca de rejeição com o MESMO código; log REPLACE/LEAVE_SERVICE', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, selecionados: 1, desdeDias: -7 });
+    const ontem = await somaDias(pool, hoje, -1);
+    const res = await api.post(
+      replaceUrl(s, s.segAllocations[0]),
+      { newWorkerId: s.selecionados[0], fromDate: hoje, reasonCategory: REASON, destination: 'LEAVE_SERVICE' },
+      { headers: asAdmin.headers },
+    );
+    expect(res.status).toBe(200);
+
+    expect(await alloc(s.segAllocations[0])).toMatchObject({ status: 'ACTIVE', vt: ontem });
+    const novaId = await allocationOf(s.serviceId, s.selecionados[0]);
+    expect(await alloc(novaId)).toEqual({ status: 'ACTIVE', vf: hoje, vt: null });
+
+    const marks = await pool.query(
+      `SELECT worker_id, reject_reason_category FROM contracted_service_rejections WHERE service_id = $1 AND reverted_at IS NULL`,
+      [s.serviceId],
+    );
+    expect(marks.rows).toEqual([{ worker_id: s.segWorkers[0], reject_reason_category: REASON }]);
+    const log = await pool.query(
+      `SELECT kind, destination FROM patient_itinerary_change_log WHERE contracted_service_id = $1`,
+      [s.serviceId],
+    );
+    expect(log.rows).toEqual([{ kind: 'REPLACE', destination: 'LEAVE_SERVICE' }]);
+  });
 });
