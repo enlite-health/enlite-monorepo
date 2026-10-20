@@ -26,12 +26,28 @@ import type { CoverageEntry } from './patientCoverageRead';
  * com o `asOf` da ficha: +3 queries por ficha, qualquer que seja o nº de serviços.
  */
 
+/** Horário vigente em `asOf` de CADA serviço pedido — todo id tem entrada (sem faixa = `null`, nunca ausente). Dono único: ficha e rota chamam esta. */
+export async function fetchServiceSchedules(
+  q: { query(sql: string, params?: unknown[]): Promise<{ rows: any[] }> },
+  serviceIds: string[],
+  asOf: string,
+): Promise<Map<string, ContractedServiceScheduleView[] | null>> {
+  const out = new Map<string, ContractedServiceScheduleView[] | null>(serviceIds.map((id) => [id, null]));
+  if (serviceIds.length === 0) return out;
+  const { rows } = await q.query(
+    `SELECT id, horario_do_servico(id, $2::date) AS schedule FROM patient_contracted_services WHERE id = ANY($1::uuid[])`,
+    [serviceIds, asOf],
+  );
+  for (const r of rows ?? []) out.set(r.id as string, (r.schedule as ContractedServiceScheduleView[] | null) ?? null);
+  return out;
+}
+
 async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[], asOf: string) {
   if (serviceIds.length === 0) {
     return {
         devices: [] as any[],
         providers: [] as any[],
-        schedules: [] as any[],
+        schedules: new Map<string, ContractedServiceScheduleView[] | null>(),
         liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>>,
         authorizations: new Map<string, CurrentAuthorization>(),
         payers: new Map() as Awaited<ReturnType<typeof payerAtMany>>,
@@ -58,20 +74,17 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[], 
         ORDER BY csp.active DESC, csp.created_at ASC`,
       [serviceIds],
     ),
-    // Spec 056: o horário NÃO é a coluna `pcs.schedule` — é `horario_do_servico(id, CURRENT_DATE)` (faixas vigentes hoje).
-    pool.query(
-      `SELECT id, horario_do_servico(id, CURRENT_DATE) AS schedule FROM patient_contracted_services WHERE id = ANY($1::uuid[])`,
-      [serviceIds],
-    ),
+    // Spec 058 (B1): o horário vigente em `asOf` — dono: `fetchServiceSchedules` (a rota usa a MESMA).
+    fetchServiceSchedules(pool, serviceIds, asOf),
     // Spec 018 PR-6 / spec 047 F2: a vaga viva do serviço (id + código + estado + link) — dono: `fetchLiveVacancies`.
     fetchLiveVacancies(pool, serviceIds),
-    // Spec 056: a autorização corrente (vigente hoje) — dono: `contracted_service_authorization`.
-    fetchCurrentAuthorizations(pool, serviceIds),
+    // Spec 056: a autorização corrente (vigente em `asOf`) — dono: `contracted_service_authorization`.
+    fetchCurrentAuthorizations(pool, serviceIds, asOf),
     payerAtMany(pool, serviceIds, asOf),
     payerHistoryMany(pool, serviceIds),
     priceStateMany(pool, serviceIds, asOf),
   ]);
-  return { devices: devices.rows, providers: providers.rows, schedules: schedules.rows, liveVacancies, authorizations, payers, histories, prices };
+  return { devices: devices.rows, providers: providers.rows, schedules, liveVacancies, authorizations, payers, histories, prices };
 }
 
 export async function mapContractedServices(
@@ -85,7 +98,7 @@ export async function mapContractedServices(
 ): Promise<ContractedServiceDetail[]> {
   const ids = serviceRows.map((r) => r.id);
   const { devices, providers, schedules, liveVacancies, authorizations, payers, histories, prices } = await fetchContractedServiceChildren(pool, ids, asOf);
-  const scheduleById = new Map<string, ContractedServiceScheduleView[] | null>(schedules.map((s) => [s.id, s.schedule ?? null]));
+  const scheduleById = schedules;
   const decryptedProviders = await Promise.all(
     providers.map(async (p) => {
       const [first, last] = await Promise.all([enc.decrypt(p.first_name_encrypted ?? ''), enc.decrypt(p.last_name_encrypted ?? '')]);

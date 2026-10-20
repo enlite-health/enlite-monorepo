@@ -236,7 +236,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           },
         ],
       }) // providers
-      // Spec 056: o horário vem de `horario_do_servico(id, CURRENT_DATE)`, não da coluna `pcs.schedule`.
+      // Spec 056: o horário vem de `horario_do_servico(id, $2::date)`, não da coluna `pcs.schedule`.
       .mockResolvedValueOnce({
         rows: [{ id: 'svc-1', schedule: [{ dayOfWeek: 1, startTime: '20:00', endTime: '08:00', durationMinutes: 720 }] }],
       }) // schedules
@@ -250,7 +250,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       }) // live vacancy
       // Spec 056: a autorização corrente (vigente hoje) — validTo da API é inclusivo (upper − 1 dia).
       .mockResolvedValueOnce({
-        rows: [{ contracted_service_id: 'svc-1', id: 'auth-1', hours: '120', valid_from: '2026-01-01', valid_upper: '2027-01-01' }],
+        rows: [{ contracted_service_id: 'svc-1', id: 'auth-1', hours: '120', valid: '[2026-01-01,2027-01-01)' }],
       }) // authorizations
       // Spec 058: pagador vigente, histórico e preço/imposto do serviço -- 3 queries EM LOTE, uma por função, qualquer que seja o nº de serviços.
       .mockResolvedValueOnce({ rows: [LINK_ROW] }) // payerAtMany
@@ -288,7 +288,9 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     expect(Object.keys(svc.liveVacancy!).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'status']);
     // O SQL lê o caso do fragmento com dono (046) e só vagas vivas — e NÃO toca social_short_links.
     const sqlVaga = String(queryImpl.mock.calls[11][0]);
-    expect(String(queryImpl.mock.calls[10][0])).toContain('horario_do_servico(id, CURRENT_DATE)');
+    expect(String(queryImpl.mock.calls[10][0])).toContain('horario_do_servico(id, $2::date)');
+    expect(queryImpl.mock.calls[10][1]).toEqual([['svc-1'], '2026-10-19']);
+    expect(queryImpl.mock.calls[12][1]).toEqual([['svc-1'], '2026-10-19']);
     expect(svc.schedule).toEqual([{ dayOfWeek: 1, startTime: '20:00', endTime: '08:00', durationMinutes: 720 }]);
     expect(sqlVaga).toContain(`${VACANCY_CASE_NUMBER_SQL} AS case_number`);
     expect(sqlVaga).not.toContain('social_short_links');
