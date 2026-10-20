@@ -90,4 +90,33 @@ test.describe('servico-dados-recrutamento-capacidade — Trava B no formulário 
     await expect(page.getByTestId(`contracted-service-error-${seed.serviceId}`)).toContainText('por debajo de los ya asignados');
     expect(sqlComVars(`SELECT coalesce(providers_needed::text, '<null>') FROM patient_contracted_services WHERE id = :'sid'`, { sid: seed.serviceId })).toBe('3');
   });
+
+  test('3. alt (servidor recusa) — limpar o campo já informado: 422 PROVIDERS_NEEDED_CANNOT_CLEAR com mensagem; o banco segue 3', async ({ page }) => {
+    await loginComoStaffMock(page, STAFF, 'E2E Capacidade');
+    await abrirFormularioDoServico(page, seed);
+    await trocarQuantidade(page, '');
+    await expect(page.getByTestId('svc-providersNeeded-1')).toHaveValue('');
+    const [resp] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${seed.serviceId}$`).test(r.url())),
+      page.getByTestId(`contracted-service-save-${seed.serviceId}`).click(),
+    ]);
+    expect(resp.status()).toBe(422);
+    expect(((await resp.json()) as { code?: string }).code).toBe('PROVIDERS_NEEDED_CANNOT_CLEAR');
+    await expect(page.getByTestId(`contracted-service-error-${seed.serviceId}`)).toContainText('no puede quedar vacía');
+    expect(sqlComVars(`SELECT coalesce(providers_needed::text, '<null>') FROM patient_contracted_services WHERE id = :'sid'`, { sid: seed.serviceId })).toBe('3');
+  });
+
+  test('4. controle — com a vaga VIVA, limpar o campo dá OUTRO 422 (SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY), não o da Trava B', async ({ page }) => {
+    cleanupItinerary(seed); // o seed do beforeEach fica órfão: limpa antes de reatribuir; o afterEach limpa o novo
+    seed = semearCapacidade({ vagaViva: true });
+    await loginComoStaffMock(page, STAFF, 'E2E Capacidade');
+    await abrirFormularioDoServico(page, seed);
+    await trocarQuantidade(page, '');
+    const [resp] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${seed.serviceId}$`).test(r.url())),
+      page.getByTestId(`contracted-service-save-${seed.serviceId}`).click(),
+    ]);
+    expect(resp.status()).toBe(422);
+    expect(((await resp.json()) as { code?: string }).code).toBe('SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY');
+  });
 });
