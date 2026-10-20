@@ -88,6 +88,7 @@ const ITINERARY: PatientItinerary = {
       scheduleHours: 20,
       reserve: null,
       cobertas: 0,
+      providersNeeded: null,
       slots: [{ id: 'slot-1', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] }],
     },
     {
@@ -95,6 +96,7 @@ const ITINERARY: PatientItinerary = {
       scheduleHours: 10,
       reserve: null,
       cobertas: 0,
+      providersNeeded: null,
       slots: [{ id: 'slot-2', weekday: 2, startTime: '09:00', endTime: '11:00', durationMinutes: 120, assignments: [] }],
     },
   ],
