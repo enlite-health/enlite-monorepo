@@ -3371,6 +3371,8 @@
         "providerInactive": "Dado de baja",
         "createServiceError": "No se pudo crear el servicio",
         "updateServiceError": "No se pudo actualizar el servicio",
+        "providersNeededBelowOccupancy": "No se puede bajar la cantidad de prestadores por debajo de los ya asignados al itinerario.",
+        "providersNeededCannotClear": "Una vez informada, la cantidad de prestadores no puede quedar vacía.",
         "deactivateServiceError": "No se pudo dar de baja el servicio",
         "selectServiceCode": "Servicio",
         "selectWorker": "Seleccioná un prestador",

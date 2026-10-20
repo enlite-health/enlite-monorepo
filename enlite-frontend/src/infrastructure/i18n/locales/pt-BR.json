@@ -3292,6 +3292,8 @@
         "providerInactive": "Baixado",
         "createServiceError": "Não foi possível criar o serviço",
         "updateServiceError": "Não foi possível atualizar o serviço",
+        "providersNeededBelowOccupancy": "Não é possível baixar a quantidade de prestadores abaixo dos já alocados no itinerário.",
+        "providersNeededCannotClear": "Depois de informada, a quantidade de prestadores não pode ficar vazia.",
         "deactivateServiceError": "Não foi possível dar baixa no serviço",
         "selectServiceCode": "Serviço",
         "selectWorker": "Selecione um prestador",
