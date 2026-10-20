@@ -6173,7 +6173,7 @@
         "title": "Nueva obra social",
         "nameLabel": "Nombre",
         "nameHelp": "Solo el nombre es obligatorio. El código se genera a partir de él y no cambia después.",
-        "aliasesLabel": "Otros nombres (opcional)",
+        "aliasesLabel": "Otros nombres",
         "aliasesHelp": "Separalos con coma. Sirven solo para reconocer la obra social en otras fuentes.",
         "codeLabel": "Código",
         "codeNeeded": "No se pudo generar el código a partir de ese nombre. Informá un código (letras y números, sin espacios).",
@@ -6195,7 +6195,8 @@
         "new": "Nuevo",
         "save": "Guardar",
         "saving": "Guardando…",
-        "cancel": "Cancelar"
+        "cancel": "Cancelar",
+        "close": "Cerrar"
       },
       "general": {
         "title": "Datos generales",
@@ -6234,8 +6235,8 @@
           "fullName": "Nombre completo",
           "roleTitle": "Cargo",
           "phone": "Teléfono",
-          "email": "E-mail (opcional)",
-          "documentType": "Tipo de documento (opcional)",
+          "email": "E-mail",
+          "documentType": "Tipo de documento",
           "documentNone": "Sin documento",
           "documentNumber": "Número de documento",
           "documentPairIncomplete": "Informá el tipo y el número del documento juntos, o dejá los dos vacíos.",
@@ -6270,7 +6271,7 @@
           "name": "Nombre del contrato",
           "country": "País",
           "countryPlaceholder": "Elegí el país",
-          "scope": "Alcance (opcional)",
+          "scope": "Alcance",
           "scopeHelp": "Texto descriptivo: región, turno, tipo de atención.",
           "firstTerm": "Primer término de valor",
           "required": "Informá el nombre y el país del contrato."
@@ -6285,7 +6286,7 @@
           "rateRequired": "Informá el valor hora.",
           "validFrom": "Inicio de la vigencia",
           "validFromRequired": "Informá el inicio de la vigencia.",
-          "validTo": "Fin de la vigencia (opcional)",
+          "validTo": "Fin de la vigencia",
           "validToBeforeFrom": "El fin no puede ser anterior al inicio.",
           "retroWarning": "Esa fecha es anterior a hoy ({{asOf}}). El término será retroactivo.",
           "asOfLoading": "Elegí el país para ver la fecha de hoy.",

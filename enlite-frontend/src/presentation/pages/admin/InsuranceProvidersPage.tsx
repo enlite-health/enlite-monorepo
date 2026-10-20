@@ -1,5 +1,5 @@
 /**
- * InsuranceProvidersPage — lista de obras sociais (spec 058 §4.2): busca por nome, "mostrar inativas" e criar SÓ com o nome.
+ * InsuranceProvidersPage — lista de obras sociais (spec 058 §4.2): busca por nome, "mostrar inativas" e criar SÓ com o nome, em modal.
  * O `code` é derivado do nome pelo back e nunca muda; `aliases` (outros nomes) é opcional. Se o nome não gera código
  * (`NAME_NOT_CODIFIABLE`) a tela passa a pedir o código. Criada, a obra social abre na página de cartões para ser completada.
  *
@@ -9,7 +9,6 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Building2, Plus } from 'lucide-react';
-import { Button } from '@presentation/components/atoms/Button';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Input } from '@presentation/components/atoms/Input';
@@ -17,6 +16,7 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@presentation/components/atoms/Table';
 import { Text } from '@presentation/components/atoms/Text';
 import { Field } from './InsuranceProviderDetailPage/Field';
+import { FormModal } from './InsuranceProviderDetailPage/FormModal';
 import { ActionButton } from '@presentation/components/features/access';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
@@ -110,34 +110,36 @@ export default function InsuranceProvidersPage(): JSX.Element {
       <Text size="sm" color="inherit" className="mb-6 text-slate-600">{t(`${NS}.subtitle`)}</Text>
 
       {creating && (
-        <div className="mb-6 rounded-xl border border-slate-300 bg-white p-5 flex flex-col gap-4" data-testid="provider-create-form">
-          <Heading level={2} weight="semibold" color="primary">{t(`${NS}.create.title`)}</Heading>
-          <Field label={t(`${NS}.create.nameLabel`)} required hint={t(`${NS}.create.nameHelp`)} htmlFor="provider-create-name">
-            <Input id="provider-create-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="provider-create-name" />
-          </Field>
-          <Field label={t(`${NS}.create.aliasesLabel`)} hint={t(`${NS}.create.aliasesHelp`)} htmlFor="provider-create-aliases">
-            <Input id="provider-create-aliases" value={aliases} onChange={(e) => setAliases(e.target.value)} data-testid="provider-create-aliases" />
-          </Field>
-          {needsCode && (
-            <Field label={t(`${NS}.create.codeLabel`)} required hint={t(`${NS}.create.codeNeeded`)} htmlFor="provider-create-code">
-              <Input id="provider-create-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} data-testid="provider-create-code" />
-            </Field>
-          )}
-          {createError && (
-            <div role="alert" data-testid="provider-create-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-              <Text color="inherit" size="sm" className="text-red-700">{createError}</Text>
-            </div>
-          )}
-          <div className="flex items-center gap-3 justify-end">
-            <Button variant="outline" size="sm" onClick={() => setCreating(false)} disabled={saving} data-testid="provider-create-cancel">{t(`${NS}.create.cancel`)}</Button>
-            <Button variant="primary" size="sm" isLoading={saving} disabled={name.trim() === ''} onClick={create} data-testid="provider-create-submit">{t(`${NS}.create.submit`)}</Button>
-          </div>
-        </div>
+        <FormModal
+          title={t(`${NS}.create.title`)}
+          isDirty={name !== '' || aliases !== '' || code !== ''}
+          onClose={() => setCreating(false)}
+          busy={saving}
+          testId="provider-create-form"
+          saveLabel={t(`${NS}.create.submit`)}
+          onSave={create}
+          saving={saving}
+          saveDisabled={name.trim() === ''}
+          saveTestId="provider-create-submit"
+          notice={createError && <Text size="sm" className="text-red-600" role="alert" data-testid="provider-create-error">{createError}</Text>}
+        >
+              <Field label={t(`${NS}.create.nameLabel`)} required hint={t(`${NS}.create.nameHelp`)} htmlFor="provider-create-name">
+                <Input inputSize="compact" id="provider-create-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="provider-create-name" />
+              </Field>
+              <Field label={t(`${NS}.create.aliasesLabel`)} optional hint={t(`${NS}.create.aliasesHelp`)} htmlFor="provider-create-aliases">
+                <Input inputSize="compact" id="provider-create-aliases" value={aliases} onChange={(e) => setAliases(e.target.value)} data-testid="provider-create-aliases" />
+              </Field>
+              {needsCode && (
+                <Field label={t(`${NS}.create.codeLabel`)} required hint={t(`${NS}.create.codeNeeded`)} htmlFor="provider-create-code">
+                  <Input inputSize="compact" id="provider-create-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} data-testid="provider-create-code" />
+                </Field>
+              )}
+        </FormModal>
       )}
 
       <div className="flex items-end gap-6 flex-wrap mb-4">
         <Field label={t(`${NS}.searchLabel`)} htmlFor="providers-search" className="w-full max-w-sm">
-          <Input id="providers-search" type="search" value={search} placeholder={t(`${NS}.searchPlaceholder`)} onChange={(e) => setSearch(e.target.value)} data-testid="providers-search" />
+          <Input inputSize="compact" id="providers-search" type="search" value={search} placeholder={t(`${NS}.searchPlaceholder`)} onChange={(e) => setSearch(e.target.value)} data-testid="providers-search" />
         </Field>
         <div className="pb-2">
           <Checkbox id="providers-include-inactive" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} label={t(`${NS}.showInactive`)} data-testid="providers-include-inactive" />

@@ -4,7 +4,8 @@
  * E2E DE TELA, SEM MOCK de resposta: frontend + API + Postgres reais, engine ABAC LIGADO, staff REAL em grupo, clique e teclado de humano.
  * O cenário (a obra social e o contato já cadastrado) é montado pela API real.
  *
- *  FELIZ         — "Nuevo" -> nome, cargo, telefone, e-mail, tipo e número do documento -> Guardar -> a linha mostra tudo.
+ *  FELIZ         — "Nuevo" (abre UMA modal) -> nome, cargo, telefone, e-mail, tipo e número do documento -> Guardar -> a linha mostra tudo;
+ *                  depois, fechar a modal com alteração pede descarte (X/Esc; seguir editando mantém, descartar fecha) e sem alteração fecha direto.
  *  ALTERNATIVO 1 — tipo do documento SEM número: a tela recusa com a frase (nenhum POST sai) e o servidor, forçado, recusa com
  *                  `DOCUMENT_PAIR_INCOMPLETE` (422); nada foi gravado.
  *  ALTERNATIVO 2 — (ABAC) quem NÃO tem `insurance_provider_contacts:read` não vê a tabela, o telefone, o e-mail nem o nome: vê "sem permissão"
@@ -79,6 +80,27 @@ test.describe('058a-empregados — cartão Empleados da obra social (spec 058 T1
     await expect(linha).toContainText('99000582');
     // O contato semente (cadastrado pela API) continua ali: o Novo acrescenta, não substitui.
     await expect(page.locator('[data-testid^="employee-row-"]', { hasText: `QA058A Contato Semente ${RUN_ID}` })).toHaveCount(1);
+
+    // Fechar a modal COM alteração pede descarte (X e Esc); "Seguir editando" mantém o digitado; "Descartar" fecha sem gravar nada.
+    const rascunho = `QA058A Empleado Rascunho ${RUN_ID}`;
+    await page.getByTestId('employees-new').click();
+    await expect(page.getByTestId('contact-form')).toBeVisible();
+    expect(await digitar(page, 'contact-fullName', rascunho)).toBe(rascunho);
+    await page.getByTestId('contact-form-close').click();
+    await expect(page.getByTestId('discard-changes-confirm')).toBeVisible();
+    await page.getByTestId('discard-changes-keep-editing').click();
+    await expect(page.getByTestId('discard-changes-confirm')).toHaveCount(0);
+    await expect(page.getByTestId('contact-fullName')).toHaveValue(rascunho);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('discard-changes-confirm')).toBeVisible();
+    await page.getByTestId('discard-changes-discard').click();
+    await expect(page.getByTestId('contact-form')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="employee-row-"]', { hasText: rascunho })).toHaveCount(0);
+    // Sem alteração, fecha direto (sem pergunta).
+    await page.getByTestId('employees-new').click();
+    await page.getByTestId('contact-form-close').click();
+    await expect(page.getByTestId('contact-form')).toHaveCount(0);
+    await expect(page.getByTestId('discard-changes-confirm')).toHaveCount(0);
     await page.screenshot({ path: 'test-results/058a-empregados.png', fullPage: true });
   });
 

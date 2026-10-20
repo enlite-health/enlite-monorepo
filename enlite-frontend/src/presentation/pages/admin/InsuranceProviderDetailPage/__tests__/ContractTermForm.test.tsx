@@ -3,7 +3,7 @@
  * (`0` = isento é digitado, nunca pré-preenchido). O "hoje" é o `asOf` recebido, nunca o relógio do navegador.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('react-i18next', async () => (await import('./support')).i18nMock);
 
@@ -79,10 +79,10 @@ describe('ContractTermForm', () => {
     expect(screen.getByText('O fim não pode ser antes do início.')).toBeInTheDocument();
   });
 
-  it('mostra a frase de erro do envio anterior e cancela', () => {
+  it('mostra a frase de erro do envio anterior e o X fecha', async () => {
     const { onCancel } = renderForm({ error: 'Essa vigência se sobrepõe a outro termo.' });
     expect(screen.getByTestId(`${PREFIX}error`)).toHaveTextContent('Essa vigência se sobrepõe');
-    fireEvent.click(screen.getByTestId(`${PREFIX}cancel`));
-    expect(onCancel).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId(`${PREFIX}form-close`));
+    await waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 });

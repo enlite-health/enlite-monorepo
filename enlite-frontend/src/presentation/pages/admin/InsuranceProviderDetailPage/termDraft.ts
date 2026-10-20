@@ -56,6 +56,8 @@ export function validateTermDraft(draft: TermDraft): { errors: TermErrors; body:
 export interface TermDraftState {
   draft: TermDraft;
   errors: TermErrors;
+  /** `true` quando a pessoa mexeu em algo (o `asOf` que chega sozinho não conta). */
+  dirty: boolean;
   set: (field: keyof TermDraft, value: string) => void;
   /** Valida e devolve o corpo (ou `null` mostrando os erros). */
   submit: () => InsuranceTermBody | null;
@@ -71,9 +73,11 @@ export function useTermDraft(asOf: string | null, initial?: Partial<TermDraft>):
     if (asOf) setDraft((d) => (d.validFrom === '' ? { ...d, validFrom: asOf } : d));
   }, [asOf]);
 
+  const baseline: TermDraft = { ...emptyTermDraft(asOf), ...initial };
   return {
     draft,
     errors,
+    dirty: (Object.keys(baseline) as (keyof TermDraft)[]).some((k) => draft[k] !== baseline[k]),
     set: (field, value) => setDraft((d) => ({ ...d, [field]: value })),
     submit: () => {
       const result = validateTermDraft(draft);

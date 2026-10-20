@@ -6094,7 +6094,7 @@
         "title": "Nova obra social",
         "nameLabel": "Nome",
         "nameHelp": "Só o nome é obrigatório. O código é gerado a partir dele e não muda depois.",
-        "aliasesLabel": "Outros nomes (opcional)",
+        "aliasesLabel": "Outros nomes",
         "aliasesHelp": "Separe por vírgula. Servem só para reconhecer a obra social em outras fontes.",
         "codeLabel": "Código",
         "codeNeeded": "Não foi possível gerar o código a partir desse nome. Informe um código (letras e números, sem espaços).",
@@ -6116,7 +6116,8 @@
         "new": "Novo",
         "save": "Salvar",
         "saving": "Salvando…",
-        "cancel": "Cancelar"
+        "cancel": "Cancelar",
+        "close": "Fechar"
       },
       "general": {
         "title": "Dados gerais",
@@ -6155,8 +6156,8 @@
           "fullName": "Nome completo",
           "roleTitle": "Cargo",
           "phone": "Telefone",
-          "email": "E-mail (opcional)",
-          "documentType": "Tipo de documento (opcional)",
+          "email": "E-mail",
+          "documentType": "Tipo de documento",
           "documentNone": "Sem documento",
           "documentNumber": "Número do documento",
           "documentPairIncomplete": "Informe o tipo e o número do documento juntos, ou deixe os dois vazios.",
@@ -6191,7 +6192,7 @@
           "name": "Nome do contrato",
           "country": "País",
           "countryPlaceholder": "Escolha o país",
-          "scope": "Abrangência (opcional)",
+          "scope": "Abrangência",
           "scopeHelp": "Texto descritivo: região, turno, tipo de atendimento.",
           "firstTerm": "Primeiro termo de valor",
           "required": "Informe o nome e o país do contrato."
@@ -6206,7 +6207,7 @@
           "rateRequired": "Informe o valor-hora.",
           "validFrom": "Início da vigência",
           "validFromRequired": "Informe o início da vigência.",
-          "validTo": "Fim da vigência (opcional)",
+          "validTo": "Fim da vigência",
           "validToBeforeFrom": "O fim não pode ser antes do início.",
           "retroWarning": "Essa data é anterior a hoje ({{asOf}}). O termo será retroativo.",
           "asOfLoading": "Escolha o país para ver a data de hoje.",

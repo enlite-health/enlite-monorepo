@@ -1,6 +1,6 @@
 /**
  * ContractItem — um contrato na lista do cartão Contratos (spec 058 §4.3): nome, país, abrangência, termo vigente (valor-hora e imposto
- * em %), "sem termo vigente hoje" (`NO_TERM`) + os termos futuros, e o "Novo termo" inline.
+ * em %), "sem termo vigente hoje" (`NO_TERM`) + os termos futuros, e o "Novo termo" / "Corrigir termo" em modal (uma por ação).
  *
  * "Novo termo" sobre um termo VIVO é um reajuste (`supersede` com `REPRICED`: o trecho anterior fica, o novo vale dali em diante);
  * sobre um contrato sem termo vigente (`NO_TERM`) é um termo novo simples. O preço vem redigido (`REDACTED`) sem
@@ -104,12 +104,10 @@ export function ContractItem({ contract, onChanged }: Props): JSX.Element {
           </div>
           <Text as="span" size="xs" color="inherit" className="text-slate-600" data-testid={`${tid}-scope`}>{contract.scopeDescription ?? t(`${NS}.scopeNone`)}</Text>
         </div>
-        {form === null && (
-          <ActionButton resource="patient_contract_value" action="create" variant="outline" size="sm" onClick={() => { setError(null); setForm({ kind: 'NEW' }); }} className="flex items-center gap-1" data-testid={`${tid}-new-term`}>
-            {t(`${NS}.newTerm`)}
-            <Plus className="w-4 h-4" />
-          </ActionButton>
-        )}
+        <ActionButton resource="patient_contract_value" action="create" variant="outline" size="sm" onClick={() => { setError(null); setForm({ kind: 'NEW' }); }} className="flex items-center gap-1" data-testid={`${tid}-new-term`}>
+          {t(`${NS}.newTerm`)}
+          <Plus className="w-4 h-4" />
+        </ActionButton>
       </div>
 
       {current.state === 'OK' ? (
