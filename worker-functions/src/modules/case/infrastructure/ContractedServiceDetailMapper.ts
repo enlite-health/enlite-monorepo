@@ -126,7 +126,6 @@ export async function mapContractedServices(
     professionalProfile: r.professional_profile,
     providersNeeded: r.providers_needed,
     authorization: authorizations.get(r.id) ?? null,
-    legacyAuthorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
     scheduleHours: computeScheduleWeeklyHours(scheduleById.get(r.id) ?? null),
     careLocation: r.care_location,
     startDate: r.start_date,

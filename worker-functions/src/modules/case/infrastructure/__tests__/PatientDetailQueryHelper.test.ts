@@ -268,7 +268,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
       id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
-      legacyAuthorizedHours: 20, scheduleHours: 12, // string → Number
+      scheduleHours: 12, // string → Number
       authorization: { id: 'auth-1', hours: 120, validFrom: '2026-01-01', validTo: '2026-12-31' },
       deviceTypes: ['HOME'],
       // Spec 058: asOf = dia de operação do país do paciente (AR) no requestNow; pagador/preço/imposto/divergência crus.
@@ -279,6 +279,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       coverageMatch: { state: 'MATCH' },
     });
     expect(svc.payerHistory).toHaveLength(1);
+    expect(svc).not.toHaveProperty('legacyAuthorizedHours'); // a linha crua traz authorized_hours: '20' e a ficha NÃO a expõe
     expect(svc).not.toHaveProperty('hourlyValue');
     expect(result!.coverage).toMatchObject({ displaySource: 'INFORMED', display: 'OSDE' });
     // A1 (047): o objeto INTEIRO, com as 4 chaves e nenhuma a mais.
@@ -348,7 +349,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     expect(svc.deviceTypes).toEqual([]); // device de OUTRO serviço não vaza
     expect(svc.providers[0].workerName).toBeNull();
     expect(svc.providers[0]).not.toHaveProperty('weeklyHours');
-    expect(svc.legacyAuthorizedHours).toBeNull();
+    expect(svc).not.toHaveProperty('legacyAuthorizedHours');
     expect(svc.authorization).toBeNull();
     // Lote sem buraco: o serviço sem vínculo aparece como NO_CONTRACT (nunca ausente).
     expect(svc).toMatchObject({ payer: { state: 'NO_CONTRACT' }, payerHistory: [], price: { state: 'NO_CONTRACT' }, tax: { state: 'NO_CONTRACT' }, coverageMatch: { state: 'NO_PAYER' } });
