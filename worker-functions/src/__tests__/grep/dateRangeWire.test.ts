@@ -16,8 +16,7 @@ const DONO = path.join('modules', 'case', 'domain', 'dateRangeWire.ts');
  * `daterange`/`upper(valid)` por conta própria. Migrar esses 5 arquivos para `dateRangeWire.ts` muda o código da 056 e fica para a Parte B;
  * a lista é FECHADA (arquivo novo fora dela reprova) e o teste abaixo falha se um item sair de lá sem necessidade (lista velha = achado).
  */
-const INTERINIDADE_056 = [
-  'shared/openapi/registrations/adminPatients.ts',
+const INTERINIDADE_056: string[] = [
 ];
 
 function fontes(dir: string, out: string[] = []): string[] {
