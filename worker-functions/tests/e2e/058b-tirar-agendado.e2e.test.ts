@@ -87,4 +87,46 @@ describe('POST …/allocations/:id/end com agendamento — API real (058 P5c) @i
     expect(res.data.details.futureEntryFrom).toBeNull();
     expect(await snapshot(s)).toEqual(before);
   });
+
+  it('com cancelScheduled: as 2 ausências seguem abertas com substituto NULL; 2 SUBSTITUTE_CANCELLED + 1 REMOVE; C encerrado; marca de rejeição; A continua titular', async () => {
+    const { s } = await cenarioSubstituto(nextTag());
+    const res = await api.post(
+      endUrl(s, s.segAllocations[0]),
+      { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE', cancelScheduled: true },
+      { headers: asAdmin.headers },
+    );
+    expect(res.status).toBe(200);
+
+    const abs = await pool.query(
+      `SELECT id, substitute_worker_id, cancelled_at FROM patient_itinerary_absence WHERE assignment_id = $1 ORDER BY on_date`,
+      [s.quaAllocations[0]],
+    );
+    expect(abs.rows).toHaveLength(2);
+    for (const a of abs.rows) {
+      expect(a.substitute_worker_id).toBeNull();
+      expect(a.cancelled_at).toBeNull();
+    }
+    const kinds = await pool.query(
+      `SELECT kind, count(*)::int AS n FROM patient_itinerary_change_log WHERE contracted_service_id = $1 GROUP BY kind ORDER BY kind`,
+      [s.serviceId],
+    );
+    expect(kinds.rows).toEqual([{ kind: 'REMOVE', n: 1 }, { kind: 'SUBSTITUTE_CANCELLED', n: 2 }]);
+    const canc = await pool.query(
+      `SELECT absence_id, destination, reason_code FROM patient_itinerary_change_log
+        WHERE contracted_service_id = $1 AND kind = 'SUBSTITUTE_CANCELLED' ORDER BY absence_id`,
+      [s.serviceId],
+    );
+    expect(canc.rows).toEqual(
+      abs.rows.map((a) => ({ absence_id: a.id, destination: null, reason_code: 'OTHER' })).sort((x, y) => (x.absence_id < y.absence_id ? -1 : 1)),
+    );
+    const c = await pool.query(`SELECT status FROM patient_itinerary_assignment WHERE id = $1`, [s.segAllocations[0]]);
+    expect(c.rows[0].status).toBe('ENDED');
+    const marks = await pool.query(
+      `SELECT worker_id, reject_reason_category FROM contracted_service_rejections WHERE service_id = $1 AND reverted_at IS NULL`,
+      [s.serviceId],
+    );
+    expect(marks.rows).toEqual([{ worker_id: s.segWorkers[0], reject_reason_category: 'OTHER' }]);
+    const a = await pool.query(`SELECT status FROM patient_itinerary_assignment WHERE id = $1`, [s.quaAllocations[0]]);
+    expect(a.rows[0].status).toBe('ACTIVE');
+  });
 });
