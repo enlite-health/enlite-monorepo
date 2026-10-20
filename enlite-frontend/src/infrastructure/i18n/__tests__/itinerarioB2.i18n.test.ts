@@ -55,4 +55,14 @@ describe('itinerário B2 — i18n', () => {
     expect(get(esJson, `${SW}.entry`)).toContain('{{date}}');
     expect(get(esJson, `${SW}.confirm`)).toBe('Confirmar y cancelar agendamientos');
   });
+
+  it('REGRA-05: addressLockedLiveVacancy e addressLockedAllocation existem em es e pt-BR (texto literal em es)', () => {
+    const ED = 'admin.patients.editDrawer';
+    for (const k of ['addressLockedLiveVacancy', 'addressLockedAllocation']) {
+      expect(typeof get(esJson, `${ED}.${k}`) === 'string' && (get(esJson, `${ED}.${k}`) as string).length > 0, `es ${k}`).toBe(true);
+      expect(typeof get(ptBRJson, `${ED}.${k}`) === 'string' && (get(ptBRJson, `${ED}.${k}`) as string).length > 0, `pt-BR ${k}`).toBe(true);
+    }
+    expect(get(esJson, `${ED}.addressLockedLiveVacancy`)).toBe('No se puede cambiar el domicilio: el servicio tiene una vacante activa. Si el lugar cambió, creá un servicio nuevo.');
+    expect(get(esJson, `${ED}.addressLockedAllocation`)).toBe('No se puede cambiar el domicilio: el servicio ya tiene prestadores asignados en el itinerario. Si el lugar cambió, creá un servicio nuevo.');
+  });
 });

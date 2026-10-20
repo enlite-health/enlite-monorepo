@@ -3312,6 +3312,8 @@
         "requiredField": "Este campo é obrigatório",
         "serviceAddress": "Endereço",
         "serviceAddressHint": "Onde ESTE serviço é prestado. Cada serviço se vincula a um endereço do paciente; a vaga nasce ali.",
+        "addressLockedLiveVacancy": "Não é possível alterar o endereço: o serviço tem uma vaga ativa. Se o local mudou, crie um serviço novo.",
+        "addressLockedAllocation": "Não é possível alterar o endereço: o serviço já tem prestadores alocados no itinerário. Se o local mudou, crie um serviço novo.",
         "serviceSchedule": "Horários",
         "serviceScheduleHint": "Opcional para salvar. Mas sem horário o paciente não pode passar a ativo, busca nem substituição.",
         "serviceScheduleNone": "Este serviço ainda não tem horário. Você pode salvar assim, mas o paciente não vai poder passar a ativo, busca nem substituição até você preenchê-lo.",

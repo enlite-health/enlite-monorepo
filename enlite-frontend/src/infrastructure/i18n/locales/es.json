@@ -3391,6 +3391,8 @@
         "requiredField": "Este campo es obligatorio",
         "serviceAddress": "Domicilio",
         "serviceAddressHint": "Dónde se presta ESTE servicio. Cada servicio se vincula a un domicilio del paciente; la vacante nace ahí.",
+        "addressLockedLiveVacancy": "No se puede cambiar el domicilio: el servicio tiene una vacante activa. Si el lugar cambió, creá un servicio nuevo.",
+        "addressLockedAllocation": "No se puede cambiar el domicilio: el servicio ya tiene prestadores asignados en el itinerario. Si el lugar cambió, creá un servicio nuevo.",
         "serviceSchedule": "Horarios",
         "serviceScheduleHint": "Opcional para guardar. Pero sin horario el paciente no puede pasar a activo, búsqueda ni reemplazo.",
         "serviceScheduleNone": "Este servicio todavía no tiene horario. Podés guardarlo así, pero el paciente no va a poder pasar a activo, búsqueda ni reemplazo hasta que lo cargues.",
