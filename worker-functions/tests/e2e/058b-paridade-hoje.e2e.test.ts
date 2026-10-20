@@ -1,8 +1,10 @@
 /**
  * 058b-paridade-hoje.e2e.test.ts @integration — spec 058 T212: o "hoje" do SQL (`fn_operation_date`) e o do TS (`operationDateOf`)
  * dão o mesmo dia, com o processo e a sessão em fuso EXTERNO (Asia/Tokyo; AR e BR são ambos −03, passariam por coincidência).
- * Rodar sempre com `TZ=Asia/Tokyo`.
+ * O fuso é fixado AQUI (1ª linha executável): `npm run test:e2e` não define TZ, então o arquivo não depende do ambiente.
  */
+process.env.TZ = 'Asia/Tokyo'; // antes de qualquer `Date` (o V8 relê TZ ao ser alterada em runtime)
+
 import { Pool } from 'pg';
 import { COUNTRY_TIMEZONE_MAP } from '@shared/locale/CountryTimezone';
 import { operationDateOf, UnknownCountryError } from '@shared/locale/operationDate';
@@ -21,6 +23,7 @@ describe('058b paridade "hoje": fn_operation_date (SQL) × operationDateOf (TS) 
 
   it('controle do fuso externo: TZ=Asia/Tokyo', () => {
     expect(process.env.TZ).toBe('Asia/Tokyo');
+    expect(new Date(0).getTimezoneOffset()).toBe(-540); // prova o EFEITO: o processo realmente está em UTC+9
   });
 
   it.each([
