@@ -2,7 +2,7 @@
  * 058a-rastro-e-redacao.e2e.test.ts @integration — spec 058 Parte A (T093): rastro de autoria, redação por célula (§0, os 4 decisores), recusa de
  * chave legada ANTES do ABAC, log sem PII, portão 403 do §L ponta a ponta e a cascata `for-service` (R7).
  * App REAL com o engine de permissão LIGADO (ver `helpers/contrato058aApp.ts`), banco real, atores em grupos com EXATAMENTE as células de cada cenário.
- * Sem `jest.mock`. Cada recusa tem o controle positivo do MESMO ator/rota (a recusa mede a célula, não um corpo ruim).
+ * Sem mock de módulo do Jest. Cada recusa tem o controle positivo do MESMO ator/rota (a recusa mede a célula, não um corpo ruim).
  */
 import { Pool } from 'pg';
 import type { AppDeFamilia } from './helpers/permissionFamilyHarness';

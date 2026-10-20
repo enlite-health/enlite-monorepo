@@ -2,7 +2,7 @@
  * 058a-ficha-vs-rota.e2e.test.ts @integration — spec 058 Parte A (T094, SC-001, D-44): o MESMO serviço, no MESMO instante, lido pela FICHA do
  * paciente (`GET /patients/:id`) e pela ROTA do serviço (`GET /patients/:id/contracted-services`) devolve `asOf`, `payer`, `payerHistory`, `price`,
  * `tax` e `coverageMatch` idênticos — porque as duas chamam as mesmas funções em lote. E a ficha de um serviço SEM vínculo diz `NO_CONTRACT`
- * (nunca "sem preço" calado). Postgres real, app real com o engine ligado, sem `jest.mock`.
+ * (nunca "sem preço" calado). Postgres real, app real com o engine ligado, sem mock de módulo do Jest.
  * Com `requestNow` FIXO (chamada direta dos repositórios) prova também o `asOf` = dia de operação de Buenos Aires, não o do servidor (UTC).
  */
 import { Pool } from 'pg';
