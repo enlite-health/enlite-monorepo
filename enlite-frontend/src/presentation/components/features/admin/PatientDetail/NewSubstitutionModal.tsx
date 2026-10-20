@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Select } from '@presentation/components/atoms/Select';
-import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import type { ExitDestination, ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import type { AllocationOptionsLoad } from '@hooks/admin/usePatientItinerary';
 import { SubstitutionDayModal } from './SubstitutionDayModal';
 import { SidePanelShell } from './SidePanelShell';
@@ -19,7 +19,7 @@ interface NewSubstitutionModalProps {
   asOf: string;
   loadOptions: (serviceId: string) => Promise<AllocationOptionsLoad>;
   onSubmitComplementary: (serviceId: string, allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string) => void;
-  onSubmitPermanent: (serviceId: string, allocationId: string, newWorkerId: string, fromDate: string) => void;
+  onSubmitPermanent: (serviceId: string, allocationId: string, newWorkerId: string, fromDate: string, reasonCategory: string, destination: ExitDestination) => void;
   onCancel: () => void;
 }
 
@@ -100,7 +100,9 @@ export function NewSubstitutionModal({
       onSubmit={(allocationId, date, substituteWorkerId, reasonCategory) =>
         onSubmitComplementary(service.serviceId, allocationId, date, substituteWorkerId, reasonCategory)
       }
-      onSubmitPermanent={(allocationId, newWorkerId, fromDate) => onSubmitPermanent(service.serviceId, allocationId, newWorkerId, fromDate)}
+      onSubmitPermanent={(allocationId, newWorkerId, fromDate, reasonCategory, destination) =>
+        onSubmitPermanent(service.serviceId, allocationId, newWorkerId, fromDate, reasonCategory, destination)
+      }
       onCancel={onCancel}
       panel
     />
