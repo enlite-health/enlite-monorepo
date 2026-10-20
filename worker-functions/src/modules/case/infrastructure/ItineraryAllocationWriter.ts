@@ -138,4 +138,19 @@ export class ItineraryAllocationWriter {
     );
     return res.rowCount ?? 0;
   }
+
+  /**
+   * Cancela uma alocação `ACTIVE` que ainda não começou a atender (`valid_from >= minValidFrom`): `status = 'CANCELLED'`,
+   * `valid_to` intocado. `minValidFrom` = 1º dia em que o cancelamento vale (entrada futura: amanhã; titular que começa
+   * no dia do reemplazo: o próprio dia). `0` = já não era ACTIVE ou já começou antes.
+   */
+  async cancelAllocation(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<number> {
+    const res = await client.query(
+      `UPDATE patient_itinerary_assignment
+          SET status = 'CANCELLED', updated_by = $3, updated_at = now()
+        WHERE id = $1 AND status = 'ACTIVE' AND valid_from >= $2::date`,
+      [id, minValidFrom, actorUid],
+    );
+    return res.rowCount ?? 0;
+  }
 }
