@@ -6,9 +6,10 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Select, type SelectOption } from '@presentation/components/atoms/Select';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { nextDatesOfWeekday, formatDDMM, weekdayName } from './substitutionDates';
-import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import type { ExitDestination, ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { workerLabel } from './workerLabel';
 import { ExitReasonSelect } from './ExitReasonSelect';
+import { ExitDestinationField } from './ExitDestinationField';
 import { AllocationOptionStatus } from './AllocationOptionStatus';
 import { SidePanelShell } from './SidePanelShell';
 import { DdMmDateInput } from './DdMmDateInput';
@@ -24,7 +25,7 @@ interface SubstitutionDayModalProps {
    * este prop (molde `ServiceTeamBoard`, comportamento intocado), o toggle nem aparece: o modal
    * continua sendo só "Sustituir un día" (complementar), zero mudança visual ali.
    */
-  onSubmitPermanent?: (allocationId: string, newWorkerId: string, fromDate: string) => void;
+  onSubmitPermanent?: (allocationId: string, newWorkerId: string, fromDate: string, reasonCategory: string, destination: ExitDestination) => void;
   /**
    * Renderiza como PAINEL LATERAL (`SidePanelShell`: título + "Confirmar" na mesma linha, sem
    * botão Cancelar — fecha por overlay/Esc). É o "Nuevo +" da aba Itinerario; o `ServiceTeamBoard`
@@ -68,6 +69,7 @@ export function SubstitutionDayModal({
   const [mode, setMode] = useState<SubstitutionMode>('COMPLEMENTARY');
   const [reasonCategory, setReasonCategory] = useState('');
   const [startMode, setStartMode] = useState<'NOW' | 'SCHEDULED'>('NOW');
+  const [destination, setDestination] = useState<ExitDestination | ''>('');
   const [scheduledDate, setScheduledDate] = useState('');
 
   const allocation = allocations.find((a) => a.allocationId === allocationId) ?? null;
@@ -105,11 +107,17 @@ export function SubstitutionDayModal({
   const fromDate = startMode === 'NOW' ? asOf : scheduledDate;
   const scheduledValid = startMode === 'NOW' || scheduledDate > asOf;
 
+  // "Programada": o titular segue até D-1, então só pode ficar como reserva — limpa `LEAVE_SERVICE` já escolhido.
+  function handleStartScheduled(): void {
+    setStartMode('SCHEDULED');
+    if (destination === 'LEAVE_SERVICE') setDestination('');
+  }
+
   function handleConfirm(): void {
     if (!allocationId) return;
     if (isPermanent) {
-      if (!substituteWorkerId || !scheduledValid) return;
-      onSubmitPermanent?.(allocationId, substituteWorkerId, fromDate);
+      if (!substituteWorkerId || !scheduledValid || !reasonCategory || !destination) return;
+      onSubmitPermanent?.(allocationId, substituteWorkerId, fromDate, reasonCategory, destination);
       return;
     }
     if (!date) return;
@@ -117,8 +125,7 @@ export function SubstitutionDayModal({
     onSubmit(allocationId, date, substituteWorkerId === NO_SUBSTITUTE_VALUE ? null : substituteWorkerId, reasonCategory);
   }
 
-  // O motivo é obrigatório só no modo de um dia; o modo "Entero" ganha o campo na Fase 6 (precisa de destino).
-  const canConfirm = Boolean(allocationId && (isPermanent ? substituteWorkerId && scheduledValid : date && reasonCategory));
+  const canConfirm = Boolean(allocationId && (isPermanent ? substituteWorkerId && scheduledValid && reasonCategory && destination : date && reasonCategory));
 
   const title = t('admin.patients.detail.serviceTeam.substitution.title');
   const confirmLabel = t('admin.patients.detail.serviceTeam.substitution.confirm');
@@ -179,7 +186,7 @@ export function SubstitutionDayModal({
         <>
           <div role="radiogroup" aria-label={t('admin.patients.detail.serviceTeam.substitution.startLabel')} className="flex gap-4" data-testid="substitution-start">
             <label className="flex items-center gap-2"><input type="radio" name="substitution-start" checked={startMode === 'NOW'} onChange={() => setStartMode('NOW')} data-testid="substitution-start-now" /><Text as="span" size="sm">{t('admin.patients.detail.serviceTeam.substitution.startNow')}</Text></label>
-            <label className="flex items-center gap-2"><input type="radio" name="substitution-start" checked={startMode === 'SCHEDULED'} onChange={() => setStartMode('SCHEDULED')} data-testid="substitution-start-scheduled" /><Text as="span" size="sm">{t('admin.patients.detail.serviceTeam.substitution.startScheduled')}</Text></label>
+            <label className="flex items-center gap-2"><input type="radio" name="substitution-start" checked={startMode === 'SCHEDULED'} onChange={() => handleStartScheduled()} data-testid="substitution-start-scheduled" /><Text as="span" size="sm">{t('admin.patients.detail.serviceTeam.substitution.startScheduled')}</Text></label>
           </div>
           {startMode === 'SCHEDULED' && (
             <DdMmDateInput value={scheduledDate} onChange={setScheduledDate} ariaLabel={t('admin.patients.detail.serviceTeam.substitution.scheduledDate')} data-testid="substitution-start-date" />
@@ -196,7 +203,18 @@ export function SubstitutionDayModal({
         label={t('admin.patients.detail.serviceTeam.substitution.worker')}
       />
 
-      {!isPermanent && <ExitReasonSelect value={reasonCategory} onChange={setReasonCategory} data-testid="substitution-reason" />}
+      <ExitReasonSelect value={reasonCategory} onChange={setReasonCategory} data-testid="substitution-reason" />
+
+      {isPermanent && (
+        <>
+          <ExitDestinationField value={destination} onChange={setDestination} disabledOptions={startMode === 'SCHEDULED' ? ['LEAVE_SERVICE'] : []} data-testid="substitution-destination" />
+          {startMode === 'SCHEDULED' && (
+            <Text as="p" size="xs" color="secondary" data-testid="substitution-reserve-only">
+              {t('admin.patients.detail.serviceTeam.substitution.scheduledReserveOnly', { date: formatDDMM(scheduledDate || asOf) })}
+            </Text>
+          )}
+        </>
+      )}
 
       <Text as="p" size="xs" color="secondary" data-testid="substitution-anacare-notice">
         {t('admin.patients.detail.serviceTeam.substitution.anaCareNotice')}
