@@ -116,6 +116,14 @@ test.describe('058a-dados-gerais — cadastro da obra social e cartão Dados gen
     await expect(page.getByTestId('provider-general-error')).toHaveText('Ya existe una obra social con ese nombre.');
     expect(scalar(`SELECT name FROM insurance_providers WHERE code = '${esta.code}'`)).toBe(esta.name);
 
+    // (a2) CRIAR com o nome de outra (caixa/espaços diferentes) = mensagem de NOME e NENHUM campo de código.
+    await page.goto('/admin/obras-sociales');
+    await page.getByTestId('providers-new').click();
+    await digitar(page, 'provider-create-name', `  ${outra.name.toUpperCase()} `);
+    await page.getByTestId('provider-create-submit').click();
+    await expect(page.getByTestId('provider-create-error')).toHaveText('Ya existe una obra social con ese nombre.');
+    await expect(page.getByTestId('provider-create-code')).toHaveCount(0);
+
     // (b) nome só de símbolos: o código não sai dele -> a tela pede o código; informado, a obra social é criada.
     await page.goto('/admin/obras-sociales');
     await page.getByTestId('providers-new').click();

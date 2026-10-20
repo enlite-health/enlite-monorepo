@@ -120,6 +120,7 @@ describe('InsuranceProvidersPage', () => {
     change('provider-create-name', 'OSDE');
     fireEvent.click(screen.getByTestId('provider-create-submit'));
     expect(await screen.findByTestId('provider-create-error')).toHaveTextContent('Já existe uma obra social com esse nome.');
+    expect(screen.queryByTestId('provider-create-code')).not.toBeInTheDocument();
   });
 
   it('sem catalog_insurance_providers:create o botão Nova some', async () => {
