@@ -91,6 +91,7 @@ export interface ItineraryAllocationWriterPort {
   endAllocation(client: PoolClient, id: string, today: string, actorUid: string): Promise<number>;
   /** D445.5: agenda o FIM (`valid_to`) sem mudar o `status` — a alocação segue `ACTIVE`, vigente até o último dia. */
   scheduleAllocationEnd(client: PoolClient, id: string, lastDay: string, actorUid: string): Promise<number>;
+  cancelAllocation(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<number>;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -301,7 +302,13 @@ export class ItineraryAllocationUseCase {
     // `ACTIVE` — com `ENDED` + `valid_to` FUTURO o titular sairia HOJE. O titular fica `ACTIVE`
     // com `valid_to = D-1`: trabalha até D-1, e o novo entra em D.
     const dMinus1 = addDaysToDateString(fromDate, -1);
-    const endRowCount = await this.writer.scheduleAllocationEnd(client, allocation.id, dMinus1, actorUid);
+    // Titular que começa em D ou depois (Caso A com `valid_from = hoje`): nunca atendeu. `valid_to = D-1` ficaria antes do início
+    // (o `GREATEST` do writer o traz de volta a `valid_from`) e dois vigentes no mesmo dia — a Trava A (limite 1) recusaria.
+    // Cancela em vez de agendar o fim (⚑ padrão: plan §1 P5b, resultado esperado do T240(b)).
+    const endRowCount =
+      allocation.validFrom >= fromDate
+        ? await this.writer.cancelAllocation(client, allocation.id, fromDate, actorUid)
+        : await this.writer.scheduleAllocationEnd(client, allocation.id, dMinus1, actorUid);
     if (endRowCount === 0) throw new AllocationNotActiveError(allocationId);
 
     // (ii) cria a nova a partir de D, no MESMO slot — a 482/484 já libera porque o titular
