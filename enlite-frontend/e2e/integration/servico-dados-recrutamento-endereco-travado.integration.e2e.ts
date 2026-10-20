@@ -15,6 +15,7 @@ import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertSecondAddress } from '../helpers/itinerario-escrita-e2e-helper';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
@@ -74,5 +75,30 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
     expect(patch.status()).toBe(200);
     expect(enderecoDoServico(serviceId)).toBe(segundo);
     await expect(page.getByTestId('svc-address-locked-1')).toHaveCount(0);
+  });
+
+  test('ALTERNATIVO 1 (servidor recusa): vaga viva → 422 SERVICE_ADDRESS_LOCKED (LIVE_VACANCY) com mensagem sob o endereço; address_id inalterado', async ({ page, request }) => {
+    const { patientId, addressId, serviceId } = await semear(request, { ...RECRUITMENT_FIELDS_E2E });
+    // A vaga viva nasce por API (o outbound da ativação está mapeado no cabeçalho): a tela só tenta trocar o endereço.
+    const ativou = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`, { headers: AUTH_HEADERS });
+    expect(ativou.status(), `activate-recruitment ${ativou.status()} ${await ativou.text()}`).toBe(201);
+    const segundo = insertSecondAddress(patientId);
+    await loginComoStaffMock(page, STAFF, 'E2E Endereco Travado');
+    await abrirCardDoServico(page, patientId, serviceId);
+    await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
+    await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
+
+    await page.getByTestId('svc-addressId-1').selectOption(segundo);
+    const [patch] = await Promise.all([
+      page.waitForResponse((r) => ehPatchDoServico(serviceId)(r.request())),
+      page.getByTestId(`contracted-service-save-${serviceId}`).click(),
+    ]);
+    expect(patch.status()).toBe(422);
+    const corpo = (await patch.json()) as { code?: string; details?: { reason?: string } };
+    expect(corpo.code).toBe('SERVICE_ADDRESS_LOCKED');
+    expect(corpo.details?.reason).toBe('LIVE_VACANCY');
+    await expect(page.getByTestId('svc-address-locked-1')).toContainText('el servicio tiene una vacante activa');
+    await expect(page.getByTestId(`contracted-service-error-${serviceId}`)).toHaveCount(0); // não cai no erro genérico
+    expect(enderecoDoServico(serviceId)).toBe(addressId);
   });
 });
