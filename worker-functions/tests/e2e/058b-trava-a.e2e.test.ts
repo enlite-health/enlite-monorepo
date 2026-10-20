@@ -2,6 +2,8 @@
  * 058b-trava-a.e2e.test.ts @integration — spec 058 T215: a Trava A (`trg_058_b_assignment_capacity`) recusa alocação ACTIVE que passa de
  * `providers_needed` da faixa, de hoje (do país) em diante, e aceita o que não deve recusar. Banco real; fixtures sintéticas.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { Pool, PoolClient } from 'pg';
 import { alocar, criarCandidato, criarCenario, erroDe, hojeOp, limparB, mais, novoPool, travaA } from './helpers/itinerario058bDb';
 import type { PgErr } from './helpers/itinerario058bDb';
@@ -153,5 +155,76 @@ describe('058b Trava A: capacidade da faixa @integration', () => {
       const r = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_itinerary_assignment WHERE slot_id = $1 AND status = 'ACTIVE' AND valid_to IS NULL`, [f]);
       expect(r.rows[0].n).toBe(1);
     }
+  });
+
+  it('corrida: 2 transações reais na última vaga da faixa — a 1ª fica aberta sem COMMIT, a 2ª espera o lock do serviço, exatamente 1 passa', async () => {
+    const cen = await criarCenario(pool, { providersNeeded: 2, faixas: 2 });
+    const D = await hojeOp(pool);
+    const [w1, w2, w3] = [await criarCandidato(pool, cen), await criarCandidato(pool, cen), await criarCandidato(pool, cen)];
+    await alocar(pool, cen.faixas[0], w1, D, null);
+    const a = await pool.connect();
+    const b = await pool.connect();
+    try {
+      await a.query('BEGIN');
+      await alocar(a, cen.faixas[0], w2, D, null); // segura o lock do serviço até o COMMIT
+      await b.query('BEGIN');
+      let terminou = false;
+      const pb = erroDe(() => alocar(b, cen.faixas[0], w3, D, null)).then((e) => { terminou = true; return e; });
+      await new Promise((r) => setTimeout(r, 400));
+      expect(terminou).toBe(false); // prova de que a 2ª estava de fato bloqueada no lock, não só atrasada
+      await a.query('COMMIT');
+      esperaExcedeu(await pb);
+      await b.query('ROLLBACK');
+      const r = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_itinerary_assignment WHERE slot_id = $1 AND status = 'ACTIVE'`, [cen.faixas[0]]);
+      expect(r.rows[0].n).toBe(2);
+    } finally {
+      await a.query('ROLLBACK').catch(() => undefined);
+      await b.query('ROLLBACK').catch(() => undefined);
+      a.release();
+      b.release();
+    }
+  });
+
+  const sql543 = (): string => fs.readFileSync(path.join(__dirname, '../../migrations/543_058b_trava_a_capacidade_da_faixa.sql'), 'utf8');
+
+  it('assert 12a levanta: faixa acima do limite faz a migration 543 falhar', async () => {
+    const cen = await criarCenario(pool, { providersNeeded: 2, faixas: 2 });
+    const D = await hojeOp(pool);
+    const ws = [await criarCandidato(pool, cen), await criarCandidato(pool, cen), await criarCandidato(pool, cen)];
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await travaA(c, false);
+      for (const w of ws) await alocar(c, cen.faixas[0], w, D, null);
+      await travaA(c, true);
+      const sql = sql543();
+      const e = await erroDe(() => c.query(sql));
+      expect(e?.code).toBe('P0001');
+      expect(e?.message).toContain('TRAVA_A_ATIVACAO_RECUSADA');
+      expect(e?.message).toContain('1 faixa(s)');
+    } finally {
+      await c.query('ROLLBACK').catch(() => undefined);
+      c.release();
+    }
+  });
+
+  it('assert 12a avisa: banco sem faixa acima passa e o NOTICE diz quantas faixas foram avaliadas', async () => {
+    const cen = await criarCenario(pool, { providersNeeded: 2, faixas: 2 });
+    const D = await hojeOp(pool);
+    await alocar(pool, cen.faixas[0], await criarCandidato(pool, cen), D, null);
+    const avisos: string[] = [];
+    const c = await pool.connect();
+    c.on('notice', (m) => { avisos.push(m.message ?? ''); });
+    try {
+      await c.query('BEGIN');
+      await c.query(sql543());
+      await c.query('ROLLBACK');
+    } finally {
+      await c.query('ROLLBACK').catch(() => undefined);
+      c.release();
+    }
+    const m = avisos.map((x) => /^faixas_avaliadas=(\d+), faixas_acima=0$/.exec(x)).find((x) => x);
+    expect(m).toBeTruthy();
+    expect(Number(m?.[1])).toBeGreaterThanOrEqual(1); // zero avaliada seria "não medi"
   });
 });
