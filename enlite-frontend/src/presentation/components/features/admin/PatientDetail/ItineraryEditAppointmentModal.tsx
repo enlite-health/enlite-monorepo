@@ -13,6 +13,7 @@ import { Select } from '@presentation/components/atoms/Select';
 import { SidePanelShell } from './SidePanelShell';
 import { RemoveFromItineraryPanel } from './RemoveFromItineraryPanel';
 import type { ExitDestination } from '@domain/entities/ServiceTeam';
+import { slotCapacityState } from '@domain/entities/PatientItinerary';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { weekdayName } from './substitutionDates';
 import { workerLabel } from './workerLabel';
@@ -28,6 +29,8 @@ interface ItineraryEditAppointmentModalProps {
   vacancyId: string | null;
   /** Todos os prestadores vigentes da faixa (N >= 0); cada um tem o seu "Quitar". */
   vigentes: ReadonlyArray<{ workerId: string; allocationId: string }>;
+  /** Quantidade de prestadores por faixa do serviço; `null` = não informada (sem limite, com nota). */
+  providersNeeded: number | null;
   onSubmit: (workerId: string) => void;
   onCancel: () => void;
   /**
@@ -57,6 +60,7 @@ export function ItineraryEditAppointmentModal({
   options,
   vacancyId,
   vigentes,
+  providersNeeded,
   onSubmit,
   onCancel,
   onRemove,
@@ -66,6 +70,7 @@ export function ItineraryEditAppointmentModal({
   const { t, i18n } = useTranslation();
   const tm = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.editModal.${key}`, opts);
   const [workerId, setWorkerId] = useState('');
+  const capacity = slotCapacityState(providersNeeded, vigentes.length);
   const [removeTarget, setRemoveTarget] = useState<{ workerId: string; allocationId: string } | null>(null);
 
   const workerOptions = (options ?? []).map((member) => ({
@@ -96,7 +101,7 @@ export function ItineraryEditAppointmentModal({
           size="md"
           className="w-[160px]"
           onClick={() => onSubmit(workerId)}
-          disabled={!workerId}
+          disabled={!workerId || capacity === 'FULL'}
           data-testid="itinerario-editar-guardar"
         >
           {tm('save')}
@@ -138,8 +143,19 @@ export function ItineraryEditAppointmentModal({
         />
       </div>
 
+      {capacity === 'FULL' ? (
+        <Text size="sm" role="status" color="secondary" data-testid="itinerario-faixa-cheia">
+          {tm('capacityFull', { count: vigentes.length })}
+        </Text>
+      ) : (
+        <>
       <div className="flex flex-col gap-1">
-        <Label className={fieldLabel}>{tm('assignWorker')}</Label>
+        <Label className={fieldLabel}>{vigentes.length > 0 ? tm('addWorker') : tm('assignWorker')}</Label>
+        {capacity === 'NOT_INFORMED' && (
+          <Text size="xs" color="secondary" data-testid="itinerario-capacidad-no-informada">
+            {tm('capacityNotInformed')}
+          </Text>
+        )}
         {/* SearchableSelect compact é h-10; o desenho pede o campo de 48px (h-12) com texto #737373 de 14px. */}
         <div className="[&_button]:!h-12 [&_button]:!text-[#737373] [&_button]:!py-0">
           <SearchableSelect
@@ -209,6 +225,8 @@ export function ItineraryEditAppointmentModal({
             ))}
           </div>
         </div>
+      )}
+        </>
       )}
 
       <div className="flex flex-col gap-4">

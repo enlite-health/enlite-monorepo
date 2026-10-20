@@ -43,6 +43,7 @@ function renderModal(props: Partial<Parameters<typeof ItineraryEditAppointmentMo
         options={OPTIONS}
         vacancyId="vac-1"
         vigentes={[]}
+        providersNeeded={3}
         onSubmit={onSubmit}
         onCancel={onCancel}
         {...props}
@@ -168,6 +169,38 @@ describe('ItineraryEditAppointmentModal', () => {
     const { onCancel } = renderModal();
     fireEvent.click(screen.getByTestId('itinerario-editar-modal-backdrop'));
     await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
+  });
+
+  describe('058 — capacidade da faixa (Agregar profesional)', () => {
+    const DOIS = [{ workerId: 'w-1', allocationId: 'alloc-1' }, { workerId: 'w-2', allocationId: 'alloc-2' }];
+
+    it('faixa cheia (vigentes = providersNeeded): sem select nem Preseleccionados, Guardar desabilitado e orientação itinerario-faixa-cheia', () => {
+      renderModal({ vigentes: DOIS, providersNeeded: 2 });
+      expect(screen.queryByTestId('itinerario-editar-prestador')).toBeNull();
+      expect(screen.queryByTestId('itinerario-editar-preselecionados')).toBeNull();
+      expect(screen.getByTestId('itinerario-editar-guardar')).toBeDisabled();
+      expect(screen.getByTestId('itinerario-faixa-cheia')).toHaveTextContent('Franja completa: ya hay 2 asignados');
+    });
+
+    it('com vaga (1 de 2): o campo vira "Agregar profesional" e o select aparece', () => {
+      renderModal({ vigentes: [DOIS[0]], providersNeeded: 2 });
+      expect(screen.getByText('Agregar profesional')).toBeInTheDocument();
+      expect(screen.getByTestId('itinerario-editar-prestador')).toBeInTheDocument();
+      expect(screen.queryByTestId('itinerario-faixa-cheia')).toBeNull();
+    });
+
+    it('capacidade não informada (null): select disponível + nota itinerario-capacidad-no-informada', () => {
+      renderModal({ vigentes: [DOIS[0]], providersNeeded: null });
+      expect(screen.getByTestId('itinerario-editar-prestador')).toBeInTheDocument();
+      expect(screen.getByTestId('itinerario-capacidad-no-informada')).toHaveTextContent('la franja no tiene límite');
+      expect(screen.queryByTestId('itinerario-faixa-cheia')).toBeNull();
+    });
+
+    it('N=0 vigentes: rótulo "Asignar prestador" (não "Agregar")', () => {
+      renderModal({ vigentes: [], providersNeeded: 3 });
+      expect(screen.getByText('Asignar prestador')).toBeInTheDocument();
+      expect(screen.queryByText('Agregar profesional')).toBeNull();
+    });
   });
 
   describe('Fase 4 — "Quitar del itinerario"', () => {
