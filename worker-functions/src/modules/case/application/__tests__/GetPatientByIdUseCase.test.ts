@@ -53,7 +53,6 @@ const mockPatient: PatientDetailRow = {
   hasCud: true,
   hasConsent: true,
   insuranceInformed: 'OSDE',
-  insuranceVerified: 'OSDE',
   cityLocality: 'CABA',
   province: 'Buenos Aires',
   zoneNeighborhood: 'Palermo',
@@ -67,7 +66,7 @@ const mockPatient: PatientDetailRow = {
   onHoldNote: null,
   serviceStartDate: null,
   insuranceVerifiedCodes: [],
-  insuranceVerifiedEntries: [],
+  coverage: { display: 'OSDE', displaySource: 'INFORMED', entries: [] },
   hasVerifiedActiveCoverage: false,
   deviceTypes: [],
   needsAttention: false,
@@ -214,7 +213,18 @@ describe('GetPatientByIdUseCase', () => {
 
       expect(findDetailById).toHaveBeenCalledTimes(1);
       // D286: o 2º argumento é o mapa de containers legíveis (sem células → todos).
-      expect(findDetailById).toHaveBeenCalledWith(PATIENT_ID, expect.objectContaining({ family: true, clinical: true }));
+      // Spec 058 §H: o 3º é o `requestNow` capturado UMA vez na abertura da ficha (dele sai o asOf).
+      expect(findDetailById).toHaveBeenCalledWith(PATIENT_ID, expect.objectContaining({ family: true, clinical: true }), expect.any(Date));
+    });
+
+    it('requestNow explícito é repassado como veio (o relógio da requisição é um só)', async () => {
+      const findDetailById = jest.fn().mockResolvedValue(mockPatient);
+      const useCase = new GetPatientByIdUseCase(makeRepo({ findDetailById }) as any);
+      const now = new Date('2026-10-19T01:30:00Z');
+
+      await useCase.execute(PATIENT_ID, undefined, now);
+
+      expect(findDetailById.mock.calls[0][2]).toBe(now);
     });
   });
 });

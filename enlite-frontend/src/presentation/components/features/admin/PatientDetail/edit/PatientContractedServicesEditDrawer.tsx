@@ -45,6 +45,8 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
   const [loadError, setLoadError] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [formDirty, setFormDirty] = useState(false);
+  // Spec 058: o serviço novo foi CRIADO, mas o vínculo com o contrato falhou — o painel do serviço (modo edição) mostra o erro.
+  const [linkError, setLinkError] = useState<unknown>(null);
 
   const refetch = async (): Promise<PatientContractedServiceDetail[]> => {
     try {
@@ -86,9 +88,10 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  const handleChildSaved = async (saved?: PatientContractedServiceDetail): Promise<void> => {
+  const handleChildSaved = async (saved?: PatientContractedServiceDetail, opts?: { linkError?: unknown }): Promise<void> => {
     setDirty(true);
     setFormDirty(false);
+    setLinkError(opts?.linkError ?? null);
     if (saved) {
       // O que a API devolveu entra na lista local JÁ — se o `list()` abaixo falhar, o recém-criado
       // continua na tela como alvo de edição (gate 06/09: antes voltava um form vazio e o operador
@@ -103,6 +106,9 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
       setTarget({ kind: 'edit', serviceId: novo.id });
     }
   };
+
+  // `REQUIRES_NEW_SERVICE` ("vir por outro plano é outra admissão"): o painel pede um serviço novo — abre o formulário vazio.
+  const requestNewService = (): void => { setLinkError(null); setFormDirty(false); setTarget({ kind: 'new' }); };
 
   const service = target.kind === 'edit' ? services.find((s) => s.id === target.serviceId) ?? null : null;
   const missing = target.kind === 'edit' && !service;
@@ -152,6 +158,7 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
               addresses={patient.addresses ?? []}
               service={null}
               index={services.length + 1}
+              patientCountry={patient.country}
               onSaved={handleChildSaved}
               onCancelNew={requestClose}
               onDirtyChange={setFormDirty}
@@ -166,6 +173,8 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
               service={service}
               index={Math.max(1, services.findIndex((s) => s.id === service.id) + 1)}
               onSaved={handleChildSaved}
+              initialLinkError={linkError}
+              onRequestNewService={requestNewService}
               onDirtyChange={setFormDirty}
             />
           )}

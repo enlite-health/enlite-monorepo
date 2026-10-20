@@ -72,7 +72,6 @@ interface MockVacancy {
   patient_zone: string;
   patient_city: string;
   patient_neighborhood: string;
-  insurance_verified: boolean;
   required_professions: string[];
   required_sex: string;
   pathology_types: string;
@@ -106,7 +105,6 @@ const baseVacancy: MockVacancy = {
   patient_zone: 'Palermo',
   patient_city: 'CABA',
   patient_neighborhood: 'Palermo',
-  insurance_verified: true,
   required_professions: ['AT'],
   required_sex: 'F',
   pathology_types: 'TEA',

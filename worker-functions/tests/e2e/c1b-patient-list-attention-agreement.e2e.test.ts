@@ -171,7 +171,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     // é isto que impede as duas implementações da regra de divergirem sem ninguém ver.
     const { rows } = await pool.query<Record<string, never>>(`
       SELECT p.id, p.status, p.needs_attention, p.birth_date, p.has_consent,
-             COALESCE(p.insurance_informed, p.health_insurance_name) AS ins,
+             p.insurance_informed AS ins,
              (SELECT COUNT(*)::int FROM patient_addresses pa WHERE pa.patient_id = p.id AND pa.archived_at IS NULL) AS addrs,
              (EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = p.id AND pr.active))::int AS resp,
              (EXISTS (SELECT 1 FROM patient_contracted_services s WHERE s.patient_id = p.id AND s.active))::int AS svc,

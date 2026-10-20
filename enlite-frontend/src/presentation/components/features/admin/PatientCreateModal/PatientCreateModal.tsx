@@ -43,7 +43,6 @@ const createSchema = z.object({
   documentType: z.string(),
   documentNumber: z.string().trim(),
   healthInsuranceName: z.string().trim(),
-  healthInsuranceMemberId: z.string().trim(),
   serviceType: z.array(z.string()),
 });
 
@@ -83,7 +82,6 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
       documentType: '',
       documentNumber: '',
       healthInsuranceName: '',
-      healthInsuranceMemberId: '',
       serviceType: [],
     },
   });
@@ -135,7 +133,6 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
       documentType: clean(values.documentType),
       documentNumber: clean(values.documentNumber),
       healthInsuranceName: clean(values.healthInsuranceName),
-      healthInsuranceMemberId: clean(values.healthInsuranceMemberId),
       serviceType: values.serviceType.length > 0 ? values.serviceType : undefined,
     };
 
@@ -263,11 +260,8 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             <Text size="sm" weight="semibold" color="secondary" className="sm:col-span-2">
               {tc('coverageSection')}
             </Text>
-            <FormField label={tc('healthInsuranceName')} htmlFor="pc-insName" optional>
+            <FormField label={tc('healthInsuranceName')} htmlFor="pc-insName" optional className="sm:col-span-2">
               <InputWithIcon id="pc-insName" inputSize="compact" data-testid="pc-insName" {...register('healthInsuranceName')} />
-            </FormField>
-            <FormField label={tc('healthInsuranceMemberId')} htmlFor="pc-insMember" optional>
-              <InputWithIcon id="pc-insMember" inputSize="compact" data-testid="pc-insMember" {...register('healthInsuranceMemberId')} />
             </FormField>
           </div>
 

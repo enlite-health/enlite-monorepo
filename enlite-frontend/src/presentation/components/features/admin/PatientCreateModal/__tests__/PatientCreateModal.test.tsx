@@ -36,7 +36,7 @@ describe('PatientCreateModal', () => {
     fireEvent.click(screen.getByTestId('pc-save'));
     await waitFor(() => expect(createPatient).toHaveBeenCalledWith({
       firstName: 'Nina', country: 'AR', lastName: undefined, birthDate: '2015-06-20', phoneWhatsapp: '+5491100000031', contactEmail: undefined,
-      documentType: undefined, documentNumber: undefined, healthInsuranceName: undefined, healthInsuranceMemberId: undefined, serviceType: undefined,
+      documentType: undefined, documentNumber: undefined, healthInsuranceName: undefined, serviceType: undefined,
     }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('new-1'));
   });

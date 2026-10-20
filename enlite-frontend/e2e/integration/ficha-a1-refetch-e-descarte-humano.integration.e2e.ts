@@ -110,9 +110,9 @@ test.describe('Entrega A1 — refetch silencioso (item 1+4) e DiscardChangesConf
 
     const coverageCard = page.getByTestId('cobertura-medica-card');
     await expect(coverageCard).toBeVisible({ timeout: 20_000 });
-    // Baseline: seed não grava `insurance_informed` nem `health_insurance_name` — "Nombre de la
-    // Cobertura" nasce vazio ("—"). Prova que o valor que aparecer depois veio do PATCH desta
-    // edição, não de outra fonte (o GET prioriza `insurance_informed`, o campo do ClickUp).
+    // Baseline: seed não grava `insurance_informed` (o dono único da cobertura informada, spec 058) —
+    // "Nombre de la Cobertura" nasce vazio ("—"). Prova que o valor que aparecer depois veio do PATCH
+    // desta edição, não de outra fonte.
     await expect(coverageCard).toContainText('—');
 
     await page.getByTestId('edit-coverage-btn').click();

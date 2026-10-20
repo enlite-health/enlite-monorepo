@@ -4,8 +4,6 @@ import {
   patientAddressLabel,
   SERVICE_CODES,
   CARE_LOCATIONS,
-  CONTRACT_TYPES,
-  TAX_CONDITIONS,
   SUPERVISION_FREQUENCIES,
   GUARD_SHIFTS,
   PROVIDER_AGE_BANDS,
@@ -28,8 +26,6 @@ export function useContractedServiceOptions(addresses: PatientAddressDetail[]) {
   return {
     serviceOptions: enumOptions(SERVICE_CODES, 'serviceTypes'),
     careLocationOptions: enumOptions(CARE_LOCATIONS, 'careLocationOptions'),
-    contractTypeOptions: enumOptions(CONTRACT_TYPES, 'contractTypeOptions'),
-    taxConditionOptions: enumOptions(TAX_CONDITIONS, 'taxConditionOptions'),
     supervisionOptions: enumOptions(SUPERVISION_FREQUENCIES, 'supervisionFrequencyOptions'),
     guardShiftOptions: enumOptions(GUARD_SHIFTS, 'guardShiftOptions'),
     providerAgeBandOptions: enumOptions(PROVIDER_AGE_BANDS, 'providerAgeBandOptions'),

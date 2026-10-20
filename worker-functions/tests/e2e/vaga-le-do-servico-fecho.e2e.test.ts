@@ -74,7 +74,7 @@ describe('Vaga lê do serviço contratado — fecho por API (vaga-le-do-servico-
   async function seedServico(): Promise<{ patientId: string; serviceId: string; caseNumber: number }> {
     const caseNumber = caseSeq++;
     const patientId = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, health_insurance_name)
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, insurance_informed)
        VALUES ($1, 'VagaLeServico', 'Fecho E2E', 'AR', 'PENDING_ADMISSION', $2, 'Particular') RETURNING id`,
       [`${TAG}-${caseNumber}`, caseNumber],
     )).rows[0].id;

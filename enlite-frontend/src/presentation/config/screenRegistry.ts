@@ -137,6 +137,20 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },
   { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update'] },
   { id: 'patients.catalogSegments', route: '/admin/catalogos/segmentos', cells: ['catalog_therapeutic_segments:read', 'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update'] },
+  // Spec 058 (Parte A): cadastro da obra social. A lista abre e cria (só o nome); o detalhe é uma página de CARTÕES, um container por
+  // dado — cada um com a célula do que ele lê/escreve. O valor-hora do termo é `patient_contract_value` (a mesma da ficha do paciente).
+  { id: 'insurance.providers', route: '/admin/obras-sociales', cells: ['catalog_insurance_providers:read', 'catalog_insurance_providers:create'] },
+  {
+    id: 'insurance.providerDetail',
+    route: '/admin/obras-sociales/:code',
+    containers: [
+      c('general', 'catalog_insurance_providers', ['read', 'update']),
+      c('employees', 'insurance_provider_contacts', ['read', 'create', 'update']),
+      c('contracts', 'insurance_contracts', ['read', 'create', 'update']),
+      c('termValue', 'patient_contract_value', ['read', 'create']),
+      c('patients', 'insurance_provider_patients', ['read']),
+    ],
+  },
   {
     id: 'map',
     route: '/admin/mapa',

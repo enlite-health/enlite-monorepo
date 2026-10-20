@@ -7,6 +7,8 @@ import type { PatientAddressDetail, PatientContractedServiceDetail } from '@doma
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { formatCalendarDate } from '@presentation/utils/dateTimeFormat';
+import { contractedServicePriceText, contractedServiceTaxText } from './contractedServicePriceText';
+import { CoverageMatchNotice } from './CoverageMatchNotice';
 
 interface Props {
   service: PatientContractedServiceDetail;
@@ -37,7 +39,7 @@ function Field({ label, value, testId }: { label: string; value: string; testId:
  * Enum nunca chega cru: cada valor passa por i18n com fallback no próprio valor.
  */
 export function ContractedServiceDetailDrawer({ service, addresses, onClose, onEdit }: Props): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const tc = (k: string) => t(`${CARD}.${k}`);
   const opt = (group: string, v: string | null) => (v ? t(`${CARD}.${group}.${v}`, { defaultValue: v }) : EMPTY);
   const [show, setShow] = useState(false);
@@ -67,9 +69,15 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose, onE
   const address = addresses.find((a) => a.id === service.addressId) ?? null;
   const activeProviders = service.providers.filter((p) => p.active);
   const num = (v: number | null): string => (v == null ? EMPTY : String(v));
-  const valueText = service.hourlyValueRedacted
-    ? tc('tableValueRedacted')
-    : num(service.hourlyValue);
+  // Spec 058: preço e imposto vêm do termo vigente do contrato vinculado (somente leitura); o pagador, do vínculo.
+  const valueText = contractedServicePriceText(t, service.price, i18n.language);
+  const taxText = contractedServiceTaxText(t, service.tax, i18n.language);
+  const linked = service.payer.state === 'LINKED' ? service.payer : null;
+  const payerText = !linked
+    ? tc('payer.none')
+    : linked.names
+      ? `${linked.names.providerName} — ${linked.names.contractName}`
+      : linked.isPrivate ? tc('payer.private') : tc('payer.hidden');
 
   return (
     <>
@@ -137,8 +145,12 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose, onE
             <Field label={tc('tableAuthorizedHours')} testId="svc-detail-authorized-hours" value={num(service.authorizedHours)} />
             <Field label={tc('tableValue')} testId="svc-detail-value" value={valueText} />
             <Field label={tc('tableStart')} testId="svc-detail-start" value={formatCalendarDate(service.startDate, {}) ?? EMPTY} />
-            <Field label={tc('tableContract')} testId="svc-detail-contract" value={opt('contractTypeOptions', service.contractType)} />
-            <Field label={tc('tableIVA')} testId="svc-detail-iva" value={opt('taxConditionOptions', service.taxCondition)} />
+            <Field label={tc('tableContract')} testId="svc-detail-contract" value={payerText} />
+            <Field label={tc('tableIVA')} testId="svc-detail-iva" value={taxText} />
+            <div className="flex flex-col gap-0.5 sm:col-span-2">
+              <Text size="xs" color="secondary">{tc('coverageMatchLabel')}</Text>
+              <CoverageMatchNotice state={service.coverageMatch.state} testId="svc-detail-coverage-match" />
+            </div>
             <Field label={tc('tableProviderAgeBand')} testId="svc-detail-age-band" value={opt('providerAgeBandOptions', service.providerAgeBand)} />
             <Field label={tc('detailSupervision')} testId="svc-detail-supervision" value={opt('supervisionFrequencyOptions', service.supervisionFrequency)} />
             <Field label={tc('detailGuardShift')} testId="svc-detail-guard-shift" value={opt('guardShiftOptions', service.guardShift)} />

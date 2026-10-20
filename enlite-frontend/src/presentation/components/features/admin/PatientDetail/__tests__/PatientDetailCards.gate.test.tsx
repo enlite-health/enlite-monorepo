@@ -1,3 +1,4 @@
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
@@ -16,11 +17,8 @@ const SERVICO: PatientContractedServiceDetail = {
   authorizedHours: 10,
   weeklyHours: 10,
   careLocation: 'HOME',
-  hourlyValue: null,
-  hourlyValueRedacted: false,
+  ...CONTRACT_058_DEFAULTS,
   startDate: '2026-09-01T00:00:00.000Z',
-  contractType: 'OBRA_SOCIAL',
-  taxCondition: 'IVA_EXEMPT',
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,

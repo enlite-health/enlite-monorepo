@@ -84,23 +84,18 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await expect(page.getByText('Este campo acepta solo números.').first()).toBeVisible();
     await expect(page.getByText('Solo números').first()).toBeVisible();
 
-    // ── Vírgula: medido 06/09 no Chromium, "1500,50" virava 150050 — a vírgula sumia em
-    //    silêncio e o valor ficava 100× maior. Agora ela é bloqueada com aviso próprio: o campo
-    //    fica em "1500" e a pessoa VÊ por quê. ──
-    const valor = page.getByTestId('svc-hourlyValue-1');
-    await valor.click();
-    await page.keyboard.type('1500,');
-    await expect(valor).toHaveValue('1500');
-    await expect(page.getByText('Para decimales usá punto (.), no coma.')).toBeVisible();
-    await valor.press('Meta+A');
-    await valor.press('Backspace');
-    await expect(valor).toHaveValue('');
+    // ── Spec 058: o valor-hora e o imposto NÃO são mais campos do formulário — vêm do termo do contrato (só exibidos). Serviço NOVO tem a
+    //    cascata Obra social -> Contrato (opcional: vazia, o serviço nasce sem vínculo e a carga pode vir depois). ──
+    await expect(page.getByTestId('svc-hourlyValue-1')).toHaveCount(0);
+    await expect(page.getByTestId('svc-contractType-1')).toHaveCount(0);
+    await expect(page.getByTestId('svc-taxCondition-1')).toHaveCount(0);
+    await expect(page.getByTestId('svc-contract-new-1')).toBeVisible();
+    await expect(page.getByTestId('svc-contract-1-provider')).toBeVisible();
 
     // ── Texto/número: clique + teclado, e o valor que FICOU ──
     expect(await digitar(page, 'svc-providersNeeded-1', '2')).toBe('2');
     expect(await digitar(page, 'svc-weeklyHours-1', '20')).toBe('20');
     expect(await digitar(page, 'svc-authorizedHours-1', '24')).toBe('24');
-    expect(await digitar(page, 'svc-hourlyValue-1', '1500')).toBe('1500');
     expect(await digitar(page, 'svc-profile-1', 'perfil digitado por humano')).toBe('perfil digitado por humano');
 
     // ── Horário: o "+" de segunda-feira cria um slot 09:00–17:00 ──
@@ -114,11 +109,11 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     // ── Guardar: a resposta real da API carrega o que foi digitado ──
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await page.getByTestId('contracted-service-new-save').click();
-    const body = (await (await created).json()) as { data: { id: string; addressId: string; schedule: unknown[]; providersNeeded: number; hourlyValue: number } };
+    const body = (await (await created).json()) as { data: { id: string; addressId: string; schedule: unknown[]; providersNeeded: number; price: { state: string } } };
     expect(body.data.addressId).toBe(seed.addressId);
     expect(body.data.schedule).toEqual([{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }]);
     expect(body.data.providersNeeded).toBe(2);
-    expect(body.data.hourlyValue).toBe(1500);
+    expect(body.data.price).toEqual({ state: 'NO_CONTRACT' }); // sem obra social escolhida: o serviço nasce sem vínculo
 
     // Depois de salvar, o drawer troca para a EDIÇÃO do recém-criado (06/09) — é aí que a
     // seção de prestadores existe. Esperar a troca também tira de cena a lixeira do form novo.
@@ -138,7 +133,7 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     // ── Clique real na linha → detalhe; "Editar" no detalhe → drawer SÓ deste serviço ──
     await row.click();
     await expect(page.getByTestId('contracted-service-detail-drawer')).toBeVisible();
-    await expect(page.getByTestId('svc-detail-value')).toContainText('1500');
+    await expect(page.getByTestId('svc-detail-value')).toContainText('Sin contrato vinculado');
     await expect(page.getByTestId('svc-detail-schedule')).toContainText('Lunes 09:00-17:00');
     await page.getByTestId('contracted-service-detail-edit').click();
     await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();

@@ -42,6 +42,8 @@ import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
 import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
 import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
+import InsuranceProvidersPage from './pages/admin/InsuranceProvidersPage';
+import InsuranceProviderDetailPage from './pages/admin/InsuranceProviderDetailPage/InsuranceProviderDetailPage';
 import TherapeuticCatalogPage from './pages/admin/TherapeuticCatalogPage/TherapeuticCatalogPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
 import { RedirectKeepingSearch } from './components/shared/RedirectKeepingSearch';
@@ -274,6 +276,10 @@ export function App() {
           {/* Depois de "registrar", senão o literal seria capturado pelo :slug. */}
           <Route path="plantillas/:slug" element={<TemplateCatalogDetailPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
+          {/* Spec 058: cadastro da obra social (lista + página de cartões). Sem chave `screen:*`: gateada pelas células próprias
+              (`catalog_insurance_providers:*` etc.), não por país (a obra social atende AR e BR). */}
+          <Route path="obras-sociales" element={<InsuranceProvidersPage />} />
+          <Route path="obras-sociales/:code" element={<InsuranceProviderDetailPage />} />
           {/* Spec 017: uma TELA por catálogo do projeto terapêutico (célula própria cada); sem `screen:*` no manifest, como patient-chat-roles. */}
           <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />

@@ -44,7 +44,7 @@ describe('PatientIdentityRepository.upsert', () => {
     const { sql, params } = lastCall();
     expect(sql).toMatch(/INSERT INTO patients/);
     expect(sql).toMatch(/ON CONFLICT \(clickup_task_id\) DO UPDATE SET/);
-    expect(p(params, 15)).toBe('AR');
+    expect(p(params, 14)).toBe('AR');
     // Todos os opcionais ausentes viram NULL — o ramo `?? null` de cada um.
     expect(p(params, 2)).toBeNull();   // first_name
     expect(p(params, 3)).toBeNull();   // last_name
@@ -55,16 +55,15 @@ describe('PatientIdentityRepository.upsert', () => {
     expect(p(params, 8)).toBeNull();   // sex
     expect(p(params, 9)).toBeNull();   // phone_whatsapp
     expect(p(params, 10)).toBeNull();  // insurance_informed
-    expect(p(params, 11)).toBeNull();  // insurance_verified
-    expect(p(params, 12)).toBeNull();  // city_locality
-    expect(p(params, 13)).toBeNull();  // province
-    expect(p(params, 14)).toBeNull();  // zone_neighborhood
-    expect(p(params, 16)).toBe(false); // needs_attention
-    expect(p(params, 17)).toEqual([]); // attention_reasons
-    expect(p(params, 18)).toBeNull();  // health_insurance_name
-    expect(p(params, 19)).toBeNull();  // health_insurance_member_id
-    expect(p(params, 20)).toBeNull();  // case_number
-    expect(p(params, 21)).toBeNull();  // status
+    expect(p(params, 11)).toBeNull();  // city_locality
+    expect(p(params, 12)).toBeNull();  // province
+    expect(p(params, 13)).toBeNull();  // zone_neighborhood
+    expect(p(params, 15)).toBe(false); // needs_attention
+    expect(p(params, 16)).toEqual([]); // attention_reasons
+    expect(p(params, 17)).toBeNull();  // case_number
+    expect(p(params, 18)).toBeNull();  // status
+    // Spec 058: as 3 colunas legadas de cobertura NÃO são mais escritas.
+    expect(sql).not.toMatch(/insurance_verified|health_insurance_name|health_insurance_member_id/);
   });
 
   it('linha EXISTENTE: xmax != 0 → created=false', async () => {
@@ -80,28 +79,35 @@ describe('PatientIdentityRepository.upsert', () => {
       firstName: 'Nome', lastName: 'Sobrenome', birthDate: nascimento,
       documentType: 'DNI', documentNumber: '12345678', affiliateId: 'AF-1',
       sex: 'FEMALE', phoneWhatsapp: '+5491100000000',
-      insuranceInformed: 'OSDE', insuranceVerified: 'SANIDAD',
+      insuranceInformed: 'OSDE',
       cityLocality: 'Temperley', province: 'Buenos Aires', zoneNeighborhood: 'Centro',
       country: 'BR',
       needsAttention: true, attentionReasons: ['MISSING_INFO'],
-      healthInsuranceName: 'OSPICHA', healthInsuranceMemberId: 'M-9',
       caseNumber: 766, status: 'ACTIVE',
     });
 
     const { params } = lastCall();
-    expect(params.slice(0, 21)).toEqual([
+    expect(params.slice(0, 18)).toEqual([
       TASK, 'Nome', 'Sobrenome', nascimento, 'DNI', '12345678', 'AF-1', 'FEMALE',
-      '+5491100000000', 'OSDE', 'SANIDAD', 'Temperley', 'Buenos Aires', 'Centro', 'BR',
-      true, ['MISSING_INFO'], 'OSPICHA', 'M-9', 766, 'ACTIVE',
+      '+5491100000000', 'OSDE', 'Temperley', 'Buenos Aires', 'Centro', 'BR',
+      true, ['MISSING_INFO'], 766, 'ACTIVE',
     ]);
   });
 
-  it('as três bandeiras `*Readable` ausentes = TRUE — chamador antigo NUNCA para de escrever', async () => {
+  it('as duas bandeiras `*Readable` ausentes = TRUE — chamador antigo NUNCA para de escrever', async () => {
     await new PatientIdentityRepository().upsert({ clickupTaskId: TASK });
     const { params } = lastCall();
-    expect(p(params, 22)).toBe(true); // insuranceVerifiedReadable
-    expect(p(params, 23)).toBe(true); // documentTypeReadable
-    expect(p(params, 24)).toBe(true); // sexReadable
+    expect(p(params, 19)).toBe(true); // documentTypeReadable
+    expect(p(params, 20)).toBe(true); // sexReadable
+  });
+
+  it('spec 058 — o sync é FILL-ONLY nos dois donos da cobertura: nunca sobrescreve valor existente', async () => {
+    await new PatientIdentityRepository().upsert({ clickupTaskId: TASK });
+    const { sql } = lastCall();
+    expect(sql).toMatch(/insurance_informed\s+= COALESCE\(patients\.insurance_informed, EXCLUDED\.insurance_informed\)/);
+    expect(sql).toMatch(/affiliate_id\s+= COALESCE\(patients\.affiliate_id, EXCLUDED\.affiliate_id\)/);
+    expect(sql).not.toMatch(/= EXCLUDED\.insurance_informed/);
+    expect(sql).not.toMatch(/= EXCLUDED\.affiliate_id/);
   });
 
   it('I2 — `false` nas bandeiras faz o DO UPDATE PULAR a coluna (o `CASE WHEN` é a trava)', async () => {
@@ -109,17 +115,14 @@ describe('PatientIdentityRepository.upsert', () => {
       clickupTaskId: TASK,
       documentTypeReadable: false,
       sexReadable: false,
-      insuranceVerifiedReadable: false,
     });
 
     const { sql, params } = lastCall();
-    expect(p(params, 22)).toBe(false);
-    expect(p(params, 23)).toBe(false);
-    expect(p(params, 24)).toBe(false);
+    expect(p(params, 19)).toBe(false);
+    expect(p(params, 20)).toBe(false);
     // A forma do SQL é o que garante o efeito — o `ELSE` devolve o valor JÁ GRAVADO.
-    expect(sql).toMatch(/document_type\s+= CASE WHEN \$23::boolean THEN EXCLUDED\.document_type ELSE patients\.document_type END/);
-    expect(sql).toMatch(/sex\s+= CASE WHEN \$24::boolean THEN EXCLUDED\.sex ELSE patients\.sex END/);
-    expect(sql).toMatch(/insurance_verified\s+= CASE WHEN \$22::boolean THEN EXCLUDED\.insurance_verified ELSE patients\.insurance_verified END/);
+    expect(sql).toMatch(/document_type\s+= CASE WHEN \$19::boolean THEN EXCLUDED\.document_type ELSE patients\.document_type END/);
+    expect(sql).toMatch(/sex\s+= CASE WHEN \$20::boolean THEN EXCLUDED\.sex ELSE patients\.sex END/);
     // ⚠️ E o INSERT continua escrevendo os dois: linha nova não tem o que apagar.
     expect(sql).toMatch(/document_type, document_number, affiliate_id,/);
   });
@@ -149,10 +152,11 @@ describe('PatientIdentityRepository.insertNative', () => {
     expect(sql).not.toMatch(/ON CONFLICT/);
     expect(p(params, 1)).toBe('web_form');
     expect(p(params, 2)).toBeNull();   // contact_email_encrypted
-    expect(p(params, 16)).toBe('AR');
-    expect(p(params, 17)).toBe(false); // needs_attention
-    expect(p(params, 18)).toEqual([]); // attention_reasons
-    expect(p(params, 22)).toBe('SOLICITANTE');
+    expect(p(params, 15)).toBe('AR');
+    expect(p(params, 16)).toBe(false); // needs_attention
+    expect(p(params, 17)).toEqual([]); // attention_reasons
+    expect(p(params, 19)).toBe('SOLICITANTE');
+    expect(sql).not.toMatch(/insurance_verified|health_insurance_name|health_insurance_member_id/);
   });
 
   it('todos os campos presentes (o outro lado de cada `?? null` do caminho nativo)', async () => {
@@ -164,18 +168,17 @@ describe('PatientIdentityRepository.insertNative', () => {
       firstName: 'Nome', lastName: 'Sobrenome', birthDate: nascimento,
       documentType: 'DNI', documentNumber: '999', affiliateId: 'AF-2',
       sex: 'MALE', phoneWhatsapp: '+5491111111111',
-      insuranceInformed: 'OSDE', insuranceVerified: 'SANIDAD',
+      insuranceInformed: 'OSDE',
       cityLocality: 'CABA', province: 'CABA', zoneNeighborhood: 'Palermo',
       needsAttention: true, attentionReasons: ['MISSING_INFO'],
-      healthInsuranceName: 'OSPICHA', healthInsuranceMemberId: 'M-1',
       caseNumber: 900,
     });
 
     const { params } = lastCall();
     expect(params).toEqual([
       'admin_manual', 'BASE64==', 'Nome', 'Sobrenome', nascimento, 'DNI', '999', 'AF-2',
-      'MALE', '+5491111111111', 'OSDE', 'SANIDAD', 'CABA', 'CABA', 'Palermo', 'AR',
-      true, ['MISSING_INFO'], 'OSPICHA', 'M-1', 900, 'SOLICITANTE',
+      'MALE', '+5491111111111', 'OSDE', 'CABA', 'CABA', 'Palermo', 'AR',
+      true, ['MISSING_INFO'], 900, 'SOLICITANTE',
     ]);
   });
 

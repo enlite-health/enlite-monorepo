@@ -34,6 +34,10 @@ import {
   TherapeuticContactRemindersInternalController,
   createTherapeuticContactRemindersInternalRoutes,
   createAdminPatientsRoutes,
+  createAdminInsuranceRoutes,
+  AdminInsuranceProviderContactsController,
+  AdminInsuranceContractsController,
+  AdminContractedServiceContractLinkController,
   PublicLeadsController,
   createAdminPatientPhotoRoutes,
 } from '@modules/case';
@@ -585,6 +589,19 @@ app.use(
     new AdminPatientContractedServicesController(),
     new AdminPatientDiagnosesController(),
     new AdminTerminologySearchController(),
+  ),
+);
+
+// ========== Admin Obras Sociais, contratos e vínculo do serviço (spec 058, Parte A) ==========
+app.use(
+  '/api/admin',
+  createAdminInsuranceRoutes(
+    authMiddleware,
+    permissionMiddleware,
+    new AdminInsuranceProvidersController(),
+    new AdminInsuranceProviderContactsController(),
+    new AdminInsuranceContractsController(),
+    new AdminContractedServiceContractLinkController(),
   ),
 );
 

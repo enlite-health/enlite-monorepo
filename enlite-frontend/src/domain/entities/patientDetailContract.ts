@@ -15,6 +15,8 @@
 import { z } from 'zod';
 import { PATIENT_COMPLETENESS_CODES } from './PatientCompleteness';
 import { PATIENT_PROFESSIONAL_SPECIALTY_CODES } from './patientEnums';
+import { COVERAGE_MATCH_STATES } from './PatientContractedService';
+import { CURRENCIES, PAYER_KINDS } from './InsuranceContract';
 import type { PatientDetail } from './PatientDetail';
 
 const isoDate = z.string();
@@ -122,6 +124,55 @@ const contractedServiceProviderSchema = z
   })
   .strict();
 
+const payerNamesSchema = z
+  .object({
+    providerCode: z.string(),
+    providerName: z.string(),
+    contractId: z.string(),
+    contractName: z.string(),
+    payerKind: z.enum(PAYER_KINDS).nullable(),
+  })
+  .strict();
+
+const payerSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('NO_CONTRACT') }).strict(),
+  z
+    .object({
+      state: z.literal('LINKED'),
+      isPrivate: z.boolean(),
+      validFrom: isoDate,
+      validTo: isoDate.nullable(),
+      names: payerNamesSchema.nullable(),
+    })
+    .strict(),
+]);
+
+const payerHistoryItemSchema = z
+  .object({ linkId: z.string(), isPrivate: z.boolean(), validFrom: isoDate, validTo: isoDate.nullable(), names: payerNamesSchema.nullable() })
+  .strict();
+
+const priceSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('NO_CONTRACT') }).strict(),
+  z.object({ state: z.literal('NO_TERM') }).strict(),
+  z.object({ state: z.literal('OK'), hourlyRate: z.number(), currency: z.enum(CURRENCIES) }).strict(),
+  z.object({ state: z.literal('REDACTED') }).strict(),
+]);
+
+const taxSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('NO_CONTRACT') }).strict(),
+  z.object({ state: z.literal('NO_TERM') }).strict(),
+  z.object({ state: z.literal('OK'), taxRatePercent: z.number() }).strict(),
+]);
+
+// Spec 058 §C: `entries` = { code|null, name|null, mapped, source }; `display`/`displaySource` só alimentam o PDF.
+const coverageSchema = z
+  .object({
+    display: z.string().nullable(),
+    displaySource: z.enum(['INFORMED', 'VERIFIED', 'UNMAPPED_ONLY', 'NONE']),
+    entries: z.array(z.object({ code: z.string().nullable(), name: z.string().nullable(), mapped: z.boolean(), source: z.string() }).strict()),
+  })
+  .strict();
+
 const contractedServiceSchema = z
   .object({
     id: z.string(),
@@ -132,12 +183,15 @@ const contractedServiceSchema = z
     authorizedHours: z.number().nullable(),
     weeklyHours: z.number().nullable(),
     careLocation: z.string().nullable(),
-    // lex C-c.4: redigido (null) para quem não é admin — hourlyValueRedacted diz qual dos dois.
-    hourlyValue: z.number().nullable(),
-    hourlyValueRedacted: z.boolean(),
     startDate: isoDate.nullable(),
-    contractType: z.string().nullable(),
-    taxCondition: z.string().nullable(),
+    // Spec 058 (§G/§P/§D): pagador, preço e imposto NA data `asOf` (dia de operação do país do serviço). `names: null` /
+    // `price: REDACTED` / `coverageMatch: REDACTED` = o ator não lê a célula (o imposto nunca é redigido).
+    asOf: z.string(),
+    payer: payerSchema,
+    payerHistory: z.array(payerHistoryItemSchema),
+    price: priceSchema,
+    tax: taxSchema,
+    coverageMatch: z.object({ state: z.enum(COVERAGE_MATCH_STATES) }).strict(),
     supervisionFrequency: z.string().nullable(),
     guardShift: z.string().nullable(),
     // Spec 015 (US-A6.1): franja etária solicitada do prestador — string frouxa, molde do resto.
@@ -211,7 +265,6 @@ export const patientDetailContractSchema = z
     hasCud: z.boolean().nullable(),
     hasConsent: z.boolean().nullable(),
     insuranceInformed: z.string().nullable(),
-    insuranceVerified: z.string().nullable(),
     cityLocality: z.string().nullable(),
     province: z.string().nullable(),
     zoneNeighborhood: z.string().nullable(),
@@ -223,7 +276,7 @@ export const patientDetailContractSchema = z
     onHoldNoteRedacted: z.boolean().optional(),
     serviceStartDate: isoDate.nullable(),
     insuranceVerifiedCodes: z.array(z.string()),
-    insuranceVerifiedEntries: z.array(z.object({ code: z.string(), source: z.string() })).optional(),
+    coverage: coverageSchema.nullable(),
     hasVerifiedActiveCoverage: z.boolean().optional(),
     deviceTypes: z.array(z.string()),
     needsAttention: z.boolean(),

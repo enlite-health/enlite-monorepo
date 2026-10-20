@@ -1,5 +1,5 @@
 import { projectPatientClinicalForActor } from '../application/patientClinicalAccess';
-import { projectContractedServiceForActor, type HourlyValueActor } from '../application/contractedServiceHourlyValueAccess';
+import { projectContractedServiceForActor, type HourlyValueActor, type ProjectableService } from '../application/contractedServiceHourlyValueAccess';
 import {
   projectCompletenessByContainers,
   projectPatientDetailByContainers,
@@ -17,7 +17,7 @@ import type { PatientListRow } from '../infrastructure/PatientQueryRows';
  * `@modules/diagnosis/interfaces/DiagnosisPublicView`: um lugar só decide o formato público.
  *
  * Nada de comportamento mudou de lugar: mesmos campos, mesmos defaults, mesma ordem, mesmo
- * ponto ÚNICO de redação do texto clínico (D211.2) e do `hourlyValue` (lex C-c.4). O que NÃO
+ * ponto ÚNICO de redação do texto clínico (D211.2) e do preço do serviço (lex C-c.4). O que NÃO
  * está aqui, de propósito: as trilhas de leitura (`patient_clinical.read`,
  * `patient_lead_contact.read`), que dependem do `req` e continuam no controller.
  */
@@ -78,9 +78,9 @@ function toAdminPatientListItemRaw(row: PatientListRow) {
 /**
  * A ficha, com as TRÊS redações aplicadas na MESMA passada (`lex` C1: projeção única):
  *   - texto clínico restrito → ponto único (D211.2), por célula;
- *   - `hourlyValue` de cada serviço contratado → célula `patient_contract_value:read` (lex C-c.4;
+ *   - o `price` de cada serviço contratado → célula `patient_contract_value:read` (lex C-c.4;
  *     papel `admin` só enquanto o engine não decide), campo por campo — mantém portão PRÓPRIO,
- *     nunca embutido em `patient_services:read` (`lex` C6);
+ *     nunca embutido em `patient_services:read` (`lex` C6); `payer.names`/`coverageMatch` → container `coverage` (spec 058 §0);
  *   - cada CONTAINER (identidade, clínica, familiares, chat, cobertura, endereço, serviços,
  *     equipe) → por célula própria (D286), com marcador constante `redacted.<container>`.
  */
@@ -94,7 +94,7 @@ export function projectAdminPatientDetail(
   const withServices = Array.isArray(rawServices)
     ? {
         ...clinicalProjected,
-        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null; liveVacancy: unknown }, actor)),
+        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as ProjectableService, actor)),
       }
     : clinicalProjected;
   return projectPatientDetailByContainers(withServices, cells);

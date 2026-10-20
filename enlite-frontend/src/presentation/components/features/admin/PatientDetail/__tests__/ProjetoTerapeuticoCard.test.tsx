@@ -12,6 +12,7 @@
  *  · Sem serviço contratado ativo não há o que vincular: "Novo" desabilitado com o motivo no `title`,
  *    e o vazio diz o motivo em vez do texto genérico.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
@@ -73,11 +74,8 @@ const SERVICO: PatientContractedServiceDetail = {
   authorizedHours: 20,
   weeklyHours: 20,
   careLocation: 'HOME',
-  hourlyValue: null,
-  hourlyValueRedacted: false,
+  ...CONTRACT_058_DEFAULTS,
   startDate: null,
-  contractType: null,
-  taxCondition: null,
   supervisionFrequency: null,
   guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,

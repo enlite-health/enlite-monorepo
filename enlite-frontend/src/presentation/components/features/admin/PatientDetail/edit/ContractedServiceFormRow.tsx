@@ -14,7 +14,11 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import { SelectField } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { DayScheduleEditor } from '@presentation/components/molecules/DayScheduleEditor';
+import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
+import { ContractedServiceContractPanel } from './ContractedServiceContractPanel';
+import { ContractCascade } from './ContractCascade';
+import { EMPTY_CASCADE, type ContractCascadeValue } from './contractCascadeValue';
 import { AvisoAmbar } from './AvisoAmbar';
 import { NumericField } from './NumericField';
 import { ContractedServiceRecruitmentFields } from './ContractedServiceRecruitmentFields';
@@ -33,9 +37,15 @@ interface Props {
   service: PatientContractedServiceDetail | null;
   /** Index visual ("Serviço 1", "Serviço 2"…) — só para o rótulo, nunca enviado. */
   index: number;
+  /** País do PACIENTE: o serviço novo nasce nele, e a cascata de obra social só lista as do país (serviço existente usa o próprio). */
+  patientCountry?: string | null;
   /** Recebe o serviço que a API devolveu (create/update) — o pai não depende de um `list()` para
-   *  saber o id do recém-criado. A baixa chama sem argumento. */
-  onSaved: (saved?: PatientContractedServiceDetail) => void;
+   *  saber o id do recém-criado. A baixa chama sem argumento. `linkError`: o serviço foi CRIADO, mas o vínculo com o contrato falhou. */
+  onSaved: (saved?: PatientContractedServiceDetail, opts?: { linkError?: unknown }) => void;
+  /** Vínculo que falhou logo depois de criar este serviço — o painel mostra o erro e a saída. */
+  initialLinkError?: unknown;
+  /** `REQUIRES_NEW_SERVICE`: o pai abre o formulário de serviço novo. */
+  onRequestNewService?: () => void;
   onCancelNew?: () => void;
   /** Spec 014 (US-D4): avisa o pai (`PatientContractedServicesEditDrawer`) sempre que ESTA
    * linha tem mudança não salva — o drawer não tem "Guardar" próprio (cada linha salva sozinha,
@@ -59,10 +69,7 @@ const schema = z.object({
   authorizedHours: numericString,
   weeklyHours: numericString,
   careLocation: z.string(),
-  hourlyValue: numericString,
   startDate: z.string(),
-  contractType: z.string(),
-  taxCondition: z.string(),
   supervisionFrequency: z.string(),
   guardShift: z.string(),
   providerAgeBand: z.string(),
@@ -118,15 +125,17 @@ export async function deactivateService(
 
 /**
  * Formulário de UM serviço contratado — cria (POST) quando `service` é `null`, atualiza
- * (PATCH, Merge Patch parcial) quando existe. `hourlyValue` fica DESABILITADO quando o backend
- * redigiu (lex C-c.4) — evita o operador não-admin sobrescrever um valor que não pode ver.
+ * (PATCH, Merge Patch parcial) quando existe. Spec 058: o contrato (obra social -> contrato) é a CASCATA abaixo; preço e
+ * imposto vêm do termo vigente e só são exibidos (`ContractedServiceContractPanel`) — não há mais valor-hora nem imposto editável.
  */
-export function ContractedServiceFormRow({ patientId, addresses, service, index, onSaved, onCancelNew, onDirtyChange }: Props): JSX.Element {
+export function ContractedServiceFormRow({ patientId, addresses, service, index, patientCountry, onSaved, initialLinkError, onRequestNewService, onCancelNew, onDirtyChange }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
   const isNew = service === null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Só o serviço NOVO escolhe o contrato aqui; o existente tem o painel próprio (vincular / trocar / corrigir / terminar).
+  const [cascade, setCascade] = useState<ContractCascadeValue>(EMPTY_CASCADE);
 
   const { register, handleSubmit, control, reset, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -137,10 +146,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       authorizedHours: empty(service?.authorizedHours),
       weeklyHours: empty(service?.weeklyHours),
       careLocation: service?.careLocation ?? '',
-      hourlyValue: empty(service?.hourlyValue),
       startDate: service?.startDate ? service.startDate.slice(0, 10) : '',
-      contractType: service?.contractType ?? '',
-      taxCondition: service?.taxCondition ?? '',
       supervisionFrequency: service?.supervisionFrequency ?? '',
       guardShift: service?.guardShift ?? '',
       providerAgeBand: service?.providerAgeBand ?? '',
@@ -160,12 +166,17 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
   }, [isDirty]);
 
   const {
-    serviceOptions, careLocationOptions, contractTypeOptions, taxConditionOptions,
+    serviceOptions, careLocationOptions,
     supervisionOptions, guardShiftOptions, deviceOptions, providerAgeBandOptions, addressOptions,
   } = useContractedServiceOptions(addresses);
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setError(null);
+    // Obra social escolhida sem contrato/início: não cria o serviço pela metade.
+    if (isNew && cascade.providerCode && (!cascade.contractId || !cascade.validFrom)) {
+      setError(te('contractRequired'));
+      return;
+    }
     setBusy(true);
     const nz = (v: string): string | null => (v.trim() ? v.trim() : null);
     try {
@@ -178,10 +189,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           authorizedHours: numOrNull(values.authorizedHours),
           weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
-          hourlyValue: numOrNull(values.hourlyValue),
           startDate: nz(values.startDate),
-          contractType: nz(values.contractType) as never,
-          taxCondition: nz(values.taxCondition) as never,
           supervisionFrequency: nz(values.supervisionFrequency) as never,
           guardShift: nz(values.guardShift) as never,
           providerAgeBand: nz(values.providerAgeBand) as never,
@@ -197,12 +205,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           authorizedHours: numOrNull(values.authorizedHours),
           weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
-          // Campo desabilitado (redigido) nunca entra no submit — ver `disabled` abaixo; quando
-          // habilitado, envia o que o operador digitou (inclusive limpar → null).
-          hourlyValue: service.hourlyValueRedacted ? undefined : numOrNull(values.hourlyValue),
           startDate: nz(values.startDate),
-          contractType: nz(values.contractType) as never,
-          taxCondition: nz(values.taxCondition) as never,
           supervisionFrequency: nz(values.supervisionFrequency) as never,
           guardShift: nz(values.guardShift) as never,
           providerAgeBand: nz(values.providerAgeBand) as never,
@@ -217,6 +220,19 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       // ficaria `true` para sempre após a 1ª edição salva, e a confirmação de "descartar
       // cambios" apareceria ao fechar mesmo sem NADA pendente).
       reset(values);
+      if (isNew && cascade.contractId) {
+        // Serviço criado: agora o vínculo. Se ele falhar, o serviço JÁ existe — o pai troca para o modo edição e o painel mostra o erro.
+        try {
+          saved = await AdminInsuranceApiService.createContractLink(patientId, saved.id, {
+            contractId: cascade.contractId,
+            validFrom: cascade.validFrom,
+            validTo: cascade.validTo || null,
+          });
+        } catch (linkError) {
+          onSaved(saved, { linkError });
+          return;
+        }
+      }
       onSaved(saved);
     } catch {
       setError(isNew ? te('createServiceError') : te('updateServiceError'));
@@ -300,25 +316,8 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             />
           )} />
         </FormField>
-        {service?.hourlyValueRedacted ? (
-          <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
-            <InputWithIcon id={`svc-hourlyValue-${index}`} inputSize="compact" value={te('hourlyValueRedacted')} disabled data-testid={`svc-hourlyValue-${index}`} />
-          </FormField>
-        ) : (
-          <NumericField id={`svc-hourlyValue-${index}`} label={te('hourlyValue')} testId={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
-        )}
         <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
           <InputWithIcon id={`svc-startDate-${index}`} type="date" inputSize="compact" data-testid={`svc-startDate-${index}`} {...register('startDate')} />
-        </FormField>
-        <FormField label={te('contractType')} htmlFor={`svc-contractType-${index}`} optional>
-          <Controller control={control} name="contractType" render={({ field }) => (
-            <SelectField id={`svc-contractType-${index}`} inputSize="compact" options={contractTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-contractType-${index}`} />
-          )} />
-        </FormField>
-        <FormField label={te('taxCondition')} htmlFor={`svc-taxCondition-${index}`} optional>
-          <Controller control={control} name="taxCondition" render={({ field }) => (
-            <SelectField id={`svc-taxCondition-${index}`} inputSize="compact" options={taxConditionOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-taxCondition-${index}`} />
-          )} />
         </FormField>
         <FormField label={te('supervisionFrequency')} htmlFor={`svc-supervisionFrequency-${index}`} optional>
           <Controller control={control} name="supervisionFrequency" render={({ field }) => (
@@ -336,6 +335,16 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           )} />
         </FormField>
       </div>
+
+      {/* Spec 058: o contrato do serviço (dentro do container). Existente = painel (vincular/trocar/corrigir/terminar); novo = cascata. */}
+      {isNew ? (
+        <div className="flex flex-col gap-2" data-testid={`svc-contract-new-${index}`}>
+          <Text size="sm" weight="semibold" color="secondary">{t('admin.patients.detail.contractedServicesCard.contractSection')}</Text>
+          <ContractCascade idPrefix={`svc-contract-${index}`} country={patientCountry} value={cascade} onChange={setCascade} disabled={busy} />
+        </div>
+      ) : (
+        <ContractedServiceContractPanel patientId={patientId} service={service} onChanged={(saved) => onSaved(saved)} onRequestNewService={onRequestNewService} initialError={initialLinkError} />
+      )}
 
       {/* Migration 330: horário do encuadre — o MESMO editor da vaga (DayScheduleEditor). Salvar
           vazio continua legítimo (Gabriel 05/09: "o operador pode criar uma vacante sem ter

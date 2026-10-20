@@ -28,7 +28,6 @@
   "hasCud": null,
   "hasConsent": true,
   "insuranceInformed": "OSDE 210 (fixture)",
-  "insuranceVerified": null,
   "cityLocality": null,
   "province": null,
   "zoneNeighborhood": null,
@@ -42,7 +41,24 @@
   "onHoldNote": null,
   "serviceStartDate": null,
   "insuranceVerifiedCodes": [],
-  "insuranceVerifiedEntries": [],
+  "coverage": {
+    "display": "OSDE 210 (fixture)",
+    "displaySource": "INFORMED",
+    "entries": [
+      {
+        "code": "OSDE",
+        "name": "OSDE",
+        "mapped": true,
+        "source": "admin_manual"
+      },
+      {
+        "code": null,
+        "name": null,
+        "mapped": false,
+        "source": "clickup"
+      }
+    ]
+  },
   "deviceTypes": [],
   "needsAttention": false,
   "attentionReasons": [],
@@ -181,10 +197,48 @@
       "authorizedHours": 20,
       "weeklyHours": 20,
       "careLocation": "HOME",
-      "hourlyValue": 1500,
       "startDate": "2026-09-01T00:00:00.000Z",
-      "contractType": "OBRA_SOCIAL",
-      "taxCondition": "IVA_EXEMPT",
+      "asOf": "2026-10-19",
+      "payer": {
+        "state": "LINKED",
+        "isPrivate": false,
+        "validFrom": "2026-09-01",
+        "validTo": null,
+        "names": {
+          "providerCode": "OSDE",
+          "providerName": "OSDE",
+          "contractId": "11111111-1111-4111-8111-111111111111",
+          "contractName": "Plan 210 (fixture)",
+          "payerKind": "PREPAGA"
+        }
+      },
+      "payerHistory": [
+        {
+          "linkId": "22222222-2222-4222-8222-222222222222",
+          "isPrivate": false,
+          "validFrom": "2026-09-01",
+          "validTo": null,
+          "names": {
+            "providerCode": "OSDE",
+            "providerName": "OSDE",
+            "contractId": "11111111-1111-4111-8111-111111111111",
+            "contractName": "Plan 210 (fixture)",
+            "payerKind": "PREPAGA"
+          }
+        }
+      ],
+      "price": {
+        "state": "OK",
+        "hourlyRate": 1500,
+        "currency": "ARS"
+      },
+      "tax": {
+        "state": "OK",
+        "taxRatePercent": 0
+      },
+      "coverageMatch": {
+        "state": "MATCH"
+      },
       "supervisionFrequency": "DAYS_30",
       "guardShift": "MORNING",
       "providerAgeBand": "AGE_30_45",
@@ -204,7 +258,6 @@
       "providers": [],
       "createdAt": "2026-09-04T15:34:14.210Z",
       "updatedAt": "2026-09-04T15:34:14.210Z",
-      "hourlyValueRedacted": false,
       "addressId": null,
       "schedule": null
     }

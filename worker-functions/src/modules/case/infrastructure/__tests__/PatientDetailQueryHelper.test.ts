@@ -68,7 +68,7 @@ function basePatientRow(overrides: Record<string, unknown> = {}) {
     hasCud: true,
     hasConsent: true,
     insuranceInformed: 'OSDE',
-    insuranceVerified: null,
+    coverageEntries: [{ code: 'OSDE', name: 'OSDE', mapped: true, source: 'clickup' }],
     cityLocality: 'CABA',
     province: 'Buenos Aires',
     zoneNeighborhood: null,
@@ -194,6 +194,11 @@ describe('fetchPatientDetail — happy path completo', () => {
   });
 });
 
+const LINK_ROW = {
+  link_id: 'l-1', contracted_service_id: 'svc-1', valid: '[2026-01-01,)', contract_id: 'c-1', contract_name: 'OSDE 210',
+  provider_code: 'OSDE', provider_name: 'OSDE', payer_kind: 'OBRA_SOCIAL',
+};
+
 // Spec 013, bloco C: mapContractedServices/fetchContractedServiceChildren só rodam de verdade
 // quando há ao menos 1 serviço — o teste 2 (contractedServices: []) não passa por aqui.
 describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () => {
@@ -212,8 +217,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT',
             professional_profile: 'perfil sintético', providers_needed: 2,
             authorized_hours: '20', weekly_hours: '20', care_location: 'HOME',
-            hourly_value: '1500', start_date: '2026-09-01',
-            contract_type: 'OBRA_SOCIAL', tax_condition: 'IVA_EXEMPT',
+            start_date: '2026-09-01',
             supervision_frequency: 'DAYS_30', guard_shift: 'MORNING',
             active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
@@ -239,20 +243,35 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           contracted_service_id: 'svc-1', id: 'vac-live-1', case_number: 1234, case_ordinal: 1,
           status: 'SEARCHING',
         }],
-      });
+      }) // live vacancy
+      // Spec 058: pagador vigente, histórico e preço/imposto do serviço -- 3 queries EM LOTE, uma por função, qualquer que seja o nº de serviços.
+      .mockResolvedValueOnce({ rows: [LINK_ROW] }) // payerAtMany
+      .mockResolvedValueOnce({ rows: [LINK_ROW] }) // payerHistoryMany
+      .mockResolvedValueOnce({
+        rows: [{ contracted_service_id: 'svc-1', term_id: 't-1', contract_id: 'c-1', country: 'AR', hourly_rate: '1500.00', tax_rate_percent: '21.00', valid: '[2026-01-01,)' }],
+      }); // priceStateMany
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
-    const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
+    const result = await fetchPatientDetail(pool, enc, PATIENT_ID, undefined, new Date('2026-10-19T15:00:00Z'));
 
-    expect(queryImpl).toHaveBeenCalledTimes(11);
+    expect(queryImpl).toHaveBeenCalledTimes(14);
     expect(result!.contractedServices).toHaveLength(1);
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
       id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
-      authorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
+      authorizedHours: 20, weeklyHours: 20, // string → Number
       deviceTypes: ['HOME'],
+      // Spec 058: asOf = dia de operação do país do paciente (AR) no requestNow; pagador/preço/imposto/divergência crus.
+      asOf: '2026-10-19',
+      payer: { state: 'LINKED', isPrivate: false, validFrom: '2026-01-01', validTo: null, names: { providerCode: 'OSDE', contractId: 'c-1', payerKind: 'OBRA_SOCIAL' } },
+      price: { state: 'OK', hourlyRate: 1500, currency: 'ARS' },
+      tax: { state: 'OK', taxRatePercent: 21 },
+      coverageMatch: { state: 'MATCH' },
     });
+    expect(svc.payerHistory).toHaveLength(1);
+    expect(svc).not.toHaveProperty('hourlyValue');
+    expect(result!.coverage).toMatchObject({ displaySource: 'INFORMED', display: 'OSDE' });
     // A1 (047): o objeto INTEIRO, com as 4 chaves e nenhuma a mais.
     expect(svc.liveVacancy).toEqual({
       id: 'vac-live-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING',
@@ -283,7 +302,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           {
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT', professional_profile: null,
             providers_needed: null, authorized_hours: null, weekly_hours: null, care_location: null,
-            hourly_value: null, start_date: null, contract_type: null, tax_condition: null,
+            start_date: null,
             supervision_frequency: null, guard_shift: null, active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
           },
@@ -301,7 +320,10 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           },
         ],
       })
-      .mockResolvedValueOnce({ rows: [] }); // live vacancies (spec 018, PR-6) — nenhuma
+      .mockResolvedValueOnce({ rows: [] }) // live vacancies (spec 018, PR-6) — nenhuma
+      .mockResolvedValueOnce({ rows: [] }) // payerAtMany -- sem vínculo
+      .mockResolvedValueOnce({ rows: [] }) // payerHistoryMany
+      .mockResolvedValueOnce({ rows: [] }); // priceStateMany
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
@@ -311,7 +333,8 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     expect(svc.deviceTypes).toEqual([]); // device de OUTRO serviço não vaza
     expect(svc.providers[0].workerName).toBeNull();
     expect(svc.providers[0].weeklyHours).toBeNull();
-    expect(svc.hourlyValue).toBeNull();
+    // Lote sem buraco: o serviço sem vínculo aparece como NO_CONTRACT (nunca ausente).
+    expect(svc).toMatchObject({ payer: { state: 'NO_CONTRACT' }, payerHistory: [], price: { state: 'NO_CONTRACT' }, tax: { state: 'NO_CONTRACT' }, coverageMatch: { state: 'NO_PAYER' } });
     expect(svc.authorizedHours).toBeNull();
   });
 });
@@ -405,11 +428,12 @@ describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4
     return { queryImpl, enc, run: () => fetchPatientDetail(makePool(queryImpl), enc, PATIENT_ID) };
   }
 
-  it('A3 (lex caminho a) — a ficha lê COALESCE(insurance_informed, health_insurance_name): o painel grava na coluna protegida, o sync do ClickUp sobrescreve a outra', async () => {
+  it('spec 058 — a ficha lê SÓ insurance_informed (o dono); health_insurance_name não entra mais', async () => {
     const { queryImpl, run } = runWithRow(basePatientRow());
     await run();
     const mainSql = String(queryImpl.mock.calls[0][0]);
-    expect(mainSql).toMatch(/COALESCE\(\s*p?\.?insurance_informed\s*,\s*p?\.?health_insurance_name\s*\)\s+AS\s+"insuranceInformed"/);
+    expect(mainSql).toMatch(/p\.insurance_informed\s+AS\s+"insuranceInformed"/);
+    expect(mainSql).not.toMatch(/health_insurance_name/);
   });
 
   it('A4 (lex C4.1) — seleciona contact_email_encrypted e descriptografa via KMS: exatamente 1 decrypt a mais, com o ciphertext certo', async () => {

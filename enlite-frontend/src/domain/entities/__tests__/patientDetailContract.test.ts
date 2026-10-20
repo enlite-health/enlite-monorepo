@@ -24,6 +24,11 @@
  * recaptura); serviço nasce com `provider_age_band='AGE_30_45'` — é o valor que o teste abaixo
  * verifica chegar cru no contrato (a TELA é quem traduz, não o contrato).
  *
+ * ATUALIZADA à mão em 19/10 (spec 058 Parte A, A2): o serviço perdeu `hourlyValue`/`contractType`/`taxCondition`/`hourlyValueRedacted`
+ * e ganhou `asOf`/`payer`/`payerHistory`/`price`/`tax`/`coverageMatch`; a ficha perdeu `insuranceVerified`/`insuranceVerifiedEntries` e
+ * ganhou `coverage` — o formato é o da resposta da A1 (rodada 4; provado lá por `058a-ficha-vs-rota`). A recaptura contra a API
+ * real fica para o e2e de tela da rodada 9 (T110/T130-T135).
+ *
  * O que este teste trava:
  *  - a entidade `PatientDetail` lê as chaves que a API manda (`name`, não
  *    `fullName`; `addressFormatted`, não `fullAddress`) — o `.strict()` do
@@ -88,8 +93,67 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
     expect(ok.contractedServices[0].liveVacancy).toEqual(vaga);
     const redigida = patientDetailContractSchema.parse(comServico({ liveVacancy: null, liveVacancyRedacted: true }));
     expect(redigida.contractedServices[0]).toMatchObject({ liveVacancy: null, liveVacancyRedacted: true });
-    expect(() => patientDetailContractSchema.parse(comServico({ liveVacancy: { ...vaga, hourlyValue: 1500 }, liveVacancyRedacted: false }))).toThrow();
+    expect(() => patientDetailContractSchema.parse(comServico({ liveVacancy: { ...vaga, campoExtra: 1500 }, liveVacancyRedacted: false }))).toThrow();
     expect(() => patientDetailContractSchema.parse(comServico({ chaveAntiga: 'v1' }))).toThrow(); // `.strict()`: chave desconhecida é recusada
+  });
+
+  describe('spec 058 (A2): pagador, preço, imposto, divergência e cobertura no fio', () => {
+    const comServico = (patch: Record<string, unknown>) => ({ ...fixture, contractedServices: [{ ...fixture.contractedServices[0], ...patch }] });
+    const names = { providerCode: 'OSDE', providerName: 'OSDE', contractId: 'c1', contractName: 'Plan 210', payerKind: 'PREPAGA' };
+
+    it('serviço VINCULADO: pagador com nomes, preço e imposto 0 (isento) chegam; o front não calcula "hoje" (asOf vem da resposta)', () => {
+      const s = patientDetailContractSchema.parse(fixture).contractedServices[0];
+      expect(s.asOf).toBe('2026-10-19');
+      expect(s.payer).toMatchObject({ state: 'LINKED', isPrivate: false, validTo: null, names: { providerName: 'OSDE', payerKind: 'PREPAGA' } });
+      expect(s.price).toEqual({ state: 'OK', hourlyRate: 1500, currency: 'ARS' });
+      expect(s.tax).toEqual({ state: 'OK', taxRatePercent: 0 });
+      expect(s.coverageMatch).toEqual({ state: 'MATCH' });
+    });
+
+    it('serviço SEM vínculo (todo serviço de hoje): NO_CONTRACT em pagador, preço e imposto', () => {
+      const p = patientDetailContractSchema.parse(comServico({ payer: { state: 'NO_CONTRACT' }, payerHistory: [], price: { state: 'NO_CONTRACT' }, tax: { state: 'NO_CONTRACT' }, coverageMatch: { state: 'NO_PAYER' } }));
+      expect(p.contractedServices[0].payer).toEqual({ state: 'NO_CONTRACT' });
+    });
+
+    it('REDAÇÃO por célula: sem `coverage` os nomes viram null e a divergência REDACTED; sem o valor, price REDACTED (imposto continua)', () => {
+      const p = patientDetailContractSchema.parse(comServico({
+        payer: { state: 'LINKED', isPrivate: true, validFrom: '2026-09-01', validTo: '2026-12-31', names: null },
+        payerHistory: [{ linkId: 'l1', isPrivate: true, validFrom: '2026-09-01', validTo: null, names: null }],
+        price: { state: 'REDACTED' },
+        coverageMatch: { state: 'REDACTED' },
+      }));
+      expect(p.contractedServices[0].price).toEqual({ state: 'REDACTED' });
+      expect(p.contractedServices[0].tax.state).toBe('OK');
+      expect(p.contractedServices[0].coverageMatch.state).toBe('REDACTED');
+    });
+
+    it('os 7 estados da divergência são aceitos e um estado desconhecido é recusado', () => {
+      for (const state of ['NO_PAYER', 'PRIVATE_PAYER', 'NO_COVERAGE', 'UNMAPPED_ONLY', 'MATCH', 'MISMATCH', 'REDACTED']) {
+        expect(patientDetailContractSchema.safeParse(comServico({ coverageMatch: { state }, payer: { state: 'LINKED', isPrivate: false, validFrom: '2026-09-01', validTo: null, names } })).success).toBe(true);
+      }
+      expect(patientDetailContractSchema.safeParse(comServico({ coverageMatch: { state: 'TALVEZ' } })).success).toBe(false);
+    });
+
+    it('as chaves LEGADAS do serviço (valor-hora, tipo, IVA) são recusadas pelo `.strict()` — saíram do fio', () => {
+      for (const legacy of [{ hourlyValue: 1500 }, { hourlyValueRedacted: false }, { contractType: 'OBRA_SOCIAL' }, { taxCondition: 'IVA_21' }]) {
+        expect(patientDetailContractSchema.safeParse(comServico(legacy)).success).toBe(false);
+      }
+    });
+
+    it('cobertura: `entries` com `code`+`name`+`mapped`+`source`; mapped:false tem code/name null; coverage:null = sem permissão', () => {
+      const p = patientDetailContractSchema.parse(fixture);
+      expect(p.coverage?.entries).toEqual([
+        { code: 'OSDE', name: 'OSDE', mapped: true, source: 'admin_manual' },
+        { code: null, name: null, mapped: false, source: 'clickup' },
+      ]);
+      expect(patientDetailContractSchema.parse({ ...fixture, coverage: null }).coverage).toBeNull();
+      expect(patientDetailContractSchema.safeParse({ ...fixture, coverage: { display: null, displaySource: 'NONE', entries: [{ code: 'X', source: 'clickup' }] } }).success).toBe(false);
+    });
+
+    it('`insuranceVerified` / `insuranceVerifiedEntries` (legado da ficha) são recusados', () => {
+      expect(patientDetailContractSchema.safeParse({ ...fixture, insuranceVerified: null }).success).toBe(false);
+      expect(patientDetailContractSchema.safeParse({ ...fixture, insuranceVerifiedEntries: [] }).success).toBe(false);
+    });
   });
 
   it('spec 015 (US-A6.1): providerAgeBand chega CRU no contrato — a tradução é responsabilidade da TELA, não do contrato', () => {

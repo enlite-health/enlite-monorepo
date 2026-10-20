@@ -1057,7 +1057,11 @@ describe('CoberturaMedicaCard', () => {
   const withInsurance = {
     ...patientDetailFixture,
     insuranceInformed: 'UNIMED',
-    insuranceVerified: 'Plano Unimed Empresarial',
+    coverage: {
+      display: 'UNIMED',
+      displaySource: 'INFORMED' as const,
+      entries: [{ code: 'UNIMED', name: 'Unimed Empresarial', mapped: true, source: 'admin_manual' }],
+    },
     affiliateId: '0000000000000000',
   };
 
@@ -1071,9 +1075,35 @@ describe('CoberturaMedicaCard', () => {
     expect(screen.getByText('UNIMED')).toBeInTheDocument();
   });
 
-  it('renders plan from insuranceVerified', () => {
+  // Spec 058 §4.5: a linha das VERIFICADAS lê `coverage.entries[].name` (nome do banco), não um escalar nem a tradução por código.
+  it('renders the verified coverage by the catalog NAME from coverage.entries', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
-    expect(screen.getByText('Plano Unimed Empresarial')).toBeInTheDocument();
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Unimed Empresarial');
+  });
+
+  it('lines: informada e verificadas são DUAS linhas distintas', () => {
+    render(<CoberturaMedicaCard patient={withInsurance} />);
+    expect(screen.getByTestId('coverage-informed')).toHaveTextContent('UNIMED');
+    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('Unimed Empresarial');
+  });
+
+  it('entradas sem mapeamento aparecem como "sin mapeo" junto das mapeadas — nunca escondidas', () => {
+    const coverage = {
+      display: 'UNIMED', displaySource: 'INFORMED' as const,
+      entries: [
+        { code: 'UNIMED', name: 'Unimed Empresarial', mapped: true, source: 'admin_manual' },
+        { code: null, name: null, mapped: false, source: 'clickup' },
+        { code: null, name: null, mapped: false, source: 'clickup' },
+      ],
+    };
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, coverage }} />);
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Unimed Empresarial, Sem mapeamento ao catálogo (2)');
+  });
+
+  it('coverage:null (ator sem a célula): "sem permissão" nas duas linhas — não "—", que diria "não tem"', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, insuranceInformed: null, coverage: null }} />);
+    expect(screen.getByTestId('coverage-informed')).toHaveTextContent('Sem permissão para ver a cobertura');
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Sem permissão para ver a cobertura');
   });
 
   it('renders affiliateId as credential', () => {
@@ -1108,10 +1138,19 @@ describe('CoberturaMedicaCard', () => {
     expect(screen.getAllByTestId('patient-coverage-edit-drawer')).toHaveLength(2);
   });
 
-  it('spec 012 US-B3: verificadas por CÓDIGO aparecem traduzidas e têm precedência sobre o escalar cru', () => {
-    render(<CoberturaMedicaCard patient={{ ...withInsurance, insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL', 'CODIGO_NOVO'] }} />);
-    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('OSDE, Swiss Medical, CODIGO_NOVO');
-    expect(screen.queryByText('Plano Unimed Empresarial')).not.toBeInTheDocument();
+  it('spec 058: as verificadas aparecem pelo NOME do catálogo (coverage.entries), nunca pelo código; nome repetido (2 origens) sai uma vez', () => {
+    const coverage = {
+      display: 'UNIMED', displaySource: 'INFORMED' as const,
+      entries: [
+        { code: 'OSDE', name: 'OSDE', mapped: true, source: 'clickup' },
+        { code: 'OSDE', name: 'OSDE', mapped: true, source: 'admin_manual' },
+        { code: 'SWISS_MEDICAL', name: 'Swiss Medical', mapped: true, source: 'admin_manual' },
+        { code: 'CODIGO_NOVO', name: 'Nome Novo do Banco', mapped: true, source: 'admin_manual' },
+      ],
+    };
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, coverage }} />);
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('OSDE, Swiss Medical, Nome Novo do Banco');
+    expect(screen.getByTestId('coverage-verified-value').textContent).not.toContain('CODIGO_NOVO');
   });
 });
 
