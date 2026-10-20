@@ -17,7 +17,6 @@ const DONO = path.join('modules', 'case', 'domain', 'dateRangeWire.ts');
  * a lista é FECHADA (arquivo novo fora dela reprova) e o teste abaixo falha se um item sair de lá sem necessidade (lista velha = achado).
  */
 const INTERINIDADE_056 = [
-  'modules/case/domain/ContractedServiceAuthorization.ts',
   'shared/openapi/registrations/adminPatients.ts',
 ];
 
