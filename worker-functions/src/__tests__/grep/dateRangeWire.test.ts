@@ -18,7 +18,6 @@ const DONO = path.join('modules', 'case', 'domain', 'dateRangeWire.ts');
  */
 const INTERINIDADE_056 = [
   'modules/case/domain/ContractedServiceAuthorization.ts',
-  'modules/case/infrastructure/ContractedServiceAuthorizationRepository.ts',
   'modules/case/infrastructure/ServiceSlotWriter.ts',
   'shared/openapi/registrations/adminPatients.ts',
 ];

@@ -1,5 +1,6 @@
+const mockPoolQuery = jest.fn().mockResolvedValue({ rows: [] });
 jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: { getInstance: () => ({ getPool: () => ({ query: jest.fn() }) }) },
+  DatabaseConnection: { getInstance: () => ({ getPool: () => ({ query: mockPoolQuery }) }) },
 }));
 jest.mock('@shared/database/actorContext', () => ({
   withActorContext: jest.fn(),
@@ -11,7 +12,7 @@ import { AuthorizationNotFoundError, AuthorizationOverlapsError } from '../../do
 
 const W = { serviceId: 'svc-1', hours: 120, validFrom: '2026-01-01', validTo: '2026-12-31', actorUid: 'staff-1' };
 const ROW = {
-  id: 'a-1', hours: '120', valid_from: '2026-01-01', valid_upper: '2027-01-01',
+  id: 'a-1', hours: '120', valid: '[2026-01-01,2027-01-01)',
   recorded_at: new Date('2026-10-18T00:00:00Z'), recorded_by: 'staff-1', superseded_at: null,
 };
 
@@ -27,10 +28,19 @@ describe('ContractedServiceAuthorizationRepository', () => {
     runWith(query);
     const view = await new ContractedServiceAuthorizationRepository().create(W);
     const [sql, params] = query.mock.calls[0];
-    expect(sql).toContain("daterange($3::date, $4::date, '[)')");
-    expect(params).toEqual(['svc-1', 120, '2026-01-01', '2027-01-01', 'staff-1']);
+    expect(sql).toContain('VALUES ($1, $2, $3, $4)');
+    expect(sql).not.toContain('daterange(');
+    expect(params).toEqual(['svc-1', 120, '[2026-01-01,2027-01-01)', 'staff-1']);
     expect(view.validTo).toBe('2026-12-31');
     expect(view.hours).toBe(120);
+  });
+
+  it('list ordena por valid DESC, recorded_at DESC (início, depois fim, depois registro)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    await new ContractedServiceAuthorizationRepository().list('svc-1');
+    const sql = String(mockPoolQuery.mock.calls[0][0]);
+    expect(sql).toContain('ORDER BY valid DESC, recorded_at DESC');
+    expect(sql).not.toMatch(/lower\(valid\)/);
   });
 
   it('supersede faz UPDATE antes do INSERT, no mesmo client', async () => {
