@@ -67,7 +67,6 @@ export const mockVacancy = {
   patient_zone: 'Palermo',
   patient_city: 'CABA',
   patient_neighborhood: 'Palermo',
-  insurance_verified: true,
   required_professions: ['AT'],
   required_sex: 'F',
   pathology_types: 'TEA',

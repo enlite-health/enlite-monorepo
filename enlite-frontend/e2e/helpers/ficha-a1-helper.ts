@@ -23,12 +23,8 @@ export function seedFichaA1Patient(): FichaA1Seed {
     withAddress: true,
   });
   if (!addressId) throw new Error('seedFichaA1Patient: insertTestPatient não devolveu addressId');
-  // `sex` conhecido para provar a troca no card. `insurance_informed` fica de propósito NULL — o
-  // GET faz `COALESCE(insurance_informed, health_insurance_name)` (`PatientDetailQueryHelper.ts`):
-  // se a semeadura gravasse `insurance_informed` (o campo legado do ClickUp), o COALESCE nunca
-  // deixaria o valor editado pelo painel (`health_insurance_name`, o que o drawer `pcv-name`
-  // grava) aparecer no card — medido 15/09, editar "Nombre de la Cobertura" não mudava nada na
-  // tela até tirar este UPDATE.
+  // `sex` conhecido para provar a troca no card. `insurance_informed` (dono único da cobertura informada, spec 058) fica de propósito NULL:
+  // o card nasce com "—", e o valor que aparecer depois veio do PATCH do drawer `pcv-name`, não da semeadura.
   runSQL(`UPDATE patients SET sex = 'FEMALE' WHERE id = '${patientId}'`);
   runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by)
           VALUES ('${patientId}', 'AT', true, 'AR', 'e2e-ficha-a1-setup', 'e2e-ficha-a1-setup')`);
