@@ -137,7 +137,9 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     const botao = page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`);
     await expect(botao).toBeVisible();
     await expect(botao).toBeDisabled();
-    await expect(botao).toHaveAttribute('title', /Datos de reclutamiento del servicio/);
+    await expect(botao).toHaveAttribute('title', /Sexo del prestador del servicio/);
+    // Só o campo que falta aparece: os outros 4 estão preenchidos.
+    await expect(botao).not.toHaveAttribute('title', /Día de pago|Jornada|Experiencia requerida|Tipo de prestador/);
 
     // Nenhuma vaga nasceu.
     expect(runSQL(`SELECT count(*) FROM job_postings WHERE patient_id = '${patientId}'`).trim()).toBe('0');
