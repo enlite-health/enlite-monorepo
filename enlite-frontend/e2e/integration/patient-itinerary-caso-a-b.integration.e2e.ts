@@ -174,7 +174,7 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
 
       // Por fora: o titular é encerrado por outro caminho.
       const fora = await endAllocationApi(request, derivacaoToken(), m.seed.patientId, m.serviceId, m.allocationA, { reasonCategory: 'OTHER', destination: 'RESERVE' });
-      expect(fora.status, `end por fora ${fora.status} ${fora.code ?? ''}`).toBe(200);
+      expect(fora.status, `end por fora ${fora.status} ${fora.body.code ?? ''}`).toBe(200);
 
       const [resp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())),
