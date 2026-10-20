@@ -21,7 +21,7 @@ import { loginAs } from '../helpers/abac-stack-helper';
 import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
 import { seedDerivablePatient, selectedWorker, allocateWorker, derivacaoToken } from '../helpers/derivacao-e2e-helper';
 import { insertWJA } from '../helpers/wja-test-helper';
-import { allocationOptionsApi } from '../helpers/itinerario-escrita-e2e-helper';
+import { allocationOptionsApi, endAllocationApi } from '../helpers/itinerario-escrita-e2e-helper';
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
 
@@ -160,6 +160,35 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
       expect(proibidos()).toEqual([]);
     } finally {
       seed2.cleanup();
+      m.seed.cleanup();
+    }
+  });
+
+  test('ALTERNATIVO 2 (estado muda por fora): o titular é encerrado por outro caminho antes de confirmar → 422 ALLOCATION_NOT_ACTIVE com mensagem', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const m = await semearTroca(request);
+    try {
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, m.seed.patientId);
+      await prepararEntero(page); // tudo preenchido, SEM confirmar
+
+      // Por fora: o titular é encerrado por outro caminho.
+      const fora = await endAllocationApi(request, derivacaoToken(), m.seed.patientId, m.serviceId, m.allocationA, { reasonCategory: 'OTHER', destination: 'RESERVE' });
+      expect(fora.status, `end por fora ${fora.status} ${fora.code ?? ''}`).toBe(200);
+
+      const [resp] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())),
+        page.getByTestId('substitution-confirm').click(),
+      ]);
+      expect(resp.status()).toBe(422);
+      expect((await resp.json()).code).toBe('ALLOCATION_NOT_ACTIVE');
+      await expect(page.getByTestId('itinerario-novo-erro-submit')).toContainText('Esa asignación ya no está activa');
+
+      expect(statusDaAlocacao(m.allocationA)).toBe('ENDED');
+      expect(contagemNoServico(m.serviceId, m.b)).toBe('0');
+      expect(replaces(m.serviceId)).toBe('0'); // só o REMOVE do passo por fora
+      expect(proibidos()).toEqual([]);
+    } finally {
       m.seed.cleanup();
     }
   });
