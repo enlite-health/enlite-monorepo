@@ -532,9 +532,11 @@ describe('ContractedServiceFormRow', () => {
       expect(screen.queryByTestId('svc-auth-legacy-1')).toBeNull();
     });
 
-    it('mostra legado quando authorization null', () => {
-      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, legacyAuthorizedHours: 20 }} index={1} onSaved={vi.fn()} />);
-      expect(screen.getByTestId('svc-auth-legacy-1').textContent).toBe('Valor anterior, sin vigencia: 20 h');
+    it('sem legado: authorization null mostra "sin autorización" e NÃO o valor antigo da coluna', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, legacyAuthorizedHours: 20 } as PatientContractedServiceDetail} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-auth-none-1').textContent).toBe('Sin autorización vigente');
+      expect(screen.queryByTestId('svc-auth-legacy-1')).toBeNull();
+      expect(screen.queryByText(/Valor anterior/)).toBeNull();
       expect(screen.queryByTestId('svc-auth-current-1')).toBeNull();
     });
 
