@@ -13,9 +13,18 @@ export class NameNotCodifiableError extends Error {
   }
 }
 
+/** Teto do `code` (mesmo de `providerCodeParamSchema`). */
+const MAX_CODE_LENGTH = 64;
+
 export function deriveProviderCode(name: string): string {
   const upper = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
   if (!/[A-Z0-9]/.test(upper)) throw new NameNotCodifiableError();
   const base = upper.replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return /^[0-9]/.test(base) ? `P_${base}` : base;
+  const prefixed = /^[0-9]/.test(base);
+  const full = prefixed ? `P_${base}` : base;
+  if (full.length <= MAX_CODE_LENGTH) return full;
+  // Teto de 64 (as rotas `:code` e o CHECK barram mais): corta na última fronteira `_` que cabe, sem `_` final; colisão segue 409 no repositório.
+  const window = full.slice(0, MAX_CODE_LENGTH + 1);
+  const cut = window.lastIndexOf('_');
+  return cut > (prefixed ? 1 : 0) ? window.slice(0, cut) : full.slice(0, MAX_CODE_LENGTH);
 }

@@ -1,3 +1,4 @@
+import { providerCodeParamSchema } from '../../interfaces/validators/insuranceProviderSchemas';
 import { NameNotCodifiableError, deriveProviderCode } from '../deriveProviderCode';
 
 describe('deriveProviderCode', () => {
@@ -31,5 +32,20 @@ describe('deriveProviderCode', () => {
       expect(c).toMatch(/^[A-Z][A-Z0-9_]*$/);
       expect(deriveProviderCode(n)).toBe(c);
     }
+  });
+
+  it('nome longo (78 caracteres da QA): o código cabe em 64, termina em palavra inteira e a rota :code o aceita', () => {
+    const nome = 'Obra Social del Personal de Edificios de Renta y Horizontal de Capital Federal';
+    expect(nome).toHaveLength(78);
+    const c = deriveProviderCode(nome);
+    expect(c.length).toBeLessThanOrEqual(64);
+    expect(c).not.toMatch(/_$/);
+    expect(nome.toUpperCase().replace(/ /g, '_').startsWith(c)).toBe(true);
+    expect(providerCodeParamSchema.safeParse({ code: c }).success).toBe(true);
+  });
+
+  it('com prefixo P_ e uma palavra só maior que o teto: continua <= 64', () => {
+    expect(deriveProviderCode(`1${'A'.repeat(80)}`).length).toBe(64);
+    expect(deriveProviderCode(`${'B'.repeat(70)} x`)).toMatch(/^B{64}$/);
   });
 });
