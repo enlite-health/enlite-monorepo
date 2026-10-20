@@ -27,6 +27,7 @@ import {
   ServiceWithoutSlotError,
 } from '../../application/AssembleItineraryUseCase';
 import { RemoveFromItineraryUseCase } from '../../application/RemoveFromItineraryUseCase';
+import { ReplaceWithReasonUseCase } from '../../application/ReplaceWithReasonUseCase';
 import {
   ServiceTeamWorkerAllocatedError,
   ServiceTeamNotSelectedError,
@@ -74,6 +75,7 @@ export class AdminItineraryWriteController {
     private readonly allocationUseCase: ItineraryAllocationUseCase = new ItineraryAllocationUseCase(),
     private readonly assemblyUseCase: AssembleItineraryUseCase = new AssembleItineraryUseCase(),
     private readonly removeUseCase: RemoveFromItineraryUseCase = new RemoveFromItineraryUseCase(),
+    private readonly replaceUseCase: ReplaceWithReasonUseCase = new ReplaceWithReasonUseCase(),
   ) {}
 
   /** GET .../contracted-services/:sid/allocation-options */
@@ -233,12 +235,14 @@ export class AdminItineraryWriteController {
     if (actorUid === null) return;
     const { id: patientId, sid: serviceId, allocationId } = params.data;
     try {
-      const result = await this.allocationUseCase.replace({
+      const result = await this.replaceUseCase.execute({
         patientId,
         serviceId,
         allocationId,
         newWorkerId: body.data.newWorkerId,
         fromDate: body.data.fromDate,
+        reasonCategory: body.data.reasonCategory,
+        destination: body.data.destination,
         actorUid,
       });
       res.status(200).json({ success: true, data: result });

@@ -38,6 +38,7 @@ import {
   ServiceWithoutSlotError,
 } from '../../../application/AssembleItineraryUseCase';
 import { RemoveFromItineraryUseCase } from '../../../application/RemoveFromItineraryUseCase';
+import { ReplaceWithReasonUseCase } from '../../../application/ReplaceWithReasonUseCase';
 import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../../domain/serviceExitReason';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
@@ -89,12 +90,14 @@ describe('AdminItineraryWriteController', () => {
   const allocationUseCase = { allocate: jest.fn(), end: jest.fn() };
   const assemblyUseCase = { execute: jest.fn() };
   const removeUseCase = { execute: jest.fn() };
+  const replaceUseCase = { execute: jest.fn() };
   const ctrl = new AdminItineraryWriteController(
     teamUseCase as unknown as GetServiceTeamUseCase,
     slotUseCase as unknown as ItinerarySlotWriteUseCase,
     allocationUseCase as unknown as ItineraryAllocationUseCase,
     assemblyUseCase as unknown as AssembleItineraryUseCase,
     removeUseCase as unknown as RemoveFromItineraryUseCase,
+    replaceUseCase as unknown as ReplaceWithReasonUseCase,
   );
   beforeEach(() => jest.clearAllMocks());
 
@@ -454,6 +457,37 @@ describe('AdminItineraryWriteController', () => {
       const call = (reportError as jest.Mock).mock.calls[0][1] as Record<string, unknown>;
       expect(call).not.toHaveProperty('workerId');
       expect(call.serviceId).toBeUndefined();
+    });
+  });
+
+  describe('replace (POST .../allocations/:allocationId/replace) — Caso A/B (058)', () => {
+    const PARAMS = { id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID };
+    const BODY = { newWorkerId: WORKER_ID, fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' };
+
+    it('corpo sem newWorkerId → 400; o caso de uso não roda', async () => {
+      const [req, res] = reqRes(PARAMS, { fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' });
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(replaceUseCase.execute).not.toHaveBeenCalled();
+    });
+    it('sem ator → 401', async () => {
+      const [req, res] = reqRes(PARAMS, BODY, null);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(replaceUseCase.execute).not.toHaveBeenCalled();
+    });
+    it('feliz → 200; o caso de uso recebe newWorkerId, fromDate, reasonCategory e destination', async () => {
+      const result = { endedAllocationId: ALLOCATION_ID, status: 'ACTIVE' as const };
+      replaceUseCase.execute.mockResolvedValueOnce(result);
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: true, data: result });
+      expect(replaceUseCase.execute).toHaveBeenCalledWith({
+        patientId: PATIENT_ID, serviceId: SERVICE_ID, allocationId: ALLOCATION_ID, newWorkerId: WORKER_ID,
+        fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE', actorUid: 'staff-1',
+      });
+      expect(allocationUseCase).not.toHaveProperty('replace');
     });
   });
 
