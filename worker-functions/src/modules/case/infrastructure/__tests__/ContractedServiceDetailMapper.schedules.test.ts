@@ -29,6 +29,16 @@ describe('fetchServiceSchedules', () => {
     expect(out.get('s3')).toBeNull();
   });
 
+  it('resposta sem rows → todas as chaves null; linha sem schedule → null', async () => {
+    const semRows = { query: jest.fn().mockResolvedValue({}) };
+    const a = await fetchServiceSchedules(semRows, ['s1'], '2024-03-09');
+    expect(a.get('s1')).toBeNull();
+
+    const semSchedule = fakeQ([{ id: 's2' }]);
+    const b = await fetchServiceSchedules(semSchedule, ['s2'], '2024-03-09');
+    expect(b.get('s2')).toBeNull();
+  });
+
   it('sem ids: não consulta e devolve Map vazio', async () => {
     const q = fakeQ();
     const out = await fetchServiceSchedules(q, [], '2024-03-09');

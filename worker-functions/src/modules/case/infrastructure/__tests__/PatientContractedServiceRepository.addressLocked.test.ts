@@ -39,15 +39,15 @@ function fakeProviderRepo(): ContractedServiceProviderRepository {
   return { listForService: jest.fn().mockResolvedValue([]) } as unknown as ContractedServiceProviderRepository;
 }
 
-function cliente(opts: { atual?: string | null; vagaViva?: boolean; alocacoes?: number }) {
-  const { atual = 'addr-A', vagaViva = false, alocacoes = 0 } = opts;
+function cliente(opts: { atual?: string | null; vagaViva?: boolean; alocacoes?: number; semRowCount?: boolean }) {
+  const { atual = 'addr-A', vagaViva = false, alocacoes = 0, semRowCount = false } = opts;
   const chamadas: string[] = [];
   const query = jest.fn(async (sql: string) => {
     chamadas.push(sql.replace(/\s+/g, ' ').trim());
     const t = sql.trim();
     if (/^BEGIN$|^COMMIT$|^ROLLBACK$/.test(t)) return { rows: [], rowCount: 0 };
     if (/^SELECT address_id, country FROM patient_contracted_services/.test(t)) return { rows: [{ address_id: atual, country: 'AR' }], rowCount: 1 };
-    if (/^SELECT 1 FROM job_postings/.test(t)) return { rows: vagaViva ? [{ '?column?': 1 }] : [], rowCount: vagaViva ? 1 : 0 };
+    if (/^SELECT 1 FROM job_postings/.test(t)) return { rows: vagaViva ? [{ '?column?': 1 }] : [], rowCount: semRowCount ? undefined : vagaViva ? 1 : 0 };
     if (/^SELECT count\(\*\)::int AS n/.test(t)) return { rows: [{ n: alocacoes }], rowCount: 1 };
     if (/^UPDATE patient_contracted_services SET/.test(t)) return { rows: [], rowCount: 1 };
     if (/^SELECT \* FROM patient_contracted_services WHERE id/.test(t)) return { rows: [SERVICE_ROW], rowCount: 1 };
@@ -74,6 +74,15 @@ describe('PatientContractedServiceRepository.update — REGRA-05 (addressId trav
     expect(err).toBeInstanceOf(ServiceAddressLockedError);
     expect(err).toMatchObject({ code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'LIVE_VACANCY' } });
     expect(houveUpdate(chamadas)).toBe(false);
+  });
+
+  it('REGRA-05 recusa: driver sem rowCount → conta pelas linhas devolvidas (LIVE_VACANCY)', async () => {
+    const { cli } = cliente({ vagaViva: true, semRowCount: true });
+    mockConnect.mockResolvedValue(cli);
+
+    const err = await repo().update('svc-1', { addressId: 'addr-B', actorUid: 'u-1' }, NOW).catch((e) => e);
+
+    expect(err).toMatchObject({ code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'LIVE_VACANCY' } });
   });
 
   it('REGRA-05 recusa: sem vaga viva e com alocação vigente → ALLOCATION', async () => {
