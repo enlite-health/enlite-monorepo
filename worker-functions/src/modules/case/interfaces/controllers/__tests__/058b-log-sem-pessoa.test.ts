@@ -115,4 +115,20 @@ describe('058b — log sem pessoa', () => {
     expect(logado).not.toContain(PATIENT_ID);
     expect(logado).not.toContain(SERVICE_ID);
   });
+
+  it.each(['PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'PROVIDERS_NEEDED_CANNOT_CLEAR'])('caminho 2 — Trava B: P0001 %s → 422 com o código, sem log de pessoa', async (codigo) => {
+    const repo = {
+      findById: jest.fn().mockResolvedValue({ patientId: PATIENT_ID }),
+      update: jest.fn().mockRejectedValue(Object.assign(new Error(codigo), { code: 'P0001' })),
+    };
+    const ctrl = new AdminPatientContractedServicesController(repo as never, {} as never);
+    const res = reqResPlain();
+    await ctrl.update({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 2 }, user: { roles: ['admin'] } } as never, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: codigo }));
+    expect(reportError).not.toHaveBeenCalled();
+    const logado = tudoQueFoiLogado();
+    expect(logado).not.toContain(PATIENT_ID);
+    expect(logado).not.toContain(SERVICE_ID);
+  });
 });
