@@ -78,13 +78,9 @@ const PATIENT_DETAIL_SQL = `
     has_judicial_protection  AS "hasJudicialProtection",
     has_cud                  AS "hasCud",
     has_consent              AS "hasConsent",
-    -- Cobertura (spec 011 A3, lex "caminho a"): o painel grava em
-    -- health_insurance_name (fill-only no upsert do ClickUp, mig 147) e o
-    -- sync do ClickUp SOBRESCREVE insurance_informed com o que o mapper manda —
-    -- e ele não manda. Ler só insurance_informed escondia a cobertura gravada;
-    -- mover a escrita para lá faria o próximo webhook apagá-la. A ficha lê as
-    -- duas; a coluna de origem (ClickUp) tem precedência quando existe.
-    COALESCE(p.insurance_informed, p.health_insurance_name) AS "insuranceInformed",
+    -- Cobertura (spec 058): insurance_informed é o ÚNICO dono — o painel grava nele e o sync do
+    -- ClickUp só preenche quando está vazio (fill-only); a coluna legada de cobertura não é mais lida.
+    p.insurance_informed     AS "insuranceInformed",
     city_locality            AS "cityLocality",
     province,
     zone_neighborhood        AS "zoneNeighborhood",
@@ -206,8 +202,8 @@ async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionSer
           AND jp.deleted_at IS NULL`,
       [patientId],
     ),
-    // Serviços contratados (spec 013, bloco C) — contrato do detalhe. hourlyValue vem CRU aqui;
-    // a redação por papel (lex C-c.4) acontece no controller (ponto único).
+    // Serviços contratados (spec 013, bloco C) — contrato do detalhe. O `price` (do termo do contrato, spec 058) vem CRU aqui;
+    // a redação por ator (`redactTermForActor`) acontece na projeção (ponto único).
     pool.query(`SELECT * FROM patient_contracted_services WHERE patient_id = $1 ORDER BY active DESC, created_at ASC`, [patientId]),
     // 417 (D301): só o ciphertext; decifra depois, e só sob `patient_coverage:read`. Bulkhead (molde dos
     // diagnósticos, D263 C4): a 417 é migration MANUAL em prod e o merge deploya o código — se a tabela ainda

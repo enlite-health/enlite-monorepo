@@ -153,8 +153,7 @@ export class PatientQueryRepository {
         -- não são PII encriptada.
         p.birth_date            AS "birthDate",
         p.has_consent           AS "hasConsent",
-        COALESCE(p.insurance_informed, p.health_insurance_name)
-                               AS "insuranceInformed",
+        p.insurance_informed        AS "insuranceInformed",
         -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como
         -- presente — mesma régua de MISSING_SQL.RESPONSIBLE (PatientCompleteness.ts).
         EXISTS (SELECT 1 FROM patient_responsibles pr

@@ -599,7 +599,7 @@ export class AdminPatientsController {
         return;
       }
 
-      // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do `hourlyValue` (lex
+      // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do preço do contrato `price` (lex
       // C-c.4): as duas redações vivem em `AdminPatientView.projectAdminPatientDetail`.
       const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, hourlyValueActorOf(req));
       // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.

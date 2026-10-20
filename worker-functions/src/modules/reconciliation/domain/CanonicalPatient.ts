@@ -92,8 +92,10 @@ export function toCanonical(input: PatientServiceUpsertInput, country: string): 
     documentNumber: input.documentNumber ?? null,
     sex: input.sex ?? null,
     phoneWhatsapp: input.phoneWhatsapp ?? null,
-    healthInsuranceName: input.healthInsuranceName ?? null,
-    healthInsuranceMemberId: input.healthInsuranceMemberId ?? null,
+    // Spec 058: as CHAVES canônicas (`healthInsuranceName`/`healthInsuranceMemberId`) são dado de `source_field_map` (migration 438) e
+    // não mudam; o que muda é de onde o mapper as entrega — os donos `insuranceInformed` e `affiliateId`.
+    healthInsuranceName: input.insuranceInformed ?? null,
+    healthInsuranceMemberId: input.affiliateId ?? null,
     hasCud: input.hasCud ?? null,
     hasConsent: input.hasConsent ?? null,
     hasJudicialProtection: input.hasJudicialProtection ?? null,

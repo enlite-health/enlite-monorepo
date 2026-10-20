@@ -185,7 +185,7 @@ export interface RecruitmentReadinessInput {
   serviceHasAddress: boolean;
   /** O serviço `:sid` tem `schedule` não-vazio (array com ≥1 item). */
   serviceHasSchedule: boolean;
-  /** `insurance_informed`/`health_insurance_name` do PACIENTE — mesma fonte do checklist geral. */
+  /** `insurance_informed` do PACIENTE — mesma fonte do checklist geral. */
   insuranceInformed: string | null;
   /**
    * Hotfix gate-cobertura-verificada-vacante (28/09): o paciente tem ≥1 linha em
@@ -226,7 +226,7 @@ export interface PatientCompletenessInput {
   /** Data de nascimento do paciente (ISO ou Date) — usada só para decidir se RESPONSIBLE é exigido. */
   birthDate: string | Date | null;
   hasConsent: boolean | null;
-  /** `insuranceInformed` (ou `health_insurance_name`) — string vazia conta como ausente. */
+  /** `insuranceInformed` — string vazia conta como ausente. */
   insuranceInformed: string | null;
   activeAddressCount: number;
   activeResponsibleCount: number;
@@ -351,8 +351,8 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
   // FR-122: mesmo critério de `isPlaceholderCoverageValue` — < 2 caracteres alfanuméricos, ou só
   // zeros, depois de tirar pontuação/espaço. Mesmo COALESCE que a listagem projeta.
   COVERAGE: (p) => `(
-        LENGTH(REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ${p}.health_insurance_name, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g')) < 2
-        OR REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ${p}.health_insurance_name, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g') ~ '^0+$'
+        LENGTH(REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g')) < 2
+        OR REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g') ~ '^0+$'
       )`,
   // activeContractedServiceCount < 1
   CONTRACTED_SERVICE: (p) => `NOT EXISTS (SELECT 1 FROM patient_contracted_services pcs WHERE pcs.patient_id = ${p}.id AND pcs.active)`,
