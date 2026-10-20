@@ -54,6 +54,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeScheduled, setRemoveScheduled] = useState<{ substitutionDates: string[]; futureEntryFrom: string | null } | null>(null);
   const openRef = useRef(0);
 
   if (status === 'idle' || status === 'loading') return <DetailSkeleton />;
@@ -139,6 +140,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
     openRef.current += 1;
     setEditing(null);
     setRemoveError(null);
+    setRemoveScheduled(null);
   }
 
   function confirmEdit(workerId: string): void {
@@ -149,16 +151,26 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
   }
 
   /** "Quitar del itinerario" (Fase 4): motivo + destino; erro fica no painel (traduzido por CÓDIGO), sucesso fecha o modal. */
-  async function removeFromItinerary(reasonCategory: string, destination: ExitDestination, allocationId: string): Promise<void> {
+  async function removeFromItinerary(reasonCategory: string, destination: ExitDestination, allocationId: string, cancelScheduled?: boolean): Promise<void> {
     if (!editing) return;
     const { serviceId } = editing;
     setRemoving(true);
     setRemoveError(null);
+    setRemoveScheduled(null);
     try {
-      await AdminContractedServicesApiService.endAllocation(patient.id, serviceId, allocationId, { reasonCategory, destination });
+      await AdminContractedServicesApiService.endAllocation(patient.id, serviceId, allocationId, {
+        reasonCategory,
+        destination,
+        ...(cancelScheduled ? { cancelScheduled: true } : {}),
+      });
       closeEdit();
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
+      if (code === 'WORKER_HAS_SCHEDULED_ATTENDANCES') {
+        const d = (err as { details?: { substitutionDates?: string[]; futureEntryFrom?: string | null } }).details;
+        setRemoveScheduled({ substitutionDates: d?.substitutionDates ?? [], futureEntryFrom: d?.futureEntryFrom ?? null });
+        return;
+      }
       setRemoveError(
         code ? t(`admin.patients.detail.itinerary.actionErrors.${code}`, ti('removePanel.submitError')) : ti('removePanel.submitError'),
       );
@@ -278,7 +290,9 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
           providersNeeded={editing.providersNeeded}
           onSubmit={confirmEdit}
           onCancel={closeEdit}
-          onRemove={(reasonCategory, destination, allocationId) => void removeFromItinerary(reasonCategory, destination, allocationId)}
+          onRemove={(reasonCategory, destination, allocationId, cancelScheduled) => void removeFromItinerary(reasonCategory, destination, allocationId, cancelScheduled)}
+          removeScheduled={removeScheduled}
+          onRemoveScheduledDismiss={() => setRemoveScheduled(null)}
           removing={removing}
           removeError={removeError}
         />

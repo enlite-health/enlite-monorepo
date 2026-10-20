@@ -448,6 +448,53 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
       expect(await screen.findByTestId('itinerario-quitar-erro')).toHaveTextContent('No se pudo quitar al prestador del itinerario');
     });
 
+    const SCHEDULED_409 = () =>
+      Object.assign(new Error('x'), {
+        code: 'WORKER_HAS_SCHEDULED_ATTENDANCES',
+        status: 409,
+        details: { substitutionDates: ['2026-10-26', '2026-11-02'], futureEntryFrom: null },
+      });
+
+    async function confirmarAteOAviso() {
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TITULAR }));
+      renderTab();
+      await openQuitarPanel();
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      return screen.findByTestId('aviso-agendados');
+    }
+
+    it('409 WORKER_HAS_SCHEDULED_ATTENDANCES: mostra aviso-agendados com as datas; nenhum erro genérico; o painel continua aberto', async () => {
+      mockEndAllocation.mockRejectedValueOnce(SCHEDULED_409());
+      const aviso = await confirmarAteOAviso();
+      expect(screen.getByTestId('aviso-agendados-datas')).toHaveTextContent('26/10, 02/11');
+      expect(aviso).toBeInTheDocument();
+      expect(screen.queryByTestId('itinerario-quitar-erro')).toBeNull();
+      expect(screen.getByTestId('itinerario-quitar-painel')).toBeInTheDocument();
+    });
+
+    it('confirmar o aviso reenvia endAllocation com cancelScheduled: true e fecha o modal', async () => {
+      mockEndAllocation.mockRejectedValueOnce(SCHEDULED_409());
+      mockEndAllocation.mockResolvedValueOnce({ allocationId: 'alloc-1', status: 'ENDED', validTo: '2026-09-28', destination: 'LEAVE_SERVICE' });
+      await confirmarAteOAviso();
+      fireEvent.click(screen.getByTestId('aviso-agendados-confirmar'));
+      await waitFor(() => expect(mockEndAllocation).toHaveBeenCalledTimes(2));
+      expect(mockEndAllocation).toHaveBeenNthCalledWith(2, PATIENT.id, 'svc-1', 'alloc-1', {
+        reasonCategory: 'NOVO_DO_ADMIN',
+        destination: 'LEAVE_SERVICE',
+        cancelScheduled: true,
+      });
+      await waitFor(() => expect(screen.queryByTestId('itinerario-editar-modal')).toBeNull());
+    });
+
+    it('Volver do aviso: nenhuma 2ª chamada a endAllocation', async () => {
+      mockEndAllocation.mockRejectedValueOnce(SCHEDULED_409());
+      await confirmarAteOAviso();
+      fireEvent.click(screen.getByTestId('aviso-agendados-cancelar'));
+      await waitFor(() => expect(screen.queryByTestId('aviso-agendados')).toBeNull());
+      expect(mockEndAllocation).toHaveBeenCalledTimes(1);
+    });
+
     it('faixa sem prestador vigente: nenhuma ação de quitar', async () => {
       mockUsePatientItinerary.mockReturnValue(hookState());
       renderTab();
