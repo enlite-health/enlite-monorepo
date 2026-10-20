@@ -78,4 +78,56 @@ test.describe('patient-itinerary-capacidade-faixa: N prestadores por faixa pela 
       f.seed.cleanup();
     }
   });
+
+  test('ALTERNATIVO 1 (servidor recusa): outro agente aloca o 2º por API com a tela ainda mostrando "Agregar" → 422 ITINERARY_SLOT_CAPACITY_EXCEEDED → orientação e recarrega', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const f = await semearFaixa(request, 2, 3);
+    try {
+      const [a, b, c] = f.workers;
+      const alocA = await allocateWorker(request, f.seed.patientId, f.serviceId, f.slotId, a);
+      expect(alocA.status, `allocate A ${alocA.status} ${alocA.code ?? ''}`).toBe(201);
+
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, f.seed.patientId);
+      await page.getByTestId(`itinerario-slot-editar-${f.slotId}`).click();
+      await expect(page.getByTestId('itinerario-editar-prestador')).toBeVisible(); // há vaga: 1 de 2
+      await page.getByTestId(`itinerario-editar-selecionar-${b}`).click();
+
+      // Por fora: outro agente ocupa a 2ª vaga enquanto a tela ainda mostra "Agregar".
+      const alocC = await allocateWorker(request, f.seed.patientId, f.serviceId, f.slotId, c);
+      expect(alocC.status, `allocate C ${alocC.status} ${alocC.code ?? ''}`).toBe(201);
+
+      const [resp] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && /\/slots\/[^/]+\/allocations$/.test(r.url())),
+        page.getByTestId('itinerario-editar-guardar').click(),
+      ]);
+      expect(resp.status()).toBe(422);
+      expect((await resp.json()).code).toBe('ITINERARY_SLOT_CAPACITY_EXCEEDED');
+
+      await expect(page.getByTestId('itinerario-acao-erro')).toContainText('La franja ya tiene todos los prestadores que necesita el servicio');
+      await expect(page.getByTestId(`itinerario-slot-prestador-${f.slotId}-${a}`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId(`itinerario-slot-prestador-${f.slotId}-${c}`)).toBeVisible();
+      await expect(page.getByTestId(`itinerario-slot-prestador-${f.slotId}-${b}`)).toHaveCount(0);
+
+      // Reabrir a faixa: agora está cheia.
+      if (await page.getByTestId('itinerario-editar-modal').count()) {
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('itinerario-editar-modal')).toHaveCount(0);
+      }
+      await page.getByTestId(`itinerario-slot-editar-${f.slotId}`).click();
+      await expect(page.getByTestId('itinerario-faixa-cheia')).toBeVisible();
+
+      expect(vigentes(f.serviceId)).toBe(2);
+      const deB = Number(
+        sqlComVars(
+          "SELECT count(*) FROM patient_itinerary_assignment a JOIN patient_itinerary_slot s ON s.id = a.slot_id WHERE s.contracted_service_id = :'svc'::uuid AND a.worker_id = :'w'::uuid",
+          { svc: f.serviceId, w: b },
+        ),
+      );
+      expect(deB).toBe(0);
+      expect(proibidos()).toEqual([]);
+    } finally {
+      f.seed.cleanup();
+    }
+  });
 });
