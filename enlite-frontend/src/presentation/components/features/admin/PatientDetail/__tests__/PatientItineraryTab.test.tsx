@@ -387,5 +387,47 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
       await screen.findByTestId('itinerario-editar-modal');
       expect(screen.queryByTestId('itinerario-quitar-w-titular')).toBeNull();
     });
+
+    const WITH_TWO: PatientItinerary = {
+      ...WITH_TITULAR,
+      services: [
+        {
+          ...WITH_TITULAR.services[0],
+          providersNeeded: 2,
+          slots: [
+            {
+              ...WITH_TITULAR.services[0].slots[0],
+              assignments: [
+                { workerId: 'w-titular', applicationId: 'app-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', allocationId: 'alloc-1', displayName: 'Ana Fixture' },
+                { workerId: 'w-segundo', applicationId: 'app-2', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', allocationId: 'alloc-2', displayName: 'Bia Fixture' },
+              ],
+            },
+          ],
+        },
+        WITH_TITULAR.services[1],
+      ],
+    };
+
+    it('faixa com 2 vigentes e providersNeeded 2: o modal lista os 2 com Quitar e mostra faixa cheia', async () => {
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TWO }));
+      renderTab();
+      fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+      expect(await screen.findByTestId('itinerario-quitar-w-titular')).toBeInTheDocument();
+      expect(screen.getByTestId('itinerario-quitar-w-segundo')).toBeInTheDocument();
+      expect(screen.getByTestId('itinerario-faixa-cheia')).toHaveTextContent('Franja completa: ya hay 2 asignados');
+    });
+
+    it('quitar o 2º vigente chama endAllocation com a alocação DELE', async () => {
+      mockEndAllocation.mockResolvedValue({ allocationId: 'alloc-2', status: 'ENDED', validTo: '2026-09-28', destination: 'RESERVE' });
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TWO }));
+      renderTab();
+      fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+      fireEvent.click(await screen.findByTestId('itinerario-quitar-w-segundo'));
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'NOVO_DO_ADMIN' } });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      await waitFor(() => expect(mockEndAllocation).toHaveBeenCalledTimes(1));
+      expect(mockEndAllocation).toHaveBeenCalledWith(PATIENT.id, 'svc-1', 'alloc-2', { reasonCategory: 'NOVO_DO_ADMIN', destination: 'RESERVE' });
+    });
   });
 });

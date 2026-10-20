@@ -23,9 +23,9 @@ interface PatientItineraryTabProps {
 interface EditingSlot {
   serviceId: string;
   slot: { id: string; weekday: number; startTime: string; endTime: string };
-  currentWorkerId: string | null;
-  /** A alocação vigente do prestador atual da faixa — o que o "Quitar del itinerario" encerra. */
-  currentAllocationId: string | null;
+  /** Todos os prestadores vigentes da faixa; cada um tem a SUA alocação (o que o "Quitar del itinerario" encerra). */
+  vigentes: Array<{ workerId: string; allocationId: string }>;
+  providersNeeded: number | null;
 }
 
 /** Código sintético quando as opções do modal não carregam — cai no texto `actionErrors.generic`. */
@@ -104,13 +104,13 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
     const service = itinerary!.services.find((s) => s.contractedServiceId === serviceId);
     const slot = service?.slots.find((s) => s.id === slotId);
     if (!slot) return;
-    const covering = slot.assignments.find((a) => isVigenteAt(a, itinerary!.asOf)) ?? null;
+    const vigentes = slot.assignments.filter((a) => isVigenteAt(a, itinerary!.asOf)).map((a) => ({ workerId: a.workerId, allocationId: a.allocationId }));
     const openId = ++openRef.current;
     setEditing({
       serviceId,
       slot: { id: slot.id, weekday: slot.weekday, startTime: slot.startTime, endTime: slot.endTime },
-      currentWorkerId: covering?.workerId ?? null,
-      currentAllocationId: covering?.allocationId ?? null,
+      vigentes,
+      providersNeeded: service?.providersNeeded ?? null,
     });
     setRemoveError(null);
     setEditOptions(null);
@@ -149,13 +149,13 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
   }
 
   /** "Quitar del itinerario" (Fase 4): motivo + destino; erro fica no painel (traduzido por CÓDIGO), sucesso fecha o modal. */
-  async function removeFromItinerary(reasonCategory: string, destination: ExitDestination): Promise<void> {
-    if (!editing?.currentAllocationId) return;
-    const { serviceId, currentAllocationId } = editing;
+  async function removeFromItinerary(reasonCategory: string, destination: ExitDestination, allocationId: string): Promise<void> {
+    if (!editing) return;
+    const { serviceId } = editing;
     setRemoving(true);
     setRemoveError(null);
     try {
-      await AdminContractedServicesApiService.endAllocation(patient.id, serviceId, currentAllocationId, { reasonCategory, destination });
+      await AdminContractedServicesApiService.endAllocation(patient.id, serviceId, allocationId, { reasonCategory, destination });
       closeEdit();
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
@@ -273,10 +273,11 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
           addressLabel={servicesById.get(editing.serviceId)?.addressLabel ?? ''}
           options={editOptions}
           vacancyId={editVacancyId}
-          currentWorkerId={editing.currentWorkerId}
+          vigentes={editing.vigentes}
+          providersNeeded={editing.providersNeeded}
           onSubmit={confirmEdit}
           onCancel={closeEdit}
-          onRemove={(reasonCategory, destination) => void removeFromItinerary(reasonCategory, destination)}
+          onRemove={(reasonCategory, destination, allocationId) => void removeFromItinerary(reasonCategory, destination, allocationId)}
           removing={removing}
           removeError={removeError}
         />
