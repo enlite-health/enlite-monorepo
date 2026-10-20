@@ -3,7 +3,7 @@
  * e que motivo/destino inválidos saem antes de qualquer escrita.
  */
 import { ReplaceWithReasonUseCase, type ReplaceWithReasonInput } from '../ReplaceWithReasonUseCase';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError } from '../../domain/serviceExitReason';
 import type { ItineraryReplaceWithResult } from '../ItineraryAllocationUseCase';
 
 const FAKE_CLIENT = { marker: 'fake-client' } as never;
@@ -13,9 +13,12 @@ type RunInTransaction = ConstructorParameters<typeof ReplaceWithReasonUseCase>[4
 
 function build(opts: { catalogHit?: boolean; changeLogError?: Error } = {}) {
   const log: string[] = [];
+  const writes: string[] = [];
   const allocations = {
-    replaceWith: jest.fn(async (_c: unknown, _i: unknown, o: { derive: boolean }): Promise<ItineraryReplaceWithResult> => {
+    replaceWith: jest.fn(async (_c: unknown, _i: unknown, o: { derive: boolean; beforeWrite?: (ctx: { today: string }) => void }): Promise<ItineraryReplaceWithResult> => {
       log.push(`replace(derive=${o.derive})`);
+      o.beforeWrite?.({ today: '2026-09-30' });
+      writes.push('write'); // a 1ª escrita do replaceWith real vem DEPOIS do beforeWrite
       return {
         endedAllocationId: 'alloc-1', endedValidTo: '2026-09-29', newAllocationId: 'alloc-2', newWorkerId: 'w-2',
         validFrom: '2026-09-30', status: 'ACTIVE', outgoingWorkerId: 'w-1', today: '2026-09-30',
@@ -46,7 +49,7 @@ function build(opts: { catalogHit?: boolean; changeLogError?: Error } = {}) {
     return cb(FAKE_CLIENT);
   }) as unknown as RunInTransaction & jest.Mock;
   const useCase = new ReplaceWithReasonUseCase(allocations, reasonCatalog, changeLog, derivation, runInTransaction);
-  return { useCase, log, allocations, reasonCatalog, changeLog, derivation, runInTransaction };
+  return { useCase, log, writes, allocations, reasonCatalog, changeLog, derivation, runInTransaction };
 }
 
 const INPUT: ReplaceWithReasonInput = {
@@ -98,5 +101,24 @@ describe('ReplaceWithReasonUseCase', () => {
 
     await expect(t.useCase.execute(INPUT)).rejects.toThrow('boom');
     expect(t.derivation.run).not.toHaveBeenCalled();
+  });
+
+  it('Caso B LEAVE_SERVICE: fromDate > hoje → DestinationNotAvailableForScheduledError; nenhuma escrita (sem log, sem derivação)', async () => {
+    const t = build();
+
+    await expect(t.useCase.execute({ ...INPUT, fromDate: '2026-10-05', destination: 'LEAVE_SERVICE' })).rejects.toThrow(DestinationNotAvailableForScheduledError);
+
+    expect(t.writes).toEqual([]);
+    expect(t.log).not.toContain('log');
+    expect(t.log).not.toContain('derive');
+  });
+
+  it('Caso B RESERVE: fromDate > hoje é aceito', async () => {
+    const t = build();
+
+    const result = await t.useCase.execute({ ...INPUT, fromDate: '2026-10-05', destination: 'RESERVE' });
+
+    expect(result.destination).toBe('RESERVE');
+    expect(t.writes).toEqual(['write']);
   });
 });

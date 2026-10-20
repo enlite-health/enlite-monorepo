@@ -4,7 +4,7 @@ import { ItineraryAllocationUseCase, type ItineraryReplaceInput, type ItineraryR
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from './PatientStatusDerivation';
 import { ItineraryChangeLogWriter, type InsertItineraryChangeInput, type ItineraryChangeDestination } from '../infrastructure/ItineraryChangeLogWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError } from '../domain/serviceExitReason';
 
 export interface ReplaceWithReasonAllocationPort {
   replaceWith(client: PoolClient, input: ItineraryReplaceInput, opts: ItineraryReplaceWithOptions): Promise<ItineraryReplaceWithResult>;
@@ -44,7 +44,14 @@ export class ReplaceWithReasonUseCase {
 
     return this.runInTransaction(async (client) => {
       if ((await this.reasonCatalog.findActiveByCode(client, reasonCategory)) === null) throw new ServiceExitReasonInvalidError();
-      const replaced = await this.allocations.replaceWith(client, { ...input, now }, { derive: false });
+      const replaced = await this.allocations.replaceWith(client, { ...input, now }, {
+        derive: false,
+        // Caso B (D > hoje) + LEAVE_SERVICE: o titular segue vigente até D-1, a marca de rejeição não pode ser gravada hoje e não há rotina noturna
+        // (design trocas D4, ⚑ R2). Roda depois das leituras e ANTES da 1ª escrita ⇒ 0 escritas.
+        beforeWrite: ({ today }) => {
+          if (input.fromDate > today && dest === 'LEAVE_SERVICE') throw new DestinationNotAvailableForScheduledError();
+        },
+      });
       if (!replaced.outgoingWorkerId) throw new Error(`allocation without titular worker: ${input.allocationId}`);
       await this.changeLog.insert(client, {
         serviceId: input.serviceId, kind: 'REPLACE', outgoingWorkerId: replaced.outgoingWorkerId, incomingWorkerId: input.newWorkerId,
