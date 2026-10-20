@@ -40,7 +40,7 @@ import {
 import { RemoveFromItineraryUseCase } from '../../../application/RemoveFromItineraryUseCase';
 import { ReplaceWithReasonUseCase } from '../../../application/ReplaceWithReasonUseCase';
 import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError } from '../../../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError, WorkerHasScheduledAttendancesError } from '../../../domain/serviceExitReason';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
 
 const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
@@ -404,6 +404,20 @@ describe('AdminItineraryWriteController', () => {
       await ctrl.endAllocation(req, res);
       expect(res.status).toHaveBeenCalledWith(400);
       expect(removeUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('WorkerHasScheduledAttendancesError → 409 WORKER_HAS_SCHEDULED_ATTENDANCES com details { substitutionDates, futureEntryFrom }', async () => {
+      removeUseCase.execute.mockRejectedValueOnce(new WorkerHasScheduledAttendancesError(['2026-10-26', '2026-11-02'], '2026-10-28'));
+      const [req, res] = reqRes(PARAMS, { ...BODY, destination: 'LEAVE_SERVICE' });
+      await ctrl.endAllocation(req, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(jsonOf(res)).toHaveBeenCalledWith({
+        success: false,
+        code: 'WORKER_HAS_SCHEDULED_ATTENDANCES',
+        error: 'worker has scheduled attendances',
+        details: { substitutionDates: ['2026-10-26', '2026-11-02'], futureEntryFrom: '2026-10-28' },
+      });
+      expect(reportError).not.toHaveBeenCalled();
     });
 
     it('corpo ausente → o caso de uso recebe motivo/destino `undefined` (quem responde 422 é ele)', async () => {

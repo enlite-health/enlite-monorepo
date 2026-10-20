@@ -34,7 +34,7 @@ import {
   ServiceTeamAlreadyRejectedError,
 } from '../../application/ServiceTeamMarkUseCase';
 import { ServiceTeamReasonRequiredError, ServiceTeamReasonInvalidError } from '../../domain/serviceTeamReason';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError } from '../../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError, WorkerHasScheduledAttendancesError } from '../../domain/serviceExitReason';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
 import { insuranceErrorBody } from './insuranceErrorResponse';
@@ -355,6 +355,16 @@ export class AdminItineraryWriteController {
     }
     if (err instanceof DestinationNotAvailableForScheduledError) {
       res.status(422).json({ success: false, code: 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED' });
+      return;
+    }
+    // 058 P5c: o aviso. Só datas no corpo (`details`, que o cliente HTTP do front já expõe) — nenhum id de pessoa.
+    if (err instanceof WorkerHasScheduledAttendancesError) {
+      res.status(409).json({
+        success: false,
+        code: 'WORKER_HAS_SCHEDULED_ATTENDANCES',
+        error: 'worker has scheduled attendances',
+        details: { substitutionDates: err.substitutionDates, futureEntryFrom: err.futureEntryFrom },
+      });
       return;
     }
     // `LEAVE_SERVICE` de quem tem agendamento: o `rejectWith` recusa e a transação inteira desfaz (Fase 4; a Fase 8 troca por aviso).
