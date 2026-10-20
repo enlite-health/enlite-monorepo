@@ -3280,7 +3280,6 @@
         "onlyFichaNote": "Somente ficha: não é copiado para a vaga.",
         "freeTextHint": "Não incluir informação de saúde do paciente nem o motivo dos requisitos.",
         "providersNeeded": "Prestadores necessários",
-        "authorizedHours": "Horas autorizadas",
         "weeklyHours": "Horas semanais",
         "careLocation": "Local de atendimento",
         "startDate": "Data de início",
@@ -3349,7 +3348,6 @@
           "save": "Salvar autorização",
           "current": "Vigente: {{hours}} h de {{from}} a {{to}}",
           "none": "Sem autorização vigente",
-          "legacy": "Valor anterior, sem vigência: {{hours}} h",
           "overlaps": "Já existe uma autorização vigente que se sobrepõe a esse período.",
           "needsEnd": "A autorização precisa de data de fim.",
           "saveError": "Não foi possível salvar a autorização."
@@ -3858,7 +3856,6 @@
           "tableProfessional": "Serviço",
           "tableProvidersNeeded": "Prest. necessários",
           "tableWeeklyHours": "Hs. semanais",
-          "tableAuthorizedHours": "Hs. autorizadas",
           "tableLocation": "Local de Atendimento",
           "tableValue": "Valor",
           "tableValueRedacted": "🔒",
