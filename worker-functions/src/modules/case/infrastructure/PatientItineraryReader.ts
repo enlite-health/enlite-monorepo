@@ -25,6 +25,8 @@ export type { ItineraryAssignmentStatus };
 
 export interface ItineraryServiceRow {
   id: string;
+  /** `pcs.providers_needed`; `null` = não informada (estado de leitura — nunca "1"). Opcional: o agregado do Kanban reusa este tipo e não lê. */
+  providersNeeded?: number | null;
 }
 
 /**
@@ -81,6 +83,7 @@ interface PatientCountryRow {
 
 interface ServiceRow {
   id: string;
+  providers_needed: number | null;
 }
 
 interface SlotJoinRow {
@@ -127,7 +130,7 @@ export class PatientItineraryReader {
 
     // Só serviço ATIVO: serviço baixado não tem cobertura a medir.
     const servicesRes = await client.query<ServiceRow>(
-      `SELECT id
+      `SELECT id, providers_needed
          FROM patient_contracted_services
         WHERE patient_id = $1 AND active
         ORDER BY created_at, id`,
@@ -174,6 +177,7 @@ export class PatientItineraryReader {
       country,
       services: servicesRes.rows.map((r) => ({
         id: r.id,
+        providersNeeded: r.providers_needed,
       })),
       slots: slotsRes.rows.map((r) => ({
         id: r.id,
