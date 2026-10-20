@@ -1,9 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, X } from 'lucide-react';
+import { Copy, Plus, X } from 'lucide-react';
 import { TimeSelect } from '@presentation/components/atoms/TimeSelect/TimeSelect';
 import { Text } from '@presentation/components/atoms/Text';
-import { shiftMinutes, type ServiceShiftFormValue } from '@domain/scheduleHours';
+import { copyShiftsToDays, shiftMinutes, type ServiceShiftFormValue } from '@domain/scheduleHours';
 
 export type { ServiceShiftFormValue };
 
@@ -19,6 +19,11 @@ interface Props {
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const NEW_SHIFT = { startTime: '09:00', endTime: '17:00' };
+
+const chip = (active: boolean): string =>
+  `px-2 py-0.5 rounded-pill border text-xs transition-colors disabled:opacity-50 ${
+    active ? 'bg-primary text-white border-primary' : 'border-gray-600 text-gray-800 hover:border-primary'
+  }`;
 
 const isEqualWithoutAllDay = (sh: ServiceShiftFormValue): boolean => !sh.allDay && sh.startTime === sh.endTime;
 const minutesOf = (sh: ServiceShiftFormValue): number | null => (sh.allDay ? 1440 : isEqualWithoutAllDay(sh) ? null : shiftMinutes(sh.startTime, sh.endTime));
@@ -43,6 +48,19 @@ export function ServiceShiftEditor({ index, value, onChange, onValidityChange, d
 
   const patch = (target: ServiceShiftFormValue, change: Partial<ServiceShiftFormValue>): void =>
     onChange(value.map((sh) => (sh === target ? { ...sh, ...change } : sh)));
+
+  const [copyFrom, setCopyFrom] = useState<number | null>(null);
+  const [targets, setTargets] = useState<number[]>([]);
+  const [conflictDays, setConflictDays] = useState<number[]>([]);
+  const toggleTarget = (day: number): void => setTargets((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
+  const applyCopy = (): void => {
+    if (copyFrom === null) return;
+    const { next, conflictDays: conflicts } = copyShiftsToDays(value, copyFrom, targets);
+    onChange(next);
+    setConflictDays(conflicts);
+    setCopyFrom(null);
+    setTargets([]);
+  };
 
   return (
     <div className="flex flex-col" data-testid={`svc-shift-editor-${index}`}>
@@ -84,10 +102,41 @@ export function ServiceShiftEditor({ index, value, onChange, onValidityChange, d
                 );
               })}
             </div>
+            {byDay[day].length > 0 && (
+              <button type="button" onClick={() => { setConflictDays([]); setTargets([]); setCopyFrom(copyFrom === day ? null : day); }} disabled={disabled || !valid} aria-expanded={copyFrom === day} data-testid={`svc-shift-copy-${index}-${day}`} className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50 shrink-0">
+                <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                {t('workerRegistration.availability.copyTo')}
+              </button>
+            )}
             <button type="button" onClick={() => onChange([...value, { dayOfWeek: day, ...NEW_SHIFT, allDay: false }])} disabled={disabled} aria-label={ts('add')} data-testid={`svc-shift-add-${index}-${day}`} className="p-1.5 rounded-pill bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0">
               <Plus className="w-4 h-4 text-white" strokeWidth={2.5} />
             </button>
           </div>
+          {conflictDays.includes(day) && (
+            <Text as="span" size="xs" color="secondary" data-testid={`svc-shift-copy-conflict-${index}-${day}`}>
+              {t('workerRegistration.availability.copyConflict', { days: t(`workerRegistration.availability.${dayKey}`) })}
+            </Text>
+          )}
+          {copyFrom === day && (
+            <div className="flex flex-wrap items-center gap-1.5" data-testid={`svc-shift-copy-panel-${index}-${day}`}>
+              {DAY_KEYS.map((k, i) =>
+                i === day ? null : (
+                  <button key={k} type="button" aria-pressed={targets.includes(i)} onClick={() => toggleTarget(i)} data-testid={`svc-shift-copy-target-${index}-${k}`} className={chip(targets.includes(i))}>
+                    {t(`workerRegistration.availability.${k}Short`)}
+                  </button>
+                ),
+              )}
+              <button type="button" onClick={() => setTargets([1, 2, 3, 4, 5].filter((d) => d !== day))} data-testid={`svc-shift-copy-weekdays-${index}`} className={chip(false)}>
+                {t('workerRegistration.availability.copyWeekdays')}
+              </button>
+              <button type="button" onClick={() => setTargets([0, 1, 2, 3, 4, 5, 6].filter((d) => d !== day))} data-testid={`svc-shift-copy-all-${index}`} className={chip(false)}>
+                {t('workerRegistration.availability.copyAll')}
+              </button>
+              <button type="button" onClick={applyCopy} disabled={targets.length === 0} data-testid={`svc-shift-copy-apply-${index}`} className="px-3 py-0.5 rounded-pill bg-primary text-white text-xs disabled:opacity-50">
+                {t('workerRegistration.availability.copyApply')}
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>
