@@ -130,12 +130,12 @@ describe('Vaga com serviço: travas dos 5 campos de recrutamento (spec 057, F5) 
   it('b2. (057 gate A1) PATCH que reenvia `null` num campo JÁ vazio + muda outro campo, com vaga VIVA -> 200 e o outro persiste', async () => {
     const { patientId, serviceId } = await seedPublicada();
     await pool.query(`UPDATE patient_contracted_services SET required_experience = NULL WHERE id = $1`, [serviceId]); // como os 25 de prd
-    const r = await patchServico(patientId, serviceId, { requiredExperience: null, weeklyHours: 18 });
-    console.info(`[057 travas] PATCH requiredExperience:null (já NULL) + weeklyHours -> ${r.status}`);
+    const r = await patchServico(patientId, serviceId, { requiredExperience: null, dailyObs: 'obs-b2' });
+    console.info(`[057 travas] PATCH requiredExperience:null (já NULL) + dailyObs -> ${r.status}`);
     expect(r.status).toBe(200);
-    const { rows: [s] } = await pool.query(`SELECT required_experience, weekly_hours FROM patient_contracted_services WHERE id = $1`, [serviceId]);
+    const { rows: [s] } = await pool.query(`SELECT required_experience, daily_obs FROM patient_contracted_services WHERE id = $1`, [serviceId]);
     expect(s.required_experience).toBeNull();
-    expect(Number(s.weekly_hours)).toBe(18);
+    expect(s.daily_obs).toBe('obs-b2');
   });
 
   it('c. PATCH F -> M com vaga publicada abre 1 aviso `required_sex`; o ack (rota real) o fecha', async () => {
