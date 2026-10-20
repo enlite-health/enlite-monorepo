@@ -211,6 +211,7 @@ export class AdminItineraryWriteController {
         allocationId,
         reasonCategory: body.data.reasonCategory,
         destination: body.data.destination,
+        cancelScheduled: body.data.cancelScheduled,
         actorUid,
       });
       res.status(200).json({ success: true, data: result });

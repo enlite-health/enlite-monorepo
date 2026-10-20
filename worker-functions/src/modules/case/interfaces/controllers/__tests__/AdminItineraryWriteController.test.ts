@@ -384,6 +384,28 @@ describe('AdminItineraryWriteController', () => {
       expect(allocationUseCase.end).not.toHaveBeenCalled();
     });
 
+    it('cancelScheduled true no corpo → o caso de uso recebe cancelScheduled: true', async () => {
+      removeUseCase.execute.mockResolvedValueOnce({ allocationId: ALLOCATION_ID, status: 'ENDED', validTo: '2026-09-28', destination: 'LEAVE_SERVICE' });
+      const [req, res] = reqRes(PARAMS, { ...BODY, destination: 'LEAVE_SERVICE', cancelScheduled: true });
+      await ctrl.endAllocation(req, res);
+      expect(removeUseCase.execute).toHaveBeenCalledWith(expect.objectContaining({ cancelScheduled: true }));
+    });
+
+    it('cancelScheduled ausente → o caso de uso recebe cancelScheduled undefined', async () => {
+      removeUseCase.execute.mockResolvedValueOnce({ allocationId: ALLOCATION_ID, status: 'ENDED', validTo: '2026-09-28', destination: 'RESERVE' });
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.endAllocation(req, res);
+      const arg = removeUseCase.execute.mock.calls[0][0];
+      expect(arg.cancelScheduled).toBeUndefined();
+    });
+
+    it('cancelScheduled string → 400; o caso de uso não roda', async () => {
+      const [req, res] = reqRes(PARAMS, { ...BODY, cancelScheduled: 'true' });
+      await ctrl.endAllocation(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(removeUseCase.execute).not.toHaveBeenCalled();
+    });
+
     it('corpo ausente → o caso de uso recebe motivo/destino `undefined` (quem responde 422 é ele)', async () => {
       removeUseCase.execute.mockRejectedValueOnce(new ServiceExitReasonRequiredError());
       const [req, res] = reqRes(PARAMS, {});
