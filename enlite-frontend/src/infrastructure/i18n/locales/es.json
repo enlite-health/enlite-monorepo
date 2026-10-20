@@ -1357,7 +1357,8 @@
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rutina y actividades",
       "catalogSegments": "Segmentos (Ana Care)",
-      "interviewHosts": "Entrevistadores"
+      "interviewHosts": "Entrevistadores",
+      "insuranceProviders": "Obras sociales"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -4816,7 +4817,11 @@
             "enquadre_event": "Eventos de encuadre (crear, convocados y cancelar)",
             "enquadre_result": "Resultado del encuadre (marcar y cerrar)",
             "enquadre_summary": "Resumen del encuadre (ver y descargar)",
-            "interview_host": "Entrevistadores de encuadre y admisión"
+            "interview_host": "Entrevistadores de encuadre y admisión",
+            "catalog_insurance_providers": "Registro de obras sociales",
+            "insurance_contracts": "Contratos de la obra social",
+            "insurance_provider_contacts": "Empleados de la obra social",
+            "insurance_provider_patients": "Pacientes de la obra social"
           },
           "help": {
             "open": "Qué hace este permiso",
@@ -5289,6 +5294,19 @@
         },
         "interviewHosts": {
           "label": "Entrevistadores"
+        },
+        "insurance.providers": {
+          "label": "Obras sociales: Lista"
+        },
+        "insurance.providerDetail": {
+          "label": "Obras sociales: Detalles",
+          "containers": {
+            "general": "Datos generales (nombre, razón social, CUIT/CNPJ, tipo de pagador)",
+            "employees": "Empleados (nombre, cargo, teléfono, documento)",
+            "contracts": "Contratos",
+            "termValue": "Valor hora e impuesto del término del contrato",
+            "patients": "Pacientes vinculados"
+          }
         }
       }
     },
@@ -6128,6 +6146,163 @@
         "insurance_providers_other_unclassified_chk": "La obra social \"Otra\" no se puede clasificar.",
         "insurance_provider_contacts_document_pair_chk": "Cargá el tipo y el número del documento, o ninguno de los dos.",
         "insurance_contracts_country_check": "El país del contrato debe ser Argentina o Brasil."
+      }
+    },
+    "insuranceProviders": {
+      "title": "Obras sociales",
+      "subtitle": "Creá la obra social solo con el nombre y completala por tarjetas: datos generales, empleados, contratos y pacientes.",
+      "searchLabel": "Buscar obra social",
+      "searchPlaceholder": "Buscar por nombre",
+      "newProvider": "Nueva obra social",
+      "showInactive": "Mostrar inactivas",
+      "columns": {
+        "name": "Nombre",
+        "payerKind": "Tipo de pagador",
+        "status": "Estado"
+      },
+      "active": "Activa",
+      "inactive": "Inactiva",
+      "unclassified": "Sin clasificar",
+      "empty": "Todavía no hay obras sociales registradas.",
+      "emptySearch": "No se encontró ninguna obra social para esa búsqueda.",
+      "loadError": "No se pudieron cargar las obras sociales.",
+      "noPermission": "No tenés permiso para ver las obras sociales.",
+      "open": "Abrir",
+      "create": {
+        "title": "Nueva obra social",
+        "nameLabel": "Nombre",
+        "nameHelp": "Solo el nombre es obligatorio. El código se genera a partir de él y no cambia después.",
+        "aliasesLabel": "Otros nombres (opcional)",
+        "aliasesHelp": "Separalos con coma. Sirven solo para reconocer la obra social en otras fuentes.",
+        "codeLabel": "Código",
+        "codeNeeded": "No se pudo generar el código a partir de ese nombre. Informá un código (letras y números, sin espacios).",
+        "submit": "Crear",
+        "saving": "Creando…",
+        "cancel": "Cancelar"
+      },
+      "detail": {
+        "back": "Volver a las obras sociales",
+        "loading": "Cargando…",
+        "loadError": "No se pudo cargar la obra social.",
+        "notFound": "Esa obra social no existe.",
+        "noPermission": "No tenés permiso para ver esta tarjeta.",
+        "notInformed": "No informado",
+        "redacted": "Oculto",
+        "yes": "Sí",
+        "no": "No",
+        "edit": "Editar",
+        "new": "Nuevo",
+        "save": "Guardar",
+        "saving": "Guardando…",
+        "cancel": "Cancelar"
+      },
+      "general": {
+        "title": "Datos generales",
+        "fields": {
+          "name": "Nombre",
+          "code": "Código",
+          "legalName": "Razón social",
+          "taxId": "CUIT / CNPJ",
+          "address": "Dirección",
+          "managementChatId": "ID del grupo de gestión",
+          "payerKind": "Tipo de pagador",
+          "active": "Estado"
+        },
+        "payerKindNone": "Sin clasificar",
+        "payerKindHint": "Obra social, prepaga o particular. Una vez clasificado, solo se puede cambiar, no quitar.",
+        "activeLabel": "Activa (aparece en las listas de elección)",
+        "activeYes": "Activa",
+        "activeNo": "Inactiva"
+      },
+      "employees": {
+        "title": "Empleados",
+        "columns": {
+          "name": "Nombre",
+          "role": "Cargo",
+          "phone": "Teléfono",
+          "identification": "Identificación",
+          "actions": "Acciones"
+        },
+        "empty": "No hay empleados registrados.",
+        "noPermission": "No tenés permiso para ver los empleados de esta obra social.",
+        "retire": "Retirar",
+        "retireConfirm": "¿Retirar a {{name}} de la lista? El registro se conserva, pero la persona deja de aparecer.",
+        "form": {
+          "newTitle": "Nuevo empleado",
+          "editTitle": "Editar empleado",
+          "fullName": "Nombre completo",
+          "roleTitle": "Cargo",
+          "phone": "Teléfono",
+          "email": "E-mail (opcional)",
+          "documentType": "Tipo de documento (opcional)",
+          "documentNone": "Sin documento",
+          "documentNumber": "Número de documento",
+          "documentPairIncomplete": "Informá el tipo y el número del documento juntos, o dejá los dos vacíos.",
+          "required": "Completá nombre, cargo y teléfono."
+        }
+      },
+      "contracts": {
+        "title": "Contratos",
+        "newContract": "Nuevo contrato",
+        "newTerm": "Nuevo término",
+        "empty": "Esta obra social todavía no tiene contratos.",
+        "noPermission": "No tenés permiso para ver los contratos de esta obra social.",
+        "countryOptions": {
+          "AR": "Argentina",
+          "BR": "Brasil"
+        },
+        "scopeNone": "Alcance no definido",
+        "currentTerm": "Término vigente",
+        "noTermToday": "Sin término vigente hoy",
+        "futureTerms": "Términos futuros: {{count}}",
+        "futureTermsTitle": "Términos futuros",
+        "hourlyRate": "Valor hora",
+        "tax": "Impuesto",
+        "validity": "Vigencia",
+        "validityRange": "del {{from}} al {{to}}",
+        "validityOpen": "desde el {{from}}, sin fecha de fin",
+        "payerKindRequired": "Clasificá el tipo de pagador (obra social, prepaga o particular) en Datos generales antes de crear un contrato.",
+        "goToGeneral": "Ir a Datos generales",
+        "contractForm": {
+          "title": "Nuevo contrato y primer término",
+          "name": "Nombre del contrato",
+          "country": "País",
+          "countryPlaceholder": "Elegí el país",
+          "scope": "Alcance (opcional)",
+          "scopeHelp": "Texto descriptivo: región, turno, tipo de atención.",
+          "firstTerm": "Primer término de valor",
+          "required": "Informá el nombre y el país del contrato."
+        },
+        "termForm": {
+          "title": "Nuevo término de valor",
+          "hourlyRate": "Valor hora",
+          "tax": "Impuesto (%)",
+          "taxHelp": "Obligatorio. Escribí 0 si el contrato está exento.",
+          "taxRequired": "Informá el impuesto. Escribí 0 si está exento.",
+          "taxRange": "El impuesto debe estar entre 0 y 100.",
+          "rateRequired": "Informá el valor hora.",
+          "validFrom": "Inicio de la vigencia",
+          "validFromRequired": "Informá el inicio de la vigencia.",
+          "validTo": "Fin de la vigencia (opcional)",
+          "validToBeforeFrom": "El fin no puede ser anterior al inicio.",
+          "retroWarning": "Esa fecha es anterior a hoy ({{asOf}}). El término será retroactivo.",
+          "asOfLoading": "Elegí el país para ver la fecha de hoy.",
+          "submit": "Guardar término"
+        }
+      },
+      "patients": {
+        "title": "Pacientes",
+        "empty": "Ningún paciente tiene un vínculo vigente con esta obra social.",
+        "noPermission": "No tenés permiso para ver los pacientes de esta obra social.",
+        "asOf": "Vínculos vigentes al {{asOf}}",
+        "columns": {
+          "case": "Caso",
+          "service": "Servicio",
+          "contract": "Contrato",
+          "validity": "Vigencia"
+        },
+        "caseNumber": "Caso {{number}}",
+        "noCase": "Sin número de caso"
       }
     }
   },

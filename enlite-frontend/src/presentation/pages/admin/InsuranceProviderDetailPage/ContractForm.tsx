@@ -1,0 +1,106 @@
+/**
+ * ContractForm — "novo contrato + 1º termo" (spec 058 §1.3/§4.3). O país decide a moeda e é imutável depois; o "hoje" do país
+ * (`asOf`) vem da API assim que o país é escolhido (`for-service`) — nunca do relógio do navegador.
+ */
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Button } from '@presentation/components/atoms/Button';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Input } from '@presentation/components/atoms/Input';
+import { Select } from '@presentation/components/atoms/Select';
+import { Text } from '@presentation/components/atoms/Text';
+import { Textarea } from '@presentation/components/atoms/Textarea';
+import { Field } from './Field';
+import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
+import { CONTRACT_COUNTRIES, type ContractCountry, type CreateInsuranceContractBody } from '@domain/entities/InsuranceContract';
+import { TermFields } from './TermFields';
+import { useTermDraft } from './termDraft';
+
+interface Props {
+  submitting: boolean;
+  error: string | null;
+  onSubmit: (body: CreateInsuranceContractBody) => void;
+  onCancel: () => void;
+}
+
+const NS = 'admin.insuranceProviders.contracts';
+const PREFIX = 'contract-new-';
+
+export function ContractForm({ submitting, error, onSubmit, onCancel }: Props): JSX.Element {
+  const { t } = useTranslation();
+  const [name, setName] = useState('');
+  const [country, setCountry] = useState<ContractCountry | ''>('');
+  const [scope, setScope] = useState('');
+  const [asOf, setAsOf] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const term = useTermDraft(asOf);
+
+  // O "hoje" do país escolhido, da API (`for-service` devolve `asOf` mesmo sem nenhuma obra social na lista).
+  useEffect(() => {
+    setAsOf(null);
+    if (country === '') return undefined;
+    let cancelled = false;
+    AdminInsuranceApiService.listProvidersForService(country)
+      .then((res) => { if (!cancelled) setAsOf(res.asOf); })
+      .catch(() => { /* sem `asOf` o termo não pode ser salvo; a frase "escolha o país" segue na tela */ });
+    return () => { cancelled = true; };
+  }, [country]);
+
+  function handleSubmit(): void {
+    const body = term.submit();
+    if (name.trim() === '' || country === '') {
+      setMissing(true);
+      return;
+    }
+    setMissing(false);
+    if (!body) return;
+    onSubmit({
+      name: name.trim(),
+      country,
+      ...(scope.trim() !== '' ? { scopeDescription: scope.trim() } : {}),
+      firstTerm: body,
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-300 bg-gray-50 p-4 flex flex-col gap-4" data-testid="contract-new-form">
+      <Heading level={3} weight="semibold" color="primary">{t(`${NS}.contractForm.title`)}</Heading>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label={t(`${NS}.contractForm.name`)} required htmlFor="contract-new-name">
+          <Input id="contract-new-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="contract-new-name" />
+        </Field>
+        <Field label={t(`${NS}.contractForm.country`)} required htmlFor="contract-new-country">
+          <Select
+            id="contract-new-country"
+            value={country}
+            placeholder={t(`${NS}.contractForm.countryPlaceholder`)}
+            options={CONTRACT_COUNTRIES.map((c) => ({ value: c, label: t(`${NS}.countryOptions.${c}`) }))}
+            onValueChange={(v) => setCountry(v as ContractCountry | '')}
+            data-testid="contract-new-country"
+          />
+        </Field>
+        <Field label={t(`${NS}.contractForm.scope`)} hint={t(`${NS}.contractForm.scopeHelp`)} htmlFor="contract-new-scope" className="sm:col-span-2">
+          <Textarea id="contract-new-scope" rows={2} value={scope} onChange={(e) => setScope(e.target.value)} data-testid="contract-new-scope" />
+        </Field>
+      </div>
+      <Heading level={3} weight="semibold" color="primary">{t(`${NS}.contractForm.firstTerm`)}</Heading>
+      <TermFields state={term} asOf={asOf} testIdPrefix={PREFIX} />
+      {missing && (
+        <Text color="inherit" size="sm" className="text-red-700" data-testid="contract-new-required">{t(`${NS}.contractForm.required`)}</Text>
+      )}
+      {error && (
+        <div role="alert" data-testid="contract-new-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
+          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
+        </div>
+      )}
+      <div className="flex items-center gap-3 justify-end">
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={submitting} data-testid="contract-new-cancel">
+          {t('admin.insuranceProviders.detail.cancel')}
+        </Button>
+        <Button variant="primary" size="sm" isLoading={submitting} onClick={handleSubmit} data-testid="contract-new-submit">
+          {t('admin.insuranceProviders.detail.save')}
+        </Button>
+      </div>
+    </div>
+  );
+}
