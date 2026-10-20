@@ -290,6 +290,10 @@ export class InsuranceProviderRepository {
     const cli = await this.pool.connect();
     try {
       await cli.query('BEGIN');
+      // Pré-checagem do NOME (mesma chave do `insurance_providers_name_uq`): sem ela o código derivado do nome colidia no pkey
+      // primeiro e a tela respondia "código já existe". A corrida continua coberta pelo índice (23505 → `mapUniqueViolation`).
+      const dup = await cli.query('SELECT 1 FROM insurance_providers WHERE lower(btrim(name)) = lower(btrim($1)) LIMIT 1', [input.name]);
+      if (dup.rows.length > 0) throw new InsuranceProviderNameExistsError();
       let sortOrder = input.sortOrder;
       if (sortOrder === undefined) {
         const next = await cli.query<{ next: number }>('SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM insurance_providers');

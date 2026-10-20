@@ -475,16 +475,20 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
   };
   const READY = { serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', serviceRecruitmentFields: FIELDS };
 
-  it('RECRUITMENT_BLOCKING_CODES é exatamente [SERVICE_ADDRESS, SERVICE_SCHEDULE, SERVICE_RECRUITMENT_FIELDS, COVERAGE]', () => {
-    expect([...RECRUITMENT_BLOCKING_CODES]).toEqual(['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'SERVICE_RECRUITMENT_FIELDS', 'COVERAGE']);
+  it('RECRUITMENT_BLOCKING_CODES é exatamente [SERVICE_ADDRESS, SERVICE_SCHEDULE, os 5 SERVICE_* por campo, COVERAGE]', () => {
+    expect([...RECRUITMENT_BLOCKING_CODES]).toEqual([
+      'SERVICE_ADDRESS', 'SERVICE_SCHEDULE',
+      'SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY',
+      'COVERAGE',
+    ]);
   });
 
-  describe('SERVICE_RECRUITMENT_FIELDS (spec 027 Fase 3, D508 c, lex S.2)', () => {
+  describe('SERVICE_* por campo (spec 027 Fase 3, D508 c, lex S.2)', () => {
     const missingWith = (f: Partial<typeof FIELDS> | undefined) =>
       computeRecruitmentReadiness({ ...READY, serviceRecruitmentFields: f === undefined ? undefined : { ...FIELDS, ...f } }).missing;
 
-    it('requiredSex null → SERVICE_RECRUITMENT_FIELDS em missing', () => {
-      expect(missingWith({ requiredSex: null as never })).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    it('requiredSex null → SERVICE_REQUIRED_SEX em missing', () => {
+      expect(missingWith({ requiredSex: null as never })).toEqual(['SERVICE_REQUIRED_SEX']);
     });
     it("requiredSex 'BOTH' → ausente de missing (BOTH = respondido, indistinto)", () => {
       expect(missingWith({ requiredSex: 'BOTH' })).toEqual([]);
@@ -492,14 +496,26 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
     it('tudo preenchido, SEM worker_attributes e daily_obs (nem fazem parte do input) → pronto', () => {
       expect(computeRecruitmentReadiness(READY)).toEqual({ missing: [], ready: true });
     });
-    it('cada um dos 5 faltando, sozinho, bloqueia', () => {
-      for (const f of [{ requiredProfessions: [] }, { requiredProfessions: null as never }, { requiredExperience: '   ' }, { workSchedule: null as never }, { paymentDay: '' }]) {
-        expect(missingWith(f)).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    it('cada um dos 5 faltando, sozinho, devolve SÓ o código do próprio campo', () => {
+      const cases: Array<[Partial<typeof FIELDS>, string]> = [
+        [{ requiredProfessions: [] }, 'SERVICE_REQUIRED_PROFESSIONS'],
+        [{ requiredProfessions: null as never }, 'SERVICE_REQUIRED_PROFESSIONS'],
+        [{ requiredExperience: '   ' }, 'SERVICE_REQUIRED_EXPERIENCE'],
+        [{ workSchedule: null as never }, 'SERVICE_WORK_SCHEDULE'],
+        [{ paymentDay: '' }, 'SERVICE_PAYMENT_DAY'],
+      ];
+      for (const [f, code] of cases) {
+        expect(missingWith(f)).toEqual([code]);
       }
     });
-    it('profissões só com itens em branco = faltando; campo do serviço ausente no input = faltando', () => {
-      expect(missingWith({ requiredProfessions: ['  '] })).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
-      expect(missingWith(undefined)).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    it('só paymentDay vazio (caso real): missing é exatamente o dia de pago, sem os outros 4', () => {
+      const m = missingWith({ paymentDay: null as never });
+      expect(m).toEqual(['SERVICE_PAYMENT_DAY']);
+      expect(m).not.toContain('SERVICE_REQUIRED_SEX');
+    });
+    it('profissões só com itens em branco = faltando; campo do serviço ausente no input = os 5 em ordem', () => {
+      expect(missingWith({ requiredProfessions: ['  '] })).toEqual(['SERVICE_REQUIRED_PROFESSIONS']);
+      expect(missingWith(undefined)).toEqual(['SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY']);
     });
   });
 
