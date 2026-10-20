@@ -11,6 +11,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { operationDateOf } from '@shared/locale/operationDate';
+import { countVigenteForService } from './VacancyAllocationProbe';
 import { ContractedServiceContractLinkWriter } from './contractedServiceContractLinkWriter';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
 import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
@@ -445,6 +446,23 @@ export class PatientContractedServiceRepository {
   }
 
   /**
+   * 058 REGRA-05 (041): `addressId` DIFERENTE do atual com vaga viva ou alocação vigente → 422 `SERVICE_ADDRESS_LOCKED`. O formulário reenvia o mesmo
+   * `addressId` em todo PATCH (`ContractedServiceFormRow.tsx:201,215`): igual ao atual NÃO é mudança. ⚑ padrão: `null` diferente do atual também conta
+   * (limpar o local de um serviço em uso é mudar o local — plan §1 P6, já decidido pelo cto). Locka o serviço (mesma ordem do `refuseClearWhenLiveVacancy`).
+   */
+  private async refuseAddressChangeWhenInUse(cli: PoolClient, serviceId: string, next: string | null, requestNow: Date): Promise<void> {
+    const cur = await cli.query<{ address_id: string | null; country: string }>(
+      'SELECT address_id, country FROM patient_contracted_services WHERE id = $1 FOR UPDATE',
+      [serviceId],
+    );
+    const current = cur.rows[0];
+    if (!current || current.address_id === next) return;
+    const live = await cli.query(`SELECT 1 FROM job_postings WHERE contracted_service_id = $1 AND ${liveVacancySql('')} LIMIT 1`, [serviceId]);
+    if ((live.rowCount ?? live.rows.length) > 0) throw new ServiceAddressLockedError('LIVE_VACANCY');
+    if ((await countVigenteForService(cli, serviceId, operationDateOf(current.country, requestNow))) > 0) throw new ServiceAddressLockedError('ALLOCATION');
+  }
+
+  /**
    * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada,
    * `deleted_at IS NULL`, qualquer status — vaga CLOSED/DE_BAJA ainda ocupa o serviço; spec 056 ⚑E). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
    * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
@@ -493,6 +511,7 @@ export class PatientContractedServiceRepository {
             await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
           }
         }
+        if (patch.addressId !== undefined) await this.refuseAddressChangeWhenInUse(cli, serviceId, patch.addressId, requestNow);
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
