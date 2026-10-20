@@ -90,4 +90,44 @@ describe('RemoveFromItineraryPanel', () => {
     renderPanel();
     expect(screen.queryByTestId('itinerario-quitar-erro')).toBeNull();
   });
+
+  describe('058 — aviso de agendamentos', () => {
+    const SCHEDULED = { substitutionDates: ['2026-10-26', '2026-11-02'], futureEntryFrom: null };
+
+    function preencher() {
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE'));
+    }
+
+    it('com scheduled: mostra aviso-agendados com as datas e desabilita o Confirmar do cabeçalho', () => {
+      renderPanel({ scheduled: SCHEDULED });
+      preencher();
+      expect(screen.getByTestId('aviso-agendados-datas')).toHaveTextContent('26/10, 02/11');
+      expect(screen.getByTestId('itinerario-quitar-confirmar')).toBeDisabled();
+    });
+
+    it('Confirmar do aviso chama onConfirm(motivo, destino, true)', () => {
+      const { onConfirm } = renderPanel({ scheduled: SCHEDULED });
+      preencher();
+      fireEvent.click(screen.getByTestId('aviso-agendados-confirmar'));
+      expect(onConfirm).toHaveBeenCalledWith('OTHER', 'LEAVE_SERVICE', true);
+    });
+
+    it('Volver do aviso chama onScheduledDismiss e NÃO chama onConfirm', () => {
+      const onScheduledDismiss = vi.fn();
+      const { onConfirm } = renderPanel({ scheduled: SCHEDULED, onScheduledDismiss });
+      preencher();
+      fireEvent.click(screen.getByTestId('aviso-agendados-cancelar'));
+      expect(onScheduledDismiss).toHaveBeenCalledTimes(1);
+      expect(onConfirm).not.toHaveBeenCalled();
+    });
+
+    it('sem scheduled: onConfirm segue com 2 argumentos (sem o terceiro)', () => {
+      const { onConfirm } = renderPanel();
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      expect(onConfirm).toHaveBeenCalledWith('OTHER', 'RESERVE');
+    });
+  });
 });

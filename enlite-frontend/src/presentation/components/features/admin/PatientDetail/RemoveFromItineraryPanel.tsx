@@ -8,15 +8,20 @@ import type { ExitDestination } from '@domain/entities/ServiceTeam';
 import { SidePanelShell } from './SidePanelShell';
 import { ExitReasonSelect } from './ExitReasonSelect';
 import { ExitDestinationField } from './ExitDestinationField';
+import { ScheduledAttendanceWarning } from './ScheduledAttendanceWarning';
 
 interface RemoveFromItineraryPanelProps {
   /** Rótulo do prestador que sai (nome ou o fallback com o fim do id). */
   workerLabel: string;
-  onConfirm: (reasonCategory: string, destination: ExitDestination) => void;
+  onConfirm: (reasonCategory: string, destination: ExitDestination, cancelScheduled?: boolean) => void;
   onCancel: () => void;
   submitting?: boolean;
   /** Mensagem já traduzida do último erro do envio; o painel fica aberto para tentar de novo. */
   errorMessage?: string | null;
+  /** 409 `WORKER_HAS_SCHEDULED_ATTENDANCES`: as datas que o aviso lista; presente = o aviso substitui o Confirmar do cabeçalho. */
+  scheduled?: { substitutionDates: string[]; futureEntryFrom: string | null } | null;
+  /** "Volver" do aviso: quem abre o painel limpa o `scheduled`. */
+  onScheduledDismiss?: () => void;
 }
 
 /**
@@ -24,7 +29,7 @@ interface RemoveFromItineraryPanelProps {
  * e destino (`ExitDestinationField`), ambos obrigatórios — "Confirmar" fica desabilitado sem motivo OU sem destino.
  * A casca é a `SidePanelShell` do itinerário. A escrita é de quem abre o painel (`onConfirm`).
  */
-export function RemoveFromItineraryPanel({ workerLabel, onConfirm, onCancel, submitting = false, errorMessage = null }: RemoveFromItineraryPanelProps): JSX.Element {
+export function RemoveFromItineraryPanel({ workerLabel, onConfirm, onCancel, submitting = false, errorMessage = null, scheduled = null, onScheduledDismiss }: RemoveFromItineraryPanelProps): JSX.Element {
   const { t } = useTranslation();
   const tr = (key: string) => t(`admin.patients.detail.itinerary.removePanel.${key}`);
   const [reason, setReason] = useState('');
@@ -42,7 +47,7 @@ export function RemoveFromItineraryPanel({ workerLabel, onConfirm, onCancel, sub
           variant="primary"
           size="md"
           className="w-[160px]"
-          disabled={!reason || !destination || submitting}
+          disabled={!reason || !destination || submitting || Boolean(scheduled)}
           onClick={() => {
             if (reason && destination) onConfirm(reason, destination);
           }}
@@ -62,6 +67,18 @@ export function RemoveFromItineraryPanel({ workerLabel, onConfirm, onCancel, sub
       </div>
 
       <ExitDestinationField value={destination} onChange={setDestination} data-testid="itinerario-quitar-destino" />
+
+      {scheduled && (
+        <ScheduledAttendanceWarning
+          substitutionDates={scheduled.substitutionDates}
+          futureEntryFrom={scheduled.futureEntryFrom}
+          submitting={submitting}
+          onCancel={() => onScheduledDismiss?.()}
+          onConfirm={() => {
+            if (reason && destination) onConfirm(reason, destination, true);
+          }}
+        />
+      )}
 
       {errorMessage && (
         <Text size="sm" role="alert" color="inherit" className="text-red-600" data-testid="itinerario-quitar-erro">
