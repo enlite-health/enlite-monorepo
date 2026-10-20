@@ -93,6 +93,30 @@ describe('058a seed de células e backfill da cobertura (538/539) @integration',
       expect(await celulas(NOVAS)).toBe(11); // o ROLLBACK devolveu o catálogo
     });
 
+    it('master: o Acesso Master tem as 11 células novas, e reexecutar a 538 sem os grants dele os devolve (prd já enforça admin.patients)', async () => {
+      const MASTER = 'a0000000-0000-0000-0000-000000000001';
+      const contar = async (q: { query: Pool['query'] }): Promise<number> => (await q.query(
+        `SELECT count(*)::int AS n FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
+          WHERE gp.group_id = $1 AND (p.resource, p.action) IN (${NOVAS.map((_, i) => `($${2 * i + 2}, $${2 * i + 3})`).join(',')})`,
+        [MASTER, ...NOVAS.flat()])).rows[0].n as number;
+      expect((await pool.query('SELECT 1 FROM iam.permission_groups WHERE id = $1', [MASTER])).rowCount).toBe(1);
+      expect(await contar(pool)).toBe(11);
+      const c = await pool.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query(
+          `DELETE FROM iam.group_permissions WHERE group_id = $1 AND permission_id IN (SELECT id FROM iam.permissions p
+            WHERE (p.resource, p.action) IN (${NOVAS.map((_, i) => `($${2 * i + 2}, $${2 * i + 3})`).join(',')}))`, [MASTER, ...NOVAS.flat()]);
+        expect(await contar(c)).toBe(0); // a medição enxergaria os 11 se existissem
+        await c.query(fs.readFileSync(SQL_538, 'utf8'));
+        expect(await contar(c)).toBe(11);
+      } finally {
+        await c.query('ROLLBACK').catch(() => undefined);
+        c.release();
+      }
+      expect(await contar(pool)).toBe(11);
+    });
+
     it('pares de grant: todo grupo que tem a referência tem a célula nova (grants ou NOTICE, nunca nem um nem outro)', async () => {
       for (const { nova, ref } of PARES) {
         const r = await pool.query<{ com_ref: number; faltam: number }>(

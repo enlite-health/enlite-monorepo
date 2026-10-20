@@ -13,6 +13,7 @@
 --        patient_contract_value:create            <- patient_contract_value:read
 --      Referência sem nenhum grupo (banco novo/CI) => 0 grants => RAISE NOTICE: a 058 fica só-admin até alguém conceder (efeito declarado).
 -- Espelho em `public.*` só se `public.permissions` for TABELA física (relkind 'r', PRD no seed 206 cru); a view de compat da 274 não aceita INSERT.
+--    + as 11 células novas ao Acesso Master a0000000-...-0001 (molde 519/522/523; prd já enforça `admin.patients`).
 -- Idempotente (2×). Rollback: migrations/pending/ROLLBACK_538_058a_permissoes_seed.sql.
 
 DO $$
@@ -44,6 +45,8 @@ DECLARE
     ['patient_contract_value',      'create', 'patient_contract_value', 'read']
   ];
   v_i          INT;
+  v_master_id  CONSTANT UUID := 'a0000000-0000-0000-0000-000000000001';
+  v_master_n   INT;
   v_existem    INT;
   v_com_ref    INT;
   v_inseridos  INT;
@@ -99,6 +102,24 @@ BEGIN
   IF to_regclass('iam.group_permissions') IS NULL THEN
     RAISE NOTICE '[538] iam.group_permissions inexistente — sem grants';
     RETURN;
+  END IF;
+
+  -- Acesso Master recebe as 11 células novas (molde 519/522/523): em prd a família `admin.patients` já é enforced, então
+  -- sem o grant as 6 células de escrita nasceriam sem grupo nenhum. Não cria/move grupo: só concede se o Master existir.
+  IF to_regclass('iam.permission_groups') IS NOT NULL THEN
+    INSERT INTO iam.group_permissions (group_id, permission_id)
+    SELECT v_master_id, p.id
+      FROM iam.permissions p
+     WHERE (p.resource, p.action) IN (
+       ('catalog_insurance_providers','read'), ('catalog_insurance_providers','create'), ('catalog_insurance_providers','update'),
+       ('insurance_provider_contacts','read'), ('insurance_provider_contacts','create'), ('insurance_provider_contacts','update'),
+       ('insurance_contracts','read'), ('insurance_contracts','create'), ('insurance_contracts','update'),
+       ('patient_contract_value','create'), ('insurance_provider_patients','read'))
+       AND p.deprecated_at IS NULL
+       AND EXISTS (SELECT 1 FROM iam.permission_groups g WHERE g.id = v_master_id)
+    ON CONFLICT DO NOTHING;
+    GET DIAGNOSTICS v_master_n = ROW_COUNT;
+    RAISE NOTICE '[538] grant ao Acesso Master: % célula(s) novas da spec 058', v_master_n;
   END IF;
 
   FOR v_i IN 1 .. array_length(v_pares, 1) LOOP
