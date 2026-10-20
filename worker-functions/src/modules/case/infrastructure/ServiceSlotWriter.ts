@@ -18,6 +18,7 @@ import {
 } from '../domain/ItinerarySchedule';
 import { operationDateOf } from '../application/itineraryCoverage';
 import { SlotHasActiveAllocationError } from '../application/ItinerarySlotWriteUseCase';
+import { closeRangeAt, fromWire } from '../domain/dateRangeWire';
 
 /** A faixa nova sobrepõe outra do mesmo serviço na mesma vigência (constraint `pis_sem_sobreposicao`). → 409 SLOT_OVERLAP */
 export class ServiceSlotOverlapError extends Error {
@@ -66,9 +67,9 @@ export async function openSlot(
     const res = await cli.query<{ id: string }>(
       `INSERT INTO patient_itinerary_slot
               (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, daterange($5::date, NULL, '[)'), $6, $6)
+       VALUES ($1, $2, $3, $4, $5, $6, $6)
        RETURNING id`,
-      [serviceId, key.weekday, key.startTime, key.durationMinutes, hoje, actorUid],
+      [serviceId, key.weekday, key.startTime, key.durationMinutes, fromWire({ validFrom: hoje, validTo: null }), actorUid],
     );
     return res.rows[0]?.id ?? '';
   } catch (err) {
@@ -80,11 +81,11 @@ export async function openSlot(
 
 /** Fecha a faixa: vigente até ontem (`[lower, hoje)`); aberta e nascida hoje vira vazia (nunca vigente). */
 export async function closeSlot(cli: PoolClient, slotId: string, hoje: string, actorUid: string): Promise<void> {
+  const cur = await cli.query<{ valid: string }>(`SELECT valid::text AS valid FROM patient_itinerary_slot WHERE id = $1 FOR UPDATE`, [slotId]);
+  if (cur.rows.length === 0) throw new Error(`itinerary slot not found: ${slotId}`);
   await cli.query(
-    `UPDATE patient_itinerary_slot
-        SET valid = daterange(lower(valid), $2::date, '[)'), updated_by = $3, updated_at = now()
-      WHERE id = $1`,
-    [slotId, hoje, actorUid],
+    `UPDATE patient_itinerary_slot SET valid = $2, updated_by = $3, updated_at = now() WHERE id = $1`,
+    [slotId, closeRangeAt(cur.rows[0].valid, hoje), actorUid],
   );
 }
 
