@@ -4123,7 +4123,10 @@
             "noVacancy": "Este servicio no tiene una vacante activa.",
             "anaCareNotice": "Recordá cargar este cambio a mano en Ana Care — no se envía automáticamente.",
             "removeFromItinerary": "Quitar del itinerario",
-            "cancel": "Cerrar"
+            "cancel": "Cerrar",
+            "addWorker": "Agregar profesional",
+            "capacityFull": "Franja completa: ya hay {{count}} asignados, que es lo que necesita el servicio. Quitá a uno o aumentá la cantidad de prestadores del servicio para sumar a otro.",
+            "capacityNotInformed": "El servicio no tiene cargada la cantidad de prestadores: la franja no tiene límite."
           },
           "removePanel": {
             "title": "Quitar del itinerario",
@@ -4181,6 +4184,7 @@
             "ALREADY_ALLOCATED_IN_SLOT": "Este prestador ya está asignado a esta franja.",
             "SLOT_INACTIVE": "Esta franja ya no está activa.",
             "SERVICE_WITHOUT_ADDRESS": "Este servicio no tiene dirección cargada.",
+            "ITINERARY_SLOT_CAPACITY_EXCEEDED": "La franja ya tiene todos los prestadores que necesita el servicio. Actualizamos la pantalla.",
             "NOT_FOUND": "No se encontró la franja o el servicio.",
             "generic": "No se pudo asignar el prestador."
           }

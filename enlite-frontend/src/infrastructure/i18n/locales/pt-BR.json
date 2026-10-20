@@ -4044,7 +4044,10 @@
             "noVacancy": "Este serviço não tem uma vaga ativa.",
             "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente.",
             "removeFromItinerary": "Tirar do itinerário",
-            "cancel": "Fechar"
+            "cancel": "Fechar",
+            "addWorker": "Adicionar profissional",
+            "capacityFull": "Faixa completa: já há {{count}} alocados, que é o que o serviço precisa. Remova um ou aumente a quantidade de prestadores do serviço para incluir outro.",
+            "capacityNotInformed": "O serviço não tem a quantidade de prestadores cadastrada: a faixa não tem limite."
           },
           "removePanel": {
             "title": "Tirar do itinerário",
@@ -4102,6 +4105,7 @@
             "ALREADY_ALLOCATED_IN_SLOT": "Este prestador já está atribuído a esta faixa.",
             "SLOT_INACTIVE": "Esta faixa não está mais ativa.",
             "SERVICE_WITHOUT_ADDRESS": "Este serviço não tem endereço cadastrado.",
+            "ITINERARY_SLOT_CAPACITY_EXCEEDED": "A faixa já tem todos os prestadores que o serviço precisa. Atualizamos a tela.",
             "NOT_FOUND": "A faixa ou o serviço não foi encontrado.",
             "generic": "Não foi possível atribuir o prestador."
           }
