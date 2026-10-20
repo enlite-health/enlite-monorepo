@@ -520,6 +520,31 @@ describe('ContractedServiceFormRow', () => {
       expect(erro.textContent).toContain(trecho);
       expect(erro.textContent).not.toContain('No se pudo actualizar');
     });
+
+    it('REGRA-05: 422 SERVICE_ADDRESS_LOCKED (LIVE_VACANCY) → mensagem sob o endereço, sem o erro genérico', async () => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'LIVE_VACANCY' } }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      expect((await screen.findByTestId('svc-address-locked-1')).textContent).toContain('el servicio tiene una vacante activa');
+      expect(screen.queryByTestId('contracted-service-error-s1')).toBeNull();
+    });
+
+    it('REGRA-05: reason ALLOCATION → mensagem dos prestadores asignados', async () => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'ALLOCATION' } }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      expect((await screen.findByTestId('svc-address-locked-1')).textContent).toContain('prestadores asignados');
+    });
+
+    it('REGRA-05: um novo envio bem-sucedido limpa a mensagem', async () => {
+      mockUpdate.mockRejectedValueOnce(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'ALLOCATION' } }));
+      mockUpdate.mockResolvedValueOnce(SERVICE);
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await screen.findByTestId('svc-address-locked-1');
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await waitFor(() => expect(screen.queryByTestId('svc-address-locked-1')).toBeNull());
+    });
   });
 
   describe('bloco Autorización (spec 056 T2.5)', () => {

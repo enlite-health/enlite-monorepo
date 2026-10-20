@@ -136,6 +136,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
   const [error, setError] = useState<string | null>(null);
   const [shiftsValid, setShiftsValid] = useState(true);
   const [overlap, setOverlap] = useState(false);
+  const [addressLocked, setAddressLocked] = useState<'LIVE_VACANCY' | 'ALLOCATION' | null>(null);
   // Só o serviço NOVO escolhe o contrato aqui; o existente tem o painel próprio (vincular / trocar / corrigir / terminar).
   const [cascade, setCascade] = useState<ContractCascadeValue>(EMPTY_CASCADE);
 
@@ -178,6 +179,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
   const onSubmit = async (values: FormValues): Promise<void> => {
     setError(null);
     setOverlap(false);
+    setAddressLocked(null);
     if (!shiftsValid) return;
     // Obra social escolhida sem contrato/início: não cria o serviço pela metade.
     if (isNew && cascade.providerCode && (!cascade.contractId || !cascade.validFrom)) {
@@ -243,6 +245,10 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       if (code === 'SLOT_OVERLAP') setOverlap(true);
       else if (code === 'PROVIDERS_NEEDED_BELOW_OCCUPANCY') setError(te('providersNeededBelowOccupancy'));
       else if (code === 'PROVIDERS_NEEDED_CANNOT_CLEAR') setError(te('providersNeededCannotClear'));
+      else if (code === 'SERVICE_ADDRESS_LOCKED') {
+        const reason = (e as { details?: { reason?: string } }).details?.reason;
+        setAddressLocked(reason === 'LIVE_VACANCY' ? 'LIVE_VACANCY' : 'ALLOCATION');
+      }
       else setError(isNew ? te('createServiceError') : te('updateServiceError'));
     } finally {
       setBusy(false);
@@ -322,6 +328,11 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             />
           )} />
         </FormField>
+        {addressLocked && (
+          <Text size="sm" className="text-red-600 sm:col-span-2" data-testid={`svc-address-locked-${index}`}>
+            {te(addressLocked === 'LIVE_VACANCY' ? 'addressLockedLiveVacancy' : 'addressLockedAllocation')}
+          </Text>
+        )}
         <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
           <InputWithIcon id={`svc-startDate-${index}`} type="date" inputSize="compact" data-testid={`svc-startDate-${index}`} {...register('startDate')} />
         </FormField>
