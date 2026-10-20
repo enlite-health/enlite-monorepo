@@ -32,7 +32,7 @@ beforeAll(async () => {
 });
 
 const BASE = {
-  id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: null, providersNeeded: 1, authorization: null, legacyAuthorizedHours: null, scheduleHours: 0, careLocation: null,
+  id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: null, providersNeeded: 1, authorization: null, scheduleHours: 0, careLocation: null,
   startDate: null, supervisionFrequency: null, guardShift: null, providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null,
   workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, liveVacancy: null, liveVacancyRedacted: false,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',

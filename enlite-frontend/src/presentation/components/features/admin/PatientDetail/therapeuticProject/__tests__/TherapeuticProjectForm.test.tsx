@@ -72,7 +72,7 @@ const servico = (over: Partial<PatientContractedServiceDetail> = {}): PatientCon
   serviceCode: 'AT',
   professionalProfile: null,
   providersNeeded: 1,
-  authorization: null, legacyAuthorizedHours: 20,
+  authorization: null,
   scheduleHours: 20,
   careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS,

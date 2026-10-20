@@ -25,7 +25,7 @@ beforeAll(async () => {
 
 const BASE: PatientContractedServiceDetail = {
   id: 'svc-1', patientId: 'pat-1', serviceCode: 'CAREGIVER', professionalProfile: null,
-  providersNeeded: null, authorization: null, legacyAuthorizedHours: null, scheduleHours: 0, careLocation: null,
+  providersNeeded: null, authorization: null, scheduleHours: 0, careLocation: null,
   ...CONTRACT_058_DEFAULTS, startDate: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, liveVacancy: null, liveVacancyRedacted: false,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [],
