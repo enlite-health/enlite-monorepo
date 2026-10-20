@@ -60,3 +60,44 @@ export async function alocar(db: Db, slotId: string, cand: Candidato, validFrom:
   return r.rows[0].id;
 }
 
+/** "Hoje" do país, pelo banco (a função da 541) — datas dos testes são sempre relativas a ele. */
+export async function hojeOp(db: Db, country: 'AR' | 'BR' = 'AR'): Promise<string> {
+  return (await db.query<{ d: string }>(`SELECT fn_operation_date($1)::text AS d`, [country])).rows[0].d;
+}
+export async function mais(db: Db, base: string, dias: number): Promise<string> {
+  return (await db.query<{ d: string }>(`SELECT ($1::date + $2::int)::text AS d`, [base, dias])).rows[0].d;
+}
+
+/** Liga/desliga a Trava A só quando ela existe (os testes de 542 rodam antes da 543). Use DENTRO de uma transação do teste. SQL sem interpolação (regra 10): dois literais. */
+export async function travaA(db: Db, ligada: boolean): Promise<void> {
+  const existe = await db.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM pg_trigger WHERE tgname = $1 AND NOT tgisinternal`, ['trg_058_b_assignment_capacity']);
+  if (existe.rows[0].n === 0) return;
+  if (ligada) await db.query(`ALTER TABLE patient_itinerary_assignment ENABLE TRIGGER trg_058_b_assignment_capacity`);
+  else await db.query(`ALTER TABLE patient_itinerary_assignment DISABLE TRIGGER trg_058_b_assignment_capacity`);
+}
+
+/** Apaga só o que as suítes 058b criaram (superusuário do banco de teste: `session_replication_role = replica` desliga os triggers). Tudo parametrizado: $1 = prefixo de paciente, $2 = prefixo de worker. */
+export async function limparB(pool: Pool): Promise<void> {
+  const pac = PREFIXO_058B + '-%';
+  const wrk = PREFIXO_058B + '\\_%';
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    await c.query('SET LOCAL session_replication_role = replica');
+    await c.query(`DELETE FROM patient_itinerary_absence WHERE assignment_id IN (SELECT a.id FROM patient_itinerary_assignment a JOIN patient_itinerary_slot s ON s.id = a.slot_id JOIN patient_contracted_services p ON p.id = s.contracted_service_id JOIN patients t ON t.id = p.patient_id WHERE t.clickup_task_id LIKE $1)`, [pac]);
+    await c.query(`DELETE FROM patient_itinerary_assignment WHERE slot_id IN (SELECT s.id FROM patient_itinerary_slot s JOIN patient_contracted_services p ON p.id = s.contracted_service_id JOIN patients t ON t.id = p.patient_id WHERE t.clickup_task_id LIKE $1)`, [pac]);
+    await c.query(`DELETE FROM worker_job_applications WHERE job_posting_id IN (SELECT j.id FROM job_postings j JOIN patients t ON t.id = j.patient_id WHERE t.clickup_task_id LIKE $1)`, [pac]);
+    await c.query(`DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [pac]);
+    await c.query(`DELETE FROM patient_itinerary_slot WHERE contracted_service_id IN (SELECT p.id FROM patient_contracted_services p JOIN patients t ON t.id = p.patient_id WHERE t.clickup_task_id LIKE $1)`, [pac]);
+    await c.query(`DELETE FROM patient_contracted_services WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [pac]);
+    await c.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [pac]);
+    await c.query(`DELETE FROM workers WHERE auth_uid LIKE $1`, [wrk]);
+    await c.query('COMMIT');
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => undefined);
+    throw e;
+  } finally {
+    c.release();
+  }
+}
