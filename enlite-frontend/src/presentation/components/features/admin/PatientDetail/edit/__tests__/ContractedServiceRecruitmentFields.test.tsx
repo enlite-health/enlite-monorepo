@@ -53,6 +53,18 @@ const renderRow = (service: PatientContractedServiceDetail | null = SERVICE) =>
 describe('ContractedServiceFormRow — campos de recrutamento (spec 027 Fase 3)', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
+  it('os 5 campos que bloqueiam a ativação NÃO dizem "opcional"; workerAttributes e dailyObs continuam opcionais', () => {
+    renderRow();
+    const labelOf = (testId: string) => document.querySelector(`label[for="${testId}"]`) as HTMLElement;
+    for (const id of ['svc-requiredProfessions-1', 'svc-requiredSex-1', 'svc-requiredExperience-1', 'svc-workSchedule-1', 'svc-paymentDay-1']) {
+      expect(labelOf(id).textContent).toContain('*');
+      expect(labelOf(id).textContent).not.toMatch(/opcional/i);
+    }
+    for (const id of ['svc-workerAttributes-1', 'svc-dailyObs-1']) {
+      expect(labelOf(id).textContent).toMatch(/opcional/i);
+    }
+  });
+
   it('pré-carrega os 7 campos do serviço', () => {
     renderRow();
     expect((screen.getByTestId('svc-requiredSex-1') as HTMLSelectElement).value).toBe('F');

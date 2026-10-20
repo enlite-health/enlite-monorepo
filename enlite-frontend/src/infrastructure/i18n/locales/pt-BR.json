@@ -4040,7 +4040,11 @@
             "CONTRACTED_SERVICE": "Serviço contratado",
             "SERVICE_ADDRESS": "Endereço do serviço",
             "SERVICE_SCHEDULE": "Horário do serviço",
-            "SERVICE_RECRUITMENT_FIELDS": "Dados de recrutamento do serviço (tipo de prestador, sexo, experiência, jornada e dia de pagamento)",
+            "SERVICE_REQUIRED_PROFESSIONS": "Tipo de prestador do serviço",
+            "SERVICE_REQUIRED_SEX": "Sexo do prestador do serviço",
+            "SERVICE_REQUIRED_EXPERIENCE": "Experiência exigida do serviço",
+            "SERVICE_WORK_SCHEDULE": "Jornada do serviço",
+            "SERVICE_PAYMENT_DAY": "Dia de pagamento do serviço",
             "CONSENT": "Consentimento"
           }
         },
