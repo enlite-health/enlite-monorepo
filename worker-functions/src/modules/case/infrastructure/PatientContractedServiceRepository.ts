@@ -28,6 +28,7 @@ import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours'
 import { replaceServiceSlots } from './ServiceSlotWriter';
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
 import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
+import { fetchServiceSchedules } from './ContractedServiceDetailMapper';
 import {
   batchEntry,
   derivePayerCoverageMatch,
@@ -49,7 +50,7 @@ export interface ContractedServiceScheduleSlot {
   durationMinutes: number;
 }
 
-/** Turno do horário na LEITURA: `horario_do_servico(id, CURRENT_DATE)` — o `endTime` é derivado (início + duração). */
+/** Turno do horário na LEITURA: `horario_do_servico(id, asOf)` — o `endTime` é derivado (início + duração). */
 export interface ContractedServiceScheduleView extends ContractedServiceScheduleSlot {
   endTime: string;
 }
@@ -272,13 +273,9 @@ export class PatientContractedServiceRepository {
     const providers = await this.providerRepo.listForService(row.id);
     // Spec 018 PR-6 / spec 047 F2: a MESMA leitura do mapper da ficha (`fetchLiveVacancies`) — um dono só.
     const liveVacancy = (await fetchLiveVacancies(cli, [row.id])).get(row.id) ?? null;
-    // Spec 056: o horário NÃO é a coluna `pcs.schedule` (morta) — é a leitura derivada das faixas vigentes hoje.
-    const sched = await cli.query<{ schedule: ContractedServiceScheduleView[] | null }>(
-      `SELECT horario_do_servico($1, CURRENT_DATE) AS schedule`,
-      [row.id],
-    );
-    const schedule = sched.rows[0]?.schedule ?? null;
-    const authorization = (await fetchCurrentAuthorizations(cli, [row.id])).get(row.id) ?? null;
+    // Spec 058 (B1): agenda e autorização no dia de operação do serviço — as MESMAS funções da ficha (`ContractedServiceDetailMapper`).
+    const schedule = (await fetchServiceSchedules(cli, [row.id], asOf)).get(row.id) ?? null;
+    const authorization = (await fetchCurrentAuthorizations(cli, [row.id], asOf)).get(row.id) ?? null;
     const [payers, histories, prices, coverageEntries] = await Promise.all([
       payerAtMany(cli, [row.id], asOf),
       payerHistoryMany(cli, [row.id]),

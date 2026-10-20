@@ -451,6 +451,7 @@ describe('PatientContractedServiceRepository', () => {
       if (/horario_do_servico/.test(sql)) {
         return {
           rows: [{
+            id: 'svc-1',
             schedule: [
               { dayOfWeek: 1, startTime: '20:00', endTime: '08:00', durationMinutes: 720 },
               { dayOfWeek: 2, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
@@ -588,16 +589,29 @@ describe('PatientContractedServiceRepository', () => {
     mockPoolQuery.mockImplementation(async (sql: string) => {
       if (/FROM patient_contracted_services WHERE patient_id/.test(sql)) return { rows: [SERVICE_ROW] };
       if (/FROM contracted_service_authorization/.test(sql)) {
-        return { rows: [{ contracted_service_id: 'svc-1', id: 'auth-1', hours: '120', valid_from: '2026-01-01', valid_upper: '2027-01-01' }] };
+        return { rows: [{ contracted_service_id: 'svc-1', id: 'auth-1', hours: '120', valid: '[2026-01-01,2027-01-01)' }] };
       }
       return { rows: [] };
     });
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
     const out = await repo.listForPatient('pat-1', NOW);
     expect(out[0].authorization).toEqual({ id: 'auth-1', hours: 120, validFrom: '2026-01-01', validTo: '2026-12-31' });
-    const sql = mockPoolQuery.mock.calls.map((c) => String(c[0])).find((q) => /FROM contracted_service_authorization/.test(q));
-    expect(sql).toContain('superseded_at IS NULL');
-    expect(sql).toContain('valid @> CURRENT_DATE');
+    const chamada = mockPoolQuery.mock.calls.find((c) => /FROM contracted_service_authorization/.test(String(c[0])))!;
+    expect(String(chamada[0])).toContain('superseded_at IS NULL');
+    expect(String(chamada[0])).toContain('valid @> $2::date');
+    expect(chamada[1]).toEqual([['svc-1'], '2026-09-03']);
+  });
+
+  it('decorate lê a agenda pelo asOf do país: horario_do_servico(id, $2::date) com 2026-09-03', async () => {
+    mockPoolQuery.mockImplementation(async (sql: string) => {
+      if (/FROM patient_contracted_services WHERE patient_id/.test(sql)) return { rows: [SERVICE_ROW] };
+      return { rows: [] };
+    });
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.listForPatient('pat-1', NOW);
+    const chamada = mockPoolQuery.mock.calls.find((c) => /horario_do_servico/.test(String(c[0])))!;
+    expect(String(chamada[0])).toContain('horario_do_servico(id, $2::date)');
+    expect(chamada[1]).toEqual([['svc-1'], '2026-09-03']);
   });
 
   it('update/create: authorizedHours NÃO é coluna gravável (some do INSERT mesmo se vier no objeto)', async () => {
