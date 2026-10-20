@@ -20,7 +20,8 @@ import { ServiceTeamMarkUseCase, type ServiceTeamMarkInput } from './ServiceTeam
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from './PatientStatusDerivation';
 import { ItineraryChangeLogWriter, type InsertItineraryChangeInput, type ItineraryChangeDestination } from '../infrastructure/ItineraryChangeLogWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, WorkerHasScheduledAttendancesError } from '../domain/serviceExitReason';
+import { ScheduledAttendanceReader, hasScheduledAttendances, type ScheduledAttendances } from '../infrastructure/ScheduledAttendanceReader';
 
 export interface RemoveFromItineraryAllocationPort {
   endWith(client: PoolClient, input: ItineraryEndInput, opts: { derive: boolean }): Promise<ItineraryEndWithResult>;
@@ -38,6 +39,10 @@ export interface RemoveFromItineraryChangeLogPort {
   insert(client: PoolClient, input: InsertItineraryChangeInput): Promise<{ id: string }>;
 }
 
+export interface RemoveFromItineraryScheduledPort {
+  listFor(client: PoolClient, serviceId: string, workerId: string, today: string): Promise<ScheduledAttendances>;
+}
+
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
 export interface RemoveFromItineraryInput {
@@ -48,6 +53,7 @@ export interface RemoveFromItineraryInput {
   reasonCategory?: unknown;
   /** `RESERVE` | `LEAVE_SERVICE`; `unknown` pelo mesmo motivo. */
   destination?: unknown;
+  cancelScheduled?: boolean;
   actorUid: string;
   now?: Date;
 }
@@ -69,10 +75,11 @@ export class RemoveFromItineraryUseCase {
     private readonly changeLog: RemoveFromItineraryChangeLogPort = new ItineraryChangeLogWriter(),
     private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    private readonly scheduled: RemoveFromItineraryScheduledPort = new ScheduledAttendanceReader(),
   ) {}
 
   async execute(input: RemoveFromItineraryInput): Promise<RemoveFromItineraryResult> {
-    const { patientId, serviceId, allocationId, reasonCategory, destination, actorUid, now = new Date() } = input;
+    const { patientId, serviceId, allocationId, reasonCategory, destination, cancelScheduled, actorUid, now = new Date() } = input;
     if (reasonCategory === undefined || reasonCategory === null || reasonCategory === '') throw new ServiceExitReasonRequiredError();
     if (typeof reasonCategory !== 'string') throw new ServiceExitReasonInvalidError();
     if (typeof destination !== 'string' || !DESTINATIONS.includes(destination as ItineraryChangeDestination)) {
@@ -99,6 +106,12 @@ export class RemoveFromItineraryUseCase {
       });
 
       if (dest === 'LEAVE_SERVICE') {
+        // `today` = a data com que `endWith` encerrou (= hoje do país para alocação vigente). ⚑ padrão: o aviso vale só para LEAVE_SERVICE
+        // (design trocas D4-C6: `RESERVE` não grava marca e o prestador segue Selecionado com os agendamentos).
+        const agendados = await this.scheduled.listFor(client, serviceId, ended.workerId, ended.validTo);
+        if (hasScheduledAttendances(agendados) && cancelScheduled !== true) {
+          throw new WorkerHasScheduledAttendancesError(agendados.substitutions.map((s) => s.date), agendados.futureEntries[0]?.validFrom ?? null);
+        }
         await this.marks.rejectWith(client, { patientId, serviceId, workerId: ended.workerId, reasonCategory, actorUid, cells: null, now });
       }
 
