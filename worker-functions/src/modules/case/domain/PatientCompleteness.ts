@@ -127,8 +127,12 @@ export const ACTIVATABLE_STATUSES = ['ADMISSION', 'PENDING_ADMISSION'] as const;
 export const RECRUITMENT_BLOCKING_CODES = [
   'SERVICE_ADDRESS',
   'SERVICE_SCHEDULE',
-  // Spec 027 Fase 3 (D508 c): os 5 campos que a vaga copia do serviço. Código ÚNICO para os 5.
-  'SERVICE_RECRUITMENT_FIELDS',
+  // Spec 027 Fase 3 (D508 c): os 5 campos que a vaga copia do serviço — um código POR CAMPO (o tooltip diz qual falta).
+  'SERVICE_REQUIRED_PROFESSIONS',
+  'SERVICE_REQUIRED_SEX',
+  'SERVICE_REQUIRED_EXPERIENCE',
+  'SERVICE_WORK_SCHEDULE',
+  'SERVICE_PAYMENT_DAY',
   'COVERAGE',
 ] as const;
 
@@ -147,15 +151,17 @@ export interface ServiceRecruitmentFields {
 
 const hasText = (v: string | null | undefined): boolean => (v ?? '').trim().length > 0;
 
-/** `true` quando os 5 campos copiados estão preenchidos. Lista vazia e texto só com espaços = faltando. */
-export function serviceRecruitmentFieldsFilled(f: ServiceRecruitmentFields): boolean {
-  return (
-    (f.requiredProfessions ?? []).some((p) => hasText(p)) &&
-    hasText(f.requiredSex) &&
-    hasText(f.requiredExperience) &&
-    hasText(f.workSchedule) &&
-    hasText(f.paymentDay)
-  );
+/** Códigos POR CAMPO que faltam dos 5 (ordem fixa = a do formulário). Vazio = os 5 preenchidos. */
+export function serviceRecruitmentMissingCodes(
+  f: ServiceRecruitmentFields | undefined,
+): Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> {
+  const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
+  if (!(f?.requiredProfessions ?? []).some((p) => hasText(p))) missing.push('SERVICE_REQUIRED_PROFESSIONS');
+  if (!hasText(f?.requiredSex)) missing.push('SERVICE_REQUIRED_SEX');
+  if (!hasText(f?.requiredExperience)) missing.push('SERVICE_REQUIRED_EXPERIENCE');
+  if (!hasText(f?.workSchedule)) missing.push('SERVICE_WORK_SCHEDULE');
+  if (!hasText(f?.paymentDay)) missing.push('SERVICE_PAYMENT_DAY');
+  return missing;
 }
 
 /**
@@ -213,9 +219,7 @@ export function computeRecruitmentReadiness(
   const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
-  if (!input.serviceRecruitmentFields || !serviceRecruitmentFieldsFilled(input.serviceRecruitmentFields)) {
-    missing.push('SERVICE_RECRUITMENT_FIELDS');
-  }
+  missing.push(...serviceRecruitmentMissingCodes(input.serviceRecruitmentFields));
   if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
     missing.push('COVERAGE');
   }

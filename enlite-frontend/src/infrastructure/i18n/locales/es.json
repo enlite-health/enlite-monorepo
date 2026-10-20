@@ -4119,7 +4119,11 @@
             "CONTRACTED_SERVICE": "Servicio contratado",
             "SERVICE_ADDRESS": "Domicilio del servicio",
             "SERVICE_SCHEDULE": "Horario del servicio",
-            "SERVICE_RECRUITMENT_FIELDS": "Datos de reclutamiento del servicio (tipo de prestador, sexo, experiencia, jornada y día de pago)",
+            "SERVICE_REQUIRED_PROFESSIONS": "Tipo de prestador del servicio",
+            "SERVICE_REQUIRED_SEX": "Sexo del prestador del servicio",
+            "SERVICE_REQUIRED_EXPERIENCE": "Experiencia requerida del servicio",
+            "SERVICE_WORK_SCHEDULE": "Jornada del servicio",
+            "SERVICE_PAYMENT_DAY": "Día de pago del servicio",
             "CONSENT": "Consentimiento"
           }
         },
