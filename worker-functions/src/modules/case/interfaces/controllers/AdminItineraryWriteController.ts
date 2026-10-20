@@ -34,7 +34,7 @@ import {
   ServiceTeamAlreadyRejectedError,
 } from '../../application/ServiceTeamMarkUseCase';
 import { ServiceTeamReasonRequiredError, ServiceTeamReasonInvalidError } from '../../domain/serviceTeamReason';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError } from '../../domain/serviceExitReason';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
 import { insuranceErrorBody } from './insuranceErrorResponse';
@@ -350,6 +350,10 @@ export class AdminItineraryWriteController {
     }
     if (err instanceof DestinationRequiredError) {
       res.status(422).json({ success: false, code: 'DESTINATION_REQUIRED' });
+      return;
+    }
+    if (err instanceof DestinationNotAvailableForScheduledError) {
+      res.status(422).json({ success: false, code: 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED' });
       return;
     }
     // `LEAVE_SERVICE` de quem tem agendamento: o `rejectWith` recusa e a transação inteira desfaz (Fase 4; a Fase 8 troca por aviso).

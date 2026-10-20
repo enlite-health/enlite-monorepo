@@ -40,7 +40,7 @@ import {
 import { RemoveFromItineraryUseCase } from '../../../application/RemoveFromItineraryUseCase';
 import { ReplaceWithReasonUseCase } from '../../../application/ReplaceWithReasonUseCase';
 import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError } from '../../../domain/serviceExitReason';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
 
 const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
@@ -488,6 +488,24 @@ describe('AdminItineraryWriteController', () => {
         fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE', actorUid: 'staff-1',
       });
       expect(allocationUseCase).not.toHaveProperty('replace');
+    });
+    it('Caso B + LEAVE_SERVICE: DestinationNotAvailableForScheduledError → 422 DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED', async () => {
+      replaceUseCase.execute.mockRejectedValueOnce(new DestinationNotAvailableForScheduledError());
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, code: 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED' });
+    });
+    it.each([
+      ['REASON_REQUIRED', ServiceExitReasonRequiredError],
+      ['DESTINATION_REQUIRED', DestinationRequiredError],
+      ['ALLOCATION_NOT_ACTIVE', AllocationNotActiveError],
+    ] as const)('replace: %s → 422', async (code, ErrorClass) => {
+      replaceUseCase.execute.mockRejectedValueOnce(new (ErrorClass as new (id: string) => Error)(ALLOCATION_ID));
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, code });
     });
   });
 
