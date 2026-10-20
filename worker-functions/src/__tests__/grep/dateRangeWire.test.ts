@@ -11,6 +11,19 @@ const SRC = path.resolve(__dirname, '../..');
 const PROIBIDO = /(upper|lower|upper_inf)\(\s*(\w+\.)?valid|inclusiveValidTo|::daterange|'\[\)'/;
 const DONO = path.join('modules', 'case', 'domain', 'dateRangeWire.ts');
 
+/**
+ * Interinidade declarada do sync main -> stage (20/10): o código da spec 056 (horas com dono único, só na stage até a Parte B) escreve
+ * `daterange`/`upper(valid)` por conta própria. Migrar esses 5 arquivos para `dateRangeWire.ts` muda o código da 056 e fica para a Parte B;
+ * a lista é FECHADA (arquivo novo fora dela reprova) e o teste abaixo falha se um item sair de lá sem necessidade (lista velha = achado).
+ */
+const INTERINIDADE_056 = [
+  'modules/case/domain/ContractedServiceAuthorization.ts',
+  'modules/case/infrastructure/ContractedServiceAuthorizationRepository.ts',
+  'modules/case/infrastructure/ServiceSlotWriter.ts',
+  'modules/case/infrastructure/contractedServiceAuthorizationRead.ts',
+  'shared/openapi/registrations/adminPatients.ts',
+];
+
 function fontes(dir: string, out: string[] = []): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name);
@@ -40,7 +53,15 @@ describe('grep-teste: conversão de daterange só em dateRangeWire.ts', () => {
     const achados = todas
       .filter((f) => !f.endsWith(DONO))
       .filter((f) => PROIBIDO.test(fs.readFileSync(f, 'utf8')))
-      .map((f) => path.relative(SRC, f));
+      .map((f) => path.relative(SRC, f))
+      .filter((f) => !INTERINIDADE_056.includes(f));
     expect(achados).toEqual([]);
+  });
+
+  it('a interinidade da 056 só lista arquivos que ainda casam o padrão (lista velha não esconde nada)', () => {
+    for (const rel of INTERINIDADE_056) {
+      const full = path.join(SRC, rel);
+      if (fs.existsSync(full)) expect(PROIBIDO.test(fs.readFileSync(full, 'utf8'))).toBe(true);
+    }
   });
 });
