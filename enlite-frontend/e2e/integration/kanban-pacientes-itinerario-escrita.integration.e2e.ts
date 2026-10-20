@@ -45,7 +45,8 @@ test.describe('itinerario-escrita @integration', () => {
   useLancamentoStaff(mockAdminUserFor('itinerario-escrita'), 'E2E Itinerario Escrita');
 
   test('itinerario-gate-recusa', async ({ request }) => {
-    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    // Trava A (058b): o slot comporta no máximo `providers_needed` alocados. Este teste aloca w4, w2 e w5 no MESMO slot -> 3.
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4, providersNeeded: 3 });
     const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
     const token = tokenFor(ITINERARIO_STAFF);
     const itin = await readItineraryApi(request, seed.patientId);
@@ -315,7 +316,8 @@ test.describe('itinerario-escrita @integration', () => {
   });
 
   test('itinerario-folga-aceita', async ({ request }) => {
-    const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    // Trava A (058b): w e w2 ocupam o MESMO slot1 do serviço X (r1, r5) -> providers_needed 2.
+    const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4, providersNeeded: 2 });
     const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.63, lng: -58.43 });
     const s3 = await createServiceViaApi(request, seedX.patientId, {
       addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '17:00', durationMinutes: 180 }],

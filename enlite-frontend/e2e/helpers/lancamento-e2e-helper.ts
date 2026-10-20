@@ -319,6 +319,8 @@ export interface SeedLaunchablePatientOpts {
   lng: number;
   /** Faixas do serviço semeado (default: 1 faixa seg 08:00, 240 min = 4 h). Vivem em `patient_itinerary_slot`. */
   schedule?: ContractedServiceBody['schedule'];
+  /** `providers_needed` do serviço semeado (default 1). A Trava A (058b) recusa alocar além dele num mesmo slot. */
+  providersNeeded?: number;
 }
 
 export interface SeedLaunchablePatientResult {
@@ -339,7 +341,7 @@ export async function seedLaunchablePatient(
   request: APIRequestContext,
   opts: SeedLaunchablePatientOpts,
 ): Promise<SeedLaunchablePatientResult> {
-  const { status, lat, lng, schedule } = opts;
+  const { status, lat, lng, schedule, providersNeeded = 1 } = opts;
   const { patientId, addressId } = insertTestPatient({
     status,
     withAddress: true,
@@ -355,7 +357,7 @@ export async function seedLaunchablePatient(
   const token = tokenFor(MOCK_STAFF);
   const serviceId = await postContractedServiceViaApi(request, token, patientId, {
     serviceCode: 'AT',
-    providersNeeded: 1,
+    providersNeeded,
     careLocation: 'HOME',
     addressId,
     schedule: schedule ?? [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
