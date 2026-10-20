@@ -206,6 +206,24 @@ describe('AdminContractedServicesApiService', () => {
     ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code });
   });
 
+  it('replaceAllocation (058): POST em /itinerary/allocations/:id/replace com { newWorkerId, fromDate, reasonCategory, destination }', async () => {
+    const data = { replacedAllocationId: ALLOCATION_ID };
+    const f = mockFetch({ success: true, data });
+    const body = { newWorkerId: 'w2', fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' as const };
+    await AdminContractedServicesApiService.replaceAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, body);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/allocations/${ALLOCATION_ID}/replace`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it.each(['REASON_REQUIRED', 'DESTINATION_REQUIRED', 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED', 'ITINERARY_OVERLAP', 'ALLOCATION_NOT_ACTIVE'])('replaceAllocation: 4xx %s vira ContractedServiceApiError com code', async (code) => {
+    mockFetch({ success: false, code }, 422);
+    await expect(
+      AdminContractedServicesApiService.replaceAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { newWorkerId: 'w2', fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code });
+  });
+
   it('setAbsenceSubstitute: PATCH em /itinerary/absences/:absenceId/substitute com { substituteWorkerId }', async () => {
     const f = mockFetch({ success: true, data: ABSENCE_OPEN });
     const out = await AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, 'w2');

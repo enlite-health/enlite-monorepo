@@ -226,20 +226,20 @@ class AdminContractedServicesApiServiceClass {
 
   /**
    * POST .../itinerary/allocations/:allocationId/replace (D445.5) — reemplazo permanente: encerra
-   * o titular em D-1 e cria o novo a partir de `fromDate`, 1 transação. 409 `ITINERARY_OVERLAP` /
-   * 422 `REPLACEMENT_DATE_IN_PAST`/`NOT_SELECTED_FOR_SERVICE` viram `ContractedServiceApiError`.
+   * o titular em D-1 e cria o novo a partir de `fromDate`, 1 transação, com motivo e destino (058).
+   * 409 `ITINERARY_OVERLAP` / 422 `REPLACEMENT_DATE_IN_PAST`/`NOT_SELECTED_FOR_SERVICE`/`REASON_*`/
+   * `DESTINATION_REQUIRED`/`DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED` viram `ContractedServiceApiError` (`err.code`).
    */
   async replaceAllocation(
     patientId: string,
     serviceId: string,
     allocationId: string,
-    newWorkerId: string,
-    fromDate: string,
+    body: { newWorkerId: string; fromDate: string; reasonCategory: string; destination: ExitDestination },
   ): Promise<ItineraryReplaceResult> {
     return this.request<ItineraryReplaceResult>(
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/replace`,
-      { newWorkerId, fromDate },
+      body,
     );
   }
 
