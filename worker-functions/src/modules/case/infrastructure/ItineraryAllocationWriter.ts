@@ -153,4 +153,15 @@ export class ItineraryAllocationWriter {
     );
     return res.rowCount ?? 0;
   }
+
+  /** Desfaz o fim agendado (`valid_to = NULL`): o titular que a entrada futura substituía volta a ser aberto. Só bate `ACTIVE`. */
+  async clearScheduledEnd(client: PoolClient, id: string, actorUid: string): Promise<number> {
+    const res = await client.query(
+      `UPDATE patient_itinerary_assignment
+          SET valid_to = NULL, updated_by = $2, updated_at = now()
+        WHERE id = $1 AND status = 'ACTIVE'`,
+      [id, actorUid],
+    );
+    return res.rowCount ?? 0;
+  }
 }

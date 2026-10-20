@@ -179,4 +179,25 @@ describe('ItineraryAllocationWriter', () => {
 
     expect(rowCount).toBe(0);
   });
+
+  it('clearScheduledEnd: 1 query, valid_to = NULL só de ACTIVE; params [id, actor]', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.clearScheduledEnd(client as never, 'alloc-1', 'u-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/SET valid_to = NULL/);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND status = 'ACTIVE'/);
+    expect(params).toEqual(['alloc-1', 'u-1']);
+    expect(rowCount).toBe(1);
+  });
+
+  it('clearScheduledEnd: nenhuma linha → 0', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    const rowCount = await writer.clearScheduledEnd(client as never, 'alloc-1', 'u-1');
+
+    expect(rowCount).toBe(0);
+  });
 });
