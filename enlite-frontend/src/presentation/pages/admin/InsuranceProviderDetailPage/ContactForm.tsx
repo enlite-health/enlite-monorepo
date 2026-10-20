@@ -37,8 +37,28 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
   const isDirty = JSON.stringify(draft) !== JSON.stringify(initial);
 
   return (
-    <FormModal title={title} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contact-form">
-      {(requestClose) => (<>
+    <FormModal title={title} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contact-form"
+      footer={(requestClose) => (<>
+      {problem && (
+        <div role="alert" data-testid="contact-problem" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
+          <Text color="inherit" size="sm" className="text-red-700">{t(`${NS}.${problem}`)}</Text>
+        </div>
+      )}
+      {error && (
+        <div role="alert" data-testid="contact-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
+          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
+        </div>
+      )}
+      <div className="flex items-center gap-3 justify-end">
+        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contact-cancel">
+          {t('admin.insuranceProviders.detail.cancel')}
+        </Button>
+        <Button variant="primary" size="sm" isLoading={submitting} onClick={submit} data-testid="contact-save">
+          {t('admin.insuranceProviders.detail.save')}
+        </Button>
+      </div>
+      </>)}
+    >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label={t(`${NS}.fullName`)} required htmlFor="contact-fullName">
           <Input inputSize="compact" id="contact-fullName" value={draft.fullName} onChange={(e) => set('fullName', e.target.value)} data-testid="contact-fullName" />
@@ -67,25 +87,6 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
           <Input inputSize="compact" id="contact-documentNumber" value={draft.documentNumber} onChange={(e) => set('documentNumber', e.target.value)} data-testid="contact-documentNumber" />
         </Field>
       </div>
-      {problem && (
-        <div role="alert" data-testid="contact-problem" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-          <Text color="inherit" size="sm" className="text-red-700">{t(`${NS}.${problem}`)}</Text>
-        </div>
-      )}
-      {error && (
-        <div role="alert" data-testid="contact-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
-        </div>
-      )}
-      <div className="flex items-center gap-3 justify-end">
-        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contact-cancel">
-          {t('admin.insuranceProviders.detail.cancel')}
-        </Button>
-        <Button variant="primary" size="sm" isLoading={submitting} onClick={submit} data-testid="contact-save">
-          {t('admin.insuranceProviders.detail.save')}
-        </Button>
-      </div>
-      </>)}
     </FormModal>
   );
 }

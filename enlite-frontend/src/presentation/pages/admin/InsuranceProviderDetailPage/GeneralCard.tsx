@@ -104,9 +104,24 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
       </dl>
     </ProviderCard>
     {editing && (
-      <FormModal title={t(`${NS}.general.title`)} isDirty={dirty} onClose={() => setEditing(false)} busy={saving} testId="provider-general-modal">
-        {(requestClose) => (
-        <div className="flex flex-col gap-4" data-testid="provider-general-form">
+      <FormModal title={t(`${NS}.general.title`)} isDirty={dirty} onClose={() => setEditing(false)} busy={saving} testId="provider-general-modal"
+        footer={(requestClose) => (<>
+          {error && (
+            <div role="alert" data-testid="provider-general-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
+              <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
+            </div>
+          )}
+          <div className="flex items-center gap-3 justify-end">
+            <Button variant="outline" size="sm" onClick={requestClose} disabled={saving} data-testid="provider-general-cancel">
+              {t(`${NS}.detail.cancel`)}
+            </Button>
+            <Button variant="primary" size="sm" isLoading={saving} disabled={draft.name.trim() === ''} onClick={save} data-testid="provider-general-save">
+              {t(`${NS}.detail.save`)}
+            </Button>
+          </div>
+        </>)}
+      >
+        <div data-testid="provider-general-form" className="flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label={t(`${NS}.general.fields.name`)} required htmlFor="provider-general-name-input">
               <Input inputSize="compact" id="provider-general-name-input" value={draft.name} onChange={(e) => set('name', e.target.value)} data-testid="provider-general-name-input" />
@@ -137,21 +152,7 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
               />
             </div>
           </div>
-          {error && (
-            <div role="alert" data-testid="provider-general-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-              <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
-            </div>
-          )}
-          <div className="flex items-center gap-3 justify-end">
-            <Button variant="outline" size="sm" onClick={requestClose} disabled={saving} data-testid="provider-general-cancel">
-              {t(`${NS}.detail.cancel`)}
-            </Button>
-            <Button variant="primary" size="sm" isLoading={saving} disabled={draft.name.trim() === ''} onClick={save} data-testid="provider-general-save">
-              {t(`${NS}.detail.save`)}
-            </Button>
-          </div>
         </div>
-        )}
       </FormModal>
     )}
     </>

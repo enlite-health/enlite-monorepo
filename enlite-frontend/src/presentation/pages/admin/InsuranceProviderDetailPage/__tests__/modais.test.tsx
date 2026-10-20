@@ -44,7 +44,7 @@ function fechamento(opts: { abrir: () => Promise<void>; modal: string; sujar: ()
       if (how === 'fora') fireEvent.click(screen.getByTestId(`${opts.modal}-overlay`));
       if (how === 'cancelar') fireEvent.click(screen.getByTestId(opts.cancelar));
       expect(discard()).not.toBeInTheDocument();
-      expect(screen.queryByTestId(opts.modal)).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByTestId(opts.modal)).not.toBeInTheDocument());
     }
   });
 
@@ -63,7 +63,7 @@ function fechamento(opts: { abrir: () => Promise<void>; modal: string; sujar: ()
     }
     fireEvent.click(screen.getByTestId(`${opts.modal}-close`));
     fireEvent.click(screen.getByTestId('discard-changes-discard'));
-    expect(screen.queryByTestId(opts.modal)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId(opts.modal)).not.toBeInTheDocument());
   });
 }
 
@@ -93,13 +93,28 @@ describe('modal Empregado (novo)', () => {
   });
 });
 
+describe('rodapé fixo', () => {
+  it('Cancelar/Salvar e o erro do envio ficam no rodapé, fora do corpo rolável', async () => {
+    api.createContact.mockRejectedValue(apiError(422, 'DOCUMENT_PAIR_INCOMPLETE'));
+    render(<EmployeesCard code="OSDE" />);
+    fireEvent.click(await screen.findByTestId('employees-new'));
+    change('contact-fullName', 'F'); change('contact-roleTitle', 'A'); change('contact-phone', '1');
+    fireEvent.click(screen.getByTestId('contact-save'));
+    const footer = screen.getByTestId('contact-form-footer');
+    expect(footer).toContainElement(screen.getByTestId('contact-save'));
+    expect(footer).toContainElement(screen.getByTestId('contact-cancel'));
+    expect(footer).toContainElement(await screen.findByTestId('contact-error'));
+    expect(footer).not.toContainElement(screen.getByTestId('contact-fullName'));
+  });
+});
+
 describe('modal Empregado (editar)', () => {
   it('abre com os dados do contato; sem mudar nada, fecha direto', async () => {
     render(<EmployeesCard code="OSDE" />);
     fireEvent.click(await screen.findByTestId('employee-edit-c1'));
     expect(screen.getByTestId('contact-fullName')).toHaveValue('Pessoa Teste');
     fireEvent.click(screen.getByTestId('contact-form-close'));
-    expect(screen.queryByTestId('contact-form')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId('contact-form')).not.toBeInTheDocument());
     expect(discard()).not.toBeInTheDocument();
   });
   it('voltar ao valor original não conta como alteração', async () => {

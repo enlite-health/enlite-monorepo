@@ -68,8 +68,27 @@ export function ContractForm({ submitting, error, errorAction, onSubmit, onCance
   const isDirty = name !== '' || country !== '' || scope !== '' || term.dirty;
 
   return (
-    <FormModal title={t(`${NS}.contractForm.title`)} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contract-new-form" widthClassName="max-w-3xl">
-      {(requestClose) => (<>
+    <FormModal title={t(`${NS}.contractForm.title`)} isDirty={isDirty} onClose={onCancel} busy={submitting} testId="contract-new-form"
+      footer={(requestClose) => (<>
+      {missing && (
+        <Text color="inherit" size="sm" className="text-red-700" data-testid="contract-new-required">{t(`${NS}.contractForm.required`)}</Text>
+      )}
+      {error && (
+        <div role="alert" data-testid="contract-new-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
+          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
+        </div>
+      )}
+      {error && errorAction}
+      <div className="flex items-center gap-3 justify-end">
+        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contract-new-cancel">
+          {t('admin.insuranceProviders.detail.cancel')}
+        </Button>
+        <Button variant="primary" size="sm" isLoading={submitting} onClick={handleSubmit} data-testid="contract-new-submit">
+          {t('admin.insuranceProviders.detail.save')}
+        </Button>
+      </div>
+      </>)}
+    >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label={t(`${NS}.contractForm.name`)} required htmlFor="contract-new-name">
           <Input inputSize="compact" id="contract-new-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="contract-new-name" />
@@ -91,24 +110,6 @@ export function ContractForm({ submitting, error, errorAction, onSubmit, onCance
       </div>
       <Heading level={3} weight="semibold" color="primary">{t(`${NS}.contractForm.firstTerm`)}</Heading>
       <TermFields state={term} asOf={asOf} testIdPrefix={PREFIX} />
-      {missing && (
-        <Text color="inherit" size="sm" className="text-red-700" data-testid="contract-new-required">{t(`${NS}.contractForm.required`)}</Text>
-      )}
-      {error && (
-        <div role="alert" data-testid="contract-new-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-          <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
-        </div>
-      )}
-      {error && errorAction}
-      <div className="flex items-center gap-3 justify-end">
-        <Button variant="outline" size="sm" onClick={requestClose} disabled={submitting} data-testid="contract-new-cancel">
-          {t('admin.insuranceProviders.detail.cancel')}
-        </Button>
-        <Button variant="primary" size="sm" isLoading={submitting} onClick={handleSubmit} data-testid="contract-new-submit">
-          {t('admin.insuranceProviders.detail.save')}
-        </Button>
-      </div>
-      </>)}
     </FormModal>
   );
 }

@@ -33,10 +33,7 @@ export function ContractTermForm({ asOf, submitting, error, onSubmit, onCancel, 
       onClose={onCancel}
       busy={submitting}
       testId={`${testIdPrefix}form`}
-      widthClassName="max-w-xl"
-    >
-      {(requestClose) => (<>
-      <TermFields state={state} asOf={asOf} testIdPrefix={testIdPrefix} enforceMin={!correction} />
+      footer={(requestClose) => (<>
       {error && (
         <div role="alert" data-testid={`${testIdPrefix}error`} className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
           <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
@@ -60,6 +57,8 @@ export function ContractTermForm({ asOf, submitting, error, onSubmit, onCancel, 
         </Button>
       </div>
       </>)}
+    >
+      <TermFields state={state} asOf={asOf} testIdPrefix={testIdPrefix} enforceMin={!correction} />
     </FormModal>
   );
 }

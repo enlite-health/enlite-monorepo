@@ -117,10 +117,18 @@ export default function InsuranceProvidersPage(): JSX.Element {
           onClose={() => setCreating(false)}
           busy={saving}
           testId="provider-create-form"
-          widthClassName="max-w-lg"
+          footer={(requestClose) => (<>
+              {createError && (
+                <div role="alert" data-testid="provider-create-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
+                  <Text color="inherit" size="sm" className="text-red-700">{createError}</Text>
+                </div>
+              )}
+              <div className="flex items-center gap-3 justify-end">
+                <Button variant="outline" size="sm" onClick={requestClose} disabled={saving} data-testid="provider-create-cancel">{t(`${NS}.create.cancel`)}</Button>
+                <Button variant="primary" size="sm" isLoading={saving} disabled={name.trim() === ''} onClick={create} data-testid="provider-create-submit">{t(`${NS}.create.submit`)}</Button>
+              </div>
+          </>)}
         >
-          {(requestClose) => (
-            <>
               <Field label={t(`${NS}.create.nameLabel`)} required hint={t(`${NS}.create.nameHelp`)} htmlFor="provider-create-name">
                 <Input inputSize="compact" id="provider-create-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="provider-create-name" />
               </Field>
@@ -132,17 +140,6 @@ export default function InsuranceProvidersPage(): JSX.Element {
                   <Input inputSize="compact" id="provider-create-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} data-testid="provider-create-code" />
                 </Field>
               )}
-              {createError && (
-                <div role="alert" data-testid="provider-create-error" className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
-                  <Text color="inherit" size="sm" className="text-red-700">{createError}</Text>
-                </div>
-              )}
-              <div className="flex items-center gap-3 justify-end">
-                <Button variant="outline" size="sm" onClick={requestClose} disabled={saving} data-testid="provider-create-cancel">{t(`${NS}.create.cancel`)}</Button>
-                <Button variant="primary" size="sm" isLoading={saving} disabled={name.trim() === ''} onClick={create} data-testid="provider-create-submit">{t(`${NS}.create.submit`)}</Button>
-              </div>
-            </>
-          )}
         </FormModal>
       )}
 
