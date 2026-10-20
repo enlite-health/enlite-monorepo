@@ -37,7 +37,11 @@ interface ItineraryEditAppointmentModalProps {
    * Fase 4: tirar UM prestador vigente da faixa, com motivo e destino (e a alocação a encerrar). Sem ele (ou sem
    * vigentes) a ação "Quitar del itinerario" não aparece. A escrita é de quem abre o modal.
    */
-  onRemove?: (reasonCategory: string, destination: ExitDestination, allocationId: string) => void;
+  onRemove?: (reasonCategory: string, destination: ExitDestination, allocationId: string, cancelScheduled?: boolean) => void;
+  /** Aviso de agendamentos futuros (409 do "Quitar"): o painel o mostra; `null`/ausente = sem aviso. */
+  removeScheduled?: { substitutionDates: string[]; futureEntryFrom: string | null } | null;
+  /** "Volver" do aviso: quem abre o modal limpa o `removeScheduled`. */
+  onRemoveScheduledDismiss?: () => void;
   /** Envio do "Quitar" em curso — desabilita o Confirmar do painel. */
   removing?: boolean;
   /** Erro (já traduzido) do último "Quitar"; o painel fica aberto. */
@@ -64,6 +68,8 @@ export function ItineraryEditAppointmentModal({
   onSubmit,
   onCancel,
   onRemove,
+  removeScheduled,
+  onRemoveScheduledDismiss,
   removing = false,
   removeError = null,
 }: ItineraryEditAppointmentModalProps): JSX.Element {
@@ -273,7 +279,13 @@ export function ItineraryEditAppointmentModal({
     {removeTarget && onRemove && (
       <RemoveFromItineraryPanel
         workerLabel={workerLabel(t, removeTarget.workerId, (options ?? []).find((m) => m.workerId === removeTarget.workerId)?.displayName ?? null)}
-        onConfirm={(reason, destination) => onRemove(reason, destination, removeTarget.allocationId)}
+        onConfirm={(reason, destination, cancelScheduled) =>
+          cancelScheduled === undefined
+            ? onRemove(reason, destination, removeTarget.allocationId)
+            : onRemove(reason, destination, removeTarget.allocationId, cancelScheduled)
+        }
+        scheduled={removeScheduled ?? null}
+        onScheduledDismiss={onRemoveScheduledDismiss}
         onCancel={() => setRemoveTarget(null)}
         submitting={removing}
         errorMessage={removeError}

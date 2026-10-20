@@ -255,5 +255,33 @@ describe('ItineraryEditAppointmentModal', () => {
       fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
       expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE', 'alloc-2');
     });
+
+    it('com removeScheduled: o painel mostra o aviso; confirmar o aviso chama onRemove(motivo, destino, allocationId, true)', () => {
+      const onRemove = vi.fn();
+      renderModal({
+        vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }],
+        onRemove,
+        removeScheduled: { substitutionDates: ['2026-11-03'], futureEntryFrom: null },
+      });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
+      expect(screen.getByTestId('aviso-agendados')).toBeInTheDocument();
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('aviso-agendados-confirmar'));
+      expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE', 'alloc-2', true);
+    });
+
+    it('Volver do aviso chama onRemoveScheduledDismiss', () => {
+      const onRemoveScheduledDismiss = vi.fn();
+      renderModal({
+        vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }],
+        onRemove: vi.fn(),
+        removeScheduled: { substitutionDates: ['2026-11-03'], futureEntryFrom: null },
+        onRemoveScheduledDismiss,
+      });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
+      fireEvent.click(screen.getByTestId('aviso-agendados-cancelar'));
+      expect(onRemoveScheduledDismiss).toHaveBeenCalledTimes(1);
+    });
   });
 });
