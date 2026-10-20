@@ -52,6 +52,8 @@ export interface PatientItinerarySlot {
 
 export interface PatientItineraryService {
   contractedServiceId: string;
+  /** `pcs.providers_needed`; `null` = não informada (CAPACITY_NOT_EVALUATED é estado de leitura; nunca "1" — plan §1 P4(b)). */
+  providersNeeded: number | null;
   /** Σ durationMinutes/60 das faixas vigentes (spec 056 §6.1). */
   scheduleHours: number;
   cobertas: number;

@@ -47,3 +47,14 @@ describe('buildServiceCoverages', () => {
     expect(services[1].slots).toEqual([]);
   });
 });
+
+describe('buildServiceCoverages — providersNeeded', () => {
+  it('providersNeeded: 3 → 3, NULL → null, ausente → null (nunca 1)', () => {
+    const rows: Pick<ItineraryRows, 'services' | 'slots'> = {
+      services: [{ id: 'a', providersNeeded: 3 }, { id: 'b', providersNeeded: null }, { id: 'c' }],
+      slots: [],
+    };
+    const services = buildServiceCoverages(rows, '2026-09-28');
+    expect(services.map((s) => s.providersNeeded)).toEqual([3, null, null]);
+  });
+});

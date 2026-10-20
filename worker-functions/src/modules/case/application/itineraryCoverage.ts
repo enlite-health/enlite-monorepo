@@ -63,6 +63,7 @@ export function buildServiceCoverages(
     });
     return {
       contractedServiceId: service.id,
+      providersNeeded: service.providersNeeded ?? null,
       scheduleHours: coverage.total,
       cobertas: coverage.cobertas,
       slots,
