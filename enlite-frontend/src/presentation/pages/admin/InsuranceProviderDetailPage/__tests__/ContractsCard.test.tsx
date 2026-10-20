@@ -170,3 +170,55 @@ describe('ContractsCard — novo termo', () => {
     expect(await screen.findByTestId('contract-k1-term-error')).toHaveTextContent('se sobrepõe a outro termo de valor do mesmo contrato');
   });
 });
+
+describe('ContractsCard — corrigir termo', () => {
+  it('corrige o termo vivo com CORRECTION: parte do valor e da vigência dele, imposto VAZIO e obrigatório', async () => {
+    api.supersedeTerm.mockResolvedValue(contractItem());
+    render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('contract-k1-current-correct'));
+    expect(screen.getByTestId('contract-k1-correct-hourly-rate')).toHaveValue(1500);
+    expect(screen.getByTestId('contract-k1-correct-valid-from')).toHaveValue('2026-01-01');
+    // corrigir não é termo novo: sem data mínima e sem aviso de retroativo
+    expect(screen.getByTestId('contract-k1-correct-valid-from')).not.toHaveAttribute('min');
+    expect(screen.getByTestId('contract-k1-correct-tax-rate')).toHaveValue(null);
+    fireEvent.click(screen.getByTestId('contract-k1-correct-submit'));
+    expect(api.supersedeTerm).not.toHaveBeenCalled();
+    expect(screen.getByText('Informe o imposto. Digite 0 se for isento.')).toBeInTheDocument();
+    change('contract-k1-correct-hourly-rate', '1600');
+    change('contract-k1-correct-tax-rate', '0');
+    fireEvent.click(screen.getByTestId('contract-k1-correct-submit'));
+    await waitFor(() => expect(api.supersedeTerm).toHaveBeenCalledWith('k1', 't1', {
+      reason: 'CORRECTION', hourlyRate: 1600, taxRatePercent: 0, validFrom: '2026-01-01', validTo: null,
+    }));
+    expect(api.addTerm).not.toHaveBeenCalled();
+  });
+
+  it('também corrige um termo futuro (pelo id dele)', async () => {
+    api.listContracts.mockResolvedValue([contractItem({ futureTerms: [okTerm({ termId: 'f1', validFrom: '2027-01-01', validTo: '2027-06-30' })] })]);
+    api.supersedeTerm.mockResolvedValue(contractItem());
+    render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('contract-k1-future-f1-correct'));
+    change('contract-k1-correct-tax-rate', '10');
+    fireEvent.click(screen.getByTestId('contract-k1-correct-submit'));
+    await waitFor(() => expect(api.supersedeTerm).toHaveBeenCalledWith('k1', 'f1', expect.objectContaining({ reason: 'CORRECTION', validFrom: '2027-01-01', validTo: '2027-06-30' })));
+  });
+
+  it('409 (termo já substituído) e 422 (vigência inválida) viram frase da tela no formulário', async () => {
+    render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('contract-k1-current-correct'));
+    change('contract-k1-correct-tax-rate', '5');
+    api.supersedeTerm.mockRejectedValueOnce(apiError(409, 'TERM_ALREADY_SUPERSEDED'));
+    fireEvent.click(screen.getByTestId('contract-k1-correct-submit'));
+    expect(await screen.findByTestId('contract-k1-correct-error')).toHaveTextContent('Esse termo já foi substituído. Recarregue a lista.');
+    api.supersedeTerm.mockRejectedValueOnce(apiError(422, 'TERM_RANGE_INVALID'));
+    fireEvent.click(screen.getByTestId('contract-k1-correct-submit'));
+    await waitFor(() => expect(screen.getByTestId('contract-k1-correct-error')).toHaveTextContent('A vigência do termo é inválida.'));
+  });
+
+  it('sem patient_contract_value:create o botão Corrigir termo some', async () => {
+    comCelulas(['insurance_contracts:read']);
+    render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />);
+    await screen.findByTestId('contract-k1-name');
+    expect(screen.queryByTestId('contract-k1-current-correct')).not.toBeInTheDocument();
+  });
+});

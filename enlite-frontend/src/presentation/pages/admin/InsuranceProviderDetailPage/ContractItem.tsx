@@ -17,24 +17,43 @@ import { contractTermTexts } from '@presentation/components/features/admin/Patie
 import { insuranceErrorText } from '@presentation/utils/insuranceErrors';
 import { formatCalendarDate } from './calendar';
 import { ContractTermForm } from './ContractTermForm';
+import type { TermDraft } from './termDraft';
 
 const NS = 'admin.insuranceProviders.contracts';
 
 type OkTerm = Extract<ContractTermView, { state: 'OK' }>;
 
-function TermLine({ term, language, testId }: { term: OkTerm; language: string; testId: string }): JSX.Element {
+function TermLine({ term, language, testId, onCorrect }: { term: OkTerm; language: string; testId: string; onCorrect?: () => void }): JSX.Element {
   const { t } = useTranslation();
   const { price, tax } = contractTermTexts(t, term, language);
   const validity = term.validTo
     ? t(`${NS}.validityRange`, { from: formatCalendarDate(term.validFrom), to: formatCalendarDate(term.validTo) })
     : t(`${NS}.validityOpen`, { from: formatCalendarDate(term.validFrom) });
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1" data-testid={testId}>
+    <div className="flex flex-col gap-1" data-testid={testId}>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1">
       <Text color="tertiary" as="span" size="sm" data-testid={`${testId}-price`}><Text as="span" size="xs" color="inherit" className="text-slate-600">{t(`${NS}.hourlyRate`)}: </Text>{price}</Text>
       <Text color="tertiary" as="span" size="sm" data-testid={`${testId}-tax`}><Text as="span" size="xs" color="inherit" className="text-slate-600">{t(`${NS}.tax`)}: </Text>{tax}</Text>
       <Text color="tertiary" as="span" size="sm" data-testid={`${testId}-validity`}><Text as="span" size="xs" color="inherit" className="text-slate-600">{t(`${NS}.validity`)}: </Text>{validity}</Text>
     </div>
+    {onCorrect && (
+      <div>
+        <ActionButton resource="patient_contract_value" action="create" variant="quiet" size="xs" onClick={onCorrect} data-testid={`${testId}-correct`}>
+          {t(`${NS}.correctTerm`)}
+        </ActionButton>
+      </div>
+    )}
+    </div>
   );
+}
+
+/** Ponto de partida da correção: o valor-hora, a vigência e o fim do termo corrigido. O imposto NÃO vem: corrigir também exige digitá-lo. */
+function correctionStart(term: OkTerm): Partial<TermDraft> {
+  return {
+    ...(term.price.state === 'OK' ? { hourlyRate: String(term.price.hourlyRate) } : {}),
+    validFrom: term.validFrom,
+    validTo: term.validTo ?? '',
+  };
 }
 
 interface Props {
@@ -44,7 +63,8 @@ interface Props {
 
 export function ContractItem({ contract, onChanged }: Props): JSX.Element {
   const { t, i18n } = useTranslation();
-  const [formOpen, setFormOpen] = useState(false);
+  // null = fechado; NEW = novo termo (reajuste); CORRECTION = corrige o termo vivo indicado (substitui o termo inteiro).
+  const [form, setForm] = useState<{ kind: 'NEW' } | { kind: 'CORRECTION'; term: OkTerm } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const futures = contract.futureTerms.filter((f): f is OkTerm => f.state === 'OK');
@@ -54,12 +74,15 @@ export function ContractItem({ contract, onChanged }: Props): JSX.Element {
     try {
       setSubmitting(true);
       setError(null);
-      if (current.state === 'OK') {
+      if (form?.kind === 'CORRECTION') {
+        // Fim vazio na correção = "sem data final" (null explícito); ausente herdaria o fim do termo corrigido.
+        await AdminInsuranceApiService.supersedeTerm(contract.id, form.term.termId, { ...body, validTo: body.validTo ?? null, reason: 'CORRECTION' });
+      } else if (current.state === 'OK') {
         await AdminInsuranceApiService.supersedeTerm(contract.id, current.termId, { ...body, reason: 'REPRICED' });
       } else {
         await AdminInsuranceApiService.addTerm(contract.id, body);
       }
-      setFormOpen(false);
+      setForm(null);
       onChanged();
     } catch (err: unknown) {
       setError(insuranceErrorText(t, err));
@@ -81,8 +104,8 @@ export function ContractItem({ contract, onChanged }: Props): JSX.Element {
           </div>
           <Text as="span" size="xs" color="inherit" className="text-slate-600" data-testid={`${tid}-scope`}>{contract.scopeDescription ?? t(`${NS}.scopeNone`)}</Text>
         </div>
-        {!formOpen && (
-          <ActionButton resource="patient_contract_value" action="create" variant="outline" size="sm" onClick={() => { setError(null); setFormOpen(true); }} className="flex items-center gap-1" data-testid={`${tid}-new-term`}>
+        {form === null && (
+          <ActionButton resource="patient_contract_value" action="create" variant="outline" size="sm" onClick={() => { setError(null); setForm({ kind: 'NEW' }); }} className="flex items-center gap-1" data-testid={`${tid}-new-term`}>
             {t(`${NS}.newTerm`)}
             <Plus className="w-4 h-4" />
           </ActionButton>
@@ -92,7 +115,7 @@ export function ContractItem({ contract, onChanged }: Props): JSX.Element {
       {current.state === 'OK' ? (
         <div className="flex flex-col gap-1">
           <Text as="span" size="xs" color="inherit" className="text-slate-600">{t(`${NS}.currentTerm`)}</Text>
-          <TermLine term={current} language={i18n.language} testId={`${tid}-current`} />
+          <TermLine term={current} language={i18n.language} testId={`${tid}-current`} onCorrect={() => { setError(null); setForm({ kind: 'CORRECTION', term: current }); }} />
         </div>
       ) : (
         // NO_TERM: nenhum termo vale hoje — a frase é o estado, não um valor em branco.
@@ -103,19 +126,21 @@ export function ContractItem({ contract, onChanged }: Props): JSX.Element {
         <div className="flex flex-col gap-1" data-testid={`${tid}-future`}>
           <Text as="span" size="xs" color="inherit" className="text-slate-600" data-testid={`${tid}-future-count`}>{t(`${NS}.futureTerms`, { count: futures.length })}</Text>
           {futures.map((f) => (
-            <TermLine key={f.termId} term={f} language={i18n.language} testId={`${tid}-future-${f.termId}`} />
+            <TermLine key={f.termId} term={f} language={i18n.language} testId={`${tid}-future-${f.termId}`} onCorrect={() => { setError(null); setForm({ kind: 'CORRECTION', term: f }); }} />
           ))}
         </div>
       )}
 
-      {formOpen && (
+      {form !== null && (
         <ContractTermForm
+          key={form.kind === 'CORRECTION' ? form.term.termId : 'new'}
           asOf={contract.asOf}
           submitting={submitting}
           error={error}
           onSubmit={saveTerm}
-          onCancel={() => setFormOpen(false)}
-          testIdPrefix={`${tid}-term-`}
+          onCancel={() => setForm(null)}
+          testIdPrefix={form.kind === 'CORRECTION' ? `${tid}-correct-` : `${tid}-term-`}
+          correction={form.kind === 'CORRECTION' ? { initial: correctionStart(form.term) } : undefined}
         />
       )}
     </article>

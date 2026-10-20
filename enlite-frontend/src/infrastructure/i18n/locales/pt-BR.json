@@ -6208,8 +6208,11 @@
           "validToBeforeFrom": "O fim não pode ser antes do início.",
           "retroWarning": "Essa data é anterior a hoje ({{asOf}}). O termo será retroativo.",
           "asOfLoading": "Escolha o país para ver a data de hoje.",
-          "submit": "Salvar termo"
-        }
+          "submit": "Salvar termo",
+          "correctTitle": "Corrigir termo de valor",
+          "correctSubmit": "Salvar correção"
+        },
+        "correctTerm": "Corrigir termo"
       },
       "patients": {
         "title": "Pacientes",

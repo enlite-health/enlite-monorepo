@@ -61,8 +61,9 @@ export interface TermDraftState {
   submit: () => InsuranceTermBody | null;
 }
 
-export function useTermDraft(asOf: string | null): TermDraftState {
-  const [draft, setDraft] = useState<TermDraft>(() => emptyTermDraft(asOf));
+/** `initial` só existe na CORREÇÃO de um termo (parte dos valores do termo corrigido); o imposto, não: corrigir também exige digitá-lo. */
+export function useTermDraft(asOf: string | null, initial?: Partial<TermDraft>): TermDraftState {
+  const [draft, setDraft] = useState<TermDraft>(() => ({ ...emptyTermDraft(asOf), ...initial }));
   const [errors, setErrors] = useState<TermErrors>({});
 
   // O `asOf` pode chegar depois (contrato novo: só se sabe o "hoje" depois de escolher o país). Só preenche o início se a pessoa ainda não digitou.

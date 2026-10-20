@@ -15,15 +15,17 @@ interface Props {
   asOf: string | null;
   /** Prefixo dos data-testid (`<prefixo>hourly-rate`, `tax-rate`, `valid-from`, `valid-to`, `retro-warning`). */
   testIdPrefix: string;
+  /** `false` na CORREÇÃO de um termo existente: ele pode começar antes de hoje, então não há mínimo nem aviso de retroativo. */
+  enforceMin?: boolean;
 }
 
 const NS = 'admin.insuranceProviders.contracts.termForm';
 
-export function TermFields({ state, asOf, testIdPrefix }: Props): JSX.Element {
+export function TermFields({ state, asOf, testIdPrefix, enforceMin = true }: Props): JSX.Element {
   const { t } = useTranslation();
   const { draft, errors, set } = state;
   const err = (key: keyof typeof errors): string | undefined => (errors[key] ? t(`${NS}.${errors[key]}`) : undefined);
-  const retroactive = asOf !== null && isDayBefore(draft.validFrom, asOf);
+  const retroactive = enforceMin && asOf !== null && isDayBefore(draft.validFrom, asOf);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -62,7 +64,7 @@ export function TermFields({ state, asOf, testIdPrefix }: Props): JSX.Element {
           <Input
             id={`${testIdPrefix}valid-from`}
             type="date"
-            min={asOf}
+            min={enforceMin ? asOf : undefined}
             value={draft.validFrom}
             onChange={(e) => set('validFrom', e.target.value)}
             error={err('validFrom')}

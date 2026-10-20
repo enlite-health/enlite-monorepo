@@ -6287,8 +6287,11 @@
           "validToBeforeFrom": "El fin no puede ser anterior al inicio.",
           "retroWarning": "Esa fecha es anterior a hoy ({{asOf}}). El término será retroactivo.",
           "asOfLoading": "Elegí el país para ver la fecha de hoy.",
-          "submit": "Guardar término"
-        }
+          "submit": "Guardar término",
+          "correctTitle": "Corregir término de valor",
+          "correctSubmit": "Guardar corrección"
+        },
+        "correctTerm": "Corregir término"
       },
       "patients": {
         "title": "Pacientes",

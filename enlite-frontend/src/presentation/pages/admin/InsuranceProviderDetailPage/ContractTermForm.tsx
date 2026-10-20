@@ -8,7 +8,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import type { InsuranceTermBody } from '@domain/entities/InsuranceContract';
 import { TermFields } from './TermFields';
-import { useTermDraft } from './termDraft';
+import { useTermDraft, type TermDraft } from './termDraft';
 
 interface Props {
   asOf: string;
@@ -18,16 +18,18 @@ interface Props {
   onSubmit: (body: InsuranceTermBody) => void;
   onCancel: () => void;
   testIdPrefix: string;
+  /** Correção de um termo: valores de partida (sem o imposto), outro título/botão e sem data mínima. */
+  correction?: { initial: Partial<TermDraft> };
 }
 
-export function ContractTermForm({ asOf, submitting, error, onSubmit, onCancel, testIdPrefix }: Props): JSX.Element {
+export function ContractTermForm({ asOf, submitting, error, onSubmit, onCancel, testIdPrefix, correction }: Props): JSX.Element {
   const { t } = useTranslation();
-  const state = useTermDraft(asOf);
+  const state = useTermDraft(asOf, correction?.initial);
 
   return (
     <div className="rounded-xl border border-slate-300 bg-gray-50 p-4 flex flex-col gap-4" data-testid={`${testIdPrefix}form`}>
-      <Heading level={3} weight="semibold" color="primary">{t('admin.insuranceProviders.contracts.termForm.title')}</Heading>
-      <TermFields state={state} asOf={asOf} testIdPrefix={testIdPrefix} />
+      <Heading level={3} weight="semibold" color="primary">{t(correction ? 'admin.insuranceProviders.contracts.termForm.correctTitle' : 'admin.insuranceProviders.contracts.termForm.title')}</Heading>
+      <TermFields state={state} asOf={asOf} testIdPrefix={testIdPrefix} enforceMin={!correction} />
       {error && (
         <div role="alert" data-testid={`${testIdPrefix}error`} className="border border-red-300 bg-red-50 rounded-lg px-3 py-2">
           <Text color="inherit" size="sm" className="text-red-700">{error}</Text>
@@ -47,7 +49,7 @@ export function ContractTermForm({ asOf, submitting, error, onSubmit, onCancel, 
           }}
           data-testid={`${testIdPrefix}submit`}
         >
-          {t('admin.insuranceProviders.contracts.termForm.submit')}
+          {t(correction ? 'admin.insuranceProviders.contracts.termForm.correctSubmit' : 'admin.insuranceProviders.contracts.termForm.submit')}
         </Button>
       </div>
     </div>
