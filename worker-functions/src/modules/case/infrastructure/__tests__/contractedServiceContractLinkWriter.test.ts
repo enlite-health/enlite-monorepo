@@ -31,6 +31,7 @@ interface Script {
   owner?: boolean;
   contract?: boolean;
   live?: { id: string; contract_id: string; valid: string } | null;
+  lives?: Array<{ id: string; contract_id: string; valid: string }>;
   failOn?: (sql: string) => unknown;
 }
 
@@ -41,7 +42,7 @@ function script(s: Script = {}): void {
     if (f) throw f;
     if (/FROM patient_contracted_services/.test(sql)) return { rows: owner ? [{ '?column?': 1 }] : [], rowCount: owner ? 1 : 0 };
     if (/FROM insurance_contracts/.test(sql)) return { rows: contract ? [{ '?column?': 1 }] : [], rowCount: contract ? 1 : 0 };
-    if (/FROM contracted_service_contract/.test(sql)) return { rows: live ? [live] : [], rowCount: live ? 1 : 0 };
+    if (/FROM contracted_service_contract/.test(sql)) { const rows = s.lives ?? (live ? [live] : []); return { rows, rowCount: rows.length }; }
     return { rows: [], rowCount: 1 };
   });
 }
@@ -170,38 +171,49 @@ describe('ContractedServiceContractLinkWriter', () => {
     expect(src).not.toMatch(/CURRENT_DATE|now\(\)|NOW\(\)|::daterange/);
   });
 
-  describe('endOnServiceClose (baixa do serviço, na transação do chamador)', () => {
+  describe('endOnServiceClose (baixa do serviço, na transação do chamador; fim EXCLUSIVO em hoje)', () => {
     const cli = { query: mockClientQuery } as never;
-    const liveRow = (valid: string) => ({ id: 'L1', contract_id: OLD_CONTRACT, valid });
+    const liveRow = (valid: string, id = 'L1') => ({ id, contract_id: OLD_CONTRACT, valid });
+    const TODAY = '2026-10-18';
 
-    it('vínculo aberto que começou antes: marca ENDED e re-insere [início, fim] do MESMO contrato; não abre transação própria', async () => {
+    it('vínculo aberto que começou antes: marca ENDED e re-insere [início, hoje) do MESMO contrato — hoje fica livre', async () => {
       script({ live: liveRow('[2026-03-01,)') });
-      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
+      await writer.endOnServiceClose(cli, SERVICE, TODAY, ACTOR);
       const w = writes();
       expect(w).toHaveLength(2);
-      expect(w[0][0]).toMatch(/^\s*UPDATE contracted_service_contract SET superseded_by/);
       expect(w[0][1]).toEqual(['L1', ACTOR, 'ENDED']);
-      expect(w[1][1]).toEqual([SERVICE, OLD_CONTRACT, '[2026-03-01,2026-10-19)', ACTOR]);
+      expect(w[1][1]).toEqual([SERVICE, OLD_CONTRACT, '[2026-03-01,2026-10-18)', ACTOR]);
     });
 
-    it('vínculo que começa DEPOIS do encerramento: só marca ENDED (reinsert ficaria vazio)', async () => {
-      script({ live: liveRow('[2099-01-01,)') });
-      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
-      expect(writes().map(([sql]) => sql.trim().split(' ')[0])).toEqual(['UPDATE']);
+    it('vínculo que começa HOJE ou depois: só marca ENDED (reinsert ficaria vazio)', async () => {
+      for (const desde of ['2026-10-18', '2099-01-01']) {
+        mockClientQuery.mockReset();
+        script({ live: liveRow(`[${desde},)`) });
+        await writer.endOnServiceClose(cli, SERVICE, TODAY, ACTOR);
+        expect(writes().map(([sql]) => sql.trim().split(' ')[0])).toEqual(['UPDATE']);
+      }
     });
 
-    it('sem vínculo vivo, ou vínculo que já termina no dia do encerramento ou antes: nada escrito', async () => {
+    it('sem vínculo vivo, ou vínculo que já terminou antes de hoje: nada escrito', async () => {
       script({ live: null });
-      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
-      script({ live: liveRow('[2026-01-01,2026-10-19)') }); // último dia vigente = 2026-10-18
-      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
+      await writer.endOnServiceClose(cli, SERVICE, TODAY, ACTOR);
+      script({ live: liveRow('[2026-01-01,2026-10-18)') }); // último dia vigente = 17/10
+      await writer.endOnServiceClose(cli, SERVICE, TODAY, ACTOR);
       expect(writes()).toEqual([]);
     });
 
-    it('vínculo fechado que termina DEPOIS do encerramento: encurta para o dia de encerramento', async () => {
+    it('vínculo fechado que termina DEPOIS de hoje: encurta para [início, hoje)', async () => {
       script({ live: liveRow('[2026-01-01,2027-01-01)') });
-      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
-      expect(writes()[1][1]).toEqual([SERVICE, OLD_CONTRACT, '[2026-01-01,2026-10-19)', ACTOR]);
+      await writer.endOnServiceClose(cli, SERVICE, TODAY, ACTOR);
+      expect(writes()[1][1]).toEqual([SERVICE, OLD_CONTRACT, '[2026-01-01,2026-10-18)', ACTOR]);
+    });
+
+    it('N4 — troca programada: encerra TODAS as vivas (a que vale hoje com reinsert; a futura sem), a já terminada fica', async () => {
+      script({ lives: [liveRow('[2025-01-01,2026-01-01)', 'L0'), liveRow('[2026-01-01,2026-12-01)', 'L1'), liveRow('[2026-12-01,)', 'L2')] });
+      await writer.endOnServiceClose(cli, SERVICE, TODAY, ACTOR);
+      const w = writes();
+      expect(w.map(([sql, p]) => `${sql.trim().split(' ')[0]}:${String(p[0])}`)).toEqual(['UPDATE:L1', 'INSERT:' + SERVICE, 'UPDATE:L2']);
+      expect(w[1][1]).toEqual([SERVICE, OLD_CONTRACT, '[2026-01-01,2026-10-18)', ACTOR]);
     });
   });
 });

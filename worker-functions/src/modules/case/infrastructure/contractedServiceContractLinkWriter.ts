@@ -154,23 +154,23 @@ export class ContractedServiceContractLinkWriter {
   }
 
   /**
-   * Baixa do serviço (`PATCH {active:false}`): encerra o vínculo vivo NA TRANSAÇÃO DO CHAMADOR (`client` já tem contexto de país e o lock do
-   * paciente). `endDate` = dia de encerramento do serviço no país (`operationDateOf`, vem do chamador — sem relógio aqui). Sem vínculo vivo = no-op.
-   * Vínculo que começa DEPOIS de `endDate` é só marcado `ENDED` (sem reinsert: o trecho ficaria vazio); o que já termina em `endDate` ou antes fica.
+   * Baixa do serviço (`PATCH {active:false}`): encerra TODAS as linhas vivas do serviço NA TRANSAÇÃO DO CHAMADOR (`client` já tem contexto de
+   * país e o lock do paciente). `today` = dia de operação do país (vem do chamador — sem relógio aqui) e o fim é EXCLUSIVO nele: o vínculo
+   * vale até ontem e um serviço novo pode começar hoje. Por linha: começa em `today` ou depois => só marca `ENDED` (reinsert ficaria vazio);
+   * começa antes e ainda vale hoje => marca `ENDED` e re-insere `[início, today)`; já termina antes de hoje => fica. Sem linha viva = no-op.
    */
-  async endOnServiceClose(client: PoolClient, serviceId: string, endDate: string, actorUid: string): Promise<void> {
+  async endOnServiceClose(client: PoolClient, serviceId: string, today: string, actorUid: string): Promise<void> {
     const r = await client.query<LiveLink>(
       `SELECT id, contract_id, valid::text AS valid FROM contracted_service_contract
-        WHERE contracted_service_id = $1 AND superseded_at IS NULL ORDER BY valid DESC LIMIT 1 FOR UPDATE`,
+        WHERE contracted_service_id = $1 AND superseded_at IS NULL ORDER BY valid FOR UPDATE`,
       [serviceId],
     );
-    const live = r.rows[0];
-    if (!live) return;
-    const wire = toWire(live.valid);
-    if (wire.validTo !== null && wire.validTo <= endDate) return;
-    await this.mark(client, live.id, 'ENDED', actorUid);
-    if (wire.validFrom <= endDate) {
-      await this.insert(client, serviceId, live.contract_id, fromWire({ validFrom: wire.validFrom, validTo: endDate }), actorUid);
+    for (const live of r.rows) {
+      const wire = toWire(live.valid);
+      if (wire.validTo !== null && wire.validTo < today) continue;
+      await this.mark(client, live.id, 'ENDED', actorUid);
+      const reinsert = wire.validFrom >= today ? null : reinsertClosed(wire.validFrom, today);
+      if (reinsert !== null) await this.insert(client, serviceId, live.contract_id, reinsert, actorUid);
     }
   }
 

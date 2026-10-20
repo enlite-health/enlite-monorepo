@@ -463,6 +463,8 @@ export class PatientContractedServiceRepository {
       // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
       const row = await withActorContext(this.pool, async (cli) => {
         // F3/F5: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o campo.
+        // Baixa: o lock do paciente vem ANTES de qualquer lock de linha (o FOR UPDATE do `captureFieldBefore`) — a mesma ordem do escritor do vínculo.
+        if (patch.active === false) await this.lockPatientOfService(cli, serviceId);
         const before = new Map<GuardedServiceField, unknown>();
         for (const [field, key] of GUARDED_FIELDS) before.set(field, await captureFieldBefore(cli, serviceId, field, patch[key]));
         // F2/F5: apagar um campo que a vaga viva lê → recusa (um campo por vez, na ordem de GUARDED_FIELDS).
@@ -472,7 +474,6 @@ export class PatientContractedServiceRepository {
             await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
           }
         }
-        if (patch.active === false) await this.lockPatientOfService(cli, serviceId);
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {

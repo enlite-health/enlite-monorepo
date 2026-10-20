@@ -210,9 +210,12 @@ describe('PatientContractedServiceRepository', () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    await repo.update('svc-1', { active: false, actorUid: 'uid-2' }, NOW);
+    await repo.update('svc-1', { active: false, providersNeeded: 2, actorUid: 'uid-2' }, NOW);
     const ordem = chamadas.map((c) => c.sql);
     const iLock = ordem.findIndex((q) => /pg_advisory_xact_lock\(hashtext\('contract-link:patient:'/.test(q));
+    const iFor = ordem.findIndex((q) => /FOR UPDATE/i.test(q)); // 1º lock de linha da transação (captureFieldBefore)
+    expect(iFor).toBeGreaterThan(-1); // o PATCH tem campo guardado: o FOR UPDATE existe...
+    expect(iLock).toBeLessThan(iFor); // ...e o lock do paciente vem antes dele (N2)
     const iUpd = ordem.findIndex((q) => /^UPDATE patient_contracted_services SET/.test(q));
     const iLink = ordem.findIndex((q) => /FROM contracted_service_contract/.test(q));
     expect(iLock).toBeGreaterThan(-1);

@@ -506,6 +506,30 @@ describe('058a vínculo serviço → contrato — travas de banco (537) @integra
       expect(depois.status).toBe(201);
     });
 
+    it('N1 — baixa HOJE: o vínculo acaba ONTEM (fim exclusivo em hoje) e o serviço novo de outra obra social pode começar HOJE', async () => {
+      expect((await api.post(link(), { contractId: cA1, validFrom: '2020-01-01' }, admin)).status).toBe(201);
+      expect((await api.patch(`${BASE}/patients/${patient}/contracted-services/${s1}`, { active: false }, admin)).status).toBe(200);
+      // "hoje" medido FORA do código sob teste: o dia de Buenos Aires (o serviço é AR). O mesmo fuso ±3h do relógio da API, mas só nas bordas da meia-noite.
+      const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+      expect((await vivosDe(s1))[0].valid).toBe(`[2020-01-01,${hoje})`); // upper exclusivo = hoje: o vínculo vale até ONTEM
+      const novo = await api.post(link(s2), { contractId: cB1, validFrom: hoje }, admin);
+      expect([novo.status, novo.data.code]).toEqual([201, undefined]);
+    });
+
+    it('N4 — troca programada (viva que vale hoje + viva futura): a baixa encerra as DUAS; só resta o trecho até ontem e o serviço novo passa', async () => {
+      await emTransacao(pool, async (c) => {
+        await vincular(c, s1, cA1, vigencia('2020-01-01', '2099-06-01'));
+        await vincular(c, s1, cA1, vigencia('2099-06-01'));
+      });
+      expect((await api.patch(`${BASE}/patients/${patient}/contracted-services/${s1}`, { active: false }, admin)).status).toBe(200);
+      const vivos = await vivosDe(s1);
+      expect(vivos).toHaveLength(1);
+      const hoje = /^\[2020-01-01,(\d{4}-\d{2}-\d{2})\)$/.exec(vivos[0].valid)?.[1];
+      expect(hoje).toBeDefined();
+      expect((await pool.query(`SELECT count(*)::int AS n FROM contracted_service_contract WHERE contracted_service_id = $1 AND superseded_reason = 'ENDED'`, [s1])).rows[0].n).toBe(2);
+      expect((await api.post(link(s2), { contractId: cB1, validFrom: '2099-06-01' }, admin)).status).toBe(201);
+    });
+
     it('baixa de serviço cujo vínculo vivo começa DEPOIS do encerramento: marcado ENDED sem reinsert (nada vivo) e o serviço novo passa', async () => {
       expect((await api.post(link(), { contractId: cA1, validFrom: '2099-01-01' }, admin)).status).toBe(201);
       expect((await api.patch(`${BASE}/patients/${patient}/contracted-services/${s1}`, { active: false }, admin)).status).toBe(200);
