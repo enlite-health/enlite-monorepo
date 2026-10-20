@@ -67,7 +67,7 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel
         {expanded &&
           slots.map((slot) => {
             const nextDay = slot.endTime <= slot.startTime;
-            const covering = slot.assignments.find((a) => isVigenteAt(a, asOf)) ?? null;
+            const vigentes = slot.assignments.filter((a) => isVigenteAt(a, asOf));
             const rowContent = (
               <>
                 <div className="bg-primary text-white rounded-lg px-3 py-1 flex flex-col items-center shrink-0" data-testid={`itinerario-slot-horario-${slot.id}`}>
@@ -89,16 +89,19 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel
                 </div>
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <User size={16} className="text-primary shrink-0" />
-                  <Text
-                    as="span"
-                    size="sm"
-                    weight="medium"
-                    color="primary"
-                    className="break-words min-w-0"
-                    data-testid={covering ? `itinerario-slot-prestador-${slot.id}-${covering.workerId}` : `itinerario-slot-sem-prestador-${slot.id}`}
-                  >
-                    {covering ? workerLabel(t, covering.workerId, covering.displayName) : ti('unassigned')}
-                  </Text>
+                  <div className="flex flex-col min-w-0">
+                    {vigentes.length === 0 ? (
+                      <Text as="span" size="sm" weight="medium" color="primary" className="break-words min-w-0" data-testid={`itinerario-slot-sem-prestador-${slot.id}`}>
+                        {ti('unassigned')}
+                      </Text>
+                    ) : (
+                      vigentes.map((a) => (
+                        <Text key={a.allocationId} as="span" size="sm" weight="medium" color="primary" className="break-words min-w-0" data-testid={`itinerario-slot-prestador-${slot.id}-${a.workerId}`}>
+                          {workerLabel(t, a.workerId, a.displayName)}
+                        </Text>
+                      ))
+                    )}
+                  </div>
                   {canEdit && <ArrowLeftRight size={16} className="text-primary shrink-0" aria-hidden="true" />}
                 </div>
               </>
