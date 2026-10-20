@@ -99,6 +99,19 @@ describe('InsuranceProvidersPage', () => {
     await waitFor(() => expect(api.createProvider).toHaveBeenLastCalledWith({ name: '###', code: 'XX' }));
   });
 
+  it('INSURANCE_PROVIDER_CODE_EXISTS (código derivado colidiu): a tela passa a pedir o código e reenvia com ele', async () => {
+    api.createProvider.mockRejectedValueOnce(apiError(409, 'INSURANCE_PROVIDER_CODE_EXISTS')).mockResolvedValueOnce({ code: 'LARGO_2', name: 'Largo', active: true, sortOrder: 1 });
+    renderPage();
+    await screen.findByTestId('provider-name-OSDE');
+    fireEvent.click(screen.getByTestId('providers-new'));
+    change('provider-create-name', 'Largo');
+    fireEvent.click(screen.getByTestId('provider-create-submit'));
+    expect(await screen.findByTestId('provider-create-code')).toBeInTheDocument();
+    change('provider-create-code', 'largo_2');
+    fireEvent.click(screen.getByTestId('provider-create-submit'));
+    await waitFor(() => expect(api.createProvider).toHaveBeenLastCalledWith({ name: 'Largo', code: 'LARGO_2' }));
+  });
+
   it('nome repetido (409) vira a frase da tela', async () => {
     api.createProvider.mockRejectedValue(apiError(409, 'INSURANCE_PROVIDER_NAME_EXISTS'));
     renderPage();

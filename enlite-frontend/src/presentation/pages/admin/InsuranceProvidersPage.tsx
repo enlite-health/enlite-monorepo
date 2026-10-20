@@ -83,7 +83,9 @@ export default function InsuranceProvidersPage(): JSX.Element {
       });
       navigate(`/admin/obras-sociales/${encodeURIComponent(created.code)}`);
     } catch (err: unknown) {
-      if (insuranceErrorCode(err) === 'NAME_NOT_CODIFIABLE') setNeedsCode(true);
+      // Código derivado do nome: sem caractere codificável OU colidindo com outro (corte em 64) => o operador informa o código.
+      const errCode = insuranceErrorCode(err);
+      if (errCode === 'NAME_NOT_CODIFIABLE' || errCode === 'INSURANCE_PROVIDER_CODE_EXISTS') setNeedsCode(true);
       setCreateError(insuranceErrorText(t, err));
     } finally {
       setSaving(false);
