@@ -141,6 +141,23 @@ describe('InsuranceProviderRepository', () => {
     expect(mapUniqueViolation(null)).toBeNull();
   });
 
+  it('mapUniqueViolation: sem contexto, pkey e sort_order caem nos defaults (código vazio, posição 0) — nunca lançam', () => {
+    expect(mapUniqueViolation(pgError('23505', 'insurance_providers_pkey'))).toBeInstanceOf(InsuranceProviderExistsError);
+    expect(mapUniqueViolation(pgError('23505', 'insurance_providers_sort_order_unico'))).toBeInstanceOf(InsuranceProviderSortOrderTakenError);
+  });
+
+  it('list() sem opções lista só as ativas; get() de código inexistente → null', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    expect(await new InsuranceProviderRepository().list()).toEqual([]);
+    expect(mockPoolQuery.mock.calls[mockPoolQuery.mock.calls.length - 1][0]).toContain('WHERE active');
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    expect(await new InsuranceProviderRepository().get('NAO_EXISTE')).toBeNull();
+    mockPoolQuery.mockResolvedValueOnce({ rows: [{ code: 'OSDE', name: 'OSDE', payer_kind: 'PREPAGA', active: true, legal_name: null, tax_id: null, address: null, management_chat_id: '120@g.us', sort_order: '15' }] });
+    expect(await new InsuranceProviderRepository().get('OSDE')).toEqual({
+      code: 'OSDE', name: 'OSDE', payerKind: 'PREPAGA', active: true, legalName: null, taxId: null, address: null, managementChatId: '120@g.us', sortOrder: 15,
+    });
+  });
+
   it('create: unique desconhecida propaga o erro CRU (500 + alarme), nunca vira "já existe"', async () => {
     const crua = pgError('23505', 'unique_que_ninguem_mapeou');
     const { cli } = cliente({ insertFailures: [crua] });

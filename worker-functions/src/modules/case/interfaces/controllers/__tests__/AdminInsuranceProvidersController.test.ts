@@ -19,6 +19,7 @@ const mockProviderPatientsRead = jest.fn();
 jest.mock('../../../infrastructure/providerPatientsRead', () => ({ providerPatientsRead: (...a: unknown[]) => mockProviderPatientsRead(...a) }));
 
 import { Request, Response } from 'express';
+import { UnknownCountryError } from '@shared/locale/operationDate';
 import { reportError } from '@shared/logging';
 import { CountryScopeError } from '@modules/identity';
 import { AdminInsuranceProvidersController, createInsuranceProviderSchema } from '../AdminInsuranceProvidersController';
@@ -237,6 +238,77 @@ describe('AdminInsuranceProvidersController', () => {
     const [req, res] = reqRes({ params: { code: 'NADA' } });
     await ctrl.listPatients(req, res);
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  // ── ramos de borda: forma inválida (400), erro de banco (500) e país fora do mapa (422) ─────────────────────────────────────────
+  it('search: 200 com `items` (busca + includeInactive); includeInactive fora de true|false → 400; erro → 500 + reportError', async () => {
+    repo.list.mockResolvedValueOnce([{ code: 'OSDE' }]);
+    const [req, res, json] = reqRes({ query: { search: 'os', includeInactive: 'true' } });
+    await ctrl.search(req, res);
+    expect(repo.list).toHaveBeenCalledWith({ search: 'os', includeInactive: true });
+    expect(json.mock.calls[0][0]).toEqual({ success: true, data: { items: [{ code: 'OSDE' }] } });
+    const [bad, badRes] = reqRes({ query: { includeInactive: 'talvez' } });
+    await ctrl.search(bad, badRes);
+    expect(badRes.status).toHaveBeenCalledWith(400);
+    repo.list.mockRejectedValueOnce(new Error('db'));
+    const [e, eRes] = reqRes();
+    await ctrl.search(e, eRes);
+    expect(eRes.status).toHaveBeenCalledWith(500);
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminInsuranceProvidersController:search' });
+  });
+
+  it('get / patch / §L: `:code` fora da forma → 400 sem tocar no repositório; erro de banco no get → 500 com o código no log', async () => {
+    for (const call of [(r: Request, s: Response) => ctrl.get(r, s), (r: Request, s: Response) => ctrl.patch(r, s), (r: Request, s: Response) => ctrl.listPatients(r, s)]) {
+      const [req, res] = reqRes({ params: { code: 'minúscula' }, body: {} });
+      await call(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    }
+    expect(repo.get).not.toHaveBeenCalled();
+    expect(repo.patch).not.toHaveBeenCalled();
+    repo.get.mockRejectedValueOnce(new Error('db'));
+    const [req, res] = reqRes({ params: { code: 'OSDE' } });
+    await ctrl.get(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminInsuranceProvidersController:get', providerCode: 'OSDE' });
+  });
+
+  it('relógio padrão: sem `now` injetado, o asOf do for-service sai do relógio real (formato AAAA-MM-DD)', async () => {
+    repo.listForService.mockResolvedValueOnce([]);
+    const [req, res, json] = reqRes({ query: { country: 'AR' } });
+    await new AdminInsuranceProvidersController(repo as unknown as InsuranceProviderRepository).listForService(req, res);
+    expect(json.mock.calls[0][0].data.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('patch: corpo ausente (null) é um PATCH vazio — chega ao repositório como `{}`, sem estourar', async () => {
+    repo.patch.mockResolvedValueOnce({ code: 'OSDE' });
+    const [req, res] = reqRes({ params: { code: 'OSDE' } });
+    (req as { body: unknown }).body = null;
+    await ctrl.patch(req, res);
+    expect(repo.patch).toHaveBeenCalledWith('OSDE', {});
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('for-service: erro de banco → 500 + reportError', async () => {
+    repo.listForService.mockRejectedValueOnce(new Error('db'));
+    const [req, res] = reqRes({ query: { country: 'AR' } });
+    await ctrl.listForService(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminInsuranceProvidersController:listForService' });
+  });
+
+  it('§L: falha que NÃO é de escopo ao resolver o país → 500 (nunca consulta pacientes); país fora do mapa de fusos → 422 UNKNOWN_COUNTRY', async () => {
+    mockResolveScope.mockRejectedValueOnce(new Error('db'));
+    const [req, res] = reqRes({ params: { code: 'OSDE' } });
+    await ctrl.listPatients(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminInsuranceProvidersController:listPatients:scope' });
+    expect(mockProviderPatientsRead).not.toHaveBeenCalled();
+    mockResolveScope.mockResolvedValueOnce({ countries: ['AR'], requested: 'ALL' });
+    repo.get.mockRejectedValueOnce(new UnknownCountryError('XX'));
+    const [req2, res2, json2] = reqRes({ params: { code: 'OSDE' } });
+    await ctrl.listPatients(req2, res2);
+    expect(res2.status).toHaveBeenCalledWith(422);
+    expect(json2.mock.calls[0][0].code).toBe('UNKNOWN_COUNTRY');
   });
 
   it('construtor sem repositório injetado constrói o real (pool preguiçoso — não abre conexão)', () => {
