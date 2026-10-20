@@ -109,4 +109,19 @@ test.describe('vacancy-locked-fields — quantidade de prestadores sem padrão 1
     await expect(page.getByText('Debe haber al menos 1 prestador')).toBeVisible();
     expect(puts).toHaveLength(0);
   });
+
+  test('3. alt (estado muda por fora) — o serviço ganha a quantidade depois de a vaga abrir: reabrir mostra o número efetivo, ainda travado', async ({ page, request }) => {
+    const { patientId, serviceId, vacancyId } = await semearVagaComServicoNulo(request);
+    await loginComoStaffMock(page, STAFF, 'E2E Providers Fora');
+    await page.goto(`/admin/vacancies/${vacancyId}/edit`);
+    await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByTestId('providers-needed-input')).toHaveValue('');
+    // por fora da tela (como a operação faria na ficha): o serviço passa a ter 2 prestadores
+    const patch = await request.patch(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}`, { headers: AUTH_HEADERS, data: { providersNeeded: 2 } });
+    expect(patch.ok(), `PATCH do serviço falhou: ${patch.status()} ${await patch.text()}`).toBe(true);
+    await page.reload();
+    await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByTestId('providers-needed-input')).toHaveValue('2');
+    await expect(page.getByTestId('providers-needed-input')).toBeDisabled();
+  });
 });
