@@ -130,4 +130,37 @@ test.describe('patient-itinerary-capacidade-faixa: N prestadores por faixa pela 
       f.seed.cleanup();
     }
   });
+
+  test('ALTERNATIVO 2 (UI): faixa cheia (1 de 1) → "Agregar" ausente e a orientação itinerario-faixa-cheia', async ({ page, request }) => {
+    const proibidos = vigiarHosts(page);
+    const f = await semearFaixa(request, 1, 2);
+    try {
+      const [a] = f.workers;
+      const alocA = await allocateWorker(request, f.seed.patientId, f.serviceId, f.slotId, a);
+      expect(alocA.status, `allocate A ${alocA.status} ${alocA.code ?? ''}`).toBe(201);
+      const posts: string[] = [];
+      page.on('request', (r) => {
+        if (r.method() === 'POST' && /\/slots\/[^/]+\/allocations$/.test(r.url())) posts.push(r.url());
+      });
+
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, f.seed.patientId);
+      await page.getByTestId(`itinerario-slot-editar-${f.slotId}`).click();
+      await expect(page.getByTestId('itinerario-faixa-cheia')).toBeVisible();
+      await expect(page.getByTestId('itinerario-faixa-cheia')).toContainText('Franja completa: ya hay 1 asignados');
+      await expect(page.getByTestId('itinerario-editar-prestador')).toHaveCount(0);
+      await expect(page.getByTestId('itinerario-editar-guardar')).toBeDisabled();
+      expect(posts).toHaveLength(0);
+
+      // Controle de instrumento: com providers_needed = 2 (e a página recarregada) o estado inverte — o teste mede as duas coisas.
+      sqlComVars("UPDATE patient_contracted_services SET providers_needed = 2 WHERE id = :'id'::uuid", { id: f.serviceId });
+      await openItineraryTab(page, f.seed.patientId);
+      await page.getByTestId(`itinerario-slot-editar-${f.slotId}`).click();
+      await expect(page.getByTestId('itinerario-editar-prestador')).toBeVisible();
+      await expect(page.getByTestId('itinerario-faixa-cheia')).toHaveCount(0);
+      expect(proibidos()).toEqual([]);
+    } finally {
+      f.seed.cleanup();
+    }
+  });
 });
