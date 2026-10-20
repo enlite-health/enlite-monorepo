@@ -84,4 +84,37 @@ describe('GeneralCard', () => {
     renderCard({}, vi.fn(), 1);
     expect(screen.getByTestId('provider-general-form')).toBeInTheDocument();
   });
+
+  describe('grupo de gestão (FR-13)', () => {
+    it('exibe o grupo gravado; sem grupo, "Não informado"', () => {
+      renderCard({ managementChatId: '120363000000000000@g.us' });
+      expect(screen.getByTestId('provider-general-managementChatId')).toHaveTextContent('120363000000000000@g.us');
+    });
+
+    it('sem grupo mostra "Não informado"', () => {
+      renderCard();
+      expect(screen.getByTestId('provider-general-managementChatId')).toHaveTextContent('Não informado');
+    });
+
+    it('editar manda SÓ o grupo novo (aparado); apagar manda null, nunca string vazia', async () => {
+      api.patchProvider.mockResolvedValue(provider({ managementChatId: 'grp-1' }));
+      renderCard();
+      fireEvent.click(screen.getByTestId('provider-general-edit'));
+      change('provider-general-managementChatId-input', '  grp-1 ');
+      fireEvent.click(screen.getByTestId('provider-general-save'));
+      await waitFor(() => expect(api.patchProvider).toHaveBeenCalledWith('OSDE', { managementChatId: 'grp-1' }));
+      expect(buildGeneralPatch(provider({ managementChatId: 'grp-1' }), {
+        name: 'OSDE', legalName: '', taxId: '', address: '', managementChatId: '  ', payerKind: '', active: true,
+      })).toEqual({ managementChatId: null });
+    });
+
+    it('422 do back aparece como a frase do idioma, não como texto cru', async () => {
+      api.patchProvider.mockRejectedValue(apiError(422, 'INVALID_management_chat_id'));
+      renderCard();
+      fireEvent.click(screen.getByTestId('provider-general-edit'));
+      change('provider-general-managementChatId-input', 'x');
+      fireEvent.click(screen.getByTestId('provider-general-save'));
+      expect(await screen.findByTestId('provider-general-error')).toHaveTextContent('Os dados não cumprem as regras');
+    });
+  });
 });

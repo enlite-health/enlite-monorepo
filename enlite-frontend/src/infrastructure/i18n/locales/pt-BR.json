@@ -3891,6 +3891,7 @@
             "REDACTED": "🔒 Sem permissão para ver o valor"
           },
           "payer": {
+            "scheduled": "Vínculo programado a partir de {{date}}",
             "none": "Sem contrato vinculado",
             "private": "Particular (sem obra social)",
             "hidden": "Obra social não visível com a sua permissão"
@@ -6183,6 +6184,7 @@
         "validityRange": "de {{from}} até {{to}}",
         "validityOpen": "desde {{from}}, sem data final",
         "payerKindRequired": "Classifique o tipo do pagador (obra social, prepaga ou particular) em Dados gerais antes de criar contrato.",
+        "otherNotApplicable": "A obra social \"Outra\" agrupa as não listadas: não tem contratos nem exige classificar o tipo do pagador.",
         "goToGeneral": "Ir para Dados gerais",
         "contractForm": {
           "title": "Novo contrato e primeiro termo",

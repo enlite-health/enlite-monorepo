@@ -40,22 +40,26 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
   const { t, i18n } = useTranslation();
   const [mode, setMode] = useState<Mode>('view');
   const [value, setValue] = useState<ContractCascadeValue>(EMPTY_CASCADE);
-  const [endTo, setEndTo] = useState(service.asOf);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(initialError ?? null);
 
   const payer = service.payer;
   const linked = payer.state === 'LINKED' ? payer : null;
-  const names = linked?.names ?? null;
+  // Vínculo VIVO que só começa depois do `asOf`: `payer` diz NO_CONTRACT, mas o banco já recusa um "Vincular" novo (USE_CORRECTION).
+  const scheduled = linked ? null : (service.payerHistory.filter((h) => h.validFrom > service.asOf).sort((a, b) => a.validFrom.localeCompare(b.validFrom))[0] ?? null);
+  const live = linked ?? scheduled;
+  const names = live?.names ?? null;
   const hasHistory = service.payerHistory.length > 0;
   const code = error ? insuranceErrorCode(error) : null;
   const disabled = busy || !service.active;
+  const defaultEnd = scheduled ? scheduled.validFrom : service.asOf;
+  const [endTo, setEndTo] = useState(defaultEnd);
 
   const close = (): void => { setMode('view'); setError(null); };
   const open = (next: Mode): void => {
     setError(null);
     setValue({ ...EMPTY_CASCADE, providerCode: next === 'switch' ? (names?.providerCode ?? '') : '' });
-    setEndTo(service.asOf);
+    setEndTo(defaultEnd);
     setMode(next);
   };
 
@@ -89,9 +93,9 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
   const formReady = mode === 'end' ? endTo !== '' : value.contractId !== '' && value.validFrom !== '';
 
   const payerLine = (): string => {
-    if (!linked) return t(`${CARD}.payer.none`);
+    if (!live) return t(`${CARD}.payer.none`);
     if (names) return `${names.providerName} — ${names.contractName}`;
-    return linked.isPrivate ? t(`${CARD}.payer.private`) : t(`${CARD}.payer.hidden`);
+    return live.isPrivate ? t(`${CARD}.payer.private`) : t(`${CARD}.payer.hidden`);
   };
 
   return (
@@ -103,6 +107,12 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
           <Text size="xs" color="secondary">{t(`${CARD}.cascade.provider`)} / {t(`${CARD}.cascade.contract`)}</Text>
           <Text size="sm" weight="medium">{payerLine()}</Text>
         </div>
+        {scheduled && (
+          <div className="flex flex-col gap-0.5" data-testid="svc-payer-scheduled">
+            <Text size="xs" color="secondary">{t(`${CARD}.cascade.validity`)}</Text>
+            <Text size="sm" weight="medium">{t(`${CARD}.payer.scheduled`, { date: formatCalendarDate(scheduled.validFrom, {}) })}</Text>
+          </div>
+        )}
         {linked && (
           <div className="flex flex-col gap-0.5" data-testid="svc-payer-validity">
             <Text size="xs" color="secondary">{t(`${CARD}.cascade.validity`)}</Text>
@@ -135,15 +145,17 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
 
       {mode === 'view' && (
         <div className="flex flex-wrap gap-2">
-          {!linked && (
+          {!live && service.active && (
             <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => open('link')} data-testid="svc-contract-link-open">{t(`${CARD}.actions.link`)}</Button>
           )}
-          {!linked && hasHistory && onRequestNewService && (
+          {!live && service.active && hasHistory && onRequestNewService && (
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onRequestNewService} data-testid="svc-contract-new-service">{t(`${CARD}.actions.newService`)}</Button>
           )}
-          {linked && (
+          {live && (
             <>
-              <Button type="button" variant="outline" size="sm" disabled={disabled || !names} onClick={() => open('switch')} data-testid="svc-contract-switch-open">{t(`${CARD}.actions.switch`)}</Button>
+              {linked && (
+                <Button type="button" variant="outline" size="sm" disabled={disabled || !names} onClick={() => open('switch')} data-testid="svc-contract-switch-open">{t(`${CARD}.actions.switch`)}</Button>
+              )}
               <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => open('correct')} data-testid="svc-contract-correct-open">{t(`${CARD}.actions.correct`)}</Button>
               <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => open('end')} data-testid="svc-contract-end-open">{t(`${CARD}.actions.end`)}</Button>
             </>
@@ -183,7 +195,7 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
             {code === NEEDS_NEW_SERVICE && onRequestNewService && (
               <Button type="button" variant="outline" size="sm" onClick={onRequestNewService} data-testid="svc-contract-error-new-service">{t(`${CARD}.actions.newService`)}</Button>
             )}
-            {code === NEEDS_CORRECTION && linked && (
+            {code === NEEDS_CORRECTION && service.active && (
               <Button type="button" variant="outline" size="sm" onClick={() => open('correct')} data-testid="svc-contract-error-correct">{t(`${CARD}.actions.correct`)}</Button>
             )}
           </div>

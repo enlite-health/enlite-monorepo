@@ -21,6 +21,8 @@ import { CardMessage, ProviderCard } from './ProviderCard';
 import { isForbidden, useCardLoad } from './useCardLoad';
 
 const NS = 'admin.insuranceProviders';
+/** "Otra" = obra social não listada: o banco proíbe contrato e classificação do pagador para ela. */
+const OTHER_PROVIDER = 'OTHER';
 
 interface Props {
   code: string;
@@ -32,12 +34,13 @@ export function ContractsCard({ code, onGoToGeneral }: Props): JSX.Element {
   const { t } = useTranslation();
   const readGate = useActionGate('insurance_contracts', 'read');
   const termGate = useActionGate('patient_contract_value', 'create');
-  const { data, error, loading, reload } = useCardLoad(() => AdminInsuranceApiService.listContracts(code), readGate.allowed, [code]);
+  const { data, error, loading, reload } = useCardLoad(() => AdminInsuranceApiService.listContracts(code), readGate.allowed && code !== OTHER_PROVIDER, [code]);
   const [formOpen, setFormOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [payerKindRequired, setPayerKindRequired] = useState(false);
 
+  const isOther = code === OTHER_PROVIDER;
   const noRead = readGate.denied || isForbidden(error);
   const contracts = data ?? [];
 
@@ -62,7 +65,7 @@ export function ContractsCard({ code, onGoToGeneral }: Props): JSX.Element {
   }
 
   // O contrato nasce com o 1º termo na mesma chamada, e o termo exige `patient_contract_value:create`: sem as duas células o botão some.
-  const actions = noRead || !termGate.allowed ? null : (
+  const actions = noRead || isOther || !termGate.allowed ? null : (
     <ActionButton resource="insurance_contracts" action="create" variant="outline" size="sm" onClick={() => { setFormError(null); setPayerKindRequired(false); setFormOpen(true); }} className="flex items-center gap-1" data-testid="contracts-new">
       {t(`${NS}.contracts.newContract`)}
       <Plus className="w-4 h-4" />
@@ -71,7 +74,9 @@ export function ContractsCard({ code, onGoToGeneral }: Props): JSX.Element {
 
   return (
     <ProviderCard id="provider-contracts-card" title={t(`${NS}.contracts.title`)} actions={actions}>
-      {noRead ? (
+      {isOther ? (
+        <CardMessage testId="contracts-other-not-applicable">{t(`${NS}.contracts.otherNotApplicable`)}</CardMessage>
+      ) : noRead ? (
         <CardMessage testId="contracts-no-permission">{t(`${NS}.contracts.noPermission`)}</CardMessage>
       ) : (
         <>

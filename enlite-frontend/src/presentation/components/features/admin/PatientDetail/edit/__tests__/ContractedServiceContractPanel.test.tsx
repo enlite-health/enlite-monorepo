@@ -225,9 +225,54 @@ describe('ContractedServiceContractPanel', () => {
     expect(screen.getByTestId('svc-payer').textContent).toContain('Particular');
   });
 
-  it('serviço em BAIXA: nenhuma ação de vínculo fica ligada', () => {
-    renderPanel({ ...UNLINKED, active: false });
-    expect((screen.getByTestId('svc-contract-link-open') as HTMLButtonElement).disabled).toBe(true);
+  it('serviço em BAIXA: nem "Vincular" nem "Crear un servicio nuevo" aparecem, e o vínculo encerrado segue como histórico', () => {
+    renderPanel({ ...ENDED, active: false, endedAt: '2026-10-10T00:00:00Z' });
+    expect(screen.queryByTestId('svc-contract-link-open')).toBeNull();
+    expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+    expect(screen.queryByTestId('svc-contract-end-open')).toBeNull();
+    expect(screen.getByTestId('svc-payer').getAttribute('data-state')).toBe('NO_CONTRACT');
+  });
+
+  it('serviço em BAIXA que ainda traga vínculo vivo: as ações ficam desligadas', () => {
+    renderPanel({ ...LINKED, active: false });
+    for (const id of ['svc-contract-switch-open', 'svc-contract-correct-open', 'svc-contract-end-open']) {
+      expect((screen.getByTestId(id) as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  describe('vínculo vivo que só começa no futuro (asOf 19/10, início 01/11)', () => {
+    const FUTURE = {
+      ...UNLINKED,
+      payerHistory: [{ linkId: 'l1', isPrivate: false, validFrom: '2026-11-01', validTo: null, names: LINKED_058.payer.names }],
+    } as PatientContractedServiceDetail;
+
+    it('mostra o contrato e "programado desde" a data; esconde "Vincular"; oferece Corrigir e Terminar habilitados', () => {
+      renderPanel(FUTURE);
+      expect(screen.getByTestId('svc-payer').textContent).toContain('OSDE — Plan 210');
+      expect(screen.getByTestId('svc-payer-scheduled').textContent).toMatch(/1\/11\/2026/);
+      expect(screen.queryByTestId('svc-contract-link-open')).toBeNull();
+      expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+      expect((screen.getByTestId('svc-contract-correct-open') as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByTestId('svc-contract-end-open') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('Corrigir manda CORRECTION; Terminar nasce no início do vínculo (não antes dele) e vai em end', async () => {
+      mockSupersede.mockResolvedValue(FUTURE);
+      mockEndLink.mockResolvedValue(FUTURE);
+      renderPanel(FUTURE);
+      fireEvent.click(screen.getByTestId('svc-contract-end-open'));
+      expect((screen.getByTestId('svc-contract-end-to') as HTMLInputElement).value).toBe('2026-11-01');
+      fireEvent.click(screen.getByTestId('svc-contract-save'));
+      await waitFor(() => expect(mockEndLink).toHaveBeenCalledWith('pat1', 's1', { validTo: '2026-11-01' }));
+      fireEvent.click(screen.getByTestId('svc-contract-correct-open'));
+      expect(screen.getByTestId('svc-contract-form-correct')).toBeTruthy();
+    });
+
+    it('USE_CORRECTION sem vínculo vigente (futuro) ainda traz o botão que abre a correção', () => {
+      renderPanel(FUTURE, { initialError: erro(422, 'USE_CORRECTION') });
+      fireEvent.click(screen.getByTestId('svc-contract-error-correct'));
+      expect(screen.getByTestId('svc-contract-form-correct')).toBeTruthy();
+    });
   });
 
   it('erro herdado (vínculo que falhou logo após criar o serviço) aparece já na abertura', () => {

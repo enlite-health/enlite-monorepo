@@ -222,3 +222,19 @@ describe('ContractsCard — corrigir termo', () => {
     expect(screen.queryByTestId('contract-k1-current-correct')).not.toBeInTheDocument();
   });
 });
+
+describe('ContractsCard — obra social "Otra" (OTHER)', () => {
+  it('não oferece "Novo contrato", não lista nem consulta contratos, e explica por quê (sem pedir classificar o pagador)', async () => {
+    render(<ContractsCard code="OTHER" onGoToGeneral={vi.fn()} />);
+    expect(screen.getByTestId('contracts-other-not-applicable')).toHaveTextContent('não tem contratos');
+    expect(screen.queryByTestId('contracts-new')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contracts-go-general')).not.toBeInTheDocument();
+    expect(api.listContracts).not.toHaveBeenCalled();
+  });
+
+  it('as outras obras sociais seguem com "Novo contrato"', async () => {
+    render(<ContractsCard code="OSDE" onGoToGeneral={vi.fn()} />);
+    expect(await screen.findByTestId('contracts-new')).toBeInTheDocument();
+    expect(screen.queryByTestId('contracts-other-not-applicable')).not.toBeInTheDocument();
+  });
+});

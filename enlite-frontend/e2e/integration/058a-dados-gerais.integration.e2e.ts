@@ -20,6 +20,8 @@ import {
 
 // CUIT sintético, único por rodada (a obra social vive só neste banco de teste).
 const TAX_A = `30${Date.now().toString().slice(-9)}`;
+// Grupo de gestão sintético (FR-13), único por rodada.
+const GRUPO_FELIZ = `1203630${Date.now().toString().slice(-8)}@g.us`;
 const TAX_FELIZ = `33${Date.now().toString().slice(-9)}`;
 
 test.use({ viewport: { width: 1600, height: 1100 }, video: 'on' });
@@ -69,12 +71,14 @@ test.describe('058a-dados-gerais — cadastro da obra social e cartão Dados gen
     await digitar(page, 'provider-general-legalName-input', 'QA058A Razon Social S.A.');
     await digitar(page, 'provider-general-taxId-input', TAX_FELIZ);
     await digitar(page, 'provider-general-address-input', 'Av. Sintetica 1234, CABA');
+    expect(await digitar(page, 'provider-general-managementChatId-input', GRUPO_FELIZ)).toBe(GRUPO_FELIZ);
     await escolher(page, 'provider-general-payerKind-input', 'Obra Social');
     await page.getByTestId('provider-general-save').click();
     await expect(page.getByTestId('provider-general-view')).toBeVisible();
     await expect(page.getByTestId('provider-general-legalName')).toHaveText('QA058A Razon Social S.A.');
     await expect(page.getByTestId('provider-general-taxId')).toHaveText(TAX_FELIZ);
     await expect(page.getByTestId('provider-general-payerKind')).toHaveText('Obra Social');
+    await expect(page.getByTestId('provider-general-managementChatId')).toHaveText(GRUPO_FELIZ);
 
     // Reabre a página: tudo persistido (lido da tela, não do estado em memória).
     await page.reload();
@@ -82,6 +86,7 @@ test.describe('058a-dados-gerais — cadastro da obra social e cartão Dados gen
     await expect(page.getByTestId('provider-general-name')).toHaveText(nome);
     await expect(page.getByTestId('provider-general-address')).toHaveText('Av. Sintetica 1234, CABA');
     await expect(page.getByTestId('provider-general-taxId')).toHaveText(TAX_FELIZ);
+    await expect(page.getByTestId('provider-general-managementChatId')).toHaveText(GRUPO_FELIZ);
     await expect(page.getByTestId('provider-general-payerKind')).toHaveText('Obra Social');
     expect(scalar(`SELECT payer_kind FROM insurance_providers WHERE code = '${code}'`)).toBe('OBRA_SOCIAL');
 
