@@ -479,6 +479,44 @@ describe('058a vínculo serviço → contrato — travas de banco (537) @integra
         expect((await api.get(`${BASE}/insurance-providers/${provA}/patients?country=BR`, soAr)).status).toBe(403);
         expect((await api.get(`${BASE}/insurance-providers/NAO_EXISTE_058/patients`, soAr)).status).toBe(404);
       });
+
+      it('§L: paciente apagado (deleted_at) não aparece em pacientes da obra social', async () => {
+        await termo(cA1);
+        await vincular(pool, s1, cA1, vigencia('2020-01-01'));
+        const url = `${BASE}/insurance-providers/${provA}/patients`;
+        expect((await api.get(url, soAr)).data.data.items.map((i: { contractedServiceId: string }) => i.contractedServiceId)).toEqual([s1]);
+        await pool.query('UPDATE patients SET deleted_at = now() WHERE id = $1', [patient]);
+        expect((await api.get(url, soAr)).data.data.items).toEqual([]);
+      });
+    });
+
+    it('baixa de serviço (PATCH active:false) encerra o vínculo vivo na mesma transação: o serviço novo de OUTRA obra social do paciente nasce sem TWO_PAYERS_OVERLAP', async () => {
+      expect((await api.post(link(), { contractId: cA1, validFrom: '2020-01-01' }, admin)).status).toBe(201);
+      // antes da baixa o vínculo vivo bloqueia o pagador novo (controle: a medição enxerga o cruzamento)
+      const antes = await api.post(link(s2), { contractId: cB1, validFrom: '2099-01-01' }, admin);
+      expect([antes.status, antes.data.code]).toEqual([422, 'TWO_PAYERS_OVERLAP']);
+      const baixa = await api.patch(`${BASE}/patients/${patient}/contracted-services/${s1}`, { active: false }, admin);
+      expect(baixa.status).toBe(200);
+      const vivos = await vivosDe(s1);
+      expect(vivos).toHaveLength(1);
+      expect(vivos[0].valid).toMatch(/^\[2020-01-01,\d{4}-\d{2}-\d{2}\)$/); // fechado no dia de encerramento, não mais aberto
+      expect((await pool.query('SELECT superseded_reason FROM contracted_service_contract WHERE contracted_service_id = $1 AND superseded_at IS NOT NULL', [s1])).rows)
+        .toEqual([{ superseded_reason: 'ENDED' }]);
+      const depois = await api.post(link(s2), { contractId: cB1, validFrom: '2099-01-01' }, admin);
+      expect(depois.status).toBe(201);
+    });
+
+    it('baixa de serviço cujo vínculo vivo começa DEPOIS do encerramento: marcado ENDED sem reinsert (nada vivo) e o serviço novo passa', async () => {
+      expect((await api.post(link(), { contractId: cA1, validFrom: '2099-01-01' }, admin)).status).toBe(201);
+      expect((await api.patch(`${BASE}/patients/${patient}/contracted-services/${s1}`, { active: false }, admin)).status).toBe(200);
+      expect(await vivosDe(s1)).toEqual([]);
+      expect((await pool.query('SELECT superseded_reason FROM contracted_service_contract WHERE contracted_service_id = $1', [s1])).rows).toEqual([{ superseded_reason: 'ENDED' }]);
+      expect((await api.post(link(s2), { contractId: cB1, validFrom: '2099-01-01' }, admin)).status).toBe(201);
+    });
+
+    it('baixa de serviço sem vínculo, ou repetida: segue 200 (no-op no vínculo)', async () => {
+      expect((await api.patch(`${BASE}/patients/${patient}/contracted-services/${s1}`, { active: false }, admin)).status).toBe(200);
+      expect(await vivosDe(s1)).toEqual([]);
     });
 
     it.todo('retry de 40P01/40001 em withSerializationRetry → 409 depois de 3 tentativas (unit do escritor + mapa de erros cobrem; deadlock real não é determinístico por HTTP)');

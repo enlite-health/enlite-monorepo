@@ -11,6 +11,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { operationDateOf } from '@shared/locale/operationDate';
+import { ContractedServiceContractLinkWriter } from './contractedServiceContractLinkWriter';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
 import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
 import {
@@ -443,6 +444,14 @@ export class PatientContractedServiceRepository {
     }
   }
 
+  /** Mesma chave das triggers T1/T2/T3 e do `ContractedServiceContractLinkWriter`; antes de qualquer escrita da baixa (ordem: lock → UPDATE). */
+  private async lockPatientOfService(cli: PoolClient, serviceId: string): Promise<void> {
+    await cli.query(
+      `SELECT pg_advisory_xact_lock(hashtext('contract-link:patient:' || patient_id::text)) FROM patient_contracted_services WHERE id = $1`,
+      [serviceId],
+    );
+  }
+
   /**
    * Atualização PARCIAL (Merge Patch, molde `PatientClinicalRepository`): chave ausente não
    * toca a coluna. `active:false` grava `ended_at=NOW()` (baixa, C-a.4); o schema HTTP só
@@ -463,6 +472,7 @@ export class PatientContractedServiceRepository {
             await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
           }
         }
+        if (patch.active === false) await this.lockPatientOfService(cli, serviceId);
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
@@ -492,6 +502,10 @@ export class PatientContractedServiceRepository {
         for (const [field, key] of GUARDED_FIELDS) await recordFieldChange(cli, serviceId, field, before.get(field), patch[key]);
         await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
+        // Baixa: o vínculo vivo com a obra social acaba junto (senão o serviço novo do paciente bate em TWO_PAYERS_OVERLAP).
+        if (patch.active === false && sel.rows[0]) {
+          await new ContractedServiceContractLinkWriter().endOnServiceClose(cli, serviceId, operationDateOf(sel.rows[0].country, requestNow), patch.actorUid);
+        }
         return sel.rows[0] ?? null;
       });
       if (row === null) return null;

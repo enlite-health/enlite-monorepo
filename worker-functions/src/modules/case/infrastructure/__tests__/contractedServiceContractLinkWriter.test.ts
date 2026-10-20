@@ -169,4 +169,39 @@ describe('ContractedServiceContractLinkWriter', () => {
       .join('\n');
     expect(src).not.toMatch(/CURRENT_DATE|now\(\)|NOW\(\)|::daterange/);
   });
+
+  describe('endOnServiceClose (baixa do serviço, na transação do chamador)', () => {
+    const cli = { query: mockClientQuery } as never;
+    const liveRow = (valid: string) => ({ id: 'L1', contract_id: OLD_CONTRACT, valid });
+
+    it('vínculo aberto que começou antes: marca ENDED e re-insere [início, fim] do MESMO contrato; não abre transação própria', async () => {
+      script({ live: liveRow('[2026-03-01,)') });
+      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
+      const w = writes();
+      expect(w).toHaveLength(2);
+      expect(w[0][0]).toMatch(/^\s*UPDATE contracted_service_contract SET superseded_by/);
+      expect(w[0][1]).toEqual(['L1', ACTOR, 'ENDED']);
+      expect(w[1][1]).toEqual([SERVICE, OLD_CONTRACT, '[2026-03-01,2026-10-19)', ACTOR]);
+    });
+
+    it('vínculo que começa DEPOIS do encerramento: só marca ENDED (reinsert ficaria vazio)', async () => {
+      script({ live: liveRow('[2099-01-01,)') });
+      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
+      expect(writes().map(([sql]) => sql.trim().split(' ')[0])).toEqual(['UPDATE']);
+    });
+
+    it('sem vínculo vivo, ou vínculo que já termina no dia do encerramento ou antes: nada escrito', async () => {
+      script({ live: null });
+      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
+      script({ live: liveRow('[2026-01-01,2026-10-19)') }); // último dia vigente = 2026-10-18
+      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
+      expect(writes()).toEqual([]);
+    });
+
+    it('vínculo fechado que termina DEPOIS do encerramento: encurta para o dia de encerramento', async () => {
+      script({ live: liveRow('[2026-01-01,2027-01-01)') });
+      await writer.endOnServiceClose(cli, SERVICE, '2026-10-18', ACTOR);
+      expect(writes()[1][1]).toEqual([SERVICE, OLD_CONTRACT, '[2026-01-01,2026-10-19)', ACTOR]);
+    });
+  });
 });

@@ -38,7 +38,7 @@ export async function providerPatientsRead(q: Queryable, providerCode: string, a
        JOIN insurance_contracts c ON c.id = csc.contract_id AND c.provider_code = $1
        JOIN patient_contracted_services pcs ON pcs.id = csc.contracted_service_id
        JOIN patients p ON p.id = pcs.patient_id
-      WHERE csc.superseded_at IS NULL AND csc.valid @> ($2::jsonb ->> pcs.country)::date
+      WHERE csc.superseded_at IS NULL AND p.deleted_at IS NULL AND csc.valid @> ($2::jsonb ->> pcs.country)::date
       ORDER BY c.name, p.id, pcs.id`,
     [providerCode, JSON.stringify(asOfByCountry)],
   );

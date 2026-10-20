@@ -206,6 +206,27 @@ describe('PatientContractedServiceRepository', () => {
     expect(upd?.sql).toContain('ended_at = NOW()');
   });
 
+  it('update: active:false trava o paciente ANTES do UPDATE e encerra o vínculo vivo DEPOIS (mesma transação); active:true e PATCH comum não tocam no vínculo', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.update('svc-1', { active: false, actorUid: 'uid-2' }, NOW);
+    const ordem = chamadas.map((c) => c.sql);
+    const iLock = ordem.findIndex((q) => /pg_advisory_xact_lock\(hashtext\('contract-link:patient:'/.test(q));
+    const iUpd = ordem.findIndex((q) => /^UPDATE patient_contracted_services SET/.test(q));
+    const iLink = ordem.findIndex((q) => /FROM contracted_service_contract/.test(q));
+    expect(iLock).toBeGreaterThan(-1);
+    expect(iLock).toBeLessThan(iUpd);
+    expect(iUpd).toBeLessThan(iLink);
+    expect(ordem.indexOf('COMMIT')).toBeGreaterThan(iLink);
+    for (const patch of [{ active: true }, { weeklyHours: 10 }]) {
+      const outra = cliente();
+      mockConnect.mockResolvedValue(outra.cli);
+      await new PatientContractedServiceRepository(fakeProviderRepo()).update('svc-1', { ...patch, actorUid: 'uid-2' }, NOW);
+      expect(outra.chamadas.some((c) => /contracted_service_contract|pg_advisory_xact_lock/.test(c.sql))).toBe(false);
+    }
+  });
+
   it('update: active:true grava ended_at = NULL', async () => {
     const { cli, chamadas } = cliente();
     mockConnect.mockResolvedValue(cli);

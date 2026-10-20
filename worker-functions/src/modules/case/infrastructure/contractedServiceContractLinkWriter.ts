@@ -153,6 +153,27 @@ export class ContractedServiceContractLinkWriter {
     });
   }
 
+  /**
+   * Baixa do serviço (`PATCH {active:false}`): encerra o vínculo vivo NA TRANSAÇÃO DO CHAMADOR (`client` já tem contexto de país e o lock do
+   * paciente). `endDate` = dia de encerramento do serviço no país (`operationDateOf`, vem do chamador — sem relógio aqui). Sem vínculo vivo = no-op.
+   * Vínculo que começa DEPOIS de `endDate` é só marcado `ENDED` (sem reinsert: o trecho ficaria vazio); o que já termina em `endDate` ou antes fica.
+   */
+  async endOnServiceClose(client: PoolClient, serviceId: string, endDate: string, actorUid: string): Promise<void> {
+    const r = await client.query<LiveLink>(
+      `SELECT id, contract_id, valid::text AS valid FROM contracted_service_contract
+        WHERE contracted_service_id = $1 AND superseded_at IS NULL ORDER BY valid DESC LIMIT 1 FOR UPDATE`,
+      [serviceId],
+    );
+    const live = r.rows[0];
+    if (!live) return;
+    const wire = toWire(live.valid);
+    if (wire.validTo !== null && wire.validTo <= endDate) return;
+    await this.mark(client, live.id, 'ENDED', actorUid);
+    if (wire.validFrom <= endDate) {
+      await this.insert(client, serviceId, live.contract_id, fromWire({ validFrom: wire.validFrom, validTo: endDate }), actorUid);
+    }
+  }
+
   /** Troca (`SWITCHED`, só dentro do mesmo pagador) ou corrige (`CORRECTION`, qualquer contrato do país) o vínculo vivo. */
   async supersede(patientId: string, serviceId: string, input: SupersedeLinkInput, actorUid: string): Promise<void> {
     await this.run(async (client) => {
