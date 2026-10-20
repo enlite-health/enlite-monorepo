@@ -100,15 +100,28 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
   const rm = (i: Parameters<typeof recruitmentMissingCodes>[0]) => recruitmentMissingCodes({ serviceRecruitmentFields: FIELDS, ...i });
 
   // Spec 027 Fase 3 (D508 c, lex S.2) — espelha o backend.
-  it('requiredSex null → SERVICE_RECRUITMENT_FIELDS; BOTH → ok', () => {
-    expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, requiredSex: null } })).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+  it('requiredSex null → SERVICE_REQUIRED_SEX; BOTH → ok', () => {
+    expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, requiredSex: null } })).toEqual(['SERVICE_REQUIRED_SEX']);
     expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, requiredSex: 'BOTH' } })).toEqual([]);
   });
-  it('cada um dos 5 faltando (lista vazia, texto em branco, null) bloqueia; sem o objeto = faltando', () => {
-    for (const f of [{ requiredProfessions: [] }, { requiredExperience: '  ' }, { workSchedule: null }, { paymentDay: '' }]) {
-      expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, ...f } })).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+  it('cada um dos 5 faltando (lista vazia, texto em branco, null) devolve SÓ o código do próprio campo; sem o objeto = os 5 em ordem', () => {
+    const cases: Array<[Partial<typeof FIELDS>, string]> = [
+      [{ requiredProfessions: [] }, 'SERVICE_REQUIRED_PROFESSIONS'],
+      [{ requiredProfessions: ['  '] }, 'SERVICE_REQUIRED_PROFESSIONS'],
+      [{ requiredSex: null as never }, 'SERVICE_REQUIRED_SEX'],
+      [{ requiredExperience: '  ' }, 'SERVICE_REQUIRED_EXPERIENCE'],
+      [{ workSchedule: null as never }, 'SERVICE_WORK_SCHEDULE'],
+      [{ paymentDay: '' }, 'SERVICE_PAYMENT_DAY'],
+    ];
+    for (const [f, code] of cases) {
+      expect(recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, ...f } })).toEqual([code]);
     }
-    expect(recruitmentMissingCodes(BASE)).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    expect(recruitmentMissingCodes(BASE)).toEqual(['SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY']);
+  });
+  it('só paymentDay vazio (caso real): missing é exatamente o dia de pago, sem os outros 4', () => {
+    const r = recruitmentMissingCodes({ ...BASE, serviceRecruitmentFields: { ...FIELDS, paymentDay: null } });
+    expect(r).toEqual(['SERVICE_PAYMENT_DAY']);
+    expect(r).not.toContain('SERVICE_REQUIRED_SEX');
   });
 
   it('tudo presente → vazio (pronto para ativar)', () => {

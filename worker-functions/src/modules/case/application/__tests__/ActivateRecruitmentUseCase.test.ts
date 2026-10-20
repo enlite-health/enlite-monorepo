@@ -304,19 +304,19 @@ describe('ActivateRecruitmentUseCase', () => {
   describe('spec 027 Fase 3 — os 5 campos do serviço (D508)', () => {
     const ADMISSION_PATIENT = { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' };
 
-    it('SERVICE_RECRUITMENT_FIELDS: ativar com os campos vazios devolve o código no 422 (T026)', async () => {
+    it('5 campos vazios: ativar devolve os 5 códigos por campo no 422 (T026)', async () => {
       const { promise } = run({
         patientRow: ADMISSION_PATIENT,
         serviceRow: { ...READY_SERVICE, required_professions: null, required_sex: null, required_experience: null, work_schedule: null, payment_day: null },
       });
       await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
-      await expect(promise).rejects.toMatchObject({ missing: ['SERVICE_RECRUITMENT_FIELDS'] });
+      await expect(promise).rejects.toMatchObject({ missing: ['SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY'] });
       expect(mockBuildInsertParams).not.toHaveBeenCalled();
     });
 
-    it('SERVICE_RECRUITMENT_FIELDS: required_sex null com os outros 4 preenchidos ainda bloqueia (S.2); BOTH libera', async () => {
+    it('SERVICE_REQUIRED_SEX: required_sex null com os outros 4 preenchidos ainda bloqueia (S.2); BOTH libera', async () => {
       const blocked = run({ patientRow: ADMISSION_PATIENT, serviceRow: { ...READY_SERVICE, required_sex: null } });
-      await expect(blocked.promise).rejects.toMatchObject({ missing: ['SERVICE_RECRUITMENT_FIELDS'] });
+      await expect(blocked.promise).rejects.toMatchObject({ missing: ['SERVICE_REQUIRED_SEX'] });
       const ok = run({ patientRow: ADMISSION_PATIENT, serviceRow: { ...READY_SERVICE, required_sex: 'BOTH' } });
       await expect(ok.promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
     });

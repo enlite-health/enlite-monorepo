@@ -388,7 +388,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(Number(n.n)).toBe(0);
   });
 
-  it('ALTERNATIVO (spec 027 Fase 3): serviço sem os 5 campos → 422 SERVICE_RECRUITMENT_FIELDS só ele, sem criar vaga; required_sex BOTH conta como preenchido', async () => {
+  it('ALTERNATIVO (spec 027 Fase 3): serviço sem os 5 campos → 422 com os 5 códigos SERVICE_* por campo, sem criar vaga; required_sex BOTH conta como preenchido', async () => {
     const patientId = await criarPacienteDeFunil({ tag: 'activation-e2e-recfields', caseNumber: 991010, coverage: 'Particular' });
     const addr = await api.post(`/api/admin/patients/${patientId}/addresses`, { address_formatted: 'Calle Campos 1', address_type: 'primary' }, asAdmin);
     const addressId = addr.data.data.id as string;
@@ -403,7 +403,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
 
     const refused = await api.post(url, {}, asAdmin);
     expect(refused.status).toBe(422);
-    expect(refused.data.details.missing).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    expect(refused.data.details.missing).toEqual(['SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY']);
     const { rows: [n] } = await pool.query<{ n: string }>('SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId]);
     expect(Number(n.n)).toBe(0);
 
