@@ -43,3 +43,22 @@ export class DestinationRequiredError extends Error {
     this.name = 'DestinationRequiredError';
   }
 }
+
+/** 422 — Caso B (início programado) com `LEAVE_SERVICE`: o titular segue vigente até D-1 e não há rotina noturna (design trocas D4, ⚑ R2). */
+export class DestinationNotAvailableForScheduledError extends Error {
+  constructor() {
+    super('destination LEAVE_SERVICE is not available for a scheduled replacement');
+    this.name = 'DestinationNotAvailableForScheduledError';
+  }
+}
+
+/** 409 — `LEAVE_SERVICE` de quem tem agendamento sem `cancelScheduled: true`: carrega as datas do aviso (só datas, nenhum id de pessoa). */
+export class WorkerHasScheduledAttendancesError extends Error {
+  constructor(
+    readonly substitutionDates: string[],
+    readonly futureEntryFrom: string | null,
+  ) {
+    super('worker has scheduled attendances');
+    this.name = 'WorkerHasScheduledAttendancesError';
+  }
+}
