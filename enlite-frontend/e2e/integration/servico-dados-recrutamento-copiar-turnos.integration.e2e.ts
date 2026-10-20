@@ -135,4 +135,35 @@ test.describe('servico-dados-recrutamento-copiar-turnos — "Copiar a…" do edi
       Number(sqlComVars("SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = :'id'::uuid AND weekday = 2 AND upper_inf(valid) AND duration_minutes = 120", { id: serviceId })),
     ).toBe(1);
   });
+
+  test('ALTERNATIVO 2 (servidor recusa): depois de copiar segunda → quarta, o humano soma à mão um turno 10:00–12:00 na quarta (a tela deixa) → Guardar → 409 SLOT_OVERLAP com mensagem; o horário não muda', async ({ page, request }) => {
+    const { patientId, serviceId } = await semear(request, [{ dayOfWeek: 1, startTime: '09:00', durationMinutes: 480 }]);
+    const antes = await lerSchedule(request, patientId, serviceId);
+    expect(antes).toEqual([{ dayOfWeek: 1, startTime: '09:00', durationMinutes: 480, endTime: '17:00' }]);
+    await loginComoStaffMock(page, STAFF, 'E2E Copiar Turnos');
+    await abrirCardDoServico(page, patientId, serviceId);
+    await abrirEdicao(page, serviceId);
+
+    await page.getByTestId('svc-shift-copy-1-1').click();
+    await page.getByTestId('svc-shift-copy-target-1-wednesday').click();
+    await page.getByTestId('svc-shift-copy-apply-1').click();
+    await expect(page.getByTestId('svc-shift-start-1-3-0')).toContainText('09:00');
+
+    await page.getByTestId('svc-shift-add-1-3').click();
+    await expect(page.getByTestId('svc-shift-start-1-3-1')).toBeVisible();
+    await escolherHora(page, 'svc-shift-start-1-3-1', '10:00');
+    await escolherHora(page, 'svc-shift-end-1-3-1', '12:00'); // 10:00–12:00 cruza o 09:00–17:00 copiado
+
+    const [patch] = await Promise.all([
+      page.waitForResponse((r) => ehPatchDoServico(serviceId)(r.request())),
+      page.getByTestId(`contracted-service-save-${serviceId}`).click(),
+    ]);
+    expect(patch.status()).toBe(409);
+    expect((await patch.json()).code).toBe('SLOT_OVERLAP');
+    const aviso = page.getByTestId('svc-schedule-overlap-1');
+    await expect(aviso).toBeVisible();
+    await expect(aviso).toContainText('Dos turnos del mismo servicio se superponen.');
+
+    expect(await lerSchedule(request, patientId, serviceId)).toEqual(antes); // nada gravado
+  });
 });
