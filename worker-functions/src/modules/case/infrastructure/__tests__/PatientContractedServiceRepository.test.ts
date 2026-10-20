@@ -576,12 +576,12 @@ describe('PatientContractedServiceRepository', () => {
     expect(mockPoolQuery).toHaveBeenCalledTimes(2);
   });
 
-  it('decorate devolve authorization null e legacyAuthorizedHours 20 quando só há a coluna', async () => {
+  it('decorate NÃO devolve legacyAuthorizedHours nem authorizedHours (a coluna é snapshot; o leitor saiu)', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] }); // listForPatient; o resto cai no default { rows: [] }
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
     const out = await repo.listForPatient('pat-1', NOW);
     expect(out[0].authorization).toBeNull();
-    expect(out[0].legacyAuthorizedHours).toBe(20);
+    expect(out[0]).not.toHaveProperty('legacyAuthorizedHours');
     expect(out[0]).not.toHaveProperty('authorizedHours');
   });
 
@@ -622,14 +622,6 @@ describe('PatientContractedServiceRepository', () => {
     const ins = chamadas.find((c) => /^INSERT INTO patient_contracted_services/.test(c.sql));
     expect(ins?.sql).not.toContain('authorized_hours');
     expect(ins?.params).not.toContain(99);
-  });
-
-  it('listForPatient: legacyAuthorizedHours nulo permanecem null (não 0)', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ ...SERVICE_ROW, authorized_hours: null }] });
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
-    const out = await repo.listForPatient('pat-1', NOW);
-    expect(out[0]).toMatchObject({ legacyAuthorizedHours: null, authorization: null });
   });
 
   it('update: erro genérico durante o UPDATE → propaga, ROLLBACK, client liberado', async () => {

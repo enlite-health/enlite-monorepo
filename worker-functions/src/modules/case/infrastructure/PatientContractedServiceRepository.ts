@@ -94,8 +94,6 @@ export interface ContractedServiceDetail {
   providersNeeded: number | null;
   /** Autorização corrente e vigente hoje (spec 056, dono: `contracted_service_authorization`) — null = nenhuma. */
   authorization: CurrentAuthorization | null;
-  /** `pcs.authorized_hours` (coluna legada, só exibição; não é mais escrita pela API — spec 056 §8). */
-  legacyAuthorizedHours: number | null;
   /** Σ das faixas vigentes hoje (`computeScheduleWeeklyHours(schedule)`) — o horário é das faixas, não de coluna (spec 056). */
   scheduleHours: number;
   careLocation: string | null;
@@ -216,7 +214,6 @@ interface ServiceRow {
   service_code: string;
   professional_profile: string | null;
   providers_needed: number | null;
-  authorized_hours: string | null;
   care_location: string | null;
   start_date: string | null;
   supervision_frequency: string | null;
@@ -292,7 +289,6 @@ export class PatientContractedServiceRepository {
       professionalProfile: row.professional_profile,
       providersNeeded: row.providers_needed,
       authorization,
-      legacyAuthorizedHours: row.authorized_hours != null ? Number(row.authorized_hours) : null,
       scheduleHours: computeScheduleWeeklyHours(schedule),
       careLocation: row.care_location,
       startDate: row.start_date,

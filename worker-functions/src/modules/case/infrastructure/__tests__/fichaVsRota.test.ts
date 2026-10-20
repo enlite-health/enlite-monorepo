@@ -21,7 +21,7 @@ const NOW = new Date('2026-10-19T02:00:00Z');
 const ASOF = '2026-10-18';
 
 const base = {
-  patient_id: 'pat-1', service_code: 'AT', professional_profile: null, providers_needed: 1, authorized_hours: null, weekly_hours: null,
+  patient_id: 'pat-1', service_code: 'AT', professional_profile: null, providers_needed: 1, weekly_hours: null,
   care_location: null, start_date: null, supervision_frequency: null, guard_shift: null, provider_age_band: null, address_id: null,
   schedule: null, required_professions: null, required_sex: null, required_experience: null, worker_attributes: null, work_schedule: null,
   payment_day: null, daily_obs: null, active: true, ended_at: null, country: 'AR', created_at: '2026-09-03T00:00:00Z', updated_at: '2026-09-03T00:00:00Z',
