@@ -290,6 +290,16 @@ describe('AdminPatientContractedServicesController', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', details: { field: 'schedule', vacancyIds: ['vac-1'] } }));
     });
 
+    it.each(['UNKNOWN_COUNTRY', 'ITINERARY_SLOT_CAPACITY_EXCEEDED', 'PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'PROVIDERS_NEEDED_CANNOT_CLEAR'])('P0001 %s → 422 com o próprio código, sem reportError', async (code) => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(Object.assign(new Error(code), { code: 'P0001' })) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: code, code });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('200 quando atualiza com sucesso', async () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);

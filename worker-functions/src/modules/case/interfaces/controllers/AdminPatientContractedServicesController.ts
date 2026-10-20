@@ -20,6 +20,7 @@ import {
   RecruitmentNotReadyError,
 } from '../../application/ActivateRecruitmentUseCase';
 import { vacancyActorFromRequest } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
+import { insuranceErrorBody } from './insuranceErrorResponse';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
@@ -156,6 +157,12 @@ export class AdminPatientContractedServicesController {
       // F2/F5: apagar horário ou quantidade com vaga viva — a vaga lê esses campos do serviço (vaga-le-do-servico-contratado).
       if (err instanceof ServiceFieldRequiredByLiveVacancyError) {
         res.status(422).json({ success: false, error: `Service ${err.field} cannot be cleared while a live vacancy reads it`, code: err.code, details: { field: err.field, vacancyIds: err.vacancyIds } });
+        return;
+      }
+      // Spec 058 B (§K): Trava B (PROVIDERS_NEEDED_*) e demais erros conhecidos de banco saem pelo mapa único.
+      const mapped = insuranceErrorBody(err);
+      if (mapped) {
+        res.status(mapped.status).json(mapped.body);
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
