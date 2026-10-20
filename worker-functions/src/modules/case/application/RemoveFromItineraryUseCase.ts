@@ -21,6 +21,7 @@ import { PatientStatusDerivation, type PatientStatusDerivationPort } from './Pat
 import { ItineraryChangeLogWriter, type InsertItineraryChangeInput, type ItineraryChangeDestination } from '../infrastructure/ItineraryChangeLogWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, WorkerHasScheduledAttendancesError } from '../domain/serviceExitReason';
+import { ItineraryAbsenceWriter } from '../infrastructure/ItineraryAbsenceWriter';
 import { ScheduledAttendanceReader, hasScheduledAttendances, type ScheduledAttendances } from '../infrastructure/ScheduledAttendanceReader';
 
 export interface RemoveFromItineraryAllocationPort {
@@ -41,6 +42,10 @@ export interface RemoveFromItineraryChangeLogPort {
 
 export interface RemoveFromItineraryScheduledPort {
   listFor(client: PoolClient, serviceId: string, workerId: string, today: string): Promise<ScheduledAttendances>;
+}
+
+export interface RemoveFromItineraryAbsencePort {
+  updateSubstitute(client: PoolClient, id: string, substituteWorkerId: string | null, substituteApplicationId: string | null, actorUid: string): Promise<number>;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -76,6 +81,7 @@ export class RemoveFromItineraryUseCase {
     private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
     private readonly scheduled: RemoveFromItineraryScheduledPort = new ScheduledAttendanceReader(),
+    private readonly absences: RemoveFromItineraryAbsencePort = new ItineraryAbsenceWriter(),
   ) {}
 
   async execute(input: RemoveFromItineraryInput): Promise<RemoveFromItineraryResult> {
@@ -111,6 +117,14 @@ export class RemoveFromItineraryUseCase {
         const agendados = await this.scheduled.listFor(client, serviceId, ended.workerId, ended.validTo);
         if (hasScheduledAttendances(agendados) && cancelScheduled !== true) {
           throw new WorkerHasScheduledAttendancesError(agendados.substitutions.map((s) => s.date), agendados.futureEntries[0]?.validFrom ?? null);
+        }
+        for (const s of agendados.substitutions) {
+          // 0 linhas = a ausência já foi cancelada por fora: não há o que desfazer nem o que registrar.
+          if ((await this.absences.updateSubstitute(client, s.absenceId, null, null, actorUid)) === 0) continue;
+          await this.changeLog.insert(client, {
+            serviceId, kind: 'SUBSTITUTE_CANCELLED', outgoingWorkerId: ended.workerId, absenceId: s.absenceId,
+            effectiveDate: s.date, reasonCode: reasonCategory, actorUid,
+          });
         }
         await this.marks.rejectWith(client, { patientId, serviceId, workerId: ended.workerId, reasonCategory, actorUid, cells: null, now });
       }

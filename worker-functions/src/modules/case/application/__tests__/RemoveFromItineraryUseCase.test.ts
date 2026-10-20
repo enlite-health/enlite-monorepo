@@ -14,7 +14,7 @@ const NOW = new Date('2026-09-30T15:00:00Z');
 
 type RunInTransaction = ConstructorParameters<typeof RemoveFromItineraryUseCase>[5];
 
-function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError?: Error; scheduled?: ScheduledAttendances } = {}) {
+function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError?: Error; scheduled?: ScheduledAttendances; clearResult?: number } = {}) {
   const log: string[] = [];
   const allocations = {
     endWith: jest.fn(async (_c: unknown, input: { allocationId: string }, o: { derive: boolean }): Promise<ItineraryEndWithResult> => {
@@ -49,12 +49,18 @@ function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError
     }),
   };
   const scheduled = { listFor: jest.fn(async () => opts.scheduled ?? { substitutions: [], futureEntries: [] }) };
+  const absences = {
+    updateSubstitute: jest.fn(async () => {
+      log.push('sub-clear');
+      return opts.clearResult ?? 1;
+    }),
+  };
   const runInTransaction = jest.fn((cb: (client: unknown) => Promise<unknown>) => {
     log.push('tx');
     return cb(FAKE_CLIENT);
   }) as unknown as RunInTransaction & jest.Mock;
-  const useCase = new RemoveFromItineraryUseCase(allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction, scheduled);
-  return { useCase, log, scheduled, allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction };
+  const useCase = new RemoveFromItineraryUseCase(allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction, scheduled, absences);
+  return { useCase, log, absences, scheduled, allocations, marks, reasonCatalog, changeLog, derivation, runInTransaction };
 }
 
 const INPUT: RemoveFromItineraryInput = {
@@ -196,5 +202,35 @@ describe('RemoveFromItineraryUseCase', () => {
     await t.useCase.execute(INPUT);
 
     expect(t.scheduled.listFor).not.toHaveBeenCalled();
+  });
+
+  const DOIS_SUBSTITUTOS: ScheduledAttendances = {
+    substitutions: [{ absenceId: 'ab-1', date: '2026-10-26' }, { absenceId: 'ab-2', date: '2026-11-02' }],
+    futureEntries: [],
+  };
+
+  it('com cancelScheduled: tira cada substituto (null,null) e registra SUBSTITUTE_CANCELLED por data, ANTES do rejectWith', async () => {
+    const t = build({ scheduled: DOIS_SUBSTITUTOS });
+
+    await t.useCase.execute({ ...INPUT, destination: 'LEAVE_SERVICE', cancelScheduled: true });
+
+    expect(t.log).toEqual(['tx', 'catalog', 'end(derive=false)', 'log', 'sub-clear', 'log', 'sub-clear', 'log', 'reject', 'derive']);
+    expect(t.absences.updateSubstitute).toHaveBeenCalledWith(FAKE_CLIENT, 'ab-1', null, null, 'u-1');
+    const chamadas = t.changeLog.insert.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>;
+    const cancelados = chamadas.map(([, i]) => i).filter((i) => i.kind === 'SUBSTITUTE_CANCELLED');
+    expect(cancelados).toHaveLength(2);
+    expect(cancelados[0]).toEqual({
+      serviceId: 's-1', kind: 'SUBSTITUTE_CANCELLED', outgoingWorkerId: 'w-1', absenceId: 'ab-1',
+      effectiveDate: '2026-10-26', reasonCode: 'DESISTENCIA_DO_PRESTADOR', actorUid: 'u-1',
+    });
+    expect(cancelados[0]).not.toHaveProperty('destination');
+  });
+
+  it('ausência já cancelada por fora (updateSubstitute → 0): não registra', async () => {
+    const t = build({ scheduled: DOIS_SUBSTITUTOS, clearResult: 0 });
+
+    await t.useCase.execute({ ...INPUT, destination: 'LEAVE_SERVICE', cancelScheduled: true });
+
+    expect(t.log).toEqual(['tx', 'catalog', 'end(derive=false)', 'log', 'sub-clear', 'sub-clear', 'reject', 'derive']);
   });
 });
