@@ -177,6 +177,25 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     await waitFor(() => expect(mockGetItineraryEvents).toHaveBeenCalled());
   });
 
+  it('2 prestadores vigentes na mesma faixa e data → 2 cartões de evento, cada um com o seu prestador', async () => {
+    mockUsePatientItinerary.mockReturnValue(hookState());
+    const base = {
+      date: '2026-09-29', weekday: 2, serviceId: 'svc-1', slotId: 'slot-1', startTime: '08:00', endTime: '12:00',
+      status: 'covered' as const, substituteWorkerId: null, substituteDisplayName: null, absenceId: null,
+    };
+    mockGetItineraryEvents.mockResolvedValue({
+      patientId: PATIENT.id, from: '2026-09-28', to: '2026-10-11',
+      events: [
+        { ...base, assignmentId: 'a-1', titularWorkerId: 'w-1', titularDisplayName: 'Ana Fixture', workerId: 'w-1', workerDisplayName: 'Ana Fixture' },
+        { ...base, assignmentId: 'a-2', titularWorkerId: 'w-2', titularDisplayName: 'Bia Fixture', workerId: 'w-2', workerDisplayName: 'Bia Fixture' },
+      ],
+    });
+    renderTab();
+    await waitFor(() => expect(screen.getAllByTestId(/^itinerario-evento-prestador-/)).toHaveLength(2));
+    expect(screen.getByTestId('itinerario-evento-prestador-a-1-2026-09-29')).toHaveTextContent('Ana Fixture');
+    expect(screen.getByTestId('itinerario-evento-prestador-a-2-2026-09-29')).toHaveTextContent('Bia Fixture');
+  });
+
   it('ABAC sem célula de endereço (addresses: null) → a aba renderiza, sem lançar', async () => {
     mockUsePatientItinerary.mockReturnValue(hookState());
     const semEnderecos = { ...PATIENT, addresses: null } as unknown as PatientDetail;
