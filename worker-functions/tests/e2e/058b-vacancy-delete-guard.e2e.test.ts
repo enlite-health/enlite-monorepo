@@ -102,4 +102,14 @@ describe('DELETE /api/admin/vacancies/:id — guarda do itinerário (058 P6) @in
     expect(res.status).toBe(200);
     expect((await vaga(s)).apagada).toBe(true);
   });
+
+  it('serviço 100% coberto: a vaga continua viva (nenhum fechamento automático; D448.4) e o DELETE segue recusado', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1 });
+    const antes = await vaga(s);
+    expect(antes.apagada).toBe(false);
+    expect(antes.status).not.toMatch(/^closed$/i);
+    const res = await apagar(s);
+    expect(res.status).toBe(409);
+    expect(await vaga(s)).toEqual(antes);
+  });
 });
