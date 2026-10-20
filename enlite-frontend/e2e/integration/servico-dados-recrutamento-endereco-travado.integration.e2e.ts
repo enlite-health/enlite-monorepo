@@ -16,6 +16,7 @@ import { sqlComVars } from '../helpers/sql-com-vars';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { seedDerivablePatient, selectedWorker, allocateWorker } from '../helpers/derivacao-e2e-helper';
 import { insertSecondAddress } from '../helpers/itinerario-escrita-e2e-helper';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
@@ -100,5 +101,38 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
     await expect(page.getByTestId('svc-address-locked-1')).toContainText('el servicio tiene una vacante activa');
     await expect(page.getByTestId(`contracted-service-error-${serviceId}`)).toHaveCount(0); // não cai no erro genérico
     expect(enderecoDoServico(serviceId)).toBe(addressId);
+  });
+
+  test('ALTERNATIVO 2 (servidor recusa): só alocação vigente (sem vaga viva) → 422 SERVICE_ADDRESS_LOCKED (ALLOCATION) com mensagem', async ({ page, request }) => {
+    const seed = await seedDerivablePatient(request, { status: 'SEARCHING', services: [{ schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] }] });
+    try {
+      const [svc] = seed.services;
+      const worker = selectedWorker(seed, svc.vacancyId);
+      const aloc = await allocateWorker(request, seed.patientId, svc.serviceId, svc.slotIds[0], worker);
+      expect(aloc.status, `allocate ${aloc.status} ${aloc.code ?? ''}`).toBe(201);
+      // Isola o motivo: a vaga é apagada por SQL (como dono); a alocação vigente continua.
+      sqlComVars("UPDATE job_postings SET deleted_at = now(), status = 'CLOSED' WHERE id = :'id'::uuid", { id: svc.vacancyId });
+      const original = enderecoDoServico(svc.serviceId);
+      const segundo = insertSecondAddress(seed.patientId);
+
+      await loginComoStaffMock(page, STAFF, 'E2E Endereco Travado');
+      await abrirCardDoServico(page, seed.patientId, svc.serviceId);
+      await page.getByTestId(`contracted-service-edit-${svc.serviceId}`).click();
+      await expect(page.getByTestId(`contracted-service-form-${svc.serviceId}`)).toBeVisible({ timeout: 15_000 });
+      await page.getByTestId('svc-addressId-1').selectOption(segundo);
+      const [patch] = await Promise.all([
+        page.waitForResponse((r) => ehPatchDoServico(svc.serviceId)(r.request())),
+        page.getByTestId(`contracted-service-save-${svc.serviceId}`).click(),
+      ]);
+      expect(patch.status()).toBe(422);
+      const corpo = (await patch.json()) as { code?: string; details?: { reason?: string } };
+      expect(corpo.code).toBe('SERVICE_ADDRESS_LOCKED');
+      expect(corpo.details?.reason).toBe('ALLOCATION');
+      await expect(page.getByTestId('svc-address-locked-1')).toContainText('ya tiene prestadores asignados');
+      expect(enderecoDoServico(svc.serviceId)).toBe(original);
+      expect(sqlComVars("SELECT status FROM patient_itinerary_assignment WHERE id = :'id'::uuid", { id: aloc.allocationId! })).toBe('ACTIVE');
+    } finally {
+      seed.cleanup();
+    }
   });
 });
