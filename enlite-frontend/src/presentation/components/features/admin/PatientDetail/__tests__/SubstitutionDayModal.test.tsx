@@ -212,7 +212,7 @@ describe('SubstitutionDayModal — modo Entero (D445.5, reemplazo permanente)', 
     expect(listbox.getByText('Dana Fixture')).toBeTruthy();
   });
 
-  it('confirmar no modo Entero chama onSubmitPermanent(allocationId, workerId, date) — nunca onSubmit', () => {
+  it('confirmar no modo Entero "Ahora" chama onSubmitPermanent(allocationId, workerId, asOf) — nunca onSubmit', () => {
     const onSubmit = vi.fn();
     const onSubmitPermanent = vi.fn();
     render(
@@ -226,14 +226,12 @@ describe('SubstitutionDayModal — modo Entero (D445.5, reemplazo permanente)', 
       />,
     );
     fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
-    const firstDate = nextDatesOfWeekday(ASOF, 1, 8)[0];
-    fireEvent.change(dateSelect(), { target: { value: firstDate } });
 
     fireEvent.click(screen.getByTestId('substitution-worker'));
     fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
 
     fireEvent.click(screen.getByTestId('substitution-confirm'));
-    expect(onSubmitPermanent).toHaveBeenCalledWith('alloc-1', 'w-sel-1', firstDate);
+    expect(onSubmitPermanent).toHaveBeenCalledWith('alloc-1', 'w-sel-1', ASOF);
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -249,8 +247,45 @@ describe('SubstitutionDayModal — modo Entero (D445.5, reemplazo permanente)', 
       />,
     );
     fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
-    const firstDate = nextDatesOfWeekday(ASOF, 1, 8)[0];
-    fireEvent.change(dateSelect(), { target: { value: firstDate } });
     expect((screen.getByTestId('substitution-confirm') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  function renderPermanent(onSubmitPermanent = vi.fn()) {
+    render(
+      <SubstitutionDayModal
+        allocations={ONE_SLOT}
+        selected={SELECTED}
+        asOf={ASOF}
+        onSubmit={vi.fn()}
+        onSubmitPermanent={onSubmitPermanent}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
+    return onSubmitPermanent;
+  }
+
+  it('Entero: o select de data do modo complementar não aparece; aparecem "Ahora" e "Programada"', () => {
+    renderPermanent();
+    expect(screen.queryByTestId('substitution-date')).toBeNull();
+    expect(screen.getByTestId('substitution-start-now')).toBeChecked();
+    expect(screen.getByTestId('substitution-start')).toHaveTextContent('Ahora');
+    expect(screen.getByTestId('substitution-start')).toHaveTextContent('Programada');
+    expect(screen.queryByTestId('substitution-start-date')).toBeNull();
+  });
+
+  it('Programada exige data posterior a hoje: sem data ou com a data de hoje o Confirmar fica desabilitado; com amanhã habilita e envia essa data', () => {
+    const onSubmitPermanent = renderPermanent();
+    fireEvent.click(screen.getByTestId('substitution-worker'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
+    const confirm = screen.getByTestId('substitution-confirm') as HTMLButtonElement;
+    fireEvent.click(screen.getByTestId('substitution-start-scheduled'));
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('substitution-start-date'), { target: { value: ASOF } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('substitution-start-date'), { target: { value: '2026-09-29' } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    expect(onSubmitPermanent).toHaveBeenCalledWith('alloc-1', 'w-sel-1', '2026-09-29');
   });
 });

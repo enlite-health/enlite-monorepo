@@ -11,6 +11,7 @@ import { workerLabel } from './workerLabel';
 import { ExitReasonSelect } from './ExitReasonSelect';
 import { AllocationOptionStatus } from './AllocationOptionStatus';
 import { SidePanelShell } from './SidePanelShell';
+import { DdMmDateInput } from './DdMmDateInput';
 
 interface SubstitutionDayModalProps {
   allocations: ServiceTeamAllocation[];
@@ -66,6 +67,8 @@ export function SubstitutionDayModal({
   const [substituteWorkerId, setSubstituteWorkerId] = useState(NO_SUBSTITUTE_VALUE);
   const [mode, setMode] = useState<SubstitutionMode>('COMPLEMENTARY');
   const [reasonCategory, setReasonCategory] = useState('');
+  const [startMode, setStartMode] = useState<'NOW' | 'SCHEDULED'>('NOW');
+  const [scheduledDate, setScheduledDate] = useState('');
 
   const allocation = allocations.find((a) => a.allocationId === allocationId) ?? null;
   const isPermanent = mode === 'PERMANENT' && onSubmitPermanent !== undefined;
@@ -98,19 +101,24 @@ export function SubstitutionDayModal({
     if (next === 'PERMANENT' && substituteWorkerId === NO_SUBSTITUTE_VALUE) setSubstituteWorkerId('');
   }
 
+  // Reemplazo "Entero": "Ahora" começa em `asOf`; "Programada" exige data DEPOIS de hoje.
+  const fromDate = startMode === 'NOW' ? asOf : scheduledDate;
+  const scheduledValid = startMode === 'NOW' || scheduledDate > asOf;
+
   function handleConfirm(): void {
-    if (!allocationId || !date) return;
+    if (!allocationId) return;
     if (isPermanent) {
-      if (!substituteWorkerId) return;
-      onSubmitPermanent?.(allocationId, substituteWorkerId, date);
+      if (!substituteWorkerId || !scheduledValid) return;
+      onSubmitPermanent?.(allocationId, substituteWorkerId, fromDate);
       return;
     }
+    if (!date) return;
     if (!reasonCategory) return;
     onSubmit(allocationId, date, substituteWorkerId === NO_SUBSTITUTE_VALUE ? null : substituteWorkerId, reasonCategory);
   }
 
   // O motivo é obrigatório só no modo de um dia; o modo "Entero" ganha o campo na Fase 6 (precisa de destino).
-  const canConfirm = Boolean(allocationId && date && (isPermanent ? substituteWorkerId : reasonCategory));
+  const canConfirm = Boolean(allocationId && (isPermanent ? substituteWorkerId && scheduledValid : date && reasonCategory));
 
   const title = t('admin.patients.detail.serviceTeam.substitution.title');
   const confirmLabel = t('admin.patients.detail.serviceTeam.substitution.confirm');
@@ -155,15 +163,29 @@ export function SubstitutionDayModal({
         placeholder={t('admin.patients.detail.serviceTeam.substitution.slot')}
       />
 
-      <Select
-        inputSize="compact"
-        data-testid="substitution-date"
-        options={dateOptions}
-        value={date}
-        onValueChange={setDate}
-        disabled={!allocation}
-        placeholder={t('admin.patients.detail.serviceTeam.substitution.date')}
-      />
+      {!isPermanent && (
+        <Select
+          inputSize="compact"
+          data-testid="substitution-date"
+          options={dateOptions}
+          value={date}
+          onValueChange={setDate}
+          disabled={!allocation}
+          placeholder={t('admin.patients.detail.serviceTeam.substitution.date')}
+        />
+      )}
+
+      {isPermanent && (
+        <>
+          <div role="radiogroup" aria-label={t('admin.patients.detail.serviceTeam.substitution.startLabel')} className="flex gap-4" data-testid="substitution-start">
+            <label className="flex items-center gap-2"><input type="radio" name="substitution-start" checked={startMode === 'NOW'} onChange={() => setStartMode('NOW')} data-testid="substitution-start-now" /><Text as="span" size="sm">{t('admin.patients.detail.serviceTeam.substitution.startNow')}</Text></label>
+            <label className="flex items-center gap-2"><input type="radio" name="substitution-start" checked={startMode === 'SCHEDULED'} onChange={() => setStartMode('SCHEDULED')} data-testid="substitution-start-scheduled" /><Text as="span" size="sm">{t('admin.patients.detail.serviceTeam.substitution.startScheduled')}</Text></label>
+          </div>
+          {startMode === 'SCHEDULED' && (
+            <DdMmDateInput value={scheduledDate} onChange={setScheduledDate} ariaLabel={t('admin.patients.detail.serviceTeam.substitution.scheduledDate')} data-testid="substitution-start-date" />
+          )}
+        </>
+      )}
 
       <SearchableSelect
         data-testid="substitution-worker"
