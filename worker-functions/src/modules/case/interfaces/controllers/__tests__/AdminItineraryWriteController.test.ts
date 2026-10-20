@@ -303,6 +303,15 @@ describe('AdminItineraryWriteController', () => {
       expect(jsonOf(res)).toHaveBeenCalledWith(body);
     });
 
+    it.each(['UNKNOWN_COUNTRY', 'ITINERARY_SLOT_CAPACITY_EXCEEDED', 'PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'PROVIDERS_NEEDED_CANNOT_CLEAR'])('P0001 %s → 422 com o próprio código, sem reportError', async (code) => {
+      allocationUseCase.allocate.mockRejectedValueOnce(Object.assign(new Error(code), { code: 'P0001' }));
+      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, slotId: SLOT_ID }, { workerId: WORKER_ID });
+      await ctrl.allocate(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, error: code, code });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('ItineraryOverlapError → 409 com existing/requested/sameAddress/minGapMinutes e error = overlapMessage', async () => {
       const existing = { serviceId: SERVICE_ID, weekday: 1, startTime: '08:00', endTime: '12:00' };
       const requested = { serviceId: 'other-service', weekday: 1, startTime: '11:00', endTime: '15:00' };

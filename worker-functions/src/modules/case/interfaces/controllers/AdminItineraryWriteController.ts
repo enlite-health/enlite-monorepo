@@ -36,6 +36,7 @@ import { ServiceTeamReasonRequiredError, ServiceTeamReasonInvalidError } from '.
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../domain/serviceExitReason';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
+import { insuranceErrorBody } from './insuranceErrorResponse';
 import {
   itineraryPatientParamsSchema,
   itineraryServiceParamsSchema,
@@ -374,6 +375,12 @@ export class AdminItineraryWriteController {
     }
     if (err instanceof ServiceWithoutSlotError) {
       res.status(422).json({ success: false, code: 'SERVICE_WITHOUT_SLOT', services: err.services });
+      return;
+    }
+    // Spec 058 B (§K): erro CONHECIDO de banco (P0001 da Trava A/`UNKNOWN_COUNTRY`, 23514, 23P01, 22000, concorrência esgotada) sai pelo mapa único; o inesperado segue para 500 + alarme.
+    const mapped = insuranceErrorBody(err);
+    if (mapped) {
+      res.status(mapped.status).json(mapped.body);
       return;
     }
     const e = err instanceof Error ? err : new Error(String(err));
