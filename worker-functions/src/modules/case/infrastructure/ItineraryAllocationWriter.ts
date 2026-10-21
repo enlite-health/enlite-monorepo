@@ -164,4 +164,18 @@ export class ItineraryAllocationWriter {
     );
     return res.rowCount ?? 0;
   }
+
+  /**
+   * D1 (desfazer o Caso B): restaura o titular que foi `CANCELLED` por ainda não ter começado (`valid_to` NULL, `valid_from >= minValidFrom`)
+   * quando o substituto é tirado. `valid_from` original intocado. `0` = já não estava assim (nada a restaurar).
+   */
+  async restoreCancelled(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<number> {
+    const res = await client.query(
+      `UPDATE patient_itinerary_assignment
+          SET status = 'ACTIVE', updated_by = $3, updated_at = now()
+        WHERE id = $1 AND status = 'CANCELLED' AND valid_to IS NULL AND valid_from >= $2::date`,
+      [id, minValidFrom, actorUid],
+    );
+    return res.rowCount ?? 0;
+  }
 }
