@@ -332,7 +332,7 @@ describe('WorkerDocumentsCard — es labels', () => {
 
   it('renders view buttons for uploaded documents', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...docHandlers} />);
-    const viewButtons = screen.getAllByLabelText('Visualizar documento');
+    const viewButtons = screen.getAllByLabelText(es.documents.viewAria);
     expect(viewButtons.length).toBe(2); // cv + criminal (additionalCertificatesUrls moved to AdditionalDocumentsSection)
   });
 

@@ -69,7 +69,8 @@ export function MultiSelect({ options, value, onChange, placeholder, error, labe
             </Text>
             <img
               className={`w-3 h-[7px] pointer-events-none transition-transform ${isOpen ? 'rotate-180' : ''}`}
-              alt="Vector"
+              alt=""
+              aria-hidden="true"
               src="https://c.animaapp.com/Bbli6X7n/img/vector-9.svg"
             />
           </div>

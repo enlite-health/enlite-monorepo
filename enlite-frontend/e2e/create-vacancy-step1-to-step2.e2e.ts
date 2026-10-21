@@ -443,7 +443,7 @@ test.describe('CreateVacancy — full flow Step 1 → Step 2 → Step 3', () => 
 
     // Stepper marks Step 2 active
     await expect(
-      page.locator('ol[aria-label="Progress"] li[aria-current="step"]'),
+      page.locator('ol[aria-label="Progreso"] li[aria-current="step"]'),
     ).toContainText(/Configuración Talentum/i);
 
     // Vacancy create + meet links persistence both happened

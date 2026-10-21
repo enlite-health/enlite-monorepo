@@ -129,7 +129,7 @@ describe('WorkerDetailPage — delete regression', () => {
     // Clica no botão "Remover" do slot at_certificate
     const atSlot = container.querySelector('[data-testid="doc-slot-at_certificate"]');
     expect(atSlot).toBeTruthy();
-    const deleteBtn = atSlot!.querySelector('button[aria-label="Remover documento"]') as HTMLButtonElement | null;
+    const deleteBtn = atSlot!.querySelector('button[aria-label="documents.removeAria"]') as HTMLButtonElement | null;
     expect(deleteBtn).toBeTruthy();
 
     await act(async () => {
@@ -164,7 +164,7 @@ describe('WorkerDetailPage — delete regression', () => {
     });
 
     const atSlot = container.querySelector('[data-testid="doc-slot-at_certificate"]');
-    const deleteBtn = atSlot?.querySelector('button[aria-label="Remover documento"]');
+    const deleteBtn = atSlot?.querySelector('button[aria-label="documents.removeAria"]');
 
     await act(async () => {
       fireEvent.click(deleteBtn as HTMLButtonElement);

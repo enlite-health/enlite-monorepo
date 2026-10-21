@@ -110,7 +110,7 @@ describe('DocumentsGrid — aviso de pendentes por profissão (bug camada 0 #3)'
     const documents = makeDocuments({ identityDocumentUrl: 'path/dni.pdf' });
     render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents, onView } as any)} />);
     await act(async () => {
-      fireEvent.click(screen.getByLabelText('Visualizar documento'));
+      fireEvent.click(screen.getByLabelText('documents.viewAria'));
     });
     expect(onView).toHaveBeenCalledWith('path/dni.pdf');
   });
@@ -120,14 +120,14 @@ describe('DocumentsGrid — aviso de pendentes por profissão (bug camada 0 #3)'
     const documents = makeDocuments({ identityDocumentUrl: 'path/dni.pdf' });
     render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents, onDelete } as any)} />);
     await act(async () => {
-      fireEvent.click(screen.getByLabelText('Remover documento'));
+      fireEvent.click(screen.getByLabelText('documents.removeAria'));
     });
     expect(onDelete).toHaveBeenCalledWith('identity_document');
   });
 
   it('documents=null → nenhum slot marcado como enviado e onView não é chamável (getFilePath null)', () => {
     render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents: null })} />);
-    expect(screen.queryByLabelText('Visualizar documento')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('documents.viewAria')).not.toBeInTheDocument();
   });
 
   it('erro no upload mostra a mensagem de erro no card do slot', async () => {
