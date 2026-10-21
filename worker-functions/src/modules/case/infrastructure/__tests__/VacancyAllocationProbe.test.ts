@@ -1,4 +1,4 @@
-import { countVigenteForService, countVigenteForVacancy } from '../VacancyAllocationProbe';
+import { countVigenteForService, countVigenteForVacancy, countVivasForPatient } from '../VacancyAllocationProbe';
 
 const NOW = new Date('2026-10-21T02:30:00Z'); // 23:30 de 20/10 em Buenos Aires
 
@@ -48,5 +48,21 @@ describe('VacancyAllocationProbe', () => {
     expect(sqls[1]).toMatch(/pg_advisory_xact_lock\(hashtext\('itinerary:service:' \|\| \$1::text\)\)/);
     expect(q.query.mock.calls[1][1]).toEqual(['svc-1']);
     expect(sqls[2]).toMatch(/SELECT count\(\*\)::int AS n/);
+  });
+});
+
+describe('countVivasForPatient (D489/D530)', () => {
+  it('devolve a contagem; consulta parametrizada por paciente, ACTIVE e vigente pelo hoje do país (fn_operation_date)', async () => {
+    const q = qStub({ rows: [{ n: 2 }] });
+    expect(await countVivasForPatient(q as never, 'pat-1')).toBe(2);
+    const [sql, params] = q.query.mock.calls[0];
+    expect(params).toEqual(['pat-1']);
+    expect(String(sql)).toMatch(/a\.status = 'ACTIVE'/);
+    expect(String(sql)).toMatch(/valid_to >= fn_operation_date\(p\.country\)/);
+    expect(String(sql)).not.toMatch(/CURRENT_DATE|valid_from/);
+  });
+
+  it('sem linha de retorno → 0', async () => {
+    expect(await countVivasForPatient(qStub({ rows: [] }) as never, 'pat-1')).toBe(0);
   });
 });
