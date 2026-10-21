@@ -2,7 +2,7 @@
  * PatientItinerary (Fase 12, DX-12.6/DX-12.11) — as 2 funções puras da entidade.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { isVigenteAt, coverageHoursPair, type PatientItineraryAssignment } from '../PatientItinerary';
+import { isVigenteAt, coverageHoursPair, slotCapacityState, type PatientItineraryAssignment } from '../PatientItinerary';
 
 const AS_OF = '2026-10-07';
 
@@ -66,5 +66,24 @@ describe('coverageHoursPair', () => {
 
   it('(0, 0) → "0/0" (serviço sem horário não vira traço)', () => {
     expect(coverageHoursPair(0, 0)).toBe('0/0');
+  });
+});
+
+describe('slotCapacityState', () => {
+  it('slotCapacityState: providersNeeded null → NOT_INFORMED (disponível com nota), mesmo com vigentes', () => {
+    expect(slotCapacityState(null, 0)).toBe('NOT_INFORMED');
+    expect(slotCapacityState(null, 5)).toBe('NOT_INFORMED');
+  });
+
+  it('slotCapacityState: 1 de 2 → AVAILABLE', () => {
+    expect(slotCapacityState(2, 1)).toBe('AVAILABLE');
+  });
+
+  it('slotCapacityState: 2 de 2 → FULL', () => {
+    expect(slotCapacityState(2, 2)).toBe('FULL');
+  });
+
+  it('slotCapacityState: acima do limite (3 de 2) → FULL', () => {
+    expect(slotCapacityState(2, 3)).toBe('FULL');
   });
 });

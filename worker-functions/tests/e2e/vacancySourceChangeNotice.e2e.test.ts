@@ -338,10 +338,13 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
       expect((await notices()).rows).toHaveLength(0);
     });
 
-    it('apagar (null) SEM vaga viva (só apagada) → grava NULL, sem aviso; com CLOSED não apagada (viva, ⚑E) → recusa', async () => {
+    it('apagar (null) é SEMPRE recusado: sem vaga viva → PROVIDERS_NEEDED_CANNOT_CLEAR (Trava B); com CLOSED não apagada (viva, ⚑E) → SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', async () => {
+      // Trava B (migration 544): número → NULL é recusado com ou sem vaga viva. O repositório relança o erro cru do pg
+      // (code P0001, message = o código); o controller o devolve como 422 + code (P0001_CODES, insuranceErrorResponse.ts).
       const ctx = await seed([{ deleted: true }]);
-      await patchProviders(ctx, null);
-      expect(await providersOf(ctx.serviceId)).toBeNull();
+      const erroTrava = await patchProviders(ctx, null).catch((e) => e);
+      expect(erroTrava).toMatchObject({ code: 'P0001', message: 'PROVIDERS_NEEDED_CANNOT_CLEAR' });
+      expect(await providersOf(ctx.serviceId)).toBe(1);
       expect((await notices()).rows).toHaveLength(0);
 
       const ctxClosed = await seed([{ status: 'CLOSED' }], SCHEDULE_A, ctx);

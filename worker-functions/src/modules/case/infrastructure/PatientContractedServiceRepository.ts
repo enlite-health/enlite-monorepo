@@ -11,6 +11,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { operationDateOf } from '@shared/locale/operationDate';
+import { countVigenteForService } from './VacancyAllocationProbe';
 import { ContractedServiceContractLinkWriter } from './contractedServiceContractLinkWriter';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
 import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
@@ -28,6 +29,7 @@ import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours'
 import { replaceServiceSlots } from './ServiceSlotWriter';
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
 import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
+import { fetchServiceSchedules } from './ContractedServiceDetailMapper';
 import {
   batchEntry,
   derivePayerCoverageMatch,
@@ -49,7 +51,7 @@ export interface ContractedServiceScheduleSlot {
   durationMinutes: number;
 }
 
-/** Turno do horário na LEITURA: `horario_do_servico(id, CURRENT_DATE)` — o `endTime` é derivado (início + duração). */
+/** Turno do horário na LEITURA: `horario_do_servico(id, asOf)` — o `endTime` é derivado (início + duração). */
 export interface ContractedServiceScheduleView extends ContractedServiceScheduleSlot {
   endTime: string;
 }
@@ -78,6 +80,18 @@ export class ServiceFieldRequiredByLiveVacancyError extends Error {
   }
 }
 
+/** 058 REGRA-05 (041): `addressId` diferente do atual com vaga viva ou alocação vigente — mudou o local = serviço novo. 422 via `insuranceErrorBody`. */
+export class ServiceAddressLockedError extends Error {
+  readonly httpStatus = 422;
+  readonly code = 'SERVICE_ADDRESS_LOCKED';
+  readonly details: { reason: 'LIVE_VACANCY' | 'ALLOCATION' };
+  constructor(reason: 'LIVE_VACANCY' | 'ALLOCATION') {
+    super(`service address cannot change: ${reason}`);
+    this.name = 'ServiceAddressLockedError';
+    this.details = { reason };
+  }
+}
+
 const ADDRESS_FK = 'pcs_address_same_patient_fk';
 
 function isAddressFkViolation(err: unknown): boolean {
@@ -93,8 +107,6 @@ export interface ContractedServiceDetail {
   providersNeeded: number | null;
   /** Autorização corrente e vigente hoje (spec 056, dono: `contracted_service_authorization`) — null = nenhuma. */
   authorization: CurrentAuthorization | null;
-  /** `pcs.authorized_hours` (coluna legada, só exibição; não é mais escrita pela API — spec 056 §8). */
-  legacyAuthorizedHours: number | null;
   /** Σ das faixas vigentes hoje (`computeScheduleWeeklyHours(schedule)`) — o horário é das faixas, não de coluna (spec 056). */
   scheduleHours: number;
   careLocation: string | null;
@@ -215,7 +227,6 @@ interface ServiceRow {
   service_code: string;
   professional_profile: string | null;
   providers_needed: number | null;
-  authorized_hours: string | null;
   care_location: string | null;
   start_date: string | null;
   supervision_frequency: string | null;
@@ -272,13 +283,9 @@ export class PatientContractedServiceRepository {
     const providers = await this.providerRepo.listForService(row.id);
     // Spec 018 PR-6 / spec 047 F2: a MESMA leitura do mapper da ficha (`fetchLiveVacancies`) — um dono só.
     const liveVacancy = (await fetchLiveVacancies(cli, [row.id])).get(row.id) ?? null;
-    // Spec 056: o horário NÃO é a coluna `pcs.schedule` (morta) — é a leitura derivada das faixas vigentes hoje.
-    const sched = await cli.query<{ schedule: ContractedServiceScheduleView[] | null }>(
-      `SELECT horario_do_servico($1, CURRENT_DATE) AS schedule`,
-      [row.id],
-    );
-    const schedule = sched.rows[0]?.schedule ?? null;
-    const authorization = (await fetchCurrentAuthorizations(cli, [row.id])).get(row.id) ?? null;
+    // Spec 058 (B1): agenda e autorização no dia de operação do serviço — as MESMAS funções da ficha (`ContractedServiceDetailMapper`).
+    const schedule = (await fetchServiceSchedules(cli, [row.id], asOf)).get(row.id) ?? null;
+    const authorization = (await fetchCurrentAuthorizations(cli, [row.id], asOf)).get(row.id) ?? null;
     const [payers, histories, prices, coverageEntries] = await Promise.all([
       payerAtMany(cli, [row.id], asOf),
       payerHistoryMany(cli, [row.id]),
@@ -295,7 +302,6 @@ export class PatientContractedServiceRepository {
       professionalProfile: row.professional_profile,
       providersNeeded: row.providers_needed,
       authorization,
-      legacyAuthorizedHours: row.authorized_hours != null ? Number(row.authorized_hours) : null,
       scheduleHours: computeScheduleWeeklyHours(schedule),
       careLocation: row.care_location,
       startDate: row.start_date,
@@ -440,6 +446,23 @@ export class PatientContractedServiceRepository {
   }
 
   /**
+   * 058 REGRA-05 (041): `addressId` DIFERENTE do atual com vaga viva ou alocação vigente → 422 `SERVICE_ADDRESS_LOCKED`. O formulário reenvia o mesmo
+   * `addressId` em todo PATCH (`ContractedServiceFormRow.tsx:201,215`): igual ao atual NÃO é mudança. ⚑ padrão: `null` diferente do atual também conta
+   * (limpar o local de um serviço em uso é mudar o local — plan §1 P6, já decidido pelo cto). Locka o serviço (mesma ordem do `refuseClearWhenLiveVacancy`).
+   */
+  private async refuseAddressChangeWhenInUse(cli: PoolClient, serviceId: string, next: string | null, requestNow: Date): Promise<void> {
+    const cur = await cli.query<{ address_id: string | null; country: string }>(
+      'SELECT address_id, country FROM patient_contracted_services WHERE id = $1 FOR UPDATE',
+      [serviceId],
+    );
+    const current = cur.rows[0];
+    if (!current || current.address_id === next) return;
+    const live = await cli.query(`SELECT 1 FROM job_postings WHERE contracted_service_id = $1 AND ${liveVacancySql('')} LIMIT 1`, [serviceId]);
+    if ((live.rowCount ?? live.rows.length) > 0) throw new ServiceAddressLockedError('LIVE_VACANCY');
+    if ((await countVigenteForService(cli, serviceId, operationDateOf(current.country, requestNow))) > 0) throw new ServiceAddressLockedError('ALLOCATION');
+  }
+
+  /**
    * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada,
    * `deleted_at IS NULL`, qualquer status — vaga CLOSED/DE_BAJA ainda ocupa o serviço; spec 056 ⚑E). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
    * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
@@ -488,6 +511,7 @@ export class PatientContractedServiceRepository {
             await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
           }
         }
+        if (patch.addressId !== undefined) await this.refuseAddressChangeWhenInUse(cli, serviceId, patch.addressId, requestNow);
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {

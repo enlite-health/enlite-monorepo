@@ -88,6 +88,7 @@ const ITINERARY: PatientItinerary = {
       scheduleHours: 20,
       reserve: null,
       cobertas: 0,
+      providersNeeded: null,
       slots: [{ id: 'slot-1', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] }],
     },
     {
@@ -95,6 +96,7 @@ const ITINERARY: PatientItinerary = {
       scheduleHours: 10,
       reserve: null,
       cobertas: 0,
+      providersNeeded: null,
       slots: [{ id: 'slot-2', weekday: 2, startTime: '09:00', endTime: '11:00', durationMinutes: 120, assignments: [] }],
     },
   ],
@@ -175,6 +177,25 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     expect(ids).toEqual(['itinerario-servico-svc-1', 'itinerario-servico-svc-2']);
     expect(screen.getByTestId('itinerario-eventos-painel')).toBeInTheDocument();
     await waitFor(() => expect(mockGetItineraryEvents).toHaveBeenCalled());
+  });
+
+  it('2 prestadores vigentes na mesma faixa e data → 2 cartões de evento, cada um com o seu prestador', async () => {
+    mockUsePatientItinerary.mockReturnValue(hookState());
+    const base = {
+      date: '2026-09-29', weekday: 2, serviceId: 'svc-1', slotId: 'slot-1', startTime: '08:00', endTime: '12:00',
+      status: 'covered' as const, substituteWorkerId: null, substituteDisplayName: null, absenceId: null,
+    };
+    mockGetItineraryEvents.mockResolvedValue({
+      patientId: PATIENT.id, from: '2026-09-28', to: '2026-10-11',
+      events: [
+        { ...base, assignmentId: 'a-1', titularWorkerId: 'w-1', titularDisplayName: 'Ana Fixture', workerId: 'w-1', workerDisplayName: 'Ana Fixture' },
+        { ...base, assignmentId: 'a-2', titularWorkerId: 'w-2', titularDisplayName: 'Bia Fixture', workerId: 'w-2', workerDisplayName: 'Bia Fixture' },
+      ],
+    });
+    renderTab();
+    await waitFor(() => expect(screen.getAllByTestId(/^itinerario-evento-prestador-/)).toHaveLength(2));
+    expect(screen.getByTestId('itinerario-evento-prestador-a-1-2026-09-29')).toHaveTextContent('Ana Fixture');
+    expect(screen.getByTestId('itinerario-evento-prestador-a-2-2026-09-29')).toHaveTextContent('Bia Fixture');
   });
 
   it('ABAC sem célula de endereço (addresses: null) → a aba renderiza, sem lançar', async () => {
@@ -293,6 +314,74 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  describe('058 — reemplazo Entero com motivo e destino', () => {
+    const WITH_ALLOC: PatientItinerary = {
+      ...ITINERARY,
+      services: [
+        {
+          ...ITINERARY.services[0],
+          slots: [
+            {
+              ...ITINERARY.services[0].slots[0],
+              assignments: [
+                { workerId: 'w-titular', applicationId: 'app-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', allocationId: 'alloc-1', displayName: 'Ana Fixture' },
+              ],
+            },
+          ],
+        },
+        ITINERARY.services[1],
+      ],
+    };
+
+    async function confirmarEntero() {
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_ALLOC }));
+      renderTab();
+      fireEvent.click(screen.getByTestId('itinerario-novo-btn'));
+      fireEvent.change(await screen.findByTestId('itinerario-novo-servico'), { target: { value: 'svc-1' } });
+      fireEvent.click(await screen.findByTestId('substitution-mode-permanent'));
+      fireEvent.change(screen.getByTestId('substitution-slot'), { target: { value: 'alloc-1' } });
+      fireEvent.click(screen.getByTestId('substitution-worker'));
+      fireEvent.click(within(await screen.findByRole('listbox')).getByText('Dana Fixture'));
+      fireEvent.change(screen.getByTestId('substitution-reason'), { target: { value: 'NOVO_DO_ADMIN' } });
+      fireEvent.click(screen.getByTestId('substitution-destination-RESERVE'));
+      fireEvent.click(screen.getByTestId('substitution-confirm'));
+    }
+
+    it('Entero: confirmar chama replaceAllocation(paciente, serviço, alocação, { newWorkerId, fromDate, reasonCategory, destination }) e fecha', async () => {
+      mockReplaceAllocation.mockResolvedValue({});
+      await confirmarEntero();
+      await waitFor(() => expect(mockReplaceAllocation).toHaveBeenCalledTimes(1));
+      expect(mockReplaceAllocation).toHaveBeenCalledWith(PATIENT.id, 'svc-1', 'alloc-1', {
+        newWorkerId: 'w-opt-1',
+        fromDate: ITINERARY.asOf,
+        reasonCategory: 'NOVO_DO_ADMIN',
+        destination: 'RESERVE',
+      });
+      await waitFor(() => expect(screen.queryByTestId('substitution-modal')).toBeNull());
+    });
+
+    it('Entero: 409 ITINERARY_OVERLAP → mensagem de produto em itinerario-novo-erro-submit (sem código cru) e o modal continua', async () => {
+      mockReplaceAllocation.mockRejectedValue(Object.assign(new Error('x'), { code: 'ITINERARY_OVERLAP', status: 409 }));
+      await confirmarEntero();
+      const erro = await screen.findByTestId('itinerario-novo-erro-submit');
+      expect(erro).toHaveTextContent('El prestador ya tiene otra franja que se superpone');
+      expect(erro.textContent).not.toMatch(/ITINERARY_OVERLAP/);
+      expect(screen.getByTestId('substitution-modal')).toBeInTheDocument();
+    });
+
+    it('Entero: 422 ALLOCATION_NOT_ACTIVE → "Esa asignación ya no está activa"', async () => {
+      mockReplaceAllocation.mockRejectedValue(Object.assign(new Error('x'), { code: 'ALLOCATION_NOT_ACTIVE', status: 422 }));
+      await confirmarEntero();
+      expect(await screen.findByTestId('itinerario-novo-erro-submit')).toHaveTextContent('Esa asignación ya no está activa');
+    });
+
+    it('Entero: erro sem código → mensagem genérica (submitError)', async () => {
+      mockReplaceAllocation.mockRejectedValue(new Error('rede'));
+      await confirmarEntero();
+      expect(await screen.findByTestId('itinerario-novo-erro-submit')).toHaveTextContent('No se pudo guardar la sustitución');
+    });
+  });
+
   describe('Fase 4 — "Quitar del itinerario"', () => {
     const WITH_TITULAR: PatientItinerary = {
       ...ITINERARY,
@@ -359,12 +448,101 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
       expect(await screen.findByTestId('itinerario-quitar-erro')).toHaveTextContent('No se pudo quitar al prestador del itinerario');
     });
 
+    const SCHEDULED_409 = () =>
+      Object.assign(new Error('x'), {
+        code: 'WORKER_HAS_SCHEDULED_ATTENDANCES',
+        status: 409,
+        details: { substitutionDates: ['2026-10-26', '2026-11-02'], futureEntryFrom: null },
+      });
+
+    async function confirmarAteOAviso() {
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TITULAR }));
+      renderTab();
+      await openQuitarPanel();
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      return screen.findByTestId('aviso-agendados');
+    }
+
+    it('409 WORKER_HAS_SCHEDULED_ATTENDANCES: mostra aviso-agendados com as datas; nenhum erro genérico; o painel continua aberto', async () => {
+      mockEndAllocation.mockRejectedValueOnce(SCHEDULED_409());
+      const aviso = await confirmarAteOAviso();
+      expect(screen.getByTestId('aviso-agendados-datas')).toHaveTextContent('26/10, 02/11');
+      expect(aviso).toBeInTheDocument();
+      expect(screen.queryByTestId('itinerario-quitar-erro')).toBeNull();
+      expect(screen.getByTestId('itinerario-quitar-painel')).toBeInTheDocument();
+    });
+
+    it('confirmar o aviso reenvia endAllocation com cancelScheduled: true e fecha o modal', async () => {
+      mockEndAllocation.mockRejectedValueOnce(SCHEDULED_409());
+      mockEndAllocation.mockResolvedValueOnce({ allocationId: 'alloc-1', status: 'ENDED', validTo: '2026-09-28', destination: 'LEAVE_SERVICE' });
+      await confirmarAteOAviso();
+      fireEvent.click(screen.getByTestId('aviso-agendados-confirmar'));
+      await waitFor(() => expect(mockEndAllocation).toHaveBeenCalledTimes(2));
+      expect(mockEndAllocation).toHaveBeenNthCalledWith(2, PATIENT.id, 'svc-1', 'alloc-1', {
+        reasonCategory: 'NOVO_DO_ADMIN',
+        destination: 'LEAVE_SERVICE',
+        cancelScheduled: true,
+      });
+      await waitFor(() => expect(screen.queryByTestId('itinerario-editar-modal')).toBeNull());
+    });
+
+    it('Volver do aviso: nenhuma 2ª chamada a endAllocation', async () => {
+      mockEndAllocation.mockRejectedValueOnce(SCHEDULED_409());
+      await confirmarAteOAviso();
+      fireEvent.click(screen.getByTestId('aviso-agendados-cancelar'));
+      await waitFor(() => expect(screen.queryByTestId('aviso-agendados')).toBeNull());
+      expect(mockEndAllocation).toHaveBeenCalledTimes(1);
+    });
+
     it('faixa sem prestador vigente: nenhuma ação de quitar', async () => {
       mockUsePatientItinerary.mockReturnValue(hookState());
       renderTab();
       fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
       await screen.findByTestId('itinerario-editar-modal');
       expect(screen.queryByTestId('itinerario-quitar-w-titular')).toBeNull();
+    });
+
+    const WITH_TWO: PatientItinerary = {
+      ...WITH_TITULAR,
+      services: [
+        {
+          ...WITH_TITULAR.services[0],
+          providersNeeded: 2,
+          slots: [
+            {
+              ...WITH_TITULAR.services[0].slots[0],
+              assignments: [
+                { workerId: 'w-titular', applicationId: 'app-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', allocationId: 'alloc-1', displayName: 'Ana Fixture' },
+                { workerId: 'w-segundo', applicationId: 'app-2', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', allocationId: 'alloc-2', displayName: 'Bia Fixture' },
+              ],
+            },
+          ],
+        },
+        WITH_TITULAR.services[1],
+      ],
+    };
+
+    it('faixa com 2 vigentes e providersNeeded 2: o modal lista os 2 com Quitar e mostra faixa cheia', async () => {
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TWO }));
+      renderTab();
+      fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+      expect(await screen.findByTestId('itinerario-quitar-w-titular')).toBeInTheDocument();
+      expect(screen.getByTestId('itinerario-quitar-w-segundo')).toBeInTheDocument();
+      expect(screen.getByTestId('itinerario-faixa-cheia')).toHaveTextContent('Franja completa: ya hay 2 asignados');
+    });
+
+    it('quitar o 2º vigente chama endAllocation com a alocação DELE', async () => {
+      mockEndAllocation.mockResolvedValue({ allocationId: 'alloc-2', status: 'ENDED', validTo: '2026-09-28', destination: 'RESERVE' });
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TWO }));
+      renderTab();
+      fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+      fireEvent.click(await screen.findByTestId('itinerario-quitar-w-segundo'));
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'NOVO_DO_ADMIN' } });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      await waitFor(() => expect(mockEndAllocation).toHaveBeenCalledTimes(1));
+      expect(mockEndAllocation).toHaveBeenCalledWith(PATIENT.id, 'svc-1', 'alloc-2', { reasonCategory: 'NOVO_DO_ADMIN', destination: 'RESERVE' });
     });
   });
 });

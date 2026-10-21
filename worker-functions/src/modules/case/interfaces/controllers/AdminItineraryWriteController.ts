@@ -27,15 +27,17 @@ import {
   ServiceWithoutSlotError,
 } from '../../application/AssembleItineraryUseCase';
 import { RemoveFromItineraryUseCase } from '../../application/RemoveFromItineraryUseCase';
+import { ReplaceWithReasonUseCase } from '../../application/ReplaceWithReasonUseCase';
 import {
   ServiceTeamWorkerAllocatedError,
   ServiceTeamNotSelectedError,
   ServiceTeamAlreadyRejectedError,
 } from '../../application/ServiceTeamMarkUseCase';
 import { ServiceTeamReasonRequiredError, ServiceTeamReasonInvalidError } from '../../domain/serviceTeamReason';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError, WorkerHasScheduledAttendancesError } from '../../domain/serviceExitReason';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
+import { insuranceErrorBody } from './insuranceErrorResponse';
 import {
   itineraryPatientParamsSchema,
   itineraryServiceParamsSchema,
@@ -73,6 +75,7 @@ export class AdminItineraryWriteController {
     private readonly allocationUseCase: ItineraryAllocationUseCase = new ItineraryAllocationUseCase(),
     private readonly assemblyUseCase: AssembleItineraryUseCase = new AssembleItineraryUseCase(),
     private readonly removeUseCase: RemoveFromItineraryUseCase = new RemoveFromItineraryUseCase(),
+    private readonly replaceUseCase: ReplaceWithReasonUseCase = new ReplaceWithReasonUseCase(),
   ) {}
 
   /** GET .../contracted-services/:sid/allocation-options */
@@ -208,6 +211,7 @@ export class AdminItineraryWriteController {
         allocationId,
         reasonCategory: body.data.reasonCategory,
         destination: body.data.destination,
+        cancelScheduled: body.data.cancelScheduled,
         actorUid,
       });
       res.status(200).json({ success: true, data: result });
@@ -232,12 +236,14 @@ export class AdminItineraryWriteController {
     if (actorUid === null) return;
     const { id: patientId, sid: serviceId, allocationId } = params.data;
     try {
-      const result = await this.allocationUseCase.replace({
+      const result = await this.replaceUseCase.execute({
         patientId,
         serviceId,
         allocationId,
         newWorkerId: body.data.newWorkerId,
         fromDate: body.data.fromDate,
+        reasonCategory: body.data.reasonCategory,
+        destination: body.data.destination,
         actorUid,
       });
       res.status(200).json({ success: true, data: result });
@@ -347,6 +353,20 @@ export class AdminItineraryWriteController {
       res.status(422).json({ success: false, code: 'DESTINATION_REQUIRED' });
       return;
     }
+    if (err instanceof DestinationNotAvailableForScheduledError) {
+      res.status(422).json({ success: false, code: 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED' });
+      return;
+    }
+    // 058 P5c: o aviso. Só datas no corpo (`details`, que o cliente HTTP do front já expõe) — nenhum id de pessoa.
+    if (err instanceof WorkerHasScheduledAttendancesError) {
+      res.status(409).json({
+        success: false,
+        code: 'WORKER_HAS_SCHEDULED_ATTENDANCES',
+        error: 'worker has scheduled attendances',
+        details: { substitutionDates: err.substitutionDates, futureEntryFrom: err.futureEntryFrom },
+      });
+      return;
+    }
     // `LEAVE_SERVICE` de quem tem agendamento: o `rejectWith` recusa e a transação inteira desfaz (Fase 4; a Fase 8 troca por aviso).
     if (err instanceof ServiceTeamWorkerAllocatedError) {
       res.status(422).json({ success: false, code: 'SERVICE_TEAM_WORKER_ALLOCATED', error: 'tiene atenciones agendadas; cancele antes' });
@@ -374,6 +394,12 @@ export class AdminItineraryWriteController {
     }
     if (err instanceof ServiceWithoutSlotError) {
       res.status(422).json({ success: false, code: 'SERVICE_WITHOUT_SLOT', services: err.services });
+      return;
+    }
+    // Spec 058 B (§K): erro CONHECIDO de banco (P0001 da Trava A/`UNKNOWN_COUNTRY`, 23514, 23P01, 22000, concorrência esgotada) sai pelo mapa único; o inesperado segue para 500 + alarme.
+    const mapped = insuranceErrorBody(err);
+    if (mapped) {
+      res.status(mapped.status).json(mapped.body);
       return;
     }
     const e = err instanceof Error ? err : new Error(String(err));

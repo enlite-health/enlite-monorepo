@@ -263,7 +263,7 @@ export function VacancyFormRightColumn({
           type="number"
           min={1}
           disabled={isProvidersLocked}
-          {...register('providers_needed', { valueAsNumber: true })}
+          {...register('providers_needed', { setValueAs: (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v)) })}
           data-testid="providers-needed-input"
           error={
             errors.providers_needed

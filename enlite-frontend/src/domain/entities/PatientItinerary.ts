@@ -42,6 +42,8 @@ export interface PatientItineraryService {
   scheduleHours: number;
   cobertas: number;
   reserve: ServiceReserve | null;
+  /** Quantidade de prestadores por faixa (pcs.providers_needed); null = não informada (nunca 1 por padrão, §N). */
+  providersNeeded: number | null;
   slots: PatientItinerarySlot[];
 }
 
@@ -125,4 +127,12 @@ export interface PatientItineraryEventsResult {
   from: string;
   to: string;
   events: PatientItineraryEvent[];
+}
+
+export type SlotCapacityState = 'AVAILABLE' | 'FULL' | 'NOT_INFORMED';
+
+/** `null` = capacidade não informada (estado de LEITURA, não erro): "Agregar" disponível + nota. Com número: cheia quando vigentes >= número. */
+export function slotCapacityState(providersNeeded: number | null, vigentes: number): SlotCapacityState {
+  if (providersNeeded === null) return 'NOT_INFORMED';
+  return vigentes < providersNeeded ? 'AVAILABLE' : 'FULL';
 }

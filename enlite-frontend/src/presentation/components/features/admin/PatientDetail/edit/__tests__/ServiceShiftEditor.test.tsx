@@ -61,4 +61,29 @@ describe('ServiceShiftEditor', () => {
     fireEvent.click(screen.getByTestId('svc-shift-remove-1-3-0'));
     expect(screen.queryByTestId('svc-shift-start-1-3-0')).toBeNull();
   });
+
+  it('Copiar a… de segunda para terça–sexta (Lun–Vie + Aplicar) acrescenta o turno nos 4 dias', () => {
+    render(<Harness initial={[TURNO]} onValidityChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('svc-shift-copy-1-1'));
+    fireEvent.click(screen.getByTestId('svc-shift-copy-weekdays-1'));
+    fireEvent.click(screen.getByTestId('svc-shift-copy-apply-1'));
+    for (const d of [2, 3, 4, 5]) expect(screen.getByTestId(`svc-shift-start-1-${d}-0`)).toBeTruthy();
+    expect(screen.getByTestId('svc-shift-start-1-1-0')).toBeTruthy();
+  });
+
+  it('destino com turno sobreposto: mantém o existente e mostra o aviso do dia', () => {
+    render(<Harness initial={[TURNO, { dayOfWeek: 2, startTime: '10:00', endTime: '12:00', allDay: false }]} onValidityChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('svc-shift-copy-1-1'));
+    fireEvent.click(screen.getByTestId('svc-shift-copy-target-1-tuesday'));
+    fireEvent.click(screen.getByTestId('svc-shift-copy-apply-1'));
+    expect(screen.getByTestId('svc-shift-copy-conflict-1-2')).toBeTruthy();
+    expect(screen.getByTestId('svc-shift-start-1-2-0')).toBeTruthy();
+    expect(screen.queryByTestId('svc-shift-start-1-2-1')).toBeNull();
+  });
+
+  it('o gatilho só aparece em dia com turno', () => {
+    render(<Harness initial={[TURNO]} onValidityChange={vi.fn()} />);
+    expect(screen.getByTestId('svc-shift-copy-1-1')).toBeTruthy();
+    expect(screen.queryByTestId('svc-shift-copy-1-3')).toBeNull();
+  });
 });

@@ -17,6 +17,7 @@ import {
   cleanupItinerary,
   type ItinerarySeed,
 } from '../helpers/itinerary-db-helper';
+import { digitarDataNoCampo } from '../helpers/itinerario-aba-e2e-helper';
 
 const MOCK_ADMIN_USER = { uid: 'e2e-int-admin-itinerario', email: 'admin.itinerario@e2e.test', role: 'admin' };
 const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
@@ -223,13 +224,15 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     await page.getByTestId('itinerario-novo-btn').click();
     await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('substitution-mode-permanent').click();
-    await page.getByTestId('substitution-date').selectOption({ index: 1 });
     await page.getByTestId('substitution-worker').click();
     // `substituteWorkerId` continua "Selecionado" neste serviço (nunca foi alocado nele — a 1ª
     // `it` só o usou como substituto de UM DIA, não muda a candidatura), mas já cobre uma faixa
     // que se sobrepõe em OUTRO serviço (`seedConflictForSubstitute`, invariante 4: o gatilho de
     // conflito é GLOBAL por worker, não por paciente/serviço).
     await page.getByRole('listbox').getByText(seed.names.substitute).click();
+    // Entero pede motivo e destino (058b/B2): "Ahora" já vem marcado; sem os dois o Confirmar fica desabilitado.
+    await page.getByTestId('substitution-reason').selectOption({ label: 'El prestador desistió' });
+    await page.getByTestId('substitution-destination-RESERVE').click();
     await page.getByTestId('substitution-confirm').click();
 
     const erro = page.getByTestId('itinerario-novo-erro-submit');
@@ -252,10 +255,15 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     await page.getByTestId('itinerario-novo-btn').click();
     await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('substitution-mode-permanent').click();
-    await page.getByTestId('substitution-date').selectOption({ index: 2 });
-    const fromDate = await page.getByTestId('substitution-date').inputValue();
+    await page.getByTestId('substitution-start-scheduled').click();
+    // D = a SEGUNDA seguinte à 1ª segunda (`nextMonday` = 1ª segunda em hoje+1..hoje+7). Com D = `nextMonday` o 1º evento da faixa
+    // (segunda) já cai em D e nunca existe evento "antes de D" para o titular — a asserção abaixo esperava um (medido no CI #712).
+    const fromDate = new Date(Date.parse(`${seed.nextMonday}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+    await digitarDataNoCampo(page, 'substitution-start-date', fromDate);
     await page.getByTestId('substitution-worker').click();
     await page.getByRole('listbox').getByText(seed.names.permanent).click();
+    await page.getByTestId('substitution-reason').selectOption({ label: 'El prestador desistió' });
+    await page.getByTestId('substitution-destination-RESERVE').click();
     await page.getByTestId('substitution-confirm').click();
 
     await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });
@@ -278,7 +286,7 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     expect(novo?.status).toBe('ACTIVE');
     expect(novo?.validTo).toBeNull();
     // Na tela (próximos eventos): antes de D (1ª segunda) o TITULAR; a partir de D o NOVO.
-    // "Antes de D" = o 1º evento com data < fromDate (não `seed.nextMonday`: numa segunda-feira ele coincide com D).
+    // "Antes de D" = o 1º evento com data < fromDate (a `nextMonday`).
     const idEventoAntesDeD = async (): Promise<string> =>
       (await page.locator('[data-testid^="itinerario-evento-prestador-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid') ?? '')))
         .filter((id) => id.slice(-10) < fromDate)[0] ?? '';

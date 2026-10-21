@@ -13,6 +13,7 @@ import { Select } from '@presentation/components/atoms/Select';
 import { SidePanelShell } from './SidePanelShell';
 import { RemoveFromItineraryPanel } from './RemoveFromItineraryPanel';
 import type { ExitDestination } from '@domain/entities/ServiceTeam';
+import { slotCapacityState } from '@domain/entities/PatientItinerary';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { weekdayName } from './substitutionDates';
 import { workerLabel } from './workerLabel';
@@ -26,14 +27,21 @@ interface ItineraryEditAppointmentModalProps {
   options: ServiceTeamMember[] | null;
   /** A vaga viva do serviço — link "ir a la vacante" da Búsqueda de Urgência (D445.7). `null` sem vaga. */
   vacancyId: string | null;
-  currentWorkerId: string | null;
+  /** Todos os prestadores vigentes da faixa (N >= 0); cada um tem o seu "Quitar". */
+  vigentes: ReadonlyArray<{ workerId: string; allocationId: string }>;
+  /** Quantidade de prestadores por faixa do serviço; `null` = não informada (sem limite, com nota). */
+  providersNeeded: number | null;
   onSubmit: (workerId: string) => void;
   onCancel: () => void;
   /**
-   * Fase 4: tirar o prestador ATUAL da faixa, com motivo e destino. Sem ele (ou sem prestador atual) a ação
-   * "Quitar del itinerario" não aparece. A escrita é de quem abre o modal.
+   * Fase 4: tirar UM prestador vigente da faixa, com motivo e destino (e a alocação a encerrar). Sem ele (ou sem
+   * vigentes) a ação "Quitar del itinerario" não aparece. A escrita é de quem abre o modal.
    */
-  onRemove?: (reasonCategory: string, destination: ExitDestination) => void;
+  onRemove?: (reasonCategory: string, destination: ExitDestination, allocationId: string, cancelScheduled?: boolean) => void;
+  /** Aviso de agendamentos futuros (409 do "Quitar"): o painel o mostra; `null`/ausente = sem aviso. */
+  removeScheduled?: { substitutionDates: string[]; futureEntryFrom: string | null } | null;
+  /** "Volver" do aviso: quem abre o modal limpa o `removeScheduled`. */
+  onRemoveScheduledDismiss?: () => void;
   /** Envio do "Quitar" em curso — desabilita o Confirmar do painel. */
   removing?: boolean;
   /** Erro (já traduzido) do último "Quitar"; o painel fica aberto. */
@@ -55,18 +63,21 @@ export function ItineraryEditAppointmentModal({
   addressLabel,
   options,
   vacancyId,
-  currentWorkerId,
+  vigentes,
+  providersNeeded,
   onSubmit,
   onCancel,
   onRemove,
+  removeScheduled,
+  onRemoveScheduledDismiss,
   removing = false,
   removeError = null,
 }: ItineraryEditAppointmentModalProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const tm = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.editModal.${key}`, opts);
-  const [workerId, setWorkerId] = useState(currentWorkerId ?? '');
-  const [showRemove, setShowRemove] = useState(false);
-  const currentMember = currentWorkerId ? (options ?? []).find((m) => m.workerId === currentWorkerId) : undefined;
+  const [workerId, setWorkerId] = useState('');
+  const capacity = slotCapacityState(providersNeeded, vigentes.length);
+  const [removeTarget, setRemoveTarget] = useState<{ workerId: string; allocationId: string } | null>(null);
 
   const workerOptions = (options ?? []).map((member) => ({
     value: member.workerId,
@@ -96,7 +107,7 @@ export function ItineraryEditAppointmentModal({
           size="md"
           className="w-[160px]"
           onClick={() => onSubmit(workerId)}
-          disabled={!workerId}
+          disabled={!workerId || capacity === 'FULL'}
           data-testid="itinerario-editar-guardar"
         >
           {tm('save')}
@@ -138,8 +149,19 @@ export function ItineraryEditAppointmentModal({
         />
       </div>
 
+      {capacity === 'FULL' ? (
+        <Text size="sm" role="status" color="secondary" data-testid="itinerario-faixa-cheia">
+          {tm('capacityFull', { count: vigentes.length })}
+        </Text>
+      ) : (
+        <>
       <div className="flex flex-col gap-1">
-        <Label className={fieldLabel}>{tm('assignWorker')}</Label>
+        <Label className={fieldLabel}>{vigentes.length > 0 ? tm('addWorker') : tm('assignWorker')}</Label>
+        {capacity === 'NOT_INFORMED' && (
+          <Text size="xs" color="secondary" data-testid="itinerario-capacidad-no-informada">
+            {tm('capacityNotInformed')}
+          </Text>
+        )}
         {/* SearchableSelect compact é h-10; o desenho pede o campo de 48px (h-12) com texto #737373 de 14px. */}
         <div className="[&_button]:!h-12 [&_button]:!text-[#737373] [&_button]:!py-0">
           <SearchableSelect
@@ -210,6 +232,8 @@ export function ItineraryEditAppointmentModal({
           </div>
         </div>
       )}
+        </>
+      )}
 
       <div className="flex flex-col gap-4">
         <Heading level={1} as="h3" weight="semibold" color="secondary">
@@ -231,32 +255,38 @@ export function ItineraryEditAppointmentModal({
         )}
       </div>
 
-      {onRemove && currentWorkerId && (
-        <div className="flex flex-col gap-2">
+      {onRemove && vigentes.map((v) => (
+        <div key={v.allocationId} className="flex flex-col gap-2">
           <ActionButton
             resource="patient_itinerary"
             action="update"
             variant="outline"
             size="sm"
             className="self-start"
-            onClick={() => setShowRemove(true)}
-            data-testid={`itinerario-quitar-${currentWorkerId}`}
+            onClick={() => setRemoveTarget(v)}
+            data-testid={`itinerario-quitar-${v.workerId}`}
           >
             {tm('removeFromItinerary')}
           </ActionButton>
         </div>
-      )}
+      ))}
 
       <Text as="p" size="xs" color="secondary" data-testid="itinerario-editar-anacare-aviso">
         {tm('anaCareNotice')}
       </Text>
     </SidePanelShell>
     {/* Irmão do modal, não filho: o modal tem `transform`, que viraria o bloco de contenção do `fixed` do painel. */}
-    {showRemove && onRemove && currentWorkerId && (
+    {removeTarget && onRemove && (
       <RemoveFromItineraryPanel
-        workerLabel={workerLabel(t, currentWorkerId, currentMember?.displayName ?? null)}
-        onConfirm={onRemove}
-        onCancel={() => setShowRemove(false)}
+        workerLabel={workerLabel(t, removeTarget.workerId, (options ?? []).find((m) => m.workerId === removeTarget.workerId)?.displayName ?? null)}
+        onConfirm={(reason, destination, cancelScheduled) =>
+          cancelScheduled === undefined
+            ? onRemove(reason, destination, removeTarget.allocationId)
+            : onRemove(reason, destination, removeTarget.allocationId, cancelScheduled)
+        }
+        scheduled={removeScheduled ?? null}
+        onScheduledDismiss={onRemoveScheduledDismiss}
+        onCancel={() => setRemoveTarget(null)}
         submitting={removing}
         errorMessage={removeError}
       />

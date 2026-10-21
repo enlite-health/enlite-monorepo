@@ -451,7 +451,7 @@ registry.registerPath({
   tags: ['Admin · Patients'],
   summary: 'Horas autorizadas do serviço, com vigência',
   description:
-    'Envelope `{ success, data: { authorizations } }`, ordem `lower(valid) DESC, recorded_at DESC`. Cada item: ' +
+    'Envelope `{ success, data: { authorizations } }`, ordem: início da vigência, depois o fim (mais recente primeiro) e por último o registro. Cada item: ' +
     '`{ id, hours, validFrom, validTo (inclusivo), recordedAt, recordedBy, supersededAt }`; `supersededAt` preenchido = linha corrigida.',
   security: [{ firebaseAuth: [] }],
   request: { params: AUTHORIZATION_PARAMS },

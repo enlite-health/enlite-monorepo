@@ -11,10 +11,9 @@ import { withActorContext } from '@shared/database/actorContext';
 import {
   AuthorizationNotFoundError,
   AuthorizationOverlapsError,
-  exclusiveUpperOf,
-  inclusiveValidToOf,
   type AuthorizationView,
 } from '../domain/ContractedServiceAuthorization';
+import { fromWire, toWire } from '../domain/dateRangeWire';
 
 export interface AuthorizationWrite {
   serviceId: string;
@@ -27,22 +26,22 @@ export interface AuthorizationWrite {
 interface AuthorizationRow {
   id: string;
   hours: string;
-  valid_from: string;
-  valid_upper: string;
+  valid: string;
   recorded_at: Date;
   recorded_by: string;
   superseded_at: Date | null;
 }
 
-const RETURNING = `id, hours::text AS hours, lower(valid)::text AS valid_from, upper(valid)::text AS valid_upper,
-                   recorded_at, recorded_by, superseded_at`;
+const RETURNING = `id, hours::text AS hours, valid::text AS valid, recorded_at, recorded_by, superseded_at`;
 
 function toView(r: AuthorizationRow): AuthorizationView {
+  const wire = toWire(r.valid);
   return {
     id: r.id,
     hours: Number(r.hours),
-    validFrom: r.valid_from,
-    validTo: inclusiveValidToOf(r.valid_upper),
+    validFrom: wire.validFrom,
+    // `csa_valid_fechada` (529) garante vigência fechada: `validTo` nunca é null aqui.
+    validTo: wire.validTo as string,
     recordedAt: r.recorded_at.toISOString(),
     recordedBy: r.recorded_by,
     supersededAt: r.superseded_at ? r.superseded_at.toISOString() : null,
@@ -53,9 +52,9 @@ async function insertRow(cli: PoolClient, w: AuthorizationWrite): Promise<Author
   try {
     const { rows } = await cli.query<AuthorizationRow>(
       `INSERT INTO contracted_service_authorization (contracted_service_id, hours, valid, recorded_by)
-       VALUES ($1, $2, daterange($3::date, $4::date, '[)'), $5)
+       VALUES ($1, $2, $3, $4)
        RETURNING ${RETURNING}`,
-      [w.serviceId, w.hours, w.validFrom, exclusiveUpperOf(w.validTo), w.actorUid],
+      [w.serviceId, w.hours, fromWire({ validFrom: w.validFrom, validTo: w.validTo }), w.actorUid],
     );
     return toView(rows[0]);
   } catch (err: unknown) {
@@ -85,7 +84,7 @@ export class ContractedServiceAuthorizationRepository {
     const { rows } = await this.pool.query<AuthorizationRow>(
       `SELECT ${RETURNING} FROM contracted_service_authorization
         WHERE contracted_service_id = $1
-        ORDER BY lower(valid) DESC, recorded_at DESC`,
+        ORDER BY valid DESC, recorded_at DESC`,
       [serviceId],
     );
     return rows.map(toView);

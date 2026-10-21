@@ -44,7 +44,7 @@ function itinerary(patientId: string, cobertas = 0): PatientItinerary {
   return {
     patientId,
     asOf: '2026-10-07',
-    services: [{ contractedServiceId: S1, scheduleHours: 20, cobertas, reserve: null, slots: [] }],
+    services: [{ contractedServiceId: S1, scheduleHours: 20, cobertas, reserve: null, providersNeeded: null, slots: [] }],
     alerts: [],
     assembledAt: null,
   };

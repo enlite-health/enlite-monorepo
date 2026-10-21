@@ -98,13 +98,15 @@ describe('SubstitutionDayModal — faixa, data e substituto em cascata', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('modo Entero não mostra o campo de motivo (ganha na Fase 6)', () => {
+  it('modo Entero mostra o campo de motivo e o de destino', () => {
     render(
       <SubstitutionDayModal allocations={ONE_SLOT} selected={SELECTED} asOf={ASOF} onSubmit={vi.fn()} onSubmitPermanent={vi.fn()} onCancel={vi.fn()} />,
     );
     expect(screen.getByTestId('substitution-reason')).toBeTruthy();
+    expect(screen.queryByTestId('substitution-destination')).toBeNull();
     fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
-    expect(screen.queryByTestId('substitution-reason')).toBeNull();
+    expect(screen.getByTestId('substitution-reason')).toBeTruthy();
+    expect(screen.getByTestId('substitution-destination')).toBeTruthy();
   });
 
   it('as 8 datas do Select batem com nextDatesOfWeekday', () => {
@@ -212,7 +214,7 @@ describe('SubstitutionDayModal — modo Entero (D445.5, reemplazo permanente)', 
     expect(listbox.getByText('Dana Fixture')).toBeTruthy();
   });
 
-  it('confirmar no modo Entero chama onSubmitPermanent(allocationId, workerId, date) — nunca onSubmit', () => {
+  it('confirmar no modo Entero chama onSubmitPermanent(allocationId, workerId, fromDate, motivo, destino)', () => {
     const onSubmit = vi.fn();
     const onSubmitPermanent = vi.fn();
     render(
@@ -226,14 +228,14 @@ describe('SubstitutionDayModal — modo Entero (D445.5, reemplazo permanente)', 
       />,
     );
     fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
-    const firstDate = nextDatesOfWeekday(ASOF, 1, 8)[0];
-    fireEvent.change(dateSelect(), { target: { value: firstDate } });
 
     fireEvent.click(screen.getByTestId('substitution-worker'));
     fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
+    fireEvent.change(reasonSelect(), { target: { value: 'OTHER' } });
+    fireEvent.click(screen.getByTestId('substitution-destination-RESERVE'));
 
     fireEvent.click(screen.getByTestId('substitution-confirm'));
-    expect(onSubmitPermanent).toHaveBeenCalledWith('alloc-1', 'w-sel-1', firstDate);
+    expect(onSubmitPermanent).toHaveBeenCalledWith('alloc-1', 'w-sel-1', ASOF, 'OTHER', 'RESERVE');
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -249,8 +251,80 @@ describe('SubstitutionDayModal — modo Entero (D445.5, reemplazo permanente)', 
       />,
     );
     fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
-    const firstDate = nextDatesOfWeekday(ASOF, 1, 8)[0];
-    fireEvent.change(dateSelect(), { target: { value: firstDate } });
     expect((screen.getByTestId('substitution-confirm') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  function renderPermanent(onSubmitPermanent = vi.fn()) {
+    render(
+      <SubstitutionDayModal
+        allocations={ONE_SLOT}
+        selected={SELECTED}
+        asOf={ASOF}
+        onSubmit={vi.fn()}
+        onSubmitPermanent={onSubmitPermanent}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
+    return onSubmitPermanent;
+  }
+
+  it('Entero: o select de data do modo complementar não aparece; aparecem "Ahora" e "Programada"', () => {
+    renderPermanent();
+    expect(screen.queryByTestId('substitution-date')).toBeNull();
+    expect(screen.getByTestId('substitution-start-now')).toBeChecked();
+    expect(screen.getByTestId('substitution-start')).toHaveTextContent('Ahora');
+    expect(screen.getByTestId('substitution-start')).toHaveTextContent('Programada');
+    expect(screen.queryByTestId('substitution-start-date')).toBeNull();
+  });
+
+  it('Programada exige data posterior a hoje: sem data ou com a data de hoje o Confirmar fica desabilitado; com amanhã habilita e envia essa data', () => {
+    const onSubmitPermanent = renderPermanent();
+    fireEvent.click(screen.getByTestId('substitution-worker'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
+    const confirm = screen.getByTestId('substitution-confirm') as HTMLButtonElement;
+    fireEvent.click(screen.getByTestId('substitution-start-scheduled'));
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('substitution-start-date'), { target: { value: ASOF } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('substitution-start-date'), { target: { value: '2026-09-29' } });
+    fireEvent.change(reasonSelect(), { target: { value: 'OTHER' } });
+    fireEvent.click(screen.getByTestId('substitution-destination-RESERVE'));
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    expect(onSubmitPermanent).toHaveBeenCalledWith('alloc-1', 'w-sel-1', '2026-09-29', 'OTHER', 'RESERVE');
+  });
+
+  it('Entero: sem motivo ou sem destino o Confirmar fica desabilitado', () => {
+    renderPermanent();
+    fireEvent.click(screen.getByTestId('substitution-worker'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
+    const confirm = screen.getByTestId('substitution-confirm') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(reasonSelect(), { target: { value: 'OTHER' } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('substitution-destination-RESERVE'));
+    expect(confirm.disabled).toBe(false);
+  });
+
+  it('Programada: LEAVE_SERVICE fica desabilitado e a frase da reserva aparece com a data; Ahora: LEAVE_SERVICE habilitado', () => {
+    renderPermanent();
+    expect(screen.getByTestId('substitution-destination-LEAVE_SERVICE')).not.toBeDisabled();
+    expect(screen.queryByTestId('substitution-reserve-only')).toBeNull();
+    fireEvent.click(screen.getByTestId('substitution-start-scheduled'));
+    fireEvent.change(screen.getByTestId('substitution-start-date'), { target: { value: '2026-09-29' } });
+    expect(screen.getByTestId('substitution-destination-LEAVE_SERVICE')).toBeDisabled();
+    expect(screen.getByTestId('substitution-reserve-only')).toHaveTextContent('desde el 29/09');
+    fireEvent.click(screen.getByTestId('substitution-start-now'));
+    expect(screen.getByTestId('substitution-destination-LEAVE_SERVICE')).not.toBeDisabled();
+  });
+
+  it('trocar para Programada com LEAVE_SERVICE já escolhido limpa o destino', () => {
+    renderPermanent();
+    fireEvent.click(screen.getByTestId('substitution-destination-LEAVE_SERVICE'));
+    expect(screen.getByTestId('substitution-destination-LEAVE_SERVICE')).toBeChecked();
+    fireEvent.click(screen.getByTestId('substitution-start-scheduled'));
+    expect(screen.getByTestId('substitution-destination-LEAVE_SERVICE')).not.toBeChecked();
+    expect(screen.getByTestId('substitution-destination-RESERVE')).not.toBeChecked();
   });
 });

@@ -226,20 +226,20 @@ class AdminContractedServicesApiServiceClass {
 
   /**
    * POST .../itinerary/allocations/:allocationId/replace (D445.5) — reemplazo permanente: encerra
-   * o titular em D-1 e cria o novo a partir de `fromDate`, 1 transação. 409 `ITINERARY_OVERLAP` /
-   * 422 `REPLACEMENT_DATE_IN_PAST`/`NOT_SELECTED_FOR_SERVICE` viram `ContractedServiceApiError`.
+   * o titular em D-1 e cria o novo a partir de `fromDate`, 1 transação, com motivo e destino (058).
+   * 409 `ITINERARY_OVERLAP` / 422 `REPLACEMENT_DATE_IN_PAST`/`NOT_SELECTED_FOR_SERVICE`/`REASON_*`/
+   * `DESTINATION_REQUIRED`/`DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED` viram `ContractedServiceApiError` (`err.code`).
    */
   async replaceAllocation(
     patientId: string,
     serviceId: string,
     allocationId: string,
-    newWorkerId: string,
-    fromDate: string,
+    body: { newWorkerId: string; fromDate: string; reasonCategory: string; destination: ExitDestination },
   ): Promise<ItineraryReplaceResult> {
     return this.request<ItineraryReplaceResult>(
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/replace`,
-      { newWorkerId, fromDate },
+      body,
     );
   }
 
@@ -273,12 +273,14 @@ class AdminContractedServicesApiServiceClass {
    * motivo (código do catálogo) e destino (`RESERVE` segue como reserva; `LEAVE_SERVICE` sai do encuadre
    * do serviço). 422 vira `ContractedServiceApiError` com o `code` (`REASON_REQUIRED`, `REASON_INVALID`,
    * `DESTINATION_REQUIRED`, `ALLOCATION_NOT_ACTIVE`, `SERVICE_TEAM_WORKER_ALLOCATED` …).
+   * 409 `WORKER_HAS_SCHEDULED_ATTENDANCES` traz `err.details = { substitutionDates: string[]; futureEntryFrom: string | null }`
+   * (só com `LEAVE_SERVICE` e sem `cancelScheduled: true`).
    */
   async endAllocation(
     patientId: string,
     serviceId: string,
     allocationId: string,
-    body: { reasonCategory: string; destination: ExitDestination },
+    body: { reasonCategory: string; destination: ExitDestination; cancelScheduled?: boolean },
   ): Promise<ItineraryRemoveResult> {
     return this.request<ItineraryRemoveResult>(
       'POST',

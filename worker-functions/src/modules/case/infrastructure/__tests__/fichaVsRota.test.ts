@@ -2,7 +2,7 @@
  * "Ficha × rota" (SC-001, spec 058 T055, D-44): o MESMO serviço, com o MESMO `requestNow`, devolve `asOf`, `payer`, `payerHistory`,
  * `price`, `tax` e `coverageMatch` idênticos pela ficha (`mapContractedServices`) e pela rota (`PatientContractedServiceRepository`,
  * via `decorate`) — porque os dois chamam as MESMAS funções em lote. Banco falso roteado por SQL (a prova contra o Postgres real é de
- * `tests/e2e/058a-ficha-vs-rota.e2e.test.ts`, A1.7). Schedule/authorization são da Parte B.
+ * `tests/e2e/058a-ficha-vs-rota.e2e.test.ts`, A1.7). Schedule/authorization entram na B (SC-001 estendido): o objeto INTEIRO é idêntico.
  */
 const mockPoolQuery = jest.fn();
 jest.mock('@shared/database/DatabaseConnection', () => ({
@@ -21,7 +21,7 @@ const NOW = new Date('2026-10-19T02:00:00Z');
 const ASOF = '2026-10-18';
 
 const base = {
-  patient_id: 'pat-1', service_code: 'AT', professional_profile: null, providers_needed: 1, authorized_hours: null, weekly_hours: null,
+  patient_id: 'pat-1', service_code: 'AT', professional_profile: null, providers_needed: 1, weekly_hours: null,
   care_location: null, start_date: null, supervision_frequency: null, guard_shift: null, provider_age_band: null, address_id: null,
   schedule: null, required_professions: null, required_sex: null, required_experience: null, worker_attributes: null, work_schedule: null,
   payment_day: null, daily_obs: null, active: true, ended_at: null, country: 'AR', created_at: '2026-09-03T00:00:00Z', updated_at: '2026-09-03T00:00:00Z',
@@ -84,6 +84,28 @@ describe('ficha × rota (SC-001)', () => {
       expect(daRota).not.toBeNull();
       expect(pick(daRota!)).toEqual(pick(f));
     }
+  });
+
+  it('ficha × rota: o ContractedServiceDetail INTEIRO é idêntico, com agenda e autorização vindas do banco falso, mesmo requestNow', async () => {
+    const FAIXA = { dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 };
+    const comAgendaEAutorizacao = (sql: string, params: unknown[]): unknown[] | undefined => {
+      const ids = (Array.isArray(params[0]) ? params[0] : [params[0]]) as string[];
+      if (/horario_do_servico/.test(sql)) return ids.includes('s1') ? [{ id: 's1', schedule: [FAIXA] }] : [];
+      if (/FROM contracted_service_authorization/.test(sql)) {
+        return ids.includes('s1') ? [{ contracted_service_id: 's1', id: 'a1', hours: '40', valid: '[2026-01-01,2027-01-01)' }] : [];
+      }
+      return undefined;
+    };
+    const daFicha = await ficha(fakeDb(comAgendaEAutorizacao));
+    for (const id of ['s1', 's2', 's3']) {
+      const daRota = await rota(fakeDb(comAgendaEAutorizacao), id);
+      expect(daRota).toEqual(daFicha.find((s) => s.id === id));
+    }
+    const [s1, s2] = daFicha;
+    expect(s1.schedule).toEqual([FAIXA]);
+    expect(s1.authorization).toEqual({ id: 'a1', hours: 40, validFrom: '2026-01-01', validTo: '2026-12-31' });
+    expect(s2.schedule).toBeNull();
+    expect(s2.authorization).toBeNull();
   });
 
   it('o conteúdo comparado é o esperado (não duas leituras vazias iguais): vínculo OSDE com preço, sem vínculo, particular sem termo', async () => {

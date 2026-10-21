@@ -26,6 +26,8 @@ import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkServi
 import { reportError, loggingAls } from '@shared/logging';
 import { withSystemDbContext } from '@shared/database/requestDbSession';
 import { vacancyRawColumnsSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { withActorContext } from '@shared/database/actorContext';
+import { countVigenteForVacancy } from '@modules/case';
 
 const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
@@ -84,6 +86,13 @@ async function tryPurgeShortLinks(pool: Pool, vacancyId: string): Promise<void> 
  */
 function extractHumanActor(req: Request): HumanActor {
   return { ...vacancyActorFromRequest(req, 'admin_panel'), actorType: 'HUMAN' };
+}
+
+class VacancyNotFound extends Error {}
+class VacancyHasAllocations extends Error {
+  constructor(readonly count: number) {
+    super('vacancy has active allocations');
+  }
 }
 
 /**
@@ -354,44 +363,30 @@ export class VacancyCrudController {
       const { id } = req.params;
       const actor = extractHumanActor(req);
 
-      const client = await this.db.connect();
-      try {
-        await client.query('BEGIN');
-
-        // Snapshot before soft-delete
+      await withActorContext(this.db, async (client) => {
+        // Snapshot before soft-delete (FOR UPDATE: segura a vaga contra delete concorrente)
         const beforeResult = await client.query<Record<string, unknown>>(
-          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL`,
+          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
           [id],
         );
-        if (beforeResult.rows.length === 0) {
-          await client.query('ROLLBACK');
-          res.status(404).json({ success: false, error: 'Vacancy not found' });
-          return;
-        }
+        if (beforeResult.rows.length === 0) throw new VacancyNotFound();
         const before = beforeResult.rows[0];
+
+        // 058 P6: vaga com alocação vigente no itinerário não se apaga. A probe roda NO client do ator (RLS) e toma o lock do serviço.
+        const vigentes = await countVigenteForVacancy(client, id, new Date());
+        if (vigentes > 0) throw new VacancyHasAllocations(vigentes);
 
         const result = await client.query<{ id: string }>(
           `UPDATE job_postings SET status = 'CLOSED', deleted_at = NOW(), updated_at = NOW()
            WHERE id = $1 RETURNING id`,
           [id],
         );
-        if (result.rows.length === 0) {
-          await client.query('ROLLBACK');
-          res.status(404).json({ success: false, error: 'Vacancy not found' });
-          return;
-        }
+        if (result.rows.length === 0) throw new VacancyNotFound();
 
         // auditVacancyDeleted uses logEventSafe (SAVEPOINT) — FK failure cannot
         // abort this transaction; the soft-delete always commits.
         await auditVacancyDeleted(client, id, before, actor);
-
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
+      });
 
       // Free Short.io quota — the deleted vacancy's links will never be shared again.
       setImmediate(() => {
@@ -400,6 +395,14 @@ export class VacancyCrudController {
 
       res.status(200).json({ success: true, message: 'Vacancy deleted successfully' });
     } catch (error: unknown) {
+      if (error instanceof VacancyNotFound) {
+        res.status(404).json({ success: false, error: 'Vacancy not found' });
+        return;
+      }
+      if (error instanceof VacancyHasAllocations) {
+        res.status(409).json({ success: false, code: 'VACANCY_HAS_ACTIVE_ALLOCATIONS', error: 'Vacancy has active itinerary allocations', details: { count: error.count } });
+        return;
+      }
       const msg = error instanceof Error ? error.message : String(error);
       reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyCrudController:deleteVacancy', vacancyId: req.params.id });
       res.status(500).json({ success: false, error: 'Failed to delete vacancy', details: msg });

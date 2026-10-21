@@ -36,7 +36,7 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
-  providersNeeded: 2, authorization: null, legacyAuthorizedHours: 20, scheduleHours: 20, careLocation: 'HOME',
+  providersNeeded: 2, authorization: null, scheduleHours: 20, careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS, startDate: '2026-09-01T00:00:00.000Z', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: ['AT'], requiredSex: 'F', requiredExperience: 'exp-sintetica', workerAttributes: 'atrib-sintetico', workSchedule: 'part-time', paymentDay: 'dia 5', dailyObs: 'obs-sintetica',
   addressId: null,

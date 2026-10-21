@@ -62,3 +62,17 @@ export function slotAllocationsInDom(page: Page, slotId: string): Locator {
 export function countSlotAllocationsInDom(page: Page, slotId: string): Promise<number> {
   return slotAllocationsInDom(page, slotId).count();
 }
+
+/**
+ * Digita uma data num `<input type="date">` como um humano e lê o valor de volta da TELA. Os segmentos do Chromium seguem o idioma
+ * da UI do navegador (en-US → MMDDYYYY), NÃO o `locale` do contexto: digitar `ddmmaaaa` dava `102026-02-07` no CI (#712).
+ */
+export async function digitarDataNoCampo(page: Page, testId: string, iso: string): Promise<void> {
+  const [y, m, d] = iso.split('-');
+  const campo = page.getByTestId(testId);
+  await campo.click();
+  await expect(campo).toBeFocused();
+  for (let i = 0; i < 3; i += 1) await page.keyboard.press('ArrowLeft');
+  await page.keyboard.type(`${m}${d}${y}`);
+  await expect(campo).toHaveValue(iso);
+}

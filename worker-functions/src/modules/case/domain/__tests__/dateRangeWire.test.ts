@@ -2,7 +2,7 @@
  * dateRangeWire.test.ts — spec 058 T046. Teste de contrato da conversão daterange `[)` <-> wire (única dona).
  * Os 4 testes numerados (i–iv) são os que a SABOTAGEM "somar 1 dia a validTo em toWire" derruba; os demais não dependem de validTo não nulo.
  */
-import { dayAfter, fromWire, isSameStart, reinsertClosed, toWire } from '../dateRangeWire';
+import { closeRangeAt, dayAfter, fromWire, isSameStart, reinsertClosed, toWire } from '../dateRangeWire';
 
 describe('dateRangeWire', () => {
   it('(i) fronteira de 1 dia: [2026-03-01,2026-04-01) <-> validTo 2026-03-31 (inclusivo no fio, exclusivo no banco)', () => {
@@ -49,5 +49,21 @@ describe('dateRangeWire', () => {
 
   it('ida e volta de faixa aberta: fromWire(toWire(x)) = x', () => {
     expect(fromWire(toWire('[2026-03-01,)'))).toBe('[2026-03-01,)');
+  });
+
+  it('closeRangeAt: [desde,) fechada em hoje vira [desde,hoje)', () => {
+    expect(closeRangeAt('[2026-10-01,)', '2026-10-18')).toBe('[2026-10-01,2026-10-18)');
+  });
+
+  it('closeRangeAt: faixa que já tinha fim também fecha em hoje', () => {
+    expect(closeRangeAt('[2026-10-01,2026-12-01)', '2026-10-18')).toBe('[2026-10-01,2026-10-18)');
+  });
+
+  it('closeRangeAt vazio: nascida hoje e fechada hoje vira empty', () => {
+    expect(closeRangeAt('[2026-10-18,)', '2026-10-18')).toBe('empty');
+  });
+
+  it('closeRangeAt: hoje anterior ao início lança', () => {
+    expect(() => closeRangeAt('[2026-10-18,)', '2026-10-17')).toThrow(/anterior/);
   });
 });

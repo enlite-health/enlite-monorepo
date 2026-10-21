@@ -79,6 +79,10 @@ export const itineraryReplaceBodySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .refine(isRealCalendarDate, { message: 'fromDate must be a real calendar date' }),
+  // Motivo e destino: AUSENTES não viram 400 da borda — são 422 `REASON_REQUIRED` / `DESTINATION_REQUIRED` do caso de uso
+  // (mesmo molde de `itineraryEndBodySchema`). O zod garante só a FORMA (string).
+  reasonCategory: z.string().nullish(),
+  destination: z.string().nullish(),
 });
 
 export type ItineraryReplaceBody = z.infer<typeof itineraryReplaceBodySchema>;
@@ -91,6 +95,8 @@ export type ItineraryReplaceBody = z.infer<typeof itineraryReplaceBodySchema>;
 export const itineraryEndBodySchema = z.object({
   reasonCategory: z.string().nullish(),
   destination: z.string().nullish(),
+  // 058 P5c: confirma o cancelamento dos agendamentos do prestador (aviso). Ausente/false = só avisar (409).
+  cancelScheduled: z.boolean().optional(),
 });
 
 export type ItineraryEndBody = z.infer<typeof itineraryEndBodySchema>;

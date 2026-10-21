@@ -279,3 +279,4 @@ export {
 } from './interfaces/validators/publicLeadSchema';
 export type { PublicLeadBody, LeadServiceSlug } from './interfaces/validators/publicLeadSchema';
 export { ServiceHoursSummaryReader } from './infrastructure/ServiceHoursSummaryReader';
+export { countVigenteForVacancy } from './infrastructure/VacancyAllocationProbe';

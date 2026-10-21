@@ -91,6 +91,7 @@ export interface ItineraryAllocationWriterPort {
   endAllocation(client: PoolClient, id: string, today: string, actorUid: string): Promise<number>;
   /** D445.5: agenda o FIM (`valid_to`) sem mudar o `status` — a alocação segue `ACTIVE`, vigente até o último dia. */
   scheduleAllocationEnd(client: PoolClient, id: string, lastDay: string, actorUid: string): Promise<number>;
+  cancelAllocation(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<number>;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -152,6 +153,18 @@ export interface ItineraryReplaceResult {
   newWorkerId: string;
   validFrom: string;
   status: 'ACTIVE';
+}
+
+export interface ItineraryReplaceWithOptions {
+  derive: boolean;
+  /** Roda DEPOIS de todas as leituras/validações e ANTES da 1ª escrita; quem compõe valida o que depende de `today` (Caso B + LEAVE_SERVICE). */
+  beforeWrite?: (ctx: { today: string }) => void;
+}
+
+/** `replace` + o que o composto precisa: o titular que sai (registro de trocas) e o "hoje" do país. */
+export interface ItineraryReplaceWithResult extends ItineraryReplaceResult {
+  outgoingWorkerId: string | null;
+  today: string;
 }
 
 /** A data de início do reemplazo é anterior a hoje (data de operação do país) — a passada é sempre recusada. */
@@ -258,56 +271,69 @@ export class ItineraryAllocationUseCase {
    * `inPatientTransaction`/`withActorContext`).
    */
   async replace(input: ItineraryReplaceInput): Promise<ItineraryReplaceResult> {
+    const r = await this.runInTransaction((client) => this.replaceWith(client, input, { derive: true }));
+    return { endedAllocationId: r.endedAllocationId, endedValidTo: r.endedValidTo, newAllocationId: r.newAllocationId, newWorkerId: r.newWorkerId, validFrom: r.validFrom, status: r.status };
+  }
+
+  async replaceWith(client: PoolClient, input: ItineraryReplaceInput, opts: ItineraryReplaceWithOptions): Promise<ItineraryReplaceWithResult> {
     const { patientId, serviceId, allocationId, newWorkerId, fromDate, actorUid, now = new Date() } = input;
-    return this.runInTransaction(async (client) => {
-      const allocation = await this.writer.findAllocation(client, patientId, serviceId, allocationId);
-      if (allocation === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
-      if (allocation.status !== 'ACTIVE') throw new AllocationNotActiveError(allocationId);
-      if (allocation.slotId === undefined) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+    const allocation = await this.writer.findAllocation(client, patientId, serviceId, allocationId);
+    if (allocation === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+    if (allocation.status !== 'ACTIVE') throw new AllocationNotActiveError(allocationId);
+    if (allocation.slotId === undefined) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
 
-      const row = await this.reader.readWith(client, patientId, serviceId);
-      if (row === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+    const row = await this.reader.readWith(client, patientId, serviceId);
+    if (row === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
 
-      const today = operationDateOf(row.country, now);
-      if (fromDate < today) throw new ReplacementDateInPastError(allocationId, fromDate);
+    const today = operationDateOf(row.country, now);
+    if (fromDate < today) throw new ReplacementDateInPastError(allocationId, fromDate);
 
-      const pool = deriveAllocationPoolFromRows(row, now);
-      if (!canAllocate(pool, newWorkerId)) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
-      if (row.liveVacancyId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
-      const applicationId = await this.writer.findApplicationId(client, newWorkerId, row.liveVacancyId);
-      if (applicationId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
+    const pool = deriveAllocationPoolFromRows(row, now);
+    if (!canAllocate(pool, newWorkerId)) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
+    if (row.liveVacancyId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
+    const applicationId = await this.writer.findApplicationId(client, newWorkerId, row.liveVacancyId);
+    if (applicationId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
 
-      // (i) agenda o fim do titular em D-1 (`GREATEST(valid_from, D-1)`, nunca antes do início).
-      // NÃO usa `endAllocation`: aquele grava `status='ENDED'`, e toda leitura de vigência
-      // (`isVigenteAt`, horas cobertas, estado do paciente, eventos, conflito 482/484) exige
-      // `ACTIVE` — com `ENDED` + `valid_to` FUTURO o titular sairia HOJE. O titular fica `ACTIVE`
-      // com `valid_to = D-1`: trabalha até D-1, e o novo entra em D.
-      const dMinus1 = addDaysToDateString(fromDate, -1);
-      const endRowCount = await this.writer.scheduleAllocationEnd(client, allocation.id, dMinus1, actorUid);
-      if (endRowCount === 0) throw new AllocationNotActiveError(allocationId);
+    opts.beforeWrite?.({ today });
 
-      // (ii) cria a nova a partir de D, no MESMO slot — a 482/484 já libera porque o titular
-      // encerrou ANTES de D (sem sobreposição consigo mesmo).
-      let inserted: InsertedAllocation;
-      try {
-        inserted = await this.writer.insertAllocation(client, { slotId: allocation.slotId, workerId: newWorkerId, applicationId, validFrom: fromDate, actorUid });
-      } catch (err) {
-        const overlap = fromPgError(err as PgOverlapLikeError);
-        if (overlap !== null) throw overlap;
-        if (isOpenPairConflict(err)) throw new AlreadyAllocatedInSlotError(allocation.slotId, newWorkerId);
-        throw err;
-      }
+    // (i) agenda o fim do titular em D-1 (`GREATEST(valid_from, D-1)`, nunca antes do início).
+    // NÃO usa `endAllocation`: aquele grava `status='ENDED'`, e toda leitura de vigência
+    // (`isVigenteAt`, horas cobertas, estado do paciente, eventos, conflito 482/484) exige
+    // `ACTIVE` — com `ENDED` + `valid_to` FUTURO o titular sairia HOJE. O titular fica `ACTIVE`
+    // com `valid_to = D-1`: trabalha até D-1, e o novo entra em D.
+    const dMinus1 = addDaysToDateString(fromDate, -1);
+    // Titular que começa em D ou depois (Caso A com `valid_from = hoje`): nunca atendeu. `valid_to = D-1` ficaria antes do início
+    // (o `GREATEST` do writer o traz de volta a `valid_from`) e dois vigentes no mesmo dia — a Trava A (limite 1) recusaria.
+    // Cancela em vez de agendar o fim (⚑ padrão: plan §1 P5b, resultado esperado do T240(b)).
+    const endRowCount =
+      allocation.validFrom >= fromDate
+        ? await this.writer.cancelAllocation(client, allocation.id, fromDate, actorUid)
+        : await this.writer.scheduleAllocationEnd(client, allocation.id, dMinus1, actorUid);
+    if (endRowCount === 0) throw new AllocationNotActiveError(allocationId);
 
-      await this.derivation.run(client, patientId, now);
+    // (ii) cria a nova a partir de D, no MESMO slot — a 482/484 já libera porque o titular
+    // encerrou ANTES de D (sem sobreposição consigo mesmo).
+    let inserted: InsertedAllocation;
+    try {
+      inserted = await this.writer.insertAllocation(client, { slotId: allocation.slotId, workerId: newWorkerId, applicationId, validFrom: fromDate, actorUid });
+    } catch (err) {
+      const overlap = fromPgError(err as PgOverlapLikeError);
+      if (overlap !== null) throw overlap;
+      if (isOpenPairConflict(err)) throw new AlreadyAllocatedInSlotError(allocation.slotId, newWorkerId);
+      throw err;
+    }
 
-      return {
-        endedAllocationId: allocation.id,
-        endedValidTo: dMinus1,
-        newAllocationId: inserted.id,
-        newWorkerId,
-        validFrom: inserted.validFrom,
-        status: 'ACTIVE' as const,
-      };
-    });
+    if (opts.derive) await this.derivation.run(client, patientId, now);
+
+    return {
+      endedAllocationId: allocation.id,
+      endedValidTo: dMinus1,
+      newAllocationId: inserted.id,
+      newWorkerId,
+      validFrom: inserted.validFrom,
+      status: 'ACTIVE' as const,
+      outgoingWorkerId: allocation.workerId ?? null,
+      today,
+    };
   }
 }

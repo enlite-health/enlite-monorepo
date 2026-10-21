@@ -25,7 +25,7 @@ beforeAll(async () => {
 
 const BASE: PatientContractedServiceDetail = {
   id: 'svc-1', patientId: 'pat-1', serviceCode: 'CAREGIVER', professionalProfile: null,
-  providersNeeded: null, authorization: null, legacyAuthorizedHours: null, scheduleHours: 0, careLocation: null,
+  providersNeeded: null, authorization: null, scheduleHours: 0, careLocation: null,
   ...CONTRACT_058_DEFAULTS, startDate: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, liveVacancy: null, liveVacancyRedacted: false,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [],
@@ -33,6 +33,11 @@ const BASE: PatientContractedServiceDetail = {
 };
 
 describe('ContractedServiceDetailDrawer', () => {
+  it('não mostra horas autorizadas (a autorização corrente mora no editor; o legado saiu)', () => {
+    render(<ContractedServiceDetailDrawer service={{ ...BASE, authorization: { id: 'a1', hours: 40, validFrom: '2026-01-01', validTo: '2026-12-31' } }} addresses={[]} onClose={vi.fn()} />);
+    expect(screen.queryByTestId('svc-detail-authorized-hours')).toBeNull();
+  });
+
   it('serviço mínimo: todo campo vazio vira "—"/rótulo; sem badge de baixa; sem perfil', () => {
     const { container } = render(<ContractedServiceDetailDrawer service={BASE} addresses={[]} onClose={vi.fn()} />);
     expect(screen.getByTestId('svc-detail-devices').textContent).toContain('—');

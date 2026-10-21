@@ -54,7 +54,7 @@ describe('PatientItineraryReader', () => {
     queryImpl = async (sql) => {
       if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
       if (/FROM patient_contracted_services/.test(sql)) {
-        return { rows: [{ id: 'svc-1' }], rowCount: 1 };
+        return { rows: [{ id: 'svc-1', providers_needed: 3 }], rowCount: 1 };
       }
       if (/FROM patient_itinerary_absence/.test(sql)) {
         return {
@@ -94,7 +94,7 @@ describe('PatientItineraryReader', () => {
 
     expect(result).toEqual({
       country: 'AR',
-      services: [{ id: 'svc-1', }],
+      services: [{ id: 'svc-1', providersNeeded: 3 }],
       slots: [
         {
           id: 'slot-1',
@@ -134,6 +134,21 @@ describe('PatientItineraryReader', () => {
     expect(c.every((x) => !/contracted_service_providers|phone/i.test(x.sql))).toBe(true);
     expect(slotsQuery?.sql).toMatch(/w\.first_name_encrypted/);
     expect(slotsQuery?.sql).toMatch(/LEFT JOIN workers w ON w\.id = a\.worker_id/);
+  });
+
+  it('providersNeeded: NULL do banco vira null (nunca 1) e 3 vira 3', async () => {
+    const lerCom = async (valor: number | null) => {
+      queryImpl = async (sql) => {
+        if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
+        if (/FROM patient_contracted_services/.test(sql)) return { rows: [{ id: 'svc-1', providers_needed: valor }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      };
+      return reader.readPatientItinerary(PID);
+    };
+    const nulo = await lerCom(null);
+    expect(nulo!.services[0].providersNeeded).toBeNull();
+    const tres = await lerCom(3);
+    expect(tres!.services[0].providersNeeded).toBe(3);
   });
 
   it('[Fase 3] assembledAt = max(assembled_at) em ISO UTC, lido no mesmo client (dentro do BEGIN…COMMIT); sem linha de montagem → null', async () => {

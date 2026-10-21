@@ -3280,7 +3280,6 @@
         "onlyFichaNote": "Somente ficha: não é copiado para a vaga.",
         "freeTextHint": "Não incluir informação de saúde do paciente nem o motivo dos requisitos.",
         "providersNeeded": "Prestadores necessários",
-        "authorizedHours": "Horas autorizadas",
         "weeklyHours": "Horas semanais",
         "careLocation": "Local de atendimento",
         "startDate": "Data de início",
@@ -3293,6 +3292,8 @@
         "providerInactive": "Baixado",
         "createServiceError": "Não foi possível criar o serviço",
         "updateServiceError": "Não foi possível atualizar o serviço",
+        "providersNeededBelowOccupancy": "Não é possível baixar a quantidade de prestadores abaixo dos já alocados no itinerário.",
+        "providersNeededCannotClear": "Depois de informada, a quantidade de prestadores não pode ficar vazia.",
         "deactivateServiceError": "Não foi possível dar baixa no serviço",
         "selectServiceCode": "Serviço",
         "selectWorker": "Selecione um prestador",
@@ -3311,6 +3312,8 @@
         "requiredField": "Este campo é obrigatório",
         "serviceAddress": "Endereço",
         "serviceAddressHint": "Onde ESTE serviço é prestado. Cada serviço se vincula a um endereço do paciente; a vaga nasce ali.",
+        "addressLockedLiveVacancy": "Não é possível alterar o endereço: o serviço tem uma vaga ativa. Se o local mudou, crie um serviço novo.",
+        "addressLockedAllocation": "Não é possível alterar o endereço: o serviço já tem prestadores alocados no itinerário. Se o local mudou, crie um serviço novo.",
         "serviceSchedule": "Horários",
         "serviceScheduleHint": "Opcional para salvar. Mas sem horário o paciente não pode passar a ativo, busca nem substituição.",
         "serviceScheduleNone": "Este serviço ainda não tem horário. Você pode salvar assim, mas o paciente não vai poder passar a ativo, busca nem substituição até você preenchê-lo.",
@@ -3349,7 +3352,6 @@
           "save": "Salvar autorização",
           "current": "Vigente: {{hours}} h de {{from}} a {{to}}",
           "none": "Sem autorização vigente",
-          "legacy": "Valor anterior, sem vigência: {{hours}} h",
           "overlaps": "Já existe uma autorização vigente que se sobrepõe a esse período.",
           "needsEnd": "A autorização precisa de data de fim.",
           "saveError": "Não foi possível salvar a autorização."
@@ -3858,7 +3860,6 @@
           "tableProfessional": "Serviço",
           "tableProvidersNeeded": "Prest. necessários",
           "tableWeeklyHours": "Hs. semanais",
-          "tableAuthorizedHours": "Hs. autorizadas",
           "tableLocation": "Local de Atendimento",
           "tableValue": "Valor",
           "tableValueRedacted": "🔒",
@@ -4001,7 +4002,12 @@
             "reason": "Motivo",
             "reasonPlaceholder": "Motivo da troca",
             "reasonLoadError": "Não foi possível carregar os motivos.",
-            "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente."
+            "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente.",
+            "startLabel": "Início da substituição",
+            "startNow": "Agora",
+            "startScheduled": "Programada",
+            "scheduledDate": "Data de início",
+            "scheduledReserveOnly": "Com início programado o prestador atual segue até o dia anterior, por isso só pode ficar como reserva. Para tirá-lo do encuadre, remova-o do itinerário a partir de {{date}}."
           }
         },
         "itinerary": {
@@ -4045,14 +4051,24 @@
             "noVacancy": "Este serviço não tem uma vaga ativa.",
             "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente.",
             "removeFromItinerary": "Tirar do itinerário",
-            "cancel": "Fechar"
+            "cancel": "Fechar",
+            "addWorker": "Adicionar profissional",
+            "capacityFull": "Faixa completa: já há {{count}} alocados, que é o que o serviço precisa. Remova um ou aumente a quantidade de prestadores do serviço para incluir outro.",
+            "capacityNotInformed": "O serviço não tem a quantidade de prestadores cadastrada: a faixa não tem limite."
           },
           "removePanel": {
             "title": "Tirar do itinerário",
             "worker": "Prestador: {{worker}}",
             "reason": "Motivo",
             "confirm": "Confirmar",
-            "submitError": "Não foi possível tirar o prestador do itinerário. Tente novamente."
+            "submitError": "Não foi possível tirar o prestador do itinerário. Tente novamente.",
+            "scheduledWarning": {
+              "title": "Este prestador tem atendimentos agendados",
+              "substitutions": "Cobre como substituto: {{dates}}. Se você o remover do encuadre, eles são cancelados e esses dias ficam sem cobertura.",
+              "entry": "Tem uma entrada agendada a partir de {{date}}. Se você o remover do encuadre, ela é cancelada e o titular atual segue sem data de saída.",
+              "confirm": "Confirmar e cancelar agendamentos",
+              "back": "Voltar"
+            }
           },
           "exitDestination": {
             "label": "Destino",
@@ -4103,6 +4119,12 @@
             "ALREADY_ALLOCATED_IN_SLOT": "Este prestador já está atribuído a esta faixa.",
             "SLOT_INACTIVE": "Esta faixa não está mais ativa.",
             "SERVICE_WITHOUT_ADDRESS": "Este serviço não tem endereço cadastrado.",
+            "ITINERARY_SLOT_CAPACITY_EXCEEDED": "A faixa já tem todos os prestadores que o serviço precisa. Atualizamos a tela.",
+            "ITINERARY_OVERLAP": "O prestador já tem outra faixa que se sobrepõe a este horário.",
+            "WORKER_HAS_SCHEDULED_ATTENDANCES": "Este prestador tem atendimentos agendados.",
+            "ALLOCATION_NOT_ACTIVE": "Essa alocação não está mais ativa. Atualizamos a tela.",
+            "REPLACEMENT_DATE_IN_PAST": "A data de início já passou. Escolha hoje ou uma data futura.",
+            "DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED": "Com início programado o prestador só pode ficar como reserva.",
             "NOT_FOUND": "A faixa ou o serviço não foi encontrado.",
             "generic": "Não foi possível atribuir o prestador."
           }

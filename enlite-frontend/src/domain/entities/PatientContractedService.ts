@@ -168,8 +168,6 @@ export interface PatientContractedServiceDetail {
   providersNeeded: number | null;
   /** Autorização VIGENTE hoje (spec 056 §5.2) — dono único das horas autorizadas; `null` = sem vigente. */
   authorization: ContractedServiceAuthorization | null;
-  /** Valor antigo da coluna sem vigência (só leitura, "Valor anterior, sin vigencia"); `null` = não havia. */
-  legacyAuthorizedHours: number | null;
   /** Soma das faixas do horário vigente (horas/semana) — derivada pela API; o serviço não grava mais as horas semanais. */
   scheduleHours: number;
   careLocation: string | null;

@@ -121,6 +121,12 @@ describe('GetPatientItineraryUseCase', () => {
     expect(result.services[1].slots).toHaveLength(1);
   });
 
+  it('providersNeeded por serviço sai do leitor: 3 → 3 e NULL → null no resultado', async () => {
+    const reader = readerWith({ country: 'AR', services: [{ id: 'svc-a', providersNeeded: 3 }, { id: 'svc-b', providersNeeded: null }], slots: [] });
+    const result = await new GetPatientItineraryUseCase(reader, kmsDouble(), noTeam).execute(PID, new Date('2026-09-27T15:00:00Z'));
+    expect(result.services.map((s) => s.providersNeeded)).toEqual([3, null]);
+  });
+
   it('serviço sem slot algum → slots: [], cobertas: 0 (nenhuma linha de slot para ele no leitor)', async () => {
     const rows: ItineraryRows = {
       country: 'AR',
@@ -132,7 +138,7 @@ describe('GetPatientItineraryUseCase', () => {
     const result = await useCase.execute(PID, new Date('2026-09-27T15:00:00Z'));
 
     expect(result.services).toEqual([
-      { contractedServiceId: 'svc-c', scheduleHours: 0, cobertas: 0, reserve: null, slots: [] },
+      { contractedServiceId: 'svc-c', providersNeeded: null, scheduleHours: 0, cobertas: 0, reserve: null, slots: [] },
     ]);
   });
 

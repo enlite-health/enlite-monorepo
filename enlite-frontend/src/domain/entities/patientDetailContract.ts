@@ -182,7 +182,6 @@ const contractedServiceSchema = z
     authorization: z
       .object({ id: z.string(), hours: z.number(), validFrom: isoDate, validTo: isoDate })
       .nullable(),
-    legacyAuthorizedHours: z.number().nullable(),
     scheduleHours: z.number(),
     careLocation: z.string().nullable(),
     startDate: isoDate.nullable(),

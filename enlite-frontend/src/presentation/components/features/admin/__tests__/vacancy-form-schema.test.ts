@@ -142,8 +142,47 @@ describe('vacancyFormSchema — patientAddressId obrigatório (US-D6)', () => {
     expect(result.success).toBe(true);
   });
 
+  it('DEFAULT_FORM_VALUES.providers_needed é null (§N: nunca 1)', () => {
+    expect(DEFAULT_FORM_VALUES.providers_needed).toBeNull();
+  });
+
   it('DEFAULT_FORM_VALUES.patientAddressId nasce vazio (sem endereço pré-selecionado)', () => {
     expect(DEFAULT_FORM_VALUES.patientAddressId).toBe('');
+  });
+});
+
+describe('vacancyFormSchema — quantidade de prestadores sem padrão 1 (058 B)', () => {
+  const valido = {
+    ...minimalFormData,
+    title: 'Teste',
+    patientAddressId: 'a-1',
+    required_professions: ['AT'],
+    schedule: [{ days: ['lun'], timeFrom: '09:00', timeTo: '17:00' }],
+    meet_links: ['https://meet.google.com/abc-defg-hij', '', ''],
+  };
+
+  it('§N destravado: providers_needed null, 0 e 1.5 são recusados em providers_needed; 2 passa', () => {
+    expect(buildVacancyFormSchema().safeParse({ ...valido, providers_needed: 2 }).success).toBe(true);
+    for (const v of [null, 0, 1.5]) {
+      const r = buildVacancyFormSchema().safeParse({ ...valido, providers_needed: v });
+      expect(r.success).toBe(false);
+      if (!r.success) expect(r.error.issues[0].path).toEqual(['providers_needed']);
+    }
+  });
+
+  it('providers_needed null (não travado) é inválido sem abortar o refine de meet_links', () => {
+    const r = buildVacancyFormSchema().safeParse({ ...valido, providers_needed: null, meet_links: ['', '', ''] });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const paths = r.error.issues.map((i) => i.path[0]);
+      expect(paths).toContain('providers_needed');
+      expect(paths).toContain('meet_links');
+    }
+  });
+
+  it('§N travado (providersLocked): null passa; 0 continua recusado', () => {
+    expect(buildVacancyFormSchema(false, true).safeParse({ ...valido, providers_needed: null }).success).toBe(true);
+    expect(buildVacancyFormSchema(false, true).safeParse({ ...valido, providers_needed: 0 }).success).toBe(false);
   });
 });
 

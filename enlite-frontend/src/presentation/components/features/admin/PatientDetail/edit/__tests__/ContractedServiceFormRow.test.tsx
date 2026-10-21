@@ -53,7 +53,7 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
-  providersNeeded: 2, authorization: null, legacyAuthorizedHours: null, scheduleHours: 20, careLocation: 'HOME',
+  providersNeeded: 2, authorization: null, scheduleHours: 20, careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS, startDate: '2026-09-01T00:00:00.000Z', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,
@@ -511,6 +511,40 @@ describe('ContractedServiceFormRow', () => {
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       expect((await screen.findByTestId('svc-schedule-overlap-1')).textContent).toContain('se superponen');
     });
+
+    it.each([['PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'por debajo de los ya asignados'], ['PROVIDERS_NEEDED_CANNOT_CLEAR', 'no puede quedar vacía']])('422 %s mostra a mensagem própria em contracted-service-error-s1 (não a genérica)', async (code, trecho) => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      const erro = await screen.findByTestId('contracted-service-error-s1');
+      expect(erro.textContent).toContain(trecho);
+      expect(erro.textContent).not.toContain('No se pudo actualizar');
+    });
+
+    it('REGRA-05: 422 SERVICE_ADDRESS_LOCKED (LIVE_VACANCY) → mensagem sob o endereço, sem o erro genérico', async () => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'LIVE_VACANCY' } }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      expect((await screen.findByTestId('svc-address-locked-1')).textContent).toContain('el servicio tiene una vacante activa');
+      expect(screen.queryByTestId('contracted-service-error-s1')).toBeNull();
+    });
+
+    it('REGRA-05: reason ALLOCATION → mensagem dos prestadores asignados', async () => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'ALLOCATION' } }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      expect((await screen.findByTestId('svc-address-locked-1')).textContent).toContain('prestadores asignados');
+    });
+
+    it('REGRA-05: um novo envio bem-sucedido limpa a mensagem', async () => {
+      mockUpdate.mockRejectedValueOnce(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'ALLOCATION' } }));
+      mockUpdate.mockResolvedValueOnce(SERVICE);
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await screen.findByTestId('svc-address-locked-1');
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await waitFor(() => expect(screen.queryByTestId('svc-address-locked-1')).toBeNull());
+    });
   });
 
   describe('bloco Autorización (spec 056 T2.5)', () => {
@@ -532,9 +566,11 @@ describe('ContractedServiceFormRow', () => {
       expect(screen.queryByTestId('svc-auth-legacy-1')).toBeNull();
     });
 
-    it('mostra legado quando authorization null', () => {
-      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, legacyAuthorizedHours: 20 }} index={1} onSaved={vi.fn()} />);
-      expect(screen.getByTestId('svc-auth-legacy-1').textContent).toBe('Valor anterior, sin vigencia: 20 h');
+    it('sem legado: authorization null mostra "sin autorización" e NÃO o valor antigo da coluna', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, legacyAuthorizedHours: 20 } as PatientContractedServiceDetail} index={1} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('svc-auth-none-1').textContent).toBe('Sin autorización vigente');
+      expect(screen.queryByTestId('svc-auth-legacy-1')).toBeNull();
+      expect(screen.queryByText(/Valor anterior/)).toBeNull();
       expect(screen.queryByTestId('svc-auth-current-1')).toBeNull();
     });
 

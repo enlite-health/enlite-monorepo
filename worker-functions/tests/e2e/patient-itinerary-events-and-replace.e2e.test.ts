@@ -336,7 +336,7 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     const novoTitular = workerIdOf('novoTitular');
     const replaceRes = await api.post(
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/replace`,
-      { newWorkerId: novoTitular, fromDate: secondMonday },
+      { newWorkerId: novoTitular, fromDate: secondMonday, reasonCategory: 'OTHER', destination: 'RESERVE' },
       { headers: asAdmin.headers },
     );
     expect(replaceRes.status).toBe(200);
@@ -418,7 +418,7 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
 
     const replaceRes = await api.post(
       `/api/admin/patients/${patientId}/contracted-services/${serviceAlvo}/itinerary/allocations/${allocationIdAlvo}/replace`,
-      { newWorkerId: conflitante, fromDate: nextMonday },
+      { newWorkerId: conflitante, fromDate: nextMonday, reasonCategory: 'OTHER', destination: 'RESERVE' },
       { headers: asAdmin.headers },
     );
     expect(replaceRes.status).toBe(409);

@@ -142,7 +142,6 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose, onE
               <Field label={tc('tableSchedule')} testId="svc-detail-schedule" value={contractedServiceScheduleText(service.schedule) ?? tc('noSchedule')} />
             </div>
             <Field label={tc('tableWeeklyHours')} testId="svc-detail-schedule-hours" value={`${service.scheduleHours} h`} />
-            <Field label={tc('tableAuthorizedHours')} testId="svc-detail-authorized-hours" value={num(service.authorization?.hours ?? service.legacyAuthorizedHours)} />
             <Field label={tc('tableValue')} testId="svc-detail-value" value={valueText} />
             <Field label={tc('tableStart')} testId="svc-detail-start" value={formatCalendarDate(service.startDate, {}) ?? EMPTY} />
             <Field label={tc('tableContract')} testId="svc-detail-contract" value={payerText} />

@@ -30,6 +30,7 @@ const SERVICE: PatientItineraryService = {
   scheduleHours: 20,
   reserve: null,
   cobertas: 4,
+  providersNeeded: null,
   slots: [
     { id: 'slot-mon', weekday: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240, assignments: [] },
     { id: 'slot-wed', weekday: 3, startTime: '14:00', endTime: '18:00', durationMinutes: 240, assignments: [] },

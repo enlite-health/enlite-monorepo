@@ -38,8 +38,9 @@ import {
   ServiceWithoutSlotError,
 } from '../../../application/AssembleItineraryUseCase';
 import { RemoveFromItineraryUseCase } from '../../../application/RemoveFromItineraryUseCase';
+import { ReplaceWithReasonUseCase } from '../../../application/ReplaceWithReasonUseCase';
 import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
-import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../../domain/serviceExitReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError, WorkerHasScheduledAttendancesError } from '../../../domain/serviceExitReason';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
 
 const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
@@ -89,12 +90,14 @@ describe('AdminItineraryWriteController', () => {
   const allocationUseCase = { allocate: jest.fn(), end: jest.fn() };
   const assemblyUseCase = { execute: jest.fn() };
   const removeUseCase = { execute: jest.fn() };
+  const replaceUseCase = { execute: jest.fn() };
   const ctrl = new AdminItineraryWriteController(
     teamUseCase as unknown as GetServiceTeamUseCase,
     slotUseCase as unknown as ItinerarySlotWriteUseCase,
     allocationUseCase as unknown as ItineraryAllocationUseCase,
     assemblyUseCase as unknown as AssembleItineraryUseCase,
     removeUseCase as unknown as RemoveFromItineraryUseCase,
+    replaceUseCase as unknown as ReplaceWithReasonUseCase,
   );
   beforeEach(() => jest.clearAllMocks());
 
@@ -303,6 +306,15 @@ describe('AdminItineraryWriteController', () => {
       expect(jsonOf(res)).toHaveBeenCalledWith(body);
     });
 
+    it.each(['UNKNOWN_COUNTRY', 'ITINERARY_SLOT_CAPACITY_EXCEEDED', 'PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'PROVIDERS_NEEDED_CANNOT_CLEAR'])('P0001 %s → 422 com o próprio código, sem reportError', async (code) => {
+      allocationUseCase.allocate.mockRejectedValueOnce(Object.assign(new Error(code), { code: 'P0001' }));
+      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, slotId: SLOT_ID }, { workerId: WORKER_ID });
+      await ctrl.allocate(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, error: code, code });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('ItineraryOverlapError → 409 com existing/requested/sameAddress/minGapMinutes e error = overlapMessage', async () => {
       const existing = { serviceId: SERVICE_ID, weekday: 1, startTime: '08:00', endTime: '12:00' };
       const requested = { serviceId: 'other-service', weekday: 1, startTime: '11:00', endTime: '15:00' };
@@ -370,6 +382,42 @@ describe('AdminItineraryWriteController', () => {
         actorUid: 'staff-1',
       });
       expect(allocationUseCase.end).not.toHaveBeenCalled();
+    });
+
+    it('cancelScheduled true no corpo → o caso de uso recebe cancelScheduled: true', async () => {
+      removeUseCase.execute.mockResolvedValueOnce({ allocationId: ALLOCATION_ID, status: 'ENDED', validTo: '2026-09-28', destination: 'LEAVE_SERVICE' });
+      const [req, res] = reqRes(PARAMS, { ...BODY, destination: 'LEAVE_SERVICE', cancelScheduled: true });
+      await ctrl.endAllocation(req, res);
+      expect(removeUseCase.execute).toHaveBeenCalledWith(expect.objectContaining({ cancelScheduled: true }));
+    });
+
+    it('cancelScheduled ausente → o caso de uso recebe cancelScheduled undefined', async () => {
+      removeUseCase.execute.mockResolvedValueOnce({ allocationId: ALLOCATION_ID, status: 'ENDED', validTo: '2026-09-28', destination: 'RESERVE' });
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.endAllocation(req, res);
+      const arg = removeUseCase.execute.mock.calls[0][0];
+      expect(arg.cancelScheduled).toBeUndefined();
+    });
+
+    it('cancelScheduled string → 400; o caso de uso não roda', async () => {
+      const [req, res] = reqRes(PARAMS, { ...BODY, cancelScheduled: 'true' });
+      await ctrl.endAllocation(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(removeUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('WorkerHasScheduledAttendancesError → 409 WORKER_HAS_SCHEDULED_ATTENDANCES com details { substitutionDates, futureEntryFrom }', async () => {
+      removeUseCase.execute.mockRejectedValueOnce(new WorkerHasScheduledAttendancesError(['2026-10-26', '2026-11-02'], '2026-10-28'));
+      const [req, res] = reqRes(PARAMS, { ...BODY, destination: 'LEAVE_SERVICE' });
+      await ctrl.endAllocation(req, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(jsonOf(res)).toHaveBeenCalledWith({
+        success: false,
+        code: 'WORKER_HAS_SCHEDULED_ATTENDANCES',
+        error: 'worker has scheduled attendances',
+        details: { substitutionDates: ['2026-10-26', '2026-11-02'], futureEntryFrom: '2026-10-28' },
+      });
+      expect(reportError).not.toHaveBeenCalled();
     });
 
     it('corpo ausente → o caso de uso recebe motivo/destino `undefined` (quem responde 422 é ele)', async () => {
@@ -445,6 +493,55 @@ describe('AdminItineraryWriteController', () => {
       const call = (reportError as jest.Mock).mock.calls[0][1] as Record<string, unknown>;
       expect(call).not.toHaveProperty('workerId');
       expect(call.serviceId).toBeUndefined();
+    });
+  });
+
+  describe('replace (POST .../allocations/:allocationId/replace) — Caso A/B (058)', () => {
+    const PARAMS = { id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID };
+    const BODY = { newWorkerId: WORKER_ID, fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' };
+
+    it('corpo sem newWorkerId → 400; o caso de uso não roda', async () => {
+      const [req, res] = reqRes(PARAMS, { fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' });
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(replaceUseCase.execute).not.toHaveBeenCalled();
+    });
+    it('sem ator → 401', async () => {
+      const [req, res] = reqRes(PARAMS, BODY, null);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(replaceUseCase.execute).not.toHaveBeenCalled();
+    });
+    it('feliz → 200; o caso de uso recebe newWorkerId, fromDate, reasonCategory e destination', async () => {
+      const result = { endedAllocationId: ALLOCATION_ID, status: 'ACTIVE' as const };
+      replaceUseCase.execute.mockResolvedValueOnce(result);
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: true, data: result });
+      expect(replaceUseCase.execute).toHaveBeenCalledWith({
+        patientId: PATIENT_ID, serviceId: SERVICE_ID, allocationId: ALLOCATION_ID, newWorkerId: WORKER_ID,
+        fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE', actorUid: 'staff-1',
+      });
+      expect(allocationUseCase).not.toHaveProperty('replace');
+    });
+    it('Caso B + LEAVE_SERVICE: DestinationNotAvailableForScheduledError → 422 DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED', async () => {
+      replaceUseCase.execute.mockRejectedValueOnce(new DestinationNotAvailableForScheduledError());
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, code: 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED' });
+    });
+    it.each([
+      ['REASON_REQUIRED', ServiceExitReasonRequiredError],
+      ['DESTINATION_REQUIRED', DestinationRequiredError],
+      ['ALLOCATION_NOT_ACTIVE', AllocationNotActiveError],
+    ] as const)('replace: %s → 422', async (code, ErrorClass) => {
+      replaceUseCase.execute.mockRejectedValueOnce(new (ErrorClass as new (id: string) => Error)(ALLOCATION_ID));
+      const [req, res] = reqRes(PARAMS, BODY);
+      await ctrl.replace(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, code });
     });
   });
 

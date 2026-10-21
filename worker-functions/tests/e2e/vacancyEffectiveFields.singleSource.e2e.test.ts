@@ -18,7 +18,8 @@ import { randomUUID } from 'crypto';
 import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveRequiredSexSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
-import { withSystemDbContext } from '../../src/shared/database/requestDbSession';
+import { withSystemDbContext, releaseDbSession, type DbSession } from '../../src/shared/database/requestDbSession';
+import { loggingAls } from '../../src/shared/logging';
 import { fetchPatientDetail } from '../../src/modules/case/infrastructure/PatientDetailQueryHelper';
 import { loadVacancyDescriptionInput } from '../../src/modules/integration/infrastructure/TalentumDescriptionService';
 import { loadVacancyForAiContent } from '../../src/modules/matching/interfaces/controllers/vacancyAiContentQuery';
@@ -337,6 +338,8 @@ interface LeitorQtd {
   seed?: () => Promise<Ctx>;
   /** Devolve o que o leitor mostra como quantidade ('2' | '7' | outro), ou null se não mostra. */
   probe: (ctx: Ctx) => Promise<string | null>;
+  /** O que o `probe` devolve antes/depois do UPDATE para 7 (default '2' -> '7'). */
+  esperado?: { antes: string; depois: string };
 }
 
 const LEITORES_QTD: LeitorQtd[] = [
@@ -358,14 +361,18 @@ const LEITORES_QTD: LeitorQtd[] = [
   },
   {
     nome: 'GetArmedCasesUseCase.execute (serviço NULL = SEM_CONFIG; com valor = POR_ARMAR)',
+    // Trava B (migration 544): limpar `providers_needed` é recusado (PROVIDERS_NEEDED_CANNOT_CLEAR). A transição provável é
+    // NULL -> 7 (SEM_CONFIG -> POR_ARMAR); com 2 -> 7 o bucket não muda (sem encuadres, ambos POR_ARMAR) e o teste não provaria nada.
+    seed: () => seed({ serviceProviders: null }),
+    esperado: { antes: 'SEM_CONFIG', depois: 'POR_ARMAR' },
     probe: async () => {
       // As horas vêm do `PatientKanbanServicesReader`/`inPatientTransaction`, que em produção rodam sob o contexto da request
       // (ALS: uid+país → GUCs na transação). Aqui o `connect()` é CRU de propósito (ver o Proxy do beforeAll) e não há request:
       // o contexto de sistema declarado entrega a identidade que a policy de país de `patients` exige.
       const r = await withSystemDbContext('job:test-armed-cases', () =>
         new GetArmedCasesUseCase(identityPool, new ServiceHoursSummaryReader()).execute(['AR']));
-      if (r.porArmar === 1 && r.semConfig === 0) return '2';
-      if (r.porArmar === 0 && r.semConfig === 1) return '7';
+      if (r.porArmar === 1 && r.semConfig === 0) return 'POR_ARMAR';
+      if (r.porArmar === 0 && r.semConfig === 1) return 'SEM_CONFIG';
       return `porArmar=${r.porArmar} semConfig=${r.semConfig}`;
     },
   },
@@ -518,6 +525,17 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
     });
   });
 
+  // PUT: client cru sem identidade (a restrição do orquestrador). DELETE: client cru + withActorContext com o contexto da request = identidade.
+  /** Roda `fn` como uma request staff AR (molde `asRequest` de patient-diagnoses-rls-context.e2e.test.ts): DbSession + ALS. */
+  async function asStaffRequest<T>(fn: () => Promise<T>): Promise<T> {
+    const session: DbSession = { context: { kind: 'staff', uid: UID, country: 'AR' }, released: false };
+    try {
+      return await loggingAls.run({ traceId: 'vls-f1-delete', dbSession: session }, fn);
+    } finally {
+      await releaseDbSession(session);
+    }
+  }
+
   describe('leitor 13 — client cru sem identidade (restrição do orquestrador)', () => {
     it('PUT e DELETE de vaga COM serviço não estouram rls_session_without_identity, e o PUT traz o horário do SERVIÇO', async () => {
       const ctx = await seed({ draft: true });
@@ -533,7 +551,7 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       expect((await admin.query(`SELECT schedule FROM job_postings WHERE id = $1`, [ctx.vacancyId])).rows[0].schedule).toBeNull(); // a coluna da vaga segue NULL (F7)
 
       const del = mockRes();
-      await crud.deleteVacancy(asReq({ params: { id: ctx.vacancyId }, user: { uid: UID } }), asRes(del));
+      await asStaffRequest(() => crud.deleteVacancy(asReq({ params: { id: ctx.vacancyId }, user: { uid: UID } }), asRes(del)));
       console.info(`[singleSource] DELETE -> status ${del.statusCode} ${JSON.stringify(del.body).slice(0, 160)}`);
       expect(JSON.stringify(del.body)).not.toMatch(/rls_session_without_identity/);
       expect(del.statusCode).toBe(200);
@@ -556,14 +574,15 @@ describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE 
   });
 
   describe.each(LEITORES_QTD.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {
-    it('UPDATE em pcs.providers_needed (vaga intocada) -> a saída passa de 2 para 7', async () => {
+    it('UPDATE em pcs.providers_needed (vaga intocada) -> a saída muda para a do valor 7 (default: de 2 para 7)', async () => {
+      const esperado = leitor.esperado ?? { antes: '2', depois: '7' };
       const ctx = await (leitor.seed ?? (() => seed({ serviceProviders: 2 })))();
       const antes = await leitor.probe(ctx);
-      expect(antes).toBe('2'); // controle positivo: o instrumento enxerga o valor inicial
-      await setServiceProviders(ctx, leitor.nome.startsWith('GetArmedCasesUseCase') ? null : 7);
+      expect(antes).toBe(esperado.antes); // controle positivo: o instrumento enxerga o valor inicial
+      await setServiceProviders(ctx, 7);
       const copia = await admin.query(`SELECT providers_needed FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
       expect(copia.rows[0].providers_needed).toBeNull(); // a coluna da vaga segue NULL (F7: não há mais cópia)
-      expect(await leitor.probe(ctx)).toBe('7');
+      expect(await leitor.probe(ctx)).toBe(esperado.depois);
     });
   });
 

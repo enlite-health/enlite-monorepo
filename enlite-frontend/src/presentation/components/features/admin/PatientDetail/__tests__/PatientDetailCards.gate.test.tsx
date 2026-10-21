@@ -14,7 +14,7 @@ const SERVICO: PatientContractedServiceDetail = {
   serviceCode: 'AT',
   professionalProfile: null,
   providersNeeded: 1,
-  authorization: null, legacyAuthorizedHours: 10,
+  authorization: null,
   scheduleHours: 10,
   careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS,

@@ -55,7 +55,7 @@ describe('PatientVacanciesCard — código da vaga em EN1234#01 (spec 047 F4)', 
 
   it('A2: para a MESMA vaga o texto do bloco é IGUAL ao da coluna "Código da vacante" da tabela de serviços (um dono só)', () => {
     const servico = {
-      id: 'svc-x', patientId: 'p1', serviceCode: 'AT', professionalProfile: null, providersNeeded: 1, authorization: null, legacyAuthorizedHours: null, scheduleHours: 0,
+      id: 'svc-x', patientId: 'p1', serviceCode: 'AT', professionalProfile: null, providersNeeded: 1, authorization: null, scheduleHours: 0,
       careLocation: null, ...CONTRACT_058_DEFAULTS, startDate: null,
       supervisionFrequency: null, guardShift: null, providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, endedAt: null, country: 'AR',
       deviceTypes: [], providers: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', active: true,

@@ -54,6 +54,25 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
+jest.mock('@modules/case', () => ({ countVigenteForVacancy: jest.fn().mockResolvedValue(0) }));
+
+jest.mock('@shared/database/actorContext', () => ({
+  withActorContext: async (pool: any, fn: (c: any) => Promise<unknown>) => {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      const r = await fn(c);
+      await c.query('COMMIT');
+      return r;
+    } catch (e) {
+      await c.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
+  },
+}));
+
 jest.mock('../../../src/modules/matching/infrastructure/MatchmakingService', () => ({
   MatchmakingService: jest.fn().mockImplementation(() => ({
     matchWorkersForJob: jest.fn().mockResolvedValue({ candidates: [] }),

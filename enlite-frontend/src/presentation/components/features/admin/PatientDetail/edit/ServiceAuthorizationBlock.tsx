@@ -20,8 +20,8 @@ const ERROR_KEY: Record<string, string> = {
 
 /**
  * Bloco "Autorización" do serviço (spec 056 §7): horas autorizadas com vigência. Salva SOZINHO
- * (POST; supersede quando já há vigente) — não entra no PATCH do serviço, que recusa `authorizedHours`.
- * `validTo` é INCLUSIVO, enviado como digitado. Sem vigente e com valor antigo: só leitura "sin vigencia".
+ * (POST; supersede quando já há vigente) — não entra no PATCH do serviço, que recusa o campo legado.
+ * `validTo` é INCLUSIVO, enviado como digitado. Sem vigente: "sin autorización" (o valor antigo da coluna é snapshot e não é mais lido — 058 B, P7).
  */
 export function ServiceAuthorizationBlock({ patientId, service, index }: Props): JSX.Element {
   const { t } = useTranslation();
@@ -69,11 +69,6 @@ export function ServiceAuthorizationBlock({ patientId, service, index }: Props):
         </Text>
       ) : (
         <Text size="sm" data-testid={`svc-auth-none-${index}`}>{ta('none')}</Text>
-      )}
-      {!current && service.legacyAuthorizedHours !== null && (
-        <Text size="sm" color="secondary" data-testid={`svc-auth-legacy-${index}`}>
-          {ta('legacy', { hours: service.legacyAuthorizedHours })}
-        </Text>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <FormField label={ta('hours')} htmlFor={`svc-auth-hours-${index}`}>

@@ -115,6 +115,7 @@ async function selectCaseAndFillMinimum(caseNumber: number) {
 
   const meetInput = await screen.findByTestId('meet-link-0');
   await userEvent.type(meetInput, 'https://meet.google.com/abc-defg-hij');
+  await userEvent.type(await screen.findByTestId('providers-needed-input'), '1');
 
   await waitFor(() => expect(screen.getByTestId('header-save-btn')).not.toBeDisabled());
 }

@@ -43,8 +43,9 @@ const meetLinkSlot = z
 /**
  * `professionsLocked` (057/A6): com `required_professions` em `locked_fields` o campo é do serviço, está
  * `disabled` e some do PUT (`stripLockedFields`) — a regra `min(1)` não pode barrar o save dos outros campos.
+ * `providersLocked` (058 B §N): idem para `providers_needed`.
  */
-export function buildVacancyFormSchema(professionsLocked = false) {
+export function buildVacancyFormSchema(professionsLocked = false, providersLocked = false) {
   return z
   .object({
     title: z.string().min(3),
@@ -55,7 +56,17 @@ export function buildVacancyFormSchema(professionsLocked = false) {
     age_range_max: z.number().optional(),
     required_experience: z.string().optional(),
     worker_attributes: z.string().optional(),
-    providers_needed: z.number({ invalid_type_error: 'required' }).min(1),
+    // §N (058 B): sem padrão "1". Destravado (vaga manual) = obrigatório, inteiro ≥ 1; travado (a quantidade é do serviço, campo `disabled`,
+    // some do PUT por `stripLockedFields`) aceita `null` = "não informada" e nunca barra o save dos outros campos.
+    providers_needed: providersLocked
+      ? z.number().int().min(1).nullable()
+      : z
+          .number({ invalid_type_error: 'required' })
+          .int()
+          .min(1)
+          .nullable()
+          // `null` como issue `custom` (não fatal): um `invalid_type` abortaria o `.refine` de `meet_links` do objeto.
+          .refine((v) => v !== null, { message: 'required' }),
     // Spec 014 (US-D6, lex D6.1): "Dirección" (a `patientAddressId` selecionada em
     // `VacancyFormRightColumn`) passa a ser exigida pelo ZOD — inclusive em modo EDIÇÃO. Antes
     // disso o campo era só visualmente `required` (asterisco), sem validação nenhuma: submeter
@@ -296,7 +307,7 @@ export const DEFAULT_FORM_VALUES: VacancyFormData = {
   age_range_max: undefined,
   required_experience: '',
   worker_attributes: '',
-  providers_needed: 1,
+  providers_needed: null, // §N: vaga manual nasce vazia (obrigatório); nunca "1"
   patientAddressId: '',
   work_schedule: '',
   schedule: [{ days: [], timeFrom: '', timeTo: '' }],

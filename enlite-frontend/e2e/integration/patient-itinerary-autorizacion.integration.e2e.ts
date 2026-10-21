@@ -12,11 +12,14 @@
  * Side-effect outbound mapeado: POST/supersede de autorização só escrevem em Postgres (sem vaga, sem
  * Talentum/Twilio/Periskope/e-mail).
  *
- * Os 2 testes (alternativos do bloco):
+ * Os 3 testes (alternativos do bloco):
  *   1. 409 AUTHORIZATION_OVERLAPS na tela — já existe uma autorização FUTURA (POST pela API); digitar um
  *      período que a cruza → `svc-auth-error-1` com o texto de `authorization.overlaps`;
  *   2. supersede troca a vigente — vigente de 20 h; digitar 30 h → `svc-auth-current-1` mostra "30 h" e
  *      `GET …/authorizations` tem 2 linhas, a antiga com `supersededAt`.
+ *   3. serviço com valor LEGADO (pcs.authorized_hours) e sem autorização vigente — o bloco diz "sin autorización" e NÃO
+ *      mostra o valor antigo (058 B, P7). O feliz do bloco (criar → aparece como corrente) vive em
+ *      admission-c-servico-contratado-humano e, para o supersede, no teste 2.
  *
  * Datas digitadas com dia = mês (06/06, 07/07, 01/01, 12/12): o teclado vale em qualquer ordem de
  * segmentos do locale e o valor lido da tela é ISO.
@@ -28,6 +31,7 @@ import {
 import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
 import { insertTestPatient } from '../helpers/db-test-helper';
 import { cleanupPatientDeep } from '../helpers/patient-detail-a-helper';
+import { sqlComVars } from '../helpers/sql-com-vars';
 
 const STAFF = mockAdminUserFor('autorizacion');
 
@@ -138,6 +142,22 @@ test.describe('patient-itinerary-autorizacion: bloco Autorización do serviço @
       expect(linhas).toHaveLength(2);
       expect(linhas.find((a) => a.hours === 20)?.supersededAt).not.toBeNull();
       expect(linhas.find((a) => a.hours === 30)?.supersededAt).toBeNull();
+    } finally {
+      cleanupPatientDeep(patientId);
+    }
+  });
+
+  test('serviço com authorized_hours LEGADO e sem autorização: o bloco diz "sin autorización" e NÃO mostra o valor antigo', async ({ page, request }) => {
+    const { patientId, serviceId } = await seedServico(request);
+    try {
+      sqlComVars(`UPDATE patient_contracted_services SET authorized_hours = 20 WHERE id = :'sid'`, { sid: serviceId });
+      await loginAs(page, STAFF);
+      await abrirDrawerDoServico(page, patientId, serviceId);
+      await expect(page.getByTestId('svc-auth-none-1')).toBeVisible();
+      await expect(page.getByTestId('svc-auth-none-1')).toContainText('Sin autorización vigente');
+      await expect(page.getByTestId('svc-auth-legacy-1')).toHaveCount(0);
+      await expect(page.getByTestId('svc-auth-block-1')).not.toContainText('Valor anterior');
+      expect(sqlComVars(`SELECT coalesce(authorized_hours::text, '<null>') FROM patient_contracted_services WHERE id = :'sid'`, { sid: serviceId })).toBe('20'); // a coluna segue lá (snapshot): é a TELA que não a mostra
     } finally {
       cleanupPatientDeep(patientId);
     }

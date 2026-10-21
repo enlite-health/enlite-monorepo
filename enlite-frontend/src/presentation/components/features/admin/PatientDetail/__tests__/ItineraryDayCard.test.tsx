@@ -172,6 +172,26 @@ describe('ItineraryDayCard — o card de um dia da agenda (D445.3)', () => {
     expect(classes.filter((c) => /#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(c))).toEqual([]);
   });
 
+  it('N=2: a faixa mostra os 2 prestadores vigentes, cada um com o seu testid', () => {
+    renderCard([slot({ assignments: [
+      assignment({ workerId: 'worker-0000-aaaa1111', allocationId: 'alloc-1', displayName: 'Ana Fixture' }),
+      assignment({ workerId: 'worker-0000-bbbb2222', allocationId: 'alloc-2', displayName: 'Bia Fixture' }),
+    ] })]);
+    expect(screen.getByTestId('itinerario-slot-prestador-slot-1-worker-0000-aaaa1111')).toHaveTextContent('Ana Fixture');
+    expect(screen.getByTestId('itinerario-slot-prestador-slot-1-worker-0000-bbbb2222')).toHaveTextContent('Bia Fixture');
+    expect(screen.queryByTestId('itinerario-slot-sem-prestador-slot-1')).toBeNull();
+  });
+
+  it('alocação encerrada ou futura não aparece; sem vigente → "Sin asignar"', () => {
+    renderCard([slot({ assignments: [
+      assignment({ workerId: 'worker-0000-cccc3333', allocationId: 'alloc-3', validTo: '2026-09-10', status: 'ENDED' }),
+      assignment({ workerId: 'worker-0000-dddd4444', allocationId: 'alloc-4', validFrom: '2026-10-15' }),
+    ] })]);
+    expect(screen.queryByTestId('itinerario-slot-prestador-slot-1-worker-0000-cccc3333')).toBeNull();
+    expect(screen.queryByTestId('itinerario-slot-prestador-slot-1-worker-0000-dddd4444')).toBeNull();
+    expect(screen.getByTestId('itinerario-slot-sem-prestador-slot-1')).toHaveTextContent('Sin asignar');
+  });
+
   it('pt-BR → nome do dia em português', async () => {
     await i18n.changeLanguage('pt-BR');
     const { unmount } = renderCard([]);
