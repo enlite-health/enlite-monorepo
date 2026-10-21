@@ -5,7 +5,7 @@
  */
 import { RemoveFromItineraryUseCase, type RemoveFromItineraryInput } from '../RemoveFromItineraryUseCase';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, WorkerHasScheduledAttendancesError } from '../../domain/serviceExitReason';
-import type { ScheduledAttendances } from '../../infrastructure/ScheduledAttendanceReader';
+import type { ScheduledAttendances, ScheduledEntry } from '../../infrastructure/ScheduledAttendanceReader';
 import { ServiceTeamWorkerAllocatedError } from '../ServiceTeamMarkUseCase';
 import { AllocationNotActiveError, type ItineraryEndWithResult } from '../ItineraryAllocationUseCase';
 
@@ -184,7 +184,7 @@ describe('RemoveFromItineraryUseCase', () => {
     const t = build({
       scheduled: {
         substitutions: [{ absenceId: 'ab-1', date: '2026-10-26' }, { absenceId: 'ab-2', date: '2026-11-02' }],
-        futureEntries: [{ allocationId: 'al-9', validFrom: '2026-10-28', replacesAllocationId: 'al-3' }],
+        futureEntries: [{ allocationId: 'al-9', validFrom: '2026-10-28', replaces: { allocationId: 'al-3', status: 'ACTIVE', validFrom: '2026-09-01', endIsEve: true } }],
       },
     });
 
@@ -244,14 +244,15 @@ describe('RemoveFromItineraryUseCase', () => {
     expect(t.log).toEqual(['tx', 'catalog', 'end(derive=false)', 'log', 'sub-clear', 'sub-clear', 'reject', 'derive']);
   });
 
-  const UMA_ENTRADA = (replacesAllocationId: string | null): ScheduledAttendances => ({
+  const TITULAR = (status: string, endIsEve: boolean): ScheduledEntry['replaces'] => ({ allocationId: 'al-3', status, validFrom: '2026-09-01', endIsEve });
+  const UMA_ENTRADA = (replaces: ScheduledEntry['replaces']): ScheduledAttendances => ({
     substitutions: [],
-    futureEntries: [{ allocationId: 'al-9', validFrom: '2026-10-28', replacesAllocationId }],
+    futureEntries: [{ allocationId: 'al-9', validFrom: '2026-10-28', replaces }],
   });
   const REMOVE_TUDO = { ...INPUT, destination: 'LEAVE_SERVICE', cancelScheduled: true };
 
   it('ordem do cancelamento: entrada futura cancelada ANTES de soltar o fim do titular; registra ENTRY_CANCELLED', async () => {
-    const t = build({ scheduled: UMA_ENTRADA('al-3') });
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('ACTIVE', true)) });
 
     await t.useCase.execute(REMOVE_TUDO);
 
@@ -267,7 +268,7 @@ describe('RemoveFromItineraryUseCase', () => {
     expect(entrada).not.toHaveProperty('destination');
   });
 
-  it('entrada sem alocação substituída (replacesAllocationId null): cancela e NÃO chama clearScheduledEnd', async () => {
+  it('entrada sem ligação REPLACE (replaces null): cancela e NÃO chama clearScheduledEnd', async () => {
     const t = build({ scheduled: UMA_ENTRADA(null) });
 
     await t.useCase.execute(REMOVE_TUDO);
@@ -277,7 +278,7 @@ describe('RemoveFromItineraryUseCase', () => {
   });
 
   it('cancelAllocation → 0 (já começou/cancelada): não registra e não solta o fim', async () => {
-    const t = build({ scheduled: UMA_ENTRADA('al-3'), cancelResult: 0 });
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('ACTIVE', true)), cancelResult: 0 });
 
     await t.useCase.execute(REMOVE_TUDO);
 
@@ -287,9 +288,25 @@ describe('RemoveFromItineraryUseCase', () => {
 
   it('titular vigente com outra alocação: o rejectWith continua recusando (ServiceTeamWorkerAllocatedError) e a transação rejeita', async () => {
     const refusal = new ServiceTeamWorkerAllocatedError('p-1', 's-1', 'w-1');
-    const t = build({ scheduled: UMA_ENTRADA('al-3'), rejectError: refusal });
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('ACTIVE', true)), rejectError: refusal });
 
     await expect(t.useCase.execute(REMOVE_TUDO)).rejects.toBe(refusal);
     expect(t.derivation.run).not.toHaveBeenCalled();
+  });
+
+  it('titular ligado ACTIVE mas com fim em OUTRA data (não a véspera): não reabre nada', async () => {
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('ACTIVE', false)) });
+
+    await t.useCase.execute(REMOVE_TUDO);
+
+    expect(t.schedule.clearScheduledEnd).not.toHaveBeenCalled();
+  });
+
+  it('titular ligado ENDED por outro caminho: não reabre nada', async () => {
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('ENDED', true)) });
+
+    await t.useCase.execute(REMOVE_TUDO);
+
+    expect(t.schedule.clearScheduledEnd).not.toHaveBeenCalled();
   });
 });

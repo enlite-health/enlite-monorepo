@@ -142,7 +142,10 @@ export class RemoveFromItineraryUseCase {
             serviceId, kind: 'ENTRY_CANCELLED', outgoingWorkerId: ended.workerId, assignmentId: e.allocationId,
             effectiveDate: e.validFrom, reasonCode: reasonCategory, actorUid,
           });
-          if (e.replacesAllocationId) await this.schedule.clearScheduledEnd(client, e.replacesAllocationId, actorUid);
+          // O titular vem da LIGAÇÃO do REPLACE (nunca da data). Vivo com fim na véspera → solta o fim; qualquer outro caso
+          // (ENDED por outro caminho, fim noutra data, sem ligação) → não reabre nada.
+          const r = e.replaces;
+          if (r?.status === 'ACTIVE' && r.endIsEve) await this.schedule.clearScheduledEnd(client, r.allocationId, actorUid);
         }
         await this.marks.rejectWith(client, { patientId, serviceId, workerId: ended.workerId, reasonCategory, actorUid, cells: null, now });
       }
