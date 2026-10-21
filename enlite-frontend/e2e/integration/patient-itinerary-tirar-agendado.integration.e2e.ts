@@ -47,9 +47,11 @@ async function semearSubstituto(request: APIRequestContext) {
     const alocC = await allocateWorker(request, seed.patientId, svc.serviceId, svc.slotIds[0], c);
     const alocA = await allocateWorker(request, seed.patientId, svc.serviceId, svc.slotIds[1], a);
     expect([alocC.status, alocA.status]).toEqual([201, 201]);
-    // 2 próximas quartas (SQL no fuso do país, nunca `new Date()` do runner) + ausência de A com substituto C
+    // 2 próximas quartas (SQL no fuso do país, nunca `new Date()` do runner) + ausência de A com substituto C.
+    // A 1ª quarta é a de hoje em diante (`>= hoje`, como o `ScheduledAttendanceReader`: `on_date >= today`): assim d1 <= hoje+6 e
+    // d2 = d1+7 <= hoje+13 em TODO dia da semana — dentro da janela padrão do painel (hoje..hoje+13); partindo de hoje+1, na quarta d2 = hoje+14 saía dela.
     const d1 = sqlComVars(
-      `SELECT to_char(x.d, 'YYYY-MM-DD') FROM (SELECT (${HOJE_SQL} + 1) + ((3 - extract(dow FROM (${HOJE_SQL} + 1))::int + 7) % 7) AS d) x`,
+      `SELECT to_char(x.d, 'YYYY-MM-DD') FROM (SELECT ${HOJE_SQL} + ((3 - extract(dow FROM ${HOJE_SQL})::int + 7) % 7) AS d) x`,
     );
     const d2 = sqlComVars("SELECT to_char(:'d'::date + 7, 'YYYY-MM-DD')", { d: d1 });
     for (const d of [d1, d2]) {
