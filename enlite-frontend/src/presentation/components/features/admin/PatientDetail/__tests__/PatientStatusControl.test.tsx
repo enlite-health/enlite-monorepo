@@ -363,8 +363,10 @@ describe('PatientStatusControl', () => {
     getPatientStatusOptions.mockResolvedValue(serverOptions(['ON_HOLD']));
     fireEvent.change(screen.getByTestId('patient-status-select'), { target: { value: 'SEARCHING' } });
     fireEvent.click(screen.getByTestId('patient-status-save'));
-    await waitFor(() => expect(screen.getByTestId('patient-status-select')).toHaveValue('ACTIVE'));
-    expect(screen.getByTestId('patient-status-save')).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByTestId('patient-status-select')).toHaveValue('ACTIVE');
+      expect(screen.getByTestId('patient-status-save')).toBeDisabled();
+    });
   });
 
   it('422 de completude em destino que não é SEARCHING usa "faltam dados do paciente" (o SEARCHING, coberto acima, fala do serviço contratado)', async () => {
