@@ -4,13 +4,15 @@
  * E2E DE TELA, SEM MOCK de resposta: frontend + API + Postgres reais, engine ABAC LIGADO, staff REAL em grupo, clique e teclado de humano
  * (select real, data digitada). O cenário (obras sociais, contratos com termo, pacientes com serviço e vínculos) vem da API real.
  *
- *  FELIZ         — serviço SEM vínculo -> "Vincular contrato" (obra social, contrato, vigência digitada) -> o pagador, o valor e o imposto aparecem
- *                  (e a cobertura verificada CASA); a FICHA e a ROTA dizem o mesmo; "Cambiar de contrato": o select mostra o pagador já escolhido
- *                  PELO NOME (travado), trocar o contrato muda valor e imposto.
+ *  FELIZ         — serviço SEM vínculo -> "Vincular obra social y contrato" (obra social, contrato, vigência digitada) -> o cartão "vigente hoy" mostra o
+ *                  pagador, o valor e o imposto (e a cobertura verificada CASA); a FICHA e a ROTA dizem o mesmo; "Cambiar, corregir o terminar…" ->
+ *                  "Cambió el contrato": o select mostra o pagador já escolhido PELO NOME (travado), trocar o contrato muda valor e imposto.
+ *                  + ALINHAMENTO MEDIDO (opção T1+A): rótulo 12px, o bloco de obra social ACIMA do campo "Servicio", o valor numa linha só,
+ *                  campos da mesma linha com o mesmo topo.
  *  ALTERNATIVO 1 — vínculo ENCERRADO + tentar vincular de novo = `REQUIRES_NEW_SERVICE` (frase + botão "Crear un servicio nuevo" que abre o formulário).
- *  ALTERNATIVO 2 — dois operadores: o serviço foi vinculado por outro enquanto este escolhia = `USE_CORRECTION`; recarregado, "Corregir vínculo" funciona.
+ *  ALTERNATIVO 2 — dois operadores: o serviço foi vinculado por outro enquanto este escolhia = `USE_CORRECTION`; recarregado, "Se cargó mal" (corrigir) funciona.
  *  ALTERNATIVO 3 — serviço nunca vinculado: `NO_CONTRACT` na ficha (pagador, valor, imposto e cobertura dizem "sem contrato"), na lista e no detalhe.
- *  ALTERNATIVO 4 — (ABAC) sem `patient_coverage:read` o pagador vem `REDACTED` SEM nome (R7): frase de ocultação, cobertura `REDACTED`, "Cambiar" desligado,
+ *  ALTERNATIVO 4 — (ABAC) sem `patient_coverage:read` o pagador vem `REDACTED` SEM nome (R7): frase de ocultação, cobertura `REDACTED`, sem a resposta "Cambió el contrato",
  *                  nenhum nome no DOM; sem `patient_contract_value:read` o valor é o cadeado. Só mede com o engine ligado.
  * NÃO cobre `COUNTRY_MISMATCH` / `TWO_PAYERS_OVERLAP` (provados ponta a ponta no e2e de API da T091).
  */
@@ -27,6 +29,34 @@ const V1800 = /1\.?800,00/;
 
 type Seed = { patientId: string; addressId: string; stamp: string };
 type Servico = { id: string; payer: any; payerHistory: any; price: any; tax: any; coverageMatch: any; asOf: string };
+
+/** O que a tela MEDE (getBoundingClientRect/getComputedStyle), não o que o código diz: o desalinhamento que o Gabriel reprovou. */
+async function medirAlinhamento(page: Page, sid: string): Promise<void> {
+  const m = await page.evaluate((id) => {
+    const q = (sel: string): HTMLElement => document.querySelector(sel) as HTMLElement;
+    const top = (el: Element): number => el.getBoundingClientRect().top;
+    const centro = (el: Element): number => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+    const servico = q('[data-testid^="svc-code-"]');
+    const prestadores = q('[data-testid^="svc-providersNeeded-"]');
+    const preco = q('[data-testid="svc-price"]');
+    const rotuloServico = q(`label[for="${servico.id}"]`);
+    const rotuloPrestadores = q(`label[for="${prestadores.id}"]`);
+    return {
+      fonteRotulo: getComputedStyle(rotuloServico).fontSize,
+      painelTop: top(q(`[data-testid="svc-contract-panel-${id}"]`)),
+      servicoTop: top(servico),
+      rotulosTop: [top(rotuloServico), top(rotuloPrestadores)],
+      centrosInputs: [centro(servico), centro(prestadores)],
+      precoAltura: preco.getBoundingClientRect().height,
+      precoLinha: parseFloat(getComputedStyle(preco).lineHeight),
+    };
+  }, sid);
+  expect(m.fonteRotulo, 'rótulo "Servicio" compacto').toBe('12px');
+  expect(m.painelTop, 'o bloco de obra social vem ANTES do campo Servicio').toBeLessThan(m.servicoTop);
+  expect(m.precoAltura, 'o valor monetário ocupa UMA linha').toBeLessThanOrEqual(m.precoLinha * 1.6);
+  expect(Math.abs(m.rotulosTop[0] - m.rotulosTop[1]), 'rótulo alinha com rótulo').toBeLessThanOrEqual(1);
+  expect(Math.abs(m.centrosInputs[0] - m.centrosInputs[1]), 'input alinha com input').toBeLessThanOrEqual(2);
+}
 
 test.use({ viewport: { width: 1600, height: 1200 }, video: 'on' });
 
@@ -131,7 +161,8 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
 
     const painel = page.getByTestId(`svc-contract-panel-${s1}`);
     await expect(painel.getByTestId('svc-payer')).toHaveAttribute('data-state', 'LINKED');
-    await expect(painel.getByTestId('svc-payer')).toContainText(`${pa.name} — ${ca1.name}`);
+    await expect(painel.getByTestId('svc-payer-provider')).toHaveText(pa.name);
+    await expect(painel.getByTestId('svc-payer-contract')).toHaveText(ca1.name);
     await expect(painel.getByTestId('svc-payer-kind')).toHaveText(/Obra Social/);
     await expect(painel.getByTestId('svc-price')).toContainText(V1500);
     await expect(painel.getByTestId('svc-tax')).toHaveText('Exento (0 %)');
@@ -139,8 +170,13 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     const aposVincular = await fichaIgualRota(request, ator, p1, s1);
     expect(aposVincular.payer.names).toMatchObject({ providerName: pa.name, contractName: ca1.name });
 
-    // "Cambiar de contrato": o select da obra social mostra o pagador JÁ ESCOLHIDO, pelo nome, e fica travado.
+    await medirAlinhamento(page, s1);
+
+    // "Cambió el contrato": o select da obra social mostra o pagador JÁ ESCOLHIDO, pelo nome, e fica travado (com o cadeado).
+    await page.getByTestId('svc-contract-change-open').click();
+    await expect(page.getByTestId('svc-contract-chooser')).toBeVisible();
     await page.getByTestId('svc-contract-switch-open').click();
+    await expect(page.getByTestId('svc-contract-provider-lock')).toBeVisible();
     const selectObra = page.getByTestId('svc-contract-provider');
     await expect(selectObra).toBeDisabled();
     await expect(selectObra).toHaveValue(pa.code);
@@ -152,7 +188,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await page.getByTestId('svc-contract-save').click();
     expect((await trocado).status()).toBe(200);
 
-    await expect(painel.getByTestId('svc-payer')).toContainText(`${pa.name} — ${ca2.name}`);
+    await expect(painel.getByTestId('svc-payer-contract')).toHaveText(ca2.name);
     await expect(painel.getByTestId('svc-price')).toContainText(V1800);
     await expect(painel.getByTestId('svc-tax')).toHaveText('21 %');
     const aposTroca = await fichaIgualRota(request, ator, p1, s1);
@@ -179,7 +215,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await expect(page.getByTestId('contracted-service-new')).toBeVisible({ timeout: 15_000 });
   });
 
-  test('ALTERNATIVO 2: outro operador vinculou enquanto este escolhia = USE_CORRECTION; recarregado, "Corregir vínculo" troca o contrato', async ({ page, request }) => {
+  test('ALTERNATIVO 2: outro operador vinculou enquanto este escolhia = USE_CORRECTION; recarregado, "Se cargó mal" (corregir) troca o contrato', async ({ page, request }) => {
     await loginAs(page, ator.user);
     await abrirPainel(page, p3, s3);
     await page.getByTestId('svc-contract-link-open').click();
@@ -193,7 +229,8 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
 
     // Recarregado, o serviço aparece vinculado ao contrato do outro operador; a correção (mesma data de início) o troca.
     await abrirPainel(page, p3, s3);
-    await expect(page.getByTestId('svc-payer')).toContainText(`${pa.name} — ${ca2.name}`);
+    await expect(page.getByTestId('svc-payer-contract')).toHaveText(ca2.name);
+    await page.getByTestId('svc-contract-change-open').click();
     await page.getByTestId('svc-contract-correct-open').click();
     await escolher(page, 'svc-contract-provider', pa.name); // na CORREÇÃO a obra social destrava
     await escolher(page, 'svc-contract-contract', ca1.name);
@@ -201,7 +238,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     const corrigido = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contract-link\/supersede$/.test(r.url()));
     await page.getByTestId('svc-contract-save').click();
     expect((await corrigido).status()).toBe(200);
-    await expect(page.getByTestId('svc-payer')).toContainText(`${pa.name} — ${ca1.name}`);
+    await expect(page.getByTestId('svc-payer-contract')).toHaveText(ca1.name);
     await expect(page.getByTestId('svc-price')).toContainText(V1500);
   });
 
@@ -214,12 +251,12 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await loginAs(page, ator.user);
     await abrirPainel(page, p1, s4);
     await expect(page.getByTestId('svc-payer')).toHaveAttribute('data-state', 'NO_CONTRACT');
-    await expect(page.getByTestId('svc-payer')).toContainText('Sin contrato vinculado');
-    await expect(page.getByTestId('svc-price')).toHaveText('Sin contrato vinculado');
-    await expect(page.getByTestId('svc-tax')).toHaveText('Sin contrato vinculado');
-    await expect(page.getByTestId('svc-coverage-match')).toHaveAttribute('data-state', 'NO_PAYER');
-    await expect(page.getByTestId('svc-contract-link-open')).toBeVisible();
-    await expect(page.getByTestId('svc-contract-switch-open')).toHaveCount(0);
+    await expect(page.getByTestId('svc-payer')).toContainText('Este servicio todavía no tiene obra social ni contrato');
+    await expect(page.getByTestId('svc-payer')).toContainText('Hasta vincularlo no hay valor ni impuesto para este servicio.');
+    await expect(page.getByTestId('svc-price')).toHaveCount(0); // sem vínculo não há valor nem imposto para mostrar
+    await expect(page.getByTestId('svc-tax')).toHaveCount(0);
+    await expect(page.getByTestId('svc-contract-link-open')).toHaveText('Vincular obra social y contrato');
+    await expect(page.getByTestId('svc-contract-change-open')).toHaveCount(0);
     await expect(page.getByTestId('svc-contract-new-service')).toHaveCount(0); // sem histórico: o caminho é vincular, não outro serviço
 
     // O detalhe (somente leitura) diz o mesmo.
@@ -232,7 +269,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await expect(page.getByTestId('svc-detail-coverage-match')).toHaveAttribute('data-state', 'NO_PAYER');
   });
 
-  test('ALTERNATIVO 4 (ABAC): sem `patient_coverage:read` o pagador vem REDACTED sem nome (R7), a cobertura REDACTED, "Cambiar" desligado; sem valor o cadeado', async ({ page, request }) => {
+  test('ALTERNATIVO 4 (ABAC): sem `patient_coverage:read` o pagador vem REDACTED sem nome (R7), a cobertura REDACTED, sem a resposta "Cambió el contrato"; sem valor o cadeado', async ({ page, request }) => {
     // Controle positivo: quem tem a cobertura lê os NOMES do MESMO serviço.
     const comNomes = await fichaIgualRota(request, ator, p5, s5);
     expect(comNomes.payer.names).toMatchObject({ providerName: pa.name, contractName: ca1.name });
@@ -251,7 +288,9 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await expect(page.getByTestId('svc-coverage-match')).toHaveAttribute('data-state', 'REDACTED');
     await expect(page.getByTestId('svc-coverage-match')).toHaveText('No visible con tu permiso (cobertura).');
     await expect(page.getByTestId('svc-price')).toContainText('🔒 Sin permiso para ver el valor');
-    await expect(page.getByTestId('svc-contract-switch-open')).toBeDisabled();
+    await page.getByTestId('svc-contract-change-open').click();
+    await expect(page.getByTestId('svc-contract-switch-open')).toHaveCount(0); // sem o nome da obra social não há contrato a trocar
+    await expect(page.getByTestId('svc-contract-correct-open')).toBeVisible();
     const corpo = await page.locator('body').innerText();
     expect(corpo).not.toContain(pa.name);
     expect(corpo).not.toContain(ca1.name);

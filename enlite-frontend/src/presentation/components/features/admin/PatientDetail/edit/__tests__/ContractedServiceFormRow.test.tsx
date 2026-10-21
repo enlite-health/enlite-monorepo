@@ -747,5 +747,28 @@ describe('ContractedServiceFormRow', () => {
       expect(screen.getByTestId('svc-contract-panel-s1')).toBeTruthy();
       expect(screen.queryByTestId('svc-contract-1-cascade')).toBeNull();
     });
+    it('serviço EXISTENTE: o bloco de obra social vem ANTES do campo "Servicio" (opção A: o que vale hoje sobe para o topo)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      const panel = screen.getByTestId('svc-contract-panel-s1');
+      const servico = screen.getByTestId('svc-code-1');
+      expect(panel.compareDocumentPosition(servico) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('serviço NOVO: a cascata continua ABAIXO do campo "Servicio" (onde sempre esteve)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      const servico = screen.getByTestId('svc-code-1');
+      const cascata = screen.getByTestId('svc-contract-new-1');
+      expect(servico.compareDocumentPosition(cascata) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('T1: o rótulo de campo do drawer é o compacto (12px), em campos de grade, de recrutamento e de autorização', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      for (const forId of ['svc-code-1', 'svc-providersNeeded-1', 'svc-requiredSex-1', 'svc-auth-hours-1', 'svc-profile-1']) {
+        const label = document.querySelector(`label[for="${forId}"]`);
+        expect(label, forId).not.toBeNull();
+        expect(label!.className, forId).toContain('text-[12px]');
+        expect(label!.className, forId).not.toContain('text-[18px]');
+      }
+    });
   });
 });

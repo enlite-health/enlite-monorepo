@@ -71,13 +71,13 @@ export function ServiceAuthorizationBlock({ patientId, service, index }: Props):
         <Text size="sm" data-testid={`svc-auth-none-${index}`}>{ta('none')}</Text>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <FormField label={ta('hours')} htmlFor={`svc-auth-hours-${index}`}>
+        <FormField labelSize="compact" label={ta('hours')} htmlFor={`svc-auth-hours-${index}`}>
           <InputWithIcon id={`svc-auth-hours-${index}`} type="number" min={0} step="any" inputSize="compact" value={hours} onChange={(e) => setHours(e.target.value)} data-testid={`svc-auth-hours-${index}`} />
         </FormField>
-        <FormField label={ta('from')} htmlFor={`svc-auth-from-${index}`}>
+        <FormField labelSize="compact" label={ta('from')} htmlFor={`svc-auth-from-${index}`}>
           <InputWithIcon id={`svc-auth-from-${index}`} type="date" inputSize="compact" value={from} onChange={(e) => setFrom(e.target.value)} data-testid={`svc-auth-from-${index}`} />
         </FormField>
-        <FormField label={ta('to')} htmlFor={`svc-auth-to-${index}`}>
+        <FormField labelSize="compact" label={ta('to')} htmlFor={`svc-auth-to-${index}`}>
           <InputWithIcon id={`svc-auth-to-${index}`} type="date" inputSize="compact" value={to} onChange={(e) => setTo(e.target.value)} data-testid={`svc-auth-to-${index}`} />
         </FormField>
       </div>
