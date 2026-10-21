@@ -106,7 +106,8 @@ test.describe('vacancy-locked-fields — quantidade de prestadores sem padrão 1
     await page.keyboard.type('meet.google.com/abc-defg-hij');
     await meetInput.blur();
     await page.getByTestId('create-vacancy-save-btn').click({ timeout: 5_000 }).catch(() => undefined); // desabilitado por validação também vale (conta 1)
-    await expect(page.getByText('Debe haber al menos 1 prestador')).toBeVisible();
+    // a mensagem aparece 2× (erro do FormField + erro do input, no código de produção desde antes do PR): `.first()` evita o strict mode
+    await expect(page.getByText('Debe haber al menos 1 prestador').first()).toBeVisible();
     expect(puts).toHaveLength(0);
   });
 
