@@ -119,7 +119,7 @@ test.describe('servico-dados-recrutamento-copiar-turnos — "Copiar a…" do edi
     await page.getByTestId('svc-shift-copy-1-1').click();
     await page.getByTestId('svc-shift-copy-target-1-tuesday').click();
     await page.getByTestId('svc-shift-copy-apply-1').click();
-    await expect(page.getByTestId('svc-shift-copy-conflict-1-2')).toContainText('La franja ya existente se mantuvo en: martes');
+    await expect(page.getByTestId('svc-shift-copy-conflict-1-2')).toContainText('La franja ya existente se mantuvo en: Martes');
     await expect(page.getByTestId('svc-shift-start-1-2-1')).toHaveCount(0);
 
     const [patch] = await Promise.all([
