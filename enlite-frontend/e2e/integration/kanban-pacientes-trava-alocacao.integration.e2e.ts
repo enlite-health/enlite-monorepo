@@ -119,7 +119,7 @@ test.describe('D489/D530 — estado travado por alocação viva no itinerário @
       const card = page.locator(`[data-testid="patient-kanban-card-${seed.patientId}"]`);
       await expect(card).toBeVisible({ timeout: 30_000 });
       await card.scrollIntoViewIfNeeded();
-      await dndKitDrag(page, card, page.locator('[data-testid="kanban-column-ON_HOLD"]'));
+      await dndKitDrag(page, card, page.locator('[data-testid="kanban-column-SEARCHING"]'));
 
       await expect(page.getByText(AVISO)).toBeVisible({ timeout: 8_000 });
       await expect(page.locator('[data-testid="kanban-column-REPLACEMENT"]').locator(`[data-testid="patient-kanban-card-${seed.patientId}"]`)).toBeVisible();
