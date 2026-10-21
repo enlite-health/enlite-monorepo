@@ -23,6 +23,7 @@ import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infras
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, WorkerHasScheduledAttendancesError } from '../domain/serviceExitReason';
 import { ItineraryAllocationWriter } from '../infrastructure/ItineraryAllocationWriter';
 import { addDaysToDateString } from '../domain/itineraryEvents';
+import { fromPgError, type PgOverlapLikeError } from '../domain/itineraryOverlap';
 import { ItineraryAbsenceWriter } from '../infrastructure/ItineraryAbsenceWriter';
 import { ScheduledAttendanceReader, hasScheduledAttendances, type ScheduledAttendances } from '../infrastructure/ScheduledAttendanceReader';
 
@@ -53,6 +54,7 @@ export interface RemoveFromItineraryAbsencePort {
 export interface RemoveFromItineraryScheduleWriterPort {
   cancelAllocation(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<number>;
   clearScheduledEnd(client: PoolClient, id: string, actorUid: string): Promise<number>;
+  restoreCancelled(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<number>;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -142,10 +144,11 @@ export class RemoveFromItineraryUseCase {
             serviceId, kind: 'ENTRY_CANCELLED', outgoingWorkerId: ended.workerId, assignmentId: e.allocationId,
             effectiveDate: e.validFrom, reasonCode: reasonCategory, actorUid,
           });
-          // O titular vem da LIGAÇÃO do REPLACE (nunca da data). Vivo com fim na véspera → solta o fim; qualquer outro caso
-          // (ENDED por outro caminho, fim noutra data, sem ligação) → não reabre nada.
+          // O titular vem da LIGAÇÃO do REPLACE (nunca da data). Vivo com fim na véspera → solta o fim; CANCELLED (ainda não começara, D1) →
+          // restaura; qualquer outro caso (ENDED por outro caminho, fim noutra data, sem ligação) → não reabre nada.
           const r = e.replaces;
           if (r?.status === 'ACTIVE' && r.endIsEve) await this.schedule.clearScheduledEnd(client, r.allocationId, actorUid);
+          else if (r?.status === 'CANCELLED') await this.restoreTitular(client, r.allocationId, addDaysToDateString(ended.validTo, 1), actorUid);
         }
         await this.marks.rejectWith(client, { patientId, serviceId, workerId: ended.workerId, reasonCategory, actorUid, cells: null, now });
       }
@@ -153,5 +156,16 @@ export class RemoveFromItineraryUseCase {
       await this.derivation.run(client, patientId, now);
       return { allocationId: ended.allocationId, status: ended.status, validTo: ended.validTo, destination: dest };
     });
+  }
+
+  /** Trava A / sobreposição (482) na restauração viram erro de domínio (a transação inteira desfaz), não 500. */
+  private async restoreTitular(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<void> {
+    try {
+      await this.schedule.restoreCancelled(client, id, minValidFrom, actorUid);
+    } catch (err) {
+      const overlap = fromPgError(err as PgOverlapLikeError);
+      if (overlap !== null) throw overlap;
+      throw err;
+    }
   }
 }

@@ -280,6 +280,36 @@ describe('POST …/allocations/:id/end com agendamento — API real (058 P5c) @i
     expect((await alocacao(wQua)).status).toBe('CANCELLED');
   });
 
+  it('D1: titular que ainda não começou (valid_from = hoje+3) substituído desde hoje+1 → tirar W RESTAURA o titular (ACTIVE, mesmo valid_from, sem fim); 1 titular na faixa', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 0, selecionados: 2, desdeDias: -7 });
+    const [t, w] = s.selecionados;
+    const vfT = await somaDias(pool, hoje, 3);
+    const amanha = await somaDias(pool, hoje, 1);
+    const tAlloc = await pool.query<{ id: string }>(
+      `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, status, created_by, updated_by)
+       VALUES ($1, $2, (SELECT id FROM worker_job_applications WHERE worker_id = $2), $3::date, 'ACTIVE', 'e2e', 'e2e') RETURNING id`,
+      [s.slotQuaId, t, vfT],
+    );
+    const tId = tAlloc.rows[0].id;
+    await replace(s, tId, w, amanha);
+    expect(await alocacao(tId)).toEqual({ status: 'CANCELLED', vf: vfT, vt: null }); // controle: o replace de verdade cancelou o titular
+    const wSeg = await alocarVigente(w, s.slotSegId);
+
+    expect((await tirarTudo(s, wSeg)).status).toBe(200);
+
+    expect(await alocacao(tId)).toEqual({ status: 'ACTIVE', vf: vfT, vt: null });
+    const naFaixa = await pool.query<{ worker_id: string }>(
+      `SELECT worker_id FROM patient_itinerary_assignment WHERE slot_id = $1 AND status = 'ACTIVE'`,
+      [s.slotQuaId],
+    );
+    expect(naFaixa.rows).toEqual([{ worker_id: t }]);
+    const ec = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM patient_itinerary_change_log WHERE contracted_service_id = $1 AND kind = 'ENTRY_CANCELLED'`,
+      [s.serviceId],
+    );
+    expect(ec.rows[0].n).toBe(1);
+  });
+
   it('controle negativo: o titular ligado já está ENDED por outro caminho → tirar W não reabre nada', async () => {
     const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 0, titularesQua: 1, selecionados: 1, desdeDias: -7 });
     const [t] = s.quaAllocations;

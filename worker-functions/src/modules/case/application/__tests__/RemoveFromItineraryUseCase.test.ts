@@ -7,6 +7,7 @@ import { RemoveFromItineraryUseCase, type RemoveFromItineraryInput } from '../Re
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, WorkerHasScheduledAttendancesError } from '../../domain/serviceExitReason';
 import type { ScheduledAttendances, ScheduledEntry } from '../../infrastructure/ScheduledAttendanceReader';
 import { ServiceTeamWorkerAllocatedError } from '../ServiceTeamMarkUseCase';
+import { ItineraryOverlapError } from '../../domain/itineraryOverlap';
 import { AllocationNotActiveError, type ItineraryEndWithResult } from '../ItineraryAllocationUseCase';
 
 const FAKE_CLIENT = { marker: 'fake-client' } as never;
@@ -14,7 +15,7 @@ const NOW = new Date('2026-09-30T15:00:00Z');
 
 type RunInTransaction = ConstructorParameters<typeof RemoveFromItineraryUseCase>[5];
 
-function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError?: Error; scheduled?: ScheduledAttendances; clearResult?: number; cancelResult?: number } = {}) {
+function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError?: Error; scheduled?: ScheduledAttendances; clearResult?: number; cancelResult?: number; restoreError?: unknown } = {}) {
   const log: string[] = [];
   const allocations = {
     endWith: jest.fn(async (_c: unknown, input: { allocationId: string }, o: { derive: boolean }): Promise<ItineraryEndWithResult> => {
@@ -62,6 +63,11 @@ function build(opts: { catalogHit?: boolean; changeLogError?: Error; rejectError
     }),
     clearScheduledEnd: jest.fn(async () => {
       log.push('end-clear');
+      return 1;
+    }),
+    restoreCancelled: jest.fn(async () => {
+      log.push('restore');
+      if (opts.restoreError) throw opts.restoreError;
       return 1;
     }),
   };
@@ -294,12 +300,23 @@ describe('RemoveFromItineraryUseCase', () => {
     expect(t.derivation.run).not.toHaveBeenCalled();
   });
 
+  it('D1: titular ligado CANCELLED (não começara) → restoreCancelled(titular, dia seguinte ao fim, actor) DEPOIS do cancelamento da entrada; NÃO solta fim', async () => {
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('CANCELLED', false)) });
+
+    await t.useCase.execute(REMOVE_TUDO);
+
+    expect(t.log).toEqual(['tx', 'catalog', 'end(derive=false)', 'log', 'entry-cancel', 'log', 'restore', 'reject', 'derive']);
+    expect(t.schedule.restoreCancelled).toHaveBeenCalledWith(FAKE_CLIENT, 'al-3', '2026-10-01', 'u-1');
+    expect(t.schedule.clearScheduledEnd).not.toHaveBeenCalled();
+  });
+
   it('titular ligado ACTIVE mas com fim em OUTRA data (não a véspera): não reabre nada', async () => {
     const t = build({ scheduled: UMA_ENTRADA(TITULAR('ACTIVE', false)) });
 
     await t.useCase.execute(REMOVE_TUDO);
 
     expect(t.schedule.clearScheduledEnd).not.toHaveBeenCalled();
+    expect(t.schedule.restoreCancelled).not.toHaveBeenCalled();
   });
 
   it('titular ligado ENDED por outro caminho: não reabre nada', async () => {
@@ -308,5 +325,24 @@ describe('RemoveFromItineraryUseCase', () => {
     await t.useCase.execute(REMOVE_TUDO);
 
     expect(t.schedule.clearScheduledEnd).not.toHaveBeenCalled();
+    expect(t.schedule.restoreCancelled).not.toHaveBeenCalled();
+  });
+
+  it('restoreCancelled estoura a sobreposição (23P01 itinerary_overlap) → erro de domínio ItineraryOverlapError; sem derivação', async () => {
+    const detail = JSON.stringify({
+      existingServiceId: 's-1', existingWeekday: 1, existingStart: '08:00', existingEnd: '12:00',
+      requestedServiceId: 's-1', requestedWeekday: 1, requestedStart: '08:00', requestedEnd: '12:00', sameAddress: true, minGapMinutes: null,
+    });
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('CANCELLED', false)), restoreError: Object.assign(new Error('itinerary_overlap'), { code: '23P01', detail }) });
+
+    await expect(t.useCase.execute(REMOVE_TUDO)).rejects.toBeInstanceOf(ItineraryOverlapError);
+    expect(t.derivation.run).not.toHaveBeenCalled();
+  });
+
+  it('restoreCancelled estoura outro erro (Trava A, P0001): repassa o erro original', async () => {
+    const trava = Object.assign(new Error('ITINERARY_SLOT_CAPACITY_EXCEEDED'), { code: 'P0001' });
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('CANCELLED', false)), restoreError: trava });
+
+    await expect(t.useCase.execute(REMOVE_TUDO)).rejects.toBe(trava);
   });
 });

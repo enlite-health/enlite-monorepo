@@ -200,4 +200,30 @@ describe('ItineraryAllocationWriter', () => {
 
     expect(rowCount).toBe(0);
   });
+
+  it('restoreCancelled: 1 query, ACTIVE só de CANCELLED sem fim e com valid_from >= minValidFrom; params [id, min, actor]', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.restoreCancelled(client as never, 'alloc-1', '2026-10-22', 'u-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/SET status = 'ACTIVE'/);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND status = 'CANCELLED' AND valid_to IS NULL AND valid_from >= \$2::date/);
+    expect(String(sql)).not.toMatch(/SET[^W]*valid_from/);
+    expect(params).toEqual(['alloc-1', '2026-10-22', 'u-1']);
+    expect(rowCount).toBe(1);
+  });
+
+  it('restoreCancelled: nenhuma linha → 0', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    expect(await writer.restoreCancelled(client as never, 'alloc-1', '2026-10-22', 'u-1')).toBe(0);
+  });
+
+  it('restoreCancelled: rowCount ausente → 0', async () => {
+    const client = clientStub({ rows: [] } as never);
+
+    expect(await writer.restoreCancelled(client as never, 'alloc-1', '2026-10-22', 'u-1')).toBe(0);
+  });
 });
