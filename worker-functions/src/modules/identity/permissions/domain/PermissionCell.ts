@@ -107,6 +107,9 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   dashboard_funnel: 'Operações',
   dashboard_zones: 'Operações',
   integration: 'Operações',
+  // Spec 029 — mesma casa do `integration`: as rotas vivem no módulo `integration` e na família
+  // `admin.integrations`. Sem esta linha o painel mostraria a permissão como "Não categorizado".
+  ai_prompt: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -499,6 +502,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     + 'serem bloqueadas antes de completar a aplicação (cadastro incompleto, prestador '
     + 'desativado ou não encontrado). Tela só leitura — sem ação.',
 
+"  // ── Spec 029 (prompts de IA editáveis) — as 2 células que `adminAiPromptRoutes` cobra.
+  //    `ai_prompt:restore` (migration 488) NÃO entra: nenhuma rota a cobra ainda (Fase 5).
+  'ai_prompt:read': 'Ler o conteúdo e o histórico dos prompts de IA da plataforma, e comparar versões.',
+  'ai_prompt:update': 'Salvar e desfazer a última alteração de um prompt de IA.',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.

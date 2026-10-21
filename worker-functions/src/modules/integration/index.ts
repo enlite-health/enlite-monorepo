@@ -37,7 +37,6 @@ export {
   retryMissingFields,
 } from './infrastructure/GeminiVacancyParserHelpers';
 export { GoogleApiKeyValidator } from './infrastructure/GoogleApiKeyValidator';
-export { GoogleDocsPromptProvider } from './infrastructure/GoogleDocsPromptProvider';
 export { ClickUpFieldResolver } from './infrastructure/clickup/ClickUpFieldResolver';
 export type { ClickUpFieldResolverOptions } from './infrastructure/clickup/ClickUpFieldResolver';
 export type { ClickUpTask, ClickUpTaskCustomField } from './infrastructure/clickup/ClickUpTask';
@@ -89,6 +88,8 @@ export { TalentumWebhookController } from './interfaces/webhooks/controllers/Tal
 export { PartnerAuthMiddleware } from './interfaces/webhooks/middleware/PartnerAuthMiddleware';
 export { createWebhookRoutes } from './interfaces/webhooks/routes/webhookRoutes';
 export { createAdminIntegrationsRoutes } from './interfaces/routes/adminIntegrationsRoutes';
+export { createAdminAiPromptRoutes } from './interfaces/routes/adminAiPromptRoutes';
+export { AiPromptController } from './interfaces/controllers/AiPromptController';
 export { AnaCareBackfillController } from './interfaces/controllers/AnaCareBackfillController';
 export { TalentumPrescreeningPayloadSchema } from './interfaces/webhooks/validators/talentumPrescreeningSchema';
 export type { TalentumPrescreeningPayloadInput, TalentumPrescreeningPayloadParsed, TalentumPrescreeningCreatedParsed, TalentumPrescreeningResponseParsed } from './interfaces/webhooks/validators/talentumPrescreeningSchema';

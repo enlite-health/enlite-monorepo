@@ -80,6 +80,54 @@ import { withTransientRetry } from './retryTransient';
 export interface RecurringMeetSlot { weekday: number; time: string; link: string }
 export { ApiError } from './ApiError';
 
+/**
+ * `AiPromptSlug` (spec 029) — os três identificadores fechados de prompt de IA editável, espelho
+ * de `AI_PROMPT_SLUGS`/`AiPromptSlug` do backend (`worker-functions/src/modules/integration/
+ * domain/AiPromptSlug.ts`). Tipo novo só nasce quando o backend alargar a união — nunca só aqui.
+ */
+export type AiPromptSlug = 'VACANCY_DESCRIPTION' | 'PRESCREENING_AT' | 'PRESCREENING_CAREGIVER';
+
+/** Formato de registro do contrato `contracts/admin-ai-prompts.md` (list/get/update/undo). */
+export interface AiPrompt {
+  slug: AiPromptSlug;
+  body: string;
+  version: number;
+  updatedBy: string | null;
+  updatedAt: string;
+  isActive: boolean;
+}
+
+/** Resposta de `/preview` (contrato `admin-ai-prompts.md`). */
+export interface AiPromptPreview {
+  jobPostingId: string;
+  slug: AiPromptSlug;
+  generated: string;
+}
+
+/** Corpos em edição enviados à simulação; ausente = o backend usa o prompt salvo. */
+export type AiPromptBodies = Partial<Record<AiPromptSlug, string>>;
+
+/** Resposta de `POST /api/admin/ai-prompts/simulate-vacancy` (contrato `admin-ai-prompts.md`). */
+export interface AiVacancySimulation {
+  description: string;
+  prescreening: {
+    questions: Array<{
+      question: string;
+      responseType: string[];
+      desiredResponse: string;
+      weight: number;
+      required: boolean;
+      analyzed: boolean;
+      earlyStoppage: boolean;
+    }>;
+    faq: Array<{ question: string; answer: string }>;
+  };
+  /** O backend escolhe o prescreening pela VAGA, não pelo slug recebido. */
+  workerType: 'AT' | 'CUIDADOR';
+  /** Os dois prompts de fato exercitados. */
+  usedSlugs: AiPromptSlug[];
+}
+
 class AdminApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -463,6 +511,54 @@ class AdminApiServiceClass {
     return this.request<{ questions: any[]; faq: any[] }>(
       'POST', `/api/admin/vacancies/${vacancyId}/prescreening-config`, data,
     );
+  }
+
+  // ========== AI Prompts (spec 029) ==========
+  // Contrato: `specs/029-prompts-ia-editaveis/contracts/admin-ai-prompts.md`.
+  // `restore` (permissão `ai_prompt:restore`, versão arbitrária) é de fase posterior — não entra aqui.
+
+  /** `GET /api/admin/ai-prompts` — lista os três prompts, com conteúdo (sem paginação). */
+  async listAiPrompts(): Promise<AiPrompt[]> {
+    return this.request<AiPrompt[]>('GET', '/api/admin/ai-prompts');
+  }
+
+  /** `GET /api/admin/ai-prompts/{slug}` — um prompt. 404 se o slug não é do conjunto fechado. */
+  async getAiPrompt(slug: AiPromptSlug): Promise<AiPrompt> {
+    return this.request<AiPrompt>('GET', `/api/admin/ai-prompts/${slug}`);
+  }
+
+  /**
+   * `PUT /api/admin/ai-prompts/{slug}` — grava conteúdo novo com lock otimista (`version`).
+   * 409 quando a `version` enviada diverge da atual: nada é gravado.
+   */
+  async updateAiPrompt(slug: AiPromptSlug, body: string, version: number): Promise<AiPrompt> {
+    return this.request<AiPrompt>('PUT', `/api/admin/ai-prompts/${slug}`, { body, version });
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/{slug}/undo` — desfaz a última alteração, um passo, sem alvo
+   * (não recebe qual versão restaurar: é sempre a imediatamente anterior). 422 sem versão anterior.
+   */
+  async undoAiPrompt(slug: AiPromptSlug, version: number): Promise<AiPrompt> {
+    return this.request<AiPrompt>('POST', `/api/admin/ai-prompts/${slug}/undo`, { version });
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/{slug}/preview` — gera, com o texto EM EDIÇÃO e um caso real, o que
+   * aquele prompt produziria. Não grava e não publica nada. `generated` é sempre string (para os
+   * slugs de preselección, o JSON serializado). 503 quando o modelo está indisponível.
+   */
+  async previewAiPrompt(slug: AiPromptSlug, body: string, jobPostingId: string): Promise<AiPromptPreview> {
+    return this.request<AiPromptPreview>('POST', `/api/admin/ai-prompts/${slug}/preview`, { body, jobPostingId });
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/simulate-vacancy` — simula a CRIAÇÃO de uma vacante (descrição +
+   * pré-seleção) com os textos em edição. Não grava, não publica. Pode levar dezenas de segundos
+   * (até 3 chamadas ao modelo). 503 quando o modelo está indisponível; 404 se o caso não existe.
+   */
+  async simulateVacancyCreation(jobPostingId: string, bodies: AiPromptBodies): Promise<AiVacancySimulation> {
+    return this.request<AiVacancySimulation>('POST', '/api/admin/ai-prompts/simulate-vacancy', { jobPostingId, bodies });
   }
 
   // ========== Worker Document methods — delegated to AdminWorkerDocsApiService ==========
