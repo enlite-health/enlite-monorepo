@@ -1,4 +1,5 @@
 import { LabelHTMLAttributes, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * O tamanho do rótulo.
@@ -41,6 +42,7 @@ export function Label({
   className = '',
   ...props
 }: LabelProps): JSX.Element {
+  const { t } = useTranslation();
   return (
     <label
       className={`font-['Lexend'] font-medium ${SIZE_CLASSES[size]} ${className}`}
@@ -49,7 +51,7 @@ export function Label({
       {children}
       {required && <span className="text-red-500 ml-1">*</span>}
       {optional && (
-        <span className="font-normal text-xs text-[#b0b0b0] ml-2">(opcional)</span>
+        <span className="font-normal text-xs text-[#b0b0b0] ml-2">{t('common.optional')}</span>
       )}
     </label>
   );
