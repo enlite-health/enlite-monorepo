@@ -18,7 +18,7 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import { mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, digitarDataNoCampo } from '../helpers/itinerario-aba-e2e-helper';
 import { seedDerivablePatient, selectedWorker, allocateWorker, derivacaoToken } from '../helpers/derivacao-e2e-helper';
 import { insertWJA } from '../helpers/wja-test-helper';
 import { allocationOptionsApi, endAllocationApi } from '../helpers/itinerario-escrita-e2e-helper';
@@ -49,6 +49,17 @@ function vigiarHosts(page: Page): () => string[] {
   return () => hosts.filter((h) => CADEIA_FORBIDDEN_HOSTS.test(h));
 }
 
+/**
+ * Escolhe o substituto pela marca de estado do próprio prestador (`substitution-status-<workerId>`). NUNCA `option.first()`: a 1ª
+ * opção do `SearchableSelect` é "Todos" (limpa a escolha) e a lista traz também o titular ("En atención") — medido no CI (#712):
+ * `first()` clicava "Todos", o Confirmar ficava desabilitado e o `waitForResponse` esperava os 150 s do teste.
+ */
+async function escolherSubstituto(page: Page, workerId: string): Promise<void> {
+  await page.getByTestId('substitution-worker').click();
+  await page.getByRole('listbox').getByRole('option').filter({ has: page.getByTestId(`substitution-status-${workerId}`) }).click();
+  await expect(page.getByTestId('substitution-worker')).not.toHaveText('Todos'); // lido da TELA: o campo mudou
+}
+
 const hojeDoBanco = (): string =>
   sqlComVars("SELECT to_char((now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date, 'YYYY-MM-DD')");
 
@@ -68,8 +79,7 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
       await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
       await page.getByTestId('substitution-mode-permanent').click();
       await expect(page.getByTestId('substitution-start-now')).toBeChecked();
-      await page.getByTestId('substitution-worker').click();
-      await page.getByRole('listbox').getByRole('option').first().click();
+      await escolherSubstituto(page, m.b);
       await page.getByTestId('substitution-reason').selectOption({ label: MOTIVO_DESISTENCIA });
       await page.getByTestId('substitution-destination-RESERVE').click();
       const [resp] = await Promise.all([
@@ -108,12 +118,11 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
   });
 
   /** Nuevo + → Entero → "Ahora" → substituto (única opção) → motivo → `RESERVE`, SEM confirmar. */
-  async function prepararEntero(page: Page): Promise<void> {
+  async function prepararEntero(page: Page, workerId: string): Promise<void> {
     await page.getByTestId('itinerario-novo-btn').click();
     await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('substitution-mode-permanent').click();
-    await page.getByTestId('substitution-worker').click();
-    await page.getByRole('listbox').getByRole('option').first().click();
+    await escolherSubstituto(page, workerId);
     await page.getByTestId('substitution-reason').selectOption({ label: MOTIVO_DESISTENCIA });
     await page.getByTestId('substitution-destination-RESERVE').click();
   }
@@ -141,7 +150,7 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, m.seed.patientId);
-      await prepararEntero(page);
+      await prepararEntero(page, m.b);
       const [resp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())),
         page.getByTestId('substitution-confirm').click(),
@@ -170,7 +179,7 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
     try {
       await loginAs(page, STAFF);
       await openItineraryTab(page, m.seed.patientId);
-      await prepararEntero(page); // tudo preenchido, SEM confirmar
+      await prepararEntero(page, m.b); // tudo preenchido, SEM confirmar
 
       // Por fora: o titular é encerrado por outro caminho.
       const fora = await endAllocationApi(request, derivacaoToken(), m.seed.patientId, m.serviceId, m.allocationA, { reasonCategory: 'OTHER', destination: 'RESERVE' });
@@ -211,15 +220,12 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
       await page.getByTestId('substitution-start-scheduled').click();
       await expect(page.getByTestId('substitution-destination-LEAVE_SERVICE')).toBeDisabled();
       await expect(page.getByTestId('substitution-reserve-only')).toContainText('solo se puede dejar como reserva');
-      await page.getByTestId('substitution-worker').click();
-      await page.getByRole('listbox').getByRole('option').first().click();
+      await escolherSubstituto(page, m.b);
       await page.getByTestId('substitution-reason').selectOption({ label: MOTIVO_DESISTENCIA });
       await page.getByTestId('substitution-destination-RESERVE').click();
       await expect(page.getByTestId('substitution-confirm')).toBeDisabled(); // sem data
 
-      await page.getByTestId('substitution-start-date').click();
-      await page.keyboard.type(dataIso.slice(8, 10) + dataIso.slice(5, 7) + dataIso.slice(0, 4)); // dd mm aaaa
-      expect(await page.getByTestId('substitution-start-date').inputValue()).toBe(dataIso); // lido da TELA
+      await digitarDataNoCampo(page, 'substitution-start-date', dataIso);
       await expect(page.getByTestId('substitution-confirm')).toBeEnabled();
 
       expect(posts).toHaveLength(0); // não confirmou
