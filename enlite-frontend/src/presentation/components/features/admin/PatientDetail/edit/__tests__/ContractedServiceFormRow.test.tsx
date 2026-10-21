@@ -521,12 +521,44 @@ describe('ContractedServiceFormRow', () => {
       expect(erro.textContent).not.toContain('No se pudo actualizar');
     });
 
-    it('REGRA-05: 422 SERVICE_ADDRESS_LOCKED (LIVE_VACANCY) → mensagem sob o endereço, sem o erro genérico', async () => {
+    it.each([['LIVE_VACANCY', 'el servicio tiene una vacante activa'], ['ALLOCATION', 'prestadores asignados']])('REGRA-05: 422 SERVICE_ADDRESS_LOCKED (%s) → mensagem na linha do Guardar, select volta ao endereço SALVO, sem o erro genérico', async (reason, trecho) => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason } }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, addressId: 'addr-home' }} index={1} onSaved={vi.fn()} />);
+      const select = screen.getByTestId('svc-addressId-1') as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: 'addr-school' } });
+      expect(select.value).toBe('addr-school');
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      const msg = await screen.findByTestId('svc-address-locked-1');
+      expect(msg.textContent).toContain(trecho);
+      // O que o usuário vê: a mensagem está na MESMA linha do botão Guardar (não lá em cima, sob o select).
+      expect(msg.parentElement).toBe(screen.getByTestId('contracted-service-save-s1').parentElement);
+      await waitFor(() => expect(select.value).toBe('addr-home'));
+      expect(screen.queryByTestId('contracted-service-error-s1')).toBeNull();
+    });
+
+    it('422 SERVICE_ADDRESS_LOCKED sem endereço salvo → select volta ao vazio', async () => {
       mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_ADDRESS_LOCKED', details: { reason: 'LIVE_VACANCY' } }));
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      const select = screen.getByTestId('svc-addressId-1') as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: 'addr-school' } });
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
-      expect((await screen.findByTestId('svc-address-locked-1')).textContent).toContain('el servicio tiene una vacante activa');
-      expect(screen.queryByTestId('contracted-service-error-s1')).toBeNull();
+      await screen.findByTestId('svc-address-locked-1');
+      await waitFor(() => expect(select.value).toBe(''));
+    });
+
+    it.each([
+      ['providers_needed', 'No se puede dejar vacía la cantidad de prestadores'],
+      ['schedule', 'No se puede dejar vacío este dato'],
+      [undefined, 'No se puede dejar vacío este dato'],
+    ])('422 SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY (campo %s) → mensagem específica, não a genérica', async (field, trecho) => {
+      mockUpdate.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', details: field ? { field } : undefined }));
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '' } });
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      const erro = await screen.findByTestId('contracted-service-error-s1');
+      expect(erro.textContent).toContain(trecho);
+      expect(erro.textContent).toContain('vacante activa');
+      expect(erro.textContent).not.toContain('No se pudo actualizar');
     });
 
     it('REGRA-05: reason ALLOCATION → mensagem dos prestadores asignados', async () => {

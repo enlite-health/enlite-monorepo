@@ -140,7 +140,9 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
   // Só o serviço NOVO escolhe o contrato aqui; o existente tem o painel próprio (vincular / trocar / corrigir / terminar).
   const [cascade, setCascade] = useState<ContractCascadeValue>(EMPTY_CASCADE);
 
-  const { register, handleSubmit, control, reset, watch, formState: { isDirty } } = useForm<FormValues>({
+  // Só um endereço VIVO da ficha vale como "salvo" (ver o comentário do defaultValues abaixo).
+  const savedAddressId = addresses.some((a) => a.id === service?.addressId) ? String(service?.addressId) : '';
+  const { register, handleSubmit, control, reset, watch, setValue, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       serviceCode: service?.serviceCode ?? '',
@@ -154,7 +156,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       // Só um endereço VIVO da ficha entra como valor inicial: um `addressId` arquivado não
       // aparece no select e, se ficasse no form, o PATCH reenviaria o UUID morto que a tela
       // mostra como "vazio" (gate, 06/09). Fora da lista → '' → salvar sem escolher manda null.
-      addressId: addresses.some((a) => a.id === service?.addressId) ? String(service?.addressId) : '',
+      addressId: savedAddressId,
       schedule: slotsToShifts(service?.schedule ?? []),
       deviceTypeCodes: service?.deviceTypes ?? [],
       ...recruitmentDefaults(service),
@@ -245,9 +247,15 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       if (code === 'SLOT_OVERLAP') setOverlap(true);
       else if (code === 'PROVIDERS_NEEDED_BELOW_OCCUPANCY') setError(te('providersNeededBelowOccupancy'));
       else if (code === 'PROVIDERS_NEEDED_CANNOT_CLEAR') setError(te('providersNeededCannotClear'));
+      else if (code === 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY') {
+        const field = (e as { details?: { field?: string } }).details?.field;
+        setError(te(field === 'providers_needed' ? 'providersNeededRequiredByLiveVacancy' : 'serviceFieldRequiredByLiveVacancy'));
+      }
       else if (code === 'SERVICE_ADDRESS_LOCKED') {
         const reason = (e as { details?: { reason?: string } }).details?.reason;
         setAddressLocked(reason === 'LIVE_VACANCY' ? 'LIVE_VACANCY' : 'ALLOCATION');
+        // Nada foi gravado: o select volta ao endereço SALVO (não fica mostrando o que a API recusou).
+        setValue('addressId', savedAddressId, { shouldDirty: true });
       }
       else setError(isNew ? te('createServiceError') : te('updateServiceError'));
     } finally {
@@ -328,11 +336,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             />
           )} />
         </FormField>
-        {addressLocked && (
-          <Text size="sm" className="text-red-600 sm:col-span-2" data-testid={`svc-address-locked-${index}`}>
-            {te(addressLocked === 'LIVE_VACANCY' ? 'addressLockedLiveVacancy' : 'addressLockedAllocation')}
-          </Text>
-        )}
         <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
           <InputWithIcon id={`svc-startDate-${index}`} type="date" inputSize="compact" data-testid={`svc-startDate-${index}`} {...register('startDate')} />
         </FormField>
@@ -404,6 +407,12 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} disabled={!shiftsValid} className="w-32" data-testid={isNew ? 'contracted-service-new-save' : `contracted-service-save-${service.id}`}>
           {te('save')}
         </Button>
+        {/* A recusa do endereço fica NA LINHA do Guardar: o select está lá em cima e o drawer rola — a mensagem sob o select ficava fora da tela. */}
+        {addressLocked && (
+          <Text size="sm" className="text-red-600" data-testid={`svc-address-locked-${index}`}>
+            {te(addressLocked === 'LIVE_VACANCY' ? 'addressLockedLiveVacancy' : 'addressLockedAllocation')}
+          </Text>
+        )}
         {error && <Text size="sm" className="text-red-600" data-testid={isNew ? 'contracted-service-new-error' : `contracted-service-error-${service?.id}`}>{error}</Text>}
       </div>
 

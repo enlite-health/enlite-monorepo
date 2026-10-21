@@ -78,7 +78,7 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
     await expect(page.getByTestId('svc-address-locked-1')).toHaveCount(0);
   });
 
-  test('ALTERNATIVO 1 (servidor recusa): vaga viva → 422 SERVICE_ADDRESS_LOCKED (LIVE_VACANCY) com mensagem sob o endereço; address_id inalterado', async ({ page, request }) => {
+  test('ALTERNATIVO 1 (servidor recusa): vaga viva → 422 SERVICE_ADDRESS_LOCKED (LIVE_VACANCY) com mensagem na linha do Guardar e select de volta ao endereço salvo; address_id inalterado', async ({ page, request }) => {
     const { patientId, addressId, serviceId } = await semear(request, { ...RECRUITMENT_FIELDS_E2E });
     // A vaga viva nasce por API (o outbound da ativação está mapeado no cabeçalho): a tela só tenta trocar o endereço.
     const ativou = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`, { headers: AUTH_HEADERS });
@@ -98,7 +98,12 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
     const corpo = (await patch.json()) as { code?: string; details?: { reason?: string } };
     expect(corpo.code).toBe('SERVICE_ADDRESS_LOCKED');
     expect(corpo.details?.reason).toBe('LIVE_VACANCY');
-    await expect(page.getByTestId('svc-address-locked-1')).toContainText('el servicio tiene una vacante activa');
+    // Régua humana (058b/fix-422): o que a PESSOA vê — a mensagem está na tela (na viewport, ao lado do Guardar que ela acabou de clicar) e o select NÃO fica
+    // mostrando o endereço que a API recusou. `toContainText` sozinho passava com a mensagem fora da tela (lá em cima, sob o select, num drawer que rola).
+    const aviso = page.getByTestId('svc-address-locked-1');
+    await expect(aviso).toContainText('el servicio tiene una vacante activa');
+    await expect(aviso).toBeInViewport();
+    await expect(page.getByTestId('svc-addressId-1')).toHaveValue(addressId);
     await expect(page.getByTestId(`contracted-service-error-${serviceId}`)).toHaveCount(0); // não cai no erro genérico
     expect(enderecoDoServico(serviceId)).toBe(addressId);
   });
@@ -128,7 +133,10 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
       const corpo = (await patch.json()) as { code?: string; details?: { reason?: string } };
       expect(corpo.code).toBe('SERVICE_ADDRESS_LOCKED');
       expect(corpo.details?.reason).toBe('ALLOCATION');
-      await expect(page.getByTestId('svc-address-locked-1')).toContainText('ya tiene prestadores asignados');
+      const aviso = page.getByTestId('svc-address-locked-1');
+      await expect(aviso).toContainText('ya tiene prestadores asignados');
+      await expect(aviso).toBeInViewport();
+      await expect(page.getByTestId('svc-addressId-1')).toHaveValue(original);
       expect(enderecoDoServico(svc.serviceId)).toBe(original);
       expect(sqlComVars("SELECT status FROM patient_itinerary_assignment WHERE id = :'id'::uuid", { id: aloc.allocationId! })).toBe('ACTIVE');
     } finally {

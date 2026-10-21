@@ -3373,6 +3373,8 @@
         "updateServiceError": "No se pudo actualizar el servicio",
         "providersNeededBelowOccupancy": "No se puede bajar la cantidad de prestadores por debajo de los ya asignados al itinerario.",
         "providersNeededCannotClear": "Una vez informada, la cantidad de prestadores no puede quedar vacía.",
+        "providersNeededRequiredByLiveVacancy": "No se puede dejar vacía la cantidad de prestadores: hay una vacante activa que la lee. Cerrá la vacante antes de borrarla.",
+        "serviceFieldRequiredByLiveVacancy": "No se puede dejar vacío este dato: hay una vacante activa que lo lee. Cerrá la vacante antes de borrarlo.",
         "deactivateServiceError": "No se pudo dar de baja el servicio",
         "selectServiceCode": "Servicio",
         "selectWorker": "Seleccioná un prestador",

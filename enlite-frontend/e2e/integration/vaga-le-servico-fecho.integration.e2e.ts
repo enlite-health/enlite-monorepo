@@ -171,7 +171,8 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
     expect(await guardarServico(page)).toBe(422); // SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY
     const erro = page.getByTestId(`contracted-service-error-${serviceId}`);
     await expect(erro).toBeVisible({ timeout: 15_000 });
-    await expect(erro).toContainText('No se pudo actualizar el servicio');
+    await expect(erro).toContainText('No se puede dejar vacío este dato: hay una vacante activa que lo lee');
+    await expect(erro).not.toContainText('No se pudo actualizar');
 
     // Nada foi apagado: o serviço segue com os 2 turnos, a vaga segue lendo o horário.
     expect(runSQL(`SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = '${serviceId}' AND valid @> CURRENT_DATE`)).toBe('2');
