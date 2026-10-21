@@ -13,6 +13,10 @@ import { CONTRACT_058_DEFAULTS, LINKED_058 } from '@domain/entities/__tests__/fi
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { ContractedServiceContractPanel } from '../ContractedServiceContractPanel';
 
+const mockCreateGate = vi.fn(() => ({ allowed: true }));
+vi.mock('@presentation/hooks/useCellAccess', () => ({
+  useActionGate: (resource: string, action: string) => (resource === 'patient_services' && action === 'create' ? mockCreateGate() : { allowed: true }),
+}));
 const mockForService = vi.fn();
 const mockListContracts = vi.fn();
 const mockCreateLink = vi.fn();
@@ -72,6 +76,7 @@ const optionsOf = (testId: string): string[] => Array.from((screen.getByTestId(t
 describe('ContractedServiceContractPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCreateGate.mockReturnValue({ allowed: true });
     mockForService.mockResolvedValue({ providers: [{ code: 'OSDE', name: 'OSDE' }, { code: 'GALENO', name: 'Galeno' }], asOf: '2026-10-19' });
     mockListContracts.mockResolvedValue([CONTRATO]);
   });
@@ -342,6 +347,19 @@ describe('ContractedServiceContractPanel', () => {
       choose('svc-contract-new-service');
       expect(onRequestNewService).toHaveBeenCalledTimes(1);
       expect(screen.queryByTestId('svc-contract-save')).toBeNull();
+    });
+
+    it('sem `patient_services:create` a resposta "otra obra social" some (as outras 3 ficam); com a célula, aparece', () => {
+      mockCreateGate.mockReturnValue({ allowed: false });
+      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={LINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+      expect(screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'))).toEqual(['svc-contract-switch-open', 'svc-contract-correct-open', 'svc-contract-end-open']);
+      unmount();
+      mockCreateGate.mockReturnValue({ allowed: true });
+      render(<ContractedServiceContractPanel patientId="pat1" service={LINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      expect(screen.getByTestId('svc-contract-new-service')).toBeTruthy();
     });
 
     it('sem `onRequestNewService` a resposta "otra obra social" não aparece', () => {

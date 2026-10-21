@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Button } from '@presentation/components/atoms/Button';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
@@ -39,6 +40,7 @@ interface Props {
  */
 export function ContractedServiceContractPanel({ patientId, service, onChanged, onRequestNewService, initialError }: Props): JSX.Element {
   const { t } = useTranslation();
+  const { allowed: canCreateService } = useActionGate('patient_services', 'create');
   const [mode, setMode] = useState<Mode>('view');
   const [value, setValue] = useState<ContractCascadeValue>(EMPTY_CASCADE);
   const [busy, setBusy] = useState(false);
@@ -101,7 +103,8 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
   const answers: ChangeAnswer[] = [];
   if (linked && names) answers.push('switch');
   if (live) answers.push('correct', 'end');
-  if (live && onRequestNewService) answers.push('newService');
+  // Serviço novo = `patient_services:create` (as 4 ações do vínculo pedem só `update`): quem não cria não vê a saída.
+  if (live && onRequestNewService && canCreateService) answers.push('newService');
 
   const choose = (a: ChangeAnswer): void => {
     if (a === 'newService') { onRequestNewService?.(); return; }
