@@ -7,7 +7,7 @@
  * As peças `PrescreeningStep`/`AIDescriptionEditor` são as REAIS (não dubladas).
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -194,5 +194,43 @@ describe('VacancySimulationSection', () => {
     render(<VacancySimulationSection bodies={{}} />);
     await pickCaseAndRun();
     expect(await screen.findByTestId('vacancy-simulation-empty-description')).toBeInTheDocument();
+  });
+
+  it('desmontar antes da listagem chegar: a resposta tardia (sucesso ou falha) é ignorada, sem erro', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let resolve!: (v: { data: unknown[]; total: number }) => void;
+    let reject!: (e: unknown) => void;
+    listVacancies().mockReturnValueOnce(new Promise((r) => { resolve = r as typeof resolve; }) as never);
+    const a = render(<VacancySimulationSection bodies={{}} />);
+    a.unmount();
+    await act(async () => { resolve({ data: [{ id: CASE_ID, caseNumber: 101, caseOrdinal: null, isDraft: false }], total: 1 }); });
+
+    listVacancies().mockReturnValueOnce(new Promise((_r, rej) => { reject = rej; }) as never);
+    const b = render(<VacancySimulationSection bodies={{}} />);
+    b.unmount();
+    await act(async () => { reject(new Error('tarde demais')); });
+
+    expect(erro).not.toHaveBeenCalled();
+    expect(document.body.textContent).toBe('');
+    erro.mockRestore();
+  });
+
+  it('aviso de "não exercitado" sem nenhum prescreening usado: o aviso aparece e o texto não cita um prescreening inexistente', async () => {
+    simulate().mockResolvedValue(sim({ usedSlugs: ['VACANCY_DESCRIPTION'] }));
+    render(<VacancySimulationSection bodies={{ PRESCREENING_AT: 'meu texto de AT' }} />);
+    await pickCaseAndRun();
+    const aviso = await screen.findByTestId('vacancy-simulation-not-exercised-PRESCREENING_AT');
+    expect(aviso).toHaveTextContent('Pré-seleção — Acompanhante Terapêutico');
+    expect(aviso).not.toHaveTextContent('Pré-seleção — Cuidador');
+  });
+
+  it('resultado é só leitura: tentar alterar a descrição exibida não muda o texto', async () => {
+    simulate().mockResolvedValue(sim({ desc: 'Descrição simulada' }));
+    render(<VacancySimulationSection bodies={{}} />);
+    await pickCaseAndRun();
+    const campo = await screen.findByDisplayValue('Descrição simulada');
+    fireEvent.change(campo, { target: { value: 'tentativa de edição' } });
+    expect(screen.getByDisplayValue('Descrição simulada')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('tentativa de edição')).not.toBeInTheDocument();
   });
 });

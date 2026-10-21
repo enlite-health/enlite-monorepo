@@ -339,6 +339,15 @@ describe('AiPromptsPage — carregamento e erro', () => {
     expect(await screen.findByTestId('ai-prompts-load-error')).toBeInTheDocument();
     expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
   });
+
+  it('falha ao carregar com valor que não é Error: mostra o aviso de erro (sem vazar o valor cru) e sem quebrar', async () => {
+    listAiPrompts().mockRejectedValue('503 cru');
+    render(<AiPromptsPage />);
+    const aviso = await screen.findByTestId('ai-prompts-load-error');
+    expect(aviso).toHaveAttribute('role', 'alert');
+    expect(aviso).not.toHaveTextContent('503 cru');
+    expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
+  });
 });
 
 describe('AiPromptsPage — ABAC: cells === null (motor não decidiu) × cells === [] (decidiu: nada)', () => {

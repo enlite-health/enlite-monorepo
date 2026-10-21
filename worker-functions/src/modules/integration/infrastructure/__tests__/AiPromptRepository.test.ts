@@ -74,6 +74,27 @@ describe('AiPromptRepository (spec 029 T007)', () => {
     });
   });
 
+  describe('findActiveBySlug', () => {
+    it('devolve a Entity mapeada quando a linha existe e está ativa; filtra is_active no SQL', async () => {
+      const repo = new AiPromptRepository();
+      mockPoolQuery.mockResolvedValueOnce({ rows: [ROW], rowCount: 1 });
+
+      const found = await repo.findActiveBySlug('VACANCY_DESCRIPTION');
+
+      expect(found).toMatchObject({ slug: 'VACANCY_DESCRIPTION', body: 'Texto do prompt de vaga.', version: 7, isActive: true });
+      const [sql, params] = mockPoolQuery.mock.calls[0];
+      expect(sql).toContain('is_active = true');
+      expect(params).toEqual(['VACANCY_DESCRIPTION']);
+    });
+
+    it('devolve null quando não há linha ativa (inexistente ou desativada) — o texto não segue ao modelo', async () => {
+      const repo = new AiPromptRepository();
+      mockPoolQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      expect(await repo.findActiveBySlug('PRESCREENING_AT')).toBeNull();
+    });
+  });
+
   describe('listAll', () => {
     it('devolve todas as linhas mapeadas, ORDER BY slug', async () => {
       const repo = new AiPromptRepository();

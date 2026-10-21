@@ -776,6 +776,14 @@ describe('AiPromptController', () => {
       expect(execute).not.toHaveBeenCalled();
     });
 
+    it('400: requisição sem corpo nenhum (req.body undefined) — não chama o use case', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ body: undefined }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
     it('400: body ausente', async () => {
       const execute = jest.fn();
       const res = mockRes();
@@ -897,6 +905,14 @@ describe('AiPromptController', () => {
       expect(corpoDaResposta(res).success).toBe(true);
       expect(corpoDaResposta(res)).toEqual({ success: true, data: OUTPUT });
       expect(execute).toHaveBeenCalledWith({ jobPostingId: JOB_ID, bodies: { PRESCREENING_AT: 'em edição' } });
+    });
+
+    it('400: requisição sem corpo nenhum (req.body undefined) — não chama o use case', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, {}, { execute }).simulateVacancy(reqSim({ body: undefined }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(execute).not.toHaveBeenCalled();
     });
 
     it('bodies ausente vira {} (corpo ausente = prompt salvo)', async () => {
