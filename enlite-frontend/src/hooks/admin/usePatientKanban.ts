@@ -3,7 +3,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { PatientKanbanItem, PatientKanbanServiceSummary, PatientStatusOption } from '@domain/entities/PatientDetail';
 import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
-import { STATUS_NOT_OFFERED, STATUS_OPTIONS_UNAVAILABLE, SERVER_STATUS_REFUSAL, refusalFromError } from '@domain/entities/PatientStatusRefusal';
+import { ACTIVE_ALLOCATION_BLOCK, STATUS_NOT_OFFERED, STATUS_OPTIONS_UNAVAILABLE, SERVER_STATUS_REFUSAL, refusalFromError } from '@domain/entities/PatientStatusRefusal';
 import type { PatientStatus } from '@domain/entities/patientEnums';
 import type { PatientCompletenessCode } from '@domain/entities/PatientCompleteness';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
@@ -191,8 +191,10 @@ export function usePatientKanban(country?: string) {
     }
     const destino = offered.find((o) => o.status === targetStatus);
     if (!destino) return { code: STATUS_NOT_OFFERED, to: targetStatus };
+    // D489/D530: prestador com alocação viva — o PUT recusaria com 422; a lista já diz, poupa a ida e volta.
+    if (destino.blockedBy?.includes(ACTIVE_ALLOCATION_BLOCK)) return { code: SERVER_STATUS_REFUSAL.LOCKED_BY_ALLOCATION, to: targetStatus };
     // Lista diz que falta dado do paciente: o PUT recusaria com o mesmo 422 — poupa a ida e volta.
-    if (destino.blockedBy?.length) return { code: SERVER_STATUS_REFUSAL.NOT_READY, missing: destino.blockedBy, to: targetStatus };
+    if (destino.blockedBy?.length) return { code: SERVER_STATUS_REFUSAL.NOT_READY, missing: destino.blockedBy as PatientCompletenessCode[], to: targetStatus };
 
     // O board é lido DEPOIS do `await` da lista: outro arrasto ou um refetch pode ter mudado o board nesse
     // intervalo, e montar o próximo estado sobre a foto de antes devolveria o card dele à coluna antiga.

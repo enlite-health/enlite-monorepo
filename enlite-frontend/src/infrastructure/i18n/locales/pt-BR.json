@@ -4563,7 +4563,8 @@
           "onHoldReasonRequired": "Para deixar o paciente «Em espera», informe o motivo (escola, convênio ou outro).",
           "suspensionExitReasonRequired": "Para tirar o paciente de «Suspenso», escolha o motivo.",
           "notAvailable": "Esta mudança de estado não está disponível.",
-          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente."
+          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente.",
+          "lockedByAllocation": "Não é possível mudar o estado: o paciente tem prestador alocado no itinerário. Retire o prestador do itinerário primeiro."
         }
       }
     },
