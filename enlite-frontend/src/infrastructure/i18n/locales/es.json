@@ -4011,7 +4011,7 @@
             "PREPAGA": "Prepaga",
             "PRIVATE": "Particular"
           },
-          "payerKind": "Tipo de pagador",
+          "payerKind": "Tipo",
           "taxExempt": "Exento (0 %)",
           "priceState": {
             "NO_CONTRACT": "Sin contrato vinculado",
@@ -4041,25 +4041,42 @@
             "validFrom": "Vigente desde",
             "validTo": "Vigente hasta",
             "validToHint": "Opcional. Vacío = sin fecha de fin; el día indicado se incluye.",
-            "validity": "Vigencia del vínculo",
-            "noEnd": "sin fin",
             "noCountry": "El servicio no tiene país: no se puede elegir la obra social.",
-            "noProviders": "No hay obras sociales activas con contrato ofrecido en este país."
-          },
-          "modeHint": {
-            "link": "Elegí la obra social y el contrato de este servicio. Después de este primer vínculo la obra social queda fija.",
-            "switch": "Cambio de contrato dentro de la misma obra social: el anterior queda en el historial.",
-            "correct": "Corrección: el vínculo anterior estaba mal cargado. Solo acá se puede cambiar la obra social.",
-            "end": "Terminar el vínculo: elegí el último día vigente."
+            "noProviders": "No hay obras sociales activas con contrato ofrecido en este país.",
+            "lockedHint": "Fija en este servicio. ¿Otra obra social? Es otra admisión: creá un servicio nuevo.",
+            "contractPlaceholder": "Elegí el contrato",
+            "noEndMark": "(vacío = sin fin)"
           },
           "actions": {
-            "link": "Vincular contrato",
             "switch": "Cambiar de contrato",
             "correct": "Corregir vínculo",
             "end": "Terminar vínculo",
             "save": "Guardar vínculo",
             "cancel": "Cancelar",
             "newService": "Crear un servicio nuevo"
+          },
+          "summary": {
+            "eyebrow": "Vigente hoy · {{date}}",
+            "since": "Desde {{from}} · sin fecha de fin",
+            "sinceUntil": "Desde {{from}} · hasta {{to}}",
+            "futureChange": "Desde el {{date}} pasa a {{provider}} · {{contract}}",
+            "change": "Cambiar, corregir o terminar…",
+            "emptyTitle": "Este servicio todavía no tiene obra social ni contrato",
+            "emptyBody": "Hasta vincularlo no hay valor ni impuesto para este servicio.",
+            "linkCta": "Vincular obra social y contrato",
+            "noCoverage": "Sin cobertura vigente",
+            "lastLink": "{{provider}} · {{contract}}, hasta el {{date}}"
+          },
+          "chooser": {
+            "title": "¿Qué pasó con la cobertura?",
+            "switchTitle": "Cambió el contrato, sigue {{provider}}",
+            "switchHint": "Cambiar de contrato · el actual queda en el historial.",
+            "correctTitle": "Se cargó mal",
+            "correctHint": "Corregir vínculo · reemplaza el actual. Única forma de cambiar una obra social cargada por error.",
+            "endTitle": "Terminó la cobertura",
+            "endHint": "Terminar vínculo · elegís el último día vigente.",
+            "newServiceTitle": "Ahora lo cubre otra obra social",
+            "newServiceHint": "Crear un servicio nuevo · otra obra social es otra admisión."
           }
         },
         "serviceTeam": {
