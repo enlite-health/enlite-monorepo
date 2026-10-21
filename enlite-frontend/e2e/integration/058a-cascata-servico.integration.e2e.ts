@@ -9,7 +9,8 @@
  *                  "Cambió el contrato": o select mostra o pagador já escolhido PELO NOME (travado), trocar o contrato muda valor e imposto.
  *                  + ALINHAMENTO MEDIDO (opção T1+A): rótulo 12px, o bloco de obra social ACIMA do campo "Servicio", o valor numa linha só,
  *                  campos da mesma linha com o mesmo topo.
- *  ALTERNATIVO 1 — vínculo ENCERRADO + tentar vincular de novo = `REQUIRES_NEW_SERVICE` (frase + botão "Crear un servicio nuevo" que abre o formulário).
+ *  ALTERNATIVO 1 — vínculo ENCERRADO + tentar vincular de novo = `REQUIRES_NEW_SERVICE` (frase + botão "Crear un servicio nuevo" que abre o formulário,
+ *                  SÓ para quem tem `patient_services:create`; 1b: sem essa célula a frase fica e o botão some).
  *  ALTERNATIVO 2 — dois operadores: o serviço foi vinculado por outro enquanto este escolhia = `USE_CORRECTION`; recarregado, "Se cargó mal" (corrigir) funciona.
  *  ALTERNATIVO 3 — serviço nunca vinculado: `NO_CONTRACT` na ficha (pagador, valor, imposto e cobertura dizem "sem contrato"), na lista e no detalhe.
  *  ALTERNATIVO 4 — (ABAC) sem `patient_coverage:read` o pagador vem `REDACTED` SEM nome (R7): frase de ocultação, cobertura `REDACTED`, sem a resposta "Cambió el contrato",
@@ -66,6 +67,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
 
   let ator: Actor;
   let semCobertura: Actor;
+  let comCriar: Actor;
   let pa: ProviderMade;
   let pb: ProviderMade;
   let ca1: ContractMade;
@@ -111,6 +113,8 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     // Mesma ficha, MENOS cobertura e valor: a pessoa do alternativo 4.
     const semCob = CELLS_FICHA.filter(([r]) => r !== 'patient_coverage');
     semCobertura = seedActor('casc-sem-cobertura', [...semCob, ['insurance_contracts', 'read'], ['catalog_insurance_providers', 'read']]);
+    // Quem também CRIA serviço (`patient_services:create`): só ele vê "Crear un servicio nuevo" (a saída do REQUIRES_NEW_SERVICE).
+    comCriar = seedActor('casc-cria', [...CELLS_FICHA, ...CELLS_INSURANCE_ALL, ['patient_services', 'create']]);
     pa = await makeProvider(request, ator, 'Cascata A');
     pb = await makeProvider(request, ator, 'Cascata B');
     hoje = await asOfAR(request, ator);
@@ -196,23 +200,38 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await page.screenshot({ path: 'test-results/058a-cascata-servico.png', fullPage: true });
   });
 
-  test('ALTERNATIVO 1: vínculo encerrado + vincular de novo = REQUIRES_NEW_SERVICE (frase + botão que abre o formulário do serviço novo)', async ({ page }) => {
-    await loginAs(page, ator.user);
-    const linhas = (): string => runSQL(`SELECT count(*) FROM contracted_service_contract WHERE contracted_service_id = '${s2}'`).split('\n')[0].trim();
-    const antes = linhas(); // o encerramento já gravou a linha marcada + a reinserida fechada
+  /** Serviço 2 (vínculo encerrado): tenta vincular de novo e leva o REQUIRES_NEW_SERVICE. */
+  async function provocarRequiresNewService(page: Page): Promise<void> {
     await abrirPainel(page, p2, s2);
     await expect(page.getByTestId('svc-payer')).toHaveAttribute('data-state', 'NO_CONTRACT'); // encerrado ontem: nada vigente hoje
-    await expect(page.getByTestId('svc-contract-new-service')).toBeVisible(); // há histórico: o caminho é outra admissão
     await page.getByTestId('svc-contract-link-open').click();
     await escolher(page, 'svc-contract-provider', pb.name);
     await escolher(page, 'svc-contract-contract', cb1.name);
     await page.getByTestId('svc-contract-save').click();
-
     await expect(page.getByTestId('svc-contract-error')).toHaveText('Cambiar de obra social es otra admisión: hay que crear un servicio nuevo.');
+  }
+  const linhasDoServico2 = (): string => runSQL(`SELECT count(*) FROM contracted_service_contract WHERE contracted_service_id = '${s2}'`).split('\n')[0].trim();
+
+  test('ALTERNATIVO 1: vínculo encerrado + vincular de novo = REQUIRES_NEW_SERVICE; quem CRIA serviço vê o botão que abre o formulário do serviço novo', async ({ page }) => {
+    await loginAs(page, comCriar.user);
+    const antes = linhasDoServico2(); // o encerramento já gravou a linha marcada + a reinserida fechada
+    await abrirPainel(page, p2, s2);
+    await expect(page.getByTestId('svc-contract-new-service')).toBeVisible(); // há histórico e a célula `create`: o caminho é outra admissão
+    await provocarRequiresNewService(page);
     await expect(page.getByTestId('svc-contract-error-new-service')).toBeVisible();
-    expect(linhas()).toBe(antes); // nada novo gravado
+    expect(linhasDoServico2()).toBe(antes); // nada novo gravado
     await page.getByTestId('svc-contract-error-new-service').click();
     await expect(page.getByTestId('contracted-service-new')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('ALTERNATIVO 1b (ABAC): sem `patient_services:create` a frase do REQUIRES_NEW_SERVICE e do estado terminado ficam, mas NÃO o botão "Crear un servicio nuevo"', async ({ page }) => {
+    await loginAs(page, ator.user); // `ator` tem `patient_services:update` (vincular) e NÃO tem `create`
+    await abrirPainel(page, p2, s2);
+    await expect(page.getByTestId('svc-payer')).toContainText('Sin cobertura vigente'); // a frase do estado terminado continua
+    await expect(page.getByTestId('svc-contract-new-service')).toHaveCount(0);
+    await expect(page.getByTestId('svc-contract-link-open')).toBeVisible(); // vincular segue (é `update`)
+    await provocarRequiresNewService(page);
+    await expect(page.getByTestId('svc-contract-error-new-service')).toHaveCount(0); // a frase fica, o botão não
   });
 
   test('ALTERNATIVO 2: outro operador vinculou enquanto este escolhia = USE_CORRECTION; recarregado, "Se cargó mal" (corregir) troca o contrato', async ({ page, request }) => {

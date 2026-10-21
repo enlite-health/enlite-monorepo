@@ -120,7 +120,7 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
   ) : service.active && (
     <>
       <Button type="button" variant="primary" size="sm" disabled={disabled} onClick={() => open('link')} data-testid="svc-contract-link-open">{t(`${CARD}.summary.linkCta`)}</Button>
-      {hasHistory && onRequestNewService && (
+      {hasHistory && onRequestNewService && canCreateService && (
         <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onRequestNewService} data-testid="svc-contract-new-service">{t(`${CARD}.actions.newService`)}</Button>
       )}
     </>
@@ -175,7 +175,7 @@ export function ContractedServiceContractPanel({ patientId, service, onChanged, 
         <div className="flex flex-col gap-2" data-testid="svc-contract-error-box">
           <AvisoAmbar testId="svc-contract-error">{insuranceErrorText(t, error)}</AvisoAmbar>
           <div className="flex flex-wrap gap-2">
-            {code === NEEDS_NEW_SERVICE && onRequestNewService && (
+            {code === NEEDS_NEW_SERVICE && onRequestNewService && canCreateService && (
               <Button type="button" variant="outline" size="sm" onClick={onRequestNewService} data-testid="svc-contract-error-new-service">{t(`${CARD}.actions.newService`)}</Button>
             )}
             {code === NEEDS_CORRECTION && service.active && (

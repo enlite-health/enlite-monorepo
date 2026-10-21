@@ -393,6 +393,31 @@ describe('ContractedServiceContractPanel', () => {
     });
   });
 
+  describe('"Crear un servicio nuevo" fora do chooser: só com `patient_services:create` (a frase fica)', () => {
+    it('(a) erro REQUIRES_NEW_SERVICE: sem create o botão some e a frase continua; com create o botão aparece', () => {
+      mockCreateGate.mockReturnValue({ allowed: false });
+      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={UNLINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} initialError={erro(422, 'REQUIRES_NEW_SERVICE')} />);
+      expect(screen.getByTestId('svc-contract-error').textContent).toContain('otra admisión');
+      expect(screen.queryByTestId('svc-contract-error-new-service')).toBeNull();
+      unmount();
+      mockCreateGate.mockReturnValue({ allowed: true });
+      render(<ContractedServiceContractPanel patientId="pat1" service={UNLINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} initialError={erro(422, 'REQUIRES_NEW_SERVICE')} />);
+      expect(screen.getByTestId('svc-contract-error-new-service')).toBeTruthy();
+    });
+
+    it('(b) estado terminado: sem create o botão some e o texto "Sin cobertura vigente" continua; com create aparece', () => {
+      mockCreateGate.mockReturnValue({ allowed: false });
+      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={ENDED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      expect(screen.getByTestId('svc-payer').textContent).toContain('Sin cobertura vigente');
+      expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+      expect(screen.getByTestId('svc-contract-link-open')).toBeTruthy(); // vincular segue (é `update`)
+      unmount();
+      mockCreateGate.mockReturnValue({ allowed: true });
+      render(<ContractedServiceContractPanel patientId="pat1" service={ENDED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      expect(screen.getByTestId('svc-contract-new-service')).toBeTruthy();
+    });
+  });
+
   describe('cascata — falhas de leitura', () => {
     it('sem permissão para listar (403): avisa com a frase do idioma, sem lista e sem travar o formulário', async () => {
       mockForService.mockRejectedValue(erro(403, ''));
