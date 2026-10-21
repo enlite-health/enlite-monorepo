@@ -107,6 +107,22 @@ describe('AiPromptEditor', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
+  it('trocar o prompt (slug diferente) descarta rascunho e erro e volta à leitura com o texto do novo', async () => {
+    updateAiPrompt().mockRejectedValue(new Error('falhou ao gravar'));
+    const { rerender } = render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
+    fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'rascunho da aba A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    expect(await screen.findByText('falhou ao gravar')).toBeInTheDocument();
+
+    rerender(<AiPromptEditor prompt={fakePrompt({ slug: 'PRESCREENING_AT', body: 'Texto do prompt de AT.', version: 1 })} />);
+
+    expect(await screen.findByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto do prompt de AT.');
+    expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
+    expect(screen.queryByText('falhou ao gravar')).not.toBeInTheDocument();
+    expect(screen.queryByText('rascunho da aba A')).not.toBeInTheDocument();
+  });
+
   // ─── Render básico ────────────────────────────────────────────────────────
 
   it('mostra o texto do prompt, o contador e a autoria da versão atual', async () => {

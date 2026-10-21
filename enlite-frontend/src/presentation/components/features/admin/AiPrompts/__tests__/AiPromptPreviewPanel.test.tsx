@@ -132,4 +132,23 @@ describe('AiPromptPreviewPanel', () => {
     rerender(<AiPromptPreviewPanel slug="PRESCREENING_AT" body="t" />);
     expect(screen.queryByTestId('ai-prompt-preview-result')).not.toBeInTheDocument();
   });
+
+  it('desmontar antes da listagem chegar: a resposta tardia (sucesso ou falha) é ignorada, sem erro', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let resolve!: (v: { data: unknown[]; total: number }) => void;
+    let reject!: (e: unknown) => void;
+    listVacancies().mockReturnValueOnce(new Promise((r) => { resolve = r as typeof resolve; }) as never);
+    const a = render(<AiPromptPreviewPanel slug="VACANCY_DESCRIPTION" body="t" />);
+    a.unmount();
+    await act(async () => { resolve({ data: [{ id: CASE_ID, caseNumber: 101, caseOrdinal: null, isDraft: false }], total: 1 }); });
+
+    listVacancies().mockReturnValueOnce(new Promise((_r, rej) => { reject = rej; }) as never);
+    const b = render(<AiPromptPreviewPanel slug="VACANCY_DESCRIPTION" body="t" />);
+    b.unmount();
+    await act(async () => { reject(new Error('tarde demais')); });
+
+    expect(erro).not.toHaveBeenCalled();
+    expect(document.body.textContent).toBe('');
+    erro.mockRestore();
+  });
 });
