@@ -1356,6 +1356,7 @@
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rutina y actividades",
+      "aiPrompts": "Prompts de IA",
       "catalogSegments": "Segmentos (Ana Care)",
       "interviewHosts": "Entrevistadores",
       "insuranceProviders": "Obras sociales"
@@ -4772,6 +4773,7 @@
             "worker_address": "Dirección del prestador: línea, coordenada, radio",
             "worker_document": "Documentos",
             "tag": "Catálogo de etiquetas",
+            "ai_prompt": "Prompts de IA",
             "vacancy": "Vacantes",
             "funnel": "Embudo",
             "interview": "Entrevistas",
@@ -5227,6 +5229,9 @@
         },
         "tags": {
           "label": "Etiquetas"
+        },
+        "integration.aiPrompts": {
+          "label": "Prompts de IA"
         },
         "vacancies.list": {
           "label": "Vacantes: Lista"
@@ -6097,6 +6102,68 @@
         "cancel": "Cancelar",
         "confirm": "Quitar"
       }
+    },
+    "aiPrompts": {
+      "title": "Prompts de IA",
+      "description": "Editá el texto que la IA usa en cada situación. Los cambios valen para lo que la plataforma genere de ahora en más — no reescriben nada que ya fue enviado.",
+      "loading": "Cargando los prompts…",
+      "loadError": "No se pudieron cargar los prompts.",
+      "readOnlyNotice": "Solo lectura: podés ver el contenido, pero no guardarlo.",
+      "tabs": {
+        "vacancyDescription": "Descripción de vacante",
+        "prescreeningAt": "Preselección — Acompañante Terapéutico",
+        "prescreeningCaregiver": "Preselección — Cuidador"
+      },
+      "editor": {
+        "charCount": "{{count}} caracteres",
+        "lastEditedBy": "Última edición: {{date}} · {{name}}"
+      },
+      "actions": {
+        "save": "Guardar",
+        "edit": "Editar",
+        "cancel": "Cancelar",
+        "saving": "Guardando…",
+        "undo": "Deshacer último cambio",
+        "undoConfirm": "¿Deshacer el último cambio? El texto vuelve a la versión anterior.",
+        "undoUnavailable": "No hay una versión anterior para deshacer."
+      },
+      "errors": {
+        "emptyBody": "El texto no puede estar vacío.",
+        "versionConflict": "Otra persona ({{updatedBy}}) ya guardó un cambio en este prompt. Recargá para ver la versión actual antes de volver a guardar."
+      },
+      "preview": {
+        "notice": "SIMULACIÓN — lo que ves abajo es solo una vista previa con el texto que estás editando. No se guardó nada y no se envió nada a Talentum ni a nadie.",
+        "cta": "Simular con este texto",
+        "title": "Simular con un caso real",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Elegí un caso…",
+        "casesLoading": "Cargando los casos…",
+        "casesError": "No se pudieron cargar los casos.",
+        "loading": "Generando la simulación…",
+        "resultTitle": "Resultado de la simulación",
+        "error": "No se pudo generar la simulación. El texto que estás editando se conservó; probá de nuevo en unos instantes.",
+        "errorUnavailable": "El modelo de IA no está disponible en este momento. El texto que estás editando se conservó; probá de nuevo en unos instantes."
+      },
+      "simulation": {
+        "title": "Simular creación de vacante",
+        "description": "La creación de una vacante usa los tres textos juntos. Elegí un caso real y mirá cómo quedaría, con el texto que tenés en los editores ahora (aunque no esté guardado). Es solo una simulación: no se crea ni se publica nada.",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Elegí un caso…",
+        "casesLoading": "Cargando los casos…",
+        "casesError": "No se pudieron cargar los casos.",
+        "noCases": "No hay casos disponibles para simular.",
+        "cta": "Simular creación",
+        "running": "Simulando… puede tardar decenas de segundos.",
+        "error": "No se pudo generar la simulación. Los textos de los editores se conservaron; probá de nuevo en unos instantes.",
+        "errorUnavailable": "El modelo de IA no está disponible en este momento. Los textos de los editores se conservaron; probá de nuevo en unos instantes.",
+        "errorNotFound": "El caso elegido ya no existe. Elegí otro.",
+        "notice": "SIMULACIÓN — nada se guardó, no se creó ninguna vacante y no se envió nada a Talentum ni a nadie. Refleja los textos que estaban en los editores al momento de simular.",
+        "usedTitle": "Prompts que se ejercitaron",
+        "notExercised": "Tu texto de «{{label}}» NO entró en esta simulación: la vacante elegida usa el prompt de «{{used}}». Para probarlo, elegí una vacante de ese tipo.",
+        "notExercisedDetail": "No hubo error: la simulación simplemente no usó ese texto.",
+        "resultEmptyDescription": "El modelo no devolvió descripción."
+      },
+      "unsavedTab": "Cambios sin guardar"
     },
     "insuranceErrors": {
       "generic": "No se pudo completar la operación. Probá de nuevo.",

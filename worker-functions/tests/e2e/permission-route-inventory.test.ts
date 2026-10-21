@@ -393,6 +393,13 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/anacare-hours/shifts/:shiftId/validate → anacare_hours:validate',
         'POST /api/admin/anacare-hours/shifts/:shiftId/contest → anacare_hours:validate',
         'POST /api/admin/anacare-hours/sync → anacare_hours:validate',
+        // spec 029 (prompts de IA editáveis) — as 6 rotas de `ai-prompts`.
+        'GET /api/admin/ai-prompts → ai_prompt:read',
+        'GET /api/admin/ai-prompts/:slug → ai_prompt:read',
+        'POST /api/admin/ai-prompts/:slug/preview → ai_prompt:update',
+        'POST /api/admin/ai-prompts/:slug/undo → ai_prompt:update',
+        'POST /api/admin/ai-prompts/simulate-vacancy → ai_prompt:update', // T071
+        'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
         // ── spec 022 (chat interno por paciente + anexos + sino de notificações) ──
         // Conversa (Bloco 1/3, `adminConversationRoutes.ts`) — família `admin.patients`,
         // célula NOVA `patient_conversation:*` (D-07, migration 463).

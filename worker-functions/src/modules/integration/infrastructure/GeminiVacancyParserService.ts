@@ -17,7 +17,8 @@ import {
   VACANCY_RESPONSE_SCHEMA,
   JSON_OUTPUT_INSTRUCTIONS,
 } from './gemini-vacancy-constants';
-import { GoogleDocsPromptProvider } from './GoogleDocsPromptProvider';
+import { AiPromptRepository } from './AiPromptRepository';
+import type { AiPromptSlug } from '../domain/AiPromptSlug';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import {
   parseFromTalentumDescriptionHelper,
@@ -82,23 +83,24 @@ export type WorkerType = 'AT' | 'CUIDADOR';
 
 export class GeminiVacancyParserService {
   private model: string;
-  private promptProvider: GoogleDocsPromptProvider;
+  private promptRepo: AiPromptRepository;
 
   constructor(modelOverride?: string) {
     this.model = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
-    this.promptProvider = new GoogleDocsPromptProvider();
+    this.promptRepo = new AiPromptRepository();
   }
 
   async parseFromText(
     text: string,
     workerType: WorkerType,
+    promptBodyOverride?: string,
   ): Promise<ParsedVacancyResult> {
     console.log(
       `[GeminiParser] Parsing vacancy text, workerType=${workerType}, len=${text.length}`,
     );
 
     const userParts = [{ text }];
-    return this.callGeminiAndParse(userParts, workerType);
+    return this.callGeminiAndParse(userParts, workerType, promptBodyOverride);
   }
 
   async parseFromPdf(
@@ -149,6 +151,7 @@ export class GeminiVacancyParserService {
       state?: string | null;
     },
     workerType: WorkerType = 'AT',
+    promptBodyOverride?: string,
   ): Promise<ParsedVacancyResult> {
     const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
     const scheduleText =
@@ -180,7 +183,7 @@ export class GeminiVacancyParserService {
       .filter(Boolean)
       .join('\n');
 
-    return this.parseFromText(text, workerType);
+    return this.parseFromText(text, workerType, promptBodyOverride);
   }
 
   async parseFromTalentumDescription(
@@ -193,8 +196,9 @@ export class GeminiVacancyParserService {
   private async callGeminiAndParse(
     userParts: Array<Record<string, any>>,
     workerType: WorkerType,
+    promptBodyOverride?: string,
   ): Promise<ParsedVacancyResult> {
-    const systemPrompt = await this.buildSystemPrompt(workerType);
+    const systemPrompt = await this.buildSystemPrompt(workerType, promptBodyOverride);
 
     const response = await generateContentVertex(
       this.model,
@@ -278,14 +282,23 @@ export class GeminiVacancyParserService {
     return parsed;
   }
 
-  private async buildSystemPrompt(workerType: WorkerType): Promise<string> {
-    const docId =
-      workerType === 'AT'
-        ? process.env.PROMPT_DOC_ID_AT ?? ''
-        : process.env.PROMPT_DOC_ID_CUIDADOR ?? '';
+  private async buildSystemPrompt(
+    workerType: WorkerType,
+    promptBodyOverride?: string,
+  ): Promise<string> {
+    // Override (preview de prompt não salvo, spec 029 T030): usa o texto recebido e NÃO consulta a tabela.
+    if (promptBodyOverride !== undefined) {
+      return promptBodyOverride + '\n\n' + JSON_OUTPUT_INSTRUCTIONS;
+    }
+    const slug: AiPromptSlug =
+      workerType === 'AT' ? 'PRESCREENING_AT' : 'PRESCREENING_CAREGIVER';
 
-    const fileContent = await this.promptProvider.getPrompt(docId);
+    // Leitura de SERVIÇO (respeita is_active), sem cache e sem fallback (FR-031).
+    const prompt = await this.promptRepo.findActiveBySlug(slug);
+    if (!prompt) {
+      throw new Error(`AiPrompt not found: ${slug}`);
+    }
 
-    return fileContent + '\n\n' + JSON_OUTPUT_INSTRUCTIONS;
+    return prompt.body + '\n\n' + JSON_OUTPUT_INSTRUCTIONS;
   }
 }

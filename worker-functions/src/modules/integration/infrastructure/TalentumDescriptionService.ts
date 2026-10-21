@@ -9,18 +9,23 @@
  *   2. "Perfil Profesional Sugerido:" — ideal candidate profile
  *   3. "El Marco de Acompanamiento:" — fixed institutional text
  *
- * Uses an inline system prompt (not the Drive doc the parser uses): the doc
- * mixes prescreening/WordPress instructions and the "Regla #7" mutual-exclusion
+ * System prompt is NOT the Drive doc the parser uses (that doc mixes
+ * prescreening/WordPress instructions and the "Regla #7" mutual-exclusion
  * filter that refuses generation on AT/CUIDADOR mismatches — both irrelevant
- * (and harmful) for the programmatic description flow.
+ * and harmful for this flow). It is read from `ai_prompts` (slug
+ * `VACANCY_DESCRIPTION`, spec 029 T018) via `AiPromptRepository` — editable
+ * from the admin screen, no redeploy needed. Seeded by migration 487 with the
+ * content that used to live as an inline constant in
+ * `talentumDescriptionHelpers.ts` (removed in T051a, together with the Drive
+ * provider).
  */
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { generateContentVertex } from './vertex-gemini';
+import { AiPromptRepository } from './AiPromptRepository';
 import {
   DESCRIPTION_RESPONSE_SCHEMA,
-  DESCRIPTION_SYSTEM_PROMPT,
   formatZoneForPrompt,
   MARCO_TEXT,
   REFUSAL_MARKER,
@@ -75,6 +80,14 @@ export interface GenerateDescriptionInput {
   paymentDay?: string;
 }
 
+/** Caso inexistente — tipado para o chamador (ex.: preview) traduzir em 404. Mensagem inalterada. */
+export class JobPostingNotFoundError extends Error {
+  constructor(jobPostingId: string) {
+    super(`Job posting ${jobPostingId} not found`);
+    this.name = 'JobPostingNotFoundError';
+  }
+}
+
 export interface GeneratedDescription {
   title: string;
   description: string;
@@ -116,7 +129,7 @@ export async function loadVacancyDescriptionInput(db: Pool, jobPostingId: string
   );
 
   if (result.rows.length === 0) {
-    throw new Error(`Job posting ${jobPostingId} not found`);
+    throw new JobPostingNotFoundError(jobPostingId);
   }
 
   const row = applyEffectiveAgeRange(result.rows[0]);
@@ -149,11 +162,13 @@ export class TalentumDescriptionService {
   private db: Pool;
   private model: string;
   private auditRepo: JobPostingAuditRepository;
+  private promptRepo: AiPromptRepository;
 
   constructor(modelOverride?: string) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.model = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     this.auditRepo = new JobPostingAuditRepository();
+    this.promptRepo = new AiPromptRepository();
   }
 
   /**
@@ -162,8 +177,23 @@ export class TalentumDescriptionService {
    */
   async generateDescriptionPreview(jobPostingId: string): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description preview for job_posting ${jobPostingId}`);
+    return this.composeDescription(jobPostingId);
+  }
+
+  /**
+   * Lê o caso, monta o payload e chama o modelo — SEM gravar nada. É a parte de
+   * `generateDescription` que vai até produzir o texto (spec 029 T030).
+   *
+   * @param promptBodyOverride - Quando fornecido, é o corpo do prompt de sistema e a tabela
+   *   `ai_prompts` NÃO é consultada (preview de texto ainda não salvo). Omitido = comportamento
+   *   de sempre (`findActiveBySlug`).
+   */
+  async composeDescription(
+    jobPostingId: string,
+    promptBodyOverride?: string,
+  ): Promise<GeneratedDescription> {
     const input = await loadVacancyDescriptionInput(this.db, jobPostingId);
-    const llmText = await this.callGemini(input);
+    const llmText = await this.callGemini(input, promptBodyOverride);
     const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
     return { title: input.title, description: fullDescription };
   }
@@ -182,9 +212,8 @@ export class TalentumDescriptionService {
     actor?: DescriptionAuditActor,
   ): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description for job_posting ${jobPostingId}`);
-    const input = await loadVacancyDescriptionInput(this.db, jobPostingId);
-    const llmText = await this.callGemini(input);
-    const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
+    const composed = await this.composeDescription(jobPostingId);
+    const fullDescription = composed.description;
 
     // CA-3.6: persist in job_postings.talentum_description + audit UPDATED
     const client = await this.db.connect();
@@ -217,7 +246,7 @@ export class TalentumDescriptionService {
     }
     console.log(`[TalentumDesc] Description saved for job_posting ${jobPostingId}`);
 
-    return { title: input.title, description: fullDescription };
+    return { title: composed.title, description: fullDescription };
   }
 
   private formatSchedule(schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>): string {
@@ -235,7 +264,10 @@ export class TalentumDescriptionService {
     return 'No especificado';
   }
 
-  private async callGemini(input: GenerateDescriptionInput): Promise<string> {
+  private async callGemini(
+    input: GenerateDescriptionInput,
+    promptBodyOverride?: string,
+  ): Promise<string> {
     const profession = input.requiredProfessions.length > 0
       ? input.requiredProfessions.join(', ')
       : 'No especificado';
@@ -271,12 +303,27 @@ Datos de la vacante:
 - Salario: ${input.salaryText || 'A convenir'}
 - Día de pago: ${input.paymentDay || 'No especificado'}`;
 
+    // Lido da tabela a cada chamada (sem cache — T019 prova isso): o texto
+    // vem de `ai_prompts.body` para o slug VACANCY_DESCRIPTION, editável pela
+    // tela sem redeploy. Ausência de linha não tem fallback para a constante
+    // antiga — a falha visível para esse caso é objeto da T019a.
+    let promptBody: string;
+    if (promptBodyOverride !== undefined) {
+      promptBody = promptBodyOverride;
+    } else {
+      const prompt = await this.promptRepo.findActiveBySlug('VACANCY_DESCRIPTION');
+      if (!prompt) {
+        throw new Error('AiPrompt not found: VACANCY_DESCRIPTION');
+      }
+      promptBody = prompt.body;
+    }
+
     // 2.5-pro spends thinking tokens within maxOutputTokens; 4096 leaves
     // ~3.5k for thinking and still fits ~500 tokens of JSON output.
     const response = await generateContentVertex(
       this.model,
       {
-        systemInstruction: { parts: [{ text: DESCRIPTION_SYSTEM_PROMPT }] },
+        systemInstruction: { parts: [{ text: promptBody }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         generationConfig: {
           temperature: 0.3,

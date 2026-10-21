@@ -741,6 +741,16 @@ jobs:
       # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`. Precisa do sync do
       # catálogo (`PERMISSION_CATALOG_SYNC_ENABLED`, já neste override): `grantCell` falha alto se as 7 células `patient_status:*` não existirem.
       # Usa `abac-stack-helper` (staff REAL em grupo). Sem canal externo: só Postgres.
+      # `ai-prompts-humano` ENTROU (spec 029, T035): o humano lê/edita/simula/guarda/desfaz em
+      # `/admin/prompts-ia`. Precisa do engine ligado com `admin.integrations` enforçada — as rotas
+      # `/ai-prompts` usam `untilEnforced: 'admin'` e só checam a célula `ai_prompt:*` de verdade
+      # com a família ligada; o job padrão (engine OFF, sem `iam.rollout_state`) faria o spec falhar
+      # em `pollAuthz`/403. REUSO deste job, sem override novo: as 12 famílias de
+      # `docker-compose.group-simulation.yml` já incluem `admin.integrations` e `admin.vacancies`
+      # (lista de vacantes do seletor de caso), e `CATALOG_SYNC` já está ligado. O modelo NUNCA é o
+      # real: `docker-compose.test.yml` (base, versionado) carrega `vertexInterceptPreload.js` na API,
+      # e o próprio spec reprova se a contagem de `[VERTEX-STUB]` não subir. O spec lê o log do
+      # container achando-o pela porta 8080 publicada — sem nome fixo.
       # `058a-` ENTROU (spec 058 Parte A, obra social + contrato: `058a-dados-gerais|empregados|contratos|pacientes-cartao|cascata-servico|cobertura-pdf`,
       # 21 casos). Quatro casos são (ABAC) e SÓ medem com o engine ligado (com ele OFF `cells===null` mostra tudo e o teste ficaria verde sem medir nada):
       # `058a-empregados` ALTERNATIVO 2 (sem `insurance_provider_contacts:read` o cartão diz "sem permissão" e o telefone/e-mail não aparece),
@@ -760,7 +770,7 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|058a-"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|ai-prompts-humano|058a-"
 
       # T141B (spec 058): vídeo + print das 6 telas da obra social. Passo 0 medido: o único upload de `test-results/` deste job é o "Relatório (só quando
       # falha)" — com o job verde nenhum vídeo/print era publicado, então este passo roda SEMPRE (`if: always()`).

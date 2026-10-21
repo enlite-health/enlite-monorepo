@@ -5,7 +5,9 @@
  * (DB query, Gemini API call, Marco text, DB save), callGemini (prompt
  * assembly, HTTP error, empty response), and all edge cases.
  *
- * Mocks: DatabaseConnection (singleton + Pool), global.fetch (Gemini API).
+ * Mocks: DatabaseConnection (singleton + Pool), global.fetch (Gemini API),
+ * AiPromptRepository (T018 — dublê do repositório, não bate no Pool mockado
+ * acima: mantém as asserções de query count das SELECTs de vacante intactas).
  */
 
 // ── Mocks ────────────────────────────────────────────────────────────
@@ -26,6 +28,17 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
+// T018: o serviço agora lê o system prompt de `ai_prompts` via
+// AiPromptRepository.findActiveBySlug (leitura de serviço — respeita `is_active`),
+// não mais de uma constante no código (a antiga DESCRIPTION_SYSTEM_PROMPT foi apagada no corte T051).
+// O dublê é a própria classe (jest.mock do módulo) — nunca bate no Pool acima.
+const mockFindActiveBySlug = jest.fn();
+jest.mock('../../../src/modules/integration/infrastructure/AiPromptRepository', () => ({
+  AiPromptRepository: jest.fn().mockImplementation(() => ({
+    findActiveBySlug: mockFindActiveBySlug,
+  })),
+}));
+
 // Vertex AI auth via ADC — mock GoogleAuth so tests don't hit the metadata server.
 jest.mock('google-auth-library', () => ({
   GoogleAuth: jest.fn().mockImplementation(() => ({
@@ -33,6 +46,28 @@ jest.mock('google-auth-library', () => ({
     getProjectId: jest.fn().mockResolvedValue('test-project'),
   })),
 }));
+
+// Conteúdo seedado pela migration 487 (byte a byte) — usado só como o valor
+// PADRÃO do dublê do repositório acima, para não reescrever as asserções de
+// conteúdo já existentes. Não é mais usado pelo serviço (T018).
+// Cópia local do texto seedado pela migration 487 (a constante saiu do código na T051a).
+const DESCRIPTION_SYSTEM_PROMPT = `Sos un especialista en redacción de propuestas de prestación de servicios terapéuticos para EnLite Health Solutions.
+
+Tu tarea: generar la descripción de una vacante para publicar en Talentum, en formato JSON con dos campos.
+
+Reglas obligatorias:
+1. Privacidad absoluta: NUNCA incluyas datos personales identificables del paciente (nombres, DNI, direcciones exactas). Usá descripciones generales.
+2. Lenguaje profesional: NUNCA uses lenguaje laboral ("contratar", "equipo", "trabajo"). La relación es de "prestación de servicios" o "profesional independiente".
+3. Flexibilidad de horarios: Si el caso tiene múltiples turnos posibles, presentá la propuesta aclarando que el profesional puede postularse para un solo turno o jornada completa.
+4. Voseo argentino: usá "vos" en lugar de "tú". Tono cercano, amable, humano y profesional.
+5. Terminología correcta: usar "Certificado de AT", "Certificación", "Formación en Acompañamiento Terapéutico". NUNCA "Título", "Matrícula", "Habilitante".
+6. Texto plano sin markdown, sin asteriscos, sin encabezados. SIN saludos, introducciones ni despedidas.
+7. NO incluyas el texto del "Marco de Acompañamiento" institucional — el sistema lo agrega automáticamente al final.
+8. La "Zona" se entrega como una lista deduplicada (barrio, ciudad y/o provincia). NO infieras "capital" ni el centro de una provincia solo porque la zona menciona el nombre de la provincia. Usá literalmente el texto provisto.
+
+Estructura del output:
+- "propuesta": resumen objetivo del caso (tipo de profesional, zona, dispositivo, jornada, días/horarios disponibles, cantidad de prestadores, objetivo del acompañamiento basado en patologías y dependencia). 60-250 palabras.
+- "perfilProfesional": perfil ideal (sexo si excluyente, formación requerida, experiencia, atributos valorados). 60-250 palabras.`;
 
 const originalFetch = global.fetch;
 const mockFetch = jest.fn();
@@ -53,6 +88,21 @@ beforeEach(() => {
   // Default: client queries (BEGIN, UPDATE talentum_description, audit SAVEPOINT, COMMIT) resolve safely.
   mockClientQuery.mockResolvedValue({ rows: [] });
   mockPool.connect.mockResolvedValue({ query: mockClientQuery, release: mockClientRelease });
+
+  // Default: ai_prompts tem a linha VACANCY_DESCRIPTION com o MESMO conteúdo que a
+  // constante antiga (migration 487 semeia byte a byte) — mantém as asserções
+  // pré-existentes de conteúdo do systemInstruction válidas sem tocar nelas.
+  mockFindActiveBySlug.mockReset();
+  mockFindActiveBySlug.mockResolvedValue({
+    slug: 'VACANCY_DESCRIPTION',
+    body: DESCRIPTION_SYSTEM_PROMPT,
+    version: 1,
+    isActive: true,
+    createdBy: 'migration-487-seed',
+    updatedBy: 'migration-487-seed',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -363,12 +413,49 @@ describe('TalentumDescriptionService', () => {
       expect(sysText).toContain('"perfilProfesional"');
     });
 
-    it('does not depend on PROMPT_DOC_ID env vars (no Drive fetch)', async () => {
-      // Regression guard: switching to the inline prompt removed the
-      // GoogleDocsPromptProvider dependency. Description must work even
-      // when PROMPT_DOC_ID_AT / PROMPT_DOC_ID_CUIDADOR are unset.
-      delete process.env.PROMPT_DOC_ID_AT;
-      delete process.env.PROMPT_DOC_ID_CUIDADOR;
+    it('reads the system prompt from ai_prompts (VACANCY_DESCRIPTION) and uses the CURRENT row content, not the old constant (T018)', async () => {
+      const customBody = 'PROMPT EDITADO PELA TELA — CONTEUDO NOVO, DIFERENTE DA CONSTANTE ANTIGA.';
+      mockFindActiveBySlug.mockResolvedValueOnce({
+        slug: 'VACANCY_DESCRIPTION',
+        body: customBody,
+        version: 7,
+        isActive: true,
+        createdBy: 'migration-487-seed',
+        updatedBy: 'user-abc',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-09-29T00:00:00.000Z',
+      });
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
+
+      const service = createService();
+      await service.generateDescription('job-prompt-from-table');
+
+      expect(mockFindActiveBySlug).toHaveBeenCalledWith('VACANCY_DESCRIPTION');
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const sysText = body.systemInstruction.parts[0].text as string;
+
+      // A afirmação central: o texto que chegou ao MODELO é o da linha da
+      // tabela (não apenas "o repositório foi chamado").
+      expect(sysText).toBe(customBody);
+      expect(sysText).not.toBe(DESCRIPTION_SYSTEM_PROMPT);
+      expect(sysText).not.toContain('Sos un especialista en redacción');
+    });
+
+    it('throws when the VACANCY_DESCRIPTION row is missing, without falling back to the old constant (documents current behavior — T019a proves the full contract)', async () => {
+      mockFindActiveBySlug.mockResolvedValueOnce(null);
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+
+      const service = createService();
+      await expect(service.generateDescription('job-prompt-missing'))
+        .rejects.toThrow('AiPrompt not found: VACANCY_DESCRIPTION');
+
+      // Nunca chega a chamar o Gemini com a constante antiga como fallback.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('does not depend on any Drive fetch (prompt comes from ai_prompts)', async () => {
       mockQuery.mockResolvedValueOnce({
         rows: [makeVacancyRow({ required_professions: ['AT', 'CAREGIVER'] })],
       });

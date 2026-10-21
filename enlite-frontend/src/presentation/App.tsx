@@ -38,6 +38,7 @@ import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import InterviewHostsPage from './pages/admin/InterviewHostsPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
+import { AiPromptsPage } from './pages/admin/AiPromptsPage/AiPromptsPage';
 import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
 import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
 import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
@@ -271,6 +272,7 @@ export function App() {
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="entrevistadores" element={<InterviewHostsPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
+          <Route path="prompts-ia" element={<AiPromptsPage />} />
           <Route path="plantillas" element={<TemplateCatalogPage />} />
           <Route path="plantillas/registrar" element={<TemplateDraftsPage />} />
           {/* Depois de "registrar", senão o literal seria capturado pelo :slug. */}

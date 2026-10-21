@@ -48,6 +48,9 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
   // Spec 017: os 3 catálogos do projeto terapêutico — gateados pela célula própria de cada um, não por país.
   'catalogos/objetivos-especificos', 'catalogos/actividades',
+  // Spec 029: prompts de IA — gateada pela célula própria (`ai_prompt:read`), não por país; mesmo caso
+  // de tags/plantillas/catálogos acima (tela de configuração global, sem chave `screen:*` no manifest).
+  'prompts-ia',
   // Spec 030 (F1): segmentos Ana Care — célula própria (`catalog_therapeutic_segments:read`), mesmo caso dos catálogos acima.
   'catalogos/segmentos',
   // Spec 055: Entrevistadores — gateada pelas células próprias (`interview_host:read|update`), não por país (a pessoa pode atender AR e BR).
