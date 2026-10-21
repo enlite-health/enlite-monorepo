@@ -502,7 +502,7 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     + 'serem bloqueadas antes de completar a aplicação (cadastro incompleto, prestador '
     + 'desativado ou não encontrado). Tela só leitura — sem ação.',
 
-"  // ── Spec 029 (prompts de IA editáveis) — as 2 células que `adminAiPromptRoutes` cobra.
+  // ── Spec 029 (prompts de IA editáveis) — as 2 células que `adminAiPromptRoutes` cobra.
   //    `ai_prompt:restore` (migration 488) NÃO entra: nenhuma rota a cobra ainda (Fase 5).
   'ai_prompt:read': 'Ler o conteúdo e o histórico dos prompts de IA da plataforma, e comparar versões.',
   'ai_prompt:update': 'Salvar e desfazer a última alteração de um prompt de IA.',
