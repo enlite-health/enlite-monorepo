@@ -37,3 +37,23 @@ export async function countVigenteForVacancy(q: Queryable, vacancyId: string, no
   await q.query(`SELECT pg_advisory_xact_lock(hashtext('itinerary:service:' || $1::text))`, [row.service_id]);
   return countVigenteForService(q, row.service_id, operationDateOf(row.country, now));
 }
+
+/**
+ * Alocações VIVAS do paciente no itinerário (D489/D530): `ACTIVE` e (`valid_to` nulo OU >= hoje do país do paciente) — a mesma
+ * definição do `countVigenteForService`, INCLUI alocação que começa no futuro. "Hoje" vem de `fn_operation_date(p.country)` (migration
+ * 541), na MESMA transação do chamador; nunca `CURRENT_DATE`. Itinerário montado sem prestador → 0. Só contagem: sem nome de prestador (PII).
+ */
+export async function countVivasForPatient(q: Queryable, patientId: string): Promise<number> {
+  const res = await q.query<{ n: number }>(
+    `SELECT count(*)::int AS n
+       FROM patients p
+       JOIN patient_contracted_services pcs ON pcs.patient_id = p.id
+       JOIN patient_itinerary_slot s ON s.contracted_service_id = pcs.id
+       JOIN patient_itinerary_assignment a ON a.slot_id = s.id
+      WHERE p.id = $1
+        AND a.status = 'ACTIVE'
+        AND (a.valid_to IS NULL OR a.valid_to >= fn_operation_date(p.country))`,
+    [patientId],
+  );
+  return res.rows[0]?.n ?? 0;
+}

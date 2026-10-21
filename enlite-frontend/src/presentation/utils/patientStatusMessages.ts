@@ -36,6 +36,8 @@ export function friendlyStatusMessage(t: Translate, r: StatusRefusal): string | 
       if (!items) return f('notReadyGeneric', { status });
       return r.to === 'SEARCHING' ? f('notReadySearching', { status, items }) : f('notReady', { status, items });
     }
+    case CODE.LOCKED_BY_ALLOCATION:
+      return f('lockedByAllocation');
     case CODE.ON_HOLD_REASON_REQUIRED:
       return f('onHoldReasonRequired');
     case CODE.SUSPENSION_EXIT_REASON_REQUIRED:

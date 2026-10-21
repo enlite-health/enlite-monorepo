@@ -34,7 +34,8 @@ export interface UpdatePatientStatusPayload {
 export interface PatientStatusOption {
   status: PatientStatus;
   via: 'fluxo' | 'permissao';
-  blockedBy?: PatientCompletenessCode[];
+  /** + `ACTIVE_ALLOCATION` (D489/D530): alocação viva no itinerário bloqueia TODO destino. */
+  blockedBy?: Array<PatientCompletenessCode | 'ACTIVE_ALLOCATION'>;
 }
 
 export interface PatientStatusOptions {

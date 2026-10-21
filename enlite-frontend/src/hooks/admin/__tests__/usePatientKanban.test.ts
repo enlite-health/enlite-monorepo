@@ -354,6 +354,17 @@ describe('usePatientKanban — patients.status', () => {
       expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
     });
 
+    it('destino com blockedBy ACTIVE_ALLOCATION → recusa LOCKED_BY_ALLOCATION (não a de completude), sem PUT e sem mover o card (D489/D530)', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'ACTIVE', options: [{ status: 'ON_HOLD', via: 'fluxo', blockedBy: ['ACTIVE_ALLOCATION'] }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(err).toEqual({ code: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION', to: 'ON_HOLD' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
     it('falha ao ler a lista → STATUS_OPTIONS_UNAVAILABLE, sem PUT e sem mover o card (nunca "tenta mesmo assim")', async () => {
       getPatientStatusOptions.mockRejectedValue(new Error('rede caiu'));
       const { result } = renderHook(() => usePatientKanban());
