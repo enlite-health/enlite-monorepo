@@ -118,5 +118,10 @@ test.describe('servico-dados-recrutamento-capacidade — Trava B no formulário 
     ]);
     expect(resp.status()).toBe(422);
     expect(((await resp.json()) as { code?: string }).code).toBe('SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY');
+    // Régua humana: a pessoa lê POR QUE não gravou (quantidade em branco + vaga viva) — não o genérico.
+    const erro = page.getByTestId(`contracted-service-error-${seed.serviceId}`);
+    await expect(erro).toBeInViewport();
+    await expect(erro).toContainText('No se puede dejar vacía la cantidad de prestadores');
+    await expect(erro).not.toContainText('No se pudo actualizar');
   });
 });
