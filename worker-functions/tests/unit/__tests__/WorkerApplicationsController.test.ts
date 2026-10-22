@@ -230,6 +230,8 @@ describe('WorkerApplicationsController.trackChannel — branches adicionais', ()
     mockAssertWorkerCanApply.mockResolvedValueOnce(undefined);
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
+    // FR-16 (spec 067): 3ª query = SELECT do talentum_whatsapp_url (prescreeningUrl) no ramo aprovado.
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ url: 'https://wa.me/talentum' }] });
 
     const res = mockRes();
     await controller.trackChannel(mockReq() as never, res as never);
@@ -246,6 +248,8 @@ describe('WorkerApplicationsController.trackChannel — branches adicionais', ()
     mockAssertWorkerCanApply.mockResolvedValueOnce(undefined);
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
+    // FR-16 (spec 067): 3ª query = SELECT do talentum_whatsapp_url (prescreeningUrl) no ramo aprovado.
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ url: 'https://wa.me/talentum' }] });
 
     const res = mockRes();
     await controller.trackChannel(mockReq() as never, res as never);
