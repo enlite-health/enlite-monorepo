@@ -11,6 +11,7 @@
 --   - O único trigger de job_postings (update_job_postings_updated_at) não referencia as colunas.
 -- SEM CASCADE de propósito: se aparecer dependente que a conferência não viu, a migration FALHA em vez de apagar o dependente.
 --
+-- Rollback: migrations/pending/ROLLBACK_541_drop_job_postings_meet_link_columns.sql (recria a estrutura, NÃO o dado).
 -- Sem BEGIN/COMMIT próprio (o runner envolve cada arquivo numa transação). Idempotente (IF EXISTS em tudo).
 -- ⚠️ Migrations rodam no boot: o merge na `main` executa este DROP em prd. O dado (links de 122 vagas) NÃO é recuperável
 -- pelo app; recuperação = backup automático do Cloud SQL.
