@@ -7,10 +7,12 @@ interface Row {
   stage: string | null;
   source: string | null;
   messaged_at: Date | null;
+  worker_apto: boolean | null;
 }
 
 function row(partial: Partial<Row> & { worker_id: string }): Row {
-  return { stage: 'IN_PROGRESS', source: 'talentum', messaged_at: null, ...partial };
+  // worker_apto true por padrão: a massa antiga espera Completado; os casos de Bloqueados passam false/null
+  return { stage: 'IN_PROGRESS', source: 'talentum', messaged_at: null, worker_apto: true, ...partial };
 }
 
 function mockDb(rows: Row[]): { query: jest.Mock } {
@@ -173,7 +175,7 @@ describe('GetFunnelByWorkerUseCase', () => {
 
     expect(result.total).toBe(0);
     expect(result.porEtapa).toEqual({
-      COMPATIBLE: 0, INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0,
+      COMPATIBLE: 0, INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, BLOQUEADO: 0,
       COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0,
     });
     expect(result.consolidado).toEqual(result.porEtapa);
@@ -198,5 +200,34 @@ describe('GetFunnelByWorkerUseCase', () => {
     }
     // Não vaza PII: a query só lê id/estado, nunca coluna criptografada.
     expect(sql).not.toMatch(/_encrypted|_bidx/);
+  });
+
+  // Spec 067 (FR-08, C4): Gestão à Vista lê o apto — Completado sem apto soma em BLOQUEADO, não em COMPLETED.
+  it('Completado sem apto (false ou null) conta em BLOQUEADO; apto conta em COMPLETED; a soma consolidada = total', async () => {
+    const db = mockDb([
+      row({ worker_id: 'w1', stage: 'QUALIFIED', worker_apto: true }),
+      row({ worker_id: 'w2', stage: 'QUALIFIED', worker_apto: false }),
+      row({ worker_id: 'w3', stage: 'IN_DOUBT', worker_apto: null }),
+      row({ worker_id: 'w4', stage: 'IN_PROGRESS', worker_apto: null }),
+    ]);
+    const result = await new GetFunnelByWorkerUseCase(db as never).execute();
+
+    expect(result.porEtapa.COMPLETED).toBe(1);
+    expect(result.porEtapa.BLOQUEADO).toBe(2);
+    expect(result.consolidado.BLOQUEADO).toBe(2);
+    expect(sum(result.consolidado)).toBe(result.total);
+    expect(String(db.query.mock.calls[0][0])).toContain('fn_worker_is_apto(wja.worker_id)');
+  });
+
+  it('o mesmo prestador apto em uma vaga e não apto em outra: consolidado fica em COMPLETED (mais avançada)', async () => {
+    const result = await new GetFunnelByWorkerUseCase(
+      mockDb([
+        row({ worker_id: 'w1', stage: 'QUALIFIED', worker_apto: false }),
+        row({ worker_id: 'w1', stage: 'COMPLETED', worker_apto: true }),
+      ]) as never,
+    ).execute();
+    expect(result.consolidado.COMPLETED).toBe(1);
+    expect(result.consolidado.BLOQUEADO).toBe(0);
+    expect(result.porEtapa.BLOQUEADO).toBe(1);
   });
 });

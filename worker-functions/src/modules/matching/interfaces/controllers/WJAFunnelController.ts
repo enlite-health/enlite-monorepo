@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
 import {
@@ -144,6 +145,9 @@ export class WJAFunnelController {
              wja.application_funnel_stage AS funnel_stage,
              wja.source,
              wja.messaged_at,
+             -- Spec 067: o apto (fn_worker_is_apto) só é lido para etapa de Completado; as outras vêm NULL.
+             -- Completado sem apto cai em BLOQUEADO (deriveKanbanColumn).
+             ${aptoWhenCompletedSql('wja.application_funnel_stage', 'wja.worker_id')} AS worker_apto,
              -- D200.1: quando a janela de reenvio (MANUAL_RESEND_COOLDOWN_HOURS) abre de novo
              -- para este worker×vaga, ou NULL se o "Reenviar" está livre. MESMA expressão que
              -- o guard usa para o 422 — o card desabilita o botão antes do clique.
@@ -226,6 +230,7 @@ export class WJAFunnelController {
         INICIADO: [],       // INVITED+source='manual' — postulação real, não-bloqueada
         PRE_SCREENING: [],  // Antigo INITIATED — entrou no formulário Talentum
         IN_PROGRESS: [],
+        BLOQUEADO: [],      // spec 067: etapa de Completado, prestador NÃO apto (documentos sem validação)
         COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
         SELECTED: [],
         QUICK_RESPONSE_TEAM: [], // Fase 4 (D430) — destino do arrasto manual, entrada do quadro C
@@ -254,6 +259,7 @@ export class WJAFunnelController {
             row.funnel_stage as string | null,
             row.source as string | null,
             row.messaged_at as string | Date | null,
+            (row.worker_apto as boolean | null) ?? null,
           );
           if (column === 'COMPATIBLE' && !podeVerCandidatoDoMatch(cells)) {
             return { name: NOME_REDIGIDO, phone: null, column, matchRedigido: true };

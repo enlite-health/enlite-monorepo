@@ -25,6 +25,7 @@ import {
   vacancyEffectiveRequiredSexSql,
 } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
+import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 import {
   tallyKanbanColumns,
@@ -260,17 +261,20 @@ export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promis
   const { rows } = await db.query(
     `SELECT wja.job_posting_id AS id, 'wja' AS kind, wja.application_funnel_stage AS stage, wja.source,
             (wja.messaged_at IS NOT NULL) AS messaged, COUNT(*)::int AS n,
-            false AS dismissed
+            false AS dismissed,
+            -- Spec 067: o apto entra na coluna E no GROUP BY (8), senão Completado apto e não apto somariam juntos.
+            ${aptoWhenCompletedSql('wja.application_funnel_stage', 'wja.worker_id')} AS apto
        FROM worker_job_applications wja
       WHERE wja.job_posting_id = ANY($1::uuid[]) AND ${WORKER_ACTIVE_SQL}
         AND NOT ${wjaSupersededByBlockedSql('wja')}
-      GROUP BY 1, 2, 3, 4, 5
+      GROUP BY 1, 2, 3, 4, 5, 8
      UNION ALL
      SELECT wba.job_posting_id, 'blocked', NULL, NULL, false, COUNT(*)::int,
-            (wba.dismissed_at IS NOT NULL) AS dismissed
+            (wba.dismissed_at IS NOT NULL) AS dismissed,
+            NULL::boolean AS apto
        FROM worker_blocked_applications wba
       WHERE wba.job_posting_id = ANY($1::uuid[]) AND ${blockedNotPromotedSql('wba')}
-      GROUP BY 1, 7`,
+      GROUP BY 1, 7, 8`,
     [jobPostingIds],
   );
   const byId = new Map<string, KanbanTallyRow[]>();

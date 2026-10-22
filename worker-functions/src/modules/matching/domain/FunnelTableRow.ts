@@ -47,7 +47,7 @@ export interface FunnelTableRow {
    */
   selfAppliedAt: string | null;
   /** Coluna do Kanban (D433: tentativa negada = REJECTED) — null quando fora do board (match candidate). */
-  kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> | null;
+  kanbanColumn: KanbanColumn | null;
   /** true quando a linha veio de worker_blocked_applications (fetchBlockedRawRows), não de WJA. */
   isBlocked: boolean;
   /** km até a vaga (DX-3.10); null = sem coordenada ou tentativa negada. */

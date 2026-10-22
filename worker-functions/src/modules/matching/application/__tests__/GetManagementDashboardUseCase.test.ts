@@ -224,14 +224,14 @@ describe('GetManagementDashboardUseCase', () => {
         porEtapa: {
           somavel: false,
           colunas: {
-            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
+            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1, BLOQUEADO: 0,
             COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 2,
           },
         },
         consolidado: {
           somavel: true,
           colunas: {
-            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
+            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1, BLOQUEADO: 0,
             COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 1,
           },
         },

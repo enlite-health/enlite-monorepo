@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { liveWorkerJoinSql } from './blockedAttemptLiveState';
 import { blockedNotPromotedSql, wjaSupersededByBlockedSql } from './BlockedApplicationQueryRepository';
 import { candidateDistanceKmSql } from './candidateDistanceSql';
@@ -39,6 +40,11 @@ export interface FunnelTableRawRow {
   source: string | null;
   /** worker_job_applications.messaged_at — distingue match candidate de convite real. */
   messaged_at: string | null;
+  /**
+   * Spec 067: `fn_worker_is_apto(worker_id)`, lido só para etapa de Completado (NULL nas outras e nas linhas
+   * bloqueadas). Ausente/NULL numa etapa de Completado = não apto (fail-closed, deriveKanbanColumn).
+   */
+  worker_apto?: boolean | null;
   /** true quando a linha veio de worker_blocked_applications (fetchBlockedRawRows), não de WJA. */
   is_blocked: boolean;
   /** Só nas linhas bloqueadas: tentativa dispensada ("Rechazar") → coluna REJECTED, senão INICIADO (D474). */
@@ -80,6 +86,7 @@ export class FunnelTableRepository {
          wja.interview_response,
          wja.source,
          wja.messaged_at::text                             AS messaged_at,
+         ${aptoWhenCompletedSql('wja.application_funnel_stage', 'wja.worker_id')} AS worker_apto,
          false                                              AS is_blocked,
          latest_wbdl.dispatched_at::text                  AS wbdl_dispatched_at,
          latest_wbdl.delivery_status                      AS wbdl_delivery_status,

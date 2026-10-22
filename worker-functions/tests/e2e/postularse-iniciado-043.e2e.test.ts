@@ -144,7 +144,7 @@ describe('M6 — o clique em Postularse leva o convidado a INICIADO (banco real)
     const v = await makeVacancy();
     const wjaId = await seedWja(w, v, 'INVITED', 'system');
     const antes = await wjaOf(w, v);
-    expect(deriveKanbanColumn(antes.stage, antes.source, new Date())).toBe('INVITED');
+    expect(deriveKanbanColumn(antes.stage, antes.source, new Date(), true)).toBe('INVITED');
 
     await click(w, v);
 
@@ -152,7 +152,7 @@ describe('M6 — o clique em Postularse leva o convidado a INICIADO (banco real)
     expect(depois.id).toBe(wjaId); // a MESMA linha, não uma nova
     expect(depois.stage).toBe('INVITED');
     expect(depois.source).toBe('manual');
-    expect(deriveKanbanColumn(depois.stage, depois.source, new Date())).toBe('INICIADO');
+    expect(deriveKanbanColumn(depois.stage, depois.source, new Date(), true)).toBe('INICIADO');
 
     const hist = await sourceHistory(wjaId);
     expect(hist).toEqual([
