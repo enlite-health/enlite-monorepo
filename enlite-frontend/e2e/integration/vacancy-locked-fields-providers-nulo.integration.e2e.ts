@@ -70,10 +70,6 @@ test.describe('vacancy-locked-fields — quantidade de prestadores sem padrão 1
     await expect(page.getByTestId('providers-needed-input')).toHaveValue('');
     await expect(page.getByTestId('locked-field-link-providers')).toBeVisible();
 
-    const meetInput = page.getByTestId('meet-link-0');
-    await meetInput.click();
-    await page.keyboard.type('meet.google.com/abc-defg-hij');
-    await meetInput.blur();
 
     const saveBtn = page.getByTestId('create-vacancy-save-btn');
     await expect(saveBtn).toBeEnabled({ timeout: 10_000 });
@@ -101,10 +97,6 @@ test.describe('vacancy-locked-fields — quantidade de prestadores sem padrão 1
     await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
     await expect(page.getByTestId('providers-needed-input')).toBeEnabled();
     await expect(page.getByTestId('providers-needed-input')).toHaveValue('');
-    const meetInput = page.getByTestId('meet-link-0');
-    await meetInput.click();
-    await page.keyboard.type('meet.google.com/abc-defg-hij');
-    await meetInput.blur();
     await page.getByTestId('create-vacancy-save-btn').click({ timeout: 5_000 }).catch(() => undefined); // desabilitado por validação também vale (conta 1)
     // a mensagem aparece 2× (erro do FormField + erro do input, no código de produção desde antes do PR): `.first()` evita o strict mode
     await expect(page.getByText('Debe haber al menos 1 prestador').first()).toBeVisible();
