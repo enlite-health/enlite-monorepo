@@ -4527,14 +4527,7 @@
       "colOccupation": "Ocupación",
       "colZone": "Zona / Dist",
       "colCases": "Casos",
-      "colScore": "Score final",
-      "missingMeetLinks": {
-        "title": "Esta vacante aún no tiene enlaces de reunión",
-        "instructionsBefore": "Para invitar candidatos, primero agregá al menos un link de reunión en la pestaña ",
-        "instructionsTab": "Links",
-        "instructionsAfter": ".",
-        "goToLinks": "Ir a Links"
-      }
+      "colScore": "Score final"
     },
     "messaging": {
       "title": "Enviar invitación",

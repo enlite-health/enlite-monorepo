@@ -326,7 +326,7 @@ test.describe('Match modal — painel de convite flutuante @integration', () => 
       caseNumber,
       requiredSex: 'F',
       requiredProfessions: ['AT'],
-      // Meet link libera o envio de convites (gate hasAnyMeetLink) no modal.
+      // Meet link da vaga (o modal não exige mais; mantido só como dado de seed).
       meetLink1: 'https://meet.google.com/e2e-panel-test',
     });
 

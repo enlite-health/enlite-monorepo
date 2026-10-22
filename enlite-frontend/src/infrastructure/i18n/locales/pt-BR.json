@@ -4448,14 +4448,7 @@
       "colOccupation": "Ocupação",
       "colZone": "Zona / Dist",
       "colCases": "Casos",
-      "colScore": "Score Final",
-      "missingMeetLinks": {
-        "title": "Esta vaga ainda não tem links de reunião",
-        "instructionsBefore": "Para convidar candidatos, adicione pelo menos um link de reunião na aba ",
-        "instructionsTab": "Links",
-        "instructionsAfter": ".",
-        "goToLinks": "Ir para Links"
-      }
+      "colScore": "Score Final"
     },
     "messaging": {
       "title": "Enviar convite",
