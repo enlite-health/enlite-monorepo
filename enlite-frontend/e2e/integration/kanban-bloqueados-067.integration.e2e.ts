@@ -265,11 +265,8 @@ test.describe('Kanban da vaga — coluna Bloqueados (spec 067) @integration', ()
     await focar(page, 'INICIADO');
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot('bloqueados-067-alt2-bloqueado-e-barrada.png', { maxDiffPixelRatio: 0.05 });
 
-    // Soltar um card sobre Bloqueados (coluna só leitura, droppable:false). O board NÃO ignora o drop: `closestCenter` (P20b, DX-5.16,
-    // anterior a esta spec) o resolve para a coluna HABILITADA de centro mais próximo — Seleccionados (abre o diálogo de papel) ou, se a
-    // medição do arrasto cair para o outro lado, Invitados (move e GRAVA). Esta spec não decide qual: ela OBSERVA o que o drop fez
-    // (PUT .../move e diálogo de papel), registra na anotação `drop-em-bloqueados` e só aceita o desfecho que não escreve nada.
-    // Se o drop mover o card, o teste falha dizendo para onde foi — em vez de passar, ou falhar por acaso no `data-stage` lá embaixo.
+    // Soltar um card sobre Bloqueados (FR-06: não é destino de arrasto, só se chega lá por derivação). O drop é CANCELADO: nenhum PUT .../move,
+    // nenhum diálogo (papel ou motivo), o card volta ao lugar. (Sem o cancelamento, o `closestCenter` da P20b o resolveria para a coluna vizinha.)
     const moves: Array<{ url: string; body: string }> = [];
     page.on('request', (r) => { if (r.method() === 'PUT' && /\/api\/admin\/encuadres\/.+\/move/.test(r.url())) moves.push({ url: r.url(), body: r.postData() ?? '' }); });
     await focar(page, 'BLOQUEADO');
@@ -277,10 +274,9 @@ test.describe('Kanban da vaga — coluna Bloqueados (spec 067) @integration', ()
     await dndKitDrag(page, arrastavel, page.locator('[data-testid="kanban-column-BLOQUEADO"]'), { activationSteps: 8, mainSteps: 30, pauseAfterUp: 600 });
     await page.waitForTimeout(1_000);
     const dialogo = page.getByTestId('role-modal');
-    const abriuPapel = (await dialogo.count()) > 0;
-    const desfecho = abriuPapel ? 'resolveu para Seleccionados (diálogo de papel)' : moves.length ? `MOVEU o card: ${moves.map((m) => m.body).join(' | ')}` : 'não resolveu para nenhuma coluna (nada aconteceu)';
+    const desfecho = (await dialogo.count()) > 0 ? 'abriu o diálogo de papel (Seleccionados)' : moves.length ? `MOVEU o card: ${moves.map((m) => m.body).join(' | ')}` : 'nada aconteceu';
     test.info().annotations.push({ type: 'drop-em-bloqueados', description: desfecho });
-    if (abriuPapel) await page.getByTestId('role-cancel').click(); // a pessoa CANCELA: nada é confirmado, nada é gravado
+    expect(desfecho, 'soltar sobre Bloqueados não pode abrir diálogo nem mover').toBe('nada aconteceu');
     await expect(dialogo).toHaveCount(0);
     await expect(page.getByTestId('move-reason-modal')).toHaveCount(0);
     // o que a spec exige: o drop NÃO escreveu — nenhum PUT de mover, o card segue em Completado e Bloqueados não ganhou card

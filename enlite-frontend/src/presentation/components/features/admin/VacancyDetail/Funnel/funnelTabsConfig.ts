@@ -14,6 +14,8 @@ export interface VacancyFunnelColumn {
   sources: readonly string[];
   color: string;
   droppable: boolean;
+  /** Soltar com o ponteiro sobre a coluna cancela o drop (FR-06 da 067): não cai na coluna vizinha pelo closestCenter (P20b). */
+  cancelDrop?: boolean;
 }
 
 /**
@@ -26,7 +28,7 @@ export const VACANCY_FUNNEL_COLUMNS: readonly VacancyFunnelColumn[] = [
   { id: 'INVITED', sources: ['INVITED'], color: 'bg-blue-400', droppable: true },
   { id: 'INICIADO', sources: ['INICIADO'], color: 'bg-indigo-400', droppable: false },
   { id: 'PRE_SCREENING', sources: ['PRE_SCREENING', 'IN_PROGRESS'], color: 'bg-violet-400', droppable: false },
-  { id: 'BLOQUEADO', sources: ['BLOQUEADO'], color: 'bg-amber-500', droppable: false },
+  { id: 'BLOQUEADO', sources: ['BLOQUEADO'], color: 'bg-amber-500', droppable: false, cancelDrop: true },
   { id: 'COMPLETED', sources: ['COMPLETED'], color: 'bg-violet-600', droppable: false },
   { id: 'SELECTED', sources: ['SELECTED'], color: 'bg-green-500', droppable: true },
   { id: 'QUICK_RESPONSE_TEAM', sources: ['QUICK_RESPONSE_TEAM'], color: 'bg-teal-500', droppable: true },
