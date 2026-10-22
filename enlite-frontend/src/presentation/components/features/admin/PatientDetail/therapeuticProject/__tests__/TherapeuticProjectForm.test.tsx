@@ -555,6 +555,15 @@ describe('🔒 D328/ADR-4 — campo MACRO trava na edição, nunca vira input de
     expect(screen.getByTestId('tp-activities-locked')).toHaveTextContent('—');
   });
 
+  it('spec 060: atividades travadas (MACRO) saem A–Z, sem mudar a versão de origem', () => {
+    const atividades = [item('ac1', 'Zeta actividad'), item('ac2', 'Árbol actividad'), item('ac3', 'Abeja actividad')];
+    montar({ from: { ...VERSAO, activities: atividades } });
+
+    const lis = Array.from(screen.getByTestId('tp-activities-locked').querySelectorAll('li')).map((li) => li.textContent);
+    expect(lis).toEqual(['Abeja actividad', 'Árbol actividad', 'Zeta actividad']);
+    expect(atividades.map((a) => a.id)).toEqual(['ac1', 'ac2', 'ac3']);
+  });
+
   it('serviço travado cujo id não existe em `services` (removido/de outro paciente): cai no id cru, não quebra', () => {
     montar({ from: { ...VERSAO, contractedServiceId: 'svc-removido' } });
 

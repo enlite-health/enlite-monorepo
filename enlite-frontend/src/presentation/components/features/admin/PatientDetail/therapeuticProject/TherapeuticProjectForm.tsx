@@ -50,6 +50,7 @@ import { ClinicalTextareaField } from '../edit/ClinicalTextareaField';
 import { IcdSearchCombobox } from '../edit/IcdSearchCombobox';
 import { TherapeuticProjectSegmentField } from './TherapeuticProjectSegmentField';
 import { segmentOptions } from './segmentOptions';
+import { sortAlphabeticallyEs } from './alphabeticalOrder';
 import { keptCareTeamIds, keptIdsOfKind, removedInactiveByKind } from './contactSelection';
 import { todayInOperationZone } from '@presentation/utils/dateTimeFormat';
 
@@ -336,7 +337,7 @@ export function TherapeuticProjectForm({
           </FormField>
           <FormField label={tc('activitiesPlan')} htmlFor="tp-activities" labelSize="compact" required={!isMacroLocked('activityIds')}>
             {isMacroLocked('activityIds')
-              ? lockedList(from!.activities, 'tp-activities-locked')
+              ? lockedList(sortAlphabeticallyEs(from!.activities), 'tp-activities-locked')
               : <MultiSelect id="tp-activities" searchable options={optionsOf('activities', from?.activities, activityIds)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} />}
           </FormField>
           {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
