@@ -1295,7 +1295,7 @@
           "INICIADO": "Iniciado",
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "En progreso",
-          "BLOQUEADO": "Bloqueados",
+          "BLOQUEADO": "Sin validar",
           "COMPLETED": "Completos",
           "SELECTED": "Seleccionados",
           "REJECTED": "Rechazados"
