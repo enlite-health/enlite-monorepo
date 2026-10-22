@@ -129,6 +129,12 @@ export function mostAdvancedColumn(a: KanbanColumn, b: KanbanColumn): KanbanColu
 export const COMPLETED_COLUMN_STAGES: readonly string[] = ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'];
 
 /**
+ * Spec 067 FR-24: destinos de arrasto (quadro da vaga) que exigem o predicado APTO — Completado, Seleccionados e o
+ * Equipo de Respuesta Rápida. Os demais destinos seguem no limiar de postulação.
+ */
+export const APTO_REQUIRED_TARGET_STAGES: readonly string[] = [...COMPLETED_COLUMN_STAGES, 'SELECTED', 'QUICK_RESPONSE_TEAM'];
+
+/**
  * Derives the Kanban column for a WJA row from its funnel stage + source.
  * Mirrors the classification chain in WJAFunnelController.getEncuadreFunnel.
  *

@@ -344,7 +344,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
   });
 
-  it.each(['COMPLETED', 'QUALIFIED', 'IN_DOUBT'])(
+  it.each(['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'QUICK_RESPONSE_TEAM'])(
     'spec 067 FR-24: destino %s chama assertWorkerApto (limiar de apto) e NÃO o gate de postulação sozinho',
     async (targetStage) => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
@@ -361,7 +361,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     },
   );
 
-  it.each(['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'SELECTED', 'REJECTED', 'QUICK_RESPONSE_TEAM'])(
+  it.each(['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'REJECTED'])(
     'spec 067 FR-24: destino %s fica no limiar de hoje — assertWorkerApto NÃO é chamado',
     async (targetStage) => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
