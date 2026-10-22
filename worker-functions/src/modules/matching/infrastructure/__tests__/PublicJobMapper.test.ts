@@ -10,7 +10,7 @@
  *   2. sanitizeDescription — returns empty string for null
  *   3. sanitizeDescription — trims whitespace
  *   4. sanitizeDescription — returns empty string for empty string input
- *   5. mapPublicJobRow — maps all fields correctly (including 5 new fields + country + age_range + whatsapp_url)
+ *   5. mapPublicJobRow — maps all fields correctly (including 5 new fields + country + age_range + can_apply)
  *   6. mapPublicJobRow — description (from talentum_description) passes through trimmed
  *   7. mapPublicJobRow — state_city empty string normalised to null
  *   8. mapPublicJobRow — state_city whitespace-only normalised to null
@@ -69,12 +69,12 @@ describe('mapPublicJobRow', () => {
       country: 'AR',
       age_range_min: 5,
       age_range_max: 12,
-      whatsapp_url: 'https://wa.me/5491112345678',
+      can_apply: true,
       ...overrides,
     };
   }
 
-  it('maps all fields from row to DTO (including 5 new fields + country + age_range + whatsapp_url)', () => {
+  it('maps all fields from row to DTO (including 5 new fields + country + age_range + can_apply)', () => {
     const row = makeRow();
     const dto = mapPublicJobRow(row);
 
@@ -99,7 +99,8 @@ describe('mapPublicJobRow', () => {
     expect(dto.country).toBe('AR');
     expect(dto.age_range_min).toBe(5);
     expect(dto.age_range_max).toBe(12);
-    expect(dto.whatsapp_url).toBe('https://wa.me/5491112345678');
+    expect(dto.can_apply).toBe(true);
+    expect(Object.keys(dto)).not.toContain('whatsapp_url'); // spec 067 FR-14: o link da Talentum não sai do feed público
     expect(dto.schedule_week).toBeNull(); // makeRow() default schedule is null
   });
 
@@ -189,14 +190,14 @@ describe('mapPublicJobRow', () => {
     expect(dto.age_range_max).toBeNull();
   });
 
-  it('passes through whatsapp_url when populated', () => {
-    const dto = mapPublicJobRow(makeRow({ whatsapp_url: 'https://wa.me/5491199999999' }));
-    expect(dto.whatsapp_url).toBe('https://wa.me/5491199999999');
+  it('passes through can_apply=true when the vacancy has a pre-screening', () => {
+    const dto = mapPublicJobRow(makeRow({ can_apply: true }));
+    expect(dto.can_apply).toBe(true);
   });
 
-  it('passes through whatsapp_url as null when absent', () => {
-    const dto = mapPublicJobRow(makeRow({ whatsapp_url: null }));
-    expect(dto.whatsapp_url).toBeNull();
+  it('maps can_apply to false when absent (fail-closed: sem informação não é postulável)', () => {
+    const dto = mapPublicJobRow(makeRow({ can_apply: undefined as unknown as boolean }));
+    expect(dto.can_apply).toBe(false);
   });
 
   it('maps country to dto.country', () => {

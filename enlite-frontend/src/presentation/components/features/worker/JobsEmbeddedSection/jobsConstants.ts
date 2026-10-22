@@ -28,7 +28,8 @@ export interface Job {
   daysAndHours: string;
   ageRange: string;
   profile: string;
-  whatsappLink: string;
+  /** Spec 067 FR-15: a vaga é postulável. O link da Talentum não vem no feed público (só no 200 de track-channel). */
+  canApply: boolean;
   detailLink: string;
 }
 
@@ -145,7 +146,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes a viernes de 09:00 a 15:00 hs.',
     ageRange: '25 a 40 años',
     profile: 'AT con experiencia en casos complejos de salud mental y trastornos de personalidad.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20736',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/736/',
   },
   {
@@ -162,7 +163,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes y jueves de 11:00 a 14:00. (A partir de mayo se suma el viernes).',
     ageRange: '20 a 45 años (Sugerido)',
     profile: 'Profesional mujer con formación en AT y experiencia en discapacidad intelectual y comunicación.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20732',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/732/',
   },
   {
@@ -179,7 +180,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes, miércoles y viernes 8-12h; martes y jueves 10-14h.',
     ageRange: 'Adulto',
     profile: 'Profesional con experiencia en discapacidad infantil y entorno educativo.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20735',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/735/',
   },
   {
@@ -196,7 +197,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes a sábados de 08:30 a 11:30.',
     ageRange: 'Adolescente (15 años)',
     profile: 'Profesional independiente masculino con experiencia en adolescentes.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20734',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/734/',
   },
   {
@@ -213,7 +214,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes a viernes de 13:00 a 17:00.',
     ageRange: '20 a 30 años',
     profile: 'AT mujer con formación en discapacidad o integración escolar.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20733',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/733/',
   },
 ];

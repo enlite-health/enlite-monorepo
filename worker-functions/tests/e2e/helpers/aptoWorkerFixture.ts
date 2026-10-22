@@ -12,6 +12,9 @@ import type { Pool } from 'pg';
 
 export type AptoDocs = 'validated' | 'unvalidated' | 'none';
 
+/** Modo passthrough do KMS nos testes (NODE_ENV=test): o "ciphertext" é o base64 do texto — assim o prestador também lê pela API (Worker). */
+const enc = (plain: string): string => Buffer.from(plain, 'utf8').toString('base64');
+
 const VALIDATION = { validated_by: 'qa@example.test', validated_at: '2026-10-22T00:00:00Z' };
 
 /** Completa o cadastro de um prestador JÁ existente (UPDATE idempotente) e semeia área, disponibilidade e documentos. */
@@ -19,12 +22,12 @@ export async function completeWorkerProfile(pool: Pool, workerId: string, docs: 
   await pool.query(
     `UPDATE workers SET
        phone = COALESCE(NULLIF(phone, ''), '+5411' || right(replace(id::text, '-', ''), 10)),
-       profession = 'CAREGIVER', first_name_encrypted = 'enc', last_name_encrypted = 'enc', sex_encrypted = 'enc',
-       gender_encrypted = 'enc', birth_date_encrypted = 'enc', document_number_encrypted = 'enc', document_type = 'DNI',
-       languages_encrypted = 'enc', knowledge_level = 'BASIC', title_certificate = 'DEGREE', years_experience = '3-5',
+       profession = 'CAREGIVER', first_name_encrypted = $2, last_name_encrypted = $3, sex_encrypted = $4,
+       gender_encrypted = $5, birth_date_encrypted = $6, document_number_encrypted = $7, document_type = 'DNI',
+       languages_encrypted = $8, knowledge_level = 'BASIC', title_certificate = 'DEGREE', years_experience = '3-5',
        experience_types = ARRAY['TEA'], preferred_types = ARRAY['TEA'], preferred_age_range = ARRAY['CHILD']
      WHERE id = $1`,
-    [workerId],
+    [workerId, enc('Ficticia'), enc('Teste'), enc('FEMALE'), enc('FEMALE'), enc('1990-01-01'), enc('12345678'), enc('["es"]')],
   );
   await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = $1`, [workerId]);
   await pool.query(`INSERT INTO worker_service_areas (worker_id, address_line, radius_km) VALUES ($1, 'Av. Test 1', 5)`, [workerId]);

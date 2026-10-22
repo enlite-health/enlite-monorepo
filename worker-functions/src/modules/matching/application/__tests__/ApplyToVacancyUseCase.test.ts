@@ -1,6 +1,8 @@
 import { ApplyToVacancyUseCase } from '../ApplyToVacancyUseCase';
 import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
+const LINK = 'http://talentum.invalid/public/pre-screening/00000000-0000-4000-8000-000000000067/chat';
+
 describe('ApplyToVacancyUseCase', () => {
   let mockQuery: jest.Mock;
   let mockDb: { query: jest.Mock };
@@ -26,12 +28,24 @@ describe('ApplyToVacancyUseCase', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  it('worker REGISTERED → cria WJA+encuadre com os MESMOS params do app e retorna wjaId', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
+  it('spec 067 FR-16: vaga SEM link → ok:true com prescreeningUrl null', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockImplementation(async (sql: string) =>
+      String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: null }] } : { rows: [] });
 
     const result = await useCase.execute(mockDb as any, PARAMS);
 
-    expect(result).toEqual({ ok: true, wjaId: 'wja-1' });
+    expect(result).toEqual({ ok: true, wjaId: 'wja-1', prescreeningUrl: null });
+  });
+
+  it('worker REGISTERED → cria WJA+encuadre com os MESMOS params do app e retorna wjaId', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
+    mockQuery.mockImplementation(async (sql: string) =>
+      String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: LINK }] } : { rows: [] }); // link da vaga (spec 067 FR-16)
+
+    const result = await useCase.execute(mockDb as any, PARAMS);
+
+    expect(result).toEqual({ ok: true, wjaId: 'wja-1', prescreeningUrl: LINK });
     // Recebe o CLIENT da transação (não o pool): a criação da candidatura passou
     // a rodar sob `withActorContext` para carimbar quem postulou.
     expect(mockCreateWja.execute).toHaveBeenCalledWith(expect.objectContaining({
@@ -52,6 +66,9 @@ describe('ApplyToVacancyUseCase', () => {
 
     const result = await useCase.execute(mockDb as any, PARAMS);
 
+    // Spec 067 FR-16: o ramo ok:false NUNCA carrega o link da Talentum nem chega a lê-lo no banco
+    expect(result).not.toHaveProperty('prescreeningUrl');
+    expect(mockQuery.mock.calls.some((c: unknown[]) => String(c[0]).includes('talentum_whatsapp_url'))).toBe(false);
     expect(result).toEqual({
       ok: false,
       code: 'WORKER_NOT_ELIGIBLE',
@@ -87,13 +104,14 @@ describe('ApplyToVacancyUseCase', () => {
   });
 
   it('idempotência delega ao ON CONFLICT do CreateManualWjaWithEncuadre (repete → mesma chamada, sem erro)', async () => {
-    mockQuery.mockResolvedValue({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockImplementation(async (sql: string) =>
+      String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: LINK }] } : { rows: [{ status: 'REGISTERED' }] });
 
     const first = await useCase.execute(mockDb as any, PARAMS);
     const second = await useCase.execute(mockDb as any, PARAMS);
 
-    expect(first).toEqual({ ok: true, wjaId: 'wja-1' });
-    expect(second).toEqual({ ok: true, wjaId: 'wja-1' });
+    expect(first).toEqual({ ok: true, wjaId: 'wja-1', prescreeningUrl: LINK });
+    expect(second).toEqual({ ok: true, wjaId: 'wja-1', prescreeningUrl: LINK });
     expect(mockCreateWja.execute).toHaveBeenCalledTimes(2);
   });
 

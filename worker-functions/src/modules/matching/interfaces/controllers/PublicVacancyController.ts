@@ -175,7 +175,8 @@ export class PublicVacancyController {
           jp.schedule_days_hours,
           jp.salary_text,
           jp.talentum_description,
-          jp.talentum_whatsapp_url,
+          -- Spec 067 FR-14: so o booleano; o link da Talentum NAO sai nesta rota publica.
+          (NULLIF(jp.talentum_whatsapp_url, '') IS NOT NULL) AS can_apply,
           jp.country,
           jp.created_at,
           COALESCE(
@@ -239,7 +240,7 @@ export class PublicVacancyController {
         schedule_days_hours:    row.schedule_days_hours,
         salary_text:            row.salary_text,
         talentum_description:   row.talentum_description,
-        talentum_whatsapp_url:  row.talentum_whatsapp_url,
+        can_apply:              row.can_apply === true,
         patient_zone:           row.patient_zone,
         country:                row.country,
         created_at:             row.created_at,

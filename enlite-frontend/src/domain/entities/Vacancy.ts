@@ -46,7 +46,8 @@ export interface PublicVacancyDetail {
   schedule_days_hours: string | null;
   salary_text: string | null;
   talentum_description: string | null;
-  talentum_whatsapp_url: string | null;
+  /** Spec 067 FR-14/15: a vaga aceita postulação. O LINK da Talentum não sai desta rota pública — vem só no 200 de track-channel. */
+  can_apply: boolean;
   patient_zone: string | null;
   country: string | null;
   created_at: string;

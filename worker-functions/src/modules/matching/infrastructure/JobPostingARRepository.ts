@@ -323,7 +323,9 @@ export class JobPostingARRepository {
          NULLIF(TRIM(CONCAT_WS(' / ', pa.state, pa.city)), '') AS state_city,
          jp.country                           AS country,
          ${vacancyEffectiveAgeRangeSql('jp')},
-         jp.talentum_whatsapp_url             AS whatsapp_url
+         -- Spec 067 FR-14: o LINK da Talentum NAO sai do banco nesta rota publica (so o booleano). O link vai ao front
+         -- apenas na resposta da postulacao aprovada (track-channel).
+         (NULLIF(jp.talentum_whatsapp_url, '') IS NOT NULL) AS can_apply
        FROM job_postings jp
        ${vacancyEffectiveJoinSql('jp')}
        LEFT JOIN patients p    ON jp.patient_id = p.id

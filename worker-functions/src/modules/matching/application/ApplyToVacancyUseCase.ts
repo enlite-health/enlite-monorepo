@@ -29,7 +29,15 @@ export interface ApplyToVacancyParams {
 }
 
 export type ApplyToVacancyResult =
-  | { ok: true; wjaId: string | null }
+  | {
+      ok: true;
+      wjaId: string | null;
+      /**
+       * Spec 067 FR-16: o link do pré-screening da Talentum, devolvido SÓ na postulação aprovada. Deixou de sair das rotas
+       * públicas (`/api/public/v1/jobs`, `/api/vacancies/:id`). `null` = a vaga não tem link (o front trata como indisponível).
+       */
+      prescreeningUrl: string | null;
+    }
   | {
       ok: false;
       code: 'WORKER_NOT_ELIGIBLE';
@@ -102,6 +110,11 @@ export class ApplyToVacancyUseCase {
       actor,
     );
 
-    return { ok: true, wjaId };
+    // Spec 067 FR-16: o link só é lido no ramo APROVADO (depois do gate e da criação); o ramo `ok:false` nunca o toca.
+    const link = await db.query<{ url: string | null }>(
+      `SELECT NULLIF(talentum_whatsapp_url, '') AS url FROM job_postings WHERE id = $1`,
+      [jobPostingId],
+    );
+    return { ok: true, wjaId, prescreeningUrl: link.rows[0]?.url ?? null };
   }
 }
