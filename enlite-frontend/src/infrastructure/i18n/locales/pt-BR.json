@@ -2180,8 +2180,6 @@
         "requiredExperience": "Experiência exigida",
         "paymentDay": "Prazo de pagamento",
         "closesAt": "Data de encerramento",
-        "meetLinks": "Links do Google Meet",
-        "meetLinksAside": "para as entrevistas",
         "serviceRecruitmentFields": "Completar {{count}} campos na ficha do paciente"
       },
       "lastUpdated": "Última edição: {{date}}"
@@ -2489,7 +2487,6 @@
           "scheduleDaysRequired": "Selecione pelo menos um dia",
           "scheduleTimeRequired": "Preencha o horário de início e fim",
           "providersMin": "Deve haver pelo menos 1 prestador",
-          "meetLinkRequired": "Você precisa de ao menos um link de Google Meet válido",
           "requiredProfessionsMin": "Selecione pelo menos um tipo de prestador",
           "stateRequired": "A província é obrigatória",
           "cityMin": "A localidade deve ter pelo menos 2 caracteres",
@@ -2745,10 +2742,6 @@
       "jobDescription": "Descrição do trabalho",
       "interviewDates": "Datas para entrevistas de enquadre",
       "interviewDatesPlaceholder": "Em breve",
-      "meetLinksLabel": "Links de Google Meet (ao menos um)",
-      "meetLinkPlaceholder": "https://meet.google.com/xxx-xxxx-xxx",
-      "meetLinkNotFound": "Não encontramos esse meet no seu calendário.",
-      "meetLinkInvalid": "Formato inválido. Use meet.google.com/xxx-xxxx-xxx",
       "validationBanner": {
         "title": "Faltam dados para criar a vaga:"
       },
