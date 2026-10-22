@@ -68,6 +68,11 @@ export const PublicJobV1ItemSchema = registry.register(
     worker_sex: z.string().nullable().openapi({ example: 'FEMALE' }),
     worker_type: z.string().nullable().openapi({ example: 'AT' }),
     short_url: z.string().nullable().openapi({ example: 'https://enl.it/abc123' }),
+    can_apply: z.boolean().openapi({
+      description:
+        'Spec 067 FR-14/15: a vaga aceita postulação (tem pré-screening da Talentum). O LINK da Talentum NÃO sai desta rota pública: ' +
+        'quem postula o recebe só na resposta aprovada de POST /api/worker-applications/track-channel.',
+    }),
     schedule_week: ScheduleWeekSchema.nullable().openapi({
       description: 'null quando o schedule não é estruturável — o WordPress cai no fallback de texto livre (schedule_days_hours).',
     }),

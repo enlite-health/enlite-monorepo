@@ -20,7 +20,7 @@ import {
   STAGE_OF_COLUMN,
   type EnquadreColumnId,
 } from '../domain/enquadreEvent';
-import { assertWorkerCanApply, WorkerNotEligibleError } from '../domain/WorkerApplicationEligibility';
+import { assertWorkerApto, assertWorkerCanApply, WorkerNotEligibleError } from '../domain/WorkerApplicationEligibility';
 import {
   EnquadreCalendarUpdateFailedError,
   EnquadreEventNotEndedError,
@@ -138,7 +138,7 @@ export class EnquadreEventMutations {
       const p = active.find((x) => x.id === participantId);
       if (!p) throw new EnquadreParticipantNotFoundError();
       if (columnOfStage(p.stage) === column) return;
-      await this.assertEligible(p);
+      await this.assertEligible(p, column);
       const moved = await moveApplicationStage(
         client,
         {
@@ -230,10 +230,15 @@ export class EnquadreEventMutations {
     logger.warn({ vacancyId, eventId, errorName: err instanceof Error ? err.name : 'unknown' }, event);
   }
 
-  /** A mesma checagem do funil (`assertWorkerCanApply`) e a mesma resposta 403 quando o prestador não pode se candidatar. */
-  private async assertEligible(p: ActiveParticipantRow): Promise<void> {
+  /**
+   * A mesma recusa 403 do funil quando o prestador não pode ser movido. Spec 067 FR-24: para CONVOKED/SELECTED/QUICK_RESPONSE_TEAM
+   * o limiar é o de APTO (`assertWorkerApto`: documentos obrigatórios validados); REJECTED fica no limiar de hoje
+   * (`assertWorkerCanApply`) porque a operação precisa conseguir rejeitar quem perdeu a validação.
+   */
+  private async assertEligible(p: ActiveParticipantRow, column: EnquadreColumnId): Promise<void> {
     try {
-      await assertWorkerCanApply(this.deps.db, p.worker_id);
+      if (column === 'REJECTED') await assertWorkerCanApply(this.deps.db, p.worker_id);
+      else await assertWorkerApto(this.deps.db, p.worker_id);
     } catch (err) {
       if (err instanceof WorkerNotEligibleError) {
         throw new EnquadreMoveRefusedError(err.status, {

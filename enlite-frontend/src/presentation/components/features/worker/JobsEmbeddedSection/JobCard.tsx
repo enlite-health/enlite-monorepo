@@ -16,7 +16,7 @@ interface JobCardProps {
  *
  * "Postularse" passa pelo servidor (`usePostularseAction`, MESMO hook de
  * `/vacantes/:id`, canal fixo `'site'` — não é clique via UTM). Só existe
- * quando o job tem `whatsappLink` E `id` (job_postings.id real — só a API
+ * quando o job tem `canApply` E `id` (job_postings.id real — só a API
  * pública fornece; o scraper legado não tem, e sem UUID não dá pra checar
  * elegibilidade real nem criar WJA — o hook modelaria isso como
  * `not_available`, mas aqui nem chega a renderizar o botão pra evitar um
@@ -27,9 +27,9 @@ interface JobCardProps {
  */
 export function JobCard({ job, applyLabel, onViewDetails }: JobCardProps): JSX.Element {
   const { t } = useTranslation();
-  const canTrackApply = Boolean(job.whatsappLink && job.id);
+  const canTrackApply = Boolean(job.canApply && job.id);
   const { state, missingFields, postularse, dismissModal } = usePostularseAction(
-    job.whatsappLink || null,
+    job.canApply,
     job.id || null,
     'site',
   );

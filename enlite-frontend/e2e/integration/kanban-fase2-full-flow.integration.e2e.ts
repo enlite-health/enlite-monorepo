@@ -48,6 +48,7 @@ import {
   BACKEND_URL,
 } from '../helpers/talentumWebhookHelper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from '../helpers/eligibility-worker-helper';
 // DX-4.17/A-contrato (achado R2, Fase 4): salto de coluna agora pede motivo (422 →
 // modal → 2xx) — reusa o helper da própria fase, não duplica a escolha de opção.
 import { chooseReasonInModal } from '../helpers/funnel-move-e2e-helper';
@@ -181,14 +182,12 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     cleanupWorkerIds.push(workerA_Id);
 
     // Path B — Talentum webhook
-    workerB_Phone = `+549119${rand()}`;
-    workerB_Email = `e2e-fase2-b-${ts}@test.com`;
+    // spec 067: o Path B chega a Completado/QUALIFIED e é arrastado a Selecionado → prestador APTO (documentos validados)
+    const aptoB = insertAptoWorker({ docs: 'validated' });
+    workerB_Phone = aptoB.phone!;
+    workerB_Email = aptoB.email;
     workerB_ProfileId = `prof-b-${ts}`;
-    workerB_Id = insertTestWorker({
-      firstName: 'WorkerB',
-      lastName: 'Webhook',
-      phone: workerB_Phone,
-    });
+    workerB_Id = aptoB.workerId;
     cleanupWorkerIds.push(workerB_Id);
 
     // Path C — talent_search via match trigger
@@ -236,7 +235,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     if (orphanWorker1Id) runSQL(`DELETE FROM workers WHERE id = '${orphanWorker1Id}'`);
     if (orphanWorker2Id) runSQL(`DELETE FROM workers WHERE id = '${orphanWorker2Id}'`);
 
-    for (const wid of cleanupWorkerIds) cleanupTestWorker(wid);
+    for (const wid of cleanupWorkerIds) { cleanupEligibilityWorkerChildren(wid); cleanupTestWorker(wid); }
     cleanupTestPatient(patientId);
   });
 

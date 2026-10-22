@@ -47,6 +47,7 @@ export const VACANCY_SORT_ALLOWLIST: Readonly<Record<string, Extractor>> = {
   invited: column('INVITED'),
   iniciado: column('INICIADO'),
   preScreening: column('PRE_SCREENING', 'IN_PROGRESS'),
+  bloqueados: column('BLOQUEADO'),
   completed: column('COMPLETED'),
   selected: column('SELECTED'),
   quickResponseTeam: column('QUICK_RESPONSE_TEAM'),

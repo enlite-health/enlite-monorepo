@@ -13,6 +13,12 @@ export interface KanbanColumnSpec {
   /** classe de cor do bolinha do cabeçalho (ex.: 'bg-green-500'). */
   color: string;
   droppable?: boolean;
+  /**
+   * Coluna registrada no dnd-kit só para colisão (não é destino válido, sem destaque): quando o
+   * `closestCenter` resolve o drop para ela, o drop é cancelado — não cai na coluna vizinha (P20b).
+   * Só faz sentido com `droppable=false`.
+   */
+  cancelDrop?: boolean;
   /** Cabeçalho em tom de alerta (vermelho) — coluna que pede ação do operador. */
   alert?: boolean;
 }
@@ -139,6 +145,9 @@ export function KanbanBoardShell<T>({
     const itemId = activeId;
     setActiveId(null);
     if (!itemId || !event.over) return;
+    // Coluna `cancelDrop` está registrada só para COLISÃO: o closestCenter resolve `over` para ela, e aqui o drop morre.
+    const overId = String(event.over.id);
+    if (columns.some((c) => c.id === overId && c.cancelDrop)) return;
 
     const toColumnId = String(event.over.id);
     // Coluna não-droppable nem chega aqui (useDroppable desabilitado), mas o
@@ -171,6 +180,7 @@ export function KanbanBoardShell<T>({
               count={items.length}
               color={col.color}
               droppable={col.droppable !== false}
+              cancelDrop={col.cancelDrop}
               alert={col.alert}
               dragActive={activeId !== null}
               collapsed={collapsed.has(col.id)}

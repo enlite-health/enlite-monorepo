@@ -25,6 +25,7 @@
  *      (`isMatchedNotInvited`, `WF/domain/kanbanColumn.ts:42-48`).
  */
 import type { APIRequestContext, Page } from '@playwright/test';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from './eligibility-worker-helper';
 import {
   insertTestPatient,
   insertBaseVacancy,
@@ -104,10 +105,14 @@ export function seedVacancyWithCards(
   }
 
   const cards: SeedVacancyCard[] = stages.map(({ stage, source = 'system' }, idx) => {
-    const workerId = insertTestWorker({
-      firstName: `FunnelMove${stage}`,
-      lastName: `E2E${Date.now()}-${idx}`,
-    });
+    // spec 067: a coluna Completado só recebe prestador APTO — quem semeia card em etapa de Completado quer "apto" (a intenção do
+    // teste); os demais seguem com o prestador simples de sempre.
+    const workerId = ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)
+      ? insertAptoWorker({ docs: 'validated' }).workerId
+      : insertTestWorker({
+          firstName: `FunnelMove${stage}`,
+          lastName: `E2E${Date.now()}-${idx}`,
+        });
     const wjaId = insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: stage, source });
     // insertWJA não expõe messaged_at — sem isso, INVITED/system fica "matched not
     // invited" e some da coluna Invitados (isMatchedNotInvited, kanbanColumn.ts:42-48).
@@ -120,6 +125,7 @@ export function seedVacancyWithCards(
     for (const card of cards) {
       try {
         cleanupWJAAndEncuadre(card.workerId, vacancyId);
+        cleanupEligibilityWorkerChildren(card.workerId);
         cleanupTestWorker(card.workerId);
       } catch (err) {
         console.error('[cleanup] card falhou (seguindo)', err);

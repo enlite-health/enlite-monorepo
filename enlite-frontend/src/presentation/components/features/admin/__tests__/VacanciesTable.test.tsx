@@ -15,6 +15,7 @@ describe('VacanciesTable', () => {
         INVITED: 32,
         INICIADO: 9,
         PRE_SCREENING: 5,
+        BLOQUEADO: 12,
         COMPLETED: 3,
         SELECTED: 27,
         QUICK_RESPONSE_TEAM: 7,
@@ -35,6 +36,7 @@ describe('VacanciesTable', () => {
         INVITED: 16,
         INICIADO: 41,
         PRE_SCREENING: 18,
+        BLOQUEADO: 13,
         COMPLETED: 11,
         SELECTED: 61,
         QUICK_RESPONSE_TEAM: 4,
@@ -47,7 +49,7 @@ describe('VacanciesTable', () => {
     },
   ];
 
-  it('should render table headers (case, status, última ação, as 8 colunas do funil, applicants, missing)', () => {
+  it('should render table headers (case, status, última ação, as 9 colunas do funil, applicants, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
@@ -57,6 +59,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.BLOQUEADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.COMPLETED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.SELECTED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.QUICK_RESPONSE_TEAM')).toBeInTheDocument();
@@ -73,8 +76,8 @@ describe('VacanciesTable', () => {
     expect(screen.queryByText('admin.vacancies.table.daysWithoutDivulgation')).not.toBeInTheDocument();
   });
 
-  it('A2 (spec 052): a lista mostra as mesmas 8 colunas do funil (Kanban/abas), sem filtro local', () => {
-    expect(VACANCY_FUNNEL_COLUMNS).toHaveLength(8);
+  it('A2 (spec 052): a lista mostra as mesmas 9 colunas do funil (Kanban/abas), sem filtro local', () => {
+    expect(VACANCY_FUNNEL_COLUMNS).toHaveLength(9);
     render(<VacanciesTable vacancies={realApiData} />);
     VACANCY_FUNNEL_COLUMNS.forEach((c) => expect(screen.getByTestId(`vacancies-col-${c.id}`)).toBeInTheDocument());
   });
@@ -99,7 +102,7 @@ describe('VacanciesTable', () => {
     expect(statusElements).toHaveLength(2);
   });
 
-  it('should render numeric data fields (stageCounts das 8 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
+  it('should render numeric data fields (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
     // Caso 349: stageCounts padStart(2,'0')
@@ -113,6 +116,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('02')).toBeInTheDocument();
     expect(screen.getByText('115')).toBeInTheDocument();
     expect(screen.getByText('00')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument(); // 067: Bloqueados
     // Caso 348
     expect(screen.getByText('08')).toBeInTheDocument();
     expect(screen.getByText('16')).toBeInTheDocument();
@@ -123,6 +127,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('04')).toBeInTheDocument();
     expect(screen.getByText('10')).toBeInTheDocument();
     expect(screen.getByText('52')).toBeInTheDocument();
+    expect(screen.getByText('13')).toBeInTheDocument(); // 067: Bloqueados
     expect(screen.getByText('01')).toBeInTheDocument();
   });
 
@@ -203,7 +208,7 @@ describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () =>
     expect(cell.textContent).not.toBe('');
   });
 
-  it('ordem dos vacancies-col-* = lista literal de 13 (tudo menos o olho; sem priority nem dias sem divulgação)', () => {
+  it('ordem dos vacancies-col-* = lista literal de 14 (tudo menos o olho; sem priority nem dias sem divulgação)', () => {
     render(<VacanciesTable vacancies={[base]} />);
     const headers = screen.getAllByTestId(/^vacancies-col-/);
     const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));
@@ -215,6 +220,7 @@ describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () =>
       'INVITED',
       'INICIADO',
       'PRE_SCREENING',
+      'BLOQUEADO',
       'COMPLETED',
       'SELECTED',
       'QUICK_RESPONSE_TEAM',

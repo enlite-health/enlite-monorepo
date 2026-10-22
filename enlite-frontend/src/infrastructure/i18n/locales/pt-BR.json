@@ -1130,6 +1130,12 @@
           "origen": "• O card chega aqui ao avançar de Invitados/Iniciado — por resposta da pessoa ou movimento da recrutadora.",
           "cambia": "• Avanços de conversa: entra.\n• Completar a triagem, agendar, selecionar ou rejeitar: sai."
         },
+        "stage_BLOQUEADO": {
+          "title": "Bloqueados (coluna)",
+          "que": "Prestadores que concluíram a triagem mas ainda não podem avançar: seus documentos obrigatórios não estão todos validados.",
+          "origen": "• É a mesma regra da coluna Bloqueados do Kanban da vaga — painel e Kanban contam igual.\n• Não é o número \"Bloqueados\" de tentativas de candidatura: aquele conta tentativas barradas por cadastro incompleto.",
+          "cambia": "• Concluir a triagem sem documentos validados, ou um documento ser desvalidado ou apagado: entra.\n• Validar os documentos: sai e volta para Completos."
+        },
         "stage_COMPLETED": {
           "title": "Completos (coluna)",
           "que": "Prestadores que terminaram a triagem e estão prontos para a próxima etapa. A coluna agrupa três situações internas: completo, qualificado e em dúvida (por exemplo, falta na entrevista).",
@@ -1289,6 +1295,7 @@
           "INICIADO": "Iniciado",
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "Em progresso",
+          "BLOQUEADO": "Bloqueados",
           "COMPLETED": "Completos",
           "SELECTED": "Selecionados",
           "REJECTED": "Rejeitados"
@@ -2313,6 +2320,7 @@
           "compatibleReadOnlyInviteBySend": "Para convidar, envie a mensagem pela tarjeta.",
           "workerNotEligibleTitle": "Worker com cadastro incompleto",
           "workerEligibilityReason": {
+            "documents_not_validated": "O prestador enviou os documentos, mas eles ainda não estão validados. Valide-os para poder avançar no funil.",
             "registration_incomplete": "O worker ainda não completou o cadastro ou não enviou todos os documentos obrigatórios. Peça ao worker pra completar o perfil antes de avançar no funil.",
             "worker_disabled": "O worker está desativado no sistema e não pode ser movido no funil.",
             "worker_not_found": "Worker não encontrado ou fundido com outro registro."
@@ -2576,6 +2584,7 @@
           "tactiqLinkRequired": "Esse entrevistador não tem Tactiq vinculado. Escolha outra pessoa.",
           "hostNotInRoster": "Essa pessoa não está na equipe de entrevistadores deste país.",
           "workerNotAvailable": "Algum prestador não está mais disponível (mudou de etapa ou já está em outro evento). Atualizamos a lista.",
+          "workerNotEligible": "Algum prestador não é mais apto (seus documentos deixaram de estar validados). Atualizamos a lista.",
           "workerEmailInvalid": "Algum prestador não tem e-mail válido: não dá para convocá-lo.",
           "guestNotAllowed": "Esse convite não é permitido para este evento.",
           "configInvalid": "A agenda de enquadres não está configurada. Avise a equipe técnica.",
@@ -6375,9 +6384,13 @@
         "worker_availability": "Disponibilidade",
         "phone": "Telefone",
         "doc_resume_cv": "Currículo",
+        "unvalidated_resume_cv": "Currículo (em validação)",
         "doc_identity_document": "Documento de identidade",
+        "unvalidated_identity_document": "Documento de identidade (em validação)",
         "doc_criminal_record": "Antecedentes penais",
+        "unvalidated_criminal_record": "Antecedentes penais (em validação)",
         "doc_at_certificate": "Certificado de Acompanhante Terapêutico",
+        "unvalidated_at_certificate": "Certificado de Acompanhante Terapêutico (em validação)",
         "worker_documents": "Documentos"
       },
       "bodyGeneric": "Seu cadastro está incompleto. Vamos redirecioná-lo ao seu perfil para completá-lo.",

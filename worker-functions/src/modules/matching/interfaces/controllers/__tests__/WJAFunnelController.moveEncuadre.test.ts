@@ -33,6 +33,21 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
+// Spec 067 FR-24: `assertWorkerApto` (limiar de apto, consulta `fn_worker_is_apto`) é dublê aqui — o SQL dele é provado em
+// `tests/e2e/mover-apto-067.e2e.test.ts` e em `WorkerApplicationEligibility.apto.test.ts`. Neste arquivo ele delega ao gate de
+// hoje (mesma sequência de queries do mock), e o que se prova é QUAIS destinos o chamam.
+const mockAssertApto = jest.fn();
+jest.mock('../../../domain/WorkerApplicationEligibility', () => {
+  const actual = jest.requireActual('../../../domain/WorkerApplicationEligibility');
+  return {
+    ...actual,
+    assertWorkerApto: (...a: unknown[]) => {
+      mockAssertApto(...a);
+      return actual.assertWorkerCanApply(...a);
+    },
+  };
+});
+
 import { WJAFunnelController } from '../WJAFunnelController';
 import { Request, Response } from 'express';
 
@@ -328,6 +343,39 @@ describe('WJAFunnelController — moveEncuadre', () => {
       }
     });
   });
+
+  it.each(['COMPLETED', 'QUALIFIED', 'IN_DOUBT'])(
+    'spec 067 FR-24: destino %s chama assertWorkerApto (limiar de apto) e NÃO o gate de postulação sozinho',
+    async (targetStage) => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'PRE_SCREENING', source: 'talentum' }] });
+      mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
+      mockAssertApto.mockClear();
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage, reasonCategory: 'OTHER' });
+      await controller.moveEncuadre(req, res);
+
+      expect(mockAssertApto).toHaveBeenCalledTimes(1);
+      expect(mockAssertApto.mock.calls[0][1]).toBe('w-1');
+    },
+  );
+
+  it.each(['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'SELECTED', 'REJECTED', 'QUICK_RESPONSE_TEAM'])(
+    'spec 067 FR-24: destino %s fica no limiar de hoje — assertWorkerApto NÃO é chamado',
+    async (targetStage) => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
+      mockAssertApto.mockClear();
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage, reasonCategory: 'OTHER' });
+      await controller.moveEncuadre(req, res);
+
+      expect(mockAssertApto).not.toHaveBeenCalled();
+    },
+  );
 
   it('retorna 403 quando worker.status = INCOMPLETE_REGISTER', async () => {
     // Query 1: SELECT encuadre

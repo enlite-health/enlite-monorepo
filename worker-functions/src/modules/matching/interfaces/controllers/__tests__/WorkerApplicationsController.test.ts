@@ -86,11 +86,15 @@ function mockWorkerEligible(status: string = 'REGISTERED') {
   mockQuery.mockResolvedValueOnce({ rows: [{ status }] });
 }
 
-/** Mock all DB calls after worker lookup: eligibility check + WJA upsert + encuadre insert */
-function mockDbSuccess(status: string = 'REGISTERED') {
+/** Link do pré-screening da Talentum (spec 067 FR-16): string local não roteável — só prova que o corpo o carrega. */
+const PRESCREENING_URL = 'http://talentum.invalid/public/pre-screening/00000000-0000-4000-8000-000000000067/chat';
+
+/** Mock all DB calls after worker lookup: eligibility check + WJA upsert + encuadre insert + leitura do link (só no ramo aprovado) */
+function mockDbSuccess(status: string = 'REGISTERED', link: string | null = PRESCREENING_URL) {
   mockWorkerEligible(status);
   mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // WJA upsert
   mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // encuadre insert
+  mockQuery.mockResolvedValueOnce({ rows: [{ url: link }] }); // spec 067 FR-16: link da vaga, só na postulação aprovada
 }
 
 describe('WorkerApplicationsController — trackChannel', () => {
@@ -126,7 +130,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     mockDbSuccess();
 
     await controller.trackChannel(req, res);
-    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
   });
 
   it('returns 400 when channel is invalid', async () => {
@@ -167,7 +171,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
     await controller.trackChannel(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
 
     // Call 0 = worker lookup, 1 = eligibility check, 2 = WJA upsert
     const upsertCall = mockQuery.mock.calls[2];
@@ -187,7 +191,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1' }, 'uid-1');
     await controller.trackChannel(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
     expect(res.status).not.toHaveBeenCalledWith(400);
     expect(mockQuery.mock.calls[2][1]).toEqual(['w-1', 'jp-1', null]);
   });
@@ -199,7 +203,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: null }, 'uid-1');
     await controller.trackChannel(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
     expect(res.status).not.toHaveBeenCalledWith(400);
     expect(mockQuery.mock.calls[2][1]).toEqual(['w-1', 'jp-1', null]);
   });
@@ -213,7 +217,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'instagram' }, 'uid-1');
     await controller.trackChannel(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
 
     // Call 3 = encuadre insert (0=worker, 1=eligibility, 2=WJA, 3=encuadre)
     const encuadreCall = mockQuery.mock.calls[3];
@@ -270,7 +274,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
       const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel }, 'uid-1');
       await controller.trackChannel(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({ success: true });
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
 
       // Verify encuadre import_source_audit matches channel (call 3: 0=worker, 1=eligibility, 2=WJA, 3=encuadre)
       const encuadreCall = mockQuery.mock.calls[3];
@@ -292,7 +296,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
     await controller.trackChannel(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
 
     const encuadreCall = mockQuery.mock.calls[3];
     expect(encuadreCall[1][3]).toBe(''); // empty name fallback
@@ -325,6 +329,18 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(encuadreCall[1][4]).toBe(''); // empty phone fallback
   });
 
+  // ── Spec 067 FR-16: o link da Talentum só na resposta aprovada ─────────
+
+  it('spec 067: vaga sem link da Talentum → 200 com prescreeningUrl null (o front trata como indisponível)', async () => {
+    mockWorkerFound('w-1');
+    mockDbSuccess('REGISTERED', null);
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'facebook' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: null } });
+  });
+
   // ── Eligibility gating (cadastro + documentos completos) ──────────────
 
   it('returns 403 when worker.status = INCOMPLETE_REGISTER — inclui missingFields no body', async () => {
@@ -344,6 +360,10 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(body.reason).toBe('registration_incomplete');
     expect(body.workerStatus).toBe('INCOMPLETE_REGISTER');
     expect(body.missingFields).toEqual(['phone']);
+    // Spec 067 FR-16: a 403 NUNCA carrega o link da Talentum nem lê o link no banco
+    expect(JSON.stringify(body)).not.toContain('prescreeningUrl');
+    expect(JSON.stringify(body)).not.toContain('pre-screening');
+    expect((mockQuery.mock.calls as unknown[][]).some((c) => String(c[0]).includes('talentum_whatsapp_url'))).toBe(false);
     // NÃO deve ter chamado WJA upsert nem encuadre insert — só worker lookup + eligibility +
     // fn_worker_missing_fields + INSERT worker_blocked_applications
     expect(mockQuery).toHaveBeenCalledTimes(4);

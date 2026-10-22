@@ -40,7 +40,7 @@ function vagaRow(id: string, overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 const wja = (id: string, stage: string, n: number) =>
-  ({ id, kind: 'wja', stage, source: 'manual', messaged: false, n, dismissed: false });
+  ({ id, kind: 'wja', stage, source: 'manual', messaged: false, n, dismissed: false, apto: true });
 
 /** Mocka as 4 consultas do caminho com sort: total, todas as vagas, stageCounts, atividade. */
 function mockSortPath(rows: unknown[], stageRows: unknown[], activityRows: unknown[] = []) {

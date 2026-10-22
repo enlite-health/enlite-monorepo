@@ -244,7 +244,7 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     await openKanban(page, vacancyId);
 
     const expectedCols = [
-      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'BLOQUEADO', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ];
 
     for (const col of expectedCols) {

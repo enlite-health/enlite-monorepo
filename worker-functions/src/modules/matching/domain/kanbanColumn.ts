@@ -83,8 +83,10 @@ export function isMatchedNotInvited(
  * vacancy A and IN_PROGRESS on vacancy B is an active candidate, not a rejected
  * one. Here REJECTED ranks LAST: it only describes a person when nothing else does.
  *
- * BLOQUEADO is absent on purpose — blocked attempts have no WJA and are counted
- * from `worker_blocked_applications`, never collapsed into a worker's funnel column.
+ * BLOQUEADO (spec 067): candidatura em etapa de Completado cujo prestador NÃO está apto (documentos
+ * obrigatórios sem validação). Fica entre IN_PROGRESS e COMPLETED — mais avançada que quem ainda está na
+ * triagem, menos que quem está pronto para encuadre. NÃO confundir com a tentativa barrada
+ * (`worker_blocked_applications`), que não tem WJA e cai em INICIADO/REJECTED (`kanbanColumnForBlocked`, D474).
  */
 const KANBAN_COLUMN_ADVANCEMENT: readonly KanbanColumn[] = [
   'REJECTED',
@@ -93,6 +95,7 @@ const KANBAN_COLUMN_ADVANCEMENT: readonly KanbanColumn[] = [
   'INICIADO',
   'PRE_SCREENING',
   'IN_PROGRESS',
+  'BLOQUEADO', // spec 067: Completado sem apto
   'COMPLETED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM', // entrada do quadro C, invariante 1 (Fase 4) — mais avançada que SELECTED
@@ -133,17 +136,21 @@ export const COMPLETED_COLUMN_STAGES: readonly string[] = ['COMPLETED', 'QUALIFI
  * @param source     worker_job_applications.source (nullable) — 'manual' means the worker
  *                   clicked postularse (→ INICIADO), otherwise it's an auto-invite (→ INVITED)
  * @param messagedAt worker_job_applications.messaged_at — obrigatório: decide Compatíveis × Invitados, D432
+ * @param workerApto `fn_worker_is_apto(worker_id)` (spec 067) — OBRIGATÓRIO, sem default: quem chama tem de ter
+ *                   lido o apto. Etapa de Completado e `workerApto !== true` (false OU null = não lido) → BLOQUEADO
+ *                   (fail-closed, SUP-4). As outras etapas ignoram o apto.
  */
 export function deriveKanbanColumn(
   stage: string | null,
   source: string | null,
   messagedAt: string | Date | null,
+  workerApto: boolean | null,
 ): KanbanColumn {
   if (isMatchedNotInvited(stage, source, messagedAt)) return 'COMPATIBLE';
   if (stage === 'SELECTED') return 'SELECTED';
   if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
-  if (stage !== null && COMPLETED_COLUMN_STAGES.includes(stage)) return 'COMPLETED';
+  if (stage !== null && COMPLETED_COLUMN_STAGES.includes(stage)) return workerApto === true ? 'COMPLETED' : 'BLOQUEADO';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
   if (stage === 'PRE_SCREENING') return 'PRE_SCREENING';
   // INVITED+manual = clicou em postularse manualmente → coluna INICIADO.
@@ -153,7 +160,7 @@ export function deriveKanbanColumn(
 }
 
 /** Contagem por coluna do Kanban — as MESMAS colunas que o operador vê no board. */
-export type FunnelColumnCounts = Record<Exclude<KanbanColumn, 'BLOQUEADO'>, number>;
+export type FunnelColumnCounts = Record<KanbanColumn, number>;
 
 /** Zero em TODAS as colunas — coluna sem ninguém aparece como 0, nunca ausente. */
 export function emptyFunnelColumnCounts(): FunnelColumnCounts {
@@ -172,6 +179,8 @@ export interface KanbanTallyRow {
   stage: string | null;
   source: string | null;
   messaged: boolean;
+  /** Só para kind='wja': `fn_worker_is_apto` lido na query (null = etapa fora de Completado ou não lido → não apto). */
+  apto: boolean | null;
   n: number;
 }
 
@@ -183,7 +192,7 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
       counts[kanbanColumnForBlocked(r.dismissed === true) as keyof FunnelColumnCounts] += r.n;
       continue;
     }
-    counts[deriveKanbanColumn(r.stage, r.source, r.messaged ? 'sent' : null) as keyof FunnelColumnCounts] += r.n;
+    counts[deriveKanbanColumn(r.stage, r.source, r.messaged ? 'sent' : null, r.apto) as keyof FunnelColumnCounts] += r.n;
   }
   return counts;
 }
@@ -192,13 +201,19 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
  * Ordem que o operador vê no quadro B (funil de candidatura); base do "salto" (DX-4.5,
  * execucao/fase-4.md) — espelha `VACANCY_FUNNEL_COLUMNS` do front (funnelTabsConfig.ts).
  * IN_PROGRESS mora dentro de PRE_SCREENING no quadro; COMPLETED/QUALIFIED/IN_DOUBT já
- * chegam colapsados em COMPLETED por `deriveKanbanColumn`. BLOQUEADO fica de fora — não
- * tem posição própria no quadro (vira card em INICIADO, ou REJECTED se dispensado, D474).
- * 8 colunas; Compatíveis é derivada, destino proibido — DX-5.5.
+ * chegam colapsados em COMPLETED por `deriveKanbanColumn` (com apto). BLOQUEADO (spec 067) é a coluna
+ * "Completado sem apto", imediatamente antes de COMPLETED; a tentativa barrada NÃO vai para ela (D474).
+ * 9 colunas; Compatíveis é derivada, destino proibido — DX-5.5; Bloqueados não é destino (droppable: false).
  */
 export const VACANCY_BOARD_COLUMNS = [
-  'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+  'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'BLOQUEADO', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
 ] as const satisfies readonly KanbanColumn[];
+
+/**
+ * Colunas que medem o "salto" (`moveReason`): o quadro SEM Bloqueados. Bloqueados não é uma etapa que o operador
+ * atravessa — com ela na régua, PRE_SCREENING → COMPLETED viraria "salto" e pediria motivo sem ter pulado nada.
+ */
+const BOARD_POSITION_COLUMNS = VACANCY_BOARD_COLUMNS.filter((c) => c !== 'BLOQUEADO');
 
 /**
  * Posição no quadro; IN_PROGRESS mora na coluna PRE_SCREENING (como no front,
@@ -209,7 +224,8 @@ export function boardPosition(
   source: string | null,
   messagedAt: string | Date | null,
 ): number {
-  const column = deriveKanbanColumn(stage, source, messagedAt);
+  // apto=true de propósito: a posição é da ETAPA, não da elegibilidade do prestador (ver BOARD_POSITION_COLUMNS).
+  const column = deriveKanbanColumn(stage, source, messagedAt, true);
   const boardColumn = column === 'IN_PROGRESS' ? 'PRE_SCREENING' : column;
-  return VACANCY_BOARD_COLUMNS.indexOf(boardColumn as (typeof VACANCY_BOARD_COLUMNS)[number]);
+  return BOARD_POSITION_COLUMNS.indexOf(boardColumn as (typeof BOARD_POSITION_COLUMNS)[number]);
 }

@@ -118,6 +118,12 @@ interface ApiErrorResponse {
 type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
 /** Shape returned by GET /api/workers/lookup (public, no auth) */
+/** Spec 067 FR-16: corpo (`data`) do 200 de POST /api/worker-applications/track-channel — a postulação foi aprovada. */
+export interface TrackChannelResponse {
+  /** Link do pré-screening da Talentum; `null` quando a vaga não tem. Só existe nesta resposta aprovada. */
+  prescreeningUrl: string | null;
+}
+
 export interface WorkerLookupResponse {
   found: boolean;
   phoneMasked?: string;
@@ -324,9 +330,12 @@ class WorkerApiServiceClass {
    * records blocked attempts (worker_blocked_applications). First-touch: backend
    * will not overwrite an existing channel. `channel` is nullable (direct links
    * have no UTM).
+   *
+   * Spec 067 FR-16: devolve o link do pré-screening da Talentum — que NÃO sai mais das rotas públicas — só quando o
+   * backend aprova a postulação (200). Na 403 o `request` lança `ApiError` e o link nunca chega aqui.
    */
-  async trackAcquisitionChannel(jobPostingId: string, channel: string | null): Promise<void> {
-    await this.request<unknown>('POST', '/api/worker-applications/track-channel', {
+  async trackAcquisitionChannel(jobPostingId: string, channel: string | null): Promise<TrackChannelResponse> {
+    return this.request<TrackChannelResponse>('POST', '/api/worker-applications/track-channel', {
       jobPostingId,
       channel,
     });

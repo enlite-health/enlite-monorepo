@@ -224,14 +224,14 @@ describe('GetManagementDashboardUseCase', () => {
         porEtapa: {
           somavel: false,
           colunas: {
-            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
+            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1, BLOQUEADO: 0,
             COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 2,
           },
         },
         consolidado: {
           somavel: true,
           colunas: {
-            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
+            INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1, BLOQUEADO: 0,
             COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 1,
           },
         },
@@ -490,6 +490,7 @@ describe('GetManagementDashboardUseCase', () => {
 
     const [esperandoSql, esperandoParams] = db.query.mock.calls[CALL.esperando];
     expect(esperandoSql).toContain('w.country = ANY($1::bpchar[])');
+    expect(esperandoSql).toContain('fn_worker_is_apto(w.id)'); // 067: só o apto espera agenda (mesmo recorte do Kanban)
     expect(esperandoParams).toEqual([['AR']]);
 
     const [alocadosSql, alocadosParams] = db.query.mock.calls[CALL.alocados];
