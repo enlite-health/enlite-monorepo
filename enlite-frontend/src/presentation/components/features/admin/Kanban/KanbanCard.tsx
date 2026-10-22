@@ -266,7 +266,7 @@ export function KanbanCard({
         </span>
       )}
 
-      {stage === 'COMPLETED' && internalStage && completadoBadgeStyle(internalStage) && (
+      {(stage === 'COMPLETED' || stage === 'BLOQUEADO') && internalStage && completadoBadgeStyle(internalStage) && (
         <span
           data-testid="completado-badge"
           className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${completadoBadgeStyle(internalStage)}`}

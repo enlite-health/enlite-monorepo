@@ -10,7 +10,7 @@ const SERVER_CODES = [
   'TACTIQ_LINK_REQUIRED', 'HOST_NOT_IN_ROSTER', 'ENQUADRE_WORKER_NOT_AVAILABLE', 'ENQUADRE_WORKER_EMAIL_INVALID',
   'ENQUADRE_GUEST_NOT_ALLOWED', 'ENQUADRE_CONFIG_INVALID', 'ENQUADRE_SLOT_IN_PAST', 'CALENDAR_CREATE_FAILED',
   'CALENDAR_UPDATE_FAILED', 'ENQUADRE_EVENT_NOT_OPEN', 'ENQUADRE_EVENT_NOT_ENDED', 'ENQUADRE_PARTICIPANT_ALREADY_MARKED',
-  'ENQUADRE_EVENT_NOT_FOUND',
+  'ENQUADRE_EVENT_NOT_FOUND', 'WORKER_NOT_ELIGIBLE',
 ];
 
 describe('enquadreErrorKey', () => {
@@ -20,7 +20,7 @@ describe('enquadreErrorKey', () => {
     for (const lng of ['es', 'pt-BR']) expect(i18n.getFixedT(lng)(key), `${lng} ${key}`).not.toBe(key);
   });
 
-  it('as 13 chaves mapeadas são todas distintas', () => {
+  it('as 14 chaves mapeadas são todas distintas', () => {
     expect(ENQUADRE_ERROR_KEYS).toHaveLength(SERVER_CODES.length);
     expect(new Set(ENQUADRE_ERROR_KEYS).size).toBe(SERVER_CODES.length);
   });

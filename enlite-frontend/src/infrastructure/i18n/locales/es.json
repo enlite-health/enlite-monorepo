@@ -1130,6 +1130,12 @@
           "origen": "• La tarjeta llega acá al avanzar desde Invitados/Iniciado — por respuesta de la persona o movimiento de la reclutadora.",
           "cambia": "• Avances de conversación: entra.\n• Completar el triage, agendar, seleccionar o rechazar: sale."
         },
+        "stage_BLOQUEADO": {
+          "title": "Bloqueados (columna)",
+          "que": "Prestadores que completaron el triage pero todavía no pueden avanzar: sus documentos obligatorios no están todos validados.",
+          "origen": "• Es la misma regla que la columna Bloqueados del Kanban de la vacante — panel y Kanban cuentan igual.\n• No es el número \"Bloqueados\" de intentos de postulación: ese cuenta intentos frenados por registro incompleto.",
+          "cambia": "• Completar el triage sin documentos validados, o que se desvalide o borre un documento: entra.\n• Validar los documentos: sale y vuelve a Completos."
+        },
         "stage_COMPLETED": {
           "title": "Completos (columna)",
           "que": "Prestadores que terminaron el triage y están listos para la próxima etapa. La columna agrupa tres situaciones internas: completo, calificado y en duda (por ejemplo, ausencia en la entrevista).",
@@ -1289,6 +1295,7 @@
           "INICIADO": "Iniciado",
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "En progreso",
+          "BLOQUEADO": "Bloqueados",
           "COMPLETED": "Completos",
           "SELECTED": "Seleccionados",
           "REJECTED": "Rechazados"
@@ -2329,6 +2336,7 @@
           "compatibleReadOnlyInviteBySend": "Para invitar, enviá el mensaje desde la tarjeta.",
           "workerNotEligibleTitle": "Worker con registro incompleto",
           "workerEligibilityReason": {
+            "documents_not_validated": "El prestador envió sus documentos, pero todavía no están validados. Valídalos para poder avanzar en el embudo.",
             "registration_incomplete": "El worker todavía no completó su registro o no envió todos los documentos obligatorios. Solicítale completar el perfil antes de avanzar en el embudo.",
             "worker_disabled": "El worker está desactivado en el sistema y no puede ser movido en el embudo.",
             "worker_not_found": "El worker no fue encontrado o fue fusionado con otro registro."
@@ -2655,6 +2663,7 @@
           "tactiqLinkRequired": "Ese entrevistador no tiene Tactiq vinculado. Elegí otra persona.",
           "hostNotInRoster": "Esa persona no está en el equipo de entrevistadores de este país.",
           "workerNotAvailable": "Algún prestador ya no está disponible (cambió de etapa o ya está en otro evento). Actualizamos la lista.",
+          "workerNotEligible": "Algún prestador ya no es apto (sus documentos dejaron de estar validados). Actualizamos la lista.",
           "workerEmailInvalid": "Algún prestador no tiene un e-mail válido: no se lo puede convocar.",
           "guestNotAllowed": "Esa invitación no está permitida para este evento.",
           "configInvalid": "La agenda de encuadres no está configurada. Avisá al equipo técnico.",

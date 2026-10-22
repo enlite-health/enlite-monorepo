@@ -3,6 +3,7 @@ export type VacancyFunnelColumnId =
   | 'INVITED'
   | 'INICIADO'
   | 'PRE_SCREENING'
+  | 'BLOQUEADO'
   | 'COMPLETED'
   | 'SELECTED'
   | 'QUICK_RESPONSE_TEAM'
@@ -15,12 +16,17 @@ export interface VacancyFunnelColumn {
   droppable: boolean;
 }
 
-/** Quadro B (D433): 8 colunas (052: o estágio Confirmado saiu); Compatíveis (Fase 5) é derivada do match, só leitura. */
+/**
+ * Quadro B (D433): 9 colunas (052: o estágio Confirmado saiu); Compatíveis (Fase 5) é derivada do match, só leitura.
+ * 067: Bloqueados (Completado cujo prestador não está apto) vem imediatamente antes de Completado e é só leitura:
+ * o card sai de lá quando o prestador fica apto, não por arrasto.
+ */
 export const VACANCY_FUNNEL_COLUMNS: readonly VacancyFunnelColumn[] = [
   { id: 'COMPATIBLE', sources: ['COMPATIBLE'], color: 'bg-slate-400', droppable: false },
   { id: 'INVITED', sources: ['INVITED'], color: 'bg-blue-400', droppable: true },
   { id: 'INICIADO', sources: ['INICIADO'], color: 'bg-indigo-400', droppable: false },
   { id: 'PRE_SCREENING', sources: ['PRE_SCREENING', 'IN_PROGRESS'], color: 'bg-violet-400', droppable: false },
+  { id: 'BLOQUEADO', sources: ['BLOQUEADO'], color: 'bg-amber-500', droppable: false },
   { id: 'COMPLETED', sources: ['COMPLETED'], color: 'bg-violet-600', droppable: false },
   { id: 'SELECTED', sources: ['SELECTED'], color: 'bg-green-500', droppable: true },
   { id: 'QUICK_RESPONSE_TEAM', sources: ['QUICK_RESPONSE_TEAM'], color: 'bg-teal-500', droppable: true },

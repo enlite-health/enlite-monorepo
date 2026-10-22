@@ -45,6 +45,7 @@ export const MANAGEMENT_HELP_KEYS = [
   'stage_INICIADO',
   'stage_PRE_SCREENING',
   'stage_IN_PROGRESS',
+  'stage_BLOQUEADO',
   'stage_COMPLETED',
   'stage_SELECTED',
   'stage_REJECTED',

@@ -74,6 +74,7 @@ export interface FunnelStages {
   INICIADO: FunnelEncuadre[];
   PRE_SCREENING: FunnelEncuadre[];
   IN_PROGRESS: FunnelEncuadre[];
+  BLOQUEADO: FunnelEncuadre[];
   COMPLETED: FunnelEncuadre[];
   SELECTED: FunnelEncuadre[];
   QUICK_RESPONSE_TEAM: FunnelEncuadre[];
