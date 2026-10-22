@@ -775,7 +775,7 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-|064-cobertura-entrada"
 
       # T141B (spec 058): vídeo + print das 6 telas da obra social. Passo 0 medido: o único upload de `test-results/` deste job é o "Relatório (só quando
       # falha)" — com o job verde nenhum vídeo/print era publicado, então este passo roda SEMPRE (`if: always()`).

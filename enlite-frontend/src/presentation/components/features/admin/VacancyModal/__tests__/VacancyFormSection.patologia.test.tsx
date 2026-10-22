@@ -50,7 +50,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     getNextVacancyNumber: vi.fn().mockResolvedValue(7),
     createVacancy: vi.fn(),
     updateVacancy: vi.fn(),
-    updateVacancyMeetLinks: vi.fn(),
   },
 }));
 

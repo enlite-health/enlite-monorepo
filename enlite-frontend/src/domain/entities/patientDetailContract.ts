@@ -74,6 +74,17 @@ const availabilitySchema = z
   })
   .strict();
 
+// Spec 064: cobertura atual (serviços ativos). `.strict()`: chave a mais é drift.
+const currentCoverageSchema = z
+  .object({
+    providers: z.array(z.object({ code: z.string(), name: z.string() }).strict()),
+    privateServices: z.number(),
+    hiddenServices: z.number(),
+    unlinkedServices: z.number(),
+    activeServices: z.number(),
+  })
+  .strict();
+
 const addressSchema = z
   .object({
     id: z.string(),
@@ -276,6 +287,8 @@ export const patientDetailContractSchema = z
     onHoldNote: z.string().nullable(),
     onHoldNoteRedacted: z.boolean().optional(),
     serviceStartDate: isoDate.nullable(),
+    currentCoverage: currentCoverageSchema.nullable().optional(),
+    entryDate: isoDate.nullable().optional(),
     insuranceVerifiedCodes: z.array(z.string()),
     coverage: coverageSchema.nullable(),
     hasVerifiedActiveCoverage: z.boolean().optional(),

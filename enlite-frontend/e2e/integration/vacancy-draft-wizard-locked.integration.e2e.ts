@@ -8,8 +8,7 @@
  *
  * Mocks (ÚNICOS, mesmo molde de `full-create-vacancy.integration.e2e.ts` — "Custo de API = zero"
  * e "Teste nunca toca canal real", CLAUDE.md): Firebase Identity Toolkit, `/api/admin/auth/profile`,
- * `/generate-ai-content` (Gemini custaria), `/publish-talentum` (canal real proibido),
- * `/meet-links/lookup` (Google Calendar). GET/PUT de vacante, serviço contratado e o foguete são
+ * `/generate-ai-content` (Gemini custaria), `/publish-talentum` (canal real proibido). GET/PUT de vacante, serviço contratado e o foguete são
  * o backend REAL — nenhum mock neles, exceto a sabotagem do teste 5 (`page.route` reintroduzindo
  * `schedule` travado no body), que é o único ponto onde a doc pede isso.
  *
@@ -157,15 +156,6 @@ async function installInterceptors(page: Page): Promise<void> {
       return;
     }
 
-    if (url.includes('/meet-links/lookup')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { normalized: 'https://meet.google.com/abc-defg-hij', datetime: '2026-06-01T15:00:00-03:00' } }),
-      });
-      return;
-    }
-
     const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
     await route.continue({ headers });
   };
@@ -296,11 +286,6 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await page.keyboard.press('Backspace');
     await page.keyboard.type('$5000');
     await expect(salaryInput).toHaveValue('$5000');
-
-    const meetInput = page.getByTestId('meet-link-0');
-    await meetInput.click();
-    await page.keyboard.type('meet.google.com/abc-defg-hij');
-    await meetInput.blur();
 
     const saveBtn = page.getByTestId('create-vacancy-save-btn');
     await expect(saveBtn).toBeEnabled({ timeout: 10_000 });

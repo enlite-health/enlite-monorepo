@@ -305,21 +305,19 @@ test.describe('AdminVacanciesPage — edit routing por is_draft @integration', (
       isDraft: false,
     });
 
-    // Garante meet_link e schedule pra o detalhe não estourar
+    // Garante schedule pra o detalhe não estourar
     runSQL(`
       UPDATE job_postings
-      SET meet_link_1 = 'https://meet.google.com/abc-defg-hij',
-          schedule = '[{"dayOfWeek": 5, "startTime": "16:30", "endTime": "18:30"}]'::jsonb
+      SET schedule = '[{"dayOfWeek": 5, "startTime": "16:30", "endTime": "18:30"}]'::jsonb
       WHERE id = '${nonDraftVacancyId}'
     `);
 
     // Mesma hidratação para a draft — o cenário 4 abre o modal grande e submete,
-    // e o schema Zod exige schedule + meet_link válidos. Sem isso, o submit nem
+    // e o schema Zod exige schedule válido. Sem isso, o submit nem
     // chega ao PUT (validation barra antes) e a defesa do 403 não é exercitada.
     runSQL(`
       UPDATE job_postings
-      SET meet_link_1 = 'https://meet.google.com/abc-defg-hij',
-          schedule = '[{"dayOfWeek": 1, "startTime": "09:00", "endTime": "17:00"}]'::jsonb,
+      SET schedule = '[{"dayOfWeek": 1, "startTime": "09:00", "endTime": "17:00"}]'::jsonb,
           providers_needed = 1
       WHERE id = '${draftVacancyId}'
     `);

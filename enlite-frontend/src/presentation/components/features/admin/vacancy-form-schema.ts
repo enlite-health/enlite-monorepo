@@ -7,40 +7,6 @@ import { parseScheduleString, LABEL_TO_KEY } from './vacancyScheduleUtils';
 // ---------------------------------------------------------------------------
 
 /**
- * Google Meet URL pattern (canonical, with scheme): https://meet.google.com/xxx-xxxx-xxx
- * (O card de links da página de detalhe, que usava a mesma regex, saiu na spec 052.)
- */
-export const MEET_LINK_REGEX = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
-
-/**
- * Loose regex used while typing — accepts the link with or without the `https://`
- * prefix and with optional `www.`, so users can paste raw `meet.google.com/...`.
- * Always normalize to the canonical form via {@link normalizeMeetLink} before
- * sending to the backend.
- */
-export const MEET_LINK_REGEX_LOOSE = /^(?:https?:\/\/)?(?:www\.)?meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
-
-/**
- * Normalize a user-provided Meet URL to the canonical
- * `https://meet.google.com/xxx-xxxx-xxx` form. Returns the original (trimmed)
- * input untouched when it does not match the loose pattern.
- */
-export function normalizeMeetLink(input: string): string {
-  const trimmed = (input ?? '').trim();
-  if (!trimmed) return '';
-  const match = trimmed.match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})$/i);
-  if (!match) return trimmed;
-  return `https://meet.google.com/${match[1].toLowerCase()}`;
-}
-
-const meetLinkSlot = z
-  .string()
-  .trim()
-  .optional()
-  .transform((v) => (v ? normalizeMeetLink(v) : v))
-  .refine((v) => !v || MEET_LINK_REGEX.test(v), { message: 'invalidMeetLink' });
-
-/**
  * `professionsLocked` (057/A6): com `required_professions` em `locked_fields` o campo é do serviço, está
  * `disabled` e some do PUT (`stripLockedFields`) — a regra `min(1)` não pode barrar o save dos outros campos.
  * `providersLocked` (058 B §N): idem para `providers_needed`.
@@ -85,16 +51,10 @@ export function buildVacancyFormSchema(professionsLocked = false, providersLocke
     published_at: z.string().optional(),
     /** ISO date `YYYY-MM-DD`. Optional — left blank by default. */
     closes_at: z.string().optional(),
-    /** 3 fixed Meet link slots. At least one must be a valid Google Meet URL. */
-    meet_links: z.tuple([meetLinkSlot, meetLinkSlot, meetLinkSlot]),
   })
   .refine(
     (d) => !(d.age_range_min !== undefined && d.age_range_max !== undefined && d.age_range_max < d.age_range_min),
     { message: 'ageRangeInvalid', path: ['age_range_max'] },
-  )
-  .refine(
-    (d) => d.meet_links.some((l) => !!l && MEET_LINK_REGEX.test(l)),
-    { message: 'meetLinkRequired', path: ['meet_links'] },
   );
 }
 
@@ -317,5 +277,4 @@ export const DEFAULT_FORM_VALUES: VacancyFormData = {
   // Publish defaults to today (operations rule: auto-fill, but editable). Closes blank.
   published_at: todayIsoDate(),
   closes_at: '',
-  meet_links: ['', '', ''],
 };

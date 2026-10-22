@@ -156,6 +156,15 @@ export interface PatientDiagnosisDetail {
   active: boolean;
 }
 
+/** Spec 064: resumo da cobertura ATUAL (serviços ativos) — só contagens e nomes de provedor. */
+export interface CurrentCoverageSummary {
+  providers: { code: string; name: string }[];
+  privateServices: number;
+  hiddenServices: number;
+  unlinkedServices: number;
+  activeServices: number;
+}
+
 export interface PatientDetail {
   id: string;
   /** null para paciente NATIVO (criado no painel ou pelo formulário público, mig 251). */
@@ -240,6 +249,13 @@ export interface PatientDetail {
   onHoldNoteRedacted?: boolean;
   /** Data de início do serviço (mig 317) — ISO; nativa do painel, não deriva da vaga. */
   serviceStartDate: string | null;
+  /**
+   * Spec 064: cobertura atual derivada dos serviços ativos. `null` = sem permissão
+   * (`redacted.services`); AUSENTE (undefined) = backend anterior, "não li".
+   */
+  currentCoverage?: CurrentCoverageSummary | null;
+  /** Spec 064: data de entrada (menor start_date dos serviços). `null` = sem permissão ou sem data; ausente = backend anterior. */
+  entryDate?: string | null;
   /** Coberturas verificadas por CÓDIGO do catálogo (mig 312), ordem do catálogo. */
   insuranceVerifiedCodes: string[];
   /**

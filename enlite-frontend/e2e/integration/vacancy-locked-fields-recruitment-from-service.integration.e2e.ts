@@ -147,10 +147,6 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
     }
 
     await page.getByTestId('required-sex-select').selectOption('F');
-    const meetInput = page.getByTestId('meet-link-0');
-    await meetInput.click();
-    await page.keyboard.type('meet.google.com/abc-defg-hij');
-    await meetInput.blur();
 
     const saveBtn = page.getByTestId('create-vacancy-save-btn');
     await expect(saveBtn).toBeEnabled({ timeout: 10_000 });

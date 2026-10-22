@@ -53,7 +53,6 @@ const minimalFormData: VacancyFormData = {
   patientAddressId: 'addr-1',
   schedule: [{ days: ['lun'], timeFrom: '08:00', timeTo: '16:00' }],
   status: 'SEARCHING',
-  meet_links: ['https://meet.google.com/abc-defg-hij', undefined, undefined],
 };
 
 // ---------------------------------------------------------------------------
@@ -170,16 +169,6 @@ describe('vacancyFormSchema — quantidade de prestadores sem padrão 1 (058 B)'
     }
   });
 
-  it('providers_needed null (não travado) é inválido sem abortar o refine de meet_links', () => {
-    const r = buildVacancyFormSchema().safeParse({ ...valido, providers_needed: null, meet_links: ['', '', ''] });
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      const paths = r.error.issues.map((i) => i.path[0]);
-      expect(paths).toContain('providers_needed');
-      expect(paths).toContain('meet_links');
-    }
-  });
-
   it('§N travado (providersLocked): null passa; 0 continua recusado', () => {
     expect(buildVacancyFormSchema(false, true).safeParse({ ...valido, providers_needed: null }).success).toBe(true);
     expect(buildVacancyFormSchema(false, true).safeParse({ ...valido, providers_needed: 0 }).success).toBe(false);
@@ -260,5 +249,22 @@ describe('buildScheduleFromVacancy — aceita schedule como objeto (forma do GET
     const vacancy = { schedule: {}, schedule_days_hours: '' };
     const result = buildScheduleFromVacancy(vacancy);
     expect(result).toEqual([{ days: [], timeFrom: '', timeTo: '' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 068 — a vaga não tem link de reunião
+// ---------------------------------------------------------------------------
+
+describe('vacancyFormSchema — vaga sem link de reunião é válida (spec 068)', () => {
+  it('aceita a vaga mínima SEM nenhum campo de link (antes um refine de "link obrigatório" a barrava)', () => {
+    const result = vacancyFormSchema.safeParse(minimalFormData);
+    expect(result.success).toBe(true);
+  });
+
+  it('o schema e o default do formulário não têm mais o campo `meet_links`', () => {
+    expect('meet_links' in DEFAULT_FORM_VALUES).toBe(false);
+    const parsed = vacancyFormSchema.safeParse(minimalFormData);
+    expect(parsed.success && 'meet_links' in parsed.data).toBe(false);
   });
 });

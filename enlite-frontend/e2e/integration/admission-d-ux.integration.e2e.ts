@@ -262,7 +262,7 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
 
     // US-D6: títulos de sección (Heading) agrupando los campos — no una lista plana.
     await expect(page.getByText('Caso y perfil profesional')).toBeVisible();
-    await expect(page.getByText('Meet y fechas')).toBeVisible();
+    await expect(page.getByText('Fechas', { exact: true })).toBeVisible();
     await expect(page.getByText('Estado y ubicación')).toBeVisible();
     await expect(page.getByText('Condiciones de la vacante')).toBeVisible();
 
@@ -277,7 +277,7 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
     // vacío" no se puede clickear ahí. En modo EDICIÓN el botón queda SIEMPRE habilitado
     // ("dejá que el RHF valide en el submit y el banner lo muestre" — comentario del propio
     // archivo) — es el camino real y alcanzable para probar el banner. La vaga sembrada en
-    // `beforeAll` (`insertBaseVacancy`, sin schedule ni meet link) llega INCOMPLETA de
+    // `beforeAll` (`insertBaseVacancy`, sin schedule) llega INCOMPLETA de
     // fábrica: ni toco nada, sólo abro y envío.
     // Sincroniza pela RESPOSTA do GET da vaga (modo edição carrega assíncrono): sob carga, o
     // clique chegava antes de o formulário hidratar e o submit se perdia — verde sozinho,
@@ -298,10 +298,10 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
     }
     await expect(banner).toBeVisible({ timeout: 10_000 });
     await expect(banner).toContainText('Faltan datos para crear la vacante');
-    // Nombres de campo — nunca valores (lex D6.1): la vaga sembrada no tiene horario ni
-    // link de Meet, então esos dos faltam de verdade.
+    // Nombres de campo — nunca valores (lex D6.1): la vaga sembrada no tiene horario,
+    // então ele falta de verdade. Link de reunião não existe mais na vaga (spec 068).
     await expect(banner).toContainText('Horario');
-    await expect(banner).toContainText('Links de Google Meet');
+    await expect(banner).not.toContainText('Google Meet');
   });
 
   // ── US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────────────────

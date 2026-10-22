@@ -60,12 +60,6 @@ const MOCK_VACANCY = {
   talentum_published_at: null,
   publications: [],
   social_short_links: null,
-  meet_link_1: 'https://meet.google.com/nox-yqex-sdj',
-  meet_datetime_1: '2026-05-10T10:00:00Z',
-  meet_link_2: null,
-  meet_datetime_2: null,
-  meet_link_3: null,
-  meet_datetime_3: null,
   created_at: '2026-01-15T00:00:00Z',
   closed_at: null,
   schedule: {

@@ -52,9 +52,9 @@ test.describe('Match modal — select-all por Km + marcador de totais (auth real
   test('AC1 select-all por bucket + AC3 marcador disponíveis × recrutados', async ({ page }) => {
     await mockAdminBaseRoutes(page);
 
-    // Vaga COM meet link → sem alerta de "faltan links", modal limpo.
+    // Vaga sem link de reunião (a vaga não tem esse campo — spec 068): modal limpo.
     await page.route(`**/api/admin/vacancies/${VACANCY_ID}`, (r: Route) =>
-      r.fulfill(ok({ ...mockVacancy, meet_link_1: 'https://meet.google.com/abc-defg-hij' })));
+      r.fulfill(ok({ ...mockVacancy })));
 
     // Funnel vazio (a tela abre no Kanban; o modal é aberto via "Hacer match", presente nas duas visões).
     await page.route(`**/api/admin/vacancies/${VACANCY_ID}/funnel`, (r: Route) =>

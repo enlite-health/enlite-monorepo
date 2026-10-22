@@ -2194,8 +2194,6 @@
         "requiredExperience": "Experiencia requerida",
         "paymentDay": "Plazo de pago",
         "closesAt": "Fecha de cierre",
-        "meetLinks": "Links de Google Meet",
-        "meetLinksAside": "para las entrevistas",
         "serviceRecruitmentFields": "Completar {{count}} campos en la ficha del paciente"
       },
       "lastUpdated": "Última edición: {{date}}"
@@ -2521,7 +2519,6 @@
           "scheduleDaysRequired": "Seleccioná al menos un día",
           "scheduleTimeRequired": "Completá el horario de inicio y fin",
           "providersMin": "Debe haber al menos 1 prestador",
-          "meetLinkRequired": "Necesitás al menos un link de Google Meet válido",
           "requiredProfessionsMin": "Seleccioná al menos un tipo de prestador",
           "stateRequired": "La provincia es obligatoria",
           "cityMin": "La localidad debe tener al menos 2 caracteres",
@@ -2839,15 +2836,11 @@
       "jobDescription": "Descripción del trabajo",
       "interviewDates": "Fechas para entrevistas de enquadre",
       "interviewDatesPlaceholder": "Próximamente",
-      "meetLinksLabel": "Links de Google Meet (al menos uno)",
-      "meetLinkPlaceholder": "https://meet.google.com/xxx-xxxx-xxx",
-      "meetLinkNotFound": "No encontramos este meet en tu calendario.",
-      "meetLinkInvalid": "Formato inválido. Usá meet.google.com/xxx-xxxx-xxx",
       "validationBanner": {
         "title": "Faltan datos para crear la vacante:"
       },
       "sectionCaseAndProfile": "Caso y perfil profesional",
-      "sectionScheduleAndDates": "Meet y fechas",
+      "sectionScheduleAndDates": "Fechas",
       "sectionStatusAndLocation": "Estado y ubicación",
       "sectionConditions": "Condiciones de la vacante",
       "publishDate": "Fecha de publicación",
@@ -3680,6 +3673,17 @@
         },
         "identityCard": {
           "admission": "Admisión",
+          "currentCoverage": "Cobertura actual",
+          "currentCoverageNoService": "Sin servicio activo",
+          "currentCoverageUnlinked": "Sin obra social vinculada",
+          "currentCoveragePrivate": "Particular",
+          "currentCoverageHidden": "Obra social (sin acceso al nombre)",
+          "currentCoverageSomeUnlinked_one": "{{count}} servicio sin obra social",
+          "currentCoverageSomeUnlinked_other": "{{count}} servicios sin obra social",
+          "entryDate": "Ingreso al servicio",
+          "entryDateEmpty": "Sin fecha de inicio en los servicios",
+          "noPermission": "Sin permiso",
+          "unavailable": "No disponible",
           "lastUpdate": "Actualización",
           "discharge": "Desligamiento",
           "responsibleName": "Nombre del Responsable",
@@ -4741,14 +4745,7 @@
       "colOccupation": "Ocupación",
       "colZone": "Zona / Dist",
       "colCases": "Casos",
-      "colScore": "Score final",
-      "missingMeetLinks": {
-        "title": "Esta vacante aún no tiene enlaces de reunión",
-        "instructionsBefore": "Para invitar candidatos, primero agregá al menos un link de reunión en la pestaña ",
-        "instructionsTab": "Links",
-        "instructionsAfter": ".",
-        "goToLinks": "Ir a Links"
-      }
+      "colScore": "Score final"
     },
     "messaging": {
       "title": "Enviar invitación",

@@ -97,6 +97,33 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
     expect(() => patientDetailContractSchema.parse(comServico({ chaveAntiga: 'v1' }))).toThrow(); // `.strict()`: chave desconhecida é recusada
   });
 
+  describe('spec 064: cobertura atual e data de entrada', () => {
+    const cobertura = { providers: [{ code: 'OSDE', name: 'OSDE' }], privateServices: 0, hiddenServices: 0, unlinkedServices: 0, activeServices: 1 };
+
+    it('aceita currentCoverage e entryDate', () => {
+      const p = patientDetailContractSchema.parse({ ...fixture, currentCoverage: cobertura, entryDate: '2026-01-05' });
+      expect(p.currentCoverage).toEqual(cobertura);
+      expect(p.entryDate).toBe('2026-01-05');
+      const semPermissao = patientDetailContractSchema.parse({ ...fixture, currentCoverage: null, entryDate: null });
+      expect(semPermissao.currentCoverage).toBeNull();
+      expect(semPermissao.entryDate).toBeNull();
+    });
+
+    it('aceita a ficha SEM os dois campos (backend anterior)', () => {
+      const r = patientDetailContractSchema.safeParse(fixture);
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data.currentCoverage).toBeUndefined();
+        expect(r.data.entryDate).toBeUndefined();
+      }
+    });
+
+    it('rejeita currentCoverage com forma errada', () => {
+      expect(patientDetailContractSchema.safeParse({ ...fixture, currentCoverage: { ...cobertura, campoExtra: 1 } }).success).toBe(false);
+      expect(patientDetailContractSchema.safeParse({ ...fixture, currentCoverage: { providers: [{ code: 'OSDE' }] } }).success).toBe(false);
+    });
+  });
+
   describe('spec 058 (A2): pagador, preço, imposto, divergência e cobertura no fio', () => {
     const comServico = (patch: Record<string, unknown>) => ({ ...fixture, contractedServices: [{ ...fixture.contractedServices[0], ...patch }] });
     const names = { providerCode: 'OSDE', providerName: 'OSDE', contractId: 'c1', contractName: 'Plan 210', payerKind: 'PREPAGA' };

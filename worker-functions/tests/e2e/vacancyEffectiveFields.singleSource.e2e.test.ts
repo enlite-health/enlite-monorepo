@@ -521,7 +521,9 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       const { rows } = await admin.query(
         `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'job_postings' ORDER BY ordinal_position`,
       );
-      expect(JOB_POSTING_COLUMNS).toEqual(rows.map((r) => r.column_name));
+      expect(JOB_POSTING_COLUMNS).toEqual(
+        rows.map((r) => r.column_name),
+      );
     });
   });
 

@@ -27,13 +27,11 @@ import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 // transitivamente pelo `VacancyModal`) roda antes do resto do arquivo.
 const {
   createVacancy,
-  updateVacancyMeetLinks,
   NATIVE_CASE,
   LEGACY_CASE,
   NEXT_VACANCY_NUMBER,
 } = vi.hoisted(() => ({
   createVacancy: vi.fn().mockResolvedValue({ id: 'new-vac' }),
-  updateVacancyMeetLinks: vi.fn().mockResolvedValue({}),
   NATIVE_CASE: 1041,
   LEGACY_CASE: 828,
   NEXT_VACANCY_NUMBER: 5597,
@@ -64,7 +62,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     getNextVacancyNumber: vi.fn().mockResolvedValue(NEXT_VACANCY_NUMBER),
     createVacancy,
     updateVacancy: vi.fn(),
-    updateVacancyMeetLinks,
   },
 }));
 
@@ -91,7 +88,7 @@ function renderModal() {
 }
 
 /** Seleciona o caso e preenche o mínimo pra passar o Zod (profissão, 1 slot
- * de horário na segunda-feira, e 1 link de Meet válido). Endereço já vem
+ * de horário na segunda-feira). Endereço já vem
  * auto-selecionado — só existe 1 no mock de `listPatientAddresses`. */
 async function selectCaseAndFillMinimum(caseNumber: number) {
   await waitFor(() => expect(screen.getByTestId('case-select')).toBeInTheDocument());
@@ -113,8 +110,6 @@ async function selectCaseAndFillMinimum(caseNumber: number) {
   )[0];
   await userEvent.click(addSlotBtn);
 
-  const meetInput = await screen.findByTestId('meet-link-0');
-  await userEvent.type(meetInput, 'https://meet.google.com/abc-defg-hij');
   await userEvent.type(await screen.findByTestId('providers-needed-input'), '1');
 
   await waitFor(() => expect(screen.getByTestId('header-save-btn')).not.toBeDisabled());
@@ -123,7 +118,6 @@ async function selectCaseAndFillMinimum(caseNumber: number) {
 describe('VacancyFormSection — prefill do título (spec 028)', () => {
   beforeEach(() => {
     createVacancy.mockClear();
-    updateVacancyMeetLinks.mockClear();
   });
 
   it('caso NATIVO (case_number >= 1000): grava "CASO EN{n}-{m}"', async () => {
