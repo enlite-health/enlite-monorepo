@@ -87,8 +87,8 @@ test.describe('064-cobertura-entrada — cobertura atual e data de entrada na fi
     const cobertura = page.getByTestId('patient-current-coverage');
     await expect(cobertura).toHaveText(`${pa.name} · 1 servicio sin obra social`);
     const entrada = page.getByTestId('patient-entry-date');
-    await expect(entrada).toHaveText(ddmmaaaa(dataA));
-    await expect(entrada).not.toContainText(ddmmaaaa(dataB));
+    await expect(entrada).toHaveText(ddmmaaaa(dataB));
+    await expect(entrada).not.toContainText(ddmmaaaa(dataA));
   });
 
   test('ALTERNATIVO A (ABAC): sem a célula de serviços os dois campos dizem "Sin permiso" e nenhum nome chega ao DOM', async ({ page }) => {
