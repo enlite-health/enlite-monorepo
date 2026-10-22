@@ -8,6 +8,7 @@ import type { PatientContractedServiceDetail } from '@domain/entities/PatientDet
 import type { TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import { Text } from '@presentation/components/atoms/Text';
 import { formatIsoDateEsAr } from './pdf/therapeuticProjectPdfInput';
+import { sortAlphabeticallyEs } from './alphabeticalOrder';
 
 interface Props {
   version: TherapeuticProjectVersion;
@@ -123,7 +124,7 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
         <Row label={tc('specificObjectives')} testId="tpv-specific"><ListValue items={compact ? v.specificObjectives.slice(0, 3) : v.specificObjectives} /></Row>
       </div>
       <div className="flex flex-col gap-4">
-        <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue items={compact ? v.activities.slice(0, 3) : v.activities} /></Row>
+        <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue items={compact ? sortAlphabeticallyEs(v.activities).slice(0, 3) : sortAlphabeticallyEs(v.activities)} /></Row>
         {/* "Tipo de patología" não aparece na tela: é máscara derivada do CID-11 para o Ana Care (DEC-09) — sai só no PDF. */}
         {!compact && (
           <Row label={tc('contacts')} testId="tpv-contacts">

@@ -14,6 +14,7 @@ import {
   NOT_DOMESTIC_TITLE, NOT_DOMESTIC, NOT_DOMESTIC_OUTRO, FUNDAMENTAL_RULE, FIXED_SECTIONS_SERVICE_CODE,
 } from './pdfFixedTexts';
 import { formatIsoDateEsAr, implementationPeriodText, type PdfContact, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
+import { sortAlphabeticallyEs } from '../alphabeticalOrder';
 
 const PRIMARY = '#180149';
 const GRAY = '#737373';
@@ -224,7 +225,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {v.specificObjectives.map((o) => <Bullet key={o.id}>{o.label}</Bullet>)}
 
         <SectionTitle>{PDF_SECTIONS.activities}</SectionTitle>
-        {v.activities.map((a) => <Bullet key={a.id}>{a.label}</Bullet>)}
+        {sortAlphabeticallyEs(v.activities).map((a) => <Bullet key={a.id}>{a.label}</Bullet>)}
 
         {/* VIII e IX — texto fixo (constante, sem dado pessoal) do serviço de CUIDADORES (Ana, 08/09 — D301.1).
             Decide pelo `service_code` CONGELADO na versão (417): não depende de célula nem do serviço vivo. */}
