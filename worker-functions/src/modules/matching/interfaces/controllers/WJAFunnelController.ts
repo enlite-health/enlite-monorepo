@@ -14,7 +14,7 @@ import {
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository, wjaSupersededByBlockedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
-import { COMPLETED_COLUMN_STAGES, deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
+import { APTO_REQUIRED_TARGET_STAGES, deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
 import {
   interviewScheduleSchema,
   INTERVIEW_DATE_RESOLVED_SQL,
@@ -527,9 +527,9 @@ export class WJAFunnelController {
       }
 
       try {
-        // Spec 067 FR-24: arrastar PARA Completado exige APTO (documentos obrigatórios validados); os demais destinos
-        // seguem no limiar de hoje (`assertWorkerCanApply`).
-        if (COMPLETED_COLUMN_STAGES.includes(targetStage)) await assertWorkerApto(this.db, workerId);
+        // Spec 067 FR-24: arrastar PARA Completado, Seleccionados ou Equipo de Respuesta Rápida exige APTO (documentos
+        // obrigatórios validados); os demais destinos seguem no limiar de hoje (`assertWorkerCanApply`).
+        if (APTO_REQUIRED_TARGET_STAGES.includes(targetStage)) await assertWorkerApto(this.db, workerId);
         else await assertWorkerCanApply(this.db, workerId);
       } catch (err) {
         if (err instanceof WorkerNotEligibleError) {
