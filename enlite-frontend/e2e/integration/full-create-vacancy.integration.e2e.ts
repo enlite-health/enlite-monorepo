@@ -14,14 +14,13 @@
  *   8. Geração AI MOCKADA popula descrição/prescreening
  *   9. Publicar Talentum MOCKADO → detail page
  *  10. SELECT no banco prova: case_number, patient_id, patient_address_id,
- *      schedule, meet_link_1, published_at, closes_at, status
+ *      schedule, published_at, closes_at, status
  *
  * Mocks (ÚNICOS):
  *   - /generate-ai-content (Gemini — custo)
  *   - /publish-talentum (não polui prod do Talentum)
  *   - /api/admin/auth/profile (evita lookup de usuário)
  *   - Firebase Identity Toolkit (auth fake JWT)
- *   - /meet-links/lookup (Google Calendar — sem ambiente real)
  *
  * Tudo o resto bate no backend real.
  */
@@ -204,21 +203,6 @@ async function installInterceptors(page: Page): Promise<void> {
       return;
     }
 
-    if (url.includes('/meet-links/lookup')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            normalized: 'https://meet.google.com/abc-defg-hij',
-            datetime: '2026-06-01T15:00:00-03:00',
-          },
-        }),
-      });
-      return;
-    }
-
     // Tudo mais: troca o token Firebase pelo mock_<base64> que o backend aceita
     const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
     await route.continue({ headers });
@@ -320,11 +304,7 @@ test.describe('Caminho feliz: criar vaga ponta-a-ponta @integration', () => {
     await lunesAddBtn.scrollIntoViewIfNeeded();
     await lunesAddBtn.click();
 
-    // ── 7. Preenche meet link ───────────────────────────────────────────────
-    const meetInput = page.locator('[data-testid="meet-link-0"]');
-    await meetInput.scrollIntoViewIfNeeded();
-    await meetInput.fill('meet.google.com/abc-defg-hij');
-    await meetInput.blur();
+    // ── 7. (sem link de reunião: a vaga não tem esse campo — spec 068) ──────
 
     // ── 8. Botão Continuar fica habilitado ──────────────────────────────────
     const continueBtn = page.getByTestId('create-vacancy-save-btn');

@@ -4,7 +4,7 @@
  *
  * Puro, sem React: `DraftVacancyPage.tsx` só chama.
  *
- * ── Por que M é fixo em 8, não o tamanho de `locked_fields` do GET ─────────────────────────
+ * ── Por que M é fixo em 7, não o tamanho de `locked_fields` do GET ─────────────────────────
  * `locked_fields` (F3, fase 1) é a lista do que o FOGUETE já preencheu — 8 campos DIFERENTES
  * (`SOURCE_LOCKED_FIELDS` no backend: os 8 do foguete + os 5 de recrutamento que, com serviço
  * contratado, vêm do serviço — D523/057). Os 8 do foguete são "o que já sabemos" (coluna esquerda
@@ -62,9 +62,6 @@ export interface DraftVacancyLike {
   required_experience?: string | null;
   payment_day?: string | null;
   closes_at?: string | null;
-  meet_link_1?: string | null;
-  meet_link_2?: string | null;
-  meet_link_3?: string | null;
   /** 057 (D523): com serviço contratado, os 5 campos de recrutamento vêm do serviço. */
   contracted_service_id?: string | null;
   work_schedule?: string | null;
@@ -86,7 +83,7 @@ export interface DraftTodoField {
 }
 
 /**
- * A lista fixa, na ORDEM do protótipo v3 (F24) — "Lo que falta". 8 itens, sempre 8: M nunca
+ * A lista fixa, na ORDEM do protótipo v3 (F24) — "Lo que falta". 7 itens, sempre 7: M nunca
  * muda com o payload, só o "empty" de cada um muda entre `false`/`true`.
  */
 export const DRAFT_TODO_FIELDS: readonly DraftTodoField[] = [
@@ -126,18 +123,12 @@ export const DRAFT_TODO_FIELDS: readonly DraftTodoField[] = [
     labelKey: 'closesAt',
     isEmpty: (v) => !v.closes_at,
   },
-  {
-    key: 'meet_links',
-    labelKey: 'meetLinks',
-    asideKey: 'meetLinksAside',
-    isEmpty: (v) => !v.meet_link_1 && !v.meet_link_2 && !v.meet_link_3,
-  },
 ];
 
 /** Nomes dos campos de `DRAFT_TODO_FIELDS` — o outro lado da validação de paridade. */
 export const DRAFT_TODO_FIELD_KEYS: readonly string[] = DRAFT_TODO_FIELDS.map((f) => f.key);
 
-/** M sem serviço contratado — sempre 8, o tamanho da lista fixa. Com serviço, ver `draftTodoTotal`. */
+/** M sem serviço contratado — sempre 7, o tamanho da lista fixa. Com serviço, ver `draftTodoTotal`. */
 export const DRAFT_TODO_TOTAL = DRAFT_TODO_FIELDS.length;
 
 /** Os 4 itens do checklist que, com serviço contratado, passam a vir do serviço (D523/057). */
@@ -169,7 +160,7 @@ const SERVICE_RECRUITMENT_TODO: DraftTodoField = {
 };
 
 /**
- * O checklist DESTA vaga. Sem serviço: os 8 de `DRAFT_TODO_FIELDS`, inalterado. Com serviço
+ * O checklist DESTA vaga. Sem serviço: os 7 de `DRAFT_TODO_FIELDS`, inalterado. Com serviço
  * (`contracted_service_id`): os 4 itens que vêm do serviço saem e entra 1 item único
  * `service_recruitment_fields`, na posição do primeiro removido.
  */
@@ -183,7 +174,7 @@ export function draftTodoFields(vacancy: DraftVacancyLike): readonly DraftTodoFi
   return out;
 }
 
-/** M desta vaga: 8 sem serviço; 5 com serviço (4 itens viram 1). */
+/** M desta vaga: 7 sem serviço; 4 com serviço (4 itens viram 1). */
 export function draftTodoTotal(vacancy: DraftVacancyLike): number {
   return draftTodoFields(vacancy).length;
 }

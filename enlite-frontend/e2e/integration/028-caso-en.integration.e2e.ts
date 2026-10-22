@@ -291,7 +291,7 @@ async function openCaseSelectAndSearch(page: Page, term: string): Promise<void> 
 }
 
 // ── Preenchimento mínimo pra passar a validação Zod (profissão + 1 slot de
-//    horário + 1 link de Meet válido) — interação humana: click + keyboard,
+//    horário) — interação humana: click + keyboard,
 //    nunca fill()/selectOption() forçado num widget que não é <select>. ────
 
 async function fillMinimumAndSave(page: Page, saveTestId: string): Promise<void> {
@@ -304,12 +304,6 @@ async function fillMinimumAndSave(page: Page, saveTestId: string): Promise<void>
   const addSlotBtn = page.getByRole('button', { name: /Horarios|Horários/i }).first();
   await addSlotBtn.scrollIntoViewIfNeeded();
   await addSlotBtn.click();
-
-  const meetInput = page.locator('[data-testid="meet-link-0"]');
-  await meetInput.scrollIntoViewIfNeeded();
-  await meetInput.click();
-  await meetInput.type('meet.google.com/abc-defg-hij', { delay: 15 });
-  await meetInput.blur();
 
   const saveBtn = page.getByTestId(saveTestId);
   await expect(saveBtn).toBeEnabled({ timeout: 10_000 });

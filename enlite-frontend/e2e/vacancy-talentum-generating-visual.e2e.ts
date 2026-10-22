@@ -46,8 +46,6 @@ const MOCK_VACANCY = {
   talentum_published_at: null,
   publications: [],
   social_short_links: null,
-  meet_link_1: null,
-  meet_datetime_1: null,
   created_at: '2026-05-01T00:00:00Z',
   closed_at: null,
   schedule: { saturday: [{ start: '14:30', end: '19:30' }], sunday: [{ start: '14:30', end: '19:30' }] },

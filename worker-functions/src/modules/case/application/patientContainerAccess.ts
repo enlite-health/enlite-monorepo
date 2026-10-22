@@ -102,7 +102,7 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
   chat: ['chatIds', 'familyChatId', 'providersChatId'],
   coverage: ['affiliateId', 'insuranceInformed', 'insuranceVerifiedCodes', 'coverage', 'coverageEmergencyContacts', 'coverageDirectProfessionalRedacted', 'coverageEmergencyContactsUnavailable'],
   address: ['addresses', 'cityLocality', 'province', 'zoneNeighborhood'],
-  services: ['contractedServices', 'serviceType', 'serviceStartDate'],
+  services: ['contractedServices', 'serviceType', 'serviceStartDate', 'currentCoverage', 'entryDate'],
   // Nenhum campo na ficha: as versões saem pela rota própria. O marcador `redacted.therapeuticProject`
   // continua constante (lex C8) — "existe projeto" não vaza por ausência de campo.
   therapeuticProject: [],

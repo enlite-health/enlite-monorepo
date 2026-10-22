@@ -430,6 +430,10 @@ describe('leitura', () => {
     const busy = build({ available: [] }, { hostEmail: `${FAKE_BUSY_EMAIL_PREFIX}anfitriona@example.test` });
     expect(await busy.service.listHostFreeSlots(VACANCY_ID, HOST_ID, '2026-10-15', 60)).toEqual([]);
 
+    // duração de 30 min: a grade anda de meia em meia hora
+    const half = await build({ available: [] }).service.listHostFreeSlots(VACANCY_ID, HOST_ID, '2026-10-15', 30);
+    expect(half).toContain('09:30');
+
     // sábado: sem expediente, e a grade NÃO "empurra" para a segunda-feira
     expect(await build({ available: [] }).service.listHostFreeSlots(VACANCY_ID, HOST_ID, '2026-10-17', 60)).toEqual([]);
     // passado: vazio

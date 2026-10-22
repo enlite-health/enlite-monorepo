@@ -261,7 +261,7 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         express.use(
           '/api/admin',
           matchingModule.createAdminVacanciesRoutes(
-            {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+            {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
             auth,
             permissions,
           ),

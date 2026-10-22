@@ -84,6 +84,18 @@ describe('projectPatientDetailByContainers', () => {
     expect(com.redacted).not.toHaveProperty('coverage');
   });
 
+  it('services sem a célula => currentCoverage e entryDate null + redacted.services', () => {
+    const comDerivados = { ...ficha, currentCoverage: { providers: [{ code: 'OSDE', name: 'OSDE' }], privateServices: 0, hiddenServices: 0, unlinkedServices: 0, activeServices: 1 }, entryDate: '2025-01-01' };
+    const sem = projectPatientDetailByContainers(comDerivados, ['patient:read', 'patient_identity:read']);
+    expect(sem.currentCoverage).toBeNull();
+    expect(sem.entryDate).toBeNull();
+    expect(sem.redacted).toHaveProperty('services', true);
+    const com = projectPatientDetailByContainers(comDerivados, ['patient:read', 'patient_services:read']);
+    expect(com.currentCoverage).toEqual(comDerivados.currentCoverage);
+    expect(com.entryDate).toBe('2025-01-01');
+    expect(com.redacted).not.toHaveProperty('services');
+  });
+
   it('spec 017 — therapeuticProject: sem célula o marcador sai; com ela, nada muda na ficha (não há campo)', () => {
     const sem = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
     expect(sem.redacted).toHaveProperty('therapeuticProject', true);

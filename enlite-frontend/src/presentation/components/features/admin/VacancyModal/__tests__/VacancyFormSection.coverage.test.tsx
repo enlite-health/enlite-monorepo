@@ -24,12 +24,10 @@ import { ApiError } from '@infrastructure/http/ApiError';
 const {
   createVacancy,
   updateVacancy,
-  updateVacancyMeetLinks,
   EDIT_VACANCY,
 } = vi.hoisted(() => ({
   createVacancy: vi.fn().mockResolvedValue({ id: 'new-vac' }),
   updateVacancy: vi.fn().mockResolvedValue({}),
-  updateVacancyMeetLinks: vi.fn().mockResolvedValue({}),
   EDIT_VACANCY: {
     id: 'vac-edit-1',
     case_number: 1041,
@@ -52,9 +50,6 @@ const {
     daily_obs: 'Obs de teste',
     published_at: '2026-01-05T00:00:00Z',
     closes_at: '2026-02-05T00:00:00Z',
-    meet_link_1: 'https://meet.google.com/abc-defg-hij',
-    meet_link_2: '',
-    meet_link_3: '',
   },
 }));
 
@@ -76,7 +71,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     getNextVacancyNumber: vi.fn().mockResolvedValue(999),
     createVacancy,
     updateVacancy,
-    updateVacancyMeetLinks,
   },
 }));
 
@@ -106,12 +100,10 @@ describe('VacancyFormSection — modo edit: reset() carrega a vaga inteira', () 
   beforeEach(() => {
     createVacancy.mockClear();
     updateVacancy.mockClear();
-    updateVacancyMeetLinks.mockClear();
     updateVacancy.mockResolvedValue({});
-    updateVacancyMeetLinks.mockResolvedValue({});
   });
 
-  it('carrega required_professions, providers_needed e meet_link_1 no form (reset)', async () => {
+  it('carrega required_professions, providers_needed no form (reset)', async () => {
     renderEditModal();
 
     await waitFor(() => expect(screen.getByTestId('vacancy-form')).toBeInTheDocument());
@@ -124,8 +116,8 @@ describe('VacancyFormSection — modo edit: reset() carrega a vaga inteira', () 
     // providers_needed=2 (register direto).
     expect(screen.getByTestId('providers-needed-input')).toHaveValue(2);
 
-    // meet_link_1 populado.
-    expect(screen.getByTestId('meet-link-0')).toHaveValue(EDIT_VACANCY.meet_link_1);
+    // a vaga não tem campo de link de reunião (spec 068).
+    expect(screen.queryByTestId('meet-link-0')).toBeNull();
 
     // case-number-display (modo edit é read-only) — confirma selectedCaseNumber
     // chegou via `flow.selectCase(v.case_number, v.patient_id, v.patient_address_id)`.
@@ -169,7 +161,6 @@ describe('VacancyFormSection — onSubmit catch: erro genérico, não-Error, e 4
   beforeEach(() => {
     createVacancy.mockClear();
     updateVacancy.mockClear();
-    updateVacancyMeetLinks.mockClear();
   });
 
   async function submitEditForm() {

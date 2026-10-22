@@ -7,7 +7,7 @@
  *
  * Setup:
  *   - Worker com phone no banco
- *   - Job posting com meet_link_1/meet_datetime_1
+ *   - Job posting (sem link de reunião, spec 068)
  *   - worker_job_applications com interview_response='pending'
  *   - messaging_outbox com twilio_sid para correlação
  *
@@ -24,8 +24,6 @@ const DATABASE_URL =
 
 const WORKER_PHONE = '+5491199880001';
 const WORKER_EMAIL = 'inbound-e2e@test.local';
-const FUTURE_DATETIME = '2099-07-15T14:00:00Z';
-const MEET_LINK = 'https://meet.google.com/inbound-e2e-test';
 
 describe('Inbound WhatsApp Webhook — Step 7', () => {
   const api = createApiClient();
@@ -48,12 +46,11 @@ describe('Inbound WhatsApp Webhook — Step 7', () => {
     );
     workerId = workerRes.rows[0].id;
 
-    // 2. Criar job_posting com meet links
+    // 2. Criar job_posting (a vaga não tem link de reunião — spec 068)
     const jpRes = await pool.query(
-      `INSERT INTO job_postings (case_number, title, meet_link_1, meet_datetime_1, status, created_at, updated_at)
-       VALUES (99901, 'Vaga Inbound E2E', $1, $2, 'SEARCHING', NOW(), NOW())
+      `INSERT INTO job_postings (case_number, title, status, created_at, updated_at)
+       VALUES (99901, 'Vaga Inbound E2E', 'SEARCHING', NOW(), NOW())
        RETURNING id`,
-      [MEET_LINK, FUTURE_DATETIME],
     );
     jobPostingId = jpRes.rows[0].id;
 

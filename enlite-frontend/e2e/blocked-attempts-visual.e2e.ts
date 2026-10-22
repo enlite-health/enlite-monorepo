@@ -135,8 +135,7 @@ const MOCK_VACANCY_1 = {
   city: null, salary_text: null, payment_day: null,
   daily_obs: null, published_at: null, closes_at: null, talentum_description: null,
   talentum_project_id: null, talentum_whatsapp_url: null, talentum_slug: null,
-  talentum_published_at: null, meet_link_1: null, meet_datetime_1: null,
-  meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null,
+  talentum_published_at: null,
   social_short_links: null,
 };
 

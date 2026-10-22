@@ -37,12 +37,6 @@ const MOCK_VACANCY = {
   worker_attributes: null,
   service_type: null,
   schedule: null,
-  meet_link_1: null,
-  meet_datetime_1: null,
-  meet_link_2: null,
-  meet_datetime_2: null,
-  meet_link_3: null,
-  meet_datetime_3: null,
 };
 
 async function mockPublicVacancy(page: import('@playwright/test').Page) {

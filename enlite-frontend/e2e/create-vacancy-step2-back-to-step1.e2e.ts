@@ -95,12 +95,6 @@ const EXISTING_VACANCY = {
   daily_obs: '',
   published_at: null,
   closes_at: null,
-  meet_link_1: 'https://meet.google.com/abc-defg-hij',
-  meet_link_2: null,
-  meet_link_3: null,
-  meet_datetime_1: '2026-05-10T15:00:00-03:00',
-  meet_datetime_2: null,
-  meet_datetime_3: null,
   patient_first_name: PATIENT_DETAIL.firstName,
   patient_last_name: PATIENT_DETAIL.lastName,
   caseNumber: 77,
@@ -229,9 +223,8 @@ test.describe('CreateVacancy — Step 2 → Voltar → Step 1 (edit mode)', () =
     await expect(otherBtn).toBeVisible();
     await expect(otherBtn).not.toHaveClass(/border-primary/);
 
-    // Meet link existente populado no input
-    const meetInput = page.locator('[data-testid="meet-link-0"]');
-    await expect(meetInput).toHaveValue('https://meet.google.com/abc-defg-hij');
+    // A vaga não tem campo de link de reunião (spec 068)
+    await expect(page.locator('[data-testid="meet-link-0"]')).toHaveCount(0);
 
     // REGRESSION: o botão Continuar tem que estar HABILITADO logo após o
     // form hidratar — antes do fix, ficava travado em disabled porque o

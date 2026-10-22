@@ -53,6 +53,8 @@ const MAX_CODE_ATTEMPTS = 5;
 const EMAIL = z.string().email();
 const WALL_CLOCK = "yyyy-LL-dd'T'HH:mm";
 const FALLBACK_HOST_NAME = 'Entrevistadora';
+/** Grade de inícios dos "Horarios libres" do enquadre: de meia em meia hora (a admissão pública segue de hora em hora). */
+const ENQUADRE_SLOT_STEP_MINUTES = 30;
 
 // ─── Formas devolvidas: as MESMAS de `enlite-frontend/src/domain/entities/EnquadreEvent.ts` ───────────────────────────────
 
@@ -244,6 +246,7 @@ export class EnquadreEventService {
       holidays: cfg.holidays,
       businessHours: cfg.businessHours,
       slotMinutes: durationMinutes,
+      stepMinutes: ENQUADRE_SLOT_STEP_MINUTES,
       minLeadMinutes: 0,
       horizonBusinessDays: 1,
     });

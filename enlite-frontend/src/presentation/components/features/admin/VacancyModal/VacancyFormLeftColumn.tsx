@@ -29,7 +29,6 @@ import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import type { VacancyFormData } from '../vacancy-form-schema';
 import { PROFESSION_OPTIONS, SEX_OPTIONS, AGE_RANGE_OPTIONS } from '../vacancy-form-schema';
 import { TEXTAREA_CLS, READONLY_CLS } from './vacancyFormShared';
-import { MeetLinksField } from './MeetLinksField';
 import { LockedFieldBadgeLink } from './LockedFieldBadgeLink';
 
 // ---------------------------------------------------------------------------
@@ -348,11 +347,6 @@ export function VacancyFormLeftColumn({
       <Heading level={4} weight="semibold" color="secondary" className="pt-2 border-t border-slate-100">
         {tp('sectionScheduleAndDates')}
       </Heading>
-
-      {/* 9. Meet links — extracted to MeetLinksField for size/SRP. */}
-      <div className={patientDis}>
-        <MeetLinksField control={control} errors={errors} />
-      </div>
 
       {/* 10. Publish date — defaults to today, optional, editable. */}
       <FormField label={tp('publishDate')}>

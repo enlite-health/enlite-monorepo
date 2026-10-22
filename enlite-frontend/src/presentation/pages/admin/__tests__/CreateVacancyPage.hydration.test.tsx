@@ -61,7 +61,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     generateAIContent: vi.fn(),
     createVacancy: vi.fn(),
     updateVacancy: vi.fn(),
-    updateVacancyMeetLinks: vi.fn(),
     // Draft-check: return empty so the resume dialog never opens in these tests
     listDraftsForPatient: vi.fn().mockResolvedValue([]),
     // Address-has-vacancy guard: return empty so the dialog never opens in these tests
@@ -161,8 +160,8 @@ describe('CreateVacancyPage — patient hydration smoke', () => {
 
     await pickCase('CASO 99');
 
-    // Picking a case is necessary but not sufficient — schedule, profession,
-    // meet link and address are still required by the schema.
+    // Picking a case is necessary but not sufficient — schedule, profession
+    // and address are still required by the schema.
     await waitFor(() => {
       expect(AdminApiService.getPatientById).toHaveBeenCalled();
     });

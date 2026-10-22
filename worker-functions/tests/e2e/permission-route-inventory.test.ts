@@ -227,7 +227,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/workers/:id/tags/:tagId → worker:update',
         'POST /api/admin/workers/sync-talentum → talentum:create+talentum:update',
         'PUT /api/admin/workers/:id/service-area → worker:update',
-        // ── admin.vacancies (47) — a 4ª e maior, um arquivo só
+        // ── admin.vacancies (45) — a 4ª e maior, um arquivo só
         'DELETE /api/admin/interview-slots/:slotId → interview:delete',
         'DELETE /api/admin/vacancies/:id → vacancy:delete',
         'DELETE /api/admin/vacancies/:id/publish-talentum → talentum:update',
@@ -273,12 +273,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/blocked-applications/:blockedId/promote → funnel:update',
         'POST /api/admin/vacancies/blocked-applications/:blockedId/reject → funnel:update',
         'POST /api/admin/vacancies/blocked-applications/:blockedId/restore → funnel:update',
-        'POST /api/admin/vacancies/meet-links/lookup → vacancy:read',
         'POST /api/admin/vacancies/sync-talentum → talentum:create+talentum:update',
         'PUT /api/admin/encuadres/:id/move → funnel:update',
         'PUT /api/admin/encuadres/:id/result → funnel:update',
         'PUT /api/admin/vacancies/:id → vacancy:update',
-        'PUT /api/admin/vacancies/:id/meet-links → vacancy:update',
         'PUT /api/admin/vacancies/:id/talentum-description → talentum:update',
         // ── admin.analytics (15) + admin.recruitment (hoje só blocked-attempts; as outras 10 saíram com o dashboard) — a 5ª e a 6ª
         'GET /analytics/dashboard/cases/:caseNumber → dashboard:read',
