@@ -928,3 +928,45 @@ describe('spec 048 — "Todavía no hay registro" / "No necesita" no corpo envia
     expect(onSubmit.mock.calls[0][0].contactStatus).toEqual({});
   });
 });
+
+// ── Atividades A–Z e busca — spec 060 ────────────────────────────────────────
+
+describe('campo de atividades: A–Z e busca (spec 060)', () => {
+  const catalogoDesordenado = (): TherapeuticCatalogs => ({
+    'specific-objectives': [item('so2', 'Objetivo 2'), item('so1', 'Objetivo 1')],
+    activities: [item('ac1', 'Zeta actividad'), item('ac2', 'Árbol actividad'), item('ac3', 'Abeja actividad')],
+    segments: [item('seg-A', 'Segmento A')],
+  });
+  const rotulosDe = (id: string) => Array.from(listaDoMulti(id).querySelectorAll('li')).map((li) => li.textContent);
+
+  it('(a) atividades saem A–Z; objetivos seguem a ordem do catálogo', () => {
+    montar({ patientDiagnoses: [], catalogs: catalogoDesordenado() });
+
+    expect(rotulosDe('tp-activities')).toEqual(['Abeja actividad', 'Árbol actividad', 'Zeta actividad']);
+    expect(rotulosDe('tp-specificObjectives')).toEqual(['Objetivo 2', 'Objetivo 1']);
+    expect(screen.queryByTestId('tp-specificObjectives-search')).not.toBeInTheDocument();
+  });
+
+  it('(b) digitar "arbol" na busca deixa só "Árbol actividad"', () => {
+    montar({ patientDiagnoses: [], catalogs: catalogoDesordenado() });
+    listaDoMulti('tp-activities');
+
+    fireEvent.change(screen.getByTestId('tp-activities-search'), { target: { value: 'arbol' } });
+
+    expect(rotulosDe('tp-activities')).toEqual(['Árbol actividad']);
+  });
+
+  it('(c) filtrar, marcar a atividade filtrada e salvar leva o id dela em activityIds (além do já marcado)', () => {
+    montar({
+      patientDiagnoses: [],
+      catalogs: { ...CATALOGOS, activities: [item('ac1', 'Atividade 1'), item('ac2', 'Árbol actividad')] },
+    });
+    preencherTudo(); // marca 'Atividade 1' (ac1)
+    listaDoMulti('tp-activities');
+    fireEvent.change(screen.getByTestId('tp-activities-search'), { target: { value: 'arbol' } });
+    alternarNoMulti('tp-activities', 'Árbol actividad');
+    fireEvent.click(salvar());
+
+    expect(onSubmit.mock.calls[0][0].activityIds).toEqual(['ac1', 'ac2']);
+  });
+});
