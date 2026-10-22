@@ -17,6 +17,9 @@
  *             0 participações; controle positivo: com a entrevistadora boa, o mesmo drawer grava 1 evento e 2 participações).
  *  3 alt    — encerrar com não marcados gera anotação de sistema por prestador, que aparece no card, e os dois voltam à lista de
  *             disponíveis e podem entrar num novo evento.
+ *  4 alt    — spec 067 FR-24: o prestador convocado deixou de ser apto (documento desvalidado depois de entrar no evento): "Mover a…
+ *             Seleccionado" é RECUSADO pelo servidor (403 WORKER_NOT_ELIGIBLE / documents_not_validated) e a tela mostra a mensagem aprovada;
+ *             nada é gravado (etapa, carimbo e histórico intactos). Sem canal: a recusa vem ANTES de qualquer escrita, Calendar nem é tocado.
  *
  * ⚠️ Precisa do engine ABAC LIGADO e da API com `ADMISSION_EXTERNALS=fake` + as duas envs do enquadre — por isso o token
  * `enquadre-052` entra no `--grep` do job `integration-e2e-group-simulation` do `_frontend-integration.yml` (e NÃO no `grep:` do
@@ -375,5 +378,49 @@ test.describe('enquadre-052 — aba Encuadre da vaga: criar, marcar, encerrar, f
     await expect(page.getByTestId(`enquadre-event-row-${eventId}`)).toHaveAttribute('data-phase', 'closed'); // o 1º segue encerrado, na lista
     expect(scalar(`SELECT count(*) FROM enquadre_event_participants WHERE event_id = '${novoId}' AND worker_id = '${wa}' AND released_at IS NULL`)).toBe('1');
     await expect(page.getByTestId('enquadre-unassigned-count')).toHaveAttribute('data-count', '1'); // só o wb sobrou
+  });
+
+  test('enquadre-052 prestador deixou de ser apto (067 FR-24): "Mover a… Seleccionado" é recusado com a mensagem aprovada e NADA é gravado', async ({ page }, testInfo) => {
+    const sc = seedScenario(2);
+    const [wa, wb] = sc.workerIds;
+    // Evento ABERTO e futuro, com os 2 convocados (semeado direto, como dona do banco de teste: nenhum Calendar, nenhum e-mail).
+    const codigo = `ENC-${Math.random().toString(36).slice(2, 8).toUpperCase().padEnd(6, 'X')}`;
+    const eventId = scalar(`INSERT INTO enquadre_events (job_posting_id, host_email, host_display_name, starts_at, ends_at, event_code, created_by_uid)
+      VALUES ('${sc.vacancyId}', '${HOST_OK}', 'Entrevistadora E2E052', now() + interval '1 day', now() + interval '1 day 1 hour', '${codigo}', '${staffUid}') RETURNING id`);
+    psql(`INSERT INTO enquadre_event_participants (event_id, job_posting_id, worker_id, added_by_uid)
+          VALUES ('${eventId}', '${sc.vacancyId}', '${wa}', '${staffUid}'), ('${eventId}', '${sc.vacancyId}', '${wb}', '${staffUid}')`);
+    // A validação do documento do `wa` cai DEPOIS de ele entrar no evento (o admin a tirou na ficha): ele deixa de ser apto.
+    psql(`UPDATE worker_documents SET document_validations = '{}'::jsonb WHERE worker_id = '${wa}'`);
+    expect(scalar(`SELECT fn_worker_is_apto('${wa}')`), 'o dono do apto diz NÃO para o wa').toBe('f');
+    expect(scalar(`SELECT fn_worker_is_apto('${wb}')`), 'e SIM para o wb (controle)').toBe('t');
+    const pa = participantId(eventId, wa);
+    const historicoAntes = scalar(`SELECT count(*) FROM worker_job_application_stage_history h JOIN worker_job_applications wja ON wja.id = h.application_id WHERE wja.job_posting_id = '${sc.vacancyId}'`);
+
+    await loginAs(page, staff);
+    await abrirAbaEncuadre(page, sc);
+    await page.getByTestId(`enquadre-event-row-${eventId}`).click();
+    await expect(page.getByTestId('enquadre-kanban')).toHaveAttribute('data-phase', 'scheduled');
+    await expect(page.getByTestId('kanban-column-CONVOKED-count')).toHaveText('2');
+    await expect(page.getByTestId('enquadre-kanban-error')).toHaveCount(0);
+
+    // o clique de quem tenta marcar o prestador como Selecionado
+    const recusa = page.waitForResponse((r) => r.request().method() === 'PUT' && MOVE_ROUTE.test(r.url()));
+    await colunaDe(page, pa).getByTestId('move-to-button').click();
+    await page.getByTestId('move-to-option-SELECTED').click();
+    const resposta = await recusa;
+    expect(resposta.status(), 'o servidor recusa').toBe(403);
+    const corpo = (await resposta.json()) as { code?: string; reason?: string };
+    expect(corpo.code).toBe('WORKER_NOT_ELIGIBLE');
+    expect(corpo.reason).toBe('documents_not_validated');
+
+    // a tela diz o que houve, na mensagem aprovada (e o card NÃO saiu de Convocados)
+    await expect(page.getByTestId('enquadre-kanban-error')).toHaveText('Algún prestador ya no es apto (sus documentos dejaron de estar validados). Actualizamos la lista.');
+    await expect(colunaDe(page, pa)).toHaveAttribute('data-column', 'CONVOKED');
+    await page.screenshot({ path: testInfo.outputPath('6-nao-apto-recusado.png'), fullPage: true });
+
+    // nada gravado: etapa, carimbo da participação e histórico de estágio intactos
+    expect(stageOf(sc, wa)).toBe('COMPLETED');
+    expect(scalar(`SELECT coalesce(outcome, 'null') FROM enquadre_event_participants WHERE id = '${pa}'`)).toBe('null');
+    expect(scalar(`SELECT count(*) FROM worker_job_application_stage_history h JOIN worker_job_applications wja ON wja.id = h.application_id WHERE wja.job_posting_id = '${sc.vacancyId}'`)).toBe(historicoAntes);
   });
 });
