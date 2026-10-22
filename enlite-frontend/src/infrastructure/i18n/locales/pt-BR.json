@@ -1132,9 +1132,9 @@
         },
         "stage_BLOQUEADO": {
           "title": "Bloqueados (coluna)",
-          "que": "Prestadores que concluíram a triagem mas ainda não podem avançar: seus documentos obrigatórios não estão todos validados.",
-          "origen": "• É a mesma regra da coluna Bloqueados do Kanban da vaga — painel e Kanban contam igual.\n• Não é o número \"Bloqueados\" de tentativas de candidatura: aquele conta tentativas barradas por cadastro incompleto.",
-          "cambia": "• Concluir a triagem sem documentos validados, ou um documento ser desvalidado ou apagado: entra.\n• Validar os documentos: sai e volta para Completos."
+          "que": "Prestadores que concluíram a triagem mas ainda não estão aptos: falta algum dado obrigatório do cadastro ou há documento obrigatório sem validar.",
+          "origen": "• É a mesma regra da coluna Bloqueados do Kanban da vaga — painel e Kanban contam igual.\n• Não é o número \"Bloqueados ao se candidatar\" de tentativas de candidatura: aquele conta tentativas barradas por cadastro incompleto.",
+          "cambia": "• Concluir a triagem com dado obrigatório faltando ou sem documentos validados, ou um documento ser desvalidado ou apagado: entra.\n• Completar o cadastro E validar os documentos obrigatórios: sai e volta para Completos."
         },
         "stage_COMPLETED": {
           "title": "Completos (coluna)",
@@ -1295,7 +1295,7 @@
           "INICIADO": "Iniciado",
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "Em progresso",
-          "BLOQUEADO": "Sem validar",
+          "BLOQUEADO": "Bloqueados",
           "COMPLETED": "Completos",
           "SELECTED": "Selecionados",
           "REJECTED": "Rejeitados"
@@ -1303,7 +1303,7 @@
         "periodLabel": "Entrada no funil:",
         "periodAll": "Tudo",
         "periodDays": "Últimos {{count}} dias",
-        "bloqueados": "Bloqueados",
+        "bloqueados": "Bloqueados ao se candidatar",
         "bloqueadosSub": "Tentaram se candidatar e o cadastro incompleto barrou — vagas ativas"
       },
       "cadastros": {

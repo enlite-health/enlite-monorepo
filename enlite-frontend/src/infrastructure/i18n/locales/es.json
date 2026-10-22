@@ -1132,9 +1132,9 @@
         },
         "stage_BLOQUEADO": {
           "title": "Bloqueados (columna)",
-          "que": "Prestadores que completaron el triage pero todavía no pueden avanzar: sus documentos obligatorios no están todos validados.",
-          "origen": "• Es la misma regla que la columna Bloqueados del Kanban de la vacante — panel y Kanban cuentan igual.\n• No es el número \"Bloqueados\" de intentos de postulación: ese cuenta intentos frenados por registro incompleto.",
-          "cambia": "• Completar el triage sin documentos validados, o que se desvalide o borre un documento: entra.\n• Validar los documentos: sale y vuelve a Completos."
+          "que": "Prestadores que completaron el triage pero todavía no están aptos: les falta algún dato obligatorio del registro o tienen algún documento obligatorio sin validar.",
+          "origen": "• Es la misma regla que la columna Bloqueados del Kanban de la vacante — panel y Kanban cuentan igual.\n• No es el número \"Bloqueados al postularse\" de intentos de postulación: ese cuenta intentos frenados por registro incompleto.",
+          "cambia": "• Completar el triage con datos obligatorios faltantes o sin documentos validados, o que se desvalide o borre un documento: entra.\n• Completar el registro Y validar los documentos obligatorios: sale y vuelve a Completos."
         },
         "stage_COMPLETED": {
           "title": "Completos (columna)",
@@ -1295,7 +1295,7 @@
           "INICIADO": "Iniciado",
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "En progreso",
-          "BLOQUEADO": "Sin validar",
+          "BLOQUEADO": "Bloqueados",
           "COMPLETED": "Completos",
           "SELECTED": "Seleccionados",
           "REJECTED": "Rechazados"
@@ -1303,7 +1303,7 @@
         "periodLabel": "Entrada al embudo:",
         "periodAll": "Todo",
         "periodDays": "Últimos {{count}} días",
-        "bloqueados": "Bloqueados",
+        "bloqueados": "Bloqueados al postularse",
         "bloqueadosSub": "Intentaron postularse y el registro incompleto lo impidió — vacantes activas"
       },
       "cadastros": {
