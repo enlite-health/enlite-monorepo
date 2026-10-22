@@ -88,7 +88,7 @@ describe('arrasto para Completado exige APTO (spec 067 FR-24) — moveEncuadre, 
     expect(por).toEqual({ [ID.apto]: ['REGISTERED', true], [ID.naoApto]: ['REGISTERED', false] });
   });
 
-  it.each(['COMPLETED', 'QUALIFIED', 'IN_DOUBT'])('REGISTERED não apto → %s: 403 WORKER_NOT_ELIGIBLE/documents_not_validated e NADA gravado', async (targetStage) => {
+  it.each(['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'QUICK_RESPONSE_TEAM'])('REGISTERED não apto → %s: 403 WORKER_NOT_ELIGIBLE/documents_not_validated e NADA gravado', async (targetStage) => {
     const antesEventos = (await pool.query(`SELECT count(*)::int AS n FROM domain_events`)).rows[0].n;
     const r = await move(ENC.naoApto, { targetStage, reasonCategory: 'ENCUADRE_ANTECIPADO' });
     expect(r.status).toBe(403);
