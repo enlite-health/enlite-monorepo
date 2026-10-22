@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { cleanup } from '@testing-library/react';
 import { MultiSelect } from './MultiSelect';
 
 vi.mock('react-i18next', () => ({
@@ -157,5 +158,95 @@ describe('MultiSelect', () => {
     expect(checkboxes[0].checked).toBe(false); // A
     expect(checkboxes[1].checked).toBe(true);  // B
     expect(checkboxes[2].checked).toBe(false); // C
+  });
+
+  describe('searchable (spec 060)', () => {
+    const OPCOES = [
+      { value: 'A', label: 'Ejercicio con kinesiólogo' },
+      { value: 'B', label: 'Higiene diaria' },
+      { value: 'C', label: 'Salidas' },
+    ];
+    const abrir = (props: Partial<Parameters<typeof MultiSelect>[0]> = {}) => {
+      const r = renderMultiSelect({ id: 'x', options: OPCOES, searchable: true, ...props });
+      fireEvent.click(screen.getByRole('button'));
+      return r;
+    };
+    const rotulos = () => screen.queryAllByRole('option').map((o) => o.textContent);
+
+    it('t1 default sem searchable não tem input de busca', () => {
+      renderMultiSelect({ id: 'x', options: OPCOES });
+      fireEvent.click(screen.getByRole('button'));
+      expect(screen.queryByTestId('x-search')).toBeNull();
+      expect(screen.getAllByRole('option')).toHaveLength(3);
+      cleanup();
+      renderMultiSelect({ id: 'x', options: OPCOES, value: ['fora-do-catalogo'] });
+      expect(screen.getByText('fora-do-catalogo')).toBeInTheDocument();
+    });
+
+    it('t2 com searchable, abrir mostra o input com foco', () => {
+      abrir();
+      const input = screen.getByTestId('x-search');
+      expect(document.activeElement).toBe(input);
+      expect(input).toHaveAttribute('aria-label', 'common.multiSelect.searchAriaLabel');
+      expect(input).toHaveAttribute('placeholder', 'common.multiSelect.searchPlaceholder');
+    });
+
+    it('t3 digitar KINESIO (maiúscula, sem acento) deixa só a opção com acento', () => {
+      abrir();
+      fireEvent.change(screen.getByTestId('x-search'), { target: { value: ' KINESIO ' } });
+      expect(rotulos()).toEqual(['Ejercicio con kinesiólogo']);
+    });
+
+    it('t4 sem match mostra x-no-results e 0 opções; rótulos custom valem', () => {
+      abrir({ searchPlaceholder: 'Procurar', noResultsLabel: 'Nada aqui' });
+      expect(screen.getByTestId('x-search')).toHaveAttribute('placeholder', 'Procurar');
+      fireEvent.change(screen.getByTestId('x-search'), { target: { value: 'zzz' } });
+      expect(screen.getByTestId('x-no-results')).toHaveTextContent('Nada aqui');
+      cleanup();
+      abrir();
+      fireEvent.change(screen.getByTestId('x-search'), { target: { value: 'zzz' } });
+      expect(screen.getByTestId('x-no-results')).toHaveTextContent('common.multiSelect.noResults');
+      expect(screen.queryAllByRole('option')).toHaveLength(0);
+    });
+
+    it('t5 filtrar por higiene e clicar a única opção chama onChange([B])', () => {
+      const { onChange } = abrir();
+      fireEvent.change(screen.getByTestId('x-search'), { target: { value: 'higiene' } });
+      fireEvent.click(screen.getAllByRole('option')[0].querySelector('button')!);
+      expect(onChange).toHaveBeenCalledWith(['B']);
+    });
+
+    it('t6 fechar e reabrir mostra as 3 opções e input vazio', () => {
+      abrir();
+      fireEvent.change(screen.getByTestId('x-search'), { target: { value: 'sal' } });
+      expect(rotulos()).toEqual(['Salidas']);
+      fireEvent.click(screen.getAllByRole('button')[0]);
+      fireEvent.click(screen.getAllByRole('button')[0]);
+      expect(screen.getByTestId('x-search')).toHaveValue('');
+      expect(screen.getAllByRole('option')).toHaveLength(3);
+    });
+
+    it('t7 Escape no input fecha e não propaga para o pai', () => {
+      const onKeyDown = vi.fn();
+      render(
+        <div onKeyDown={onKeyDown}>
+          <MultiSelect id="x" options={OPCOES} value={[]} onChange={vi.fn()} searchable />
+        </div>,
+      );
+      fireEvent.click(screen.getByRole('button'));
+      fireEvent.keyDown(screen.getByTestId('x-search'), { key: 'Escape' });
+      expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+      expect(onKeyDown).not.toHaveBeenCalled();
+    });
+
+    it('t8 ArrowDown no input foca a 1ª opção; Enter não é propagado como submit; outras teclas são ignoradas', () => {
+      abrir();
+      const input = screen.getByTestId('x-search');
+      fireEvent.keyDown(input, { key: 'a' });
+      expect(document.activeElement).toBe(input);
+      expect(fireEvent.keyDown(input, { key: 'Enter' })).toBe(false);
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(screen.getAllByRole('option')[0].querySelector('button'));
+    });
   });
 });

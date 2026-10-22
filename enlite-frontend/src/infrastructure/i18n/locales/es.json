@@ -106,7 +106,10 @@
     "close": "Cerrar",
     "logout": "Salir",
     "multiSelect": {
-      "selectedCount": "{{count}} seleccionados"
+      "selectedCount": "{{count}} seleccionados",
+      "searchPlaceholder": "Buscar…",
+      "searchAriaLabel": "Buscar en la lista",
+      "noResults": "Sin resultados"
     },
     "yes": "Sí",
     "no": "No",
