@@ -21,10 +21,10 @@ describe('DraftVacancyTodoCard — 057/T4.4', () => {
     expect(screen.getByTestId('draft-todo-service-link')).toHaveAttribute('href', '/admin/patients/p-3?tab=contractedService');
   });
 
-  it('sem serviço: 8 itens, sem link', () => {
+  it('sem serviço: 7 itens, sem link', () => {
     render(
       <MemoryRouter>
-        <DraftVacancyTodoCard vacancy={{ ...base }} missing={8} />
+        <DraftVacancyTodoCard vacancy={{ ...base }} missing={7} />
       </MemoryRouter>,
     );
     expect(screen.getByText('admin.draftVacancy.todo.paymentDay')).toBeInTheDocument();

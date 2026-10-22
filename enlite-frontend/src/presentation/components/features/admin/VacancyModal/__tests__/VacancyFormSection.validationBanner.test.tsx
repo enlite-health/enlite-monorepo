@@ -29,7 +29,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     getNextVacancyNumber: vi.fn().mockResolvedValue(42),
     createVacancy: vi.fn(),
     updateVacancy: vi.fn(),
-    updateVacancyMeetLinks: vi.fn(),
   },
 }));
 
@@ -73,10 +72,11 @@ describe('VacancyFormSection — banner de validação (US-D6, lex D6.1)', () =>
     expect(banner).toHaveTextContent('admin.vacancyModal.professionalType');
     expect(banner).toHaveTextContent('admin.vacancyModal.serviceAddress');
     expect(banner).toHaveTextContent('admin.vacancyModal.schedule');
-    expect(banner).toHaveTextContent('admin.vacancyModal.meetLinksLabel');
+    // a vaga não tem link de reunião: esse rótulo não existe mais (spec 068).
+    expect(banner.textContent).not.toContain('meetLink');
   });
 
-  it('valor sabotado (link de Meet inválido, parece dado sensível) → banner mostra o NOME do campo, nunca o valor digitado', async () => {
+  it('valor sabotado (texto livre que parece dado sensível) → banner mostra o NOME do campo, nunca o valor digitado', async () => {
     renderModal();
     await waitFor(() => expect(screen.getByTestId('case-select')).toBeInTheDocument());
     await userEvent.click(screen.getByTestId('case-select').querySelector('button') as HTMLElement);
@@ -85,16 +85,16 @@ describe('VacancyFormSection — banner de validação (US-D6, lex D6.1)', () =>
     await userEvent.click(options[1]);
     await waitFor(() => expect(screen.getByTestId('header-save-btn')).not.toBeDisabled());
 
-    // Link de Meet inválido — o valor digitado carrega algo que PARECE dado sensível
-    // (telefone/e-mail de uma pessoa). A validação falha (não bate com o regex de
-    // meet.google.com); o teste prova que esse texto nunca chega ao banner.
-    await userEvent.type(await screen.findByTestId('meet-link-0'), SABOTAGE_VALUE);
+    // Texto livre que carrega algo que PARECE dado sensível (telefone/e-mail de uma pessoa),
+    // com o form ainda inválido (sem profissão/endereço/horário): o banner sai, e o teste
+    // prova que esse texto nunca chega a ele.
+    await userEvent.type(await screen.findByTestId('salary-text-input'), SABOTAGE_VALUE);
 
     await userEvent.click(screen.getByTestId('header-save-btn'));
 
     const banner = await screen.findByTestId('vacancy-validation-banner');
-    // O NOME do campo aparece...
-    expect(banner).toHaveTextContent('admin.vacancyModal.meetLinksLabel');
+    // O NOME de um campo realmente inválido aparece...
+    expect(banner).toHaveTextContent('admin.vacancyModal.professionalType');
     // ...o VALOR sabotado nunca aparece em lugar nenhum do banner.
     expect(banner.textContent).not.toContain(SABOTAGE_VALUE);
     expect(banner.textContent).not.toContain('juan.perez');

@@ -14,9 +14,6 @@ export interface VacancyForMatch {
   patient_address_formatted?: string | null;
   /** Endereço cru do patient_addresses linkado em patient_address_id */
   patient_address_raw?: string | null;
-  meet_link_1?: string | null;
-  meet_link_2?: string | null;
-  meet_link_3?: string | null;
 }
 
 export interface DistanceBucket {

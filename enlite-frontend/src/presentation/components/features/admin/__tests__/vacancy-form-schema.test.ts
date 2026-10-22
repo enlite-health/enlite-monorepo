@@ -53,7 +53,6 @@ const minimalFormData: VacancyFormData = {
   patientAddressId: 'addr-1',
   schedule: [{ days: ['lun'], timeFrom: '08:00', timeTo: '16:00' }],
   status: 'SEARCHING',
-  meet_links: ['https://meet.google.com/abc-defg-hij', undefined, undefined],
 };
 
 // ---------------------------------------------------------------------------
@@ -221,5 +220,22 @@ describe('buildScheduleFromVacancy — aceita schedule como objeto (forma do GET
     const vacancy = { schedule: {}, schedule_days_hours: '' };
     const result = buildScheduleFromVacancy(vacancy);
     expect(result).toEqual([{ days: [], timeFrom: '', timeTo: '' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 068 — a vaga não tem link de reunião
+// ---------------------------------------------------------------------------
+
+describe('vacancyFormSchema — vaga sem link de reunião é válida (spec 068)', () => {
+  it('aceita a vaga mínima SEM nenhum campo de link (antes um refine de "link obrigatório" a barrava)', () => {
+    const result = vacancyFormSchema.safeParse(minimalFormData);
+    expect(result.success).toBe(true);
+  });
+
+  it('o schema e o default do formulário não têm mais o campo `meet_links`', () => {
+    expect('meet_links' in DEFAULT_FORM_VALUES).toBe(false);
+    const parsed = vacancyFormSchema.safeParse(minimalFormData);
+    expect(parsed.success && 'meet_links' in parsed.data).toBe(false);
   });
 });

@@ -452,11 +452,6 @@ export async function completeDraftViaWizard(page: Page, vacancyId: string): Pro
   await page.keyboard.type('$5000');
   await expect(salaryInput).toHaveValue('$5000');
 
-  const meetInput = page.getByTestId('meet-link-0');
-  await meetInput.click();
-  await page.keyboard.type('meet.google.com/abc-defg-hij');
-  await meetInput.blur();
-
   const saveBtn = page.getByTestId('create-vacancy-save-btn');
   await expect(saveBtn).toBeEnabled({ timeout: 10_000 });
   await saveBtn.click();

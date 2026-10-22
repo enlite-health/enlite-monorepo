@@ -25,7 +25,6 @@
  *   - /api/admin/auth/profile (evita lookup de usuário)
  *   - /generate-ai-content (Gemini — custo; no cenário 6 retorna 500 p/ simular falha)
  *   - /publish-talentum (não polui prod do Talentum)
- *   - /meet-links/lookup (Google Calendar)
  *
  * Tudo o mais bate no backend Docker real (USE_MOCK_AUTH=true).
  */
@@ -227,21 +226,6 @@ async function installInterceptors(page: Page): Promise<void> {
             publicId: '00000000-0000-0000-0000-000000000000',
             slug: 'e2e-resume-draft',
             whatsappUrl: 'https://wa.me/fake',
-          },
-        }),
-      });
-      return;
-    }
-
-    if (url.includes('/meet-links/lookup')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            normalized: 'https://meet.google.com/abc-defg-hij',
-            datetime: '2026-06-01T15:00:00-03:00',
           },
         }),
       });
@@ -623,11 +607,10 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       requiredProfessions: ['AT'],
     });
 
-    // Insere os meet links via SQL para que o form de edit os hidrate
+    // Garante providers_needed para que o form de edit o hidrate
     runSQL(`
       UPDATE job_postings
-      SET meet_link_1 = 'https://meet.google.com/abc-defg-hij',
-          providers_needed = 1
+      SET providers_needed = 1
       WHERE id = '${draftVacancyId}'
     `);
 
@@ -681,9 +664,8 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       // providers_needed = 1 (setado via UPDATE acima)
       await expect(page.getByTestId('providers-needed-input')).toHaveValue('1');
 
-      // Meet link presente (meet_link_1 hidratado do banco)
-      const meetLinkVal = await page.getByTestId('meet-link-0').inputValue();
-      expect(meetLinkVal).toMatch(/meet\.google\.com/);
+      // A vaga não tem campo de link de reunião (spec 068)
+      await expect(page.getByTestId('meet-link-0')).toHaveCount(0);
 
       // case-number-display mostra o case number
       await expect(page.getByTestId('case-number-display')).toContainText(String(e2eCaseNumber));
@@ -891,12 +873,11 @@ test.describe('Retomar rascunho de vaga @integration', () => {
       requiredProfessions: ['AT'],
     });
 
-    // Garante que o draft tem providers_needed e meet_link para que a página
+    // Garante que o draft tem providers_needed para que a página
     // Talentum carregue sem erros de validação
     runSQL(`
       UPDATE job_postings
-      SET meet_link_1 = 'https://meet.google.com/abc-defg-hij',
-          providers_needed = 1,
+      SET providers_needed = 1,
           description = 'Draft description for publish flow test.'
       WHERE id = '${flowDraftId}'
     `);

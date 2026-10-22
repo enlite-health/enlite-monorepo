@@ -100,7 +100,6 @@ export const PR8B_ROTAS_CREATE_UPDATE: readonly RotaCreateUpdate[] = [
   { method: 'POST', path: '/api/admin/vacancies/:id/generate-ai-content', actions: ['update'], source: 'adminVacanciesRoutes.ts:147' },
   { method: 'POST', path: '/api/admin/vacancies/sync-talentum', actions: ['create', 'update'], source: 'adminVacanciesRoutes.ts:150' },
   { method: 'POST', path: '/api/admin/vacancies/:id/prescreening-config', actions: ['update'], source: 'adminVacanciesRoutes.ts:159' },
-  { method: 'PUT', path: '/api/admin/vacancies/:id/meet-links', actions: ['update'], source: 'adminVacanciesRoutes.ts:169' },
   { method: 'POST', path: '/api/admin/vacancies/:id/social-links', actions: ['create'], source: 'adminVacanciesRoutes.ts:174' },
   { method: 'PUT', path: '/api/admin/encuadres/:id/move', actions: ['update'], source: 'adminVacanciesRoutes.ts:185' },
   { method: 'POST', path: '/api/admin/vacancies/blocked-applications/:blockedId/reject', actions: ['update'], source: 'adminVacanciesRoutes.ts:190' },

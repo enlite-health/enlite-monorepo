@@ -6,9 +6,8 @@
  *
  * Cenários:
  *   - Seleção de caso → hidratação de paciente + endereço
- *   - Form preenchido com link Meet sem `https://` — onBlur normaliza e busca
- *     a data/hora via `meet-links/lookup` (wrapper de `resolveDateTime`)
- *   - Click Guardar → cria vaga, salva meet links, gera IA mockado → /talentum
+ *   - Form preenchido sem link de reunião (a vaga não tem esse campo — spec 068)
+ *   - Click Guardar → cria vaga, gera IA mockado → /talentum
  *   - Step 2 carregado com description + perguntas + FAQs vindos do mock
  *   - Click Publicar → auto-save prescreening → publish (mockado) → detalhe
  *
@@ -16,7 +15,6 @@
  *   - `/generate-ai-content` → fixture (NÃO chama Gemini real, evita custo)
  *   - `/publish-talentum` → success (NÃO publica vaga real no Talentum)
  *   - `/prescreening-config` POST/GET → success
- *   - `/meet-links/lookup` → datetime fixo (NÃO chama Google Calendar real)
  *   - `/vacancies` POST/GET → fixture (NÃO escreve no banco)
  *
  * Auth: Firebase Emulator (mesmo padrão de create-vacancy.e2e.ts).
@@ -152,18 +150,14 @@ async function loginAsAdmin(page: Page): Promise<void> {
 // ── Counters captured by mocks ─────────────────────────────────────────────────
 
 interface FlowCounters {
-  meetLookupCalls: { link: string }[];
   vacancyCreated: { calls: number; lastBody: unknown };
-  meetLinksPersisted: { calls: number; lastBody: unknown };
   prescreeningSaved: { calls: number; lastBody: unknown };
   publishCalled: { calls: number };
 }
 
 function newCounters(): FlowCounters {
   return {
-    meetLookupCalls: [],
     vacancyCreated: { calls: 0, lastBody: null },
-    meetLinksPersisted: { calls: 0, lastBody: null },
     prescreeningSaved: { calls: 0, lastBody: null },
     publishCalled: { calls: 0 },
   };
@@ -206,23 +200,6 @@ function installApiMocks(page: Page, c: FlowCounters): void {
     }),
   );
 
-  // POST /vacancies/meet-links/lookup — onBlur (mocked: no Google Calendar call)
-  page.route('**/api/admin/vacancies/meet-links/lookup', (route: Route) => {
-    const body = route.request().postDataJSON() as { link: string };
-    c.meetLookupCalls.push({ link: body.link });
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: {
-          normalized: body.link.startsWith('http') ? body.link : `https://${body.link}`,
-          datetime: '2026-05-10T15:00:00-03:00',
-        },
-      }),
-    });
-  });
-
   // POST /vacancies (create)
   page.route('**/api/admin/vacancies', (route: Route) => {
     if (route.request().method() === 'POST') {
@@ -232,31 +209,6 @@ function installApiMocks(page: Page, c: FlowCounters): void {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ success: true, data: CREATED_VACANCY }),
-      });
-    } else {
-      route.continue();
-    }
-  });
-
-  // PUT /vacancies/:id/meet-links — persist after create
-  page.route(`**/api/admin/vacancies/${CREATED_VACANCY_ID}/meet-links`, (route: Route) => {
-    if (route.request().method() === 'PUT') {
-      c.meetLinksPersisted.calls++;
-      c.meetLinksPersisted.lastBody = route.request().postDataJSON();
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            meet_link_1: 'https://meet.google.com/abc-defg-hij',
-            meet_datetime_1: '2026-05-10T15:00:00-03:00',
-            meet_link_2: null,
-            meet_datetime_2: null,
-            meet_link_3: null,
-            meet_datetime_3: null,
-          },
-        }),
       });
     } else {
       route.continue();
@@ -419,19 +371,8 @@ test.describe('CreateVacancy — full flow Step 1 → Step 2 → Step 3', () => 
       .first();
     await addSlotBtn.click();
 
-    // Meet link without https — onBlur normalizes + lookup
-    const meetInput = page.locator('[data-testid="meet-link-0"]');
-    await meetInput.fill('meet.google.com/abc-defg-hij');
-    await meetInput.blur();
-
-    await expect
-      .poll(() => c.meetLookupCalls.length, { timeout: 5_000 })
-      .toBeGreaterThanOrEqual(1);
-    expect(c.meetLookupCalls[0].link).toBe('https://meet.google.com/abc-defg-hij');
-    await expect(meetInput).toHaveValue('https://meet.google.com/abc-defg-hij');
-    await expect(
-      page.locator('[data-testid="meet-link-0-datetime"]'),
-    ).toBeVisible({ timeout: 3_000 });
+    // A vaga não tem campo de link de reunião (spec 068): salva sem ele.
+    await expect(page.locator('[data-testid="meet-link-0"]')).toHaveCount(0);
 
     // ── STEP 1 → 2: Click Guardar ─────────────────────────────────────────
     await page.getByTestId('create-vacancy-save-btn').click();
@@ -446,9 +387,8 @@ test.describe('CreateVacancy — full flow Step 1 → Step 2 → Step 3', () => 
       page.locator('ol[aria-label="Progress"] li[aria-current="step"]'),
     ).toContainText(/Configuración Talentum/i);
 
-    // Vacancy create + meet links persistence both happened
+    // Vacancy create happened
     expect(c.vacancyCreated.calls).toBe(1);
-    expect(c.meetLinksPersisted.calls).toBe(1);
 
     // ── STEP 2: AI content (mocked) populated ─────────────────────────────
     // Description textarea has the canonical headers we control via service.

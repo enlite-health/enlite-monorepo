@@ -88,7 +88,6 @@ import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplication
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
-import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
@@ -269,7 +268,6 @@ const workerTimelineController = new WorkerTimelineController(DatabaseConnection
 const adminPatientsController = new AdminPatientsController();
 const publicVacancyController = new PublicVacancyController();
 const interviewSlotsController = new InterviewSlotsController();
-const vacancyMeetLinksController = new VacancyMeetLinksController();
 const vacancySocialLinksController = new VacancySocialLinksController();
 const vacancyAddressReviewController = new VacancyAddressReviewController();
 const publicJobsController = new PublicJobsController();
@@ -736,7 +734,6 @@ app.use('/api/admin', createAdminVacanciesRoutes(
   vacancyCrudController,
   vacancyTalentumController,
   vacancyMatchController,
-  vacancyMeetLinksController,
   vacancySocialLinksController,
   funnelController,
   dashboardController,
