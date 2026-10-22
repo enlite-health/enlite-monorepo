@@ -165,7 +165,7 @@ export function TherapeuticProjectForm({
 
   /** Escolhidos (da versão antiga, já desativados, ou fora do segmento atual) continuam visíveis como opção. */
   const optionsOf = (kind: 'specific-objectives' | 'activities', chosen: { id: string; label: string }[] | undefined, picked: string[]) =>
-    segmentOptions(catalogs[kind], segmentId, [...(chosen ?? []), ...catalogs[kind].filter((i) => picked.includes(i.id))]);
+    segmentOptions(catalogs[kind], segmentId, [...(chosen ?? []), ...catalogs[kind].filter((i) => picked.includes(i.id))], kind === 'activities');
 
   const contactOptionsOf = (items: { id: string; label: string }[]) => items.map((i) => ({ value: i.id, label: i.label }));
   /**
@@ -337,7 +337,7 @@ export function TherapeuticProjectForm({
           <FormField label={tc('activitiesPlan')} htmlFor="tp-activities" labelSize="compact" required={!isMacroLocked('activityIds')}>
             {isMacroLocked('activityIds')
               ? lockedList(from!.activities, 'tp-activities-locked')
-              : <MultiSelect id="tp-activities" options={optionsOf('activities', from?.activities, activityIds)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} />}
+              : <MultiSelect id="tp-activities" searchable options={optionsOf('activities', from?.activities, activityIds)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} />}
           </FormField>
           {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
           <div className="grid grid-cols-2 gap-4">
