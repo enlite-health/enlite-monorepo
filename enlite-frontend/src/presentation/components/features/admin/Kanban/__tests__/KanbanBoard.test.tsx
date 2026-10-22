@@ -290,8 +290,9 @@ describe('KanbanBoard — drag & drop rules', () => {
     expect(screen.queryByTestId('kanban-column-IN_PROGRESS')).not.toBeInTheDocument();
     expect(droppableIds.find((d) => d.id === 'IN_PROGRESS')).toBeUndefined();
     expect(screen.getByTestId('kanban-column-BLOQUEADO')).toBeInTheDocument();
-    // 067 FR-06: só leitura — o card sai de Bloqueados quando o prestador fica apto, não por arrasto
-    expect(droppableIds.find((d) => d.id === 'BLOQUEADO')?.disabled).toBe(true);
+    // 067 FR-06: só leitura — o card sai de Bloqueados quando o prestador fica apto, não por arrasto.
+    // Registrada para COLISÃO no dnd-kit (o drop sobre ela é cancelado pelo shell), mas nunca como destino válido.
+    expect(droppableIds.find((d) => d.id === 'BLOQUEADO')?.disabled).toBe(false);
   });
 
   it('keeps droppable enabled on INVITED, SELECTED, and REJECTED columns', () => {
@@ -375,32 +376,25 @@ describe('KanbanBoard — não envia PUT de auto-movimento (DX-5.16)', () => {
 // Soltar com o PONTEIRO sobre a coluna Bloqueados cancela o drop. O `closestCenter` resolveria `over`
 // para a vizinha habilitada (Invitados); a P20b continua valendo para qualquer outra coluna não-droppable.
 describe('KanbanBoard — soltar sobre Bloqueados não move (067 FR-06)', () => {
-  function pointerSobre(columnId: string) {
-    const col = screen.getByTestId(`kanban-column-${columnId}`);
-    col.getBoundingClientRect = () => ({ left: 100, right: 200, top: 0, bottom: 500, width: 100, height: 500, x: 100, y: 0, toJSON: () => ({}) });
-    act(() => { window.dispatchEvent(new MouseEvent('pointermove', { clientX: 150, clientY: 100 })); });
-  }
-
-  it('ponteiro dentro de Bloqueados e over resolvido para Invitados: onMove NÃO é chamado', () => {
+  it('over resolvido para a própria coluna Bloqueados: onMove NÃO é chamado e nenhum diálogo abre', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-blk', encuadreId: 'enc-blk-id' })];
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     act(() => capturedOnDragStart!({ active: { id: 'enc-blk' } }));
-    pointerSobre('BLOQUEADO');
-    act(() => capturedOnDragEnd!({ over: { id: 'INVITED' } }));
+    expect(screen.getByTestId('kanban-column-BLOQUEADO').className).not.toContain('border-green-400'); // nunca "destino válido"
+    act(() => capturedOnDragEnd!({ over: { id: 'BLOQUEADO' } }));
 
     expect(noop).not.toHaveBeenCalled();
     expect(screen.queryByTestId('role-modal')).not.toBeInTheDocument();
   });
 
-  it('controle P20b: ponteiro em Completado (não-droppable, sem cancelDrop) e over resolvido para Invitados: onMove É chamado', () => {
+  it('controle P20b: over resolvido para a vizinha habilitada (Invitados) ainda move', () => {
     const stages = emptyStages();
     stages.REJECTED = [makeEncuadre({ id: 'enc-viz', encuadreId: 'enc-viz-id' })];
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
     act(() => capturedOnDragStart!({ active: { id: 'enc-viz' } }));
-    pointerSobre('COMPLETED');
     act(() => capturedOnDragEnd!({ over: { id: 'INVITED' } }));
 
     expect(noop).toHaveBeenCalledWith('enc-viz-id', 'INVITED', undefined, undefined);

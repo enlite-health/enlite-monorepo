@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, useSensor, useSensors, closestCenter,
@@ -14,8 +14,9 @@ export interface KanbanColumnSpec {
   color: string;
   droppable?: boolean;
   /**
-   * Soltar com o PONTEIRO dentro desta coluna cancela o drop (nada acontece). Só faz sentido com
-   * `droppable=false`: o `closestCenter` resolveria o drop para a coluna habilitada mais próxima.
+   * Coluna registrada no dnd-kit só para colisão (não é destino válido, sem destaque): quando o
+   * `closestCenter` resolve o drop para ela, o drop é cancelado — não cai na coluna vizinha (P20b).
+   * Só faz sentido com `droppable=false`.
    */
   cancelDrop?: boolean;
   /** Cabeçalho em tom de alerta (vermelho) — coluna que pede ação do operador. */
@@ -136,29 +137,6 @@ export function KanbanBoardShell<T>({
 
   const active = activeId ? locate(activeId) : null;
 
-  // Última posição do ponteiro durante o arrasto: o dnd-kit só entrega `over` (já resolvido pelo
-  // closestCenter), e o drop sobre coluna `cancelDrop` precisa saber onde o ponteiro REALMENTE soltou.
-  const pointer = useRef<{ x: number; y: number } | null>(null);
-  const dragging = activeId !== null;
-  useEffect(() => {
-    if (!dragging) return;
-    const track = (e: PointerEvent) => { pointer.current = { x: e.clientX, y: e.clientY }; };
-    window.addEventListener('pointermove', track);
-    return () => { window.removeEventListener('pointermove', track); pointer.current = null; };
-  }, [dragging]);
-
-  function droppedOnCancelColumn(): boolean {
-    const p = pointer.current;
-    if (!p) return false;
-    return columns.some((c) => {
-      if (!c.cancelDrop) return false;
-      const el = document.querySelector(`[data-testid="kanban-column-${c.id}"]`);
-      if (!el) return false;
-      const r = el.getBoundingClientRect();
-      return p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
-    });
-  }
-
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
   }
@@ -167,7 +145,9 @@ export function KanbanBoardShell<T>({
     const itemId = activeId;
     setActiveId(null);
     if (!itemId || !event.over) return;
-    if (droppedOnCancelColumn()) return;
+    // Coluna `cancelDrop` está registrada só para COLISÃO: o closestCenter resolve `over` para ela, e aqui o drop morre.
+    const overId = String(event.over.id);
+    if (columns.some((c) => c.id === overId && c.cancelDrop)) return;
 
     const toColumnId = String(event.over.id);
     // Coluna não-droppable nem chega aqui (useDroppable desabilitado), mas o
@@ -200,6 +180,7 @@ export function KanbanBoardShell<T>({
               count={items.length}
               color={col.color}
               droppable={col.droppable !== false}
+              cancelDrop={col.cancelDrop}
               alert={col.alert}
               dragActive={activeId !== null}
               collapsed={collapsed.has(col.id)}
