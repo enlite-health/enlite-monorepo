@@ -100,7 +100,7 @@ test.describe('Gestão à Vista — coluna Bloqueados do funil (spec 067) @integ
     const gaveta = page.getByTestId('mgmt-help-drawer');
     await expect(gaveta).toBeVisible();
     await expect(gaveta).toContainText('Bloqueados (columna)');
-    await expect(gaveta).toContainText('documentos obligatorios no están todos validados');
+    await expect(gaveta).toContainText('documento obligatorio sin validar');
     await expect(gaveta).toContainText('panel y Kanban cuentan igual');
     await page.getByTestId('mgmt-help-close').click();
     await expect(page.getByTestId('mgmt-help-drawer')).toHaveCount(0);
