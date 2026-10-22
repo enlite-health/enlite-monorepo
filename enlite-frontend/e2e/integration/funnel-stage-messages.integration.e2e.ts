@@ -17,7 +17,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
-import { insertTestPatient, cleanupTestPatient, insertBaseVacancy, cleanupVacancies, insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
+import { insertTestPatient, cleanupTestPatient, insertBaseVacancy, cleanupVacancies, cleanupTestWorker } from '../helpers/db-test-helper';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from '../helpers/eligibility-worker-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import { openKanban } from '../helpers/talentumWebhookHelper';
 
@@ -78,7 +79,11 @@ test.describe('Mensagem por etapa: configurar e arrastar a tarjeta (PEND-14 / DE
     const p = insertTestPatient({ firstName: 'Paciente', lastName: workerName, withAddress: true, addressLat: -34.6037, addressLng: -58.3816 });
     patientId = p.patientId;
     vacancyId = insertBaseVacancy({ patientId, patientAddressId: p.addressId as string, caseNumber: CASE_NUMBER, status: 'SEARCHING', isDraft: false });
-    workerId = insertTestWorker({ firstName: workerName, lastName: 'Etapa', occupation: 'AT', status: 'REGISTERED', lat: -34.6, lng: -58.4 });
+    // Spec 067 FR-07/FR-24: o card só fica em Completado e só arrasta para Seleccionados se o prestador é APTO (documentos obrigatórios
+    // validados). O helper ÚNICO semeia isso; aqui só se ajusta o nome que a tela exibe/busca.
+    workerId = insertAptoWorker({ docs: 'validated' }).workerId;
+    const b64 = (v: string): string => Buffer.from(v, 'utf8').toString('base64');
+    runSQL(`UPDATE workers SET first_name_encrypted = '${b64(workerName)}', last_name_encrypted = '${b64('Etapa')}' WHERE id = '${workerId}'`);
     runSQL(`INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source) VALUES ('${workerId}', '${vacancyId}', 'COMPLETED', 'manual') ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET application_funnel_stage = 'COMPLETED'`);
     encuadreId = runSQL(`SELECT id FROM encuadres WHERE worker_id = '${workerId}' AND job_posting_id = '${vacancyId}' LIMIT 1`);
     wjaId = runSQL(`SELECT id FROM worker_job_applications WHERE worker_id = '${workerId}' AND job_posting_id = '${vacancyId}'`);
@@ -88,6 +93,7 @@ test.describe('Mensagem por etapa: configurar e arrastar a tarjeta (PEND-14 / DE
   test.afterAll(() => {
     runSQL(`UPDATE funnel_stage_messages SET template_slug = NULL, enabled = false WHERE country = 'AR'`);
     runSQL(`UPDATE messaging_channel_pause SET paused = false WHERE channel = 'whatsapp' AND paused_by = 'e2e-fsm-ui'`);
+    cleanupEligibilityWorkerChildren(workerId);
     cleanupTestWorker(workerId);
     cleanupVacancies([vacancyId]);
     cleanupTestPatient(patientId);

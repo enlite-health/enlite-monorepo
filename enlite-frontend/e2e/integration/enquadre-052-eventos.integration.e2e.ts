@@ -30,6 +30,7 @@ import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
 import { seedInterviewHost, cleanupInterviewHosts } from '../helpers/interview-host-seed';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from '../helpers/eligibility-worker-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const HOST_OK = `ana.e2e052-${RUN_ID}@example.test`;
@@ -71,9 +72,11 @@ function seedScenario(nWorkers: number): Scenario {
   scenarios.push(sc);
   for (let i = 1; i <= nWorkers; i++) {
     const tag = `${RUN_ID}-${scenarios.length}-${i}`;
-    const id = scalar(`INSERT INTO workers (auth_uid, email, country, timezone, status, first_name_encrypted, last_name_encrypted)
-      VALUES ('e2e052-${tag}', 'prestador${i}.e2e052-${tag}@example.test', 'AR', 'America/Argentina/Buenos_Aires', 'REGISTERED',
-              '${b64(`Ficticio ${String(i).padStart(2, '0')}`)}', '${b64('E2E052')}') RETURNING id`);
+    // Spec 067 FR-07: só prestador APTO (REGISTERED + cadastro completo + documentos obrigatórios VALIDADOS) é convocável.
+    // O helper ÚNICO semeia isso (documentos e document_validations); aqui só se ajusta identidade/e-mail (allowlist `example.test`).
+    const id = insertAptoWorker({ docs: 'validated' }).workerId;
+    psql(`UPDATE workers SET auth_uid = 'e2e052-${tag}', email = 'prestador${i}.e2e052-${tag}@example.test',
+      first_name_encrypted = '${b64(`Ficticio ${String(i).padStart(2, '0')}`)}', last_name_encrypted = '${b64('E2E052')}' WHERE id = '${id}'`);
     workerIds.push(id);
     psql(`INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source) VALUES ('${id}', '${vacancyId}', 'COMPLETED', 'talentum')`);
   }
@@ -85,6 +88,7 @@ function cleanupScenario(sc: Scenario): void {
   safeSql(`DELETE FROM enquadre_events WHERE job_posting_id = '${sc.vacancyId}'`); // participações saem em cascata
   safeSql(`DELETE FROM worker_job_applications WHERE job_posting_id = '${sc.vacancyId}'`); // notas e histórico saem em cascata
   safeSql(`DELETE FROM encuadres WHERE job_posting_id = '${sc.vacancyId}'`);
+  for (const w of sc.workerIds) { try { cleanupEligibilityWorkerChildren(w); } catch (err) { console.error('[cleanup] satélites do apto falharam (seguindo)', err); } }
   safeSql(`DELETE FROM workers WHERE id IN (${ids})`);
   try { cleanupTestPatient(sc.patientId); } catch (err) { console.error('[cleanup] paciente/vaga falhou (seguindo)', err); }
 }
