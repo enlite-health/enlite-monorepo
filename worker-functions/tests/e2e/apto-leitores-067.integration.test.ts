@@ -22,6 +22,7 @@ import { WJAFunnelController } from '../../src/modules/matching/interfaces/contr
 import { loadStageCounts } from '../../src/modules/matching/interfaces/controllers/vacancyListHelpers';
 import { GetFunnelByWorkerUseCase } from '../../src/modules/matching/application/GetFunnelByWorkerUseCase';
 import { GetFunnelTableUseCase } from '../../src/modules/matching/application/GetFunnelTableUseCase';
+import { esperandoAgendaQuery } from '../../src/modules/matching/application/managementDashboardQueries';
 import { WorkerApplicationRepository } from '../../src/modules/matching/infrastructure/WorkerApplicationRepository';
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
 
@@ -160,6 +161,11 @@ describe('apto nos cinco leitores (spec 067 F3) — SQL real', () => {
     expect(r.porEtapa.BLOQUEADO).toBe(2);
     expect(r.consolidado.BLOQUEADO).toBe(2);
     expect(Object.values(r.consolidado).reduce((a, n) => a + n, 0)).toBe(r.total);
+  });
+
+  it('C4b "Completos esperando agenda": conta o QUALIFIED apto (1) e NÃO o QUALIFIED não apto, que está em Bloqueados', async () => {
+    const { rows } = await esperandoAgendaQuery(DatabaseConnection.getInstance().getPool(), ['AR']);
+    expect(rows[0].esperando).toBe(1);
   });
 
   it('C5 ficha do prestador: o prestador não apto vê BLOQUEADO na vaga; o apto vê COMPLETED', async () => {

@@ -490,6 +490,7 @@ describe('GetManagementDashboardUseCase', () => {
 
     const [esperandoSql, esperandoParams] = db.query.mock.calls[CALL.esperando];
     expect(esperandoSql).toContain('w.country = ANY($1::bpchar[])');
+    expect(esperandoSql).toContain('fn_worker_is_apto(w.id)'); // 067: só o apto espera agenda (mesmo recorte do Kanban)
     expect(esperandoParams).toEqual([['AR']]);
 
     const [alocadosSql, alocadosParams] = db.query.mock.calls[CALL.alocados];
