@@ -262,7 +262,7 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
 
     // US-D6: títulos de sección (Heading) agrupando los campos — no una lista plana.
     await expect(page.getByText('Caso y perfil profesional')).toBeVisible();
-    await expect(page.getByText('Meet y fechas')).toBeVisible();
+    await expect(page.getByText('Fechas', { exact: true })).toBeVisible();
     await expect(page.getByText('Estado y ubicación')).toBeVisible();
     await expect(page.getByText('Condiciones de la vacante')).toBeVisible();
 

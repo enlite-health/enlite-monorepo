@@ -76,7 +76,6 @@ export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 import { withTransientRetry } from './retryTransient';
 
-/** Slot recorrente da reunión de presentación (mig 291). */
 export { ApiError } from './ApiError';
 
 /**
