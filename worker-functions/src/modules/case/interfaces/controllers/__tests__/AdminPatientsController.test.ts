@@ -169,6 +169,9 @@ describe('AdminPatientsController.getPatientById', () => {
         success: true,
         data: {
           ...patient,
+          // Spec 064: fixture sem `contractedServices` => derivação `null` (nunca `activeServices: 0`).
+          currentCoverage: null,
+          entryDate: null,
           // Spec 016 F2 (D263): diagnoses[] embutido — o pool mockado deste arquivo devolve
           // `undefined` de `query()` (sem mockResolvedValue), o que faz `patientExists` lançar —
           // o bulkhead do controller (reportError + []) garante que isso não derruba a ficha
