@@ -72,6 +72,16 @@ const FIELD_DESTINATION_MAP: Record<string, FieldDestination> = {
   doc_identity_document: { tab: 'documents', focus: 'identity_document' },
   doc_criminal_record: { tab: 'documents', focus: 'criminal_record' },
   doc_at_certificate: { tab: 'documents', focus: 'at_certificate' },
+
+  /**
+   * Modo estrito (fn_worker_missing_fields, migration 546): documento ENVIADO mas ainda não validado.
+   * Mesmo destino do `doc_<tipo>` correspondente (passo de documentos, slot do tipo) — a prestadora
+   * corrige/reenvia no mesmo lugar em que enviaria o que falta.
+   */
+  unvalidated_resume_cv: { tab: 'documents', focus: 'resume_cv' },
+  unvalidated_identity_document: { tab: 'documents', focus: 'identity_document' },
+  unvalidated_criminal_record: { tab: 'documents', focus: 'criminal_record' },
+  unvalidated_at_certificate: { tab: 'documents', focus: 'at_certificate' },
 };
 
 /**

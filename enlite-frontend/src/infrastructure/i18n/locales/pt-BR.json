@@ -6384,9 +6384,13 @@
         "worker_availability": "Disponibilidade",
         "phone": "Telefone",
         "doc_resume_cv": "Currículo",
+        "unvalidated_resume_cv": "Currículo (em validação)",
         "doc_identity_document": "Documento de identidade",
+        "unvalidated_identity_document": "Documento de identidade (em validação)",
         "doc_criminal_record": "Antecedentes penais",
+        "unvalidated_criminal_record": "Antecedentes penais (em validação)",
         "doc_at_certificate": "Certificado de Acompanhante Terapêutico",
+        "unvalidated_at_certificate": "Certificado de Acompanhante Terapêutico (em validação)",
         "worker_documents": "Documentos"
       },
       "bodyGeneric": "Seu cadastro está incompleto. Vamos redirecioná-lo ao seu perfil para completá-lo.",

@@ -6463,9 +6463,13 @@
         "worker_availability": "Disponibilidad horaria",
         "phone": "Teléfono",
         "doc_resume_cv": "Currículum vitae",
+        "unvalidated_resume_cv": "Currículum vitae (en validación)",
         "doc_identity_document": "Documento de identidad",
+        "unvalidated_identity_document": "Documento de identidad (en validación)",
         "doc_criminal_record": "Antecedentes penales",
+        "unvalidated_criminal_record": "Antecedentes penales (en validación)",
         "doc_at_certificate": "Certificado de Acompañante Terapéutico",
+        "unvalidated_at_certificate": "Certificado de Acompañante Terapéutico (en validación)",
         "worker_documents": "Documentos"
       },
       "bodyGeneric": "Su registro está incompleto. Lo redirigiremos a su perfil para completarlo.",
