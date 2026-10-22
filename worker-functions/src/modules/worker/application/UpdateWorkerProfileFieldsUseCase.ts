@@ -190,10 +190,12 @@ export class UpdateWorkerProfileFieldsUseCase {
       // `worker.registration_completed` promove TODAS as tentativas bloqueadas
       // do worker. Sem isto o admin completava e os cards seguiam BLOQUEADO.
       //
-      // SÓ PROMOVE (043 A1): o recálculo também REBAIXA REGISTERED → INCOMPLETE_REGISTER
-      // quando o critério fixo falha (WorkerImportRepository.recalculateStatus), e o admin
-      // editar um REGISTERED legado fora do critério não é pedido de rebaixar ninguém.
-      if (statusBefore === 'INCOMPLETE_REGISTER') {
+      // PROMOVE E REBAIXA (spec 067 FR-23; substitui o "SÓ PROMOVE" da 043 A1): o recálculo decide pelo dono
+      // (`fn_worker_missing_fields`), então editar um REGISTERED que deixa o cadastro incompleto o rebaixa para
+      // INCOMPLETE_REGISTER — a edição apaga o campo, a completude acompanha. DISABLED nunca muda de status
+      // (a guarda de `recalculateWorkerStatus` também devolve null para ele; a checagem aqui evita a ida ao banco).
+      // ⚠️ Este caso de uso também serve à MCP (`mountMcpRoutes`, `ConfirmWorkerProfileUpdateUseCase`).
+      if (statusBefore !== 'DISABLED') {
         await recalculateWorkerStatus(this.pool, workerId, this.pubsub);
       }
     }

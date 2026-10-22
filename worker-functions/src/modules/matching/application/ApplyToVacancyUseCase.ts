@@ -4,6 +4,7 @@ import type { ActorContext } from '@shared/audit/actorSource';
 import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
+  isBlockedAttemptReason,
   type WorkerEligibilityReason,
 } from '../domain/WorkerApplicationEligibility';
 import { RecordBlockedAttemptUseCase } from './RecordBlockedAttemptUseCase';
@@ -62,7 +63,7 @@ export class ApplyToVacancyUseCase {
     try {
       await assertWorkerCanApply(db, workerId);
     } catch (err) {
-      if (err instanceof WorkerNotEligibleError) {
+      if (err instanceof WorkerNotEligibleError && isBlockedAttemptReason(err.reason)) {
         // Instrumenta a tentativa bloqueada. Awaited de propósito: em Cloud Run,
         // trabalho em background após o response é estrangulado/descartado, o que
         // perderia a gravação. A conexão já está quente (assertWorkerCanApply acima)
