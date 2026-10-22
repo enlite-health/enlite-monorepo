@@ -14,7 +14,7 @@
  *  Rascunho `/admin/vacancies/:id/borrador`
  *   4. feliz: serviço com 2 dos 5 vazios → 1 item único "Completar 2 campos…" + link da ficha; os 4 itens
  *      individuais (tipo de profesional, disponible para, experiencia, plazo de pago) NÃO aparecem;
- *   5. alt: vaga manual → 8 itens, os 4 individuais presentes, sem link da ficha;
+ *   5. alt: vaga manual → 7 itens, os 4 individuais presentes, sem link da ficha;
  *   6. alt: serviço com os 5 preenchidos → o item aparece "Completar 0 campos…" já concluído (check, sem
  *      círculo vazio) e o link da ficha segue lá (`linksToPatient`).
  *
@@ -153,14 +153,14 @@ test.describe('vacancy-locked-fields — detalhe e rascunho com os 5 campos do s
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute('href', new RegExp(`/admin/patients/${patientId}.*tab=contractedService`));
     for (const rotulo of ITENS_INDIVIDUAIS) await expect(card.getByText(rotulo, { exact: true })).toHaveCount(0);
-    await expect(card.locator('li')).toHaveCount(5);
+    await expect(card.locator('li')).toHaveCount(4);
   });
 
-  test('5. rascunho alt — vaga manual: 8 itens, os 4 individuais presentes, sem link da ficha', async ({ page }) => {
+  test('5. rascunho alt — vaga manual: 7 itens, os 4 individuais presentes, sem link da ficha', async ({ page }) => {
     const { vacancyId } = semearVagaManual(false);
     const card = await abrirRascunho(page, vacancyId);
 
-    await expect(card.locator('li')).toHaveCount(8);
+    await expect(card.locator('li')).toHaveCount(7);
     for (const rotulo of ITENS_INDIVIDUAIS) await expect(card.getByText(rotulo, { exact: true })).toBeVisible();
     await expect(page.getByTestId('draft-todo-service-link')).toHaveCount(0);
     await expect(card.getByText(/Completar \d+ campos en la ficha/)).toHaveCount(0);
@@ -175,6 +175,6 @@ test.describe('vacancy-locked-fields — detalhe e rascunho com os 5 campos do s
     // Concluído: o círculo vazio (borda) dá lugar ao check verde.
     await expect(item.locator('svg')).toHaveCount(1);
     await expect(item.getByTestId('draft-todo-service-link')).toBeVisible();
-    await expect(card.locator('li')).toHaveCount(5);
+    await expect(card.locator('li')).toHaveCount(4);
   });
 });
