@@ -5,7 +5,10 @@
  * vínculos) vem da API real; o serviço contratado entra por SQL (molde do `058a-cascata-servico`) para fixar `start_date`. A asserção é o TEXTO da tela.
  * NENHUM efeito externo: não ativa recrutamento, não completa worker, não chama mirror Ana Care / mensageria — só Postgres + API de leitura/vínculo.
  *
- *  FELIZ         — 2 serviços ativos, 2 obras sociais distintas, `start_date` distintas -> os 2 nomes e a MENOR data (DD/MM/AAAA).
+ *  FELIZ         — 2 serviços ativos do mesmo paciente: A vinculado a UMA obra social (start_date MAIS TARDE), B sem vínculo (start_date MAIS CEDO)
+ *                  -> "<obra social> · 1 servicio sin obra social" e a MENOR data (a de B, DD/MM/AAAA).
+ *                  Não há cenário com 2 obras sociais vigentes ao mesmo tempo: a regra T2 (`migrations/537_contracted_service_contract.sql`,
+ *                  TWO_PAYERS_OVERLAP) proíbe, por PACIENTE, dois vínculos vivos com vigências sobrepostas e `provider_code` diferente.
  *  ALTERNATIVO A — (ABAC) ator SEM `patient_services:read` -> os dois campos dizem "Sin permiso" e nenhum nome vaza para o DOM.
  *  ALTERNATIVO B — serviço ativo sem vínculo e sem `start_date` -> "Sin obra social vinculada" e "Sin fecha de inicio en los servicios".
  */
@@ -14,7 +17,7 @@ import { loginAs } from '../helpers/abac-stack-helper';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import {
   CELLS_FICHA, CELLS_INSURANCE_ALL, seedActor, dropActors, purgeProviders, apiOk, makeProvider, makeContract, asOfAR, addDays,
-  type Actor, type ProviderMade, type ContractMade,
+  type Actor, type ProviderMade,
 } from '../helpers/insurance-058a-helper';
 
 type Seed = { patientId: string; addressId: string; stamp: string };
@@ -30,7 +33,6 @@ test.describe('064-cobertura-entrada — cobertura atual e data de entrada na fi
   let ator: Actor;
   let semServicos: Actor;
   let pa: ProviderMade;
-  let pb: ProviderMade;
   let hoje = '';
   let dataA = '';
   let dataB = '';
@@ -54,21 +56,16 @@ test.describe('064-cobertura-entrada — cobertura atual e data de entrada na fi
     // A mesma ficha, SEM a célula do container `services`: a pessoa do alternativo A.
     semServicos = seedActor('cob-sem-servicos', CELLS_FICHA.filter(([r]) => r !== 'patient_services'));
     pa = await makeProvider(request, ator, 'Cob A');
-    pb = await makeProvider(request, ator, 'Cob B');
     hoje = await asOfAR(request, ator);
-    dataA = addDays(hoje, -90); // a MENOR: é a data de entrada esperada
-    dataB = addDays(hoje, -30);
+    dataA = addDays(hoje, -30); // serviço A (vinculado): a data MAIS TARDE
+    dataB = addDays(hoje, -90); // serviço B (sem vínculo): a MENOR, a data de entrada esperada
     const desde = addDays(hoje, -200);
     const ca = await makeContract(request, ator, pa.code, 'COBA', { hourlyRate: 1500, taxRatePercent: 0, validFrom: desde });
-    const cb = await makeContract(request, ator, pb.code, 'COBB', { hourlyRate: 1000, taxRatePercent: 10.5, validFrom: desde });
 
     pFeliz = novoPaciente(661000);
-    const sA = novoServico(pFeliz, dataB); // ordem trocada de propósito: o 1º serviço NÃO tem a menor data
-    const sB = novoServico(pFeliz, dataA);
-    const vincular = (sid: string, contract: ContractMade) =>
-      apiOk(request, ator, 'POST', `/api/admin/patients/${pFeliz.patientId}/contracted-services/${sid}/contract-link`, { contractId: contract.id, validFrom: addDays(hoje, -29) }, 201);
-    await vincular(sA, ca);
-    await vincular(sB, cb);
+    const sA = novoServico(pFeliz, dataA);
+    novoServico(pFeliz, dataB); // B: ativo, sem vínculo (a regra T2 impede um 2º pagador vigente)
+    await apiOk(request, ator, 'POST', `/api/admin/patients/${pFeliz.patientId}/contracted-services/${sA}/contract-link`, { contractId: ca.id, validFrom: addDays(hoje, -29) }, 201);
 
     pSemVinculo = novoPaciente(662000);
     novoServico(pSemVinculo, null);
@@ -84,12 +81,11 @@ test.describe('064-cobertura-entrada — cobertura atual e data de entrada na fi
     dropActors();
   });
 
-  test('FELIZ: dois serviços ativos em duas obras sociais -> a ficha mostra os dois nomes e a MENOR data de início', async ({ page }) => {
+  test('FELIZ: um serviço vinculado a uma obra social e outro sem vínculo -> a ficha mostra o nome com "1 servicio sin obra social" e a MENOR data de início', async ({ page }) => {
     await loginAs(page, ator.user);
     await abrirFicha(page, pFeliz);
     const cobertura = page.getByTestId('patient-current-coverage');
-    await expect(cobertura).toContainText(pa.name);
-    await expect(cobertura).toContainText(pb.name);
+    await expect(cobertura).toHaveText(`${pa.name} · 1 servicio sin obra social`);
     const entrada = page.getByTestId('patient-entry-date');
     await expect(entrada).toHaveText(ddmmaaaa(dataA));
     await expect(entrada).not.toContainText(ddmmaaaa(dataB));
@@ -101,7 +97,6 @@ test.describe('064-cobertura-entrada — cobertura atual e data de entrada na fi
     await expect(page.getByTestId('patient-current-coverage')).toHaveText('Sin permiso');
     await expect(page.getByTestId('patient-entry-date')).toHaveText('Sin permiso');
     await expect(page.getByText(pa.name)).toHaveCount(0);
-    await expect(page.getByText(pb.name)).toHaveCount(0);
   });
 
   test('ALTERNATIVO B: serviço ativo sem vínculo e sem data de início -> frases de vazio, não "—"', async ({ page }) => {
