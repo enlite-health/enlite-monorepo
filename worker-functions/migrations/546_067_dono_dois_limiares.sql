@@ -4,8 +4,8 @@
 -- "Completo" (cadastro) e "apto" (completo + documentos validados) são dois limiares do MESMO dono:
 --   * fn_worker_missing_fields_of(workers, strict)   núcleo; recebe a LINHA (não o id) — o guard roda BEFORE UPDATE
 --                                                    e um SELECT por id dentro do trigger veria a linha ANTIGA (plan SUP-1);
---   * fn_worker_missing_fields(uuid)                 modo PADRÃO: saída byte a byte igual à da migration 212;
 --   * fn_worker_missing_fields(uuid, boolean)        modo ESTRITO (sem DEFAULT: com DEFAULT a chamada de 1 argumento fica ambígua);
+--   * fn_worker_missing_fields(uuid)                 modo PADRÃO = o de 2 argumentos com false (sem corpo próprio); saída byte a byte igual à da 212;
 --   * fn_worker_is_apto(uuid)                        REGISTERED + estrito = '[]'. Não grava nada;
 --   * fn_guard_registered_status()                   passa a decidir pelo núcleo em modo padrão (nenhuma regra própria).
 --
@@ -147,29 +147,7 @@ COMMENT ON FUNCTION public.fn_worker_missing_fields_of(public.workers, boolean) 
   'p_strict=false: cadastro completo (= fn_worker_missing_fields da 212). '
   'p_strict=true: acrescenta unvalidated_<slug> para documento obrigatório com URL e sem chave em document_validations.';
 
--- ─── 2. modo padrão (assinatura e saída da 212) ─────────────────────────────
-CREATE OR REPLACE FUNCTION public.fn_worker_missing_fields(p_worker_id UUID)
-  RETURNS JSONB
-  LANGUAGE plpgsql
-  STABLE
-AS $func$
-DECLARE
-  v_w public.workers;
-BEGIN
-  SELECT * INTO v_w FROM workers WHERE id = p_worker_id;
-  IF NOT FOUND THEN
-    RETURN '["worker_not_found"]'::JSONB;
-  END IF;
-  RETURN public.fn_worker_missing_fields_of(v_w, false);
-END;
-$func$;
-
-COMMENT ON FUNCTION public.fn_worker_missing_fields(UUID) IS
-  'Retorna array JSONB com campos/tabelas faltantes para elegibilidade de postulação (modo padrão). '
-  'SSOT de completude: corpo em fn_worker_missing_fields_of (migration 546, spec 067). '
-  'Migration 212: identity_document_back_url é OPCIONAL.';
-
--- ─── 3. modo estrito (SEM DEFAULT) ──────────────────────────────────────────
+-- ─── 2. modo estrito (SEM DEFAULT) — o único corpo que lê a linha; o modo padrão chama este ──────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fn_worker_missing_fields(p_worker_id UUID, p_strict BOOLEAN)
   RETURNS JSONB
   LANGUAGE plpgsql
@@ -188,6 +166,20 @@ $func$;
 
 COMMENT ON FUNCTION public.fn_worker_missing_fields(UUID, BOOLEAN) IS
   'Mesmo que fn_worker_missing_fields(uuid); p_strict=true acrescenta unvalidated_<slug> (spec 067). Sem DEFAULT de propósito.';
+
+-- ─── 3. modo padrão (assinatura e saída da 212) — delega ao estrito com p_strict=false ─────────────────
+CREATE OR REPLACE FUNCTION public.fn_worker_missing_fields(p_worker_id UUID)
+  RETURNS JSONB
+  LANGUAGE sql
+  STABLE
+AS $func$
+  SELECT public.fn_worker_missing_fields(p_worker_id, false);
+$func$;
+
+COMMENT ON FUNCTION public.fn_worker_missing_fields(UUID) IS
+  'Retorna array JSONB com campos/tabelas faltantes para elegibilidade de postulação (modo padrão). '
+  'SSOT de completude: corpo em fn_worker_missing_fields_of (migration 546, spec 067). '
+  'Migration 212: identity_document_back_url é OPCIONAL.';
 
 -- ─── 4. apto ────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fn_worker_is_apto(p_worker_id UUID)
