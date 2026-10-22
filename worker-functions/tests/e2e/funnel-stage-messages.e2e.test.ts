@@ -38,6 +38,7 @@ jest.mock('twilio', () => jest.fn(() => ({ messages: { create: mockTwilioCreate 
 
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
 import { RoutingMessagingService } from '@modules/notification/infrastructure/RoutingMessagingService';
 import { TwilioMessagingService } from '@modules/notification/infrastructure/TwilioMessagingService';
@@ -94,6 +95,7 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
     await waitForBackend(api);
     pool = new Pool({ connectionString: DATABASE_URL });
     await pool.query(`DELETE FROM job_postings WHERE case_number = ANY($1::int[])`, [[CASE_A, CASE_B]]);
+    await cleanWorkerProfile(pool, (await pool.query<{ id: string }>(`SELECT id FROM workers WHERE email LIKE 'fsm-%@e2e.local'`)).rows.map((r) => r.id));
     await pool.query(`DELETE FROM workers WHERE email LIKE 'fsm-%@e2e.local'`);
     await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1::text[])`, [[ADMIN_UID, RECRUITER_UID]]);
     await pool.query(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ($1, $2, 'FSM Admin', 'admin', true, true), ($3, $4, 'FSM Recruiter', 'recruiter', true, true) ON CONFLICT (firebase_uid) DO NOTHING`, [ADMIN_UID, `${ADMIN_UID}@e2e.local`, RECRUITER_UID, `${RECRUITER_UID}@e2e.local`]);
@@ -109,6 +111,8 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
 
     const w = async (tag: string) => (await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid, email, phone, status, country) VALUES ($1, $2, $3, 'REGISTERED', 'AR') RETURNING id`, [`fsm-uid-${tag}`, `fsm-${tag}@e2e.local`, `+549119999${{ a: '0001', o: '0002', b: '0003', c: '0004' }[tag] ?? '0009'}`])).rows[0].id;
     workerA = await w('a'); workerOptOut = await w('o'); workerB = await w('b'); workerC = await w('c');
+    // Spec 067 FR-24: arrastar para Completado exige prestador APTO (documentos obrigatórios validados) — semeia os 4 como aptos.
+    for (const id of [workerA, workerOptOut, workerB, workerC]) await completeWorkerProfile(pool, id, 'validated');
     await pool.query(`INSERT INTO messaging_opt_out (worker_id, phone, opted_out_at) VALUES ($1, '+5491199990002', NOW())`, [workerOptOut]);
     jobA = (await pool.query<{ id: string }>(`INSERT INTO job_postings (case_number, title, status, country) VALUES ($1, $2, 'SEARCHING', 'AR') RETURNING id`, [CASE_A, `CASO ${CASE_A} FSM`])).rows[0].id;
     // encuadres + candidatura em INVITED (o card existe no Kanban)
