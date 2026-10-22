@@ -5,6 +5,7 @@ import {
   projectPatientDetailByContainers,
   projectPatientListItemByContainers,
 } from '../application/patientContainerAccess';
+import { deriveCurrentCoverage, deriveEntryDate, type SummarizableService } from '../application/patientCoverageSummary';
 import { computePatientCompleteness, type PatientCompletenessResult } from '../domain/PatientCompleteness';
 import type { PatientListRow } from '../infrastructure/PatientQueryRows';
 
@@ -97,7 +98,15 @@ export function projectAdminPatientDetail(
         contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as ProjectableService, actor)),
       }
     : clinicalProjected;
-  return projectPatientDetailByContainers(withServices, cells);
+  // Spec 064: derivados SOBRE o array já projetado para o ator (nunca o cru) — quem não lê o
+  // container `coverage` não ganha o nome da obra social por esta porta. Os dois campos pertencem
+  // ao container `services` (DETAIL_FIELDS) e viram null sem a célula.
+  const services = (withServices as { contractedServices?: unknown }).contractedServices;
+  const summarizable = Array.isArray(services) ? (services as SummarizableService[]) : null;
+  return projectPatientDetailByContainers(
+    { ...withServices, currentCoverage: deriveCurrentCoverage(summarizable), entryDate: deriveEntryDate(summarizable) },
+    cells,
+  );
 }
 
 /**
