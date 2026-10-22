@@ -350,3 +350,35 @@ describe('computeFreeSlots — entradas degeneradas não derrubam a tela públic
     expect(slots.length).toBeGreaterThan(0); // fonte sem intervalos = totalmente livre
   });
 });
+
+describe('computeFreeSlots — stepMinutes', () => {
+  const MONDAY_EARLY = ar('2026-08-03T06:00');
+
+  it('stepMinutes 30 + slot 30 + busy 10:00-10:30: 10:30 está livre e 10:00 não', () => {
+    const slots = computeFreeSlots({
+      busyIntervalsByHost: { [SOLE]: [busy('2026-08-03T10:00', '2026-08-03T10:30')] },
+      now: MONDAY_EARLY,
+      slotMinutes: 30,
+      stepMinutes: 30,
+      minLeadMinutes: 0,
+      horizonBusinessDays: 1,
+    });
+    const starts = startsOf(slots);
+    expect(starts).toContain('2026-08-03T10:30');
+    expect(starts).not.toContain('2026-08-03T10:00');
+    expect(starts).toContain('2026-08-03T09:30');
+    expect(starts[starts.length - 1]).toBe('2026-08-03T17:30'); // 17:30→18:00 cabe no expediente
+  });
+
+  it('sem stepMinutes a grade segue de hora em hora (a admissão pública não muda)', () => {
+    const slots = computeFreeSlots({
+      busyIntervalsByHost: { [SOLE]: [] },
+      now: MONDAY_EARLY,
+      slotMinutes: 30,
+      minLeadMinutes: 0,
+      horizonBusinessDays: 1,
+    });
+    expect(startsOf(slots).every((s) => s.endsWith(':00'))).toBe(true);
+    expect(startsOf(slots)).toHaveLength(9);
+  });
+});
