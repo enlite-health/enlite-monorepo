@@ -62,14 +62,6 @@ export function bucketize(candidates: SavedCandidate[]): DistanceBucket[] {
   return [...distanceBuckets, noLocationBucket];
 }
 
-export function hasAnyMeetLink(vacancy: VacancyForMatch | undefined): boolean {
-  return Boolean(
-    vacancy?.meet_link_1?.trim() ||
-      vacancy?.meet_link_2?.trim() ||
-      vacancy?.meet_link_3?.trim(),
-  );
-}
-
 /** Endereço de display da vaga.
  *
  *  Resolve sempre o endereço *específico* da vaga (via patient_address_id →
