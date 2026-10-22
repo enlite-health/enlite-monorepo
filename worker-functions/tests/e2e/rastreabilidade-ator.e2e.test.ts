@@ -14,6 +14,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -47,6 +48,8 @@ describe('Movimento de funil registra QUEM moveu', () => {
       [`uid-${tag}-${suffix}`, `worker-${tag}-${suffix}@ator.test`],
     );
     const workerId = w.rows[0].id as string;
+    // spec 067 FR-24: mover para QUALIFIED/IN_DOUBT exige APTO; a intenção do teste é rastrear QUEM moveu um prestador movível
+    await completeWorkerProfile(pool, workerId, 'validated');
     await pool.query(
       `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
        VALUES ($1, $2, 'INVITED')`,
@@ -102,6 +105,7 @@ describe('Movimento de funil registra QUEM moveu', () => {
     await pool.query(`DELETE FROM encuadres WHERE job_posting_id = $1`, [vacancyId]);
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [vacancyId]);
     await pool.query(`DELETE FROM job_postings WHERE id = $1`, [vacancyId]);
+    await cleanWorkerProfile(pool, [workerA, workerB]);
     await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [[workerA, workerB]]);
     await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
     await pool.end();
