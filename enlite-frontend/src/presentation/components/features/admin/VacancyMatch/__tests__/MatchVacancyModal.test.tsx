@@ -51,20 +51,16 @@ vi.mock('@hooks/admin/useVacancyMatch', () => ({
   }),
 }));
 
-// Vaga SEM nenhum link de Meet: o convite não depende dele (o backend só
+// A vaga não tem link de reunião (spec 068): o convite não depende dele (o backend só
 // recebe workerId + jobPostingId), então o modal não pode travar por isso.
-const vacancyWithoutMeetLinks: VacancyForMatch = {
-  meet_link_1: null,
-  meet_link_2: '',
-  meet_link_3: undefined,
-};
+const vacancyForMatch: VacancyForMatch = {};
 
 function renderModal() {
   return render(
     <MemoryRouter>
       <MatchVacancyModal
         vacancyId="v1"
-        vacancy={vacancyWithoutMeetLinks}
+        vacancy={vacancyForMatch}
         onClose={vi.fn()}
       />
     </MemoryRouter>,
@@ -73,12 +69,6 @@ function renderModal() {
 
 describe('MatchVacancyModal — convite sem link de Meet na vaga', () => {
   beforeEach(() => enqueue.mockClear());
-
-  it('não mostra o aviso de "sem enlaces de reunión"', () => {
-    renderModal();
-    expect(screen.queryByText('admin.match.missingMeetLinks.title')).toBeNull();
-    expect(screen.queryByText('admin.match.missingMeetLinks.goToLinks')).toBeNull();
-  });
 
   it('habilita "Invitar seleccionados" com candidato marcado e enfileira o convite', () => {
     renderModal();

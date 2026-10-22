@@ -146,7 +146,6 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'POST /api/admin/workers/:workerId/presentation-invite', surface: 'api', tier: 'regression' },
   // Slot recorrente da vaga (mig 291). Rota própria porque `PUT /vacancies/:id` NÃO aceita
   // campos `meet_*` — não estão na whitelist (medido 30/08).
-  { route: 'PUT /api/admin/vacancies/:id/meet-links', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/workers/map', surface: 'api', tier: 'regression' },
   { route: 'PUT /api/admin/patients/:id/status', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/patients/:id/activate', surface: 'api', tier: 'regression' },

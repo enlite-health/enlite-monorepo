@@ -24,8 +24,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     generateAIContent: vi.fn(),
     createVacancy: vi.fn(),
     updateVacancy: vi.fn(),
-    updateVacancyMeetLinks: vi.fn(),
-    lookupMeetDatetime: vi.fn(),
   },
 }));
 
@@ -67,9 +65,6 @@ const EXISTING_VACANCY = {
   daily_obs: '',
   published_at: null,
   closes_at: null,
-  meet_link_1: 'https://meet.google.com/abc-defg-hij',
-  meet_link_2: null,
-  meet_link_3: null,
 };
 
 const PATIENT_DETAIL = {

@@ -21,10 +21,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
-const { getVacancyById, updateVacancy, updateVacancyMeetLinks } = vi.hoisted(() => ({
+const { getVacancyById, updateVacancy } = vi.hoisted(() => ({
   getVacancyById: vi.fn(),
   updateVacancy: vi.fn().mockResolvedValue({}),
-  updateVacancyMeetLinks: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('@infrastructure/http/AdminApiService', () => ({
@@ -36,7 +35,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     getNextVacancyNumber: vi.fn().mockResolvedValue(321),
     createVacancy: vi.fn().mockResolvedValue({ id: 'x' }),
     updateVacancy,
-    updateVacancyMeetLinks,
   },
 }));
 
@@ -78,8 +76,8 @@ describe('VacancyFormSection — modo edit, vaga esparsa (só `id`, resto ausent
     expect(screen.getByTestId('profession-checkbox-AT')).not.toBeChecked();
     // providers_needed ?? 1 → fallback numérico.
     expect(screen.getByTestId('providers-needed-input')).toHaveValue(1);
-    // meet_link_1 ?? '' → vazio.
-    expect(screen.getByTestId('meet-link-0')).toHaveValue('');
+    // a vaga não tem campo de link de reunião (spec 068).
+    expect(screen.queryByTestId('meet-link-0')).toBeNull();
   });
 });
 
@@ -176,7 +174,7 @@ function FullFormHarness({
   selectedPatientId,
   selectedAddressId,
   onValidationFailedFieldsChange,
-  meetLinkSlot = 0,
+  onSuccess,
 }: {
   mode: 'create' | 'edit';
   existingVacancy: any | null;
@@ -184,7 +182,7 @@ function FullFormHarness({
   selectedPatientId: string | null;
   selectedAddressId: string | null;
   onValidationFailedFieldsChange?: (fields: string[]) => void;
-  meetLinkSlot?: 0 | 1 | 2;
+  onSuccess?: (id: string) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   // `selectedAddressId` só entra DEPOIS do 1º commit — espelha o fluxo real
@@ -217,31 +215,25 @@ function FullFormHarness({
         patientSelected
         formRef={formRef}
         onSubmittingChange={() => {}}
-        onSuccess={() => {}}
+        onSuccess={onSuccess ?? (() => {})}
         selectCase={() => {}}
         selectAddress={() => {}}
         onValidationFailedFieldsChange={onValidationFailedFieldsChange}
       />
-      <input data-testid="meet-slot-marker" readOnly value={String(meetLinkSlot)} />
     </>
   );
 }
 
-async function fillMinimumAndSubmit(meetLinkSlot: 0 | 1 | 2 = 0) {
+async function fillMinimumAndSubmit() {
   await userEvent.click(await screen.findByTestId('profession-checkbox-AT'));
   const addSlotBtn = (await screen.findAllByLabelText('admin.vacancyModal.scheduleSlotsLabel'))[0];
   await userEvent.click(addSlotBtn);
-  await userEvent.type(
-    await screen.findByTestId(`meet-link-${meetLinkSlot}`),
-    'https://meet.google.com/abc-defg-hij',
-  );
   await userEvent.click(screen.getByTestId('harness-save'));
 }
 
 describe('VacancyFormSection — submit edit direto com selectedPatientId/AddressId/CaseNumber null (fallback pra existingVacancy)', () => {
   beforeEach(() => {
     updateVacancy.mockClear();
-    updateVacancyMeetLinks.mockClear();
   });
 
   it('updateVacancy recebe patient_id/patient_address_id/case_number da existingVacancy (nunca de selectedX, que vieram null)', async () => {
@@ -261,14 +253,12 @@ describe('VacancyFormSection — submit edit direto com selectedPatientId/Addres
           selectedPatientId={null}
           selectedAddressId={null}
           onValidationFailedFieldsChange={onValidationFailedFieldsChange}
-          meetLinkSlot={1}
         />
       </MemoryRouter>,
     );
 
-    // Slot 1 (índice 1) preenchido, slot 0 fica vazio — cobre o `|| null` do
-    // slot 0 em `meetLinksPayload` (a validação Zod só exige QUALQUER slot válido).
-    await fillMinimumAndSubmit(1);
+    // Sem nenhum link de reunião: a vaga não tem esse campo (spec 068).
+    await fillMinimumAndSubmit();
 
     await waitFor(() => expect(updateVacancy).toHaveBeenCalled());
     expect(updateVacancy).toHaveBeenCalledWith(
@@ -282,11 +272,6 @@ describe('VacancyFormSection — submit edit direto com selectedPatientId/Addres
     // Submit válido → onSubmit (não onValidationError) roda; a única leitura de
     // `onValidationFailedFieldsChange` DENTRO de onSubmit é o reset pra `[]`.
     expect(onValidationFailedFieldsChange).toHaveBeenCalledWith([]);
-
-    const meetLinksCalls = updateVacancyMeetLinks.mock.calls;
-    const meetLinksArg = meetLinksCalls[meetLinksCalls.length - 1]?.[1];
-    expect(meetLinksArg[0]).toBeNull(); // slot 0 vazio → `.trim() || null`
-    expect(meetLinksArg[1]).toBe('https://meet.google.com/abc-defg-hij');
   });
 
   it('case_number cai no `null` final quando NEM selectedCaseNumber NEM existingVacancy.case_number existem', async () => {
@@ -309,7 +294,7 @@ describe('VacancyFormSection — submit edit direto com selectedPatientId/Addres
       </MemoryRouter>,
     );
 
-    await fillMinimumAndSubmit(0);
+    await fillMinimumAndSubmit();
 
     await waitFor(() => expect(updateVacancy).toHaveBeenCalled());
     expect(updateVacancy).toHaveBeenCalledWith(
@@ -320,13 +305,10 @@ describe('VacancyFormSection — submit edit direto com selectedPatientId/Addres
 });
 
 describe('VacancyFormSection — submit create direto: createVacancy resolve string crua (sem `.id`)', () => {
-  beforeEach(() => {
-    updateVacancyMeetLinks.mockClear();
-  });
-
   it('vacancyId cai no fallback `(result as unknown as string)` quando result não tem `.id`', async () => {
     const { AdminApiService } = await import('@infrastructure/http/AdminApiService');
     (AdminApiService.createVacancy as any).mockResolvedValueOnce('created-raw-id');
+    const onSuccess = vi.fn();
 
     render(
       <MemoryRouter>
@@ -336,20 +318,17 @@ describe('VacancyFormSection — submit create direto: createVacancy resolve str
           selectedCaseNumber={999}
           selectedPatientId="p-create"
           selectedAddressId="addr-create"
+          onSuccess={onSuccess}
         />
       </MemoryRouter>,
     );
 
-    await fillMinimumAndSubmit(0);
+    await fillMinimumAndSubmit();
 
-    await waitFor(() => expect(updateVacancyMeetLinks).toHaveBeenCalled());
     // Se o fallback não tivesse rodado, `vacancyId` seria `undefined` (de
-    // `(result as any)?.id` numa string) — a chamada provaria isso passando
+    // `(result as any)?.id` numa string) — o onSuccess provaria isso recebendo
     // `undefined` em vez do id cru.
-    expect(updateVacancyMeetLinks).toHaveBeenCalledWith(
-      'created-raw-id',
-      expect.any(Array),
-    );
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('created-raw-id'));
   });
 });
 
@@ -371,7 +350,7 @@ describe('VacancyFormSection — modo create, caso JÁ selecionado no primeiro m
       </MemoryRouter>,
     );
 
-    await fillMinimumAndSubmit(0);
+    await fillMinimumAndSubmit();
 
     await waitFor(() => expect(AdminApiService.createVacancy).toHaveBeenCalled());
     const createCalls = (AdminApiService.createVacancy as any).mock.calls;
