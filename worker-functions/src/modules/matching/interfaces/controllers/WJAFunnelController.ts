@@ -8,12 +8,13 @@ import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
 import {
+  assertWorkerApto,
   assertWorkerCanApply,
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository, wjaSupersededByBlockedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
-import { deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
+import { COMPLETED_COLUMN_STAGES, deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
 import {
   interviewScheduleSchema,
   INTERVIEW_DATE_RESOLVED_SQL,
@@ -526,7 +527,10 @@ export class WJAFunnelController {
       }
 
       try {
-        await assertWorkerCanApply(this.db, workerId);
+        // Spec 067 FR-24: arrastar PARA Completado exige APTO (documentos obrigatórios validados); os demais destinos
+        // seguem no limiar de hoje (`assertWorkerCanApply`).
+        if (COMPLETED_COLUMN_STAGES.includes(targetStage)) await assertWorkerApto(this.db, workerId);
+        else await assertWorkerCanApply(this.db, workerId);
       } catch (err) {
         if (err instanceof WorkerNotEligibleError) {
           res.status(err.status).json({
