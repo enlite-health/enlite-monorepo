@@ -498,7 +498,15 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       const { rows } = await admin.query(
         `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'job_postings' ORDER BY ordinal_position`,
       );
-      expect(JOB_POSTING_COLUMNS).toEqual(rows.map((r) => r.column_name));
+      // removidas no PR B da spec 068: as 9 colunas de meet da vaga ainda existem no banco até o DROP,
+      // mas nenhum código as lê. O PR B apaga esta exclusão junto com a migration.
+      const REMOVIDAS_NO_PR_B_DA_SPEC_068 = new Set([
+        'meet_link_1', 'meet_datetime_1', 'meet_link_2', 'meet_datetime_2', 'meet_link_3', 'meet_datetime_3',
+        'meet_recurring_weekday', 'meet_recurring_time', 'meet_recurring_link',
+      ]);
+      expect(JOB_POSTING_COLUMNS).toEqual(
+        rows.map((r) => r.column_name).filter((c) => !REMOVIDAS_NO_PR_B_DA_SPEC_068.has(c)),
+      );
     });
   });
 

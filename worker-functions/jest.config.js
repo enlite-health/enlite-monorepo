@@ -453,7 +453,7 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    'src/modules/matching/interfaces/controllers/{FunnelStageMessagesController,PublicJobsController,PublicVacancyController,VacancyMeetLinksController}.ts': {
+    'src/modules/matching/interfaces/controllers/{FunnelStageMessagesController,PublicJobsController,PublicVacancyController}.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
