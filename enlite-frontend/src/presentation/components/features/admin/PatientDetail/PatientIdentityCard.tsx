@@ -13,6 +13,8 @@ import { maskDocumentNumber } from '@presentation/utils/maskDocumentNumber';
 import { PatientPhotoSlot } from './PatientPhotoSlot';
 import { ENV } from '@infrastructure/config/env';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { formatDateFromISO } from '@presentation/hooks/useMask';
+import { currentCoverageText } from './currentCoverageText';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -224,6 +226,32 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
             <FieldPair label={t('admin.patients.detail.identityCard.patientEmail')} value={patient.contactEmail} testId="patient-contact-email" />
           </div>
           <FieldPair label={t('admin.patients.detail.identityCard.admission')} value={formatDate(patient.createdAt)} />
+          {/* Spec 064: derivados no servidor. `undefined` = backend anterior ("não li"); `null` em
+              currentCoverage = sem permissão (redacted.services). Data via formatDateFromISO (sem fuso). */}
+          <FieldPair
+            label={t('admin.patients.detail.identityCard.currentCoverage')}
+            value={
+              patient.currentCoverage === undefined
+                ? t('admin.patients.detail.identityCard.unavailable')
+                : patient.currentCoverage === null
+                  ? t('admin.patients.detail.identityCard.noPermission')
+                  : currentCoverageText(t, patient.currentCoverage)
+            }
+            testId="patient-current-coverage"
+          />
+          <FieldPair
+            label={t('admin.patients.detail.identityCard.entryDate')}
+            value={
+              patient.entryDate === undefined
+                ? t('admin.patients.detail.identityCard.unavailable')
+                : patient.currentCoverage === null && patient.entryDate === null
+                  ? t('admin.patients.detail.identityCard.noPermission')
+                  : patient.entryDate === null
+                    ? t('admin.patients.detail.identityCard.entryDateEmpty')
+                    : formatDateFromISO(patient.entryDate)
+            }
+            testId="patient-entry-date"
+          />
           <FieldPair label={t('admin.patients.detail.identityCard.lastUpdate')} value={formatDate(patient.updatedAt)} />
           {/*
            * Spec 014 US-D2 removeu "Desligamiento" porque não havia coluna (era `value={null}`
