@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface StepperStep {
   label: string;
@@ -16,8 +17,9 @@ export interface StepperProps {
  * creation → Talentum config → detail). Visual only — does not handle navigation.
  */
 export function Stepper({ steps, currentStep, className = '' }: StepperProps): JSX.Element {
+  const { t } = useTranslation();
   return (
-    <ol className={`flex items-center w-full ${className}`} aria-label="Progress">
+    <ol className={`flex items-center w-full ${className}`} aria-label={t('common.progress')}>
       {steps.map((step, idx) => {
         const stepNumber = idx + 1;
         const isCompleted = stepNumber < currentStep;

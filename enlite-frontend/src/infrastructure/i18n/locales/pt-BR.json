@@ -77,6 +77,8 @@
     }
   },
   "common": {
+    "optional": "(opcional)",
+    "progress": "Progresso",
     "home": "Início",
     "communication": "Comunicação",
     "notifications": "Notificações",
@@ -655,6 +657,8 @@
   },
   "documents": {
     "title": "Documentos",
+    "removeAria": "Remover documento",
+    "viewAria": "Visualizar documento",
     "resumeCv": "Currículo",
     "identity": "RG/CPF - Frente",
     "identityBack": "RG/CPF - Verso",

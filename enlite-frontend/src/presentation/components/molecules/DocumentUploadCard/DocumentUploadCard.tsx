@@ -99,14 +99,14 @@ export function DocumentUploadCard({
           {/* D269 — sem worker_document:delete, o ícone de remover SOME. */}
           {canDelete && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              aria-label="Remover documento" className="text-gray-800 hover:text-red-500 transition-colors">
+              aria-label={t('documents.removeAria')} className="text-gray-800 hover:text-red-500 transition-colors">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
                 <path d="M7 8.4L1.4 14 0 12.6 5.6 7 0 1.4 1.4 0 7 5.6 12.6 0 14 1.4 8.4 7 14 12.6 12.6 14 7 8.4Z" />
               </svg>
             </button>
           )}
           <button type="button" onClick={(e) => { e.stopPropagation(); onView(); }}
-            aria-label="Visualizar documento" className="text-gray-800 hover:text-primary transition-colors">
+            aria-label={t('documents.viewAria')} className="text-gray-800 hover:text-primary transition-colors">
             <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
               <path d="M1 6C1 6 3.5 1 8 1C12.5 1 15 6 15 6C15 6 12.5 11 8 11C3.5 11 1 6 1 6Z" />
               <circle cx="8" cy="6" r="2" />

@@ -343,7 +343,7 @@ describe('WorkerDocumentsCard — pt-BR labels', () => {
 
   it('renders view buttons for uploaded documents', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...docHandlers} />);
-    const viewButtons = screen.getAllByLabelText('Visualizar documento');
+    const viewButtons = screen.getAllByLabelText(ptBR.documents.viewAria);
     expect(viewButtons.length).toBe(2); // cv + id (criminal is null in fullDoc)
   });
 
