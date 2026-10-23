@@ -24,6 +24,7 @@
 
 import { test, expect, type Page, type Route } from '@playwright/test';
 import http from 'http';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // ── Auth (mesmo padrão dos demais @integration) ───────────────────────────────
 
@@ -255,8 +256,8 @@ test.describe('Chat IDs do paciente — vinculação semiautomática @integratio
     await page.screenshot({ path: 'e2e/artifacts/chat-ids-02-candidatos.png' });
 
     // 5. O humano escolhe os papéis.
-    await page.getByTestId('chat-ids-family-select').selectOption(GROUP_FAMILY);
-    await page.getByTestId('chat-ids-providers-select').selectOption(GROUP_PROVIDERS);
+    await escolherNoCombo(page, page.getByTestId('chat-ids-family-select'), `Flia ${PATIENT_FIRST} ${PATIENT_LAST}`); // GROUP_FAMILY
+    await escolherNoCombo(page, page.getByTestId('chat-ids-providers-select'), `Prestadores ${PATIENT_FIRST} ${PATIENT_LAST}`); // GROUP_PROVIDERS
     await page.waitForTimeout(400);
     await page.screenshot({ path: 'e2e/artifacts/chat-ids-03-escolhido.png' });
 

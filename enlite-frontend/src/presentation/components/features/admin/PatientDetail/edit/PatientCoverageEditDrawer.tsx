@@ -7,10 +7,9 @@ import type { PatientDetail, PatientCoverageSectionPayload, InsuranceProvider } 
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Combobox } from '@presentation/components/atoms/Combobox';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import type { SelectOption } from '@presentation/components/molecules/SelectField';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { CoverageEmergencyContactsEditor } from './CoverageEmergencyContactsEditor';
@@ -112,7 +111,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   const labelOf = (code: string): string =>
     catalog.find((p) => p.code === code)?.name ?? mappedEntries.find((e) => e.code === code)?.name ?? code;
   // Opções = catálogo vivo (fonte do dropdown) + o que já está marcado e ainda não veio na lista (leitura lenta/falha).
-  const options: SelectOption[] = [
+  const options: ComboboxOption[] = [
     ...catalog.map((p) => ({ value: p.code, label: p.name })),
     ...selected.filter((c) => !catalog.some((p) => p.code === c)).map((c) => ({ value: c, label: labelOf(c) })),
   ];

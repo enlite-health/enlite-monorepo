@@ -19,6 +19,7 @@ import { insertTestPatient, cleanupTestPatient, insertBaseVacancy, cleanupVacanc
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
 const STAFF: MockUser = { uid: `e2e-vaga-campos-servico-${Date.now()}`, email: `e2e.vaga-campos-servico.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
@@ -99,7 +100,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
     await expect(page.getByTestId(`contracted-service-row-${serviceId}`)).toBeVisible({ timeout: 20_000 });
     await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId('svc-requiredSex-1').selectOption('F');
+    await escolherNoCombo(page, page.getByTestId('svc-requiredSex-1'), 'Femenino'); // F
     const guardou = page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${serviceId}$`).test(r.url()));
     await page.getByTestId(`contracted-service-save-${serviceId}`).click();
     expect((await guardou).status()).toBe(200);

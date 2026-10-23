@@ -21,6 +21,7 @@ import path from 'node:path';
 import { seedStaffInGroup, grantCell, cleanupStaffAndGroup, loginAs, type MockUser } from '../helpers/abac-stack-helper';
 import { runSQL, cleanupPatientDeep } from '../helpers/patient-detail-a-helper';
 import { insertTestPatient } from '../helpers/db-test-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // `specs/` vive na raiz do ebrain, FORA desta worktree (repos/_worktrees/018-cabecalho-ficha/…) —
 // caminho absoluto para não depender de quantos níveis a worktree está aninhada.
@@ -131,7 +132,7 @@ test.describe('spec 018 PR-3 — cabeçalho da ficha (gênero/idiomas/emergênci
     await page.getByTestId('edit-general-btn').click();
     const drawer = page.getByTestId('patient-general-edit-drawer');
     await expect(drawer).toBeVisible();
-    await page.getByTestId('pge-gender').selectOption('NON_BINARY');
+    await escolherNoCombo(page, page.getByTestId('pge-gender'), 'No binario'); // NON_BINARY
     const languagesBtn = page.locator('#pge-languages');
     await languagesBtn.click();
     await page.getByRole('option', { name: 'Portugués' }).locator('button').click();

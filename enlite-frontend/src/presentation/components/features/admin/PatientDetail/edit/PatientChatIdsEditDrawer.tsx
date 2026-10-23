@@ -13,9 +13,9 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   patient: PatientDetail;
@@ -153,7 +153,7 @@ export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }:
    * já escolhidos em OUTRO papel somem daqui: o mesmo grupo não pode ocupar dois
    * papéis do mesmo paciente (400 no backend, UNIQUE no banco).
    */
-  const optionsFor = (role: string): SelectOption[] => {
+  const optionsFor = (role: string): ComboboxOption[] => {
     const takenHere = new Set(
       roles.filter(r => r !== role).map(r => valueFor(r)).filter(Boolean),
     );
@@ -163,13 +163,13 @@ export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }:
       ? [...candidates].sort((a, b) => order.indexOf(a.chatId) - order.indexOf(b.chatId))
       : candidates;
 
-    const fromCandidates: SelectOption[] = ranked.map(c => ({
+    const fromCandidates: ComboboxOption[] = ranked.map(c => ({
       value: c.chatId,
       label: `${c.chatName ?? c.chatId}${c.linkedToOtherPatient ? ` — ${tc('alreadyLinked')}` : ''}`,
     }));
 
     const seen = new Set(fromCandidates.map(o => o.value));
-    const linked: SelectOption[] = [];
+    const linked: ComboboxOption[] = [];
     // `seen` cresce no laço: os valores podem coincidir entre si, e uma option
     // repetida quebra a key do React (chave duplicada no <select>).
     for (const v of [valueFor(role), ...roles.map(r => patient.chatIds?.[r])]) {
@@ -306,10 +306,10 @@ export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }:
                     testIdPrefix={`chat-ids-${role}`}
                   />
                 ) : (
-                  <SelectField
+                  <Combobox
                     inputSize="compact"
                     options={optionsFor(role)}
-                    placeholder={tc('choose')}
+                    placeholder={tc('choose')} clearLabel={tc('choose')}
                     value={valueFor(role)}
                     onChange={value => setEdited(prev => ({ ...prev, [role]: value }))}
                     data-testid={`chat-ids-${role}-select`}

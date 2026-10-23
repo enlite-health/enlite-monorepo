@@ -87,6 +87,7 @@ describe('PatientGeneralEditDrawer — e-mail do paciente (A4)', () => {
 // ── Cobertura 100 % do arquivo (D200): cada campo, cada ramo de comparação, fechar, erro ──
 
 import { patientDetailMinimal } from '../../__tests__/patientDetailFixture';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 describe('PatientGeneralEditDrawer — todos os campos e ramos', () => {
   beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: patient.id }); });
@@ -96,8 +97,8 @@ describe('PatientGeneralEditDrawer — todos os campos e ramos', () => {
     for (const id of ['pge-firstName', 'pge-lastName', 'pge-phone', 'pge-email', 'pge-documentNumber', 'pge-birthDate']) {
       expect(screen.getByTestId(id)).toHaveValue('');
     }
-    expect(screen.getByTestId('pge-documentType')).toHaveValue('');
-    expect(screen.getByTestId('pge-sex')).toHaveValue('');
+    expect(screen.getByTestId('pge-documentType')).toHaveTextContent('Selecione…'); // (vazio)
+    expect(screen.getByTestId('pge-sex')).toHaveTextContent('Selecione…'); // (vazio)
   });
 
   it('sem mudança nenhuma: não chama a API e fecha', async () => {
@@ -112,9 +113,9 @@ describe('PatientGeneralEditDrawer — todos os campos e ramos', () => {
     render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.change(screen.getByTestId('pge-firstName'), { target: { value: 'Santi' } });
     fireEvent.change(screen.getByTestId('pge-lastName'), { target: { value: '' } });
-    fireEvent.change(screen.getByTestId('pge-documentType'), { target: { value: 'DNI' } });
+    chooseCombo(screen.getByTestId('pge-documentType'), 'DNI'); // DNI = DNI
     fireEvent.change(screen.getByTestId('pge-documentNumber'), { target: { value: '' } });
-    fireEvent.change(screen.getByTestId('pge-sex'), { target: { value: 'FEMALE' } });
+    chooseCombo(screen.getByTestId('pge-sex'), 'Feminino'); // FEMALE = Feminino
     fireEvent.change(screen.getByTestId('pge-birthDate'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('pge-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
@@ -269,12 +270,12 @@ describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => 
 
   it('carrega gender/languages atuais do detalhe (fixture: MALE, pt+es)', () => {
     render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('pge-gender')).toHaveValue('MALE');
+    expect(screen.getByTestId('pge-gender')).toHaveTextContent('Masculino'); // MALE
   });
 
   it('trocar o gênero envia SÓ gender (não perturba languages inalterado)', async () => {
     render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('pge-gender'), { target: { value: 'NON_BINARY' } });
+    chooseCombo(screen.getByTestId('pge-gender'), 'Não binário'); // NON_BINARY = Não binário
     fireEvent.click(screen.getByTestId('pge-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { gender: 'NON_BINARY' });
@@ -282,7 +283,7 @@ describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => 
 
   it('limpar o gênero (voltar para "") envia null — "não perguntado", sem obrigatoriedade nenhuma', async () => {
     render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('pge-gender'), { target: { value: '' } });
+    chooseCombo(screen.getByTestId('pge-gender'), 'Selecione…'); // (vazio) = Selecione…
     fireEvent.click(screen.getByTestId('pge-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { gender: null });
@@ -293,7 +294,7 @@ describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => 
     // `patientDetailMinimal` tem `firstName: null` → zod .min(1) barraria o submit por um motivo
     // TOTALMENTE alheio a gender/languages; usamos `patient` (nome válido) só sem os dois campos.
     render(<PatientGeneralEditDrawer patient={{ ...patient, gender: null, languages: null }} onClose={onClose} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('pge-gender')).toHaveValue('');
+    expect(screen.getByTestId('pge-gender')).toHaveTextContent('Selecione…'); // (vazio)
     fireEvent.click(screen.getByTestId('pge-save'));
     await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 2000 });
     expect(updatePatientSection).not.toHaveBeenCalled();

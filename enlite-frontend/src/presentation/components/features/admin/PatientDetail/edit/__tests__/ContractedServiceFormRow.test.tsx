@@ -12,6 +12,7 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import { ContractedServiceFormRow, deactivateService } from '../ContractedServiceFormRow';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { LINKED_058 } from '@domain/entities/__tests__/fixtures/contractedService058';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
@@ -68,6 +69,7 @@ const ADDRESSES = [
   { ...ADDRESS_BASE, id: 'addr-school', addressFormatted: null, addressRaw: 'Av. Cruzeiro do Sul, 1212', isPrimary: false, displayOrder: 2 },
 ];
 
+const PLACEHOLDER = 'Seleccioná…'; // admin.patients.editDrawer.selectPlaceholder (es)
 const confirmSpy = vi.spyOn(window, 'confirm');
 
 describe('ContractedServiceFormRow', () => {
@@ -96,7 +98,7 @@ describe('ContractedServiceFormRow', () => {
     mockCreate.mockResolvedValue(SERVICE);
     const onSaved = vi.fn();
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={onSaved} />);
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'CAREGIVER' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Cuidador'); // CAREGIVER = Cuidador
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await waitFor(() => expect(mockCreate).toHaveBeenCalled());
     expect(mockCreate.mock.calls[0][0]).toBe('pat1');
@@ -108,8 +110,8 @@ describe('ContractedServiceFormRow', () => {
   it('modo NOVO: escolher providerAgeBand e salvar envia o valor escolhido', async () => {
     mockCreate.mockResolvedValue(SERVICE);
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
-    fireEvent.change(screen.getByTestId('svc-providerAgeBand-1'), { target: { value: 'AGE_30_45' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
+    chooseCombo(screen.getByTestId('svc-providerAgeBand-1'), '30 a 45 Años'); // AGE_30_45 = 30 a 45 Años
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await waitFor(() => expect(mockCreate).toHaveBeenCalled());
     expect(mockCreate.mock.calls[0][1]).toMatchObject({ providerAgeBand: 'AGE_30_45' });
@@ -118,7 +120,7 @@ describe('ContractedServiceFormRow', () => {
   it('modo NOVO: sem escolher providerAgeBand, envia null (nunca string vazia)', async () => {
     mockCreate.mockResolvedValue(SERVICE);
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await waitFor(() => expect(mockCreate).toHaveBeenCalled());
     expect(mockCreate.mock.calls[0][1]).toMatchObject({ providerAgeBand: null });
@@ -127,18 +129,18 @@ describe('ContractedServiceFormRow', () => {
   it('modo NOVO: erro ao criar mostra mensagem', async () => {
     mockCreate.mockRejectedValue(new Error('boom'));
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await waitFor(() => expect(screen.getByTestId('contracted-service-new-error')).toBeTruthy());
   });
 
   it('modo EXISTENTE: pré-carrega os campos do serviço, código desabilitado (imutável)', () => {
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
-    expect((screen.getByTestId('svc-code-1') as HTMLSelectElement).value).toBe('AT');
+    expect(screen.getByTestId('svc-code-1')).toHaveTextContent('Acompañante Terapéutico'); // AT
     expect(screen.getByTestId('svc-code-1')).toBeDisabled();
     expect((screen.getByTestId('svc-providersNeeded-1') as HTMLInputElement).value).toBe('2');
     expect((screen.getByTestId('svc-profile-1') as HTMLTextAreaElement).value).toBe('perfil sintético');
-    expect((screen.getByTestId('svc-providerAgeBand-1') as HTMLSelectElement).value).toBe('AGE_30_45');
+    expect(screen.getByTestId('svc-providerAgeBand-1')).toHaveTextContent('30 a 45 Años'); // AGE_30_45
     expect(screen.getByTestId('providers-section-s1')).toBeTruthy();
   });
 
@@ -155,7 +157,7 @@ describe('ContractedServiceFormRow', () => {
   it('modo EXISTENTE: editar providerAgeBand e salvar chama updateContractedService com o novo valor', async () => {
     mockUpdate.mockResolvedValue(SERVICE);
     render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('svc-providerAgeBand-1'), { target: { value: 'AGE_45_PLUS' } });
+    chooseCombo(screen.getByTestId('svc-providerAgeBand-1'), '+ 45 Años'); // AGE_45_PLUS = + 45 Años
     fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ providerAgeBand: 'AGE_45_PLUS' })));
   });
@@ -305,8 +307,8 @@ describe('ContractedServiceFormRow', () => {
   describe('endereço e horário (migration 330)', () => {
     it('o select "Domicilio" lista SÓ os endereços da ficha, com o rótulo do geocoder ou o texto cru', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-      const select = screen.getByTestId('svc-addressId-1') as HTMLSelectElement;
-      const labels = Array.from(select.options).map((o) => o.textContent);
+      const select = screen.getByTestId('svc-addressId-1') as HTMLButtonElement;
+      const labels = comboLabels(select);
       expect(labels).toContain('Rua Augusta, 975 - Centro');
       expect(labels).toContain('Av. Cruzeiro do Sul, 1212');
       expect(select.disabled).toBe(false);
@@ -314,7 +316,7 @@ describe('ContractedServiceFormRow', () => {
 
     it('sem endereço na ficha: o select fica desabilitado E um aviso âmbar diz que o paciente NÃO tem domicílio (Gabriel, 06/09)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={[]} service={null} index={1} onSaved={vi.fn()} />);
-      expect((screen.getByTestId('svc-addressId-1') as HTMLSelectElement).disabled).toBe(true);
+      expect((screen.getByTestId('svc-addressId-1') as HTMLButtonElement).disabled).toBe(true);
       const aviso = screen.getByTestId('svc-address-none-1');
       expect(aviso).toHaveAttribute('role', 'alert');
       expect(aviso.textContent).toContain('no tiene domicilio cargado');
@@ -353,7 +355,7 @@ describe('ContractedServiceFormRow', () => {
       expect(label?.textContent).toContain('(opcional)');
       expect(label?.querySelector('.text-red-500')).toBeNull();
 
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
       await waitFor(() => expect(mockCreate).toHaveBeenCalled());
       expect(mockCreate.mock.calls[0][1]).toMatchObject({ schedule: null });
@@ -396,7 +398,7 @@ describe('ContractedServiceFormRow', () => {
       mockCreate.mockResolvedValue(criado);
       const onSaved = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={onSaved} />);
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
       await waitFor(() => expect(onSaved).toHaveBeenCalledWith(criado));
       const atualizado = { ...SERVICE, providersNeeded: 9 };
@@ -419,13 +421,13 @@ describe('ContractedServiceFormRow', () => {
     it('modo NOVO: escolher o endereço envia addressId; sem escolher envia null (nunca string vazia)', async () => {
       mockCreate.mockResolvedValue(SERVICE);
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
       await waitFor(() => expect(mockCreate).toHaveBeenCalled());
       expect(mockCreate.mock.calls[0][1]).toMatchObject({ addressId: null, schedule: null });
 
       mockCreate.mockClear();
-      fireEvent.change(screen.getByTestId('svc-addressId-1'), { target: { value: 'addr-school' } });
+      chooseCombo(screen.getByTestId('svc-addressId-1'), 'Av. Cruzeiro do Sul, 1212'); // addr-school = Av. Cruzeiro do Sul, 1212
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
       await waitFor(() => expect(mockCreate).toHaveBeenCalled());
       expect(mockCreate.mock.calls[0][1]).toMatchObject({ addressId: 'addr-school' });
@@ -435,12 +437,12 @@ describe('ContractedServiceFormRow', () => {
       mockUpdate.mockResolvedValue(SERVICE);
       const svc = { ...SERVICE, addressId: 'addr-home', schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] };
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
-      expect((screen.getByTestId('svc-addressId-1') as HTMLSelectElement).value).toBe('addr-home');
+      expect(screen.getByTestId('svc-addressId-1')).toHaveTextContent('Rua Augusta, 975 - Centro'); // addr-home
       // O editor de horário (o MESMO da vaga, `DayScheduleEditor`) mostra o slot hidratado na
       // segunda-feira (dayOfWeek 1 → 'monday'): existe o botão de remover do slot 0.
       expect(screen.getByTestId('day-schedule-remove-monday-0')).toBeTruthy();
 
-      fireEvent.change(screen.getByTestId('svc-addressId-1'), { target: { value: 'addr-school' } });
+      chooseCombo(screen.getByTestId('svc-addressId-1'), 'Av. Cruzeiro do Sul, 1212'); // addr-school = Av. Cruzeiro do Sul, 1212
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
       expect(mockUpdate.mock.calls[0][2]).toMatchObject({
@@ -453,9 +455,10 @@ describe('ContractedServiceFormRow', () => {
       mockUpdate.mockResolvedValue(SERVICE);
       const svc = { ...SERVICE, addressId: 'addr-arquivado' };
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
-      const select = screen.getByTestId('svc-addressId-1') as HTMLSelectElement;
-      expect(Array.from(select.options).map((o) => o.value)).not.toContain('addr-arquivado');
-      fireEvent.change(select, { target: { value: '' } });
+      const select = screen.getByTestId('svc-addressId-1');
+      expect(select).toHaveTextContent(PLACEHOLDER); // addr-arquivado não está na lista: o gatilho mostra o placeholder
+      expect(comboLabels(select)).not.toContain('addr-arquivado');
+      chooseCombo(select, PLACEHOLDER); // '' = a linha que limpa
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
       expect(mockUpdate.mock.calls[0][2]).toMatchObject({ addressId: null });
@@ -480,17 +483,17 @@ describe('ContractedServiceFormRow', () => {
 
     async function escolherContrato(): Promise<void> {
       await waitFor(() => expect(mockForService).toHaveBeenCalled());
-      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-provider') as HTMLSelectElement).options).map((o) => o.value)).toContain('OSDE'));
-      fireEvent.change(screen.getByTestId('svc-contract-1-provider'), { target: { value: 'OSDE' } });
-      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-contract') as HTMLSelectElement).options).map((o) => o.value)).toContain('ct-1'));
-      fireEvent.change(screen.getByTestId('svc-contract-1-contract'), { target: { value: 'ct-1' } });
+      await waitFor(() => expect(comboLabels(screen.getByTestId('svc-contract-1-provider'))).toContain('OSDE') /* OSDE */);
+      chooseCombo(screen.getByTestId('svc-contract-1-provider'), 'OSDE'); // OSDE = OSDE
+      await waitFor(() => expect(comboLabels(screen.getByTestId('svc-contract-1-contract'))).toContain('Plan 210') /* ct-1 */);
+      chooseCombo(screen.getByTestId('svc-contract-1-contract'), 'Plan 210'); // ct-1 = Plan 210
     }
 
     it('as obras sociais vêm do banco pelo país do PACIENTE (nome do banco, sem tradução por código) e o início sugerido é o asOf da resposta', async () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={vi.fn()} />);
       await waitFor(() => expect(mockForService).toHaveBeenCalledWith('AR', undefined));
       await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
-      const labels = Array.from((screen.getByTestId('svc-contract-1-provider') as HTMLSelectElement).options).map((o) => o.textContent);
+      const labels = comboLabels(screen.getByTestId('svc-contract-1-provider'));
       expect(labels).toContain('OSDE');
     });
 
@@ -499,8 +502,8 @@ describe('ContractedServiceFormRow', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={vi.fn()} />);
       await escolherContrato();
       expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' });
-      fireEvent.change(screen.getByTestId('svc-contract-1-provider'), { target: { value: '' } });
-      await waitFor(() => expect((screen.getByTestId('svc-contract-1-contract') as HTMLSelectElement).value).toBe(''));
+      chooseCombo(screen.getByTestId('svc-contract-1-provider'), PLACEHOLDER); // '' = limpar a obra social
+      await waitFor(() => expect(screen.getByTestId('svc-contract-1-contract')).toHaveTextContent(PLACEHOLDER));
     });
 
     it('salvar com contrato: cria o serviço (SEM valor/tipo/IVA) e DEPOIS grava o vínculo; onSaved recebe o serviço vinculado', async () => {
@@ -511,7 +514,7 @@ describe('ContractedServiceFormRow', () => {
       mockCreateLink.mockResolvedValue(vinculado);
       const onSaved = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={onSaved} />);
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
       await escolherContrato();
       await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
@@ -525,7 +528,7 @@ describe('ContractedServiceFormRow', () => {
       mockCreate.mockResolvedValue({ ...SERVICE, id: 'novo' });
       const onSaved = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={onSaved} />);
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
       await waitFor(() => expect(onSaved).toHaveBeenCalled());
       expect(mockCreateLink).not.toHaveBeenCalled();
@@ -533,9 +536,9 @@ describe('ContractedServiceFormRow', () => {
 
     it('obra social escolhida sem contrato: NÃO cria o serviço pela metade — mostra o erro do formulário', async () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
-      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-provider') as HTMLSelectElement).options).map((o) => o.value)).toContain('OSDE'));
-      fireEvent.change(screen.getByTestId('svc-contract-1-provider'), { target: { value: 'OSDE' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
+      await waitFor(() => expect(comboLabels(screen.getByTestId('svc-contract-1-provider'))).toContain('OSDE') /* OSDE */);
+      chooseCombo(screen.getByTestId('svc-contract-1-provider'), 'OSDE'); // OSDE = OSDE
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
       await waitFor(() => expect(screen.getByTestId('contracted-service-new-error').textContent).toContain('Elegí el contrato'));
       expect(mockCreate).not.toHaveBeenCalled();
@@ -549,7 +552,7 @@ describe('ContractedServiceFormRow', () => {
       mockCreateLink.mockRejectedValue(erro);
       const onSaved = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={onSaved} />);
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT = Acompañante Terapéutico
       await escolherContrato();
       await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));

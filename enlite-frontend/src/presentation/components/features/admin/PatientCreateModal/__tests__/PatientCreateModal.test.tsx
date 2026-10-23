@@ -20,6 +20,7 @@ const createPatient = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { createPatient: (...a: unknown[]) => createPatient(...a) } }));
 
 import { PatientCreateModal } from '../PatientCreateModal';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 describe('PatientCreateModal', () => {
   beforeEach(() => createPatient.mockReset().mockResolvedValue({ id: 'new-1' }));
@@ -28,7 +29,7 @@ describe('PatientCreateModal', () => {
     const onCreated = vi.fn();
     render(<PatientCreateModal onClose={vi.fn()} onCreated={onCreated} />);
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: '  Nina ' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
     const birth = screen.getByTestId('pc-birthDate');
     expect(birth).toHaveAttribute('type', 'date');
     fireEvent.change(birth, { target: { value: '2015-06-20' } });
@@ -44,8 +45,8 @@ describe('PatientCreateModal', () => {
   it('tipo de documento e serviço requerido entram quando escolhidos', async () => {
     const { container } = render(<PatientCreateModal onClose={vi.fn()} onCreated={vi.fn()} />);
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
-    fireEvent.change(screen.getByTestId('pc-documentType'), { target: { value: 'DNI' } });
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
+    chooseCombo(screen.getByTestId('pc-documentType'), 'DNI'); // DNI = DNI
     fireEvent.click(container.querySelector('#pc-serviceType') as HTMLElement);
     fireEvent.click(screen.getByText('Cuidador'));
     fireEvent.click(screen.getByTestId('pc-save'));
@@ -59,7 +60,7 @@ describe('PatientCreateModal', () => {
     expect(createPatient).not.toHaveBeenCalled();
     createPatient.mockRejectedValueOnce(new Error('Validação de contato'));
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
     fireEvent.click(screen.getByTestId('pc-save'));
     expect(await screen.findByTestId('pc-error')).toHaveTextContent('Validação de contato');
     createPatient.mockRejectedValueOnce('x');
@@ -81,7 +82,7 @@ describe('PatientCreateModal', () => {
   it('e-mail inválido: a mensagem de validação aparece e a API não é chamada', async () => {
     render(<PatientCreateModal onClose={vi.fn()} onCreated={vi.fn()} />);
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
     fireEvent.change(screen.getByTestId('pc-email'), { target: { value: 'nao-e-email' } });
     fireEvent.click(screen.getByTestId('pc-save'));
     await waitFor(() => expect(screen.getAllByText(/email/i).length).toBeGreaterThan(0));

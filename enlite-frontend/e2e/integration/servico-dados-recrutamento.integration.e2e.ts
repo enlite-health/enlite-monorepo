@@ -24,6 +24,7 @@ import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
 const STAFF: MockUser = { uid: `e2e-servico-recrutamento-${Date.now()}`, email: `e2e.servico-recrutamento.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
@@ -92,8 +93,8 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
     // O input real é `sr-only`: o alvo de um humano é o <label> (mesmo gesto do wizard da vaga).
     await page.locator('label[for="svc-profession-CAREGIVER-1"]').click();
-    await page.getByTestId('svc-requiredSex-1').selectOption('F');
-    await page.getByTestId('svc-workSchedule-1').selectOption('full-time');
+    await escolherNoCombo(page, page.getByTestId('svc-requiredSex-1'), 'Femenino'); // F
+    await escolherNoCombo(page, page.getByTestId('svc-workSchedule-1'), 'Full-time'); // full-time
     for (const [id, texto] of [
       ['svc-requiredExperience-1', EXPERIENCIA], ['svc-paymentDay-1', DIA_PAGO],
       ['svc-workerAttributes-1', ATRIBUTOS_FICHA], ['svc-dailyObs-1', OBS_FICHA],
@@ -147,7 +148,7 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     // Escolher o sexo como humano destrava (BOTH = indistinto conta como respondido).
     await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId('svc-requiredSex-1').selectOption('BOTH');
+    await escolherNoCombo(page, page.getByTestId('svc-requiredSex-1'), 'Indistinto'); // BOTH
     const guardou = page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${serviceId}$`).test(r.url()));
     await page.getByTestId(`contracted-service-save-${serviceId}`).click();
     expect((await guardou).status()).toBe(200);

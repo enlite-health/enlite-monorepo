@@ -10,8 +10,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { SelectOption } from '@presentation/components/molecules/SelectField';
-import { Combobox } from '@presentation/components/atoms/Combobox';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
@@ -64,7 +63,7 @@ export function PatientServiceEditDrawer({ patient, onClose, onSaved }: Props): 
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  const serviceOptions: SelectOption[] = SERVICE_TYPES.map((s) => ({
+  const serviceOptions: ComboboxOption[] = SERVICE_TYPES.map((s) => ({
     value: s,
     label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }),
   }));

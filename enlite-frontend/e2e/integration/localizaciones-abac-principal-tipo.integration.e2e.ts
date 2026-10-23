@@ -31,6 +31,7 @@ import {
 } from '../helpers/abac-stack-helper';
 import { insertTestPatient } from '../helpers/db-test-helper';
 import { instalarFakeDeGestos, CABA_CORRIENTES } from '../helpers/google-places-fake-gestos';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const COUNTRY = 'AR';
@@ -125,8 +126,7 @@ test.describe('Card Localizaciones — engine ABAC LIGADO (D286) @integration', 
     const drawer2 = page.getByTestId('patient-address-drawer');
     await expect(drawer2).toBeVisible();
     const tipoSelect = page.getByTestId('pad-type');
-    await tipoSelect.click();
-    await tipoSelect.selectOption('casa_madre');
+    await escolherNoCombo(page, tipoSelect, 'Casa de la madre'); // casa_madre
     const patchTipo1 = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/addresses\//.test(r.url()));
     await page.getByTestId('pad-save').click();
     expect((await patchTipo1).status()).toBe(200);
@@ -135,8 +135,7 @@ test.describe('Card Localizaciones — engine ABAC LIGADO (D286) @integration', 
 
     await editButtons.first().click();
     await expect(drawer2).toBeVisible();
-    await tipoSelect.click();
-    await tipoSelect.selectOption('otro');
+    await escolherNoCombo(page, tipoSelect, 'Otro'); // otro
     const campoOtro = page.getByTestId('pad-type-other');
     await campoOtro.click();
     await expect(campoOtro).toBeFocused();

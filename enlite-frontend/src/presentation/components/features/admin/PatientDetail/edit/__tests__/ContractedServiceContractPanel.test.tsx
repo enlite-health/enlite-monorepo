@@ -11,6 +11,7 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import { CONTRACT_058_DEFAULTS, LINKED_058 } from '@domain/entities/__tests__/fixtures/contractedService058';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { ContractedServiceContractPanel } from '../ContractedServiceContractPanel';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const mockForService = vi.fn();
 const mockListContracts = vi.fn();
@@ -60,7 +61,7 @@ function renderPanel(service: PatientContractedServiceDetail, extra: Partial<Rea
   return { onChanged, onRequestNewService };
 }
 
-const optionsOf = (testId: string): string[] => Array.from((screen.getByTestId(testId) as HTMLSelectElement).options).map((o) => o.value);
+const optionsOf = (testId: string): string[] => comboLabels(screen.getByTestId(testId));
 
 describe('ContractedServiceContractPanel', () => {
   beforeEach(() => {
@@ -88,10 +89,10 @@ describe('ContractedServiceContractPanel', () => {
     fireEvent.click(screen.getByTestId('svc-contract-link-open'));
     await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('OSDE'));
     expect((screen.getByTestId('svc-contract-save') as HTMLButtonElement).disabled).toBe(true); // sem contrato escolhido não grava
-    fireEvent.change(screen.getByTestId('svc-contract-provider'), { target: { value: 'OSDE' } });
-    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('ct-2'));
+    chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE'); // OSDE = OSDE
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
     expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' });
-    fireEvent.change(screen.getByTestId('svc-contract-contract'), { target: { value: 'ct-2' } });
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
     await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
     fireEvent.click(screen.getByTestId('svc-contract-save'));
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(vinculado));
@@ -115,12 +116,12 @@ describe('ContractedServiceContractPanel', () => {
     mockSupersede.mockResolvedValue({ ...LINKED });
     const { onChanged } = renderPanel(LINKED);
     fireEvent.click(screen.getByTestId('svc-contract-switch-open'));
-    const provider = screen.getByTestId('svc-contract-provider') as HTMLSelectElement;
+    const provider = screen.getByTestId('svc-contract-provider') as HTMLButtonElement;
     await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' }));
-    expect(provider.value).toBe('OSDE');
+    expect(provider).toHaveTextContent('OSDE');
     expect(provider.disabled).toBe(true);
-    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('ct-2'));
-    fireEvent.change(screen.getByTestId('svc-contract-contract'), { target: { value: 'ct-2' } });
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
     await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
     fireEvent.click(screen.getByTestId('svc-contract-save'));
     await waitFor(() => expect(mockSupersede).toHaveBeenCalledWith('pat1', 's1', { reason: 'SWITCHED', contractId: 'ct-2', validFrom: '2026-10-19', validTo: null }));
@@ -131,12 +132,12 @@ describe('ContractedServiceContractPanel', () => {
     mockSupersede.mockResolvedValue({ ...LINKED });
     renderPanel(LINKED);
     fireEvent.click(screen.getByTestId('svc-contract-correct-open'));
-    await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('GALENO'));
-    expect((screen.getByTestId('svc-contract-provider') as HTMLSelectElement).disabled).toBe(false);
-    fireEvent.change(screen.getByTestId('svc-contract-provider'), { target: { value: 'GALENO' } });
+    await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('Galeno'));
+    expect((screen.getByTestId('svc-contract-provider') as HTMLButtonElement).disabled).toBe(false);
+    chooseCombo(screen.getByTestId('svc-contract-provider'), 'Galeno'); // GALENO = Galeno
     await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('GALENO', { offered: true, country: 'AR' }));
-    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('ct-2'));
-    fireEvent.change(screen.getByTestId('svc-contract-contract'), { target: { value: 'ct-2' } });
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
     await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
     fireEvent.click(screen.getByTestId('svc-contract-save'));
     await waitFor(() => expect(mockSupersede).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ reason: 'CORRECTION', contractId: 'ct-2' })));
@@ -166,9 +167,9 @@ describe('ContractedServiceContractPanel', () => {
     const { onRequestNewService } = renderPanel(UNLINKED);
     fireEvent.click(screen.getByTestId('svc-contract-link-open'));
     await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('OSDE'));
-    fireEvent.change(screen.getByTestId('svc-contract-provider'), { target: { value: 'OSDE' } });
-    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('ct-2'));
-    fireEvent.change(screen.getByTestId('svc-contract-contract'), { target: { value: 'ct-2' } });
+    chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE'); // OSDE = OSDE
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
     await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
     fireEvent.click(screen.getByTestId('svc-contract-save'));
     await waitFor(() => expect(screen.getByTestId('svc-contract-error').textContent).toContain('otra admisión'));
@@ -316,9 +317,9 @@ describe('ContractedServiceContractPanel', () => {
       renderPanel(UNLINKED);
       fireEvent.click(screen.getByTestId('svc-contract-link-open'));
       await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('OSDE'));
-      fireEvent.change(screen.getByTestId('svc-contract-provider'), { target: { value: 'OSDE' } });
-      await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('ct-2'));
-      fireEvent.change(screen.getByTestId('svc-contract-contract'), { target: { value: 'ct-2' } });
+      chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE'); // OSDE = OSDE
+      await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+      chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
       expect(screen.getByTestId('svc-contract-preview-price').textContent).toMatch(/2\.?000/);
       expect(screen.getByTestId('svc-contract-preview-tax').textContent).toBe('Exento (0 %)');
     });

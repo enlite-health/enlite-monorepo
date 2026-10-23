@@ -22,6 +22,7 @@ import { insertTestPatient, cleanupTestPatient, cleanupVacancies } from '../help
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
 const STAFF: MockUser = { uid: `e2e-vaga-servico-fecho-${Date.now()}`, email: `e2e.vaga-servico-fecho.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
@@ -207,7 +208,7 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
     await expect(linhaDoRotulo(page, 'Rango etario:')).toContainText('20 - 29');
 
     await abrirFormularioDoServico(page);
-    await page.getByTestId('svc-providerAgeBand-1').selectOption('AGE_30_45'); // → 30 - 44
+    await escolherNoCombo(page, page.getByTestId('svc-providerAgeBand-1'), '30 a 45 Años'); // AGE_30_45 → 30 - 44
     expect(await guardarServico(page)).toBe(200);
 
     await abrirVaga(page, vacancyId);

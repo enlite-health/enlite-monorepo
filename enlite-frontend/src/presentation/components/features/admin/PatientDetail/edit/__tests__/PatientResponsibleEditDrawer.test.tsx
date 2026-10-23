@@ -33,6 +33,7 @@ vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
 }));
 
 import { PatientResponsibleEditDrawer } from '../PatientResponsibleEditDrawer';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const PATIENT_ID = 'a0000000-0000-0000-0000-000000000001';
 const DOC_NUMBER = '987.654.321-00';
@@ -60,7 +61,7 @@ describe('PatientResponsibleEditDrawer — criar × editar', () => {
     renderDrawer(titular, [titular, outro]);
     expect(screen.getByTestId('responsible-edit-drawer')).toHaveAttribute('aria-label', t('admin.patients.detail.familyCard.editTitle'));
     expect(screen.getByTestId('responsible-firstName')).toHaveValue('Luciana');
-    expect(screen.getByTestId('responsible-documentType')).toHaveValue('CPF');
+    expect(screen.getByTestId('responsible-documentType')).toHaveTextContent('CPF'); // CPF
     expect(screen.getByTestId('responsible-documentNumber')).toHaveValue(DOC_NUMBER);
     fill('responsible-phone', '(11) 90000-0000');
     fireEvent.click(screen.getByTestId('responsible-save'));
@@ -90,7 +91,7 @@ describe('PatientResponsibleEditDrawer — criar × editar', () => {
 
   it('trocar tipo de documento e limpar o número (espaços) vai no PATCH como DNI / null', async () => {
     renderDrawer(titular, [titular]);
-    fill('responsible-documentType', 'DNI');
+    chooseCombo(screen.getByTestId('responsible-documentType'), 'DNI');
     fill('responsible-documentNumber', '   ');
     fireEvent.click(screen.getByTestId('responsible-save'));
     await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(1));
@@ -143,8 +144,8 @@ describe('PatientResponsibleEditDrawer — opcionais intocados não são apagado
 
   it('editar numa linha com parentesco VÁLIDO: o select abre com esse valor (e a tabela/rótulo existe para ele)', () => {
     renderDrawer(comParentesco, [comParentesco]);
-    expect(screen.getByTestId('responsible-rel')).toHaveValue('UNCLE_AUNT');
-    expect(screen.getByRole('option', { name: t('admin.patients.detail.relationshipOptions.UNCLE_AUNT') })).toBeInTheDocument();
+    expect(screen.getByTestId('responsible-rel')).toHaveTextContent('Tio/a'); // UNCLE_AUNT
+    expect(comboLabels(screen.getByTestId('responsible-rel'))).toContain(t('admin.patients.detail.relationshipOptions.UNCLE_AUNT'));
   });
 
   it('salvar mudando SÓ o telefone: PATCH manda parentesco, e-mail, tipo e nº do documento IGUAIS (nunca null/\'\') — mesmo payload do drawer antigo', async () => {

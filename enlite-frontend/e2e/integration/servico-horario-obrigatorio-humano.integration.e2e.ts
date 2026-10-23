@@ -19,6 +19,7 @@ import { test, expect } from '@playwright/test';
 import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoHumano } from '../helpers/login-humano';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAFF_EMAIL = `e2e.horario.${Date.now()}@enlite.health`;
 
@@ -60,8 +61,8 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     await expect(rotulo.locator('.text-red-500')).toHaveCount(0);
 
     // ── 2. Salvar SEM horário continua funcionando (a decisão de 05/09 não foi revogada) ──
-    await page.getByTestId('svc-code-1').selectOption('AT');
-    await page.getByTestId('svc-addressId-1').selectOption(seed.addressId);
+    await escolherNoCombo(page, page.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
+    await escolherNoCombo(page, page.getByTestId('svc-addressId-1'), 'Av. Corrientes 1234, CABA, AR'); // seed.addressId (address_formatted do seed)
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await page.getByTestId('contracted-service-new-save').click();
     const svcBody = (await (await createService).json()) as { data: { id: string } };

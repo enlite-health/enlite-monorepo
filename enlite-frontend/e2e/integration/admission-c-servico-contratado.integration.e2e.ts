@@ -15,6 +15,7 @@ import {
   seedActivatablePatient, seedWorker, cleanupWorker, readContractedServices, readVacanciesByService,
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-c-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -69,9 +70,10 @@ async function forceFill(locator: Locator, value: string): Promise<void> {
   await locator.fill(value);
 }
 
-async function forceSelect(locator: Locator, value: string): Promise<void> {
+/** Escolhe pelo RÓTULO que a pessoa lê, no combo (spec 070): abre o gatilho, busca (se houver) e clica a opção. */
+async function forceSelect(page: Page, locator: Locator, rotulo: string): Promise<void> {
   await locator.scrollIntoViewIfNeeded();
-  await locator.selectOption(value);
+  await escolherNoCombo(page, locator, rotulo);
 }
 
 async function openDetail(page: Page, patientId: string): Promise<void> {
@@ -137,13 +139,13 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     //    cria o 1º serviço (AT domiciliar, 20h/sem, 2 prestadores necessários) ──
     await forceClick(page.getByTestId('new-service-btn'));
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
-    await forceSelect(page.getByTestId('svc-code-1'), 'AT');
+    await forceSelect(page, page.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
     await forceFill(page.getByTestId('svc-providersNeeded-1'), '2');
     await forceFill(page.getByTestId('svc-weeklyHours-1'), '20');
-    await forceSelect(page.getByTestId('svc-careLocation-1'), 'HOME');
+    await forceSelect(page, page.getByTestId('svc-careLocation-1'), 'Domicilio'); // HOME
     // Migration 330: o serviço aponta para UM endereço da ficha (o seed cria 1) — sem isso o
     // checklist acusa SERVICE_ADDRESS e o activate recusa (422), em vez de multiplicar vagas.
-    await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
+    await forceSelect(page, page.getByTestId('svc-addressId-1'), 'Av. Corrientes 1234, CABA, AR'); // seed.addressId
     // Decisão do Gabriel 07/09: serviço ativo SEM horário bloqueia o activate (SERVICE_SCHEDULE).
     // Este spec ativa o paciente mais abaixo e espera 200 — então os serviços nascem com horário.
     await forceClick(page.getByTestId('day-schedule-add-monday'));
@@ -172,10 +174,10 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     // ── 2º serviço (cuidador escolar, 10h/sem): de novo pelo "+ Nuevo servicio" do card ──
     await forceClick(page.getByTestId('new-service-btn'));
     // O índice visual conta os existentes: com 1 serviço na ficha o form novo é "Servicio 2".
-    await forceSelect(page.getByTestId('svc-code-2'), 'CAREGIVER');
+    await forceSelect(page, page.getByTestId('svc-code-2'), 'Cuidador'); // CAREGIVER
     await forceFill(page.getByTestId('svc-weeklyHours-2'), '10');
-    await forceSelect(page.getByTestId('svc-careLocation-2'), 'SCHOOL');
-    await forceSelect(page.getByTestId('svc-addressId-2'), seed.addressId);
+    await forceSelect(page, page.getByTestId('svc-careLocation-2'), 'Escuela'); // SCHOOL
+    await forceSelect(page, page.getByTestId('svc-addressId-2'), 'Av. Corrientes 1234, CABA, AR'); // seed.addressId
     await forceClick(page.getByTestId('day-schedule-add-wednesday'));
     await preencherRecrutamentoPelaTela(page, 2); // spec 027 Fase 3: o portão exige os 5 campos
     const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));

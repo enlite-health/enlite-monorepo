@@ -13,8 +13,8 @@ import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { buttonClasses } from '@presentation/components/atoms/Button/buttonClasses';
 import { ChevronDown } from 'lucide-react';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { SuspensionExitReasonSelect } from './SuspensionExitReasonSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   patient: PatientDetail;
@@ -71,7 +71,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const canSave = changed && (!goingOnHold || reason !== '') && (!leavingSuspended || exitReason !== '') && !busy;
 
   const label = (s: string) => t(`admin.patients.statusOptions.${s}`, s);
-  const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
+  const reasonOptions: ComboboxOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
   // Estado atual + SÓ o que o servidor devolveu. Sem lista (carregando ou falha) só o atual — nunca o catálogo inteiro.
   const optionsReady = optionsState.phase === 'ready';
   // Recorte de APRESENTAÇÃO da ficha (spec ponto 1: o funil fica como hoje): a lista do servidor pode trazer
@@ -172,11 +172,11 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
       {goingOnHold && (
         <>
           <FormField label={ts('reason')} htmlFor="patient-status-reason" required>
-            <SelectField
+            <Combobox
               id="patient-status-reason"
               inputSize="compact"
               options={reasonOptions}
-              placeholder={t('admin.patients.editDrawer.unset')}
+              placeholder={t('admin.patients.editDrawer.unset')} clearLabel={t('admin.patients.editDrawer.unset')}
               value={reason}
               onChange={(v) => setReason(v)}
               data-testid="patient-status-reason"

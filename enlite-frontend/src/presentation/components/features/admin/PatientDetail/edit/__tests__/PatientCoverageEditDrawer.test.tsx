@@ -42,6 +42,7 @@ vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
 }));
 
 import { PatientCoverageEditDrawer } from '../PatientCoverageEditDrawer';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const entry = (code: string, name: string, source: string) => ({ code, name, mapped: true, source });
 const coverageOf = (...entries: ReturnType<typeof entry>[]) => ({ display: 'OSDE 210', displaySource: 'INFORMED' as const, entries });
@@ -128,7 +129,7 @@ describe('PatientCoverageEditDrawer', () => {
     updatePatientSection.mockClear();
     // Adiciona um profissional direto (com espaços) → createCoverageEmergencyContact, com trim.
     fireEvent.click(screen.getByTestId('pcv-contact-add'));
-    fireEvent.change(screen.getByTestId('pcv-contact-kind-1'), { target: { value: 'DIRECT_PROFESSIONAL' } });
+    chooseCombo(screen.getByTestId('pcv-contact-kind-1'), 'Profissional direto'); // DIRECT_PROFESSIONAL
     fireEvent.change(screen.getByTestId('pcv-contact-name-1'), { target: { value: '  Dra. Pérez  ' } });
     fireEvent.change(screen.getByTestId('pcv-contact-phone-1'), { target: { value: ' 11-5555 ' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
@@ -235,8 +236,8 @@ describe('PatientCoverageEditDrawer', () => {
     for (const marcador of [true, undefined]) {
       const r = render(<PatientCoverageEditDrawer patient={{ ...patient, coverageEmergencyContacts: [], coverageDirectProfessionalRedacted: marcador }} onClose={vi.fn()} onSaved={vi.fn()} />);
       fireEvent.click(screen.getByTestId('pcv-contact-add'));
-      const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
-      expect(Array.from(select.options).map((o) => o.value)).not.toContain('DIRECT_PROFESSIONAL');
+      const select = screen.getByTestId('pcv-contact-kind-0');
+      expect(comboLabels(select)).not.toContain('Profissional direto'); // DIRECT_PROFESSIONAL
       r.unmount();
     }
   });
