@@ -77,7 +77,7 @@ export function ItineraryServiceCard({ service, label, addressLabel, vacancy, ho
             <Heading level={2} as="h4" weight="semibold" color="primary" className="min-w-0 truncate" title={label} data-single-line="">
               {label}
             </Heading>
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0" data-clarity-mask="True">
               <MapPin size={16} className="text-primary shrink-0" aria-hidden="true" />
               <SingleLine size="sm" color="tertiary">
                 {addressLabel}

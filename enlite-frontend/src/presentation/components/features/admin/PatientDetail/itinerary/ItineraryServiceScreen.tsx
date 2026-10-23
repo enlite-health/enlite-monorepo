@@ -117,7 +117,7 @@ export function ItineraryServiceScreen({
             <Heading level={1} as="h3" weight="semibold" color="primary" className="min-w-0 truncate" title={label} data-single-line="" data-testid="itinerario-servico-nome">
               {label}
             </Heading>
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0" data-clarity-mask="True">
               <MapPin size={16} className="text-primary shrink-0" aria-hidden="true" />
               <SingleLine size="sm" color="tertiary">
                 {addressLabel}
