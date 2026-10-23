@@ -138,12 +138,18 @@ describe('GetPatientItineraryUseCase', () => {
     const result = await useCase.execute(PID, new Date('2026-09-27T15:00:00Z'));
 
     expect(result.services).toEqual([
-      { contractedServiceId: 'svc-c', providersNeeded: null, scheduleHours: 0, cobertas: 0, reserve: null, slots: [] },
+      { contractedServiceId: 'svc-c', providersNeeded: null, scheduleHours: 0, cobertas: 0, reserve: null, uncoveredShifts: 0, slots: [] },
     ]);
   });
 
-  it('alerts: a ausência de HOJE entra, a de ONTEM sai (asOf AR); cobertas IGUAL com ou sem ausência (mesma linha de services)', async () => {
+  describe('"Sin cubrir" (spec 069): alerts[], uncoveredShifts e horizonDays saem das MESMAS ocorrências', () => {
+    const slot = (id: string, weekday: number, start = '08:00', end = '12:00') => ({
+      slotId: id, serviceId: 'svc-a', weekday, startTime: start, endTime: end, validFrom: '2026-01-01', validTo: null,
+    });
+    const titular = { assignmentId: 'asg-1', slotId: 's1', workerId: 'w-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' as const };
+    // Itinerário MONTADO (`assembledAt`): o universo do "Sin cubrir" (P13). Sem isto nenhum turno conta.
     const baseRows: ItineraryRows = {
+      assembledAt: '2026-09-01T12:00:00.000Z',
       country: 'AR',
       services: [{ id: 'svc-a' }],
       slots: [
@@ -153,30 +159,83 @@ describe('GetPatientItineraryUseCase', () => {
         },
       ],
     };
-    const now = new Date('2026-09-27T15:00:00Z'); // asOf AR = 2026-09-27
+    // 2026-09-27 é domingo; hoje (AR) = 27/09; a janela é 27/09 … 03/10. Segundas: 28/09 e (fora) 05/10.
+    const now = new Date('2026-09-27T15:00:00Z');
 
-    const semAusencia = new GetPatientItineraryUseCase(readerWith(baseRows), kmsDouble(), noTeam);
-    const resultSemAusencia = await semAusencia.execute(PID, now);
+    it('universo P13: itinerário NÃO montado → faixa sem ninguém NÃO é "Sin cubrir" (alerts [], uncoveredShifts 0); montado, a MESMA entrada conta', async () => {
+      const occurrences = { slots: [slot('m', 1), slot('t', 1, '14:00', '18:00')], assignments: [], absences: [] };
+      const naoMontado = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, assembledAt: null, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(naoMontado.alerts).toEqual([]);
+      expect(naoMontado.services[0].uncoveredShifts).toBe(0);
+      const montado = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(montado.services[0].uncoveredShifts).toBe(2);
+      expect(montado.alerts).toHaveLength(2);
+    });
 
-    const comAusencia = new GetPatientItineraryUseCase(
-      readerWith({
-        ...baseRows,
-        uncoveredAbsences: [
-          { serviceId: 'svc-a', date: '2026-09-27', startTime: '08:00', endTime: '12:00' }, // hoje
-          { serviceId: 'svc-a', date: '2026-09-26', startTime: '08:00', endTime: '12:00' }, // ontem
+    it('universo P13: montado mas em estado manual travado (ON_HOLD) → alerts [] e uncoveredShifts 0; ACTIVE com a MESMA entrada conta', async () => {
+      const occurrences = { slots: [slot('m', 1), slot('t', 1, '14:00', '18:00')], assignments: [], absences: [] };
+      const emEspera = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, patientStatus: 'ON_HOLD', occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(emEspera.alerts).toEqual([]);
+      expect(emEspera.services[0].uncoveredShifts).toBe(0);
+      const ativo = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, patientStatus: 'ACTIVE', occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(ativo.services[0].uncoveredShifts).toBe(2);
+    });
+
+    it('sem ocorrências lidas → alerts [], uncoveredShifts 0, horizonDays 7', async () => {
+      const result = await new GetPatientItineraryUseCase(readerWith(baseRows), kmsDouble(), noTeam).execute(PID, now);
+      expect(result.alerts).toEqual([]);
+      expect(result.services[0].uncoveredShifts).toBe(0);
+      expect(result.horizonDays).toBe(7);
+    });
+
+    it('ausência sem substituto na janela entra; a de ontem e a de hoje+7 saem; cobertas IGUAL com ou sem ausência', async () => {
+      const occurrences = {
+        slots: [slot('s1', 1), slot('s0', 0), slot('s6', 6)], // seg, dom (hoje), sáb
+        assignments: [titular, { ...titular, assignmentId: 'asg-0', slotId: 's0' }, { ...titular, assignmentId: 'asg-6', slotId: 's6' }],
+        absences: [
+          { absenceId: 'ab-hoje', assignmentId: 'asg-0', onDate: '2026-09-27', substituteWorkerId: null, requestId: 'r1' }, // hoje
+          { absenceId: 'ab-sab', assignmentId: 'asg-6', onDate: '2026-09-26', substituteWorkerId: null, requestId: 'r1' }, // ontem (fora do recorte)
         ],
-      }),
-      kmsDouble(),
-      noTeam,
-    );
-    const resultComAusencia = await comAusencia.execute(PID, now);
+      };
+      const semAusencia = await new GetPatientItineraryUseCase(readerWith(baseRows), kmsDouble(), noTeam).execute(PID, now);
+      const comAusencia = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
 
-    expect(resultSemAusencia.alerts).toEqual([]);
-    expect(resultComAusencia.alerts).toEqual([
-      { serviceId: 'svc-a', date: '2026-09-27', startTime: '08:00', endTime: '12:00' },
-    ]);
-    expect(resultComAusencia.services[0].cobertas).toBe(resultSemAusencia.services[0].cobertas);
-    expect(resultComAusencia.services).toEqual(resultSemAusencia.services);
+      expect(comAusencia.alerts).toEqual([{ serviceId: 'svc-a', date: '2026-09-27', startTime: '08:00', endTime: '12:00' }]);
+      expect(comAusencia.services[0].uncoveredShifts).toBe(1);
+      expect(comAusencia.services[0].cobertas).toBe(semAusencia.services[0].cobertas);
+      expect({ ...comAusencia.services[0], uncoveredShifts: 0 }).toEqual(semAusencia.services[0]);
+    });
+
+    it('FR-12: faixa SEM alocação vigente é "Sin cubrir" — 2 faixas no mesmo dia = 2 turnos, só dentro do horizonte (hoje+6 entra, hoje+7 não)', async () => {
+      // 28/09 (seg) tem 2 faixas sem ninguém; 03/10 (sáb = hoje+6) entra; 04/10 (dom = hoje+7) não.
+      const occurrences = {
+        slots: [slot('m', 1, '08:00', '12:00'), slot('t', 1, '14:00', '18:00'), slot('sab', 6), slot('dom', 0)],
+        assignments: [],
+        absences: [],
+      };
+      const result = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(result.alerts.map((a) => `${a.date} ${a.startTime}`)).toEqual(['2026-09-27 08:00', '2026-09-28 08:00', '2026-09-28 14:00', '2026-10-03 08:00']);
+      expect(result.alerts.some((a) => a.date === '2026-10-04')).toBe(false);
+      expect(result.services[0].uncoveredShifts).toBe(4);
+    });
+
+    it('fuso: 2026-11-03T02:30Z é 02/11 em AR — a janela começa em 02/11 (SANIDADE: em UTC já seria 03/11)', async () => {
+      const instante = new Date('2026-11-03T02:30:00Z');
+      expect(instante.toISOString().slice(0, 10)).toBe('2026-11-03');
+      // 02/11/2026 é segunda; faixa de segunda sem ninguém: ocorrência 02/11 só existe se o "hoje" for o de Buenos Aires.
+      const occurrences = { slots: [slot('seg', 1)], assignments: [], absences: [] };
+      const result = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, instante);
+      expect(result.asOf).toBe('2026-11-02');
+      expect(result.alerts.map((a) => a.date)).toEqual(['2026-11-02', '2026-11-09'].filter((d) => d <= '2026-11-08'));
+    });
+
+    it('os alertas e a contagem são POR serviço: o turno de outro serviço não entra no cartão deste', async () => {
+      const rows: ItineraryRows = { ...baseRows, services: [{ id: 'svc-a' }, { id: 'svc-b' }] };
+      const occurrences = { slots: [slot('s1', 1), { ...slot('sb', 1), serviceId: 'svc-b' }], assignments: [], absences: [] };
+      const result = await new GetPatientItineraryUseCase(readerWith({ ...rows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(result.services.map((s) => [s.contractedServiceId, s.uncoveredShifts])).toEqual([['svc-a', 1], ['svc-b', 1]]);
+      expect(result.alerts).toHaveLength(2);
+    });
   });
 
   describe('[12.9] nome do prestador por célula', () => {

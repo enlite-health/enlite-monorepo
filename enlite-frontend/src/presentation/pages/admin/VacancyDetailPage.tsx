@@ -177,7 +177,7 @@ export default function VacancyDetailPage() {
             variant="outline"
             size="sm"
             data-testid="vacancy-view-patient-itinerary"
-            onClick={() => navigate(`/admin/patients/${vacancy.patient_id}?tab=itinerary`)}
+            onClick={() => navigate(`/admin/patients/${vacancy.patient_id}?tab=itinerary${vacancy.contracted_service_id ? `&serviceId=${vacancy.contracted_service_id}` : ''}`)}
           >
             {t('admin.vacancyDetail.viewPatientItinerary')}
           </Button>

@@ -40,6 +40,8 @@ export const patientItineraryServiceSchema = z.object({
   cobertas: z.number().nonnegative(),
   /** 056 §9: `null` = serviço sem vaga viva ("sin vacante"). */
   reserve: z.object({ count: z.number().int().nonnegative(), minimum: z.number().int().positive() }).nullable(),
+  /** Spec 069 (FR-03): TURNOS sin cubrir nos próximos `horizonDays` dias — separado do estado estrutural (`cobertas`/`scheduleHours`). */
+  uncoveredShifts: z.number().int().nonnegative(),
   slots: z.array(patientItinerarySlotSchema),
 }).strict();
 
@@ -47,6 +49,10 @@ export const patientItineraryResponseSchema = z.object({
   patientId: z.string().uuid(),
   asOf: z.string().regex(ISO_DATE_REGEX),
   services: z.array(patientItineraryServiceSchema),
+  /** Turno "Sin cubrir" (ausência sem substituto OU faixa sem alocação) em `[asOf, asOf + horizonDays - 1]`; sem nome. */
+  alerts: z.array(z.object({ serviceId: z.string().uuid(), date: z.string().regex(ISO_DATE_REGEX), startTime: z.string(), endTime: z.string() }).strict()),
+  /** O horizonte do aviso (dias): o i18n interpola `{days}`. */
+  horizonDays: z.number().int().positive(),
   /** Fase 3 (C8): `max(assembled_at)` ISO UTC; `null` = nunca montado. Obrigatório (sem `.optional()`) — o GET sempre o devolve. */
   assembledAt: z.string().datetime().nullable(),
 });

@@ -249,8 +249,13 @@ export { createAdminItineraryWriteRoutes } from './interfaces/routes/adminItiner
 // Itinerário-trocas Fase 2 (C9): leitura do registro de trocas.
 export { AdminItineraryChangesController } from './interfaces/controllers/AdminItineraryChangesController';
 export { createAdminItineraryChangesRoutes } from './interfaces/routes/adminItineraryChangesRoutes';
+// Spec 069: o pedido de substituição.
+export { AdminSubstitutionRequestController } from './interfaces/controllers/AdminSubstitutionRequestController';
+export { createAdminSubstitutionRequestRoutes } from './interfaces/routes/adminSubstitutionRequestRoutes';
 export { TherapeuticContactRemindersInternalController } from './interfaces/controllers/TherapeuticContactRemindersInternalController';
 export { createTherapeuticContactRemindersInternalRoutes } from './interfaces/routes/therapeuticContactRemindersInternalRoutes';
+export { ItineraryDailyInternalController } from './interfaces/controllers/ItineraryDailyInternalController';
+export { createItineraryDailyInternalRoutes } from './interfaces/routes/itineraryDailyInternalRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';

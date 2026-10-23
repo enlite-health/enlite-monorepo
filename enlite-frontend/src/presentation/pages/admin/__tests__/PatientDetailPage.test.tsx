@@ -29,6 +29,8 @@ vi.mock('react-router-dom', () => ({
   useParams: () => ({ id: 'p1' }),
   useNavigate: () => navigate,
   useLocation: () => locationState(),
+  // A aba Itinerario (spec 069) lê `?serviceId=` por `useSearchParams`.
+  useSearchParams: () => [new URLSearchParams(locationState().search ?? ''), vi.fn()],
 }));
 const detail = { patient: null as unknown, isLoading: false, error: null as string | null, refetch: vi.fn() };
 const vac = { vacancies: [], isLoading: false, error: null, refetch: vi.fn() };

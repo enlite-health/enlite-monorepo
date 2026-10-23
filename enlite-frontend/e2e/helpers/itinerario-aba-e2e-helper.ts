@@ -76,3 +76,50 @@ export async function digitarDataNoCampo(page: Page, testId: string, iso: string
   await page.keyboard.type(`${m}${d}${y}`);
   await expect(campo).toHaveValue(iso);
 }
+
+// ── Navegação da aba por serviço (spec 069, F7): lista (B1) → tela do serviço (B2) → sub-abas ─────────────────────────────
+
+/**
+ * Chega na TELA do serviço (B2) pela aba já aberta (`openItineraryTab`): com 1 serviço a aba já abre nela (a lista é pulada); com
+ * 2+, clica "Organizar agenda" do cartão do serviço (e antes volta à lista se outro serviço estiver aberto). Cliques reais.
+ */
+export async function openServiceScreen(page: Page, serviceId: string): Promise<void> {
+  const target = page.getByTestId(`itinerario-servico-tela-${serviceId}`);
+  const anyScreen = page.locator('[data-testid^="itinerario-servico-tela-"]');
+  const list = page.getByTestId('itinerario-lista-servicos');
+  await expect(list.or(anyScreen).first()).toBeVisible({ timeout: 15_000 });
+  if (await target.isVisible()) return;
+  if (await anyScreen.first().isVisible()) await page.getByTestId('itinerario-voltar-servicos').click();
+  await page.getByTestId(`itinerario-cartao-abrir-${serviceId}`).click();
+  await expect(target).toBeVisible({ timeout: 15_000 });
+}
+
+/** Aba interna "Horario fijo" do serviço (a agenda semanal editável; onde moram `itinerario-slot-*`). */
+export async function openFixedSchedule(page: Page, serviceId: string): Promise<void> {
+  await openServiceScreen(page, serviceId);
+  await page.getByTestId('itinerario-aba-fixed').click();
+  await expect(page.getByTestId('itinerario-horario-fijo')).toBeVisible({ timeout: 15_000 });
+}
+
+/** Aba interna "Próximos días" (a padrão): espera a tabela (ou o vazio) da semana. */
+export async function openUpcomingDays(page: Page, serviceId: string): Promise<void> {
+  await openServiceScreen(page, serviceId);
+  await page.getByTestId('itinerario-aba-upcoming').click();
+  await expect(page.getByTestId('itinerario-proximos-tabela').or(page.getByTestId('itinerario-proximos-vazio'))).toBeVisible({ timeout: 15_000 });
+}
+
+/** Aba interna "Sustituciones": espera a lista (ou o estado vazio). */
+export async function openSubstitutions(page: Page, serviceId: string): Promise<void> {
+  await openServiceScreen(page, serviceId);
+  await page.getByTestId('itinerario-aba-substitutions').click();
+  await expect(page.getByTestId('sustituciones-lista').or(page.getByTestId('sustituciones-vacio'))).toBeVisible({ timeout: 15_000 });
+}
+
+/**
+ * "Horas cubiertas: X de Y h" do cabeçalho do serviço aberto (era o par `X/Y` da seção da aba antiga): a MESMA conta do Kanban, lida da TELA.
+ * `par` = `cobertas/total` (ex.: '20/40'). A tela do serviço certo tem de estar aberta (`openServiceScreen`).
+ */
+export async function expectHorasCubiertas(page: Page, par: string, timeout = 10_000): Promise<void> {
+  const [cobertas, total] = par.split('/');
+  await expect(page.getByTestId('itinerario-servico-horas')).toHaveText(`Horas cubiertas: ${cobertas} de ${total} h`, { timeout });
+}

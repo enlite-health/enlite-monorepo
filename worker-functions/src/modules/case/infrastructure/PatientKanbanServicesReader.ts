@@ -17,10 +17,11 @@
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
-import type { ItinerarySlotRow, ItineraryUncoveredAbsenceRow } from './PatientItineraryReader';
+import type { ItinerarySlotRow } from './PatientItineraryReader';
 import { liveVacancySelect } from './liveVacancySql';
-import { uncoveredAbsenceSelect } from './absenceSql';
 import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
+import { readAlertUniverseFacts, readOccurrenceInputsByPatient, type OccurrenceInputs } from './occurrenceInputs';
+import { UNCOVERED_HORIZON_DAYS } from '../domain/serviceOccurrences';
 
 export interface KanbanServiceRow {
   id: string;
@@ -34,8 +35,18 @@ export interface KanbanServicesRows {
   country: string;
   services: KanbanServiceRow[];
   slots: ItinerarySlotRow[];
-  /** Opcional: nasce só na Fase 13; ausente quando o paciente não tem nenhuma ausência sem substituto (DX-13.10). */
-  uncoveredAbsences?: ItineraryUncoveredAbsenceRow[];
+  /**
+   * Itinerário MONTADO (universo do "Sin cubrir", P13): sem montagem, faixa sem ninguém é falta estrutural, não alerta.
+   * Ausente em `readForPatientWith` (a derivação lê `montado` do sujeito) — ausente = não montado.
+   */
+  assembled?: boolean;
+  /** Estado atual do paciente (`patients.status`): o 2º fato do universo (P13 — estado manual travado fica fora). Ausente = sem estado. */
+  patientStatus?: string | null;
+  /**
+   * Spec 069 (FR-12, P7): faixas × alocações × ausências vivas da janela superconjunto `[CURRENT_DATE - 1, CURRENT_DATE + horizonte]`.
+   * Ausente quando o paciente não tem nenhuma faixa tocando a janela (e na leitura `readForPatientWith`, que não lê ocorrência).
+   */
+  occurrences?: OccurrenceInputs;
 }
 
 interface KanbanJoinRow {
@@ -55,14 +66,6 @@ interface KanbanJoinRow {
   valid_from: string | null;
   valid_to: string | null;
   status: ItinerarySlotRow['status'];
-}
-
-interface UncoveredAbsenceJoinRow {
-  patient_id: string;
-  contracted_service_id: string;
-  on_date: string;
-  start_time: string;
-  slot_end: string;
 }
 
 export class PatientKanbanServicesReader {
@@ -141,28 +144,28 @@ export class PatientKanbanServicesReader {
     }
     if (!withAbsences) return Array.from(byPatient.values());
 
-    // 2ª query, DX-13.10: 1 query a mais para TODOS os pacientes do filtro — nunca por card (sem
-    // N+1). `ab.on_date >= CURRENT_DATE - 1` é SUPERCONJUNTO (a data de Buenos Aires nunca é menor
-    // que a UTC − 1); só poda histórico — quem decide vigência é `uncoveredDayAlerts` com o `asOf`
-    // do país (caso de uso). Nenhuma coluna de nome/telefone.
-    // Fragmento único em `absenceSql.ts` (só conta ausência sobre alocação ACTIVE e vigente na
-    // data — gate parcial #1).
-    const absencesRes = await client.query<UncoveredAbsenceJoinRow>(
-      uncoveredAbsenceSelect(
-        'pcs.active AND ($1::text IS NULL OR p.country = $1) AND ab.on_date >= CURRENT_DATE - 1',
-        'JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL AND ($2::uuid IS NULL OR p.id = $2)',
-      ),
-      [country, patientId],
-    );
-    for (const r of absencesRes.rows) {
-      const patient = byPatient.get(r.patient_id);
-      if (!patient) continue; // defensivo: o mesmo filtro de país/ativo da 1ª query
-      (patient.uncoveredAbsences ??= []).push({
-        serviceId: r.contracted_service_id,
-        date: r.on_date,
-        startTime: r.start_time,
-        endTime: r.slot_end,
-      });
+    // Universo do "Sin cubrir" (P13): montado + estado — UMA consulta para todos os pacientes (sem N+1).
+    const universeFacts = await readAlertUniverseFacts(client, [...byPatient.keys()]);
+    for (const [pid, patient] of byPatient) {
+      const facts = universeFacts.get(pid);
+      patient.assembled = facts?.itineraryAssembled === true;
+      patient.patientStatus = facts?.patientStatus ?? null;
+    }
+
+    // Ocorrências (spec 069, FR-12/P7): as 3 consultas de `occurrenceInputs` rodam UMA vez para TODOS os pacientes do filtro —
+    // nunca por card (sem N+1). A janela em SQL é SUPERCONJUNTO (a data de Buenos Aires nunca é menor que a UTC − 1 e o horizonte
+    // tem teto em CURRENT_DATE + horizonte): só poda histórico e futuro distante; quem decide a janela exata é o caso de uso
+    // com o `asOf` do país. Nenhuma coluna de nome/telefone.
+    const occurrences = await readOccurrenceInputsByPatient(client, {
+      scopeSql: `pcs.active AND ($1::text IS NULL OR p.country = $1) AND ($2::uuid IS NULL OR p.id = $2)`,
+      extraJoin: 'JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL',
+      fromSql: 'CURRENT_DATE - 1',
+      toSql: `CURRENT_DATE + ${UNCOVERED_HORIZON_DAYS}`,
+      params: [country, patientId],
+    });
+    for (const [pid, inputs] of occurrences) {
+      const patient = byPatient.get(pid);
+      if (patient) patient.occurrences = inputs; // defensivo: o mesmo filtro de país/ativo da 1ª query
     }
 
     return Array.from(byPatient.values());

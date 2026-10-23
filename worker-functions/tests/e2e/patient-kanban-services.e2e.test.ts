@@ -87,6 +87,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
       [prefixLike],
     );
     await pool.query(`DELETE FROM workers WHERE auth_uid LIKE $1`, [prefixLike]);
+    await pool.query(`DELETE FROM patient_itinerary_assembly WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [prefixLike]);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [prefixLike]);
     await pool.end();
   });
@@ -218,14 +219,29 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
       schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
     });
 
-    const res = await getKanbanServices('AR');
-    expect(res.status).toBe(200);
-    assertNoClinicalLeak(res.data);
+    const servicoEsperado = (uncoveredDays: number) => [
+      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays, reserve: null },
+    ];
+    const lerAr = async () => {
+      const res = await getKanbanServices('AR');
+      expect(res.status).toBe(200);
+      assertNoClinicalLeak(res.data);
+      return res;
+    };
+
+    // universo P13 (orquestrador 23/10): sem itinerário MONTADO a faixa sem ninguém é falta estrutural, não "Sin cubrir" → 0
+    const semMontagem = await lerAr();
+    const patientArSemMontagem = semMontagem.data.data.patients.find((p: { patientId: string }) => p.patientId === ar.patientId);
+    expect(patientArSemMontagem).toBeTruthy();
+    expect(patientArSemMontagem.services).toEqual(servicoEsperado(0));
+
+    // spec 069 (FR-12/P7): montado, a faixa de segunda SEM ninguém alocado é "Sin cubrir" e a segunda cai UMA vez em qualquer janela
+    // de 7 dias — `uncoveredDays` conta DIAS no horizonte (antes só contava falta sem substituto, 0 aqui).
+    await pool.query(`INSERT INTO patient_itinerary_assembly (patient_id, assembled_by, country) VALUES ($1, $2, 'AR')`, [ar.patientId, TASK_PREFIX]);
+    const res = await lerAr();
     const patientAr = res.data.data.patients.find((p: { patientId: string }) => p.patientId === ar.patientId);
     expect(patientAr).toBeTruthy();
-    expect(patientAr.services).toEqual([
-      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays: 0, reserve: null },
-    ]);
+    expect(patientAr.services).toEqual(servicoEsperado(1));
     expect(res.data.data.patients.some((p: { patientId: string }) => p.patientId === br.patientId)).toBe(false);
   });
 

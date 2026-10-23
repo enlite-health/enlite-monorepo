@@ -39,7 +39,7 @@ import { readItineraryApi, type ReadItineraryResult, type ItineraryResponseDto }
 import {
   assembleApi, allocationOptionsApi, endAllocationApi, countActiveAllocations,
 } from '../helpers/itinerario-escrita-e2e-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openFixedSchedule } from '../helpers/itinerario-aba-e2e-helper';
 import { readSubcardPair, pairFromItinerary } from '../helpers/kanban-subcard-e2e-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
@@ -343,7 +343,8 @@ test.describe('cadeia-completa @integration', () => {
        * Aba Itinerario aberta: "Asignar" do slot → modal → busca pelo rótulo visível → confirmar. Devolve o POST.
        * `listed` = nº de opções esperado na lista aberta (o `SearchableSelect` abre com 1 linha de placeholder a mais).
        */
-      const allocateOnScreen = async (slotId: string, label: string, listed?: number): Promise<Response> => {
+      const allocateOnScreen = async (serviceId: string, slotId: string, label: string, listed?: number): Promise<Response> => {
+        await openFixedSchedule(page, serviceId); // a faixa mora na aba "Horario fijo" da tela do serviço (spec 069)
         await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
         const modal = page.getByTestId('itinerario-editar-modal');
         await expect(modal).toBeVisible();
@@ -383,7 +384,7 @@ test.describe('cadeia-completa @integration', () => {
         if (!slot1) throw new Error('passo 6: slot 08:00 do serviço 1 ausente');
 
         await openItineraryTab(page, X.patientId);
-        const postResp = await allocateOnScreen(slot1.id, waLabel, options.length);
+        const postResp = await allocateOnScreen(X.service1Id, slot1.id, waLabel, options.length);
         expect(postResp.status()).toBe(201);
         allocationId = ((await postResp.json()) as { data?: { allocationId?: string } }).data?.allocationId ?? '';
         expect(allocationId).not.toBe('');
@@ -411,7 +412,7 @@ test.describe('cadeia-completa @integration', () => {
         if (!waLabelY) throw new Error('passo 7: WA sem displayName nas opções de Y');
 
         await openItineraryTab(page, Y.patientId);
-        const early = await allocateOnScreen(slotEarly.id, waLabelY);
+        const early = await allocateOnScreen(Y.serviceId, slotEarly.id, waLabelY);
         expect(early.status()).toBe(409);
         const body = (await early.json()) as OverlapBody;
         expect(body.code).toBe('ITINERARY_OVERLAP');
@@ -423,7 +424,7 @@ test.describe('cadeia-completa @integration', () => {
         await expect(erro).toContainText(`${body.requested.startTime}-${body.requested.endTime}`);
         await expect(erro).toContainText(String(body.minGapMinutes));
 
-        const late = await allocateOnScreen(slotLate.id, waLabelY);
+        const late = await allocateOnScreen(Y.serviceLateId, slotLate.id, waLabelY);
         expect(late.status()).toBe(201);
         await expect(page.getByTestId(`itinerario-slot-prestador-${slotLate.id}-${wa}`)).toBeVisible({ timeout: 15_000 });
         const active = countActiveAllocations(wa);

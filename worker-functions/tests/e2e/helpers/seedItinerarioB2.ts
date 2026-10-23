@@ -98,6 +98,8 @@ export async function limparB2(pool: Pool, prefix: string): Promise<void> {
     await pool.query(`DELETE FROM contracted_service_rejections WHERE service_id IN (${svcs})`, like);
     await pool.query(`DELETE FROM patient_itinerary_absence WHERE assignment_id IN (SELECT id FROM patient_itinerary_assignment WHERE slot_id IN (${slots}))`, like);
     await pool.query(`DELETE FROM patient_itinerary_assignment WHERE slot_id IN (${slots})`, like);
+    // O pedido de substituição (548) referencia prestador sem cascata: sai depois das ausências/alocações, antes dos workers.
+    await pool.query(`DELETE FROM patient_itinerary_substitution_request WHERE contracted_service_id IN (${svcs})`, like);
     await pool.query(`DELETE FROM patient_itinerary_assembly WHERE patient_id IN (${pats})`, like);
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id IN (SELECT id FROM job_postings WHERE title LIKE $1)`, like);
     await pool.query(`DELETE FROM job_postings WHERE title LIKE $1`, like);

@@ -13,7 +13,7 @@
  *
  * Os 3 testes:
  *   1. RESERVA 7 — vaga viva com 7 candidatos em QUICK_RESPONSE_TEAM, nenhum alocado: o subcard mostra
- *      "Reserva 7/10" com `data-alert="true"` e a aba mostra "7 de 10";
+ *      "Reserva 7/10" com `data-alert="true"` e a aba (selo da vaga no cabeçalho do serviço, spec 069) mostra "7 en Respuesta Rápida";
  *   2. RESERVA 10 — 10 candidatos em QRT: "Reserva 10/10" com `data-alert="false"` (não alerta no mínimo);
  *   3. SEM VAGA VIVA — serviço sem vaga: "sin vacante" (nunca "0/10"), `data-alert="false"`.
  */
@@ -23,7 +23,7 @@ import {
 } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
 import { activateRecruitmentViaApi } from '../helpers/itinerario-e2e-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openServiceScreen } from '../helpers/itinerario-aba-e2e-helper';
 import { openPatientKanban, readSubcardPair } from '../helpers/kanban-subcard-e2e-helper';
 import { insertWJA } from '../helpers/wja-test-helper';
 import { CADEIA_FORBIDDEN_HOSTS, seedMarkedWorker, cleanupCadeia } from '../helpers/cadeia-completa-e2e-helper';
@@ -93,7 +93,8 @@ test.describe('kanban-pacientes reserva: o selo da Equipe de Resposta Rápida @i
 
       // Aba Itinerario.
       await openItineraryTab(page, patient.patientId);
-      await expect(page.getByTestId(`itinerario-reserva-${patient.serviceId}`)).toContainText('7 de 10');
+      await openServiceScreen(page, patient.serviceId);
+      await expect(page.getByTestId('itinerario-servico-reserva')).toContainText('7 en Respuesta Rápida');
 
       expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
     } finally {
@@ -115,7 +116,8 @@ test.describe('kanban-pacientes reserva: o selo da Equipe de Resposta Rápida @i
       await expect(selo).toHaveAttribute('data-alert', 'false');
 
       await openItineraryTab(page, patient.patientId);
-      await expect(page.getByTestId(`itinerario-reserva-${patient.serviceId}`)).toContainText('10 de 10');
+      await openServiceScreen(page, patient.serviceId);
+      await expect(page.getByTestId('itinerario-servico-reserva')).toContainText('10 en Respuesta Rápida');
 
       expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
     } finally {
@@ -137,7 +139,8 @@ test.describe('kanban-pacientes reserva: o selo da Equipe de Resposta Rápida @i
       await expect(selo).toHaveAttribute('data-alert', 'false');
 
       await openItineraryTab(page, patient.patientId);
-      await expect(page.getByTestId(`itinerario-reserva-${patient.serviceId}`)).toContainText('sin vacante');
+      await openServiceScreen(page, patient.serviceId);
+      await expect(page.getByTestId('itinerario-servico-reserva')).toContainText('Sin vacante abierta');
 
       expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
     } finally {

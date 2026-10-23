@@ -38,6 +38,11 @@ export interface ServiceReserve {
 
 export interface PatientItineraryService {
   contractedServiceId: string;
+  /**
+   * Spec 069 (FR-03): TURNOS "Sin cubrir" nos próximos `PatientItinerary.horizonDays` dias — o aviso
+   * temporário do cartão, SEPARADO do estado estrutural (`cobertas`/`scheduleHours`). Vem do GET.
+   */
+  uncoveredShifts: number;
   /** Soma das faixas do serviço (horas/semana) — dono único, vem da API (spec 056). */
   scheduleHours: number;
   cobertas: number;
@@ -60,6 +65,8 @@ export interface PatientItinerary {
   asOf: string;
   services: PatientItineraryService[];
   alerts: PatientItineraryAlert[];
+  /** Horizonte do aviso "sin cubrir" em dias (a API manda; nenhum texto leva um número fixo). */
+  horizonDays: number;
   /** `max(assembled_at)` da montagem ("Itinerario listo"), ISO UTC; `null` = nunca montado (Fase 3, C8). */
   assembledAt: string | null;
 }
@@ -109,10 +116,11 @@ export interface PatientItineraryEvent {
   weekday: number;
   serviceId: string;
   slotId: string;
-  assignmentId: string;
+  /** `null` = faixa sem alocação vigente na data (spec 069, FR-12): "Sin cubrir". */
+  assignmentId: string | null;
   startTime: string;
   endTime: string;
-  titularWorkerId: string;
+  titularWorkerId: string | null;
   titularDisplayName: string | null;
   status: ItineraryEventStatus;
   workerId: string | null;
@@ -120,6 +128,8 @@ export interface PatientItineraryEvent {
   substituteWorkerId: string | null;
   substituteDisplayName: string | null;
   absenceId: string | null;
+  /** Pedido de substituição a que o turno pertence (`null` = sem pedido). */
+  requestId: string | null;
 }
 
 export interface PatientItineraryEventsResult {

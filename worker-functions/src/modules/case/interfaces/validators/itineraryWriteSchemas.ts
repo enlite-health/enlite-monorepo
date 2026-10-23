@@ -42,7 +42,7 @@ export const itineraryAbsenceParamsSchema = itineraryServiceParamsSchema.extend(
 // (ex.: `2026-02-31`) — o `$2::date` do Postgres rejeitava (22008) e virava 500 genérico em vez de
 // 400. Round-trip em `Date.UTC` (mesmo padrão de `isValidIsoBirthDate.ts:25-32`, sem a restrição
 // "não-futura" — ausência é sempre futura ou passada, controlada pelo caso de uso, nunca aqui).
-function isRealCalendarDate(value: string): boolean {
+export function isRealCalendarDate(value: string): boolean {
   const [yearStr, monthStr, dayStr] = value.split('-');
   const year = Number(yearStr);
   const month = Number(monthStr);

@@ -245,6 +245,11 @@ export function cleanupItinerary(seed: ItinerarySeed): void {
     DELETE FROM patient_itinerary_assignment a USING patient_itinerary_slot s, patient_contracted_services pcs
      WHERE a.slot_id = s.id AND s.contracted_service_id = pcs.id AND pcs.created_by = '${TASK_PREFIX}'
   `);
+  // O pedido de substituição (migration 548) referencia prestador sem cascata: sai depois das alocações (que levam as ausências).
+  runSQL(`
+    DELETE FROM patient_itinerary_substitution_request r USING patient_contracted_services pcs
+     WHERE r.contracted_service_id = pcs.id AND pcs.created_by = '${TASK_PREFIX}'
+  `);
   runSQL(`DELETE FROM job_postings WHERE title LIKE '${TASK_PREFIX}%'`);
   runSQL(`DELETE FROM patients WHERE clickup_task_id LIKE '${TASK_PREFIX}%'`);
   runSQL(`DELETE FROM workers WHERE auth_uid LIKE '${TASK_PREFIX}%'`);

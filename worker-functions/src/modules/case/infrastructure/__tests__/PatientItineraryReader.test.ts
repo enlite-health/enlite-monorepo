@@ -50,17 +50,27 @@ describe('PatientItineraryReader', () => {
     expect(c[c.length - 1].sql).toBe('COMMIT');
   });
 
-  it('paciente presente: as 5 queries rodam dentro da MESMA transação (BEGIN…COMMIT), datas/horas por to_char, sem contracted_service_providers/nome/telefone', async () => {
+  it('paciente presente: as 7 queries rodam dentro da MESMA transação (BEGIN…COMMIT), datas/horas por to_char, sem contracted_service_providers/nome/telefone', async () => {
     queryImpl = async (sql) => {
-      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
+      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR', status: 'ACTIVE' }], rowCount: 1 };
       if (/FROM patient_contracted_services/.test(sql)) {
         return { rows: [{ id: 'svc-1', providers_needed: 3 }], rowCount: 1 };
       }
       if (/FROM patient_itinerary_absence/.test(sql)) {
         return {
-          rows: [
-            { contracted_service_id: 'svc-1', on_date: '2026-10-05', start_time: '08:00', slot_end: '12:00' },
-          ],
+          rows: [{ patient_id: PID, absence_id: 'ab-1', assignment_id: 'asg-1', on_date: '2026-10-05', substitute_worker_id: null, request_id: 'req-1' }],
+          rowCount: 1,
+        };
+      }
+      if (/FROM patient_itinerary_assignment a\s+JOIN patient_itinerary_slot/.test(sql)) {
+        return {
+          rows: [{ patient_id: PID, assignment_id: 'asg-1', slot_id: 'slot-1', worker_id: 'w-1', valid_from: '2026-09-01', valid_to: null, status: 'ACTIVE' }],
+          rowCount: 1,
+        };
+      }
+      if (/FROM patient_itinerary_slot s[\s\S]*s\.valid && daterange/.test(sql)) {
+        return {
+          rows: [{ patient_id: PID, slot_id: 'slot-1', service_id: 'svc-1', weekday: 1, start_time: '08:00', slot_end: '12:00', valid_range: '[2026-01-01,)' }],
           rowCount: 1,
         };
       }
@@ -113,24 +123,31 @@ describe('PatientItineraryReader', () => {
           lastNameEncrypted: 'enc-last',
         },
       ],
-      uncoveredAbsences: [{ serviceId: 'svc-1', date: '2026-10-05', startTime: '08:00', endTime: '12:00' }],
+      occurrences: {
+        slots: [{ slotId: 'slot-1', serviceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null }],
+        assignments: [{ assignmentId: 'asg-1', slotId: 'slot-1', workerId: 'w-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
+        absences: [{ absenceId: 'ab-1', assignmentId: 'asg-1', onDate: '2026-10-05', substituteWorkerId: null, requestId: 'req-1' }],
+      },
       assembledAt: null,
+      patientStatus: 'ACTIVE',
     });
 
     const c = calls();
     expect(c[0].sql).toBe('BEGIN');
     expect(c[c.length - 1].sql).toBe('COMMIT');
-    expect(c.filter((x) => /^SELECT/.test(x.sql))).toHaveLength(5);
-    const slotsQuery = c.find((x) => /FROM patient_itinerary_slot/.test(x.sql));
+    expect(c.filter((x) => /^SELECT/.test(x.sql))).toHaveLength(7);
+    const slotsQuery = c.find((x) => /LEFT JOIN patient_itinerary_assignment a ON a\.slot_id = s\.id/.test(x.sql));
     expect(slotsQuery?.sql).toMatch(/to_char\(s\.start_time, 'HH24:MI'\)/);
     expect(slotsQuery?.sql).toMatch(/to_char\(a\.valid_from, 'YYYY-MM-DD'\)/);
     expect(slotsQuery?.sql).toMatch(/pcs\.active/);
-    const uncoveredQuery = c.find((x) => /FROM patient_itinerary_absence/.test(x.sql));
-    expect(uncoveredQuery?.sql).toMatch(/ab\.cancelled_at IS NULL/);
-    expect(uncoveredQuery?.sql).toMatch(/ab\.substitute_worker_id IS NULL/);
-    expect(uncoveredQuery?.sql).toMatch(/pcs\.patient_id = \$1/);
-    expect(uncoveredQuery?.sql).toMatch(/pcs\.active/);
-    expect(uncoveredQuery?.sql).toMatch(/to_char\(ab\.on_date/);
+    const absenceQuery = c.find((x) => /FROM patient_itinerary_absence/.test(x.sql));
+    expect(absenceQuery?.sql).toMatch(/ab\.cancelled_at IS NULL/);
+    expect(absenceQuery?.sql).not.toMatch(/substitute_worker_id IS NULL/); // com ou sem substituto: a expansão decide "sin cubrir"
+    expect(absenceQuery?.sql).toMatch(/pcs\.patient_id = \$1/);
+    expect(absenceQuery?.sql).toMatch(/pcs\.active/);
+    expect(absenceQuery?.sql).toMatch(/to_char\(ab\.on_date/);
+    expect(absenceQuery?.sql).toMatch(/\(CURRENT_DATE - 1\)::date/);
+    expect(absenceQuery?.sql).toMatch(/\(CURRENT_DATE \+ 7\)::date/); // teto do prefiltro = UNCOVERED_HORIZON_DAYS
     expect(c.every((x) => !/contracted_service_providers|phone/i.test(x.sql))).toBe(true);
     expect(slotsQuery?.sql).toMatch(/w\.first_name_encrypted/);
     expect(slotsQuery?.sql).toMatch(/LEFT JOIN workers w ON w\.id = a\.worker_id/);
@@ -183,7 +200,7 @@ describe('PatientItineraryReader', () => {
       if (/FROM patient_contracted_services/.test(sql)) {
         return { rows: [{ id: 'svc-1' }], rowCount: 1 };
       }
-      if (/FROM patient_itinerary_slot/.test(sql)) {
+      if (/LEFT JOIN patient_itinerary_assignment a ON a\.slot_id = s\.id/.test(sql)) {
         return {
           rows: [
             {
@@ -220,7 +237,7 @@ describe('PatientItineraryReader', () => {
     expect(slotsQuery?.sql).toContain('s.duration_minutes');
   });
 
-  it('gate parcial #1: a ausência descoberta só conta sobre alocação ACTIVE e vigente na data (fragmento único absenceSql)', async () => {
+  it('gate parcial #1: a ausência só conta sobre alocação ACTIVE e vigente na data (fragmento único absenceSql)', async () => {
     queryImpl = async (sql) => {
       if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
       return { rows: [], rowCount: 0 };
@@ -233,6 +250,6 @@ describe('PatientItineraryReader', () => {
     expect(sql).toMatch(/a\.status = 'ACTIVE'/);
     expect(sql).toMatch(/a\.valid_from <= ab\.on_date/);
     expect(sql).toMatch(/\(a\.valid_to IS NULL OR a\.valid_to >= ab\.on_date\)/);
-    expect(sql).toMatch(/ab\.substitute_worker_id IS NULL/);
+    expect(sql).not.toMatch(/ab\.substitute_worker_id IS NULL/); // spec 069: com ou sem substituto — a expansão decide "sin cubrir"
   });
 });

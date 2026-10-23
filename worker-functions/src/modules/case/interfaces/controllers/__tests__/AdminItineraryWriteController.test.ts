@@ -38,6 +38,7 @@ import {
   ServiceWithoutSlotError,
 } from '../../../application/AssembleItineraryUseCase';
 import { RemoveFromItineraryUseCase } from '../../../application/RemoveFromItineraryUseCase';
+import { AllocationRestoreConflictError } from '../../../application/restoreTitular';
 import { ReplaceWithReasonUseCase } from '../../../application/ReplaceWithReasonUseCase';
 import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, DestinationNotAvailableForScheduledError, WorkerHasScheduledAttendancesError } from '../../../domain/serviceExitReason';
@@ -431,6 +432,11 @@ describe('AdminItineraryWriteController', () => {
     it.each([
       [new AllocationNotFoundError(PATIENT_ID, SERVICE_ID, ALLOCATION_ID), 404, { success: false, code: 'NOT_FOUND' }],
       [new AllocationNotActiveError(ALLOCATION_ID), 422, { success: false, code: 'ALLOCATION_NOT_ACTIVE' }],
+      [
+        new AllocationRestoreConflictError(ALLOCATION_ID),
+        409,
+        { success: false, code: 'ALLOCATION_RESTORE_CONFLICT', error: 'el prestador ya tiene una asignación abierta en esta franja' },
+      ],
       [new ServiceExitReasonRequiredError(), 422, { success: false, code: 'REASON_REQUIRED' }],
       [new ServiceExitReasonInvalidError(), 422, { success: false, code: 'REASON_INVALID' }],
       [new DestinationRequiredError(), 422, { success: false, code: 'DESTINATION_REQUIRED' }],

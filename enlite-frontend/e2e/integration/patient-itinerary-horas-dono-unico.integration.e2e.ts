@@ -21,7 +21,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
 import { readItineraryApi } from '../helpers/itinerario-e2e-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openServiceScreen, openFixedSchedule, expectHorasCubiertas } from '../helpers/itinerario-aba-e2e-helper';
 import { openPatientKanban, readSubcardPair } from '../helpers/kanban-subcard-e2e-helper';
 import {
   seedDerivablePatient, selectedWorker, allocateWorker, coveredHours, derivacaoToken, type DerivableSeed,
@@ -62,7 +62,8 @@ async function alocar(request: Parameters<typeof allocateWorker>[0], seed: Deriv
 /** Subcard do Kanban e aba Itinerario (recarregadas do zero) mostram o MESMO par `X/Y`. */
 async function expectParNasDuasTelas(page: Page, patientId: string, serviceId: string, par: string): Promise<void> {
   await openItineraryTab(page, patientId);
-  await expect(page.getByTestId(`itinerario-servico-par-${serviceId}`)).toContainText(par);
+  await openServiceScreen(page, serviceId);
+  await expectHorasCubiertas(page, par);
   await openPatientKanban(page);
   expect(await readSubcardPair(page, serviceId)).toBe(par);
 }
@@ -92,7 +93,8 @@ test.describe('patient-itinerary-horas-dono-unico: o par cobertas/horário vem d
 
       // Aba Itinerario.
       await openItineraryTab(page, seed.patientId);
-      await expect(page.getByTestId(`itinerario-servico-par-${svc.serviceId}`)).toContainText('20/40');
+      await openServiceScreen(page, svc.serviceId);
+      await expectHorasCubiertas(page, '20/40');
 
       // Subcard do Kanban.
       await openPatientKanban(page);
@@ -117,17 +119,19 @@ test.describe('patient-itinerary-horas-dono-unico: o par cobertas/horário vem d
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed.patientId);
-      const cardSabado = page.getByTestId(`itinerario-dia-${svc.serviceId}-${SABADO}`);
+      await openFixedSchedule(page, svc.serviceId);
+      const cardSabado = page.getByTestId(`itinerario-dia-${svc.serviceId}-${SABADO}-${slotId}`);
       await expect(cardSabado).toBeVisible();
       await expect(cardSabado.getByTestId(`itinerario-slot-duracao-${slotId}`)).toHaveText('12 h');
       await expect(cardSabado.getByTestId(`itinerario-slot-horario-${slotId}`)).toContainText('20:00');
       await expect(cardSabado.getByTestId(`itinerario-slot-horario-${slotId}`)).toContainText('08:00');
-      await expect(page.getByTestId(`itinerario-servico-par-${svc.serviceId}`)).toContainText('0/12');
+      await expectHorasCubiertas(page, '0/12');
 
       await alocar(request, seed, [slotId]);
 
       await openItineraryTab(page, seed.patientId); // releitura pela tela
-      await expect(page.getByTestId(`itinerario-servico-par-${svc.serviceId}`)).toContainText('12/12');
+      await openServiceScreen(page, svc.serviceId);
+      await expectHorasCubiertas(page, '12/12');
       await openPatientKanban(page);
       expect(await readSubcardPair(page, svc.serviceId)).toBe('12/12');
 

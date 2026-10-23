@@ -7,6 +7,7 @@ import * as path from 'path';
 import { Pool, PoolClient } from 'pg';
 import { alocar, criarCandidato, criarCenario, erroDe, hojeOp, limparB, mais, novoPool, travaA } from './helpers/itinerario058bDb';
 import type { PgErr } from './helpers/itinerario058bDb';
+import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 
 describe('058b Trava A: capacidade da faixa @integration', () => {
   let pool: Pool;
@@ -112,10 +113,11 @@ describe('058b Trava A: capacidade da faixa @integration', () => {
     const D = await hojeOp(pool);
     const [w1, w2, w3] = [await criarCandidato(pool, cen), await criarCandidato(pool, cen), await criarCandidato(pool, cen)];
     const a1 = await alocar(pool, cen.faixas[0], w1, D, null);
+    const requestId = await seedRequestForAssignment(pool, a1, { createdBy: 'qa058b' });
     await pool.query(
-      `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-       VALUES ($1, $2::date, $3, $4, 'qa058b', 'qa058b')`,
-      [a1, await proximaSegunda(D), w2.workerId, w2.applicationId]);
+      `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+       VALUES ($1, $2::date, $3, $4, 'qa058b', 'qa058b', $5)`,
+      [a1, await proximaSegunda(D), w2.workerId, w2.applicationId, requestId]);
     await alocar(pool, cen.faixas[0], w3, D, null); // ocupação = W1 + W3 = 2; contando o substituto seria 3
   });
 

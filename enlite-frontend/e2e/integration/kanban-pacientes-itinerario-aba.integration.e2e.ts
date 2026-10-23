@@ -29,7 +29,9 @@ import { postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e
 import {
   allocationOptionsApi, allocateApi, countActiveAllocations, cleanupItineraryWrite,
 } from '../helpers/itinerario-escrita-e2e-helper';
-import { openItineraryTab, slotAllocationsInDom, countSlotAllocationsInDom } from '../helpers/itinerario-aba-e2e-helper';
+import {
+  openItineraryTab, openFixedSchedule, openServiceScreen, expectHorasCubiertas, slotAllocationsInDom, countSlotAllocationsInDom,
+} from '../helpers/itinerario-aba-e2e-helper';
 
 interface OptionDto { workerId: string; displayName: string | null; status?: string }
 interface OptionsData { options: OptionDto[] }
@@ -45,7 +47,7 @@ interface OverlapBody {
 const STAFF = mockAdminUserFor('itinerario-aba');
 const CLINICAL = /diagnos|clinic/gi;
 
-/** O par da seção como a tela o monta (`cobertas/horário`; denominador = `scheduleHours`) — oráculo lido da ROTA. */
+/** O par `cobertas/horário` (denominador = `scheduleHours`) — oráculo lido da ROTA; a tela o mostra em "Horas cubiertas: X de Y h". */
 function expectedPair(cobertas: number, scheduleHours: number): string {
   return `${cobertas}/${scheduleHours}`;
 }
@@ -101,8 +103,8 @@ test.describe('itinerario-aba @integration', () => {
       await expect(tabButtons.nth(5)).toHaveText('Itinerario');
       await expect(page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Encuadre', exact: true })).toHaveCount(0);
 
-      const par = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
-      await expect(par).toContainText(expectedPair(svcBefore.cobertas, svcBefore.scheduleHours));
+      await expectHorasCubiertas(page, expectedPair(svcBefore.cobertas, svcBefore.scheduleHours));
+      await openFixedSchedule(page, seed.serviceId);
       await expect(slotAllocationsInDom(page, slotId)).toHaveCount(0);
 
       // Alocar pela TELA.
@@ -129,7 +131,7 @@ test.describe('itinerario-aba @integration', () => {
       const vigentes = (slotAfter?.assignments ?? []).filter((a) => a.status === 'ACTIVE' && a.workerId === w);
       expect(vigentes).toHaveLength(1);
       expect(svcAfter.cobertas).toBeGreaterThan(svcBefore.cobertas);
-      await expect(par).toContainText(expectedPair(svcAfter.cobertas, svcAfter.scheduleHours));
+      await expectHorasCubiertas(page, expectedPair(svcAfter.cobertas, svcAfter.scheduleHours), 15_000);
       await expect(page.getByTestId(`itinerario-slot-prestador-${slotId}-${w}`)).toBeVisible();
       await expect(slotAllocationsInDom(page, slotId)).toHaveCount(1);
       // D445.3 (rodada 2): a faixa continua clicável mesmo coberta — "Editar agendamiento" também
@@ -141,7 +143,7 @@ test.describe('itinerario-aba @integration', () => {
 
       // Prints DEPOIS (DX-12.17) e baseline da seção com o slot coberto.
       await page.evaluate(() => document.fonts.ready);
-      const secao = page.getByTestId(`itinerario-servico-${seed.serviceId}`);
+      const secao = page.getByTestId(`itinerario-servico-tela-${seed.serviceId}`);
       const printDir = process.env.PRINT_DIR;
       if (printDir) {
         await page.getByTestId('patient-profile-tabs').screenshot({ path: `${printDir}/abas.png`, animations: 'disabled', caret: 'hide' });
@@ -192,24 +194,26 @@ test.describe('itinerario-aba @integration', () => {
       await openItineraryTab(page, seed.patientId);
 
       const s1 = seed.serviceId;
-      await expect(page.getByTestId(`itinerario-servico-${s1}`)).toBeVisible();
-      await expect(page.getByTestId(`itinerario-servico-${s2}`)).toBeVisible();
-      let vazios1 = 0;
-      for (const wd of [0, 2, 3, 4, 5, 6]) {
-        await expect(page.getByTestId(`itinerario-dia-vazio-${s1}-${wd}`)).toHaveCount(1);
-        vazios1 += 1;
-      }
-      await expect(page.getByTestId(`itinerario-dia-vazio-${s1}-1`)).toHaveCount(0);
-      let vazios2 = 0;
-      for (const wd of [0, 1, 2, 3, 4, 5, 6]) {
-        await expect(page.getByTestId(`itinerario-dia-vazio-${s2}-${wd}`)).toHaveCount(1);
-        vazios2 += 1;
-      }
-      // Controle positivo: a segunda do 1º serviço tem o card com o chip do horário.
-      const monday = page.getByTestId(`itinerario-dia-${s1}-1`);
+      // 2 serviços → a aba abre na LISTA (um cartão por serviço); cada um se abre pelo "Organizar agenda".
+      await expect(page.getByTestId(`itinerario-cartao-${s1}`)).toBeVisible();
+      await expect(page.getByTestId(`itinerario-cartao-${s2}`)).toBeVisible();
+
+      // S1 (só segunda): "Horario fijo" lista os 6 outros dias em "Sin atención" e a segunda tem a linha com o chip do horário.
+      await openFixedSchedule(page, s1);
+      await expect(page.getByTestId('itinerario-sin-atencion')).toHaveText('Sin atención: domingo, martes, miércoles, jueves, viernes y sábado');
+      const vazios1 = 6;
+      await expect(page.getByTestId(`itinerario-dia-${s1}-0-${s1Slot.id}`)).toHaveCount(0);
+      // Controle positivo: a segunda do 1º serviço tem a linha com o chip do horário.
+      const monday = page.getByTestId(`itinerario-dia-${s1}-1-${s1Slot.id}`);
       await expect(monday).toBeVisible();
       await expect(monday.getByTestId(`itinerario-slot-horario-${s1Slot.id}`)).toBeVisible();
-      console.log('[12.2]', vazios1, vazios2, await monday.getByTestId(`itinerario-slot-horario-${s1Slot.id}`).count());
+
+      // S2 (sem faixa nenhuma): os 7 dias sem atenção.
+      await openFixedSchedule(page, s2);
+      await expect(page.getByTestId('itinerario-sin-atencion')).toHaveText('Sin atención: domingo, lunes, martes, miércoles, jueves, viernes y sábado');
+      const vazios2 = 7;
+      await expect(page.locator('[data-testid^="itinerario-dia-"]')).toHaveCount(0);
+      console.log('[12.2]', vazios1, vazios2, await monday.count());
     } finally {
       cleanupItineraryWrite(seed.patientId);
       seed.cleanup();
@@ -259,6 +263,7 @@ test.describe('itinerario-aba @integration', () => {
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed.patientId);
+      await openFixedSchedule(page, seed.serviceId);
       await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
       const modal = page.getByTestId('itinerario-editar-modal');
       await expect(modal).toBeVisible();
@@ -313,6 +318,7 @@ test.describe('itinerario-aba @integration', () => {
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed1.patientId);
+      await openFixedSchedule(page, seed1.serviceId);
       await expect(slotAllocationsInDom(page, slot1)).toHaveCount(0);
       const domBefore = await countSlotAllocationsInDom(page, slot1);
 

@@ -1,7 +1,6 @@
 /**
  * SidePanelShell.test.tsx — casca do painel lateral do itinerário (Figma 11340:76377): à direita,
- * altura cheia, cantos arredondados só à esquerda, sem X, fecha por overlay/Esc; e o "Nuevo +"
- * (SubstitutionDayModal `panel`) tem título + Confirmar na mesma linha e nenhum botão Cancelar.
+ * altura cheia, cantos arredondados só à esquerda, sem X, fecha por overlay/Esc.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
@@ -11,7 +10,6 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import { SidePanelShell } from '../SidePanelShell';
 import { DdMmDateInput } from '../DdMmDateInput';
 import { formatDdMmYyyy } from '../ddMmDate';
-import { SubstitutionDayModal } from '../SubstitutionDayModal';
 
 beforeAll(async () => {
   await i18n.use(initReactI18next).init({
@@ -77,27 +75,5 @@ describe('DdMmDateInput', () => {
   it('formata pela STRING (sem Date): 2026-01-01 → 01/01/2026', () => {
     expect(formatDdMmYyyy('2026-01-01')).toBe('01/01/2026');
     expect(formatDdMmYyyy('')).toBe('');
-  });
-});
-
-describe('SubstitutionDayModal panel ("Nuevo +")', () => {
-  it('título e Confirmar na mesma linha; sem botão Cancelar; Confirmar desabilitado até escolher', () => {
-    render(
-      <SubstitutionDayModal
-        panel
-        allocations={[{ allocationId: 'a1', weekday: 1, startTime: '08:00', endTime: '10:00' }]}
-        selected={[]}
-        asOf="2026-09-28"
-        onSubmit={() => {}}
-        onSubmitPermanent={() => {}}
-        onCancel={() => {}}
-      />,
-    );
-    const dialog = screen.getByTestId('substitution-modal');
-    expect(dialog.className).toContain('right-0');
-    expect(screen.queryByTestId('substitution-cancel')).toBeNull();
-    const confirm = screen.getByTestId('substitution-confirm');
-    expect(confirm).toBeDisabled();
-    expect(confirm.parentElement?.className).toContain('justify-between');
   });
 });

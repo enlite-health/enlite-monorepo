@@ -18,8 +18,9 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
-import { uncoveredAbsenceSelect } from './absenceSql';
 import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
+import { readOccurrenceInputsByPatient, EMPTY_OCCURRENCE_INPUTS, type OccurrenceInputs } from './occurrenceInputs';
+import { UNCOVERED_HORIZON_DAYS } from '../domain/serviceOccurrences';
 
 export type { ItineraryAssignmentStatus };
 
@@ -55,30 +56,29 @@ export interface ItinerarySlotRow {
   lastNameEncrypted?: string | null;
 }
 
-/** Uma ausência sem substituto (a candidata a "dia descoberto" — DX-13.9). Sem `workerId`/nome. */
-export interface ItineraryUncoveredAbsenceRow {
-  serviceId: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-}
-
 export interface ItineraryRows {
   country: string;
   services: ItineraryServiceRow[];
   slots: ItinerarySlotRow[];
-  /** Opcional: nasce só na Fase 13. Sem filtro de vigência aqui — `uncoveredDayAlerts` decide (caso de uso). */
-  uncoveredAbsences?: ItineraryUncoveredAbsenceRow[];
+  /**
+   * Spec 069 (FR-12): faixas × alocações × ausências vivas de uma janela SUPERCONJUNTO de `[hoje, hoje + horizonte]` (a data de
+   * operação do país nunca é menor que a UTC − 1 nem maior que a UTC); a expansão e o recorte exato são do caso de uso.
+   * Opcional: o agregado do Kanban reusa este tipo.
+   */
+  occurrences?: OccurrenceInputs;
   /**
    * Fase 3 (C8): `max(assembled_at)` de `patient_itinerary_assembly` (482, log append-only), ISO UTC;
    * `null` = nunca montado. Opcional — o agregado do Kanban reusa este tipo e não lê montagem.
    */
   assembledAt?: string | null;
+  /** `patients.status` (2º fato do universo do "Sin cubrir", P13). Opcional como `assembledAt`. */
+  patientStatus?: string | null;
 }
 
 interface PatientCountryRow {
   id: string;
   country: string;
+  status: string | null;
 }
 
 interface ServiceRow {
@@ -107,13 +107,6 @@ interface AssembledAtRow {
   assembled_at: string | null;
 }
 
-interface UncoveredAbsenceJoinRow {
-  contracted_service_id: string;
-  on_date: string;
-  start_time: string;
-  slot_end: string;
-}
-
 export class PatientItineraryReader {
   /** `null` = paciente inexistente, soft-deletado, ou de outro país (RLS) — o caso de uso mapeia para 404. */
   async readPatientItinerary(patientId: string): Promise<ItineraryRows | null> {
@@ -122,11 +115,11 @@ export class PatientItineraryReader {
 
   private async run(client: PoolClient, patientId: string): Promise<ItineraryRows | null> {
     const patientRes = await client.query<PatientCountryRow>(
-      `SELECT id, country FROM patients WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT id, country, status FROM patients WHERE id = $1 AND deleted_at IS NULL`,
       [patientId],
     );
     if ((patientRes.rowCount ?? 0) === 0) return null;
-    const { country } = patientRes.rows[0];
+    const { country, status: patientStatus } = patientRes.rows[0];
 
     // Só serviço ATIVO: serviço baixado não tem cobertura a medir.
     const servicesRes = await client.query<ServiceRow>(
@@ -156,14 +149,16 @@ export class PatientItineraryReader {
       [patientId],
     );
 
-    // Ausência sem substituto (DX-13.9): sem filtro de data aqui — `uncoveredDayAlerts` (caso de
-    // uso) decide `date >= asOf`. Nenhuma coluna de nome/telefone; `ab.substitute_worker_id IS NULL`
-    // exclui quem já tem substituto (coberto, não é alerta). Fragmento único em `absenceSql.ts`
-    // (só conta ausência sobre alocação ACTIVE e vigente na data — gate parcial #1).
-    const uncoveredRes = await client.query<UncoveredAbsenceJoinRow>(
-      uncoveredAbsenceSelect('pcs.patient_id = $1 AND pcs.active'),
-      [patientId],
-    );
+    // Ocorrências (spec 069, FR-12): UMA leitura compartilhada com a agenda e o Kanban. Janela superconjunto em SQL:
+    // [CURRENT_DATE - 1, CURRENT_DATE + horizonte]; `expandServiceOccurrences` + `uncoveredDayAlerts` recortam a janela do país.
+    const occurrences = (
+      await readOccurrenceInputsByPatient(client, {
+        scopeSql: 'pcs.patient_id = $1 AND pcs.active',
+        fromSql: 'CURRENT_DATE - 1',
+        toSql: `CURRENT_DATE + ${UNCOVERED_HORIZON_DAYS}`,
+        params: [patientId],
+      })
+    ).get(patientId) ?? EMPTY_OCCURRENCE_INPUTS;
 
     // Montagem (482): UMA linha, `max` → `null` sem montagem. Texto ISO UTC (nunca `Date` do driver).
     const assembledRes = await client.query<AssembledAtRow>(
@@ -195,13 +190,9 @@ export class PatientItineraryReader {
         firstNameEncrypted: r.first_name_encrypted,
         lastNameEncrypted: r.last_name_encrypted,
       })),
-      uncoveredAbsences: uncoveredRes.rows.map((r) => ({
-        serviceId: r.contracted_service_id,
-        date: r.on_date,
-        startTime: r.start_time,
-        endTime: r.slot_end,
-      })),
+      occurrences,
       assembledAt: assembledRes.rows[0]?.assembled_at ?? null,
+      patientStatus: patientStatus ?? null,
     };
   }
 }

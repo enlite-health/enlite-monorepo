@@ -15,6 +15,7 @@
  * aprendizado da Fase 7).
  */
 import { Pool, type PoolClient } from 'pg';
+import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -134,7 +135,7 @@ describe('ausência, validação e trava por data — migration 484 @integration
     );
   }
 
-  function insertAbsence(
+  async function insertAbsence(
     assignmentId: string,
     onDate: string,
     opts: {
@@ -144,11 +145,13 @@ describe('ausência, validação e trava por data — migration 484 @integration
     } = {},
   ) {
     const createdBy = opts.createdBy ?? TASK_PREFIX;
+    // 548: a ausência nasce com pedido (mesmo serviço e titular da alocação).
+    const requestId = await seedRequestForAssignment(pool, assignmentId, { createdBy });
     return pool.query<{ id: string }>(
       `INSERT INTO patient_itinerary_absence
-         (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
-      [assignmentId, onDate, opts.substituteWorkerId ?? null, opts.substituteApplicationId ?? null, createdBy],
+         (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+       VALUES ($1, $2, $3, $4, $5, $5, $6) RETURNING id`,
+      [assignmentId, onDate, opts.substituteWorkerId ?? null, opts.substituteApplicationId ?? null, createdBy, requestId],
     );
   }
 
@@ -707,16 +710,19 @@ describe('ausência, validação e trava por data — migration 484 @integration
       await c1.query('BEGIN');
       await c2.query('BEGIN');
 
+      const requestA = await seedRequestForAssignment(c1, assignmentA, { createdBy: TASK_PREFIX });
+      const requestB = await seedRequestForAssignment(c2, assignmentB, { createdBy: TASK_PREFIX });
+
       await c1.query(
-        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $5)`,
-        [assignmentA, nextMonday, w.workerId, subAppA, TASK_PREFIX],
+        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+         VALUES ($1, $2, $3, $4, $5, $5, $6)`,
+        [assignmentA, nextMonday, w.workerId, subAppA, TASK_PREFIX, requestA],
       );
 
       const p2 = c2.query(
-        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $5)`,
-        [assignmentB, nextMonday, w.workerId, subAppB, TASK_PREFIX],
+        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+         VALUES ($1, $2, $3, $4, $5, $5, $6)`,
+        [assignmentB, nextMonday, w.workerId, subAppB, TASK_PREFIX, requestB],
       );
 
       await c1.query('SELECT pg_sleep(0.3)');

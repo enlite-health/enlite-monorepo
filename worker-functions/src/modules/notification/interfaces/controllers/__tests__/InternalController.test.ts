@@ -492,6 +492,36 @@ describe('InternalController', () => {
       });
     });
 
+    describe('spec 069 F4 — alarme "a rotina diária do itinerário não rodou"', () => {
+      const { logger } = jest.requireMock('@shared/logging');
+      beforeEach(() => logger.warn.mockClear());
+      const comItinerario = (getHealth: jest.Mock) =>
+        new InternalController(
+          eventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler,
+          domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, undefined, { getHealth } as never,
+        );
+
+      it('país sem rodada terminada: WARN com o msg literal que a métrica filtra (sem PII), a CADA ciclo, e o bloco sobe no JSON', async () => {
+        const getHealth = jest.fn().mockResolvedValue({ missing: [{ country: 'AR', operationDate: '2026-11-02' }] });
+        const c = comItinerario(getHealth);
+        const res = mockRes();
+        await c.getEventsHealth(mockReq({}, {}), res);
+        await c.getEventsHealth(mockReq({}, {}), mockRes());
+        const warns = logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg === 'itinerary_daily_run_missing');
+        expect(warns).toHaveLength(2);
+        expect(warns[0][0]).toEqual({ msg: 'itinerary_daily_run_missing', country: 'AR', operationDate: '2026-11-02' });
+        expect((res.json as jest.Mock).mock.calls[0][0].itineraryDailyRun).toEqual({ missing: [{ country: 'AR', operationDate: '2026-11-02' }] });
+      });
+
+      it('tudo rodou: nenhum WARN; sem o serviço injetado o bloco é omitido', async () => {
+        await comItinerario(jest.fn().mockResolvedValue({ missing: [] })).getEventsHealth(mockReq({}, {}), mockRes());
+        expect(logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg === 'itinerary_daily_run_missing')).toHaveLength(0);
+        const res = mockRes();
+        await controller.getEventsHealth(mockReq({}, {}), res);
+        expect((res.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('itineraryDailyRun');
+      });
+    });
+
     it('parses recentWindowHours/stuckThresholdMinutes from query', async () => {
       const req = mockReq({}, { recentWindowHours: '12', stuckThresholdMinutes: '30' });
       const res = mockRes();

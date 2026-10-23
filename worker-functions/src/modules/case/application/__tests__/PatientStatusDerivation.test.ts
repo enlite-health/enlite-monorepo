@@ -65,6 +65,48 @@ describe('PatientStatusDerivation', () => {
     expect(moveStatus).not.toHaveBeenCalled();
   });
 
+  it('evaluate (spec 069, pré-visão): devolve a entrada da regra pura SEM mover e, com lock:false, pede a leitura sem lock; sem sujeito → null', async () => {
+    const { derivation, subjectReader, moveStatus } = montar({});
+    const ev = await derivation.evaluate(client, PID, NOW, { lock: false });
+    expect(ev?.subject).toEqual({ status: 'SEARCHING', country: 'AR', montado: true });
+    expect(ev?.input).toMatchObject({ status: 'SEARCHING', montado: true, servicos: [{ temVacanteViva: true }] });
+    expect(subjectReader.readSubjectWith).toHaveBeenCalledWith(client, PID, false);
+    expect(moveStatus).not.toHaveBeenCalled();
+
+    const padrao = await derivation.evaluate(client, PID, NOW);
+    expect(padrao).not.toBeNull();
+    expect(subjectReader.readSubjectWith).toHaveBeenLastCalledWith(client, PID, true);
+
+    await expect(montar({ subject: null }).derivation.evaluate(client, PID, NOW)).resolves.toBeNull();
+  });
+
+  it('evaluate com `simulate` (spec 069, "No vuelve más"): a MESMA conta sobre as faixas transformadas, na data pedida; não mexe no que foi lido nem move', async () => {
+    const { derivation, moveStatus } = montar({ rows: linhas(servico('s1', 2)) }); // 8/8 hoje
+    const hoje = await derivation.evaluate(client, PID, NOW, { lock: false });
+    expect(hoje?.input.servicos).toEqual([{ temVacanteViva: true, cobertas: 8, total: 8 }]);
+
+    const asOfs: string[] = [];
+    const simulado = await derivation.evaluate(client, PID, NOW, {
+      lock: false,
+      simulate: {
+        asOf: '2026-11-02',
+        transform: (rows) => {
+          asOfs.push(rows.patientId);
+          return { ...rows, slots: rows.slots.map((r) => (r.id === 's1-a' ? { ...r, validTo: '2026-11-01' } : r)) }; // a faixa a perde a alocação em D
+        },
+      },
+    });
+    expect(asOfs).toEqual([PID]);
+    expect(simulado?.input.servicos).toEqual([{ temVacanteViva: true, cobertas: 4, total: 8 }]); // só a faixa b segue coberta em 02/11
+    expect(moveStatus).not.toHaveBeenCalled();
+  });
+
+  it('evaluate sem leitura de serviços (null) usa linhas vazias do próprio paciente — nunca explode, e a simulação roda sobre elas', async () => {
+    const { derivation } = montar({ rows: null });
+    const ev = await derivation.evaluate(client, PID, NOW, { lock: false, simulate: { asOf: '2026-11-02', transform: (rows) => rows } });
+    expect(ev?.input.servicos).toEqual([]);
+  });
+
   it("itinerário não montado → 'unchanged' e mover 0×", async () => {
     const { derivation, moveStatus } = montar({ subject: { status: 'SEARCHING', country: 'AR', montado: false } });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('unchanged');

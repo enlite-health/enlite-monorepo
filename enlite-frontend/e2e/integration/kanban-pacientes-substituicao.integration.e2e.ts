@@ -30,7 +30,7 @@ import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { postServiceTeamAction } from '../helpers/quadro-c-e2e-helper';
 import {
-  allocateApi, endAllocationApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite, patientStatus,
+  allocateApi, assembleApi, endAllocationApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite, patientStatus,
 } from '../helpers/itinerario-escrita-e2e-helper';
 import {
   registerAbsenceApi, setAbsenceSubstituteApi, cancelAbsenceApi, nextWeekdaySql, pastWeekdaySql,
@@ -575,6 +575,10 @@ test.describe('substituicao @integration', () => {
       expect(allocT.status).toBe(201);
       const allocationId = (allocT.body.data as AllocateData | undefined)?.allocationId;
       if (!allocationId) throw new Error('substituicao-alerta: alocação sem allocationId');
+      // Spec 069 (P13): o "Sin cubrir" que vira alerta só existe para paciente com itinerário MONTADO ("Itinerario listo") — antes disso a faixa sem
+      // prestador é falta estrutural. O teste monta o itinerário (a mesma rota que o botão chama) antes de lançar a falta.
+      const montado = await assembleApi(request, token, seed.patientId);
+      expect(montado.status, `montar ${montado.status}`).toBeLessThan(300);
 
       const absence = await registerAbsenceApi(request, token, seed.patientId, seed.serviceId, allocationId, { date: d });
       expect(absence.status).toBe(201);

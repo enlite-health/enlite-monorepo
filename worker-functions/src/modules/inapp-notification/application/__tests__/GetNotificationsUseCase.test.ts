@@ -285,3 +285,28 @@ describe('GetNotificationsUseCase — aviso do vínculo do Tactiq (spec 049 F4):
     expect(b.payload).toBeNull();
   });
 });
+
+describe('GetNotificationsUseCase — aviso diário do itinerário (spec 069 F4): payload só-ids', () => {
+  const itRow = (payload: unknown): NotificationEventRow =>
+    row({ id: 'it1', typeCode: 'ITINERARY_UNCOVERED_SHIFTS', actorUid: 'system:itinerary-daily', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, payload: payload as never });
+  const run = async (payload: unknown) => (await new GetNotificationsUseCase(repoWith([itRow(payload)])).execute({ recipientUid: 'me', limit: 20 }))[0];
+
+  it('devolve operationDate + itens de 4 chaves (ids e números); chave extra (nome do paciente) é descartada e item malformado sai', async () => {
+    const dto = await run({
+      operationDate: '2026-11-02',
+      nomeDoPaciente: 'Ana Silva',
+      items: [
+        { patientId: 'p1', serviceId: 's1', shifts: 2, firstDate: '2026-11-02', nome: 'Ana Silva' },
+        { patientId: 'p2', serviceId: 's2', shifts: 'dois', firstDate: '2026-11-03' },
+      ],
+    });
+    expect(dto.payload).toEqual({ operationDate: '2026-11-02', items: [{ patientId: 'p1', serviceId: 's1', shifts: 2, firstDate: '2026-11-02' }] });
+    expect(dto.patientCaseNumber).toBeNull();
+  });
+
+  it('payload malformado ou ausente vira null (nunca explode o sino)', async () => {
+    expect((await run({ items: [] })).payload).toBeNull();
+    expect((await run({ operationDate: '2026-11-02', items: 'x' })).payload).toBeNull();
+    expect((await run(null)).payload).toBeNull();
+  });
+});

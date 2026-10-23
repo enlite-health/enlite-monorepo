@@ -31,10 +31,14 @@ describe('patientItinerarySlotSchema', () => {
   });
 
   it('serviço com contratadas é recusado (.strict); scheduleHours é exigido', () => {
-    const svc = { contractedServiceId: '11111111-1111-4111-8111-111111111111', scheduleHours: 8, cobertas: 4, reserve: { count: 3, minimum: 10 }, slots: [] };
+    const svc = { contractedServiceId: '11111111-1111-4111-8111-111111111111', scheduleHours: 8, cobertas: 4, reserve: { count: 3, minimum: 10 }, uncoveredShifts: 2, slots: [] };
     expect(patientItineraryServiceSchema.safeParse(svc).success).toBe(true);
     expect(patientItineraryServiceSchema.safeParse({ ...svc, contratadas: { weekly: 8, authorized: null } }).success).toBe(false);
     const { scheduleHours: _omit, ...semHoras } = svc;
     expect(patientItineraryServiceSchema.safeParse(semHoras).success).toBe(false);
+    // spec 069 (FR-03): `uncoveredShifts` (turnos) é obrigatório e inteiro >= 0
+    const { uncoveredShifts: _omitShifts, ...semTurnos } = svc;
+    expect(patientItineraryServiceSchema.safeParse(semTurnos).success).toBe(false);
+    expect(patientItineraryServiceSchema.safeParse({ ...svc, uncoveredShifts: -1 }).success).toBe(false);
   });
 });

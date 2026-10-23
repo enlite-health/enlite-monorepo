@@ -7,6 +7,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { seedB2, hojeAr, somaDias, proximoDia, limparB2, type SeedB2 } from './helpers/seedItinerarioB2';
+import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -49,10 +50,11 @@ describe('POST …/allocations/:id/end com agendamento — API real (058 P5c) @i
     const d2 = await somaDias(pool, d1, 7);
     const appC = await applicationOf(s.segAllocations[0]);
     for (const d of [d1, d2]) {
+      const requestId = await seedRequestForAssignment(pool, s.quaAllocations[0], { createdBy: 'e2e' });
       await pool.query(
-        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-         VALUES ($1, $2::date, $3, $4, 'e2e', 'e2e')`,
-        [s.quaAllocations[0], d, s.segWorkers[0], appC],
+        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+         VALUES ($1, $2::date, $3, $4, 'e2e', 'e2e', $5)`,
+        [s.quaAllocations[0], d, s.segWorkers[0], appC, requestId],
       );
     }
     return { s, d1, d2 };
@@ -308,6 +310,37 @@ describe('POST …/allocations/:id/end com agendamento — API real (058 P5c) @i
       [s.serviceId],
     );
     expect(ec.rows[0].n).toBe(1);
+  });
+
+  it('defeito 17 (spec 069 FR-34): restaurar o titular bate em `uq_pia_open_pair` (ele já tem OUTRA alocação aberta na faixa) → 409 ALLOCATION_RESTORE_CONFLICT, nunca 500; snapshot antes = depois', async () => {
+    // providers_needed = 2: a Trava A deixa o titular ter a 2ª alocação aberta ao lado da entrada do substituto
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 2, titularesSeg: 0, selecionados: 2, desdeDias: -7 });
+    const [t, w] = s.selecionados;
+    const vfT = await somaDias(pool, hoje, 3);
+    const amanha = await somaDias(pool, hoje, 1);
+    const tId = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, status, created_by, updated_by)
+         VALUES ($1, $2, (SELECT id FROM worker_job_applications WHERE worker_id = $2), $3::date, 'ACTIVE', 'e2e', 'e2e') RETURNING id`,
+        [s.slotQuaId, t, vfT],
+      )
+    ).rows[0].id;
+    await replace(s, tId, w, amanha);
+    expect(await alocacao(tId)).toEqual({ status: 'CANCELLED', vf: vfT, vt: null }); // controle: o replace de verdade cancelou o titular
+    await pool.query(
+      `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, status, created_by, updated_by)
+       VALUES ($1, $2, (SELECT id FROM worker_job_applications WHERE worker_id = $2), $3::date, 'ACTIVE', 'e2e', 'e2e')`,
+      [s.slotQuaId, t, await somaDias(pool, hoje, -7)],
+    ); // o titular ganhou OUTRA alocação aberta no mesmo slot: restaurar a cancelada duplica o par aberto
+    const wSeg = await alocarVigente(w, s.slotSegId);
+    const before = await snapshot(s);
+
+    const res = await tirarTudo(s, wSeg);
+
+    expect(res.status).toBe(409);
+    expect(res.data.code).toBe('ALLOCATION_RESTORE_CONFLICT');
+    expect(await snapshot(s)).toEqual(before); // a transação inteira desfez (entrada cancelada, w ainda alocado)
+    expect(await alocacao(tId)).toEqual({ status: 'CANCELLED', vf: vfT, vt: null });
   });
 
   it('controle negativo: o titular ligado já está ENDED por outro caminho → tirar W não reabre nada', async () => {

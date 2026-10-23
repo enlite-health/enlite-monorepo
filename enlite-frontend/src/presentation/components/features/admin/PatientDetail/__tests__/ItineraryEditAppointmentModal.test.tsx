@@ -143,9 +143,9 @@ describe('ItineraryEditAppointmentModal', () => {
     expect(screen.getByTestId('itinerario-editar-sem-vaga')).toBeInTheDocument();
   });
 
-  it('aviso Ana Care sempre visível (padrão D445)', () => {
+  it('FR-40: o modal não menciona o Ana Care (nada é lançado à mão nem espelhado; o aviso saiu)', () => {
     renderModal();
-    expect(screen.getByTestId('itinerario-editar-anacare-aviso')).toBeInTheDocument();
+    expect(screen.queryByText(/Ana Care/i)).toBeNull();
   });
 
   it('options null (carregando) → select desabilitado', () => {

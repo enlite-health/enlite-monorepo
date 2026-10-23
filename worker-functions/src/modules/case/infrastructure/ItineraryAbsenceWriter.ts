@@ -24,6 +24,8 @@ import type { PoolClient } from 'pg';
 
 export interface InsertAbsenceInput {
   allocationId: string;
+  /** Pedido de substituição dono desta ausência (548: obrigatório; o banco recusa INSERT sem pedido). */
+  requestId: string;
   date: string;
   substituteWorkerId: string | null;
   substituteApplicationId: string | null;
@@ -48,10 +50,10 @@ export class ItineraryAbsenceWriter {
   async insertAbsence(client: PoolClient, input: InsertAbsenceInput): Promise<InsertedAbsence> {
     const res = await client.query<{ id: string; on_date: string }>(
       `INSERT INTO patient_itinerary_absence
-         (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-       VALUES ($1, $2::date, $3, $4, $5, $5)
+         (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+       VALUES ($1, $2::date, $3, $4, $5, $5, $6)
        RETURNING id, to_char(on_date,'YYYY-MM-DD') AS on_date`,
-      [input.allocationId, input.date, input.substituteWorkerId, input.substituteApplicationId, input.actorUid],
+      [input.allocationId, input.date, input.substituteWorkerId, input.substituteApplicationId, input.actorUid, input.requestId],
     );
     const row = res.rows[0];
     return { id: row.id, date: row.on_date };
@@ -83,6 +85,20 @@ export class ItineraryAbsenceWriter {
       substituteWorkerId: row.substitute_worker_id,
       cancelled: row.cancelled_at !== null,
     };
+  }
+
+  /** FR-23: as ausências ABERTAS do titular neste serviço com `on_date >= fromDate` (ids, em ordem de data). */
+  async listOpenOfWorker(client: PoolClient, serviceId: string, workerId: string, fromDate: string): Promise<string[]> {
+    const res = await client.query<{ id: string }>(
+      `SELECT ab.id
+         FROM patient_itinerary_absence ab
+         JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
+         JOIN patient_itinerary_slot s ON s.id = a.slot_id
+        WHERE s.contracted_service_id = $1 AND a.worker_id = $2 AND ab.cancelled_at IS NULL AND ab.on_date >= $3::date
+        ORDER BY ab.on_date, ab.id`,
+      [serviceId, workerId, fromDate],
+    );
+    return res.rows.map((r) => r.id);
   }
 
   /** Põe/tira o substituto — os 2 campos JUNTOS (`null`/`null` tira); `cancelled_at IS NULL` no WHERE. */

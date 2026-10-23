@@ -16,7 +16,9 @@ registry.registerPath({
     'faixas vigentes, horas/semana (D516: autorização não entra). Sem backfill: serviço cujo horário não foi ' +
     'salvo depois da migration 480 aparece com `slots: []`. `slots[]` traz só faixas vigentes: ' +
     '`{ id, weekday, startTime, endTime, durationMinutes, assignments }` (`endTime` derivado de início + duração; sem `active`). `alerts: [{ serviceId, date, ' +
-    'startTime, endTime }]` (fase 13): ausência sem substituto, data ≥ hoje (Buenos Aires); sem nome. ' +
+    'startTime, endTime }]` (fase 13; spec 069): TURNO "Sin cubrir" — ausência sem substituto OU faixa sem alocação vigente — em ' +
+    '`[hoje, hoje + horizonDays - 1]` (Buenos Aires); sem nome. `horizonDays` = horizonte do aviso (7); `services[].uncoveredShifts` = TURNOS ' +
+    'sin cubrir nesse horizonte (separado do estado estrutural "Faltan cubrir X h de Y"). ' +
     '`assembledAt` (ISO UTC, `null` = nunca montado): `max(assembled_at)` de `patient_itinerary_assembly`. ' +
     '`services[].reserve: { count, minimum } | null` (056): Equipe de Resposta Rápida da vaga viva, sem alocados nem rejeitados; `null` = sem vaga viva. ' +
     'Fase 12: cada alocação traz `allocationId` e `displayName` (só vigente; `null` sem `worker_contact:read`).',

@@ -17,7 +17,7 @@
  */
 import * as functions from 'firebase-functions';
 import type { PoolClient } from 'pg';
-import { derivarEstadoPaciente, type ServicoParaDerivar } from '../domain/derivarEstadoPaciente';
+import { derivarEstadoPaciente, type EntradaDerivacao, type ServicoParaDerivar } from '../domain/derivarEstadoPaciente';
 import { PatientStatusDerivationReader, type DerivationSubject } from '../infrastructure/PatientStatusDerivationReader';
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { buildServiceCoverages, operationDateOf } from './itineraryCoverage';
@@ -30,7 +30,22 @@ export interface PatientStatusDerivationPort {
 }
 
 export interface DerivationSubjectReaderPort {
-  readSubjectWith(client: PoolClient, patientId: string): Promise<DerivationSubject | null>;
+  readSubjectWith(client: PoolClient, patientId: string, lock?: boolean): Promise<DerivationSubject | null>;
+}
+
+/** A entrada da regra pura + o sujeito (spec 069: a pré-visão do estado novo chama a MESMA regra com a cobertura simulada). */
+export interface DerivationEvaluation {
+  subject: DerivationSubject;
+  input: EntradaDerivacao;
+}
+
+/**
+ * Cobertura SIMULADA (spec 069, pré-visão do "No vuelve más"): a MESMA conta, sobre as faixas/alocações lidas depois de `transform`,
+ * na data `asOf` (D, o 1º dia sem a pessoa). Nunca escreve.
+ */
+export interface DerivationSimulation {
+  asOf: string;
+  transform(rows: KanbanServicesRows): KanbanServicesRows;
 }
 
 export interface DerivationServicesReaderPort {
@@ -54,20 +69,37 @@ export class PatientStatusDerivation implements PatientStatusDerivationPort {
     this.moveStatus = deps.moveStatus ?? movePatientStatus;
   }
 
-  async run(client: PoolClient, patientId: string, now: Date): Promise<DerivationOutcome> {
-    const subject = await this.subjectReader.readSubjectWith(client, patientId);
-    if (!subject) return 'not_subject';
+  /**
+   * Lê o sujeito e a cobertura e monta a entrada da regra pura (`derivarEstadoPaciente`). `lock: false` = só leitura (pré-visão
+   * do pedido de substituição, spec 069): nenhum `FOR UPDATE`. `null` = não é sujeito (sem paciente).
+   */
+  async evaluate(
+    client: PoolClient,
+    patientId: string,
+    now: Date,
+    opts: { lock: boolean; simulate?: DerivationSimulation } = { lock: true },
+  ): Promise<DerivationEvaluation | null> {
+    const subject = await this.subjectReader.readSubjectWith(client, patientId, opts.lock);
+    if (!subject) return null;
 
-    const rows = (await this.servicesReader.readForPatientWith(client, patientId)) ?? { services: [], slots: [] };
-    const asOf = operationDateOf(subject.country, now);
+    const read = (await this.servicesReader.readForPatientWith(client, patientId)) ?? { patientId, country: subject.country, services: [], slots: [] };
+    const rows = opts.simulate ? opts.simulate.transform(read) : read;
+    const asOf = opts.simulate?.asOf ?? operationDateOf(subject.country, now);
     // 1 item por serviço, na MESMA ordem de `rows.services` (molde `ListKanbanServicesUseCase`).
     const servicos: ServicoParaDerivar[] = buildServiceCoverages(rows, asOf).map((coverage, index) => ({
       temVacanteViva: rows.services[index].liveVacancyId !== null,
       cobertas: coverage.cobertas,
       total: coverage.scheduleHours,
     }));
+    return { subject, input: { status: subject.status, montado: subject.montado, servicos } };
+  }
 
-    const alvo = derivarEstadoPaciente({ status: subject.status, montado: subject.montado, servicos });
+  async run(client: PoolClient, patientId: string, now: Date): Promise<DerivationOutcome> {
+    const evaluation = await this.evaluate(client, patientId, now);
+    if (!evaluation) return 'not_subject';
+    const { subject, input } = evaluation;
+
+    const alvo = derivarEstadoPaciente(input);
     if (alvo === null || alvo === subject.status) return 'unchanged';
 
     try {

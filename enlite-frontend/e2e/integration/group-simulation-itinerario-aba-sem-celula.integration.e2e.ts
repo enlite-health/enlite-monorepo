@@ -29,7 +29,7 @@ import {
 } from '../helpers/abac-stack-helper';
 import { postSlotApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite } from '../helpers/itinerario-escrita-e2e-helper';
 import { LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
-import { openItineraryTab, ITINERARY_TAB_LABEL } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openFixedSchedule, ITINERARY_TAB_LABEL } from '../helpers/itinerario-aba-e2e-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -102,6 +102,7 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
       // SEM: a aba aparece, a tela carregou (o chip do slot), e o "Asignar prestador" não.
       await loginAs(page, STAFF_SEM);
       await openItineraryTab(page, patientId);
+      await openFixedSchedule(page, svc.serviceId);
       await expect(
         page.getByTestId('patient-profile-tabs').getByRole('button', { name: ITINERARY_TAB_LABEL }),
       ).toBeVisible();
@@ -112,6 +113,9 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
       // Fase 3: o "Itinerario listo" (`patient_itinerary:update`) também SOME para quem não tem a célula —
       // a tela carregou (o chip do slot acima), então o 0 não é "ainda não montou".
       await expect(page.getByTestId('itinerario-montar')).toHaveCount(0);
+      // Spec 069: o "Nueva sustitución" da tela do serviço é a MESMA célula — some para quem não a tem (e a linha da faixa é só de leitura).
+      await expect(page.getByTestId('itinerario-nova-substituicao')).toHaveCount(0);
+      await expect(page.getByTestId(`itinerario-slot-somente-leitura-${slotId}`)).toHaveCount(1);
 
       // COM (controle positivo): mesma tela, contexto novo — a ação aparece no slot sem cobertura.
       const ctx = await browser.newContext({ ...LANCAMENTO_VIEWPORT_ES_AR, deviceScaleFactor: 1 });
@@ -119,7 +123,9 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
         const pageCom = await ctx.newPage();
         await loginAs(pageCom, STAFF_COM);
         await openItineraryTab(pageCom, patientId);
+        await openFixedSchedule(pageCom, svc.serviceId);
         await expect(pageCom.getByTestId(`itinerario-slot-horario-${slotId}`)).toBeVisible();
+        await expect(pageCom.getByTestId('itinerario-nova-substituicao')).toHaveCount(1); // controle positivo do 0 acima
         const comActions = pageCom.getByTestId(/^itinerario-slot-editar-/);
         await expect(comActions).toHaveCount(1);
         const comCount = await comActions.count();

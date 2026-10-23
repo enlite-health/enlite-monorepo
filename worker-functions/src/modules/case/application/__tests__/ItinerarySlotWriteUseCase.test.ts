@@ -223,6 +223,39 @@ describe('ItinerarySlotWriteUseCase', () => {
     });
   });
 
+  describe('spec 069 (P1): faixa com pedido de substituição FUTURO não se edita nem se encerra', () => {
+    // A guarda não conhece "pedido": ela enxerga a alocação ACTIVE ainda não encerrada (toda ausência viva de um pedido exige essa alocação).
+    // Então enquanto houver pedido futuro, `update` e `end` recusam — e NADA é escrito (nem faixa, nem derivação): nenhuma ausência muda.
+    it('update e end recusam com SlotHasActiveAllocationError, perguntam pela alocação em `hoje` do país e não escrevem nem derivam', async () => {
+      const derivation = { run: jest.fn().mockResolvedValue('unchanged') };
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
+        slotHasActiveAllocation: jest.fn().mockResolvedValue(true), // há alocação ACTIVE (a do titular com falta futura)
+      });
+      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), derivation);
+      const now = new Date('2026-10-30T15:00:00Z'); // hoje AR = 2026-10-30
+
+      await expect(useCase.update({ ...UPDATE, now })).rejects.toThrow(SlotHasActiveAllocationError);
+      await expect(useCase.end({ ...END, now })).rejects.toThrow(SlotHasActiveAllocationError);
+
+      expect(writer.slotHasActiveAllocation).toHaveBeenCalledTimes(2);
+      expect(writer.slotHasActiveAllocation).toHaveBeenNthCalledWith(1, FAKE_CLIENT, 'slot-1', '2026-10-30');
+      semEscrita(writer);
+      expect(derivation.run).not.toHaveBeenCalled();
+    });
+
+    it('controle positivo: sem alocação ativa a MESMA chamada escreve (a recusa vem da guarda, não de outra coisa)', async () => {
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
+        slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
+      });
+      await new ItinerarySlotWriteUseCase(writer, runInTransactionStub(), NO_DERIVATION).end(END);
+      expect(writer.closeSlot).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('hoje = operationDateOf(country, now) — findSlot e slotHasActiveAllocation recebem a data do país, não now() do processo', async () => {
     const writer = writerStub({
       findServiceForWrite: jest.fn().mockResolvedValue(SERVICE_WITH_ADDRESS),

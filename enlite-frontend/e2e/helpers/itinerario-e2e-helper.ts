@@ -60,12 +60,16 @@ export interface ItineraryServiceDto {
   cobertas: number;
   /** Reserva da vaga viva (spec 056 T6.2); `null` = sin vacante. */
   reserve?: { count: number; minimum: number } | null;
+  /** Spec 069: turnos sin cubrir nos próximos `horizonDays` dias (o aviso temporário do cartão) — número, sem PII. */
+  uncoveredShifts: number;
   slots: ItinerarySlotDto[];
 }
 
 export interface ItineraryResponseDto {
   patientId: string;
   asOf: string;
+  /** Spec 069: o horizonte do aviso, em dias (a tela nunca escreve "7" fixo). */
+  horizonDays: number;
   services: ItineraryServiceDto[];
 }
 
@@ -209,5 +213,10 @@ export function cleanupItinerary(patientId: string): void {
       `SELECT pis.id FROM patient_itinerary_slot pis ` +
       `JOIN patient_contracted_services pcs ON pcs.id = pis.contracted_service_id ` +
       `WHERE pcs.patient_id = '${patientId}')`,
+  );
+  // O pedido de substituição (migration 548) referencia prestador sem cascata: sai depois das alocações (que levam as ausências).
+  runSQL(
+    `DELETE FROM patient_itinerary_substitution_request WHERE contracted_service_id IN (` +
+      `SELECT id FROM patient_contracted_services WHERE patient_id = '${patientId}')`,
   );
 }

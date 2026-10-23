@@ -10,6 +10,7 @@
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
 import { uncoveredDayAlerts, uncoveredDayCount } from '../domain/itineraryAlerts';
+import { expandServiceOccurrences, uncoveredWindow } from '../domain/serviceOccurrences';
 import type { ServiceReserve } from '../domain/deriveServiceTeam';
 import { ServiceTeamReader } from '../infrastructure/ServiceTeamReader';
 import { reservesByServiceId, type ServiceReserveReaderPort } from './serviceReserve';
@@ -20,7 +21,7 @@ export interface KanbanServiceSummary {
   scheduleHours: number;
   cobertas: number;
   liveVacancyId: string | null;
-  /** DX-13.10: quantos dias vigentes (`date >= asOf`) o serviço tem ausência sem substituto. Leitura — nada de A muda. */
+  /** DX-13.10 → spec 069 (P7): quantos DIAS, nos próximos `UNCOVERED_HORIZON_DAYS`, o serviço tem turno sin cubrir (ausência sem substituto OU faixa sem alocação). Leitura — nada de A muda. */
   uncoveredDays: number;
   /** 056 §9: `null` = serviço sem vaga viva ("sin vacante"). Leitura derivada do quadro C — nada gravado. */
   reserve: ServiceReserve | null;
@@ -57,20 +58,22 @@ export class ListKanbanServicesUseCase {
       const asOf = operationDateOf(row.country, now);
       const reserves = reservesByServiceId(teamRows, asOf);
       const coverages = buildServiceCoverages(row, asOf);
+      const { from, to } = uncoveredWindow(asOf);
+      const occurrences = row.occurrences ? expandServiceOccurrences(row.occurrences.slots, row.occurrences.assignments, row.occurrences.absences, from, to) : [];
       // `buildServiceCoverages` devolve 1 item por serviço, na MESMA ordem de `row.services`
       // (`itineraryCoverage.ts` — `rows.services.map(...)`) — casamento por índice, sem `find`
       // O(n²) nem fallback (achado #4 do gate parcial da Fase 8).
       const services: KanbanServiceSummary[] = coverages.map((coverage, index) => {
         const service = row.services[index];
-        const absencesDoServico = (row.uncoveredAbsences ?? []).filter((a) => a.serviceId === service.id);
+        const doServico = occurrences.filter((o) => o.serviceId === service.id);
         return {
           contractedServiceId: coverage.contractedServiceId,
           serviceCode: service.serviceCode,
           scheduleHours: coverage.scheduleHours,
           cobertas: coverage.cobertas,
           liveVacancyId: service.liveVacancyId,
-          // L2: DIAS, não alertas — dedupe por `date` (2 faixas descobertas no mesmo dia = 1 dia).
-          uncoveredDays: uncoveredDayCount(uncoveredDayAlerts(absencesDoServico, asOf)),
+          // L2: DIAS, não turnos — dedupe por `date` (2 faixas descobertas no mesmo dia = 1 dia).
+          uncoveredDays: uncoveredDayCount(uncoveredDayAlerts(doServico, asOf, { itineraryAssembled: row.assembled === true, patientStatus: row.patientStatus ?? null })),
           reserve: reserves.get(service.id) ?? null,
         };
       });

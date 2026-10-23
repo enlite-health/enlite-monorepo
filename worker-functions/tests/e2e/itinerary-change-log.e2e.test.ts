@@ -127,8 +127,9 @@ describe('patient_itinerary_change_log — regras do banco (migration 494) @inte
   });
 
   it('(4) country herdado do serviço pelo trigger (AR e BR)', async () => {
-    const ar = await insertLog(serviceAR);
-    const br = await insertLog(serviceBR);
+    // 548: ABSENCE passou a exigir pedido (trg_picl_request, coberto em 069-schema.e2e.test.ts); a herança de país não depende do kind.
+    const ar = await insertLog(serviceAR, { kind: 'REMOVE', destination: 'RESERVE' });
+    const br = await insertLog(serviceBR, { kind: 'REMOVE', destination: 'RESERVE' });
     logAR = ar.rows[0].id;
     logBR = br.rows[0].id;
     expect(ar.rows[0].country).toBe('AR');

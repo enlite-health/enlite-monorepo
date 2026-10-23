@@ -23,7 +23,7 @@ function kmsDouble(): { decrypt: jest.Mock } {
   return { decrypt: jest.fn(async (v: string) => `dec:${v}`) };
 }
 
-const EMPTY_ROWS: ItineraryEventsRows = { country: 'AR', assignments: [], absences: [], workerNames: [] };
+const EMPTY_ROWS: ItineraryEventsRows = { country: 'AR', slots: [], assignments: [], absences: [], workerNames: [] };
 
 describe('GetPatientItineraryEventsUseCase', () => {
   it('paciente inexistente (reader devolve null) → PatientNotFoundForItineraryEventsError', async () => {
@@ -59,20 +59,8 @@ describe('GetPatientItineraryEventsUseCase', () => {
   it('feliz: 1 alocação vigente no domingo do intervalo, nome do titular decifrado', async () => {
     const rows: ItineraryEventsRows = {
       country: 'AR',
-      assignments: [
-        {
-          assignmentId: 'a-1',
-          slotId: 'slot-1',
-          serviceId: 'svc-1',
-          weekday: 0,
-          startTime: '09:00',
-          endTime: '13:00',
-          workerId: 'w-titular',
-          validFrom: '2026-09-01',
-          validTo: null,
-          status: 'ACTIVE',
-        },
-      ],
+      slots: [{ slotId: 'slot-1', serviceId: 'svc-1', weekday: 0, startTime: '09:00', endTime: '13:00', validFrom: '2026-01-01', validTo: null }],
+      assignments: [{ assignmentId: 'a-1', slotId: 'slot-1', workerId: 'w-titular', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
       absences: [],
       workerNames: [{ workerId: 'w-titular', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }],
     };
@@ -87,6 +75,49 @@ describe('GetPatientItineraryEventsUseCase', () => {
     // Sem célula real de decrypt aqui — o double só prova que o mapa foi consultado; a redação de
     // verdade (NOME_REDIGIDO por `projectWorkerFields`) é coberta pelo teste de `workerDisplayNames`.
     expect(reader.readForRange).toHaveBeenCalledWith(PID, '2026-09-27', '2026-09-27');
+    expect(result.events[0]).toMatchObject({ titularDisplayName: 'dec:enc-first dec:enc-last', requestId: null, absenceId: null });
+  });
+
+  it('FR-12: faixa SEM alocação vigente sai como uncovered com ids nulos e nomes nulos (contrato string | null)', async () => {
+    const rows: ItineraryEventsRows = {
+      country: 'AR',
+      slots: [{ slotId: 'slot-1', serviceId: 'svc-1', weekday: 0, startTime: '09:00', endTime: '13:00', validFrom: '2026-01-01', validTo: null }],
+      assignments: [],
+      absences: [],
+      workerNames: [],
+    };
+    const result = await new GetPatientItineraryEventsUseCase(readerWith(rows), kmsDouble()).execute({ patientId: PID, from: '2026-09-27', to: '2026-09-27' });
+
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        status: 'uncovered',
+        assignmentId: null,
+        titularWorkerId: null,
+        titularDisplayName: null,
+        absenceId: null,
+        requestId: null,
+        workerId: null,
+        workerDisplayName: null,
+        substituteDisplayName: null,
+        slotId: 'slot-1',
+      }),
+    ]);
+  });
+
+  it('ausência com substituto: requestId do pedido na linha e o nome de quem cobre', async () => {
+    const rows: ItineraryEventsRows = {
+      country: 'AR',
+      slots: [{ slotId: 'slot-1', serviceId: 'svc-1', weekday: 0, startTime: '09:00', endTime: '13:00', validFrom: '2026-01-01', validTo: null }],
+      assignments: [{ assignmentId: 'a-1', slotId: 'slot-1', workerId: 'w-titular', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
+      absences: [{ absenceId: 'ab-1', assignmentId: 'a-1', onDate: '2026-09-27', substituteWorkerId: 'w-sub', requestId: 'req-1' }],
+      workerNames: [
+        { workerId: 'w-titular', firstNameEncrypted: 'ft', lastNameEncrypted: 'lt' },
+        { workerId: 'w-sub', firstNameEncrypted: 'fs', lastNameEncrypted: 'ls' },
+      ],
+    };
+    const result = await new GetPatientItineraryEventsUseCase(readerWith(rows), kmsDouble()).execute({ patientId: PID, from: '2026-09-27', to: '2026-09-27' });
+
+    expect(result.events[0]).toMatchObject({ status: 'substituted', requestId: 'req-1', absenceId: 'ab-1', workerDisplayName: 'dec:fs dec:ls', substituteDisplayName: 'dec:fs dec:ls', titularDisplayName: 'dec:ft dec:lt' });
   });
 
   it('repassa serviceId/workerId ao expansor — o reader recebe só from/to (o filtro é em memória)', async () => {
