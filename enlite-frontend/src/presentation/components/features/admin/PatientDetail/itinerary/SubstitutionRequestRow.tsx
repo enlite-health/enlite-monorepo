@@ -11,8 +11,8 @@ import { dayMonthLabel, fullDayLabel, periodRangeLabel, shortDayLabel } from './
 import { dateLocaleOf } from './weekRange';
 
 /** Cuándo e Acción com a largura do CONTEÚDO (nowrap); Sale/Entra dividem o resto (`minmax(0,1fr)`). As linhas são subgrades da lista: as colunas alinham. */
-export const SUBSTITUTION_ROW_GRID = 'grid grid-cols-subgrid col-span-3 items-center gap-4';
-export const SUBSTITUTION_LIST_GRID = 'grid grid-cols-[max-content_minmax(0,1fr)_max-content] gap-x-4';
+export const SUBSTITUTION_ROW_GRID = 'grid grid-cols-subgrid col-span-3 items-center gap-3';
+export const SUBSTITUTION_LIST_GRID = 'grid grid-cols-[max-content_minmax(0,1fr)_max-content] gap-x-3';
 
 interface SubstitutionRequestRowProps {
   request: SubstitutionRequestItem;
@@ -78,14 +78,14 @@ export function SubstitutionRequestRow({ request, reasonLabel, expanded, undoing
           onPick={canAct && request.requestId !== null ? onPick : undefined}
         />
 
-        <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+        <div className="flex flex-col items-end gap-1.5 whitespace-nowrap">
           {request.shiftCount > 1 && (
-            <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={onToggleDays} aria-expanded={expanded} data-testid={`sustitucion-ver-dias-${id}`} {...NOWRAP}>
+            <Button variant="outline" size="sm" className="w-[116px] whitespace-nowrap" onClick={onToggleDays} aria-expanded={expanded} data-testid={`sustitucion-ver-dias-${id}`} {...NOWRAP}>
               {expanded ? td('hideDays') : td('viewDays')}
             </Button>
           )}
           {canAct && request.undoable && request.requestId !== null && (
-            <ActionButton resource="patient_itinerary" action="update" variant="outline" size="sm" className="whitespace-nowrap" disabled={undoing} onClick={onUndo} data-testid={`sustitucion-deshacer-${id}`} {...NOWRAP}>
+            <ActionButton resource="patient_itinerary" action="update" variant="outline" size="sm" className="w-[116px] whitespace-nowrap" disabled={undoing} onClick={onUndo} data-testid={`sustitucion-deshacer-${id}`} {...NOWRAP}>
               {td('undo')}
             </ActionButton>
           )}

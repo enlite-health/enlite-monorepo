@@ -4401,8 +4401,7 @@
             },
             "columns": {
               "when": "Cuándo",
-              "sale": "Sale",
-              "enters": "Entra",
+              "change": "Cambio",
               "action": "Acción"
             },
             "types": {

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { PersonAvatar } from '@presentation/components/atoms/PersonAvatar';
 import { Text } from '@presentation/components/atoms/Text';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
@@ -34,8 +34,6 @@ interface SaleEntraBlockProps {
   onPick?: () => void;
   /** Passadas/desfeitas: o bloco esmaece. */
   dimmed?: boolean;
-  /** `equal` = Sale e Entra do mesmo tamanho (a linha da lista, alinhada ao cabeçalho); `content` = Entra do tamanho do conteúdo (o resumo do modal, estreito). */
-  columns?: 'equal' | 'content';
   'data-testid'?: string;
 }
 
@@ -45,7 +43,7 @@ interface SaleEntraBlockProps {
  * com `aria-label` "Sale"/"Entra"; a informação de "sem cobertura" aparece NO CAMPO Entra ("Nadie todavía" + "Elegir quién entra"),
  * nunca num selo à parte. Cores do mockup (`.ci2`): #7A0A1E/#FFE0E5 (9,0:1) e #064E24/#D3F0DF (≥ 7:1).
  */
-export function SaleEntraBlock({ sale, entra, uncoveredLabels = [], onPick, dimmed = false, columns = 'equal', 'data-testid': testId }: SaleEntraBlockProps): JSX.Element {
+export function SaleEntraBlock({ sale, entra, uncoveredLabels = [], onPick, dimmed = false, 'data-testid': testId }: SaleEntraBlockProps): JSX.Element {
   const { t } = useTranslation();
   const tb = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.saleEntra.${key}`, opts);
   const saleName = workerLabel(t, sale.workerId, sale.displayName);
@@ -55,28 +53,29 @@ export function SaleEntraBlock({ sale, entra, uncoveredLabels = [], onPick, dimm
   const entraNames = entra.map((p) => workerLabel(t, p.workerId, p.displayName)).join(', ');
   const first = entra[0];
 
+  const roleText = first?.role && entra.length === 1 ? tb(`roles.${first.role}`) : null;
+
   return (
-    <div className={`grid ${nobody ? 'grid-cols-[minmax(0,1fr)_28px_minmax(max-content,1fr)]' : 'grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)]'} items-center gap-3 ${dimmed ? 'opacity-70' : ''}`} data-columns={columns} data-testid={testId}>
-      <div className="flex items-center gap-2 min-w-0" data-testid={testId ? `${testId}-sale` : undefined}>
+    <div className={`flex min-w-0 flex-col gap-1.5 ${dimmed ? 'opacity-70' : ''}`} data-testid={testId}>
+      {/* Linha 1 — quem SAI: seta ↓, avatar, NOME (o que cede por último) e "· motivo" (o que cede primeiro). */}
+      <div className="flex min-w-0 items-center gap-2" data-testid={testId ? `${testId}-sale` : undefined}>
         <span role="img" aria-label={tb('sale')} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#FFE0E5] text-[#7A0A1E]">
           <ArrowDown size={16} aria-hidden="true" />
         </span>
         <PersonAvatar uid={sale.workerId} name={saleName} size={32} />
-        <div className="flex min-w-0 flex-col">
-          <SingleLine size="sm" weight="semibold" color="primary">
-            {saleName}
+        <SingleLine size="sm" weight="semibold" color="primary" className="shrink">
+          {saleName}
+        </SingleLine>
+        {sale.caption && (
+          <SingleLine size="xs" color="tertiary" className="shrink-[4]">
+            {`· ${sale.caption}`}
           </SingleLine>
-          {sale.caption && (
-            <SingleLine size="xs" color="tertiary">
-              {sale.caption}
-            </SingleLine>
-          )}
-        </div>
+        )}
       </div>
 
-      <ArrowRight size={16} className="justify-self-center text-[#374151]" aria-hidden="true" />
-
-      <div className="flex items-center gap-2 min-w-0" data-testid={testId ? `${testId}-entra` : undefined}>
+      {/* Linha 2 — quem ENTRA: seta ↑, avatar, NOME + papel; sem substituto: "Nadie todavía" + "Elegir quién entra" na MESMA linha. A exceção
+          "salvo …: nadie" é um chip próprio, nunca cortado: quem cede é o nome. */}
+      <div className="flex min-w-0 items-center gap-2" data-testid={testId ? `${testId}-entra` : undefined}>
         <span
           role="img"
           aria-label={tb('enters')}
@@ -85,45 +84,47 @@ export function SaleEntraBlock({ sale, entra, uncoveredLabels = [], onPick, dimm
           <ArrowUp size={16} aria-hidden="true" />
         </span>
         {nobody ? (
-          <span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full border-2 border-dashed border-gray-800" />
+          <>
+            <span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full border-2 border-dashed border-gray-800" />
+            <Text as="span" size="sm" weight="semibold" color="inherit" className="shrink-0 whitespace-nowrap text-red-900" data-info-label="" {...NOWRAP}>
+              {tb('nobodyYet')}
+            </Text>
+            {onPick && canPick && (
+              <button type="button" onClick={onPick} className="shrink-0 whitespace-nowrap underline" data-testid={testId ? `${testId}-elegir` : undefined} data-info-label="" {...NOWRAP}>
+                <Text as="span" size="xs" weight="semibold" color="primary" className="whitespace-nowrap">
+                  {tb('pick')}
+                </Text>
+              </button>
+            )}
+          </>
         ) : (
-          <PersonAvatar uid={first.workerId} name={workerLabel(t, first.workerId, first.displayName)} size={32} />
-        )}
-        <div className="flex min-w-0 flex-col">
-          {nobody ? (
-            <>
-              <Text as="span" size="sm" weight="semibold" color="inherit" className="whitespace-nowrap text-red-900" {...NOWRAP}>
-                {tb('nobodyYet')}
-              </Text>
-              {onPick && canPick && (
-                <button type="button" onClick={onPick} className="self-start whitespace-nowrap underline" data-testid={testId ? `${testId}-elegir` : undefined} {...NOWRAP}>
-                  <Text as="span" size="xs" weight="semibold" color="primary" className="whitespace-nowrap">
-                    {tb('pick')}
-                  </Text>
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <SingleLine size="sm" weight="semibold" color="primary">
-                {entraNames}
-              </SingleLine>
-              {first.role && entra.length === 1 && (
-                <span className="flex min-w-0 items-center gap-1.5" data-testid={testId ? `${testId}-papel` : undefined} data-role={first.role}>
-                  {ROLE_DOT[first.role] && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${ROLE_DOT[first.role]}`} />}
-                  <SingleLine size="xs" color="tertiary">
-                    {tb(`roles.${first.role}`)}
-                  </SingleLine>
-                </span>
-              )}
-              {uncoveredLabels.length > 0 && (
-                <SingleLine size="xs" weight="semibold" color="inherit" className="text-red-900" data-testid={testId ? `${testId}-salvo` : undefined}>
-                  {tb('except', { days: uncoveredLabels.join(', ') })}
+          <>
+            <PersonAvatar uid={first.workerId} name={workerLabel(t, first.workerId, first.displayName)} size={32} />
+            <SingleLine size="sm" weight="semibold" color="primary" className="shrink">
+              {entraNames}
+            </SingleLine>
+            {roleText && first.role && (
+              <span className="flex min-w-0 shrink-[4] items-center gap-1.5 overflow-hidden" data-testid={testId ? `${testId}-papel` : undefined} data-role={first.role}>
+                {ROLE_DOT[first.role] && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${ROLE_DOT[first.role]}`} />}
+                <SingleLine size="xs" color="tertiary">
+                  {roleText}
                 </SingleLine>
-              )}
-            </>
-          )}
-        </div>
+              </span>
+            )}
+            {uncoveredLabels.length > 0 && (
+              <span
+                className="shrink-0 whitespace-nowrap rounded-full bg-[#FFE0E5] px-2.5 py-0.5 text-[#7A0A1E]"
+                data-testid={testId ? `${testId}-salvo` : undefined}
+                data-info-label=""
+                {...NOWRAP}
+              >
+                <Text as="span" size="xs" weight="semibold" color="inherit" className="whitespace-nowrap">
+                  {tb('except', { days: uncoveredLabels.join(', ') })}
+                </Text>
+              </span>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

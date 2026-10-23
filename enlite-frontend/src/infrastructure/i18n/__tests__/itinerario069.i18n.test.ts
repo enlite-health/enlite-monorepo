@@ -101,7 +101,7 @@ describe('itinerário 069 — i18n es + pt-BR', () => {
     expect(get(esJson, `${f}.summary.registering`)).toBe('Vas a registrar:');
     expect(get(esJson, `${ITIN}.saleEntra.pick`)).toBe('Elegir quién entra');
     expect(get(esJson, `${ITIN}.substitutions.filters`)).toEqual({ upcoming: 'Próximas', past: 'Pasadas' });
-    expect(get(esJson, `${ITIN}.substitutions.columns`)).toEqual({ when: 'Cuándo', sale: 'Sale', enters: 'Entra', action: 'Acción' });
+    expect(get(esJson, `${ITIN}.substitutions.columns`)).toEqual({ when: 'Cuándo', change: 'Cambio', action: 'Acción' });
     expect([get(esJson, `${ITIN}.substitutions.undone`), get(esJson, `${ITIN}.substitutions.adjusted`), get(esJson, `${ITIN}.substitutions.legacy`)]).toEqual(['Deshecha', 'Ajustado', 'Sin pedido (anterior)']);
     expect(get(esJson, `${ITIN}.fixed.noAttention`)).toBe('Sin atención: {{days}}');
     expect(get(esJson, `${ITIN}.serviceVacancy.withCase`)).toBe('Vacante CASO {{caseLabel}} · {{reserveCount}} en Respuesta Rápida');

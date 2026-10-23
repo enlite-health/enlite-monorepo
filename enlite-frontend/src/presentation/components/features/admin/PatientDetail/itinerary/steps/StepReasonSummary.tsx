@@ -87,7 +87,6 @@ export function StepReasonSummary({ draft, onChange, asOf, shifts, preview, outg
         </SingleLine>
         <div className="rounded-xl bg-white/60 p-2.5">
           <SaleEntraBlock
-            columns="content"
             data-testid="substitucion-resumen-bloque"
             sale={{ workerId: draft.outgoingWorkerId as string, displayName: outgoingName, caption: reasonLabel }}
             entra={entra.kind === 'NOBODY' ? [] : entra.workerIds.map((id) => personById.get(id) as EntraPerson)}

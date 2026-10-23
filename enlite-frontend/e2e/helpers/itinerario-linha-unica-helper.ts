@@ -16,6 +16,8 @@ export interface MedidaLinhaUnica {
   quebrados: string[];
   /** Pais que estouram na horizontal. */
   estouros: string[];
+  /** Rótulos INFORMATIVOS (`data-info-label`: "salvo …: nadie", "Nadie todavía", "Elegir quién entra") cortados pela reticência — tem de ser vazio. */
+  infoCortados: string[];
   /** Quantos marcados estão cortados pela reticência (texto maior que a caixa). */
   truncados: number;
   paginaRolaNaHorizontal: boolean;
@@ -50,6 +52,11 @@ export async function medirLinhaUnica(page: Page): Promise<MedidaLinhaUnica> {
     const quebrados: string[] = [];
     const estouros: string[] = [];
     let truncados = 0;
+    const infoCortados: string[] = [];
+    for (const el of Array.from(document.querySelectorAll('[data-info-label]')).filter(visivel)) {
+      const h = el as HTMLElement;
+      if (h.scrollWidth > h.clientWidth + 1) infoCortados.push(nome(el));
+    }
     for (const el of marcados) {
       if ((el.textContent ?? '').trim() !== '' && linhasDe(el) > 1) quebrados.push(nome(el));
       const h = el as HTMLElement;
@@ -64,6 +71,7 @@ export async function medirLinhaUnica(page: Page): Promise<MedidaLinhaUnica> {
       marcados: marcados.length,
       quebrados,
       estouros,
+      infoCortados,
       truncados,
       paginaRolaNaHorizontal: raiz.scrollWidth > raiz.clientWidth + 1,
     };
@@ -75,6 +83,7 @@ export async function expectLinhaUnica(page: Page, onde: string, minMarcados: nu
   const m = await medirLinhaUnica(page);
   expect(m.marcados, `${onde}: o guarda mediu ao menos ${minMarcados} elementos marcados (0 = não medi)`).toBeGreaterThanOrEqual(minMarcados);
   expect(m.quebrados, `${onde}: elementos que quebraram linha`).toEqual([]);
+  expect(m.infoCortados, `${onde}: rótulo informativo cortado (label informativa nunca é truncada)`).toEqual([]);
   expect(m.estouros, `${onde}: contêineres que estouram na horizontal`).toEqual([]);
   expect(m.paginaRolaNaHorizontal, `${onde}: a página não pode ganhar barra horizontal`).toBe(false);
   return m;

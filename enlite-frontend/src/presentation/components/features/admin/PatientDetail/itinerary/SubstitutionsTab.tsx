@@ -112,15 +112,9 @@ export function SubstitutionsTab({ patientId, serviceId, refreshKey, onNew, onPi
             <Text as="span" size="xs" weight="semibold" color="tertiary" className="whitespace-nowrap">
               {td('columns.when')}
             </Text>
-            <div className="grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] gap-3">
-              <Text as="span" size="xs" weight="semibold" color="tertiary">
-                {td('columns.sale')}
-              </Text>
-              <span aria-hidden="true" />
-              <Text as="span" size="xs" weight="semibold" color="tertiary">
-                {td('columns.enters')}
-              </Text>
-            </div>
+            <Text as="span" size="xs" weight="semibold" color="tertiary">
+              {td('columns.change')}
+            </Text>
             <Text as="span" size="xs" weight="semibold" color="tertiary" className="whitespace-nowrap text-right">
               {td('columns.action')}
             </Text>

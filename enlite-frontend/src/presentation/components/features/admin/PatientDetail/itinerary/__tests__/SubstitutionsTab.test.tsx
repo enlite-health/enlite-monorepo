@@ -69,12 +69,12 @@ function renderTab(over: Partial<React.ComponentProps<typeof SubstitutionsTab>> 
 }
 
 describe('SubstitutionsTab — a lista', () => {
-  it('cabeçalho Cuándo · Sale · Entra · Acción; UMA linha por pedido; filtro Próximas ativo', async () => {
+  it('cabeçalho Cuándo · Cambio · Acción; UMA linha por pedido; filtro Próximas ativo', async () => {
     const { container } = renderTab();
     expect(await screen.findByTestId('sustituciones-lista')).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith('p-1', 's-1', 'upcoming');
     const list_ = screen.getByTestId('sustituciones-lista');
-    for (const header of ['Cuándo', 'Sale', 'Entra', 'Acción']) expect(within(list_).getByText(header)).toBeInTheDocument();
+    for (const header of ['Cuándo', 'Cambio', 'Acción']) expect(within(list_).getByText(header)).toBeInTheDocument();
     expect(screen.getAllByTestId(/^sustitucion-rq-/)).toHaveLength(4);
     expect(screen.getByTestId('sustituciones-filtro-upcoming')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('sustituciones-filtro-past')).toHaveAttribute('aria-pressed', 'false');

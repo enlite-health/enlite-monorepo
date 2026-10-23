@@ -54,7 +54,7 @@ describe('SaleEntraBlock', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Elegir quién entra' }));
     expect(onPick).toHaveBeenCalledTimes(1);
     a.unmount();
-    render(<SaleEntraBlock sale={SALE} entra={[{ workerId: 'w-martin', displayName: 'Martín Gómez' }]} onPick={onPick} columns="content" uncoveredLabels={['lun 9']} />);
+    render(<SaleEntraBlock sale={SALE} entra={[{ workerId: 'w-martin', displayName: 'Martín Gómez' }]} onPick={onPick} uncoveredLabels={['lun 9']} />);
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.getByText('salvo lun 9: nadie')).toBeInTheDocument();
   });

@@ -4322,8 +4322,7 @@
             },
             "columns": {
               "when": "Quando",
-              "sale": "Sai",
-              "enters": "Entra",
+              "change": "Troca",
               "action": "Ação"
             },
             "types": {
