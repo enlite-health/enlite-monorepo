@@ -4126,6 +4126,9 @@
             "ABSENCE_DATE_IN_PAST": "A data já passou. Escolha hoje ou uma data futura.",
             "SUBSTITUTION_SHIFTS_MISMATCH": "Os turnos enviados não batem com os do período. Atualizamos a tela.",
             "NOTHING_TO_COVER": "Não sobrou nenhum turno sem cobertura neste pedido.",
+            "WORKER_HAS_SCHEDULED_EXIT": "Essa pessoa já tem uma saída programada para {{date}}. Desfaça essa substituição para mudar a data.",
+            "WORKER_HAS_SCHEDULED_EXIT_UNDATED": "Essa pessoa já tem uma saída programada. Desfaça essa substituição para mudar a data.",
+            "ALREADY_COVERED": "Esse turno já tem quem o cubra. Atualizamos a tela.",
             "SUBSTITUTE_IS_TITULAR": "O substituto não pode ser o próprio titular.",
             "generic": "Não foi possível atribuir o prestador."
           },
@@ -6307,8 +6310,11 @@
         "missing": "A extensão do Tactiq não está ativa no seu Chrome. Instale-a para continuar recebendo agendas de admissão.",
         "disabled": "A extensão do Tactiq está desativada no seu Chrome. Ative-a de novo para continuar recebendo agendas de admissão."
       },
-      "itineraryUncoveredText_one": "{{shifts}} turnos sem cobertura em {{count}} serviço",
-      "itineraryUncoveredText_other": "{{shifts}} turnos sem cobertura em {{count}} serviços",
+      "itineraryUncoveredText": "{{shifts}} sem cobertura em {{services}}",
+      "itineraryUncoveredShifts_one": "{{count}} turno",
+      "itineraryUncoveredShifts_other": "{{count}} turnos",
+      "itineraryUncoveredServices_one": "{{count}} serviço",
+      "itineraryUncoveredServices_other": "{{count}} serviços",
       "itineraryUncoveredContext": "Itinerário",
       "itineraryUncoveredDetail": "Primeiro turno sem cobertura: {{date}}"
     },

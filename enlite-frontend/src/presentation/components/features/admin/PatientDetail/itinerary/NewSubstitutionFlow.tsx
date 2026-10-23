@@ -76,6 +76,7 @@ export function NewSubstitutionFlow({ patientId, serviceId, asOf, prefill, onClo
   const permanent = draft.type === 'PERMANENT';
   const destinationAsked = permanent && draft.from === asOf;
   const pendingEntry = period.preview?.permanent?.pendingEntry === true;
+  const scheduledExit = period.preview?.permanent?.scheduledExit != null; // D1: a pessoa já tem saída agendada — o pedido seria recusado (409)
 
   const patch = (change: Partial<FlowDraft>): void => {
     setSubmitError(null);
@@ -88,9 +89,9 @@ export function NewSubstitutionFlow({ patientId, serviceId, asOf, prefill, onClo
 
   const canNext = (): boolean => {
     if (step === 1) return draft.outgoingWorkerId !== null;
-    if (step === 2) return draft.type !== null && periodProblem(draft, asOf) === null && period.status === 'ok' && shifts.length > 0 && !pendingEntry;
+    if (step === 2) return draft.type !== null && periodProblem(draft, asOf) === null && period.status === 'ok' && shifts.length > 0 && !pendingEntry && !scheduledExit;
     if (step === 3) return canAdvanceCover(draft, shifts, conflictList) && (chosen.length === 0 || conflicts.status === 'ok');
-    return draft.reason !== '' && (!destinationAsked || draft.destination !== '') && !submitting && !pendingEntry;
+    return draft.reason !== '' && (!destinationAsked || draft.destination !== '') && !submitting && !pendingEntry && !scheduledExit;
   };
 
   const confirm = async (): Promise<void> => {
@@ -101,7 +102,8 @@ export function NewSubstitutionFlow({ patientId, serviceId, asOf, prefill, onClo
       onCreated();
     } catch (err) {
       const classified = classifyActionError(err);
-      setSubmitError(classified.kind === 'coded' ? classified.code : 'GENERIC');
+      // a data da saída só vem na pré-visão; no 409 da confirmação (corrida) a mensagem não a cita
+      setSubmitError(classified.kind === 'coded' ? (classified.code === 'WORKER_HAS_SCHEDULED_EXIT' ? 'WORKER_HAS_SCHEDULED_EXIT_UNDATED' : classified.code) : 'GENERIC');
       setSubmitting(false);
     }
   };

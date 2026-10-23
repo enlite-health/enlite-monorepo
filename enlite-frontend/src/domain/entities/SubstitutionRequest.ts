@@ -106,6 +106,8 @@ export interface PermanentPreview {
   cancelledAbsences: number;
   clearedSubstitutes: number;
   pendingEntry: boolean;
+  /** O 1º dia SEM a pessoa, se ela já tem uma saída agendada no serviço (YYYY-MM-DD); `null` = não tem. O pedido é recusado (409). */
+  scheduledExit: string | null;
 }
 
 export interface SubstitutionPreview {

@@ -149,10 +149,12 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     detailLine: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
   },
   ITINERARY_UNCOVERED_SHIFTS: {
+    // Dois plurais independentes ("1 turno en 3 servicios"): cada contagem tem a SUA chave `_one/_other` (i18next só pluraliza por `count`),
+    // e a frase só costura os dois pedaços já pluralizados.
     buildText: (n, t) =>
       t('admin.notifications.itineraryUncoveredText', {
-        shifts: itineraryItems(n).reduce((sum, i) => sum + i.shifts, 0),
-        count: itineraryItems(n).length,
+        shifts: t('admin.notifications.itineraryUncoveredShifts', { count: itineraryItems(n).reduce((sum, i) => sum + i.shifts, 0) }),
+        services: t('admin.notifications.itineraryUncoveredServices', { count: itineraryItems(n).length }),
       }),
     getDeepLink: itineraryDeepLink,
     actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
