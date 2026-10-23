@@ -201,7 +201,7 @@ test.describe('itinerario-aba @integration', () => {
       // S1 (só segunda): "Horario fijo" lista os 6 outros dias em "Sin atención" e a segunda tem a linha com o chip do horário.
       await openFixedSchedule(page, s1);
       await expect(page.getByTestId('itinerario-sin-atencion')).toHaveText('Sin atención: domingo, martes, miércoles, jueves, viernes y sábado');
-      let vazios1 = 6;
+      const vazios1 = 6;
       await expect(page.getByTestId(`itinerario-dia-${s1}-0-${s1Slot.id}`)).toHaveCount(0);
       // Controle positivo: a segunda do 1º serviço tem a linha com o chip do horário.
       const monday = page.getByTestId(`itinerario-dia-${s1}-1-${s1Slot.id}`);
