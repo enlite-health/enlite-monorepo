@@ -262,7 +262,7 @@ describe('069 · pedido de substituição por dias — API real @integration', (
   });
 
   it('T6xx-extra pré-visão de "Elegir quién entra": `ignoreRequestId` aceita o pedido que já existe (turno com a falta dele, candidato livre, NADA gravado); pedido inexistente → 404; id malformado → 400', async () => {
-    const from = await addDays(nextMonday, 35);
+    const from = await addDays(nextMonday, 49);
     const shifts = await shiftsOf(from, from, sub);
     expect(shifts).toHaveLength(1);
     const created = await api.post(baseUrl(), { type: 'ONE_DAY', outgoingWorkerId: titular, from, reasonCategory: 'OTHER', shifts: [{ date: shifts[0].date, slotId: shifts[0].slotId, substituteWorkerId: null }] }, { headers: asAdmin.headers });
