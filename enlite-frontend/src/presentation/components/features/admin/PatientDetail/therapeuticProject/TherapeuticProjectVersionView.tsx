@@ -37,7 +37,7 @@ function ListValue({ items, testPrefix }: { items: { id: string; label: string; 
         <li key={i.id}>
           <Text as="span" size="sm" color="primary">{i.label}</Text>
           {i.description && (
-            <Text size="xs" color="muted" className="mt-0.5 whitespace-pre-line" data-testid={`${testPrefix}-description-${i.id}`}>{i.description}</Text>
+            <Text size="xs" color="tertiary" className="mt-0.5 whitespace-pre-line" data-testid={`${testPrefix}-description-${i.id}`}>{i.description}</Text>
           )}
         </li>
       ))}
