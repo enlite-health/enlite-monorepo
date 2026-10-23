@@ -154,6 +154,7 @@ export function VacancyFormLeftColumn({
               <div data-testid="case-select">
                 <Combobox
                   inputSize="compact"
+                  data-testid="case-select-combobox"
                   value={selectedCaseNumber != null ? String(selectedCaseNumber) : ''}
                   onChange={handleCaseChange}
                   options={cases.map((c) => ({

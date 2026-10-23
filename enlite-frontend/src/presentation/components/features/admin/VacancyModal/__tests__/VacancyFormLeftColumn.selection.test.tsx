@@ -18,6 +18,7 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     getCasesForSelect: vi.fn().mockResolvedValue([
       { caseNumber: 1234, patientId: 'p-native', dependencyLevel: 'SEVERE' },
       { caseNumber: 729, patientId: 'p-legacy', dependencyLevel: 'MODERATE' },
+      { caseNumber: 555, patientId: 'p-third', dependencyLevel: 'MILD' },
     ]),
   },
 }));
@@ -79,5 +80,16 @@ describe('VacancyFormLeftColumn — altura do seletor de caso (spec 070)', () =>
     const gatilho = (await screen.findByTestId('case-select')).querySelector('button') as HTMLElement;
     expect(gatilho.className).toContain('h-12');
     expect(gatilho.className).not.toContain('h-[60px]');
+  });
+});
+
+describe('VacancyFormLeftColumn — busca sem resultado do caso (spec 070)', () => {
+  it('termo sem caso mostra a mensagem do Combobox pelo testid case-select-combobox-no-results e nenhuma opção', async () => {
+    render(<Harness selectCase={vi.fn()} />);
+    const gatilho = (await screen.findByTestId('case-select')).querySelector('button') as HTMLElement;
+    fireEvent.click(gatilho);
+    fireEvent.change(screen.getByTestId('case-select-combobox-search'), { target: { value: 'zzz' } });
+    expect(await screen.findByTestId('case-select-combobox-no-results')).toBeInTheDocument();
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
   });
 });
