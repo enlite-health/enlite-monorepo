@@ -171,3 +171,18 @@ export async function readServiceOccurrenceInputs(
   });
   return byPatient.get(patientId) ?? EMPTY_OCCURRENCE_INPUTS;
 }
+
+/**
+ * Universo do "Sin cubrir" (P13): dos `patientIds`, quem tem itinerário MONTADO (existe linha no log append-only
+ * `patient_itinerary_assembly` — o mesmo fato que `PatientStatusDerivationReader` lê como `montado`). UMA consulta para todos
+ * (sem N+1). O filtro em si mora em `itineraryAlerts.uncoveredDayAlerts`; este é só o leitor do fato, lido pelo Kanban e pelo
+ * alerta diário.
+ */
+export async function readAssembledPatientIds(client: PoolClient, patientIds: readonly string[]): Promise<Set<string>> {
+  if (patientIds.length === 0) return new Set();
+  const res = await client.query<{ patient_id: string }>(
+    `SELECT DISTINCT patient_id FROM patient_itinerary_assembly WHERE patient_id = ANY($1::uuid[])`,
+    [patientIds],
+  );
+  return new Set(res.rows.map((r) => r.patient_id));
+}

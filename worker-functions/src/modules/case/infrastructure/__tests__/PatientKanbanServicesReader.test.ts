@@ -164,6 +164,7 @@ describe('PatientKanbanServicesReader', () => {
       rowCount: 3,
     };
     queryImpl = async (sql) => {
+      if (/FROM patient_itinerary_assembly/.test(sql)) return { rows: [{ patient_id: 'p-1' }], rowCount: 1 }; // só p-1 tem itinerário montado (P13)
       if (/WITH svc AS/.test(sql)) return svcRows;
       // Só p-1 tem faixa/alocação/ausência na janela; p-2 fica sem a chave `occurrences`.
       if (/FROM patient_itinerary_absence/.test(sql)) {
@@ -217,6 +218,10 @@ describe('PatientKanbanServicesReader', () => {
       absences: [{ absenceId: 'ab-1', assignmentId: 'asg-1', onDate: '2026-10-05', substituteWorkerId: null, requestId: 'req-1' }],
     });
     expect(Object.prototype.hasOwnProperty.call(p2!, 'occurrences')).toBe(false);
+    // universo P13: UMA consulta de montagem para todos os pacientes; montado só o p-1 (controle: o outro vem false)
+    expect(calls().filter((c) => /FROM patient_itinerary_assembly/.test(c.sql))).toHaveLength(1);
+    expect(p1!.assembled).toBe(true);
+    expect(p2!.assembled).toBe(false);
   });
 
   it('ocorrência de paciente fora do conjunto da 1ª query é ignorada (defensivo)', async () => {

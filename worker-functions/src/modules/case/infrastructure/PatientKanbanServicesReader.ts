@@ -20,7 +20,7 @@ import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow } from './PatientItineraryReader';
 import { liveVacancySelect } from './liveVacancySql';
 import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
-import { readOccurrenceInputsByPatient, type OccurrenceInputs } from './occurrenceInputs';
+import { readAssembledPatientIds, readOccurrenceInputsByPatient, type OccurrenceInputs } from './occurrenceInputs';
 import { UNCOVERED_HORIZON_DAYS } from '../domain/serviceOccurrences';
 
 export interface KanbanServiceRow {
@@ -35,6 +35,11 @@ export interface KanbanServicesRows {
   country: string;
   services: KanbanServiceRow[];
   slots: ItinerarySlotRow[];
+  /**
+   * Itinerário MONTADO (universo do "Sin cubrir", P13): sem montagem, faixa sem ninguém é falta estrutural, não alerta.
+   * Ausente em `readForPatientWith` (a derivação lê `montado` do sujeito) — ausente = não montado.
+   */
+  assembled?: boolean;
   /**
    * Spec 069 (FR-12, P7): faixas × alocações × ausências vivas da janela superconjunto `[CURRENT_DATE - 1, CURRENT_DATE + horizonte]`.
    * Ausente quando o paciente não tem nenhuma faixa tocando a janela (e na leitura `readForPatientWith`, que não lê ocorrência).
@@ -136,6 +141,10 @@ export class PatientKanbanServicesReader {
       }
     }
     if (!withAbsences) return Array.from(byPatient.values());
+
+    // Universo do "Sin cubrir" (P13): quem tem itinerário montado — UMA consulta para todos os pacientes (sem N+1).
+    const assembledIds = await readAssembledPatientIds(client, [...byPatient.keys()]);
+    for (const [pid, patient] of byPatient) patient.assembled = assembledIds.has(pid);
 
     // Ocorrências (spec 069, FR-12/P7): as 3 consultas de `occurrenceInputs` rodam UMA vez para TODOS os pacientes do filtro —
     // nunca por card (sem N+1). A janela em SQL é SUPERCONJUNTO (a data de Buenos Aires nunca é menor que a UTC − 1 e o horizonte

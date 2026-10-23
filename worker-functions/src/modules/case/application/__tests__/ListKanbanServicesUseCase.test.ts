@@ -30,7 +30,7 @@ describe('ListKanbanServicesUseCase', () => {
     const rows: KanbanServicesRows[] = [
       {
         patientId: 'p-1',
-        country: 'AR',
+        country: 'AR', assembled: true,
         services: [
           { id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v' },
           { id: 'svc-b', serviceCode: 'FA', liveVacancyId: null },
@@ -68,7 +68,7 @@ describe('ListKanbanServicesUseCase', () => {
     const rows: KanbanServicesRows[] = [
       {
         patientId: 'p-2',
-        country: 'AR',
+        country: 'AR', assembled: true,
         services: [{ id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v' }],
         slots: [
           {
@@ -90,7 +90,7 @@ describe('ListKanbanServicesUseCase', () => {
     const baseRows: KanbanServicesRows[] = [
       {
         patientId: 'p-1',
-        country: 'AR',
+        country: 'AR', assembled: true,
         services: [
           { id: 'svc-1', serviceCode: 'AT', liveVacancyId: null },
           { id: 'svc-2', serviceCode: 'FA', liveVacancyId: null },
@@ -148,7 +148,7 @@ describe('ListKanbanServicesUseCase', () => {
     const rows: KanbanServicesRows[] = [
       {
         patientId: 'p-1',
-        country: 'AR',
+        country: 'AR', assembled: true,
         services: [{ id: 'svc-1', serviceCode: 'AT', liveVacancyId: null }],
         slots: [
           {
@@ -174,13 +174,32 @@ describe('ListKanbanServicesUseCase', () => {
     expect(result.patients[0].services[0].uncoveredDays).toBe(1);
   });
 
+  it('universo P13: itinerário NÃO montado → uncoveredDays 0 mesmo com faixas sem ninguém; montado, a MESMA entrada conta', async () => {
+    const asOf = new Date('2026-09-27T15:00:00Z'); // domingo; janela 27/09 … 03/10
+    const faixa = (slotId: string, weekday: number) => ({ slotId, serviceId: 'svc-1', weekday, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null });
+    const linha = (assembled: boolean | undefined): KanbanServicesRows => ({
+      patientId: 'p-1',
+      country: 'AR',
+      ...(assembled === undefined ? {} : { assembled }),
+      services: [{ id: 'svc-1', serviceCode: 'AT', liveVacancyId: null }],
+      slots: [],
+      occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] },
+    });
+    const dias = async (assembled: boolean | undefined) =>
+      (await new ListKanbanServicesUseCase(readerWith([linha(assembled)]), noTeam).execute('AR', asOf)).patients[0].services[0].uncoveredDays;
+
+    expect(await dias(false)).toBe(0);
+    expect(await dias(undefined)).toBe(0); // ausente = não montado
+    expect(await dias(true)).toBe(2); // controle positivo
+  });
+
   it('P7: o horizonte é [hoje, hoje+6] — a segunda-feira de hoje+8 não conta; faixa sem alocação conta (FR-12)', async () => {
     const asOf = new Date('2026-09-27T15:00:00Z'); // domingo; janela 27/09 … 03/10
     const faixa = (slotId: string, weekday: number) => ({ slotId, serviceId: 'svc-1', weekday, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null });
     const rows: KanbanServicesRows[] = [
       {
         patientId: 'p-1',
-        country: 'AR',
+        country: 'AR', assembled: true,
         services: [{ id: 'svc-1', serviceCode: 'AT', liveVacancyId: null }],
         slots: [],
         occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] }, // dom 27 e sáb 03/10 (hoje+6): 2 dias; dom 04/10 (hoje+7): fora
@@ -194,8 +213,8 @@ describe('ListKanbanServicesUseCase', () => {
 
   it('mesmo `now`, paciente BR e AR: asOf pelo fuso de CADA país (countryToTimezone, nunca o relógio do processo)', async () => {
     const rows: KanbanServicesRows[] = [
-      { patientId: 'p-ar', country: 'AR', services: [], slots: [] },
-      { patientId: 'p-br', country: 'BR', services: [], slots: [] },
+      { patientId: 'p-ar', country: 'AR', assembled: true, services: [], slots: [] },
+      { patientId: 'p-br', country: 'BR', assembled: true, services: [], slots: [] },
     ];
     const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
@@ -217,7 +236,7 @@ describe('ListKanbanServicesUseCase', () => {
     const rows: KanbanServicesRows[] = [
       {
         patientId: 'p-1',
-        country: 'AR',
+        country: 'AR', assembled: true,
         services: [{ id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v' }],
         slots: [
           {
@@ -236,12 +255,12 @@ describe('ListKanbanServicesUseCase', () => {
 
   it('056 §9: reserve só dos serviços com vaga viva (leitura em lote só deles); sem vaga viva → null', async () => {
     const rows: KanbanServicesRows[] = [
-      { patientId: 'p-1', country: 'AR', services: [{ id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v-a' }, { id: 'svc-b', serviceCode: 'FA', liveVacancyId: null }], slots: [] },
+      { patientId: 'p-1', country: 'AR', assembled: true, services: [{ id: 'svc-a', serviceCode: 'AT', liveVacancyId: 'v-a' }, { id: 'svc-b', serviceCode: 'FA', liveVacancyId: null }], slots: [] },
     ];
     const teamReader = {
       readMany: jest.fn().mockResolvedValue([
         {
-          serviceId: 'svc-a', country: 'AR', liveVacancyId: 'v-a',
+          serviceId: 'svc-a', country: 'AR', assembled: true, liveVacancyId: 'v-a',
           candidacies: [
             { workerId: 'w1', vacancyId: 'v-a', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null },
             { workerId: 'w2', vacancyId: 'v-a', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null },

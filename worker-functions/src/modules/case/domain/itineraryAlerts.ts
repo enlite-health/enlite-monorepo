@@ -4,6 +4,11 @@
  * do horizonte `[asOf, asOf + UNCOVERED_HORIZON_DAYS - 1]`. Função pura: nada de `Date`/`Intl` — datas são string
  * `YYYY-MM-DD`. Esta função não lê `workerId`, nome, endereço ou qualquer coisa clínica (critério 13).
  *
+ * UNIVERSO (P13, orquestrador 23/10): só conta turno de paciente com itinerário MONTADO (`itineraryAssembled`, "Itinerario listo").
+ * Faixa de paciente sem itinerário montado é falta ESTRUTURAL — já visível no estado Búsqueda/Reemplazo —, não "Sin cubrir". O
+ * parâmetro é OBRIGATÓRIO de propósito: nenhum leitor consegue chamar a regra sem dizer se o paciente está montado, e o filtro mora
+ * AQUI, num lugar só, lido pelo Kanban, pelo GET do itinerário e pelo alerta diário (F4).
+ *
  * Lida pelo cartão do serviço (`GET itinerary`), pelo Kanban (`uncoveredDays`) e pelo alerta diário: a MESMA lista, o MESMO
  * horizonte. Duas unidades, dois nomes: `uncoveredDayCount` conta DIAS (Kanban), `uncoveredShiftCount` conta TURNOS (cartão
  * e alerta).
@@ -25,10 +30,11 @@ function alertKey(a: UncoveredDayAlert): string {
 }
 
 /**
- * Ocorrências `uncovered` com `asOf <= date <= asOf + 6` (string, nunca `Date`); ordenado por `date, startTime, serviceId`;
+ * `itineraryAssembled = false` → `[]` (universo P13). Ocorrências `uncovered` com `asOf <= date <= asOf + 6` (string, nunca `Date`); ordenado por `date, startTime, serviceId`;
  * sem repetição (mesma chave composta = mesmo turno).
  */
-export function uncoveredDayAlerts(occurrences: readonly UncoverableOccurrence[], asOf: string): UncoveredDayAlert[] {
+export function uncoveredDayAlerts(occurrences: readonly UncoverableOccurrence[], asOf: string, itineraryAssembled: boolean): UncoveredDayAlert[] {
+  if (!itineraryAssembled) return [];
   const { from, to } = uncoveredWindow(asOf);
   const seen = new Set<string>();
   const deduped: UncoveredDayAlert[] = [];

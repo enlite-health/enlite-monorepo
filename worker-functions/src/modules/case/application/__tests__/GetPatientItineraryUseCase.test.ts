@@ -147,7 +147,9 @@ describe('GetPatientItineraryUseCase', () => {
       slotId: id, serviceId: 'svc-a', weekday, startTime: start, endTime: end, validFrom: '2026-01-01', validTo: null,
     });
     const titular = { assignmentId: 'asg-1', slotId: 's1', workerId: 'w-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' as const };
+    // Itinerário MONTADO (`assembledAt`): o universo do "Sin cubrir" (P13). Sem isto nenhum turno conta.
     const baseRows: ItineraryRows = {
+      assembledAt: '2026-09-01T12:00:00.000Z',
       country: 'AR',
       services: [{ id: 'svc-a' }],
       slots: [
@@ -159,6 +161,16 @@ describe('GetPatientItineraryUseCase', () => {
     };
     // 2026-09-27 é domingo; hoje (AR) = 27/09; a janela é 27/09 … 03/10. Segundas: 28/09 e (fora) 05/10.
     const now = new Date('2026-09-27T15:00:00Z');
+
+    it('universo P13: itinerário NÃO montado → faixa sem ninguém NÃO é "Sin cubrir" (alerts [], uncoveredShifts 0); montado, a MESMA entrada conta', async () => {
+      const occurrences = { slots: [slot('m', 1), slot('t', 1, '14:00', '18:00')], assignments: [], absences: [] };
+      const naoMontado = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, assembledAt: null, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(naoMontado.alerts).toEqual([]);
+      expect(naoMontado.services[0].uncoveredShifts).toBe(0);
+      const montado = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(montado.services[0].uncoveredShifts).toBe(2);
+      expect(montado.alerts).toHaveLength(2);
+    });
 
     it('sem ocorrências lidas → alerts [], uncoveredShifts 0, horizonDays 7', async () => {
       const result = await new GetPatientItineraryUseCase(readerWith(baseRows), kmsDouble(), noTeam).execute(PID, now);

@@ -73,7 +73,7 @@ export class ListKanbanServicesUseCase {
           cobertas: coverage.cobertas,
           liveVacancyId: service.liveVacancyId,
           // L2: DIAS, não turnos — dedupe por `date` (2 faixas descobertas no mesmo dia = 1 dia).
-          uncoveredDays: uncoveredDayCount(uncoveredDayAlerts(doServico, asOf)),
+          uncoveredDays: uncoveredDayCount(uncoveredDayAlerts(doServico, asOf, row.assembled === true)),
           reserve: reserves.get(service.id) ?? null,
         };
       });
