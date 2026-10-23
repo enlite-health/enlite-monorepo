@@ -201,7 +201,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
                     {!showOrder && item.description && (
                       <Text
                         size="xs"
-                        color="muted"
+                        color="tertiary"
                         className="mt-0.5 line-clamp-2"
                         title={item.description}
                         data-testid={`therapeutic-catalog-description-${item.id}`}
