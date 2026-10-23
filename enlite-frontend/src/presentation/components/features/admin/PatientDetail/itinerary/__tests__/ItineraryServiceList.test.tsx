@@ -39,6 +39,11 @@ function renderCard(over: Partial<PatientItineraryService> = {}, horizonDays = 7
 }
 
 describe('ItineraryServiceCard — estado estrutural', () => {
+  it('Clarity: o endereço do paciente está dentro de um nó data-clarity-mask (lex C2.1, molde LocalizacoesCard)', () => {
+    renderCard();
+    expect(screen.getByText('Av. Colón 1234, Córdoba').closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
   it('completo: "Completo", nome, endereço, dias (domingo → sábado, a ordem do mockup), reserva e "Organizar agenda"', () => {
     const { container, onOpen } = renderCard();
     const card = screen.getByTestId('itinerario-cartao-svc-1');

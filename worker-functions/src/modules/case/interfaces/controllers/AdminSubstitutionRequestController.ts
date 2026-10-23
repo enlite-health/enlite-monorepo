@@ -23,6 +23,7 @@ import {
 } from '../../application/substitutionRequestErrors';
 import {
   AbsenceAlreadyCoveredError,
+  AbsenceNotFoundError,
   AbsenceCancelledError,
   AbsenceAlreadyExistsError,
   AbsenceDateInPastError,
@@ -32,6 +33,7 @@ import {
 } from '../../application/ItineraryAbsenceUseCase';
 import {
   AllocationNotActiveError,
+  AllocationNotFoundError,
   AlreadyAllocatedInSlotError,
   NotSelectedForServiceError,
 } from '../../application/ItineraryAllocationUseCase';
@@ -41,7 +43,7 @@ import {
   ServiceExitReasonInvalidError,
   ServiceExitReasonRequiredError,
 } from '../../domain/serviceExitReason';
-import { ServiceTeamWorkerAllocatedError } from '../../application/ServiceTeamMarkUseCase';
+import { ServiceTeamWorkerAllocatedError, ServiceTeamNotSelectedError, ServiceTeamAlreadyRejectedError } from '../../application/ServiceTeamMarkUseCase';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import { insuranceErrorBody } from './insuranceErrorResponse';
 import {
@@ -192,12 +194,16 @@ export class AdminSubstitutionRequestController {
 
   private handleError(err: unknown, res: Response, method: string, patientId: string, serviceId: string): void {
     const unprocessable = (code: string): void => void res.status(422).json({ success: false, code });
-    if (err instanceof SubstitutionServiceNotFoundError || err instanceof SubstitutionRequestNotFoundError) return void res.status(404).json({ success: false, code: 'NOT_FOUND' });
+    // Mesma família 404 do irmão `AdminItineraryAbsenceController` (alocação/turno inexistente em undo/cover).
+    if (err instanceof SubstitutionServiceNotFoundError || err instanceof SubstitutionRequestNotFoundError || err instanceof AllocationNotFoundError || err instanceof AbsenceNotFoundError) return void res.status(404).json({ success: false, code: 'NOT_FOUND' });
     if (err instanceof DestinationRequiredError) return unprocessable('DESTINATION_REQUIRED');
     if (err instanceof DestinationNotAvailableForScheduledError) return unprocessable('DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED');
     if (err instanceof AlreadyAllocatedInSlotError) return unprocessable('ALREADY_ALLOCATED_IN_SLOT');
     if (err instanceof AllocationNotActiveError) return unprocessable('ALLOCATION_NOT_ACTIVE');
     if (err instanceof ServiceTeamWorkerAllocatedError) return unprocessable('SERVICE_TEAM_WORKER_ALLOCATED');
+    // Molde `AdminItineraryWriteController` (mesmos status/códigos).
+    if (err instanceof ServiceTeamNotSelectedError) return unprocessable('SERVICE_TEAM_NOT_SELECTED');
+    if (err instanceof ServiceTeamAlreadyRejectedError) return void res.status(409).json({ success: false, code: 'SERVICE_TEAM_ALREADY_REJECTED' });
     if (err instanceof WorkerHasPendingEntryError) return void res.status(409).json({ success: false, code: 'WORKER_HAS_PENDING_ENTRY' });
     if (err instanceof WorkerHasScheduledExitError) return void res.status(409).json({ success: false, code: 'WORKER_HAS_SCHEDULED_EXIT', exitDate: err.exitDate });
     if (err instanceof AbsenceCancelledError) return void res.status(409).json({ success: false, code: 'ABSENCE_CANCELLED' });

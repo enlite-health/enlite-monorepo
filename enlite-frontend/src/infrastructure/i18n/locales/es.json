@@ -3967,6 +3967,7 @@
           "tableAddress": "Domicilio",
           "tableSchedule": "Horarios",
           "tableVacancyCode": "Vacante",
+          "viewVacancyAria": "Ver vacante de {{service}}",
           "noAddressLinked": "Sin domicilio vinculado",
           "noSchedule": "Sin horario",
           "detailTitle": "Detalle del servicio contratado",

@@ -23,9 +23,9 @@ import {
   WorkerHasPendingEntryError,
   WorkerHasScheduledExitError,
 } from '../../../application/substitutionRequestErrors';
-import { AbsenceAlreadyCoveredError, AbsenceCancelledError } from '../../../application/ItineraryAbsenceUseCase';
+import { AbsenceAlreadyCoveredError, AbsenceCancelledError, AbsenceNotFoundError } from '../../../application/ItineraryAbsenceUseCase';
 import { AllocationRestoreConflictError } from '../../../application/restoreTitular';
-import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
+import { ServiceTeamWorkerAllocatedError, ServiceTeamNotSelectedError, ServiceTeamAlreadyRejectedError } from '../../../application/ServiceTeamMarkUseCase';
 import {
   AbsenceAlreadyExistsError,
   AbsenceDateInPastError,
@@ -33,7 +33,7 @@ import {
   AbsenceWeekdayMismatchError,
   SubstituteIsTitularError,
 } from '../../../application/ItineraryAbsenceUseCase';
-import { AllocationNotActiveError, AlreadyAllocatedInSlotError, NotSelectedForServiceError } from '../../../application/ItineraryAllocationUseCase';
+import { AllocationNotActiveError, AllocationNotFoundError, AlreadyAllocatedInSlotError, NotSelectedForServiceError } from '../../../application/ItineraryAllocationUseCase';
 import { DestinationNotAvailableForScheduledError, DestinationRequiredError, ServiceExitReasonInvalidError, ServiceExitReasonRequiredError } from '../../../domain/serviceExitReason';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
 
@@ -262,6 +262,10 @@ describe('AdminSubstitutionRequestController', () => {
       ['já alocado na faixa', new AlreadyAllocatedInSlotError('sl', WORKER_ID), 422, 'ALREADY_ALLOCATED_IN_SLOT'],
       ['alocação não ativa', new AllocationNotActiveError('a-1'), 422, 'ALLOCATION_NOT_ACTIVE'],
       ['LEAVE_SERVICE com agendamento', new ServiceTeamWorkerAllocatedError(PATIENT_ID, SERVICE_ID, WORKER_ID), 422, 'SERVICE_TEAM_WORKER_ALLOCATED'],
+      ['selecionado: não está em Selecionado (gate 069)', new ServiceTeamNotSelectedError(PATIENT_ID, SERVICE_ID, WORKER_ID), 422, 'SERVICE_TEAM_NOT_SELECTED'],
+      ['selecionado: já rejeitado (gate 069)', new ServiceTeamAlreadyRejectedError(PATIENT_ID, SERVICE_ID, WORKER_ID), 409, 'SERVICE_TEAM_ALREADY_REJECTED'],
+      ['alocação inexistente (gate 069)', new AllocationNotFoundError(PATIENT_ID, SERVICE_ID, 'a-1'), 404, 'NOT_FOUND'],
+      ['turno inexistente (gate 069)', new AbsenceNotFoundError(PATIENT_ID, SERVICE_ID, 'ab-1'), 404, 'NOT_FOUND'],
       ['pedido inexistente', new SubstitutionRequestNotFoundError(RID), 404, 'NOT_FOUND'],
       ['pedido já desfeito', new SubstitutionRequestAlreadyUndoneError(RID), 409, 'REQUEST_ALREADY_UNDONE'],
       ['pedido sem nada futuro', new SubstitutionRequestNotUndoableError(RID), 409, 'REQUEST_NOT_UNDOABLE'],

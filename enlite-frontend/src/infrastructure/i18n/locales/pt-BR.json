@@ -3888,6 +3888,7 @@
           "tableAddress": "Endereço",
           "tableSchedule": "Horários",
           "tableVacancyCode": "Vaga",
+          "viewVacancyAria": "Ver vaga de {{service}}",
           "noAddressLinked": "Sem endereço vinculado",
           "noSchedule": "Sem horário",
           "detailTitle": "Detalhe do serviço contratado",

@@ -72,6 +72,12 @@ describe('ItineraryEditAppointmentModal', () => {
     expect(screen.getByTestId('itinerario-editar-endereco')).toHaveValue('Rua Augusta, 975');
   });
 
+
+  it('Clarity: o endereço do paciente está dentro de um nó data-clarity-mask (lex C2.1, molde LocalizacoesCard)', () => {
+    renderModal();
+    expect(screen.getByTestId('itinerario-editar-endereco').closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
   it('D445.6: NÃO existe campo de "Endereço de saída", "Valor da hora" nem etiqueta Regular/Fin de semana', () => {
     renderModal();
     expect(screen.queryByText(/Endereço de saída|Dirección de salida/i)).toBeNull();
