@@ -8,7 +8,7 @@
  *
  *  1. feliz: vaga com serviço abre no form de edição com profissões/sexo/dia de pagamento `disabled` e os
  *     links da ficha; clique real no link do sexo abre a ficha na aba Servicio Contratado; o sexo é mudado
- *     NO SERVIÇO pela UI da ficha (drawer, click + selectOption) e a vaga passa a mostrar o valor novo;
+ *     NO SERVIÇO pela UI da ficha (drawer, click + escolherNoCombo) e a vaga passa a mostrar o valor novo;
  *  2. alt: PUT com `required_sex` na vaga com serviço → 422 com `locked_fields` ⊇ required_sex (contrato
  *     de API, via `request`) e o banco não muda;
  *  3. alt: vaga SEM serviço abre com os 3 campos habilitados, sem links, e salva `required_sex` pela tela.

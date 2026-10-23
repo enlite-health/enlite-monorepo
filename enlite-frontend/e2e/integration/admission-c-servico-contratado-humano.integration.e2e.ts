@@ -2,7 +2,7 @@
  * admission-c-servico-contratado-humano.integration.e2e.ts @integration — D283 (06/09/2026)
  *
  * A pergunta do Gabriel: "quero saber se O FUNCIONAMENTO HUMANO também funciona". As specs C e
- * A6 preenchem por `fill()`/`selectOption()` depois de `scrollIntoViewIfNeeded()` — provam o
+ * A6 preenchem por `fill()` depois de `scrollIntoViewIfNeeded()` — provam o
  * ESTADO, não que um humano consegue clicar e digitar. Aqui NÃO há `evaluate`, `fill` nem
  * `dispatchEvent`: cada campo é `click()` (hit-test real de mouse) + `keyboard.type()`, e o que
  * se afirma é o valor que FICOU na tela depois de digitar. Se algo estiver por cima do campo

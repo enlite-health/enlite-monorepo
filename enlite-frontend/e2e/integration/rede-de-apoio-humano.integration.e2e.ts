@@ -2,7 +2,7 @@
  * rede-de-apoio-humano.integration.e2e.ts — spec 018, PR-2 (`lex` #4, D-A).
  *
  * Um HUMANO, contra o stack REAL (frontend + API + Postgres, engine de permissão LIGADO), zero
- * mock: click + `keyboard.type` + `selectOption` só no `<select>` nativo. Molde:
+ * mock: click + `keyboard.type` + `escolherNoCombo` (abre o Combobox e clica a opção pelo rótulo). Molde:
  * `rede-de-apoio-por-linha.integration.e2e.ts` (PR-1) + `abac-stack-helper.ts` (grupos ABAC).
  *
  * O que se prova:
