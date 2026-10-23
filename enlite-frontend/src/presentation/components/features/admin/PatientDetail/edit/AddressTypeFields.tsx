@@ -52,8 +52,8 @@ export function AddressTypeFields({
             id="pad-type"
             inputSize="compact"
             options={typeOptions}
-            placeholder="Selecione"
-            clearLabel="Selecione"
+            placeholder={ta('typePlaceholder')}
+            clearLabel={ta('typePlaceholder')}
             value={addressType}
             onChange={(v) => onAddressTypeChange(v as PatientAddressType | '')}
             data-testid="pad-type"
