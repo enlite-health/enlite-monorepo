@@ -1,7 +1,10 @@
 /**
  * Spec 030 (F3) — o campo "Segmento (Ana Care)" do form do PTI, escolhido como um HUMANO: click no
  * select nativo `#tp-segment`, foco conferido, TECLADO (`keyboard.type` das primeiras letras do rótulo
- * — o type-ahead do select nativo escolhe a opção sem abrir popup) e o valor LIDO DA TELA devolvido.
+ * + `Tab`) e o valor LIDO DA TELA devolvido. Medido (Chromium Linux = o do CI, headless): o click ABRE o
+ * popup nativo e o type-ahead só DESTACA a opção (value ficava ""); o `Tab` confirma o item destacado sem
+ * submeter o form. No macOS o popup não abre e o Tab só move o foco (a opção já foi escolhida). NÃO usar
+ * `Enter`: no macOS ele submete o form do select.
  * Compartilhado pelos specs que criam versão "Nuevo" (o segmento é obrigatório lá).
  */
 import { expect, type Page } from '@playwright/test';
@@ -19,6 +22,7 @@ export async function escolherSegmentoPeloTeclado(page: Page, rotuloEsperado: st
   await campo.click();
   await expect(campo).toBeFocused();
   await page.keyboard.type(rotuloEsperado.slice(0, 4));
+  await page.keyboard.press('Tab');
   await expect(campo).not.toHaveValue('');
   return (await campo.locator('option:checked').innerText()).trim();
 }
