@@ -103,7 +103,7 @@ async function alternar(escopo: ReturnType<typeof campo>, rotulo: string): Promi
 async function preencherNuevo(page: Page): Promise<void> {
   await page.getByTestId('tp-new-btn').click();
   await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+  await expect(page.getByTestId('tp-service')).toHaveText('Cuidador'); // serviceId = Cuidador (o seed não tem faixa de horário, então não há sufixo de h/sem)
   await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
   // Segmento (MACRO, obrigatório no "Nuevo"): escolhido pelo gesto humano no Combobox (abrir, buscar, clicar a opção pelo rótulo).
   await escolherSegmento(page, primeiroSegmento().label);

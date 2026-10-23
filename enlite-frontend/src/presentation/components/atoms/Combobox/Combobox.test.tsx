@@ -732,3 +732,28 @@ describe('Combobox — painel no celular (spec 070 T10)', () => {
     });
   });
 });
+
+describe('Combobox — posição do painel (gatilho no pé da janela)', () => {
+  const rect = (top: number, bottom: number) =>
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top, toJSON: () => ({}) });
+
+  it('sem espaço embaixo (rodapé da sidebar), o painel abre para CIMA', async () => {
+    rect(window.innerHeight - 60, window.innerHeight - 20);
+    renderSingle();
+    await userEvent.click(trigger());
+    const painel = screen.getByRole('listbox').parentElement as HTMLElement;
+    expect(painel.className).toContain('bottom-full');
+    expect(painel.className).not.toContain('mt-1');
+    vi.restoreAllMocks();
+  });
+
+  it('com espaço embaixo, o painel abre para BAIXO', async () => {
+    rect(100, 140);
+    renderSingle();
+    await userEvent.click(trigger());
+    const painel = screen.getByRole('listbox').parentElement as HTMLElement;
+    expect(painel.className).toContain('mt-1');
+    expect(painel.className).not.toContain('bottom-full');
+    vi.restoreAllMocks();
+  });
+});
