@@ -408,6 +408,11 @@ describe('título + descrição do catálogo congelados na versão (spec 061)', 
     });
     expect(screen.getByTestId('tpv-specific-description-o1')).toHaveTextContent('DESCRIPCION-SINTETICA-OBJ');
     expect(screen.getByTestId('tpv-activities-description-a1')).toHaveTextContent('DESCRIPCION-SINTETICA-ACT');
+    // Contraste AAA (#374151 = 10,3:1 sobre branco): o `muted` é gray-700 translúcido (~2:1).
+    for (const id of ['tpv-specific-description-o1', 'tpv-activities-description-a1']) {
+      expect(screen.getByTestId(id)).toHaveClass('text-[#374151]');
+      expect(screen.getByTestId(id)).not.toHaveClass('text-gray-700');
+    }
     expect(screen.queryByTestId('tpv-specific-description-o2')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tpv-activities-description-a2')).not.toBeInTheDocument();
     // O título segue visível (a descrição é ACRÉSCIMO).
