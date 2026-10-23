@@ -176,4 +176,17 @@ describe('ItineraryAbsenceWriter', () => {
     ).toBe(false);
     expect((allSql.match(/patient_itinerary_absence/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
+
+  it('listOpenOfWorker (FR-23): 1 query, ausências NÃO canceladas das alocações DELA no serviço com on_date >= fromDate; devolve só os ids', async () => {
+    const client = clientStub({ rows: [{ id: 'ab-1' }, { id: 'ab-2' }], rowCount: 2 });
+
+    const ids = await writer.listOpenOfWorker(client as never, 's-1', 'w-1', '2026-11-02');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/s\.contracted_service_id = \$1 AND a\.worker_id = \$2 AND ab\.cancelled_at IS NULL AND ab\.on_date >= \$3::date/);
+    expect(String(sql)).not.toMatch(/UPDATE|DELETE|INSERT/);
+    expect(params).toEqual(['s-1', 'w-1', '2026-11-02']);
+    expect(ids).toEqual(['ab-1', 'ab-2']);
+  });
 });

@@ -422,6 +422,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/contracted-services/:sid/substitution-requests/outgoing-options → patient_services:read',
         'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/preview → patient_itinerary:update',
         'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/:rid/undo → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/:rid/cover → patient_itinerary:update',
         // spec 029 (prompts de IA editáveis) — as 6 rotas de `ai-prompts`.
         'GET /api/admin/ai-prompts → ai_prompt:read',
         'GET /api/admin/ai-prompts/:slug → ai_prompt:read',

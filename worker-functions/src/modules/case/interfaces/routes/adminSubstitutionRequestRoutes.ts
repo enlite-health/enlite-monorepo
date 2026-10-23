@@ -10,7 +10,7 @@ import { AdminSubstitutionRequestController } from '../controllers/AdminSubstitu
  *  - pré-visão (LEITURA, mas por POST: o corpo leva candidatos × período) e criação sob `patient_itinerary:update` — a célula
  *    das escritas do itinerário; **nunca** `:write`.
  * `perm.require` sempre no ARRAY da rota, nunca em closure (memória `celula-em-closure-nao-entra-no-catalogo`). Sem `countryScope`
- * (a RLS decide, como as irmãs por `:id`). Desfazer e "Elegir quién entra" entram na F3 neste mesmo router.
+ * (a RLS decide, como as irmãs por `:id`). Desfazer (`:rid/undo`) e "Elegir quién entra" (`:rid/cover`) — F3 — também sob `patient_itinerary:update`.
  */
 export function createAdminSubstitutionRequestRoutes(
   controller: AdminSubstitutionRequestController,
@@ -30,6 +30,8 @@ export function createAdminSubstitutionRequestRoutes(
     controller.preview(req, res),
   );
   router.post(base, staffOnly, perm.require('patient_itinerary', 'update'), (req: Request, res: Response) => controller.create(req, res));
+  router.post(`${base}/:rid/undo`, staffOnly, perm.require('patient_itinerary', 'update'), (req: Request, res: Response) => controller.undo(req, res));
+  router.post(`${base}/:rid/cover`, staffOnly, perm.require('patient_itinerary', 'update'), (req: Request, res: Response) => controller.cover(req, res));
 
   return router;
 }

@@ -1,7 +1,7 @@
 /**
  * adminSubstitutionRequestRoutes — spec 069, §3.3. Varre o router de VERDADE com `scanExpressRouter` e afirma o PAR de células
- * a partir de mapa escrito à mão: as 2 leituras sob `patient_services:read`; a pré-visão e a criação sob
- * `patient_itinerary:update` — nunca `:write` (molde `adminItineraryWriteRoutes.test.ts`).
+ * a partir de mapa escrito à mão: as 2 leituras sob `patient_services:read`; a pré-visão, a criação, o desfazer e o
+ * "Elegir quién entra" sob `patient_itinerary:update` — nunca `:write` (molde `adminItineraryWriteRoutes.test.ts`).
  */
 import express from 'express';
 import request from 'supertest';
@@ -12,7 +12,7 @@ import type { AdminSubstitutionRequestController } from '../../controllers/Admin
 
 const handler = (m: string) => (req: express.Request, res: express.Response) => res.json({ m, id: req.params.id, sid: req.params.sid });
 const controllerDuble = () =>
-  ({ list: handler('list'), outgoingOptions: handler('outgoingOptions'), preview: handler('preview'), create: handler('create') }) as unknown as AdminSubstitutionRequestController;
+  ({ list: handler('list'), outgoingOptions: handler('outgoingOptions'), preview: handler('preview'), create: handler('create'), undo: handler('undo'), cover: handler('cover') }) as unknown as AdminSubstitutionRequestController;
 
 const build = () => createAdminSubstitutionRequestRoutes(controllerDuble(), authDouble(), permissionsDouble());
 
@@ -23,13 +23,15 @@ describe('createAdminSubstitutionRequestRoutes', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('são exatamente 4 rotas, com o par de células: leituras em patient_services:read, escritas em patient_itinerary:update', () => {
+  it('são exatamente 6 rotas, com o par de células: leituras em patient_services:read, escritas em patient_itinerary:update', () => {
     const declarado = scanExpressRouter(build()).map((r) => [`${r.method} ${r.path}`, r.cell ? cellKey(r.cell.resource, r.cell.action) : null]);
     expect(declarado).toEqual([
       [`GET ${BASE}`, 'patient_services:read'],
       [`GET ${BASE}/outgoing-options`, 'patient_services:read'],
       [`POST ${BASE}/preview`, 'patient_itinerary:update'],
       [`POST ${BASE}`, 'patient_itinerary:update'],
+      [`POST ${BASE}/:rid/undo`, 'patient_itinerary:update'],
+      [`POST ${BASE}/:rid/cover`, 'patient_itinerary:update'],
     ]);
   });
 
@@ -45,5 +47,7 @@ describe('createAdminSubstitutionRequestRoutes', () => {
     expect((await request(a).get(`${root}/outgoing-options`).expect(200)).body.m).toBe('outgoingOptions');
     expect((await request(a).post(`${root}/preview`).expect(200)).body.m).toBe('preview');
     expect((await request(a).post(root).expect(200)).body.m).toBe('create');
+    expect((await request(a).post(`${root}/rq-1/undo`).expect(200)).body).toMatchObject({ m: 'undo', id: 'abc-1', sid: 'svc-1' });
+    expect((await request(a).post(`${root}/rq-1/cover`).expect(200)).body.m).toBe('cover');
   });
 });

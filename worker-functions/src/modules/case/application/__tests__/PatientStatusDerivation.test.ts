@@ -80,6 +80,33 @@ describe('PatientStatusDerivation', () => {
     await expect(montar({ subject: null }).derivation.evaluate(client, PID, NOW)).resolves.toBeNull();
   });
 
+  it('evaluate com `simulate` (spec 069, "No vuelve más"): a MESMA conta sobre as faixas transformadas, na data pedida; não mexe no que foi lido nem move', async () => {
+    const { derivation, moveStatus } = montar({ rows: linhas(servico('s1', 2)) }); // 8/8 hoje
+    const hoje = await derivation.evaluate(client, PID, NOW, { lock: false });
+    expect(hoje?.input.servicos).toEqual([{ temVacanteViva: true, cobertas: 8, total: 8 }]);
+
+    const asOfs: string[] = [];
+    const simulado = await derivation.evaluate(client, PID, NOW, {
+      lock: false,
+      simulate: {
+        asOf: '2026-11-02',
+        transform: (rows) => {
+          asOfs.push(rows.patientId);
+          return { ...rows, slots: rows.slots.map((r) => (r.id === 's1-a' ? { ...r, validTo: '2026-11-01' } : r)) }; // a faixa a perde a alocação em D
+        },
+      },
+    });
+    expect(asOfs).toEqual([PID]);
+    expect(simulado?.input.servicos).toEqual([{ temVacanteViva: true, cobertas: 4, total: 8 }]); // só a faixa b segue coberta em 02/11
+    expect(moveStatus).not.toHaveBeenCalled();
+  });
+
+  it('evaluate sem leitura de serviços (null) usa linhas vazias do próprio paciente — nunca explode, e a simulação roda sobre elas', async () => {
+    const { derivation } = montar({ rows: null });
+    const ev = await derivation.evaluate(client, PID, NOW, { lock: false, simulate: { asOf: '2026-11-02', transform: (rows) => rows } });
+    expect(ev?.input.servicos).toEqual([]);
+  });
+
   it("itinerário não montado → 'unchanged' e mover 0×", async () => {
     const { derivation, moveStatus } = montar({ subject: { status: 'SEARCHING', country: 'AR', montado: false } });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('unchanged');

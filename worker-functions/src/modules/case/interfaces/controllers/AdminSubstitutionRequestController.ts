@@ -6,11 +6,19 @@ import { CreateSubstitutionRequestUseCase } from '../../application/CreateSubsti
 import { PreviewSubstitutionRequestUseCase } from '../../application/PreviewSubstitutionRequestUseCase';
 import { ListSubstitutionRequestsUseCase } from '../../application/ListSubstitutionRequestsUseCase';
 import { ListOutgoingCandidatesUseCase } from '../../application/ListOutgoingCandidatesUseCase';
+import { UndoSubstitutionRequestUseCase } from '../../application/UndoSubstitutionRequestUseCase';
+import { AssignSubstitutionCoverUseCase } from '../../application/AssignSubstitutionCoverUseCase';
+import { AllocationRestoreConflictError } from '../../application/restoreTitular';
 import {
   SubstitutionNoShiftsInPeriodError,
   SubstitutionPeriodInPastError,
   SubstitutionServiceNotFoundError,
   SubstitutionShiftsMismatchError,
+  SubstitutionRequestNotFoundError,
+  SubstitutionRequestAlreadyUndoneError,
+  SubstitutionRequestNotUndoableError,
+  SubstitutionNothingToCoverError,
+  WorkerHasPendingEntryError,
 } from '../../application/substitutionRequestErrors';
 import {
   AbsenceAlreadyExistsError,
@@ -19,19 +27,32 @@ import {
   AbsenceWeekdayMismatchError,
   SubstituteIsTitularError,
 } from '../../application/ItineraryAbsenceUseCase';
-import { NotSelectedForServiceError } from '../../application/ItineraryAllocationUseCase';
-import { ServiceExitReasonInvalidError, ServiceExitReasonRequiredError } from '../../domain/serviceExitReason';
-import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import {
+  AllocationNotActiveError,
+  AlreadyAllocatedInSlotError,
+  NotSelectedForServiceError,
+} from '../../application/ItineraryAllocationUseCase';
+import {
+  DestinationNotAvailableForScheduledError,
+  DestinationRequiredError,
+  ServiceExitReasonInvalidError,
+  ServiceExitReasonRequiredError,
+} from '../../domain/serviceExitReason';
+import { ServiceTeamWorkerAllocatedError } from '../../application/ServiceTeamMarkUseCase';
+import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
+import { insuranceErrorBody } from './insuranceErrorResponse';
+import {
+  substitutionCoverBodySchema,
   substitutionCreateBodySchema,
   substitutionListQuerySchema,
   substitutionPreviewBodySchema,
+  substitutionRequestParamsSchema,
   substitutionServiceParamsSchema,
 } from '../validators/substitutionRequestSchemas';
 
 /**
  * AdminSubstitutionRequestController — o pedido de substituição (spec 069): listar (Próximas/Pasadas), pessoas que podem "não
- * vir", pré-visão e criação (parte DIAS). Sem lógica de negócio: valida forma (zod), despacha e mapeia erro de domínio → HTTP.
+ * vir", pré-visão, criação (DIAS e "No vuelve más"), desfazer e "Elegir quién entra". Sem lógica de negócio: valida forma (zod), despacha e mapeia erro de domínio → HTTP.
  * Ator por `AuthMiddleware.getAuthContext(req)?.principal.id`; ausente = 401, sem `?? 'unknown'`. `reportError` nunca leva id de
  * prestador. Nome de prestador (lista/candidatos) sai pela célula `worker_contact:read` e entra na trilha de contato.
  */
@@ -41,6 +62,8 @@ export class AdminSubstitutionRequestController {
     private readonly outgoingUseCase: ListOutgoingCandidatesUseCase = new ListOutgoingCandidatesUseCase(),
     private readonly previewUseCase: PreviewSubstitutionRequestUseCase = new PreviewSubstitutionRequestUseCase(),
     private readonly createUseCase: CreateSubstitutionRequestUseCase = new CreateSubstitutionRequestUseCase(),
+    private readonly undoUseCase: UndoSubstitutionRequestUseCase = new UndoSubstitutionRequestUseCase(),
+    private readonly coverUseCase: AssignSubstitutionCoverUseCase = new AssignSubstitutionCoverUseCase(),
   ) {}
 
   /** GET .../contracted-services/:sid/substitution-requests?when=upcoming|past */
@@ -121,9 +144,62 @@ export class AdminSubstitutionRequestController {
     }
   }
 
+  /** POST .../substitution-requests/:rid/undo */
+  async undo(req: Request, res: Response): Promise<void> {
+    const params = substitutionRequestParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ success: false, error: 'Invalid params' });
+      return;
+    }
+    const actorUid = AuthMiddleware.getAuthContext(req)?.principal.id;
+    if (!actorUid) {
+      res.status(401).json({ success: false, code: 'UNAUTHENTICATED' });
+      return;
+    }
+    const { id: patientId, sid: serviceId, rid: requestId } = params.data;
+    try {
+      const data = await this.undoUseCase.execute({ patientId, serviceId, requestId, actorUid });
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      this.handleError(err, res, 'undo', patientId, serviceId);
+    }
+  }
+
+  /** POST .../substitution-requests/:rid/cover — "Elegir quién entra". */
+  async cover(req: Request, res: Response): Promise<void> {
+    const params = substitutionRequestParamsSchema.safeParse(req.params);
+    const body = substitutionCoverBodySchema.safeParse(req.body);
+    if (!params.success || !body.success) {
+      res.status(400).json({ success: false, error: params.success ? 'Invalid body' : 'Invalid params' });
+      return;
+    }
+    const actorUid = AuthMiddleware.getAuthContext(req)?.principal.id;
+    if (!actorUid) {
+      res.status(401).json({ success: false, code: 'UNAUTHENTICATED' });
+      return;
+    }
+    const { id: patientId, sid: serviceId, rid: requestId } = params.data;
+    try {
+      const data = await this.coverUseCase.execute({ patientId, serviceId, requestId, substituteWorkerId: body.data.substituteWorkerId, actorUid });
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      this.handleError(err, res, 'cover', patientId, serviceId);
+    }
+  }
+
   private handleError(err: unknown, res: Response, method: string, patientId: string, serviceId: string): void {
     const unprocessable = (code: string): void => void res.status(422).json({ success: false, code });
-    if (err instanceof SubstitutionServiceNotFoundError) return void res.status(404).json({ success: false, code: 'NOT_FOUND' });
+    if (err instanceof SubstitutionServiceNotFoundError || err instanceof SubstitutionRequestNotFoundError) return void res.status(404).json({ success: false, code: 'NOT_FOUND' });
+    if (err instanceof DestinationRequiredError) return unprocessable('DESTINATION_REQUIRED');
+    if (err instanceof DestinationNotAvailableForScheduledError) return unprocessable('DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED');
+    if (err instanceof AlreadyAllocatedInSlotError) return unprocessable('ALREADY_ALLOCATED_IN_SLOT');
+    if (err instanceof AllocationNotActiveError) return unprocessable('ALLOCATION_NOT_ACTIVE');
+    if (err instanceof ServiceTeamWorkerAllocatedError) return unprocessable('SERVICE_TEAM_WORKER_ALLOCATED');
+    if (err instanceof WorkerHasPendingEntryError) return void res.status(409).json({ success: false, code: 'WORKER_HAS_PENDING_ENTRY' });
+    if (err instanceof SubstitutionRequestAlreadyUndoneError) return void res.status(409).json({ success: false, code: 'REQUEST_ALREADY_UNDONE' });
+    if (err instanceof SubstitutionRequestNotUndoableError) return void res.status(409).json({ success: false, code: 'REQUEST_NOT_UNDOABLE' });
+    if (err instanceof SubstitutionNothingToCoverError) return void res.status(409).json({ success: false, code: 'NOTHING_TO_COVER' });
+    if (err instanceof AllocationRestoreConflictError) return void res.status(409).json({ success: false, code: 'ALLOCATION_RESTORE_CONFLICT' });
     if (err instanceof ServiceExitReasonRequiredError) return unprocessable('REASON_REQUIRED');
     if (err instanceof ServiceExitReasonInvalidError) return unprocessable('REASON_INVALID');
     if (err instanceof SubstitutionNoShiftsInPeriodError) return unprocessable('SUBSTITUTION_NO_SHIFTS_IN_PERIOD');
@@ -149,6 +225,9 @@ export class AdminSubstitutionRequestController {
       });
       return;
     }
+    // Erro CONHECIDO de banco (P0001 da Trava A `ITINERARY_SLOT_CAPACITY_EXCEEDED` etc., 23514, 23P01) sai pelo mapa único; o inesperado segue para 500.
+    const mapped = insuranceErrorBody(err);
+    if (mapped) return void res.status(mapped.status).json(mapped.body);
     const e = err instanceof Error ? err : new Error(String(err));
     reportError(e, { source: `AdminSubstitutionRequestController:${method}`, patientId, serviceId });
     res.status(500).json({ success: false, error: 'Failed to process substitution request' });

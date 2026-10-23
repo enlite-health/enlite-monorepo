@@ -3,6 +3,7 @@
  * transação injetada que só chama `fn` no client dublê. Um `log` de chamadas prova a ORDEM das escritas
  * (end → registro → marca → derivação) e que motivo/destino inválidos saem antes de qualquer escrita.
  */
+import { AllocationRestoreConflictError } from '../restoreTitular';
 import { RemoveFromItineraryUseCase, type RemoveFromItineraryInput } from '../RemoveFromItineraryUseCase';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError, WorkerHasScheduledAttendancesError } from '../../domain/serviceExitReason';
 import type { ScheduledAttendances, ScheduledEntry } from '../../infrastructure/ScheduledAttendanceReader';
@@ -203,6 +204,19 @@ describe('RemoveFromItineraryUseCase', () => {
     expect(t.log).not.toContain('derive');
   });
 
+  it('LEAVE_SERVICE só com substituições agendadas (sem entrada futura) e sem cancelScheduled → o aviso leva futureEntryFrom null', async () => {
+    const t = build({ scheduled: { substitutions: [{ absenceId: 'ab-1', date: '2026-10-26' }], futureEntries: [] } });
+    const err = await t.useCase.execute({ ...INPUT, destination: 'LEAVE_SERVICE' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WorkerHasScheduledAttendancesError);
+    expect((err as WorkerHasScheduledAttendancesError).futureEntryFrom).toBeNull();
+  });
+
+  it('sem `now` injetado usa o relógio (a data do fim vem do `endWith`)', async () => {
+    const t = build();
+    const { now: _now, ...semNow } = INPUT;
+    await expect(t.useCase.execute({ ...semNow, destination: 'RESERVE' })).resolves.toMatchObject({ status: 'ENDED' });
+  });
+
   it('LEAVE_SERVICE sem agendamento → segue direto (marca e derivação)', async () => {
     const t = build();
 
@@ -337,6 +351,21 @@ describe('RemoveFromItineraryUseCase', () => {
 
     await expect(t.useCase.execute(REMOVE_TUDO)).rejects.toBeInstanceOf(ItineraryOverlapError);
     expect(t.derivation.run).not.toHaveBeenCalled();
+  });
+
+  it('defeito 17 (FR-34): restoreCancelled estoura 23505 de `uq_pia_open_pair` → AllocationRestoreConflictError (409), nunca o 23505 cru; sem derivação', async () => {
+    const aberto = Object.assign(new Error('duplicate key value violates unique constraint "uq_pia_open_pair"'), { code: '23505', constraint: 'uq_pia_open_pair' });
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('CANCELLED', false)), restoreError: aberto });
+
+    await expect(t.useCase.execute(REMOVE_TUDO)).rejects.toBeInstanceOf(AllocationRestoreConflictError);
+    expect(t.derivation.run).not.toHaveBeenCalled();
+  });
+
+  it('23505 de OUTRA constraint não é o conflito do restore: sobe cru (é bug, não 409)', async () => {
+    const outro = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'uq_outra' });
+    const t = build({ scheduled: UMA_ENTRADA(TITULAR('CANCELLED', false)), restoreError: outro });
+
+    await expect(t.useCase.execute(REMOVE_TUDO)).rejects.toBe(outro);
   });
 
   it('restoreCancelled estoura outro erro (Trava A, P0001): repassa o erro original', async () => {

@@ -17,6 +17,8 @@ export interface RequestScopedAbsence extends RequestAbsenceRow {
 
 export interface RequestScopedLog extends RequestLogRow {
   requestId: string;
+  /** Destino do `REMOVE`/`REPLACE` (o "Elegir quién entra" do permanente grava o mesmo no `REPLACE`). */
+  destination?: 'RESERVE' | 'LEAVE_SERVICE' | null;
 }
 
 export interface WorkerNameSourceRow {
@@ -101,6 +103,7 @@ interface LogJoinRow {
   assignment_id: string | null;
   new_assignment_id: string | null;
   effective_date: string;
+  destination: 'RESERVE' | 'LEAVE_SERVICE' | null;
 }
 interface NewAssignmentJoinRow {
   id: string;
@@ -140,7 +143,7 @@ export class SubstitutionRequestReader {
     );
 
     const logRes = await client.query<LogJoinRow>(
-      `SELECT request_id, kind, assignment_id, new_assignment_id, to_char(effective_date, 'YYYY-MM-DD') AS effective_date
+      `SELECT request_id, kind, assignment_id, new_assignment_id, to_char(effective_date, 'YYYY-MM-DD') AS effective_date, destination
          FROM patient_itinerary_change_log
         WHERE contracted_service_id = $1 AND request_id IS NOT NULL
         ORDER BY created_at, id`,
@@ -191,6 +194,7 @@ export class SubstitutionRequestReader {
         assignmentId: r.assignment_id,
         newAssignmentId: r.new_assignment_id,
         effectiveDate: r.effective_date,
+        destination: r.destination,
       })),
       newAssignments: newRes.rows.map((r) => ({ assignmentId: r.id, workerId: r.worker_id, status: r.status })),
       workerNames: await readNames(client, names),

@@ -87,6 +87,20 @@ export class ItineraryAbsenceWriter {
     };
   }
 
+  /** FR-23: as ausências ABERTAS do titular neste serviço com `on_date >= fromDate` (ids, em ordem de data). */
+  async listOpenOfWorker(client: PoolClient, serviceId: string, workerId: string, fromDate: string): Promise<string[]> {
+    const res = await client.query<{ id: string }>(
+      `SELECT ab.id
+         FROM patient_itinerary_absence ab
+         JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
+         JOIN patient_itinerary_slot s ON s.id = a.slot_id
+        WHERE s.contracted_service_id = $1 AND a.worker_id = $2 AND ab.cancelled_at IS NULL AND ab.on_date >= $3::date
+        ORDER BY ab.on_date, ab.id`,
+      [serviceId, workerId, fromDate],
+    );
+    return res.rows.map((r) => r.id);
+  }
+
   /** Põe/tira o substituto — os 2 campos JUNTOS (`null`/`null` tira); `cancelled_at IS NULL` no WHERE. */
   async updateSubstitute(
     client: PoolClient,

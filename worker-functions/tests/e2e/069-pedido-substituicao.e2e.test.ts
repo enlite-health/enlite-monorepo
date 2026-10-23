@@ -1,5 +1,9 @@
 /**
- * 069-pedido-substituicao.e2e.test.ts @integration — spec 069, F2 (parte DIAS).
+ * 069-pedido-substituicao.e2e.test.ts @integration — spec 069, F2 (parte DIAS) e F3 (parte PERMANENTE, desfazer, "Elegir quién entra").
+ *
+ * A parte F3 é o 2º `describe` do arquivo (semente `seedB2`): "No vuelve más" a partir de D com titular em 2 faixas, sem e com
+ * substituto, FR-23, P5, destino (P6), desfazer antes de D (ORDEM: cancela a entrada ANTES de soltar o fim do titular — Trava A),
+ * desfazer de pedido todo passado (409) e "Elegir quién entra". Nada é mock: tudo pela API HTTP real + Postgres real.
  *
  * Prova, contra a API REAL de pé + Postgres real, o pedido de substituição por dias:
  *   GET  .../contracted-services/:sid/substitution-requests/outgoing-options  (¿Quién no va a venir?)
@@ -17,6 +21,8 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
+import { seedB2, limparB2, hojeAr, somaDias, proximoDia, type SeedB2 } from './helpers/seedItinerarioB2';
+import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const RUN = Date.now();
@@ -349,5 +355,318 @@ describe('069 · pedido de substituição por dias — API real @integration', (
     expect((await api.get(`${baseUrl(outro)}?when=upcoming`, { headers: asAdmin.headers })).status).toBe(404);
     expect((await api.get(`${baseUrl(outro)}/outgoing-options`, { headers: asAdmin.headers })).status).toBe(404);
     expect((await api.get(`${baseUrl('nao-e-uuid')}`, { headers: asAdmin.headers })).status).toBe(400);
+  });
+});
+
+describe('069 · "No vuelve más", desfazer e "Elegir quién entra" — API real @integration', () => {
+  const api = createApiClient();
+  const pool = new Pool({ connectionString: DATABASE_URL, max: 3 });
+  const TAG = `ps069x-${RUN}-`;
+  let asAdmin: { headers: { Authorization: string } };
+  let hoje = '';
+  let seq = 0;
+
+  beforeAll(async () => {
+    await waitForBackend(api);
+    asAdmin = await staffAuth(`ps069x-admin-${RUN}`, 'admin');
+    hoje = await hojeAr(pool);
+  });
+  afterAll(async () => {
+    await limparB2(pool, TAG); // fecha o pool
+  });
+
+  const nextTag = (): string => `${TAG}${(seq += 1)}`;
+  const h = () => ({ headers: asAdmin.headers });
+  const base = (s: SeedB2): string => `/api/admin/patients/${s.patientId}/contracted-services/${s.serviceId}/substitution-requests`;
+  const q = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => (await pool.query(sql, params)).rows as T[];
+  /** A 2ª segunda estritamente depois de hoje: antes dela cabe a 1ª segunda (D-7), e D fica a mais de 7 dias de hoje. */
+  const diaD = async (): Promise<string> => somaDias(pool, await proximoDia(pool, hoje, 1), 7);
+
+  const permanent = (workerId: string, from: string, substituteWorkerId: string | null, extra: Record<string, unknown> = {}) => ({
+    type: 'PERMANENT', outgoingWorkerId: workerId, from, reasonCategory: 'OTHER', substituteWorkerId, ...extra,
+  });
+
+  async function allocate(s: SeedB2, slotId: string, workerId: string): Promise<string> {
+    const res = await api.post(`/api/admin/patients/${s.patientId}/contracted-services/${s.serviceId}/itinerary/slots/${slotId}/allocations`, { workerId }, h());
+    expect(res.status).toBe(201);
+    return res.data.data.allocationId as string;
+  }
+
+  /** Falta (por dias) pela API real: a pré-visão deriva os turnos, o create grava; `substitute` por turno (null = Nadie todavía). */
+  async function daysRequest(s: SeedB2, workerId: string, from: string, to: string, substitute: string | null): Promise<string> {
+    const prev = await api.post(`${base(s)}/preview`, { type: 'DAYS', outgoingWorkerId: workerId, from, to, candidateWorkerIds: [] }, h());
+    expect(prev.status).toBe(200);
+    const shifts = prev.data.data.shifts as Array<{ date: string; slotId: string }>;
+    const res = await api.post(base(s), { type: 'DAYS', outgoingWorkerId: workerId, from, to, reasonCategory: 'OTHER', shifts: shifts.map((x) => ({ date: x.date, slotId: x.slotId, substituteWorkerId: substitute })) }, h());
+    expect(res.status).toBe(201);
+    return res.data.data.requestId as string;
+  }
+
+  const allocsOf = (s: SeedB2, workerId: string) =>
+    q<{ id: string; slot_id: string; status: string; valid_from: string; valid_to: string | null }>(
+      `SELECT a.id, a.slot_id, a.status, to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to
+         FROM patient_itinerary_assignment a JOIN patient_itinerary_slot sl ON sl.id = a.slot_id
+        WHERE sl.contracted_service_id = $1 AND a.worker_id = $2 ORDER BY sl.weekday, a.valid_from`,
+      [s.serviceId, workerId],
+    );
+  const logsOf = (requestId: string) =>
+    q<{ kind: string; assignment_id: string | null; new_assignment_id: string | null; effective_date: string; destination: string | null; incoming_worker_id: string | null }>(
+      `SELECT kind, assignment_id, new_assignment_id, to_char(effective_date,'YYYY-MM-DD') AS effective_date, destination, incoming_worker_id
+         FROM patient_itinerary_change_log WHERE request_id = $1 ORDER BY kind, effective_date, assignment_id`,
+      [requestId],
+    );
+  const headerOf = async (requestId: string) =>
+    (await q<{ undone_at: string | null }>(`SELECT undone_at FROM patient_itinerary_substitution_request WHERE id = $1`, [requestId]))[0];
+  const absenceOf = async (id: string) =>
+    (await q<{ cancelled_at: string | null; substitute_worker_id: string | null }>(`SELECT cancelled_at, substitute_worker_id FROM patient_itinerary_absence WHERE id = $1`, [id]))[0];
+  const counts = async (s: SeedB2) =>
+    (
+      await q<{ headers: number; logs: number; allocs: string }>(
+        `SELECT (SELECT count(*) FROM patient_itinerary_substitution_request WHERE contracted_service_id = $1)::int AS headers,
+                (SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = $1)::int AS logs,
+                (SELECT string_agg(a.status || ':' || a.valid_from::text || ':' || coalesce(a.valid_to::text, 'NULL'), ',' ORDER BY a.id::text)
+                   FROM patient_itinerary_assignment a JOIN patient_itinerary_slot sl ON sl.id = a.slot_id WHERE sl.contracted_service_id = $1) AS allocs`,
+        [s.serviceId],
+      )
+    )[0];
+  const listRow = async (s: SeedB2, requestId: string, when: 'upcoming' | 'past' = 'upcoming') => {
+    const res = await api.get(`${base(s)}?when=${when}`, h());
+    expect(res.status).toBe(200);
+    return (res.data.data.requests as Array<{ requestId: string; type: string; from: string; to: string | null; shiftCount: number; undoable: boolean; undoneAt: string | null; entra: { kind: string; workerIds: string[] } }>).find((r) => r.requestId === requestId);
+  };
+
+  it('T309 sem substituto (FR-30), D > hoje: 2 faixas → 2 REMOVE com o MESMO request_id e valid_to = D-1; faltas dela de D em diante canceladas (as anteriores ficam); Sin cubrir a partir de D; desfazer antes de D reabre tudo', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    const T = s.segWorkers[0];
+    await allocate(s, s.slotQuaId as string, T); // T em 2 faixas (seg + qua)
+    const D = await diaD();
+    const Dm1 = await somaDias(pool, D, -1);
+    const antesD = await somaDias(pool, D, -7); // uma segunda ANTES de D
+    await daysRequest(s, T, antesD, antesD, null);
+    await daysRequest(s, T, D, D, null);
+    const faltas = await q<{ id: string; on_date: string }>(
+      `SELECT ab.id, to_char(ab.on_date,'YYYY-MM-DD') AS on_date FROM patient_itinerary_absence ab JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
+         JOIN patient_itinerary_slot sl ON sl.id = a.slot_id WHERE sl.contracted_service_id = $1 ORDER BY ab.on_date`, [s.serviceId]);
+    expect(faltas.map((f) => f.on_date)).toEqual([antesD, D]); // controle positivo: as 2 faltas existem
+    const antes = await counts(s);
+
+    // P6: LEAVE_SERVICE com D > hoje é recusado SEM escrever; controle positivo logo abaixo
+    const leave = await api.post(base(s), permanent(T, D, null, { destination: 'LEAVE_SERVICE' }), h());
+    expect([leave.status, leave.data.code]).toEqual([422, 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED']);
+    expect(await counts(s)).toEqual(antes);
+
+    const prev = await api.post(`${base(s)}/preview`, { type: 'PERMANENT', outgoingWorkerId: T, from: D, candidateWorkerIds: [] }, h());
+    expect(prev.status).toBe(200);
+    expect(prev.data.data.permanent).toEqual({ allocationCount: 2, cancelledAbsences: 1, clearedSubstitutes: 0, pendingEntry: false });
+    expect(await counts(s)).toEqual(antes); // a pré-visão é LEITURA
+
+    const res = await api.post(base(s), permanent(T, D, null), h());
+    expect(res.status).toBe(201);
+    const requestId = res.data.data.requestId as string;
+    expect(res.data.data).toMatchObject({ type: 'PERMANENT', from: D, to: null, shiftCount: 2, destination: 'RESERVE', cancelledAbsences: 1, clearedSubstitutes: 0 });
+
+    const alocs = await allocsOf(s, T);
+    expect(alocs).toHaveLength(2);
+    expect(alocs.every((a) => a.status === 'ACTIVE' && a.valid_to === Dm1)).toBe(true); // fim agendado em D-1, o titular trabalha até lá
+    const logs = await logsOf(requestId);
+    expect(logs).toHaveLength(2);
+    expect(logs.every((l) => l.kind === 'REMOVE' && l.effective_date === Dm1 && l.destination === 'RESERVE')).toBe(true);
+    expect((await absenceOf(faltas[1].id)).cancelled_at).not.toBeNull(); // FR-23: a de D foi cancelada
+    expect((await absenceOf(faltas[0].id)).cancelled_at).toBeNull(); // a anterior a D fica
+
+    const row = await listRow(s, requestId);
+    expect(row).toMatchObject({ type: 'PERMANENT', from: D, to: null, shiftCount: 2, undoable: true, undoneAt: null });
+    expect(row?.entra.kind).toBe('NOBODY');
+    // a agenda: a partir de D a segunda está "Sin cubrir" (faixa sem ninguém), antes de D o titular segue
+    const events = await api.get(`/api/admin/patients/${s.patientId}/itinerary/events?from=${D}&to=${D}&serviceId=${s.serviceId}`, h());
+    const naD = (events.data.data.events as Array<{ date: string; status: string; assignmentId: string | null }>).filter((e) => e.date === D);
+    expect(naD.some((e) => e.status === 'uncovered' && e.assignmentId === null)).toBe(true);
+
+    // desfazer ANTES de D: as 2 alocações reabertas; a falta cancelada NÃO volta; o pedido fica desfeito
+    const undo = await api.post(`${base(s)}/${requestId}/undo`, {}, h());
+    expect(undo.status).toBe(200);
+    expect(undo.data.data).toMatchObject({ requestId, type: 'PERMANENT', cancelledEntries: 0, restoredTitulars: 2 });
+    expect((await allocsOf(s, T)).every((a) => a.status === 'ACTIVE' && a.valid_to === null)).toBe(true);
+    expect((await absenceOf(faltas[1].id)).cancelled_at).not.toBeNull();
+    expect((await headerOf(requestId)).undone_at).not.toBeNull();
+    expect((await listRow(s, requestId))).toMatchObject({ undoable: false });
+    const de = await api.post(`${base(s)}/${requestId}/undo`, {}, h());
+    expect([de.status, de.data.code]).toEqual([409, 'REQUEST_ALREADY_UNDONE']);
+  });
+
+  it('T309 com substituto + FR-23 (substituta em falta alheia): REPLACE ligado ao request_id; o substituto dela é limpo; DESFAZER cancela a ENTRADA antes de soltar o fim (Trava A)', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 1, titularesQua: 1, selecionados: 1, desdeDias: -7 });
+    const T = s.segWorkers[0];
+    const O = s.quaWorkers[0];
+    const S = s.selecionados[0];
+    const D = await diaD();
+    const quartaDeD = await somaDias(pool, D, 2);
+    const faltaAlheia = await daysRequest(s, O, quartaDeD, quartaDeD, T); // T cobre a falta de O na quarta depois de D
+    const faltaId = (await q<{ id: string }>(`SELECT id FROM patient_itinerary_absence WHERE request_id = $1`, [faltaAlheia]))[0].id;
+    expect((await absenceOf(faltaId)).substitute_worker_id).toBe(T); // controle positivo
+
+    const prev = await api.post(`${base(s)}/preview`, { type: 'PERMANENT', outgoingWorkerId: T, from: D, candidateWorkerIds: [S] }, h());
+    expect(prev.status).toBe(200);
+    expect(prev.data.data.conflicts).toEqual([expect.objectContaining({ workerId: S, state: 'free' })]);
+    expect(prev.data.data.permanent).toEqual({ allocationCount: 1, cancelledAbsences: 0, clearedSubstitutes: 1, pendingEntry: false });
+
+    const res = await api.post(base(s), permanent(T, D, S), h());
+    expect(res.status).toBe(201);
+    const requestId = res.data.data.requestId as string;
+    expect(res.data.data).toMatchObject({ shiftCount: 1, clearedSubstitutes: 1, cancelledAbsences: 0 });
+
+    const [tSeg] = await allocsOf(s, T);
+    expect(tSeg).toMatchObject({ status: 'ACTIVE', valid_to: await somaDias(pool, D, -1) });
+    const [sSeg] = await allocsOf(s, S);
+    expect(sSeg).toMatchObject({ slot_id: s.slotSegId, status: 'ACTIVE', valid_from: D, valid_to: null });
+    const logs = await logsOf(requestId);
+    expect(logs.map((l) => l.kind)).toEqual(['REPLACE', 'SUBSTITUTE_CANCELLED']);
+    expect(logs[0]).toMatchObject({ assignment_id: tSeg.id, new_assignment_id: sSeg.id, incoming_worker_id: S, effective_date: D, destination: 'RESERVE' });
+    expect((await absenceOf(faltaId)).substitute_worker_id).toBeNull(); // a falta de O voltou a "Sin cubrir"
+    expect(await listRow(s, requestId)).toMatchObject({ type: 'PERMANENT', shiftCount: 1, undoable: true });
+    expect((await listRow(s, requestId))?.entra).toMatchObject({ kind: 'PERSON', workerIds: [S] });
+
+    const undo = await api.post(`${base(s)}/${requestId}/undo`, {}, h());
+    expect(undo.status).toBe(200); // se a ORDEM fosse invertida a Trava A recusaria (409) aqui
+    expect(undo.data.data).toMatchObject({ cancelledEntries: 1, restoredTitulars: 1 });
+    expect((await allocsOf(s, T))[0]).toMatchObject({ status: 'ACTIVE', valid_to: null });
+    expect((await allocsOf(s, S))[0]).toMatchObject({ status: 'CANCELLED' });
+    expect((await absenceOf(faltaId)).substitute_worker_id).toBeNull(); // o substituto limpo NÃO volta
+  });
+
+  it('T309 D = hoje: destino OBRIGATÓRIO (422, nada gravado); a saída vale já (valid_to = ontem); pedido que já começou NÃO se desfaz (409 REQUEST_NOT_UNDOABLE)', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    const T = s.segWorkers[0];
+    const prev = await api.post(`${base(s)}/preview`, { type: 'PERMANENT', outgoingWorkerId: T, from: hoje, candidateWorkerIds: [] }, h());
+    expect(prev.status).toBe(200);
+    expect(prev.data.data.statusAfter).toMatchObject({ current: 'ACTIVE', after: 'SEARCHING', changes: true }); // zero horas cobertas → búsqueda
+    const antes = await counts(s);
+
+    const semDestino = await api.post(base(s), permanent(T, hoje, null), h());
+    expect([semDestino.status, semDestino.data.code]).toEqual([422, 'DESTINATION_REQUIRED']);
+    expect(await counts(s)).toEqual(antes);
+
+    const ok = await api.post(base(s), permanent(T, hoje, null, { destination: 'RESERVE' }), h());
+    expect(ok.status).toBe(201);
+    expect((await allocsOf(s, T))[0]).toMatchObject({ status: 'ACTIVE', valid_to: await somaDias(pool, hoje, -1) });
+    const undo = await api.post(`${base(s)}/${ok.data.data.requestId}/undo`, {}, h());
+    expect([undo.status, undo.data.code]).toEqual([409, 'REQUEST_NOT_UNDOABLE']);
+    expect((await allocsOf(s, T))[0].valid_to).toBe(await somaDias(pool, hoje, -1)); // nada mudou
+  });
+
+  it('T303 P5: quem tem ENTRADA FUTURA no serviço → 409 WORKER_HAS_PENDING_ENTRY, nada gravado; controle positivo: outro titular sem entrada sai (201)', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 1, titularesQua: 1, selecionados: 1, desdeDias: -7 });
+    const [T, U, S] = [s.segWorkers[0], s.quaWorkers[0], s.selecionados[0]];
+    const D = await diaD();
+    const rep = await api.post(`/api/admin/patients/${s.patientId}/contracted-services/${s.serviceId}/itinerary/allocations/${s.segAllocations[0]}/replace`, { newWorkerId: S, fromDate: D, reasonCategory: 'OTHER', destination: 'RESERVE' }, h());
+    expect(rep.status).toBe(200); // S agora tem uma entrada futura (começa em D > hoje)
+    const antes = await counts(s);
+
+    const bloqueado = await api.post(base(s), permanent(S, await somaDias(pool, D, 7), null), h());
+    expect([bloqueado.status, bloqueado.data.code]).toEqual([409, 'WORKER_HAS_PENDING_ENTRY']);
+    expect(await counts(s)).toEqual(antes);
+    const prev = await api.post(`${base(s)}/preview`, { type: 'PERMANENT', outgoingWorkerId: S, from: await somaDias(pool, D, 7), candidateWorkerIds: [] }, h());
+    expect(prev.data.data.permanent.pendingEntry).toBe(true);
+
+    const livre = await api.post(base(s), permanent(U, D, null), h());
+    expect(livre.status).toBe(201);
+    expect(T).toBeTruthy();
+  });
+
+  it('T305 "Elegir quién entra": permanente sem ninguém → aloca a pessoa na faixa a partir de D com REPLACE ligado; dias → substituto nas ausências sem ninguém; 2ª chamada = NOTHING_TO_COVER; fora do pool = 422', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'TWO', providersNeeded: 1, titularesSeg: 1, titularesQua: 1, selecionados: 1, desdeDias: -7 });
+    const [T, O, S] = [s.segWorkers[0], s.quaWorkers[0], s.selecionados[0]];
+    const D = await diaD();
+    const estranho = (await q<{ id: string }>(`INSERT INTO workers (auth_uid, email, country) VALUES ($1, $2, 'AR') RETURNING id`, [`${TAG}estranho-${seq}`, `${TAG}estranho-${seq}@e2e.local`]))[0].id;
+
+    // permanente
+    const perm = await api.post(base(s), permanent(T, D, null), h());
+    expect(perm.status).toBe(201);
+    const pid = perm.data.data.requestId as string;
+    const fora = await api.post(`${base(s)}/${pid}/cover`, { substituteWorkerId: estranho }, h());
+    expect([fora.status, fora.data.code]).toEqual([422, 'NOT_SELECTED_FOR_SERVICE']);
+    expect(await allocsOf(s, estranho)).toEqual([]);
+    const cover = await api.post(`${base(s)}/${pid}/cover`, { substituteWorkerId: S }, h());
+    expect(cover.status).toBe(200);
+    expect(cover.data.data).toMatchObject({ type: 'PERMANENT', covered: 1 });
+    const [tSeg] = await allocsOf(s, T);
+    const [sSeg] = await allocsOf(s, S);
+    expect(sSeg).toMatchObject({ slot_id: s.slotSegId, status: 'ACTIVE', valid_from: D, valid_to: null });
+    const replace = (await logsOf(pid)).find((l) => l.kind === 'REPLACE');
+    expect(replace).toMatchObject({ assignment_id: tSeg.id, new_assignment_id: sSeg.id, incoming_worker_id: S, effective_date: D, destination: 'RESERVE' });
+    expect((await listRow(s, pid))?.entra).toMatchObject({ kind: 'PERSON', workerIds: [S] });
+    const de = await api.post(`${base(s)}/${pid}/cover`, { substituteWorkerId: S }, h());
+    expect([de.status, de.data.code]).toEqual([409, 'NOTHING_TO_COVER']);
+
+    // dias
+    const quarta = await somaDias(pool, D, 2);
+    const did = await daysRequest(s, O, quarta, quarta, null);
+    const faltaId = (await q<{ id: string }>(`SELECT id FROM patient_itinerary_absence WHERE request_id = $1`, [did]))[0].id;
+    const foraDias = await api.post(`${base(s)}/${did}/cover`, { substituteWorkerId: estranho }, h());
+    expect([foraDias.status, foraDias.data.code]).toEqual([422, 'NOT_SELECTED_FOR_SERVICE']);
+    expect((await absenceOf(faltaId)).substitute_worker_id).toBeNull();
+    const coverDias = await api.post(`${base(s)}/${did}/cover`, { substituteWorkerId: T }, h()); // T (pool) cobre a quarta de O; T trabalha só até D-1 na segunda, sem choque
+    expect(coverDias.status).toBe(200);
+    expect(coverDias.data.data).toMatchObject({ type: 'ONE_DAY', covered: 1 });
+    expect((await absenceOf(faltaId)).substitute_worker_id).toBe(T);
+    expect((await api.post(`${base(s)}/${did}/cover`, { substituteWorkerId: T }, h())).data.code).toBe('NOTHING_TO_COVER');
+
+    // desfazer o permanente depois do cover: a entrada some e o titular volta
+    const undo = await api.post(`${base(s)}/${pid}/undo`, {}, h());
+    expect(undo.status).toBe(200);
+    expect((await allocsOf(s, S))[0].status).toBe('CANCELLED');
+    expect((await allocsOf(s, T))[0]).toMatchObject({ status: 'ACTIVE', valid_to: null });
+    // cover num pedido desfeito e num pedido inexistente
+    expect((await api.post(`${base(s)}/${pid}/cover`, { substituteWorkerId: S }, h())).data.code).toBe('REQUEST_ALREADY_UNDONE');
+    expect((await api.post(`${base(s)}/00000000-0000-4000-8000-000000000000/cover`, { substituteWorkerId: S }, h())).status).toBe(404);
+  });
+
+  it('T304/T308 desfazer por DIAS: cancela só as ausências de hoje em diante (a passada fica); pedido todo passado = 409 REQUEST_NOT_UNDOABLE; faixa com pedido futuro recusa editar/encerrar e nenhuma ausência muda (P1)', async () => {
+    const s = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    const T = s.segWorkers[0];
+    const D = await diaD();
+    const D2 = await somaDias(pool, D, 7);
+    const rid = await daysRequest(s, T, D, D2, null); // 2 segundas futuras
+    const passada = (await q<{ d: string }>(
+      `SELECT to_char(g::date, 'YYYY-MM-DD') AS d FROM generate_series($1::date - 7, $1::date - 1, interval '1 day') g WHERE extract(dow FROM g) = 1`, [hoje]))[0].d;
+    const alocacao = (await allocsOf(s, T))[0];
+    await pool.query(
+      `INSERT INTO patient_itinerary_absence (assignment_id, on_date, created_by, updated_by, request_id) VALUES ($1, $2::date, 'e2e', 'e2e', $3)`,
+      [alocacao.id, passada, rid],
+    ); // a falta PASSADA do mesmo pedido (semente SQL, DX-13.15)
+    const abs = await q<{ id: string; on_date: string }>(`SELECT id, to_char(on_date,'YYYY-MM-DD') AS on_date FROM patient_itinerary_absence WHERE request_id = $1 ORDER BY on_date`, [rid]);
+    expect(abs.map((a) => a.on_date)).toEqual([passada, D, D2]);
+
+    // T308 (P1): com pedido futuro a faixa não se edita nem se encerra — recusa e nenhuma ausência muda
+    const snap = async () => (await q<{ n: number; c: number }>(`SELECT count(*)::int AS n, count(cancelled_at)::int AS c FROM patient_itinerary_absence WHERE request_id = $1`, [rid]))[0];
+    const antesSlot = await snap();
+    const edita = await api.patch(`/api/admin/patients/${s.patientId}/contracted-services/${s.serviceId}/itinerary/slots/${s.slotSegId}`, { weekday: 2, startTime: '08:00', durationMinutes: 240 }, h());
+    expect([edita.status, edita.data.code]).toEqual([422, 'SLOT_HAS_ACTIVE_ALLOCATION']);
+    const encerra = await api.post(`/api/admin/patients/${s.patientId}/contracted-services/${s.serviceId}/itinerary/slots/${s.slotSegId}/end`, {}, h());
+    expect([encerra.status, encerra.data.code]).toEqual([422, 'SLOT_HAS_ACTIVE_ALLOCATION']);
+    expect(await snap()).toEqual(antesSlot);
+
+    const undo = await api.post(`${base(s)}/${rid}/undo`, {}, h());
+    expect(undo.status).toBe(200);
+    expect(undo.data.data).toMatchObject({ type: 'DAYS', cancelledAbsences: 2 });
+    expect((await absenceOf(abs[0].id)).cancelled_at).toBeNull(); // o dia passado fica (US7)
+    expect((await absenceOf(abs[1].id)).cancelled_at).not.toBeNull();
+    expect((await absenceOf(abs[2].id)).cancelled_at).not.toBeNull();
+    expect((await headerOf(rid)).undone_at).not.toBeNull();
+
+    // pedido todo passado: sem nada futuro a desfazer (outra semente: a única segunda passada da janela já está ocupada acima)
+    const s2 = await seedB2(pool, nextTag(), { schedule: 'ONE', providersNeeded: 1, titularesSeg: 1, desdeDias: -7 });
+    const alocacao2 = (await allocsOf(s2, s2.segWorkers[0]))[0];
+    const pastReq = await seedRequestForAssignment(pool, alocacao2.id, { createdBy: 'e2e' });
+    await pool.query(
+      `INSERT INTO patient_itinerary_absence (assignment_id, on_date, created_by, updated_by, request_id) VALUES ($1, $2::date, 'e2e', 'e2e', $3)`,
+      [alocacao2.id, passada, pastReq],
+    );
+    const viva = await q<{ id: string }>(`SELECT id FROM patient_itinerary_absence WHERE request_id = $1`, [pastReq]);
+    expect(viva).toHaveLength(1); // controle positivo: a falta passada do pedido existe
+    const passadoTodo = await api.post(`${base(s2)}/${pastReq}/undo`, {}, h());
+    expect([passadoTodo.status, passadoTodo.data.code]).toEqual([409, 'REQUEST_NOT_UNDOABLE']);
+    expect((await absenceOf(viva[0].id)).cancelled_at).toBeNull();
+    expect((await headerOf(pastReq)).undone_at).toBeNull();
   });
 });

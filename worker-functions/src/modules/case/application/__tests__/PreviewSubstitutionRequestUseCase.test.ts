@@ -3,7 +3,8 @@
  * (ii) o conflito TRI-ESTADO (a falha da função do banco vira `unknown`, NUNCA `free`), (iii) que nada é escrito e o estado do
  * paciente é lido SEM lock, e (iv) que a regra é a MESMA função pura (`derivarEstadoPaciente`).
  */
-import { PreviewSubstitutionRequestUseCase, type PreviewSubstitutionRequestInput } from '../PreviewSubstitutionRequestUseCase';
+import { PreviewSubstitutionRequestUseCase, type PreviewPermanentInput, type PreviewSubstitutionRequestInput, type PermanentPreviewDeps } from '../PreviewSubstitutionRequestUseCase';
+import type { KanbanServicesRows } from '../../infrastructure/PatientKanbanServicesReader';
 import { ConflictPreviewUnavailableError } from '../../infrastructure/SubstituteConflictPreviewReader';
 import {
   SubstitutionNoShiftsInPeriodError,
@@ -126,5 +127,107 @@ describe('PreviewSubstitutionRequestUseCase', () => {
     const future = futureDate.toISOString().slice(0, 10);
     const { now: _now, ...semNow } = input({ type: 'ONE_DAY', from: future, to: future });
     await expect(t.useCase.execute(semNow)).rejects.toThrow(SubstitutionNoShiftsInPeriodError); // chegou ao período = passou da checagem de data com o relógio real
+  });
+});
+
+describe('PreviewSubstitutionRequestUseCase — PERMANENT ("No vuelve más")', () => {
+  const ALLOCS = [
+    { id: 'a-seg', slotId: 'seg', validFrom: '2026-01-01', validTo: null },
+    { id: 'a-qua', slotId: 'qua', validFrom: '2026-01-01', validTo: null },
+    { id: 'a-fora', slotId: 'slot-que-nao-vem', validFrom: '2026-11-02', validTo: null }, // faixa fora da leitura: sem horário, não entra nos turnos
+  ];
+
+  function permanentInput(o: Partial<PreviewPermanentInput> = {}): PreviewPermanentInput {
+    return { patientId: 'p-1', serviceId: 's-1', type: 'PERMANENT', outgoingWorkerId: 'w-out', from: '2026-11-02', candidateWorkerIds: ['w-a'], now: NOW, ...o };
+  }
+
+  function buildPermanent(opts: { allocs?: typeof ALLOCS; scheduled?: Awaited<ReturnType<PermanentPreviewDeps['scheduled']['listFor']>>; evaluations?: Array<DerivationEvaluation | null>; team?: { country: string } | null } = {}) {
+    const t = build({ team: opts.team });
+    const evaluations = [...(opts.evaluations ?? [EVALUATION, EVALUATION])];
+    const derivation = { evaluate: jest.fn(async () => (evaluations.length > 0 ? (evaluations.shift() as DerivationEvaluation | null) : EVALUATION)) };
+    const exit: PermanentPreviewDeps = {
+      schedule: { listWorkerAllocations: jest.fn(async () => opts.allocs ?? ALLOCS) },
+      absenceOps: { listOpenOfWorker: jest.fn(async () => ['ab-1', 'ab-2', 'ab-3']) },
+      scheduled: { listFor: jest.fn(async () => opts.scheduled ?? { substitutions: [{ absenceId: 'x', date: '2026-11-01' }, { absenceId: 'y', date: '2026-11-02' }], futureEntries: [] }) },
+    };
+    const useCase = new PreviewSubstitutionRequestUseCase(t.team, t.occurrences, t.conflicts, derivation, t.runInTransaction, exit);
+    return { ...t, useCase, derivation, exit };
+  }
+
+  it('um turno por alocação que sai (com horário da faixa); conflito de cada candidato com vigência ABERTA (p_from = D, p_to = null); contagens do FR-23 e P5 livre', async () => {
+    const t = buildPermanent({ allocs: ALLOCS });
+
+    const result = await t.useCase.execute(permanentInput({ candidateWorkerIds: ['w-a', 'w-b'] }));
+
+    expect(result.shifts.map((s) => `${s.date}/${s.slotId}/${s.startTime}-${s.endTime}`)).toEqual(['2026-11-02/seg/08:00-12:00', '2026-11-02/qua/08:00-12:00']);
+    expect(t.conflicts.preview).toHaveBeenCalledTimes(4);
+    expect(t.conflicts.preview).toHaveBeenCalledWith(CLIENT, { workerId: 'w-a', slotId: 'seg', from: '2026-11-02', to: null });
+    expect(result.conflicts.every((c) => c.state === 'free')).toBe(true);
+    // FR-23: 3 faltas dela com data ≥ D; ela é substituta em 2 turnos, mas só 1 é de D em diante
+    expect(result.permanent).toEqual({ allocationCount: 3, cancelledAbsences: 3, clearedSubstitutes: 1, pendingEntry: false });
+    expect(t.exit.schedule.listWorkerAllocations).toHaveBeenCalledWith(CLIENT, 's-1', 'w-out', '2026-11-02');
+    expect(t.exit.absenceOps.listOpenOfWorker).toHaveBeenCalledWith(CLIENT, 's-1', 'w-out', '2026-11-02');
+    expect(t.exit.scheduled.listFor).toHaveBeenCalledWith(CLIENT, 's-1', 'w-out', '2026-10-30');
+    expect(t.occurrences.readForService).toHaveBeenCalledWith(CLIENT, 'p-1', 's-1', '2026-11-02', '2026-11-08');
+  });
+
+  it('P5: a entrada futura aparece em `pendingEntry` (a pré-visão não lança; o create é quem recusa)', async () => {
+    const t = buildPermanent({ scheduled: { substitutions: [], futureEntries: [{ allocationId: 'e', validFrom: '2026-12-01', replaces: null }] } });
+    expect((await t.useCase.execute(permanentInput())).permanent).toMatchObject({ pendingEntry: true, clearedSubstitutes: 0 });
+  });
+
+  it('estado depois SEM ninguém no lugar: a conta é rodada na data D com a transformação das faixas (simulate), SEM lock; o resultado compara com o estado de hoje', async () => {
+    const hoje: DerivationEvaluation = { subject: { status: 'ACTIVE', country: 'AR', montado: true }, input: { status: 'ACTIVE', montado: true, servicos: [{ temVacanteViva: true, cobertas: 8, total: 8 }] } };
+    const depois: DerivationEvaluation = { subject: hoje.subject, input: { status: 'ACTIVE', montado: true, servicos: [{ temVacanteViva: true, cobertas: 0, total: 8 }] } };
+    const t = buildPermanent({ evaluations: [hoje, depois] });
+
+    const { statusAfter } = await t.useCase.execute(permanentInput());
+
+    expect(statusAfter).toEqual({ current: 'ACTIVE', after: 'SEARCHING', changes: true });
+    expect(t.derivation.evaluate).toHaveBeenNthCalledWith(1, CLIENT, 'p-1', NOW, { lock: false });
+    expect(t.derivation.evaluate).toHaveBeenNthCalledWith(2, CLIENT, 'p-1', NOW, { lock: false, simulate: { asOf: '2026-11-02', transform: expect.any(Function) } });
+  });
+
+  it('a transformação das faixas: só as alocações ACTIVE DELA no serviço mudam — fim em D-1 se já atendia, CANCELLED se só começa em D; o resto fica igual', async () => {
+    const t = buildPermanent();
+    await t.useCase.execute(permanentInput());
+    const transform = (t.derivation.evaluate.mock.calls[1] as unknown as [unknown, unknown, unknown, { simulate: { transform: (r: KanbanServicesRows) => KanbanServicesRows } }])[3].simulate.transform;
+    const row = (over: Record<string, unknown>) => ({ id: 'sl', contractedServiceId: 's-1', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00', assignmentId: 'a', workerId: 'w-out', applicationId: 'wja', validFrom: '2026-01-01', validTo: null, status: 'ACTIVE', ...over });
+    const out = transform({
+      patientId: 'p-1', country: 'AR', services: [], slots: [
+        row({}), // atende: fim em D-1
+        row({ validFrom: '2026-11-02' }), // só começaria em D: cancelada
+        row({ workerId: 'w-outro' }), // outra pessoa: igual
+        row({ contractedServiceId: 's-9' }), // outro serviço: igual
+        row({ status: 'ENDED' }), // já encerrada: igual
+        row({ assignmentId: null, workerId: null, validFrom: null, status: null }), // faixa sem alocação: igual
+      ] as never,
+    });
+    expect(out.slots.map((r) => [r.status, r.validTo])).toEqual([['ACTIVE', '2026-11-01'], ['CANCELLED', null], ['ACTIVE', null], ['ACTIVE', null], ['ENDED', null], [null, null]]);
+  });
+
+  it('D = hoje: a simulação roda em hoje; sem sujeito da derivação (hoje ou depois) → statusAfter null', async () => {
+    const t = buildPermanent();
+    await t.useCase.execute(permanentInput({ from: '2026-10-30' }));
+    expect(t.derivation.evaluate).toHaveBeenNthCalledWith(2, CLIENT, 'p-1', NOW, { lock: false, simulate: { asOf: '2026-10-30', transform: expect.any(Function) } });
+
+    expect((await buildPermanent({ evaluations: [null] }).useCase.execute(permanentInput())).statusAfter).toBeNull();
+    expect((await buildPermanent({ evaluations: [EVALUATION, null] }).useCase.execute(permanentInput())).statusAfter).toBeNull();
+  });
+
+  it('estado manual/sem regra: `after` é o atual e `changes` é false', async () => {
+    const manual: DerivationEvaluation = { subject: { status: 'ON_HOLD', country: 'AR', montado: true }, input: { status: 'ON_HOLD', montado: true, servicos: [] } };
+    const t = buildPermanent({ evaluations: [manual, manual] });
+    expect((await t.useCase.execute(permanentInput())).statusAfter).toEqual({ current: 'ON_HOLD', after: 'ON_HOLD', changes: false });
+  });
+
+  it('serviço inexistente → 404; D no passado; pessoa sem alocação → NoShifts (nada de função do banco); sem `now` usa o relógio', async () => {
+    await expect(buildPermanent({ team: null }).useCase.execute(permanentInput())).rejects.toThrow(SubstitutionServiceNotFoundError);
+    await expect(buildPermanent().useCase.execute(permanentInput({ from: '2026-10-29' }))).rejects.toThrow(SubstitutionPeriodInPastError);
+    const vazio = buildPermanent({ allocs: [] });
+    await expect(vazio.useCase.execute(permanentInput())).rejects.toThrow(SubstitutionNoShiftsInPeriodError);
+    expect(vazio.conflicts.preview).not.toHaveBeenCalled();
+    const { now: _now, ...semNow } = permanentInput({ from: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10) });
+    await expect(buildPermanent().useCase.execute(semNow)).resolves.toMatchObject({ permanent: { allocationCount: 3 } });
   });
 });

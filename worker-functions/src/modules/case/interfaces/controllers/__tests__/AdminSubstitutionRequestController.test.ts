@@ -16,7 +16,14 @@ import {
   SubstitutionPeriodInPastError,
   SubstitutionServiceNotFoundError,
   SubstitutionShiftsMismatchError,
+  SubstitutionRequestNotFoundError,
+  SubstitutionRequestAlreadyUndoneError,
+  SubstitutionRequestNotUndoableError,
+  SubstitutionNothingToCoverError,
+  WorkerHasPendingEntryError,
 } from '../../../application/substitutionRequestErrors';
+import { AllocationRestoreConflictError } from '../../../application/restoreTitular';
+import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
 import {
   AbsenceAlreadyExistsError,
   AbsenceDateInPastError,
@@ -24,8 +31,8 @@ import {
   AbsenceWeekdayMismatchError,
   SubstituteIsTitularError,
 } from '../../../application/ItineraryAbsenceUseCase';
-import { NotSelectedForServiceError } from '../../../application/ItineraryAllocationUseCase';
-import { ServiceExitReasonInvalidError, ServiceExitReasonRequiredError } from '../../../domain/serviceExitReason';
+import { AllocationNotActiveError, AlreadyAllocatedInSlotError, NotSelectedForServiceError } from '../../../application/ItineraryAllocationUseCase';
+import { DestinationNotAvailableForScheduledError, DestinationRequiredError, ServiceExitReasonInvalidError, ServiceExitReasonRequiredError } from '../../../domain/serviceExitReason';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
 
 const PATIENT_ID = '11111111-1111-4111-8111-111111111111';
@@ -54,8 +61,14 @@ describe('AdminSubstitutionRequestController', () => {
     outgoing: { execute: jest.fn() },
     preview: { execute: jest.fn() },
     create: { execute: jest.fn() },
+    undo: { execute: jest.fn() },
+    cover: { execute: jest.fn() },
   };
-  const ctrl = new AdminSubstitutionRequestController(useCases.list as never, useCases.outgoing as never, useCases.preview as never, useCases.create as never);
+  const ctrl = new AdminSubstitutionRequestController(
+    useCases.list as never, useCases.outgoing as never, useCases.preview as never, useCases.create as never, useCases.undo as never, useCases.cover as never,
+  );
+  const RID = '77777777-7777-4777-8777-777777777777';
+  const RPARAMS = { ...PARAMS, rid: RID };
   beforeEach(() => jest.clearAllMocks());
 
   describe('list', () => {
@@ -220,6 +233,102 @@ describe('AdminSubstitutionRequestController', () => {
       const [r2, s2] = reqRes({ body: CREATE_BODY });
       await ctrl.create(r2, s2);
       expect((reportError as jest.Mock).mock.calls[1][0]).toBeInstanceOf(Error);
+    });
+  });
+
+  describe('"No vuelve más" (create PERMANENT) e erros novos', () => {
+    const PERMANENT_BODY = { type: 'PERMANENT', outgoingWorkerId: WORKER_ID, from: '2026-11-02', reasonCategory: 'OTHER', destination: 'RESERVE', substituteWorkerId: null };
+    it('feliz: 201 com o corpo permanente repassado (sem `to`), ator do token', async () => {
+      useCases.create.execute.mockResolvedValue({ requestId: 'r-1', type: 'PERMANENT' });
+      const [req, res] = reqRes({ body: PERMANENT_BODY });
+      await ctrl.create(req, res);
+      expect(useCases.create.execute).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, ...PERMANENT_BODY, actorUid: 'staff-1' });
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+    it('substituteWorkerId AUSENTE no permanente → 400 (P16)', async () => {
+      const { substituteWorkerId: _omit, ...semSubstituto } = PERMANENT_BODY;
+      const [req, res] = reqRes({ body: semSubstituto });
+      await ctrl.create(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+    it.each<[string, Error, number, string]>([
+      ['entrada futura (P5)', new WorkerHasPendingEntryError(WORKER_ID), 409, 'WORKER_HAS_PENDING_ENTRY'],
+      ['destino ausente', new DestinationRequiredError(), 422, 'DESTINATION_REQUIRED'],
+      ['LEAVE_SERVICE agendado', new DestinationNotAvailableForScheduledError(), 422, 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED'],
+      ['já alocado na faixa', new AlreadyAllocatedInSlotError('sl', WORKER_ID), 422, 'ALREADY_ALLOCATED_IN_SLOT'],
+      ['alocação não ativa', new AllocationNotActiveError('a-1'), 422, 'ALLOCATION_NOT_ACTIVE'],
+      ['LEAVE_SERVICE com agendamento', new ServiceTeamWorkerAllocatedError(PATIENT_ID, SERVICE_ID, WORKER_ID), 422, 'SERVICE_TEAM_WORKER_ALLOCATED'],
+      ['pedido inexistente', new SubstitutionRequestNotFoundError(RID), 404, 'NOT_FOUND'],
+      ['pedido já desfeito', new SubstitutionRequestAlreadyUndoneError(RID), 409, 'REQUEST_ALREADY_UNDONE'],
+      ['pedido sem nada futuro', new SubstitutionRequestNotUndoableError(RID), 409, 'REQUEST_NOT_UNDOABLE'],
+      ['nada a cobrir', new SubstitutionNothingToCoverError(RID), 409, 'NOTHING_TO_COVER'],
+      ['restauração bate em uq_pia_open_pair (defeito 17)', new AllocationRestoreConflictError('a-1'), 409, 'ALLOCATION_RESTORE_CONFLICT'],
+    ])('%s → %i %s', async (_nome, err, status, code) => {
+      useCases.undo.execute.mockRejectedValueOnce(err);
+      const [req, res] = reqRes({ params: RPARAMS });
+      await ctrl.undo(req, res);
+      expect(res.status).toHaveBeenCalledWith(status);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, code });
+    });
+  });
+
+  describe('undo', () => {
+    it('Trava A (P0001 ITINERARY_SLOT_CAPACITY_EXCEEDED) ao reabrir o titular sai pelo mapa único de erro de banco (nunca 500) e não vai para o reportError', async () => {
+      useCases.undo.execute.mockRejectedValueOnce(Object.assign(new Error('ITINERARY_SLOT_CAPACITY_EXCEEDED'), { code: 'P0001' }));
+      const [req, res] = reqRes({ params: RPARAMS });
+      await ctrl.undo(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(jsonOf(res)).toHaveBeenCalledWith(expect.objectContaining({ code: 'ITINERARY_SLOT_CAPACITY_EXCEEDED' }));
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('params inválidos → 400; sem ator → 401; o caso de uso não roda', async () => {
+      const [r1, s1] = reqRes({ params: { ...RPARAMS, rid: 'x' } });
+      await ctrl.undo(r1, s1);
+      expect(s1.status).toHaveBeenCalledWith(400);
+      const [r2, s2] = reqRes({ params: RPARAMS, actor: null });
+      await ctrl.undo(r2, s2);
+      expect(s2.status).toHaveBeenCalledWith(401);
+      expect(useCases.undo.execute).not.toHaveBeenCalled();
+    });
+    it('feliz: 200 e o ator vem do token', async () => {
+      useCases.undo.execute.mockResolvedValue({ requestId: RID });
+      const [req, res] = reqRes({ params: RPARAMS });
+      await ctrl.undo(req, res);
+      expect(useCases.undo.execute).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, requestId: RID, actorUid: 'staff-1' });
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+    it('erro inesperado → 500 + reportError sem workerId', async () => {
+      useCases.undo.execute.mockRejectedValueOnce(new Error('boom'));
+      const [req, res] = reqRes({ params: RPARAMS });
+      await ctrl.undo(req, res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminSubstitutionRequestController:undo', patientId: PATIENT_ID, serviceId: SERVICE_ID });
+    });
+  });
+
+  describe('cover', () => {
+    it('params/corpo inválidos → 400; sem ator → 401', async () => {
+      const [r1, s1] = reqRes({ params: RPARAMS, body: {} });
+      await ctrl.cover(r1, s1);
+      expect(s1.status).toHaveBeenCalledWith(400);
+      const [r2, s2] = reqRes({ params: { ...RPARAMS, rid: 'x' }, body: { substituteWorkerId: WORKER_ID } });
+      await ctrl.cover(r2, s2);
+      expect(s2.status).toHaveBeenCalledWith(400);
+      const [r3, s3] = reqRes({ params: RPARAMS, body: { substituteWorkerId: WORKER_ID }, actor: null });
+      await ctrl.cover(r3, s3);
+      expect(s3.status).toHaveBeenCalledWith(401);
+      expect(useCases.cover.execute).not.toHaveBeenCalled();
+    });
+    it('feliz: 200, ator do token; NOTHING_TO_COVER → 409', async () => {
+      useCases.cover.execute.mockResolvedValueOnce({ requestId: RID, covered: 2 }).mockRejectedValueOnce(new SubstitutionNothingToCoverError(RID));
+      const [req, res] = reqRes({ params: RPARAMS, body: { substituteWorkerId: WORKER_ID } });
+      await ctrl.cover(req, res);
+      expect(useCases.cover.execute).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, requestId: RID, substituteWorkerId: WORKER_ID, actorUid: 'staff-1' });
+      expect(res.status).toHaveBeenCalledWith(200);
+      const [r2, s2] = reqRes({ params: RPARAMS, body: { substituteWorkerId: WORKER_ID } });
+      await ctrl.cover(r2, s2);
+      expect(s2.status).toHaveBeenCalledWith(409);
     });
   });
 

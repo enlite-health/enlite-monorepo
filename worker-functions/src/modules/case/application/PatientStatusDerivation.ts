@@ -39,6 +39,15 @@ export interface DerivationEvaluation {
   input: EntradaDerivacao;
 }
 
+/**
+ * Cobertura SIMULADA (spec 069, pré-visão do "No vuelve más"): a MESMA conta, sobre as faixas/alocações lidas depois de `transform`,
+ * na data `asOf` (D, o 1º dia sem a pessoa). Nunca escreve.
+ */
+export interface DerivationSimulation {
+  asOf: string;
+  transform(rows: KanbanServicesRows): KanbanServicesRows;
+}
+
 export interface DerivationServicesReaderPort {
   readForPatientWith(client: PoolClient, patientId: string): Promise<KanbanServicesRows | null>;
 }
@@ -64,12 +73,18 @@ export class PatientStatusDerivation implements PatientStatusDerivationPort {
    * Lê o sujeito e a cobertura e monta a entrada da regra pura (`derivarEstadoPaciente`). `lock: false` = só leitura (pré-visão
    * do pedido de substituição, spec 069): nenhum `FOR UPDATE`. `null` = não é sujeito (sem paciente).
    */
-  async evaluate(client: PoolClient, patientId: string, now: Date, opts: { lock: boolean } = { lock: true }): Promise<DerivationEvaluation | null> {
+  async evaluate(
+    client: PoolClient,
+    patientId: string,
+    now: Date,
+    opts: { lock: boolean; simulate?: DerivationSimulation } = { lock: true },
+  ): Promise<DerivationEvaluation | null> {
     const subject = await this.subjectReader.readSubjectWith(client, patientId, opts.lock);
     if (!subject) return null;
 
-    const rows = (await this.servicesReader.readForPatientWith(client, patientId)) ?? { services: [], slots: [] };
-    const asOf = operationDateOf(subject.country, now);
+    const read = (await this.servicesReader.readForPatientWith(client, patientId)) ?? { patientId, country: subject.country, services: [], slots: [] };
+    const rows = opts.simulate ? opts.simulate.transform(read) : read;
+    const asOf = opts.simulate?.asOf ?? operationDateOf(subject.country, now);
     // 1 item por serviço, na MESMA ordem de `rows.services` (molde `ListKanbanServicesUseCase`).
     const servicos: ServicoParaDerivar[] = buildServiceCoverages(rows, asOf).map((coverage, index) => ({
       temVacanteViva: rows.services[index].liveVacancyId !== null,

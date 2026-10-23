@@ -34,7 +34,7 @@ describe('SubstitutionRequestReader.readForServiceWith', () => {
           { id: 'ab-2', assignment_id: 'a-1', request_id: null, on_date: '2026-11-03', start_time: '08:00', slot_end: '12:00', substitute_worker_id: null, cancelled_at: '2026-10-31T00:00:00.000Z', status: 'ENDED', valid_to: '2026-11-01', titular_worker_id: 'w-out' },
         ];
       if (/FROM patient_itinerary_change_log/.test(sql))
-        return [{ request_id: 'r-1', kind: 'REPLACE', assignment_id: 'a-1', new_assignment_id: 'n-1', effective_date: '2026-11-20' }];
+        return [{ request_id: 'r-1', kind: 'REPLACE', assignment_id: 'a-1', new_assignment_id: 'n-1', effective_date: '2026-11-20', destination: 'RESERVE' }];
       if (/FROM patient_itinerary_assignment WHERE id = ANY/.test(sql)) return [{ id: 'n-1', worker_id: 'w-new', status: 'ACTIVE' }];
       if (/FROM workers WHERE id = ANY/.test(sql)) return [{ id: 'w-out', first_name_encrypted: 'fo', last_name_encrypted: 'lo' }];
       return [];
@@ -48,7 +48,7 @@ describe('SubstitutionRequestReader.readForServiceWith', () => {
       { absenceId: 'ab-1', assignmentId: 'a-1', requestId: 'r-1', onDate: '2026-11-02', startTime: '08:00', endTime: '12:00', substituteWorkerId: 'w-sub', cancelledAt: null, assignmentStatus: 'ACTIVE', assignmentValidTo: null, titularWorkerId: 'w-out' },
       { absenceId: 'ab-2', assignmentId: 'a-1', requestId: null, onDate: '2026-11-03', startTime: '08:00', endTime: '12:00', substituteWorkerId: null, cancelledAt: '2026-10-31T00:00:00.000Z', assignmentStatus: 'ENDED', assignmentValidTo: '2026-11-01', titularWorkerId: 'w-out' },
     ]);
-    expect(rows?.logRows).toEqual([{ requestId: 'r-1', kind: 'REPLACE', assignmentId: 'a-1', newAssignmentId: 'n-1', effectiveDate: '2026-11-20' }]);
+    expect(rows?.logRows).toEqual([{ requestId: 'r-1', kind: 'REPLACE', assignmentId: 'a-1', newAssignmentId: 'n-1', effectiveDate: '2026-11-20', destination: 'RESERVE' }]);
     expect(rows?.newAssignments).toEqual([{ assignmentId: 'n-1', workerId: 'w-new', status: 'ACTIVE' }]);
     // 3 pessoas distintas (w-out, w-sub, w-new) — w-out repetido 3× entra 1×; quem não veio do banco fica com nome null
     expect(rows?.workerNames.map((w) => w.workerId).sort()).toEqual(['w-new', 'w-out', 'w-sub']);

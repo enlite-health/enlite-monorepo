@@ -51,11 +51,18 @@ function validatePeriod(v: PeriodShape, ctx: z.RefinementCtx): void {
 /** `to` sai sempre preenchido (ONE_DAY → `from`). */
 const withTo = <T extends PeriodShape>(v: T): Omit<T, 'to'> & { to: string } => ({ ...v, to: v.to ?? v.from });
 
-export const substitutionPreviewBodySchema = z
+const daysPreviewBodySchema = z
   .object({ ...periodFields, candidateWorkerIds: z.array(z.string().uuid()).max(30) })
   .strict()
   .superRefine(validatePeriod)
   .transform(withTo);
+
+/** "No vuelve más": `from` = D (o 1º dia SEM a pessoa); sem `to` (sem fim). */
+const permanentPreviewBodySchema = z
+  .object({ type: z.literal('PERMANENT'), outgoingWorkerId: z.string().uuid(), from: isoDate, candidateWorkerIds: z.array(z.string().uuid()).max(30) })
+  .strict();
+
+export const substitutionPreviewBodySchema = z.union([daysPreviewBodySchema, permanentPreviewBodySchema]);
 export type SubstitutionPreviewBody = z.infer<typeof substitutionPreviewBodySchema>;
 
 export const substitutionShiftBodySchema = z
@@ -67,7 +74,7 @@ export const substitutionShiftBodySchema = z
   })
   .strict();
 
-export const substitutionCreateBodySchema = z
+const daysCreateBodySchema = z
   .object({
     ...periodFields,
     // Motivo: ausente/vazio NÃO vira 400 da borda — é 422 `REASON_REQUIRED` do caso de uso (mesmo molde de `itineraryAbsenceBodySchema`).
@@ -77,4 +84,27 @@ export const substitutionCreateBodySchema = z
   .strict()
   .superRefine(validatePeriod)
   .transform(withTo);
+
+/**
+ * "No vuelve más" (FR-16/FR-30). `substituteWorkerId` é OBRIGATÓRIO e nullable (P16): uuid = quem entra no lugar dela em TODAS as
+ * faixas; `null` = ninguém ainda (saída sem substituto, FR-30). `destination` só vale com D = hoje (P6) — como o motivo, a ausência
+ * não é 400: o caso de uso responde 422 (`DESTINATION_REQUIRED`).
+ */
+const permanentCreateBodySchema = z
+  .object({
+    type: z.literal('PERMANENT'),
+    outgoingWorkerId: z.string().uuid(),
+    from: isoDate,
+    reasonCategory: z.string().nullish(),
+    destination: z.string().nullish(),
+    substituteWorkerId: z.union([z.string().uuid(), z.null()]),
+  })
+  .strict();
+
+export const substitutionCreateBodySchema = z.union([daysCreateBodySchema, permanentCreateBodySchema]);
 export type SubstitutionCreateBody = z.infer<typeof substitutionCreateBodySchema>;
+
+export const substitutionRequestParamsSchema = itineraryServiceParamsSchema.extend({ rid: z.string().uuid() });
+
+/** "Elegir quién entra": UMA pessoa para todos os turnos sem ninguém do pedido. */
+export const substitutionCoverBodySchema = z.object({ substituteWorkerId: z.string().uuid() }).strict();

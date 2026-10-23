@@ -45,3 +45,43 @@ export class SubstitutionShiftsMismatchError extends Error {
     this.name = 'SubstitutionShiftsMismatchError';
   }
 }
+
+/** O pedido não existe, é de outro serviço/paciente ou de outro país (RLS) — 404. */
+export class SubstitutionRequestNotFoundError extends Error {
+  constructor(readonly requestId: string) {
+    super(`Substitution request not found: ${requestId}`);
+    this.name = 'SubstitutionRequestNotFoundError';
+  }
+}
+
+/** O pedido já foi desfeito (`undone_at`) — 409 `REQUEST_ALREADY_UNDONE`. */
+export class SubstitutionRequestAlreadyUndoneError extends Error {
+  constructor(readonly requestId: string) {
+    super(`Substitution request already undone: ${requestId}`);
+    this.name = 'SubstitutionRequestAlreadyUndoneError';
+  }
+}
+
+/** Nada futuro a desfazer (pedido todo passado, FR-22; permanente a partir de hoje, FR-33) — 409 `REQUEST_NOT_UNDOABLE`. */
+export class SubstitutionRequestNotUndoableError extends Error {
+  constructor(readonly requestId: string) {
+    super(`Substitution request is not undoable: ${requestId}`);
+    this.name = 'SubstitutionRequestNotUndoableError';
+  }
+}
+
+/** P5: a pessoa tem entrada FUTURA no serviço (reemplazo agendado) — "No vuelve más" é recusado; desfaça o pedido que a trouxe. 409 `WORKER_HAS_PENDING_ENTRY`. */
+export class WorkerHasPendingEntryError extends Error {
+  constructor(readonly workerId: string) {
+    super('Worker has a pending (future) entry in this service');
+    this.name = 'WorkerHasPendingEntryError';
+  }
+}
+
+/** "Elegir quién entra" num pedido sem nenhum turno futuro sem ninguém — 409 `NOTHING_TO_COVER`. */
+export class SubstitutionNothingToCoverError extends Error {
+  constructor(readonly requestId: string) {
+    super(`Substitution request has nothing left to cover: ${requestId}`);
+    this.name = 'SubstitutionNothingToCoverError';
+  }
+}

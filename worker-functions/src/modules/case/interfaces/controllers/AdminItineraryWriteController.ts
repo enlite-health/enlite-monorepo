@@ -27,6 +27,7 @@ import {
   ServiceWithoutSlotError,
 } from '../../application/AssembleItineraryUseCase';
 import { RemoveFromItineraryUseCase } from '../../application/RemoveFromItineraryUseCase';
+import { AllocationRestoreConflictError } from '../../application/restoreTitular';
 import { ReplaceWithReasonUseCase } from '../../application/ReplaceWithReasonUseCase';
 import {
   ServiceTeamWorkerAllocatedError,
@@ -382,6 +383,11 @@ export class AdminItineraryWriteController {
     }
     if (err instanceof AllocationNotActiveError) {
       res.status(422).json({ success: false, code: 'ALLOCATION_NOT_ACTIVE' });
+      return;
+    }
+    // Defeito 17 (spec 069 FR-34): o restore do titular bateu em `uq_pia_open_pair` — 409 com código, nunca 500.
+    if (err instanceof AllocationRestoreConflictError) {
+      res.status(409).json({ success: false, code: 'ALLOCATION_RESTORE_CONFLICT', error: 'el prestador ya tiene una asignación abierta en esta franja' });
       return;
     }
     if (err instanceof ReplacementDateInPastError) {

@@ -1,8 +1,10 @@
 import {
   SUBSTITUTION_MAX_DAYS,
+  substitutionCoverBodySchema,
   substitutionCreateBodySchema,
   substitutionListQuerySchema,
   substitutionPreviewBodySchema,
+  substitutionRequestParamsSchema,
   substitutionShiftBodySchema,
 } from '../substitutionRequestSchemas';
 
@@ -29,12 +31,15 @@ describe('substitutionRequestSchemas', () => {
     });
     it('ONE_DAY: `to` ausente ou igual a `from` (normalizado para `to = from`); outro `to` é recusado', () => {
       const ok = preview({ type: 'ONE_DAY', to: undefined });
-      expect(ok.success && ok.data.to).toBe('2026-11-02');
+      expect(ok.success && 'to' in ok.data && ok.data.to).toBe('2026-11-02');
       expect(preview({ type: 'ONE_DAY', to: '2026-11-02' }).success).toBe(true);
       expect(preview({ type: 'ONE_DAY', to: '2026-11-03' }).success).toBe(false);
     });
-    it('PERMANENT ainda não é aceito (F3); chave estranha é recusada (.strict)', () => {
-      expect(preview({ type: 'PERMANENT' }).success).toBe(false);
+    it('PERMANENT: `from` = D e candidatos, SEM `to` (sem fim); `to` num permanente e chave estranha são recusados (.strict)', () => {
+      const permanent = (o: Record<string, unknown>) => substitutionPreviewBodySchema.safeParse({ type: 'PERMANENT', outgoingWorkerId: W, from: '2026-11-02', candidateWorkerIds: [], ...o });
+      expect(permanent({}).success).toBe(true);
+      expect(permanent({ to: '2026-11-13' }).success).toBe(false);
+      expect(permanent({ from: '2026-02-31' }).success).toBe(false);
       expect(preview({ extra: 1 }).success).toBe(false);
       expect(preview({ candidateWorkerIds: ['x'] }).success).toBe(false);
     });
@@ -54,5 +59,30 @@ describe('substitutionRequestSchemas', () => {
     expect(substitutionCreateBodySchema.safeParse({ ...base, shifts: [] }).success).toBe(true);
     expect(substitutionCreateBodySchema.safeParse({ ...base, reasonCategory: null, shifts: [] }).success).toBe(true);
     expect(substitutionCreateBodySchema.safeParse({ ...base }).success).toBe(false); // `shifts` é obrigatório
+  });
+
+  describe('"No vuelve más" (PERMANENT) e os params/corpo das ações do pedido', () => {
+    const permanent = (o: Record<string, unknown>) =>
+      substitutionCreateBodySchema.safeParse({ type: 'PERMANENT', outgoingWorkerId: W, from: '2026-11-02', substituteWorkerId: null, ...o });
+    it('substituteWorkerId é OBRIGATÓRIO e nullable (P16): uuid ou null; ausente ou string solta é 400', () => {
+      expect(permanent({}).success).toBe(true);
+      expect(permanent({ substituteWorkerId: W }).success).toBe(true);
+      expect(permanent({ substituteWorkerId: undefined }).success).toBe(false);
+      expect(permanent({ substituteWorkerId: 'x' }).success).toBe(false);
+    });
+    it('motivo e destino ausentes NÃO são 400 (422 do caso de uso); `to`/`shifts` num permanente e data inexistente são recusados', () => {
+      expect(permanent({ reasonCategory: null, destination: null }).success).toBe(true);
+      expect(permanent({ to: '2026-11-13' }).success).toBe(false);
+      expect(permanent({ shifts: [] }).success).toBe(false);
+      expect(permanent({ from: '2026-02-31' }).success).toBe(false);
+    });
+    it('params do pedido exigem uuid em id, sid e rid; cover exige UM substituteWorkerId uuid (.strict)', () => {
+      expect(substitutionRequestParamsSchema.safeParse({ id: W, sid: SLOT, rid: W }).success).toBe(true);
+      expect(substitutionRequestParamsSchema.safeParse({ id: W, sid: SLOT, rid: 'x' }).success).toBe(false);
+      expect(substitutionCoverBodySchema.safeParse({ substituteWorkerId: W }).success).toBe(true);
+      expect(substitutionCoverBodySchema.safeParse({}).success).toBe(false);
+      expect(substitutionCoverBodySchema.safeParse({ substituteWorkerId: null }).success).toBe(false);
+      expect(substitutionCoverBodySchema.safeParse({ substituteWorkerId: W, extra: 1 }).success).toBe(false);
+    });
   });
 });

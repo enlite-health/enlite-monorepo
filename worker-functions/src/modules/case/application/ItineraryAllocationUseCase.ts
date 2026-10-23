@@ -179,7 +179,7 @@ export class ReplacementDateInPastError extends Error {
 }
 
 /** O 23505 que é a corrida do índice `uq_pia_open_pair` — e só ele (molde `isActiveRejectionConflict`). */
-function isOpenPairConflict(err: unknown): boolean {
+export function isOpenPairConflict(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false;
   const e = err as { code?: string; constraint?: string };
   return e.code === '23505' && e.constraint === 'uq_pia_open_pair';

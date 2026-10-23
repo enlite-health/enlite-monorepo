@@ -49,6 +49,16 @@ export interface AllocationRow {
   slotId?: string;
   /** O prestador titular da alocação (registro de trocas, Fase 2: `outgoing_worker_id`). Opcional pelo mesmo motivo de `slotId` — só `findAllocation` preenche. */
   workerId?: string;
+  /** Fim (inclusivo) da alocação; `null` = aberta. Só `findAllocation` preenche (o desfazer do "No vuelve más" decide por ele). */
+  validTo?: string | null;
+}
+
+/** Uma alocação `ACTIVE` de uma pessoa num serviço (a leitura do "No vuelve más"). */
+export interface WorkerAllocation {
+  id: string;
+  slotId: string;
+  validFrom: string;
+  validTo: string | null;
 }
 
 export class ItineraryAllocationWriter {
@@ -100,8 +110,8 @@ export class ItineraryAllocationWriter {
     serviceId: string,
     allocationId: string,
   ): Promise<AllocationRow | null> {
-    const res = await client.query<{ id: string; status: ItineraryAssignmentStatus; valid_from: string; slot_id: string; worker_id: string }>(
-      `SELECT a.id, a.status, to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, a.slot_id, a.worker_id
+    const res = await client.query<{ id: string; status: ItineraryAssignmentStatus; valid_from: string; valid_to: string | null; slot_id: string; worker_id: string }>(
+      `SELECT a.id, a.status, to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to, a.slot_id, a.worker_id
          FROM patient_itinerary_assignment a
          JOIN patient_itinerary_slot s ON s.id = a.slot_id
          JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
@@ -110,7 +120,21 @@ export class ItineraryAllocationWriter {
     );
     if (res.rowCount === 0) return null;
     const row = res.rows[0];
-    return { id: row.id, status: row.status, validFrom: row.valid_from, slotId: row.slot_id, workerId: row.worker_id };
+    return { id: row.id, status: row.status, validFrom: row.valid_from, validTo: row.valid_to, slotId: row.slot_id, workerId: row.worker_id };
+  }
+
+  /** As alocações `ACTIVE` da pessoa no serviço que ainda valem em `fromDate` ou depois (`valid_to` nulo ou `>= fromDate`), em ordem estável. */
+  async listWorkerAllocations(client: PoolClient, serviceId: string, workerId: string, fromDate: string): Promise<WorkerAllocation[]> {
+    const res = await client.query<{ id: string; slot_id: string; valid_from: string; valid_to: string | null }>(
+      `SELECT a.id, a.slot_id, to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to
+         FROM patient_itinerary_assignment a
+         JOIN patient_itinerary_slot s ON s.id = a.slot_id
+        WHERE s.contracted_service_id = $1 AND a.worker_id = $2 AND a.status = 'ACTIVE'
+          AND (a.valid_to IS NULL OR a.valid_to >= $3::date)
+        ORDER BY s.weekday, s.start_time, a.valid_from, a.id`,
+      [serviceId, workerId, fromDate],
+    );
+    return res.rows.map((r) => ({ id: r.id, slotId: r.slot_id, validFrom: r.valid_from, validTo: r.valid_to }));
   }
 
   /** `GREATEST(valid_from, hoje)`: o fim nunca fica antes do início. Só bate `status = 'ACTIVE'`. */

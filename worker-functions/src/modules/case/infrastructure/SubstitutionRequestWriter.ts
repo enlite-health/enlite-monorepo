@@ -22,4 +22,13 @@ export class SubstitutionRequestWriter {
     );
     return { id: res.rows[0].id };
   }
+
+  /** Marca o pedido como desfeito (o único dono de "desfeito"). `0` = já estava desfeito. O banco recusa se ainda houver ausência viva de hoje em diante (23514). */
+  async markUndone(client: PoolClient, id: string, actorUid: string): Promise<number> {
+    const res = await client.query(
+      `UPDATE patient_itinerary_substitution_request SET undone_at = now(), undone_by = $2 WHERE id = $1 AND undone_at IS NULL`,
+      [id, actorUid],
+    );
+    return res.rowCount ?? 0;
+  }
 }
