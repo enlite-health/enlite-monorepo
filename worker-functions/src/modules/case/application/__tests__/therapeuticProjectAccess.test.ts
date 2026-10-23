@@ -160,6 +160,18 @@ describe('projectTherapeuticVersionForActor', () => {
     expect(out.activities).toEqual([{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
   });
 
+  it('spec 061/D-3: a `description` do item SOBREVIVE à projeção sem `patient_clinical:read` (controle: o `segmentId` do mesmo item sai null)', () => {
+    const base = versao();
+    const comDescricao = {
+      ...base,
+      specificObjectives: [{ id: 'o-1', label: 'TITULO-SINTETICO-O', description: 'DESCRIPCION-SINTETICA-O', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
+      activities: [{ id: 'a-1', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
+    };
+    const out = projectTherapeuticVersionForActor(comDescricao, [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
+    expect(out.specificObjectives[0]).toEqual({ id: 'o-1', label: 'TITULO-SINTETICO-O', description: 'DESCRIPCION-SINTETICA-O', segmentId: null, segmentLabel: null });
+    expect(out.activities[0]).toEqual({ id: 'a-1', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A', segmentId: null, segmentLabel: null });
+  });
+
   it('lex-pr7 C3(b)/D303: SEM `patient_clinical:read` o segmento sai `null` por item, mas id/label continuam (não é o item inteiro que some)', () => {
     const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
     expect(out.specificObjectives).toEqual([{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: null, segmentLabel: null }]);

@@ -15,6 +15,7 @@ import { ListChecks, Edit2, Plus } from 'lucide-react';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import {
   SERVICE_EXIT_REASON_KIND,
+  catalogHasDescription,
   SERVICE_EXIT_REASON_RESOURCE,
   THERAPEUTIC_CATALOG_RESOURCE,
   type TherapeuticCatalogKind,
@@ -30,6 +31,7 @@ import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { TherapeuticCatalogFormModal, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
 import { segmentDisplayLabel } from './catalogSegment';
+import { sortAlphabeticallyEs } from '@presentation/components/features/admin/PatientDetail/therapeuticProject/alphabeticalOrder';
 
 /**
  * Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030) e
@@ -79,6 +81,9 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const writeGate = writeGates[kind];
 
   const [items, setItems] = useState<TherapeuticCatalogItem[]>([]);
+  // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; `segments` e motivos de saída seguem na ordem do servidor.
+  const showOrder = !catalogHasDescription(kind);
+  const shownItems = showOrder ? items : sortAlphabeticallyEs(items);
   // Segmentos (spec 030): só objetivos/atividades se vinculam; `null` = sem célula (403) ou catálogo sem vínculo.
   const [segments, setSegments] = useState<TherapeuticCatalogItem[] | null>(null);
   const hasSegmentLink = kind === 'specific-objectives' || kind === 'activities';
@@ -114,7 +119,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
     if (formModal.item) {
       await AdminTherapeuticProjectsApiService.updateCatalogItem(kind, formModal.item.id, data);
     } else {
-      await AdminTherapeuticProjectsApiService.createCatalogItem(kind, data);
+      await AdminTherapeuticProjectsApiService.createCatalogItem(kind, { ...data, label: data.label ?? '' });
     }
     setFormModal({ open: false, item: null });
     setActionError(null);
@@ -177,20 +182,33 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto" data-testid="therapeutic-catalog-table">
           <Table>
             <TableHeader>
-              <TableHead>{tr('table.order')}</TableHead>
-              <TableHead>{tr('table.label')}</TableHead>
+              {showOrder && <TableHead>{tr('table.order')}</TableHead>}
+              <TableHead>{tr(showOrder ? 'table.label' : 'table.title')}</TableHead>
               {segments !== null && <TableHead>{tr('table.segment')}</TableHead>}
               <TableHead>{tr('table.status')}</TableHead>
               <TableHead align="right">{tr('table.actions')}</TableHead>
             </TableHeader>
             <TableBody>
-              {items.map((item) => (
+              {shownItems.map((item) => (
                 <TableRow key={item.id} clickable={false} data-testid={`therapeutic-catalog-row-${item.id}`}>
-                  <TableCell unwrapped>
-                    <Text as="span" size="sm" color="muted" className="font-mono">{item.sortOrder}</Text>
-                  </TableCell>
+                  {showOrder && (
+                    <TableCell unwrapped>
+                      <Text as="span" size="sm" color="muted" className="font-mono">{item.sortOrder}</Text>
+                    </TableCell>
+                  )}
                   <TableCell unwrapped>
                     <Text as="span" size="sm" color={item.active ? 'primary' : 'muted'} data-testid={`therapeutic-catalog-label-${item.id}`}>{item.label}</Text>
+                    {!showOrder && item.description && (
+                      <Text
+                        size="xs"
+                        color="muted"
+                        className="mt-0.5 line-clamp-2"
+                        title={item.description}
+                        data-testid={`therapeutic-catalog-description-${item.id}`}
+                      >
+                        {item.description}
+                      </Text>
+                    )}
                   </TableCell>
                   {segments !== null && (
                     <TableCell unwrapped>
@@ -240,6 +258,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
 
       {formModal.open && (
         <TherapeuticCatalogFormModal
+          kind={kind}
           item={formModal.item}
           segments={segments}
           onSave={handleFormSave}

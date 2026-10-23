@@ -288,7 +288,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await digitar(page, '#tp-generalObjective', 'Objetivo que no debe persistir 017');
     await page.getByTestId('tp-modality').selectOption('IN_PERSON');
     await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
-    await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista (ORDER BY sort_order, lower(label))
+    await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista: `segmentOptions` (sem `alphabetical` p/ objetivos) põe os do segmento escolhido antes dos sem vínculo, na ordem da API (`ORDER BY lower(label)`, spec 061)
     await marcarOpcoes(page, 'tp-activities', 1);
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
@@ -297,7 +297,8 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect(page.getByTestId('tp-save')).toBeEnabled();
 
     // Enquanto o formulário está aberto, o backoffice desativa exatamente a opção escolhida.
-    const primeira = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order, lower(label) LIMIT 1`).split('\n')[0].trim();
+    // Mesma regra da tela (segmentOptions.ts + API): do segmento escolhido primeiro, depois os sem vínculo; dentro de cada bloco `lower(label)`; outro segmento fica de fora.
+    const primeira = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active AND (segment_id = '${primeiroSegmento().id}' OR segment_id IS NULL) ORDER BY (segment_id IS NULL), lower(label) LIMIT 1`).split('\n')[0].trim();
     expect(primeira).toMatch(/^[0-9a-f-]{36}$/);
     runSQL(`UPDATE therapeutic_specific_objectives SET active = false, deactivated_at = now(), updated_by = 'e2e-017' WHERE id = '${primeira}'`);
     try {

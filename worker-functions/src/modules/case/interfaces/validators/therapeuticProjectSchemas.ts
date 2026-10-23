@@ -38,6 +38,10 @@ const contactStatusSchema = z
 export const THERAPEUTIC_TEXT_MAX = 4000;
 /** Teto do rótulo de catálogo — espelha `<tabela>_label_len` (migration 415). */
 export const CATALOG_LABEL_MAX = 200;
+/** Teto do título de objetivos/atividades (spec 061) — só o zod; o CHECK do banco segue 200 (títulos antigos). */
+export const CATALOG_TITLE_MAX = 150;
+/** Teto da descrição de objetivos/atividades (spec 061) — espelha `<tabela>_description_len` (migration 547). */
+export const CATALOG_DESCRIPTION_MAX = 1000;
 /** Teto do motivo de anulação — espelha `ptp_annul_reason_len` (416). Rótulo, nunca dado do titular. */
 export const ANNUL_REASON_MAX = 200;
 
@@ -142,12 +146,29 @@ export const catalogKindSchema = z.enum(THERAPEUTIC_CATALOG_KINDS as unknown as 
  * pessoal (lex C18) é a mesma do motivo de concessão de país — e-mail ou sequência longa de
  * dígitos não passam; o teto espelha o CHECK da 415.
  */
-const catalogLabel = z
+const catalogLabelWithMax = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .refine((l) => !containsLikelyPersonalData(l), { message: 'label must not contain personal data' });
+const catalogLabel = catalogLabelWithMax(CATALOG_LABEL_MAX);
+/** Título de objetivos/atividades (spec 061): 150, só quando o corpo traz `label`. */
+const catalogTitle = catalogLabelWithMax(CATALOG_TITLE_MAX);
+
+/** Descrição (spec 061): texto livre do operador, mesma guarda de dado pessoal do rótulo. */
+const catalogDescription = z
   .string()
   .trim()
   .min(1)
-  .max(CATALOG_LABEL_MAX)
-  .refine((l) => !containsLikelyPersonalData(l), { message: 'label must not contain personal data' });
+  .max(CATALOG_DESCRIPTION_MAX)
+  .refine((d) => !containsLikelyPersonalData(d), { message: 'description must not contain personal data' });
+/** PATCH: `''`/espaços = limpar (vira `null`); `null` limpa; ausente não toca. */
+const catalogDescriptionPatch = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  catalogDescription.nullable().optional(),
+);
 
 /**
  * `segmentId` (migration 430, US-17): filtro por segmento da Ana Care — só em `specific-objectives`/
@@ -163,7 +184,9 @@ const createCatalogItemBase = {
   sortOrder: z.number().int().min(0).max(100000).optional(),
 };
 export const createCatalogItemSchema = z.object(createCatalogItemBase).strict();
-const createCatalogItemWithSegmentSchema = z.object({ ...createCatalogItemBase, segmentId: segmentIdField.optional() }).strict();
+const createCatalogItemWithSegmentSchema = z
+  .object({ ...createCatalogItemBase, label: catalogTitle, description: catalogDescription.optional(), segmentId: segmentIdField.optional() })
+  .strict();
 
 /** PATCH parcial: rótulo, ordem, e `active:false` para desativar (reativar também é permitido). */
 const updateCatalogItemBase = {
@@ -173,7 +196,7 @@ const updateCatalogItemBase = {
 };
 export const updateCatalogItemSchema = z.object(updateCatalogItemBase).strict().refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
 const updateCatalogItemWithSegmentSchema = z
-  .object({ ...updateCatalogItemBase, segmentId: segmentIdField.optional() })
+  .object({ ...updateCatalogItemBase, label: catalogTitle.optional(), description: catalogDescriptionPatch, segmentId: segmentIdField.optional() })
   .strict()
   .refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
 
