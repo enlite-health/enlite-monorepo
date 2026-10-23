@@ -40,6 +40,16 @@ export async function escolherNoCombo(
   await expect(gatilho).toContainText(rotulo);
 }
 
+/**
+ * Combobox de AÇÃO: o gatilho não guarda a escolha (ex.: "Ver como grupo" no rodapé da sidebar, que dispara a simulação e segue
+ * mostrando o placeholder). Mesmo gesto — abrir, buscar, clicar a opção pelo rótulo —, sem conferir o texto do gatilho; o efeito
+ * (banner, menu) é a asserção do teste.
+ */
+export async function acionarNoCombo(page: Page, alvo: Locator | string, rotulo: string, opts?: { buscar?: string }): Promise<void> {
+  await abrir(page, alvo, opts?.buscar ?? rotulo);
+  await page.getByRole('option', { name: rotulo, exact: true }).click();
+}
+
 /** Combobox `multiple`: marca cada rótulo (o painel fica aberto) e fecha com Esc no fim. */
 export async function escolherVariosNoCombo(page: Page, alvo: Locator | string, rotulos: string[]): Promise<void> {
   const gatilho = await abrir(page, alvo);

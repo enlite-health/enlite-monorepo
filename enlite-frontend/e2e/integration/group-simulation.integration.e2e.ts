@@ -62,7 +62,7 @@
  * (`WelcomeNoGroupPage`) não é a que aparece.
  */
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
-import { escolherNoCombo } from '../helpers/combobox';
+import { acionarNoCombo } from '../helpers/combobox';
 import {
   ABAC_TENANT,
   psql,
@@ -138,7 +138,7 @@ async function apiSimulation(
 /** Escolhe o grupo no Combobox como a pessoa faz: abre o gatilho, busca pelo nome (há busca com 3+ grupos) e clica a opção pelo rótulo. */
 async function escolherGrupo(page: Page, groupName: string): Promise<'combobox'> {
   const gatilho = page.getByRole('combobox', { name: /Ver como grupo|Simular como grupo|access\.simulation\.select/i });
-  await escolherNoCombo(page, gatilho, groupName);
+  await acionarNoCombo(page, gatilho, groupName); // o gatilho segue com o placeholder; o efeito é o banner (asserido nos testes)
   return 'combobox';
 }
 
