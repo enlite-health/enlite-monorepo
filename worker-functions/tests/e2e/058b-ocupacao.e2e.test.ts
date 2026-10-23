@@ -3,6 +3,7 @@
  * medição 12a (`fn_058_b_slots_over_capacity`). Banco real; a Trava A é desligada só para semear.
  */
 import { Pool } from 'pg';
+import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 import { alocar, criarCandidato, criarCenario, hojeOp, limparB, mais, novoPool, travaA } from './helpers/itinerario058bDb';
 
 describe('058b ocupação da faixa @integration', () => {
@@ -77,10 +78,11 @@ describe('058b ocupação da faixa @integration', () => {
     const [w1, w2] = [await criarCandidato(pool, cen), await criarCandidato(pool, cen)];
     await semear(async (c) => {
       const a1 = await alocar(c, cen.faixas[0], w1, D, null);
+      const requestId = await seedRequestForAssignment(c, a1, { createdBy: 'qa058b' });
       await c.query(
-        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-         VALUES ($1, $2::date, $3, $4, 'qa058b', 'qa058b')`,
-        [a1, await proximaSegunda(D), w2.workerId, w2.applicationId]);
+        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+         VALUES ($1, $2::date, $3, $4, 'qa058b', 'qa058b', $5)`,
+        [a1, await proximaSegunda(D), w2.workerId, w2.applicationId, requestId]);
     });
     expect(await maxOcup(cen.faixas[0], D, await mais(pool, D, 10))).toBe(1);
   });

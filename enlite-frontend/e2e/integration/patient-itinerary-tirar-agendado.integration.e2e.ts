@@ -17,6 +17,7 @@ import { loginAs } from '../helpers/abac-stack-helper';
 import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
 import { seedDerivablePatient, selectedWorker, allocateWorker } from '../helpers/derivacao-e2e-helper';
 import { sqlComVars } from '../helpers/sql-com-vars';
+import { seedRequestForAssignment } from '../helpers/seedSubstitutionRequest';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
 
 const STAFF = mockAdminUserFor('itinerario-tirar-agendado');
@@ -55,10 +56,12 @@ async function semearSubstituto(request: APIRequestContext) {
     );
     const d2 = sqlComVars("SELECT to_char(:'d'::date + 7, 'YYYY-MM-DD')", { d: d1 });
     for (const d of [d1, d2]) {
+      // 548: a ausência nasce com pedido (mesmo serviço e titular da alocação de A).
+      const r = seedRequestForAssignment(alocA.allocationId!);
       sqlComVars(
-        "INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by) " +
-          "SELECT :'a'::uuid, :'d'::date, :'c'::uuid, id, 'e2e', 'e2e' FROM worker_job_applications WHERE worker_id = :'c'::uuid AND job_posting_id = :'v'::uuid",
-        { a: alocA.allocationId!, d, c, v: svc.vacancyId },
+        "INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id) " +
+          "SELECT :'a'::uuid, :'d'::date, :'c'::uuid, id, 'e2e', 'e2e', :'r'::uuid FROM worker_job_applications WHERE worker_id = :'c'::uuid AND job_posting_id = :'v'::uuid",
+        { a: alocA.allocationId!, d, c, v: svc.vacancyId, r },
       );
     }
     return { seed, serviceId: svc.serviceId, slotSegunda: svc.slotIds[0], slotQuarta: svc.slotIds[1], a, c, alocC: alocC.allocationId!, alocA: alocA.allocationId!, datas: [d1, d2] };

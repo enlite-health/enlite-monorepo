@@ -22,6 +22,7 @@ describe('ItineraryAbsenceWriter', () => {
 
     const result = await writer.insertAbsence(client as never, {
       allocationId: 'alloc-1',
+      requestId: 'req-1',
       date: '2026-09-28',
       substituteWorkerId: null,
       substituteApplicationId: null,
@@ -32,10 +33,10 @@ describe('ItineraryAbsenceWriter', () => {
     const [sql, params] = client.query.mock.calls[0];
     expect(String(sql)).toMatch(/INSERT INTO patient_itinerary_absence/);
     expect(String(sql)).toMatch(
-      /\(assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by\)/,
+      /\(assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id\)/,
     );
     expect(String(sql)).not.toMatch(/now\(\)|CURRENT_DATE/);
-    expect(params).toEqual(['alloc-1', '2026-09-28', null, null, 'staff:u-1']);
+    expect(params).toEqual(['alloc-1', '2026-09-28', null, null, 'staff:u-1', 'req-1']);
     expect(result).toEqual({ id: 'abs-1', date: '2026-09-28' });
   });
 
@@ -44,6 +45,7 @@ describe('ItineraryAbsenceWriter', () => {
 
     await writer.insertAbsence(client as never, {
       allocationId: 'alloc-1',
+      requestId: 'req-1',
       date: '2026-09-28',
       substituteWorkerId: 'w-sub',
       substituteApplicationId: 'wja-sub',
@@ -156,6 +158,7 @@ describe('ItineraryAbsenceWriter', () => {
 
     await writer.insertAbsence(client as never, {
       allocationId: 'alloc-1',
+      requestId: 'req-1',
       date: '2026-09-28',
       substituteWorkerId: null,
       substituteApplicationId: null,

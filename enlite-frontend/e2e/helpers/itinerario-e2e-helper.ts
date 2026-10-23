@@ -210,4 +210,9 @@ export function cleanupItinerary(patientId: string): void {
       `JOIN patient_contracted_services pcs ON pcs.id = pis.contracted_service_id ` +
       `WHERE pcs.patient_id = '${patientId}')`,
   );
+  // O pedido de substituição (migration 548) referencia prestador sem cascata: sai depois das alocações (que levam as ausências).
+  runSQL(
+    `DELETE FROM patient_itinerary_substitution_request WHERE contracted_service_id IN (` +
+      `SELECT id FROM patient_contracted_services WHERE patient_id = '${patientId}')`,
+  );
 }

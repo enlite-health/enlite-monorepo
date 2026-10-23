@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
@@ -750,6 +751,8 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     const CREATED_BY = 'rls-e2e-abs13';
     let dateD = '';
     let dateD2 = '';
+    let requestAR = '';
+    let requestBR = '';
 
     beforeAll(async () => {
       const nextMondayRes = await pool.query<{ d: string }>(
@@ -831,16 +834,18 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
 
       // ausência SEM substituto no paciente AR em D2 (só para o 6l — não interage com a trava do
       // 6n, que usa a data D noutra alocação).
+      requestAR = await seedRequestForAssignment(pool, IDS.absAssignmentAR, { createdBy: CREATED_BY });
       await pool.query(
-        `INSERT INTO patient_itinerary_absence (id, assignment_id, on_date, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $4)`,
-        [IDS.absSeedAR, IDS.absAssignmentAR, dateD2, CREATED_BY],
+        `INSERT INTO patient_itinerary_absence (id, assignment_id, on_date, created_by, updated_by, request_id)
+         VALUES ($1, $2, $3, $4, $4, $5)`,
+        [IDS.absSeedAR, IDS.absAssignmentAR, dateD2, CREATED_BY, requestAR],
       );
       // ausência do paciente BR em D, COM substituto W — a semente "como dono" do 6n.
+      requestBR = await seedRequestForAssignment(pool, IDS.absAssignmentBR, { createdBy: CREATED_BY });
       await pool.query(
-        `INSERT INTO patient_itinerary_absence (id, assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $6)`,
-        [IDS.absSeedBR, IDS.absAssignmentBR, dateD, IDS.absSubstitute, IDS.absWjaSubBR, CREATED_BY],
+        `INSERT INTO patient_itinerary_absence (id, assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $6, $7)`,
+        [IDS.absSeedBR, IDS.absAssignmentBR, dateD, IDS.absSubstitute, IDS.absWjaSubBR, CREATED_BY, requestBR],
       );
     });
 
@@ -855,6 +860,7 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       await pool.query(`DELETE FROM patient_itinerary_assignment WHERE id = ANY($1)`, [
         [IDS.absAssignmentAR, IDS.absAssignmentBR],
       ]);
+      await pool.query(`DELETE FROM patient_itinerary_substitution_request WHERE id = ANY($1)`, [[requestAR, requestBR]]);
       await pool.query(`DELETE FROM worker_job_applications WHERE id = ANY($1)`, [
         [IDS.absWjaTitularAR, IDS.absWjaTitularBR, IDS.absWjaSubAR, IDS.absWjaSubBR],
       ]);
@@ -882,9 +888,9 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       await expect(
         asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
           await c.query(
-            `INSERT INTO patient_itinerary_absence (assignment_id, on_date, created_by, updated_by)
-             VALUES ($1, $2, $3, $3)`,
-            [IDS.absAssignmentBR, dateD2, STAFF_UID],
+            `INSERT INTO patient_itinerary_absence (assignment_id, on_date, created_by, updated_by, request_id)
+             VALUES ($1, $2, $3, $3, $4)`,
+            [IDS.absAssignmentBR, dateD2, STAFF_UID, requestBR],
           );
         }),
       ).rejects.toThrow(/new row violates row-level security policy/);
@@ -894,9 +900,9 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       await expect(
         asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
           await c.query(
-            `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-             VALUES ($1, $2, $3, $4, $5, $5)`,
-            [IDS.absAssignmentAR, dateD, IDS.absSubstitute, IDS.absWjaSubAR, STAFF_UID],
+            `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+             VALUES ($1, $2, $3, $4, $5, $5, $6)`,
+            [IDS.absAssignmentAR, dateD, IDS.absSubstitute, IDS.absWjaSubAR, STAFF_UID, requestAR],
           );
         }),
       ).rejects.toMatchObject({ code: '23P01' });

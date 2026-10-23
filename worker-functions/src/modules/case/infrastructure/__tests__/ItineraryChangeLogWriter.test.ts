@@ -16,6 +16,7 @@ describe('ItineraryChangeLogWriter.insert', () => {
       incomingWorkerId: 'w-in',
       assignmentId: 'a-1',
       absenceId: 'ab-1',
+      requestId: 'req-1',
       effectiveDate: '2026-09-28',
       reasonCode: 'OTHER',
       actorUid: 'staff:u-1',
@@ -26,7 +27,7 @@ describe('ItineraryChangeLogWriter.insert', () => {
     expect(sql).toMatch(/^\s*INSERT INTO patient_itinerary_change_log/);
     expect(sql).not.toMatch(/UPDATE|DELETE/);
     expect(sql).not.toMatch(/country/); // herdado do serviço pelo trigger
-    expect(params).toEqual(['s-1', 'ABSENCE', 'w-out', 'w-in', 'a-1', null, 'ab-1', '2026-09-28', 'OTHER', null, 'staff:u-1']);
+    expect(params).toEqual(['s-1', 'ABSENCE', 'w-out', 'w-in', 'a-1', null, 'ab-1', '2026-09-28', 'OTHER', null, 'staff:u-1', 'req-1']);
   });
 
   it('campos opcionais ausentes viram NULL (destination só REPLACE/REMOVE)', async () => {
@@ -46,6 +47,7 @@ describe('ItineraryChangeLogWriter.insert', () => {
     expect(params[5]).toBeNull(); // new assignment
     expect(params[6]).toBeNull(); // absence
     expect(params[9]).toBe('RESERVE');
+    expect(params[11]).toBeNull(); // request (REMOVE da faixa, sem pedido)
   });
 
   it('erro do banco sobe cru (quem chama decide; a transação desfaz)', async () => {

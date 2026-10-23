@@ -36,6 +36,7 @@ import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/Servi
 import { ItineraryAbsenceWriter, type InsertAbsenceInput, type InsertedAbsence, type AbsenceRow } from '../infrastructure/ItineraryAbsenceWriter';
 import { ItineraryAllocationWriter, type AllocationRow } from '../infrastructure/ItineraryAllocationWriter';
 import { ItineraryChangeLogWriter, type InsertItineraryChangeInput } from '../infrastructure/ItineraryChangeLogWriter';
+import { SubstitutionRequestWriter, type InsertSubstitutionRequestInput } from '../infrastructure/SubstitutionRequestWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError } from '../domain/serviceExitReason';
 import { deriveAllocationPoolFromRows } from './serviceTeamPresentation';
@@ -150,6 +151,11 @@ export interface ItineraryAbsenceChangeLogPort {
   insert(client: PoolClient, input: InsertItineraryChangeInput): Promise<{ id: string }>;
 }
 
+/** Cabeçalho do pedido (migration 548) — só o `insert`. */
+export interface ItineraryAbsenceRequestPort {
+  insert(client: PoolClient, input: InsertSubstitutionRequestInput): Promise<{ id: string }>;
+}
+
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
 export interface ItineraryAbsenceRegisterInput {
@@ -213,6 +219,7 @@ export class ItineraryAbsenceUseCase {
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
     private readonly reasonCatalog: ItineraryAbsenceReasonCatalogPort = new ServiceExitReasonReader(),
     private readonly changeLog: ItineraryAbsenceChangeLogPort = new ItineraryChangeLogWriter(),
+    private readonly requests: ItineraryAbsenceRequestPort = new SubstitutionRequestWriter(),
   ) {}
 
   /** Só o gate + `findApplicationId` quando HÁ substituto — sem substituto, os 2 campos gravam `null`. */
@@ -257,9 +264,18 @@ export class ItineraryAbsenceUseCase {
       if ((await this.reasonCatalog.findActiveByCode(client, reasonCategory)) === null) throw new ServiceExitReasonInvalidError();
       if (!allocation.workerId) throw new Error(`allocation without titular worker: ${allocationId}`);
 
+      // 548 (P3): toda ausência nasce com pedido; a rota avulsa cria o pedido de 1 turno (mesmo escritor do create do 069).
+      const request = await this.requests.insert(client, { serviceId, outgoingWorkerId: allocation.workerId, reasonCode: reasonCategory, actorUid });
       let inserted: InsertedAbsence;
       try {
-        inserted = await this.writer.insertAbsence(client, { allocationId, date, substituteWorkerId, substituteApplicationId, actorUid });
+        inserted = await this.writer.insertAbsence(client, {
+          allocationId,
+          requestId: request.id,
+          date,
+          substituteWorkerId,
+          substituteApplicationId,
+          actorUid,
+        });
       } catch (err) {
         const mapped = absenceErrorFromPg(err, allocationId, date);
         throw mapped ?? err;
@@ -273,6 +289,7 @@ export class ItineraryAbsenceUseCase {
         incomingWorkerId: substituteWorkerId,
         assignmentId: allocationId,
         absenceId: inserted.id,
+        requestId: request.id,
         effectiveDate: inserted.date,
         reasonCode: reasonCategory,
         actorUid,

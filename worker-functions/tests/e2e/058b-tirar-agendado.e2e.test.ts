@@ -7,6 +7,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { seedB2, hojeAr, somaDias, proximoDia, limparB2, type SeedB2 } from './helpers/seedItinerarioB2';
+import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -49,10 +50,11 @@ describe('POST …/allocations/:id/end com agendamento — API real (058 P5c) @i
     const d2 = await somaDias(pool, d1, 7);
     const appC = await applicationOf(s.segAllocations[0]);
     for (const d of [d1, d2]) {
+      const requestId = await seedRequestForAssignment(pool, s.quaAllocations[0], { createdBy: 'e2e' });
       await pool.query(
-        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-         VALUES ($1, $2::date, $3, $4, 'e2e', 'e2e')`,
-        [s.quaAllocations[0], d, s.segWorkers[0], appC],
+        `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+         VALUES ($1, $2::date, $3, $4, 'e2e', 'e2e', $5)`,
+        [s.quaAllocations[0], d, s.segWorkers[0], appC, requestId],
       );
     }
     return { s, d1, d2 };

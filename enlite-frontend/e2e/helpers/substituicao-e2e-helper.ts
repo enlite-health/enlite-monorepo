@@ -21,6 +21,7 @@ import { type APIRequestContext } from '@playwright/test';
 import { backendUrl } from './lancamento-e2e-helper';
 import { runSQL } from './patient-detail-a-helper';
 import { extractUuid, cleanupItineraryWrite } from './itinerario-escrita-e2e-helper';
+import { seedRequestForAssignment, cleanupRequestsOfPatientSql } from './seedSubstitutionRequest';
 
 export interface AbsenceApiResult<T = unknown> {
   status: number;
@@ -136,10 +137,12 @@ export function pastWeekdaySql(dow: number): string {
  * `(substitute_worker_id IS NULL) = (substitute_application_id IS NULL)` aceita os dois NULL).
  */
 export function insertPastAbsenceSql(allocationId: string, date: string): string {
+  // 548: a ausência nasce com pedido (mesmo serviço e titular da alocação).
+  const requestId = seedRequestForAssignment(allocationId, 'e2e-substituicao-p34');
   return extractUuid(
     runSQL(
-      `INSERT INTO patient_itinerary_absence (assignment_id, on_date, created_by, updated_by) ` +
-        `VALUES ('${allocationId}', '${date}'::date, 'e2e-substituicao-p34', 'e2e-substituicao-p34') RETURNING id`,
+      `INSERT INTO patient_itinerary_absence (assignment_id, on_date, created_by, updated_by, request_id) ` +
+        `VALUES ('${allocationId}', '${date}'::date, 'e2e-substituicao-p34', 'e2e-substituicao-p34', '${requestId}') RETURNING id`,
     ),
   );
 }
@@ -177,4 +180,6 @@ export function cleanupSubstituicao(patientId: string): void {
       `WHERE pcs.patient_id = '${patientId}')`,
   );
   cleanupItineraryWrite(patientId);
+  // pedido (548) referencia prestador sem cascata: sai depois das ausências/alocações/registro, antes de quem apaga workers
+  runSQL(cleanupRequestsOfPatientSql(patientId));
 }

@@ -24,6 +24,8 @@ import type { PoolClient } from 'pg';
 
 export interface InsertAbsenceInput {
   allocationId: string;
+  /** Pedido de substituição dono desta ausência (548: obrigatório; o banco recusa INSERT sem pedido). */
+  requestId: string;
   date: string;
   substituteWorkerId: string | null;
   substituteApplicationId: string | null;
@@ -48,10 +50,10 @@ export class ItineraryAbsenceWriter {
   async insertAbsence(client: PoolClient, input: InsertAbsenceInput): Promise<InsertedAbsence> {
     const res = await client.query<{ id: string; on_date: string }>(
       `INSERT INTO patient_itinerary_absence
-         (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
-       VALUES ($1, $2::date, $3, $4, $5, $5)
+         (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by, request_id)
+       VALUES ($1, $2::date, $3, $4, $5, $5, $6)
        RETURNING id, to_char(on_date,'YYYY-MM-DD') AS on_date`,
-      [input.allocationId, input.date, input.substituteWorkerId, input.substituteApplicationId, input.actorUid],
+      [input.allocationId, input.date, input.substituteWorkerId, input.substituteApplicationId, input.actorUid, input.requestId],
     );
     const row = res.rows[0];
     return { id: row.id, date: row.on_date };

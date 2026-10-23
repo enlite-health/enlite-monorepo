@@ -22,6 +22,8 @@ export interface InsertItineraryChangeInput {
   assignmentId?: string | null;
   newAssignmentId?: string | null;
   absenceId?: string | null;
+  /** Pedido de substituição (548). Obrigatório para `ABSENCE` (o banco recusa); `null` = o registro não nasceu de um pedido. */
+  requestId?: string | null;
   /** `YYYY-MM-DD` — a data do efeito, nunca `now()`. */
   effectiveDate: string;
   reasonCode: string;
@@ -34,8 +36,8 @@ export class ItineraryChangeLogWriter {
     const res = await client.query<{ id: string }>(
       `INSERT INTO patient_itinerary_change_log
          (contracted_service_id, kind, outgoing_worker_id, incoming_worker_id, assignment_id, new_assignment_id,
-          absence_id, effective_date, reason_code, destination, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9, $10, $11)
+          absence_id, effective_date, reason_code, destination, created_by, request_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9, $10, $11, $12)
        RETURNING id`,
       [
         input.serviceId,
@@ -49,6 +51,7 @@ export class ItineraryChangeLogWriter {
         input.reasonCode,
         input.destination ?? null,
         input.actorUid,
+        input.requestId ?? null,
       ],
     );
     return { id: res.rows[0].id };
