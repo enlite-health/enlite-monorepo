@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import { Text } from '@presentation/components/atoms/Text';
 import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 import type { ServiceReserve } from '@domain/entities/PatientItinerary';
+import { SingleLine } from './SingleLine';
 
 /** A vaga viva do serviço como a ficha a conhece (`liveVacancy`); `null` = o ator não lê vagas (redigida) ou não há dado. */
 export interface ServiceVacancyRef {
@@ -35,17 +35,17 @@ export function ServiceVacancyTag({ reserve, vacancy, variant, 'data-testid': te
         : tv('withCase', { caseLabel, reserveCount: reserve.count });
   if (variant === 'text') {
     return (
-      <Text size="xs" color="tertiary" data-testid={testId}>
+      <SingleLine size="xs" color="tertiary" data-testid={testId}>
         {text}
-      </Text>
+      </SingleLine>
     );
   }
   const tone = reserve === null ? 'bg-gray-300 text-[#4A4A4A]' : 'bg-[#F1E8FF] text-[#3B0A8C]';
   return (
-    <span className={`self-start rounded-full px-3 py-[3px] ${tone}`} data-testid={testId} data-tone={reserve === null ? 'none' : 'open'}>
-      <Text as="span" size="xs" weight="medium" color="inherit">
+    <span className={`min-w-0 max-w-full self-start rounded-full px-3 py-[3px] ${tone}`} data-testid={testId} data-tone={reserve === null ? 'none' : 'open'}>
+      <SingleLine size="xs" weight="medium" color="inherit">
         {text}
-      </Text>
+      </SingleLine>
     </span>
   );
 }

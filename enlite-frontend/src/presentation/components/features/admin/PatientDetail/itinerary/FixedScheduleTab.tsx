@@ -7,6 +7,7 @@ import { isVigenteAt, type ItineraryOverlapSide, type PatientItinerarySlot, type
 import type { ItineraryActionError } from '@hooks/admin/usePatientItinerary';
 import { weekdayName } from '../substitutionDates';
 import { workerLabel } from '../workerLabel';
+import { NOWRAP, SingleLine } from './SingleLine';
 import { shiftHours } from './weekRange';
 
 interface FixedScheduleTabProps {
@@ -65,31 +66,31 @@ export function FixedScheduleTab({ service, asOf, actionError, onEditSlot }: Fix
               <div
                 key={slot.id}
                 data-testid={`itinerario-dia-${serviceId}-${weekday}-${slot.id}`}
-                className="grid grid-cols-[84px_230px_minmax(0,1fr)_40px] items-center gap-3 border-b border-[#D6CDE0] py-3"
+                className="grid grid-cols-[104px_230px_minmax(0,1fr)_40px] items-center gap-3 border-b border-[#D6CDE0] py-3"
               >
-                <Text as="span" weight="semibold" color="primary" className="capitalize">
+                <Text as="span" weight="semibold" color="primary" className="whitespace-nowrap capitalize" {...NOWRAP}>
                   {index === 0 ? dayName(weekday) : <span className="sr-only">{dayName(weekday)}</span>}
                 </Text>
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-9 w-[130px] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-primary" data-testid={`itinerario-slot-horario-${slot.id}`}>
+                    <span className="flex h-9 w-[130px] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-primary" data-testid={`itinerario-slot-horario-${slot.id}`} {...NOWRAP}>
                       <Text as="span" size="sm" weight="medium" color="white">
                         {`${slot.startTime} – ${slot.endTime}`}
                       </Text>
                     </span>
-                    <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap" data-testid={`itinerario-slot-duracao-${slot.id}`}>
+                    <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap" data-testid={`itinerario-slot-duracao-${slot.id}`} {...NOWRAP}>
                       {t('admin.patients.detail.itinerary.upcoming.hours', { hours })}
                     </Text>
                   </div>
                   {endsNextDay && (
-                    <Text as="span" size="xs" color="tertiary" className="pl-3">
+                    <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap pl-3" {...NOWRAP}>
                       {tf('fixed.endsNextDay')}
                     </Text>
                   )}
                 </div>
                 <div className="flex min-w-0 flex-col gap-1.5">
                   {vigentes.length === 0 ? (
-                    <Text as="span" weight="semibold" color="primary" data-testid={`itinerario-slot-sem-prestador-${slot.id}`}>
+                    <Text as="span" weight="semibold" color="primary" className="whitespace-nowrap" data-testid={`itinerario-slot-sem-prestador-${slot.id}`} {...NOWRAP}>
                       {tf('unassigned')}
                     </Text>
                   ) : (
@@ -98,9 +99,9 @@ export function FixedScheduleTab({ service, asOf, actionError, onEditSlot }: Fix
                       return (
                         <div key={a.allocationId} className="flex min-w-0 items-center gap-2.5" data-testid={`itinerario-slot-prestador-${slot.id}-${a.workerId}`}>
                           <PersonAvatar uid={a.workerId} name={name} size={32} />
-                          <Text as="span" weight="semibold" color="primary" className="break-words">
+                          <SingleLine weight="semibold" color="primary">
                             {name}
-                          </Text>
+                          </SingleLine>
                         </div>
                       );
                     })
@@ -126,9 +127,9 @@ export function FixedScheduleTab({ service, asOf, actionError, onEditSlot }: Fix
       </div>
 
       {withoutAttention.length > 0 && (
-        <Text size="sm" color="tertiary" data-testid="itinerario-sin-atencion">
+        <SingleLine size="sm" color="tertiary" data-testid="itinerario-sin-atencion">
           {tf('fixed.noAttention', { days: daysText })}
-        </Text>
+        </SingleLine>
       )}
     </div>
   );

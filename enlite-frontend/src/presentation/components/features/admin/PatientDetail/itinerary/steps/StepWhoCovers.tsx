@@ -10,6 +10,7 @@ import { workerLabel } from '../../workerLabel';
 import { conflictFor, resolveCover, shiftKey, type CoverMode, type FlowDraft } from '../flowModel';
 import { shiftChipLabel } from '../substitutionLabels';
 import { ConflictBadge, ConflictNote, type ConflictBadgeState } from '../ConflictParts';
+import { NOWRAP, SingleLine } from '../SingleLine';
 import { OptionCard } from './OptionCard';
 
 interface StepWhoCoversProps {
@@ -63,14 +64,14 @@ export function StepWhoCovers({ draft, onChange, shifts, candidates, candidatesS
     return (
       <div key={key} className="flex flex-col gap-2" data-testid={`substitucion-turno-${key}`}>
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="flex h-7 w-[130px] items-center justify-center whitespace-nowrap rounded-full bg-[#F1E8FF] text-[#3B0A8C]">
-            <Text as="span" size="xs" weight="medium" color="inherit">
+          <span className="flex h-7 w-[130px] items-center justify-center whitespace-nowrap rounded-full bg-[#F1E8FF] text-[#3B0A8C]" {...NOWRAP}>
+            <Text as="span" size="xs" weight="medium" color="inherit" className="whitespace-nowrap">
               {shiftChipLabel(shift.date, shift.startTime, shift.endTime, i18n.language)}
             </Text>
           </span>
           {typeof who === 'string' && <ConflictBadge state={stateOf(who, shift)} testId={`substitucion-estado-${key}`} />}
           {who === null && (
-            <Text as="span" size="xs" weight="semibold" color="inherit" className="text-red-900">
+            <Text as="span" size="xs" weight="semibold" color="inherit" className="whitespace-nowrap text-red-900" {...NOWRAP}>
               {ts('nobody.title')}
             </Text>
           )}
@@ -135,12 +136,16 @@ export function StepWhoCovers({ draft, onChange, shifts, candidates, candidatesS
                 onValueChange={(value) => onChange({ person: value === '' ? null : value, dayChoices: {} })}
               />
               {person && (
-                <div className="flex items-center gap-2.5" data-testid="substitucion-persona-elegida">
+                <div className="flex min-w-0 items-center gap-2.5" data-testid="substitucion-persona-elegida">
                   <PersonAvatar uid={person.workerId} name={nameOf(person.workerId)} size={32} />
-                  <Text as="span" weight="semibold" color="primary">
+                  <SingleLine weight="semibold" color="primary">
                     {nameOf(person.workerId)}
-                  </Text>
-                  {person.status && <AllocationOptionStatus status={person.status} />}
+                  </SingleLine>
+                  {person.status && (
+                    <span className="shrink-0 whitespace-nowrap" {...NOWRAP}>
+                      <AllocationOptionStatus status={person.status} />
+                    </span>
+                  )}
                 </div>
               )}
               {draft.person !== null && shifts.map((shift) => shiftRow(shift, 'onConflict'))}

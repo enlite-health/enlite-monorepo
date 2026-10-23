@@ -14,6 +14,7 @@ import type { PatientItineraryEvent, PatientItineraryService } from '@domain/ent
 import type { SubstitutionFlowIntent } from '@domain/entities/SubstitutionRequest';
 import type { ItineraryActionError } from '@hooks/admin/usePatientItinerary';
 import { workerLabel } from '../workerLabel';
+import { NOWRAP, SingleLine } from './SingleLine';
 import { ServiceVacancyTag, type ServiceVacancyRef } from './ServiceVacancyTag';
 import { FixedScheduleTab } from './FixedScheduleTab';
 import { UpcomingDaysTable } from './UpcomingDaysTable';
@@ -103,42 +104,44 @@ export function ItineraryServiceScreen({
     <div data-testid={`itinerario-servico-tela-${serviceId}`}>
       <Card rounded="lg" className="border-2 border-gray-600 p-6 flex flex-col gap-5">
         {canGoBack && (
-          <button type="button" onClick={onBack} data-testid="itinerario-voltar-servicos" className="flex items-center gap-2 self-start text-primary">
+          <button type="button" onClick={onBack} data-testid="itinerario-voltar-servicos" className="flex items-center gap-2 self-start whitespace-nowrap text-primary" {...NOWRAP}>
             <ArrowLeft size={16} aria-hidden="true" />
-            <Text as="span" size="sm" weight="medium" color="primary">
+            <Text as="span" size="sm" weight="medium" color="primary" className="whitespace-nowrap">
               {ts('back')}
             </Text>
           </button>
         )}
 
-        <div className="flex items-start justify-between gap-6 flex-wrap">
-          <div className="flex flex-col gap-1 min-w-0">
-            <Heading level={1} as="h3" weight="semibold" color="primary" data-testid="itinerario-servico-nome">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <Heading level={1} as="h3" weight="semibold" color="primary" className="min-w-0 truncate" title={label} data-single-line="" data-testid="itinerario-servico-nome">
               {label}
             </Heading>
             <div className="flex items-center gap-2 min-w-0">
               <MapPin size={16} className="text-primary shrink-0" aria-hidden="true" />
-              <Text as="span" size="sm" color="tertiary" className="break-words min-w-0">
+              <SingleLine size="sm" color="tertiary">
                 {addressLabel}
-              </Text>
+              </SingleLine>
             </div>
             <ServiceVacancyTag reserve={service.reserve} vacancy={vacancy} variant="chip" data-testid="itinerario-servico-reserva" />
           </div>
-          <div className="flex flex-col items-end gap-3 min-w-[240px]">
+          <div className="flex w-[240px] shrink-0 flex-col items-end gap-3">
             <ActionButton
               resource="patient_itinerary"
               action="update"
               size="sm"
+              className="whitespace-nowrap"
               onClick={() => onSubstitutionFlow({ kind: 'new' })}
               data-testid="itinerario-nova-substituicao"
+              {...NOWRAP}
             >
-              <span className="inline-flex items-center gap-2">
+              <span className="inline-flex items-center gap-2 whitespace-nowrap">
                 <Plus size={16} aria-hidden="true" />
                 {ts('newSubstitution')}
               </span>
             </ActionButton>
             <div className="w-full flex flex-col gap-1">
-              <Text size="sm" weight="medium" color="primary" data-testid="itinerario-servico-horas">
+              <Text size="sm" weight="medium" color="primary" className="whitespace-nowrap" data-testid="itinerario-servico-horas" {...NOWRAP}>
                 {ts('coveredHours', { covered: cobertas, total })}
               </Text>
               <ProgressBar percentage={percentage} height="sm" animated={false} />
@@ -155,9 +158,10 @@ export function ItineraryServiceScreen({
               aria-selected={tab === id}
               onClick={() => setTab(id)}
               data-testid={`itinerario-aba-${id}`}
-              className={`rounded-full border px-5 py-2 ${tab === id ? 'bg-primary border-primary' : 'bg-white border-gray-800'}`}
+              className={`whitespace-nowrap rounded-full border px-5 py-2 ${tab === id ? 'bg-primary border-primary' : 'bg-white border-gray-800'}`}
+              {...NOWRAP}
             >
-              <Text as="span" size="sm" weight="semibold" color={tab === id ? 'white' : 'primary'}>
+              <Text as="span" size="sm" weight="semibold" color={tab === id ? 'white' : 'primary'} className="whitespace-nowrap">
                 {ts(`tabs.${id}`)}
               </Text>
             </button>
@@ -176,7 +180,7 @@ export function ItineraryServiceScreen({
               filter={
                 <div className="flex items-center gap-2">
                   <label htmlFor={`itinerario-filtro-prestador-${serviceId}`}>
-                    <Text as="span" size="sm" weight="medium" color="primary">
+                    <Text as="span" size="sm" weight="medium" color="primary" className="whitespace-nowrap" {...NOWRAP}>
                       {ts('workerFilter')}
                     </Text>
                   </label>

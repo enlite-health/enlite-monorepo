@@ -8,7 +8,7 @@ import type { SubstitutionRequestItem, SubstitutionWhen } from '@domain/entities
 import { classifyActionError } from '@hooks/admin/contractedServiceActionError';
 import { useServiceExitReasonOptions } from '@hooks/admin/useServiceExitReasonOptions';
 import { useSubstitutionRequests } from '@hooks/admin/useSubstitutionRequests';
-import { SUBSTITUTION_ROW_GRID, SubstitutionRequestRow } from './SubstitutionRequestRow';
+import { SUBSTITUTION_LIST_GRID, SUBSTITUTION_ROW_GRID, SubstitutionRequestRow } from './SubstitutionRequestRow';
 
 interface SubstitutionsTabProps {
   patientId: string;
@@ -107,9 +107,9 @@ export function SubstitutionsTab({ patientId, serviceId, refreshKey, onNew, onPi
           )}
         </div>
       ) : (
-        <div data-testid="sustituciones-lista">
+        <div data-testid="sustituciones-lista" className={SUBSTITUTION_LIST_GRID}>
           <div className={`${SUBSTITUTION_ROW_GRID} border-b border-[#D6CDE0] pb-2`}>
-            <Text as="span" size="xs" weight="semibold" color="tertiary">
+            <Text as="span" size="xs" weight="semibold" color="tertiary" className="whitespace-nowrap">
               {td('columns.when')}
             </Text>
             <div className="grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] gap-3">
@@ -121,11 +121,11 @@ export function SubstitutionsTab({ patientId, serviceId, refreshKey, onNew, onPi
                 {td('columns.enters')}
               </Text>
             </div>
-            <Text as="span" size="xs" weight="semibold" color="tertiary" className="text-right">
+            <Text as="span" size="xs" weight="semibold" color="tertiary" className="whitespace-nowrap text-right">
               {td('columns.action')}
             </Text>
           </div>
-          <ul>
+          <ul className="col-span-3 grid grid-cols-subgrid">
             {requests.map((request) => {
               const key = request.requestId ?? `legacy-${request.from}-${request.outgoingWorkerId}`;
               return (

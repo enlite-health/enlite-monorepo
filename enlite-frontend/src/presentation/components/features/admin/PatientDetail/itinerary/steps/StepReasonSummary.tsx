@@ -7,6 +7,7 @@ import { useServiceExitReasonOptions } from '@hooks/admin/useServiceExitReasonOp
 import { ExitDestinationField } from '../../ExitDestinationField';
 import { formatDDMM } from '../../substitutionDates';
 import { SaleEntraBlock, type EntraPerson } from '../SaleEntraBlock';
+import { SingleLine } from '../SingleLine';
 import { resolveCover, summarizeEntra, type FlowDraft } from '../flowModel';
 import { dayMonthLabel, fullDayLabel, periodRangeLabel, shortDayLabel } from '../substitutionLabels';
 
@@ -81,9 +82,9 @@ export function StepReasonSummary({ draft, onChange, asOf, shifts, preview, outg
         <Text as="span" size="sm" weight="bold" color="inherit">
           {ts('registering')}
         </Text>
-        <Text as="p" size="sm" weight="semibold" color="inherit" data-testid="substitucion-resumen-periodo">
+        <SingleLine as="p" size="sm" weight="semibold" color="inherit" data-testid="substitucion-resumen-periodo">
           {`${period} · ${count}`}
-        </Text>
+        </SingleLine>
         <div className="rounded-xl bg-white/60 p-2.5">
           <SaleEntraBlock
             columns="content"

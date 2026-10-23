@@ -5,11 +5,14 @@ import { ActionButton } from '@presentation/components/features/access';
 import { formatCalendarDate } from '@presentation/utils/dateTimeFormat';
 import type { SubstitutionRequestItem } from '@domain/entities/SubstitutionRequest';
 import { SaleEntraBlock, type EntraPerson } from './SaleEntraBlock';
+import { NOWRAP } from './SingleLine';
 import { SubstitutionDaysList } from './SubstitutionDaysList';
 import { dayMonthLabel, fullDayLabel, periodRangeLabel, shortDayLabel } from './substitutionLabels';
 import { dateLocaleOf } from './weekRange';
 
-export const SUBSTITUTION_ROW_GRID = 'grid grid-cols-[200px_minmax(0,1fr)_250px] items-center gap-4';
+/** Cuándo e Acción com a largura do CONTEÚDO (nowrap); Sale/Entra dividem o resto (`minmax(0,1fr)`). As linhas são subgrades da lista: as colunas alinham. */
+export const SUBSTITUTION_ROW_GRID = 'grid grid-cols-subgrid col-span-3 items-center gap-4';
+export const SUBSTITUTION_LIST_GRID = 'grid grid-cols-[max-content_minmax(0,1fr)_max-content] gap-x-4';
 
 interface SubstitutionRequestRowProps {
   request: SubstitutionRequestItem;
@@ -46,16 +49,15 @@ export function SubstitutionRequestRow({ request, reasonLabel, expanded, undoing
   const canAct = !undone && !past;
 
   return (
-    <li className="border-b border-[#D6CDE0] py-3" data-testid={`sustitucion-${id}`} data-when={request.when} data-undone={undone}>
-      <div className={SUBSTITUTION_ROW_GRID}>
+    <li className={`${SUBSTITUTION_ROW_GRID} col-span-3 border-b border-[#D6CDE0] py-3`} data-testid={`sustitucion-${id}`} data-when={request.when} data-undone={undone}>
         <div className={`flex flex-col ${past || undone ? 'opacity-70' : ''}`}>
-          <Text as="span" weight="semibold" color="primary">
+          <Text as="span" weight="semibold" color="primary" className="whitespace-nowrap" {...NOWRAP}>
             {when}
           </Text>
-          <Text as="span" size="xs" color="tertiary">
+          <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap" {...NOWRAP}>
             {kind}
           </Text>
-          <div className="mt-1 flex flex-wrap gap-1.5">
+          <div className="mt-1 flex gap-1.5">
             {request.legacy && <Chip tone="neutral" testId={`sustitucion-anterior-${id}`}>{td('legacy')}</Chip>}
             {undone && (
               <Chip tone="neutral" testId={`sustitucion-deshecha-${id}`}>
@@ -76,21 +78,20 @@ export function SubstitutionRequestRow({ request, reasonLabel, expanded, undoing
           onPick={canAct && request.requestId !== null ? onPick : undefined}
         />
 
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-2 whitespace-nowrap">
           {request.shiftCount > 1 && (
-            <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={onToggleDays} aria-expanded={expanded} data-testid={`sustitucion-ver-dias-${id}`}>
+            <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={onToggleDays} aria-expanded={expanded} data-testid={`sustitucion-ver-dias-${id}`} {...NOWRAP}>
               {expanded ? td('hideDays') : td('viewDays')}
             </Button>
           )}
           {canAct && request.undoable && request.requestId !== null && (
-            <ActionButton resource="patient_itinerary" action="update" variant="outline" size="sm" className="whitespace-nowrap" disabled={undoing} onClick={onUndo} data-testid={`sustitucion-deshacer-${id}`}>
+            <ActionButton resource="patient_itinerary" action="update" variant="outline" size="sm" className="whitespace-nowrap" disabled={undoing} onClick={onUndo} data-testid={`sustitucion-deshacer-${id}`} {...NOWRAP}>
               {td('undo')}
             </ActionButton>
           )}
         </div>
-      </div>
       {expanded && request.shiftCount > 1 && (
-        <div className="mt-3">
+        <div className="col-span-3 mt-3">
           <SubstitutionDaysList request={request} />
         </div>
       )}
@@ -101,7 +102,7 @@ export function SubstitutionRequestRow({ request, reasonLabel, expanded, undoing
 function Chip({ tone, testId, children }: { tone: 'neutral' | 'amber'; testId: string; children: React.ReactNode }): JSX.Element {
   const classes = tone === 'amber' ? 'bg-[#FFE7B0] text-[#4A2F00]' : 'bg-[#E8E8E8] text-[#374151]';
   return (
-    <span className={`rounded-full px-2.5 py-0.5 ${classes}`} data-testid={testId}>
+    <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 ${classes}`} data-testid={testId} {...NOWRAP}>
       <Text as="span" size="xs" weight="semibold" color="inherit">
         {children}
       </Text>

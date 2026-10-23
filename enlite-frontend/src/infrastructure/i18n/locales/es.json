@@ -4213,7 +4213,7 @@
           },
           "serviceCard": {
             "organize": "Organizar agenda",
-            "complete": "Completo",
+            "complete": "Completo · {{total}} h",
             "missing": "Faltan cubrir {{missing}} h de {{total}}",
             "noSlots": "Sin franjas horarias cargadas",
             "uncoveredShifts_one": "{{count}} turno sin cubrir en los próximos {{days}} días",

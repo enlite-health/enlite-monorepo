@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Circle, CircleDot } from 'lucide-react';
-import { Text } from '@presentation/components/atoms/Text';
+import { SingleLine } from '../SingleLine';
 
 interface OptionCardProps {
   /** Agrupa os rádios do passo (um `name` por pergunta). */
@@ -24,7 +24,7 @@ interface OptionCardProps {
  */
 export function OptionCard({ name, selected, onSelect, title, description, children, compact = false, leading, 'data-testid': testId }: OptionCardProps): JSX.Element {
   return (
-    <div className={`rounded-2xl border-2 px-3.5 py-3 ${selected ? 'border-clinic bg-[#FBF7FF]' : 'border-[#D6CDE0] bg-white'}`} data-testid={testId} data-selected={selected}>
+    <div className={`min-w-0 rounded-2xl border-2 px-3.5 py-3 ${selected ? 'border-clinic bg-[#FBF7FF]' : 'border-[#D6CDE0] bg-white'}`} data-testid={testId} data-selected={selected}>
       <label className={`flex cursor-pointer gap-3 ${compact ? 'items-center' : 'items-start'}`}>
         <input type="radio" name={name} checked={selected} onChange={onSelect} className="peer sr-only" />
         <span className={`flex h-6 w-6 shrink-0 items-center justify-center peer-focus-visible:rounded-full peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-clinic ${selected ? 'text-clinic' : 'text-primary'}`} aria-hidden="true">
@@ -32,13 +32,13 @@ export function OptionCard({ name, selected, onSelect, title, description, child
         </span>
         {leading}
         <span className="flex min-w-0 flex-1 flex-col">
-          <Text as="span" weight="semibold" color="primary">
+          <SingleLine weight="semibold" color="primary">
             {title}
-          </Text>
+          </SingleLine>
           {description && (
-            <Text as="span" size="sm" color="tertiary">
+            <SingleLine size="sm" color="tertiary">
               {description}
-            </Text>
+            </SingleLine>
           )}
         </span>
       </label>

@@ -5,6 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { AllocationOptionStatus as RoleStatus } from '@domain/entities/ServiceTeam';
 import { workerLabel } from '../workerLabel';
+import { NOWRAP, SingleLine } from './SingleLine';
 
 /** Bolinha do papel (a MESMA convenção de `AllocationOptionStatus`: verde = em atendimento, azul = resposta rápida, sem bolinha = selecionado). */
 const ROLE_DOT: Record<RoleStatus, string | null> = { IN_SERVICE: 'bg-green-600', QUICK_RESPONSE: 'bg-blue-600', SELECTED: null };
@@ -55,20 +56,20 @@ export function SaleEntraBlock({ sale, entra, uncoveredLabels = [], onPick, dimm
   const first = entra[0];
 
   return (
-    <div className={`grid ${columns === 'equal' ? 'grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)_28px_minmax(0,auto)]'} items-center gap-3 ${dimmed ? 'opacity-70' : ''}`} data-testid={testId}>
+    <div className={`grid ${nobody ? 'grid-cols-[minmax(0,1fr)_28px_minmax(max-content,1fr)]' : 'grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)]'} items-center gap-3 ${dimmed ? 'opacity-70' : ''}`} data-columns={columns} data-testid={testId}>
       <div className="flex items-center gap-2 min-w-0" data-testid={testId ? `${testId}-sale` : undefined}>
         <span role="img" aria-label={tb('sale')} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#FFE0E5] text-[#7A0A1E]">
           <ArrowDown size={16} aria-hidden="true" />
         </span>
         <PersonAvatar uid={sale.workerId} name={saleName} size={32} />
         <div className="flex min-w-0 flex-col">
-          <Text as="span" size="sm" weight="semibold" color="primary" className="break-words">
+          <SingleLine size="sm" weight="semibold" color="primary">
             {saleName}
-          </Text>
+          </SingleLine>
           {sale.caption && (
-            <Text as="span" size="xs" color="tertiary">
+            <SingleLine size="xs" color="tertiary">
               {sale.caption}
-            </Text>
+            </SingleLine>
           )}
         </div>
       </div>
@@ -91,12 +92,12 @@ export function SaleEntraBlock({ sale, entra, uncoveredLabels = [], onPick, dimm
         <div className="flex min-w-0 flex-col">
           {nobody ? (
             <>
-              <Text as="span" size="sm" weight="semibold" color="inherit" className="text-red-900">
+              <Text as="span" size="sm" weight="semibold" color="inherit" className="whitespace-nowrap text-red-900" {...NOWRAP}>
                 {tb('nobodyYet')}
               </Text>
               {onPick && canPick && (
-                <button type="button" onClick={onPick} className="self-start underline" data-testid={testId ? `${testId}-elegir` : undefined}>
-                  <Text as="span" size="xs" weight="semibold" color="primary">
+                <button type="button" onClick={onPick} className="self-start whitespace-nowrap underline" data-testid={testId ? `${testId}-elegir` : undefined} {...NOWRAP}>
+                  <Text as="span" size="xs" weight="semibold" color="primary" className="whitespace-nowrap">
                     {tb('pick')}
                   </Text>
                 </button>
@@ -104,21 +105,21 @@ export function SaleEntraBlock({ sale, entra, uncoveredLabels = [], onPick, dimm
             </>
           ) : (
             <>
-              <Text as="span" size="sm" weight="semibold" color="primary" className="break-words">
+              <SingleLine size="sm" weight="semibold" color="primary">
                 {entraNames}
-              </Text>
+              </SingleLine>
               {first.role && entra.length === 1 && (
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap" data-testid={testId ? `${testId}-papel` : undefined} data-role={first.role}>
+                <span className="flex min-w-0 items-center gap-1.5" data-testid={testId ? `${testId}-papel` : undefined} data-role={first.role}>
                   {ROLE_DOT[first.role] && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${ROLE_DOT[first.role]}`} />}
-                  <Text as="span" size="xs" color="tertiary">
+                  <SingleLine size="xs" color="tertiary">
                     {tb(`roles.${first.role}`)}
-                  </Text>
+                  </SingleLine>
                 </span>
               )}
               {uncoveredLabels.length > 0 && (
-                <Text as="span" size="xs" weight="semibold" color="inherit" className="text-red-900" data-testid={testId ? `${testId}-salvo` : undefined}>
+                <SingleLine size="xs" weight="semibold" color="inherit" className="text-red-900" data-testid={testId ? `${testId}-salvo` : undefined}>
                   {tb('except', { days: uncoveredLabels.join(', ') })}
-                </Text>
+                </SingleLine>
               )}
             </>
           )}

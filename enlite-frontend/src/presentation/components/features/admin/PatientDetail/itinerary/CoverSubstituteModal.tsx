@@ -13,6 +13,7 @@ import { useCoverCandidates } from '@hooks/admin/useSubstitutionPeople';
 import { useSubstitutionPreview } from '@hooks/admin/useSubstitutionPreview';
 import { AllocationOptionStatus } from '../AllocationOptionStatus';
 import { workerLabel } from '../workerLabel';
+import { SingleLine, NOWRAP } from './SingleLine';
 import { ConflictBadge, ConflictNote, type ConflictBadgeState } from './ConflictParts';
 import { SubstitutionModalShell } from './SubstitutionModalShell';
 import { conflictFor, shiftKey } from './flowModel';
@@ -152,12 +153,16 @@ export function CoverSubstituteModal({ patientId, serviceId, asOf, target, onClo
             onValueChange={setSelected}
           />
           {person && (
-            <div className="flex items-center gap-2.5" data-testid="sustitucion-cubrir-elegida">
+            <div className="flex min-w-0 items-center gap-2.5" data-testid="sustitucion-cubrir-elegida">
               <PersonAvatar uid={person.workerId} name={nameOf(person.workerId)} size={32} />
-              <Text as="span" weight="semibold" color="primary">
+              <SingleLine weight="semibold" color="primary">
                 {nameOf(person.workerId)}
-              </Text>
-              {person.status && <AllocationOptionStatus status={person.status} />}
+              </SingleLine>
+              {person.status && (
+                <span className="shrink-0 whitespace-nowrap" {...NOWRAP}>
+                  <AllocationOptionStatus status={person.status} />
+                </span>
+              )}
             </div>
           )}
           {selected !== '' && shifts.map((shift) => {
@@ -166,8 +171,8 @@ export function CoverSubstituteModal({ patientId, serviceId, asOf, target, onClo
             return (
               <div key={key} className="flex flex-col gap-2" data-testid={`sustitucion-cubrir-turno-${key}`}>
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <span className="flex h-7 w-[130px] items-center justify-center whitespace-nowrap rounded-full bg-[#F1E8FF] text-[#3B0A8C]">
-                    <Text as="span" size="xs" weight="medium" color="inherit">
+                  <span className="flex h-7 w-[130px] items-center justify-center whitespace-nowrap rounded-full bg-[#F1E8FF] text-[#3B0A8C]" {...NOWRAP}>
+                    <Text as="span" size="xs" weight="medium" color="inherit" className="whitespace-nowrap">
                       {shiftChipLabel(shift.date, shift.startTime, shift.endTime, i18n.language)}
                     </Text>
                   </span>

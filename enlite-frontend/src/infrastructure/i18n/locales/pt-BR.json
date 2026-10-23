@@ -4134,7 +4134,7 @@
           },
           "serviceCard": {
             "organize": "Organizar agenda",
-            "complete": "Completo",
+            "complete": "Completo · {{total}} h",
             "missing": "Faltam cobrir {{missing}} h de {{total}}",
             "noSlots": "Nenhuma faixa de horário cadastrada",
             "uncoveredShifts_one": "{{count}} turno sem cobertura nos próximos {{days}} dias",

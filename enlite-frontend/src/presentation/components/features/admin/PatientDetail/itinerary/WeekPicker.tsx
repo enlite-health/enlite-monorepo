@@ -62,7 +62,7 @@ export function WeekPicker({ weekStart, currentWeekStart, onChange, filter }: We
             className="flex h-9 items-center gap-2 rounded-full bg-purple-100 px-4"
           >
             <CalendarDays size={16} className="text-primary" aria-hidden="true" />
-            <Text as="span" size="sm" weight="semibold" color="primary" data-testid="itinerario-semana-rotulo">
+            <Text as="span" size="sm" weight="semibold" color="primary" className="whitespace-nowrap" data-single-line="" data-testid="itinerario-semana-rotulo">
               {rangeLabel}
             </Text>
           </button>
@@ -89,14 +89,14 @@ export function WeekPicker({ weekStart, currentWeekStart, onChange, filter }: We
         )}
       </div>
 
-      <Text as="span" size="sm" color="tertiary" data-testid="itinerario-semana-relativo">
+      <Text as="span" size="sm" color="tertiary" className="whitespace-nowrap" data-single-line="" data-testid="itinerario-semana-relativo">
         {relative}
       </Text>
 
       <div className="ml-auto flex items-center gap-4">
         {filter}
         <button type="button" onClick={() => onChange(currentWeekStart)} data-testid="itinerario-semana-atual" className="underline whitespace-nowrap">
-          <Text as="span" size="sm" weight="semibold" color="primary">
+          <Text as="span" size="sm" weight="semibold" color="primary" className="whitespace-nowrap" data-single-line="">
             {tw('goToCurrent')}
           </Text>
         </button>

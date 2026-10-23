@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import type { SubstitutionRequestItem } from '@domain/entities/SubstitutionRequest';
 import { workerLabel } from '../workerLabel';
+import { NOWRAP, SingleLine } from './SingleLine';
 import { fullDayLabel } from './substitutionLabels';
 
 interface SubstitutionDaysListProps {
@@ -19,23 +20,23 @@ export function SubstitutionDaysList({ request }: SubstitutionDaysListProps): JS
       {request.shifts.map((shift, index) => {
         const name = shift.workerId === null ? null : workerLabel(t, shift.workerId, request.shiftDisplayNames[index] ?? null);
         return (
-          <li key={`${shift.date}|${shift.assignmentId ?? index}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5" data-testid="sustituciones-dia">
-            <Text as="span" size="sm" weight="semibold" color="primary">
+          <li key={`${shift.date}|${shift.assignmentId ?? index}`} className="flex items-center gap-x-3" data-testid="sustituciones-dia">
+            <Text as="span" size="sm" weight="semibold" color="primary" className="whitespace-nowrap" {...NOWRAP}>
               {fullDayLabel(shift.date, i18n.language)}
             </Text>
             {shift.startTime !== null && shift.endTime !== null && (
-              <Text as="span" size="sm" color="tertiary">
+              <Text as="span" size="sm" color="tertiary" className="whitespace-nowrap" {...NOWRAP}>
                 {`${hhmm(shift.startTime)}–${hhmm(shift.endTime)}`}
               </Text>
             )}
             {name === null ? (
-              <Text as="span" size="sm" weight="semibold" color="inherit" className="text-red-900">
+              <Text as="span" size="sm" weight="semibold" color="inherit" className="whitespace-nowrap text-red-900" {...NOWRAP}>
                 {td('nobodyYet')}
               </Text>
             ) : (
-              <Text as="span" size="sm" color="primary">
+              <SingleLine size="sm" color="primary">
                 {name}
-              </Text>
+              </SingleLine>
             )}
           </li>
         );

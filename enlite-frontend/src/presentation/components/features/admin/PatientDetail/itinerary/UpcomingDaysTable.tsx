@@ -9,6 +9,7 @@ import type { PatientItineraryEvent } from '@domain/entities/PatientItinerary';
 import { addDaysToDate, weekdayName } from '../substitutionDates';
 import { workerLabel } from '../workerLabel';
 import { occurrenceKey } from './occurrenceKey';
+import { NOWRAP, SingleLine } from './SingleLine';
 import { dateLocaleOf, shiftHours, weekdayOfDate } from './weekRange';
 
 interface UpcomingDaysTableProps {
@@ -43,21 +44,21 @@ export function UpcomingDaysTable({ events, onChange, onAssign, reasonOf }: Upco
       <div className="flex items-center gap-3 min-w-0">
         <PersonAvatar uid={workerId} name={label} size={32} />
         <div className="flex flex-col min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Text as="span" weight="semibold" color="primary" className="break-words">
+          <div className="flex min-w-0 items-center gap-2">
+            <SingleLine weight="semibold" color="primary">
               {label}
-            </Text>
+            </SingleLine>
             {badge && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-900">
-                <Text as="span" size="xs" weight="medium" color="inherit">
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2 py-0.5 text-blue-900" {...NOWRAP}>
+                <Text as="span" size="xs" weight="medium" color="inherit" className="whitespace-nowrap">
                   {badge}
                 </Text>
               </span>
             )}
           </div>
-          <Text as="span" size="xs" color="tertiary">
+          <SingleLine size="xs" color="tertiary">
             {caption}
-          </Text>
+          </SingleLine>
         </div>
       </div>
     );
@@ -76,12 +77,12 @@ export function UpcomingDaysTable({ events, onChange, onAssign, reasonOf }: Upco
       <div className="flex items-center gap-3 min-w-0" data-testid={`itinerario-proximo-sem-cobertura-${occurrenceKey(e)}`}>
         <span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full border-2 border-dashed border-gray-800" />
         <div className="flex flex-col min-w-0">
-          <Text as="span" weight="semibold" color="inherit" className="text-red-800">
+          <Text as="span" weight="semibold" color="inherit" className="whitespace-nowrap text-red-800" {...NOWRAP}>
             {tu('nobodyAssigned')}
           </Text>
-          <Text as="span" size="xs" color="tertiary">
+          <SingleLine size="xs" color="tertiary">
             {caption}
-          </Text>
+          </SingleLine>
         </div>
       </div>
     );
@@ -97,12 +98,12 @@ export function UpcomingDaysTable({ events, onChange, onAssign, reasonOf }: Upco
 
   return (
     <div data-testid="itinerario-proximos-tabela">
-      <Table className="min-w-[640px]">
+      <Table className="min-w-[640px] table-auto">
         <TableHeader>
-          <TableHead className="!text-primary">{tu('columns.day')}</TableHead>
-          <TableHead className="!text-primary">{tu('columns.schedule')}</TableHead>
+          <TableHead className="w-px whitespace-nowrap !text-primary">{tu('columns.day')}</TableHead>
+          <TableHead className="w-px whitespace-nowrap !text-primary">{tu('columns.schedule')}</TableHead>
           <TableHead className="!text-primary">{tu('columns.attends')}</TableHead>
-          <TableHead align="right" className="!text-primary">
+          <TableHead align="right" className="w-px whitespace-nowrap !text-primary">
             {tu('columns.action')}
           </TableHead>
         </TableHeader>
@@ -115,39 +116,43 @@ export function UpcomingDaysTable({ events, onChange, onAssign, reasonOf }: Upco
             const uncovered = e.status === 'uncovered';
             return (
               <TableRow key={key} data-testid={`itinerario-proximo-${key}`} className="h-[76px] align-middle">
-                <TableCell unwrapped>
+                <TableCell unwrapped className="whitespace-nowrap">
                   <div className="flex flex-col">
-                    <Text as="span" weight="semibold" color="primary" className="capitalize">
+                    <Text as="span" weight="semibold" color="primary" className="whitespace-nowrap capitalize" {...NOWRAP}>
                       {weekdayName(e.weekday, i18n.language)}
                     </Text>
-                    <Text as="span" size="xs" color="tertiary">
+                    <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap" {...NOWRAP}>
                       {formatCalendarDate(e.date, { day: 'numeric', month: 'long' }, locale)}
                     </Text>
                   </div>
                 </TableCell>
-                <TableCell unwrapped>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="whitespace-nowrap rounded-full bg-primary px-4 py-1.5" data-testid={`itinerario-proximo-horario-${key}`}>
+                <TableCell unwrapped className="whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <span className="whitespace-nowrap rounded-full bg-primary px-4 py-1.5" data-testid={`itinerario-proximo-horario-${key}`} {...NOWRAP}>
                       <Text as="span" size="sm" weight="semibold" color="white">
                         {`${e.startTime} – ${e.endTime}`}
                       </Text>
                     </span>
-                    <Text as="span" size="xs" color="tertiary">
+                    <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap" {...NOWRAP}>
                       {endsNextDay ? tu('hoursEndsOn', { hours, day: endsOn }) : tu('hours', { hours })}
                     </Text>
                   </div>
                 </TableCell>
-                <TableCell unwrapped>{attendant(e)}</TableCell>
-                <TableCell unwrapped align="right">
+                <TableCell unwrapped className="w-full max-w-0">
+                  {attendant(e)}
+                </TableCell>
+                <TableCell unwrapped align="right" className="whitespace-nowrap">
                   {uncovered ? (
                     <ActionButton
                       resource="patient_itinerary"
                       action="update"
                       size="sm"
+                      className="whitespace-nowrap"
                       onClick={() => onAssign(e)}
                       data-testid={`itinerario-proximo-asignar-${key}`}
+                      {...NOWRAP}
                     >
-                      <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-2 whitespace-nowrap">
                         <UserRound size={16} aria-hidden="true" />
                         {tu('assign')}
                       </span>
@@ -158,10 +163,12 @@ export function UpcomingDaysTable({ events, onChange, onAssign, reasonOf }: Upco
                       action="update"
                       size="sm"
                       variant="outline"
+                      className="whitespace-nowrap"
                       onClick={() => onChange(e)}
                       data-testid={`itinerario-proximo-cambiar-${key}`}
+                      {...NOWRAP}
                     >
-                      <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-2 whitespace-nowrap">
                         <ArrowLeftRight size={16} aria-hidden="true" />
                         {tu('change')}
                       </span>
