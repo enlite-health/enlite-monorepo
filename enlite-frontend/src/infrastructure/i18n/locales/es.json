@@ -3641,8 +3641,6 @@
           "currentCoverageUnlinked": "Sin obra social vinculada",
           "currentCoveragePrivate": "Particular",
           "currentCoverageHidden": "Obra social (sin acceso al nombre)",
-          "currentCoverageSomeUnlinked_one": "{{count}} servicio sin obra social",
-          "currentCoverageSomeUnlinked_other": "{{count}} servicios sin obra social",
           "entryDate": "Ingreso al servicio",
           "entryDateEmpty": "Sin fecha de inicio en los servicios",
           "noPermission": "Sin permiso",
