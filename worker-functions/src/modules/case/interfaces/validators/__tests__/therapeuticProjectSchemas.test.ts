@@ -160,6 +160,39 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(updateCatalogItemSchema.safeParse({ label: 'novo rótulo', sortOrder: 5 }).success).toBe(true);
   });
 
+  it('spec 061: título 150 (151 recusa no create e no update com label); PATCH só com description não exige label', () => {
+    for (const kind of ['specific-objectives', 'activities'] as const) {
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(150) }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(151) }).success).toBe(false);
+      expect(updateCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(151) }).success).toBe(false);
+      expect(updateCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(150) }).success).toBe(true);
+      expect(updateCatalogItemSchemaFor(kind).safeParse({ description: 'DESCRIPCION-SINTETICA-1' }).success).toBe(true);
+    }
+  });
+
+  it('spec 061: descrição 1000 ok, 1001 recusa; "" no PATCH vira null (limpar); PII recusa sem ecoar o texto', () => {
+    for (const kind of ['specific-objectives', 'activities'] as const) {
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'a'.repeat(1000) }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'a'.repeat(1001) }).success).toBe(false);
+      expect(updateCatalogItemSchemaFor(kind).safeParse({ description: 'a'.repeat(1001) }).success).toBe(false);
+      const limpar = updateCatalogItemSchemaFor(kind).safeParse({ description: '   ' });
+      expect(limpar.success).toBe(true);
+      expect(limpar.success && (limpar.data as { description?: unknown }).description).toBeNull();
+      const nulo = updateCatalogItemSchemaFor(kind).safeParse({ description: null });
+      expect(nulo.success && (nulo.data as { description?: unknown }).description).toBeNull();
+      const pii = createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'llamar al 11 4463 5919' });
+      expect(pii.success).toBe(false);
+      expect(JSON.stringify(pii)).not.toContain('4463');
+    }
+  });
+
+  it('spec 061: `segments` recusa `description` (400) e segue com label 200', () => {
+    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental', description: 'DESCRIPCION-SINTETICA-1' }).success).toBe(false);
+    expect(updateCatalogItemSchemaFor('segments').safeParse({ description: 'DESCRIPCION-SINTETICA-1' }).success).toBe(false);
+    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'x'.repeat(200) }).success).toBe(true);
+    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'x'.repeat(201) }).success).toBe(false);
+  });
+
   it('catálogo: kind fechado agora inclui `segments` (US-17, migration 430)', () => {
     expect(catalogKindSchema.safeParse('segments').success).toBe(true);
   });

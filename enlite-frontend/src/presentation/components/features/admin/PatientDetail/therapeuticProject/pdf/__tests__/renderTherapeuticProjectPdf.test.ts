@@ -117,6 +117,51 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => !u.startsWith('data:'))).toEqual([]);
   });
 
+  it('spec 061 — título + descrição de objetivo e atividade saem no PDF (descrição DEPOIS do título); sem descrição só o título, sem "undefined"/"null"', async () => {
+    const { text } = await texto({
+      ...fullInput,
+      version: {
+        ...version,
+        specificObjectives: [
+          { id: 'o1', label: 'TITULO-SINTETICO-OBJ', description: 'DESCRIPCION-SINTETICA-OBJ' },
+          { id: 'o2', label: 'TITULO-SINTETICO-OBJ-SIN' },
+        ],
+        activities: [
+          { id: 'a1', label: 'TITULO-SINTETICO-ACT', description: 'DESCRIPCION-SINTETICA-ACT' },
+          { id: 'a2', label: 'TITULO-SINTETICO-ACT-NULL', description: null },
+        ],
+      },
+    });
+    for (const esperado of ['TITULO-SINTETICO-OBJ', 'DESCRIPCION-SINTETICA-OBJ', 'TITULO-SINTETICO-ACT', 'DESCRIPCION-SINTETICA-ACT', 'TITULO-SINTETICO-OBJ-SIN', 'TITULO-SINTETICO-ACT-NULL']) {
+      expect(text, esperado).toContain(esperado);
+    }
+    expect(text.indexOf('DESCRIPCION-SINTETICA-OBJ')).toBeGreaterThan(text.indexOf('TITULO-SINTETICO-OBJ'));
+    expect(text.indexOf('DESCRIPCION-SINTETICA-ACT')).toBeGreaterThan(text.indexOf('TITULO-SINTETICO-ACT'));
+    expect(text).not.toContain('undefined');
+    expect(text).not.toContain('null');
+  });
+
+  it('spec 061 — objetivos saem na ORDEM DO SNAPSHOT (não A–Z); atividades continuam A–Z', async () => {
+    const { text } = await texto({
+      ...fullInput,
+      version: {
+        ...version,
+        specificObjectives: [
+          { id: 'o1', label: 'ZZZ-OBJETIVO-SINTETICO' },
+          { id: 'o2', label: 'AAA-OBJETIVO-SINTETICO' },
+        ],
+        activities: [
+          { id: 'a1', label: 'ZZZ-ACTIVIDAD-SINTETICA' },
+          { id: 'a2', label: 'AAA-ACTIVIDAD-SINTETICA' },
+        ],
+      },
+    });
+    expect(text.indexOf('ZZZ-OBJETIVO-SINTETICO')).toBeGreaterThan(-1);
+    expect(text.indexOf('ZZZ-OBJETIVO-SINTETICO')).toBeLessThan(text.indexOf('AAA-OBJETIVO-SINTETICO'));
+    expect(text.indexOf('AAA-ACTIVIDAD-SINTETICA')).toBeGreaterThan(-1);
+    expect(text.indexOf('AAA-ACTIVIDAD-SINTETICA')).toBeLessThan(text.indexOf('ZZZ-ACTIVIDAD-SINTETICA'));
+  });
+
   it('🔒 REQ-21 no PDF: o NOME do CID-11 sai, o CÓDIGO nunca — nem do diagnóstico, nem o id do capítulo derivado (Gabriel, 09/09)', async () => {
     const { text } = await texto(fullInput);
     expect(text).toContain('Hemiplejía sintética de prueba');

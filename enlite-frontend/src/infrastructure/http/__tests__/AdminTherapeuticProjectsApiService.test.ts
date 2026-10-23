@@ -240,6 +240,20 @@ describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)
     expect(JSON.parse(init.body as string)).toEqual({ label: 'Nova', sortOrder: 3 });
   });
 
+  it('createCatalogItem com description envia o campo; sem sortOrder o corpo não o contém (spec 061)', async () => {
+    const f = mockFetch({ success: true, data: { id: ITEM_ID, label: 'TITULO-SINTETICO-1' } });
+    await AdminTherapeuticProjectsApiService.createCatalogItem('activities', { label: 'TITULO-SINTETICO-1', description: 'DESCRIPCION-SINTETICA-1' });
+    const body = JSON.parse(chamada(f)[1].body as string);
+    expect(body).toEqual({ label: 'TITULO-SINTETICO-1', description: 'DESCRIPCION-SINTETICA-1' });
+    expect(body).not.toHaveProperty('sortOrder');
+  });
+
+  it('updateCatalogItem só com description (null limpa) não leva label (spec 061)', async () => {
+    const f = mockFetch({ success: true, data: { id: ITEM_ID } });
+    await AdminTherapeuticProjectsApiService.updateCatalogItem('activities', ITEM_ID, { description: null });
+    expect(JSON.parse(chamada(f)[1].body as string)).toEqual({ description: null });
+  });
+
   it('updateCatalogItem: PATCH em /:itemId — Merge Patch, sem DELETE (desativar NÃO apaga, lex C19)', async () => {
     const f = mockFetch({ success: true, data: { id: ITEM_ID, active: false } });
     const out = await AdminTherapeuticProjectsApiService.updateCatalogItem('specific-objectives', ITEM_ID, { active: false });

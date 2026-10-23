@@ -762,6 +762,8 @@ jobs:
       # pelo CAMINHO do arquivo (o `--grep` do Playwright inclui o título do arquivo). Cada arquivo tira `test-results/058a-<tela>.png` + vídeo (T141B):
       # o passo "Evidências 058a" logo abaixo os publica mesmo com o job verde (o "Relatório" só sobe em falha).
       # `pt-atividades-az-e-busca-060` ENTROU (spec 060): usa `abac-stack-helper` (staff REAL em grupo + células), então SÓ roda aqui — nem o `grep:` do `pr-gate.yml` nem o irmão `projeto-terapeutico-humano` o alcançam.
+      # `pt-catalogo-titulo-descricao-061` ENTROU (spec 061): mesma razão do 060 (`abac-stack-helper`); 3 casos — catálogo com título+descrição, versão do PT + PDF baixado, versão/PDF antigos congelados após editar o catálogo.
+      # `catalogo-vinculo-segmento-humano` ENTROU (spec 061): usa `abac-stack-helper` (staff REAL em grupo + células, `loginAs`) — mesma razão do 060/061, SÓ roda aqui. Semeia/limpa só `created_by = 'e2e-030'` (objetivos e segmentos), faixa própria de case_number 740000.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
@@ -771,7 +773,7 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|ai-prompts-humano|058a-|064-cobertura-entrada|pt-atividades-az-e-busca-060"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|ai-prompts-humano|058a-|064-cobertura-entrada|pt-atividades-az-e-busca-060|pt-catalogo-titulo-descricao-061|catalogo-vinculo-segmento-humano"
 
       # T141B (spec 058): vídeo + print das 6 telas da obra social. Passo 0 medido: o único upload de `test-results/` deste job é o "Relatório (só quando
       # falha)" — com o job verde nenhum vídeo/print era publicado, então este passo roda SEMPRE (`if: always()`).
