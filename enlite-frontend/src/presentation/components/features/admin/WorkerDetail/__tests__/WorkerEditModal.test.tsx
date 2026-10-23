@@ -288,12 +288,12 @@ describe('WorkerEditModal', () => {
     const { container } = render(<WorkerEditModal worker={minimalWorker} onClose={vi.fn()} onSaved={vi.fn()} />);
 
     // MultiSelects (experienceTypes/preferredTypes/preferredAgeRange/languages)
-    // não têm data-testid próprio — o `id` está no wrapper; abre e marca a
+    // não têm data-testid próprio — o `id` está no gatilho; abre e marca a
     // primeira opção de cada um.
     for (const wrapperId of ['we-experienceTypes', 'we-preferredTypes', 'we-ageRange', 'we-languages']) {
-      const wrapper = container.querySelector(`#${wrapperId}`)!;
-      fireEvent.click(wrapper.querySelector('button')!);
-      fireEvent.click(wrapper.querySelectorAll('[role="option"] button')[0]);
+      const gatilho = container.querySelector(`#${wrapperId}`)!; // o id é do gatilho do Combobox
+      fireEvent.click(gatilho);
+      fireEvent.click(gatilho.parentElement!.querySelectorAll('[role="option"] button')[0]);
     }
 
     fireEvent.change(screen.getByTestId('we-lastName'), { target: { value: 'Gómez' } });

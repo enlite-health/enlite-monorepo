@@ -12,7 +12,7 @@
 import { useTranslation } from 'react-i18next';
 import { Select, type SelectOption } from '@presentation/components/atoms/Select';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import type { WorkerProfileFilters } from './workerProfileFiltersConfig';
 
@@ -232,7 +232,8 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.days.label', { defaultValue: 'Días' })}
         </Text>
-        <MultiSelect
+        <Combobox
+          multiple
           options={dayOptions}
           value={filters.days}
           onChange={(v) => onChange({ days: v })}

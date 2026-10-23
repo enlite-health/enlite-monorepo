@@ -3,7 +3,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { SearchInput } from '@presentation/components/molecules/SearchBar/SearchInput';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { TimeRangeFilter } from './TimeRangeFilter';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 
@@ -182,7 +182,8 @@ export function VacancyFilters({
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.filters.days.label')}
           </Text>
-          <MultiSelect
+          <Combobox
+            multiple
             options={dayOptions}
             value={advancedFilters.days}
             onChange={(v) => onAdvancedChange({ days: v })}

@@ -7,7 +7,7 @@ import type { PatientDetail, PatientCoverageSectionPayload, InsuranceProvider } 
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import type { SelectOption } from '@presentation/components/molecules/SelectField';
@@ -226,7 +226,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
                 )}
               </div>
             )}
-            <MultiSelect id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('selectPlaceholder')} />
+            <Combobox multiple id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('selectPlaceholder')} inputSize="compact" />
             {/* O que está marcado, por extenso: o botão do MultiSelect só diz "N seleccionados". */}
             <div className="flex flex-wrap gap-1 mt-1" data-testid="pcv-codes-selected">
               {selected.map((code) => (

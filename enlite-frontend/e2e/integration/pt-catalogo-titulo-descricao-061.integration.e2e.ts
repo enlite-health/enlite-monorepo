@@ -69,8 +69,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
 
 /** Multi-select do DS: marca as N primeiras opções pelo mouse e fecha pelo gatilho (o Escape chegaria ao drawer). */
 async function marcarOpcoes(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  const gatilho = root.locator('button[aria-haspopup="listbox"]');
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  const gatilho = gatilhoDoCampo;
   await gatilho.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();
@@ -189,13 +190,13 @@ test.describe('spec 061 — atividade do catálogo com título + descrição: do
     await marcarOpcoes(page, 'tp-specificObjectives', 1);
 
     // A atividade do catálogo é achada pela busca do campo (digitando) e marcada pelo mouse.
-    const gatilho = page.locator('#tp-activities').locator('button[aria-haspopup="listbox"]');
+    const gatilho = page.locator('#tp-activities');
     await gatilho.click();
     const busca = page.getByTestId('tp-activities-search');
     await busca.click();
     await expect(busca).toBeFocused();
     await page.keyboard.type(`SINTETICO-${SUFIXO}`);
-    const opcoes = page.locator('#tp-activities [role="option"]');
+    const opcoes = page.locator('#tp-activities').locator('..').locator('[role="option"]');
     await expect(opcoes).toHaveCount(1);
     expect(((await opcoes.first().textContent()) ?? '').trim()).toContain(TITULO);
     await opcoes.first().locator('button').click();

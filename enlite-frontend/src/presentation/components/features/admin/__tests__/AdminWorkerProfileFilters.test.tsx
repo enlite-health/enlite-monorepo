@@ -11,9 +11,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// MultiSelect tem teste próprio; aqui só precisamos do onChange chegar ao pai.
-vi.mock('@presentation/components/atoms/MultiSelect', () => ({
-  MultiSelect: ({ onChange }: { onChange: (v: string[]) => void }) => (
+// Combobox tem teste próprio; aqui só precisamos do onChange chegar ao pai.
+vi.mock('@presentation/components/atoms/Combobox', () => ({
+  Combobox: ({ onChange }: { onChange: (v: string[]) => void }) => (
     <button type="button" data-testid="days-multiselect" onClick={() => onChange(['1', '3'])}>días</button>
   ),
 }));

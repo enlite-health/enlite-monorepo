@@ -13,7 +13,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { BillingAddressField, type BillingAddressValue } from './BillingAddressField';
@@ -273,7 +273,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             </FormField>
             <FormField label={td('generalInfoCard.languages')} htmlFor="pge-languages" optional>
               <Controller control={control} name="languages" render={({ field }) => (
-                <MultiSelect options={languageOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pge-languages" />
+                <Combobox multiple options={languageOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pge-languages" inputSize="compact" />
               )} />
             </FormField>
             <BillingAddressField

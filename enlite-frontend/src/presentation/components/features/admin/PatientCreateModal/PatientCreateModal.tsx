@@ -12,7 +12,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 
 interface PatientCreateModalProps {
@@ -275,12 +275,14 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                 control={control}
                 name="serviceType"
                 render={({ field }) => (
-                  <MultiSelect
+                  <Combobox
+                    multiple
                     options={serviceTypeOptions}
                     value={field.value}
                     onChange={field.onChange}
                     placeholder={tc('unset')}
                     id="pc-serviceType"
+                    inputSize="compact"
                   />
                 )}
               />

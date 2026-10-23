@@ -45,7 +45,7 @@ function Harness({ inicial = null, deadline = null, ids = [] }: { inicial?: Cont
 
 const campo = () => screen.getByTestId('tp-field-responsibles');
 const pendente = () => screen.getByTestId('tp-responsibles-pending') as HTMLInputElement;
-const gatilho = () => document.getElementById('tp-responsibles')!.querySelector('button')!;
+const gatilho = () => document.getElementById('tp-responsibles')!;
 
 beforeEach(() => {
   cleanup();
@@ -134,7 +134,7 @@ describe('"No necesita" — só com a célula `waive_contact`', () => {
     expect(gatilho()).not.toBeDisabled();
 
     fireEvent.click(gatilho());
-    const lista = document.getElementById('tp-responsibles')!.querySelector('ul[role="listbox"]') as HTMLElement;
+    const lista = document.getElementById('tp-responsibles')!.parentElement!.querySelector('ul[role=\"listbox\"]') as HTMLElement;
     fireEvent.click(within(lista).getByText('Marta Gómez').closest('button')!);
 
     expect(screen.queryByTestId('tp-responsibles-waived-text')).toBeNull();
@@ -146,7 +146,7 @@ describe('escolher um contato desmarca o estado', () => {
     comCelulas([]);
     render(<Harness inicial="NOT_NEEDED" />);
     fireEvent.click(gatilho());
-    const lista = document.getElementById('tp-responsibles')!.querySelector('ul[role="listbox"]') as HTMLElement;
+    const lista = document.getElementById('tp-responsibles')!.parentElement!.querySelector('ul[role=\"listbox\"]') as HTMLElement;
     fireEvent.click(within(lista).getByText('Luis Gómez').closest('button')!);
     expect(pendente().checked).toBe(false);
     expect(screen.queryByTestId('tp-responsibles-waived-text')).toBeNull();

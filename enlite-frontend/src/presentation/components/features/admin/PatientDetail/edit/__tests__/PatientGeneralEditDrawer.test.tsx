@@ -311,7 +311,7 @@ describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => 
 
   it('adicionar um idioma (fixture já tem pt+es) envia languages com os 3', async () => {
     const { container } = render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    const multiSelectButton = container.querySelector('#pge-languages button') as HTMLElement;
+    const multiSelectButton = container.querySelector('#pge-languages') as HTMLElement;
     fireEvent.click(multiSelectButton); // abre o dropdown
     clickLanguageOption(container, 'Inglês');
     fireEvent.click(screen.getByTestId('pge-save'));
@@ -323,7 +323,7 @@ describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => 
     // Cobre o ramo do `.some()` em `languagesChanged`: comprimento igual ao original, mas o
     // CONJUNTO mudou — só o length não bastaria para acusar essa troca.
     const { container } = render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    const multiSelectButton = container.querySelector('#pge-languages button') as HTMLElement;
+    const multiSelectButton = container.querySelector('#pge-languages') as HTMLElement;
     fireEvent.click(multiSelectButton);
     clickLanguageOption(container, 'Português'); // remove pt → fica ['es']
     clickLanguageOption(container, 'Inglês'); // adiciona en → fica ['es','en'], mesmo tamanho de ['pt','es']
@@ -334,7 +334,7 @@ describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => 
 
   it('remover todos os idiomas envia languages: null (limpa a coluna, não [])', async () => {
     const { container } = render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    const multiSelectButton = container.querySelector('#pge-languages button') as HTMLElement;
+    const multiSelectButton = container.querySelector('#pge-languages') as HTMLElement;
     fireEvent.click(multiSelectButton); // abre — o dropdown fica ABERTO entre seleções (sem auto-close)
     clickLanguageOption(container, 'Português'); // remove pt
     clickLanguageOption(container, 'Espanhol'); // remove es → fica []

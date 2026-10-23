@@ -4,7 +4,7 @@
  * Testa o componente de filtros da página de vagas:
  * - Renderização dos selects (status, prioridade, tipo, sexo, provincia, localidade)
  * - Callbacks disparados ao alterar cada filtro
- * - MultiSelect para dias
+ * - Combobox (multiple) para dias
  * - TimeRangeFilter para horário
  * - Botão Limpiar filtros
  */
@@ -238,13 +238,13 @@ describe('VacancyFilters — estado refletido nos selects', () => {
     expect(selects[1].value).toBe('AT');
   });
 
-  it('advancedFilters.days com valores mostra count no MultiSelect', () => {
+  it('advancedFilters.days com valores mostra count no Combobox', () => {
     render(
       <VacancyFilters
         {...defaultProps({ advancedFilters: { ...INITIAL_ADVANCED, days: ['1', '3'] } })}
       />,
     );
-    // With 2 days selected, the MultiSelect button should show the count key
+    // With 2 days selected, the Combobox button should show the count key
     expect(screen.getByText('common.multiSelect.selectedCount')).toBeInTheDocument();
   });
 });

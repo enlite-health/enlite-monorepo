@@ -10,7 +10,7 @@
  *    "Editar" apagaria em silêncio um item que o servidor ainda tem no snapshot.
  *  · O corpo enviado leva os textos com `trim` — espaço não é conteúdo clínico.
  *
- * `IcdSearchCombobox` é dublê (REQ-21: o código do CID não passa por aqui); `MultiSelect`/`Select`
+ * `IcdSearchCombobox` é dublê (REQ-21: o código do CID não passa por aqui); `Combobox`/`Select`
  * são os REAIS — a régua é o que o operador consegue fazer na tela, não o que a prop aceita.
  */
 import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
@@ -193,15 +193,14 @@ const montar = (over: Partial<Props> = {}) =>
 
 const salvar = () => screen.getByTestId('tp-save') as HTMLButtonElement;
 
-/** A lista aberta do MultiSelect real (o `ul[role=listbox]`), abrindo-o se estiver fechado. */
+/** A lista aberta do Combobox real (o `id` é do GATILHO; o `ul[role=listbox]` mora no pai dele), abrindo-o se estiver fechado. */
 function listaDoMulti(id: string): HTMLElement {
-  const raiz = document.getElementById(id)!;
-  const gatilho = raiz.querySelector('button')!;
+  const gatilho = document.getElementById(id)!;
   if (gatilho.getAttribute('aria-expanded') !== 'true') fireEvent.click(gatilho);
-  return raiz.querySelector('ul[role="listbox"]') as HTMLElement;
+  return gatilho.parentElement!.querySelector('ul[role="listbox"]') as HTMLElement;
 }
 
-/** Marca/desmarca a opção com aquele rótulo no MultiSelect real (o operador clicando, não a prop). */
+/** Marca/desmarca a opção com aquele rótulo no Combobox real (o operador clicando, não a prop). */
 function alternarNoMulti(id: string, label: string): void {
   const alvo = within(listaDoMulti(id)).getByText(label);
   fireEvent.click(alvo.closest('button')!);
@@ -968,7 +967,8 @@ describe('campo de atividades: A–Z e busca (spec 060)', () => {
   it('(c) filtrar, marcar a atividade filtrada e salvar leva o id dela em activityIds (além do já marcado)', () => {
     montar({
       patientDiagnoses: [],
-      catalogs: { ...CATALOGOS, activities: [item('ac1', 'Atividade 1'), item('ac2', 'Árbol actividad')] },
+      catalogs: { ...CATALOGOS, // 3 opções: a busca só aparece com >= SEARCH_MIN_OPTIONS (regra do Combobox, não do site)
+      activities: [item('ac1', 'Atividade 1'), item('ac2', 'Árbol actividad'), item('ac3', 'Zeta actividad')] },
     });
     preencherTudo(); // marca 'Atividade 1' (ac1)
     listaDoMulti('tp-activities');

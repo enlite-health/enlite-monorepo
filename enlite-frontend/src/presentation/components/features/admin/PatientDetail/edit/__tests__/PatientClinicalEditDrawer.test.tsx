@@ -145,7 +145,7 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     expect(drawer.textContent).not.toMatch(/Especialidade|ICHOM/);
 
     // US-B4: dispositivo é multi-select de códigos do catálogo (HOME + SCHOOL), nunca texto livre
-    fireEvent.click(drawer.querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(drawer.querySelector('#pce-device') as HTMLElement);
     fireEvent.click(screen.getByText('Domiciliar'));
     fireEvent.click(screen.getByText('Escolar'));
     fireEvent.change(screen.getByTestId('pce-dependency'), { target: { value: 'MODERATE' } });
@@ -209,7 +209,7 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
   it('spec 012: deviceTypes ausente na ficha → conjunto vazio; escolher HOME manda deviceTypes; erro não-Error → mensagem genérica', async () => {
     updatePatientSection.mockRejectedValueOnce('x');
     render(<PatientClinicalEditDrawer patient={{ ...patientDetailMinimal, deviceTypes: undefined as never }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('patient-clinical-edit-drawer').querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(screen.getByTestId('patient-clinical-edit-drawer').querySelector('#pce-device') as HTMLElement);
     fireEvent.click(screen.getByText('Domiciliar'));
     fireEvent.click(screen.getByTestId('pce-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailMinimal.id, 'clinical', { deviceTypes: ['HOME'] }));

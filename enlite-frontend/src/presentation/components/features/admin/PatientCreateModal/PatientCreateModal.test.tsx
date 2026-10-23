@@ -62,9 +62,9 @@ const COUNTRY_ERROR = 'admin.patients.create.countryRequired';
 
 /** Opens the serviceType MultiSelect (a button/listbox, not a <select>). */
 function openServiceTypes() {
-  const wrapper = document.getElementById('pc-serviceType') as HTMLElement;
-  fireEvent.click(within(wrapper).getByRole('button'));
-  return wrapper;
+  const trigger = document.getElementById('pc-serviceType') as HTMLElement; // o id é do gatilho
+  fireEvent.click(trigger);
+  return trigger.parentElement as HTMLElement;
 }
 
 describe('PatientCreateModal — country selector', () => {

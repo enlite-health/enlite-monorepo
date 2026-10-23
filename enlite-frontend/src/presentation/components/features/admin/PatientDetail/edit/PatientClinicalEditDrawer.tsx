@@ -11,7 +11,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { ClinicalTextareaField } from './ClinicalTextareaField';
 import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
@@ -249,12 +249,12 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
               </FormField>
               <FormField label={te('deviceType')} htmlFor="pce-device" labelSize="compact">
                 <Controller control={control} name="deviceTypes" render={({ field }) => (
-                  <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-device" />
+                  <Combobox multiple options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-device" inputSize="compact" />
                 )} />
               </FormField>
               <FormField label={tc('serviceType')} htmlFor="pce-serviceType" labelSize="compact">
                 <Controller control={control} name="serviceType" render={({ field }) => (
-                  <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-serviceType" />
+                  <Combobox multiple options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-serviceType" inputSize="compact" />
                 )} />
               </FormField>
             </div>

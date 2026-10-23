@@ -217,10 +217,9 @@ function catalogosOk(): void {
 const esperarFormulario = () => screen.findByTestId('therapeutic-project-form');
 
 function alternarNoMulti(id: string, label: string): void {
-  const raiz = document.getElementById(id)!;
-  const gatilho = raiz.querySelector('button')!;
+  const gatilho = document.getElementById(id)!; // o `id` do Combobox é do gatilho
   if (gatilho.getAttribute('aria-expanded') !== 'true') fireEvent.click(gatilho);
-  const lista = raiz.querySelector('ul[role="listbox"]') as HTMLElement;
+  const lista = gatilho.parentElement!.querySelector('ul[role="listbox"]') as HTMLElement;
   fireEvent.click(within(lista).getByText(label).closest('button')!);
 }
 
@@ -469,11 +468,11 @@ describe('modo `new` — os catálogos antes do formulário', () => {
     montar({ mode: 'new' }, { patient: { ...PACIENTE, externalContacts: undefined, coverageEmergencyContacts: undefined } });
     await esperarFormulario();
 
-    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!.querySelector('button')!);
+    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!);
     abrir('tp-externalContacts');
-    expect(document.getElementById('tp-externalContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-externalContacts')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
     abrir('tp-coverageContacts');
-    expect(document.getElementById('tp-coverageContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-coverageContacts')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
   });
 
   // D113 — o mesmo `?? []` do teste acima, mas para os QUATRO containers cruzados que faltavam
@@ -493,11 +492,11 @@ describe('modo `new` — os catálogos antes do formulário', () => {
     });
     await esperarFormulario();
 
-    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!.querySelector('button')!);
+    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!);
     abrir('tp-responsibles');
-    expect(document.getElementById('tp-responsibles')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-responsibles')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
     abrir('tp-careTeam');
-    expect(document.getElementById('tp-careTeam')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-careTeam')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
   });
 });
 

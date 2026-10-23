@@ -132,7 +132,7 @@ test.describe('spec 018 PR-3 — cabeçalho da ficha (gênero/idiomas/emergênci
     const drawer = page.getByTestId('patient-general-edit-drawer');
     await expect(drawer).toBeVisible();
     await page.getByTestId('pge-gender').selectOption('NON_BINARY');
-    const languagesBtn = page.locator('#pge-languages button');
+    const languagesBtn = page.locator('#pge-languages');
     await languagesBtn.click();
     await page.getByRole('option', { name: 'Portugués' }).locator('button').click();
     await page.getByRole('option', { name: 'Inglés' }).locator('button').click();

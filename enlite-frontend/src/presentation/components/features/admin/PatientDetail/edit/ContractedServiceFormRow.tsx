@@ -12,7 +12,7 @@ import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { DayScheduleEditor } from '@presentation/components/molecules/DayScheduleEditor';
 import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
@@ -372,7 +372,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
 
       <FormField label={te('deviceTypes')} htmlFor={`svc-devices-${index}`} optional>
         <Controller control={control} name="deviceTypeCodes" render={({ field }) => (
-          <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id={`svc-devices-${index}`} />
+          <Combobox multiple options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id={`svc-devices-${index}`} inputSize="compact" />
         )} />
       </FormField>
 

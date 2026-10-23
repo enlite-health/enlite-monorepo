@@ -50,8 +50,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
 
 /** Abre um multi-select do DS e marca as N primeiras opções (catálogo de objetivos/atividades). */
 async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();
   for (let i = 0; i < n; i++) await opcoes.nth(i).click();
@@ -60,8 +61,9 @@ async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void>
 
 /** Abre um multi-select do DS e marca a opção CUJO TEXTO contém `texto` (contatos/equipe — nunca "os N primeiros"). */
 async function marcarPorTexto(page: Page, id: string, texto: string): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcao = root.locator('li[role="option"]', { hasText: texto });
   await expect(opcao).toBeVisible({ timeout: 10_000 });
   await opcao.locator('button').click();

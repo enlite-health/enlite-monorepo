@@ -65,13 +65,13 @@ test.describe('spec 060 — atividades do PT: A–Z e busca @integration', () =>
     await expect(page.getByTestId('tp-new-btn')).toBeEnabled();
     await page.getByTestId('tp-new-btn').click();
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
-    return page.locator('#tp-activities').locator('button[aria-haspopup="listbox"]');
+    return page.locator('#tp-activities');
   }
 
   test('1. as opções saem em ordem A–Z (lidas da tela) e a ordem difere da do catálogo', async ({ page }) => {
     const gatilho = await abrirNuevo(page);
     await gatilho.click();
-    const opcoes = page.locator('#tp-activities [role="option"]');
+    const opcoes = page.locator('#tp-activities').locator('..').locator('[role="option"]');
     await expect(opcoes.first()).toBeVisible();
 
     const naTela = (await opcoes.allTextContents()).map((s) => s.trim());
@@ -94,12 +94,12 @@ test.describe('spec 060 — atividades do PT: A–Z e busca @integration', () =>
     await expect(busca).toBeFocused();
     await page.keyboard.type('kinesiologo');
 
-    const opcoes = page.locator('#tp-activities [role="option"]');
+    const opcoes = page.locator('#tp-activities').locator('..').locator('[role="option"]');
     await expect(opcoes.first()).toBeVisible();
     const textos = (await opcoes.allTextContents()).map((s) => s.trim());
     expect(textos.length).toBeGreaterThanOrEqual(1);
     for (const t of textos) expect(plano(t)).toContain('kinesi');
-    await expect(page.locator('#tp-activities').getByText('kinesiólogo/TO.', { exact: false })).toBeVisible();
+    await expect(page.locator('#tp-activities').locator('..').getByText('kinesiólogo/TO.', { exact: false })).toBeVisible();
 
     await page.keyboard.type('zzz');
     await expect(page.getByTestId('tp-activities-no-results')).toBeVisible();
@@ -113,7 +113,7 @@ test.describe('spec 060 — atividades do PT: A–Z e busca @integration', () =>
     await busca.click();
     await page.keyboard.type('higiene');
 
-    const opcoes = page.locator('#tp-activities [role="option"]');
+    const opcoes = page.locator('#tp-activities').locator('..').locator('[role="option"]');
     await expect(opcoes).toHaveCount(1);
     const rotulo = ((await opcoes.first().textContent()) ?? '').trim();
     expect(plano(rotulo)).toContain('higiene');

@@ -313,9 +313,9 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await page.getByTestId('edit-coverage-btn').click();
     const drawer = page.getByTestId('patient-coverage-edit-drawer');
     await expect(drawer).toBeVisible();
-    await page.locator('#pcv-codes button').first().click();
-    await page.locator('#pcv-codes').getByRole('option', { name: 'OSDE', exact: true }).click();
-    await page.locator('#pcv-codes').getByRole('option', { name: 'Swiss Medical', exact: true }).click();
+    await page.locator('#pcv-codes').click();
+    await page.locator('#pcv-codes').locator('..').getByRole('option', { name: 'OSDE', exact: true }).click();
+    await page.locator('#pcv-codes').locator('..').getByRole('option', { name: 'Swiss Medical', exact: true }).click();
     await page.getByTestId('pcv-affiliate').fill('AF-B3-0001');
     await expect(page.getByTestId('pcv-codes-selected')).toContainText('Swiss Medical');
     await page.getByTestId('pcv-save').click();
@@ -339,9 +339,9 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const drawer = page.getByTestId('patient-clinical-edit-drawer');
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('pce-specialty')).toHaveCount(0);
-    await page.locator('#pce-device button').first().click();
-    await page.locator('#pce-device').getByRole('option', { name: 'Domiciliario', exact: true }).click();
-    await page.locator('#pce-device').getByRole('option', { name: 'Escolar', exact: true }).click();
+    await page.locator('#pce-device').click();
+    await page.locator('#pce-device').locator('..').getByRole('option', { name: 'Domiciliario', exact: true }).click();
+    await page.locator('#pce-device').locator('..').getByRole('option', { name: 'Escolar', exact: true }).click();
     const patch = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/clinical$/.test(r.url()));
     await page.getByTestId('pce-save').click();
     expect((await patch).status()).toBe(200);

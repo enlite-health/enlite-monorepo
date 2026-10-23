@@ -144,8 +144,8 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
     await page.getByTestId('tp-new-btn').click();
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
-    const root = page.locator('#tp-specificObjectives');
-    const gatilho = root.locator('button[aria-haspopup="listbox"]');
+    const gatilho = page.locator('#tp-specificObjectives'); // o `id` do Combobox é do GATILHO
+    const root = gatilho.locator('..'); // o painel mora no pai do gatilho
     await gatilho.click();
     const opcoes = root.locator('[role="option"]');
     await expect(opcoes.first()).toBeVisible();

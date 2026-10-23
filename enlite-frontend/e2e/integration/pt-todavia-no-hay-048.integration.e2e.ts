@@ -59,8 +59,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<voi
 }
 
 async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();
   for (let i = 0; i < n; i++) await opcoes.nth(i).click();
@@ -76,8 +77,9 @@ async function fecharLista(page: Page): Promise<void> {
 }
 
 async function marcarPorTexto(page: Page, id: string, texto: string): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcao = root.locator('li[role="option"]', { hasText: texto });
   await expect(opcao).toBeVisible({ timeout: 10_000 });
   await opcao.locator('button').click();
@@ -190,7 +192,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await alternar(responsables, LABEL_PENDING);
     await expect(responsables.getByLabel(LABEL_PENDING, { exact: true })).toBeChecked();
     await expect(responsables.getByTestId('tp-responsibles-deadline')).toHaveText('Tenés 15 días para completar este campo.');
-    await expect(page.locator('#tp-responsibles button[aria-haspopup="listbox"]')).toBeDisabled();
+    await expect(page.locator('#tp-responsibles')).toBeDisabled();
     const equipo = campo(page, 'careTeam');
     await alternar(equipo, LABEL_PENDING);
     await expect(equipo.getByLabel(LABEL_PENDING, { exact: true })).toBeChecked();
@@ -292,7 +294,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await alternar(cobertura, LABEL_WAIVED);
     await expect(cobertura.getByLabel(LABEL_WAIVED, { exact: true })).toBeChecked();
     await expect(cobertura.getByLabel(LABEL_PENDING, { exact: true })).not.toBeChecked();
-    await expect(page.locator('#tp-coverageContacts button[aria-haspopup="listbox"]')).toBeDisabled();
+    await expect(page.locator('#tp-coverageContacts')).toBeDisabled();
     await page.getByTestId('tp-modality').selectOption('ONLINE');
 
     // Já havia campos pendentes (Responsables, Equipo): a confirmação aparece e traz os vencimentos REAIS (herdados).

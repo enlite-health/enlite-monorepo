@@ -9,7 +9,7 @@ import {
   WORKER_TRASTORNO_TYPES,
 } from '@domain/entities/Worker';
 import { Text } from '@presentation/components/atoms/Text';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
@@ -75,23 +75,23 @@ export function WorkerEditProfessionalFields({ control, register }: Props): JSX.
 
       <FormField label={t('admin.workerDetail.experienceTypes')}>
         <Controller control={control} name="experienceTypes" render={({ field }) => (
-          <MultiSelect options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-experienceTypes" />
+          <Combobox multiple options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-experienceTypes" inputSize="compact" />
         )} />
       </FormField>
       <FormField label={t('admin.workerDetail.preferredTypes')}>
         <Controller control={control} name="preferredTypes" render={({ field }) => (
-          <MultiSelect options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-preferredTypes" />
+          <Combobox multiple options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-preferredTypes" inputSize="compact" />
         )} />
       </FormField>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField label={t('admin.workerDetail.preferredAgeRange')}>
           <Controller control={control} name="preferredAgeRange" render={({ field }) => (
-            <MultiSelect options={ageOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-ageRange" />
+            <Combobox multiple options={ageOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-ageRange" inputSize="compact" />
           )} />
         </FormField>
         <FormField label={t('admin.workerDetail.languages')}>
           <Controller control={control} name="languages" render={({ field }) => (
-            <MultiSelect options={langOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-languages" />
+            <Combobox multiple options={langOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-languages" inputSize="compact" />
           )} />
         </FormField>
       </div>

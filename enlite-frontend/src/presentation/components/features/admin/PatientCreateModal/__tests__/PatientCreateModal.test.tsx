@@ -46,7 +46,7 @@ describe('PatientCreateModal', () => {
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
     fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
     fireEvent.change(screen.getByTestId('pc-documentType'), { target: { value: 'DNI' } });
-    fireEvent.click(container.querySelector('#pc-serviceType button') as HTMLElement);
+    fireEvent.click(container.querySelector('#pc-serviceType') as HTMLElement);
     fireEvent.click(screen.getByText('Cuidador'));
     fireEvent.click(screen.getByTestId('pc-save'));
     await waitFor(() => expect(createPatient).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'DNI', serviceType: ['CAREGIVER'] })));

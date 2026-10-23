@@ -1,6 +1,8 @@
 export { Badge } from './Badge';
 export { Button } from './Button';
 export { Checkbox } from './Checkbox';
+export { Combobox, SEARCH_MIN_OPTIONS } from './Combobox';
+export type { ComboboxOption, ComboboxProps } from './Combobox';
 export { Divider } from './Divider';
 export { Heading } from './Heading';
 export { Icon } from './Icon';
@@ -9,8 +11,6 @@ export type { InputProps, InputSize } from './Input';
 export { Label } from './Label';
 export { MetricCard } from './MetricCard';
 export type { MetricAccent } from './MetricCard';
-export { MultiSelect } from './MultiSelect';
-export type { MultiSelectProps } from './MultiSelect';
 export { PageContainer } from './PageContainer';
 export { PercentageDisplay } from './PercentageDisplay';
 export { ProgressBar } from './ProgressBar';

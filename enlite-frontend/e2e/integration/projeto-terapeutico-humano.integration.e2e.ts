@@ -50,8 +50,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
 /** Abre um multi-select do DS e marca as N primeiras opções pelo mouse; fecha a lista clicando no gatilho de novo
  * (o `Escape` do multi-select também chega ao drawer, que desde 15/09 abre o "¿Descartar los cambios?" e tapa a tela). */
 async function marcarOpcoes(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  const gatilho = root.locator('button[aria-haspopup="listbox"]');
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  const gatilho = gatilhoDoCampo;
   await gatilho.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();

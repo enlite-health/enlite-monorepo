@@ -11,7 +11,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { SelectOption } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
@@ -116,7 +116,7 @@ export function PatientServiceEditDrawer({ patient, onClose, onSaved }: Props): 
             {/* `field.value` nunca é undefined: `defaultValues.serviceType` (linha acima) já
                 garante array — um `?? []` aqui seria morto (0% de branch, D200). */}
             <Controller control={control} name="serviceType" render={({ field }) => (
-              <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="psv-serviceType" />
+              <Combobox multiple options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="psv-serviceType" inputSize="compact" />
             )} />
           </FormField>
 
