@@ -72,6 +72,15 @@ describe('Combobox múltipla (herdada do MultiSelect)', () => {
     expect(screen.getByText('2 seleccionados')).toBeInTheDocument();
   });
 
+  it('multi: id desconhecido não aparece cru nem entra na contagem', () => {
+    renderMultiSelect({ value: ['zzz'] });
+    expect(trigger()).toHaveTextContent('Seleccionar');
+    expect(trigger().textContent).not.toContain('zzz');
+    cleanup();
+    renderMultiSelect({ value: ['A', 'zzz'] });
+    expect(trigger()).toHaveTextContent('Opción A');
+  });
+
   it('opens dropdown on click', () => {
     renderMultiSelect();
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
@@ -204,7 +213,7 @@ describe('Combobox múltipla (herdada do MultiSelect)', () => {
       expect(screen.getByTestId('x-search')).toBeInTheDocument();
       cleanup();
       renderMultiSelect({ id: 'x', options: OPCOES, value: ['fora-do-catalogo'] });
-      expect(screen.getByText('fora-do-catalogo')).toBeInTheDocument();
+      expect(screen.queryByText('fora-do-catalogo')).not.toBeInTheDocument();
     });
 
     it('t2 abrir mostra o input com foco', () => {
@@ -292,9 +301,10 @@ describe('Combobox múltipla (herdada do MultiSelect)', () => {
       expect(trigger()).toHaveTextContent('Seleccionar');
     });
 
-    it('valor fora do catálogo aparece cru', () => {
+    it('valor fora do catálogo mostra o placeholder, nunca o valor cru', () => {
       renderSingle({ value: 'zzz' });
-      expect(trigger()).toHaveTextContent('zzz');
+      expect(trigger()).toHaveTextContent('Seleccionar');
+      expect(trigger().textContent).not.toContain('zzz');
     });
 
     it('clearLabel cria a 1ª linha que limpa para ""', async () => {

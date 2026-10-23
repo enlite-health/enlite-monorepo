@@ -153,12 +153,12 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
   /**
    * 🔒 O RÓTULO SOBREVIVE À LISTA. Com busca no servidor, escolher um item TROCA
    * a lista e o escolhido some de `options`; sem este cache o gatilho voltava ao
-   * placeholder (ou ao valor cru) logo depois de escolher. Cache idempotente,
+   * placeholder logo depois de escolher. Cache idempotente,
    * alimentado no render: no 1º paint depois da troca o rótulo já tem de estar certo.
    */
   const rotulosVistos = useRef(new Map<string, string>());
   for (const o of options) rotulosVistos.current.set(o.value, o.label);
-  const labelOf = (v: string): string => rotulosVistos.current.get(v) ?? v;
+  const labelOf = (v: string): string | undefined => rotulosVistos.current.get(v);
 
   useEffect(() => {
     if (!open) return;
@@ -266,16 +266,18 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
   const clearLabel = props.multiple ? undefined : props.clearLabel;
   const showClearRow = clearLabel !== undefined && !needle;
 
-  const selectedValues = props.multiple ? props.value : props.value === '' ? [] : [props.value];
-  const buttonLabel = props.multiple
-    ? props.value.length === 0
+  // Valor que nunca esteve em lista nenhuma (no modo servidor é um id interno) NÃO
+  // é exibido cru: conta como vazio e o gatilho mostra o placeholder. No multi,
+  // só os valores conhecidos entram na contagem.
+  const knownLabels = (props.multiple ? props.value : props.value === '' ? [] : [props.value])
+    .map(labelOf)
+    .filter((l): l is string => l !== undefined);
+  const buttonLabel =
+    knownLabels.length === 0
       ? placeholder
-      : props.value.length === 1
-        ? labelOf(props.value[0])
-        : t('common.multiSelect.selectedCount', { count: props.value.length })
-    : props.value === ''
-      ? placeholder
-      : labelOf(props.value);
+      : knownLabels.length === 1
+        ? knownLabels[0]
+        : t('common.multiSelect.selectedCount', { count: knownLabels.length });
 
   const wrapperClasses = inputWrapperClasses({ size: inputSize, error: !!error, disabled });
 
@@ -355,7 +357,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
           as="span"
           size="sm"
           weight="medium"
-          color={selectedValues.length > 0 ? 'secondary' : 'muted'}
+          color={knownLabels.length > 0 ? 'secondary' : 'muted'}
           className="truncate"
         >
           {buttonLabel ?? ''}

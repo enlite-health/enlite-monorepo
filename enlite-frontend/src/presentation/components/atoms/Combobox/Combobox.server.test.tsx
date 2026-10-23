@@ -12,7 +12,7 @@ vi.mock('react-i18next', () => ({
  * - a linha "Todos" agora é `clearLabel="Todos"` (antes era implícita);
  * - o gatilho é `role=combobox` e o vazio é `${id}-no-results`;
  * - `label` não existe mais no componente (o rótulo é `<label htmlFor>` / aria-label);
- * - valor que nunca esteve em lista nenhuma aparece CRU (contrato do Combobox, T1).
+ * - valor que nunca esteve em lista nenhuma mostra o placeholder, nunca o id cru.
  */
 const OPTIONS = [
   { value: '1', label: 'Caso 1-A' },
@@ -260,9 +260,10 @@ describe('Combobox — rótulo e janela cega', () => {
     }
   });
 
-  it('valor que nunca esteve em lista nenhuma aparece cru (contrato do Combobox)', () => {
+  it('valor que nunca esteve em lista nenhuma mostra o placeholder, nunca o id', () => {
     render(ui({ value: 'jamais-visto', placeholder: 'Todos' }));
-    expect(screen.getByRole('combobox').textContent).toContain('jamais-visto');
+    expect(screen.getByRole('combobox').textContent).toContain('Todos');
+    expect(screen.getByRole('combobox').textContent).not.toContain('jamais-visto');
   });
 
   it('🔒 enquanto a resposta NÃO chegou, o filtro local vale — a lista não aparece inteira', () => {
