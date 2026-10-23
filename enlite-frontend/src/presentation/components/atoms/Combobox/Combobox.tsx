@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text/Text';
@@ -70,8 +70,10 @@ export type ComboboxProps = Common &
   );
 
 const PANEL_CLASSES =
-  'absolute z-50 w-full mt-1 bg-white border border-[#D9D9D9] rounded-[10px] shadow-lg py-1';
+  'absolute z-50 w-full bg-white border border-[#D9D9D9] rounded-[10px] shadow-lg py-1';
 const SCROLL_CLASSES = 'overflow-y-auto max-h-60';
+/** Altura que o painel pode ocupar (busca + lista de 15rem + respiro): abaixo disso no rodape da tela, ele abre para CIMA. */
+const PANEL_ROOM_PX = 320;
 
 export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Combobox(props, ref) {
   const {
@@ -98,6 +100,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [dropUp, setDropUp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -137,6 +140,14 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
     if (open) close();
     else openPanel();
   }, [open, close, openPanel]);
+
+  // Gatilho no pe da janela (ex.: rodape da sidebar): sem espaco embaixo e com mais espaco em cima, o painel abre para cima.
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const { top, bottom } = triggerRef.current.getBoundingClientRect();
+    const below = window.innerHeight - bottom;
+    setDropUp(below < PANEL_ROOM_PX && top > below);
+  }, [open]);
 
   useEffect(() => {
     if (open && showSearch) searchRef.current?.focus();
@@ -388,7 +399,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
       )}
 
       {open && (
-        <div className={`${PANEL_CLASSES} flex flex-col`} data-clarity-mask={clarityMask}>
+        <div className={`${PANEL_CLASSES} ${dropUp ? 'bottom-full mb-1' : 'mt-1'} flex flex-col`} data-clarity-mask={clarityMask}>
           {showSearch && (
             <input
               ref={searchRef}
