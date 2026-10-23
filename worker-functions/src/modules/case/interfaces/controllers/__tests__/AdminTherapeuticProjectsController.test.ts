@@ -896,6 +896,22 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(catalogs.create).not.toHaveBeenCalled();
     });
 
+    it('spec 061: repassa `description` ao create; 1001 → 400 só com o nome do campo, sem ecoar o texto (controle: 1000 passa)', async () => {
+      const catalogs = { create: jest.fn().mockResolvedValue(ITEM) };
+      const ok = mockRes();
+      const dentro = 'DESCRIPCION-SINTETICA-' + 'a'.repeat(1000 - 'DESCRIPCION-SINTETICA-'.length);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: dentro } }), ok);
+      expect(ok.status).toHaveBeenCalledWith(201);
+      expect(catalogs.create).toHaveBeenCalledWith('activities', { label: 'TITULO-SINTETICO-1', description: dentro, actorUid: 'uid-1' });
+      const ruim = mockRes();
+      const fora = 'DESCRIPCION-SINTETICA-' + 'b'.repeat(1001 - 'DESCRIPCION-SINTETICA-'.length);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: fora } }), ruim);
+      expect(ruim.status).toHaveBeenCalledWith(400);
+      expect(corpoDaResposta(ruim)).toEqual({ success: false, error: 'Invalid body', details: { fields: ['description'] } });
+      expect(JSON.stringify(corpoDaResposta(ruim))).not.toContain('DESCRIPCION-SINTETICA');
+      expect(catalogs.create).toHaveBeenCalledTimes(1);
+    });
+
     it('201 com o rótulo e o ator carimbado', async () => {
       const catalogs = { create: jest.fn().mockResolvedValue(ITEM) };
       const res = mockRes();
@@ -968,6 +984,16 @@ describe('AdminTherapeuticProjectsController', () => {
       const res = mockRes();
       await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { active: false } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('spec 061: update só com `description` repassa a descrição (sem label); `null` limpa', async () => {
+      const catalogs = { update: jest.fn().mockResolvedValue(ITEM) };
+      const res = mockRes();
+      await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { description: 'DESCRIPCION-SINTETICA-2' } }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(catalogs.update).toHaveBeenLastCalledWith('activities', ITEM_ID, { description: 'DESCRIPCION-SINTETICA-2', actorUid: 'uid-1' });
+      await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { description: null } }), mockRes());
+      expect(catalogs.update).toHaveBeenLastCalledWith('activities', ITEM_ID, { description: null, actorUid: 'uid-1' });
     });
 
     it('200 repassando o patch parcial + o ator (a baixa é `active:false`, nunca DELETE)', async () => {

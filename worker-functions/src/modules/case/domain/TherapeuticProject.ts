@@ -32,6 +32,8 @@ export interface CatalogSnapshotItem {
 export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentId?: string | null;
   segmentLabel?: string | null;
+  /** Descrição do item (spec 061, migration 547) — ausente em versão antiga e em item sem descrição. */
+  description?: string;
 }
 
 /**
