@@ -16,7 +16,8 @@
 import * as http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { insertTestPatient, insertTestWorker } from './db-test-helper';
+import { insertTestPatient } from './db-test-helper';
+import { insertAptoWorker } from './eligibility-worker-helper';
 import { runSQL, cleanupPatientDeep } from './patient-detail-a-helper';
 import { tokenFor, loginAs, type MockUser } from './abac-stack-helper';
 import { seedMockStaff, cleanupMockStaff } from './lancamento-leituras-helper';
@@ -374,7 +375,7 @@ export async function seedLaunchablePatient(
 export function seedWorkersNear(lat: number, lng: number, n: number): string[] {
   const ids: string[] = [];
   for (let i = 0; i < n; i++) {
-    ids.push(insertTestWorker({ occupation: 'AT', lat: lat + 0.0009 * (i + 1), lng }));
+    ids.push(insertAptoWorker({ occupation: 'AT', lat: lat + 0.0009 * (i + 1), lng }).workerId);
   }
   return ids;
 }

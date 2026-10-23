@@ -26,6 +26,7 @@ import {
   activateRecruitmentViaApi, readItineraryApi, seedAssignment, ITINERARIO_STAFF,
 } from '../helpers/itinerario-e2e-helper';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
+import { insertAptoWorker } from '../helpers/eligibility-worker-helper';
 import { insertWJA, upsertEncuadre, getWjaByWorkerAndJob, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { putMove } from '../helpers/funnel-move-e2e-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
@@ -45,7 +46,7 @@ test.describe('quadro-c @integration', () => {
   test('quadro-c-so-err-alimenta', async ({ request }) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
-    const workerId = insertTestWorker({ occupation: 'AT' });
+    const workerId = insertAptoWorker({ occupation: 'AT' }).workerId;
     try {
       insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'SELECTED' });
 
