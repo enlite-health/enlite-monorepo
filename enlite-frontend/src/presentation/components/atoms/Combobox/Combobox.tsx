@@ -35,6 +35,21 @@ type Common = {
   'aria-labelledby'?: string;
   searchPlaceholder?: string;
   noResultsLabel?: string;
+  /**
+   * BUSCA NO SERVIDOR (portada do SearchableSelect). Quando presente, o filtro
+   * local só vale enquanto `options` NÃO é a resposta do termo digitado; o texto
+   * é devolvido aqui com debounce para o pai buscar.
+   */
+  onSearchChange?: (text: string) => void;
+  /** Espera entre a última tecla e a busca. Só vale com `onSearchChange`. */
+  searchDebounceMs?: number;
+  /**
+   * O termo a que `options` JÁ corresponde (o que o servidor respondeu, não o
+   * que está sendo digitado). `''` = lista de repouso. Só vale com `onSearchChange`.
+   */
+  serverSearchTerm?: string;
+  /** O que dizer quando a lista está vazia (ex.: "Escribí al menos 2 letras"). */
+  emptyMessage?: string;
 };
 
 export type ComboboxProps = Common &
@@ -69,6 +84,10 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
     'aria-labelledby': ariaLabelledBy,
     searchPlaceholder,
     noResultsLabel,
+    onSearchChange,
+    searchDebounceMs = 300,
+    serverSearchTerm = '',
+    emptyMessage,
   } = props;
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -91,20 +110,55 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
 
   const searchable = options.length >= SEARCH_MIN_OPTIONS;
 
-  const close = useCallback((refocus = false) => {
+  const serverSearch = onSearchChange !== undefined;
+  const showSearch = searchable || serverSearch;
+
+  const close = useCallback((refocus = false, keepQuery = false) => {
     setOpen(false);
-    setQuery('');
+    if (!keepQuery) setQuery('');
     if (refocus) triggerRef.current?.focus();
+  }, []);
+
+  /** Abrir é o momento em que o texto da busca é limpo (no modo servidor, escolher NÃO limpa). */
+  const openPanel = useCallback(() => {
+    setQuery('');
+    setOpen(true);
   }, []);
 
   const toggleOpen = useCallback(() => {
     if (open) close();
-    else setOpen(true);
-  }, [open, close]);
+    else openPanel();
+  }, [open, close, openPanel]);
 
   useEffect(() => {
-    if (open && searchable) searchRef.current?.focus();
-  }, [open, searchable]);
+    if (open && showSearch) searchRef.current?.focus();
+  }, [open, showSearch]);
+
+  /**
+   * O callback vive num ref, e NÃO nas dependências do efeito: um pai que recria
+   * a função a cada render dispararia uma busca por render em vez de uma por
+   * termo (foi assim que o autocomplete do Places chegou a uma chamada por tecla).
+   */
+  const onSearchRef = useRef(onSearchChange);
+  useEffect(() => {
+    onSearchRef.current = onSearchChange;
+  });
+
+  useEffect(() => {
+    if (!serverSearch) return undefined;
+    const timer = setTimeout(() => onSearchRef.current?.(query), searchDebounceMs);
+    return () => clearTimeout(timer);
+  }, [query, serverSearch, searchDebounceMs]);
+
+  /**
+   * 🔒 O RÓTULO SOBREVIVE À LISTA. Com busca no servidor, escolher um item TROCA
+   * a lista e o escolhido some de `options`; sem este cache o gatilho voltava ao
+   * placeholder (ou ao valor cru) logo depois de escolher. Cache idempotente,
+   * alimentado no render: no 1º paint depois da troca o rótulo já tem de estar certo.
+   */
+  const rotulosVistos = useRef(new Map<string, string>());
+  for (const o of options) rotulosVistos.current.set(o.value, o.label);
+  const labelOf = (v: string): string => rotulosVistos.current.get(v) ?? v;
 
   useEffect(() => {
     if (!open) return;
@@ -124,10 +178,12 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
         onChange(value.includes(optValue) ? value.filter((v) => v !== optValue) : [...value, optValue]);
       } else {
         props.onChange(optValue);
-        close(true);
+        // modo servidor: o texto FICA. Limpá-lo aqui dispararia uma busca nova com o
+        // dropdown já fechado; quem limpa é `openPanel`.
+        close(true, serverSearch);
       }
     },
-    [props, close],
+    [props, close, serverSearch],
   );
 
   const optionButtons = (): HTMLButtonElement[] =>
@@ -141,7 +197,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
       toggleOpen();
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (!open) setOpen(true);
+      if (!open) openPanel();
       else (searchRef.current ?? optionButtons()[0])?.focus();
     } else if (e.key === 'Escape') {
       close();
@@ -149,7 +205,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
       close();
     } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !disabled) {
       e.preventDefault();
-      if (searchable) setQuery(open ? query + e.key : e.key);
+      if (showSearch) setQuery(open ? query + e.key : e.key);
       setOpen(true);
     }
   };
@@ -196,7 +252,14 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
   };
 
   const needle = normalizeText(query.trim());
-  const visible = needle
+  /**
+   * ⚠️ `options` corresponde a ESTE termo? Só quando a resposta do servidor para
+   * ele já chegou. Em qualquer outro instante (debounce correndo, request em voo)
+   * a lista na mão é de outra pergunta e filtrar em memória é o único
+   * comportamento honesto — senão a lista inteira reaparece sem filtro.
+   */
+  const servidorRespondePorEsteTermo = serverSearch && query.trim() === serverSearchTerm;
+  const visible = needle && !servidorRespondePorEsteTermo
     ? options.filter((o) => normalizeText(`${o.label} ${o.searchText ?? ''}`).includes(needle))
     : options;
 
@@ -208,11 +271,11 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
     ? props.value.length === 0
       ? placeholder
       : props.value.length === 1
-        ? (options.find((o) => o.value === props.value[0])?.label ?? props.value[0])
+        ? labelOf(props.value[0])
         : t('common.multiSelect.selectedCount', { count: props.value.length })
     : props.value === ''
       ? placeholder
-      : (options.find((o) => o.value === props.value)?.label ?? props.value);
+      : labelOf(props.value);
 
   const wrapperClasses = inputWrapperClasses({ size: inputSize, error: !!error, disabled });
 
@@ -313,26 +376,26 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
         </Text>
       )}
 
-      {open && !searchable && list(`${PANEL_CLASSES} ${SCROLL_CLASSES}`)}
-      {open && searchable && (
+      {open && (
         <div className={`${PANEL_CLASSES} flex flex-col`}>
-          <input
-            ref={searchRef}
-            type="text"
-            data-testid={searchTestId}
-            aria-label={t('common.multiSelect.searchAriaLabel')}
-            placeholder={searchPlaceholder ?? t('common.multiSelect.searchPlaceholder')}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            className="mx-2 mb-1 px-3 py-2 text-sm border border-[#D9D9D9] rounded-[8px] outline-none focus:border-primary"
-          />
-          {visible.length === 0 ? (
+          {showSearch && (
+            <input
+              ref={searchRef}
+              type="text"
+              data-testid={searchTestId}
+              aria-label={t('common.multiSelect.searchAriaLabel')}
+              placeholder={searchPlaceholder ?? t('common.multiSelect.searchPlaceholder')}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              className="mx-2 mb-1 px-3 py-2 text-sm border border-[#D9D9D9] rounded-[8px] outline-none focus:border-primary"
+            />
+          )}
+          {(showClearRow || visible.length > 0) && list(SCROLL_CLASSES)}
+          {visible.length === 0 && (
             <Text as="p" size="sm" color="muted" className="px-4 py-2" data-testid={noResultsTestId}>
-              {noResultsLabel ?? t('common.multiSelect.noResults')}
+              {emptyMessage ?? noResultsLabel ?? t('common.multiSelect.noResults')}
             </Text>
-          ) : (
-            list(SCROLL_CLASSES)
           )}
         </div>
       )}
