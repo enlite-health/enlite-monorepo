@@ -28,6 +28,8 @@ import { datesBetween, shiftsOfWorkerInPeriod, type SubstitutionRequestType, typ
 import { PatientStatusDerivation, type DerivationEvaluation } from './PatientStatusDerivation';
 import type { CreateSubstitutionOccurrencesPort, CreateSubstitutionTeamPort } from './CreateSubstitutionRequestUseCase';
 import { SubstitutionNoShiftsInPeriodError, SubstitutionPeriodInPastError, SubstitutionServiceNotFoundError } from './substitutionRequestErrors';
+import { assertCandidateInPool } from './substituteCover';
+import { scheduledExitOf } from './CreateSubstitutionRequestUseCase';
 import { loadRequest, type SubstitutionRequestReaderPort } from './substitutionRequestLoad';
 import { SubstitutionRequestReader } from '../infrastructure/SubstitutionRequestReader';
 import { ItineraryAbsenceWriter } from '../infrastructure/ItineraryAbsenceWriter';
@@ -71,6 +73,8 @@ export interface PermanentPreview {
   clearedSubstitutes: number;
   /** P5: tem entrada futura no serviço — o pedido será recusado (409 `WORKER_HAS_PENDING_ENTRY`). */
   pendingEntry: boolean;
+  /** D1: o 1º dia SEM ela, se já tem uma saída agendada numa alocação do serviço — o pedido será recusado (409 `WORKER_HAS_SCHEDULED_EXIT`). `null` = não tem. */
+  scheduledExit: string | null;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -151,6 +155,8 @@ export class PreviewSubstitutionRequestUseCase {
         return slot ? [{ date: from, slotId: a.slotId, assignmentId: a.id, startTime: slot.startTime, endTime: slot.endTime }] : [];
       });
 
+      // D3: candidato fora do pool do serviço = 422 SEM consultar a função DEFINER (ela não conhece país/paciente do candidato).
+      for (const workerId of new Set(candidateWorkerIds)) assertCandidateInPool({ patientId, serviceId, team, now }, workerId);
       const conflicts: ShiftConflict[] = [];
       for (const workerId of [...new Set(candidateWorkerIds)]) {
         for (const shift of shifts) conflicts.push(await this.conflictOf(client, workerId, shift, null));
@@ -162,6 +168,7 @@ export class PreviewSubstitutionRequestUseCase {
         cancelledAbsences: (await this.exit.absenceOps.listOpenOfWorker(client, serviceId, outgoingWorkerId, from)).length,
         clearedSubstitutes: agendado.substitutions.filter((x) => x.date >= from).length,
         pendingEntry: agendado.futureEntries.length > 0,
+        scheduledExit: scheduledExitOf(own),
       };
       return { shifts, conflicts, statusAfter: await this.permanentStatusAfter(client, patientId, serviceId, outgoingWorkerId, from, hoje, now), permanent };
     });
@@ -197,6 +204,7 @@ export class PreviewSubstitutionRequestUseCase {
       const shifts = shiftsOfWorkerInPeriod(inputs.slots, inputs.assignments, outgoingWorkerId, datesBetween(from, to));
       if (shifts.length === 0) throw new SubstitutionNoShiftsInPeriodError(outgoingWorkerId, from, to);
 
+      for (const workerId of new Set(candidateWorkerIds)) assertCandidateInPool({ patientId, serviceId, team, now }, workerId); // D3
       const ignored = ignoreRequestId === undefined ? new Map<string, string>() : await this.openAbsencesOf(client, { patientId, serviceId, requestId: ignoreRequestId }, now);
       const conflicts: ShiftConflict[] = [];
       for (const workerId of [...new Set(candidateWorkerIds)]) {

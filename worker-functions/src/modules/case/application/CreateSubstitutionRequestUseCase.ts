@@ -43,6 +43,7 @@ import {
   SubstitutionServiceNotFoundError,
   SubstitutionShiftsMismatchError,
   WorkerHasPendingEntryError,
+  WorkerHasScheduledExitError,
 } from './substitutionRequestErrors';
 
 export interface CreateSubstitutionTeamPort {
@@ -68,6 +69,7 @@ export interface CreateSubstitutionOccurrencesPort {
 export interface PermanentExitDeps {
   allocations: { replaceWith(client: PoolClient, input: ItineraryReplaceInput, opts: ItineraryReplaceWithOptions): Promise<ItineraryReplaceWithResult> };
   schedule: {
+    lockWorkerAllocations(client: PoolClient, serviceId: string, workerId: string): Promise<void>;
     listWorkerAllocations(client: PoolClient, serviceId: string, workerId: string, fromDate: string): Promise<WorkerAllocation[]>;
     scheduleAllocationEnd(client: PoolClient, id: string, lastDay: string, actorUid: string): Promise<number>;
     cancelAllocation(client: PoolClient, id: string, minValidFrom: string, actorUid: string): Promise<number>;
@@ -162,6 +164,12 @@ export function assertShiftsMatch(expected: readonly WorkerShift[], received: re
   if (keys.size !== received.length || received.length !== expected.length || expected.some((s) => !keys.has(shiftKey(s)))) {
     throw new SubstitutionShiftsMismatchError(expected.length, received.length);
   }
+}
+
+/** D1: o 1º dia SEM a pessoa, se alguma das alocações dela já tem fim agendado (`valid_to`); `null` = nenhuma. A mais próxima vence. */
+export function scheduledExitOf(allocations: ReadonlyArray<Pick<WorkerAllocation, 'validTo'>>): string | null {
+  const ends = allocations.flatMap((a) => (a.validTo === null ? [] : [a.validTo])).sort();
+  return ends.length === 0 ? null : addDaysToDateString(ends[0], 1);
 }
 
 export class CreateSubstitutionRequestUseCase {
@@ -282,8 +290,13 @@ export class CreateSubstitutionRequestUseCase {
 
       if ((await this.reasonCatalog.findActiveByCode(client, reasonCategory)) === null) throw new ServiceExitReasonInvalidError();
 
+      // D4: o cabeçalho é NOVO (nada a travar nele) — o que dois "No vuelve más" concorrentes disputam são as alocações da pessoa:
+      // trava-as ANTES de ler, para o 2º pedido ler (e recusar) o estado já commitado do 1º.
+      await schedule.lockWorkerAllocations(client, serviceId, outgoingWorkerId);
       const own = await schedule.listWorkerAllocations(client, serviceId, outgoingWorkerId, from);
       if (own.length === 0) throw new SubstitutionNoShiftsInPeriodError(outgoingWorkerId, from, from);
+      const scheduledExit = scheduledExitOf(own);
+      if (scheduledExit !== null) throw new WorkerHasScheduledExitError(outgoingWorkerId, scheduledExit);
       const agendado = await scheduled.listFor(client, serviceId, outgoingWorkerId, hoje);
       if (agendado.futureEntries.length > 0) throw new WorkerHasPendingEntryError(outgoingWorkerId); // P5
 

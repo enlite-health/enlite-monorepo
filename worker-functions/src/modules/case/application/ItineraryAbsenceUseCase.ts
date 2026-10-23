@@ -63,6 +63,14 @@ export class AbsenceCancelledError extends Error {
   }
 }
 
+/** D4: "Elegir quién entra" achou o turno já coberto (a corrida perdeu) — 409 `ALREADY_COVERED` no pedido de substituição. */
+export class AbsenceAlreadyCoveredError extends Error {
+  constructor(readonly absenceId: string) {
+    super(`Itinerary absence already has a substitute: ${absenceId}`);
+    this.name = 'AbsenceAlreadyCoveredError';
+  }
+}
+
 /** A ausência nasce para hoje ou depois — a passada é SEMENTE por SQL (DX-13.15, critério 10). */
 export class AbsenceDateInPastError extends Error {
   constructor(
@@ -131,6 +139,7 @@ export interface ItineraryAbsenceWriterPort {
     substituteWorkerId: string | null,
     substituteApplicationId: string | null,
     actorUid: string,
+    onlyIfUncovered?: boolean,
   ): Promise<number>;
   cancelAbsence(client: PoolClient, id: string, actorUid: string): Promise<number>;
 }
@@ -176,6 +185,8 @@ export interface ItineraryAbsenceSetSubstituteInput {
   substituteWorkerId: string | null;
   actorUid: string;
   now?: Date;
+  /** D4: só grava se o turno ainda está SEM substituto (`substitute_worker_id IS NULL` no WHERE); senão `AbsenceAlreadyCoveredError`. */
+  onlyIfUncovered?: boolean;
 }
 
 export interface ItineraryAbsenceCancelInput {
@@ -299,7 +310,7 @@ export class ItineraryAbsenceUseCase {
    * em N ausências na MESMA transação, sem abrir outra.
    */
   async setSubstituteWith(client: PoolClient, input: ItineraryAbsenceSetSubstituteInput): Promise<ItineraryAbsenceResult> {
-    const { patientId, serviceId, absenceId, substituteWorkerId, actorUid, now = new Date() } = input;
+    const { patientId, serviceId, absenceId, substituteWorkerId, actorUid, now = new Date(), onlyIfUncovered = false } = input;
     const absence = await this.writer.findAbsence(client, patientId, serviceId, absenceId);
     if (absence === null) throw new AbsenceNotFoundError(patientId, serviceId, absenceId);
     if (absence.cancelled) throw new AbsenceCancelledError(absenceId);
@@ -314,10 +325,10 @@ export class ItineraryAbsenceUseCase {
       substituteWorkerId === null ? null : await this.substituteApplicationFor(client, patientId, serviceId, row, substituteWorkerId, now);
 
     try {
-      const rowCount = await this.writer.updateSubstitute(client, absenceId, substituteWorkerId, substituteApplicationId, actorUid);
-      if (rowCount === 0) throw new AbsenceCancelledError(absenceId);
+      const rowCount = await this.writer.updateSubstitute(client, absenceId, substituteWorkerId, substituteApplicationId, actorUid, onlyIfUncovered);
+      if (rowCount === 0) throw onlyIfUncovered ? new AbsenceAlreadyCoveredError(absenceId) : new AbsenceCancelledError(absenceId);
     } catch (err) {
-      if (err instanceof AbsenceCancelledError) throw err;
+      if (err instanceof AbsenceCancelledError || err instanceof AbsenceAlreadyCoveredError) throw err;
       const mapped = absenceErrorFromPg(err, absence.allocationId, absence.date);
       throw mapped ?? err;
     }

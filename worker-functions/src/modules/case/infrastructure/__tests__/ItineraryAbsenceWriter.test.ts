@@ -105,8 +105,8 @@ describe('ItineraryAbsenceWriter', () => {
     const [sql, params] = client.query.mock.calls[0];
     expect(String(sql)).toMatch(/UPDATE patient_itinerary_absence/);
     expect(String(sql)).toMatch(/SET substitute_worker_id = \$2, substitute_application_id = \$3/);
-    expect(String(sql)).toMatch(/WHERE id = \$1 AND cancelled_at IS NULL/);
-    expect(params).toEqual(['abs-1', 'w-sub', 'wja-sub', 'staff:u-1']);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND cancelled_at IS NULL AND \(\$5::boolean = false OR substitute_worker_id IS NULL\)/);
+    expect(params).toEqual(['abs-1', 'w-sub', 'wja-sub', 'staff:u-1', false]);
     expect(rowCount).toBe(1);
   });
 
@@ -116,7 +116,13 @@ describe('ItineraryAbsenceWriter', () => {
     await writer.updateSubstitute(client as never, 'abs-1', null, null, 'staff:u-1');
 
     const [, params] = client.query.mock.calls[0];
-    expect(params).toEqual(['abs-1', null, null, 'staff:u-1']);
+    expect(params).toEqual(['abs-1', null, null, 'staff:u-1', false]);
+  });
+
+  it('updateSubstitute: `onlyIfUncovered` vai como $5 = true (a guarda substitute_worker_id IS NULL liga)', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+    expect(await writer.updateSubstitute(client as never, 'abs-1', 'w-sub', 'wja-sub', 'staff:u-1', true)).toBe(0);
+    expect(client.query.mock.calls[0][1]).toEqual(['abs-1', 'w-sub', 'wja-sub', 'staff:u-1', true]);
   });
 
   it('updateSubstitute: rowCount 0 quando a linha já está cancelada (corrida)', async () => {

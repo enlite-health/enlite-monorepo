@@ -479,7 +479,7 @@ describe('069 · "No vuelve más", desfazer e "Elegir quién entra" — API real
 
     const prev = await api.post(`${base(s)}/preview`, { type: 'PERMANENT', outgoingWorkerId: T, from: D, candidateWorkerIds: [] }, h());
     expect(prev.status).toBe(200);
-    expect(prev.data.data.permanent).toEqual({ allocationCount: 2, cancelledAbsences: 1, clearedSubstitutes: 0, pendingEntry: false });
+    expect(prev.data.data.permanent).toEqual({ allocationCount: 2, cancelledAbsences: 1, clearedSubstitutes: 0, pendingEntry: false, scheduledExit: null });
     expect(await counts(s)).toEqual(antes); // a pré-visão é LEITURA
 
     const res = await api.post(base(s), permanent(T, D, null), h());
@@ -530,7 +530,7 @@ describe('069 · "No vuelve más", desfazer e "Elegir quién entra" — API real
     const prev = await api.post(`${base(s)}/preview`, { type: 'PERMANENT', outgoingWorkerId: T, from: D, candidateWorkerIds: [S] }, h());
     expect(prev.status).toBe(200);
     expect(prev.data.data.conflicts).toEqual([expect.objectContaining({ workerId: S, state: 'free' })]);
-    expect(prev.data.data.permanent).toEqual({ allocationCount: 1, cancelledAbsences: 0, clearedSubstitutes: 1, pendingEntry: false });
+    expect(prev.data.data.permanent).toEqual({ allocationCount: 1, cancelledAbsences: 0, clearedSubstitutes: 1, pendingEntry: false, scheduledExit: null });
 
     const res = await api.post(base(s), permanent(T, D, S), h());
     expect(res.status).toBe(201);

@@ -21,7 +21,9 @@ import {
   SubstitutionRequestNotUndoableError,
   SubstitutionNothingToCoverError,
   WorkerHasPendingEntryError,
+  WorkerHasScheduledExitError,
 } from '../../../application/substitutionRequestErrors';
+import { AbsenceAlreadyCoveredError } from '../../../application/ItineraryAbsenceUseCase';
 import { AllocationRestoreConflictError } from '../../../application/restoreTitular';
 import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
 import {
@@ -253,6 +255,7 @@ describe('AdminSubstitutionRequestController', () => {
     });
     it.each<[string, Error, number, string]>([
       ['entrada futura (P5)', new WorkerHasPendingEntryError(WORKER_ID), 409, 'WORKER_HAS_PENDING_ENTRY'],
+      ['turno já coberto (D4)', new AbsenceAlreadyCoveredError('ab-1'), 409, 'ALREADY_COVERED'],
       ['destino ausente', new DestinationRequiredError(), 422, 'DESTINATION_REQUIRED'],
       ['LEAVE_SERVICE agendado', new DestinationNotAvailableForScheduledError(), 422, 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED'],
       ['já alocado na faixa', new AlreadyAllocatedInSlotError('sl', WORKER_ID), 422, 'ALREADY_ALLOCATED_IN_SLOT'],
@@ -269,6 +272,16 @@ describe('AdminSubstitutionRequestController', () => {
       await ctrl.undo(req, res);
       expect(res.status).toHaveBeenCalledWith(status);
       expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, code });
+    });
+  });
+
+  describe('D1 — saída agendada', () => {
+    it('create PERMANENT com saída agendada → 409 WORKER_HAS_SCHEDULED_EXIT com a data do 1º dia sem ela (o front monta a mensagem)', async () => {
+      useCases.create.execute.mockRejectedValueOnce(new WorkerHasScheduledExitError(WORKER_ID, '2026-11-15'));
+      const [req, res] = reqRes({ body: { type: 'PERMANENT', outgoingWorkerId: WORKER_ID, from: '2026-11-02', reasonCategory: 'OTHER', destination: 'RESERVE', substituteWorkerId: null } });
+      await ctrl.create(req, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(jsonOf(res)).toHaveBeenCalledWith({ success: false, code: 'WORKER_HAS_SCHEDULED_EXIT', exitDate: '2026-11-15' });
     });
   });
 

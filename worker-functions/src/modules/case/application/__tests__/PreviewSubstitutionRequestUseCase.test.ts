@@ -13,6 +13,8 @@ import {
   SubstitutionRequestAlreadyUndoneError,
   SubstitutionRequestNotFoundError,
 } from '../substitutionRequestErrors';
+import type { WorkerAllocation } from '../../infrastructure/ItineraryAllocationWriter';
+import type { ServiceTeamRows } from '../../infrastructure/ServiceTeamReader';
 import type { OccurrenceInputs } from '../../infrastructure/occurrenceInputs';
 import type { DerivationEvaluation } from '../PatientStatusDerivation';
 
@@ -28,6 +30,17 @@ const OCCURRENCES: OccurrenceInputs = {
   absences: [],
 };
 
+/** Pool do serviço: Respuesta Rápida da vaga viva. `w-a`/`w-b`/`w-c` estão nele; qualquer outro uuid (outro país/paciente) NÃO. */
+const TEAM: ServiceTeamRows = {
+  serviceId: 's-1',
+  country: 'AR',
+  liveVacancyId: 'v-live',
+  candidacies: ['w-a', 'w-b', 'w-c'].map((workerId) => ({ workerId, vacancyId: 'v-live', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null })),
+  assignments: [],
+  marks: [],
+  substitutions: [],
+};
+
 const EVALUATION: DerivationEvaluation = {
   subject: { status: 'ACTIVE', country: 'AR', montado: true },
   input: { status: 'ACTIVE', montado: true, servicos: [{ temVacanteViva: true, cobertas: 8, total: 8 }] },
@@ -37,9 +50,9 @@ function input(o: Partial<PreviewSubstitutionRequestInput> = {}): PreviewSubstit
   return { patientId: 'p-1', serviceId: 's-1', type: 'DAYS', outgoingWorkerId: 'w-out', from: '2026-11-02', to: '2026-11-06', candidateWorkerIds: ['w-a'], now: NOW, ...o };
 }
 
-function build(opts: { team?: { country: string } | null; evaluation?: DerivationEvaluation | null; preview?: jest.Mock } = {}) {
+function build(opts: { team?: typeof TEAM | null; evaluation?: DerivationEvaluation | null; preview?: jest.Mock } = {}) {
   const runInTransaction = jest.fn(async (fn: (c: never) => Promise<unknown>) => fn(CLIENT)) as never;
-  const team = { readWith: jest.fn(async () => (opts.team === undefined ? { country: 'AR' } : opts.team)) } as never;
+  const team = { readWith: jest.fn(async () => (opts.team === undefined ? TEAM : opts.team)) } as never;
   const occurrences = { readForService: jest.fn(async () => OCCURRENCES) };
   const conflicts = { preview: opts.preview ?? jest.fn(async () => []) };
   const derivation = { evaluate: jest.fn(async () => (opts.evaluation === undefined ? EVALUATION : opts.evaluation)) };
@@ -59,6 +72,16 @@ describe('PreviewSubstitutionRequestUseCase', () => {
     expect(t.conflicts.preview).toHaveBeenCalledWith(CLIENT, { workerId: 'w-a', slotId: 'seg', from: '2026-11-02', to: '2026-11-02' });
     expect(result.conflicts.every((c) => c.state === 'free' && c.overlaps.length === 0)).toBe(true);
     expect(t.runInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('D3 (DIAS): candidato FORA do pool (uuid de outro país/paciente) → NotSelectedForServiceError e a função do banco NUNCA é chamada, nem para os candidatos válidos', async () => {
+    const t = build();
+    await expect(t.useCase.execute(input({ candidateWorkerIds: ['w-a', 'w-de-outro-pais'] }))).rejects.toMatchObject({ name: 'NotSelectedForServiceError' });
+    expect(t.conflicts.preview).not.toHaveBeenCalled();
+    // sem vaga viva o pool é vazio: ninguém é consultável
+    const semVaga = build({ team: { ...TEAM, liveVacancyId: null } });
+    await expect(semVaga.useCase.execute(input())).rejects.toMatchObject({ name: 'NotSelectedForServiceError' });
+    expect(semVaga.conflicts.preview).not.toHaveBeenCalled();
   });
 
   it('candidato repetido é consultado uma vez só; sem candidatos = só os turnos', async () => {
@@ -170,7 +193,7 @@ describe('PreviewSubstitutionRequestUseCase — ignoreRequestId ("Elegir quién 
 });
 
 describe('PreviewSubstitutionRequestUseCase — PERMANENT ("No vuelve más")', () => {
-  const ALLOCS = [
+  const ALLOCS: WorkerAllocation[] = [
     { id: 'a-seg', slotId: 'seg', validFrom: '2026-01-01', validTo: null },
     { id: 'a-qua', slotId: 'qua', validFrom: '2026-01-01', validTo: null },
     { id: 'a-fora', slotId: 'slot-que-nao-vem', validFrom: '2026-11-02', validTo: null }, // faixa fora da leitura: sem horário, não entra nos turnos
@@ -180,7 +203,7 @@ describe('PreviewSubstitutionRequestUseCase — PERMANENT ("No vuelve más")', (
     return { patientId: 'p-1', serviceId: 's-1', type: 'PERMANENT', outgoingWorkerId: 'w-out', from: '2026-11-02', candidateWorkerIds: ['w-a'], now: NOW, ...o };
   }
 
-  function buildPermanent(opts: { allocs?: typeof ALLOCS; scheduled?: Awaited<ReturnType<PermanentPreviewDeps['scheduled']['listFor']>>; evaluations?: Array<DerivationEvaluation | null>; team?: { country: string } | null } = {}) {
+  function buildPermanent(opts: { allocs?: typeof ALLOCS; scheduled?: Awaited<ReturnType<PermanentPreviewDeps['scheduled']['listFor']>>; evaluations?: Array<DerivationEvaluation | null>; team?: typeof TEAM | null } = {}) {
     const t = build({ team: opts.team });
     const evaluations = [...(opts.evaluations ?? [EVALUATION, EVALUATION])];
     const derivation = { evaluate: jest.fn(async () => (evaluations.length > 0 ? (evaluations.shift() as DerivationEvaluation | null) : EVALUATION)) };
@@ -203,11 +226,26 @@ describe('PreviewSubstitutionRequestUseCase — PERMANENT ("No vuelve más")', (
     expect(t.conflicts.preview).toHaveBeenCalledWith(CLIENT, { workerId: 'w-a', slotId: 'seg', from: '2026-11-02', to: null });
     expect(result.conflicts.every((c) => c.state === 'free')).toBe(true);
     // FR-23: 3 faltas dela com data ≥ D; ela é substituta em 2 turnos, mas só 1 é de D em diante
-    expect(result.permanent).toEqual({ allocationCount: 3, cancelledAbsences: 3, clearedSubstitutes: 1, pendingEntry: false });
+    expect(result.permanent).toEqual({ allocationCount: 3, cancelledAbsences: 3, clearedSubstitutes: 1, pendingEntry: false, scheduledExit: null });
     expect(t.exit.schedule.listWorkerAllocations).toHaveBeenCalledWith(CLIENT, 's-1', 'w-out', '2026-11-02');
     expect(t.exit.absenceOps.listOpenOfWorker).toHaveBeenCalledWith(CLIENT, 's-1', 'w-out', '2026-11-02');
     expect(t.exit.scheduled.listFor).toHaveBeenCalledWith(CLIENT, 's-1', 'w-out', '2026-10-30');
     expect(t.occurrences.readForService).toHaveBeenCalledWith(CLIENT, 'p-1', 's-1', '2026-11-02', '2026-11-08');
+  });
+
+  it('D1: saída agendada numa alocação dela (valid_to) aparece em `scheduledExit` = 1º dia sem ela (a pré-visão não lança; o passo 2 bloqueia); sem fim agendado = null', async () => {
+    const comFim = buildPermanent({ allocs: [{ id: 'a-seg', slotId: 'seg', validFrom: '2026-01-01', validTo: '2026-11-14' }, ...ALLOCS.slice(1)] });
+    expect((await comFim.useCase.execute(permanentInput())).permanent?.scheduledExit).toBe('2026-11-15');
+    expect((await buildPermanent().useCase.execute(permanentInput())).permanent?.scheduledExit).toBeNull();
+  });
+
+  it('D3 (PERMANENT): candidato FORA do pool do serviço → NotSelectedForServiceError e a função DEFINER do banco NUNCA é chamada', async () => {
+    const t = buildPermanent();
+    await expect(t.useCase.execute(permanentInput({ candidateWorkerIds: ['w-a', 'w-de-outro-pais'] }))).rejects.toMatchObject({ name: 'NotSelectedForServiceError' });
+    expect(t.conflicts.preview).not.toHaveBeenCalled();
+    // controle positivo: só candidatos do pool consultam
+    await t.useCase.execute(permanentInput({ candidateWorkerIds: ['w-a'] }));
+    expect(t.conflicts.preview).toHaveBeenCalled();
   });
 
   it('P5: a entrada futura aparece em `pendingEntry` (a pré-visão não lança; o create é quem recusa)', async () => {

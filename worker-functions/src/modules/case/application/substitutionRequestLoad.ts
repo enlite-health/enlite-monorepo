@@ -14,6 +14,11 @@ export interface SubstitutionRequestReaderPort {
   readForServiceWith(client: PoolClient, patientId: string, serviceId: string): Promise<ServiceRequestRows | null>;
 }
 
+/** D4: trava o cabeçalho do pedido (`FOR UPDATE`) — desfazer/cobrir/… do MESMO pedido passam um de cada vez, o 2º lê o estado já commitado. */
+export interface SubstitutionRequestLockPort {
+  lockHeader(client: PoolClient, serviceId: string, requestId: string): Promise<void>;
+}
+
 export interface LoadedRequest {
   header: RequestHeaderRow;
   view: RequestView;
@@ -22,13 +27,15 @@ export interface LoadedRequest {
   logRows: RequestScopedLog[];
 }
 
-/** 404 se o serviço ou o pedido não existem (RLS inclusa); 409 se o pedido já foi desfeito. */
+/** 404 se o serviço ou o pedido não existem (RLS inclusa); 409 se o pedido já foi desfeito. Com `locker`, trava o cabeçalho ANTES de ler. */
 export async function loadRequest(
   reader: SubstitutionRequestReaderPort,
   client: PoolClient,
   ids: { patientId: string; serviceId: string; requestId: string },
   now: Date,
+  locker?: SubstitutionRequestLockPort,
 ): Promise<LoadedRequest> {
+  if (locker !== undefined) await locker.lockHeader(client, ids.serviceId, ids.requestId);
   const rows = await reader.readForServiceWith(client, ids.patientId, ids.serviceId);
   const header = rows?.headers.find((h) => h.id === ids.requestId);
   if (rows === null || header === undefined) throw new SubstitutionRequestNotFoundError(ids.requestId);

@@ -27,7 +27,7 @@ interface Opts {
 
 function build(opts: Opts = {}) {
   const order: string[] = [];
-  const reader = { readForServiceWith: jest.fn(async () => (opts.rows === undefined ? serviceRows() : opts.rows)) };
+  const reader = { readForServiceWith: jest.fn(async () => (opts.rows === undefined ? serviceRows() : opts.rows)), lockHeader: jest.fn(async () => undefined) };
   const absenceUseCase = {
     setSubstituteWith: jest.fn(async (_c: unknown, i: { absenceId: string }) => {
       order.push(`set:${i.absenceId}`);
@@ -68,13 +68,22 @@ describe('AssignSubstitutionCoverUseCase — DIAS', () => {
     ],
   });
 
+  it('D4: trava o cabeçalho ANTES de ler; cada turno é gravado com a guarda `onlyIfUncovered` (a corrida perdida vira ALREADY_COVERED, nunca sobrescreve)', async () => {
+    const t = build({ rows: dias });
+    await t.useCase.execute(input);
+    expect(t.reader.lockHeader).toHaveBeenCalledWith(CLIENT, 's-1', RID);
+    expect(t.reader.lockHeader.mock.invocationCallOrder[0]).toBeLessThan(t.reader.readForServiceWith.mock.invocationCallOrder[0]);
+    expect(t.absenceUseCase.setSubstituteWith).toHaveBeenCalledTimes(2);
+    for (const call of t.absenceUseCase.setSubstituteWith.mock.calls) expect(call[1]).toMatchObject({ onlyIfUncovered: true });
+  });
+
   it('põe o substituto SÓ nas ausências futuras, vivas e sem ninguém, no mesmo client; não deriva (falta temporária não move o paciente)', async () => {
     const t = build({ rows: dias });
 
     const result = await t.useCase.execute(input);
 
     expect(t.order).toEqual(['set:ab-1', 'set:ab-2']);
-    expect(t.absenceUseCase.setSubstituteWith).toHaveBeenCalledWith(CLIENT, { patientId: 'p-1', serviceId: 's-1', absenceId: 'ab-1', substituteWorkerId: 'w-in', actorUid: 'u-1', now: NOW });
+    expect(t.absenceUseCase.setSubstituteWith).toHaveBeenCalledWith(CLIENT, { patientId: 'p-1', serviceId: 's-1', absenceId: 'ab-1', substituteWorkerId: 'w-in', actorUid: 'u-1', now: NOW, onlyIfUncovered: true });
     expect(result).toEqual({ requestId: RID, type: 'DAYS', covered: 2 });
     expect(t.derivation.run).not.toHaveBeenCalled();
   });

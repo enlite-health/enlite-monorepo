@@ -112,6 +112,11 @@ interface NewAssignmentJoinRow {
 }
 
 export class SubstitutionRequestReader {
+  /** D4: `SELECT … FOR UPDATE` do cabeçalho (sem linha = nada travado; o `loadRequest` responde 404). */
+  async lockHeader(client: PoolClient, serviceId: string, requestId: string): Promise<void> {
+    await client.query(`SELECT id FROM patient_itinerary_substitution_request WHERE id = $1 AND contracted_service_id = $2 FOR UPDATE`, [requestId, serviceId]);
+  }
+
   /** `null` = serviço inexistente, de outro paciente ou de outro país (RLS) — o caso de uso mapeia para 404. */
   async readForServiceWith(client: PoolClient, patientId: string, serviceId: string): Promise<ServiceRequestRows | null> {
     const country = await readCountry(client, patientId, serviceId);

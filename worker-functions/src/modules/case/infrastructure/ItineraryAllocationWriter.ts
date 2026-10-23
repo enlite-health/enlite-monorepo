@@ -123,6 +123,19 @@ export class ItineraryAllocationWriter {
     return { id: row.id, status: row.status, validFrom: row.valid_from, validTo: row.valid_to, slotId: row.slot_id, workerId: row.worker_id };
   }
 
+  /** D4: trava (`FOR UPDATE`) as alocações `ACTIVE` da pessoa no serviço — serializa dois "No vuelve más" concorrentes da mesma pessoa. */
+  async lockWorkerAllocations(client: PoolClient, serviceId: string, workerId: string): Promise<void> {
+    await client.query(
+      `SELECT a.id
+         FROM patient_itinerary_assignment a
+         JOIN patient_itinerary_slot s ON s.id = a.slot_id
+        WHERE s.contracted_service_id = $1 AND a.worker_id = $2 AND a.status = 'ACTIVE'
+        ORDER BY a.id
+          FOR UPDATE OF a`,
+      [serviceId, workerId],
+    );
+  }
+
   /** As alocações `ACTIVE` da pessoa no serviço que ainda valem em `fromDate` ou depois (`valid_to` nulo ou `>= fromDate`), em ordem estável. */
   async listWorkerAllocations(client: PoolClient, serviceId: string, workerId: string, fromDate: string): Promise<WorkerAllocation[]> {
     const res = await client.query<{ id: string; slot_id: string; valid_from: string; valid_to: string | null }>(

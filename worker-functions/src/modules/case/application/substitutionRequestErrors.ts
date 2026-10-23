@@ -78,6 +78,21 @@ export class WorkerHasPendingEntryError extends Error {
   }
 }
 
+/**
+ * D1 (QA caça 069): a pessoa já tem uma SAÍDA AGENDADA (`valid_to` numa alocação ativa do serviço) — "No vuelve más" é recusado, porque
+ * `scheduleAllocationEnd` sobrescreveria o fim e desfazer o 2º pedido o apagaria (`clearScheduledEnd`). `exitDate` = o 1º dia SEM ela
+ * (`valid_to + 1`). Desfaça a substituição que agendou a saída para mudar a data. 409 `WORKER_HAS_SCHEDULED_EXIT`.
+ */
+export class WorkerHasScheduledExitError extends Error {
+  constructor(
+    readonly workerId: string,
+    readonly exitDate: string,
+  ) {
+    super('Worker already has a scheduled exit in this service');
+    this.name = 'WorkerHasScheduledExitError';
+  }
+}
+
 /** "Elegir quién entra" num pedido sem nenhum turno futuro sem ninguém — 409 `NOTHING_TO_COVER`. */
 export class SubstitutionNothingToCoverError extends Error {
   constructor(readonly requestId: string) {
