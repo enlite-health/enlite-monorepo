@@ -4,6 +4,7 @@ import { Loader2, MapPin } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { CaseOption, VacancyModalFlowState, VacancyModalFlowActions } from '@hooks/admin/useVacancyModalFlow';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 interface CaseSelectStepProps
   extends Pick<VacancyModalFlowState, 'selectedCaseNumber' | 'selectedPatientId' | 'dependencyLevel' | 'addresses' | 'selectedAddressId' | 'isLoadingPatient' | 'patientError'>
@@ -35,8 +36,7 @@ export function CaseSelectStep({
       .finally(() => setIsLoadingCases(false));
   }, []);
 
-  const handleCaseChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
+  const handleCaseChange = (val: string) => {
     if (!val) return;
     // Comparação por STRING, não `Number(val)`: `val` já é `String(c.caseNumber)` (o `value` da
     // `<option>` nunca leva o prefixo `EN` — só o `label`, formatado). `Number()` sobre texto
@@ -44,9 +44,6 @@ export function CaseSelectStep({
     const found = cases.find((c) => String(c.caseNumber) === val);
     if (found) selectCase(found.caseNumber, found.patientId);
   };
-
-  const inputCls =
-    'border border-[#D9D9D9] rounded-lg px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white w-full';
 
   return (
     <div className="space-y-4">
@@ -66,22 +63,21 @@ export function CaseSelectStep({
           ) : casesError ? (
             <p className="text-red-500 text-sm">{casesError}</p>
           ) : (
-            <select
-              className={inputCls}
-              value={selectedCaseNumber ?? ''}
+            <Combobox
+              inputSize="dense"
+              value={selectedCaseNumber != null ? String(selectedCaseNumber) : ''}
               onChange={handleCaseChange}
+              placeholder={tp('casePlaceholder')}
+              clearLabel={tp('casePlaceholder')}
+              options={cases.map((c) => ({
+                value: String(c.caseNumber),
+                label: t('admin.vacancyModal.caseSelectStep.caseOptionLabel', {
+                  caseNumber: formatCaseNumber(c.caseNumber),
+                  dependencyLevel: c.dependencyLevel || '—',
+                }),
+              }))}
               data-testid="case-select"
-            >
-              <option value="">{tp('casePlaceholder')}</option>
-              {cases.map((c) => (
-                <option key={c.caseNumber} value={c.caseNumber}>
-                  {t('admin.vacancyModal.caseSelectStep.caseOptionLabel', {
-                    caseNumber: formatCaseNumber(c.caseNumber),
-                    dependencyLevel: c.dependencyLevel || '—',
-                  })}
-                </option>
-              ))}
-            </select>
+            />
           )}
         </div>
       </div>

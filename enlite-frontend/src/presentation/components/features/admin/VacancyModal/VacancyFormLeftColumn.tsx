@@ -6,8 +6,7 @@
  *
  * Design-system components used:
  *   - FormField  → label + children + error
- *   - SelectField → simple selects via Controller
- *   - SearchableSelect → case-number picker (typeable filter for many cases)
+ *   - Combobox → simple selects via Controller and the case-number picker (search when there are many options)
  *   - InputWithIcon → date inputs
  */
 
@@ -22,8 +21,7 @@ import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
-import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
-import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import type { VacancyFormData } from '../vacancy-form-schema';
@@ -111,8 +109,8 @@ export function VacancyFormLeftColumn({
 
   const handleCaseChange = (val: string): void => {
     if (!val) return;
-    // Comparação por STRING, não `Number(val)`: `val` já é `String(c.caseNumber)` (a
-    // `SearchableSelect` recebe `value` cru — só o `label` leva o prefixo `EN`, formatado).
+    // Comparação por STRING, não `Number(val)`: `val` já é `String(c.caseNumber)` (o
+    // `Combobox` recebe `value` cru — só o `label` leva o prefixo `EN`, formatado).
     // `Number()` sobre texto formatado (`"EN1234"`) dá `NaN`, e `NaN !== NaN` é sempre true —
     // clique sem efeito, sem erro.
     const found = cases.find((c) => String(c.caseNumber) === val);
@@ -130,7 +128,7 @@ export function VacancyFormLeftColumn({
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
-  // molecule wrappers (InputWithIcon/SelectField) and read-only divs.
+  // molecule wrappers (InputWithIcon/Combobox) and read-only divs.
   const patientDis = !patientSelected
     ? 'pointer-events-none select-none [&_.bg-white]:!bg-[#f3f4f6]'
     : '';
@@ -154,7 +152,7 @@ export function VacancyFormLeftColumn({
               <p className="text-red-500 text-sm">{casesError}</p>
             ) : (
               <div data-testid="case-select">
-                <SearchableSelect
+                <Combobox
                   value={selectedCaseNumber != null ? String(selectedCaseNumber) : ''}
                   onChange={handleCaseChange}
                   options={cases.map((c) => ({
@@ -166,6 +164,7 @@ export function VacancyFormLeftColumn({
                     }),
                   }))}
                   placeholder={t('admin.vacancyModal.caseSelectStep.casePlaceholder')}
+                  clearLabel={t('admin.vacancyModal.caseSelectStep.casePlaceholder')}
                   searchPlaceholder={t('common.search', 'Buscar...')}
                 />
               </div>
@@ -266,7 +265,7 @@ export function VacancyFormLeftColumn({
             name="required_sex"
             control={control}
             render={({ field }) => (
-              <SelectField
+              <Combobox
                 value={field.value ?? ''}
                 disabled={isSexLocked}
                 onChange={(v) => field.onChange(v)}
@@ -276,6 +275,7 @@ export function VacancyFormLeftColumn({
                   label: tf(`sexOptions.${o}`),
                 }))}
                 placeholder={tp('sexPlaceholder')}
+                clearLabel={tp('sexPlaceholder')}
               />
             )}
           />
@@ -329,7 +329,7 @@ export function VacancyFormLeftColumn({
         label={tp('ageRange')}
         labelExtra={isAgeRangeLocked ? <LockedFieldBadgeLink patientId={selectedPatientId} testId="locked-field-link-age-range" /> : null}
       >
-        <SelectField
+        <Combobox
           value={selectedAgeKey}
           disabled={isAgeRangeLocked}
           onChange={(key) => {
@@ -339,6 +339,7 @@ export function VacancyFormLeftColumn({
           }}
           options={AGE_RANGE_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
           placeholder="—"
+          clearLabel="—"
           data-testid="age-range-select"
         />
       </FormField>

@@ -115,7 +115,7 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     expect(runSQL(`SELECT is_draft FROM job_postings WHERE id = '${vacancyId}'`).trim()).toBe('t');
     await abrirEdicaoDaVaga(page, vacancyId);
     await expect(page.getByTestId('profession-checkbox-CAREGIVER')).toBeChecked();
-    await expect(page.locator('select').filter({ has: page.locator('option[value="BOTH"]') }).first()).toHaveValue('F');
+    await expect(page.getByTestId('required-sex-select')).toContainText('Femenino'); // F = Femenino
     // O "Día de pago" é um input de texto sem testid: lê o valor exibido em todos os inputs de texto da tela.
     await expect.poll(() => page.locator('input[type="text"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toContain(DIA_PAGO);
     // Os dois de ficha NÃO atravessam: o textarea de atributos da vaga está vazio.

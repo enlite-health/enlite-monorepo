@@ -61,7 +61,7 @@ describe('VacancyFormSection — banner de validação (US-D6, lex D6.1)', () =>
     await userEvent.click(screen.getByTestId('case-select').querySelector('button') as HTMLElement);
     // options[0] é "Todos" (limpa a seleção) — o caso de verdade é options[1].
     const options = await screen.findAllByRole('option');
-    await userEvent.click(options[1]);
+    await userEvent.click(options[1].querySelector('button') as HTMLElement);
     await waitFor(() => expect(screen.getByTestId('header-save-btn')).not.toBeDisabled());
 
     await userEvent.click(screen.getByTestId('header-save-btn'));
@@ -82,7 +82,7 @@ describe('VacancyFormSection — banner de validação (US-D6, lex D6.1)', () =>
     await userEvent.click(screen.getByTestId('case-select').querySelector('button') as HTMLElement);
     // options[0] é "Todos" (limpa a seleção) — o caso de verdade é options[1].
     const options = await screen.findAllByRole('option');
-    await userEvent.click(options[1]);
+    await userEvent.click(options[1].querySelector('button') as HTMLElement);
     await waitFor(() => expect(screen.getByTestId('header-save-btn')).not.toBeDisabled());
 
     // Texto livre que carrega algo que PARECE dado sensível (telefone/e-mail de uma pessoa),

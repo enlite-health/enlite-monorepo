@@ -40,6 +40,7 @@
  */
 import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext, type Dialog, type Locator, type Page } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 import {
   ABAC_API_URL,
   cleanupStaffAndGroup,
@@ -64,6 +65,19 @@ const PATIENT_T035 = 'e2e-t035-paciente-caso';
 const PATIENT_T074 = 'e2e-t074-paciente-caso';
 // Texto fixo (não carimbado): o banco é restaurado ao fim, e o screenshot precisa ser estável.
 const DIGITADO = 'Nota e2e T035: linha escrita por uma pessoa no teclado.';
+
+/**
+ * Rótulo (o que a pessoa lê) da opção do seletor de casos que contém `parte`: abre o Combobox, lê as linhas
+ * do painel e fecha com Esc. O valor (id da vaga) não está no DOM — a escolha é pelo rótulo.
+ */
+async function rotuloDoCaso(page: Page, select: Locator, parte: string): Promise<string> {
+  await select.click();
+  const opcoes = await select.locator('xpath=..').getByRole('option').allTextContents();
+  await page.keyboard.press('Escape');
+  const rotulo = opcoes.map((o) => o.trim()).find((o) => o.includes(parte));
+  expect(rotulo, `o caso ${parte} não apareceu no seletor. Opções: ${JSON.stringify(opcoes)}`).toBeTruthy();
+  return rotulo!;
+}
 
 function sqlLit(s: string): string {
   return `$t035$${s}$t035$`;
@@ -293,16 +307,14 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
     await expect(textarea).toBeVisible(); // volta JÁ em edição
     expect(await textarea.inputValue(), 'o rascunho não sobreviveu à troca de aba').toBe(naTela);
 
-    // ── 4. Escolher um caso na seção de simulação (o <select> é nativo: selectOption é o gesto dele) ──
+    // ── 4. Escolher um caso na seção de simulação (o seletor é um Combobox: abrir, buscar e clicar a opção pelo rótulo) ──
     const runBtn = page.getByTestId('vacancy-simulation-run');
     await expect(runBtn).toBeDisabled(); // sem caso escolhido não simula
     const select = page.getByTestId('vacancy-simulation-case');
     await expect(select).toBeVisible({ timeout: 30_000 });
-    const opcoes = await select.locator('option').allTextContents();
-    const rotulo = opcoes.find((o) => o.includes('990035') || o.includes(CASE_TITLE));
-    expect(rotulo, `o caso semeado não apareceu no seletor. Opções: ${JSON.stringify(opcoes)}`).toBeTruthy();
-    await select.selectOption({ label: rotulo! });
-    await expect(select).toHaveValue(jobPostingId);
+    const rotulo = await rotuloDoCaso(page, select, '990035');
+    await escolherNoCombo(page, select, rotulo);
+    await expect(select).toContainText('990035');
     await expect(runBtn).toBeEnabled();
     await expect(page.getByTestId('vacancy-simulation-result')).toHaveCount(0); // antes de simular não há resultado
     await foto(page, '01-feliz-antes-de-simular.png', page.getByTestId('vacancy-simulation-section'));
@@ -583,8 +595,8 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
 
       const select = page.getByTestId('vacancy-simulation-case');
       await expect(select).toBeVisible({ timeout: 30_000 });
-      await select.selectOption({ value: jobPostingId });
-      await expect(select).toHaveValue(jobPostingId);
+      await escolherNoCombo(page, select, await rotuloDoCaso(page, select, '990035'));
+      await expect(select).toContainText('990035');
 
       const falhasAntes = stubForcedFailures(apiLogs(container));
       const sim = page.waitForResponse((r) => r.request().method() === 'POST' && SIMULATE_URL.test(r.url()), { timeout: 120_000 });
@@ -635,11 +647,8 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
       await abrirTela(page, request);
       const select = page.getByTestId('vacancy-simulation-case');
       await expect(select).toBeVisible({ timeout: 30_000 });
-      const opcoes = await select.locator('option').allTextContents();
-      const rotulo = opcoes.find((o) => o.includes('990074'));
-      expect(rotulo, `o caso efêmero não apareceu no seletor. Opções: ${JSON.stringify(opcoes)}`).toBeTruthy();
-      await select.selectOption({ label: rotulo! });
-      await expect(select).toHaveValue(efemeroId);
+      await escolherNoCombo(page, select, await rotuloDoCaso(page, select, '990074'));
+      await expect(select).toContainText('990074');
 
       // Outra pessoa apaga o caso DEPOIS de a tela listá-lo e ANTES do clique (404 de verdade, no banco).
       safeSql(`DELETE FROM job_postings WHERE id = '${efemeroId}'`);
@@ -665,8 +674,8 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
       await foto(page, '04-alternativo-404-caso-inexistente.png', page.getByTestId('vacancy-simulation-section'));
 
       // Recuperação: escolher OUTRO caso (o semeado) e simular funciona, e o erro some.
-      await select.selectOption({ value: jobPostingId });
-      await expect(select).toHaveValue(jobPostingId);
+      await escolherNoCombo(page, select, await rotuloDoCaso(page, select, '990035'));
+      await expect(select).toContainText('990035');
       const sim2 = page.waitForResponse((r) => r.request().method() === 'POST' && SIMULATE_URL.test(r.url()), { timeout: 120_000 });
       await page.getByTestId('vacancy-simulation-run').click();
       expect((await sim2).status()).toBe(200);
@@ -693,7 +702,7 @@ test.describe('spec 029 T035 — prompts de IA: um HUMANO lê, edita, simula, gu
 
     const select = page.getByTestId('vacancy-simulation-case');
     await expect(select).toBeVisible({ timeout: 30_000 });
-    await select.selectOption({ value: jobPostingId });
+    await escolherNoCombo(page, select, await rotuloDoCaso(page, select, '990035'));
     const sim = page.waitForResponse((r) => r.request().method() === 'POST' && SIMULATE_URL.test(r.url()), { timeout: 120_000 });
     await page.getByTestId('vacancy-simulation-run').click();
     const res = await sim;

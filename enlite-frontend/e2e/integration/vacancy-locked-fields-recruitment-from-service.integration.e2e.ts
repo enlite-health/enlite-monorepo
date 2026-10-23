@@ -82,7 +82,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
       await expect(page.getByTestId(`locked-field-link-${id}`)).toHaveAttribute('href', fichaUrl);
     }
     // Valores vindos do serviço (RECRUITMENT_FIELDS_E2E: BOTH / 'dia 5').
-    await expect(page.getByTestId('required-sex-select')).toHaveValue('BOTH');
+    await expect(page.getByTestId('required-sex-select')).toContainText('Indistinto'); // BOTH = Indistinto
     await expect(page.getByTestId('payment-day-input')).toHaveValue(RECRUITMENT_FIELDS_E2E.paymentDay);
 
     // Clique real no link (abre em nova aba): a URL é a da ficha na aba do serviço. A edição segue na aba
@@ -110,7 +110,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
     // Volta à vaga: o valor novo do serviço aparece (a vaga lê do serviço, não de uma cópia).
     await page.goto(`/admin/vacancies/${vacancyId}/edit`);
     await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByTestId('required-sex-select')).toHaveValue('F');
+    await expect(page.getByTestId('required-sex-select')).toContainText('Femenino'); // F = Femenino
     await expect(page.getByTestId('required-sex-select')).toBeDisabled();
   });
 
@@ -147,7 +147,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
       await expect(page.getByTestId(`locked-field-link-${id}`)).toHaveCount(0);
     }
 
-    await page.getByTestId('required-sex-select').selectOption('F');
+    await escolherNoCombo(page, page.getByTestId('required-sex-select'), 'Femenino'); // F = Femenino
 
     const saveBtn = page.getByTestId('create-vacancy-save-btn');
     await expect(saveBtn).toBeEnabled({ timeout: 10_000 });

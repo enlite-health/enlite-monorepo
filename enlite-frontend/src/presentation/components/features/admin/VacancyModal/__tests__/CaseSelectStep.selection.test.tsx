@@ -9,7 +9,8 @@
  * `EN1234` no label) ainda dispara `selectCase` com o `caseNumber` certo.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { CaseSelectStep } from '../CaseSelectStep';
 
 vi.mock('@infrastructure/http/AdminApiService', () => ({
@@ -52,10 +53,8 @@ describe('CaseSelectStep — seleção', () => {
     );
 
     const select = await screen.findByTestId('case-select');
-    // Label do caso nativo aparece formatado com o prefixo EN.
-    expect(await screen.findByText('CASO EN1234')).toBeInTheDocument();
-
-    fireEvent.change(select, { target: { value: '1234' } });
+    // Label do caso nativo aparece formatado com o prefixo EN (o clique é na opção pelo rótulo).
+    await selectCombo(select, 'CASO EN1234');
 
     expect(selectCase).toHaveBeenCalledWith(1234, 'p-native');
   });
@@ -79,9 +78,7 @@ describe('CaseSelectStep — seleção', () => {
     );
 
     const select = await screen.findByTestId('case-select');
-    expect(await screen.findByText('CASO 729')).toBeInTheDocument();
-
-    fireEvent.change(select, { target: { value: '729' } });
+    await selectCombo(select, 'CASO 729');
 
     expect(selectCase).toHaveBeenCalledWith(729, 'p-legacy');
   });
