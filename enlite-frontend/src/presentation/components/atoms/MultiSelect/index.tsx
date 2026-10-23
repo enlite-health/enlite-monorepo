@@ -17,5 +17,6 @@ export interface MultiSelectProps {
 }
 
 export function MultiSelect({ searchable: _searchable, ...rest }: MultiSelectProps): JSX.Element {
-  return <Combobox multiple {...rest} />;
+  // default do Combobox é 'default' (60px); os multi existentes eram 'compact'.
+  return <Combobox multiple {...rest} inputSize={rest.inputSize ?? 'compact'} />;
 }

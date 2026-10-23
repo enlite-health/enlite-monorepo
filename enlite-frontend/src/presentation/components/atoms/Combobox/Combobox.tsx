@@ -60,7 +60,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
     name,
     placeholder,
     disabled = false,
-    inputSize = 'compact',
+    inputSize = 'default',
     error,
     className = '',
     'data-testid': testId,

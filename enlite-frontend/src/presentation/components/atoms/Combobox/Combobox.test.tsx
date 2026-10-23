@@ -347,6 +347,19 @@ describe('Combobox múltipla (herdada do MultiSelect)', () => {
       { value: '3', label: 'Ñandú' },
     ];
 
+    it('acento NO TERMO: "garcía" acha "Garcia" e "GARCIA" acha "García"', async () => {
+      const user = userEvent.setup();
+      renderSingle({ id: 'n', options: [{ value: '1', label: 'Garcia' }, NOMES[1], NOMES[2]] });
+      await user.click(trigger());
+      await user.type(screen.getByTestId('n-search'), 'garcía');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Garcia']);
+      cleanup();
+      renderSingle({ id: 'n', options: NOMES });
+      await user.click(trigger());
+      await user.type(screen.getByTestId('n-search'), 'GARCIA');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['García']);
+    });
+
     it('"garcia" acha "García"; "nandu" acha "Ñandú"', async () => {
       renderSingle({ id: 'n', options: NOMES });
       const user = userEvent.setup();
@@ -648,9 +661,10 @@ describe('Combobox múltipla (herdada do MultiSelect)', () => {
       expect(trigger().className).toContain(cls);
     });
 
-    it('inputSize padrão é compact (h-12)', () => {
+    it('inputSize padrão é default (h-[60px]), igual a Select/SelectField', () => {
       renderSingle();
-      expect(trigger().className).toContain('h-12');
+      expect(trigger().className).toContain('h-[60px]');
+      expect(trigger().className).not.toContain('h-12');
     });
   });
 });
