@@ -261,6 +261,22 @@ describe('069 · QA caça: D1 saída agendada, D3 pool da pré-visão, D4 concor
     }
   });
 
+  it('D4: cancelar a falta × cobrir o pedido simultâneos no MESMO turno → nunca 5xx; qualquer perdedor leva 409; a falta termina cancelada', async () => {
+    const pessoa = await mkWorker('d4-cc');
+    for (let round = 0; round < 6; round++) {
+      const { requestId, absenceIds } = await pedidoSemSubstituto(30 + round);
+      const alvo = absenceIds[0];
+      const [cancel, cover] = await Promise.all([
+        call('post', `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/absences/${alvo}/cancel`, {}),
+        call('post', `${baseUrl()}/${requestId}/cover`, { substituteWorkerId: pessoa }),
+      ]);
+      expect(cancel.status).toBeLessThan(500);
+      expect(cover.status).toBeLessThan(500);
+      if (cover.status !== 200) expect(['ABSENCE_CANCELLED', 'NOTHING_TO_COVER']).toContain(cover.data.code);
+      expect((await q<{ c: boolean }>(`SELECT cancelled_at IS NOT NULL AS c FROM patient_itinerary_absence WHERE id = $1`, [alvo]))[0].c).toBe(cancel.status === 200);
+    }
+  });
+
   it('D4: dois desfazer simultâneos → um 200 e um 409 REQUEST_ALREADY_UNDONE', async () => {
     const { requestId } = await pedidoSemSubstituto(20);
     const [a, b] = await Promise.all([call('post', `${baseUrl()}/${requestId}/undo`, {}), call('post', `${baseUrl()}/${requestId}/undo`, {})]);

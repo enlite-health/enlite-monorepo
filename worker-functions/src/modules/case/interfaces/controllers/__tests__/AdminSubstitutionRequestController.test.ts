@@ -23,7 +23,7 @@ import {
   WorkerHasPendingEntryError,
   WorkerHasScheduledExitError,
 } from '../../../application/substitutionRequestErrors';
-import { AbsenceAlreadyCoveredError } from '../../../application/ItineraryAbsenceUseCase';
+import { AbsenceAlreadyCoveredError, AbsenceCancelledError } from '../../../application/ItineraryAbsenceUseCase';
 import { AllocationRestoreConflictError } from '../../../application/restoreTitular';
 import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
 import {
@@ -255,6 +255,7 @@ describe('AdminSubstitutionRequestController', () => {
     });
     it.each<[string, Error, number, string]>([
       ['entrada futura (P5)', new WorkerHasPendingEntryError(WORKER_ID), 409, 'WORKER_HAS_PENDING_ENTRY'],
+      ['turno cancelado em corrida (D4)', new AbsenceCancelledError('ab-1'), 409, 'ABSENCE_CANCELLED'],
       ['turno já coberto (D4)', new AbsenceAlreadyCoveredError('ab-1'), 409, 'ALREADY_COVERED'],
       ['destino ausente', new DestinationRequiredError(), 422, 'DESTINATION_REQUIRED'],
       ['LEAVE_SERVICE agendado', new DestinationNotAvailableForScheduledError(), 422, 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED'],

@@ -4207,6 +4207,7 @@
             "NOTHING_TO_COVER": "No queda ningún turno sin cubrir en este pedido.",
             "WORKER_HAS_SCHEDULED_EXIT": "Esta persona ya tiene una salida programada para el {{date}}. Deshacé esa sustitución para cambiar la fecha.",
             "WORKER_HAS_SCHEDULED_EXIT_UNDATED": "Esta persona ya tiene una salida programada. Deshacé esa sustitución para cambiar la fecha.",
+            "ABSENCE_CANCELLED": "Ese turno ya no tiene sustitución pendiente. Actualizá la página.",
             "ALREADY_COVERED": "Ese turno ya tiene quien lo cubra. Actualizamos la pantalla.",
             "SUBSTITUTE_IS_TITULAR": "El sustituto no puede ser el mismo titular.",
             "generic": "No se pudo asignar el prestador."

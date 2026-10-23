@@ -23,6 +23,7 @@ import {
 } from '../../application/substitutionRequestErrors';
 import {
   AbsenceAlreadyCoveredError,
+  AbsenceCancelledError,
   AbsenceAlreadyExistsError,
   AbsenceDateInPastError,
   AbsenceOutsideAllocationError,
@@ -199,6 +200,7 @@ export class AdminSubstitutionRequestController {
     if (err instanceof ServiceTeamWorkerAllocatedError) return unprocessable('SERVICE_TEAM_WORKER_ALLOCATED');
     if (err instanceof WorkerHasPendingEntryError) return void res.status(409).json({ success: false, code: 'WORKER_HAS_PENDING_ENTRY' });
     if (err instanceof WorkerHasScheduledExitError) return void res.status(409).json({ success: false, code: 'WORKER_HAS_SCHEDULED_EXIT', exitDate: err.exitDate });
+    if (err instanceof AbsenceCancelledError) return void res.status(409).json({ success: false, code: 'ABSENCE_CANCELLED' });
     if (err instanceof AbsenceAlreadyCoveredError) return void res.status(409).json({ success: false, code: 'ALREADY_COVERED' });
     if (err instanceof SubstitutionRequestAlreadyUndoneError) return void res.status(409).json({ success: false, code: 'REQUEST_ALREADY_UNDONE' });
     if (err instanceof SubstitutionRequestNotUndoableError) return void res.status(409).json({ success: false, code: 'REQUEST_NOT_UNDOABLE' });

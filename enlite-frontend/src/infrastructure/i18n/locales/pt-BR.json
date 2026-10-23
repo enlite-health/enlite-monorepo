@@ -4128,6 +4128,7 @@
             "NOTHING_TO_COVER": "Não sobrou nenhum turno sem cobertura neste pedido.",
             "WORKER_HAS_SCHEDULED_EXIT": "Essa pessoa já tem uma saída programada para {{date}}. Desfaça essa substituição para mudar a data.",
             "WORKER_HAS_SCHEDULED_EXIT_UNDATED": "Essa pessoa já tem uma saída programada. Desfaça essa substituição para mudar a data.",
+            "ABSENCE_CANCELLED": "Esse turno não tem mais substituição pendente. Atualize a página.",
             "ALREADY_COVERED": "Esse turno já tem quem o cubra. Atualizamos a tela.",
             "SUBSTITUTE_IS_TITULAR": "O substituto não pode ser o próprio titular.",
             "generic": "Não foi possível atribuir o prestador."
