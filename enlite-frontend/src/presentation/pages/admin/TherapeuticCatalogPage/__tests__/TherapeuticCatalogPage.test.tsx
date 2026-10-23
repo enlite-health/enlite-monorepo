@@ -109,11 +109,11 @@ describe('TherapeuticCatalogPage — os 3 catálogos, uma tela cada (D299, decis
     expect(listCatalog).toHaveBeenCalledWith('activities', { includeInactive: true });
   });
 
-  it('a tabela mostra ordem, texto e estado de cada opção — e nada de enum cru', async () => {
+  it('a tabela mostra texto e estado (sem ordem, spec 061) de cada opção — e nada de enum cru', async () => {
     const { container } = await renderPage();
 
-    const linha = screen.getByTestId('therapeutic-catalog-row-ativa');
-    expect(linha).toHaveTextContent('1');
+    expect(screen.getByTestId('therapeutic-catalog-row-ativa')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: COPY.table.order })).toBeNull();
     expect(screen.getByTestId('therapeutic-catalog-label-ativa')).toHaveTextContent('Mejorar autonomía');
     expect(screen.getByTestId('therapeutic-catalog-status-ativa')).toHaveTextContent(COPY.active);
     expect(screen.getByTestId('therapeutic-catalog-status-inativa')).toHaveTextContent(COPY.inactive);
@@ -178,6 +178,35 @@ describe('TherapeuticCatalogPage — carregando, erro e vazio', () => {
   });
 });
 
+describe('TherapeuticCatalogPage — título, descrição e ordem alfabética (spec 061)', () => {
+  const ZETA = item({ id: 'zeta', label: 'Zeta TITULO-SINTETICO', sortOrder: 1, description: 'DESCRIPCION-SINTETICA-Z' });
+  const ALFA = item({ id: 'alfa', label: 'Alfa TITULO-SINTETICO', sortOrder: 99 });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listCatalog.mockResolvedValue([ZETA, ALFA]);
+  });
+
+  it.each(['activities', 'specific-objectives'] as const)('%s: sem coluna "Ordem", linhas A–Z apesar do sortOrder, e a descrição aparece', async (kind) => {
+    await renderPage(kind);
+    expect(screen.queryByRole('columnheader', { name: COPY.table.order })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: COPY.table.title })).toBeInTheDocument();
+    const linhas = screen.getAllByTestId(/^therapeutic-catalog-row-/).map((r) => r.getAttribute('data-testid'));
+    expect(linhas).toEqual(['therapeutic-catalog-row-alfa', 'therapeutic-catalog-row-zeta']);
+    expect(screen.getByTestId('therapeutic-catalog-description-zeta')).toHaveTextContent('DESCRIPCION-SINTETICA-Z');
+    expect(screen.queryByTestId('therapeutic-catalog-description-alfa')).toBeNull();
+  });
+
+  it('segments: a coluna Ordem continua e a ordem é a do servidor', async () => {
+    await renderPage('segments');
+    expect(screen.getByRole('columnheader', { name: COPY.table.order })).toBeInTheDocument();
+    const linhas = screen.getAllByTestId(/^therapeutic-catalog-row-/).map((r) => r.getAttribute('data-testid'));
+    expect(linhas).toEqual(['therapeutic-catalog-row-zeta', 'therapeutic-catalog-row-alfa']);
+    expect(screen.queryByTestId('therapeutic-catalog-description-zeta')).toBeNull();
+  });
+});
+
 describe('TherapeuticCatalogPage — criar e renomear', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -196,10 +225,11 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     expect(screen.getByTestId('therapeutic-catalog-label-input')).toHaveValue('');
 
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Nueva opción' } });
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-order-input'), { target: { value: '4' } });
+    // Spec 061: atividade não tem input de ordem.
+    expect(screen.queryByTestId('therapeutic-catalog-order-input')).toBeNull();
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
 
-    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Nueva opción', sortOrder: 4 }));
+    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Nueva opción' }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
     expect(itemListCalls()).toHaveLength(2);
     expect(updateCatalogItem).not.toHaveBeenCalled();
@@ -213,8 +243,8 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Autonomía en el hogar' } });
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
 
-    // A ordem já preenchida na modal viaja junto — renomear não perde a posição da opção.
-    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { label: 'Autonomía en el hogar', sortOrder: 1 }));
+    // Merge Patch (spec 061): só o título mudou, só ele viaja — a ordem não é mais da tela.
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { label: 'Autonomía en el hogar' }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
     expect(itemListCalls()).toHaveLength(2);
     expect(createCatalogItem).not.toHaveBeenCalled();
@@ -488,7 +518,7 @@ describe('TherapeuticCatalogPage — vínculo de segmento (spec 030, F4)', () =>
     fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-obj2'));
     fireEvent.change(screen.getByTestId('therapeutic-catalog-segment-select'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'obj2', { label: 'Otro objetivo', sortOrder: 2, segmentId: null }));
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'obj2', { segmentId: null }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
 
     fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));

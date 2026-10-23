@@ -28,6 +28,8 @@ export interface CatalogSnapshotItem {
 export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentId?: string | null;
   segmentLabel?: string | null;
+  /** Spec 061: descrição congelada com a versão; ausente em versão antiga ou item sem descrição. */
+  description?: string | null;
 }
 
 export const THERAPEUTIC_MODALITIES = ['IN_PERSON', 'ONLINE', 'HYBRID'] as const;
@@ -180,10 +182,16 @@ export interface TherapeuticCatalogItem {
   /** Só objetivos/atividades têm (migration 430, US-17); `segments` não referencia a si mesmo. */
   segmentId?: string | null;
   segmentLabel?: string | null;
+  /** Spec 061: só objetivos/atividades; `null`/ausente = sem descrição. */
+  description?: string | null;
 }
 
-/** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor. */
+/** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor (`segments`). */
 export const CATALOG_LABEL_MAX = 200;
+/** Teto do título de objetivo/atividade (spec 061) — só barra criar/renomear; espelha o zod do servidor. */
+export const CATALOG_TITLE_MAX = 150;
+/** Teto da descrição de objetivo/atividade (spec 061) — espelha o CHECK da migration 547. */
+export const CATALOG_DESCRIPTION_MAX = 1000;
 /** Teto dos textos clínicos — espelha o CHECK da 416 (lex C6). */
 export const THERAPEUTIC_TEXT_MAX = 4000;
 
