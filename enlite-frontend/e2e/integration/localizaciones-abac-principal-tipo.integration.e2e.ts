@@ -166,7 +166,7 @@ test.describe('Card Localizaciones — engine ABAC LIGADO (D286) @integration', 
     //    ligado e a escritora usando a célula `patient_address:write` já concedida acima. ────────
     await editButtons.first().click();
     await expect(drawer2).toBeVisible();
-    await expect(tipoSelect).toHaveValue('otro');
+    await expect(tipoSelect).toContainText('Otro'); // otro = Otro
     await expect(campoOtro).toHaveValue('Casa de un tio ABAC');
     await campoOtro.click({ clickCount: 3 });
     await campoOtro.pressSequentially('Casa de una tia ABAC', { delay: 40 });

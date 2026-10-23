@@ -165,7 +165,7 @@ test.describe('Card Localizaciones — Fase 2, PRINCIPAL + TIPO (spec 019) @inte
     //      isso). Confere que o PATCH sai 200 e que o texto novo PERSISTE após reload. ────────────
     await editButtons.first().click();
     await expect(drawer).toBeVisible();
-    await expect(tipoSelect).toHaveValue('otro');
+    await expect(tipoSelect).toContainText('Otro'); // otro = Otro
     await expect(campoOtro).toHaveValue('Casa de una prima');
     await campoOtro.click();
     await campoOtro.press('Control+A');
