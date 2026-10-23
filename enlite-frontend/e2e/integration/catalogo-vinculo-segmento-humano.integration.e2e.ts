@@ -108,8 +108,12 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
 
   test('feliz: modal do objetivo → segmento pelo teclado → salva → a coluna mostra o rótulo → segment_id no banco → "Nuevo" do PTI com esse segmento lista o objetivo PRIMEIRO', async ({ page }) => {
     const segmento = seg();
-    // Pré-condição do "primeiro": o objetivo semeado é o ÚLTIMO por ordem (nenhum outro com sort_order >= o dele).
-    expect(Number(scalar(`SELECT count(*) FROM therapeutic_specific_objectives WHERE active AND id <> '${objFeliz}' AND sort_order >= 99999`))).toBe(0);
+    // Pré-condição do "primeiro" (spec 061: a lista é A–Z, `sort_order` não ordena mais objetivos): SEM o vínculo o objetivo
+    // semeado NÃO seria o primeiro — algum outro ativo vem antes dele no critério do idioma (Intl.Collator 'es', calculado AQUI).
+    const es = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
+    const outrosRotulos = psql(`SELECT label FROM therapeutic_specific_objectives WHERE active AND id <> '${objFeliz}'`).split('\n').map((l) => l.trim()).filter(Boolean);
+    expect(outrosRotulos.length).toBeGreaterThan(0); // controle de não-vacuidade
+    expect(outrosRotulos.some((l) => es.compare(l, OBJ_FELIZ) < 0)).toBe(true);
     expect(segmentoNoBanco(objFeliz)).toBe('NULL');
 
     await abrirCatalogo(page, admin.user);
