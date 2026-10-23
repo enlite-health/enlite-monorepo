@@ -142,3 +142,12 @@ describe('AnaCareHoursPatientSwitch', () => {
     fetchSpy.mockRestore();
   });
 });
+
+describe('AnaCareHoursPatientSwitch — altura do seletor de paciente', () => {
+  it('POSITIVO — o gatilho tem a altura compacta (h-12) que o ProviderFilterCombobox dava, não a h-[60px]', async () => {
+    const { user } = setup();
+    await user.click(icon());
+    expect(field().className).toContain('h-12');
+    expect(field().className).not.toContain('h-[60px]');
+  });
+});

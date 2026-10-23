@@ -822,3 +822,12 @@ describe('AdminMapPage — o que a 2ª passada do gate pegou', () => {
     }
   });
 });
+
+describe('AdminMapPage — altura do seletor de âncora (spec 070)', () => {
+  it('o gatilho da âncora tem h-12 (48px), a altura que o SearchableSelect dava', () => {
+    setup();
+    const gatilho = within(last(screen.getAllByTestId('map-center-patient')) as HTMLElement).getByRole('combobox');
+    expect(gatilho.className).toContain('h-12');
+    expect(gatilho.className).not.toContain('h-[60px]');
+  });
+});

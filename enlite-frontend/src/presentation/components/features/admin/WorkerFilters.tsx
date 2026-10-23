@@ -133,6 +133,7 @@ export function WorkerFilters({
             {t('admin.workers.caseLabel', 'Caso')}
           </label>
           <Combobox
+            inputSize="compact"
             options={caseOptions}
             value={selectedCaseId}
             onChange={onCaseChange}

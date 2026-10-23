@@ -67,6 +67,7 @@ export function AnaCareHoursPatientSwitch({ patients, currentPatientId, onSelect
             <Heading level={3} id="anacare-hours-patient-switch-title">{t(`${I18N}.patientSwitchTitle`)}</Heading>
             <div className="flex flex-col gap-1.5">
               <Combobox
+                inputSize="compact"
                 id={FIELD_ID}
                 data-testid={FIELD_ID}
                 options={options}

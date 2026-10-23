@@ -192,6 +192,7 @@ export function AnaCareHoursListPage({
           </div>
           <div className="w-64">
             <Combobox
+              inputSize="compact"
               id="anacare-hours-provider-filter"
               data-testid="anacare-hours-provider-filter"
               options={providerOptions}

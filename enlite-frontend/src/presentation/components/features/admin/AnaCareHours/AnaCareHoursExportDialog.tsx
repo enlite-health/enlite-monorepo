@@ -92,6 +92,7 @@ export function AnaCareHoursExportDialog({ service, patients, initialPatientId, 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="anacare-hours-export-patient" required>{t(`${I18N}.patientLabel`)}</Label>
           <Combobox
+            inputSize="compact"
             id="anacare-hours-export-patient"
             data-testid="anacare-hours-export-patient"
             options={options}

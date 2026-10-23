@@ -72,3 +72,12 @@ describe('VacancyFormLeftColumn — seleção de caso', () => {
     expect(selectCase).toHaveBeenCalledWith(1234, 'p-native');
   });
 });
+
+describe('VacancyFormLeftColumn — altura do seletor de caso (spec 070)', () => {
+  it('o gatilho do caso tem h-12 (48px), a altura que o SearchableSelect dava', async () => {
+    render(<Harness selectCase={vi.fn()} />);
+    const gatilho = (await screen.findByTestId('case-select')).querySelector('button') as HTMLElement;
+    expect(gatilho.className).toContain('h-12');
+    expect(gatilho.className).not.toContain('h-[60px]');
+  });
+});

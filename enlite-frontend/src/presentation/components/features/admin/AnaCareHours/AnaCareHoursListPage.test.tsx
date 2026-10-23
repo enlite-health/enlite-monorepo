@@ -333,3 +333,20 @@ describe('AnaCareHoursListPage', () => {
     );
   });
 });
+
+describe('AnaCareHoursListPage — alturas dos seletores (spec 070)', () => {
+  it('POSITIVO — filtro de prestador com a altura compacta (h-12) que o ProviderFilterCombobox dava', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
+    const gatilho = screen.getByTestId('anacare-hours-provider-filter');
+    expect(gatilho.className).toContain('h-12');
+    expect(gatilho.className).not.toContain('h-[60px]');
+  });
+
+  it('POSITIVO — seletor de mês: o wrapper leva o override do h-8 SOBRE o gatilho (filho direto), que ganha de h-12', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
+    const gatilho = screen.getByLabelText('admin.anacareHours.monthAriaLabel');
+    expect(gatilho.className).toContain('h-12');
+    expect(gatilho.parentElement?.className).toContain('[&>button]:!h-8');
+    expect(gatilho.parentElement?.querySelector(':scope > button')).toBe(gatilho);
+  });
+});

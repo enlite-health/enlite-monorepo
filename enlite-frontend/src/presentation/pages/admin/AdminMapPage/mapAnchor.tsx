@@ -84,6 +84,7 @@ export function AnchorPicker({
     <Field id={id} label={label} group>
       <div data-testid={id} data-clarity-mask="True" onFocusCapture={onTouch} onClick={onTouch}>
         <Combobox
+          inputSize="compact"
           id={id}
           aria-labelledby={`${id}-label`}
           options={options}

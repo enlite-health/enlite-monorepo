@@ -171,3 +171,12 @@ describe('AnaCareHoursExportDialog', () => {
     expect(service.exportPatientRange).not.toHaveBeenCalled();
   });
 });
+
+describe('AnaCareHoursExportDialog — altura do seletor de paciente', () => {
+  it('POSITIVO — o gatilho tem a altura compacta (h-12) que o ProviderFilterCombobox dava, não a h-[60px]', () => {
+    setup();
+    const gatilho = screen.getByTestId('anacare-hours-export-patient');
+    expect(gatilho.className).toContain('h-12');
+    expect(gatilho.className).not.toContain('h-[60px]');
+  });
+});
