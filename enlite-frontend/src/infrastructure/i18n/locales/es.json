@@ -6130,6 +6130,8 @@
       "table": {
         "order": "Orden",
         "label": "Texto",
+        "title": "Título",
+        "description": "Descripción",
         "segment": "Segmento",
         "status": "Estado",
         "actions": "Acciones"
@@ -6137,6 +6139,12 @@
       "form": {
         "label": "Texto de la opción",
         "labelHelp": "En español, como va a salir en el PDF. Sin datos de ninguna persona.",
+        "title": "Título de la opción",
+        "titleHelp": "En español, como va a salir en el PDF. Máximo 150 caracteres. Sin datos de ninguna persona.",
+        "titleCounter": "{{count}}/{{max}} caracteres",
+        "description": "Descripción",
+        "descriptionHelp": "Opcional. En español, como va a salir en el PDF. Sin datos de ninguna persona.",
+        "descriptionCounter": "{{count}}/{{max}} caracteres",
         "sortOrder": "Orden",
         "sortOrderHelp": "Posición en la lista (menor primero). Vacío = al final.",
         "segment": "Segmento (Ana Care)",

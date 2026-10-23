@@ -47,7 +47,7 @@ const onClose = vi.fn();
 
 /** Renderiza e espera o `requestAnimationFrame` do slide-in (o painel entra em `show`). */
 async function renderModal(alvo: TherapeuticCatalogItem | null = null) {
-  const utils = render(<TherapeuticCatalogFormModal item={alvo} onSave={onSave} onClose={onClose} />);
+  const utils = render(<TherapeuticCatalogFormModal kind="segments" item={alvo} onSave={onSave} onClose={onClose} />);
   await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
   return utils;
 }
@@ -90,7 +90,7 @@ describe('TherapeuticCatalogFormModal — criar × editar', () => {
 
   it('o `requestAnimationFrame` do slide-in é cancelado ao desmontar (nada roda depois)', async () => {
     const cancel = vi.spyOn(window, 'cancelAnimationFrame');
-    const { unmount } = render(<TherapeuticCatalogFormModal item={null} onSave={onSave} onClose={onClose} />);
+    const { unmount } = render(<TherapeuticCatalogFormModal kind="segments" item={null} onSave={onSave} onClose={onClose} />);
     // Antes do frame: o painel está fora da tela e o fundo transparente.
     expect(document.querySelector('form')).toHaveClass('translate-x-full');
     unmount();
@@ -289,7 +289,7 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
   const segmentoSelect = () => screen.getByTestId('therapeutic-catalog-segment-select') as HTMLSelectElement;
 
   async function renderComSegmentos(alvo: TherapeuticCatalogItem | null, segments: TherapeuticCatalogItem[] | null) {
-    const utils = render(<TherapeuticCatalogFormModal item={alvo} segments={segments} onSave={onSave} onClose={onClose} />);
+    const utils = render(<TherapeuticCatalogFormModal kind="specific-objectives" item={alvo} segments={segments} onSave={onSave} onClose={onClose} />);
     await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
     return utils;
   }
@@ -323,7 +323,8 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
 
     fireEvent.change(segmentoSelect(), { target: { value: '' } });
     fireEvent.click(salvar());
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Mejorar autonomía', sortOrder: 7, segmentId: null }));
+    // Spec 061: objetivo/atividade em edição manda SÓ o que mudou (sem label inalterado, sem ordem).
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ segmentId: null }));
   });
 
   it('submit envia o `segmentId` escolhido; sem mexer no campo NÃO envia (o inativo vinculado não é re-mandado)', async () => {
@@ -336,9 +337,107 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
     onSave.mockClear();
     primeira.unmount();
     const { unmount } = await renderComSegmentos(item({ segmentId: 'seg-off', label: 'Otro' }), [SEG_OFF]);
+    fireEvent.change(textoInput(), { target: { value: 'Otro 2' } });
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro', sortOrder: 7 }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro 2' }));
     unmount();
+  });
+});
+
+// ── Spec 061 — objetivo/atividade: título 150 + descrição 1000, sem Ordem ───────────────────────────
+
+describe('TherapeuticCatalogFormModal — título e descrição (spec 061)', () => {
+  const descInput = () => screen.getByTestId('therapeutic-catalog-description-input');
+  const descCount = () => screen.getByTestId('therapeutic-catalog-description-count');
+  const labelCount = () => screen.getByTestId('therapeutic-catalog-label-count');
+
+  async function renderKind(kind: 'activities' | 'specific-objectives' | 'segments', alvo: TherapeuticCatalogItem | null) {
+    const utils = render(<TherapeuticCatalogFormModal kind={kind} item={alvo} onSave={onSave} onClose={onClose} />);
+    await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
+    return utils;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    onSave.mockResolvedValue(undefined);
+  });
+
+  it.each(['activities', 'specific-objectives'] as const)('%s: NÃO existe o input de ordem nem a ajuda; existe a descrição', async (kind) => {
+    await renderKind(kind, item({ sortOrder: 7 }));
+    expect(screen.queryByTestId('therapeutic-catalog-order-input')).toBeNull();
+    expect(screen.queryByText(COPY.form.sortOrderHelp)).toBeNull();
+    expect(screen.getByLabelText(COPY.form.title)).toBe(textoInput());
+    expect(screen.getByLabelText(COPY.form.description)).toBe(descInput());
+  });
+
+  it('segments: o input de ordem continua e NÃO há descrição', async () => {
+    await renderKind('segments', item());
+    expect(ordemInput()).toHaveValue(7);
+    expect(screen.queryByTestId('therapeutic-catalog-description-input')).toBeNull();
+  });
+
+  it('criar: título e descrição digitados vão no onSave; contadores n/150 e n/1000', async () => {
+    await renderKind('activities', null);
+    expect(labelCount()).toHaveTextContent('0/150');
+    expect(descCount()).toHaveTextContent('0/1000');
+    fireEvent.change(textoInput(), { target: { value: 'TITULO-SINTETICO-1' } });
+    fireEvent.change(descInput(), { target: { value: '  DESCRIPCION-SINTETICA-1  ' } });
+    expect(descCount()).toHaveTextContent('23/1000');
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'TITULO-SINTETICO-1', description: 'DESCRIPCION-SINTETICA-1' }));
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('sortOrder');
+  });
+
+  it('criar com título de 151 desabilita Salvar (150 ainda salva)', async () => {
+    await renderKind('activities', null);
+    fireEvent.change(textoInput(), { target: { value: 'a'.repeat(151) } });
+    expect(labelCount()).toHaveTextContent('151/150');
+    expect(labelCount()).toHaveClass('text-red-600');
+    expect(salvar()).toBeDisabled();
+    fireEvent.change(textoInput(), { target: { value: 'a'.repeat(150) } });
+    expect(salvar()).not.toBeDisabled();
+  });
+
+  it('descrição de 1001 desabilita Salvar; 1000 salva', async () => {
+    await renderKind('specific-objectives', null);
+    fireEvent.change(textoInput(), { target: { value: 'TITULO-SINTETICO-2' } });
+    fireEvent.change(descInput(), { target: { value: 'd'.repeat(1001) } });
+    expect(descCount()).toHaveClass('text-red-600');
+    expect(salvar()).toBeDisabled();
+    fireEvent.change(descInput(), { target: { value: 'd'.repeat(1000) } });
+    expect(salvar()).not.toBeDisabled();
+  });
+
+  it('item ANTIGO com título de 155: mudar só a descrição habilita Salvar e o payload NÃO leva label', async () => {
+    const antigo = 'T'.repeat(155);
+    await renderKind('activities', item({ label: antigo, description: null }));
+    expect(labelCount()).toHaveTextContent('155/150');
+    expect(labelCount()).not.toHaveClass('text-red-600');
+    fireEvent.change(descInput(), { target: { value: 'DESCRIPCION-SINTETICA-3' } });
+    expect(salvar()).not.toBeDisabled();
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ description: 'DESCRIPCION-SINTETICA-3' }));
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('label');
+  });
+
+  it('renomear o item de 155 para 151 desabilita Salvar (título mudou, teto vale)', async () => {
+    await renderKind('activities', item({ label: 'T'.repeat(155) }));
+    fireEvent.change(textoInput(), { target: { value: 'U'.repeat(151) } });
+    expect(labelCount()).toHaveClass('text-red-600');
+    expect(salvar()).toBeDisabled();
+  });
+
+  it('esvaziar a descrição de um item que tinha manda `description: null` (limpa)', async () => {
+    await renderKind('activities', item({ description: 'DESCRIPCION-SINTETICA-4' }));
+    expect(descInput()).toHaveValue('DESCRIPCION-SINTETICA-4');
+    fireEvent.change(descInput(), { target: { value: '   ' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ description: null }));
+  });
+
+  it('editar sem mudar nada: nada a salvar (Salvar desabilitado, sem PATCH vazio)', async () => {
+    await renderKind('activities', item({ description: 'DESCRIPCION-SINTETICA-5' }));
+    expect(salvar()).toBeDisabled();
   });
 });
 
