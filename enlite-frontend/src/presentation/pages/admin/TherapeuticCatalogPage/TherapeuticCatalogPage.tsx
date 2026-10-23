@@ -17,6 +17,7 @@ import {
   THERAPEUTIC_CATALOG_RESOURCE,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogItem,
+  catalogHasDescription,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -67,7 +68,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
 
   const [items, setItems] = useState<TherapeuticCatalogItem[]>([]);
   // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; `segments` segue na ordem do servidor.
-  const showOrder = kind === 'segments';
+  const showOrder = !catalogHasDescription(kind);
   const shownItems = showOrder ? items : sortAlphabeticallyEs(items);
   // Segmentos (spec 030): só objetivos/atividades se vinculam; `null` = sem célula (403) ou catálogo sem vínculo.
   const [segments, setSegments] = useState<TherapeuticCatalogItem[] | null>(null);

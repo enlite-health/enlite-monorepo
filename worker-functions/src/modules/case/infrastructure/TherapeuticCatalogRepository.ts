@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import {
   THERAPEUTIC_CATALOG_TABLE,
+  catalogHasDescription,
   type CatalogSnapshotItem,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogSnapshotItem,
@@ -97,7 +98,7 @@ export class TherapeuticCatalogRepository {
   async list(kind: TherapeuticCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<CatalogItem[]> {
     const where = opts.includeInactive ? '' : 'WHERE active';
     // Objetivos/atividades: ordem alfabética (spec 061); `segments` mantém a ordem manual.
-    const orderBy = kind === 'segments' ? 'active DESC, sort_order, lower(label)' : 'lower(label)';
+    const orderBy = catalogHasDescription(kind) ? 'lower(label)' : 'active DESC, sort_order, lower(label)';
     const res = await this.pool.query<CatalogRow>(
       `SELECT * FROM ${this.table(kind)} ${where} ORDER BY ${orderBy}`,
     );
@@ -168,7 +169,7 @@ export class TherapeuticCatalogRepository {
           cols.push('segment_id');
           placeholders.push(`$${params.length}`);
         }
-        if (input.description !== undefined) {
+        if (catalogHasDescription(kind) && input.description !== undefined) {
           params.push(input.description);
           cols.push('description');
           placeholders.push(`$${params.length}`);
@@ -207,7 +208,7 @@ export class TherapeuticCatalogRepository {
     if (patch.label !== undefined) push('label', patch.label);
     if (patch.sortOrder !== undefined) push('sort_order', patch.sortOrder);
     if (patch.segmentId !== undefined) push('segment_id', patch.segmentId);
-    if (patch.description !== undefined) push('description', patch.description);
+    if (catalogHasDescription(kind) && patch.description !== undefined) push('description', patch.description);
     if (patch.active !== undefined) {
       push('active', patch.active);
       sets.push(patch.active ? 'deactivated_at = NULL' : 'deactivated_at = NOW()');

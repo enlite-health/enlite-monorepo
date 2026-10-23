@@ -15,6 +15,7 @@ import {
   CATALOG_TITLE_MAX,
   type TherapeuticCatalogItem,
   type TherapeuticCatalogKind,
+  catalogHasDescription,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Label } from '@presentation/components/atoms/Label';
@@ -50,8 +51,8 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
   const tr = (k: string, o?: Record<string, unknown>) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
   const isEdit = item !== null;
   // Spec 061: `segments` segue como era (rótulo 200 + Ordem); objetivo/atividade ganham título 150 + descrição, sem Ordem.
-  const isSegments = kind === 'segments';
-  const labelMax = isSegments ? CATALOG_LABEL_MAX : CATALOG_TITLE_MAX;
+  const hasDescription = catalogHasDescription(kind);
+  const labelMax = !hasDescription ? CATALOG_LABEL_MAX : CATALOG_TITLE_MAX;
   const [label, setLabel] = useState(item?.label ?? '');
   const [description, setDescription] = useState(item?.description ?? '');
   const [sortOrder, setSortOrder] = useState(item ? String(item.sortOrder) : '');
@@ -73,9 +74,9 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
   const descriptionChanged = trimmedDescription !== initialDescription;
   const segmentChanged = segments !== null && segmentId !== initialSegmentId;
   // O teto novo só barra título criado agora ou alterado: o antigo (até 200) segue editável sem ser recusado.
-  const tooLong = trimmed.length > labelMax && (isSegments || labelChanged);
-  const descriptionTooLong = !isSegments && trimmedDescription.length > CATALOG_DESCRIPTION_MAX;
-  const nothingToSave = !isSegments && isEdit && !labelChanged && !descriptionChanged && !segmentChanged;
+  const tooLong = trimmed.length > labelMax && (!hasDescription || labelChanged);
+  const descriptionTooLong = hasDescription && trimmedDescription.length > CATALOG_DESCRIPTION_MAX;
+  const nothingToSave = hasDescription && isEdit && !labelChanged && !descriptionChanged && !segmentChanged;
   const canSave = trimmed.length > 0 && !tooLong && !descriptionTooLong && !nothingToSave && !isLoading;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
@@ -84,12 +85,12 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
     setIsLoading(true);
     setSaveError('');
     try {
-      const order = !isSegments || sortOrder.trim() === '' ? undefined : Number(sortOrder);
+      const order = hasDescription || sortOrder.trim() === '' ? undefined : Number(sortOrder);
       // `segmentId` só viaja se o campo existe E mudou: reenviar um vínculo inativo seria recusado (422).
       await onSave({
-        ...(isSegments || labelChanged ? { label: trimmed } : {}),
+        ...(!hasDescription || labelChanged ? { label: trimmed } : {}),
         ...(order !== undefined && Number.isFinite(order) ? { sortOrder: order } : {}),
-        ...(!isSegments && descriptionChanged ? { description: trimmedDescription === '' ? null : trimmedDescription } : {}),
+        ...(hasDescription && descriptionChanged ? { description: trimmedDescription === '' ? null : trimmedDescription } : {}),
         ...(segmentChanged ? { segmentId: segmentId || null } : {}),
       });
     } catch (err: unknown) {
@@ -114,7 +115,7 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
           <div>
-            <Label htmlFor="therapeutic-catalog-label">{tr(isSegments ? 'form.label' : 'form.title')}</Label>
+            <Label htmlFor="therapeutic-catalog-label">{tr(!hasDescription ? 'form.label' : 'form.title')}</Label>
             <textarea
               id="therapeutic-catalog-label"
               value={label}
@@ -126,13 +127,13 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
               autoFocus
             />
             <div className="flex justify-between mt-1">
-              <Text size="xs" color="muted">{tr(isSegments ? 'form.labelHelp' : 'form.titleHelp')}</Text>
+              <Text size="xs" color="muted">{tr(!hasDescription ? 'form.labelHelp' : 'form.titleHelp')}</Text>
               <Text size="xs" color={tooLong ? 'inherit' : 'muted'} className={tooLong ? 'text-red-600' : undefined} data-testid="therapeutic-catalog-label-count">
                 {trimmed.length}/{labelMax}
               </Text>
             </div>
           </div>
-          {!isSegments && (
+          {hasDescription && (
             <div>
               <Label htmlFor="therapeutic-catalog-description">{tr('form.description')}</Label>
               <textarea
@@ -157,7 +158,7 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
               </div>
             </div>
           )}
-          {isSegments && (
+          {!hasDescription && (
           <div>
             <Label htmlFor="therapeutic-catalog-order">{tr('form.sortOrder')}</Label>
             <input

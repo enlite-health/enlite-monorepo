@@ -53,6 +53,13 @@ export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'seg
 
 export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
 
+/**
+ * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. `segments` fica como era:
+ * Ordem, sem descrição. Checagem POSITIVA: kind novo nasce sem descrição.
+ */
+export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
+export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WITH_DESCRIPTION.includes(kind);
+
 /** Tabela de cada catálogo (migrations 415/430). Fonte única — o repositório monta o SQL por aqui. */
 export const THERAPEUTIC_CATALOG_TABLE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'therapeutic_specific_objectives',

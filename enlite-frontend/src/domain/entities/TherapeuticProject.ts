@@ -186,6 +186,14 @@ export interface TherapeuticCatalogItem {
   description?: string | null;
 }
 
+/**
+ * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. `segments` fica como era:
+ * Ordem, sem descrição. Espelho de `catalogHasDescription` do backend (checagem POSITIVA — kind novo nasce
+ * sem descrição).
+ */
+export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
+export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WITH_DESCRIPTION.includes(kind);
+
 /** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor (`segments`). */
 export const CATALOG_LABEL_MAX = 200;
 /** Teto do título de objetivo/atividade (spec 061) — só barra criar/renomear; espelha o zod do servidor. */
