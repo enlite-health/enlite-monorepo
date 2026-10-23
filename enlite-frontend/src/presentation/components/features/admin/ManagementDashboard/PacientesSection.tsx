@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HeartPulse, Users, CheckCircle, AlertTriangle, HelpCircle } from 'lucide-react';
 import { Text, MetricCard } from '@presentation/components/atoms';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { usePatientStats } from '@hooks/admin/usePatientStats';
 import { usePatientFunnel } from '@hooks/admin/usePatientFunnel';
 import { getFunnelPeriodOptions } from '@presentation/pages/admin/patientsData';
@@ -139,11 +139,11 @@ export function PacientesSection({ country }: PacientesSectionProps): JSX.Elemen
             {t('admin.patients.funnel.title')}
           </Text>
           <div className="w-[180px]" data-testid="funnel-period-filter">
-            <Select
+            <Combobox
               inputSize="compact"
               options={periodOptions}
               value={periodDays}
-              onValueChange={setPeriodDays}
+              onChange={setPeriodDays}
             />
           </div>
         </div>

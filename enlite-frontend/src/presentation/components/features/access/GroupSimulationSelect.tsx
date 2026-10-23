@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LogOut } from 'lucide-react';
-import { Select } from '@presentation/components/atoms';
+import { Combobox } from '@presentation/components/atoms';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { AuthzActionError } from '@infrastructure/http/AdminAuthzApiService';
 
 /**
  * F3 (spec 026), decisão #2 do Gabriel: controle de simulação de grupo no
- * rodapé da sidebar — `Select` de grupos vivos (sem o Master) + botão de
+ * rodapé da sidebar — `Combobox` de grupos vivos (sem o Master) + botão de
  * ícone (logout) ao lado, só quando há simulação ativa.
  *
  * Correção de terreno (L15, 23/09): este projeto é Tailwind + lucide-react +
- * átomos da casa — NÃO MUI. Usa `@presentation/components/atoms/Select`
- * (nativo `<select>`) e um botão cru com `LogOut` do lucide-react, no mesmo
+ * átomos da casa — NÃO MUI. Usa `@presentation/components/atoms/Combobox`
+ * (gatilho + painel, com busca a partir de 3 grupos) e um botão cru com `LogOut` do lucide-react, no mesmo
  * padrão do botão de menu já existente em `SidebarUserFooter`. Sem átomo de
  * Tooltip na casa: o "tooltip" do estado desabilitado é o atributo `title`
  * nativo do HTML no wrapper.
@@ -77,14 +77,14 @@ export function GroupSimulationSelect(): JSX.Element | null {
         data-testid="group-simulation-select-disabled-wrapper"
         title={enforcementOn ? undefined : t('access.simulation.disabledEngineOff')}
       >
-        <Select
+        <Combobox
           aria-label={t('access.simulation.select')}
           options={grupos.map((g) => ({ value: g.id, label: g.name }))}
           placeholder={t('access.simulation.select')}
           value=""
           disabled={!enforcementOn || switching !== null}
           inputSize="dense"
-          onValueChange={handleChange}
+          onChange={handleChange}
         />
       </div>
 

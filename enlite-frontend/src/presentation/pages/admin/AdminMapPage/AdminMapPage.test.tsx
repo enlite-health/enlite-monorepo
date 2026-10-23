@@ -12,6 +12,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { AdminMapPage } from './AdminMapPage';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -98,7 +99,9 @@ const ancoraBR = { country: 'BR', center: SAO_PAULO, radius_km: 50 };
 function openPicker(id = 'map-center-patient'): HTMLElement {
   // `setup` monta uma árvore NOVA sem desmontar a anterior: sempre a última.
   const picker = last(screen.getAllByTestId(id)) as HTMLElement;
-  fireEvent.click(within(picker).getByRole('button'));
+  const gatilho = within(picker).getByRole('combobox');
+  // o gatilho ALTERNA (abre/fecha): abrir um painel já aberto fecharia — só clica se estiver fechado
+  if (gatilho.getAttribute('aria-expanded') !== 'true') fireEvent.click(gatilho);
   return picker;
 }
 function pickerOptions(id = 'map-center-patient'): string[] {
@@ -109,10 +112,10 @@ function pick(label: string, id = 'map-center-patient'): void {
   // pelo ROLE, não pelo texto: com a lista aberta o rótulo do botão repete o placeholder
   const option = within(picker).getAllByRole('option').find((o) => o.textContent === label);
   if (!option) throw new Error(`opção "${label}" não está na lista`);
-  fireEvent.click(option);
+  fireEvent.click(option.querySelector('button')!); // o clique real cai no <button> dentro do <li role=option>
 }
 function pickerLabel(id = 'map-center-patient'): string {
-  return within(last(screen.getAllByTestId(id)) as HTMLElement).getByRole('button').textContent ?? '';
+  return within(last(screen.getAllByTestId(id)) as HTMLElement).getByRole('combobox').textContent ?? '';
 }
 /** O caminho normal da tela: escolher a âncora abre o passo 2 em diante. */
 const escolherPaciente = (label = 'P 9 · CABA'): void => pick(label);
@@ -147,7 +150,7 @@ describe('AdminMapPage', () => {
     expect(lastWorkersCall()).toEqual([{ country: 'AR', center: { lat: -34.61, lng: -58.41 }, radius_km: 5 }, true]);
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-center', '-34.61,-58.41');
     expect(screen.getByTestId('fake-map')).toHaveAttribute('data-radius', '5');
-    expect(screen.getByTestId('map-radius')).toHaveValue('5');
+    expect(screen.getByTestId('map-radius')).toHaveTextContent('5 km');
     expect(screen.getByTestId('map-counts')).toHaveTextContent('en 5 km');
     // a aba de pacientes continua parada — o portão dela é outro
     expect(lastPatientsCall()[1]).toBe(false);
@@ -180,7 +183,7 @@ describe('AdminMapPage', () => {
     expect(pickerOptions()).toEqual(['Centrar en un paciente…', 'P 9 · CABA', 'P 7', 'P 5 · CABA']);
     // mudar o raio da TELA não mexe no escopo do seletor: 5 km não pode esvaziá-lo
     escolherPaciente();
-    fireEvent.change(screen.getByTestId('map-radius'), { target: { value: '50' } });
+    chooseCombo(screen.getByTestId('map-radius'), '50 km');
     expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
     fireEvent.click(screen.getByTestId('fake-map-click'));
     expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
@@ -301,7 +304,7 @@ describe('AdminMapPage', () => {
   it('trocar o país FECHA os dois portões: a âncora era do país anterior', () => {
     setup();
     escolherPaciente();
-    fireEvent.change(screen.getByTestId('map-country'), { target: { value: 'BR' } });
+    chooseCombo(screen.getByTestId('map-country'), 'admin.patients.countryOptions.BR'); // BR
     expect(screen.getByTestId('map-anchor-empty')).toBeInTheDocument();
     expect(screen.queryByTestId('map-filters-block')).toBeNull();
     expect(pickerLabel()).toContain('Centrar en un paciente…');
@@ -317,13 +320,13 @@ describe('AdminMapPage', () => {
   it('filtros de prestador entram no corpo da request: documentação, profissão, raio, país', () => {
     setup();
     escolherPaciente();
-    fireEvent.change(screen.getByTestId('map-docs'), { target: { value: 'incomplete' } });
-    fireEvent.change(screen.getByTestId('map-profession'), { target: { value: 'CAREGIVER' } });
-    fireEvent.change(screen.getByTestId('map-radius'), { target: { value: '25' } });
+    chooseCombo(screen.getByTestId('map-docs'), 'Registro incompleto'); // incomplete
+    chooseCombo(screen.getByTestId('map-profession'), 'Cuidador'); // CAREGIVER
+    chooseCombo(screen.getByTestId('map-radius'), '25 km');
     expect(lastWorkersFilters()).toEqual({ country: 'AR', center: { lat: -34.61, lng: -58.41 }, radius_km: 25, docs_complete: 'incomplete', profession: ['CAREGIVER'] });
     expect(screen.getByTestId('map-counts')).toHaveTextContent('en 25 km');
-    fireEvent.change(screen.getByTestId('map-docs'), { target: { value: 'all' } });
-    fireEvent.change(screen.getByTestId('map-profession'), { target: { value: '' } });
+    chooseCombo(screen.getByTestId('map-docs'), 'Todos'); // all
+    chooseCombo(screen.getByTestId('map-profession'), 'Todas las profesiones'); // '' = todas
     expect(lastWorkersFilters()).toEqual({ country: 'AR', center: { lat: -34.61, lng: -58.41 }, radius_km: 25 });
   });
 
@@ -332,10 +335,10 @@ describe('AdminMapPage', () => {
     fireEvent.click(screen.getByTestId('map-tab-patients'));
     escolherPrestador();
     const centro = { lat: -34.6, lng: -58.4 };
-    fireEvent.change(screen.getByTestId('map-patient-status'), { target: { value: 'SUSPENDED' } });
+    chooseCombo(screen.getByTestId('map-patient-status'), 'Suspendido'); // SUSPENDED
     fireEvent.click(screen.getByTestId('map-open-vacancies'));
     expect(lastPatientsFilters()).toEqual({ country: 'AR', center: centro, radius_km: 5, status: ['SUSPENDED'], with_open_vacancies: true });
-    fireEvent.change(screen.getByTestId('map-patient-status'), { target: { value: '' } });
+    chooseCombo(screen.getByTestId('map-patient-status'), 'Todos los estados'); // '' = todos
     fireEvent.click(screen.getByTestId('map-open-vacancies'));
     expect(lastPatientsFilters()).toEqual({ country: 'AR', center: centro, radius_km: 5 });
     // Truncado: a contagem é a do banco (4231), e o aviso diz quantos está mostrando de quantos existem.
@@ -714,7 +717,7 @@ describe('AdminMapPage — busca de âncora por nome', () => {
       setup(okWorkers, { ...okPatients, points: [], total: 0, withoutCoordinates: 0, truncated: false });
       fireEvent.focusIn(screen.getByTestId('map-center-patient'));
       digitar('Reyna');
-      expect(last(screen.getAllByTestId('searchable-select-empty'))?.textContent)
+      expect(last(screen.getAllByTestId('map-center-patient-no-results'))?.textContent)
         .toBe('Sin resultados para ese nombre');
     } finally {
       vi.useRealTimers();
@@ -727,7 +730,7 @@ describe('AdminMapPage — busca de âncora por nome', () => {
       setup(okWorkers, { ...okPatients, points: [], total: 0, truncated: false });
       fireEvent.focusIn(screen.getByTestId('map-center-patient'));
       digitar('R');
-      expect(last(screen.getAllByTestId('searchable-select-empty'))?.textContent)
+      expect(last(screen.getAllByTestId('map-center-patient-no-results'))?.textContent)
         .toBe('Escribí al menos 3 letras');
     } finally {
       vi.useRealTimers();
@@ -737,7 +740,8 @@ describe('AdminMapPage — busca de âncora por nome', () => {
   it('🔒 o seletor de PRESTADOR não busca no servidor: escopo segue o raio', () => {
     vi.useFakeTimers();
     try {
-      setup();
+      // o campo de busca só existe com 3+ opções (SEARCH_MIN_OPTIONS): um prestador a mais que o fixture padrão
+      setup({ ...okWorkers, points: [...okWorkers.points, W('4')] });
       fireEvent.click(screen.getByTestId('map-tab-patients'));
       fireEvent.focusIn(screen.getByTestId('map-center-worker'));
       digitar('Reyna', 'map-center-worker');
@@ -799,7 +803,7 @@ describe('AdminMapPage — o que a 2ª passada do gate pegou', () => {
       });
       fireEvent.focusIn(screen.getByTestId('map-center-patient'));
       digitar2('Reyna');
-      expect(last(screen.getAllByTestId('searchable-select-empty'))?.textContent)
+      expect(last(screen.getAllByTestId('map-center-patient-no-results'))?.textContent)
         .toBe('2 encontrado(s), pero sin ubicación registrada');
     } finally {
       vi.useRealTimers();
@@ -812,7 +816,7 @@ describe('AdminMapPage — o que a 2ª passada do gate pegou', () => {
       setup();
       fireEvent.focusIn(screen.getByTestId('map-center-patient'));
       digitar2('Reyna');
-      expect(screen.queryAllByTestId('searchable-select-empty')).toHaveLength(0);
+      expect(screen.queryAllByTestId('map-center-patient-no-results')).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }

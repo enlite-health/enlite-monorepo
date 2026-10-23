@@ -23,6 +23,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { test, expect, type Download, type Page, type Route } from '@playwright/test';
 import * as XLSX from 'xlsx';
+import { escolherNoCombo, rotuloDoMes } from '../helpers/combobox';
 
 const DB_URL = process.env.ANACARE_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const API_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
@@ -119,8 +120,7 @@ async function abrirListaNoMes(page: Page, mes: string): Promise<void> {
   await expect(page).toHaveURL(/\/admin\/anacare\/horas$/);
   await expect(page.getByRole('heading', { name: 'Horas Ana Care' })).toBeVisible({ timeout: 15_000 });
   const seletorMes = page.getByLabel('Mes', { exact: true });
-  await seletorMes.selectOption(mes);
-  await expect(seletorMes).toHaveValue(mes);
+  await escolherNoCombo(page, seletorMes, rotuloDoMes(mes)); // mes = "Septiembre 2026"-style
   await expect(page.getByTestId(`anacare-hours-patient-row-${PACIENTE}`)).toBeVisible({ timeout: 15_000 });
 }
 
@@ -135,18 +135,10 @@ async function digitarDataNoDialogo(page: Page, testId: string, iso: string): Pr
   await expect(campo).toHaveValue(iso);
 }
 
-/** Troca o paciente do autocomplete: limpa o campo por teclado (com paciente escolhido o combobox filtra pelo rótulo), digita o ID e escolhe a opção. */
+/** Troca o paciente do Combobox: abre o gatilho, busca pelo ID (a busca casa nome OU ID) e clica a opção pelo rótulo. */
 async function escolherPaciente(page: Page, patientId: string): Promise<void> {
   const campo = page.getByTestId('anacare-hours-export-patient');
-  await campo.click();
-  await expect(campo).toBeFocused();
-  await page.keyboard.press('ControlOrMeta+a');
-  await page.keyboard.press('Backspace');
-  await page.keyboard.type(patientId);
-  const opcao = page.getByTestId(`anacare-hours-export-patient-option-${patientId}`);
-  await expect(opcao).toBeVisible();
-  await opcao.click();
-  await expect(campo).toHaveValue(`Sin vínculo · ID ${patientId}`);
+  await escolherNoCombo(page, campo, `Sin vínculo · ID ${patientId}`, { buscar: patientId });
 }
 
 /** Confirma e captura o download real; salva num tmp e devolve o nome sugerido + o workbook lido. */
@@ -227,12 +219,7 @@ test.describe('anacare-hours-export — exportar as horas de um paciente em xlsx
     await expect(page.getByTestId('anacare-hours-export-desde')).toHaveValue('2026-09-01');
     await expect(page.getByTestId('anacare-hours-export-hasta')).toHaveValue('2026-09-30');
 
-    const campo = page.getByTestId('anacare-hours-export-patient');
-    await campo.click();
-    await expect(campo).toBeFocused();
-    await page.keyboard.type(PACIENTE);
-    await page.getByTestId(`anacare-hours-export-patient-option-${PACIENTE}`).click();
-    await expect(campo).toHaveValue(`Sin vínculo · ID ${PACIENTE}`);
+    await escolherPaciente(page, PACIENTE);
 
     const { filename, wb } = await confirmarEBaixar(page);
     // Prova o `exposedHeaders` (nome via X-Export-Filename entre origens) — sem hífen nas partes.
@@ -281,7 +268,7 @@ test.describe('anacare-hours-export — exportar as horas de um paciente em xlsx
     await page.getByTestId('anacare-hours-export-button').click();
     await expect(page.getByTestId('anacare-hours-export-dialog')).toBeVisible();
     // Pré-preenchido pelo detalhe: paciente e mês.
-    await expect(page.getByTestId('anacare-hours-export-patient')).toHaveValue(`Sin vínculo · ID ${PACIENTE}`);
+    await expect(page.getByTestId('anacare-hours-export-patient')).toContainText(`Sin vínculo · ID ${PACIENTE}`);
     await expect(page.getByTestId('anacare-hours-export-desde')).toHaveValue('2026-09-01');
     await expect(page.getByTestId('anacare-hours-export-hasta')).toHaveValue('2026-09-30');
 

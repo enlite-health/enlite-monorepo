@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AnaCareHoursListPage } from './AnaCareHoursListPage';
+import { formatMonthLabel } from './selectors';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import type { AnaCareMonthSnapshot } from './types';
 import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
@@ -192,7 +194,7 @@ describe('AnaCareHoursListPage', () => {
    */
   it('POSITIVO — seletor de mês com a altura dos botões sm (h-8) e cabeçalho centralizado', () => {
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
-    const wrapper = (screen.getByLabelText('admin.anacareHours.monthAriaLabel') as HTMLSelectElement).parentElement as HTMLElement;
+    const wrapper = screen.getByLabelText('admin.anacareHours.monthAriaLabel').parentElement as HTMLElement; // o gatilho do Combobox mora no div que leva o `className`
     expect(wrapper.className).toContain('!h-8');
     const actions = screen.getByTestId('anacare-hours-header-actions');
     expect(actions.className).toContain('items-start');
@@ -203,8 +205,7 @@ describe('AnaCareHoursListPage', () => {
   it('POSITIVO — troca de mês chama onMonthChange', () => {
     const onMonthChange = vi.fn();
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} onMonthChange={onMonthChange} />);
-    const select = screen.getByLabelText('admin.anacareHours.monthAriaLabel') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: '2026-09' } });
+    chooseCombo(screen.getByLabelText('admin.anacareHours.monthAriaLabel'), formatMonthLabel('2026-09', 'es'));
     expect(onMonthChange).toHaveBeenCalledWith('2026-09');
   });
 
@@ -235,8 +236,7 @@ describe('AnaCareHoursListPage', () => {
 
   it('POSITIVO — filtro por prestador restringe a lista', () => {
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
-    fireEvent.focus(screen.getByTestId('anacare-hours-provider-filter'));
-    fireEvent.click(screen.getByTestId('anacare-hours-provider-filter-option-p1'));
+    chooseCombo(screen.getByTestId('anacare-hours-provider-filter'), 'Rocío García QA');
     expect(screen.getByTestId('anacare-hours-patient-row-90000')).toBeInTheDocument();
     expect(screen.queryByTestId('anacare-hours-patient-row-90447')).not.toBeInTheDocument();
   });
@@ -274,8 +274,8 @@ describe('AnaCareHoursListPage', () => {
 
   it('POSITIVO — as opções do dropdown de prestador são montadas a partir de `providers` (sem `shifts`)', () => {
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
-    fireEvent.focus(screen.getByTestId('anacare-hours-provider-filter'));
-    expect(screen.getByTestId('anacare-hours-provider-filter-option-p1')).toHaveTextContent('Rocío García QA');
+    fireEvent.click(screen.getByTestId('anacare-hours-provider-filter'));
+    expect(screen.getByRole('option', { name: 'Rocío García QA' })).toBeInTheDocument();
   });
 
   /**

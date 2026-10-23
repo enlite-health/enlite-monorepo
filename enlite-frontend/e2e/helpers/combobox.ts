@@ -50,3 +50,20 @@ export async function escolherVariosNoCombo(page: Page, alvo: Locator | string, 
   await page.keyboard.press('Escape');
   await expect(gatilho).toBeVisible();
 }
+
+/** Rótulo do mês como o seletor de Horas Ana Care o exibe (`formatMonthLabel`): "Septiembre 2026". */
+export function rotuloDoMes(mesIso: string, locale = 'es'): string {
+  const [ano, mes] = mesIso.split('-').map(Number);
+  const nome = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(ano, mes - 1, 1)));
+  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)} ${ano}`;
+}
+
+/** Inverso de `rotuloDoMes`: "Septiembre 2026" → "2026-09" (o painel mostra só o rótulo, o valor ISO não vai à tela). */
+export function mesIsoDoRotulo(rotulo: string, locale = 'es'): string {
+  const ano = Number(rotulo.trim().split(/\s+/).pop());
+  for (let m = 1; m <= 12; m += 1) {
+    const iso = `${ano}-${String(m).padStart(2, '0')}`;
+    if (rotuloDoMes(iso, locale) === rotulo.trim()) return iso;
+  }
+  throw new Error(`rótulo de mês desconhecido: "${rotulo}"`);
+}

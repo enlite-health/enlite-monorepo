@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
@@ -150,6 +151,7 @@ describe('ZoneAnalyticsSection', () => {
 
     render(<ZoneAnalyticsSection />);
 
+    fireEvent.click(screen.getByRole('combobox')); // as opções só existem com o painel aberto
     expect(screen.getByRole('option', { name: 'Acompañante Terapéutico' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Cuidador/a' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Enfermero/a' })).toBeInTheDocument();
@@ -173,14 +175,14 @@ describe('ZoneAnalyticsSection', () => {
 
     expect(mockUseZoneAnalytics).toHaveBeenLastCalledWith(undefined);
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'CAREGIVER' } });
+    chooseCombo(screen.getByRole('combobox'), 'Cuidador/a');
     expect(mockUseZoneAnalytics).toHaveBeenLastCalledWith('CAREGIVER');
 
     fireEvent.click(screen.getByRole('button', { name: 'Todas' }));
     expect(mockUseZoneAnalytics).toHaveBeenLastCalledWith(undefined);
   });
 
-  it('selecionar o valor vazio direto no <select> (voltar pro placeholder) também limpa o filtro', () => {
+  it('"Todas" devolve o gatilho ao placeholder (o Combobox não tem linha vazia: quem limpa é o botão)', () => {
     mockUseZoneAnalytics.mockReturnValue({
       data: POPULATED,
       isLoading: false,
@@ -190,10 +192,13 @@ describe('ZoneAnalyticsSection', () => {
 
     render(<ZoneAnalyticsSection />);
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'CAREGIVER' } });
+    chooseCombo(screen.getByRole('combobox'), 'Cuidador/a');
     expect(mockUseZoneAnalytics).toHaveBeenLastCalledWith('CAREGIVER');
+    expect(screen.getByRole('combobox')).toHaveTextContent('Cuidador/a');
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Todas' }));
     expect(mockUseZoneAnalytics).toHaveBeenLastCalledWith(undefined);
+    expect(screen.getByRole('combobox')).toHaveTextContent('Todas');
+    expect(screen.getByRole('combobox')).not.toHaveTextContent('Cuidador/a');
   });
 });

@@ -12,7 +12,7 @@
  */
 import { MapPinned } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Field } from './mapSidebar';
 
 /** Quem o mapa toma como referência: o centro do raio e o destino das rotas. */
@@ -83,11 +83,13 @@ export function AnchorPicker({
   return (
     <Field id={id} label={label} group>
       <div data-testid={id} data-clarity-mask="True" onFocusCapture={onTouch} onClick={onTouch}>
-        <SearchableSelect
+        <Combobox
+          id={id}
+          aria-labelledby={`${id}-label`}
           options={options}
           value={value}
           onChange={onChange}
-          placeholder={placeholder}
+          placeholder={placeholder} clearLabel={placeholder}
           searchPlaceholder={searchPlaceholder}
           onSearchChange={onSearchChange}
           serverSearchTerm={serverSearchTerm}

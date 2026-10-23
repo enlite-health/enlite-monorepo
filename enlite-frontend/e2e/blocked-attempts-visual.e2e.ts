@@ -21,6 +21,7 @@
  */
 
 import { test, expect, Page, Route } from '@playwright/test';
+import { escolherNoCombo } from './helpers/combobox';
 
 // ── Auth constants ─────────────────────────────────────────────────────────────
 
@@ -398,8 +399,8 @@ test.describe('BlockedAttemptsPage — visual proof', () => {
     await page.goto('/admin/recruitment/blocked-attempts');
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });
 
-    const select = page.locator('[data-testid="blocked-filters"] select').first();
-    await select.selectOption('registration_incomplete');
+    const select = page.locator('[data-testid="blocked-filters"]').getByRole('combobox').first();
+    await escolherNoCombo(page, select, 'Registro incompleto'); // registration_incomplete = Registro incompleto
 
     await page.waitForResponse(
       (resp) =>

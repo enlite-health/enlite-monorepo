@@ -31,6 +31,7 @@
 
 import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route, type APIRequestContext } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -461,8 +462,8 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     await page.goto('/admin/access/audit');
     await expect(page.getByRole('heading', { name: 'Historial de cambios de permisos' })).toBeVisible({ timeout: 15_000 });
 
-    // Select REAL (não fill/forceFill) — filtra pelo grupo criado no teste 1.
-    await page.getByLabel('Grupo').selectOption({ label: NOVO_GROUP_NAME });
+    // Combobox REAL (não fill/forceFill) — filtra pelo grupo criado no teste 1.
+    await escolherNoCombo(page, page.getByLabel('Grupo'), NOVO_GROUP_NAME);
     await page.getByRole('button', { name: 'Buscar' }).click();
 
     // Evento de PERMISSÃO: `vacancy:read` agregado ao grupo no teste 2.
@@ -484,7 +485,7 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     await page.goto('/admin/access/audit');
     await expect(page.getByRole('heading', { name: 'Historial de cambios de permisos' })).toBeVisible({ timeout: 15_000 });
 
-    await page.getByLabel('Grupo').selectOption({ label: OWN_GROUP_NAME });
+    await escolherNoCombo(page, page.getByLabel('Grupo'), OWN_GROUP_NAME);
     await page.getByRole('button', { name: 'Buscar' }).click();
 
     // O grupo PRÓPRIO da gestora (`beforeAll`) tem um evento de membro (ela
@@ -506,8 +507,8 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     // O grupo próprio ganhou as células no `beforeAll` por INSERT direto (não
     // por `iam.set_group_permissions`) — não existe linha em
     // `permission_group_changes` para ele, então `type=Permiso` dá vazio.
-    await page.getByLabel('Grupo').selectOption({ label: OWN_GROUP_NAME });
-    await page.getByLabel('Tipo').selectOption({ label: 'Permiso' });
+    await escolherNoCombo(page, page.getByLabel('Grupo'), OWN_GROUP_NAME);
+    await escolherNoCombo(page, page.getByLabel('Tipo'), 'Permiso');
     await page.getByRole('button', { name: 'Buscar' }).click();
 
     await expect(page.getByText('Sin registros para ese filtro.')).toBeVisible({ timeout: 15_000 });

@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { AdminApiService, ApiError, type AiPromptSlug } from '@infrastructure/http/AdminApiService';
 import type { VacancyRow } from '@presentation/components/features/admin/VacanciesTable';
 import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
@@ -92,12 +92,12 @@ export function AiPromptPreviewPanel({ slug, body }: AiPromptPreviewPanelProps) 
         </Text>
       )}
       {casesState === 'ready' && (
-        <Select
+        <Combobox
           aria-label={pc('caseLabel')}
           options={cases}
           placeholder={pc('casePlaceholder')}
           value={jobPostingId}
-          onValueChange={setJobPostingId}
+          onChange={setJobPostingId}
           data-testid="ai-prompt-preview-case"
         />
       )}

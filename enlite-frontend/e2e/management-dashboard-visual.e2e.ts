@@ -17,6 +17,7 @@
  */
 
 import { test, expect, Page, Route } from '@playwright/test';
+import { escolherNoCombo } from './helpers/combobox';
 
 const MOCK_ADMIN = {
   uid: 'mgmt-vis-admin-uid',
@@ -384,7 +385,7 @@ test.describe('ManagementDashboardPage — visual proof', () => {
 
     // Filtro dispara refetch com ?profession=CAREGIVER.
     const filterReq = page.waitForRequest((req) => req.url().includes('profession=CAREGIVER'));
-    await page.getByTestId('mgmt-zone-analytics-filters').getByRole('combobox').selectOption('CAREGIVER');
+    await escolherNoCombo(page, page.getByTestId('mgmt-zone-analytics-filters').getByRole('combobox'), 'Cuidador/a'); // CAREGIVER
     await filterReq;
 
     // Botão "Todas" volta ao geral (novo fetch sem query-param de profession).

@@ -59,7 +59,7 @@ describe('TimeRangeFilter — combobox com busca (REQ-06)', () => {
     const list = openList('time-from');
     fireEvent.change(screen.getByPlaceholderText('Buscar...'), { target: { value: '14' } });
     const labels = within(list).getAllByRole('option').map((o) => o.textContent);
-    expect(labels).toEqual(['admin.vacancies.filters.time.from', '14:00', '14:30']);
+    expect(labels).toEqual(['14:00', '14:30']); // filtrando, a linha "todos" (placeholder) sai da lista
   });
 
   it('calls onFromChange when a time is picked in "from"', () => {
