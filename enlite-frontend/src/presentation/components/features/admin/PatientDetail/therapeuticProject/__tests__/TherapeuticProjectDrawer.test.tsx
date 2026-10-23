@@ -476,9 +476,9 @@ describe('modo `new` — os catálogos antes do formulário', () => {
 
     const abrir = (id: string) => fireEvent.click(document.getElementById(id)!);
     abrir('tp-externalContacts');
-    expect(document.getElementById('tp-externalContacts')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
+    expect(document.getElementById('tp-externalContacts')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
     abrir('tp-coverageContacts');
-    expect(document.getElementById('tp-coverageContacts')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
+    expect(document.getElementById('tp-coverageContacts')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
   });
 
   // D113 — o mesmo `?? []` do teste acima, mas para os QUATRO containers cruzados que faltavam
@@ -500,9 +500,9 @@ describe('modo `new` — os catálogos antes do formulário', () => {
 
     const abrir = (id: string) => fireEvent.click(document.getElementById(id)!);
     abrir('tp-responsibles');
-    expect(document.getElementById('tp-responsibles')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
+    expect(document.getElementById('tp-responsibles')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
     abrir('tp-careTeam');
-    expect(document.getElementById('tp-careTeam')!.parentElement!.querySelectorAll('li[role=\"option\"]')).toHaveLength(0);
+    expect(document.getElementById('tp-careTeam')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
   });
 });
 
