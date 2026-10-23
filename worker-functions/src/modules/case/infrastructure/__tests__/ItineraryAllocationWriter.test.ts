@@ -96,6 +96,15 @@ describe('ItineraryAllocationWriter', () => {
     expect(result).toEqual({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01', validTo: '2026-11-01', slotId: 'sl-1', workerId: 'w-1' });
   });
 
+  it('lockWorkerAllocations (D4): 1 query FOR UPDATE nas alocações ACTIVE da pessoa no serviço, em ordem estável (sem deadlock)', async () => {
+    const client = clientStub({ rows: [{ id: 'a-1' }], rowCount: 1 });
+    await writer.lockWorkerAllocations(client as never, 's-1', 'w-1');
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/a\.status = 'ACTIVE'[\s\S]*ORDER BY a\.id[\s\S]*FOR UPDATE OF a/);
+    expect(params).toEqual(['s-1', 'w-1']);
+  });
+
   it('listWorkerAllocations: 1 query, só ACTIVE da pessoa no serviço que valem em fromDate ou depois (valid_to nulo ou >= fromDate); ordem estável', async () => {
     const client = clientStub({ rows: [{ id: 'a-1', slot_id: 'sl-1', valid_from: '2026-01-01', valid_to: null }, { id: 'a-2', slot_id: 'sl-2', valid_from: '2026-01-01', valid_to: '2026-12-31' }], rowCount: 2 });
 

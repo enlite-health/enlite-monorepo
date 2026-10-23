@@ -37,14 +37,17 @@ resource "google_cloud_scheduler_job" "itinerary_daily" {
   }
 }
 
-# Emitida pelo health check (GET /api/internal/events/health, a cada 5 min) a CADA ciclo
-# em que a rotina diária do dia não tenha rodado (WARN, campos country e operationDate).
-# Sinal de ESTADO: não auto-resolve com o job parado/não aplicado.
+# Emitida pelo health check (GET /api/internal/events/health, a cada 5 min) a CADA ciclo, em dois casos (WARN, sem PII):
+#   - `itinerary_daily_run_missing`  : a rotina diária do dia não terminou (campos country e operationDate);
+#   - `itinerary_daily_run_failures` : a rotina TERMINOU, mas com falhas isoladas (country, operationDate, failures) — D2 da QA caça:
+#     sem isto um e-mail/aviso que não saiu só ficava na coluna `failures` do banco, em silêncio.
+# Sinal de ESTADO: não auto-resolve com o job parado/não aplicado nem com a falha do dia ainda registrada.
+# O NOME da métrica/política segue `itinerary_daily_run_missing` de propósito: renomear recria o recurso em PRD (apaga o histórico).
 resource "google_logging_metric" "itinerary_daily_run_missing" {
   project     = var.project_id
   name        = "itinerary_daily_run_missing"
-  description = "A rotina diária do itinerário não rodou no dia operacional. Sinal de ESTADO reemitido a cada ciclo do health check."
-  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND jsonPayload.msg=\"itinerary_daily_run_missing\""
+  description = "A rotina diária do itinerário não rodou no dia operacional OU terminou com falhas (failures > 0). Sinal de ESTADO reemitido a cada ciclo do health check."
+  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND (jsonPayload.msg=\"itinerary_daily_run_missing\" OR jsonPayload.msg=\"itinerary_daily_run_failures\")"
 
   metric_descriptor {
     metric_kind = "DELTA"
@@ -55,7 +58,7 @@ resource "google_logging_metric" "itinerary_daily_run_missing" {
 
 resource "google_monitoring_alert_policy" "itinerary_daily_run_missing" {
   project      = var.project_id
-  display_name = "[ATENÇÃO] Rotina diária do itinerário não rodou (job itinerary-daily)"
+  display_name = "[ATENÇÃO] Rotina diária do itinerário não rodou ou terminou com falhas (job itinerary-daily)"
   combiner     = "OR"
   enabled      = true
   severity     = "WARNING"
@@ -64,15 +67,18 @@ resource "google_monitoring_alert_policy" "itinerary_daily_run_missing" {
 
   documentation {
     mime_type = "text/markdown"
-    subject   = "Rotina diária do itinerário não rodou: alertas de turnos sem cobertura não estão saindo"
+    subject   = "Rotina diária do itinerário não rodou ou terminou com falhas: alertas de turnos sem cobertura podem não estar saindo"
     content   = <<-EOT
       ## Impacto
       A rotina `POST /api/internal/itinerary/daily` não registrou execução para o dia operacional
       (campos `country` e `operationDate` no log). Turnos descobertos não geram o aviso aos gestores.
 
       ## O que este alerta afirma
-      O health check (`GET /api/internal/events/health`, a cada 5 min) reemite o WARN
-      `itinerary_daily_run_missing` enquanto não houver registro da rotina do dia. Sinal de **ESTADO**.
+      O health check (`GET /api/internal/events/health`, a cada 5 min) reemite um dos WARN enquanto a condição durar. Sinal de **ESTADO**:
+      - `itinerary_daily_run_missing` — não há registro de rotina TERMINADA para o dia operacional;
+      - `itinerary_daily_run_failures` — a rotina terminou, mas com `failures > 0` (campos `country`, `operationDate`, `failures`).
+        Olhar os logs do `worker-functions` da hora da rotina por `source=UncoveredShiftsAlertUseCase:*` ou `ItineraryDailyRoutineUseCase:*`
+        (e-mail do alerta que não saiu, aviso in-app, paciente que não derivou). Reexecutar a rota é idempotente e retoma os pendentes.
 
       ## Modos de falha (em ordem de probabilidade)
       1. **Job não aplicado / pausado** — `gcloud scheduler jobs describe itinerary-daily --location=southamerica-east1`.

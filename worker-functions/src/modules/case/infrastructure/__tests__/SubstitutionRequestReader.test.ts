@@ -13,6 +13,16 @@ function clientWith(impl: (sql: string, params?: unknown[]) => unknown[]) {
   return { query, client: { query } as unknown as PoolClient };
 }
 
+describe('SubstitutionRequestReader.lockHeader (D4)', () => {
+  it('SELECT … FOR UPDATE do cabeçalho do pedido DAQUELE serviço', async () => {
+    const { query, client } = clientWith(() => []);
+    await new SubstitutionRequestReader().lockHeader(client, SID, 'r-1');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0]).toMatch(/FROM patient_itinerary_substitution_request WHERE id = \$1 AND contracted_service_id = \$2 FOR UPDATE/);
+    expect(query.mock.calls[0][1]).toEqual(['r-1', SID]);
+  });
+});
+
 describe('SubstitutionRequestReader.readForServiceWith', () => {
   const reader = new SubstitutionRequestReader();
 

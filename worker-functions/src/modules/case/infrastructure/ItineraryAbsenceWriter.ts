@@ -108,12 +108,13 @@ export class ItineraryAbsenceWriter {
     substituteWorkerId: string | null,
     substituteApplicationId: string | null,
     actorUid: string,
+    onlyIfUncovered = false,
   ): Promise<number> {
     const res = await client.query(
       `UPDATE patient_itinerary_absence
           SET substitute_worker_id = $2, substitute_application_id = $3, updated_by = $4, updated_at = now()
-        WHERE id = $1 AND cancelled_at IS NULL`,
-      [id, substituteWorkerId, substituteApplicationId, actorUid],
+        WHERE id = $1 AND cancelled_at IS NULL AND ($5::boolean = false OR substitute_worker_id IS NULL)`,
+      [id, substituteWorkerId, substituteApplicationId, actorUid, onlyIfUncovered],
     );
     return res.rowCount ?? 0;
   }

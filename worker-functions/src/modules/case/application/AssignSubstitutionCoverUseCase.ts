@@ -13,7 +13,7 @@ import { PatientStatusDerivation, type PatientStatusDerivationPort } from './Pat
 import { ItineraryAbsenceUseCase, type ItineraryAbsenceResult, type ItineraryAbsenceSetSubstituteInput } from './ItineraryAbsenceUseCase';
 import { AlreadyAllocatedInSlotError, AllocationNotFoundError, isOpenPairConflict } from './ItineraryAllocationUseCase';
 import { resolveSubstituteApplicationId } from './substituteCover';
-import { exitSinceOf, loadRequest, type SubstitutionRequestReaderPort } from './substitutionRequestLoad';
+import { exitSinceOf, loadRequest, type SubstitutionRequestLockPort, type SubstitutionRequestReaderPort } from './substitutionRequestLoad';
 import { SubstitutionNothingToCoverError, SubstitutionServiceNotFoundError } from './substitutionRequestErrors';
 import { SubstitutionRequestReader } from '../infrastructure/SubstitutionRequestReader';
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
@@ -57,7 +57,7 @@ export interface AssignSubstitutionCoverResult {
 
 export class AssignSubstitutionCoverUseCase {
   constructor(
-    private readonly reader: SubstitutionRequestReaderPort = new SubstitutionRequestReader(),
+    private readonly reader: SubstitutionRequestReaderPort & SubstitutionRequestLockPort = new SubstitutionRequestReader(),
     private readonly absenceUseCase: CoverAbsencePort = new ItineraryAbsenceUseCase(),
     private readonly team: CoverTeamPort = new ServiceTeamReader(),
     private readonly allocations: CoverAllocationPort = new ItineraryAllocationWriter(),
@@ -69,13 +69,13 @@ export class AssignSubstitutionCoverUseCase {
   async execute(input: AssignSubstitutionCoverInput): Promise<AssignSubstitutionCoverResult> {
     const { patientId, serviceId, requestId, substituteWorkerId, actorUid, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
-      const { header, view, hoje, absences, logRows } = await loadRequest(this.reader, client, { patientId, serviceId, requestId }, now);
+      const { header, view, hoje, absences, logRows } = await loadRequest(this.reader, client, { patientId, serviceId, requestId }, now, this.reader);
 
       if (view.type !== 'PERMANENT') {
         const targets = absences.filter((a) => a.cancelledAt === null && a.onDate >= hoje && a.substituteWorkerId === null);
         if (targets.length === 0) throw new SubstitutionNothingToCoverError(requestId);
         for (const absence of targets) {
-          await this.absenceUseCase.setSubstituteWith(client, { patientId, serviceId, absenceId: absence.absenceId, substituteWorkerId, actorUid, now });
+          await this.absenceUseCase.setSubstituteWith(client, { patientId, serviceId, absenceId: absence.absenceId, substituteWorkerId, actorUid, now, onlyIfUncovered: true });
         }
         return { requestId, type: view.type, covered: targets.length };
       }

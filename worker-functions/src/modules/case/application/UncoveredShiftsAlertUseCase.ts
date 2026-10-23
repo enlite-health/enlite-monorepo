@@ -6,9 +6,12 @@
  *   2. resolve os destinatários (célula `patient_itinerary:update` ∪ Acesso Master) e seus países;
  *   3. por destinatário com ≥ 1 turno: UMA transação grava evento + notificação in-app + despacho `PENDING`. A PK do despacho
  *      `(dia, destinatário)` é a idempotência: a 2ª chamada do dia viola a PK e a transação volta (nada novo, `alreadySent`);
- *   4. DEPOIS do commit, tenta o e-mail dos despachos `PENDING`/`FAILED` do dia e grava o resultado em `email_status`. Falha de
- *      e-mail nunca desfaz a in-app. ⚑ Falha da in-app (banco) não envia e-mail naquela chamada: o e-mail precisa da linha de despacho
- *      para registrar o resultado; o retry do Scheduler e o alarme cobrem.
+ *   4. DEPOIS do commit, tenta o e-mail dos despachos retomáveis (`PENDING`/`FAILED`, dos últimos `RETRY_WINDOW_DAYS` dias) e grava o
+ *      resultado em `email_status`. Cada linha é REIVINDICADA (`claimEmail` → `SENDING`) antes do envio: duas execuções concorrentes
+ *      não mandam o e-mail em duplicidade. O payload é montado com a cobertura de AGORA (este `execute` acabou de recalculá-la): destinatário
+ *      sem turno descoberto hoje não recebe e-mail de dia anterior. Falha de e-mail nunca desfaz a in-app. ⚑ Falha da in-app (banco)
+ *      não envia e-mail naquela chamada: o e-mail precisa da linha de despacho para registrar o resultado; o retry do Scheduler e o
+ *      alarme `itinerary_daily_run_failures` (rotina terminada com `failures > 0`) cobrem.
  *   Sem turno descoberto = nada é gravado nem enviado. O e-mail passa por `EmailService.assertCanSend` (teste NUNCA toca canal real).
  * Isolamento: erro num país ou num destinatário é contado em `failures` e `reportError`; os demais seguem. Log SEM PII (contagens).
  *
@@ -26,7 +29,7 @@ import { uncoveredDayAlerts, uncoveredShiftCount } from '../domain/itineraryAler
 import { expandServiceOccurrences, uncoveredWindow, UNCOVERED_HORIZON_DAYS } from '../domain/serviceOccurrences';
 import { UncoveredAlertReader } from '../infrastructure/UncoveredAlertReader';
 import { UncoveredAlertRecipients, type AlertRecipient } from '../infrastructure/UncoveredAlertRecipients';
-import { UncoveredAlertDispatchRepository, isAlreadyDispatched, type AlertEmailStatus } from '../infrastructure/UncoveredAlertDispatchRepository';
+import { UncoveredAlertDispatchRepository, isAlreadyDispatched, type AlertEmailStatus, type RetryableDispatch } from '../infrastructure/UncoveredAlertDispatchRepository';
 
 /** O país do Scheduler (P11): dá a data de operação do despacho do dia. */
 export const ALERT_DISPATCH_COUNTRY = 'AR';
@@ -173,28 +176,37 @@ export class UncoveredShiftsAlertUseCase {
     }
   }
 
-  /** Depois do commit: e-mail dos despachos `PENDING`/`FAILED` do dia (os recém-criados e os de uma chamada anterior). */
+  /** Depois do commit: e-mail dos despachos retomáveis (os recém-criados e os de chamadas anteriores, janela de `RETRY_WINDOW_DAYS`). */
   private async sendPendingEmails(
     mineByUid: ReadonlyMap<string, { recipient: AlertRecipient; items: UncoveredAlertItem[] }>,
     operationDate: string,
     result: UncoveredAlertResult,
   ): Promise<void> {
-    let retryable: string[];
+    let retryable: RetryableDispatch[];
     try {
       retryable = await withActorContext(this.pool, (client) => this.dispatches.listRetryable(client, operationDate));
     } catch (err) {
       recordFailure(result, err, { source: 'UncoveredShiftsAlertUseCase:retryable' });
       return;
     }
-    for (const uid of retryable) {
-      const mine = mineByUid.get(uid);
+    for (const dispatch of retryable) {
+      const mine = mineByUid.get(dispatch.recipientUid);
       if (!mine) continue; // perdeu a célula ou os turnos foram cobertos desde o despacho: o aviso in-app já existe, nada a reenviar
+      const key = { operationDate: dispatch.operationDate, recipientUid: dispatch.recipientUid };
+      let claimed: boolean;
+      try {
+        claimed = await withActorContext(this.pool, (client) => this.dispatches.claimEmail(client, key));
+      } catch (err) {
+        recordFailure(result, err, { source: 'UncoveredShiftsAlertUseCase:claim' });
+        continue;
+      }
+      if (!claimed) continue; // outra execução reivindicou a linha: ela envia, esta não duplica
       const { status, errorCode } = await this.trySend(mine.recipient, mine.items, operationDate);
       if (status === 'SENT') result.emailsSent++;
       else if (status === 'FAILED') result.emailsFailed++;
       else result.emailsSkipped++;
       try {
-        await withActorContext(this.pool, (client) => this.dispatches.markEmail(client, { operationDate, recipientUid: uid, status, errorCode }));
+        await withActorContext(this.pool, (client) => this.dispatches.markEmail(client, { ...key, status, errorCode }));
       } catch (err) {
         recordFailure(result, err, { source: 'UncoveredShiftsAlertUseCase:markEmail' });
       }

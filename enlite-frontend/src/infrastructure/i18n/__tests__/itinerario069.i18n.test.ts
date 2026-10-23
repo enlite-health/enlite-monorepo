@@ -37,13 +37,21 @@ const NEW_ERROR_CODES = [
   'SUBSTITUTION_SHIFTS_MISMATCH',
   'NOTHING_TO_COVER',
   'SUBSTITUTE_IS_TITULAR',
+  'WORKER_HAS_SCHEDULED_EXIT',
+  'WORKER_HAS_SCHEDULED_EXIT_UNDATED',
+  'ALREADY_COVERED',
+  'ABSENCE_CANCELLED',
 ];
 /** Os códigos de erro que as rotas do pedido devolvem (F6): todos com texto, nos dois idiomas. */
 const F6_ERROR_CODES = [
   'REASON_REQUIRED', 'SUBSTITUTION_SHIFTS_MISMATCH', 'WORKER_HAS_PENDING_ENTRY', 'REQUEST_ALREADY_UNDONE', 'REQUEST_NOT_UNDOABLE',
   'NOTHING_TO_COVER', 'ALLOCATION_RESTORE_CONFLICT', 'ITINERARY_SLOT_CAPACITY_EXCEEDED', 'SUBSTITUTION_NO_SHIFTS_IN_PERIOD', 'ABSENCE_ALREADY_EXISTS',
+  'WORKER_HAS_SCHEDULED_EXIT', 'WORKER_HAS_SCHEDULED_EXIT_UNDATED', 'ALREADY_COVERED', 'ABSENCE_CANCELLED',
 ];
-const NOTIFICATION_KEYS = ['itineraryUncoveredText_one', 'itineraryUncoveredText_other', 'itineraryUncoveredContext', 'itineraryUncoveredDetail'];
+const NOTIFICATION_KEYS = [
+  'itineraryUncoveredText', 'itineraryUncoveredShifts_one', 'itineraryUncoveredShifts_other', 'itineraryUncoveredServices_one', 'itineraryUncoveredServices_other',
+  'itineraryUncoveredContext', 'itineraryUncoveredDetail',
+];
 
 describe('itinerário 069 — i18n es + pt-BR', () => {
   it.each(NEW_BRANCHES)('%s: mesmas chaves e mesmas variáveis nos 2 idiomas, nenhuma vazia', (branch) => {

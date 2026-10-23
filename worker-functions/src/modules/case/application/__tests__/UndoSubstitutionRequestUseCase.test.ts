@@ -23,7 +23,7 @@ interface Opts {
 
 function build(opts: Opts = {}) {
   const order: string[] = [];
-  const reader = { readForServiceWith: jest.fn(async () => (opts.rows === undefined ? serviceRows() : opts.rows)) };
+  const reader = { readForServiceWith: jest.fn(async () => (opts.rows === undefined ? serviceRows() : opts.rows)), lockHeader: jest.fn(async () => undefined) };
   const requests = {
     markUndone: jest.fn(async () => {
       order.push('mark');
@@ -63,6 +63,15 @@ describe('UndoSubstitutionRequestUseCase — DIAS', () => {
       absence('ab-futura', '2026-11-04'),
       absence('ab-ja-cancelada', '2026-11-06', { cancelledAt: '2026-10-29T10:00:00.000Z' }),
     ],
+  });
+
+  it('D4: trava o cabeçalho do pedido ANTES de ler o estado dele e antes de escrever qualquer coisa', async () => {
+    const t = build({ rows: diasRows });
+    await t.useCase.execute(input);
+    expect(t.reader.lockHeader).toHaveBeenCalledWith(CLIENT, 's-1', RID);
+    const lock = t.reader.lockHeader.mock.invocationCallOrder[0];
+    expect(lock).toBeLessThan(t.reader.readForServiceWith.mock.invocationCallOrder[0]);
+    expect(lock).toBeLessThan(t.requests.markUndone.mock.invocationCallOrder[0]);
   });
 
   it('cancela só as ausências vivas de hoje em diante (as passadas e as já canceladas ficam), carimba o desfeito DEPOIS e deriva por último', async () => {

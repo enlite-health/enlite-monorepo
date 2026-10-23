@@ -43,6 +43,7 @@ export function StepHowLong({ draft, onChange, asOf, outgoingName, period }: Ste
   const problem = draft.type === null ? null : periodProblem(draft, asOf);
   const shifts = period.preview?.shifts ?? [];
   const pendingEntry = period.preview?.permanent?.pendingEntry === true;
+  const scheduledExit = period.preview?.permanent?.scheduledExit ?? null;
   const firstName = outgoingName.split(' ')[0];
 
   const message = (key: string, testId: string): JSX.Element => (
@@ -76,6 +77,8 @@ export function StepHowLong({ draft, onChange, asOf, outgoingName, period }: Ste
         </SingleLine>
         {draft.type !== 'PERMANENT' && <ShiftChips shifts={shifts} language={i18n.language} />}
         {pendingEntry && message(t('admin.patients.detail.itinerary.actionErrors.WORKER_HAS_PENDING_ENTRY'), 'substitucion-entrada-pendiente')}
+        {scheduledExit !== null &&
+          message(t('admin.patients.detail.itinerary.actionErrors.WORKER_HAS_SCHEDULED_EXIT', { date: scheduledExit.split('-').reverse().slice(0, 2).join('/') }), 'substitucion-salida-programada')}
       </>
     );
   };

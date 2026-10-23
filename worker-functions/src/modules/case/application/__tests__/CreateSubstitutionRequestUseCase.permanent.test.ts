@@ -9,6 +9,7 @@ import {
   SubstitutionPeriodInPastError,
   SubstitutionServiceNotFoundError,
   WorkerHasPendingEntryError,
+  WorkerHasScheduledExitError,
 } from '../substitutionRequestErrors';
 import { AllocationNotActiveError } from '../ItineraryAllocationUseCase';
 import { DestinationNotAvailableForScheduledError, DestinationRequiredError, ServiceExitReasonInvalidError, ServiceExitReasonRequiredError } from '../../domain/serviceExitReason';
@@ -40,6 +41,7 @@ function build(opts: { team?: { country: string } | null; allocs?: WorkerAllocat
       }),
     },
     schedule: {
+      lockWorkerAllocations: jest.fn(async () => undefined),
       listWorkerAllocations: jest.fn(async () => opts.allocs ?? ALLOCS),
       scheduleAllocationEnd: jest.fn(async (_c: unknown, id: string) => (order.push(`end:${id}`), opts.endRows ?? 1)),
       cancelAllocation: jest.fn(async (_c: unknown, id: string) => (order.push(`cancel:${id}`), opts.cancelRows ?? 1)),
@@ -153,6 +155,28 @@ describe('CreateSubstitutionRequestUseCase — PERMANENT', () => {
     await expect(t.useCase.execute(input())).rejects.toBeInstanceOf(WorkerHasPendingEntryError);
     expect(t.requests.insert).not.toHaveBeenCalled();
     expect(t.exit.derivation.run).not.toHaveBeenCalled();
+  });
+
+  it('D1: pessoa com SAÍDA AGENDADA (valid_to) numa alocação do serviço → WorkerHasScheduledExitError com o 1º dia sem ela; NADA escrito (nem cabeçalho)', async () => {
+    const t = build({ allocs: [{ id: 'a-seg', slotId: 'seg', validFrom: '2026-01-01', validTo: '2026-11-14' }, { id: 'a-qua', slotId: 'qua', validFrom: '2026-01-01', validTo: '2026-11-20' }] });
+    await expect(t.useCase.execute(input())).rejects.toEqual(expect.objectContaining({ name: 'WorkerHasScheduledExitError', workerId: 'w-out', exitDate: '2026-11-15' }));
+    await expect(build({ allocs: [{ id: 'a-seg', slotId: 'seg', validFrom: '2026-01-01', validTo: '2026-11-14' }] }).useCase.execute(input())).rejects.toBeInstanceOf(WorkerHasScheduledExitError);
+    expect(t.requests.insert).not.toHaveBeenCalled();
+    expect(t.exit.schedule.scheduleAllocationEnd).not.toHaveBeenCalled();
+    expect(t.exit.derivation.run).not.toHaveBeenCalled();
+    // controle positivo: sem fim agendado o MESMO pedido grava
+    const ok = build();
+    await ok.useCase.execute(input());
+    expect(ok.requests.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('D4: as alocações dela são TRAVADAS antes de lidas e antes do cabeçalho (dois "No vuelve más" concorrentes se serializam)', async () => {
+    const t = build();
+    await t.useCase.execute(input());
+    expect(t.exit.schedule.lockWorkerAllocations).toHaveBeenCalledWith(CLIENT, 's-1', 'w-out');
+    const lock = t.exit.schedule.lockWorkerAllocations.mock.invocationCallOrder[0];
+    expect(lock).toBeLessThan(t.exit.schedule.listWorkerAllocations.mock.invocationCallOrder[0]);
+    expect(lock).toBeLessThan(t.requests.insert.mock.invocationCallOrder[0]);
   });
 
   it('validações: motivo ausente/não-string ANTES de abrir transação; inativo/inexistente sem escrever; serviço 404; D no passado; pessoa sem alocação', async () => {

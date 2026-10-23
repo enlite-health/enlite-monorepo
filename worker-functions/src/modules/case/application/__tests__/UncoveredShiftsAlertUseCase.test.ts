@@ -31,7 +31,11 @@ interface Opts {
   labels?: Array<{ patientId: string; serviceId: string; patientName: string; serviceCode: string }>;
   recipients?: Array<{ uid: string; email: string | null; countries: string[] }>;
   skippedNoCountry?: number;
+  /** uid, ou `uid@AAAA-MM-DD` para uma linha de OUTRO dia (janela de 3 dias). */
   retryable?: string[];
+  /** uids cuja reivindicação PERDE a corrida (outra execução já pegou a linha). */
+  claimLost?: string[];
+  claimError?: boolean;
   notifyError?: (uid: string) => unknown;
   sendError?: unknown;
   universeError?: string;
@@ -61,7 +65,14 @@ function montar(o: Opts = {}) {
     }),
     listRetryable: jest.fn(async () => {
       if (o.retryableError) throw new Error('boom retryable');
-      return o.retryable ?? (o.recipients ?? []).map((r) => r.uid);
+      return (o.retryable ?? (o.recipients ?? []).map((r) => r.uid)).map((s) => {
+        const [recipientUid, operationDate = ASOF] = s.split('@');
+        return { operationDate, recipientUid };
+      });
+    }),
+    claimEmail: jest.fn(async (_c: unknown, i: { recipientUid: string }) => {
+      if (o.claimError) throw new Error('boom claim');
+      return !(o.claimLost ?? []).includes(i.recipientUid);
     }),
     markEmail: jest.fn(async (..._a: unknown[]) => {
       if (o.markError) throw new Error('boom mark');
@@ -233,6 +244,59 @@ describe('UncoveredShiftsAlertUseCase (spec 069 F4)', () => {
     });
     const r = await uc.execute({ now: NOW, countries: ['AR'] });
     expect(r).toMatchObject({ notified: 0, alreadySent: 1, emailsSent: 1 });
+    expect(email.sendItineraryUncoveredShiftsDigest).toHaveBeenCalledTimes(1);
+  });
+
+  it('D2c: linha REIVINDICADA por outra execução (claim perdido) → NÃO envia o 2º e-mail e nada é contado; reivindicar vem ANTES de enviar e de marcar', async () => {
+    const base = {
+      universe: { AR: [um('p1', 's1')] },
+      labels: [{ patientId: 'p1', serviceId: 's1', patientName: 'A', serviceCode: 'AT' }],
+      recipients: [{ uid: 'u1', email: 'a@x', countries: ['AR'] }],
+    };
+    const perdeu = montar({ ...base, claimLost: ['u1'] });
+    const r = await perdeu.uc.execute({ now: NOW, countries: ['AR'] });
+    expect(perdeu.email.sendItineraryUncoveredShiftsDigest).not.toHaveBeenCalled();
+    expect(perdeu.dispatches.markEmail).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ emailsSent: 0, emailsFailed: 0, emailsSkipped: 0, failures: 0 });
+    // controle positivo: com a reivindicação ganha, o MESMO cenário envia e marca — claim < envio < mark
+    const ganhou = montar(base);
+    await ganhou.uc.execute({ now: NOW, countries: ['AR'] });
+    expect(ganhou.dispatches.claimEmail).toHaveBeenCalledWith(expect.anything(), { operationDate: ASOF, recipientUid: 'u1' });
+    const claim = ganhou.dispatches.claimEmail.mock.invocationCallOrder[0];
+    expect(claim).toBeLessThan(ganhou.email.sendItineraryUncoveredShiftsDigest.mock.invocationCallOrder[0]);
+    expect(ganhou.email.sendItineraryUncoveredShiftsDigest.mock.invocationCallOrder[0]).toBeLessThan(ganhou.dispatches.markEmail.mock.invocationCallOrder[0]);
+  });
+
+  it('D2c: erro ao reivindicar é contado em failures (reportError) e o destinatário seguinte continua; nenhum e-mail do que não foi reivindicado', async () => {
+    const { uc, email } = montar({
+      universe: { AR: [um('p1', 's1')] },
+      labels: [{ patientId: 'p1', serviceId: 's1', patientName: 'A', serviceCode: 'AT' }],
+      recipients: [{ uid: 'u1', email: 'a@x', countries: ['AR'] }],
+      claimError: true,
+    });
+    const r = await uc.execute({ now: NOW, countries: ['AR'] });
+    expect(r.failures).toBe(1);
+    expect(email.sendItineraryUncoveredShiftsDigest).not.toHaveBeenCalled();
+    expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), { source: 'UncoveredShiftsAlertUseCase:claim' });
+  });
+
+  it('D2b: linha de DIA ANTERIOR ainda pendente é retomada — com a cobertura de AGORA (payload re-montado), reivindicada e marcada na chave DAQUELE dia; quem não tem mais turno descoberto não recebe nada', async () => {
+    const { uc, email, dispatches } = montar({
+      universe: { AR: [um('p1', 's1')] },
+      labels: [{ patientId: 'p1', serviceId: 's1', patientName: 'A', serviceCode: 'AT' }],
+      recipients: [
+        { uid: 'u1', email: 'a@x', countries: ['AR'] },
+        { uid: 'u-sem-turno', email: 'b@x', countries: ['BR'] }, // BR sem universo: nada descoberto hoje
+      ],
+      notifyError: () => Object.assign(new Error('dup'), { code: '23505' }),
+      retryable: ['u1@2026-10-31', 'u-sem-turno@2026-10-31'],
+    });
+    await uc.execute({ now: NOW, countries: ['AR'] });
+    expect(dispatches.claimEmail).toHaveBeenCalledTimes(1);
+    expect(dispatches.claimEmail).toHaveBeenCalledWith(expect.anything(), { operationDate: '2026-10-31', recipientUid: 'u1' });
+    expect(dispatches.markEmail).toHaveBeenCalledWith(expect.anything(), { operationDate: '2026-10-31', recipientUid: 'u1', status: 'SENT', errorCode: null });
+    const [to, items, date] = email.sendItineraryUncoveredShiftsDigest.mock.calls[0] as unknown as [string, unknown[], string];
+    expect([to, items.length, date]).toEqual(['a@x', 1, ASOF]); // a data do DIGEST é a de hoje: o conteúdo é a cobertura de hoje
     expect(email.sendItineraryUncoveredShiftsDigest).toHaveBeenCalledTimes(1);
   });
 

@@ -21,7 +21,7 @@ import { ItineraryAllocationWriter, type AllocationRow } from '../infrastructure
 import { addDaysToDateString } from '../domain/itineraryEvents';
 import type { SubstitutionRequestType } from '../domain/substitutionRequest';
 import { reopenErrorFrom, restoreTitular } from './restoreTitular';
-import { exitSinceOf, loadRequest, type SubstitutionRequestReaderPort } from './substitutionRequestLoad';
+import { exitSinceOf, loadRequest, type SubstitutionRequestLockPort, type SubstitutionRequestReaderPort } from './substitutionRequestLoad';
 import { SubstitutionRequestAlreadyUndoneError, SubstitutionRequestNotUndoableError } from './substitutionRequestErrors';
 
 export interface UndoRequestsPort {
@@ -65,7 +65,7 @@ function isOpenTurnRefusal(err: unknown): boolean {
 
 export class UndoSubstitutionRequestUseCase {
   constructor(
-    private readonly reader: SubstitutionRequestReaderPort = new SubstitutionRequestReader(),
+    private readonly reader: SubstitutionRequestReaderPort & SubstitutionRequestLockPort = new SubstitutionRequestReader(),
     private readonly requests: UndoRequestsPort = new SubstitutionRequestWriter(),
     private readonly absences: UndoAbsencesPort = new ItineraryAbsenceWriter(),
     private readonly schedule: UndoSchedulePort = new ItineraryAllocationWriter(),
@@ -76,7 +76,7 @@ export class UndoSubstitutionRequestUseCase {
   async execute(input: UndoSubstitutionRequestInput): Promise<UndoSubstitutionRequestResult> {
     const { patientId, serviceId, requestId, actorUid, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
-      const { view, hoje, absences, logRows } = await loadRequest(this.reader, client, { patientId, serviceId, requestId }, now);
+      const { view, hoje, absences, logRows } = await loadRequest(this.reader, client, { patientId, serviceId, requestId }, now, this.reader);
       if (!view.undoable) throw new SubstitutionRequestNotUndoableError(requestId);
 
       let cancelledAbsences = 0;

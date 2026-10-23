@@ -5,10 +5,9 @@ const ANTES_DO_PRAZO = new Date('2026-11-02T10:30:00Z'); // 07:30 local
 const DEPOIS_DO_PRAZO = new Date('2026-11-02T11:30:00Z'); // 08:30 local
 
 describe('ItineraryDailyRunHealthService (spec 069 F4, alarme "não rodou")', () => {
-  it('antes das 08:00 locais não cobra nada e NEM consulta o banco', async () => {
-    const query = jest.fn();
-    expect(await new ItineraryDailyRunHealthService({ query } as never).getHealth(ANTES_DO_PRAZO)).toEqual({ missing: [] });
-    expect(query).not.toHaveBeenCalled();
+  it('antes das 08:00 locais não cobra "não rodou" (missing vazio), mas já olha falhas de uma rotina terminada', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    expect(await new ItineraryDailyRunHealthService({ query } as never).getHealth(ANTES_DO_PRAZO)).toEqual({ missing: [], failed: [] });
   });
 
   it('depois das 08:00 locais, país SEM rodada terminada do dia (data local) entra em missing; o que terminou fica de fora', async () => {
@@ -18,6 +17,7 @@ describe('ItineraryDailyRunHealthService (spec 069 F4, alarme "não rodou")', ()
     const [sql, params] = query.mock.calls[0];
     expect(sql).toContain('finished_at IS NOT NULL');
     expect(sql).not.toMatch(/INSERT|UPDATE|DELETE/);
+    expect(sql).toContain('failures');
     expect(params).toEqual([['2026-11-02', '2026-11-02']]);
   });
 
@@ -37,5 +37,21 @@ describe('ItineraryDailyRunHealthService (spec 069 F4, alarme "não rodou")', ()
       { country: 'JP', operationDate: '2026-11-03' },
       { country: 'US', operationDate: '2026-11-02' },
     ]);
+  });
+
+  it('D2a: rotina TERMINADA com failures > 0 entra em `failed` (país, data, contagem) — mesmo antes das 08:00; failures = 0 não; só o dia de operação ATUAL', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [
+        { country: 'AR', operation_date: '2026-11-02', failures: 3 },
+        { country: 'BR', operation_date: '2026-11-02', failures: 0 },
+      ],
+    });
+    const h = await new ItineraryDailyRunHealthService({ query } as never).getHealth(ANTES_DO_PRAZO);
+    expect(h.failed).toEqual([{ country: 'AR', operationDate: '2026-11-02', failures: 3 }]);
+    // linha de OUTRO dia (data fora das de hoje) devolvida pelo banco não é reportada
+    const velha = jest.fn().mockResolvedValue({ rows: [{ country: 'AR', operation_date: '2026-10-01', failures: 9 }] });
+    expect((await new ItineraryDailyRunHealthService({ query: velha } as never).getHealth(DEPOIS_DO_PRAZO)).failed).toEqual([]);
+    // controle: o payload do `failed` não carrega nada além de país/data/contagem (sem PII)
+    expect(Object.keys(h.failed[0]).sort()).toEqual(['country', 'failures', 'operationDate']);
   });
 });

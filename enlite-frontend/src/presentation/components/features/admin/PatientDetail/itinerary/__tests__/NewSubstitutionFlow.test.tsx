@@ -50,7 +50,7 @@ function previewImpl(body: Body) {
   );
   return Promise.resolve({
     shifts, conflicts, statusAfter: { current: 'ACTIVE', after: 'SEARCHING', changes: body.type === 'PERMANENT' },
-    ...(body.type === 'PERMANENT' ? { permanent: { allocationCount: 2, cancelledAbsences: 3, clearedSubstitutes: 1, pendingEntry: false, ...permanentExtra } } : {}),
+    ...(body.type === 'PERMANENT' ? { permanent: { allocationCount: 2, cancelledAbsences: 3, clearedSubstitutes: 1, pendingEntry: false, scheduledExit: null, ...permanentExtra } } : {}),
   });
 }
 
@@ -263,6 +263,17 @@ describe('Passo 2 — ¿Por cuánto tiempo?', () => {
     fireEvent.click(radioOf('substitucion-duracion-PERMANENT'));
     setDate('substitucion-fecha', '2026-12-01');
     expect(await screen.findByTestId('substitucion-entrada-pendiente')).toHaveTextContent('Esa persona tiene una entrada futura en este servicio.');
+    expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
+  });
+
+  it('D1: pessoa com saída agendada → mensagem es com a data DD/MM e "Siguiente" bloqueado; sem saída agendada o mesmo passo avança (controle)', async () => {
+    permanentExtra = { scheduledExit: '2026-11-15' };
+    await toStep2Now();
+    fireEvent.click(radioOf('substitucion-duracion-PERMANENT'));
+    setDate('substitucion-fecha', '2026-12-01');
+    expect(await screen.findByTestId('substitucion-salida-programada')).toHaveTextContent(
+      'Esta persona ya tiene una salida programada para el 15/11. Deshacé esa sustitución para cambiar la fecha.',
+    );
     expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
   });
 

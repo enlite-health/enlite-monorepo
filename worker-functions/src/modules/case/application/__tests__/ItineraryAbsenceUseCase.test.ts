@@ -8,6 +8,7 @@ import {
   ItineraryAbsenceUseCase,
   AbsenceNotFoundError,
   AbsenceCancelledError,
+  AbsenceAlreadyCoveredError,
   AbsenceDateInPastError,
   AbsenceAlreadyExistsError,
   AbsenceWeekdayMismatchError,
@@ -538,7 +539,7 @@ describe('ItineraryAbsenceUseCase.setSubstitute', () => {
     const result = await useCase.setSubstitute({ patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', substituteWorkerId: null, actorUid: 'u-1', now });
 
     expect(allocationWriter.findApplicationId).not.toHaveBeenCalled();
-    expect(writer.updateSubstitute).toHaveBeenCalledWith(FAKE_CLIENT, 'abs-1', null, null, 'u-1');
+    expect(writer.updateSubstitute).toHaveBeenCalledWith(FAKE_CLIENT, 'abs-1', null, null, 'u-1', false);
     expect(result).toEqual({ absenceId: 'abs-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: null, status: 'OPEN' });
   });
 
@@ -551,7 +552,7 @@ describe('ItineraryAbsenceUseCase.setSubstitute', () => {
 
     await useCase.setSubstitute({ patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', substituteWorkerId: 'w-sub', actorUid: 'u-1', now });
 
-    expect(writer.updateSubstitute).toHaveBeenCalledWith(FAKE_CLIENT, 'abs-1', 'w-sub', 'wja-sub', 'u-1');
+    expect(writer.updateSubstitute).toHaveBeenCalledWith(FAKE_CLIENT, 'abs-1', 'w-sub', 'wja-sub', 'u-1', false);
   });
 
   it('substituto fora de Selecionado/Em Atendimento+candidato → NotSelectedForServiceError, sem updateSubstitute', async () => {
@@ -678,7 +679,23 @@ describe('ItineraryAbsenceUseCase.setSubstituteWith (spec 069, T209)', () => {
     });
 
     expect(runInTransaction).not.toHaveBeenCalled();
-    expect(writer.updateSubstitute).toHaveBeenCalledWith(OTHER_CLIENT, 'abs-1', 'w-sub', 'wja-sub', 'u-1');
+    expect(writer.updateSubstitute).toHaveBeenCalledWith(OTHER_CLIENT, 'abs-1', 'w-sub', 'wja-sub', 'u-1', false);
     expect(result).toMatchObject({ absenceId: 'abs-1', substituteWorkerId: 'w-sub', status: 'OPEN' });
+  });
+
+  it('D4: com `onlyIfUncovered` o writer recebe a guarda; 0 linhas = turno já coberto (AbsenceAlreadyCoveredError, NÃO "cancelada")', async () => {
+    const mk = (rows: number) => {
+      const writer = writerStub({ findAbsence: jest.fn().mockResolvedValue(OPEN_ABSENCE), updateSubstitute: jest.fn().mockResolvedValue(rows) });
+      const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+      const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriterStub({ findApplicationId: jest.fn().mockResolvedValue('wja-sub') }), runInTransactionStub(), catalogStub(), changeLogStub(), requestStub());
+      return { writer, useCase };
+    };
+    const base = { patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', substituteWorkerId: 'w-sub', actorUid: 'u-1', now: new Date('2026-09-27T15:00:00Z'), onlyIfUncovered: true };
+    const perdeu = mk(0);
+    await expect(perdeu.useCase.setSubstituteWith(FAKE_CLIENT, base)).rejects.toBeInstanceOf(AbsenceAlreadyCoveredError);
+    expect(perdeu.writer.updateSubstitute).toHaveBeenCalledWith(FAKE_CLIENT, 'abs-1', 'w-sub', 'wja-sub', 'u-1', true);
+    // controle positivo: a mesma chamada que ganha a corrida grava; e sem a guarda, 0 linhas continua sendo "cancelada"
+    await expect(mk(1).useCase.setSubstituteWith(FAKE_CLIENT, base)).resolves.toMatchObject({ substituteWorkerId: 'w-sub' });
+    await expect(mk(0).useCase.setSubstituteWith(FAKE_CLIENT, { ...base, onlyIfUncovered: false })).rejects.toBeInstanceOf(AbsenceCancelledError);
   });
 });

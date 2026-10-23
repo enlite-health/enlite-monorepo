@@ -513,6 +513,17 @@ describe('InternalController', () => {
         expect((res.json as jest.Mock).mock.calls[0][0].itineraryDailyRun).toEqual({ missing: [{ country: 'AR', operationDate: '2026-11-02' }] });
       });
 
+      it('D2a: rotina terminada COM falhas → WARN itinerary_daily_run_failures (country, operationDate, failures — sem PII) a cada ciclo; sem falhas não emite', async () => {
+        const getHealth = jest.fn().mockResolvedValue({ missing: [], failed: [{ country: 'AR', operationDate: '2026-11-02', failures: 2 }] });
+        await comItinerario(getHealth).getEventsHealth(mockReq({}, {}), mockRes());
+        const warns = logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg === 'itinerary_daily_run_failures');
+        expect(warns).toHaveLength(1);
+        expect(warns[0][0]).toEqual({ msg: 'itinerary_daily_run_failures', country: 'AR', operationDate: '2026-11-02', failures: 2 });
+        logger.warn.mockClear();
+        await comItinerario(jest.fn().mockResolvedValue({ missing: [], failed: [] })).getEventsHealth(mockReq({}, {}), mockRes());
+        expect(logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg === 'itinerary_daily_run_failures')).toHaveLength(0);
+      });
+
       it('tudo rodou: nenhum WARN; sem o serviço injetado o bloco é omitido', async () => {
         await comItinerario(jest.fn().mockResolvedValue({ missing: [] })).getEventsHealth(mockReq({}, {}), mockRes());
         expect(logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg === 'itinerary_daily_run_missing')).toHaveLength(0);
