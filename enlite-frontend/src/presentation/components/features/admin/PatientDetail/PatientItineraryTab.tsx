@@ -10,6 +10,9 @@ import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { isVigenteAt, type PatientItineraryService } from '@domain/entities/PatientItinerary';
 import type { ExitDestination, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import type { SubstitutionFlowIntent } from '@domain/entities/SubstitutionRequest';
+import { CoverSubstituteModal, type CoverTarget } from './itinerary/CoverSubstituteModal';
+import { NewSubstitutionFlow } from './itinerary/NewSubstitutionFlow';
+import { SubstitutionsTab } from './itinerary/SubstitutionsTab';
 import { AssembleItineraryButton } from './AssembleItineraryButton';
 import { ItineraryEditAppointmentModal } from './ItineraryEditAppointmentModal';
 import { ItineraryServiceList } from './itinerary/ItineraryServiceList';
@@ -25,6 +28,11 @@ interface EditingSlot {
   /** Todos os prestadores vigentes da faixa; cada um tem a SUA alocação (o que o "Quitar del itinerario" encerra). */
   vigentes: Array<{ workerId: string; allocationId: string }>;
   providersNeeded: number | null;
+}
+
+/** A escolha de quem entra: um pedido inteiro (aba "Sustituciones") ou a falta de UM turno (tabela). */
+function coverTargetOf(intent: Exclude<SubstitutionFlowIntent, { kind: 'new' }>): CoverTarget {
+  return intent.kind === 'cover' ? { kind: 'request', request: intent.request } : { kind: 'absence', event: intent.event };
 }
 
 /** Código sintético quando as opções do modal não carregam — cai no texto `actionErrors.generic`. */
@@ -74,7 +82,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
   }
 
   const { asOf } = itinerary;
-  const codeById = new Map(patient.contractedServices.map((s) => [s.id, s.serviceCode]));
+  const vacancyById = new Map(patient.contractedServices.map((s) => [s.id, s.liveVacancy]));
   const addressById = new Map((patient.addresses ?? []).map((a) => [a.id, a]));
   const servicesById = new Map(
     patient.contractedServices.map((s) => [
@@ -92,6 +100,26 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
     itinerary.services.length === 1
       ? itinerary.services[0]
       : (itinerary.services.find((s) => s.contractedServiceId === serviceParam) ?? null);
+
+  /** Fechou uma escrita do pedido (criar, desfazer, quem entra): fecha o fluxo e refaz o itinerário e as leituras da tela do serviço. */
+  function afterWrite(): void {
+    setFlowIntent(null);
+    refresh();
+    setRefreshSignal((n) => n + 1);
+  }
+
+  /**
+   * O que cada ação da tabela abre: "Cambiar" num turno de quem atende → o fluxo já com a pessoa e o dia; "Cambiar"/"Asignar" num turno
+   * com FALTA → a escolha de quem entra (daquela falta); "Asignar" num turno SEM ninguém e sem falta (faixa sem alocação) → o editor da
+   * faixa em "Horario fijo" (é a alocação que falta, não uma substituição).
+   */
+  function openFlow(intent: SubstitutionFlowIntent): void {
+    if (intent.kind === 'assign' && intent.event.absenceId === null) {
+      if (selected) openEdit(selected, intent.event.slotId);
+      return;
+    }
+    setFlowIntent(intent);
+  }
 
   function setServiceParam(serviceId: string | null): void {
     setSearchParams((prev) => {
@@ -192,16 +220,26 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
         <ItineraryServiceScreen
           patientId={patient.id}
           service={selected}
-          serviceCode={codeById.get(selected.contractedServiceId) ?? ''}
           label={servicesById.get(selected.contractedServiceId)?.label ?? selected.contractedServiceId}
           addressLabel={servicesById.get(selected.contractedServiceId)?.addressLabel ?? ''}
+          vacancy={vacancyById.get(selected.contractedServiceId) ?? null}
           asOf={asOf}
           canGoBack={itinerary.services.length > 1}
           onBack={() => setServiceParam(null)}
-          onSubstitutionFlow={setFlowIntent}
+          onSubstitutionFlow={openFlow}
           actionError={actedServiceId === selected.contractedServiceId ? (editOptionsFailed ? OPTIONS_LOAD_FAILED : actionError) : null}
           onEditSlot={(slotId) => openEdit(selected, slotId)}
           refreshKey={refreshSignal}
+          substitutionsSlot={
+            <SubstitutionsTab
+              patientId={patient.id}
+              serviceId={selected.contractedServiceId}
+              refreshKey={refreshSignal}
+              onNew={() => setFlowIntent({ kind: 'new' })}
+              onPick={(request) => setFlowIntent({ kind: 'cover', request })}
+              onChanged={afterWrite}
+            />
+          }
         />
       ) : (
         <ItineraryServiceList
@@ -209,14 +247,37 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
             service,
             label: servicesById.get(service.contractedServiceId)?.label ?? service.contractedServiceId,
             addressLabel: servicesById.get(service.contractedServiceId)?.addressLabel ?? '',
+            vacancy: vacancyById.get(service.contractedServiceId) ?? null,
           }))}
           horizonDays={itinerary.horizonDays}
           onOpen={setServiceParam}
         />
       )}
 
-      {/* F6 monta aqui o fluxo "Nueva sustitución" a partir da intenção (novo · cambiar · asignar). */}
-      {flowIntent && <div hidden data-testid="itinerario-fluxo-ponto-de-montagem" data-intent={flowIntent.kind} />}
+      {/* O ponto de montagem do fluxo "Nueva sustitución" e da escolha de quem entra (spec 069, F6). */}
+      {flowIntent && selected && (
+        <div data-testid="itinerario-fluxo-ponto-de-montagem" data-intent={flowIntent.kind}>
+          {flowIntent.kind === 'new' || (flowIntent.kind === 'change' && flowIntent.event.status === 'covered') ? (
+            <NewSubstitutionFlow
+              patientId={patient.id}
+              serviceId={selected.contractedServiceId}
+              asOf={asOf}
+              prefill={flowIntent.kind === 'change' ? flowIntent.event : null}
+              onClose={() => setFlowIntent(null)}
+              onCreated={afterWrite}
+            />
+          ) : (
+            <CoverSubstituteModal
+              patientId={patient.id}
+              serviceId={selected.contractedServiceId}
+              asOf={asOf}
+              target={coverTargetOf(flowIntent)}
+              onClose={() => setFlowIntent(null)}
+              onDone={afterWrite}
+            />
+          )}
+        </div>
+      )}
 
       {editing && (
         <ItineraryEditAppointmentModal

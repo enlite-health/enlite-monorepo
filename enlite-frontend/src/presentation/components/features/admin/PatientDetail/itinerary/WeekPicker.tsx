@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
@@ -12,6 +12,8 @@ interface WeekPickerProps {
   /** Segunda-feira da semana de hoje (`asOf` da API) — o relógio do navegador nunca entra. */
   currentWeekStart: string;
   onChange: (weekStart: string) => void;
+  /** O filtro por prestador (N7): fica NA MESMA linha, à direita, antes de "Ir a esta semana" (mockup `b2a.png`). */
+  filter?: ReactNode;
 }
 
 /**
@@ -19,7 +21,7 @@ interface WeekPickerProps {
  * "2 al 8 de noviembre"] ›`, o texto relativo ("En 2 semanas") e "Ir a esta semana". Substitui as
  * setas soltas e os filtros Inicio/Fin do painel antigo. Sem teto: qualquer semana, à frente ou atrás.
  */
-export function WeekPicker({ weekStart, currentWeekStart, onChange }: WeekPickerProps): JSX.Element {
+export function WeekPicker({ weekStart, currentWeekStart, onChange, filter }: WeekPickerProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const tw = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.weekPicker.${key}`, opts);
   const locale = dateLocaleOf(i18n.language);
@@ -91,11 +93,14 @@ export function WeekPicker({ weekStart, currentWeekStart, onChange }: WeekPicker
         {relative}
       </Text>
 
-      <button type="button" onClick={() => onChange(currentWeekStart)} data-testid="itinerario-semana-atual" className="ml-auto underline">
-        <Text as="span" size="sm" weight="semibold" color="primary">
-          {tw('goToCurrent')}
-        </Text>
-      </button>
+      <div className="ml-auto flex items-center gap-4">
+        {filter}
+        <button type="button" onClick={() => onChange(currentWeekStart)} data-testid="itinerario-semana-atual" className="underline whitespace-nowrap">
+          <Text as="span" size="sm" weight="semibold" color="primary">
+            {tw('goToCurrent')}
+          </Text>
+        </button>
+      </div>
     </div>
   );
 }

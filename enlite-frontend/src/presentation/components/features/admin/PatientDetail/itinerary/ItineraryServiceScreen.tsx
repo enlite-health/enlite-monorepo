@@ -5,12 +5,16 @@ import { Card } from '@presentation/components/organisms/Card';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ProgressBar } from '@presentation/components/atoms/ProgressBar';
+import { Select } from '@presentation/components/atoms/Select';
 import { ActionButton } from '@presentation/components/features/access';
+import { useServiceExitReasonOptions } from '@hooks/admin/useServiceExitReasonOptions';
 import { useServiceOccurrences } from '@hooks/admin/useServiceOccurrences';
+import { useSubstitutionRequests } from '@hooks/admin/useSubstitutionRequests';
 import type { PatientItineraryEvent, PatientItineraryService } from '@domain/entities/PatientItinerary';
 import type { SubstitutionFlowIntent } from '@domain/entities/SubstitutionRequest';
 import type { ItineraryActionError } from '@hooks/admin/usePatientItinerary';
 import { workerLabel } from '../workerLabel';
+import { ServiceVacancyTag, type ServiceVacancyRef } from './ServiceVacancyTag';
 import { FixedScheduleTab } from './FixedScheduleTab';
 import { UpcomingDaysTable } from './UpcomingDaysTable';
 import { WeekPicker } from './WeekPicker';
@@ -19,9 +23,10 @@ import { mondayOf } from './weekRange';
 interface ItineraryServiceScreenProps {
   patientId: string;
   service: PatientItineraryService;
-  serviceCode: string;
   label: string;
   addressLabel: string;
+  /** A vaga viva do serviço (a ficha a conhece); `null` = redigida para este ator. */
+  vacancy: ServiceVacancyRef | null;
   asOf: string;
   /** "Volver a los servicios" some quando o paciente só tem um serviço (a lista é pulada). */
   canGoBack: boolean;
@@ -60,9 +65,9 @@ function peopleOf(events: PatientItineraryEvent[], t: Parameters<typeof workerLa
 export function ItineraryServiceScreen({
   patientId,
   service,
-  serviceCode,
   label,
   addressLabel,
+  vacancy,
   asOf,
   canGoBack,
   onBack,
@@ -80,6 +85,13 @@ export function ItineraryServiceScreen({
   const [weekStart, setWeekStart] = useState(currentWeekStart);
   const [workerFilter, setWorkerFilter] = useState('');
   const { events, status } = useServiceOccurrences(patientId, serviceId, weekStart, refreshKey);
+  // O MOTIVO da falta mora no PEDIDO (o dono), não no turno: "Nadie asignado — Lucía no viene · Enfermedad" lê o pedido pelo `requestId`.
+  const upcomingRequests = useSubstitutionRequests(patientId, serviceId, 'upcoming', refreshKey);
+  const { options: reasonOptions } = useServiceExitReasonOptions();
+  const reasonOf = (event: PatientItineraryEvent): string | null => {
+    const code = upcomingRequests.requests?.find((r) => event.requestId !== null && r.requestId === event.requestId)?.reasonCode ?? null;
+    return reasonOptions.find((o) => o.code === code)?.label ?? null;
+  };
 
   const cobertas = hoursLabel(service.cobertas);
   const total = hoursLabel(service.scheduleHours);
@@ -110,11 +122,7 @@ export function ItineraryServiceScreen({
                 {addressLabel}
               </Text>
             </div>
-            <Text size="sm" color="tertiary" data-testid="itinerario-servico-reserva">
-              {service.reserve === null
-                ? t('admin.patients.detail.itinerary.reserveNoVacancy')
-                : t('admin.patients.detail.itinerary.reserve', { count: service.reserve.count, minimum: service.reserve.minimum })}
-            </Text>
+            <ServiceVacancyTag reserve={service.reserve} vacancy={vacancy} variant="chip" data-testid="itinerario-servico-reserva" />
           </div>
           <div className="flex flex-col items-end gap-3 min-w-[240px]">
             <ActionButton
@@ -158,31 +166,32 @@ export function ItineraryServiceScreen({
 
         {tab === 'upcoming' && (
           <div className="flex flex-col gap-4" role="tabpanel" data-testid="itinerario-proximos-painel">
-            <WeekPicker weekStart={weekStart} currentWeekStart={currentWeekStart} onChange={(week) => {
+            <WeekPicker
+              weekStart={weekStart}
+              currentWeekStart={currentWeekStart}
+              onChange={(week) => {
                 setWeekStart(week);
                 setWorkerFilter('');
-              }} />
-            <div className="flex items-center gap-2">
-              <label htmlFor={`itinerario-filtro-prestador-${serviceId}`}>
-                <Text as="span" size="sm" weight="medium" color="primary">
-                  {ts('workerFilter')}
-                </Text>
-              </label>
-              <select
-                id={`itinerario-filtro-prestador-${serviceId}`}
-                value={workerFilter}
-                onChange={(e) => setWorkerFilter(e.target.value)}
-                data-testid="itinerario-filtro-prestador"
-                className="rounded-input border border-gray-800 bg-white px-3 py-1.5 font-lexend text-sm text-primary"
-              >
-                <option value="">{ts('workerFilterAll')}</option>
-                {people.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+              }}
+              filter={
+                <div className="flex items-center gap-2">
+                  <label htmlFor={`itinerario-filtro-prestador-${serviceId}`}>
+                    <Text as="span" size="sm" weight="medium" color="primary">
+                      {ts('workerFilter')}
+                    </Text>
+                  </label>
+                  <Select
+                    id={`itinerario-filtro-prestador-${serviceId}`}
+                    inputSize="compact"
+                    className="w-[200px] [&_select]:!text-primary"
+                    data-testid="itinerario-filtro-prestador"
+                    value={workerFilter}
+                    onValueChange={setWorkerFilter}
+                    options={[{ value: '', label: ts('workerFilterAll') }, ...people.map((p) => ({ value: p.id, label: p.label }))]}
+                  />
+                </div>
+              }
+            />
 
             {status === 'loading' || status === 'idle' ? (
               <Text size="sm" color="tertiary" data-testid="itinerario-proximos-carregando">
@@ -193,6 +202,7 @@ export function ItineraryServiceScreen({
                 events={visible}
                 onChange={(event) => onSubstitutionFlow({ kind: 'change', event })}
                 onAssign={(event) => onSubstitutionFlow({ kind: 'assign', event })}
+                reasonOf={reasonOf}
               />
             ) : (
               <Text size="sm" role="alert" color="inherit" className="text-red-800" data-testid="itinerario-proximos-erro">
@@ -204,7 +214,7 @@ export function ItineraryServiceScreen({
 
         {tab === 'fixed' && (
           <div role="tabpanel">
-            <FixedScheduleTab service={service} serviceCode={serviceCode} addressLabel={addressLabel} asOf={asOf} actionError={actionError} onEditSlot={onEditSlot} />
+            <FixedScheduleTab service={service} asOf={asOf} actionError={actionError} onEditSlot={onEditSlot} />
           </div>
         )}
 

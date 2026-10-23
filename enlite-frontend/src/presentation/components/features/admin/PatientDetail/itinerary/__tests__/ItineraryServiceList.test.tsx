@@ -34,19 +34,19 @@ function service(over: Partial<PatientItineraryService> = {}): PatientItineraryS
 
 function renderCard(over: Partial<PatientItineraryService> = {}, horizonDays = 7) {
   const onOpen = vi.fn();
-  const utils = render(<ItineraryServiceCard service={service(over)} label="Cuidador" addressLabel="Av. Colón 1234, Córdoba" horizonDays={horizonDays} onOpen={onOpen} />);
+  const utils = render(<ItineraryServiceCard service={service(over)} label="Cuidador" addressLabel="Av. Colón 1234, Córdoba" vacancy={{ caseNumber: 1412, caseOrdinal: 1 }} horizonDays={horizonDays} onOpen={onOpen} />);
   return { ...utils, onOpen };
 }
 
 describe('ItineraryServiceCard — estado estrutural', () => {
-  it('completo: "Completo", nome, endereço, dias (segunda → domingo), reserva e "Organizar agenda"', () => {
+  it('completo: "Completo", nome, endereço, dias (domingo → sábado, a ordem do mockup), reserva e "Organizar agenda"', () => {
     const { container, onOpen } = renderCard();
     const card = screen.getByTestId('itinerario-cartao-svc-1');
     expect(card).toHaveTextContent('Cuidador');
     expect(card).toHaveTextContent('Av. Colón 1234, Córdoba');
-    expect(screen.getByTestId('itinerario-cartao-dias-svc-1')).toHaveTextContent('Lun · Mar · Dom');
+    expect(screen.getByTestId('itinerario-cartao-dias-svc-1')).toHaveTextContent('Dom · Lun · Mar');
     expect(screen.getByTestId('itinerario-cartao-estado-svc-1')).toHaveTextContent('Completo');
-    expect(screen.getByTestId('itinerario-cartao-reserva-svc-1')).toHaveTextContent('Equipo de Respuesta Rápida: 3 de 10');
+    expect(screen.getByTestId('itinerario-cartao-reserva-svc-1')).toHaveTextContent('Vacante CASO EN1412#01 · 3 en Respuesta Rápida');
     fireEvent.click(screen.getByTestId('itinerario-cartao-abrir-svc-1'));
     expect(onOpen).toHaveBeenCalledWith('svc-1');
     expectNoRawEnumLeaks(container);
@@ -68,9 +68,39 @@ describe('ItineraryServiceCard — estado estrutural', () => {
     expect(screen.queryByTestId('itinerario-cartao-dias-svc-1')).toBeNull();
   });
 
-  it('sem vaga viva: "Equipo de Respuesta Rápida: sin vacante" (nunca 0)', () => {
+  it('sem vaga viva: "Sin vacante abierta" (nunca 0)', () => {
     renderCard({ reserve: null });
-    expect(screen.getByTestId('itinerario-cartao-reserva-svc-1')).toHaveTextContent('sin vacante');
+    expect(screen.getByTestId('itinerario-cartao-reserva-svc-1')).toHaveTextContent('Sin vacante abierta');
+  });
+
+  it('(ajuste b) o estado estrutural leva a BOLINHA e a COR do mockup: vermelho = falta tudo, âmbar = falta parte, verde = completo', () => {
+    const cases: Array<[Partial<PatientItineraryService>, string, string, string]> = [
+      [{ scheduleHours: 24, cobertas: 0 }, 'red', 'text-red-800', 'bg-[#E5354F]'],
+      [{ scheduleHours: 24, cobertas: 16 }, 'amber', 'text-amber-900', 'bg-[#FFB607]'],
+      [{ scheduleHours: 24, cobertas: 24 }, 'green', 'text-green-900', 'bg-[#1FA45B]'],
+    ];
+    for (const [over, tone, textClass, dotClass] of cases) {
+      const view = renderCard(over);
+      const state = screen.getByTestId('itinerario-cartao-estado-svc-1');
+      expect(state).toHaveAttribute('data-tone', tone);
+      expect(state.className).toContain(textClass);
+      const dot = state.querySelector('[aria-hidden="true"]');
+      expect(dot?.className).toContain(dotClass);
+      // o sentido está no TEXTO (a bolinha é reforço): vermelho/âmbar dizem "Faltan cubrir", verde diz "Completo"
+      expect(state).toHaveTextContent(tone === 'green' ? 'Completo' : 'Faltan cubrir');
+      view.unmount();
+    }
+    renderCard({ scheduleHours: 0, cobertas: 0, slots: [] });
+    expect(screen.getByTestId('itinerario-cartao-estado-svc-1')).toHaveAttribute('data-tone', 'neutral');
+  });
+
+  it('(ajuste b) contraste do texto do estado ≥ 7:1 sobre o branco (hex reais do Tailwind: red-800 #991B1B, amber-900 #78350F, green-900 #14532D)', () => {
+    const luminance = (hex: string): number => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (hex: string): number => 1.05 / (luminance(hex) + 0.05);
+    for (const hex of ['#991B1B', '#78350F', '#14532D']) expect(ratio(hex)).toBeGreaterThanOrEqual(7);
   });
 });
 
@@ -88,6 +118,17 @@ describe('ItineraryServiceCard — aviso temporário (FR-03)', () => {
     renderCard({ uncoveredShifts: 3 });
     expect(screen.getByTestId('itinerario-cartao-sem-cobrir-svc-1')).toHaveTextContent('3 turnos sin cubrir en los próximos 7 días');
     expect(screen.getByTestId('itinerario-cartao-sem-cobrir-svc-1')).toHaveAttribute('role', 'status');
+  });
+
+  it('(ajuste c) o aviso é UMA linha com o ícone de alerta âmbar e as cores do mockup (`.warn`: #FFF1D1 / borda #D99A1B / texto #4A2F00 — 11:1)', () => {
+    renderCard({ uncoveredShifts: 1 });
+    const aviso = screen.getByTestId('itinerario-cartao-sem-cobrir-svc-1');
+    expect(aviso.className).toContain('bg-[#FFF1D1]');
+    expect(aviso.className).toContain('border-[#D99A1B]');
+    expect(aviso.className).toContain('text-[#4A2F00]');
+    expect(aviso.querySelectorAll('svg')).toHaveLength(1);
+    expect(aviso.querySelector('svg')?.getAttribute('class')).toContain('text-[#8A5200]');
+    expect(aviso.querySelectorAll('p, li, br')).toHaveLength(0); // um texto só, sem quebra de linha forçada
   });
 
   it('T514 (sabotagem prevista): o número de dias vem de `horizonDays` — com 5 mostra "5", nunca "7" fixo', () => {
@@ -116,8 +157,8 @@ describe('ItineraryServiceList', () => {
     render(
       <ItineraryServiceList
         items={[
-          { service: service({ contractedServiceId: 'svc-1' }), label: 'Cuidador', addressLabel: 'Av. Colón 1234' },
-          { service: service({ contractedServiceId: 'svc-2', scheduleHours: 20, cobertas: 16 }), label: 'Acompañante Terapéutico', addressLabel: 'San Martín 560' },
+          { service: service({ contractedServiceId: 'svc-1' }), label: 'Cuidador', addressLabel: 'Av. Colón 1234', vacancy: null },
+          { service: service({ contractedServiceId: 'svc-2', scheduleHours: 20, cobertas: 16 }), label: 'Acompañante Terapéutico', addressLabel: 'San Martín 560', vacancy: null },
         ]}
         horizonDays={7}
         onOpen={onOpen}

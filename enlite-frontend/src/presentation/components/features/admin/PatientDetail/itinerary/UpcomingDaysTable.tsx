@@ -18,6 +18,8 @@ interface UpcomingDaysTableProps {
   onChange: (event: PatientItineraryEvent) => void;
   /** "Asignar"/"Elegir quién entra": o turno "Sin cubrir" (F6 monta o fluxo). */
   onAssign: (event: PatientItineraryEvent) => void;
+  /** O motivo da falta do turno (do PEDIDO — o dono do motivo), ou `null`: "Lucía Fernández no viene · Enfermedad". */
+  reasonOf?: (event: PatientItineraryEvent) => string | null;
 }
 
 const byDateThenStart = (a: PatientItineraryEvent, b: PatientItineraryEvent): number =>
@@ -29,7 +31,7 @@ const byDateThenStart = (a: PatientItineraryEvent, b: PatientItineraryEvent): nu
  * o selo "Sustitución" e "Cubre a <titular>"; ou "Nadie asignado" em vermelho (FR-12: ausência sem
  * substituto OU faixa sem alocação). A ação é gateada por `patient_itinerary:update` (some sem a célula).
  */
-export function UpcomingDaysTable({ events, onChange, onAssign }: UpcomingDaysTableProps): JSX.Element {
+export function UpcomingDaysTable({ events, onChange, onAssign, reasonOf }: UpcomingDaysTableProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const tu = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.upcoming.${key}`, opts);
   const locale = dateLocaleOf(i18n.language);
@@ -67,7 +69,9 @@ export function UpcomingDaysTable({ events, onChange, onAssign }: UpcomingDaysTa
       const holder = e.titularWorkerId ? workerLabel(t, e.titularWorkerId, e.titularDisplayName) : tu('noHolder');
       return personRow(e.workerId, e.workerDisplayName, tu('covers', { holder }), tu('substitutionBadge'));
     }
-    const caption = e.titularWorkerId ? tu('holderAbsent', { holder: workerLabel(t, e.titularWorkerId, e.titularDisplayName) }) : tu('slotWithoutProvider');
+    const reason = reasonOf?.(e) ?? null;
+    const holder = e.titularWorkerId ? workerLabel(t, e.titularWorkerId, e.titularDisplayName) : null;
+    const caption = holder === null ? tu('slotWithoutProvider') : reason === null ? tu('holderAbsent', { holder }) : tu('holderAbsentWithReason', { holder, reason });
     return (
       <div className="flex items-center gap-3 min-w-0" data-testid={`itinerario-proximo-sem-cobertura-${occurrenceKey(e)}`}>
         <span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full border-2 border-dashed border-gray-800" />

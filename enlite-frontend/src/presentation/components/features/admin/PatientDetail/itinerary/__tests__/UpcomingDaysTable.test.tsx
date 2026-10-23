@@ -57,8 +57,8 @@ const NO_ALLOCATION = event({
   status: 'uncovered', workerId: null, workerDisplayName: null,
 });
 
-function renderTable(events: PatientItineraryEvent[], handlers = { onChange: vi.fn(), onAssign: vi.fn() }) {
-  const utils = render(<UpcomingDaysTable events={events} {...handlers} />);
+function renderTable(events: PatientItineraryEvent[], handlers = { onChange: vi.fn(), onAssign: vi.fn() }, reasonOf?: (e: PatientItineraryEvent) => string | null) {
+  const utils = render(<UpcomingDaysTable events={events} {...handlers} reasonOf={reasonOf} />);
   return { ...utils, ...handlers };
 }
 
@@ -107,6 +107,21 @@ describe('UpcomingDaysTable', () => {
     expect(screen.queryByRole('button', { name: /Cambiar/ })).toBeNull();
     fireEvent.click(screen.getByTestId('itinerario-proximo-asignar-slot-tue-2026-11-03'));
     expect(onAssign).toHaveBeenCalledWith(NIGHT_UNCOVERED);
+  });
+
+  it('(ajuste e) com o motivo do pedido, o subtítulo é "<titular> no viene · <motivo>"; sem motivo (null), só "no viene"', () => {
+    const a = renderTable([NIGHT_UNCOVERED], undefined, (e) => (e.requestId === 'r-1' ? 'Enfermedad' : null));
+    expect(screen.getByTestId('itinerario-proximo-sem-cobertura-slot-tue-2026-11-03')).toHaveTextContent('Lucía Fernández no viene · Enfermedad');
+    a.unmount();
+    renderTable([NIGHT_UNCOVERED], undefined, () => null);
+    expect(screen.getByTestId('itinerario-proximo-sem-cobertura-slot-tue-2026-11-03')).toHaveTextContent(/Lucía Fernández no viene$/);
+  });
+
+  it('(ajuste e) faixa sem alocação nunca ganha motivo (não há quem "não venha"): "Franja sin prestador"', () => {
+    renderTable([NO_ALLOCATION], undefined, () => 'Enfermedad');
+    const sem = screen.getByTestId('itinerario-proximo-sem-cobertura-slot-wed-2026-11-04');
+    expect(sem).toHaveTextContent('Franja sin prestador');
+    expect(sem).not.toHaveTextContent('Enfermedad');
   });
 
   it('sin cubrir por FAIXA SEM ALOCAÇÃO (assignmentId null): o turno aparece, "Franja sin prestador", Asignar', () => {

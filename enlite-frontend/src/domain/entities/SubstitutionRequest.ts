@@ -129,7 +129,9 @@ export interface SubstitutionPeriodPermanent {
 }
 
 export type SubstitutionPeriod = SubstitutionPeriodDays | SubstitutionPeriodPermanent;
-export type SubstitutionPreviewBody = SubstitutionPeriod & { candidateWorkerIds: string[] };
+export type SubstitutionPreviewBody =
+  | (SubstitutionPeriodDays & { candidateWorkerIds: string[]; /** "Elegir quién entra" de um pedido que já existe (T6xx-extra). */ ignoreRequestId?: string })
+  | (SubstitutionPeriodPermanent & { candidateWorkerIds: string[] });
 
 /** Cada turno leva o substituto OBRIGATÓRIO e nullable no fio: `null` = "Nadie todavía" (chave ausente = 400). */
 export interface SubstitutionShiftInput {
@@ -176,4 +178,6 @@ export interface CoverSubstitutionResult {
 export type SubstitutionFlowIntent =
   | { kind: 'new' }
   | { kind: 'change'; event: PatientItineraryEvent }
-  | { kind: 'assign'; event: PatientItineraryEvent };
+  | { kind: 'assign'; event: PatientItineraryEvent }
+  /** "Elegir quién entra" de um pedido da aba "Sustituciones" (cobre todos os turnos dele que seguem sem ninguém). */
+  | { kind: 'cover'; request: SubstitutionRequestItem };

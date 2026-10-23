@@ -4124,11 +4124,7 @@
               "generic": "No se pudo marcar el itinerario como listo. Probá de nuevo."
             }
           },
-          "hoursPair": "Horas cubiertas/del horario: {{pair}}",
-          "reserve": "Equipo de Respuesta Rápida: {{count}} de {{minimum}}",
-          "reserveNoVacancy": "Equipo de Respuesta Rápida: sin vacante",
           "noServices": "Este paciente no tiene servicios contratados activos.",
-          "emptyDay": "Sin atención",
           "assign": "Asignar prestador",
           "unassigned": "Sin asignar",
           "modal": {
@@ -4275,7 +4271,162 @@
             "hoursEndsOn": "{{hours}} h · termina el {{day}}",
             "assign": "Asignar",
             "change": "Cambiar",
-            "empty": "No hay turnos en esta semana."
+            "empty": "No hay turnos en esta semana.",
+            "holderAbsentWithReason": "{{holder}} no viene · {{reason}}"
+          },
+          "serviceVacancy": {
+            "withCase": "Vacante CASO {{caseLabel}} · {{reserveCount}} en Respuesta Rápida",
+            "openNoCase": "Vacante abierta · {{reserveCount}} en Respuesta Rápida",
+            "none": "Sin vacante abierta"
+          },
+          "fixed": {
+            "endsNextDay": "termina al día siguiente",
+            "changeProvider": "Cambiar prestador",
+            "noAttention": "Sin atención: {{days}}",
+            "listLast": "{{head}} y {{last}}"
+          },
+          "saleEntra": {
+            "sale": "Sale",
+            "enters": "Entra",
+            "nobodyYet": "Nadie todavía",
+            "pick": "Elegir quién entra",
+            "except": "salvo {{days}}: nadie",
+            "roles": {
+              "IN_SERVICE": "En atención",
+              "QUICK_RESPONSE": "Respuesta rápida",
+              "SELECTED": "Seleccionado"
+            }
+          },
+          "flow": {
+            "title": "Nueva sustitución",
+            "step": "Paso {{current}} de {{total}}",
+            "close": "Cerrar",
+            "back": "Atrás",
+            "next": "Siguiente",
+            "confirm": "Confirmar",
+            "confirming": "Confirmando…",
+            "states": {
+              "free": "Libre",
+              "conflict": "Conflicto",
+              "unknown": "No se pudo verificar",
+              "checking": "Verificando…"
+            },
+            "who": {
+              "title": "¿Quién no va a venir?",
+              "loading": "Cargando las personas del servicio…",
+              "loadError": "No se pudieron cargar las personas de este servicio.",
+              "empty": "Este servicio no tiene a nadie con turnos para sustituir."
+            },
+            "howLong": {
+              "title": "¿Por cuánto tiempo?",
+              "loadingShifts": "Buscando los turnos de esa persona…",
+              "previewError": "No se pudieron verificar los turnos. Probá de nuevo.",
+              "toBeforeFrom": "La fecha final es anterior a la inicial.",
+              "from": "Desde",
+              "to": "Hasta",
+              "date": "Fecha",
+              "since": "A partir del",
+              "shiftsCount_one": "{{name}} tiene {{count}} turno en esas fechas",
+              "shiftsCount_other": "{{name}} tiene {{count}} turnos en esas fechas",
+              "permanentCount_one": "{{name}} sale de {{count}} franja de este servicio",
+              "permanentCount_other": "{{name}} sale de {{count}} franjas de este servicio",
+              "options": {
+                "ONE_DAY": {
+                  "title": "Un solo día",
+                  "description": "Falta un día completo."
+                },
+                "DAYS": {
+                  "title": "Varios días",
+                  "description": "Vacaciones, licencia."
+                },
+                "PERMANENT": {
+                  "title": "No vuelve más",
+                  "description": "Deja el servicio."
+                }
+              }
+            },
+            "whoCovers": {
+              "title": "¿Quién la cubre?",
+              "one": {
+                "title": "Una persona para todos los días"
+              },
+              "perDay": {
+                "title": "Una persona por día",
+                "pickFor": "Quién cubre el {{day}}"
+              },
+              "nobody": {
+                "title": "Nadie todavía",
+                "description": "Los turnos quedan sin cubrir."
+              },
+              "pickPerson": "Elegir persona",
+              "pickOtherForDay": "Elegir otra persona para ese día",
+              "conflict": "{{name}} ya atiende a otro paciente el {{weekday}} de {{start}} a {{end}}.",
+              "loadingCandidates": "Cargando quién puede cubrir…",
+              "candidatesError": "No se pudo cargar la lista de quién puede cubrir.",
+              "previewError": "No se pudo verificar el horario de la persona. Probá de nuevo.",
+              "blocked": "Resolvé cada día para continuar."
+            },
+            "summary": {
+              "title": "Motivo y resumen",
+              "reason": "Motivo",
+              "registering": "Vas a registrar:",
+              "since": "Desde el {{date}}",
+              "shifts_one": "{{count}} turno",
+              "shifts_other": "{{count}} turnos",
+              "slots_one": "{{count}} franja",
+              "slots_other": "{{count}} franjas",
+              "uncoveredFrom": "A partir del {{date}} los turnos quedan Sin cubrir",
+              "statusChange": "El estado del paciente pasa de {{from}} a {{to}}.",
+              "cancelled_one": "Se cancela {{count}} sustitución ya cargada desde esa fecha",
+              "cancelled_other": "Se cancelan {{count}} sustituciones ya cargadas desde esa fecha",
+              "cleared_one": "{{count}} turno en el que cubría queda Sin cubrir",
+              "cleared_other": "{{count}} turnos en los que cubría quedan Sin cubrir",
+              "createError": "No se pudo registrar la sustitución. Probá de nuevo.",
+              "statusChangeTo": "El estado del paciente pasa a {{to}}."
+            }
+          },
+          "cover": {
+            "title": "Elegir quién entra",
+            "heading": "¿Quién entra?",
+            "cancel": "Cancelar",
+            "confirm": "Asignar",
+            "confirming": "Asignando…",
+            "error": "No se pudo asignar a la persona. Probá de nuevo."
+          },
+          "substitutions": {
+            "filterLabel": "Sustituciones",
+            "filters": {
+              "upcoming": "Próximas",
+              "past": "Pasadas"
+            },
+            "columns": {
+              "when": "Cuándo",
+              "sale": "Sale",
+              "enters": "Entra",
+              "action": "Acción"
+            },
+            "types": {
+              "ONE_DAY": "Un día",
+              "DAYS": "Varios días",
+              "PERMANENT": "No vuelve más"
+            },
+            "shifts_one": "{{count}} turno",
+            "shifts_other": "{{count}} turnos",
+            "since": "Desde el {{date}}",
+            "legacy": "Sin pedido (anterior)",
+            "undone": "Deshecha",
+            "adjusted": "Ajustado",
+            "viewDays": "Ver días",
+            "hideDays": "Ocultar días",
+            "undo": "Deshacer",
+            "undoError": "No se pudo deshacer la sustitución.",
+            "nobodyYet": "Nadie todavía",
+            "daysListLabel": "Días de la sustitución",
+            "loading": "Cargando las sustituciones…",
+            "loadError": "No se pudieron cargar las sustituciones.",
+            "forbidden": "No tenés permiso para ver las sustituciones de este servicio.",
+            "emptyUpcoming": "Todavía no hay sustituciones próximas en este servicio.",
+            "emptyPast": "No hay sustituciones pasadas en este servicio."
           }
         },
         "matchingCard": {

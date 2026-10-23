@@ -2,11 +2,13 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import type { PatientItineraryService } from '@domain/entities/PatientItinerary';
 import { ItineraryServiceCard } from './ItineraryServiceCard';
+import type { ServiceVacancyRef } from './ServiceVacancyTag';
 
 export interface ItineraryServiceListItem {
   service: PatientItineraryService;
   label: string;
   addressLabel: string;
+  vacancy: ServiceVacancyRef | null;
 }
 
 interface ItineraryServiceListProps {
@@ -29,6 +31,7 @@ export function ItineraryServiceList({ items, horizonDays, onOpen }: ItinerarySe
           service={item.service}
           label={item.label}
           addressLabel={item.addressLabel}
+          vacancy={item.vacancy}
           horizonDays={horizonDays}
           onOpen={onOpen}
         />
