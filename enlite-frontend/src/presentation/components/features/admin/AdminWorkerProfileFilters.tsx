@@ -10,19 +10,17 @@
  * react-refresh/only-export-components.
  */
 import { useTranslation } from 'react-i18next';
-import { Select, type SelectOption } from '@presentation/components/atoms/Select';
-import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
-import { Combobox } from '@presentation/components/atoms/Combobox';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import type { WorkerProfileFilters } from './workerProfileFiltersConfig';
 
 interface AdminWorkerProfileFiltersProps {
   filters: WorkerProfileFilters;
   onChange: (updates: Partial<WorkerProfileFilters>) => void;
-  stateOptions: SelectOption[];
-  cityOptions: SelectOption[];
-  experienceTypeOptions: SelectOption[];
-  preferredTypeOptions: SelectOption[];
+  stateOptions: ComboboxOption[];
+  cityOptions: ComboboxOption[];
+  experienceTypeOptions: ComboboxOption[];
+  preferredTypeOptions: ComboboxOption[];
 }
 
 export function AdminWorkerProfileFilters({
@@ -35,7 +33,7 @@ export function AdminWorkerProfileFilters({
 }: AdminWorkerProfileFiltersProps): JSX.Element {
   const { t } = useTranslation();
 
-  const professionOptions: SelectOption[] = [
+  const professionOptions: ComboboxOption[] = [
     {
       value: 'AT',
       label: t('admin.workers.filters.profile.profession.AT', { defaultValue: 'AT' }),
@@ -50,7 +48,7 @@ export function AdminWorkerProfileFilters({
     },
   ];
 
-  const ageRangeOptions: SelectOption[] = [
+  const ageRangeOptions: ComboboxOption[] = [
     {
       value: 'children',
       label: t('admin.workers.filters.profile.ageRange.children', { defaultValue: 'Niños' }),
@@ -65,7 +63,7 @@ export function AdminWorkerProfileFilters({
     },
   ];
 
-  const languageOptions: SelectOption[] = [
+  const languageOptions: ComboboxOption[] = [
     {
       value: 'es',
       label: t('admin.workers.filters.profile.language.es', { defaultValue: 'Español' }),
@@ -80,7 +78,7 @@ export function AdminWorkerProfileFilters({
     },
   ];
 
-  const sexOptions: SelectOption[] = [
+  const sexOptions: ComboboxOption[] = [
     {
       value: 'male',
       label: t('admin.workers.filters.profile.sex.male', { defaultValue: 'Masculino' }),
@@ -92,7 +90,7 @@ export function AdminWorkerProfileFilters({
   ];
 
   // 0=domingo … 6=sábado — display lun→dom to match UX convention
-  const dayOptions: SelectOption[] = [
+  const dayOptions: ComboboxOption[] = [
     { value: '1', label: t('admin.vacancyDetail.vacancyForm.days.lun') },
     { value: '2', label: t('admin.vacancyDetail.vacancyForm.days.mar') },
     { value: '3', label: t('admin.vacancyDetail.vacancyForm.days.mie') },
@@ -115,11 +113,11 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.profession.label', { defaultValue: 'Profesión' })}
         </Text>
-        <Select
+        <Combobox
           inputSize="compact"
           options={professionOptions}
           value={filters.profession}
-          onValueChange={(v) => onChange({ profession: v })}
+          onChange={(v) => onChange({ profession: v })}
           placeholder={allOption}
         />
       </div>
@@ -129,11 +127,11 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.ageRange.label', { defaultValue: 'Rango etario' })}
         </Text>
-        <Select
+        <Combobox
           inputSize="compact"
           options={ageRangeOptions}
           value={filters.preferredAgeRange}
-          onValueChange={(v) => onChange({ preferredAgeRange: v })}
+          onChange={(v) => onChange({ preferredAgeRange: v })}
           placeholder={allOption}
         />
       </div>
@@ -143,11 +141,11 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.experienceType.label', { defaultValue: 'Tipo experiencia' })}
         </Text>
-        <Select
+        <Combobox
           inputSize="compact"
           options={experienceTypeOptions}
           value={filters.experienceType}
-          onValueChange={(v) => onChange({ experienceType: v })}
+          onChange={(v) => onChange({ experienceType: v })}
           placeholder={allOption}
         />
       </div>
@@ -157,11 +155,11 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.preferredType.label', { defaultValue: 'Tipo preferido' })}
         </Text>
-        <Select
+        <Combobox
           inputSize="compact"
           options={preferredTypeOptions}
           value={filters.preferredType}
-          onValueChange={(v) => onChange({ preferredType: v })}
+          onChange={(v) => onChange({ preferredType: v })}
           placeholder={allOption}
         />
       </div>
@@ -171,11 +169,11 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.language.label', { defaultValue: 'Idioma' })}
         </Text>
-        <Select
+        <Combobox
           inputSize="compact"
           options={languageOptions}
           value={filters.language}
-          onValueChange={(v) => onChange({ language: v })}
+          onChange={(v) => onChange({ language: v })}
           placeholder={allOption}
         />
       </div>
@@ -185,11 +183,11 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.sex.label', { defaultValue: 'Sexo' })}
         </Text>
-        <Select
+        <Combobox
           inputSize="compact"
           options={sexOptions}
           value={filters.sex}
-          onValueChange={(v) => onChange({ sex: v })}
+          onChange={(v) => onChange({ sex: v })}
           placeholder={allOption}
         />
       </div>
@@ -200,12 +198,12 @@ export function AdminWorkerProfileFilters({
           {t('admin.workers.filters.profile.province.label', { defaultValue: 'Provincia' })}
         </Text>
         {/* Lista longa (catálogo do banco): combobox com busca — REQ-06, planning 26/08 */}
-        <SearchableSelect
+        <Combobox
           inputSize="compact"
           options={stateOptions}
           value={filters.state}
           onChange={(v) => onChange({ state: v })}
-          placeholder={allOption}
+          placeholder={allOption} clearLabel={allOption}
           searchPlaceholder={searchPh}
           data-testid="filter-province"
         />
@@ -216,12 +214,12 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.locality.label', { defaultValue: 'Localidad' })}
         </Text>
-        <SearchableSelect
+        <Combobox
           inputSize="compact"
           options={cityOptions}
           value={filters.city}
           onChange={(v) => onChange({ city: v })}
-          placeholder={allOption}
+          placeholder={allOption} clearLabel={allOption}
           searchPlaceholder={searchPh}
           data-testid="filter-locality"
         />

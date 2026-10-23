@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WorkerEditModal } from '../WorkerEditModal';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import type { WorkerDetail } from '@domain/entities/Worker';
 import type { AuthzContract } from '@domain/entities/Authz';
 
@@ -215,7 +216,7 @@ describe('WorkerEditModal', () => {
 
   it('raio alterado (sem mudar endereço nem profile): salva a área de serviço com o endereço atual', async () => {
     renderModal();
-    fireEvent.change(screen.getByTestId('we-radius'), { target: { value: '20' } });
+    chooseCombo(screen.getByTestId('we-radius'), '20 km');
     fireEvent.click(screen.getByTestId('we-save'));
     await waitFor(() => expect(AdminApiService.updateWorkerServiceArea).toHaveBeenCalled());
     const payload = vi.mocked(AdminApiService.updateWorkerServiceArea).mock.calls[0][1];
@@ -255,8 +256,8 @@ describe('WorkerEditModal', () => {
 
   it('altera documentType e profession: envia ambos no patch', async () => {
     renderModal();
-    fireEvent.change(screen.getByTestId('we-documentType'), { target: { value: 'PASSPORT' } });
-    fireEvent.change(screen.getByTestId('we-profession'), { target: { value: 'CAREGIVER' } });
+    chooseCombo(screen.getByTestId('we-documentType'), 'PASSPORT');
+    chooseCombo(screen.getByTestId('we-profession'), 'CAREGIVER');
     fireEvent.click(screen.getByTestId('we-save'));
     await waitFor(() => expect(AdminApiService.updateWorkerProfile).toHaveBeenCalledWith(
       'w1',
@@ -266,15 +267,15 @@ describe('WorkerEditModal', () => {
 
   it('sem serviceAreas: usa radius default 10 e endereço vazio', () => {
     render(<WorkerEditModal worker={{ ...baseWorker, serviceAreas: [] }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('we-radius')).toHaveValue('10');
+    expect(screen.getByTestId('we-radius')).toHaveTextContent('10 km');
     expect(screen.getByTestId('gpa-input')).toHaveValue('');
   });
 
   it('worker com todos os campos opcionais ausentes: renderiza com defaults vazios', () => {
     render(<WorkerEditModal worker={minimalWorker} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('we-firstName')).toHaveValue('');
-    expect(screen.getByTestId('we-documentType')).toHaveValue('');
-    expect(screen.getByTestId('we-profession')).toHaveValue('');
+    expect(screen.getByTestId('we-documentType')).toHaveTextContent('—'); // vazio = placeholder
+    expect(screen.getByTestId('we-profession')).toHaveTextContent('—'); // vazio = placeholder
   });
 
   it('preenche um campo do worker mínimo: envia só o patch daquele campo', async () => {
@@ -299,11 +300,11 @@ describe('WorkerEditModal', () => {
     fireEvent.change(screen.getByTestId('we-lastName'), { target: { value: 'Gómez' } });
     fireEvent.change(screen.getByTestId('we-email'), { target: { value: 'nueva@example.com' } });
     fireEvent.change(screen.getByTestId('we-documentNumber'), { target: { value: '99999999' } });
-    fireEvent.change(screen.getByTestId('we-documentType'), { target: { value: 'PASSPORT' } });
-    fireEvent.change(screen.getByTestId('we-profession'), { target: { value: 'CAREGIVER' } });
-    fireEvent.change(screen.getByTestId('we-occupation'), { target: { value: 'CAREGIVER' } });
-    fireEvent.change(screen.getByTestId('we-knowledge'), { target: { value: 'SECONDARY' } });
-    fireEvent.change(screen.getByTestId('we-years'), { target: { value: '3_5' } });
+    chooseCombo(screen.getByTestId('we-documentType'), 'PASSPORT');
+    chooseCombo(screen.getByTestId('we-profession'), 'CAREGIVER');
+    chooseCombo(screen.getByTestId('we-occupation'), 'CAREGIVER');
+    chooseCombo(screen.getByTestId('we-knowledge'), 'workerRegistration.generalInfo.SECONDARY');
+    chooseCombo(screen.getByTestId('we-years'), 'workerRegistration.generalInfo.years3to5');
     fireEvent.change(screen.getByTestId('we-title'), { target: { value: 'Título X' } });
     fireEvent.change(screen.getByTestId('we-linkedin'), { target: { value: 'https://linkedin.com/in/x' } });
     fireEvent.change(screen.getByTestId('we-complement'), { target: { value: 'Piso 3' } });

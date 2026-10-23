@@ -15,6 +15,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { execSync } from 'child_process';
+import { escolherNoCombo } from './helpers/combobox';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY  = 'test-api-key';
@@ -184,8 +185,8 @@ test.describe('Worker Export Feature', () => {
     await expect(page.getByTestId('worker-export-modal')).toBeVisible({ timeout: 5000 });
 
     // Select a status filter
-    const selects = page.getByTestId('worker-export-modal').locator('select');
-    await selects.nth(1).selectOption('REGISTERED');
+    const selects = page.getByTestId('worker-export-modal').getByRole('combobox');
+    await escolherNoCombo(page, selects.nth(1), 'Registrado'); // REGISTERED = Registrado
 
     const submitBtn = page.getByTestId('worker-export-submit-btn');
     await expect(submitBtn).not.toBeDisabled();
