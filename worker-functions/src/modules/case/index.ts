@@ -254,6 +254,8 @@ export { AdminSubstitutionRequestController } from './interfaces/controllers/Adm
 export { createAdminSubstitutionRequestRoutes } from './interfaces/routes/adminSubstitutionRequestRoutes';
 export { TherapeuticContactRemindersInternalController } from './interfaces/controllers/TherapeuticContactRemindersInternalController';
 export { createTherapeuticContactRemindersInternalRoutes } from './interfaces/routes/therapeuticContactRemindersInternalRoutes';
+export { ItineraryDailyInternalController } from './interfaces/controllers/ItineraryDailyInternalController';
+export { createItineraryDailyInternalRoutes } from './interfaces/routes/itineraryDailyInternalRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';

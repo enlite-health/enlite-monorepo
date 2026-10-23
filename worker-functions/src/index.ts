@@ -43,6 +43,8 @@ import {
   createAdminSubstitutionRequestRoutes,
   TherapeuticContactRemindersInternalController,
   createTherapeuticContactRemindersInternalRoutes,
+  ItineraryDailyInternalController,
+  createItineraryDailyInternalRoutes,
   createAdminPatientsRoutes,
   createAdminInsuranceRoutes,
   AdminInsuranceProviderContactsController,
@@ -102,6 +104,7 @@ import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
+import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
@@ -820,7 +823,7 @@ const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, 
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool));
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -834,6 +837,14 @@ app.use(
   systemContextMiddleware('job:pt-contact-reminders'),
   internalAuthMiddleware,
   createTherapeuticContactRemindersInternalRoutes(new TherapeuticContactRemindersInternalController()),
+);
+
+// spec 069 F4: rotina diária do itinerário (derivação do estado → alerta "Sin cubrir"; Cloud Scheduler, 06:00 America/Argentina/Buenos_Aires).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:itinerary-daily'),
+  internalAuthMiddleware,
+  createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
 );
 
 // spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).

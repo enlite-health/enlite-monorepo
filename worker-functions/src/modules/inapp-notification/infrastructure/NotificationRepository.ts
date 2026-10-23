@@ -41,7 +41,8 @@ export type NotificationTypeCode =
   | 'CONVERSATION_REPLIED'
   | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
   | 'ADMISSION_TACTIQ_LINK_REQUIRED'
-  | 'ADMISSION_TACTIQ_EXTENSION_CHANGED';
+  | 'ADMISSION_TACTIQ_EXTENSION_CHANGED'
+  | 'ITINERARY_UNCOVERED_SHIFTS';
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
@@ -72,6 +73,15 @@ export interface AdmissionTactiqExtensionPayload {
   state: AdmissionTactiqExtensionState;
 }
 
+/**
+ * Payload do aviso diário de turnos sin cubrir (spec 069 F4): SÓ ids e números — nunca nome do paciente (resolvido na tela, sob a RLS
+ * de quem lê) nem texto livre. Construído por `buildItineraryUncoveredShiftsPayload`, nunca por objeto livre.
+ */
+export interface ItineraryUncoveredShiftsPayload {
+  operationDate: string;
+  items: Array<{ patientId: string; serviceId: string; shifts: number; firstDate: string }>;
+}
+
 export interface InsertNotificationEventInput {
   typeCode: NotificationTypeCode;
   actorUid: string;
@@ -79,7 +89,7 @@ export interface InsertNotificationEventInput {
   conversationId: string | null;
   messageId: string | null;
   /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload;
 }
 
 export interface NotificationEventRow {
