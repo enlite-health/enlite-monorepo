@@ -52,7 +52,7 @@ function renderSingle(props: Record<string, unknown> = {}) {
 
 const trigger = () => screen.getByRole('combobox');
 
-describe('Combobox múltipla (herdada do MultiSelect)', () => {
+describe('Combobox múltipla (herdada do atom antigo)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
