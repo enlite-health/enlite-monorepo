@@ -14,7 +14,7 @@ import { PatientPhotoSlot } from './PatientPhotoSlot';
 import { ENV } from '@infrastructure/config/env';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 import { formatDateFromISO } from '@presentation/hooks/useMask';
-import { currentCoverageText } from './currentCoverageText';
+import { currentCoverageDisplay, type CurrentCoverageDisplay } from './currentCoverageText';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -49,6 +49,30 @@ const STATUS_COLORS: Record<string, string> = {
   ALTA: 'bg-teal-100 text-teal-700',
   DISCHARGED: 'bg-gray-100 text-gray-600',
 };
+
+/** Pílula neutra/colorida do cartão (status, obra social). `title` + `truncate`: nome grande corta em 1 linha. */
+function Pill({ className, title, testId, children }: { className: string; title?: string; testId?: string; children: string }) {
+  return (
+    <span className={`inline-flex max-w-full px-2.5 py-0.5 rounded-full ${className}`} title={title} data-testid={testId}>
+      <Text as="span" size="xs" weight="medium" color="inherit" className="min-w-0 truncate">
+        {children}
+      </Text>
+    </span>
+  );
+}
+
+function CoverageValue({ display }: { display: CurrentCoverageDisplay }) {
+  if (display.kind === 'text') return <>{display.text}</>;
+  return (
+    <span className="flex flex-wrap gap-1.5 max-w-full">
+      {display.names.map((name) => (
+        <Pill key={name} className={STATUS_COLORS.SOLICITANTE} title={name}>
+          {name}
+        </Pill>
+      ))}
+    </span>
+  );
+}
 
 function formatDate(iso: string | null, locale = 'es-AR'): string | null {
   if (!iso) return null;
@@ -182,11 +206,9 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
         <div className="min-w-0">
           {/* 06/09: o NOME saiu daqui (subiu pro `h1` da página) — repetir dava strict-mode em e2e. */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`} data-testid="patient-status-badge">
-              <Text as="span" size="xs" weight="medium" color="inherit">
-                {statusLabel}
-              </Text>
-            </span>
+            <Pill className={statusColor} testId="patient-status-badge">
+              {statusLabel}
+            </Pill>
             {onHoldReasonLabel && (
               <span className="inline-flex px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700" data-testid="patient-on-hold-reason">
                 <Text as="span" size="xs" weight="medium" color="inherit">
@@ -230,13 +252,7 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
               currentCoverage = sem permissão (redacted.services). Data via formatDateFromISO (sem fuso). */}
           <FieldPair
             label={t('admin.patients.detail.identityCard.currentCoverage')}
-            value={
-              patient.currentCoverage === undefined
-                ? t('admin.patients.detail.identityCard.unavailable')
-                : patient.currentCoverage === null
-                  ? t('admin.patients.detail.identityCard.noPermission')
-                  : currentCoverageText(t, patient.currentCoverage)
-            }
+            value={<CoverageValue display={currentCoverageDisplay(t, patient.currentCoverage)} />}
             testId="patient-current-coverage"
           />
           <FieldPair

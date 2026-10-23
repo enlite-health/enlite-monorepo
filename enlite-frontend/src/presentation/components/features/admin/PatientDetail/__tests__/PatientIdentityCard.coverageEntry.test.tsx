@@ -4,7 +4,7 @@
  * `formatDateFromISO` (sem `new Date`), então `2026-01-05` tem de aparecer como 05/01/2026.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -48,12 +48,42 @@ describe('PatientIdentityCard — cobertura atual e data de entrada (spec 064)',
     expectNoRawEnumLeaks(container);
   });
 
-  it('duas obras sociais viram lista', () => {
+  it('duas obras sociais viram duas tags', () => {
     renderCard({
       currentCoverage: cobertura({ providers: [{ code: 'OSDE', name: 'OSDE' }, { code: 'SWISS', name: 'Swiss Medical' }], activeServices: 2 }),
       entryDate: '2026-01-05',
     });
-    expect(screen.getByTestId('patient-current-coverage')).toHaveTextContent('OSDE, Swiss Medical');
+    const tags = within(screen.getByTestId('patient-current-coverage')).getAllByTitle(/.+/);
+    expect(tags.map((e) => e.textContent)).toEqual(['OSDE', 'Swiss Medical']);
+  });
+
+  it('obra social aparece como tag só com o nome (sem contador)', () => {
+    renderCard({ currentCoverage: cobertura({ unlinkedServices: 2, hiddenServices: 1, activeServices: 4 }), entryDate: null });
+    const cov = screen.getByTestId('patient-current-coverage');
+    expect(cov.textContent).toBe('OSDE');
+    expect(within(cov).getByTitle('OSDE')).toHaveTextContent('OSDE');
+    expect(cov).not.toHaveTextContent(/servicio|sin obra social|·/);
+  });
+
+  it('nome grande: a tag tem o nome inteiro no title e trunca', () => {
+    const nome = 'Obra Social del Personal de Dirección de la Industria Metalúrgica y Afines';
+    renderCard({ currentCoverage: cobertura({ providers: [{ code: 'OSPDIM', name: nome }] }), entryDate: null });
+    const tag = within(screen.getByTestId('patient-current-coverage')).getByTitle(nome);
+    expect(tag).toHaveClass('max-w-full');
+    expect(tag.querySelector('.truncate')).toHaveTextContent(nome);
+  });
+
+  it('particular vira tag', () => {
+    renderCard({ currentCoverage: cobertura({ providers: [], privateServices: 1 }), entryDate: null });
+    const tag = within(screen.getByTestId('patient-current-coverage')).getByTitle('Particular');
+    expect(tag).toHaveTextContent('Particular');
+  });
+
+  it('só obra social sem acesso ao nome => texto, sem tag', () => {
+    renderCard({ currentCoverage: cobertura({ providers: [], hiddenServices: 1 }), entryDate: null });
+    const cov = screen.getByTestId('patient-current-coverage');
+    expect(cov).toHaveTextContent('Obra social (sin acceso al nombre)');
+    expect(within(cov).queryByTitle(/.+/)).toBeNull();
   });
 
   it('sem permissão => "Sin permiso"/"Sem permissão" e não "—"', async () => {
@@ -84,7 +114,7 @@ describe('PatientIdentityCard — cobertura atual e data de entrada (spec 064)',
   });
 
   it('pt-BR e es têm as mesmas chaves novas', () => {
-    const keys = ['currentCoverage', 'currentCoverageNoService', 'currentCoverageUnlinked', 'currentCoveragePrivate', 'currentCoverageHidden', 'currentCoverageSomeUnlinked_one', 'currentCoverageSomeUnlinked_other', 'entryDate', 'entryDateEmpty', 'noPermission', 'unavailable'];
+    const keys = ['currentCoverage', 'currentCoverageNoService', 'currentCoverageUnlinked', 'currentCoveragePrivate', 'currentCoverageHidden', 'entryDate', 'entryDateEmpty', 'noPermission', 'unavailable'];
     const es = esJson.admin.patients.detail.identityCard as Record<string, unknown>;
     const pt = ptBRJson.admin.patients.detail.identityCard as Record<string, unknown>;
     for (const k of keys) {
@@ -92,7 +122,7 @@ describe('PatientIdentityCard — cobertura atual e data de entrada (spec 064)',
       expect(typeof pt[k], `pt-BR.${k}`).toBe('string');
     }
     const { container } = renderCard({ currentCoverage: cobertura({ privateServices: 1, hiddenServices: 1, unlinkedServices: 2 }), entryDate: '2026-01-05' });
-    expect(screen.getByTestId('patient-current-coverage')).toHaveTextContent('OSDE · Particular · Obra social (sin acceso al nombre) · 2 servicios sin obra social');
+    expect(screen.getByTestId('patient-current-coverage')).toHaveTextContent('OSDEParticular');
     expectNoRawEnumLeaks(container);
   });
 });

@@ -178,7 +178,7 @@ describe('VacancyFunnelView', () => {
     expect(container.querySelector('[data-testid^="funnel-panel-"]')).toBeNull();
   });
 
-  it('a Lista pede TODAS as colunas do Kanban (as 9 sources), não bucket=ALL', async () => {
+  it('a Lista pede TODAS as colunas do Kanban (as 10 sources), não bucket=ALL', async () => {
     render(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     const lastCall =
@@ -190,7 +190,7 @@ describe('VacancyFunnelView', () => {
     expect([...tabArg.column.sources].sort()).toEqual(
       [
         'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
-        'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+        'BLOQUEADO', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
       ].sort(),
     );
     expect(lastCall[2]).toBe(true);

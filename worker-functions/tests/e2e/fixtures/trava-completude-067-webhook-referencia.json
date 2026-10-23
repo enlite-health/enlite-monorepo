@@ -1,0 +1,28 @@
+{
+  "INITIATED": {
+    "status": 200,
+    "body": {
+      "prescreeningId": "<id da linha em talentum_prescreenings>",
+      "talentumPrescreeningId": "<id do prescreening na Talentum>",
+      "workerId": "<id do prestador>",
+      "jobPostingId": "<id da vaga>",
+      "resolved": {
+        "worker": true,
+        "jobPosting": true
+      }
+    }
+  },
+  "ANALYZED_QUALIFIED": {
+    "status": 200,
+    "body": {
+      "prescreeningId": "<id da linha em talentum_prescreenings>",
+      "talentumPrescreeningId": "<id do prescreening na Talentum>",
+      "workerId": "<id do prestador>",
+      "jobPostingId": "<id da vaga>",
+      "resolved": {
+        "worker": true,
+        "jobPosting": true
+      }
+    }
+  }
+}

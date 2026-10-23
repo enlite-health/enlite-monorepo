@@ -120,4 +120,28 @@ describe('WorkerApplicationRepository.listEngagementsByWorker', () => {
     const sql: string = mockQuery.mock.calls[0][0];
     expect(sql).toContain('wja.messaged_at');
   });
+
+  // Spec 067 (FR-08, C5): a ficha do prestador mostra a MESMA coluna do Kanban, inclusive Bloqueados.
+  it('spec 067: Completado com worker_apto=false vira BLOQUEADO; com true vira COMPLETED; sem a coluna (null) vira BLOQUEADO', async () => {
+    mockQuery.mockResolvedValue({
+      rows: [
+        { ...dbRow({ id: 'a', job_posting_id: 'j', funnel_stage: 'QUALIFIED', source: 'talentum', messaged_at: null }), worker_apto: true },
+        { ...dbRow({ id: 'b', job_posting_id: 'j', funnel_stage: 'QUALIFIED', source: 'talentum', messaged_at: null }), worker_apto: false },
+        { ...dbRow({ id: 'c', job_posting_id: 'j', funnel_stage: 'IN_DOUBT', source: 'talentum', messaged_at: null }), worker_apto: null },
+        { ...dbRow({ id: 'd', job_posting_id: 'j', funnel_stage: 'IN_PROGRESS', source: 'talentum', messaged_at: null }), worker_apto: null },
+      ],
+    });
+
+    const out = await new WorkerApplicationRepository().listEngagementsByWorker(WORKER_ID);
+
+    expect(out.map((e) => e.kanbanStage)).toEqual(['COMPLETED', 'BLOQUEADO', 'BLOQUEADO', 'IN_PROGRESS']);
+  });
+
+  it('spec 067: a SQL lê o apto do dono só nas etapas de Completado', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+    await new WorkerApplicationRepository().listEngagementsByWorker(WORKER_ID);
+    const sql = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('fn_worker_is_apto(wja.worker_id)');
+    expect(sql).toContain('AS worker_apto');
+  });
 });

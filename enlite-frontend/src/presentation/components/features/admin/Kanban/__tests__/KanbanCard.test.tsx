@@ -536,6 +536,25 @@ describe('KanbanCard — completado badge', () => {
     expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['QUALIFIED', 'bg-green-50', 'text-green-700'],
+    ['IN_DOUBT', 'bg-orange-50', 'text-orange-700'],
+    ['COMPLETED', 'bg-blue-50', 'text-blue-700'],
+  ])('067 FR-09: card em BLOQUEADO com internalStage %s mostra o MESMO selo (texto e classe) do Completado', (internal, bg, text) => {
+    render(<KanbanCard {...defaultProps} stage="BLOQUEADO" internalStage={internal} />);
+    const badge = screen.getByTestId('completado-badge');
+    expect(badge).toHaveTextContent(`admin.kanban.completadoBadge.${internal}`);
+    expect(badge.className).toContain(bg);
+    expect(badge.className).toContain(text);
+  });
+
+  it('067 FR-09: card em BLOQUEADO sem internalStage de Completado nao mostra o selo', () => {
+    render(<KanbanCard {...defaultProps} stage="BLOQUEADO" internalStage={null} />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+    render(<KanbanCard {...defaultProps} stage="BLOQUEADO" internalStage="IN_PROGRESS" />);
+    expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
+  });
+
   it('does NOT render completado badge when stage is not COMPLETED', () => {
     render(<KanbanCard {...defaultProps} stage="SELECTED" internalStage="QUALIFIED" />);
     expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();

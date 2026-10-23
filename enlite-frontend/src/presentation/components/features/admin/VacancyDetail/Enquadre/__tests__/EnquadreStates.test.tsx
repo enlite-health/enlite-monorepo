@@ -341,9 +341,9 @@ describe('Cancelar e gerir convocados (E14, E16, E17)', () => {
 });
 
 describe('Kanban da vacante (E13)', () => {
-  it('E13 8 colunas (o estágio Confirmado saiu), 3 em Completado (2 com etiqueta Convocado) e 1 em Selecionados', async () => {
+  it('E13 9 colunas (o estágio Confirmado saiu; 067: +Bloqueados), 3 em Completado (2 com etiqueta Convocado) e 1 em Selecionados', async () => {
     await mount('13');
-    expect(columnIds()).toHaveLength(8);
+    expect(columnIds()).toHaveLength(9);
     expect(count('COMPLETED')).toBe(3);
     expect(count('SELECTED')).toBe(1);
     const badges = screen.getAllByTestId('convocation-badge');

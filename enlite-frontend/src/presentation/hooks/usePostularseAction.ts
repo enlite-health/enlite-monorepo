@@ -32,7 +32,11 @@ export interface UsePostularseActionResult {
 }
 
 export function usePostularseAction(
-  whatsappUrl: string | null,
+  /**
+   * Spec 067 FR-15: a vaga é postulável (`can_apply` das rotas públicas). NÃO é o link da Talentum — esse link não sai mais
+   * das rotas públicas e chega só na resposta aprovada de track-channel (FR-16).
+   */
+  canApply: boolean,
   jobPostingId: string | null = null,
   /**
    * Overrides the sessionStorage-UTM channel read below with a caller-fixed
@@ -48,7 +52,7 @@ export function usePostularseAction(
   const [missingFields, setMissingFields] = useState<MissingFields | null>(null);
 
   const postularse = useCallback(async () => {
-    if (!whatsappUrl) {
+    if (!canApply) {
       setState('not_available');
       return;
     }
@@ -69,10 +73,17 @@ export function usePostularseAction(
     try {
       const channel = fixedChannel ?? sessionStorage.getItem(SESSION_KEY_UTM);
       try {
-        await WorkerApiService.trackAcquisitionChannel(jobPostingId, channel);
-        // Backend confirmed eligibility — ONLY here do we open WhatsApp.
+        const approved = await WorkerApiService.trackAcquisitionChannel(jobPostingId, channel);
+        // Backend confirmed eligibility — ONLY here do we open the pre-screening, and ONLY the link the approved response
+        // carries (spec 067 FR-16): the Talentum link no longer comes from the public routes or from props.
         sessionStorage.removeItem(SESSION_KEY_UTM);
-        window.open(whatsappUrl, '_blank');
+        const prescreeningUrl = approved?.prescreeningUrl;
+        if (!prescreeningUrl) {
+          // Approved but the vacancy has no link: nothing to open. Never fabricate one.
+          setState('not_available');
+          return;
+        }
+        window.open(prescreeningUrl, '_blank');
         setState('idle');
         return;
       } catch (trackErr) {
@@ -95,7 +106,7 @@ export function usePostularseAction(
       setMissingFields(null);
       setState('error');
     }
-  }, [whatsappUrl, isAuthenticated, jobPostingId, fixedChannel]);
+  }, [canApply, isAuthenticated, jobPostingId, fixedChannel]);
 
   const dismissModal = useCallback(() => {
     setState('idle');

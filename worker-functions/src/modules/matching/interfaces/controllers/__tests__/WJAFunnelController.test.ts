@@ -86,6 +86,7 @@ function makeRow(overrides: Record<string, unknown> = {}) {
     source: null,
     talentum_status: null,
     work_zone: null,
+    worker_apto: true, // spec 067: Completado sem apto cai em BLOQUEADO; o padrão da massa é apto
     ...overrides,
   };
 }
@@ -150,7 +151,7 @@ describe('WJAFunnelController', () => {
 
       // 9 colunas no kanban (migration 230 + D433 + Fase 4 + Fase 5/D432: COMPATIBLE; spec 052: sem Confirmado)
       expect(Object.keys(stages)).toEqual([
-        'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+        'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'BLOQUEADO', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
       ]);
 
       // NULL → INVITED (coluna de auto-invite / sem source)
@@ -490,14 +491,14 @@ describe('WJAFunnelController', () => {
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
       expect(response.data.totalEncuadres).toBe(0);
-      // 9 colunas: COMPATIBLE, INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
-      expect(Object.keys(response.data.stages)).toHaveLength(9);
+      // 10 chaves: COMPATIBLE, INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, BLOQUEADO (spec 067), COMPLETED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
+      expect(Object.keys(response.data.stages)).toHaveLength(10);
       Object.values(response.data.stages).forEach((stage: any) => {
         expect(stage).toHaveLength(0);
       });
     });
 
-    it('stages não contém BLOQUEADO nem INITIATED (migration 230 + D433)', async () => {
+    it('stages não contém INITIATED e tem BLOQUEADO (spec 067: Completado sem apto)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-001' });
@@ -505,7 +506,7 @@ describe('WJAFunnelController', () => {
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
       expect('INITIATED' in stages).toBe(false);
-      expect('BLOQUEADO' in stages).toBe(false);
+      expect('BLOQUEADO' in stages).toBe(true);
       expect('INICIADO' in stages).toBe(true);
       expect('PRE_SCREENING' in stages).toBe(true);
     });
@@ -725,5 +726,63 @@ describe('WJAFunnelController', () => {
       expect(response.data[0].alertReasons).toContain('OPEN_MORE_THAN_30_DAYS');
       expect(response.data[0].alertReasons).toContain('NO_CANDIDATES_LAST_7_DAYS');
     });
+  });
+});
+
+/**
+ * Spec 067 (FR-06/FR-12) — C1: o Kanban da vaga lê o apto. Completado sem apto vira card em BLOQUEADO; o card
+ * mantém a etapa interna e o score. Morre se o chamador passar `true` fixo ou deixar de ler a coluna `worker_apto`.
+ */
+describe('WJAFunnelController.getEncuadreFunnel — apto (spec 067, C1)', () => {
+  const controller = new WJAFunnelController();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockListByVacancy.mockResolvedValue([]);
+  });
+
+  async function funnel(rows: Array<Record<string, unknown>>) {
+    mockQuery.mockResolvedValueOnce({ rows });
+    const [req, res] = mockReqRes({ id: 'jp-apto' });
+    await controller.getEncuadreFunnel(req, res);
+    return {
+      data: (res.json as jest.Mock).mock.calls[0][0].data,
+      sql: String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' '),
+    };
+  }
+
+  it('Completado com apto=false → BLOQUEADO; com apto=true → COMPLETED; sem a coluna (null) → BLOQUEADO', async () => {
+    const { data } = await funnel([
+      makeRow({ id: 'ok', funnel_stage: 'QUALIFIED', worker_apto: true }),
+      makeRow({ id: 'nao', funnel_stage: 'QUALIFIED', worker_apto: false }),
+      makeRow({ id: 'nulo', funnel_stage: 'IN_DOUBT', worker_apto: null }),
+      makeRow({ id: 'cmp', funnel_stage: 'COMPLETED', worker_apto: false }),
+    ]);
+    const ids = (c: string) => (data.stages[c] as Array<{ id: string }>).map((x) => x.id).sort();
+    expect(ids('COMPLETED')).toEqual(['ok']);
+    expect(ids('BLOQUEADO')).toEqual(['cmp', 'nao', 'nulo']);
+  });
+
+  it('as outras etapas ignoram o apto', async () => {
+    const { data } = await funnel([
+      makeRow({ id: 'p', funnel_stage: 'PRE_SCREENING', worker_apto: null }),
+      makeRow({ id: 's', funnel_stage: 'SELECTED', worker_apto: false }),
+    ]);
+    expect(data.stages.PRE_SCREENING).toHaveLength(1);
+    expect(data.stages.SELECTED).toHaveLength(1);
+    expect(data.stages.BLOQUEADO).toHaveLength(0);
+  });
+
+  it('FR-12: o card em BLOQUEADO mantém internalStage e matchScore da linha', async () => {
+    const { data } = await funnel([makeRow({ id: 'x', funnel_stage: 'QUALIFIED', worker_apto: false, match_score: 87 })]);
+    const card = data.stages.BLOQUEADO[0];
+    expect(card.internalStage).toBe('QUALIFIED');
+    expect(card.matchScore).toBe(87);
+  });
+
+  it('a query lê o apto do dono (fn_worker_is_apto) só para as etapas de Completado', async () => {
+    const { sql } = await funnel([]);
+    expect(sql).toContain('fn_worker_is_apto(wja.worker_id)');
+    expect(sql).toContain("wja.application_funnel_stage IN ('COMPLETED', 'QUALIFIED', 'IN_DOUBT')");
+    expect(sql).toContain('AS worker_apto');
   });
 });
