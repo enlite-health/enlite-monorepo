@@ -21,6 +21,7 @@ import type { TherapeuticCatalogItem, TherapeuticProjectVersion } from '@domain/
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { ContactStatusEntry } from '@domain/entities/TherapeuticProject';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
 // ── i18n mock (molde `PatientDetailCards.gate.test.tsx`) ─────────────────────
@@ -515,7 +516,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     await esperarFormulario();
 
     escolherNoCombo('tp-modality', 'Presencial'); // IN_PERSON = Presencial
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'segments-1' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Rótulo segments');
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'contexto novo' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'objetivo novo' } });
     alternarNoMulti('tp-specificObjectives', 'Rótulo specific-objectives');

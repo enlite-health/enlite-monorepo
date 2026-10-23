@@ -28,7 +28,7 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -157,7 +157,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
     // spec 030: o segmento é obrigatório no "Nuevo" — pelo teclado, valor lido da tela.
     const segmento = primeiroSegmento();
-    expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
+    expect(await escolherSegmento(page, segmento.label)).toBe(segmento.label);
 
     // CID pelo combobox REAL: digita como humano, escolhe a opção.
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
@@ -289,7 +289,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await digitar(page, '#tp-clinicalContext', 'Contexto que no debe persistir 017');
     await digitar(page, '#tp-generalObjective', 'Objetivo que no debe persistir 017');
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
-    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
+    await escolherSegmento(page, primeiroSegmento().label);
     await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista: `segmentOptions` (sem `alphabetical` p/ objetivos) põe os do segmento escolhido antes dos sem vínculo, na ordem da API (`ORDER BY lower(label)`, spec 061)
     await marcarOpcoes(page, 'tp-activities', 1);
     await page.locator('#tp-startDate').click();
@@ -423,7 +423,7 @@ test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na
     await expect(page.locator('#tp-endDate')).toHaveValue('2026-12-31');
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    const lido = await escolherSegmentoPeloTeclado(page, segmento.label);
+    const lido = await escolherSegmento(page, segmento.label);
     expect(lido).toBe(segmento.label);
     await expect(page.getByTestId('tp-segment')).toHaveAttribute('data-clarity-mask', 'True');
     await expect(page.getByTestId('tp-save')).toBeEnabled();

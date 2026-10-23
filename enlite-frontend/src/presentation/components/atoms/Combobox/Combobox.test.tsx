@@ -678,3 +678,22 @@ describe('Combobox múltipla (herdada do MultiSelect)', () => {
     });
   });
 });
+
+describe('Combobox — data-clarity-mask (gatilho e painel)', () => {
+  const painel = () => screen.getByRole('listbox').parentElement as HTMLElement;
+
+  it('com a prop: gatilho E painel aberto (busca + opções) levam o atributo', () => {
+    renderSingle({ 'data-clarity-mask': 'True' });
+    expect(trigger()).toHaveAttribute('data-clarity-mask', 'True');
+    fireEvent.click(trigger());
+    expect(painel()).toHaveAttribute('data-clarity-mask', 'True');
+    expect(painel().contains(screen.getByRole('listbox'))).toBe(true);
+  });
+
+  it('sem a prop: nem gatilho nem painel levam o atributo', () => {
+    renderSingle();
+    expect(trigger()).not.toHaveAttribute('data-clarity-mask');
+    fireEvent.click(trigger());
+    expect(painel()).not.toHaveAttribute('data-clarity-mask');
+  });
+});

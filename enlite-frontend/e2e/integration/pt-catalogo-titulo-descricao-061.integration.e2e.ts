@@ -20,7 +20,7 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -177,7 +177,7 @@ test.describe('spec 061 — atividade do catálogo com título + descrição: do
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
     await expect(page.getByTestId('tp-modality')).toContainText('Presencial');
     const segmento = primeiroSegmento();
-    expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
+    expect(await escolherSegmento(page, segmento.label)).toBe(segmento.label);
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
     await page.keyboard.type('sintetico');

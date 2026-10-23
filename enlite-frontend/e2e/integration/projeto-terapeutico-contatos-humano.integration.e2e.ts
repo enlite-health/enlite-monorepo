@@ -28,7 +28,7 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -181,7 +181,7 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
     await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
     // spec 030: segmento obrigatório no "Nuevo" — pelo teclado.
-    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
+    await escolherSegmento(page, primeiroSegmento().label);
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
@@ -754,7 +754,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
 
     await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
-    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label); // spec 030: obrigatório no "Nuevo"
+    await escolherSegmento(page, primeiroSegmento().label); // spec 030: obrigatório no "Nuevo"
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();

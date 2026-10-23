@@ -27,6 +27,7 @@ import type {
 } from '@domain/entities/PatientDetail';
 import type { TherapeuticCatalogItem, TherapeuticFieldClass, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import type { TherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
 // ── i18n mock (molde `PatientDetailCards.gate.test.tsx`) ─────────────────────
@@ -211,9 +212,9 @@ function escolherNoCombo(id: string, label: string): void {
   alternarNoMulti(id, label);
 }
 
-function preencherTudo(): void {
+function preencherTudo(opts: { semSegmento?: boolean } = {}): void {
   escolherNoCombo('tp-modality', 'Híbrida'); // HYBRID = Híbrida
-  fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
+  if (!opts.semSegmento) chooseCombo(screen.getByTestId('tp-segment'), 'Segmento A');
   fireEvent.click(screen.getByTestId('icd-pick-a'));
   fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: '  contexto clínico  ' } });
   fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: '  objetivo geral  ' } });
@@ -783,11 +784,10 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
 
   it('obrigatório em "Nuevo": tudo preenchido menos o segmento trava "Salvar"; escolher destrava e vai no corpo', () => {
     montar({ patientDiagnoses: [] });
-    preencherTudo();
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: '' } });
+    preencherTudo({ semSegmento: true });
     expect(salvar().disabled).toBe(true);
 
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-B' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento B');
     expect(salvar().disabled).toBe(false);
     fireEvent.click(salvar());
 
@@ -833,6 +833,9 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
   it('C8: select e texto travado levam `data-clarity-mask`', () => {
     const { unmount } = montar();
     expect(screen.getByTestId('tp-segment')).toHaveAttribute('data-clarity-mask', 'True');
+    // o painel aberto (busca + opções) também é mascarado: os rótulos do catálogo são dado de saúde
+    fireEvent.click(screen.getByTestId('tp-segment'));
+    expect(screen.getByTestId('tp-segment').parentElement!.querySelector('ul[role="listbox"]')!.parentElement).toHaveAttribute('data-clarity-mask', 'True');
     unmount();
     montar({ from: { ...VERSAO, segment: { id: 'seg-A', label: 'Segmento A' } } });
     expect(screen.getByTestId('tp-segment-locked')).toHaveAttribute('data-clarity-mask', 'True');
@@ -841,7 +844,7 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
   it('o segmento escolhido filtra objetivos: os dele primeiro, os sem vínculo depois, o de outro segmento fora', () => {
     montar({ patientDiagnoses: [], catalogs: catalogoComVinculos() });
 
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento A');
 
     const opcoes = Array.from(listaDoMulti('tp-specificObjectives').querySelectorAll('li')).map((li) => li.textContent);
     expect(opcoes).toEqual(['Objetivo 1', 'Objetivo sem vínculo']);
@@ -849,10 +852,10 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
 
   it('item já escolhido continua na lista mesmo depois de trocar para outro segmento', () => {
     montar({ patientDiagnoses: [], catalogs: catalogoComVinculos() });
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-B' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento B');
     alternarNoMulti('tp-specificObjectives', 'Objetivo 2');
 
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento A');
 
     expect(within(listaDoMulti('tp-specificObjectives')).getByText('Objetivo 2')).toBeInTheDocument();
   });

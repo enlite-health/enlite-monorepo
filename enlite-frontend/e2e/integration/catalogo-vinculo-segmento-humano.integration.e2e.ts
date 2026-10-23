@@ -15,7 +15,7 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   cleanupStaffAndGroup, grantCell, loginAs, psql, safeSql, scalar, seedStaffInGroup, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -141,7 +141,7 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
     await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('tp-new-btn').click();
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
-    expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
+    expect(await escolherSegmento(page, segmento.label)).toBe(segmento.label);
     const gatilho = page.locator('#tp-specificObjectives'); // o `id` do Combobox é do GATILHO
     const root = gatilho.locator('..'); // o painel mora no pai do gatilho
     await gatilho.click();

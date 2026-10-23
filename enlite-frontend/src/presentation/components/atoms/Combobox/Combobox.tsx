@@ -30,6 +30,11 @@ type Common = {
   error?: string;
   className?: string;
   'data-testid'?: string;
+  /**
+   * Mascara o campo no session replay (Clarity). Vale no gatilho E no painel aberto: o painel
+   * (busca + opções) mostra os mesmos rótulos, então não pode escapar do mascaramento.
+   */
+  'data-clarity-mask'?: 'True';
   onBlur?: () => void;
   'aria-label'?: string;
   'aria-labelledby'?: string;
@@ -79,6 +84,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
     error,
     className = '',
     'data-testid': testId,
+    'data-clarity-mask': clarityMask,
     onBlur,
     'aria-label': ariaLabel,
     'aria-labelledby': ariaLabelledBy,
@@ -334,6 +340,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
         id={id}
         name={name}
         data-testid={testId}
+        data-clarity-mask={clarityMask}
         role="combobox"
         disabled={disabled}
         aria-expanded={open}
@@ -379,7 +386,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
       )}
 
       {open && (
-        <div className={`${PANEL_CLASSES} flex flex-col`}>
+        <div className={`${PANEL_CLASSES} flex flex-col`} data-clarity-mask={clarityMask}>
           {showSearch && (
             <input
               ref={searchRef}

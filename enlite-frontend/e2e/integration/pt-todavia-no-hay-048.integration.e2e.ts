@@ -27,7 +27,7 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
-import { primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -105,11 +105,8 @@ async function preencherNuevo(page: Page): Promise<void> {
   await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
   await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
-  // Segmento (MACRO, obrigatório no "Nuevo"): `selectOption` pelo rótulo — o type-ahead do select nativo não é confiável no
-  // Chromium/Linux do CI (medido: o valor ficou vazio no runner), e o segmento não é o que esta spec mede.
-  const segmento = primeiroSegmento().label;
-  await page.locator('#tp-segment').selectOption({ label: segmento });
-  await expect(page.locator('#tp-segment').locator('option:checked')).toHaveText(segmento);
+  // Segmento (MACRO, obrigatório no "Nuevo"): escolhido pelo gesto humano no Combobox (abrir, buscar, clicar a opção pelo rótulo).
+  await escolherSegmento(page, primeiroSegmento().label);
   const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
   await page.getByTestId('tp-icd-input').click();
   await page.keyboard.type('sintetico 048');
