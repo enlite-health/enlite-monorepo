@@ -222,7 +222,7 @@ describe('GET /api/vacancies/:id — diagnosisLabel (HTTP real, Postgres real, R
     const esperadas = [
       'id', 'case_number', 'vacancy_number', 'title', 'status', 'is_disabled', 'service_type',
       'required_professions', 'required_sex', 'age_range_min', 'age_range_max', 'worker_attributes',
-      'schedule', 'schedule_days_hours', 'salary_text', 'talentum_description', 'talentum_whatsapp_url',
+      'schedule', 'schedule_days_hours', 'salary_text', 'talentum_description', 'can_apply',
       'patient_zone', 'country', 'created_at', 'diagnosisLabel',
     ].sort();
     for (const caso of ['feliz', 'semCid', 'doisSemPrincipal', 'doisComPrincipal'] as Caso[]) {

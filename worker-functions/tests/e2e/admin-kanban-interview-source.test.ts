@@ -13,6 +13,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -46,12 +47,15 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
     vacancyId = vacancy.rows[0].id as string;
 
     const worker = await pool.query(
-      `INSERT INTO workers (auth_uid, email, country, timezone)
-       VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires')
+      `INSERT INTO workers (auth_uid, email, country, timezone, status)
+       VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires', 'REGISTERED')
        RETURNING id`,
       [`uid-kanban-${Date.now()}`, `kanban-${Date.now()}@interview.test`],
     );
     workerId = worker.rows[0].id as string;
+    // Spec 067: o card só fica na coluna Completado (COMPLETED) se o prestador é APTO (documentos obrigatórios validados);
+    // senão cai em Bloqueados. Semeia como apto com o helper único.
+    await completeWorkerProfile(pool, workerId, 'validated');
 
     // Cenário moderno: WhatsApp gravou em worker_job_applications,
     // encuadres ficou sem data/meet_link (fonte legada vazia).
@@ -80,6 +84,7 @@ describe('GET /api/admin/vacancies/:id/funnel — fonte da data de entrevista', 
     if (pool) {
       await pool.query(`DELETE FROM encuadres WHERE id = $1`, [encuadreId]);
       await pool.query(`DELETE FROM worker_job_applications WHERE worker_id = $1`, [workerId]);
+      await cleanWorkerProfile(pool, [workerId]);
       await pool.query(`DELETE FROM workers WHERE id = $1`, [workerId]);
       await pool.query(`DELETE FROM job_postings WHERE id = $1`, [vacancyId]);
       await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);

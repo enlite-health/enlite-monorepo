@@ -87,8 +87,8 @@ function VacancyCaseCard({
         )}
 
         {/* Botão Postularse — change baja-vacante-por-servico: vaga DE_BAJA (serviço contratado
-            ligado deu baixa) nunca oferece candidatura, mesmo que talentum_whatsapp_url ainda
-            esteja preenchido (o link não deve ser usado depois da baixa). */}
+            ligado deu baixa) nunca oferece candidatura, mesmo que can_apply ainda
+            seja true (o link não deve ser usado depois da baixa). */}
         {!vacancy.is_disabled && (
           <Button
             variant="primary"
@@ -96,7 +96,7 @@ function VacancyCaseCard({
             fullWidth
             onClick={onPostularse}
             isLoading={isLoading}
-            disabled={!vacancy.talentum_whatsapp_url}
+            disabled={!vacancy.can_apply}
           >
             {t('publicVacancy.postularse')}
           </Button>
@@ -110,7 +110,7 @@ function VacancyCaseCard({
         )}
 
         {/* Mensagem quando postulação indisponível (vaga ainda ativa, só falta o link) */}
-        {!vacancy.is_disabled && !vacancy.talentum_whatsapp_url && (
+        {!vacancy.is_disabled && !vacancy.can_apply && (
           <Text size="xs" color="muted" className="text-center">
             {t('publicVacancy.postularseUnavailable')}
           </Text>
@@ -282,7 +282,7 @@ export default function PublicVacancyPage() {
   const [isNotFound, setIsNotFound] = useState(false);
 
   const { state, missingFields, postularse, dismissModal, confirmRegister } = usePostularseAction(
-    vacancy?.talentum_whatsapp_url ?? null,
+    vacancy?.can_apply ?? false,
     vacancy?.id ?? null,
   );
 

@@ -25,7 +25,8 @@ import { createServiceViaApi, activateRecruitmentViaApi } from './itinerario-e2e
 import { insertSecondAddress } from './itinerario-escrita-e2e-helper';
 import { cleanupSubstituicao } from './substituicao-e2e-helper';
 import { cleanupWJAAndEncuadre } from './wja-test-helper';
-import { insertTestWorker, cleanupTestWorker } from './db-test-helper';
+import { cleanupTestWorker } from './db-test-helper';
+import { insertAptoWorker } from './eligibility-worker-helper';
 import { runSQL } from './patient-detail-a-helper';
 import { readSubcardPair, collectDataRequests } from './kanban-subcard-e2e-helper';
 
@@ -121,7 +122,7 @@ export async function seedCadeia(request: APIRequestContext): Promise<{ x: Cadei
 
 /** Worker AT sintético com a marca e o papel no nome; sem coordenada (fora do match). */
 export function seedMarkedWorker(role: string): string {
-  return insertTestWorker({ occupation: 'AT', firstName: `${CADEIA_MARK}${role}`, lastName: CADEIA_MARK });
+  return insertAptoWorker({ occupation: 'AT', firstName: `${CADEIA_MARK}${role}`, lastName: CADEIA_MARK }).workerId;
 }
 
 /** WA titular, WB só-Selecionados-de-B, WC rejeitado em C, WS substituto (DX-16.5). */

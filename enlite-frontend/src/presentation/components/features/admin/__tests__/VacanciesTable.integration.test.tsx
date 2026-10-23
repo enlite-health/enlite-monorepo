@@ -15,6 +15,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
           INVITED: 32,
           INICIADO: 9,
           PRE_SCREENING: 5,
+          BLOQUEADO: 12,
           COMPLETED: 3,
           SELECTED: 27,
           QUICK_RESPONSE_TEAM: 7,
@@ -35,6 +36,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
           INVITED: 16,
           INICIADO: 41,
           PRE_SCREENING: 18,
+          BLOQUEADO: 13,
           COMPLETED: 11,
           SELECTED: 61,
           QUICK_RESPONSE_TEAM: 4,
@@ -61,7 +63,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     // GARANTIA 3: sem coluna de prioridade (spec 046 F1)
     expect(screen.queryByText('admin.vacancies.priorityOptions.urgent')).not.toBeInTheDocument();
 
-    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 8 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
+    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
     expect(screen.getByText('06')).toBeVisible();
     expect(screen.getByText('32')).toBeVisible();
     expect(screen.getByText('09')).toBeVisible();

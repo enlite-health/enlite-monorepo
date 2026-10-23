@@ -40,7 +40,7 @@ const MOCK_PUBLIC_JOBS = {
       country: 'AR',
       age_range_min: 25,
       age_range_max: 40,
-      whatsapp_url: 'https://wa.me/5491100000000?text=CASO+736',
+      can_apply: true,
     },
     {
       id: 'pub-0002',
@@ -64,7 +64,7 @@ const MOCK_PUBLIC_JOBS = {
       country: 'AR',
       age_range_min: 20,
       age_range_max: 45,
-      whatsapp_url: 'https://wa.me/5491100000000?text=CASO+732',
+      can_apply: true,
     },
   ],
 };

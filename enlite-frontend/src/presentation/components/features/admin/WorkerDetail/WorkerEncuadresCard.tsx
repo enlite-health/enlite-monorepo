@@ -27,6 +27,7 @@ const STAGE_COLORS: Record<WorkerEncuadreKanbanStage, string> = {
   INICIADO: 'bg-indigo-100 text-indigo-700',
   PRE_SCREENING: 'bg-violet-100 text-violet-700',
   IN_PROGRESS: 'bg-violet-100 text-violet-700',
+  BLOQUEADO: 'bg-amber-100 text-amber-700',
   COMPLETED: 'bg-violet-100 text-violet-700',
   SELECTED: 'bg-green-100 text-green-700',
   QUICK_RESPONSE_TEAM: 'bg-teal-100 text-teal-700',

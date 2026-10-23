@@ -29,7 +29,8 @@
  */
 import { type APIRequestContext } from '@playwright/test';
 import { backendUrl } from './lancamento-e2e-helper';
-import { insertTestPatient, insertTestWorker, cleanupTestWorker } from './db-test-helper';
+import { insertTestPatient, cleanupTestWorker } from './db-test-helper';
+import { insertAptoWorker } from './eligibility-worker-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from './wja-test-helper';
 import {
   createServiceViaApi, activateRecruitmentViaApi, readItineraryApi, ITINERARIO_STAFF,
@@ -138,7 +139,7 @@ export async function seedDerivablePatient(
 }
 
 /**
- * Candidato em Selecionado (C) da vaga: `insertTestWorker` (AT, marca sintética) + `insertWJA`
+ * Candidato em Selecionado (C) da vaga: `insertAptoWorker` (AT apto, marca sintética) + `insertWJA`
  * na etapa dada (default `QUICK_RESPONSE_TEAM`). Registra no `seed` para a limpeza.
  */
 export function selectedWorker(
@@ -146,7 +147,7 @@ export function selectedWorker(
   vacancyId: string,
   funnelStage = 'QUICK_RESPONSE_TEAM',
 ): string {
-  const workerId = insertTestWorker({ occupation: 'AT', lastName: DERIVACAO_MARK });
+  const workerId = insertAptoWorker({ occupation: 'AT', lastName: DERIVACAO_MARK }).workerId;
   seed.track(workerId, vacancyId);
   insertWJA({ workerId, jobPostingId: vacancyId, funnelStage });
   return workerId;
