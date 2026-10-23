@@ -11,11 +11,16 @@ async function resolverGatilho(alvo: Locator | string, page: Page): Promise<Loca
   return ehGatilho ? raiz : raiz.locator('button[aria-haspopup="listbox"]').first();
 }
 
+/** Campo de busca DESTE combobox (irmão do gatilho no mesmo contêiner) — nunca um `*-search` de outro campo da página. */
+function buscaDo(gatilho: Locator): Locator {
+  return gatilho.locator('xpath=..').locator('input[data-testid$="-search"]');
+}
+
 /** Abre o painel e, se houver campo de busca, digita o termo. Devolve o gatilho. */
 async function abrir(page: Page, alvo: Locator | string, termo?: string): Promise<Locator> {
   const gatilho = await resolverGatilho(alvo, page);
   await gatilho.click();
-  const busca = page.locator('input[data-testid$="-search"]');
+  const busca = buscaDo(gatilho);
   if (termo !== undefined && (await busca.count()) > 0) {
     await expect(busca).toBeFocused();
     await page.keyboard.type(termo);
@@ -38,7 +43,7 @@ export async function escolherNoCombo(
 /** Combobox `multiple`: marca cada rótulo (o painel fica aberto) e fecha com Esc no fim. */
 export async function escolherVariosNoCombo(page: Page, alvo: Locator | string, rotulos: string[]): Promise<void> {
   const gatilho = await abrir(page, alvo);
-  const busca = page.locator('input[data-testid$="-search"]');
+  const busca = buscaDo(gatilho);
   for (const rotulo of rotulos) {
     if ((await busca.count()) > 0) {
       await busca.click();
