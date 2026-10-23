@@ -32,6 +32,7 @@ const DESCRICAO = `DESCRIPCION-SINTETICA-${SUFIXO} original`;
 const DESCRICAO_NOVA = `DESCRIPCION-SINTETICA-${SUFIXO} reescrita`;
 const ROTA = '/admin/catalogos/actividades';
 
+const RELEASE = `e061-${RUN_ID}`; // release PRÓPRIA (padrão do 048): '2026-01' corrente deixada aqui quebrava o 048 (índice "no máximo um corrente")
 const ICD_URI = 'http://id.who.int/icd/entity/e2e-pt-061';
 const CAP06_URI = 'http://id.who.int/icd/entity/e2e-pt-061-cap06';
 const ICD_TITLE = 'Trastorno sintético de prueba 061';
@@ -48,12 +49,13 @@ const CELULAS: [string, string][] = [
 const semEspaco = (s: string): string => s.replace(/\s+/g, '');
 
 function seedIcd(): void {
-  runSQL(`INSERT INTO terminology.icd_releases (release, entity_count, is_current, promoted_at, promoted_by) VALUES ('2026-01', 1, true, now(), 'e2e-061') ON CONFLICT (release) DO UPDATE SET is_current = true, promoted_at = now(), promoted_by = 'e2e-061'`);
-  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) VALUES ('${ICD_URI}', '2026-01', '6E61', '${ICD_TITLE}', 'Synthetic disorder 061', '06', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`);
-  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) SELECT '${CAP06_URI}', '2026-01', '06', 'Trastornos mentales (e2e 061)', NULL, '06', NULL, 'chapter', false WHERE NOT EXISTS (SELECT 1 FROM terminology.icd_entities WHERE release = '2026-01' AND kind = 'chapter' AND code = '06')`);
+  runSQL(`INSERT INTO terminology.icd_releases (release, entity_count, is_current, promoted_at, promoted_by) VALUES ('${RELEASE}', 1, true, now(), 'e2e-061') ON CONFLICT (release) DO UPDATE SET is_current = true, promoted_at = now(), promoted_by = 'e2e-061'`);
+  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) VALUES ('${ICD_URI}', '${RELEASE}', '6E61', '${ICD_TITLE}', 'Synthetic disorder 061', '06', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`);
+  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) SELECT '${CAP06_URI}', '${RELEASE}', '06', 'Trastornos mentales (e2e 061)', NULL, '06', NULL, 'chapter', false WHERE NOT EXISTS (SELECT 1 FROM terminology.icd_entities WHERE release = '${RELEASE}' AND kind = 'chapter' AND code = '06')`);
 }
 function cleanupIcd(): void {
   runSQL(`DELETE FROM terminology.icd_entities WHERE icd_uri IN ('${ICD_URI}', '${CAP06_URI}')`);
+  runSQL(`DELETE FROM terminology.icd_releases WHERE release = '${RELEASE}'`);
 }
 
 /** Clica como um humano, digita, devolve o que a TELA mostra. */
