@@ -102,8 +102,10 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
-  const searchTestId = `${id ?? testId}-search`;
-  const noResultsTestId = `${id ?? testId}-no-results`;
+  // Sem id nem data-testid não há base: o atributo some (nunca `undefined-search`).
+  const testIdBase = id ?? testId;
+  const searchTestId = testIdBase ? `${testIdBase}-search` : undefined;
+  const noResultsTestId = testIdBase ? `${testIdBase}-no-results` : undefined;
 
   const setTriggerRef = useCallback(
     (node: HTMLButtonElement | null) => {

@@ -709,4 +709,26 @@ describe('Combobox — painel no celular (spec 070 T10)', () => {
     expect(painel.parentElement?.className).toContain('relative');
     expect(painel.parentElement?.contains(gatilho)).toBe(true);
   });
+
+  describe('testids derivados', () => {
+    it('sem id nem data-testid, nenhum atributo contém "undefined"', async () => {
+      const { container } = render(
+        <Combobox options={OPTIONS} value="" onChange={vi.fn()} placeholder="Escolher" />,
+      );
+      await userEvent.click(screen.getByRole('combobox'));
+      await userEvent.type(screen.getByPlaceholderText('common.multiSelect.searchPlaceholder'), 'zzz');
+      const attrs = Array.from(container.querySelectorAll('*')).flatMap((el) =>
+        Array.from(el.attributes).map((a) => `${a.name}=${a.value}`),
+      );
+      expect(attrs.filter((a) => a.includes('undefined'))).toEqual([]);
+      expect(container.querySelector('[data-testid]')).toBeNull();
+    });
+
+    it('com id, os testids derivados existem', async () => {
+      render(<Combobox id="zeta" options={OPTIONS} value="" onChange={vi.fn()} />);
+      await userEvent.click(screen.getByRole('combobox'));
+      await userEvent.type(screen.getByTestId('zeta-search'), 'zzz');
+      expect(screen.getByTestId('zeta-no-results')).toBeInTheDocument();
+    });
+  });
 });
