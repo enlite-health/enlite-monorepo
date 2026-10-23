@@ -126,6 +126,28 @@ describe('TherapeuticCatalogRepository', () => {
       await new TherapeuticCatalogRepository().list('segments');
       expect(mockPoolQuery.mock.calls[0][0] as string).toContain('ORDER BY active DESC, sort_order, lower(label)');
     });
+    it.each(['service-exit-reasons', 'segments'] as const)(
+      'kind `%s` (sem coluna description): list com ORDER BY antigo; create/update NÃO tocam `description` mesmo se vier no input',
+      async (kind) => {
+        mockPoolQuery.mockResolvedValue({ rows: [ROW] });
+        await new TherapeuticCatalogRepository().list(kind);
+        const listSql = mockPoolQuery.mock.calls[0][0] as string;
+        expect(listSql).toContain('ORDER BY active DESC, sort_order, lower(label)');
+        expect(listSql).not.toContain('description');
+
+        const c = cliente();
+        mockConnect.mockResolvedValue(c.cli);
+        await new TherapeuticCatalogRepository().create(kind, { label: 'MOTIVO-SINTETICO-1', description: 'DESCRIPCION-SINTETICA-1', actorUid: 'uid-1' });
+        expect(c.chamadas[0].sql).not.toContain('description');
+        expect(c.chamadas[0].params).toEqual(['MOTIVO-SINTETICO-1', null, 'uid-1']);
+
+        const u = cliente();
+        mockConnect.mockResolvedValue(u.cli);
+        await new TherapeuticCatalogRepository().update(kind, 'item-1', { label: 'MOTIVO-SINTETICO-2', description: 'DESCRIPCION-SINTETICA-2', actorUid: 'uid-1' });
+        expect(u.chamadas[0].sql).not.toContain('description');
+        expect(u.chamadas[0].params).toEqual(['item-1', 'MOTIVO-SINTETICO-2', 'uid-1']);
+      },
+    );
     it('list: linha COM a coluna `description` → item leva `description`; sem a coluna → chave ausente', async () => {
       mockPoolQuery.mockResolvedValue({ rows: [{ ...ROW, description: 'DESCRIPCION-SINTETICA-1' }, { ...ROW, id: 'item-2', description: null }] });
       const itens = await new TherapeuticCatalogRepository().list('activities');
