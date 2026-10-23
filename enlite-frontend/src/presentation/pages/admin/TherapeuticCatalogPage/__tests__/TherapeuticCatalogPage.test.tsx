@@ -209,6 +209,13 @@ describe('TherapeuticCatalogPage — título, descrição e ordem alfabética (s
     expect(screen.queryByTestId('therapeutic-catalog-description-alfa')).toBeNull();
   });
 
+  it('a descrição usa o token de texto com contraste AAA (#374151 = 10,3:1 sobre branco), não o muted translúcido', async () => {
+    await renderPage('activities');
+    const d = screen.getByTestId('therapeutic-catalog-description-zeta');
+    expect(d).toHaveClass('text-[#374151]');
+    expect(d).not.toHaveClass('text-gray-700');
+  });
+
   it('segments: a coluna Ordem continua e a ordem é a do servidor', async () => {
     await renderPage('segments');
     expect(screen.getByRole('columnheader', { name: COPY.table.order })).toBeInTheDocument();

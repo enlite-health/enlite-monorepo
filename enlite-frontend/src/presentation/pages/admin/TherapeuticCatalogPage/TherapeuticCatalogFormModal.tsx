@@ -126,9 +126,10 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
               data-testid="therapeutic-catalog-label-input"
               autoFocus
             />
-            <div className="flex justify-between mt-1">
-              <Text size="xs" color="muted">{tr(!hasDescription ? 'form.labelHelp' : 'form.titleHelp')}</Text>
-              <Text size="xs" color={tooLong ? 'inherit' : 'muted'} className={tooLong ? 'text-red-600' : undefined} data-testid="therapeutic-catalog-label-count">
+            {/* Ajuda quebra livre à esquerda; contador em coluna própria à direita (não encolhe, não quebra). */}
+            <div className="flex items-start justify-between gap-3 mt-1">
+              <Text size="xs" color="muted" className="min-w-0 flex-1">{tr(!hasDescription ? 'form.labelHelp' : 'form.titleHelp')}</Text>
+              <Text size="xs" color={tooLong ? 'inherit' : 'muted'} className={`shrink-0 whitespace-nowrap ${tooLong ? 'text-red-600' : ''}`} data-testid="therapeutic-catalog-label-count">
                 {trimmed.length}/{labelMax}
               </Text>
             </div>
@@ -145,12 +146,12 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none"
                 data-testid="therapeutic-catalog-description-input"
               />
-              <div className="flex justify-between mt-1">
-                <Text size="xs" color="muted">{tr('form.descriptionHelp')}</Text>
+              <div className="flex items-start justify-between gap-3 mt-1">
+                <Text size="xs" color="muted" className="min-w-0 flex-1">{tr('form.descriptionHelp')}</Text>
                 <Text
                   size="xs"
                   color={descriptionTooLong ? 'inherit' : 'muted'}
-                  className={descriptionTooLong ? 'text-red-600' : undefined}
+                  className={`shrink-0 whitespace-nowrap ${descriptionTooLong ? 'text-red-600' : ''}`}
                   data-testid="therapeutic-catalog-description-count"
                 >
                   {trimmedDescription.length}/{CATALOG_DESCRIPTION_MAX}
