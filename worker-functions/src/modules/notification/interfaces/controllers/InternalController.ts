@@ -324,6 +324,10 @@ export class InternalController {
       for (const m of itineraryDailyRun?.missing ?? []) {
         logger.warn({ msg: 'itinerary_daily_run_missing', country: m.country, operationDate: m.operationDate });
       }
+      // D2: a rotina TERMINOU, mas com falhas isoladas (ex.: e-mail/in-app que não saiu) — sem isto o `failures` só vivia na linha do banco.
+      for (const f of itineraryDailyRun?.failed ?? []) {
+        logger.warn({ msg: 'itinerary_daily_run_failures', country: f.country, operationDate: f.operationDate, failures: f.failures });
+      }
 
       const stuckRows = summary.filter(row => row.stuck);
 
