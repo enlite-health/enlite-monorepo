@@ -15,11 +15,19 @@
  *   5. as outras duas rotas abrem com o próprio título;
  *   6. foto da tabela e da modal com a recusa (`toHaveScreenshot`).
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { runSQL } from '../helpers/patient-detail-c-helper';
-import { loginComoHumano } from '../helpers/login-humano';
+import { loginComoStaffMock } from '../helpers/login-mock-staff';
+import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 
 const STAFF_EMAIL = `e2e.cat.${Date.now()}@enlite.health`;
+// Login pelo MOCK do stack de CI (USE_MOCK_AUTH=true; sem emulador do Firebase — `loginComoHumano` não funciona lá). O `uid` é o
+// `principal.id` que a API grava como autor; a linha em `users` é a mesma que o `loginComoHumano` criava.
+const STAFF: MockUser = { uid: `e2e-cat-${Date.now()}`, email: STAFF_EMAIL, role: 'admin', country: 'AR' };
+async function entrar(page: Page): Promise<void> {
+  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${STAFF.uid}', '${STAFF.email}', 'E2E Catalogo', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
+  await loginComoStaffMock(page, STAFF, 'E2E Catalogo');
+}
 const STAMP = Date.now().toString(36);
 const LABEL = `Objetivo e2e ${STAMP}`;
 const DESCRIPTION = `DESCRIPCION-SINTETICA-${STAMP}`;
@@ -44,10 +52,11 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
   });
   test.afterAll(() => {
     runSQL(`DELETE FROM therapeutic_specific_objectives WHERE label = '${LABEL}'`);
+    try { runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`); } catch { /* limpeza não esconde o resultado */ }
   });
 
   test('a rota existe, lista o seed, cria pela tela (banco confirma) e recusa o duplicado (409 na tela, banco intacto)', async ({ page }) => {
-    await loginComoHumano(page, STAFF_EMAIL, 'E2E Catalogo');
+    await entrar(page);
     await page.goto('/admin/catalogos/objetivos-especificos');
     await expect(page.getByRole('heading', { name: 'Objetivos específicos del proyecto terapéutico' })).toBeVisible({ timeout: 30_000 });
     const table = page.getByTestId('therapeutic-catalog-table');
@@ -124,7 +133,7 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
   });
 
   test('caminho alternativo: desativar pela tela → "Inactiva", banco com active=false, e o formulário do projeto deixa de oferecer a opção', async ({ page }) => {
-    await loginComoHumano(page, STAFF_EMAIL, 'E2E Catalogo');
+    await entrar(page);
     await page.goto('/admin/catalogos/objetivos-especificos');
     await expect(page.getByTestId(`therapeutic-catalog-status-${novoId}`)).toContainText('Activa', { timeout: 30_000 });
     const patched = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes(`/therapeutic-catalogs/specific-objectives/${novoId}`));
@@ -139,8 +148,9 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
     const req = page.waitForRequest((r) => r.method() === 'GET' && r.url().includes('/therapeutic-catalogs/specific-objectives'));
     await page.reload();
     const viva = await req;
-    const authorization = viva.headers()['authorization'];
-    expect(authorization).toMatch(/^Bearer /);
+    // Login pelo mock do CI: `request.headers()` mostra o JWT FALSO do navegador (o `page.route` troca por `mock_*` só na rede) → 401.
+    // O token que a API aceita é o do mesmo `STAFF` logado.
+    const authorization = `Bearer ${tokenFor(STAFF)}`;
     const base = viva.url().split('/api/admin/')[0];
     const doForm = await page.request.get(`${base}/api/admin/therapeutic-catalogs/specific-objectives`, { headers: { authorization } });
     expect(doForm.status()).toBe(200);
@@ -152,7 +162,7 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
   });
 
   test('a outra rota abre com o próprio título (mesmo componente, `kind` diferente); "tipos de patología" NÃO tem tela nem menu', async ({ page }) => {
-    await loginComoHumano(page, STAFF_EMAIL, 'E2E Catalogo');
+    await entrar(page);
     await page.goto('/admin/catalogos/actividades');
     await expect(page.getByRole('heading', { name: 'Rutina y actividades del proyecto terapéutico' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('therapeutic-catalog-table').locator('[data-testid^="therapeutic-catalog-row-"]')).toHaveCount(Number(runSQL(`SELECT count(*) FROM therapeutic_activities`)));

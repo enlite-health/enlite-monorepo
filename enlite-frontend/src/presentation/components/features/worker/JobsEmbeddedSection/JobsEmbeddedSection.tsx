@@ -62,7 +62,7 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
     daysAndHours: dto.schedule_days_hours ?? '',
     ageRange: formatAgeRange(dto.age_range_min, dto.age_range_max),
     profile: dto.worker_profile_sought ?? '',
-    whatsappLink: dto.whatsapp_url ?? '',
+    canApply: dto.can_apply === true,
     detailLink: dto.detail_link,
   };
 }

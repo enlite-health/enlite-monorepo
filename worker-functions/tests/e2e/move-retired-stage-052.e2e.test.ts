@@ -17,6 +17,7 @@ import { Pool } from 'pg';
 import type { Request, Response } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { WJAFunnelController } from '../../src/modules/matching/interfaces/controllers/WJAFunnelController';
+import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -80,6 +81,8 @@ describe('move com o destino retirado (spec 052, Fase 4)', () => {
       [`m052-${RUN}`, `worker.m052.${RUN}@example.test`],
     );
     workerId = w.rows[0].id;
+    // spec 067 FR-24: o destino Completado exige prestador APTO; a intenção do teste é "worker apto" (controle positivo)
+    await completeWorkerProfile(pool, workerId, 'validated');
     const wja = await pool.query(
       `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
        VALUES ($1, $2, 'INVITED', 'talentum') RETURNING id`,
@@ -100,6 +103,7 @@ describe('move com o destino retirado (spec 052, Fase 4)', () => {
     await pool.query(`DELETE FROM domain_events WHERE payload @> $1::jsonb`, [JSON.stringify({ workerId })]).catch(() => undefined);
     await pool.query('DELETE FROM encuadres WHERE worker_id = $1', [workerId]).catch(() => undefined);
     await pool.query('DELETE FROM worker_job_applications WHERE id = $1', [wjaId]).catch(() => undefined);
+    await cleanWorkerProfile(pool, [workerId]).catch(() => undefined);
     await pool.query('DELETE FROM workers WHERE id = $1', [workerId]).catch(() => undefined);
     await pool.query('DELETE FROM job_postings WHERE id = $1', [vacancyId]).catch(() => undefined);
     await pool.query('DELETE FROM patients WHERE id = $1', [patientId]).catch(() => undefined);

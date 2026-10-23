@@ -6,7 +6,7 @@
  * NENHUM efeito externo: não ativa recrutamento, não completa worker, não chama mirror Ana Care / mensageria — só Postgres + API de leitura/vínculo.
  *
  *  FELIZ         — 2 serviços ativos do mesmo paciente: A vinculado a UMA obra social (start_date MAIS TARDE), B sem vínculo (start_date MAIS CEDO)
- *                  -> "<obra social> · 1 servicio sin obra social" e a MENOR data (a de B, DD/MM/AAAA).
+ *                  -> a tag com SÓ o nome da obra social (sem contador) e a MENOR data (a de B, DD/MM/AAAA).
  *                  Não há cenário com 2 obras sociais vigentes ao mesmo tempo: a regra T2 (`migrations/537_contracted_service_contract.sql`,
  *                  TWO_PAYERS_OVERLAP) proíbe, por PACIENTE, dois vínculos vivos com vigências sobrepostas e `provider_code` diferente.
  *  ALTERNATIVO A — (ABAC) ator SEM `patient_services:read` -> os dois campos dizem "Sin permiso" e nenhum nome vaza para o DOM.
@@ -81,11 +81,12 @@ test.describe('064-cobertura-entrada — cobertura atual e data de entrada na fi
     dropActors();
   });
 
-  test('FELIZ: um serviço vinculado a uma obra social e outro sem vínculo -> a ficha mostra o nome com "1 servicio sin obra social" e a MENOR data de início', async ({ page }) => {
+  test('FELIZ: um serviço vinculado a uma obra social e outro sem vínculo -> a ficha mostra só o nome (tag, sem contador) e a MENOR data de início', async ({ page }) => {
     await loginAs(page, ator.user);
     await abrirFicha(page, pFeliz);
     const cobertura = page.getByTestId('patient-current-coverage');
-    await expect(cobertura).toHaveText(`${pa.name} · 1 servicio sin obra social`);
+    await expect(cobertura).toHaveText(pa.name);
+    await expect(cobertura).not.toContainText('servicio sin obra social');
     const entrada = page.getByTestId('patient-entry-date');
     await expect(entrada).toHaveText(ddmmaaaa(dataB));
     await expect(entrada).not.toContainText(ddmmaaaa(dataA));

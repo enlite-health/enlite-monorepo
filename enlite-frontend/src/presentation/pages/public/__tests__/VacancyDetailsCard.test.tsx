@@ -63,7 +63,7 @@ const baseVacancy: PublicVacancyDetail = {
   schedule_days_hours: null,
   salary_text: null,
   talentum_description: 'Buscamos un/a Acompañante Terapéutico para paciente adulto.',
-  talentum_whatsapp_url: 'https://wa.me/5491112345678',
+  can_apply: true,
   patient_zone: 'Villa Ballester, Buenos Aires',
   country: 'Argentina',
   created_at: '2026-01-01T00:00:00Z',

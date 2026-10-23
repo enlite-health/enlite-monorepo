@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { workerAptoSql } from '@shared/database/workerAptoSql';
 import { COMPLETED_COLUMN_STAGES } from '../domain/kanbanColumn';
 import type { EnquadreEventStatus, EnquadreParticipantOutcome } from '../domain/enquadreEvent';
 
@@ -149,6 +150,8 @@ export class EnquadreEventRepository {
 
   /**
    * Quem pode ser convocado: candidatura da vaga na coluna Completado (os estágios que o quadro B colapsa, `kanbanColumn.ts`)
+   * E prestador APTO agora (spec 067 FR-07: o MESMO predicado do Kanban, `fn_worker_is_apto`, lido na hora — um prestador que
+   * perdeu a validação some daqui mesmo que a etapa continue em Completado)
    * E sem participação ativa (`released_at IS NULL`) na vaga. `onlyWorkerIds` restringe a esses ids (validação da criação).
    */
   async listAvailableWorkers(client: PoolClient, vacancyId: string, onlyWorkerIds: readonly string[] | null): Promise<AvailableWorkerRow[]> {
@@ -159,6 +162,7 @@ export class EnquadreEventRepository {
         WHERE wja.job_posting_id = $1
           AND wja.application_funnel_stage = ANY($2::text[])
           AND ${excludeDisabledWorkersSql('w')}
+          AND ${workerAptoSql('w.id')}
           AND NOT EXISTS (
                 SELECT 1 FROM enquadre_event_participants p
                  WHERE p.job_posting_id = wja.job_posting_id

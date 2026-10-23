@@ -36,7 +36,7 @@ export interface VacancyRow {
 
 /** Chaves aceitas pelo backend (`VACANCY_SORT_ALLOWLIST`, spec 046 F3). Caso e Status não ordenam. */
 export type VacancySortKey =
-  | 'compatible' | 'invited' | 'iniciado' | 'preScreening' | 'completed' | 'selected'
+  | 'compatible' | 'invited' | 'iniciado' | 'preScreening' | 'bloqueados' | 'completed' | 'selected'
   | 'quickResponseTeam' | 'rejected' | 'postulados' | 'faltantes' | 'lastActionAt';
 
 const FUNNEL_SORT_KEY: Record<string, VacancySortKey> = {
@@ -44,6 +44,7 @@ const FUNNEL_SORT_KEY: Record<string, VacancySortKey> = {
   INVITED: 'invited',
   INICIADO: 'iniciado',
   PRE_SCREENING: 'preScreening',
+  BLOQUEADO: 'bloqueados',
   COMPLETED: 'completed',
   SELECTED: 'selected',
   QUICK_RESPONSE_TEAM: 'quickResponseTeam',

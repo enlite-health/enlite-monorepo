@@ -120,7 +120,8 @@ export class WorkerApplicationsController {
         return;
       }
 
-      res.status(200).json({ success: true });
+      // Spec 067 FR-16: o link da Talentum chega ao front SÓ aqui (200 aprovado); a 403 acima nunca o carrega.
+      res.status(200).json({ success: true, data: { prescreeningUrl: applyResult.prescreeningUrl } });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.error({ msg: '[WorkerApplicationsController] trackChannel error', error: message });

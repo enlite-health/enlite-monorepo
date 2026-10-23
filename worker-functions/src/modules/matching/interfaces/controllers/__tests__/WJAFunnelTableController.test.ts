@@ -43,13 +43,22 @@ describe('WJAFunnelTableController.getEncuadreFunnelTable — ?columns=', () => 
     expect(res.status).not.toHaveBeenCalledWith(400);
   });
 
-  it('?columns=BLOQUEADO → 400 (D433: coluna não existe mais)', async () => {
+  it('?columns=BLOQUEADO é aceita (spec 067: Bloqueados é coluna do quadro) e vai ao use case', async () => {
     const [req, res] = reqRes({ columns: 'BLOQUEADO' });
 
     await controller.getEncuadreFunnelTable(req, res);
 
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(mockExecute).toHaveBeenCalledWith('jp-1', 'ALL', null, ['BLOQUEADO']);
+  });
+
+  it('?columns=COLUNA_INEXISTENTE → 400 (coluna que não existe)', async () => {
+    const [req, res] = reqRes({ columns: 'COLUNA_INEXISTENTE' });
+
+    await controller.getEncuadreFunnelTable(req, res);
+
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Invalid column "BLOQUEADO"' });
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Invalid column "COLUNA_INEXISTENTE"' });
     expect(mockExecute).not.toHaveBeenCalled();
   });
 

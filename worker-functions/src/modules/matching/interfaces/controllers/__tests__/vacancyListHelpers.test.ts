@@ -338,10 +338,26 @@ describe('loadStageCounts', () => {
       'INICIADO',
       'PRE_SCREENING',
       'IN_PROGRESS',
+      'BLOQUEADO',
       'COMPLETED',
       'SELECTED',
       'QUICK_RESPONSE_TEAM',
     ]);
+  });
+
+  it('spec 067 (C3): a query lê o apto na coluna e no GROUP BY, e Completado sem apto soma em BLOQUEADO (não em COMPLETED)', async () => {
+    const pool = makePool([
+      { id: 'jp-a', kind: 'wja', stage: 'QUALIFIED', source: 'talentum', messaged: true, n: 3, dismissed: false, apto: true },
+      { id: 'jp-a', kind: 'wja', stage: 'QUALIFIED', source: 'talentum', messaged: true, n: 2, dismissed: false, apto: false },
+      { id: 'jp-a', kind: 'wja', stage: 'COMPLETED', source: 'talentum', messaged: true, n: 1, dismissed: false, apto: null },
+    ]);
+    const out = await loadStageCounts(pool, ['jp-a']);
+    const counts = out.get('jp-a')!;
+    expect(counts.COMPLETED).toBe(3);
+    expect(counts.BLOQUEADO).toBe(3);
+    const sql = String((pool.query as jest.Mock).mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('fn_worker_is_apto(wja.worker_id)');
+    expect(sql).toContain('GROUP BY 1, 2, 3, 4, 5, 8');
   });
 });
 

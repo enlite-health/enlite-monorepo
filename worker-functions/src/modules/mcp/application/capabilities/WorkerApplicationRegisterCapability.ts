@@ -12,7 +12,7 @@ const ArgsShape = {
 const ArgsSchema = z.object(ArgsShape);
 
 export type WorkerApplicationRegisterResult =
-  | { ok: true; wjaId: string | null }
+  | { ok: true; wjaId: string | null; prescreeningUrl: string | null }
   | { ok: false; reason: string; workerStatus: string | null; missingFields: string[] };
 
 /**
@@ -27,7 +27,7 @@ export type WorkerApplicationRegisterResult =
 export class WorkerApplicationRegisterCapability {
   static readonly NAME = 'worker.application.register';
   static readonly DESCRIPTION =
-    'Register a job application (postulación) for a worker on a vacancy, with the SAME eligibility rules as the app (REGISTERED only; blocked attempts instrumented). Idempotent per worker×vacancy. Returns {ok:false, reason} when not eligible.';
+    'Register a job application (postulación) for a worker on a vacancy, with the SAME eligibility rules as the app (REGISTERED only; blocked attempts instrumented). Idempotent per worker×vacancy. Returns {ok:true, wjaId, prescreeningUrl} on success (prescreeningUrl is the Talentum pre-screening link, ONLY here) and {ok:false, reason} when not eligible (never carries the link).';
   static readonly INPUT_SHAPE = ArgsShape;
 
   constructor(
@@ -71,6 +71,7 @@ export class WorkerApplicationRegisterCapability {
       };
     }
 
-    return { ok: true, wjaId: result.wjaId };
+    // Spec 067 FR-16: o link da Talentum só existe no ok:true (a Luz o entrega ao prestador aprovado); o ok:false nunca o leva.
+    return { ok: true, wjaId: result.wjaId, prescreeningUrl: result.prescreeningUrl };
   }
 }

@@ -45,7 +45,7 @@ const vacanciaDeBaja: PublicVacancyDetail = {
   salary_text: null,
   talentum_description: null,
   // De propósito PREENCHIDO: prova que o botão some pelo `is_disabled`, não por falta de link.
-  talentum_whatsapp_url: 'https://wa.me/5491112345678',
+  can_apply: true,
   patient_zone: 'Palermo, CABA',
   country: 'AR',
   created_at: '2026-09-01T00:00:00Z',
@@ -72,7 +72,7 @@ vi.mock('@presentation/hooks/usePostularseAction', () => ({
 }));
 
 describe('PublicVacancyPage — vaga DE_BAJA (change baja-vacante-por-servico)', () => {
-  it('NÃO renderiza o botão de Postularse, mesmo com talentum_whatsapp_url preenchido', async () => {
+  it('NÃO renderiza o botão de Postularse, mesmo com can_apply true', async () => {
     render(<PublicVacancyPage />);
     expect(await screen.findByText('CASO 501-1')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'publicVacancy.postularse' })).not.toBeInTheDocument();

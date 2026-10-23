@@ -66,6 +66,7 @@ async function escolherNoModal(page: Page, rotulo: string): Promise<string> {
   await campo.click();
   await expect(campo).toBeFocused();
   await page.keyboard.type(rotulo.slice(0, 4));
+  await page.keyboard.press('Tab'); // Linux/CI: o click abre o popup nativo e o type-ahead só DESTACA; o Tab confirma (mesma razão do `pti-segmento-helper`). NÃO usar Enter
   return (await campo.locator('option:checked').innerText()).trim();
 }
 
@@ -165,6 +166,7 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
     await campo.click();
     await expect(campo).toBeFocused();
     await page.keyboard.type('Sin '); // type-ahead até "Sin segmento" (1ª opção; o vínculo inativo é a última)
+    await page.keyboard.press('Tab'); // idem: confirma o item destacado no popup nativo do Linux
     await expect(campo).toHaveValue('');
 
     const patched = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes(`/therapeutic-catalogs/specific-objectives/${objInativo}`));

@@ -47,8 +47,8 @@ function payloadWith(countries: Array<'AR' | 'BR'>, requested: 'AR' | 'BR' | 'AL
     prioridades: { completosEsperandoAgendamiento: 0, registrosIncompletos: 0, bloqueadosAlPostularse: 0 },
     funnelPorPrestador: {
       total: 0, recorte: 'vagas-vivas', periodoDias: null, bloqueados: 0,
-      porEtapa: { somavel: false, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
-      consolidado: { somavel: true, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
+      porEtapa: { somavel: false, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, BLOQUEADO: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
+      consolidado: { somavel: true, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, BLOQUEADO: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
     },
     funnel: { invitados: 0, bloqueados: 0, preScreening: 0, completos: 0, seleccionados: 0, rechazados: 0 },
     encuadres: { agendadosEstaSemana: 0 },

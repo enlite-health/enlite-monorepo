@@ -21,6 +21,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -68,6 +69,8 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
     vacancyId = vacancy.rows[0].id;
 
     W.REG = await makeWorker('REGISTERED', 'reg');
+    // spec 067 FR-24: o arrasto para Completado exige APTO; a intenção do teste é "worker REGISTERED que pode ser movido"
+    await completeWorkerProfile(pool, W.REG, 'validated');
     W.INC = await makeWorker('INCOMPLETE_REGISTER', 'inc');
     W.DIS = await makeWorker('DISABLED', 'dis');
 
@@ -88,6 +91,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
       const wids = Object.values(W);
       await pool.query(`DELETE FROM worker_job_applications WHERE worker_id = ANY($1::uuid[])`, [wids]);
       await pool.query(`DELETE FROM encuadres WHERE worker_id = ANY($1::uuid[])`, [wids]);
+      await cleanWorkerProfile(pool, wids);
       await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [wids]);
       await pool.query(`DELETE FROM job_postings WHERE id = $1`, [vacancyId]);
       await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);

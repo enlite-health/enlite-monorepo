@@ -32,6 +32,7 @@ import {
   CURRENT_WEEK_START_SQL,
 } from '../domain/interviewSchedule';
 import type { CountryCode } from '@shared/domain/countryCodes';
+import { workerAptoSql } from '@shared/database/workerAptoSql';
 
 /** Linha de contagem simples chave→valor. */
 export interface CountRow {
@@ -164,7 +165,11 @@ export function funnelLegadoQuery(db: Pool, countries: CountryCode[]) {
   );
 }
 
-/** "Completos esperando agenda" — pessoas distintas em vaga viva. */
+/**
+ * "Completos esperando agenda" — pessoas distintas em vaga viva. 067 (FR-06): é o conceito Completado/convocável (a fila de
+ * "ligar primeiro" para marcar o encuadre), então só entra quem está APTO — o mesmo recorte do Kanban e do seletor de convocados.
+ * Qualificado não apto está em Bloqueados e não pode ser agendado (`workerAptoSql` = o dono `fn_worker_is_apto`).
+ */
 export function esperandoAgendaQuery(db: Pool, countries: CountryCode[]) {
   return db.query<{ esperando: number }>(
     `SELECT COUNT(DISTINCT wja.worker_id)::int AS esperando
@@ -172,6 +177,7 @@ export function esperandoAgendaQuery(db: Pool, countries: CountryCode[]) {
        JOIN job_postings jp ON jp.id = wja.job_posting_id
        JOIN workers      w  ON w.id  = wja.worker_id
       WHERE wja.application_funnel_stage = 'QUALIFIED'
+        AND ${workerAptoSql('w.id')}
         AND ${LIVE_JOB_POSTING_SQL}
         AND w.merged_into_id IS NULL
         -- fila de contato: quem deu baixa não deve ser ligado

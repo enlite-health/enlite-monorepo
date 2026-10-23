@@ -89,11 +89,11 @@ function legacyResponse(overrides: Partial<JobsResponse> = {}): JobsResponse {
         daysAndHours: 'Lunes a viernes de 09:00 a 15:00 hs, todo el mes completo',
         ageRange: '25 a 40 años',
         profile: 'perfil 736',
-        whatsappLink: 'https://wa.me/5491100000000',
+        canApply: true,
         detailLink: 'https://jobs.enlite.health/es/vagas/736/',
       },
       {
-        // Sem whatsappLink — não deve renderizar o botão "Postularse".
+        // Sem canApply — não deve renderizar o botão "Postularse".
         id: '',
         code: '732',
         title: 'CASO 732',
@@ -107,7 +107,7 @@ function legacyResponse(overrides: Partial<JobsResponse> = {}): JobsResponse {
         daysAndHours: 'Solo martes',
         ageRange: '',
         profile: 'perfil 732',
-        whatsappLink: '',
+        canApply: false,
         detailLink: 'https://jobs.enlite.health/es/vagas/732/',
       },
     ],
@@ -147,7 +147,7 @@ function publicListing(overrides: Partial<PublicJobListing> = {}): PublicJobList
     country: 'AR',
     age_range_min: null,
     age_range_max: null,
-    whatsapp_url: 'https://wa.me/5491100000900',
+    can_apply: true,
     ...overrides,
   };
 }
@@ -175,7 +175,7 @@ beforeEach(() => {
     register: vi.fn(),
     logout: vi.fn(),
   });
-  mockTrackAcquisitionChannel.mockResolvedValue(undefined);
+  mockTrackAcquisitionChannel.mockResolvedValue({ prescreeningUrl: 'https://talentum.invalid/public/pre-screening/00000000-0000-4000-8000-000000000067/chat' });
 });
 
 afterEach(() => {
@@ -249,10 +249,10 @@ describe('JobsEmbeddedSection — fonte pública de vagas', () => {
 
   it('nem min nem max, e campos opcionais null → string vazia, sem quebrar (nullish fallbacks)', async () => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
-    mockGetPublicJobs.mockResolvedValue([publicListing({ whatsapp_url: null })]);
+    mockGetPublicJobs.mockResolvedValue([publicListing({ can_apply: false })]);
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
-    // whatsapp_url null → sem botão Postularse pra esse job
+    // can_apply false → sem botão Postularse pra esse job
     expect(screen.queryByRole('button', { name: 'jobs.apply' })).not.toBeInTheDocument();
   });
 
@@ -348,18 +348,18 @@ describe('JobsEmbeddedSection — banner de cadastro incompleto', () => {
 // ── Postularse — job SEM id (fonte legada): botão não existe ─────────────────
 
 describe('JobsEmbeddedSection — Postularse e job sem id (fonte legada)', () => {
-  it('job do scraper legado (whatsappLink presente, SEM id): não mostra o botão Postularse — só a API pública tem job_postings.id real', async () => {
+  it('job do scraper legado (canApply, SEM id): não mostra o botão Postularse — só a API pública tem job_postings.id real', async () => {
     mockFetchOnce(legacyResponse());
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitForLoaded();
 
-    // 736 tem whatsappLink mas id=''; 732 não tem nem whatsappLink. Nenhum
+    // 736 tem canApply mas id=''; 732 não tem nem canApply. Nenhum
     // dos dois mostra o botão Postularse.
     expect(screen.queryByRole('button', { name: 'jobs.apply' })).not.toBeInTheDocument();
     expect(mockTrackAcquisitionChannel).not.toHaveBeenCalled();
   });
 
-  it('job com id E whatsappLink (fonte pública): mostra o botão Postularse', async () => {
+  it('job com id E canApply (fonte pública): mostra o botão Postularse', async () => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     mockGetPublicJobs.mockResolvedValue([publicListing()]);
     render(<JobsEmbeddedSection isRegistrationComplete />);
@@ -463,14 +463,14 @@ describe('JobsEmbeddedSection — Ver Detalles (comportamento inalterado)', () =
 describe('JobsEmbeddedSection — Postularse com id (usePostularseAction, canal fixo "site")', () => {
   it('elegível: chama trackAcquisitionChannel(jobId, "site") e abre o WhatsApp só depois do servidor confirmar', async () => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
-    mockGetPublicJobs.mockResolvedValue([publicListing({ id: 'job-42', whatsapp_url: 'https://wa.me/5491100000042' })]);
+    mockGetPublicJobs.mockResolvedValue([publicListing({ id: 'job-42', can_apply: true })]);
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
 
-    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://wa.me/5491100000042', '_blank'));
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://talentum.invalid/public/pre-screening/00000000-0000-4000-8000-000000000067/chat', '_blank'));
     expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith('job-42', 'site');
     openSpy.mockRestore();
   });
@@ -606,11 +606,11 @@ describe('JobsEmbeddedSection — rótulo dinâmico do Postularse (Fase 4, DD5)'
     expect(screen.getByRole('button', { name: 'jobs.apply' })).toBeInTheDocument();
   });
 
-  it('todos os jobs com whatsappLink+id mostram o MESMO rótulo (depende só de missingFields/profession, não do job)', async () => {
+  it('todos os jobs com canApply+id mostram o MESMO rótulo (depende só de missingFields/profession, não do job)', async () => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     mockGetPublicJobs.mockResolvedValue([
-      publicListing({ id: 'job-1', case_number: 1, vacancy_number: 1, whatsapp_url: 'https://wa.me/1' }),
-      publicListing({ id: 'job-2', case_number: 2, vacancy_number: 1, whatsapp_url: 'https://wa.me/2' }),
+      publicListing({ id: 'job-1', case_number: 1, vacancy_number: 1, can_apply: true }),
+      publicListing({ id: 'job-2', case_number: 2, vacancy_number: 1, can_apply: true }),
     ]);
     render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['doc_criminal_record']} profession="AT" />);
     await waitFor(() => expect(screen.getByText('1-1')).toBeInTheDocument());
@@ -643,7 +643,7 @@ describe('JobsEmbeddedSection — rótulo dinâmico do Postularse (Fase 4, DD5)'
   describe('data-clarity-mask (condição C12 do lex) — atualizado pra arquitetura JobCard/API pública', () => {
     // C12 protege o RÓTULO dinâmico do botão Postularse (pode conter o nome
     // do documento pendente — dado do próprio worker) de vazar pro Clarity
-    // (session replay). O botão só existe hoje quando o job tem `whatsappLink`
+    // (session replay). O botão só existe hoje quando o job tem `canApply`
     // E `id` real (job_postings.id — só a API pública fornece); job legado
     // do scraper nunca tem `id`, então o botão não é exibido (comportamento
     // NOVO E INTENCIONAL da rodada "home vagas API pública" — NÃO É
