@@ -393,3 +393,24 @@ describe('atividades A–Z na exibição (spec 060)', () => {
     expect(lis()).toEqual(['Abeja actividad', 'Árbol actividad', 'Mesa actividad']);
   });
 });
+
+describe('título + descrição do catálogo congelados na versão (spec 061)', () => {
+  it('mostra a descrição sob o título de objetivo e de atividade; item sem descrição não renderiza o nó', () => {
+    montar({
+      specificObjectives: [
+        { id: 'o1', label: 'TITULO-SINTETICO-OBJ', description: 'DESCRIPCION-SINTETICA-OBJ' },
+        { id: 'o2', label: 'TITULO-SINTETICO-OBJ-2' },
+      ],
+      activities: [
+        { id: 'a1', label: 'TITULO-SINTETICO-ACT', description: 'DESCRIPCION-SINTETICA-ACT' },
+        { id: 'a2', label: 'Otra actividad', description: null },
+      ],
+    });
+    expect(screen.getByTestId('tpv-specific-description-o1')).toHaveTextContent('DESCRIPCION-SINTETICA-OBJ');
+    expect(screen.getByTestId('tpv-activities-description-a1')).toHaveTextContent('DESCRIPCION-SINTETICA-ACT');
+    expect(screen.queryByTestId('tpv-specific-description-o2')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tpv-activities-description-a2')).not.toBeInTheDocument();
+    // O título segue visível (a descrição é ACRÉSCIMO).
+    expect(screen.getByTestId('tpv-specific')).toHaveTextContent('TITULO-SINTETICO-OBJ');
+  });
+});
