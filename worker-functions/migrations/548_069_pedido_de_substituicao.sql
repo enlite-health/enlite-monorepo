@@ -327,11 +327,13 @@ CREATE TABLE IF NOT EXISTS itinerary_uncovered_alert_dispatch (
   CONSTRAINT iuad_notification_fk FOREIGN KEY (event_id, recipient_uid) REFERENCES notifications (event_id, recipient_uid)
 );
 
--- tabelas de job (molde anacare_sync_run, 443): só app_system
+-- tabelas de job (molde anacare_sync_run, 443: country sem RLS): escrita só app_system; app_runtime só LÊ (regra runtime-role-privilegios)
 REVOKE ALL ON itinerary_daily_run FROM PUBLIC, app_runtime;
 REVOKE ALL ON itinerary_uncovered_alert_dispatch FROM PUBLIC, app_runtime;
 GRANT SELECT, INSERT, UPDATE ON itinerary_daily_run TO app_system;
 GRANT SELECT, INSERT, UPDATE ON itinerary_uncovered_alert_dispatch TO app_system;
+GRANT SELECT ON itinerary_daily_run TO app_runtime;
+GRANT SELECT ON itinerary_uncovered_alert_dispatch TO app_runtime;
 
 COMMENT ON TABLE itinerary_daily_run IS
   'O fato "a rotina diária do itinerário rodou para o país no dia" (spec 069). finished_at NULL = não terminou (em curso ou caiu; o alarme usa prazo). '

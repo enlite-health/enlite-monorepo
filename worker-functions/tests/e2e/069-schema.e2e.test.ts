@@ -400,12 +400,15 @@ describe('069 · pedido de substituição, travas e pré-visão do conflito — 
       expect(semNotificacao.code).toBe('23503');
     });
 
-    it('app_runtime não tem acesso às tabelas da rotina (itinerary_daily_run, dispatch); app_system tem', async () => {
-      const r = await pool.query<{ rt: boolean; sys: boolean }>(
-        `SELECT has_table_privilege('app_runtime','itinerary_daily_run','SELECT') OR has_table_privilege('app_runtime','itinerary_uncovered_alert_dispatch','SELECT') AS rt,
-                has_table_privilege('app_system','itinerary_daily_run','INSERT') AND has_table_privilege('app_system','itinerary_uncovered_alert_dispatch','INSERT') AS sys`,
-      );
-      expect(r.rows[0]).toEqual({ rt: false, sys: true });
+    it('app_runtime só LÊ as tabelas da rotina (itinerary_daily_run, dispatch); app_system escreve', async () => {
+      const tabs = ['itinerary_daily_run', 'itinerary_uncovered_alert_dispatch'];
+      const priv = async (role: string, p: string) =>
+        (await pool.query<{ ok: boolean }>(
+          `SELECT bool_and(has_table_privilege($1, t, $2)) AS ok FROM unnest($3::text[]) t`, [role, p, tabs])).rows[0].ok;
+      expect(await priv('app_runtime', 'SELECT')).toBe(true);
+      expect(await priv('app_runtime', 'INSERT')).toBe(false);
+      expect(await priv('app_runtime', 'UPDATE')).toBe(false);
+      expect(await priv('app_system', 'INSERT')).toBe(true);
     });
   });
 
