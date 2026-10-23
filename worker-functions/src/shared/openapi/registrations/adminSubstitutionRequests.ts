@@ -22,7 +22,7 @@ const permanentPeriod = {
 };
 
 const previewBody = z.union([
-  z.object({ ...period, candidateWorkerIds: z.array(z.string().uuid()) }).strict(),
+  z.object({ ...period, candidateWorkerIds: z.array(z.string().uuid()), ignoreRequestId: z.string().uuid().optional() }).strict(),
   z.object({ ...permanentPeriod, candidateWorkerIds: z.array(z.string().uuid()) }).strict(),
 ]);
 

@@ -28,6 +28,8 @@ import { datesBetween, shiftsOfWorkerInPeriod, type SubstitutionRequestType, typ
 import { PatientStatusDerivation, type DerivationEvaluation } from './PatientStatusDerivation';
 import type { CreateSubstitutionOccurrencesPort, CreateSubstitutionTeamPort } from './CreateSubstitutionRequestUseCase';
 import { SubstitutionNoShiftsInPeriodError, SubstitutionPeriodInPastError, SubstitutionServiceNotFoundError } from './substitutionRequestErrors';
+import { loadRequest, type SubstitutionRequestReaderPort } from './substitutionRequestLoad';
+import { SubstitutionRequestReader } from '../infrastructure/SubstitutionRequestReader';
 import { ItineraryAbsenceWriter } from '../infrastructure/ItineraryAbsenceWriter';
 import { ItineraryAllocationWriter, type WorkerAllocation } from '../infrastructure/ItineraryAllocationWriter';
 import { ScheduledAttendanceReader, type ScheduledAttendances } from '../infrastructure/ScheduledAttendanceReader';
@@ -81,6 +83,11 @@ export interface PreviewSubstitutionRequestInput {
   from: string;
   to: string;
   candidateWorkerIds: string[];
+  /**
+   * "Elegir quién entra" de um pedido que JÁ existe: as faltas ABERTAS dele (no mesmo turno) entram como `ignoreAbsenceId` da
+   * função do banco — a mesma que o gatilho usa ao gravar quem cobre —, senão o candidato colidiria com a própria falta que vai cobrir.
+   */
+  ignoreRequestId?: string;
   now?: Date;
 }
 
@@ -119,6 +126,7 @@ export class PreviewSubstitutionRequestUseCase {
     private readonly derivation: StatusEvaluationPort = new PatientStatusDerivation(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
     private readonly exit: PermanentPreviewDeps = { schedule: new ItineraryAllocationWriter(), absenceOps: new ItineraryAbsenceWriter(), scheduled: new ScheduledAttendanceReader() },
+    private readonly requests: SubstitutionRequestReaderPort = new SubstitutionRequestReader(),
   ) {}
 
   execute(input: PreviewSubstitutionRequestInput | PreviewPermanentInput): Promise<PreviewSubstitutionRequestResult> {
@@ -178,7 +186,7 @@ export class PreviewSubstitutionRequestUseCase {
   }
 
   private async executeDays(input: PreviewSubstitutionRequestInput): Promise<PreviewSubstitutionRequestResult> {
-    const { patientId, serviceId, outgoingWorkerId, from, to, candidateWorkerIds, now = new Date() } = input;
+    const { patientId, serviceId, outgoingWorkerId, from, to, candidateWorkerIds, ignoreRequestId, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
       // Lê o serviço sob RLS ANTES de chamar a função DEFINER do banco (ela não tem como saber de quem é o slot).
       const team = await this.team.readWith(client, patientId, serviceId);
@@ -189,10 +197,11 @@ export class PreviewSubstitutionRequestUseCase {
       const shifts = shiftsOfWorkerInPeriod(inputs.slots, inputs.assignments, outgoingWorkerId, datesBetween(from, to));
       if (shifts.length === 0) throw new SubstitutionNoShiftsInPeriodError(outgoingWorkerId, from, to);
 
+      const ignored = ignoreRequestId === undefined ? new Map<string, string>() : await this.openAbsencesOf(client, { patientId, serviceId, requestId: ignoreRequestId }, now);
       const conflicts: ShiftConflict[] = [];
       for (const workerId of [...new Set(candidateWorkerIds)]) {
         for (const shift of shifts) {
-          conflicts.push(await this.conflictOf(client, workerId, shift, shift.date));
+          conflicts.push(await this.conflictOf(client, workerId, shift, shift.date, ignored.get(`${shift.assignmentId}|${shift.date}`) ?? null));
         }
       }
 
@@ -200,11 +209,17 @@ export class PreviewSubstitutionRequestUseCase {
     });
   }
 
+  /** As faltas abertas do pedido, por `alocação|data` → id da falta (404/409 do `loadRequest` se o pedido não existe ou foi desfeito). */
+  private async openAbsencesOf(client: PoolClient, ids: { patientId: string; serviceId: string; requestId: string }, now: Date): Promise<Map<string, string>> {
+    const { absences } = await loadRequest(this.requests, client, ids, now);
+    return new Map(absences.filter((a) => a.cancelledAt === null).map((a) => [`${a.assignmentId}|${a.onDate}`, a.absenceId]));
+  }
+
   /** `to = null` = vigência aberta ("No vuelve más" com substituto). */
-  private async conflictOf(client: PoolClient, workerId: string, shift: WorkerShift, to: string | null): Promise<ShiftConflict> {
+  private async conflictOf(client: PoolClient, workerId: string, shift: WorkerShift, to: string | null, ignoreAbsenceId: string | null = null): Promise<ShiftConflict> {
     const base = { workerId, date: shift.date, slotId: shift.slotId };
     try {
-      const overlaps = await this.conflicts.preview(client, { workerId, slotId: shift.slotId, from: shift.date, to });
+      const overlaps = await this.conflicts.preview(client, { workerId, slotId: shift.slotId, from: shift.date, to, ...(ignoreAbsenceId === null ? {} : { ignoreAbsenceId }) });
       return overlaps.length === 0 ? { ...base, state: 'free', overlaps: [] } : { ...base, state: 'conflict', overlaps };
     } catch (err) {
       if (err instanceof ConflictPreviewUnavailableError) return { ...base, state: 'unknown', overlaps: [] };

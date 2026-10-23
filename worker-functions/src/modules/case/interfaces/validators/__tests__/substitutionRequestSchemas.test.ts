@@ -43,6 +43,11 @@ describe('substitutionRequestSchemas', () => {
       expect(preview({ extra: 1 }).success).toBe(false);
       expect(preview({ candidateWorkerIds: ['x'] }).success).toBe(false);
     });
+    it('DIAS: `ignoreRequestId` ("Elegir quién entra") é uuid opcional; no permanente é chave estranha', () => {
+      expect(preview({ ignoreRequestId: W }).success).toBe(true);
+      expect(preview({ ignoreRequestId: 'x' }).success).toBe(false);
+      expect(substitutionPreviewBodySchema.safeParse({ type: 'PERMANENT', outgoingWorkerId: W, from: '2026-11-02', candidateWorkerIds: [], ignoreRequestId: W }).success).toBe(false);
+    });
   });
 
   describe('turno do pedido (P16)', () => {

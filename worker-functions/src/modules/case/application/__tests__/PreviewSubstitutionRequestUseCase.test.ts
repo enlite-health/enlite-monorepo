@@ -10,6 +10,8 @@ import {
   SubstitutionNoShiftsInPeriodError,
   SubstitutionPeriodInPastError,
   SubstitutionServiceNotFoundError,
+  SubstitutionRequestAlreadyUndoneError,
+  SubstitutionRequestNotFoundError,
 } from '../substitutionRequestErrors';
 import type { OccurrenceInputs } from '../../infrastructure/occurrenceInputs';
 import type { DerivationEvaluation } from '../PatientStatusDerivation';
@@ -127,6 +129,43 @@ describe('PreviewSubstitutionRequestUseCase', () => {
     const future = futureDate.toISOString().slice(0, 10);
     const { now: _now, ...semNow } = input({ type: 'ONE_DAY', from: future, to: future });
     await expect(t.useCase.execute(semNow)).rejects.toThrow(SubstitutionNoShiftsInPeriodError); // chegou ao período = passou da checagem de data com o relógio real
+  });
+});
+
+describe('PreviewSubstitutionRequestUseCase — ignoreRequestId ("Elegir quién entra", T6xx-extra)', () => {
+  const ABSENCE = (absenceId: string, assignmentId: string, onDate: string, cancelledAt: string | null = null) => ({
+    absenceId, assignmentId, onDate, startTime: '08:00', endTime: '12:00', substituteWorkerId: null, cancelledAt, assignmentStatus: 'ACTIVE' as const, assignmentValidTo: null, requestId: 'rq-1', titularWorkerId: 'w-out',
+  });
+  const HEADER = { id: 'rq-1', outgoingWorkerId: 'w-out', type: 'DAYS', reasonCode: 'VACATION', createdAt: '2026-10-29T10:00:00Z', createdBy: 'u', undoneAt: null, undoneBy: null } as never;
+  function withRequest(absences: unknown[], undoneAt: string | null = null) {
+    const t = build();
+    const requests = { readForServiceWith: jest.fn(async () => ({ country: 'AR', headers: [{ ...(HEADER as object), undoneAt }], absences, logRows: [], newAssignments: [] })) };
+    const useCase = new PreviewSubstitutionRequestUseCase(t.team, t.occurrences, t.conflicts, t.derivation, t.runInTransaction, undefined, requests as never);
+    return { ...t, useCase, requests };
+  }
+
+  it('cada turno cuja falta ABERTA é do pedido leva o `ignoreAbsenceId` dela; falta cancelada e turno fora do pedido não levam', async () => {
+    const t = withRequest([ABSENCE('ab-seg', 'a-seg', '2026-11-02'), ABSENCE('ab-qua', 'a-qua', '2026-11-04', '2026-10-30T00:00:00Z')]);
+
+    await t.useCase.execute(input({ ignoreRequestId: 'rq-1' }));
+
+    expect(t.requests.readForServiceWith).toHaveBeenCalledWith(CLIENT, 'p-1', 's-1');
+    expect(t.conflicts.preview).toHaveBeenCalledWith(CLIENT, { workerId: 'w-a', slotId: 'seg', from: '2026-11-02', to: '2026-11-02', ignoreAbsenceId: 'ab-seg' });
+    expect(t.conflicts.preview).toHaveBeenCalledWith(CLIENT, { workerId: 'w-a', slotId: 'qua', from: '2026-11-04', to: '2026-11-04' });
+  });
+
+  it('sem `ignoreRequestId` o pedido nem é lido (a pré-visão de um pedido novo não muda)', async () => {
+    const t = withRequest([]);
+    await t.useCase.execute(input());
+    expect(t.requests.readForServiceWith).not.toHaveBeenCalled();
+  });
+
+  it('pedido que não existe → 404 do loadRequest; pedido já desfeito → 409 (nada de função do banco)', async () => {
+    const missing = withRequest([]);
+    await expect(missing.useCase.execute(input({ ignoreRequestId: 'rq-outro' }))).rejects.toThrow(SubstitutionRequestNotFoundError);
+    const undone = withRequest([], '2026-10-30T00:00:00Z');
+    await expect(undone.useCase.execute(input({ ignoreRequestId: 'rq-1' }))).rejects.toThrow(SubstitutionRequestAlreadyUndoneError);
+    expect(undone.conflicts.preview).not.toHaveBeenCalled();
   });
 });
 

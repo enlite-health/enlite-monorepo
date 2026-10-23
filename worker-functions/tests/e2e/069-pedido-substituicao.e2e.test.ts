@@ -261,6 +261,28 @@ describe('069 · pedido de substituição por dias — API real @integration', (
     expect(row?.entra).toMatchObject({ kind: 'NOBODY', uncoveredDates: [from] });
   });
 
+  it('T6xx-extra pré-visão de "Elegir quién entra": `ignoreRequestId` aceita o pedido que já existe (turno com a falta dele, candidato livre, NADA gravado); pedido inexistente → 404; id malformado → 400', async () => {
+    const from = await addDays(nextMonday, 35);
+    const shifts = await shiftsOf(from, from, sub);
+    expect(shifts).toHaveLength(1);
+    const created = await api.post(baseUrl(), { type: 'ONE_DAY', outgoingWorkerId: titular, from, reasonCategory: 'OTHER', shifts: [{ date: shifts[0].date, slotId: shifts[0].slotId, substituteWorkerId: null }] }, { headers: asAdmin.headers });
+    expect(created.status).toBe(201);
+    const requestId = created.data.data.requestId as string;
+    const antes = await counts();
+
+    const res = await api.post(`${baseUrl()}/preview`, { type: 'ONE_DAY', outgoingWorkerId: titular, from, candidateWorkerIds: [sub], ignoreRequestId: requestId }, { headers: asAdmin.headers });
+    expect(res.status).toBe(200);
+    const data = res.data.data as { shifts: Shift[]; conflicts: Array<{ workerId: string; state: string }> };
+    expect(data.shifts.map((x) => x.date)).toEqual([from]);
+    expect(data.conflicts).toEqual([expect.objectContaining({ workerId: sub, state: 'free' })]);
+    expect(await counts()).toEqual(antes); // LEITURA
+
+    const inexistente = await api.post(`${baseUrl()}/preview`, { type: 'ONE_DAY', outgoingWorkerId: titular, from, candidateWorkerIds: [sub], ignoreRequestId: '00000000-0000-4000-8000-000000000000' }, { headers: asAdmin.headers });
+    expect(inexistente.status).toBe(404);
+    const malformado = await api.post(`${baseUrl()}/preview`, { type: 'ONE_DAY', outgoingWorkerId: titular, from, candidateWorkerIds: [sub], ignoreRequestId: 'nao-e-uuid' }, { headers: asAdmin.headers });
+    expect(malformado.status).toBe(400);
+  });
+
   // ── create: as recusas, uma a uma, com a prova de "nenhuma escrita parcial" ────────────────────
   it('motivo vazio → 422 REASON_REQUIRED (e motivo inexistente → REASON_INVALID); nada gravado — controle positivo: com motivo válido grava', async () => {
     const from = await addDays(nextMonday, 35);

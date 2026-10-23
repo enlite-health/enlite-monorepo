@@ -52,7 +52,12 @@ function validatePeriod(v: PeriodShape, ctx: z.RefinementCtx): void {
 const withTo = <T extends PeriodShape>(v: T): Omit<T, 'to'> & { to: string } => ({ ...v, to: v.to ?? v.from });
 
 const daysPreviewBodySchema = z
-  .object({ ...periodFields, candidateWorkerIds: z.array(z.string().uuid()).max(30) })
+  .object({
+    ...periodFields,
+    candidateWorkerIds: z.array(z.string().uuid()).max(30),
+    // "Elegir quién entra": o pedido que JÁ existe — as faltas dele não colidem com o candidato que vai cobri-las (T6xx-extra).
+    ignoreRequestId: z.string().uuid().optional(),
+  })
   .strict()
   .superRefine(validatePeriod)
   .transform(withTo);
