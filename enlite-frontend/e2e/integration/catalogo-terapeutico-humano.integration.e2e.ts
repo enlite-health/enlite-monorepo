@@ -18,7 +18,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
-import type { MockUser } from '../helpers/abac-stack-helper';
+import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 
 const STAFF_EMAIL = `e2e.cat.${Date.now()}@enlite.health`;
 // Login pelo MOCK do stack de CI (USE_MOCK_AUTH=true; sem emulador do Firebase — `loginComoHumano` não funciona lá). O `uid` é o
@@ -148,8 +148,9 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
     const req = page.waitForRequest((r) => r.method() === 'GET' && r.url().includes('/therapeutic-catalogs/specific-objectives'));
     await page.reload();
     const viva = await req;
-    const authorization = viva.headers()['authorization'];
-    expect(authorization).toMatch(/^Bearer /);
+    // Login pelo mock do CI: `request.headers()` mostra o JWT FALSO do navegador (o `page.route` troca por `mock_*` só na rede) → 401.
+    // O token que a API aceita é o do mesmo `STAFF` logado.
+    const authorization = `Bearer ${tokenFor(STAFF)}`;
     const base = viva.url().split('/api/admin/')[0];
     const doForm = await page.request.get(`${base}/api/admin/therapeutic-catalogs/specific-objectives`, { headers: { authorization } });
     expect(doForm.status()).toBe(200);
