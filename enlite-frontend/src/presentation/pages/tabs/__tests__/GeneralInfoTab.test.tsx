@@ -7,6 +7,7 @@ import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { useWorkerRegistrationStore } from '@presentation/stores/workerRegistrationStore';
 import { ApiError } from '@infrastructure/http/ApiError';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 // i18n determinístico: t(key, defaultValue) → defaultValue (texto amigável).
 // Mantém os demais exports (ex.: initReactI18next, usado por config.ts).
@@ -133,7 +134,7 @@ describe('GeneralInfoTab - Auto Save & Toast', () => {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Regressão 31/08 — cada <select> tem de disparar o autosave SOZINHO.
+  // Regressão 31/08 — cada combobox tem de disparar o autosave SOZINHO.
   //
   // A tela não tem botão Guardar. Quem entra para corrigir UM dropdown e sai
   // nunca gera blur dentro do form: sem `triggerSave` no `onChange`, o PUT
@@ -142,26 +143,32 @@ describe('GeneralInfoTab - Auto Save & Toast', () => {
   // (worker-profile-fields-persist) confere o mesmo no banco, com stack real.
   // ───────────────────────────────────────────────────────────────────────────
   it.each([
-    ['sex', 'female'],
-    ['gender', 'female'],
-    ['profession', 'CAREGIVER'],
-    ['knowledgeLevel', 'TERTIARY'],
-    ['yearsExperience', '3_5'],
-  ])('mudar o select #%s dispara o autosave sem precisar de blur', (id, value) => {
+    // [id, rótulo exibido] — o `t` do teste devolve a chave; profession/knowledge têm rótulo fixo
+    ['sex', 'workerRegistration.generalInfo.female'],
+    ['gender', 'workerRegistration.generalInfo.female'],
+    ['profession', 'Cuidador(a)'], // CAREGIVER
+    ['knowledgeLevel', 'Terciario'], // TERTIARY
+    ['yearsExperience', 'workerRegistration.generalInfo.years3to5'], // 3_5
+  ])('mudar o combobox #%s dispara o autosave sem precisar de blur', (id, rotulo) => {
     const { container } = render(<GeneralInfoTab />);
-    const select = container.querySelector(`select#${id}`) as HTMLSelectElement;
-    expect(select, `select#${id} existe na tela`).toBeTruthy();
+    const select = container.querySelector(`button#${id}`) as HTMLElement;
+    expect(select, `combobox#${id} existe na tela`).toBeTruthy();
 
     // Zera DEPOIS do render. Sem isto a asserção é vácua: a montagem da tela já
     // chama `triggerSave` por conta própria, e o teste passaria idêntico com o
     // bug de volta — medido, foi o que aconteceu na primeira versão deste caso.
     mockTriggerSave.mockClear();
 
-    // SÓ o change. Nenhum blur, nenhum clique em campo vizinho — é assim que a
+    // SÓ a escolha. Nenhum blur, nenhum clique em campo vizinho — é assim que a
     // prestadora usa a tela quando volta para corrigir um campo só.
-    fireEvent.change(select, { target: { value } });
+    // Com ≥3 opções o painel tem busca: fechar devolve o foco ao gatilho e o blur do campo de busca
+    // (que o <form onBlur> enxerga) vale 1 save a mais. Sem ele (2 opções) só o `onChange` salva.
+    // Contar exato mantém o teste morrendo se o `triggerSave` do `onChange` sair.
+    fireEvent.click(select);
+    const temBusca = container.querySelector('input[data-testid$="-search"]') !== null;
+    chooseCombo(select, rotulo);
 
-    expect(mockTriggerSave).toHaveBeenCalledTimes(1);
+    expect(mockTriggerSave).toHaveBeenCalledTimes(temBusca ? 2 : 1);
   });
 
   it('should trigger auto-save when an input field blurs', () => {

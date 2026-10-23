@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface JobFiltersProps {
   tipoValue: string;
@@ -10,10 +10,10 @@ interface JobFiltersProps {
   onLocalChange: (value: string) => void;
   onAreaChange: (value: string) => void;
   onSexoChange: (value: string) => void;
-  tipoOptions: SelectOption[];
-  localOptions: SelectOption[];
-  areaOptions: SelectOption[];
-  sexoOptions: SelectOption[];
+  tipoOptions: ComboboxOption[];
+  localOptions: ComboboxOption[];
+  areaOptions: ComboboxOption[];
+  sexoOptions: ComboboxOption[];
 }
 
 export const JobFilters = ({
@@ -34,29 +34,33 @@ export const JobFilters = ({
   
   return (
     <div className="grid grid-cols-4 gap-4 w-full">
-      <SelectField
+      <Combobox
         value={tipoValue}
         onChange={onTipoChange}
         options={tipoOptions}
-        label={t('jobs.filterLabels.jobTypes')}
+        placeholder={t('jobs.filterLabels.jobTypes')}
+        aria-label={t('jobs.filterLabels.jobTypes')}
       />
-      <SelectField
+      <Combobox
         value={localValue}
         onChange={onLocalChange}
         options={localOptions}
-        label={t('jobs.filterLabels.workLocations')}
+        placeholder={t('jobs.filterLabels.workLocations')}
+        aria-label={t('jobs.filterLabels.workLocations')}
       />
-      <SelectField
+      <Combobox
         value={areaValue}
         onChange={onAreaChange}
         options={areaOptions}
-        label={t('jobs.filterLabels.areas')}
+        placeholder={t('jobs.filterLabels.areas')}
+        aria-label={t('jobs.filterLabels.areas')}
       />
-      <SelectField
+      <Combobox
         value={sexoValue}
         onChange={onSexoChange}
         options={sexoOptions}
-        label={t('jobs.filterLabels.gender')}
+        placeholder={t('jobs.filterLabels.gender')}
+        aria-label={t('jobs.filterLabels.gender')}
       />
     </div>
   );

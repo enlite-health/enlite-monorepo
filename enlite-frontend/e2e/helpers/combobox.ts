@@ -51,6 +51,21 @@ export async function escolherVariosNoCombo(page: Page, alvo: Locator | string, 
   await expect(gatilho).toBeVisible();
 }
 
+/**
+ * Abre o `Combobox` e clica a 1ª linha do painel (para jornadas que só precisam de "qualquer valor").
+ * Pensado para `multiple` sem `clearLabel` (a 1ª linha é uma opção de verdade); fecha com Esc.
+ * Devolve `false` sem falhar se o gatilho não aparece (mesma tolerância dos helpers antigos de jornada).
+ */
+export async function escolherPrimeiroNoCombo(page: Page, alvo: Locator | string): Promise<boolean> {
+  const raiz = typeof alvo === 'string' ? page.locator(alvo) : alvo;
+  if (!(await raiz.first().isVisible({ timeout: 5_000 }).catch(() => false))) return false;
+  const gatilho = await resolverGatilho(raiz.first(), page);
+  await gatilho.click();
+  await page.locator('ul[role="listbox"] li[role="option"] button').first().click();
+  await page.keyboard.press('Escape');
+  return true;
+}
+
 /** Rótulo do mês como o seletor de Horas Ana Care o exibe (`formatMonthLabel`): "Septiembre 2026". */
 export function rotuloDoMes(mesIso: string, locale = 'es'): string {
   const [ano, mes] = mesIso.split('-').map(Number);

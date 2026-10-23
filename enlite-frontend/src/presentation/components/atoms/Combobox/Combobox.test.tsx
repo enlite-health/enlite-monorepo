@@ -697,3 +697,16 @@ describe('Combobox — data-clarity-mask (gatilho e painel)', () => {
     expect(painel()).not.toHaveAttribute('data-clarity-mask');
   });
 });
+
+describe('Combobox — painel no celular (spec 070 T10)', () => {
+  it('o painel é absoluto e tem a largura do gatilho (w-full dentro do wrapper relative): não cria rolagem horizontal em 390px', () => {
+    renderSingle();
+    const gatilho = screen.getByRole('combobox');
+    fireEvent.click(gatilho);
+    const painel = screen.getByRole('listbox').parentElement as HTMLElement;
+    expect(painel.className).toContain('absolute');
+    expect(painel.className).toContain('w-full');
+    expect(painel.parentElement?.className).toContain('relative');
+    expect(painel.parentElement?.contains(gatilho)).toBe(true);
+  });
+});
