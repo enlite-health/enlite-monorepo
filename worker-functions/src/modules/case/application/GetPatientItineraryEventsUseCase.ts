@@ -1,7 +1,7 @@
 /**
- * GetPatientItineraryEventsUseCase — D445.3/D445.4: "Próximos eventos/Substituição" da aba
- * Itinerario. Leitura calculada (`PatientItineraryEventsReader` + `expandItineraryEvents`, puro) —
- * SEM materializar ocorrências, SEM tabela nova. `asOf`/intervalo por data de operação do PAÍS
+ * GetPatientItineraryEventsUseCase — D445.3/D445.4 → spec 069: a agenda "Próximos días" da aba
+ * Itinerario. Leitura calculada (`PatientItineraryEventsReader` + `expandServiceOccurrences`, puro, parte das FAIXAS) —
+ * SEM materializar ocorrências, SEM tabela nova. Faixa sem alocação vigente sai como `uncovered` com ids nulos (FR-12). `asOf`/intervalo por data de operação do PAÍS
  * (`operationDateOf`, a mesma fonte de `GetPatientItineraryUseCase`), nunca o relógio UTC do
  * processo. Nome do prestador (titular e substituto) pela MESMA `projectWorkerDisplayNames`
  * (célula `worker_contact:read`, `req.permissionCells`) — nenhuma 2ª decodificação.
@@ -10,7 +10,7 @@ import {
   PatientItineraryEventsReader,
   type ItineraryEventsRows,
 } from '../infrastructure/PatientItineraryEventsReader';
-import { expandItineraryEvents, type ItineraryEvent } from '../domain/itineraryEvents';
+import { expandServiceOccurrences, type ServiceOccurrence } from '../domain/serviceOccurrences';
 import { projectWorkerDisplayNames, type WorkerNameSource } from './workerDisplayNames';
 import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
@@ -35,12 +35,10 @@ export class ItineraryEventsRangeInvalidError extends Error {
   }
 }
 
-export interface PatientItineraryEventView extends Omit<ItineraryEvent, 'workerId' | 'titularWorkerId' | 'substituteWorkerId'> {
-  workerId: string | null;
+/** `assignmentId`, `titularWorkerId` e `absenceId` são `null` na faixa sem alocação vigente; `requestId` liga o turno ao pedido. */
+export interface PatientItineraryEventView extends ServiceOccurrence {
   workerDisplayName: string | null;
-  titularWorkerId: string;
   titularDisplayName: string | null;
-  substituteWorkerId: string | null;
   substituteDisplayName: string | null;
 }
 
@@ -86,7 +84,7 @@ export class GetPatientItineraryEventsUseCase {
     const rows = await this.reader.readForRange(patientId, from, to);
     if (rows === null) throw new PatientNotFoundForItineraryEventsError(patientId);
 
-    const events = expandItineraryEvents(rows.assignments, rows.absences, from, to, { serviceId, workerId });
+    const events = expandServiceOccurrences(rows.slots, rows.assignments, rows.absences, from, to, { serviceId, workerId });
 
     const nameSourceByWorkerId = new Map<string, WorkerNameSource>(
       rows.workerNames.map((w) => [w.workerId, { firstNameEncrypted: w.firstNameEncrypted, lastNameEncrypted: w.lastNameEncrypted }]),
@@ -96,7 +94,7 @@ export class GetPatientItineraryEventsUseCase {
     const views: PatientItineraryEventView[] = events.map((event) => ({
       ...event,
       workerDisplayName: event.workerId ? (displayNameByWorkerId.get(event.workerId) ?? null) : null,
-      titularDisplayName: displayNameByWorkerId.get(event.titularWorkerId) ?? null,
+      titularDisplayName: event.titularWorkerId ? (displayNameByWorkerId.get(event.titularWorkerId) ?? null) : null,
       substituteDisplayName: event.substituteWorkerId ? (displayNameByWorkerId.get(event.substituteWorkerId) ?? null) : null,
     }));
 

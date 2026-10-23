@@ -7,7 +7,7 @@
  * inPatientTransaction`.
  *
  * O gate do substituto é `canAllocate` da Fase 11 (DX-13.6, IMPORTADO — nenhuma 2ª definição de
- * Selecionado): desde a 041 R1 o gate é o pool do step final da vacante (Selecionados ∪ Equipe de
+ * Selecionado; spec 069: a função mora em `substituteCover.ts`, compartilhada com o pedido de substituição): desde a 041 R1 o gate é o pool do step final da vacante (Selecionados ∪ Equipe de
  * Resposta Rápida da vaga viva, sem rejeitados; inclui quem já substitui — Q-13.3, a 2ª data). O próprio titular da alocação é
  * recusado pelo BANCO (`piab_substituto_e_o_titular`), nunca checado aqui — 1 lugar só para essa
  * regra.
@@ -39,10 +39,9 @@ import { ItineraryChangeLogWriter, type InsertItineraryChangeInput } from '../in
 import { SubstitutionRequestWriter, type InsertSubstitutionRequestInput } from '../infrastructure/SubstitutionRequestWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError } from '../domain/serviceExitReason';
-import { deriveAllocationPoolFromRows } from './serviceTeamPresentation';
-import { canAllocate } from '../domain/itineraryAllocationGate';
+import { resolveSubstituteApplicationId } from './substituteCover';
 import { fromPgError, type PgOverlapLikeError } from '../domain/itineraryOverlap';
-import { NotSelectedForServiceError, AllocationNotFoundError, AllocationNotActiveError } from './ItineraryAllocationUseCase';
+import { AllocationNotFoundError, AllocationNotActiveError } from './ItineraryAllocationUseCase';
 
 /** Ausência inexistente, ou não pertence a este serviço/paciente — o controller mapeia para 404. */
 export class AbsenceNotFoundError extends Error {
@@ -199,7 +198,7 @@ export interface ItineraryAbsenceResult {
  * 23P01 da trava de sobreposição, DX-13.2, reusado sem mudança), depois os 23505/23514 específicos
  * da ausência. Qualquer outro código/constraint/mensagem → `null` (quem chama relança o original).
  */
-function absenceErrorFromPg(err: unknown, allocationId: string, date: string): Error | null {
+export function absenceErrorFromPg(err: unknown, allocationId: string, date: string): Error | null {
   const overlap = fromPgError(err as PgOverlapLikeError);
   if (overlap !== null) return overlap;
 
@@ -222,8 +221,8 @@ export class ItineraryAbsenceUseCase {
     private readonly requests: ItineraryAbsenceRequestPort = new SubstitutionRequestWriter(),
   ) {}
 
-  /** Só o gate + `findApplicationId` quando HÁ substituto — sem substituto, os 2 campos gravam `null`. */
-  private async substituteApplicationFor(
+  /** Só o gate + `findApplicationId` quando HÁ substituto — sem substituto, os 2 campos gravam `null`. O gate é `substituteCover.ts` (fonte única). */
+  private substituteApplicationFor(
     client: PoolClient,
     patientId: string,
     serviceId: string,
@@ -231,15 +230,7 @@ export class ItineraryAbsenceUseCase {
     substituteWorkerId: string,
     now: Date,
   ): Promise<string> {
-    const pool = deriveAllocationPoolFromRows(row, now);
-    if (!canAllocate(pool, substituteWorkerId)) {
-      throw new NotSelectedForServiceError(patientId, serviceId, substituteWorkerId);
-    }
-    if (row.liveVacancyId === null) throw new NotSelectedForServiceError(patientId, serviceId, substituteWorkerId);
-
-    const applicationId = await this.allocationWriter.findApplicationId(client, substituteWorkerId, row.liveVacancyId);
-    if (applicationId === null) throw new NotSelectedForServiceError(patientId, serviceId, substituteWorkerId);
-    return applicationId;
+    return resolveSubstituteApplicationId(this.allocationWriter, client, { patientId, serviceId, team: row, now }, substituteWorkerId);
   }
 
   async register(input: ItineraryAbsenceRegisterInput): Promise<ItineraryAbsenceResult> {
@@ -300,32 +291,38 @@ export class ItineraryAbsenceUseCase {
 
   /** `substituteWorkerId: null` tira o substituto (o dia volta a ser alerta) — sem gate, sem candidatura. */
   async setSubstitute(input: ItineraryAbsenceSetSubstituteInput): Promise<ItineraryAbsenceResult> {
+    return this.runInTransaction((client) => this.setSubstituteWith(client, input));
+  }
+
+  /**
+   * Corpo de `setSubstitute` no client recebido (spec 069, T209): quem compõe ("Elegir quién entra" do pedido) põe o substituto
+   * em N ausências na MESMA transação, sem abrir outra.
+   */
+  async setSubstituteWith(client: PoolClient, input: ItineraryAbsenceSetSubstituteInput): Promise<ItineraryAbsenceResult> {
     const { patientId, serviceId, absenceId, substituteWorkerId, actorUid, now = new Date() } = input;
-    return this.runInTransaction(async (client) => {
-      const absence = await this.writer.findAbsence(client, patientId, serviceId, absenceId);
-      if (absence === null) throw new AbsenceNotFoundError(patientId, serviceId, absenceId);
-      if (absence.cancelled) throw new AbsenceCancelledError(absenceId);
+    const absence = await this.writer.findAbsence(client, patientId, serviceId, absenceId);
+    if (absence === null) throw new AbsenceNotFoundError(patientId, serviceId, absenceId);
+    if (absence.cancelled) throw new AbsenceCancelledError(absenceId);
 
-      const row = await this.reader.readWith(client, patientId, serviceId);
-      if (row === null) throw new AbsenceNotFoundError(patientId, serviceId, absenceId);
+    const row = await this.reader.readWith(client, patientId, serviceId);
+    if (row === null) throw new AbsenceNotFoundError(patientId, serviceId, absenceId);
 
-      const asOf = operationDateOf(row.country, now);
-      if (absence.date < asOf) throw new AbsenceDateInPastError(absence.allocationId, absence.date);
+    const asOf = operationDateOf(row.country, now);
+    if (absence.date < asOf) throw new AbsenceDateInPastError(absence.allocationId, absence.date);
 
-      const substituteApplicationId =
-        substituteWorkerId === null ? null : await this.substituteApplicationFor(client, patientId, serviceId, row, substituteWorkerId, now);
+    const substituteApplicationId =
+      substituteWorkerId === null ? null : await this.substituteApplicationFor(client, patientId, serviceId, row, substituteWorkerId, now);
 
-      try {
-        const rowCount = await this.writer.updateSubstitute(client, absenceId, substituteWorkerId, substituteApplicationId, actorUid);
-        if (rowCount === 0) throw new AbsenceCancelledError(absenceId);
-      } catch (err) {
-        if (err instanceof AbsenceCancelledError) throw err;
-        const mapped = absenceErrorFromPg(err, absence.allocationId, absence.date);
-        throw mapped ?? err;
-      }
+    try {
+      const rowCount = await this.writer.updateSubstitute(client, absenceId, substituteWorkerId, substituteApplicationId, actorUid);
+      if (rowCount === 0) throw new AbsenceCancelledError(absenceId);
+    } catch (err) {
+      if (err instanceof AbsenceCancelledError) throw err;
+      const mapped = absenceErrorFromPg(err, absence.allocationId, absence.date);
+      throw mapped ?? err;
+    }
 
-      return { absenceId, allocationId: absence.allocationId, date: absence.date, substituteWorkerId, status: 'OPEN' as const };
-    });
+    return { absenceId, allocationId: absence.allocationId, date: absence.date, substituteWorkerId, status: 'OPEN' as const };
   }
 
   async cancel(input: ItineraryAbsenceCancelInput): Promise<ItineraryAbsenceResult> {

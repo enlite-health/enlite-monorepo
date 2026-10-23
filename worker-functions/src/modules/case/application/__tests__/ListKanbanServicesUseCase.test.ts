@@ -111,11 +111,20 @@ describe('ListKanbanServicesUseCase', () => {
       readerWith([
         {
           ...baseRows[0],
-          uncoveredAbsences: [
-            { serviceId: 'svc-1', date: '2026-09-27', startTime: '08:00', endTime: '12:00' }, // hoje, futura/vigente
-            { serviceId: 'svc-1', date: '2026-09-28', startTime: '08:00', endTime: '12:00' }, // futura
-            { serviceId: 'svc-1', date: '2026-09-26', startTime: '08:00', endTime: '12:00' }, // passada — não conta
-          ],
+          // 2026-09-27 = domingo (hoje), 28 = segunda, 26 = sábado (ontem). Faixas de svc-1 com alocação do titular em cada dia.
+          occurrences: {
+            slots: [
+              { slotId: 'sd', serviceId: 'svc-1', weekday: 0, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null },
+              { slotId: 'sm', serviceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null },
+              { slotId: 'ss', serviceId: 'svc-1', weekday: 6, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null },
+            ],
+            assignments: ['sd', 'sm', 'ss'].map((slotId) => ({ assignmentId: `a-${slotId}`, slotId, workerId: 'w-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' as const })),
+            absences: [
+              { absenceId: 'x1', assignmentId: 'a-sd', onDate: '2026-09-27', substituteWorkerId: null, requestId: 'r' }, // hoje
+              { absenceId: 'x2', assignmentId: 'a-sm', onDate: '2026-09-28', substituteWorkerId: null, requestId: 'r' }, // futura
+              { absenceId: 'x3', assignmentId: 'a-ss', onDate: '2026-09-26', substituteWorkerId: null, requestId: 'r' }, // passada — não conta
+            ],
+          },
         },
       ]),
       noTeam,
@@ -147,10 +156,15 @@ describe('ListKanbanServicesUseCase', () => {
             assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
           },
         ],
-        uncoveredAbsences: [
-          { serviceId: 'svc-1', date: '2026-09-28', startTime: '08:00', endTime: '10:00' }, // faixa 1, mesmo dia
-          { serviceId: 'svc-1', date: '2026-09-28', startTime: '14:00', endTime: '16:00' }, // faixa 2, mesmo dia
-        ],
+        occurrences: {
+          // 2026-09-28 = segunda: duas faixas do MESMO serviço, sem ninguém (FR-12) — 1 dia, 2 turnos
+          slots: [
+            { slotId: 'f1', serviceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '10:00', validFrom: '2026-01-01', validTo: null },
+            { slotId: 'f2', serviceId: 'svc-1', weekday: 1, startTime: '14:00', endTime: '16:00', validFrom: '2026-01-01', validTo: null },
+          ],
+          assignments: [],
+          absences: [],
+        },
       },
     ];
     const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
@@ -158,6 +172,24 @@ describe('ListKanbanServicesUseCase', () => {
     const result = await useCase.execute('AR', asOf);
 
     expect(result.patients[0].services[0].uncoveredDays).toBe(1);
+  });
+
+  it('P7: o horizonte é [hoje, hoje+6] — a segunda-feira de hoje+8 não conta; faixa sem alocação conta (FR-12)', async () => {
+    const asOf = new Date('2026-09-27T15:00:00Z'); // domingo; janela 27/09 … 03/10
+    const faixa = (slotId: string, weekday: number) => ({ slotId, serviceId: 'svc-1', weekday, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null });
+    const rows: KanbanServicesRows[] = [
+      {
+        patientId: 'p-1',
+        country: 'AR',
+        services: [{ id: 'svc-1', serviceCode: 'AT', liveVacancyId: null }],
+        slots: [],
+        occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] }, // dom 27 e sáb 03/10 (hoje+6): 2 dias; dom 04/10 (hoje+7): fora
+      },
+    ];
+
+    const result = await new ListKanbanServicesUseCase(readerWith(rows), noTeam).execute('AR', asOf);
+
+    expect(result.patients[0].services[0].uncoveredDays).toBe(2);
   });
 
   it('mesmo `now`, paciente BR e AR: asOf pelo fuso de CADA país (countryToTimezone, nunca o relógio do processo)', async () => {

@@ -35,12 +35,15 @@ const FELIZ = {
   patientId: PATIENT_ID,
   asOf: '2026-09-27',
   assembledAt: null as string | null,
+  horizonDays: 7,
+  alerts: [{ serviceId: SERVICE_ID, date: '2026-09-28', startTime: '08:00', endTime: '12:00' }],
   services: [
     {
       contractedServiceId: SERVICE_ID,
       scheduleHours: 20,
       cobertas: 4,
       reserve: { count: 3, minimum: 10 },
+      uncoveredShifts: 1,
       slots: [
         {
           id: SLOT_ID,

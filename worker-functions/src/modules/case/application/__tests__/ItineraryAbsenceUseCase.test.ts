@@ -660,3 +660,25 @@ describe('ItineraryAbsenceUseCase.cancel', () => {
     });
   });
 });
+
+describe('ItineraryAbsenceUseCase.setSubstituteWith (spec 069, T209)', () => {
+  it('roda no client RECEBIDO (nenhuma transação nova) e põe o substituto; o gate é o mesmo de setSubstitute', async () => {
+    const runInTransaction = runInTransactionStub();
+    const writer = writerStub({
+      findAbsence: jest.fn().mockResolvedValue(OPEN_ABSENCE),
+      updateSubstitute: jest.fn().mockResolvedValue(1),
+    });
+    const allocationWriter = allocationWriterStub({ findApplicationId: jest.fn().mockResolvedValue('wja-sub') });
+    const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransaction, catalogStub(), changeLogStub(), requestStub());
+    const OTHER_CLIENT = { marker: 'outro' } as never;
+
+    const result = await useCase.setSubstituteWith(OTHER_CLIENT, {
+      patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', substituteWorkerId: 'w-sub', actorUid: 'u-1', now: new Date('2026-09-27T15:00:00Z'),
+    });
+
+    expect(runInTransaction).not.toHaveBeenCalled();
+    expect(writer.updateSubstitute).toHaveBeenCalledWith(OTHER_CLIENT, 'abs-1', 'w-sub', 'wja-sub', 'u-1');
+    expect(result).toMatchObject({ absenceId: 'abs-1', substituteWorkerId: 'w-sub', status: 'OPEN' });
+  });
+});

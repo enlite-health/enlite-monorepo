@@ -26,6 +26,14 @@ describe('PatientStatusDerivationReader', () => {
     expect(params).toEqual([PID]);
   });
 
+  it('lock = false (pré-visão do estado, só leitura): a MESMA consulta sem FOR UPDATE', async () => {
+    const { query, client } = clientCom([{ status: 'SEARCHING', country: 'AR', montado: true }]);
+    await reader.readSubjectWith(client, PID, false);
+    const [sql] = query.mock.calls[0] as unknown as [string];
+    expect(sql).not.toMatch(/FOR UPDATE/);
+    expect(sql).toMatch(/p\.deleted_at IS NULL/);
+  });
+
   it('mapeia o sujeito e `montado` como boolean (true e false)', async () => {
     await expect(reader.readSubjectWith(clientCom([{ status: 'ACTIVE', country: 'AR', montado: true }]).client, PID))
       .resolves.toEqual({ status: 'ACTIVE', country: 'AR', montado: true });

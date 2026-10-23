@@ -95,7 +95,7 @@ export class AdminPatientItineraryController {
   private namedEventWorkerIds(data: PatientItineraryEventsResult): string[] {
     const ids = data.events.flatMap((event) => {
       const list: string[] = [];
-      if (event.titularDisplayName !== null) list.push(event.titularWorkerId);
+      if (event.titularDisplayName !== null && event.titularWorkerId) list.push(event.titularWorkerId);
       if (event.substituteDisplayName !== null && event.substituteWorkerId) list.push(event.substituteWorkerId);
       return list;
     });

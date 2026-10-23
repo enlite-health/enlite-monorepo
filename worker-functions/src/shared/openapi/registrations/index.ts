@@ -19,6 +19,7 @@ import './adminPatientKanbanServices';
 import './adminServiceTeam';
 import './adminServiceTeamContact';
 import './adminItineraryWrite';
+import './adminSubstitutionRequests';
 import './adminPresence';
 import './adminSetup';
 import './adminSocialLinks';

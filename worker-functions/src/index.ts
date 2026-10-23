@@ -39,6 +39,8 @@ import {
   createAdminItineraryWriteRoutes,
   AdminItineraryChangesController,
   createAdminItineraryChangesRoutes,
+  AdminSubstitutionRequestController,
+  createAdminSubstitutionRequestRoutes,
   TherapeuticContactRemindersInternalController,
   createTherapeuticContactRemindersInternalRoutes,
   createAdminPatientsRoutes,
@@ -716,6 +718,8 @@ app.use('/api/admin', createAdminServiceTeamContactRoutes(new AdminServiceTeamCo
 // ========== Itinerário — escritores (cadeia Fase 11) ==========
 app.use('/api/admin', createAdminItineraryWriteRoutes(new AdminItineraryWriteController(), authMiddleware, permissionMiddleware));
 app.use('/api/admin', createAdminItineraryChangesRoutes(new AdminItineraryChangesController(), authMiddleware, permissionMiddleware));
+// Spec 069 — pedido de substituição (lista, pré-visão, criação)
+app.use('/api/admin', createAdminSubstitutionRequestRoutes(new AdminSubstitutionRequestController(), authMiddleware, permissionMiddleware));
 
 // ========== Conferência de horas do Ana Care (spec anacare-conferencia-de-horas, fase 1) ==========
 app.use(

@@ -15,7 +15,8 @@
  */
 import { PatientItineraryReader, type ItineraryRows, type ItineraryAssignmentStatus } from '../infrastructure/PatientItineraryReader';
 import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
-import { uncoveredDayAlerts } from '../domain/itineraryAlerts';
+import { uncoveredDayAlerts, uncoveredShiftCount } from '../domain/itineraryAlerts';
+import { expandServiceOccurrences, uncoveredWindow, UNCOVERED_HORIZON_DAYS } from '../domain/serviceOccurrences';
 import { withAssignmentIdentity, workerIdsToName, type PatientItineraryServiceView } from './itineraryAssignmentView';
 import { projectWorkerDisplayNames } from './workerDisplayNames';
 import type { ServiceReserve } from '../domain/deriveServiceTeam';
@@ -60,10 +61,13 @@ export interface PatientItineraryService {
   slots: PatientItinerarySlot[];
 }
 
-/** O serviço da resposta: a cobertura + a reserva da Equipe de Resposta Rápida (056 §9; `null` = sem vaga viva). */
-export type PatientItineraryServiceWithReserve = PatientItineraryServiceView & { reserve: ServiceReserve | null };
+/**
+ * O serviço da resposta: a cobertura + a reserva da Equipe de Resposta Rápida (056 §9; `null` = sem vaga viva) +
+ * `uncoveredShifts` (spec 069, FR-03): TURNOS sin cubrir nos próximos `horizonDays` dias — separado do estado estrutural.
+ */
+export type PatientItineraryServiceWithReserve = PatientItineraryServiceView & { reserve: ServiceReserve | null; uncoveredShifts: number };
 
-/** Ausência sem substituto, `date >= asOf` — a mesma regra do Kanban (DX-13.9/13.10). Sem `workerId`/nome. */
+/** Turno "Sin cubrir" (ausência sem substituto OU faixa sem alocação) em `[asOf, asOf + horizonDays - 1]` — a mesma regra do Kanban e do alerta. Sem `workerId`/nome. */
 export interface PatientItineraryAlert {
   serviceId: string;
   date: string;
@@ -76,6 +80,8 @@ export interface PatientItineraryResult {
   asOf: string;
   services: PatientItineraryServiceWithReserve[];
   alerts: PatientItineraryAlert[];
+  /** O horizonte do aviso (dias): o i18n interpola `{days}`; nenhum "7" literal em texto. */
+  horizonDays: number;
   /** `max(assembled_at)` da montagem (ISO UTC) ou `null` se nunca montado (Fase 3, C8). */
   assembledAt: string | null;
 }
@@ -100,9 +106,18 @@ export class GetPatientItineraryUseCase {
     const displayNameByWorkerId = await projectWorkerDisplayNames(workerIdsToName(rows.slots, coverages, asOf), cells, this.kms);
     const withIdentity = withAssignmentIdentity(coverages, rows.slots, asOf, displayNameByWorkerId);
     const reserves = reservesByServiceId(await this.teamReader.readMany(withIdentity.map((s) => s.contractedServiceId)), asOf);
-    const services = withIdentity.map((service) => ({ ...service, reserve: reserves.get(service.contractedServiceId) ?? null }));
-    const alerts = uncoveredDayAlerts(rows.uncoveredAbsences ?? [], asOf);
+    // "Sin cubrir" (spec 069): UMA lista de ocorrências na janela do horizonte, lida pelo alerta e pela contagem de turnos.
+    const { from, to } = uncoveredWindow(asOf);
+    const occurrences = rows.occurrences
+      ? expandServiceOccurrences(rows.occurrences.slots, rows.occurrences.assignments, rows.occurrences.absences, from, to)
+      : [];
+    const alerts = uncoveredDayAlerts(occurrences, asOf);
+    const services = withIdentity.map((service) => ({
+      ...service,
+      reserve: reserves.get(service.contractedServiceId) ?? null,
+      uncoveredShifts: uncoveredShiftCount(alerts.filter((a) => a.serviceId === service.contractedServiceId)),
+    }));
 
-    return { patientId, asOf, services, alerts, assembledAt: rows.assembledAt ?? null };
+    return { patientId, asOf, services, alerts, horizonDays: UNCOVERED_HORIZON_DAYS, assembledAt: rows.assembledAt ?? null };
   }
 }

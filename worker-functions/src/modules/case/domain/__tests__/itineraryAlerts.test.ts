@@ -1,111 +1,97 @@
-import { uncoveredDayAlerts, uncoveredDayCount } from '../itineraryAlerts';
+import { uncoveredDayAlerts, uncoveredDayCount, uncoveredShiftCount, type UncoverableOccurrence } from '../itineraryAlerts';
 
 /**
- * uncoveredDayAlerts — Fase 13, DX-13.9, P11. A entrada já é SÓ a ausência sem substituto (quem
- * substitui está coberto — não entra aqui); nada de `workerId`/nome/endereço/clínico na saída
- * (critério 13).
+ * itineraryAlerts — spec 069 (FR-12/FR-35). A entrada são as OCORRÊNCIAS; só `uncovered` dentro de `[asOf, asOf+6]` vira alerta.
  */
+const ASOF = '2026-10-10';
+
+function occ(o: Partial<UncoverableOccurrence> & { date: string }): UncoverableOccurrence {
+  return { serviceId: 'svc-1', startTime: '08:00', endTime: '12:00', status: 'uncovered', ...o };
+}
+
 describe('uncoveredDayAlerts', () => {
-  const ASOF = '2026-09-28';
-  const SERVICE_A = 'service-a';
-  const SERVICE_B = 'service-b';
-
-  it('date = asOf → entra (vigente)', () => {
+  it('só ocorrência uncovered conta: covered e substituted ficam de fora', () => {
     const result = uncoveredDayAlerts(
-      [{ serviceId: SERVICE_A, date: ASOF, startTime: '08:00', endTime: '12:00' }],
+      [occ({ date: '2026-10-11', status: 'covered' }), occ({ date: '2026-10-12', status: 'substituted' }), occ({ date: '2026-10-13' })],
       ASOF,
     );
-    expect(result).toEqual([{ serviceId: SERVICE_A, date: ASOF, startTime: '08:00', endTime: '12:00' }]);
+    expect(result.map((a) => a.date)).toEqual(['2026-10-13']);
   });
 
-  it('date = asOf − 1 (string menor) → sai (não vigente)', () => {
+  it('janela [asOf, asOf+6]: ontem e hoje+7 ficam fora; hoje e hoje+6 entram (hoje inteiro, sem olhar a hora)', () => {
     const result = uncoveredDayAlerts(
-      [{ serviceId: SERVICE_A, date: '2026-09-27', startTime: '08:00', endTime: '12:00' }],
+      [occ({ date: '2026-10-09' }), occ({ date: '2026-10-10' }), occ({ date: '2026-10-16' }), occ({ date: '2026-10-17' })],
       ASOF,
     );
-    expect(result).toEqual([]);
+    expect(result.map((a) => a.date)).toEqual(['2026-10-10', '2026-10-16']);
   });
 
-  it('ordenação por data, depois início, depois serviço — fora de ordem na entrada', () => {
+  it('ordena por date, startTime e serviceId e remove repetição (mesma chave composta = mesmo turno)', () => {
     const result = uncoveredDayAlerts(
       [
-        { serviceId: SERVICE_B, date: '2026-09-30', startTime: '08:00', endTime: '10:00' },
-        { serviceId: SERVICE_A, date: '2026-09-29', startTime: '14:00', endTime: '16:00' },
-        { serviceId: SERVICE_A, date: '2026-09-29', startTime: '08:00', endTime: '10:00' },
-        { serviceId: SERVICE_B, date: '2026-09-29', startTime: '08:00', endTime: '10:00' },
+        occ({ date: '2026-10-12', startTime: '14:00', endTime: '18:00', serviceId: 'svc-b' }),
+        occ({ date: '2026-10-11', serviceId: 'svc-b' }),
+        occ({ date: '2026-10-11', serviceId: 'svc-a' }),
+        occ({ date: '2026-10-11', serviceId: 'svc-a' }),
+        occ({ date: '2026-10-12', startTime: '08:00', serviceId: 'svc-b' }),
       ],
       ASOF,
     );
     expect(result).toEqual([
-      { serviceId: SERVICE_A, date: '2026-09-29', startTime: '08:00', endTime: '10:00' },
-      { serviceId: SERVICE_B, date: '2026-09-29', startTime: '08:00', endTime: '10:00' },
-      { serviceId: SERVICE_A, date: '2026-09-29', startTime: '14:00', endTime: '16:00' },
-      { serviceId: SERVICE_B, date: '2026-09-30', startTime: '08:00', endTime: '10:00' },
+      { serviceId: 'svc-a', date: '2026-10-11', startTime: '08:00', endTime: '12:00' },
+      { serviceId: 'svc-b', date: '2026-10-11', startTime: '08:00', endTime: '12:00' },
+      { serviceId: 'svc-b', date: '2026-10-12', startTime: '08:00', endTime: '12:00' },
+      { serviceId: 'svc-b', date: '2026-10-12', startTime: '14:00', endTime: '18:00' },
     ]);
   });
 
-  it('entrada repetida (mesmo serviço/data/horário) → sai UMA vez só', () => {
-    const result = uncoveredDayAlerts(
-      [
-        { serviceId: SERVICE_A, date: ASOF, startTime: '08:00', endTime: '12:00' },
-        { serviceId: SERVICE_A, date: ASOF, startTime: '08:00', endTime: '12:00' },
-      ],
-      ASOF,
-    );
-    expect(result).toHaveLength(1);
+  it('o mesmo horário e data em serviços diferentes ordena por serviceId', () => {
+    const result = uncoveredDayAlerts([occ({ date: '2026-10-11', serviceId: 'svc-z' }), occ({ date: '2026-10-11', serviceId: 'svc-a' })], ASOF);
+    expect(result.map((a) => a.serviceId)).toEqual(['svc-a', 'svc-z']);
   });
 
-  it('a saída tem EXATAMENTE as chaves serviceId, date, startTime, endTime — nenhuma chave de worker/nome/endereço/clínico', () => {
-    const result = uncoveredDayAlerts(
-      [{ serviceId: SERVICE_A, date: ASOF, startTime: '08:00', endTime: '12:00' }],
-      ASOF,
-    );
-    expect(Object.keys(result[0]).sort()).toEqual(['date', 'endTime', 'serviceId', 'startTime']);
-    const proibido = /worker|name|address|diagnos|clinic/i;
-    for (const chave of Object.keys(result[0])) {
-      expect(proibido.test(chave)).toBe(false);
-    }
+  it('mesma data, início e serviço com FIM diferente: são dois turnos (a ordem é estável, nenhum se perde)', () => {
+    const result = uncoveredDayAlerts([occ({ date: '2026-10-11', endTime: '12:00' }), occ({ date: '2026-10-11', endTime: '13:00' })], ASOF);
+    expect(result.map((a) => a.endTime)).toEqual(['12:00', '13:00']);
   });
 
-  it('lista vazia de ausências → alerta vazio', () => {
+  it('serviços do mesmo horário ordenam por serviceId qualquer que seja a ordem de entrada', () => {
+    const ids = ['svc-c', 'svc-a', 'svc-d', 'svc-b'];
+    const crescente = uncoveredDayAlerts([...ids].sort().map((serviceId) => occ({ date: '2026-10-11', serviceId })), ASOF);
+    const decrescente = uncoveredDayAlerts([...ids].sort().reverse().map((serviceId) => occ({ date: '2026-10-11', serviceId })), ASOF);
+    expect(crescente.map((a) => a.serviceId)).toEqual(['svc-a', 'svc-b', 'svc-c', 'svc-d']);
+    expect(decrescente.map((a) => a.serviceId)).toEqual(['svc-a', 'svc-b', 'svc-c', 'svc-d']);
+  });
+
+  it('lista vazia → vazia', () => {
     expect(uncoveredDayAlerts([], ASOF)).toEqual([]);
+  });
+
+  it('o resultado não carrega workerId nem status (só serviço, data e horário)', () => {
+    const [a] = uncoveredDayAlerts([{ ...occ({ date: '2026-10-11' }), workerId: 'w-1' } as UncoverableOccurrence], ASOF);
+    expect(Object.keys(a).sort()).toEqual(['date', 'endTime', 'serviceId', 'startTime']);
   });
 });
 
-/**
- * uncoveredDayCount — achado L2 (veredito parcial-1): `alerts.length` conta ALERTAS (chave
- * `date|start|service|end`), não DIAS. 2 faixas descobertas no MESMO dia do MESMO serviço (horários
- * diferentes) davam `uncoveredDays: 2`. `alerts[]` continua 1 item por faixa — só a CONTAGEM dedupe
- * por `date`.
- */
-describe('uncoveredDayCount', () => {
-  const ASOF = '2026-09-28';
-  const SERVICE_A = 'service-a';
+describe('uncoveredDayCount / uncoveredShiftCount', () => {
+  const duasFaixasNoMesmoDia = uncoveredDayAlerts(
+    [occ({ date: '2026-10-11', startTime: '08:00', endTime: '12:00' }), occ({ date: '2026-10-11', startTime: '14:00', endTime: '18:00' })],
+    ASOF,
+  );
 
-  it('2 faixas descobertas no MESMO dia do MESMO serviço, horários diferentes → 1 dia (não 2 alertas)', () => {
-    const alerts = uncoveredDayAlerts(
-      [
-        { serviceId: SERVICE_A, date: ASOF, startTime: '08:00', endTime: '10:00' },
-        { serviceId: SERVICE_A, date: ASOF, startTime: '14:00', endTime: '16:00' },
-      ],
-      ASOF,
-    );
-    expect(alerts).toHaveLength(2); // alerts[] não muda
-    expect(uncoveredDayCount(alerts)).toBe(1); // a contagem, sim
+  it('2 faixas descobertas no MESMO dia = 1 DIA (Kanban) e 2 TURNOS (cartão/alerta)', () => {
+    expect(duasFaixasNoMesmoDia).toHaveLength(2);
+    expect(uncoveredDayCount(duasFaixasNoMesmoDia)).toBe(1);
+    expect(uncoveredShiftCount(duasFaixasNoMesmoDia)).toBe(2);
   });
 
-  it('2 dias diferentes → 2 (contagem igual a alerts.length quando não há repetição de dia)', () => {
-    const alerts = uncoveredDayAlerts(
-      [
-        { serviceId: SERVICE_A, date: '2026-09-28', startTime: '08:00', endTime: '10:00' },
-        { serviceId: SERVICE_A, date: '2026-09-29', startTime: '08:00', endTime: '10:00' },
-      ],
-      ASOF,
-    );
+  it('dias distintos contam cada um', () => {
+    const alerts = uncoveredDayAlerts([occ({ date: '2026-10-11' }), occ({ date: '2026-10-12' })], ASOF);
     expect(uncoveredDayCount(alerts)).toBe(2);
   });
 
-  it('lista vazia → 0', () => {
+  it('vazio → 0 e 0', () => {
     expect(uncoveredDayCount([])).toBe(0);
+    expect(uncoveredShiftCount([])).toBe(0);
   });
 });

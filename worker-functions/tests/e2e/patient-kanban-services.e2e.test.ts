@@ -223,8 +223,10 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     assertNoClinicalLeak(res.data);
     const patientAr = res.data.data.patients.find((p: { patientId: string }) => p.patientId === ar.patientId);
     expect(patientAr).toBeTruthy();
+    // spec 069 (FR-12/P7): a faixa de segunda SEM ninguém alocado é "Sin cubrir" e a segunda cai UMA vez em qualquer janela de 7
+    // dias — `uncoveredDays` conta DIAS no horizonte (antes só contava falta sem substituto, 0 aqui).
     expect(patientAr.services).toEqual([
-      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays: 0, reserve: null },
+      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays: 1, reserve: null },
     ]);
     expect(res.data.data.patients.some((p: { patientId: string }) => p.patientId === br.patientId)).toBe(false);
   });
