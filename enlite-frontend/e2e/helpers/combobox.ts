@@ -41,6 +41,16 @@ export async function escolherNoCombo(
 }
 
 /**
+ * Combobox de AÇÃO: o gatilho não guarda a escolha (ex.: "Ver como grupo" no rodapé da sidebar, que dispara a simulação e segue
+ * mostrando o placeholder). Mesmo gesto — abrir, buscar, clicar a opção pelo rótulo —, sem conferir o texto do gatilho; o efeito
+ * (banner, menu) é a asserção do teste.
+ */
+export async function acionarNoCombo(page: Page, alvo: Locator | string, rotulo: string, opts?: { buscar?: string }): Promise<void> {
+  await abrir(page, alvo, opts?.buscar ?? rotulo);
+  await page.getByRole('option', { name: rotulo, exact: true }).click();
+}
+
+/**
  * Combobox de escolha única quando o teste só conhece o VALOR (código/id de seed, ex.: `OTHER`, o id de um prestador) e não o rótulo:
  * abre o gatilho e clica a linha cujo `data-value` é o valor. O gesto continua sendo o clique humano na linha do painel.
  */
