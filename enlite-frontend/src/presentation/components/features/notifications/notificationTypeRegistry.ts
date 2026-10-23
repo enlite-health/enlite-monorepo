@@ -13,7 +13,7 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ItineraryUncoveredShiftsItem, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
@@ -100,6 +100,21 @@ function tactiqExtensionState(n: AdminNotification): AdmissionTactiqExtensionSta
   return state === 'installed' || state === 'disabled' ? state : 'missing';
 }
 
+/** spec 069 (FR-35): os itens do aviso diário, do mais urgente (primeiro turno mais cedo) ao mais tardio; payload ausente/estranho = nenhum item. */
+function itineraryItems(n: AdminNotification): ItineraryUncoveredShiftsItem[] {
+  const items = n.payload && 'items' in n.payload ? n.payload.items : [];
+  return [...items].sort((a, b) => a.firstDate.localeCompare(b.firstDate));
+}
+
+/**
+ * O aviso diário "Sin cubrir" leva a UM item por serviço; o clique abre o MAIS URGENTE direto no serviço
+ * (`?tab=itinerary&serviceId=`, o mesmo atalho do e-mail). Sem item (payload estranho) não há para onde ir.
+ */
+function itineraryDeepLink(n: AdminNotification): NotificationDeepLink | null {
+  const first = itineraryItems(n)[0];
+  return first ? { path: `/admin/patients/${first.patientId}?tab=itinerary&serviceId=${first.serviceId}` } : null;
+}
+
 /** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
 export const TACTIQ_LINK_PATH = '/admin/mi-cuenta';
 
@@ -132,6 +147,20 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
     contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
     detailLine: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
+  },
+  ITINERARY_UNCOVERED_SHIFTS: {
+    buildText: (n, t) =>
+      t('admin.notifications.itineraryUncoveredText', {
+        shifts: itineraryItems(n).reduce((sum, i) => sum + i.shifts, 0),
+        count: itineraryItems(n).length,
+      }),
+    getDeepLink: itineraryDeepLink,
+    actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
+    contextLine: (_n, t) => t('admin.notifications.itineraryUncoveredContext'),
+    detailLine: (n, t) => {
+      const first = itineraryItems(n)[0];
+      return first ? t('admin.notifications.itineraryUncoveredDetail', { date: first.firstDate.split('-').reverse().slice(0, 2).join('/') }) : null;
+    },
   },
 };
 

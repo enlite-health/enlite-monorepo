@@ -270,10 +270,6 @@ export function ItineraryEditAppointmentModal({
           </ActionButton>
         </div>
       ))}
-
-      <Text as="p" size="xs" color="secondary" data-testid="itinerario-editar-anacare-aviso">
-        {tm('anaCareNotice')}
-      </Text>
     </SidePanelShell>
     {/* Irmão do modal, não filho: o modal tem `transform`, que viraria o bloco de contenção do `fixed` do painel. */}
     {removeTarget && onRemove && (

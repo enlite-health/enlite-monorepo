@@ -156,3 +156,48 @@ describe('ADMISSION_TACTIQ_EXTENSION_CHANGED (spec 050, F15)', () => {
     expect(h.buildText(ext('qualquer'), t)).toBe('admin.notifications.tactiqExtension.missing:{}');
   });
 });
+
+// Spec 069 (FR-35): o aviso diário "Sin cubrir" — o servidor manda só ids, contagem e data; o TEXTO vive aqui.
+describe('ITINERARY_UNCOVERED_SHIFTS (spec 069, FR-35)', () => {
+  const item = (patientId: string, serviceId: string, shifts: number, firstDate: string) => ({ patientId, serviceId, shifts, firstDate });
+  const aviso = (items: ReturnType<typeof item>[] | null) =>
+    notif({
+      typeCode: 'ITINERARY_UNCOVERED_SHIFTS',
+      actorUid: 'system:itinerary-daily',
+      actorDisplayName: null,
+      patientId: null,
+      patientDisplayName: null,
+      messageId: null,
+      payload: items === null ? null : { operationDate: '2026-11-02', items },
+    });
+  const handler = () => getNotificationTypeHandler('ITINERARY_UNCOVERED_SHIFTS');
+  const ITEMS = [item('p-b', 's-b', 3, '2026-11-05'), item('p-a', 's-a', 2, '2026-11-03')];
+
+  it('texto: soma dos turnos e nº de serviços (a chave plural escolhe 1 × N pelo count)', () => {
+    expect(handler().buildText(aviso(ITEMS), t)).toBe('admin.notifications.itineraryUncoveredText:{"shifts":5,"count":2}');
+  });
+
+  it('o clique abre o serviço MAIS URGENTE (primeiro turno mais cedo) direto na aba, por ?tab=itinerary&serviceId=', () => {
+    expect(handler().getDeepLink(aviso(ITEMS))).toEqual({ path: '/admin/patients/p-a?tab=itinerary&serviceId=s-a' });
+  });
+
+  it('linhas do cartão: ator "Enlite", contexto "Itinerario" e o primeiro turno em DD/MM', () => {
+    const n = aviso(ITEMS);
+    expect(handler().actorLabel?.(n, t)).toBe('admin.notifications.ptContactsPendingActor:{}');
+    expect(handler().contextLine?.(n, t)).toBe('admin.notifications.itineraryUncoveredContext:{}');
+    expect(handler().detailLine?.(n, t)).toBe('admin.notifications.itineraryUncoveredDetail:{"date":"03/11"}');
+  });
+
+  it('payload ausente/vazio: texto zerado, sem link e sem detalhe — nunca crash', () => {
+    for (const n of [aviso(null), aviso([])]) {
+      expect(handler().buildText(n, t)).toBe('admin.notifications.itineraryUncoveredText:{"shifts":0,"count":0}');
+      expect(handler().getDeepLink(n)).toBeNull();
+      expect(handler().detailLine?.(n, t)).toBeNull();
+    }
+  });
+
+  it('payload de OUTRO tipo (sem `items`) é tratado como vazio', () => {
+    const n = notif({ typeCode: 'ITINERARY_UNCOVERED_SHIFTS', payload: { reason: 'missing' } as never });
+    expect(handler().getDeepLink(n)).toBeNull();
+  });
+});

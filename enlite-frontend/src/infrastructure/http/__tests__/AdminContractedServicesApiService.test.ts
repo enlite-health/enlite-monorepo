@@ -297,7 +297,7 @@ describe('AdminContractedServicesApiService', () => {
     };
 
     it('getItinerary: GET em /patients/:id/itinerary, devolve o itinerário', async () => {
-      const data = { patientId: PATIENT_ID, asOf: '2026-10-07', services: [], alerts: [] };
+      const data = { patientId: PATIENT_ID, asOf: '2026-10-07', services: [], alerts: [], horizonDays: 7 };
       const f = mockFetch({ success: true, data });
       const out = await AdminContractedServicesApiService.getItinerary(PATIENT_ID);
       expect(out).toEqual(data);

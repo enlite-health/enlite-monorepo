@@ -74,7 +74,8 @@ class AdminContractedServicesApiServiceClass {
     return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Público para os irmãos do mesmo domínio (`AdminSubstitutionRequestsApiService`): um só `fetch`, um só `ContractedServiceApiError`. */
+  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers = await this.getAuthHeaders();
     const response = await fetch(`${this.baseURL}${path}`, {
       method,
