@@ -28,7 +28,7 @@ import {
   mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR, readPatientKanbanColumn,
 } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openFixedSchedule, expectHorasCubiertas } from '../helpers/itinerario-aba-e2e-helper';
 import { assembleApi } from '../helpers/itinerario-escrita-e2e-helper';
 import {
   seedDerivablePatient, selectedWorker, allocateWorker, readStatusBoth, coveredHours, derivacaoToken,
@@ -92,7 +92,8 @@ function contagens(serviceId: string): { registros: number; marcas: number; vige
 /** Itinerario → Editar a faixa → "Quitar del itinerario" do prestador atual: o painel abre. */
 async function abrirPainelQuitar(page: Page, m: Montado): Promise<void> {
   await openItineraryTab(page, m.seed.patientId);
-  await expect(page.getByTestId(`itinerario-servico-par-${m.serviceId}`)).toContainText('4/4');
+  await openFixedSchedule(page, m.serviceId);
+  await expectHorasCubiertas(page, '4/4');
   await page.getByTestId(`itinerario-slot-editar-${m.slotId}`).click();
   await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
   await page.getByTestId(`itinerario-quitar-${m.workerId}`).click();
@@ -135,7 +136,7 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
       // Na tela: o painel e o modal fecham; as horas cobertas caem a 0.
       await expect(page.getByTestId('itinerario-quitar-painel')).toHaveCount(0, { timeout: 10_000 });
       await expect(page.getByTestId('itinerario-editar-modal')).toHaveCount(0);
-      await expect(page.getByTestId(`itinerario-servico-par-${m.serviceId}`)).toContainText('0/4', { timeout: 15_000 });
+      await expectHorasCubiertas(page, '0/4', 15_000);
       await expect(page.getByTestId(`itinerario-slot-prestador-${m.slotId}-${m.workerId}`)).toHaveCount(0);
 
       // Estado lido da API, do banco e do Kanban na MESMA execução: Búsqueda.
@@ -205,7 +206,7 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
       ]);
       expect(resp.status()).toBe(200);
       expect(resp.request().postDataJSON()).toEqual({ reasonCategory: 'PERFIL_INADEQUADO_AO_SERVICO', destination: 'LEAVE_SERVICE' });
-      await expect(page.getByTestId(`itinerario-servico-par-${m.serviceId}`)).toContainText('0/4', { timeout: 15_000 });
+      await expectHorasCubiertas(page, '0/4', 15_000);
 
       // Banco: a marca ativa leva o MESMO código do motivo; o estado vira Búsqueda.
       expect(contagens(m.serviceId)).toEqual({ registros: 1, marcas: 1, vigentes: 0 });

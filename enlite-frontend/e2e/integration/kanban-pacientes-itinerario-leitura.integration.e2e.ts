@@ -76,10 +76,12 @@ test.describe('kanban-pacientes itinerario leitura @integration', () => {
       expect(slot.endTime).toBe('12:00');
       expect(slot.durationMinutes).toBe(240);
       expect(slot.assignments).toEqual([]);
-      // Nenhum campo de PII (nome/telefone) no corpo — só os 6 campos do contrato (`providersNeeded` é número, sem PII).
+      // Nenhum campo de PII (nome/telefone) no corpo — só os 7 campos do contrato (`providersNeeded` e `uncoveredShifts` (spec 069, o aviso
+      // "N turnos sin cubrir") são números, sem PII).
       expect(Object.keys(serviceBefore).sort()).toEqual(
-        ['cobertas', 'contractedServiceId', 'providersNeeded', 'reserve', 'scheduleHours', 'slots'].sort(),
+        ['cobertas', 'contractedServiceId', 'providersNeeded', 'reserve', 'scheduleHours', 'slots', 'uncoveredShifts'].sort(),
       );
+      expect(serviceBefore.uncoveredShifts, 'sem alocação, a faixa sem ninguém conta como turno sin cubrir (FR-12) — número, nunca PII').toBeGreaterThanOrEqual(0);
 
       vacancyId = await activateRecruitmentViaApi(request, patient.patientId, patient.serviceId);
       workerId = insertTestWorker({ occupation: 'AT' });

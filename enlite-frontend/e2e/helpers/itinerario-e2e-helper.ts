@@ -60,12 +60,16 @@ export interface ItineraryServiceDto {
   cobertas: number;
   /** Reserva da vaga viva (spec 056 T6.2); `null` = sin vacante. */
   reserve?: { count: number; minimum: number } | null;
+  /** Spec 069: turnos sin cubrir nos próximos `horizonDays` dias (o aviso temporário do cartão) — número, sem PII. */
+  uncoveredShifts: number;
   slots: ItinerarySlotDto[];
 }
 
 export interface ItineraryResponseDto {
   patientId: string;
   asOf: string;
+  /** Spec 069: o horizonte do aviso, em dias (a tela nunca escreve "7" fixo). */
+  horizonDays: number;
   services: ItineraryServiceDto[];
 }
 

@@ -2,9 +2,9 @@
  * patient-itinerary.integration.e2e.ts @integration — D445, rodada 2.
  *
  * Full-stack, sem mock de dado de negócio (só auth/Firebase, o MESMO padrão de
- * `admission-patient-flow.integration.e2e.ts`): abre a aba Itinerario, vê a agenda semanal e os
- * próximos eventos, registra substituição pelo "Nuevo +" (feliz), tenta um substituto em conflito
- * (alternativo 1) e faz um reemplazo permanente "Entero" (alternativo 2).
+ * `admission-patient-flow.integration.e2e.ts`): abre a aba Itinerario, vê a agenda semanal ("Horario fijo") e os próximos días, registra a
+ * substituição de um dia pelo fluxo "Nueva sustitución" (feliz), tenta um substituto em conflito (alternativo 1) e faz a saída definitiva
+ * "No vuelve más" com substituto (alternativo 2). ADAPTADO à spec 069 (F7): o QUE cada teste prova é o de antes; só o caminho mudou.
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
 import {
@@ -17,7 +17,10 @@ import {
   cleanupItinerary,
   type ItinerarySeed,
 } from '../helpers/itinerary-db-helper';
-import { digitarDataNoCampo } from '../helpers/itinerario-aba-e2e-helper';
+import { openFixedSchedule, openServiceScreen, openUpcomingDays } from '../helpers/itinerario-aba-e2e-helper';
+import {
+  abrirNuevaSustitucion, confirmarPedido, irParaSemanaPeloCalendario, paso1QuienNoViene, paso2PorCuantoTiempo, paso3UnaPersona, paso4Motivo, siguiente, somaDias,
+} from '../helpers/itinerario-069-flow-helper';
 
 const MOCK_ADMIN_USER = { uid: 'e2e-int-admin-itinerario', email: 'admin.itinerario@e2e.test', role: 'admin' };
 const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
@@ -137,42 +140,38 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     cleanupItinerary(seed);
   });
 
-  test('feliz: abre Itinerario, vê agenda semanal e próximos eventos, "Nuevo +" registra substituição e o card aparece', async ({ page }) => {
+  test('feliz: abre Itinerario, vê a agenda semanal e os próximos días, "Nueva sustitución" registra a substituição de um dia e o turno aparece com o substituto', async ({ page }) => {
     await loginAsAdmin(page);
     await openItinerarioTab(page, seed.patientId);
 
-    // Coluna direita: agenda semanal com a faixa alocada ao titular.
-    await expect(page.getByText('Agenda de Atenciones')).toBeVisible();
+    // "Horario fijo": a agenda semanal com a faixa alocada ao titular.
+    await openFixedSchedule(page, seed.serviceId);
     await expect(page.getByTestId(`itinerario-slot-prestador-${seed.slotId}-${seed.titularWorkerId}`)).toBeVisible({ timeout: 10_000 });
 
-    // Coluna esquerda: painel de próximos eventos presente, com "Nuevo +".
-    await expect(page.getByTestId('itinerario-eventos-painel')).toBeVisible();
+    // "Próximos días": a tabela da semana com "Nueva sustitución".
+    await openUpcomingDays(page, seed.serviceId);
+    await expect(page.getByTestId('itinerario-proximos-tabela')).toBeVisible();
 
-    // "Nuevo +": registra substituição do dia (Complementar) com o substituto.
-    await page.getByTestId('itinerario-novo-btn').click();
-    await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
-    // Figma: PAINEL LATERAL à direita, altura cheia (não diálogo central).
-    const viewport = page.viewportSize()!;
-    await expect
-      .poll(async () => {
-        const box = await page.getByTestId('substitution-modal').boundingBox();
-        return box ? Math.round(box.x + box.width) : -1;
-      })
-      .toBe(viewport.width);
-    expect((await page.getByTestId('substitution-modal').boundingBox())!.height).toBe(viewport.height);
-    await page.getByTestId('substitution-date').selectOption({ index: 2 })  // 2ª segunda: a 1ª fica intacta (o alternativo 2 a usa como "antes de D");
-    const chosenDate = await page.getByTestId('substitution-date').inputValue();
-    await page.getByTestId('substitution-worker').click();
-    await page.getByRole('listbox').getByText(seed.names.free).click();
-    // Fase 2: a substituição de um dia pede o motivo (catálogo; 'Otro' = OTHER, da carga inicial).
-    await page.getByTestId('substitution-reason').selectOption('OTHER');
-    await page.getByTestId('substitution-confirm').click();
+    // A 2ª segunda: a 1ª fica intacta (o alternativo 2 a usa como "antes de D").
+    const chosenDate = somaDias(seed.nextMonday, 7);
+    await abrirNuevaSustitucion(page);
+    await paso1QuienNoViene(page, seed.titularWorkerId);
+    await paso2PorCuantoTiempo(page, 'ONE_DAY', chosenDate);
+    await siguiente(page);
+    await paso3UnaPersona(page, seed.freeSubstituteWorkerId);
+    await expect(page.locator('[data-testid^="substitucion-estado-"]')).toHaveText('Libre', { timeout: 15_000 });
+    await siguiente(page);
+    // A substituição de um dia pede o motivo (catálogo; 'Otro' = OTHER, da carga inicial).
+    await paso4Motivo(page, 'OTHER');
+    const resp = await confirmarPedido(page);
+    expect(resp.status()).toBe(201);
 
-    await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });
-    // O card do evento daquela data aparece com o SUBSTITUTO (não o titular) e o selo "substituído".
-    const eventPrestador = page.locator(`[data-testid^="itinerario-evento-prestador-"][data-testid$="-${chosenDate}"]`);
-    await expect(eventPrestador).toContainText(seed.names.free, { timeout: 10_000 });
-    await expect(page.locator(`[data-testid^="itinerario-evento-status-"][data-testid$="-${chosenDate}"]`)).toBeVisible();
+    await expect(page.getByTestId('substitucion-flujo')).toHaveCount(0, { timeout: 10_000 });
+    // O turno daquela data aparece com o SUBSTITUTO (não o titular) e o selo "Sustitución".
+    await irParaSemanaPeloCalendario(page, chosenDate);
+    const turno = page.getByTestId(`itinerario-proximo-${seed.slotId}-${chosenDate}`);
+    await expect(turno).toContainText(seed.names.free, { timeout: 10_000 });
+    await expect(turno).toContainText('Sustitución');
     // Prova de banco: 1 ausência aberta, naquela data, com o substituto.
     expect(readOpenAbsences(seed)).toEqual([{ onDate: chosenDate, substituteWorkerId: seed.freeSubstituteWorkerId }]);
   });
@@ -180,6 +179,7 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
   test('041 R2 — modal de edição: verde no alocado, azul na Resposta Rápida, nada no Selecionado, nessa ordem', async ({ page }) => {
     await loginAsAdmin(page);
     await openItinerarioTab(page, seed.patientId);
+    await openFixedSchedule(page, seed.serviceId);
 
     await page.getByTestId(`itinerario-slot-editar-${seed.slotId}`).click();
     const modal = page.getByTestId('itinerario-editar-modal');
@@ -216,62 +216,69 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     await expect(option.getByTestId('allocation-option-dot')).toHaveCount(0);
   });
 
-  test('alternativo 1: reemplazo com substituto em conflito → erro legível na tela, nada muda', async ({ page }) => {
+  test('alternativo 1: saída definitiva com substituto em conflito → o conflito é DITO na tela e o fluxo não avança; nada muda', async ({ page }) => {
     await loginAsAdmin(page);
     await openItinerarioTab(page, seed.patientId);
+    await openUpcomingDays(page, seed.serviceId);
 
     const before = readAssignments(seed);
-    await page.getByTestId('itinerario-novo-btn').click();
-    await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('substitution-mode-permanent').click();
-    await page.getByTestId('substitution-worker').click();
-    // `substituteWorkerId` continua "Selecionado" neste serviço (nunca foi alocado nele — a 1ª
-    // `it` só o usou como substituto de UM DIA, não muda a candidatura), mas já cobre uma faixa
-    // que se sobrepõe em OUTRO serviço (`seedConflictForSubstitute`, invariante 4: o gatilho de
-    // conflito é GLOBAL por worker, não por paciente/serviço).
-    await page.getByRole('listbox').getByText(seed.names.substitute).click();
-    // Entero pede motivo e destino (058b/B2): "Ahora" já vem marcado; sem os dois o Confirmar fica desabilitado.
-    await page.getByTestId('substitution-reason').selectOption({ label: 'El prestador desistió' });
-    await page.getByTestId('substitution-destination-RESERVE').click();
-    await page.getByTestId('substitution-confirm').click();
+    const posts: string[] = [];
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && /\/substitution-requests$/.test(r.url())) posts.push(r.url());
+    });
+    await abrirNuevaSustitucion(page);
+    await paso1QuienNoViene(page, seed.titularWorkerId);
+    await paso2PorCuantoTiempo(page, 'PERMANENT', seed.nextMonday);
+    await siguiente(page);
+    // `substituteWorkerId` continua "Selecionado" neste serviço, mas já cobre uma faixa que se sobrepõe em OUTRO serviço (`seedConflictForSubstitute`,
+    // invariante 4: o gatilho de conflito é GLOBAL por worker, não por paciente/serviço). A pré-visão do passo 3 DIZ isso antes de enviar.
+    await paso3UnaPersona(page, seed.substituteWorkerId);
+    const estado = page.locator('[data-testid^="substitucion-estado-"]');
+    await expect(estado).toHaveText('Conflicto', { timeout: 15_000 });
+    const nota = page.locator('[data-testid^="substitucion-conflicto-"]').first();
+    await expect(nota).toBeVisible();
+    expect((await nota.innerText()).trim().length).toBeGreaterThan(10); // texto legível, não código cru
+    await expect(page.getByTestId('substitucion-siguiente')).toBeDisabled();
+    await expect(page.getByTestId('substitucion-bloqueo')).toBeVisible();
 
-    const erro = page.getByTestId('itinerario-novo-erro-submit');
-    await expect(erro).toBeVisible({ timeout: 10_000 });
-    expect((await erro.innerText()).trim().length).toBeGreaterThan(10); // texto legível, não código cru
-    // Nada muda: a faixa continua com o titular original.
+    // Nada muda: a faixa continua com o titular original e nenhum pedido saiu.
+    await page.getByTestId('substitucion-cerrar').click();
+    await openFixedSchedule(page, seed.serviceId);
     await expect(page.getByTestId(`itinerario-slot-prestador-${seed.slotId}-${seed.titularWorkerId}`)).toBeVisible();
     expect(readAssignments(seed)).toEqual(before);
+    expect(posts).toHaveLength(0);
   });
 
-  test('alternativo 2: "Entero" (reemplazo permanente) — a partir da data, o titular sai e o novo entra', async ({ page }) => {
+  test('alternativo 2: "No vuelve más" com substituto — a partir da data, o titular sai e o novo entra', async ({ page }) => {
     await loginAsAdmin(page);
     await openItinerarioTab(page, seed.patientId);
+    await openServiceScreen(page, seed.serviceId);
 
-    // ANTES: horas cobertas (texto do par cobertas/horário) e estado do paciente.
-    const parLocator = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
-    await expect(page.getByTestId(`itinerario-slot-prestador-${seed.slotId}-${seed.titularWorkerId}`)).toBeVisible();
-    const parAntes = await parLocator.innerText();
+    // ANTES: horas cobertas (texto lido da tela) e estado do paciente.
+    const horasAntes = await page.getByTestId('itinerario-servico-horas').innerText();
     const statusAntes = readPatientStatus(seed);
-    await page.getByTestId('itinerario-novo-btn').click();
-    await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('substitution-mode-permanent').click();
-    await page.getByTestId('substitution-start-scheduled').click();
-    // D = a SEGUNDA seguinte à 1ª segunda (`nextMonday` = 1ª segunda em hoje+1..hoje+7). Com D = `nextMonday` o 1º evento da faixa
-    // (segunda) já cai em D e nunca existe evento "antes de D" para o titular — a asserção abaixo esperava um (medido no CI #712).
-    const fromDate = new Date(Date.parse(`${seed.nextMonday}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
-    await digitarDataNoCampo(page, 'substitution-start-date', fromDate);
-    await page.getByTestId('substitution-worker').click();
-    await page.getByRole('listbox').getByText(seed.names.permanent).click();
-    await page.getByTestId('substitution-reason').selectOption({ label: 'El prestador desistió' });
-    await page.getByTestId('substitution-destination-RESERVE').click();
-    await page.getByTestId('substitution-confirm').click();
+    // D = a SEGUNDA seguinte à 1ª segunda (`nextMonday` = 1ª segunda em hoje+1..hoje+7). Com D = `nextMonday` o 1º turno da faixa (segunda) já cai
+    // em D e nunca existe turno "antes de D" para o titular (medido no CI #712).
+    const fromDate = somaDias(seed.nextMonday, 7);
+    await openUpcomingDays(page, seed.serviceId);
+    await abrirNuevaSustitucion(page);
+    await paso1QuienNoViene(page, seed.titularWorkerId);
+    await paso2PorCuantoTiempo(page, 'PERMANENT', fromDate);
+    await siguiente(page);
+    await paso3UnaPersona(page, seed.permanentWorkerId);
+    await expect(page.locator('[data-testid^="substitucion-estado-"]')).toHaveText('Libre', { timeout: 15_000 });
+    await siguiente(page);
+    await paso4Motivo(page, 'OTHER');
+    const resp = await confirmarPedido(page);
+    expect(resp.status()).toBe(201);
 
-    await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId('substitucion-flujo')).toHaveCount(0, { timeout: 10_000 });
     // A agenda (asOf = hoje < D): a faixa AINDA mostra o titular — ele trabalha até D-1.
+    await openFixedSchedule(page, seed.serviceId);
     await expect(page.getByTestId(`itinerario-slot-prestador-${seed.slotId}-${seed.titularWorkerId}`)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId(`itinerario-slot-sem-prestador-${seed.slotId}`)).toHaveCount(0);
     // Horas cobertas e estado do paciente: IGUAIS antes e depois (hoje < D).
-    await expect(parLocator).toHaveText(parAntes);
+    await expect(page.getByTestId('itinerario-servico-horas')).toHaveText(horasAntes);
     expect(readPatientStatus(seed)).toBe(statusAntes);
     // Prova de banco: o titular encerra em D-1 e o novo entra em D, ambos no mesmo slot.
     await expect
@@ -285,16 +292,11 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     expect(titular!.validTo! < fromDate).toBe(true);
     expect(novo?.status).toBe('ACTIVE');
     expect(novo?.validTo).toBeNull();
-    // Na tela (próximos eventos): antes de D (1ª segunda) o TITULAR; a partir de D o NOVO.
-    // "Antes de D" = o 1º evento com data < fromDate (a `nextMonday`).
-    const idEventoAntesDeD = async (): Promise<string> =>
-      (await page.locator('[data-testid^="itinerario-evento-prestador-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid') ?? '')))
-        .filter((id) => id.slice(-10) < fromDate)[0] ?? '';
-    await expect.poll(idEventoAntesDeD, { timeout: 10_000 }).not.toBe('');
-    await expect(page.getByTestId(await idEventoAntesDeD())).toContainText(seed.names.titular, { timeout: 10_000 });
-    // Na tela: o evento de D mostra o NOVO prestador.
-    await expect(
-      page.locator(`[data-testid^="itinerario-evento-prestador-"][data-testid$="-${fromDate}"]`).first(),
-    ).toContainText(seed.names.permanent, { timeout: 10_000 });
+    // Na tela (Próximos días): antes de D (a 1ª segunda) o TITULAR; a partir de D o NOVO.
+    await openUpcomingDays(page, seed.serviceId);
+    await irParaSemanaPeloCalendario(page, seed.nextMonday);
+    await expect(page.getByTestId(`itinerario-proximo-${seed.slotId}-${seed.nextMonday}`)).toContainText(seed.names.titular, { timeout: 10_000 });
+    await irParaSemanaPeloCalendario(page, fromDate);
+    await expect(page.getByTestId(`itinerario-proximo-${seed.slotId}-${fromDate}`)).toContainText(seed.names.permanent, { timeout: 10_000 });
   });
 });

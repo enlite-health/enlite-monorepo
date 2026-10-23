@@ -14,8 +14,9 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import { mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openFixedSchedule, openUpcomingDays } from '../helpers/itinerario-aba-e2e-helper';
 import { seedDerivablePatient, selectedWorker, allocateWorker } from '../helpers/derivacao-e2e-helper';
+import { irParaSemanaPeloCalendario } from '../helpers/itinerario-069-flow-helper';
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { seedRequestForAssignment } from '../helpers/seedSubstitutionRequest';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
@@ -90,6 +91,7 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
     try {
       await loginAs(page, STAFF);
       await openItineraryTab(page, m.seed.patientId);
+      await openFixedSchedule(page, m.serviceId);
       await page.getByTestId(`itinerario-slot-editar-${m.slotSegunda}`).click();
       await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
       await page.getByTestId(`itinerario-quitar-${m.c}`).click();
@@ -116,9 +118,12 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
       await expect(page.getByTestId('itinerario-quitar-painel')).toHaveCount(0, { timeout: 10_000 });
 
       // Na tela: os 2 dias de A ficam sem cobertura; A segue titular da quarta.
+      await openUpcomingDays(page, m.serviceId);
       for (const d of m.datas) {
-        await expect(page.getByTestId(`itinerario-evento-status-${m.alocA}-${d}`)).toContainText('Sin cobertura', { timeout: 15_000 });
+        await irParaSemanaPeloCalendario(page, d);
+        await expect(page.getByTestId(`itinerario-proximo-sem-cobertura-${m.slotQuarta}-${d}`)).toContainText('Nadie asignado', { timeout: 15_000 });
       }
+      await openFixedSchedule(page, m.serviceId);
       await expect(page.getByTestId(`itinerario-slot-prestador-${m.slotQuarta}-${m.a}`)).toBeVisible();
 
       // Banco: 2 SUBSTITUTE_CANCELLED + 1 REMOVE; as 2 ausências sem substituto e não canceladas.
@@ -146,6 +151,7 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
     try {
       await loginAs(page, STAFF);
       await openItineraryTab(page, m.seed.patientId);
+      await openFixedSchedule(page, m.serviceId);
       await page.getByTestId(`itinerario-slot-editar-${m.slotSegunda}`).click();
       await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
       await page.getByTestId(`itinerario-quitar-${m.c}`).click();
@@ -189,6 +195,7 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
       m = await semearSubstituto(request);
       await loginAs(page, STAFF);
       await openItineraryTab(page, m.seed.patientId);
+      await openFixedSchedule(page, m.serviceId);
       await page.getByTestId(`itinerario-slot-editar-${m.slotSegunda}`).click();
       await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
       await page.getByTestId(`itinerario-quitar-${m.c}`).click();

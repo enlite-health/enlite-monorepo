@@ -21,6 +21,8 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { backendUrl } from '../helpers/lancamento-e2e-helper';
 import { seedItinerary, seedTitularAllocation, cleanupItinerary, type ItinerarySeed } from '../helpers/itinerary-db-helper';
+import { openUpcomingDays } from '../helpers/itinerario-aba-e2e-helper';
+import { abrirNuevaSustitucion, confirmarPedido, paso1QuienNoViene, paso2PorCuantoTiempo, paso3UnaPersona, siguiente, somaDias, irParaSemanaPeloCalendario } from '../helpers/itinerario-069-flow-helper';
 
 const STAMP = Date.now().toString(36);
 const ADMIN: MockUser = { uid: `e2e-motivo-subst-${STAMP}`, email: `e2e.motivo.subst.${STAMP}@enlite.test`, role: 'admin', country: 'AR' };
@@ -38,24 +40,29 @@ function codigoDoNovo(): string {
   return runSQL(`SELECT code FROM service_exit_reasons WHERE label = '${NOVO}' AND active`).split('\n')[0].trim();
 }
 
-async function abrirAbaItinerario(page: Page, patientId: string): Promise<void> {
+async function abrirAbaItinerario(page: Page, patientId: string, serviceId: string): Promise<void> {
   await page.goto(`/admin/patients/${patientId}`);
   await page.getByTestId('patient-profile-tabs').getByText('Itinerario', { exact: true }).click();
   await expect(page.getByTestId('itinerario-aba')).toBeVisible({ timeout: 15_000 });
+  await openUpcomingDays(page, serviceId);
 }
 
-/** "Nuevo +" → faixa (já vem pré-selecionada, 1 só) → data (a 2ª segunda) → substituto digitado na busca. */
-async function preencherSubstituicao(page: Page, nomeDoSubstituto: string): Promise<string> {
-  await page.getByTestId('itinerario-novo-btn').click();
-  await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId('substitution-date').selectOption({ index: 2 });
-  const data = await page.getByTestId('substitution-date').inputValue();
-  await page.getByTestId('substitution-worker').click();
-  const busca = page.getByPlaceholder('Buscar...');
-  await busca.click();
-  await page.keyboard.type(nomeDoSubstituto.slice(0, 5));
-  await page.getByRole('listbox').getByText(nomeDoSubstituto).click(); // dentro da lista do SearchableSelect (o <option> nativo de outro select não serve)
+/** "Nueva sustitución" → ¿Quién? (o titular) → Un solo día (a 2ª segunda) → una persona (o substituto) → passo 4 aberto, motivo por escolher. */
+async function preencherSubstituicao(page: Page, seed: ItinerarySeed, substitutoId: string): Promise<string> {
+  const data = await segundaDeOutraSemana(seed);
+  await abrirNuevaSustitucion(page);
+  await paso1QuienNoViene(page, seed.titularWorkerId);
+  await paso2PorCuantoTiempo(page, 'ONE_DAY', data);
+  await siguiente(page);
+  await paso3UnaPersona(page, substitutoId);
+  await expect(page.locator('[data-testid^="substitucion-estado-"]')).toHaveText('Libre', { timeout: 15_000 });
+  await siguiente(page);
   return data;
+}
+
+/** A 2ª segunda (a 1ª fica intacta, como no teste antigo): `nextMonday` + 7, calculada NO BANCO. */
+async function segundaDeOutraSemana(seed: ItinerarySeed): Promise<string> {
+  return somaDias(seed.nextMonday, 7);
 }
 
 test.use({ viewport: { width: 1600, height: 1000 } });
@@ -87,24 +94,26 @@ test.describe('patient-itinerary — motivo obrigatório na substituição de um
     runSQL(`DELETE FROM users WHERE firebase_uid = '${ADMIN.uid}'`);
   });
 
-  test('FELIZ: "Nuevo +" com motivo do catálogo → o card aparece e o registro de trocas tem 1 ABSENCE com esse motivo', async ({ page, request }) => {
+  test('FELIZ: "Nueva sustitución" com motivo do catálogo → o pedido sai e o registro de trocas tem 1 ABSENCE com esse motivo', async ({ page, request }) => {
     await loginAs(page, ADMIN);
-    await abrirAbaItinerario(page, seed.patientId);
-    const data = await preencherSubstituicao(page, seed.names.free);
+    await abrirAbaItinerario(page, seed.patientId, seed.serviceId);
+    const data = await preencherSubstituicao(page, seed, seed.freeSubstituteWorkerId);
 
     // O campo de motivo lista o catálogo ativo: o item criado pelo admin e os antigos.
-    const opcoes = (await page.getByTestId('substitution-reason').locator('option').allInnerTexts()).map((t) => t.trim());
+    const opcoes = (await page.getByTestId('substitucion-motivo').locator('option').allInnerTexts()).map((t) => t.trim());
     expect(opcoes).toContain(NOVO);
     expect(opcoes).toContain(ROTULO_ANTIGO);
 
-    await expect(page.getByTestId('substitution-confirm')).toBeDisabled(); // falta o motivo
-    await page.getByTestId('substitution-reason').selectOption({ label: NOVO });
-    await expect(page.getByTestId('substitution-confirm')).toBeEnabled();
-    await page.getByTestId('substitution-confirm').click();
+    await expect(page.getByTestId('substitucion-confirmar')).toBeDisabled(); // falta o motivo
+    await page.getByTestId('substitucion-motivo').selectOption({ label: NOVO });
+    await expect(page.getByTestId('substitucion-confirmar')).toBeEnabled();
+    const resp = await confirmarPedido(page);
+    expect(resp.status()).toBe(201);
 
-    await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });
-    const eventoPrestador = page.locator(`[data-testid^="itinerario-evento-prestador-"][data-testid$="-${data}"]`);
-    await expect(eventoPrestador).toContainText(seed.names.free, { timeout: 10_000 });
+    await expect(page.getByTestId('substitucion-flujo')).toHaveCount(0, { timeout: 10_000 });
+    await irParaSemanaPeloCalendario(page, data);
+    const turno = page.locator(`[data-testid^="itinerario-proximo-"][data-testid$="-${data}"]`).first();
+    await expect(turno).toContainText(seed.names.free, { timeout: 10_000 });
 
     // Lido na MESMA execução: a API de leitura do registro de trocas.
     const res = await request.get(
@@ -117,24 +126,24 @@ test.describe('patient-itinerary — motivo obrigatório na substituição de um
     expect(changes[0]).toMatchObject({ kind: 'ABSENCE', reasonCode: codigoDoNovo(), reasonLabel: NOVO, effectiveDate: data, incomingWorkerId: seed.freeSubstituteWorkerId });
   });
 
-  test('ALTERNATIVO 1: sem motivo, "Confirmar" fica desabilitado e nenhum POST …/absences sai', async ({ page }) => {
-    const postsDeAusencia: string[] = [];
+  test('ALTERNATIVO 1: sem motivo, "Confirmar" fica desabilitado e nenhum POST …/substitution-requests sai', async ({ page }) => {
+    const postsDoPedido: string[] = [];
     page.on('request', (r) => {
-      if (r.method() === 'POST' && r.url().endsWith('/absences')) postsDeAusencia.push(r.url());
+      if (r.method() === 'POST' && r.url().endsWith('/substitution-requests')) postsDoPedido.push(r.url());
     });
     const antes = Number(runSQL(`SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = '${seed.serviceId}'`));
 
     await loginAs(page, ADMIN);
-    await abrirAbaItinerario(page, seed.patientId);
+    await abrirAbaItinerario(page, seed.patientId, seed.serviceId);
     // Paula já virou substituta no teste 1 (Em Atendimento); aqui serve outra Selecionada.
-    await preencherSubstituicao(page, seed.names.substitute);
+    await preencherSubstituicao(page, seed, seed.substituteWorkerId);
 
-    const confirmar = page.getByTestId('substitution-confirm');
+    const confirmar = page.getByTestId('substitucion-confirmar');
     await expect(confirmar).toBeDisabled();
     await confirmar.click({ force: true }); // um clique forçado num botão desabilitado não dispara nada
     await page.waitForTimeout(1_000);
 
-    expect(postsDeAusencia).toHaveLength(0);
+    expect(postsDoPedido).toHaveLength(0);
     expect(Number(runSQL(`SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = '${seed.serviceId}'`))).toBe(antes);
   });
 });

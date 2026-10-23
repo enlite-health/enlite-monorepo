@@ -6,11 +6,14 @@
  * (`/admin/patients/:id?tab=itinerary`). O nome do arquivo casa o `--grep` `funil-vacante` do
  * job `frontend-integration` (pr-gate.yml), então roda no CI sem tocar o filtro.
  *
- * Reusa `seedVacancyWithCards([])` (paciente + vaga publicada, sem cards), `seedMockStaff`,
+ * Reusa `seedLaunchablePatient` + `activateRecruitmentViaApi` (paciente, serviço, vaga) + 2º serviço pela API, `seedMockStaff`,
  * `loginAs`, `gotoVacancyDetail`. Nunca `fill()`.
  */
 import { test, expect } from '@playwright/test';
-import { seedVacancyWithCards } from '../helpers/funnel-move-e2e-helper';
+import { seedLaunchablePatient } from '../helpers/lancamento-e2e-helper';
+import { activateRecruitmentViaApi, createServiceViaApi } from '../helpers/itinerario-e2e-helper';
+import { cleanupItineraryWrite } from '../helpers/itinerario-escrita-e2e-helper';
+import { runSQL } from '../helpers/patient-detail-a-helper';
 import { gotoVacancyDetail } from '../helpers/compativeis-e2e-helper';
 import { seedMockStaff, cleanupMockStaff } from '../helpers/vacancy-notes-e2e-helper';
 import { loginAs, type MockUser } from '../helpers/abac-stack-helper';
@@ -38,25 +41,30 @@ test.describe('detalhe da vacante — atalho para o itinerário do paciente (041
     cleanupMockStaff(MOCK_STAFF);
   });
 
-  test('funil-vacante-atalho-itinerario', async ({ page }) => {
-    const seed = seedVacancyWithCards([]);
+  test('funil-vacante-atalho-itinerario', async ({ page, request }) => {
+    // O paciente da vaga tem 2 serviços e a vaga é do 2º: o atalho leva o `serviceId` na URL e a aba abre direto na tela DELE (sem passar pela lista).
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -47.1203, lng: -66.2204 });
     try {
+      await createServiceViaApi(request, seed.patientId, { addressId: seed.addressId, schedule: [{ dayOfWeek: 3, startTime: '08:00', durationMinutes: 240 }] });
+      const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId); // a vaga do serviço da semente
+      runSQL(`UPDATE job_postings SET is_draft = false WHERE id = '${vacancyId}'`); // publicada: o funil (Kanban) da vaga carrega
       await loginAs(page, MOCK_STAFF);
-      await gotoVacancyDetail(page, seed.vacancyId);
+      await gotoVacancyDetail(page, vacancyId);
 
       await page.getByRole('button', { name: 'Ver itinerario del paciente' }).click();
 
-      await expect(page, 'chega à ficha do paciente DONO da vaga, com ?tab=itinerary').toHaveURL(
-        new RegExp(`/admin/patients/${seed.patientId}\\?tab=itinerary$`),
+      await expect(page, 'chega à ficha do paciente DONO da vaga, com ?tab=itinerary&serviceId=<serviço da vaga>').toHaveURL(
+        new RegExp(`/admin/patients/${seed.patientId}\\?tab=itinerary&serviceId=${seed.serviceId}$`),
         { timeout: 15_000 },
       );
-      // A aba Itinerario está ativa: ou a agenda (`itinerario-aba`) ou o estado vazio (paciente sem serviços).
-      await expect(
-        page.getByTestId('itinerario-aba').or(page.getByTestId('itinerario-sem-servicos')),
-        'conteúdo da aba Itinerario visível',
-      ).toBeVisible({ timeout: 15_000 });
+      // A aba Itinerario está ativa e abriu NA TELA DO SERVIÇO da vaga (e "Volver a los servicios" leva à lista dos 2).
+      await expect(page.getByTestId(`itinerario-servico-tela-${seed.serviceId}`), 'a aba abre direto no serviço da vaga').toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('itinerario-lista-servicos')).toHaveCount(0);
       await expect(page.getByTestId('patient-profile-tabs')).toBeVisible();
+      await page.getByTestId('itinerario-voltar-servicos').click();
+      await expect(page.locator('[data-testid^="itinerario-cartao-abrir-"]')).toHaveCount(2);
     } finally {
+      cleanupItineraryWrite(seed.patientId);
       seed.cleanup();
     }
   });

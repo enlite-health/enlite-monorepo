@@ -1,29 +1,31 @@
 /**
- * patient-itinerary-caso-a-b.integration.e2e.ts @integration — 058b/B2 (T243): "Nuevo +" → Entero (reemplazo permanente) com
- * início "Ahora" ou "Programada", MOTIVO e DESTINO obrigatórios (Caso A: o titular começou hoje/antes; Caso B: agendado),
- * exercitado por um HUMANO contra o stack REAL (frontend + API + Postgres), sem interceptar rota e sem mock de dado de
- * negócio — só a auth é o mock do stack (`loginAs`). Régua humana: click + `keyboard.type`, valores lidos da TELA.
+ * patient-itinerary-caso-a-b.integration.e2e.ts @integration — 058b/B2 (T243), ADAPTADO à spec 069 (F7): a saída definitiva ("reemplazo Entero") com
+ * início hoje (Caso A) ou data futura (Caso B), MOTIVO e DESTINO, agora pelo fluxo "Nueva sustitución" → "No vuelve más" da tela do serviço
+ * (4 passos), exercitado por um HUMANO contra o stack REAL (frontend + API + Postgres), sem interceptar rota e sem mock de dado de negócio — só
+ * a auth é o mock do stack (`loginAs`). Régua humana: click + teclado, valores lidos da TELA. O QUE cada teste prova é o de antes; só o caminho mudou.
  *
- * Side-effect outbound mapeado ANTES de clicar: `ReplaceWithReasonUseCase` / `ItineraryAllocationUseCase.replaceWith` /
- * `RemoveFromItineraryUseCase` só escrevem em Postgres (alocação, registro de trocas, marca de rejeição, derivação de
- * estado) — nenhum import de Twilio/Periskope/Talentum/Ana Care/ClickUp/e-mail/fila no caminho. Mesmo assim cada teste
+ * Side-effect outbound mapeado ANTES de clicar: o pedido (`POST …/substitution-requests`) só escreve em Postgres (alocação, registro de trocas, marca
+ * de rejeição, derivação de estado) — nenhum import de Twilio/Periskope/Talentum/Ana Care/ClickUp/e-mail/fila no caminho. Mesmo assim cada teste
  * registra todo host que a PÁGINA pede e exige que nenhum seja de canal real (`CADEIA_FORBIDDEN_HOSTS`).
  *
  * Os testes (o nome do arquivo casa o `--grep patient-itinerary` do `pr-gate.yml`):
- *   1. FELIZ — Caso A "Ahora" + motivo + "Sigue como reserva";
- *   2. ALTERNATIVO 1 (servidor recusa) — o substituto ganha faixa conflitante em outro paciente → 409 ITINERARY_OVERLAP;
- *   3. ALTERNATIVO 2 (estado muda por fora) — o titular é encerrado antes de confirmar → 422 ALLOCATION_NOT_ACTIVE;
- *   4. VALIDAÇÃO — "Programada" só aceita reserva; sem data o Confirmar fica desabilitado.
+ *   1. FELIZ — Caso A "hoje" + motivo + "Sigue como reserva";
+ *   2. ALTERNATIVO 1 (servidor recusa) — o substituto ganha faixa conflitante em outro paciente DEPOIS do passo 3 → 409 ITINERARY_OVERLAP dito no passo 4;
+ *   3. ALTERNATIVO 2 (estado muda por fora) — o titular é encerrado antes de confirmar → o servidor recusa e a tela diz;
+ *   4. VALIDAÇÃO — data passada bloqueada, destino só quando D = hoje e obrigatório; nenhuma requisição de pedido sai sem confirmar.
  */
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import { mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
-import { openItineraryTab, digitarDataNoCampo } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openFixedSchedule, openUpcomingDays, digitarDataNoCampo } from '../helpers/itinerario-aba-e2e-helper';
 import { seedDerivablePatient, selectedWorker, allocateWorker, derivacaoToken } from '../helpers/derivacao-e2e-helper';
 import { insertWJA } from '../helpers/wja-test-helper';
 import { allocationOptionsApi, endAllocationApi } from '../helpers/itinerario-escrita-e2e-helper';
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
+import {
+  abrirNuevaSustitucion, confirmarPedido, diaDoBanco, hojeDoBanco, paso1QuienNoViene, paso2PorCuantoTiempo, paso3UnaPersona, paso4Motivo, siguiente,
+} from '../helpers/itinerario-069-flow-helper';
 
 const STAFF = mockAdminUserFor('itinerario-caso-a-b');
 const MOTIVO_DESISTENCIA = 'El prestador desistió'; // DESISTENCIA_DO_PRESTADOR
@@ -49,47 +51,57 @@ function vigiarHosts(page: Page): () => string[] {
   return () => hosts.filter((h) => CADEIA_FORBIDDEN_HOSTS.test(h));
 }
 
-/**
- * Escolhe o substituto pela marca de estado do próprio prestador (`substitution-status-<workerId>`). NUNCA `option.first()`: a 1ª
- * opção do `SearchableSelect` é "Todos" (limpa a escolha) e a lista traz também o titular ("En atención") — medido no CI (#712):
- * `first()` clicava "Todos", o Confirmar ficava desabilitado e o `waitForResponse` esperava os 150 s do teste.
- */
-async function escolherSubstituto(page: Page, workerId: string): Promise<void> {
-  await page.getByTestId('substitution-worker').click();
-  await page.getByRole('listbox').getByRole('option').filter({ has: page.getByTestId(`substitution-status-${workerId}`) }).click();
-  await expect(page.getByTestId('substitution-worker')).not.toHaveText('Todos'); // lido da TELA: o campo mudou
+/** Fluxo até o passo 4 ("No vuelve más" a partir de `desde`, `b` cobre): devolve com o motivo ainda por escolher. */
+async function ateOPasso4(page: Page, m: { seed: { patientId: string }; serviceId: string; a: string; b: string }, desde: string): Promise<void> {
+  await openItineraryTab(page, m.seed.patientId);
+  await openUpcomingDays(page, m.serviceId);
+  await abrirNuevaSustitucion(page);
+  await paso1QuienNoViene(page, m.a);
+  await paso2PorCuantoTiempo(page, 'PERMANENT', desde);
+  await siguiente(page);
+  await paso3UnaPersona(page, m.b);
+  await expect(page.locator('[data-testid^="substitucion-estado-"]')).toHaveText('Libre', { timeout: 15_000 });
+  await siguiente(page);
+  await expect(page.getByTestId('substitucion-paso')).toContainText('4');
 }
 
-const hojeDoBanco = (): string =>
-  sqlComVars("SELECT to_char((now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date, 'YYYY-MM-DD')");
+const MOTIVO = 'DESISTENCIA_DO_PRESTADOR'; // "El prestador desistió"
 
-test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino pela tela @integration', () => {
+const contagemNoServico = (serviceId: string, worker: string): string =>
+  sqlComVars(
+    "SELECT count(*) FROM patient_itinerary_assignment a JOIN patient_itinerary_slot s ON s.id = a.slot_id WHERE s.contracted_service_id = :'svc'::uuid AND a.worker_id = :'w'::uuid",
+    { svc: serviceId, w: worker },
+  );
+const statusDaAlocacao = (allocationId: string): string =>
+  sqlComVars("SELECT status FROM patient_itinerary_assignment WHERE id = :'id'::uuid", { id: allocationId });
+const replaces = (serviceId: string): string =>
+  sqlComVars("SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = :'svc'::uuid AND kind = 'REPLACE'", { svc: serviceId });
+const pedidos = (serviceId: string): string =>
+  sqlComVars("SELECT count(*) FROM patient_itinerary_substitution_request WHERE contracted_service_id = :'svc'::uuid", { svc: serviceId });
+
+test.describe('patient-itinerary-caso-a-b: saída definitiva com motivo e destino pelo fluxo "No vuelve más" @integration', () => {
   test.use({ ...LANCAMENTO_VIEWPORT_ES_AR, deviceScaleFactor: 1 });
   test.setTimeout(150_000);
   useLancamentoStaff(STAFF, 'E2E Itinerario Caso A B');
 
-  test('FELIZ: Caso A "Ahora" + motivo + "Sigue como reserva": o substituto vira titular hoje e o antigo volta a Seleccionado', async ({ page, request }) => {
+  test('FELIZ: Caso A "hoje" + motivo + "Sigue como reserva": o substituto vira titular hoje e o antigo volta a Seleccionado', async ({ page, request }) => {
     const proibidos = vigiarHosts(page);
     const m = await semearTroca(request);
     try {
       const hoje = hojeDoBanco();
       await loginAs(page, STAFF);
-      await openItineraryTab(page, m.seed.patientId);
-      await page.getByTestId('itinerario-novo-btn').click();
-      await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
-      await page.getByTestId('substitution-mode-permanent').click();
-      await expect(page.getByTestId('substitution-start-now')).toBeChecked();
-      await escolherSubstituto(page, m.b);
-      await page.getByTestId('substitution-reason').selectOption({ label: MOTIVO_DESISTENCIA });
-      await page.getByTestId('substitution-destination-RESERVE').click();
-      const [resp] = await Promise.all([
-        page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())),
-        page.getByTestId('substitution-confirm').click(),
-      ]);
-      expect(resp.status()).toBe(200);
-      expect(resp.request().postDataJSON()).toEqual({ newWorkerId: m.b, fromDate: hoje, reasonCategory: 'DESISTENCIA_DO_PRESTADOR', destination: 'RESERVE' });
+      await ateOPasso4(page, m, hoje);
+      await expect(page.getByTestId('substitucion-destino')).toBeVisible(); // D = hoje → a tela pergunta o destino de quem sai
+      await expect(page.getByTestId('substitucion-confirmar')).toBeDisabled(); // sem motivo e sem destino
+      await paso4Motivo(page, MOTIVO, 'RESERVE');
+      const resp = await confirmarPedido(page);
+      expect(resp.status()).toBe(201);
+      expect(resp.request().postDataJSON()).toEqual({
+        type: 'PERMANENT', outgoingWorkerId: m.a, from: hoje, reasonCategory: MOTIVO, substituteWorkerId: m.b, destination: 'RESERVE',
+      });
 
-      await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });
+      await expect(page.getByTestId('substitucion-flujo')).toHaveCount(0, { timeout: 10_000 });
+      await openFixedSchedule(page, m.serviceId);
       await expect(page.getByTestId(`itinerario-slot-prestador-${m.slotId}-${m.b}`)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId(`itinerario-slot-prestador-${m.slotId}-${m.a}`)).toHaveCount(0);
 
@@ -117,55 +129,35 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
     }
   });
 
-  /** Nuevo + → Entero → "Ahora" → substituto (única opção) → motivo → `RESERVE`, SEM confirmar. */
-  async function prepararEntero(page: Page, workerId: string): Promise<void> {
-    await page.getByTestId('itinerario-novo-btn').click();
-    await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('substitution-mode-permanent').click();
-    await escolherSubstituto(page, workerId);
-    await page.getByTestId('substitution-reason').selectOption({ label: MOTIVO_DESISTENCIA });
-    await page.getByTestId('substitution-destination-RESERVE').click();
-  }
-
-  const contagemNoServico = (serviceId: string, worker: string): string =>
-    sqlComVars(
-      "SELECT count(*) FROM patient_itinerary_assignment a JOIN patient_itinerary_slot s ON s.id = a.slot_id WHERE s.contracted_service_id = :'svc'::uuid AND a.worker_id = :'w'::uuid",
-      { svc: serviceId, w: worker },
-    );
-  const statusDaAlocacao = (allocationId: string): string =>
-    sqlComVars("SELECT status FROM patient_itinerary_assignment WHERE id = :'id'::uuid", { id: allocationId });
-  const replaces = (serviceId: string): string =>
-    sqlComVars("SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = :'svc'::uuid AND kind = 'REPLACE'", { svc: serviceId });
-
-  test('ALTERNATIVO 1 (servidor recusa): o substituto passa a ter uma faixa conflitante em OUTRO paciente → 409 ITINERARY_OVERLAP com mensagem de produto; nada muda', async ({ page, request }) => {
+  test('ALTERNATIVO 1 (servidor recusa): o substituto passa a ter uma faixa conflitante em OUTRO paciente depois do passo 3 → 409 ITINERARY_OVERLAP com mensagem de produto; nada muda', async ({ page, request }) => {
     const proibidos = vigiarHosts(page);
     const m = await semearTroca(request);
     const seed2 = await seedDerivablePatient(request, { status: 'SEARCHING', services: [QUATRO_HORAS] });
     try {
+      await loginAs(page, STAFF);
+      await ateOPasso4(page, m, hojeDoBanco());
+      await paso4Motivo(page, MOTIVO, 'RESERVE'); // tudo preenchido, SEM confirmar
+
+      // Por fora: B passa a atender o 2º paciente na mesma segunda 08:00–12:00 (a pré-visão do passo 3 já tinha dito "Libre").
       const svc2 = seed2.services[0];
       insertWJA({ workerId: m.b, jobPostingId: svc2.vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
       seed2.track(m.b, svc2.vacancyId);
       const aloc2 = await allocateWorker(request, seed2.patientId, svc2.serviceId, svc2.slotIds[0], m.b);
-      expect(aloc2.status, `allocate b no 2º paciente ${aloc2.status} ${aloc2.code ?? ''}`).toBe(201); // mesma segunda 08:00–12:00
+      expect(aloc2.status, `allocate b no 2º paciente ${aloc2.status} ${aloc2.code ?? ''}`).toBe(201);
 
-      await loginAs(page, STAFF);
-      await openItineraryTab(page, m.seed.patientId);
-      await prepararEntero(page, m.b);
-      const [resp] = await Promise.all([
-        page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())),
-        page.getByTestId('substitution-confirm').click(),
-      ]);
+      const resp = await confirmarPedido(page);
       expect(resp.status()).toBe(409);
       expect((await resp.json()).code).toBe('ITINERARY_OVERLAP');
-      const erro = page.getByTestId('itinerario-novo-erro-submit');
+      const erro = page.getByTestId('substitucion-error');
       await expect(erro).toBeVisible({ timeout: 10_000 });
       await expect(erro).toContainText('El prestador ya tiene otra franja que se superpone');
       expect(await erro.innerText()).not.toContain('ITINERARY_OVERLAP');
-      await expect(page.getByTestId('substitution-modal')).toBeVisible();
+      await expect(page.getByTestId('substitucion-flujo')).toBeVisible();
 
       expect(statusDaAlocacao(m.allocationA)).toBe('ACTIVE');
       expect(contagemNoServico(m.serviceId, m.b)).toBe('0');
       expect(replaces(m.serviceId)).toBe('0');
+      expect(pedidos(m.serviceId)).toBe('0'); // o pedido inteiro falha, sem escrita parcial
       expect(proibidos()).toEqual([]);
     } finally {
       seed2.cleanup();
@@ -173,64 +165,90 @@ test.describe('patient-itinerary-caso-a-b: reemplazo Entero com motivo e destino
     }
   });
 
-  test('ALTERNATIVO 2 (estado muda por fora): o titular é encerrado por outro caminho antes de confirmar → 422 ALLOCATION_NOT_ACTIVE com mensagem', async ({ page, request }) => {
+  test('ALTERNATIVO 2 (estado muda por fora): o titular é encerrado por outro caminho antes de confirmar → o servidor recusa, a tela diz e nada é gravado', async ({ page, request }) => {
     const proibidos = vigiarHosts(page);
     const m = await semearTroca(request);
     try {
       await loginAs(page, STAFF);
-      await openItineraryTab(page, m.seed.patientId);
-      await prepararEntero(page, m.b); // tudo preenchido, SEM confirmar
+      await ateOPasso4(page, m, hojeDoBanco());
+      await paso4Motivo(page, MOTIVO, 'RESERVE'); // tudo preenchido, SEM confirmar
 
       // Por fora: o titular é encerrado por outro caminho.
       const fora = await endAllocationApi(request, derivacaoToken(), m.seed.patientId, m.serviceId, m.allocationA, { reasonCategory: 'OTHER', destination: 'RESERVE' });
       expect(fora.status, `end por fora ${fora.status} ${fora.body.code ?? ''}`).toBe(200);
 
-      const [resp] = await Promise.all([
-        page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())),
-        page.getByTestId('substitution-confirm').click(),
-      ]);
-      expect(resp.status()).toBe(422);
-      expect((await resp.json()).code).toBe('ALLOCATION_NOT_ACTIVE');
-      await expect(page.getByTestId('itinerario-novo-erro-submit')).toContainText('Esa asignación ya no está activa');
+      const resp = await confirmarPedido(page);
+      expect(resp.status()).toBeGreaterThanOrEqual(400);
+      expect(resp.status()).toBeLessThan(500);
+      const codigo = ((await resp.json()) as { code?: string }).code;
+      expect(codigo, 'o servidor devolve um código de produto').toBeTruthy();
+      const erro = page.getByTestId('substitucion-error');
+      await expect(erro).toBeVisible({ timeout: 10_000 });
+      expect(await erro.innerText()).not.toContain(codigo as string); // texto de produto, nunca o código cru
 
       expect(statusDaAlocacao(m.allocationA)).toBe('ENDED');
       expect(contagemNoServico(m.serviceId, m.b)).toBe('0');
       expect(replaces(m.serviceId)).toBe('0'); // só o REMOVE do passo por fora
+      expect(pedidos(m.serviceId)).toBe('0');
       expect(proibidos()).toEqual([]);
     } finally {
       m.seed.cleanup();
     }
   });
 
-  test('VALIDAÇÃO: "Programada" desabilita "Sale del encuadre" e mostra a frase da reserva; sem data o Confirmar fica desabilitado; nenhuma requisição …/replace sai', async ({ page, request }) => {
+  test('VALIDAÇÃO: data passada bloqueada, destino só quando D = hoje (e obrigatório); nenhuma requisição de pedido sai sem confirmar', async ({ page, request }) => {
     const proibidos = vigiarHosts(page);
     const m = await semearTroca(request);
     try {
       const posts: string[] = [];
       page.on('request', (r) => {
-        if (r.method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/replace$/.test(r.url())) posts.push(r.url());
+        if (r.method() === 'POST' && /\/substitution-requests$/.test(r.url())) posts.push(r.url());
       });
-      const dataIso = sqlComVars("SELECT to_char((now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date + 7, 'YYYY-MM-DD')");
+      const ontem = diaDoBanco(-1);
+      const daqui7 = diaDoBanco(7);
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, m.seed.patientId);
-      await page.getByTestId('itinerario-novo-btn').click();
-      await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
-      await page.getByTestId('substitution-mode-permanent').click();
-      await page.getByTestId('substitution-start-scheduled').click();
-      await expect(page.getByTestId('substitution-destination-LEAVE_SERVICE')).toBeDisabled();
-      await expect(page.getByTestId('substitution-reserve-only')).toContainText('solo se puede dejar como reserva');
-      await escolherSubstituto(page, m.b);
-      await page.getByTestId('substitution-reason').selectOption({ label: MOTIVO_DESISTENCIA });
-      await page.getByTestId('substitution-destination-RESERVE').click();
-      await expect(page.getByTestId('substitution-confirm')).toBeDisabled(); // sem data
+      await openUpcomingDays(page, m.serviceId);
+      await abrirNuevaSustitucion(page);
+      await paso1QuienNoViene(page, m.a);
 
-      await digitarDataNoCampo(page, 'substitution-start-date', dataIso);
-      await expect(page.getByTestId('substitution-confirm')).toBeEnabled();
+      // "No vuelve más" sem data: "Siguiente" bloqueado. Com data PASSADA: a tela diz e continua bloqueado (antes de enviar).
+      await page.getByTestId('substitucion-duracion-PERMANENT').locator('label').click();
+      await expect(page.getByTestId('substitucion-siguiente')).toBeDisabled();
+      await digitarDataNoCampo(page, 'substitucion-fecha', ontem);
+      await expect(page.getByTestId('substitucion-periodo-pasado')).toContainText('La fecha ya pasó');
+      await expect(page.getByTestId('substitucion-siguiente')).toBeDisabled();
+
+      // Data FUTURA: libera; no passo 4 NÃO se pergunta o destino (só D = hoje) e o Confirmar espera o motivo.
+      await digitarDataNoCampo(page, 'substitucion-fecha', daqui7);
+      await expect(page.getByTestId('substitucion-turnos-cuenta')).toBeVisible({ timeout: 15_000 });
+      await siguiente(page);
+      await paso3UnaPersona(page, m.b);
+      await expect(page.locator('[data-testid^="substitucion-estado-"]')).toHaveText('Libre', { timeout: 15_000 });
+      await siguiente(page);
+      await expect(page.getByTestId('substitucion-destino')).toHaveCount(0);
+      await expect(page.getByTestId('substitucion-confirmar')).toBeDisabled();
+      await paso4Motivo(page, MOTIVO);
+      await expect(page.getByTestId('substitucion-confirmar')).toBeEnabled();
+
+      // Voltar e trocar a data para HOJE: o destino passa a ser perguntado e obrigatório.
+      await page.getByTestId('substitucion-atras').click(); // passo 3
+      await page.getByTestId('substitucion-atras').click(); // passo 2
+      await digitarDataNoCampo(page, 'substitucion-fecha', hojeDoBanco());
+      await expect(page.getByTestId('substitucion-turnos-cuenta')).toBeVisible({ timeout: 15_000 });
+      await siguiente(page);
+      await paso3UnaPersona(page, m.b);
+      await expect(page.locator('[data-testid^="substitucion-estado-"]')).toHaveText('Libre', { timeout: 15_000 });
+      await siguiente(page);
+      await expect(page.getByTestId('substitucion-destino')).toBeVisible();
+      await expect(page.getByTestId('substitucion-confirmar')).toBeDisabled(); // motivo vale, falta o destino
+      await page.getByTestId('substitucion-destino-RESERVE').click();
+      await expect(page.getByTestId('substitucion-confirmar')).toBeEnabled();
 
       expect(posts).toHaveLength(0); // não confirmou
       expect(statusDaAlocacao(m.allocationA)).toBe('ACTIVE');
-      expect(replaces(m.serviceId)).toBe('0');
+      expect(pedidos(m.serviceId)).toBe('0');
       expect(proibidos()).toEqual([]);
     } finally {
       m.seed.cleanup();

@@ -19,7 +19,7 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import { mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openFixedSchedule } from '../helpers/itinerario-aba-e2e-helper';
 import { seedDerivablePatient, selectedWorker, allocateWorker } from '../helpers/derivacao-e2e-helper';
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
@@ -70,6 +70,7 @@ test.describe('patient-itinerary-capacidade-faixa: N prestadores por faixa pela 
       }
       await loginAs(page, STAFF);
       await openItineraryTab(page, f.seed.patientId);
+      await openFixedSchedule(page, f.serviceId);
       await expect(page.getByTestId(`itinerario-slot-prestador-${f.slotId}-${w1}`)).toBeVisible();
       await expect(page.getByTestId(`itinerario-slot-prestador-${f.slotId}-${w2}`)).toBeVisible();
       expect(vigentes(f.serviceId)).toBe(2);
@@ -89,6 +90,7 @@ test.describe('patient-itinerary-capacidade-faixa: N prestadores por faixa pela 
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, f.seed.patientId);
+      await openFixedSchedule(page, f.serviceId);
       await page.getByTestId(`itinerario-slot-editar-${f.slotId}`).click();
       await expect(page.getByTestId('itinerario-editar-prestador')).toBeVisible(); // há vaga: 1 de 2
       await page.getByTestId(`itinerario-editar-selecionar-${b}`).click();
@@ -145,6 +147,7 @@ test.describe('patient-itinerary-capacidade-faixa: N prestadores por faixa pela 
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, f.seed.patientId);
+      await openFixedSchedule(page, f.serviceId);
       await page.getByTestId(`itinerario-slot-editar-${f.slotId}`).click();
       await expect(page.getByTestId('itinerario-faixa-cheia')).toBeVisible();
       await expect(page.getByTestId('itinerario-faixa-cheia')).toContainText('Franja completa: ya hay 1 asignados');
@@ -155,6 +158,7 @@ test.describe('patient-itinerary-capacidade-faixa: N prestadores por faixa pela 
       // Controle de instrumento: com providers_needed = 2 (e a página recarregada) o estado inverte — o teste mede as duas coisas.
       sqlComVars("UPDATE patient_contracted_services SET providers_needed = 2 WHERE id = :'id'::uuid", { id: f.serviceId });
       await openItineraryTab(page, f.seed.patientId);
+      await openFixedSchedule(page, f.serviceId);
       await page.getByTestId(`itinerario-slot-editar-${f.slotId}`).click();
       await expect(page.getByTestId('itinerario-editar-prestador')).toBeVisible();
       await expect(page.getByTestId('itinerario-faixa-cheia')).toHaveCount(0);

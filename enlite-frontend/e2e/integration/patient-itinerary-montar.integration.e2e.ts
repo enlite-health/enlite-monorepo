@@ -27,7 +27,7 @@ import {
 import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
 import { ITINERARIO_STAFF, readItineraryApi } from '../helpers/itinerario-e2e-helper';
 import { allocationOptionsApi, assembleApi, endSlotApi } from '../helpers/itinerario-escrita-e2e-helper';
-import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
+import { openItineraryTab, openFixedSchedule } from '../helpers/itinerario-aba-e2e-helper';
 import {
   seedDerivablePatient, selectedWorker, readStatusBoth, coveredHours, type DerivableSeed,
 } from '../helpers/derivacao-e2e-helper';
@@ -94,6 +94,7 @@ test.describe('patient-itinerary-montar: "Itinerario listo" pela tela @integrati
 
       // ── alocar Ana pela TELA (click + keyboard.type) ────────────────────────────────
       await openItineraryTab(page, seed.patientId);
+      await openFixedSchedule(page, svc.serviceId);
       await expect(page.getByTestId('itinerario-montar')).toBeVisible();
       await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
       const modal = page.getByTestId('itinerario-editar-modal');
