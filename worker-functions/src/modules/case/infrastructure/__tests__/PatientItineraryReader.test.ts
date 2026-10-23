@@ -52,7 +52,7 @@ describe('PatientItineraryReader', () => {
 
   it('paciente presente: as 7 queries rodam dentro da MESMA transação (BEGIN…COMMIT), datas/horas por to_char, sem contracted_service_providers/nome/telefone', async () => {
     queryImpl = async (sql) => {
-      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
+      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR', status: 'ACTIVE' }], rowCount: 1 };
       if (/FROM patient_contracted_services/.test(sql)) {
         return { rows: [{ id: 'svc-1', providers_needed: 3 }], rowCount: 1 };
       }
@@ -129,6 +129,7 @@ describe('PatientItineraryReader', () => {
         absences: [{ absenceId: 'ab-1', assignmentId: 'asg-1', onDate: '2026-10-05', substituteWorkerId: null, requestId: 'req-1' }],
       },
       assembledAt: null,
+      patientStatus: 'ACTIVE',
     });
 
     const c = calls();

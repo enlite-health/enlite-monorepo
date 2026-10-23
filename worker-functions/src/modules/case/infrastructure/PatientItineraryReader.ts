@@ -71,11 +71,14 @@ export interface ItineraryRows {
    * `null` = nunca montado. Opcional — o agregado do Kanban reusa este tipo e não lê montagem.
    */
   assembledAt?: string | null;
+  /** `patients.status` (2º fato do universo do "Sin cubrir", P13). Opcional como `assembledAt`. */
+  patientStatus?: string | null;
 }
 
 interface PatientCountryRow {
   id: string;
   country: string;
+  status: string | null;
 }
 
 interface ServiceRow {
@@ -112,11 +115,11 @@ export class PatientItineraryReader {
 
   private async run(client: PoolClient, patientId: string): Promise<ItineraryRows | null> {
     const patientRes = await client.query<PatientCountryRow>(
-      `SELECT id, country FROM patients WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT id, country, status FROM patients WHERE id = $1 AND deleted_at IS NULL`,
       [patientId],
     );
     if ((patientRes.rowCount ?? 0) === 0) return null;
-    const { country } = patientRes.rows[0];
+    const { country, status: patientStatus } = patientRes.rows[0];
 
     // Só serviço ATIVO: serviço baixado não tem cobertura a medir.
     const servicesRes = await client.query<ServiceRow>(
@@ -189,6 +192,7 @@ export class PatientItineraryReader {
       })),
       occurrences,
       assembledAt: assembledRes.rows[0]?.assembled_at ?? null,
+      patientStatus: patientStatus ?? null,
     };
   }
 }

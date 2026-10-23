@@ -16,6 +16,7 @@ import { liveAbsencePredicate } from './absenceSql';
 import { toWire } from '../domain/dateRangeWire';
 import type { OccurrenceAbsence, OccurrenceAssignment, OccurrenceSlot } from '../domain/serviceOccurrences';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
+import type { AlertUniverseFacts } from '../domain/itineraryAlerts';
 
 export interface OccurrenceInputs {
   slots: OccurrenceSlot[];
@@ -173,16 +174,19 @@ export async function readServiceOccurrenceInputs(
 }
 
 /**
- * Universo do "Sin cubrir" (P13): dos `patientIds`, quem tem itinerário MONTADO (existe linha no log append-only
- * `patient_itinerary_assembly` — o mesmo fato que `PatientStatusDerivationReader` lê como `montado`). UMA consulta para todos
- * (sem N+1). O filtro em si mora em `itineraryAlerts.uncoveredDayAlerts`; este é só o leitor do fato, lido pelo Kanban e pelo
- * alerta diário.
+ * Universo do "Sin cubrir" (P13): dos `patientIds`, os FATOS que `itineraryAlerts.inAlertUniverse` lê — itinerário MONTADO (linha no log
+ * append-only `patient_itinerary_assembly`, o mesmo fato que `PatientStatusDerivationReader` lê como `montado`) e o estado atual do
+ * paciente. UMA consulta para todos (sem N+1). A regra em si mora em `itineraryAlerts`; este é só o leitor dos fatos, lido pelo Kanban
+ * e pelo alerta diário. Paciente inexistente/soft-deletado não aparece no mapa.
  */
-export async function readAssembledPatientIds(client: PoolClient, patientIds: readonly string[]): Promise<Set<string>> {
-  if (patientIds.length === 0) return new Set();
-  const res = await client.query<{ patient_id: string }>(
-    `SELECT DISTINCT patient_id FROM patient_itinerary_assembly WHERE patient_id = ANY($1::uuid[])`,
+export async function readAlertUniverseFacts(client: PoolClient, patientIds: readonly string[]): Promise<Map<string, AlertUniverseFacts>> {
+  if (patientIds.length === 0) return new Map();
+  const res = await client.query<{ id: string; status: string | null; assembled: boolean }>(
+    `SELECT p.id, p.status,
+            EXISTS (SELECT 1 FROM patient_itinerary_assembly a WHERE a.patient_id = p.id) AS assembled
+       FROM patients p
+      WHERE p.id = ANY($1::uuid[]) AND p.deleted_at IS NULL`,
     [patientIds],
   );
-  return new Set(res.rows.map((r) => r.patient_id));
+  return new Map(res.rows.map((r) => [r.id, { itineraryAssembled: r.assembled === true, patientStatus: r.status }]));
 }

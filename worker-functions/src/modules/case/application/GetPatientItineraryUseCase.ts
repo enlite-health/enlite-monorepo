@@ -111,7 +111,7 @@ export class GetPatientItineraryUseCase {
     const occurrences = rows.occurrences
       ? expandServiceOccurrences(rows.occurrences.slots, rows.occurrences.assignments, rows.occurrences.absences, from, to)
       : [];
-    const alerts = uncoveredDayAlerts(occurrences, asOf, rows.assembledAt != null);
+    const alerts = uncoveredDayAlerts(occurrences, asOf, { itineraryAssembled: rows.assembledAt != null, patientStatus: rows.patientStatus ?? null });
     const services = withIdentity.map((service) => ({
       ...service,
       reserve: reserves.get(service.contractedServiceId) ?? null,

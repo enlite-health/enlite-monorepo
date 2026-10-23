@@ -193,6 +193,20 @@ describe('ListKanbanServicesUseCase', () => {
     expect(await dias(true)).toBe(2); // controle positivo
   });
 
+  it('universo P13: montado mas em estado manual travado (ON_HOLD) → uncoveredDays 0; o mesmo paciente ACTIVE conta (controle positivo)', async () => {
+    const asOf = new Date('2026-09-27T15:00:00Z');
+    const faixa = (slotId: string, weekday: number) => ({ slotId, serviceId: 'svc-1', weekday, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null });
+    const linha = (patientStatus: string): KanbanServicesRows => ({
+      patientId: 'p-1', country: 'AR', assembled: true, patientStatus,
+      services: [{ id: 'svc-1', serviceCode: 'AT', liveVacancyId: null }],
+      slots: [],
+      occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] },
+    });
+    const dias = async (st: string) => (await new ListKanbanServicesUseCase(readerWith([linha(st)]), noTeam).execute('AR', asOf)).patients[0].services[0].uncoveredDays;
+    expect(await dias('ON_HOLD')).toBe(0);
+    expect(await dias('ACTIVE')).toBe(2);
+  });
+
   it('P7: o horizonte é [hoje, hoje+6] — a segunda-feira de hoje+8 não conta; faixa sem alocação conta (FR-12)', async () => {
     const asOf = new Date('2026-09-27T15:00:00Z'); // domingo; janela 27/09 … 03/10
     const faixa = (slotId: string, weekday: number) => ({ slotId, serviceId: 'svc-1', weekday, startTime: '08:00', endTime: '12:00', validFrom: '2026-01-01', validTo: null });

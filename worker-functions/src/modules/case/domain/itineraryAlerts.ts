@@ -4,16 +4,31 @@
  * do horizonte `[asOf, asOf + UNCOVERED_HORIZON_DAYS - 1]`. Função pura: nada de `Date`/`Intl` — datas são string
  * `YYYY-MM-DD`. Esta função não lê `workerId`, nome, endereço ou qualquer coisa clínica (critério 13).
  *
- * UNIVERSO (P13, orquestrador 23/10): só conta turno de paciente com itinerário MONTADO (`itineraryAssembled`, "Itinerario listo").
- * Faixa de paciente sem itinerário montado é falta ESTRUTURAL — já visível no estado Búsqueda/Reemplazo —, não "Sin cubrir". O
- * parâmetro é OBRIGATÓRIO de propósito: nenhum leitor consegue chamar a regra sem dizer se o paciente está montado, e o filtro mora
- * AQUI, num lugar só, lido pelo Kanban, pelo GET do itinerário e pelo alerta diário (F4).
+ * UNIVERSO (P13, orquestrador 23/10): só conta turno de paciente com itinerário MONTADO ("Itinerario listo") e fora dos estados
+ * manuais travados (`inAlertUniverse`). Faixa de paciente sem itinerário montado é falta ESTRUTURAL — já visível no estado
+ * Búsqueda/Reemplazo —, não "Sin cubrir". O parâmetro é OBRIGATÓRIO de propósito: nenhum leitor consegue chamar a regra sem dizer os
+ * fatos do paciente, e o filtro mora AQUI, num lugar só, lido pelo Kanban, pelo GET do itinerário e pelo alerta diário (F4).
  *
  * Lida pelo cartão do serviço (`GET itinerary`), pelo Kanban (`uncoveredDays`) e pelo alerta diário: a MESMA lista, o MESMO
  * horizonte. Duas unidades, dois nomes: `uncoveredDayCount` conta DIAS (Kanban), `uncoveredShiftCount` conta TURNOS (cartão
  * e alerta).
  */
+import { MANUAIS } from './derivarEstadoPaciente';
 import { uncoveredWindow, type ServiceOccurrence } from './serviceOccurrences';
+
+/** Os dois fatos do paciente que decidem o universo (P13): itinerário montado e estado atual (`patients.status`). */
+export interface AlertUniverseFacts {
+  itineraryAssembled: boolean;
+  patientStatus: string | null;
+}
+
+/**
+ * O UNIVERSO do "Sin cubrir" (P13) — a ÚNICA definição de "quem conta": paciente com itinerário MONTADO e FORA dos estados manuais
+ * travados (`MANUAIS` da derivação: ON_HOLD, SUSPENDED, ALTA, DISCHARGED). Quem está parado/encerrado por decisão humana não gera alerta.
+ */
+export function inAlertUniverse(facts: AlertUniverseFacts): boolean {
+  return facts.itineraryAssembled && !(MANUAIS as readonly string[]).includes(facts.patientStatus ?? '');
+}
 
 export interface UncoveredDayAlert {
   serviceId: string;
@@ -30,11 +45,11 @@ function alertKey(a: UncoveredDayAlert): string {
 }
 
 /**
- * `itineraryAssembled = false` → `[]` (universo P13). Ocorrências `uncovered` com `asOf <= date <= asOf + 6` (string, nunca `Date`); ordenado por `date, startTime, serviceId`;
+ * Paciente fora do universo (`inAlertUniverse`: não montado OU em estado manual travado) → `[]` (P13). Ocorrências `uncovered` com `asOf <= date <= asOf + 6` (string, nunca `Date`); ordenado por `date, startTime, serviceId`;
  * sem repetição (mesma chave composta = mesmo turno).
  */
-export function uncoveredDayAlerts(occurrences: readonly UncoverableOccurrence[], asOf: string, itineraryAssembled: boolean): UncoveredDayAlert[] {
-  if (!itineraryAssembled) return [];
+export function uncoveredDayAlerts(occurrences: readonly UncoverableOccurrence[], asOf: string, universe: AlertUniverseFacts): UncoveredDayAlert[] {
+  if (!inAlertUniverse(universe)) return [];
   const { from, to } = uncoveredWindow(asOf);
   const seen = new Set<string>();
   const deduped: UncoveredDayAlert[] = [];

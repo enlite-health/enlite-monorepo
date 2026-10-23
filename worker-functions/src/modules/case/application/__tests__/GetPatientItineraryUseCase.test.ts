@@ -172,6 +172,15 @@ describe('GetPatientItineraryUseCase', () => {
       expect(montado.alerts).toHaveLength(2);
     });
 
+    it('universo P13: montado mas em estado manual travado (ON_HOLD) → alerts [] e uncoveredShifts 0; ACTIVE com a MESMA entrada conta', async () => {
+      const occurrences = { slots: [slot('m', 1), slot('t', 1, '14:00', '18:00')], assignments: [], absences: [] };
+      const emEspera = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, patientStatus: 'ON_HOLD', occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(emEspera.alerts).toEqual([]);
+      expect(emEspera.services[0].uncoveredShifts).toBe(0);
+      const ativo = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, patientStatus: 'ACTIVE', occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(ativo.services[0].uncoveredShifts).toBe(2);
+    });
+
     it('sem ocorrências lidas → alerts [], uncoveredShifts 0, horizonDays 7', async () => {
       const result = await new GetPatientItineraryUseCase(readerWith(baseRows), kmsDouble(), noTeam).execute(PID, now);
       expect(result.alerts).toEqual([]);

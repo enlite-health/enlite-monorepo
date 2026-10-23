@@ -20,14 +20,16 @@
  * UNIVERSO (P13, orquestrador 23/10): só conta paciente com itinerário MONTADO. O paciente da semente é montado (linha em
  * `patient_itinerary_assembly`); um 2º paciente, com faixas sem ninguém e SEM montagem, tem de dar 0 em todos os leitores — e, para
  * o paciente montado, Kanban e GET do itinerário vêm da MESMA lista (dias × turnos).
+ * P13 (extra 2, orquestrador 23/10): o universo também EXCLUI estado manual travado. Três casos com as MESMAS 2 faixas sem ninguém:
+ * (a) montado + ACTIVE, (b) NÃO montado, (c) montado + ON_HOLD → Kanban = GET = seleção do alerta (a função sobre o que o banco devolve).
  */
 import { Pool, type PoolClient } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { seedRequestForAssignment } from './helpers/seedSubstitutionRequest';
 import { expandServiceOccurrences, uncoveredWindow } from '../../src/modules/case/domain/serviceOccurrences';
-import { uncoveredDayAlerts, uncoveredDayCount, uncoveredShiftCount } from '../../src/modules/case/domain/itineraryAlerts';
-import { readAssembledPatientIds, readServiceOccurrenceInputs } from '../../src/modules/case/infrastructure/occurrenceInputs';
+import { inAlertUniverse, uncoveredDayAlerts, uncoveredDayCount, uncoveredShiftCount } from '../../src/modules/case/domain/itineraryAlerts';
+import { readAlertUniverseFacts, readServiceOccurrenceInputs } from '../../src/modules/case/infrastructure/occurrenceInputs';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const RUN = Date.now();
@@ -41,6 +43,8 @@ describe('069 · paridade de "Sin cubrir" nos 4 leitores — uma semente @integr
   let serviceId = '';
   let unassembledPatientId = '';
   let unassembledServiceId = '';
+  let holdPatientId = '';
+  let holdServiceId = '';
   let jobId = '';
   let hoje = '';
   const q = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => (await pool.query(sql, params)).rows as T[];
@@ -106,6 +110,20 @@ describe('069 · paridade de "Sin cubrir" nos 4 leitores — uma semente @integr
       );
     }
 
+    // 3º paciente: MONTADO, mas ON_HOLD (estado manual travado), com as mesmas 2 faixas sem ninguém
+    holdPatientId = (await q<{ id: string }>(`INSERT INTO patients (clickup_task_id, first_name, last_name, country, status) VALUES ($1, 'Paridade', 'EnEspera', 'AR', 'ON_HOLD') RETURNING id`, [`${PREFIX}h`]))[0].id;
+    const addressH = (await q<{ id: string }>(`INSERT INTO patient_addresses (patient_id, country) VALUES ($1, 'AR') RETURNING id`, [holdPatientId]))[0].id;
+    holdServiceId = (
+      await q<{ id: string }>(`INSERT INTO patient_contracted_services (patient_id, service_code, address_id, country, created_by, updated_by) VALUES ($1, 'AT', $2, 'AR', $3, $3) RETURNING id`, [holdPatientId, addressH, PREFIX])
+    )[0].id;
+    for (const n of [1, 2]) {
+      await q(
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by) VALUES ($1, $2, '08:00', 240, daterange('2026-01-01'::date, NULL), $3, $3)`,
+        [holdServiceId, await dow(await day(n)), PREFIX],
+      );
+    }
+    await pool.query(`INSERT INTO patient_itinerary_assembly (patient_id, assembled_by, country) VALUES ($1, $2, 'AR')`, [holdPatientId, PREFIX]);
+
     const titular = await mkWorker('titular');
     const substituto = await mkWorker('substituto');
 
@@ -131,7 +149,7 @@ describe('069 · paridade de "Sin cubrir" nos 4 leitores — uma semente @integr
     await pool.query(`DELETE FROM patient_itinerary_substitution_request WHERE contracted_service_id = $1`, [serviceId]);
     await pool.query(`DELETE FROM patient_itinerary_assignment a USING patient_itinerary_slot s WHERE a.slot_id = s.id AND s.contracted_service_id = $1`, [serviceId]);
     await pool.query(`DELETE FROM job_postings WHERE id = $1`, [jobId]);
-    await pool.query(`DELETE FROM patient_itinerary_assembly WHERE patient_id = ANY($1::uuid[])`, [[patientId, unassembledPatientId]]);
+    await pool.query(`DELETE FROM patient_itinerary_assembly WHERE patient_id = ANY($1::uuid[])`, [[patientId, unassembledPatientId, holdPatientId]]);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [`${PREFIX}%`]);
     await pool.query(`DELETE FROM workers WHERE auth_uid LIKE $1`, [`${PREFIX}%`]);
     await pool.end();
@@ -175,9 +193,9 @@ describe('069 · paridade de "Sin cubrir" nos 4 leitores — uma semente @integr
     const client: PoolClient = await pool.connect();
     try {
       const inputs = await readServiceOccurrenceInputs(client, patientId, serviceId, hoje, to);
-      const assembled = await readAssembledPatientIds(client, [patientId]);
-      expect(assembled.has(patientId)).toBe(true);
-      const alerts = uncoveredDayAlerts(expandServiceOccurrences(inputs.slots, inputs.assignments, inputs.absences, hoje, to), hoje, assembled.has(patientId));
+      const facts = (await readAlertUniverseFacts(client, [patientId])).get(patientId)!;
+      expect(inAlertUniverse(facts)).toBe(true);
+      const alerts = uncoveredDayAlerts(expandServiceOccurrences(inputs.slots, inputs.assignments, inputs.absences, hoje, to), hoje, facts);
       expect(uncoveredShiftCount(alerts)).toBe(4);
       expect(uncoveredDayCount(alerts)).toBe(3);
       expect([...new Set(alerts.map((a) => a.date))].sort()).toEqual(expectedDates);
@@ -195,9 +213,10 @@ describe('069 · paridade de "Sin cubrir" nos 4 leitores — uma semente @integr
       const inputs = await readServiceOccurrenceInputs(client, unassembledPatientId, unassembledServiceId, hoje, to);
       const occurrences = expandServiceOccurrences(inputs.slots, inputs.assignments, inputs.absences, hoje, to);
       expect(occurrences.filter((o) => o.status === 'uncovered')).toHaveLength(2);
-      const assembled = await readAssembledPatientIds(client, [patientId, unassembledPatientId]);
-      expect([...assembled]).toEqual([patientId]);
-      expect(uncoveredDayAlerts(occurrences, hoje, assembled.has(unassembledPatientId))).toEqual([]);
+      const facts = await readAlertUniverseFacts(client, [patientId, unassembledPatientId]);
+      expect(facts.get(patientId)?.itineraryAssembled).toBe(true);
+      expect(facts.get(unassembledPatientId)?.itineraryAssembled).toBe(false);
+      expect(uncoveredDayAlerts(occurrences, hoje, facts.get(unassembledPatientId)!)).toEqual([]);
     } finally {
       client.release();
     }
@@ -227,5 +246,48 @@ describe('069 · paridade de "Sin cubrir" nos 4 leitores — uma semente @integr
     expect(turnos).toBe(4);
     expect(kanban).toBe(diasDoGet);
     expect(kanban).toBe(3);
+  });
+
+  it('universo P13 (a)(b)(c): montado+ativo, não montado e montado+ON_HOLD — Kanban = GET = seleção do alerta, mesmas 2 faixas sem ninguém', async () => {
+    const { to } = uncoveredWindow(hoje);
+    const casos = [
+      { nome: '(a) montado + ACTIVE', pid: patientId, sid: serviceId, esperadoTurnos: 4, esperadoDias: 3 },
+      { nome: '(b) NÃO montado', pid: unassembledPatientId, sid: unassembledServiceId, esperadoTurnos: 0, esperadoDias: 0 },
+      { nome: '(c) montado + ON_HOLD', pid: holdPatientId, sid: holdServiceId, esperadoTurnos: 0, esperadoDias: 0 },
+    ];
+
+    const kRes = await api.get(`/api/admin/patients/kanban/services?country=AR`, { headers: asAdmin.headers });
+    expect(kRes.status).toBe(200);
+    const kPatients = kRes.data.data.patients as Array<{ patientId: string; services: Array<{ contractedServiceId: string; uncoveredDays: number }> }>;
+
+    const client: PoolClient = await pool.connect();
+    try {
+      const facts = await readAlertUniverseFacts(client, casos.map((c) => c.pid));
+      // controle positivo do instrumento: (c) é montado E ON_HOLD — o que o tira do universo é só o estado
+      expect(facts.get(holdPatientId)).toEqual({ itineraryAssembled: true, patientStatus: 'ON_HOLD' });
+      for (const c of casos) {
+        const inputs = await readServiceOccurrenceInputs(client, c.pid, c.sid, hoje, to);
+        const occurrences = expandServiceOccurrences(inputs.slots, inputs.assignments, inputs.absences, hoje, to);
+        // a semente DE CADA paciente teria turno sin cubrir se o filtro não existisse
+        expect(occurrences.filter((o) => o.status === 'uncovered').length).toBeGreaterThanOrEqual(2);
+        const selecionados = uncoveredDayAlerts(occurrences, hoje, facts.get(c.pid)!);
+
+        const itRes = await api.get(`/api/admin/patients/${c.pid}/itinerary`, { headers: asAdmin.headers });
+        expect(itRes.status).toBe(200);
+        const getTurnos = (itRes.data.data.services as Array<{ contractedServiceId: string; uncoveredShifts: number }>).find((x) => x.contractedServiceId === c.sid)?.uncoveredShifts;
+        const kanbanDias = kPatients.find((p) => p.patientId === c.pid)?.services.find((x) => x.contractedServiceId === c.sid)?.uncoveredDays;
+
+        expect({ caso: c.nome, getTurnos, kanbanDias, alertaTurnos: uncoveredShiftCount(selecionados), alertaDias: uncoveredDayCount(selecionados) }).toEqual({
+          caso: c.nome,
+          getTurnos: c.esperadoTurnos,
+          kanbanDias: c.esperadoDias,
+          alertaTurnos: c.esperadoTurnos,
+          alertaDias: c.esperadoDias,
+        });
+        expect(itRes.data.data.alerts).toHaveLength(c.esperadoTurnos);
+      }
+    } finally {
+      client.release();
+    }
   });
 });

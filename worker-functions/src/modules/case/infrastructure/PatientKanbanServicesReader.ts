@@ -20,7 +20,7 @@ import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow } from './PatientItineraryReader';
 import { liveVacancySelect } from './liveVacancySql';
 import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
-import { readAssembledPatientIds, readOccurrenceInputsByPatient, type OccurrenceInputs } from './occurrenceInputs';
+import { readAlertUniverseFacts, readOccurrenceInputsByPatient, type OccurrenceInputs } from './occurrenceInputs';
 import { UNCOVERED_HORIZON_DAYS } from '../domain/serviceOccurrences';
 
 export interface KanbanServiceRow {
@@ -40,6 +40,8 @@ export interface KanbanServicesRows {
    * Ausente em `readForPatientWith` (a derivação lê `montado` do sujeito) — ausente = não montado.
    */
   assembled?: boolean;
+  /** Estado atual do paciente (`patients.status`): o 2º fato do universo (P13 — estado manual travado fica fora). Ausente = sem estado. */
+  patientStatus?: string | null;
   /**
    * Spec 069 (FR-12, P7): faixas × alocações × ausências vivas da janela superconjunto `[CURRENT_DATE - 1, CURRENT_DATE + horizonte]`.
    * Ausente quando o paciente não tem nenhuma faixa tocando a janela (e na leitura `readForPatientWith`, que não lê ocorrência).
@@ -142,9 +144,13 @@ export class PatientKanbanServicesReader {
     }
     if (!withAbsences) return Array.from(byPatient.values());
 
-    // Universo do "Sin cubrir" (P13): quem tem itinerário montado — UMA consulta para todos os pacientes (sem N+1).
-    const assembledIds = await readAssembledPatientIds(client, [...byPatient.keys()]);
-    for (const [pid, patient] of byPatient) patient.assembled = assembledIds.has(pid);
+    // Universo do "Sin cubrir" (P13): montado + estado — UMA consulta para todos os pacientes (sem N+1).
+    const universeFacts = await readAlertUniverseFacts(client, [...byPatient.keys()]);
+    for (const [pid, patient] of byPatient) {
+      const facts = universeFacts.get(pid);
+      patient.assembled = facts?.itineraryAssembled === true;
+      patient.patientStatus = facts?.patientStatus ?? null;
+    }
 
     // Ocorrências (spec 069, FR-12/P7): as 3 consultas de `occurrenceInputs` rodam UMA vez para TODOS os pacientes do filtro —
     // nunca por card (sem N+1). A janela em SQL é SUPERCONJUNTO (a data de Buenos Aires nunca é menor que a UTC − 1 e o horizonte
