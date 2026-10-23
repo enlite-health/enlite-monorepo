@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
 import { PersonAvatar } from '@presentation/components/atoms/PersonAvatar';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import { AdminSubstitutionRequestsApiService } from '@infrastructure/http/AdminSubstitutionRequestsApiService';
@@ -142,15 +142,15 @@ export function CoverSubstituteModal({ patientId, serviceId, asOf, target, onClo
               {t('admin.patients.detail.itinerary.flow.whoCovers.candidatesError')}
             </Text>
           )}
-          <Select
+          <Combobox
             inputSize="compact"
             aria-label={t('admin.patients.detail.itinerary.flow.whoCovers.pickPerson')}
             data-testid="sustitucion-cubrir-persona"
-            className="[&_select]:!text-primary"
+            className="[&_button]:!text-primary"
             placeholder={t('admin.patients.detail.itinerary.flow.whoCovers.pickPerson')}
             value={selected}
             options={candidates.map((c) => ({ value: c.workerId, label: nameOf(c.workerId) }))}
-            onValueChange={setSelected}
+            onChange={setSelected}
           />
           {person && (
             <div className="flex min-w-0 items-center gap-2.5" data-testid="sustitucion-cubrir-elegida">

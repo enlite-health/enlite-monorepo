@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoHumano } from '../helpers/login-humano';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAFF_EMAIL = `e2e.cov.${Date.now()}@enlite.health`;
 const TEL_AMBULANCIA = '0800 417 0001';
@@ -83,8 +84,7 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
     await expect(page.getByTestId('pcv-save')).toBeEnabled();
 
     await page.getByTestId('pcv-contact-add').click();
-    await page.getByTestId('pcv-contact-kind-1').selectOption('DIRECT_PROFESSIONAL');
-    await expect(page.getByTestId('pcv-contact-kind-1')).toHaveValue('DIRECT_PROFESSIONAL');
+    await escolherNoCombo(page, page.getByTestId('pcv-contact-kind-1'), 'Profesional directo'); // DIRECT_PROFESSIONAL
     await digitar(page, 'pcv-contact-name-1', 'Dra. Sintética 417');
     await digitar(page, 'pcv-contact-phone-1', TEL_PROFISSIONAL);
 

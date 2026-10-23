@@ -11,6 +11,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { MemoryRouter } from 'react-router-dom';
 import { AdminVacanciesPage } from '../AdminVacanciesPage';
 
@@ -165,7 +166,7 @@ describe('AdminVacanciesPage — no duplicate filter options', () => {
       const values = options.map((o) => o.value);
       const emptyValues = values.filter((v) => v === '');
 
-      // SelectField adds ONE placeholder option with value="".
+      // seletor antigo adds ONE placeholder option with value="".
       // No additional empty-value options should exist from the data.
       expect(emptyValues.length).toBeLessThanOrEqual(1);
     });
@@ -231,7 +232,7 @@ describe('AdminVacanciesPage — filters reset pagination', () => {
     // Change items per page — last select is the pagination one
     const selects = screen.getAllByRole('combobox');
     const itemsPerPageSelect = selects[selects.length - 1];
-    await userEvent.selectOptions(itemsPerPageSelect, '50');
+    await selectCombo(itemsPerPageSelect, '50');
 
     // After changing items per page, we should be back on page 1
     // With 25 total and 50 per page, there's only 1 page → next disabled

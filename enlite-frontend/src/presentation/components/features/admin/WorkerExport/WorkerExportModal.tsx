@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
-import { SelectField } from '@presentation/components/molecules/SelectField';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { WorkersExportApiService } from '@infrastructure/http/WorkersExportApiService';
 import {
   ALL_EXPORT_COLUMNS,
@@ -126,11 +126,11 @@ export function WorkerExportModal({
           <label className="font-lexend text-sm font-medium text-[#374151]">
             {t('admin.workers.export.formatLabel')}
           </label>
-          <SelectField
+          <Combobox
             options={FORMAT_OPTIONS}
             value={format}
             onChange={(v) => setFormat(v as 'csv' | 'xlsx')}
-            placeholder={t('admin.workers.export.formatPlaceholder')}
+            placeholder={t('admin.workers.export.formatPlaceholder')} clearLabel={t('admin.workers.export.formatPlaceholder')}
           />
         </div>
 
@@ -139,11 +139,11 @@ export function WorkerExportModal({
           <label className="font-lexend text-sm font-medium text-[#374151]">
             {t('admin.workers.export.statusLabel')}
           </label>
-          <SelectField
+          <Combobox
             options={statusOptions}
             value={status}
             onChange={setStatus}
-            placeholder={t('admin.workers.export.statusAllPlaceholder')}
+            placeholder={t('admin.workers.export.statusAllPlaceholder')} clearLabel={t('admin.workers.export.statusAllPlaceholder')}
           />
         </div>
 

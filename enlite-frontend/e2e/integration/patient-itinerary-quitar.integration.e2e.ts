@@ -36,6 +36,7 @@ import {
 } from '../helpers/derivacao-e2e-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAFF = mockAdminUserFor('itinerario-quitar');
 
@@ -122,7 +123,7 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
       await abrirPainelQuitar(page, m);
 
       await expect(page.getByTestId('itinerario-quitar-confirmar')).toBeDisabled();
-      await page.getByTestId('itinerario-quitar-motivo').selectOption({ label: MOTIVO_DESISTENCIA });
+      await escolherNoCombo(page, page.getByTestId('itinerario-quitar-motivo'), MOTIVO_DESISTENCIA);
       await page.getByTestId('itinerario-quitar-destino-RESERVE').click();
       const confirmar = page.getByTestId('itinerario-quitar-confirmar');
       await expect(confirmar).toBeEnabled();
@@ -174,7 +175,7 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
       // O motivo escolhido não se "desescolhe" (o placeholder do select some): painel novo para o outro caso.
       await abrirPainelQuitar(page, m);
       await expect(confirmar).toBeDisabled();
-      await motivo.selectOption({ label: MOTIVO_PERFIL });
+      await escolherNoCombo(page, motivo, MOTIVO_PERFIL);
       await expect(confirmar).toBeDisabled(); // com motivo e SEM destino
       await expect(page.getByTestId('itinerario-quitar-painel')).toHaveClass(/translate-x-0/); // animação de entrada (300 ms) terminou
       // Clique de mouse real no centro do botão desabilitado (o `click({force})` do Playwright o acusa fora da viewport).
@@ -198,7 +199,7 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
     try {
       await loginAs(page, STAFF);
       await abrirPainelQuitar(page, m);
-      await page.getByTestId('itinerario-quitar-motivo').selectOption({ label: MOTIVO_PERFIL });
+      await escolherNoCombo(page, page.getByTestId('itinerario-quitar-motivo'), MOTIVO_PERFIL);
       await page.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE').click();
       const [resp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/end$/.test(r.url())),

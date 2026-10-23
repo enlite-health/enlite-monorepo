@@ -19,10 +19,10 @@ import {
 } from '@domain/entities/PatientCoverage';
 import { contactFieldErrors, type EditableCoverageEmergencyContact } from './coverageContactValidation';
 import { Button } from '@presentation/components/atoms/Button';
-import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
 import { Label } from '@presentation/components/atoms/Label';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   value: EditableCoverageEmergencyContact[];
@@ -65,11 +65,11 @@ export function CoverageEmergencyContactsEditor({ value, onChange, disabled = fa
         return (
           // lex C2.1: nome de profissional é texto — a linha inteira leva a máscara do Clarity (molde EquipeTratanteCard).
           <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto] gap-2 items-start" data-clarity-mask="True" data-testid={`pcv-contact-${i}`}>
-            <Select
+            <Combobox
               id={`pcv-contact-kind-${i}`}
               inputSize="compact"
               value={c.kind}
-              onValueChange={(v) => update(i, { kind: v as CoverageEmergencyContactKind })}
+              onChange={(v) => update(i, { kind: v as CoverageEmergencyContactKind })}
               options={kindOptions}
               disabled={disabled}
               data-testid={`pcv-contact-kind-${i}`}

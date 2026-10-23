@@ -6,12 +6,12 @@ import { Lock } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { insuranceErrorText } from '@presentation/utils/insuranceErrors';
 import { contractTermTexts } from '../contractedServicePriceText';
 import { AvisoAmbar } from './AvisoAmbar';
 import type { ContractCascadeValue } from './contractCascadeValue';
 import { FIELD_CELL, FIELD_GRID } from './fieldGrid';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 const CARD = 'admin.patients.detail.contractedServicesCard';
 
@@ -47,7 +47,7 @@ interface Props {
  */
 export function ContractCascade({ idPrefix, country, value, onChange, lockedProvider = null, disabled = false }: Props): JSX.Element {
   const { t, i18n } = useTranslation();
-  const [providers, setProviders] = useState<SelectOption[]>([]);
+  const [providers, setProviders] = useState<ComboboxOption[]>([]);
   const [contracts, setContracts] = useState<InsuranceContractItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [providersLoaded, setProvidersLoaded] = useState(false);
@@ -85,13 +85,13 @@ export function ContractCascade({ idPrefix, country, value, onChange, lockedProv
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerCode, validCountry]);
 
-  const providerOptions = useMemo<SelectOption[]>(
+  const providerOptions = useMemo<ComboboxOption[]>(
     () => (lockedProvider && !providers.some((p) => p.value === lockedProvider.code)
       ? [{ value: lockedProvider.code, label: lockedProvider.name }, ...providers]
       : providers),
     [providers, lockedProvider],
   );
-  const contractOptions = useMemo<SelectOption[]>(() => contracts.map((c) => ({ value: c.id, label: c.name })), [contracts]);
+  const contractOptions = useMemo<ComboboxOption[]>(() => contracts.map((c) => ({ value: c.id, label: c.name })), [contracts]);
   const chosen = contracts.find((c) => c.id === value.contractId) ?? null;
   const preview = chosen ? contractTermTexts(t, chosen.currentTerm.state === 'OK' ? chosen.currentTerm : (chosen.futureTerms[0] ?? chosen.currentTerm), i18n.language) : null;
 
@@ -111,11 +111,12 @@ export function ContractCascade({ idPrefix, country, value, onChange, lockedProv
         <FormField label={t(`${CARD}.cascade.provider`)} htmlFor={`${idPrefix}-provider`} labelSize="compact" required={!locked}>
           {/* Travada: o cadeado (SVG) no lugar da seta — a obra social só muda por correção ou por serviço novo. */}
           <div className="relative [&_svg.lucide-chevron-down]:hidden" data-locked={locked || undefined}>
-            <SelectField
+            <Combobox
               id={`${idPrefix}-provider`}
               inputSize="compact"
               options={providerOptions}
               placeholder={t('admin.patients.editDrawer.selectPlaceholder')}
+              clearLabel={t('admin.patients.editDrawer.selectPlaceholder')}
               value={providerCode}
               // Trocar a obra social zera o contrato: a lista de um não vale para o outro.
               onChange={(code) => onChange({ ...value, providerCode: code, contractId: '' })}
@@ -129,11 +130,12 @@ export function ContractCascade({ idPrefix, country, value, onChange, lockedProv
       </Step>
       <Step n={2}>
         <FormField label={t(`${CARD}.cascade.contract`)} htmlFor={`${idPrefix}-contract`} labelSize="compact" required>
-          <SelectField
+          <Combobox
             id={`${idPrefix}-contract`}
             inputSize="compact"
             options={contractOptions}
             placeholder={t(`${CARD}.cascade.contractPlaceholder`)}
+            clearLabel={t(`${CARD}.cascade.contractPlaceholder`)}
             value={value.contractId}
             onChange={(id) => onChange({ ...value, contractId: id })}
             disabled={disabled || !providerCode}

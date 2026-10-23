@@ -12,6 +12,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 import { VacancySimulationSection } from '../VacancySimulationSection';
 import { AdminApiService, ApiError, type AiVacancySimulation } from '@infrastructure/http/AdminApiService';
 
@@ -64,17 +65,17 @@ beforeEach(() => {
 });
 
 async function pickCaseAndRun(): Promise<void> {
-  fireEvent.change(await screen.findByTestId('vacancy-simulation-case'), { target: { value: CASE_ID } });
+  chooseCombo(await screen.findByTestId('vacancy-simulation-case'), '101');
   fireEvent.click(screen.getByTestId('vacancy-simulation-run'));
 }
 
 describe('VacancySimulationSection', () => {
   it('lista os casos sem rascunhos e só habilita simular com caso escolhido', async () => {
     render(<VacancySimulationSection bodies={{}} />);
-    expect(await screen.findByRole('option', { name: '101' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: '999' })).not.toBeInTheDocument();
+    const gatilho = await screen.findByTestId('vacancy-simulation-case');
+    expect(comboLabels(gatilho)).toEqual(['101']); // o rascunho (999) não entra na lista
     expect(screen.getByTestId('vacancy-simulation-run')).toBeDisabled();
-    fireEvent.change(screen.getByTestId('vacancy-simulation-case'), { target: { value: CASE_ID } });
+    chooseCombo(gatilho, '101');
     expect(screen.getByTestId('vacancy-simulation-run')).toBeEnabled();
   });
 

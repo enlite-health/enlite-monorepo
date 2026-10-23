@@ -12,12 +12,11 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Input } from '@presentation/components/atoms/Input';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { ProgressBar } from '@presentation/components/atoms/ProgressBar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { AlertBanner } from '@presentation/components/organisms/Alert/AlertBanner';
 import { OriginLegend } from './OriginLegend';
-import { ProviderFilterCombobox } from './ProviderFilterCombobox';
 import { AnaCareHoursSyncButton } from './AnaCareHoursSyncButton';
 import type { AnaCareListPatient, AnaCareMonthSnapshot } from './types';
 import { formatDateTime, formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, shouldShowStatusBanner, statusBannerKind, type SinCheckinHoursMode } from './selectors';
@@ -118,13 +117,13 @@ export function AnaCareHoursListPage({
           </div>
           <div className="flex items-start gap-3" data-testid="anacare-hours-header-actions">
             <div className="w-48">
-              {/* Mesma altura dos botões `size="sm"` (h-8): override LOCAL no wrapper, o atom `Select` e o tamanho `compact` (usado em outras telas) ficam intocados. */}
-              <Select
+              {/* Mesma altura dos botões `size="sm"` (h-8): override LOCAL no gatilho (via `[&>button]`), o atom `Combobox` e o tamanho `compact` (usado em outras telas) ficam intocados. */}
+              <Combobox
                 inputSize="compact"
-                className="!h-8 !py-0"
+                className="[&>button]:!h-8 [&>button]:!py-0"
                 options={monthOptions}
                 value={displayedMonth}
-                onValueChange={(v) => onMonthChange?.(v)}
+                onChange={(v) => onMonthChange?.(v)}
                 aria-label={t('admin.anacareHours.monthAriaLabel')}
               />
             </div>
@@ -192,13 +191,16 @@ export function AnaCareHoursListPage({
             />
           </div>
           <div className="w-64">
-            <ProviderFilterCombobox
+            <Combobox
+              inputSize="compact"
               id="anacare-hours-provider-filter"
+              data-testid="anacare-hours-provider-filter"
               options={providerOptions}
               value={providerFilterId}
-              onValueChange={setProviderFilterId}
+              onChange={setProviderFilterId}
               placeholder={t('admin.anacareHours.list.providerFilterPlaceholder')}
-              ariaLabel={t('admin.anacareHours.list.providerFilterAriaLabel')}
+              clearLabel={t('admin.anacareHours.list.providerFilterPlaceholder')}
+              aria-label={t('admin.anacareHours.list.providerFilterAriaLabel')}
             />
           </div>
         </div>

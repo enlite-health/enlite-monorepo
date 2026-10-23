@@ -6,7 +6,7 @@
  * textareas and read-only display cells.
  *
  * Everything else (inputs, selects, field groups/labels) is handled by
- * the design system: InputWithIcon, SelectField, FormField.
+ * the design system: InputWithIcon, seletor antigo, FormField.
  */
 
 // Textarea — no design system equivalent; matches InputWithIcon visual style

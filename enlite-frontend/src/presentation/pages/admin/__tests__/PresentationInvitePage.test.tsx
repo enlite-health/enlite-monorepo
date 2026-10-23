@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { PresentationInvitePage } from '../PresentationInvitePage';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
@@ -47,11 +48,12 @@ describe('PresentationInvitePage', () => {
   it('carrega config + contadores; template inativo é escolhível, MARKETING não; "ativa" só com template+link', async () => {
     render(<PresentationInvitePage />);
     await waitFor(() => expect(screen.getByTestId('pi-form')).toBeInTheDocument());
-    const sel = screen.getByTestId('pi-template') as HTMLSelectElement;
-    const opts = Array.from(sel.options);
-    expect(opts.find((o) => o.value === 'ar_presentacion_invite')?.disabled).toBe(false);
-    expect(opts.find((o) => o.value === 'ar_presentacion_invite')?.textContent).toContain('ineligible.INACTIVE');
-    expect(opts.find((o) => o.value === 'mkt')?.disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('pi-template')); // as opções só existem com o painel aberto
+    const linha = (slug: string) => screen.getByRole('option', { name: new RegExp(`^${slug}`) });
+    expect(linha('ar_presentacion_invite').querySelector('button')).toBeEnabled();
+    expect(linha('ar_presentacion_invite').textContent).toContain('ineligible.INACTIVE');
+    expect(linha('mkt').querySelector('button')).toBeDisabled();
+    fireEvent.keyDown(screen.getByTestId('pi-template'), { key: 'Escape' });
     expect((screen.getByTestId('pi-enabled') as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByTestId('pi-stat-queued')).toHaveTextContent('3');
     expect(screen.getByTestId('pi-stat-skipped')).toHaveTextContent('4');
@@ -65,7 +67,7 @@ describe('PresentationInvitePage', () => {
     await waitFor(() => expect(screen.getByTestId('pi-form')).toBeInTheDocument());
     fireEvent.change(screen.getByTestId('pi-meet-link'), { target: { value: MEET } });
     fireEvent.change(screen.getByTestId('pi-schedule-label'), { target: { value: 'Martes 18:00' } });
-    fireEvent.change(screen.getByTestId('pi-template'), { target: { value: 'ok' } });
+    chooseCombo(screen.getByTestId('pi-template'), 'ok');
     const enabled = screen.getByTestId('pi-enabled') as HTMLInputElement;
     expect(enabled.disabled).toBe(false);
     fireEvent.click(enabled);
@@ -76,7 +78,7 @@ describe('PresentationInvitePage', () => {
     expect(mockGet).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('pi-last-edit')).toHaveTextContent('Gabi');
     // limpar o template desliga
-    fireEvent.change(screen.getByTestId('pi-template'), { target: { value: '' } });
+    chooseCombo(screen.getByTestId('pi-template'), '—'); // linha de limpar
     fireEvent.click(screen.getByTestId('pi-save'));
     await waitFor(() => expect(mockPut).toHaveBeenLastCalledWith({ templateSlug: null, meetLink: MEET, scheduleLabel: null, enabled: false })); // o reload trouxe scheduleLabel null
   });

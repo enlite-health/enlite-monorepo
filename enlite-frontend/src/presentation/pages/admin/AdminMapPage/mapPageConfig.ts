@@ -5,7 +5,7 @@
  */
 import type { TFunction } from 'i18next';
 import type { MapCountry, PatientMapPoint, WorkerMapPoint } from '@infrastructure/http/AdminMapApiService';
-import type { SelectOption } from '@presentation/components/atoms/Select';
+import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { getCountryOptions } from '../patientsData';
 import type { CorridorLabels } from './CorridorPanel';
 import type { ResultRow } from './mapResults';
@@ -200,11 +200,11 @@ export function anchorTextsFor(t: TFunction, kind: 'workers' | 'patients'): {
  * DADO — e porque a página não cabia nas 400 linhas com elas dentro.
  */
 export function filterOptionsFor(t: TFunction): {
-  radiusOptions: SelectOption[];
-  countryOptions: SelectOption[];
-  docsOptions: SelectOption[];
-  professionOptions: SelectOption[];
-  patientStatusOptions: SelectOption[];
+  radiusOptions: ComboboxOption[];
+  countryOptions: ComboboxOption[];
+  docsOptions: ComboboxOption[];
+  professionOptions: ComboboxOption[];
+  patientStatusOptions: ComboboxOption[];
 } {
   return {
     radiusOptions: RADIUS_OPTIONS_KM.map((km) => ({ value: String(km), label: `${km} km` })),

@@ -46,6 +46,7 @@ vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({
 import { PatientAddressDrawer } from '../PatientAddressDrawer';
 import { LocalizacoesCard } from '../../LocalizacoesCard';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 const existing = {
   id: 'addr1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua A 1', addressRaw: null, complement: null, displayOrder: 1,
@@ -601,11 +602,11 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
   it('editar: address_type NULL (sin especificar) → selecionar "Escuela" → PATCH só com address_type', async () => {
     const onSaved = vi.fn();
     render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressType: null }} onClose={vi.fn()} onSaved={onSaved} />);
-    expect(screen.getByTestId('pad-type')).toHaveValue('');
+    expect(screen.getByTestId('pad-type')).toHaveTextContent('Selecione'); // vazio
     // O campo "¿Cuál?" só existe quando o tipo é 'otro' — aqui nem deve renderizar.
     expect(screen.queryByTestId('pad-type-other')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    chooseCombo(screen.getByTestId('pad-type'), 'Escola'); // escuela = Escola
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', { address_type: 'escuela' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
@@ -613,7 +614,7 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
 
   it('editar: tipo "Otro" revela o campo "¿Cuál?" com contador; PATCH leva address_type + address_type_other', async () => {
     render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressType: null }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('pad-type'), 'Outro'); // otro = Outro
     const other = screen.getByTestId('pad-type-other');
     expect(other).toHaveAttribute('maxlength', '40');
     fireEvent.change(other, { target: { value: 'Casa de la tía' } });
@@ -658,7 +659,7 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
     // `existing.addressType = 'primary'` (fixture legada); a migration 434 já apaga esse valor
     // em toda linha ATIVA no backend, mas o front não pode confiar nisso sem checar.
     render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('pad-type')).toHaveValue('');
+    expect(screen.getByTestId('pad-type')).toHaveTextContent('Selecione'); // vazio
     fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Norte' } });
     fireEvent.click(screen.getByTestId('pad-save'));
     // Não muda o tipo (segue "sin especificar" pros dois lados) — PATCH não inclui address_type.
@@ -709,7 +710,7 @@ describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)'
     render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
     await assentar();
     expect(screen.getByTestId('pad-type')).toBeInTheDocument();
-    expect(screen.getByTestId('pad-type')).toHaveValue('');
+    expect(screen.getByTestId('pad-type')).toHaveTextContent('Selecione'); // vazio
   });
 
   it('escolher um tipo diferente do default: POST sem address_type, seguido de PATCH com o tipo — NESSA ORDEM', async () => {
@@ -721,7 +722,7 @@ describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)'
     render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={onSaved} />);
     await assentar();
     await escolherDaLista();
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    chooseCombo(screen.getByTestId('pad-type'), 'Escola'); // escuela = Escola
     fireEvent.click(screen.getByTestId('pad-save'));
 
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
@@ -743,7 +744,7 @@ describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)'
     render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
     await assentar();
     await escolherDaLista();
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('pad-type'), 'Outro'); // otro = Outro
     fireEvent.change(screen.getByTestId('pad-type-other'), { target: { value: 'Casa de la tía' } });
     fireEvent.click(screen.getByTestId('pad-save'));
 
@@ -756,7 +757,7 @@ describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)'
     render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
     await assentar();
     await escolherDaLista();
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('pad-type'), 'Outro'); // otro = Outro
     fireEvent.change(screen.getByTestId('pad-type-other'), { target: { value: 'x'.repeat(41) } });
     fireEvent.click(screen.getByTestId('pad-save'));
 
@@ -788,7 +789,7 @@ describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)'
     render(<PatientAddressDrawer patientId="p1" onClose={onClose} onSaved={onSaved} />);
     await assentar();
     await escolherDaLista();
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    chooseCombo(screen.getByTestId('pad-type'), 'Escola'); // escuela = Escola
     fireEvent.click(screen.getByTestId('pad-save'));
 
     await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalled());
@@ -806,7 +807,7 @@ describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)'
     render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
     await assentar();
     await escolherDaLista();
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    chooseCombo(screen.getByTestId('pad-type'), 'Escola'); // escuela = Escola
     fireEvent.click(screen.getByTestId('pad-save'));
 
     expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');

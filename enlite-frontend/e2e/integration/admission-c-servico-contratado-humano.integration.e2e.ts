@@ -2,7 +2,7 @@
  * admission-c-servico-contratado-humano.integration.e2e.ts @integration — D283 (06/09/2026)
  *
  * A pergunta do Gabriel: "quero saber se O FUNCIONAMENTO HUMANO também funciona". As specs C e
- * A6 preenchem por `fill()`/`selectOption()` depois de `scrollIntoViewIfNeeded()` — provam o
+ * A6 preenchem por `fill()` depois de `scrollIntoViewIfNeeded()` — provam o
  * ESTADO, não que um humano consegue clicar e digitar. Aqui NÃO há `evaluate`, `fill` nem
  * `dispatchEvent`: cada campo é `click()` (hit-test real de mouse) + `keyboard.type()`, e o que
  * se afirma é o valor que FICOU na tela depois de digitar. Se algo estiver por cima do campo
@@ -16,6 +16,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoHumano } from '../helpers/login-humano';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAFF_EMAIL = `e2e.humano.${Date.now()}@enlite.health`;
 
@@ -69,13 +70,14 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     expect(box?.height ?? 999).toBeLessThan(30);
 
     // ── Selects: escolha real ──
-    await page.getByTestId('svc-code-1').selectOption('AT');
-    await page.getByTestId('svc-careLocation-1').selectOption('HOME');
+    await escolherNoCombo(page, page.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
+    await escolherNoCombo(page, page.getByTestId('svc-careLocation-1'), 'Domicilio'); // HOME
     const domicilio = page.getByTestId('svc-addressId-1');
     await expect(domicilio).toBeEnabled();
-    await expect(domicilio.locator('option')).toHaveCount(2); // placeholder + o endereço da ficha
-    await domicilio.selectOption(seed.addressId);
-    await expect(domicilio).toHaveValue(seed.addressId);
+    await domicilio.click();
+    await expect(page.getByRole('option')).toHaveCount(2); // a linha que limpa (placeholder) + o endereço da ficha
+    await page.getByRole('option', { name: 'Av. Corrientes 1234, CABA, AR', exact: true }).click(); // seed.addressId
+    await expect(domicilio).toContainText('Av. Corrientes 1234, CABA, AR');
 
     // ── Letra num campo numérico: o navegador recusa em silêncio; a tela AVISA (Gabriel, 06/09) ──
     const prest = page.getByTestId('svc-providersNeeded-1');

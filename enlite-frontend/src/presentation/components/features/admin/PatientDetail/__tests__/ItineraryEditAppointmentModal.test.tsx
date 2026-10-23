@@ -11,6 +11,7 @@ import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { ItineraryEditAppointmentModal } from '../ItineraryEditAppointmentModal';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
   useServiceExitReasonOptions: () => ({ options: [{ code: 'OTHER', label: 'Otro' }], status: 'ok' }),
@@ -57,9 +58,9 @@ describe('ItineraryEditAppointmentModal', () => {
   it('"Día de la semana" e "Horario" ficam DESABILITADOS (chave imutável)', () => {
     renderModal();
     expect(screen.getByTestId('itinerario-editar-dia')).toBeDisabled();
-    // Figma: "Día de la semana" é um SELECT desabilitado (com seta); "Horario" um input.
-    expect(screen.getByTestId('itinerario-editar-dia').tagName).toBe('SELECT');
-    expect(screen.getByTestId('itinerario-editar-dia')).toHaveDisplayValue('lunes');
+    // Figma: "Día de la semana" é um combobox desabilitado (com seta); "Horario" um input.
+    expect(screen.getByTestId('itinerario-editar-dia').tagName).toBe('BUTTON');
+    expect(screen.getByTestId('itinerario-editar-dia')).toHaveTextContent('lunes');
     expect(screen.getByTestId('itinerario-editar-horario')).toBeDisabled();
     expect(screen.getByTestId('itinerario-editar-horario')).toHaveValue('08:00 - 12:00');
     // Figma: o VALOR também fica no cinza de desabilitado (#d9d9d9), não só o rótulo.
@@ -239,7 +240,7 @@ describe('ItineraryEditAppointmentModal', () => {
       const onRemove = vi.fn();
       renderModal({ vigentes: [{ workerId: 'w-2', allocationId: 'alloc-2' }], onRemove });
       fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
-      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Otro'); // OTHER;
       fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
       fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
       expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE', 'alloc-2');
@@ -250,7 +251,7 @@ describe('ItineraryEditAppointmentModal', () => {
       renderModal({ vigentes: [{ workerId: 'w-1', allocationId: 'alloc-1' }, { workerId: 'w-2', allocationId: 'alloc-2' }], onRemove });
       expect(screen.getByTestId('itinerario-quitar-w-1')).toBeInTheDocument();
       fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
-      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Otro'); // OTHER;
       fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
       fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
       expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE', 'alloc-2');
@@ -265,7 +266,7 @@ describe('ItineraryEditAppointmentModal', () => {
       });
       fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
       expect(screen.getByTestId('aviso-agendados')).toBeInTheDocument();
-      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Otro'); // OTHER;
       fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
       fireEvent.click(screen.getByTestId('aviso-agendados-confirmar'));
       expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE', 'alloc-2', true);

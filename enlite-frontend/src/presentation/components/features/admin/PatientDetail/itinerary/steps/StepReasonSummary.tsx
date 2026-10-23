@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PreviewShift, SubstitutionPreview } from '@domain/entities/SubstitutionRequest';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
@@ -57,13 +57,13 @@ export function StepReasonSummary({ draft, onChange, asOf, shifts, preview, outg
         <Text as="span" size="xs" weight="semibold" color="tertiary">
           {ts('reason')}
         </Text>
-        <Select
+        <Combobox
           inputSize="compact"
           data-testid="substitucion-motivo"
-          className="[&_select]:!text-primary"
+          className="[&_button]:!text-primary"
           options={options.map((o) => ({ value: o.code, label: o.label }))}
           value={draft.reason}
-          onValueChange={(reason) => onChange({ reason })}
+          onChange={(reason) => onChange({ reason })}
           placeholder={t('admin.patients.detail.serviceTeam.substitution.reasonPlaceholder')}
           aria-label={ts('reason')}
         />

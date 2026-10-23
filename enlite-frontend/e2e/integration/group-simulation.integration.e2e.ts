@@ -62,6 +62,7 @@
  * (`WelcomeNoGroupPage`) não é a que aparece.
  */
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 import {
   ABAC_TENANT,
   psql,
@@ -134,22 +135,11 @@ async function apiSimulation(
   return { status: res.status(), body: text ? JSON.parse(text) : null };
 }
 
-/** Escolhe a opção no `<select>` nativo pelo TECLADO (click + digitar o começo do nome + Enter);
- *  se o valor não mudar (Chromium headless às vezes não aplica type-ahead), cai para `selectOption`
- *  e devolve qual caminho funcionou — vira parte da evidência, não fica escondido. */
-async function escolherGrupoPorTeclado(
-  page: Page,
-  groupName: string,
-  groupId: string,
-): Promise<'teclado' | 'selectOption'> {
-  const select = page.getByRole('combobox', { name: /Ver como grupo|Simular como grupo|access\.simulation\.select/i });
-  await select.click();
-  await page.keyboard.type(groupName.slice(0, 18), { delay: 30 });
-  await page.keyboard.press('Enter');
-  const valorPosTeclado = await select.inputValue();
-  if (valorPosTeclado === groupId) return 'teclado';
-  await select.selectOption(groupId);
-  return 'selectOption';
+/** Escolhe o grupo no Combobox como a pessoa faz: abre o gatilho, busca pelo nome (há busca com 3+ grupos) e clica a opção pelo rótulo. */
+async function escolherGrupo(page: Page, groupName: string): Promise<'combobox'> {
+  const gatilho = page.getByRole('combobox', { name: /Ver como grupo|Simular como grupo|access\.simulation\.select/i });
+  await escolherNoCombo(page, gatilho, groupName);
+  return 'combobox';
 }
 
 test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integração real @integration', () => {
@@ -230,9 +220,9 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
     const nav = page.getByRole('navigation').first();
     await expect(nav.getByRole('link', { name: 'Vacantes' })).toBeVisible({ timeout: 15_000 });
 
-    const via = await escolherGrupoPorTeclado(page, GROUP_LIMITADO_NAME, groupLimitadoId);
+    const via = await escolherGrupo(page, GROUP_LIMITADO_NAME);
 
-    console.log(`[prova] escolha do Select via: ${via}`);
+    console.log(`[prova] escolha do Combobox via: ${via}`);
 
     // O front chama startSimulation → refetch de /v1/me/authz (cache ~30s no backend: já é
     // resposta síncrona do POST, mas o `useEffect` do banner só re-renderiza depois do fetch).
@@ -246,7 +236,7 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
 
   test('2. 403 — em simulação, rota que o grupo não cobre nega, com status capturado', async ({ page }) => {
     await loginAs(page, MASTER);
-    await escolherGrupoPorTeclado(page, GROUP_LIMITADO_NAME, groupLimitadoId);
+    await escolherGrupo(page, GROUP_LIMITADO_NAME);
     await expect(page.getByTestId('group-simulation-banner')).toBeVisible({ timeout: 20_000 });
 
     const respostaPromise = page.waitForResponse(
@@ -267,7 +257,7 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
 
   test('3. REDAÇÃO — container sem célula fica ausente sob simulação, e o texto visível bate com quem é membro real', async ({ page, browser }) => {
     await loginAs(page, MASTER);
-    await escolherGrupoPorTeclado(page, GROUP_REDACAO_NAME, groupRedacaoId);
+    await escolherGrupo(page, GROUP_REDACAO_NAME);
     await expect(page.getByTestId('group-simulation-banner')).toBeVisible({ timeout: 20_000 });
 
     const respostaSimulado = page.waitForResponse(
@@ -311,7 +301,7 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
     // pessoa não fica presa — vê o painel normal com o menu quase vazio, e o
     // botão de sair segue ali e funciona.
     await loginAs(page, MASTER);
-    await escolherGrupoPorTeclado(page, GROUP_CERO_NAME, groupCeroId);
+    await escolherGrupo(page, GROUP_CERO_NAME);
     await expect(page.getByTestId('group-simulation-banner')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('group-simulation-banner')).toContainText(GROUP_CERO_NAME);
 
@@ -374,8 +364,8 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
 
     const overlay = page.getByTestId('group-switch-overlay');
     const inicio = Date.now();
-    const via = await escolherGrupoPorTeclado(page, GROUP_LIMITADO_NAME, groupLimitadoId);
-    console.log(`[prova] escolha do Select via: ${via}`);
+    const via = await escolherGrupo(page, GROUP_LIMITADO_NAME);
+    console.log(`[prova] escolha do Combobox via: ${via}`);
 
     await expect(overlay).toBeVisible({ timeout: 5_000 });
     await expect(overlay).toContainText(GROUP_LIMITADO_NAME);
@@ -419,7 +409,7 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
     // espera de estabilidade ANTES de capturar, e essa espera sozinha já estourou a
     // janela numa 1ª tentativa (achado: "Element is not attached to the DOM",
     // retry #1/#2). `page.screenshot()` captura o viewport na hora, sem essa dança.
-    await escolherGrupoPorTeclado(page, GROUP_REDACAO_NAME, groupRedacaoId);
+    await escolherGrupo(page, GROUP_REDACAO_NAME);
     await expect(overlay).toBeVisible({ timeout: 5_000 });
     await page.screenshot({ path: 'evidencias/troca-de-grupo/f2-overlay-cambiando.png' });
     await expect(overlay).toBeHidden({ timeout: 10_000 });

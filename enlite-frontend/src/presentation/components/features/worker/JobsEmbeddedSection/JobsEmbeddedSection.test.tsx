@@ -26,6 +26,7 @@ import { JobsEmbeddedSection } from './JobsEmbeddedSection';
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
 import type { JobsResponse } from './jobsConstants';
 import { ApiError } from '@infrastructure/http/ApiError';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -735,7 +736,7 @@ describe('JobsEmbeddedSection — filtros e busca', () => {
     const clearBtn = screen.getByRole('button', { name: 'jobs.clearFilters' });
     expect(clearBtn).toBeDisabled();
 
-    fireEvent.change(sexSelect, { target: { value: 'mujer' } });
+    chooseCombo(sexSelect, 'jobs.sex.woman'); // mujer
     expect(clearBtn).not.toBeDisabled();
     expect(screen.getByText('732')).toBeInTheDocument();
     expect(screen.queryByText('736')).not.toBeInTheDocument();
@@ -743,17 +744,17 @@ describe('JobsEmbeddedSection — filtros e busca', () => {
     fireEvent.click(clearBtn);
     expect(screen.getByText('736')).toBeInTheDocument();
 
-    fireEvent.change(typeSelect, { target: { value: 'acompañante terapéutico' } });
+    chooseCombo(typeSelect, 'jobs.types.at'); // acompañante terapéutico
     expect(screen.getByText('736')).toBeInTheDocument();
     expect(screen.queryByText('732')).not.toBeInTheDocument();
     fireEvent.click(clearBtn);
 
-    fireEvent.change(provinceSelect, { target: { value: 'caba' } });
+    chooseCombo(provinceSelect, 'jobs.provinces.caba'); // caba
     expect(screen.getByText('736')).toBeInTheDocument();
     expect(screen.queryByText('732')).not.toBeInTheDocument();
     fireEvent.click(clearBtn);
 
-    fireEvent.change(localitySelect, { target: { value: 'palermo' } });
+    chooseCombo(localitySelect, 'Palermo'); // palermo
     expect(screen.getByText('736')).toBeInTheDocument();
     expect(screen.queryByText('732')).not.toBeInTheDocument();
   });

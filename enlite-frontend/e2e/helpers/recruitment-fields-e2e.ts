@@ -8,6 +8,7 @@
  * - `preencherRecrutamentoPelaTela`: o mesmo, pelo formulário do serviço (click + teclado reais).
  */
 import type { Page } from '@playwright/test';
+import { escolherNoCombo } from './combobox';
 
 export const RECRUITMENT_FIELDS_E2E = {
   requiredProfessions: ['AT'],
@@ -23,8 +24,12 @@ export const RECRUITMENT_SQL_VALUES = `ARRAY['AT'], 'BOTH', 'experiencia e2e', '
 /** Preenche os 5 campos que o portão exige, pelo formulário aberto do serviço `index` (gesto humano). */
 export async function preencherRecrutamentoPelaTela(page: Page, index: number): Promise<void> {
   await page.locator(`label[for="svc-profession-AT-${index}"]`).click({ force: true });
-  await page.getByTestId(`svc-requiredSex-${index}`).selectOption('BOTH', { force: true });
-  await page.getByTestId(`svc-workSchedule-${index}`).selectOption('part-time', { force: true });
+  const sexo = page.getByTestId(`svc-requiredSex-${index}`);
+  await sexo.scrollIntoViewIfNeeded(); // o banner fixo cobre o fim do formulário: rolar em vez de forçar o clique
+  await escolherNoCombo(page, sexo, 'Indistinto'); // BOTH
+  const jornada = page.getByTestId(`svc-workSchedule-${index}`);
+  await jornada.scrollIntoViewIfNeeded();
+  await escolherNoCombo(page, jornada, 'Part-time'); // part-time
   for (const [id, texto] of [[`svc-requiredExperience-${index}`, 'experiencia e2e'], [`svc-paymentDay-${index}`, 'dia 5']] as const) {
     await page.getByTestId(id).click({ force: true });
     await page.keyboard.type(texto);

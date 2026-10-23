@@ -20,6 +20,7 @@ import { irParaSemanaPeloCalendario } from '../helpers/itinerario-069-flow-helpe
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { seedRequestForAssignment } from '../helpers/seedSubstitutionRequest';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAFF = mockAdminUserFor('itinerario-tirar-agendado');
 const RUN = String(Date.now());
@@ -96,7 +97,7 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
       await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
       await page.getByTestId(`itinerario-quitar-${m.c}`).click();
       await expect(page.getByTestId('itinerario-quitar-painel')).toBeVisible();
-      await page.getByTestId('itinerario-quitar-motivo').selectOption({ label: MOTIVO_DESISTENCIA });
+      await escolherNoCombo(page, page.getByTestId('itinerario-quitar-motivo'), MOTIVO_DESISTENCIA);
       await page.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE').click();
 
       // 1ª tentativa: 409 com as datas; o aviso as lista em dd/mm.
@@ -155,7 +156,7 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
       await page.getByTestId(`itinerario-slot-editar-${m.slotSegunda}`).click();
       await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
       await page.getByTestId(`itinerario-quitar-${m.c}`).click();
-      await page.getByTestId('itinerario-quitar-motivo').selectOption({ label: MOTIVO_DESISTENCIA });
+      await escolherNoCombo(page, page.getByTestId('itinerario-quitar-motivo'), MOTIVO_DESISTENCIA);
       await page.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE').click();
       const [r1] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && ehEnd(r.url())),
@@ -199,7 +200,7 @@ test.describe('patient-itinerary-tirar-agendado: "Quitar del itinerario" com ate
       await page.getByTestId(`itinerario-slot-editar-${m.slotSegunda}`).click();
       await expect(page.getByTestId('itinerario-editar-modal')).toBeVisible();
       await page.getByTestId(`itinerario-quitar-${m.c}`).click();
-      await page.getByTestId('itinerario-quitar-motivo').selectOption({ label });
+      await escolherNoCombo(page, page.getByTestId('itinerario-quitar-motivo'), label);
       await page.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE').click();
 
       // Por fora: o motivo é desativado antes do Confirmar.

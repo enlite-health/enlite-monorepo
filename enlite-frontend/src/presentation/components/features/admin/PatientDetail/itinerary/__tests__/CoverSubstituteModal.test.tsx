@@ -3,7 +3,7 @@
  * (`ignoreRequestId`, T6xx-extra) e "Asignar" só habilita com a pessoa LIVRE em todos os turnos que ela vai cobrir.
  */
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AdminSubstitutionRequestsApiService } from '@infrastructure/http/AdminSubstitutionRequestsApiService';
 import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { PatientItineraryEvent } from '@domain/entities/PatientItinerary';
@@ -11,6 +11,7 @@ import type { SubstitutionRequestItem } from '@domain/entities/SubstitutionReque
 import { initI18n } from './i18nSetup';
 import { expectNoRawEnumLeaks } from '../../../../../../../test/rawEnumLeakGuard';
 import { CoverSubstituteModal, type CoverTarget } from '../CoverSubstituteModal';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('@infrastructure/http/AdminSubstitutionRequestsApiService', () => ({ AdminSubstitutionRequestsApiService: { preview: vi.fn(), cover: vi.fn() } }));
 vi.mock('@infrastructure/http/AdminContractedServicesApiService', async () => {
@@ -84,9 +85,10 @@ function renderModal(target: CoverTarget, over: Partial<React.ComponentProps<typ
   return { ...render(<CoverSubstituteModal {...props} />), props };
 }
 
-async function pick(workerId: string) {
+async function pick(label: string) {
+  fireEvent.click(screen.getByTestId('sustitucion-cubrir-persona'));
   await screen.findByRole('option', { name: 'Martín Gómez' });
-  fireEvent.change(screen.getByTestId('sustitucion-cubrir-persona'), { target: { value: workerId } });
+  chooseCombo(screen.getByTestId('sustitucion-cubrir-persona'), label);
 }
 
 describe('CoverSubstituteModal — pedido (aba "Sustituciones")', () => {
@@ -94,11 +96,12 @@ describe('CoverSubstituteModal — pedido (aba "Sustituciones")', () => {
     const { container, props } = renderModal({ kind: 'request', request: request() });
     expect(screen.getByRole('heading', { name: '¿Quién entra?' })).toBeInTheDocument();
     expect(screen.queryByTestId('substitucion-paso')).toBeNull(); // janela de UM passo: sem "Paso N de 4"
+    fireEvent.click(screen.getByTestId('sustitucion-cubrir-persona'));
     await screen.findByRole('option', { name: 'Martín Gómez' });
-    expect(within(screen.getByTestId('sustitucion-cubrir-persona')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Elegir persona', 'Martín Gómez', 'Bia Costa']);
+    expect(comboLabels(screen.getByTestId('sustitucion-cubrir-persona'))).toEqual(['Martín Gómez', 'Bia Costa']);
     expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeDisabled();
     expect(preview).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByTestId('sustitucion-cubrir-persona'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('sustitucion-cubrir-persona'), 'Martín Gómez'); // w-martin;
     expect(preview).toHaveBeenLastCalledWith('p-1', 's-1', { type: 'DAYS', outgoingWorkerId: 'w-out', from: '2026-11-02', to: '2026-11-06', ignoreRequestId: 'rq-1', candidateWorkerIds: ['w-martin'] });
     await waitFor(() => expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeEnabled());
     // o turno do meio (4/11) já tem quem entra: não conta para ESTE cover
@@ -116,27 +119,27 @@ describe('CoverSubstituteModal — pedido (aba "Sustituciones")', () => {
   it('turno sem ninguém ANTES de hoje não entra no período perguntado (o que passou não se cobre)', async () => {
     const r = request({ shifts: [{ date: '2026-10-15', startTime: '09:00', endTime: '17:00', assignmentId: 'a-0', workerId: null }, ...request().shifts] });
     renderModal({ kind: 'request', request: r });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(preview).toHaveBeenLastCalledWith('p-1', 's-1', expect.objectContaining({ from: '2026-11-02', to: '2026-11-06' }));
   });
 
   it('Un día: corpo ONE_DAY sem `to`', async () => {
     previewShifts = [shift('2026-11-02', 'a-1')];
     renderModal({ kind: 'request', request: request({ type: 'ONE_DAY', shifts: [request().shifts[0]], shiftCount: 1 }) });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(preview).toHaveBeenLastCalledWith('p-1', 's-1', { type: 'ONE_DAY', outgoingWorkerId: 'w-out', from: '2026-11-02', ignoreRequestId: 'rq-1', candidateWorkerIds: ['w-martin'] });
   });
 
   it('No vuelve más: pré-visão PERMANENT a partir de max(D, hoje); todas as franjas contam', async () => {
     previewShifts = [shift('2026-12-01', 'a-1'), shift('2026-12-01', 'a-2')];
     const a = renderModal({ kind: 'request', request: request({ type: 'PERMANENT', from: '2026-12-01', to: null }) });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(preview).toHaveBeenLastCalledWith('p-1', 's-1', { type: 'PERMANENT', outgoingWorkerId: 'w-out', from: '2026-12-01', candidateWorkerIds: ['w-martin'] });
     await waitFor(() => expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeEnabled());
     expect(screen.getAllByTestId(/^sustitucion-cubrir-turno-/)).toHaveLength(2);
     a.unmount();
     renderModal({ kind: 'request', request: request({ type: 'PERMANENT', from: '2026-10-01', to: null }) });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(preview).toHaveBeenLastCalledWith('p-1', 's-1', expect.objectContaining({ type: 'PERMANENT', from: AS_OF }));
   });
 
@@ -150,26 +153,26 @@ describe('CoverSubstituteModal — pedido (aba "Sustituciones")', () => {
   it('CONFLITO: nota com o horário, "Conflicto", "Asignar" bloqueado; outra pessoa livre desbloqueia', async () => {
     states = { 'w-martin|2026-11-06': 'conflict' };
     renderModal({ kind: 'request', request: request() });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(await screen.findByTestId('sustitucion-cubrir-conflicto-2026-11-06|sl-a-3')).toHaveTextContent('Martín ya atiende a otro paciente el lunes de 10:00 a 14:00.');
     expect(screen.getByTestId('sustitucion-cubrir-estado-2026-11-06|sl-a-3')).toHaveTextContent('Conflicto');
     expect(screen.getByTestId('sustitucion-cubrir-estado-2026-11-02|sl-a-1')).toHaveTextContent('Libre');
     expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeDisabled();
-    fireEvent.change(screen.getByTestId('sustitucion-cubrir-persona'), { target: { value: 'w-bia' } });
+    chooseCombo(screen.getByTestId('sustitucion-cubrir-persona'), 'Bia Costa'); // w-bia;
     await waitFor(() => expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeEnabled());
   });
 
   it('verificação que falhou (`unknown` ou a chamada toda) nunca vale como livre; enquanto espera: "Verificando…"', async () => {
     states = { 'w-martin|2026-11-02': 'unknown' };
     const a = renderModal({ kind: 'request', request: request() });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(await screen.findByTestId('sustitucion-cubrir-estado-2026-11-02|sl-a-1')).toHaveTextContent('No se pudo verificar');
     expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeDisabled();
     a.unmount();
 
     preview.mockRejectedValue(new Error('boom'));
     const b = renderModal({ kind: 'request', request: request() });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(await screen.findByTestId('sustitucion-cubrir-verificacion-error')).toHaveTextContent('No se pudo verificar el horario de la persona.');
     expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeDisabled();
     b.unmount();
@@ -177,7 +180,7 @@ describe('CoverSubstituteModal — pedido (aba "Sustituciones")', () => {
     let resolve: (v: unknown) => void = () => undefined;
     preview.mockImplementation(() => new Promise((r) => (resolve = r)));
     renderModal({ kind: 'request', request: request() });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeDisabled();
     resolve({ shifts: [], conflicts: [], statusAfter: null });
     await waitFor(() => expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeDisabled()); // sem turnos para cobrir ≠ verificado
@@ -186,7 +189,7 @@ describe('CoverSubstituteModal — pedido (aba "Sustituciones")', () => {
   it('erro do `cover` por CÓDIGO (traduzido, modal aberto) e sem código/desconhecido (mensagem genérica); pool com falha: aviso', async () => {
     cover.mockRejectedValueOnce(new ContractedServiceApiError('x', 409, { code: 'NOTHING_TO_COVER' }));
     const { props } = renderModal({ kind: 'request', request: request() });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     await waitFor(() => expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeEnabled());
     fireEvent.click(screen.getByTestId('sustitucion-cubrir-confirmar'));
     expect(await screen.findByTestId('sustitucion-cubrir-error')).toHaveTextContent('No queda ningún turno sin cubrir en este pedido.');
@@ -203,8 +206,9 @@ describe('CoverSubstituteModal — pedido (aba "Sustituciones")', () => {
     states = { 'w-0000-sem-nome-aaaa1111|2026-11-02': 'conflict' };
     allocationOptions.mockResolvedValue({ vacancyId: 'v', options: [{ workerId: 'w-0000-sem-nome-aaaa1111', displayName: null, vacancyId: 'v', status: 'SELECTED' }] });
     renderModal({ kind: 'request', request: request() });
+    fireEvent.click(screen.getByTestId('sustitucion-cubrir-persona'));
     await screen.findByRole('option', { name: 'Prestador sin nombre · aaaa1111' });
-    fireEvent.change(screen.getByTestId('sustitucion-cubrir-persona'), { target: { value: 'w-0000-sem-nome-aaaa1111' } });
+    chooseCombo(screen.getByTestId('sustitucion-cubrir-persona'), 'Prestador sin nombre · aaaa1111'); // w-0000-sem-nome-aaaa1111;
     expect(await screen.findByTestId('sustitucion-cubrir-conflicto-2026-11-02|sl-a-1')).toHaveTextContent('Prestador ya atiende a otro paciente');
   });
 
@@ -223,7 +227,7 @@ describe('CoverSubstituteModal — a falta de UM turno (tabela)', () => {
   it('turno de um pedido: pré-visão ONE_DAY do dia COM `ignoreRequestId`, só o turno da faixa conta; confirmar grava na falta (`setAbsenceSubstitute`)', async () => {
     previewShifts = [shift('2026-11-04', 'a-2', 'sl-a-2'), shift('2026-11-04', 'a-9', 'sl-outra-faixa')];
     const { props } = renderModal({ kind: 'absence', event: EVENT });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(preview).toHaveBeenLastCalledWith('p-1', 's-1', { type: 'ONE_DAY', outgoingWorkerId: 'w-out', from: '2026-11-04', ignoreRequestId: 'rq-1', candidateWorkerIds: ['w-martin'] });
     await waitFor(() => expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeEnabled());
     expect(screen.getAllByTestId(/^sustitucion-cubrir-turno-/)).toHaveLength(1);
@@ -236,7 +240,7 @@ describe('CoverSubstituteModal — a falta de UM turno (tabela)', () => {
   it('falta de ANTES dos pedidos (sem requestId): não há como ignorá-la na pré-visão — sem pré-visão, vale a barreira final do banco; o erro dele vem traduzido', async () => {
     setAbsenceSubstitute.mockRejectedValueOnce(new ContractedServiceApiError('x', 409, { code: 'ITINERARY_OVERLAP' }));
     renderModal({ kind: 'absence', event: { ...EVENT, requestId: null } });
-    await pick('w-martin');
+    await pick('Martín Gómez');
     expect(preview).not.toHaveBeenCalled();
     expect(screen.getByTestId('sustitucion-cubrir-confirmar')).toBeEnabled();
     fireEvent.click(screen.getByTestId('sustitucion-cubrir-confirmar'));

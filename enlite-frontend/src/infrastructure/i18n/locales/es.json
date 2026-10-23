@@ -4516,6 +4516,7 @@
           "addressAutocompleteDown": "No pudimos cargar el buscador de direcciones de Google. Sin él no se puede guardar una dirección — avisá al equipo técnico y volvé a intentar.",
           "addressRaw": "Dirección informada (texto libre)",
           "type": "Tipo",
+          "typePlaceholder": "Seleccioná",
           "type_domicilio_propio": "Domicilio propio",
           "type_casa_madre": "Casa de la madre",
           "type_casa_padre": "Casa del padre",

@@ -18,6 +18,7 @@ import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { criarPedidoViaApi, diaDoBanco, proximaDataNoDia, turnosDaPessoa } from '../helpers/itinerario-069-flow-helper';
 import { nomeDe, semearTitularSegQuaSex, servicoDaRota } from '../helpers/itinerario-069-seed-helper';
+import { escolherNoComboPorValor } from '../helpers/combobox';
 
 const STAFF = mockAdminUserFor('itinerario-069-horario-fijo');
 
@@ -121,7 +122,7 @@ test.describe('patient-itinerary-069-horario-fijo: a agenda semanal do serviço 
       await page.getByTestId(`itinerario-quitar-${m.titular}`).click();
       await expect(page.getByTestId('itinerario-quitar-painel')).toBeVisible();
       await expect(page.getByTestId('itinerario-quitar-confirmar')).toBeDisabled();
-      await page.getByTestId('itinerario-quitar-motivo').selectOption('OTHER');
+      await escolherNoComboPorValor(page, page.getByTestId('itinerario-quitar-motivo'), 'OTHER');
       await page.getByTestId('itinerario-quitar-destino-RESERVE').click();
       const [resp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && /\/itinerary\/allocations\/[^/]+\/end$/.test(r.url())),

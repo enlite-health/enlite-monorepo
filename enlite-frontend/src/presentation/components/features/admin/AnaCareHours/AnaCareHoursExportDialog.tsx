@@ -14,7 +14,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { AnaCareHoursServiceError } from './AnaCareHoursService';
 import type { AnaCareHoursExportService } from './AnaCareHoursExportService';
 import { MAX_EXPORT_DAYS, rangeDays } from './exportRange';
-import { ProviderFilterCombobox, type ProviderFilterOption } from './ProviderFilterCombobox';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { patientSearchOption, patientSearchOptions } from './patientOptions';
 import { lastDayOfMonthIso, navigableDateRange } from './selectors';
 import type { AnaCareListPatient } from './types';
@@ -44,7 +44,7 @@ export function AnaCareHoursExportDialog({ service, patients, initialPatientId, 
   const inFlight = useRef(false);
   const bounds = navigableDateRange();
 
-  const options = useMemo<ProviderFilterOption[]>(() => {
+  const options = useMemo<ComboboxOption[]>(() => {
     const list = patientSearchOptions(patients);
     if (initialPatientId && !list.some((o) => o.value === initialPatientId)) {
       list.unshift(patientSearchOption({ anaCareId: initialPatientId, name: initialPatientName }));
@@ -91,15 +91,16 @@ export function AnaCareHoursExportDialog({ service, patients, initialPatientId, 
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="anacare-hours-export-patient" required>{t(`${I18N}.patientLabel`)}</Label>
-          <ProviderFilterCombobox
+          <Combobox
+            inputSize="compact"
             id="anacare-hours-export-patient"
+            data-testid="anacare-hours-export-patient"
             options={options}
             value={patientId}
-            onValueChange={setPatientId}
+            onChange={setPatientId}
             placeholder={t(`${I18N}.patientPlaceholder`)}
-            ariaLabel={t(`${I18N}.patientLabel`)}
-            noMatchLabel={t(`${I18N}.patientNoMatch`)}
-            hideAllOption
+            aria-label={t(`${I18N}.patientLabel`)}
+            noResultsLabel={t(`${I18N}.patientNoMatch`)}
           />
           <Text size="xs" color="muted" data-testid="anacare-hours-export-help">{t(`${I18N}.help`)}</Text>
           {options.length === 0 && (

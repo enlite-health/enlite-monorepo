@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, type Mock } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -67,21 +68,20 @@ describe('AnaCareHoursExportDialog', () => {
   it('POSITIVO — o autocomplete lista SÓ os pacientes recebidos e filtra por nome ou ID', async () => {
     const { user } = setup();
     await user.click(screen.getByTestId('anacare-hours-export-patient'));
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-0')).toBeInTheDocument();
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-7')).toBeInTheDocument();
-    expect(screen.queryByTestId('anacare-hours-export-patient-option-all')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-0' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Lucía Fernández QA' })).toBeInTheDocument();
+    expect(screen.getAllByRole('option')).toHaveLength(3); // sem linha "todos": o paciente é obrigatório
     await user.keyboard('AC-PAT-6');
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-6')).toBeInTheDocument();
-    expect(screen.queryByTestId('anacare-hours-export-patient-option-AC-PAT-0')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Sin vínculo · ID AC-PAT-0' })).not.toBeInTheDocument();
   });
 
   it('POSITIVO — injeta o paciente atual como opção quando ele NÃO está na lista do mês', async () => {
     const { user } = setup({ patients: [PATIENTS[1]], initialPatientId: 'AC-PAT-0' });
-    expect(screen.getByTestId('anacare-hours-export-patient')).toHaveValue('Sin vínculo · ID AC-PAT-0');
+    expect(screen.getByTestId('anacare-hours-export-patient')).toHaveTextContent('Sin vínculo · ID AC-PAT-0');
     await user.click(screen.getByTestId('anacare-hours-export-patient'));
-    await user.clear(screen.getByTestId('anacare-hours-export-patient')); // com valor escolhido a lista abre filtrada pelo rótulo dele
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-0')).toBeInTheDocument();
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-6')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-0' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeInTheDocument();
   });
 
   it('NEGATIVO — sem paciente escolhido, "Exportar" fica desabilitado com o motivo', () => {
@@ -116,9 +116,7 @@ describe('AnaCareHoursExportDialog', () => {
 
   it('POSITIVO — escolher o paciente digitando e clicando na opção exporta ESSE paciente com o intervalo', async () => {
     const { user, service, onClose } = setup();
-    await user.click(screen.getByTestId('anacare-hours-export-patient'));
-    await user.keyboard('AC-PAT-6');
-    await user.click(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-6'));
+    await selectCombo(screen.getByTestId('anacare-hours-export-patient'), 'Sin vínculo · ID AC-PAT-6');
     await user.click(exportButton());
     expect(service.exportPatientRange).toHaveBeenCalledTimes(1);
     expect(service.exportPatientRange).toHaveBeenCalledWith({ patientId: 'AC-PAT-6', desde: '2026-09-01', hasta: '2026-09-30' });
@@ -127,11 +125,7 @@ describe('AnaCareHoursExportDialog', () => {
 
   it('POSITIVO — trocar de A (pré-preenchido) para B no autocomplete exporta B', async () => {
     const { user, service } = setup({ initialPatientId: 'AC-PAT-0' });
-    const input = screen.getByTestId('anacare-hours-export-patient');
-    await user.click(input);
-    await user.clear(input);
-    await user.keyboard('AC-PAT-7');
-    await user.click(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-7'));
+    await selectCombo(screen.getByTestId('anacare-hours-export-patient'), 'Lucía Fernández QA'); // AC-PAT-7
     await user.click(exportButton());
     expect(service.exportPatientRange).toHaveBeenCalledWith({ patientId: 'AC-PAT-7', desde: '2026-09-01', hasta: '2026-09-30' });
   });
@@ -175,5 +169,14 @@ describe('AnaCareHoursExportDialog', () => {
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(service.exportPatientRange).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnaCareHoursExportDialog — altura do seletor de paciente', () => {
+  it('POSITIVO — o gatilho tem a altura compacta (h-12) que o seletor antigo dava, não a h-[60px]', () => {
+    setup();
+    const gatilho = screen.getByTestId('anacare-hours-export-patient');
+    expect(gatilho.className).toContain('h-12');
+    expect(gatilho.className).not.toContain('h-[60px]');
   });
 });

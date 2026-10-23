@@ -59,3 +59,12 @@ describe('WorkerFilters — checkbox "Mostrar desactivados" (D-2026-09-28)', () 
     expect(screen.queryByText('admin.workers.clearFilters')).toBeNull();
   });
 });
+
+describe('WorkerFilters — altura do filtro de caso (spec 070)', () => {
+  it('POSITIVO — o gatilho do caso tem h-12 (48px), a altura que o seletor antigo dava', () => {
+    montar();
+    const gatilho = screen.getByText('admin.workers.caseOptions.all').closest('button') as HTMLElement;
+    expect(gatilho.className).toContain('h-12');
+    expect(gatilho.className).not.toContain('h-[60px]');
+  });
+});

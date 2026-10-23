@@ -9,7 +9,6 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Input } from '@presentation/components/atoms/Input';
-import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
 import { Field } from './Field';
 import { FormModal } from './FormModal';
@@ -20,6 +19,7 @@ import type { InsuranceProviderDetail } from '@domain/entities/InsuranceProvider
 import { insuranceErrorText } from '@presentation/utils/insuranceErrors';
 import { ProviderCard } from './ProviderCard';
 import { buildGeneralPatch, OPTIONAL_FIELDS, toDraft, type Draft } from './generalDraft';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   provider: InsuranceProviderDetail;
@@ -122,13 +122,13 @@ export function GeneralCard({ provider, onSaved, editRequest }: Props): JSX.Elem
               </Field>
             ))}
             <Field label={t(`${NS}.general.fields.payerKind`)} optional hint={t(`${NS}.general.payerKindHint`)} htmlFor="provider-general-payerKind-input">
-              <Select
+              <Combobox
                 inputSize="compact"
                 id="provider-general-payerKind-input"
                 value={draft.payerKind}
                 placeholder={provider.payerKind === null ? t(`${NS}.general.payerKindNone`) : undefined}
                 options={PAYER_KINDS.map((k) => ({ value: k, label: payerKindLabel(k) }))}
-                onValueChange={(v) => set('payerKind', v as PayerKind | '')}
+                onChange={(v) => set('payerKind', v as PayerKind | '')}
                 data-testid="provider-general-payerKind-input"
               />
             </Field>

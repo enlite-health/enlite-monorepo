@@ -20,6 +20,7 @@ import {
   criarPedidoViaApi, diaDoBanco, irParaSemanaPeloCalendario, proximaDataNoDia, somaDias, turnosDaPessoa,
 } from '../helpers/itinerario-069-flow-helper';
 import { nomeDe, semearTitularSegQuaSex, type Cenario } from '../helpers/itinerario-069-seed-helper';
+import { escolherNoComboPorValor } from '../helpers/combobox';
 
 const STAFF = mockAdminUserFor('itinerario-069-sustituciones');
 
@@ -150,7 +151,7 @@ test.describe('patient-itinerary-069-sustituciones: a lista de pedidos do servi√
       await expect(page.getByTestId('sustitucion-cubrir')).toBeVisible();
       await expect(page.getByTestId('sustitucion-cubrir-confirmar')).toBeDisabled(); // sem pessoa
 
-      await page.getByTestId('sustitucion-cubrir-persona').selectOption(m.sub);
+      await escolherNoComboPorValor(page, page.getByTestId('sustitucion-cubrir-persona'), m.sub);
       await expect(page.getByTestId('sustitucion-cubrir-elegida')).toContainText(nomeSub);
       const estados = page.locator('[data-testid^="sustitucion-cubrir-estado-"]');
       await expect(estados).toHaveCount(6);
