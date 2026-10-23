@@ -29,6 +29,7 @@ import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
 import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = 'http://id.who.int/icd/entity/e2e-tp-017';
@@ -149,11 +150,11 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect.poll(async () => { const b = await drawer.boundingBox(); return b ? Math.round(b.x + b.width) : 0; }).toBe(1600);
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
     // D301.3a (Ana): modalidade obrigatória — select nativo; o valor é lido de volta da tela.
-    await expect(page.getByTestId('tp-modality')).toHaveValue('');
-    await page.getByTestId('tp-modality').selectOption('HYBRID');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID');
+    await expect(page.getByTestId('tp-modality')).toContainText('Elegí la modalidad');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
+    await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
     // spec 030: o segmento é obrigatório no "Nuevo" — pelo teclado, valor lido da tela.
     const segmento = primeiroSegmento();
     expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
@@ -216,9 +217,9 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     // PR-7 (D328): editar a vigente trava os campos MACRO como TEXTO (objetivo geral, segmento…); só os MICRO mudam.
     await expect(page.getByTestId('tp-generalObjective-locked')).toHaveText('Objetivo general digitado por humano 017');
     await expect(page.getByTestId('tp-segment-locked')).toHaveText(segmento.label); // spec 030: o segmento herda da origem
-    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID'); // a edição parte da versão de origem
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await expect(page.getByTestId('tp-modality')).toContainText('Híbrida'); // a edição parte da versão de origem
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
+    await expect(page.getByTestId('tp-modality')).toContainText('On-line');
     const edited = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
     const body11 = (await (await edited).json()) as { data: { id: string; version: string; editedFromVersionId: string; generalObjective: string; modality: string; segment: { label: string } | null } };
@@ -287,7 +288,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await opcao.click();
     await digitar(page, '#tp-clinicalContext', 'Contexto que no debe persistir 017');
     await digitar(page, '#tp-generalObjective', 'Objetivo que no debe persistir 017');
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
     await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
     await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista: `segmentOptions` (sem `alphabetical` p/ objetivos) põe os do segmento escolhido antes dos sem vínculo, na ordem da API (`ORDER BY lower(label)`, spec 061)
     await marcarOpcoes(page, 'tp-activities', 1);
@@ -399,7 +400,7 @@ test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await page.getByTestId('tp-modality').selectOption('HYBRID');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
     await page.keyboard.type('sintetico');

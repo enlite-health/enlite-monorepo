@@ -10,8 +10,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
-import { Combobox } from '@presentation/components/atoms/Combobox';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { ClinicalTextareaField } from './ClinicalTextareaField';
 import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
@@ -151,10 +150,10 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  const dependencyOptions: SelectOption[] = DEPENDENCY_LEVELS.map((d) => ({ value: d, label: t(`admin.patients.dependencyOptions.${d}`, { defaultValue: d }) }));
-  const deviceOptions: SelectOption[] = DEVICE_TYPE_CODES.map((d) => ({ value: d, label: t(`admin.patients.deviceTypeOptions.${d}`, { defaultValue: d }) }));
-  const serviceOptions: SelectOption[] = SERVICE_TYPES.map((s) => ({ value: s, label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }) }));
-  const boolOptions: SelectOption[] = BOOL_VALUES.map((v) => ({
+  const dependencyOptions: ComboboxOption[] = DEPENDENCY_LEVELS.map((d) => ({ value: d, label: t(`admin.patients.dependencyOptions.${d}`, { defaultValue: d }) }));
+  const deviceOptions: ComboboxOption[] = DEVICE_TYPE_CODES.map((d) => ({ value: d, label: t(`admin.patients.deviceTypeOptions.${d}`, { defaultValue: d }) }));
+  const serviceOptions: ComboboxOption[] = SERVICE_TYPES.map((s) => ({ value: s, label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }) }));
+  const boolOptions: ComboboxOption[] = BOOL_VALUES.map((v) => ({
     value: v,
     label: v === '' ? te('unset') : v === 'true' ? t('common.yes', 'Sí') : t('common.no', 'No'),
   }));
@@ -193,7 +192,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const boolField = (name: 'hasJudicialProtection' | 'hasCud' | 'hasConsent', label: string, testid: string) => (
     <FormField label={label} htmlFor={testid} labelSize="compact">
       <Controller control={control} name={name} render={({ field }) => (
-        <SelectField inputSize="compact" options={boolOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={testid} />
+        <Combobox inputSize="compact" options={boolOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} id={testid} data-testid={testid} />
       )} />
     </FormField>
   );
@@ -244,7 +243,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FormField label={t('admin.patients.dependencyLabel', { defaultValue: 'Dependencia' })} htmlFor="pce-dependency" labelSize="compact">
                 <Controller control={control} name="dependencyLevel" render={({ field }) => (
-                  <SelectField inputSize="compact" options={dependencyOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pce-dependency" />
+                  <Combobox inputSize="compact" options={dependencyOptions} clearLabel={te('selectPlaceholder')} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} id="pce-dependency" data-testid="pce-dependency" />
                 )} />
               </FormField>
               <FormField label={te('deviceType')} htmlFor="pce-device" labelSize="compact">

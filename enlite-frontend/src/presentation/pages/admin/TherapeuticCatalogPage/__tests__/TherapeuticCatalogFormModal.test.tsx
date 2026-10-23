@@ -7,8 +7,9 @@
  * peça é justamente esse par de callbacks.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { expectNoRawEnumLeaks } from '../../../../../test/rawEnumLeakGuard';
 import type { TherapeuticCatalogItem } from '@domain/entities/TherapeuticProject';
 
@@ -286,7 +287,7 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
   const SEG_A = item({ id: 'seg-a', label: 'AT para Pacientes con TEA', sortOrder: 1 });
   const SEG_B = item({ id: 'seg-b', label: 'AT para Salud Mental', sortOrder: 2 });
   const SEG_OFF = item({ id: 'seg-off', label: 'Segmento viejo', sortOrder: 3, active: false });
-  const segmentoSelect = () => screen.getByTestId('therapeutic-catalog-segment-select') as HTMLSelectElement;
+  const segmentoSelect = () => screen.getByTestId('therapeutic-catalog-segment-select');
 
   async function renderComSegmentos(alvo: TherapeuticCatalogItem | null, segments: TherapeuticCatalogItem[] | null) {
     const utils = render(<TherapeuticCatalogFormModal kind="specific-objectives" item={alvo} segments={segments} onSave={onSave} onClose={onClose} />);
@@ -302,9 +303,10 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
   it('com a lista de segmentos o campo "Segmento" aparece e oferece "sem segmento" + os ATIVOS', async () => {
     await renderComSegmentos(null, [SEG_A, SEG_B, SEG_OFF]);
     expect(screen.getByLabelText(COPY.form.segment)).toBe(segmentoSelect());
-    const rotulos = Array.from(segmentoSelect().options).map((o) => o.textContent);
+    expect(segmentoSelect()).toHaveTextContent(COPY.form.segmentNone); // vazio mostra "Sem segmento"
+    fireEvent.click(segmentoSelect());
+    const rotulos = within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
     expect(rotulos).toEqual([COPY.form.segmentNone, SEG_A.label, SEG_B.label]);
-    expect(segmentoSelect()).toHaveValue('');
   });
 
   it('`null` (conta sem a célula de segmentos) esconde o campo, e o resto salva sem `segmentId`', async () => {
@@ -318,10 +320,10 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
 
   it('vínculo a segmento INATIVO aparece como "<rótulo> (inactivo)" e pode ser limpo (`segmentId: null`)', async () => {
     await renderComSegmentos(item({ segmentId: 'seg-off' }), [SEG_A, SEG_OFF]);
-    expect(segmentoSelect()).toHaveValue('seg-off');
+    expect(segmentoSelect()).toHaveTextContent('Segmento viejo (inactivo)'); // seg-off
+    fireEvent.click(segmentoSelect());
     expect(screen.getByRole('option', { name: 'Segmento viejo (inactivo)' })).toBeInTheDocument();
-
-    fireEvent.change(segmentoSelect(), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('option', { name: COPY.form.segmentNone }).querySelector('button')!);
     fireEvent.click(salvar());
     // Spec 061: objetivo/atividade em edição manda SÓ o que mudou (sem label inalterado, sem ordem).
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ segmentId: null }));
@@ -330,7 +332,7 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
   it('submit envia o `segmentId` escolhido; sem mexer no campo NÃO envia (o inativo vinculado não é re-mandado)', async () => {
     const primeira = await renderComSegmentos(null, [SEG_A, SEG_B]);
     fireEvent.change(textoInput(), { target: { value: 'Aseo personal' } });
-    fireEvent.change(segmentoSelect(), { target: { value: 'seg-b' } });
+    await selectCombo(segmentoSelect(), SEG_B.label); // seg-b = AT para Salud Mental
     fireEvent.click(salvar());
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Aseo personal', segmentId: 'seg-b' }));
 

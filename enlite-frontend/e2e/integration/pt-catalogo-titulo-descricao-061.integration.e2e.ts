@@ -21,6 +21,7 @@ import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
 import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 /** Só letras: sequência longa de dígitos é lida como documento/telefone e recusada (guarda de PII do servidor). */
@@ -173,8 +174,8 @@ test.describe('spec 061 — atividade do catálogo com título + descrição: do
     const drawer = page.getByTestId('therapeutic-project-drawer');
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
 
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('IN_PERSON');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
+    await expect(page.getByTestId('tp-modality')).toContainText('Presencial');
     const segmento = primeiroSegmento();
     expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));

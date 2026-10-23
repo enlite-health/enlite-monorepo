@@ -28,6 +28,7 @@ import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
 import { primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = `http://id.who.int/icd/entity/e2e-048-${RUN_ID}`;
@@ -99,11 +100,11 @@ async function alternar(escopo: ReturnType<typeof campo>, rotulo: string): Promi
 }
 
 /** Preenche o "Nuevo" até só faltar o que o teste decide (contatos). */
-async function preencherNuevo(page: Page, serviceId: string): Promise<void> {
+async function preencherNuevo(page: Page): Promise<void> {
   await page.getByTestId('tp-new-btn').click();
   await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-  await page.getByTestId('tp-modality').selectOption('HYBRID');
+  await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+  await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
   // Segmento (MACRO, obrigatório no "Nuevo"): `selectOption` pelo rótulo — o type-ahead do select nativo não é confiável no
   // Chromium/Linux do CI (medido: o valor ficou vazio no runner), e o segmento não é o que esta spec mede.
   const segmento = primeiroSegmento().label;
@@ -185,7 +186,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await loginAs(page, operador);
     await page.goto(`/admin/patients/${seed.patientId}`);
     await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
-    await preencherNuevo(page, serviceId);
+    await preencherNuevo(page);
 
     // Responsables: marca -> o select desabilita e o aviso aparece SOB o campo.
     const responsables = campo(page, 'responsibles');
@@ -295,7 +296,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await expect(cobertura.getByLabel(LABEL_WAIVED, { exact: true })).toBeChecked();
     await expect(cobertura.getByLabel(LABEL_PENDING, { exact: true })).not.toBeChecked();
     await expect(page.locator('#tp-coverageContacts')).toBeDisabled();
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
 
     // Já havia campos pendentes (Responsables, Equipo): a confirmação aparece e traz os vencimentos REAIS (herdados).
     await page.getByTestId('tp-save').click();
@@ -331,7 +332,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await expect(equipo.getByLabel(LABEL_PENDING, { exact: true })).not.toBeChecked();
     await marcarPorTexto(page, 'tp-careTeam', PROFISSIONAL_NOME);
     await expect(page.locator('#tp-careTeam')).toContainText(PROFISSIONAL_NOME);
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
 
     await page.getByTestId('tp-save').click();
     const confirmacao = page.getByTestId('pending-contacts-confirm');

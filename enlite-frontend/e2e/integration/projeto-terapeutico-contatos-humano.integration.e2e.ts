@@ -29,6 +29,7 @@ import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
 import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = `http://id.who.int/icd/entity/e2e-pr7-${RUN_ID}`;
@@ -176,9 +177,9 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-    await page.getByTestId('tp-modality').selectOption('HYBRID');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID');
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
+    await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
     // spec 030: segmento obrigatório no "Nuevo" — pelo teclado.
     await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
 
@@ -581,8 +582,8 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
     await expect(page.getByTestId('tp-form-contact-removed')).toHaveCount(0);
 
     // Muda SÓ a modalidade (MICRO) — não toca nos multi-selects de contato.
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
+    await expect(page.getByTestId('tp-modality')).toContainText('On-line');
     await expect(page.getByTestId('tp-save')).toBeEnabled();
 
     const salvo = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
@@ -751,8 +752,8 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
     await escolherSegmentoPeloTeclado(page, primeiroSegmento().label); // spec 030: obrigatório no "Nuevo"
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
@@ -812,8 +813,8 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
     await expect(page.getByTestId('tp-form-contact-removed')).toHaveCount(0);
 
     // Muda só a modalidade (MICRO) e salva — a minor nova tem de levar os DOIS contatos.
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
+    await expect(page.getByTestId('tp-modality')).toContainText('On-line');
     await expect(page.getByTestId('tp-save')).toBeEnabled();
     const salvo = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
@@ -912,8 +913,8 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
     await expect(page.getByTestId('tp-segment')).toBeVisible();
     await expect(page.getByTestId('tp-segment-empty')).toContainText('No hay segmentos activos');
 
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();

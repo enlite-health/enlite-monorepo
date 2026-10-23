@@ -216,6 +216,11 @@ function catalogosOk(): void {
 /** Espera o formulário (os 3 catálogos resolvidos) aparecer. */
 const esperarFormulario = () => screen.findByTestId('therapeutic-project-form');
 
+/** Escolhe o rótulo num Combobox de escolha única (id = do gatilho). */
+function escolherNoCombo(id: string, label: string): void {
+  alternarNoMulti(id, label);
+}
+
 function alternarNoMulti(id: string, label: string): void {
   const gatilho = document.getElementById(id)!; // o `id` do Combobox é do gatilho
   if (gatilho.getAttribute('aria-expanded') !== 'true') fireEvent.click(gatilho);
@@ -509,7 +514,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     montar({ mode: 'new' });
     await esperarFormulario();
 
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'IN_PERSON' } });
+    escolherNoCombo('tp-modality', 'Presencial'); // IN_PERSON = Presencial
     fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'segments-1' } });
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'contexto novo' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'objetivo novo' } });
@@ -691,7 +696,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     catalogosOk();
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
 
     vi.useFakeTimers();
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -710,7 +715,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     catalogosOk();
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByTestId('therapeutic-project-backdrop'));
@@ -726,7 +731,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     catalogosOk();
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
 
     fireEvent.click(screen.getByText(ptBR.common.cancel));
 
@@ -739,7 +744,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     mockCreateVersion.mockResolvedValue(CRIADA);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
 
     vi.useFakeTimers();
@@ -781,7 +786,7 @@ describe('spec 048 — passo de confirmação com campo pendente (dentro do draw
     mockCreateVersion.mockResolvedValue(CRIADA);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
     expect(screen.queryByTestId('pending-contacts-confirm')).not.toBeInTheDocument();
     expect(mockCreateVersion).toHaveBeenCalledTimes(1);
@@ -827,7 +832,7 @@ describe('spec 048 — passo de confirmação com campo pendente (dentro do draw
     montar({ mode: 'edit', version: { ...VERSAO, contactStatus: [PEND_RESP] } }, { contactReminderDates: ['2026-10-12', '2026-10-15'] });
     await esperarFormulario();
     expect((screen.getByTestId('tp-responsibles-pending') as HTMLInputElement).checked).toBe(true);
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     fireEvent.click(screen.getByTestId('tp-save'));
     expect(screen.getByTestId('pending-contacts-list')).toHaveTextContent('Responsáveis — vence em 16/10');
     expect(screen.getByTestId('pending-contacts-reminders')).toHaveTextContent('12/10, 15/10');

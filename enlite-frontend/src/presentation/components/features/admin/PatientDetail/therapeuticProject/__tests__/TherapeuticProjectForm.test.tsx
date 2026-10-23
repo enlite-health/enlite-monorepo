@@ -206,8 +206,13 @@ function alternarNoMulti(id: string, label: string): void {
   fireEvent.click(alvo.closest('button')!);
 }
 
+/** Escolhe o rótulo num Combobox de escolha única (id = do gatilho): o operador abrindo e clicando. */
+function escolherNoCombo(id: string, label: string): void {
+  alternarNoMulti(id, label);
+}
+
 function preencherTudo(): void {
-  fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'HYBRID' } });
+  escolherNoCombo('tp-modality', 'Híbrida'); // HYBRID = Híbrida
   fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
   fireEvent.click(screen.getByTestId('icd-pick-a'));
   fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: '  contexto clínico  ' } });
@@ -238,9 +243,8 @@ describe('modo "Novo" — versão do zero', () => {
   it('serviço: pré-seleciona o primeiro ATIVO e rotula com as horas quando existem', () => {
     montar();
 
-    const select = screen.getByTestId('tp-service') as HTMLSelectElement;
-    expect(select.value).toBe('svc-1');
-    const opcoes = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+    expect(screen.getByTestId('tp-service')).toHaveTextContent('Acompanhante Terapêutico · 20 h/sem'); // svc-1
+    const opcoes = Array.from(listaDoMulti('tp-service').querySelectorAll('li[role="option"]')).map((o) => o.textContent);
     expect(opcoes).toContain('Acompanhante Terapêutico · 20 h/sem');
     expect(opcoes).toContain('Cuidador'); // `weeklyHours: null` → sem o sufixo
     expect(screen.queryByTestId('tp-no-service')).not.toBeInTheDocument();
@@ -249,15 +253,14 @@ describe('modo "Novo" — versão do zero', () => {
   it('serviço INATIVO não entra na lista de escolha', () => {
     montar({ services: [servico(), servico({ id: 'svc-morto', active: false, serviceCode: 'CAREGIVER' })] });
 
-    const select = screen.getByTestId('tp-service') as HTMLSelectElement;
-    expect(Array.from(select.querySelectorAll('option')).map((o) => (o as HTMLOptionElement).value)).toEqual(['', 'svc-1']);
+    expect(Array.from(listaDoMulti('tp-service').querySelectorAll('li[role="option"]'))).toHaveLength(1); // só svc-1, o inativo fica fora
   });
 
   it('🔴 sem NENHUM serviço ativo: aviso âmbar e "Salvar" travado (não há o que vincular)', () => {
     montar({ services: [servico({ active: false })] });
 
     expect(screen.getByTestId('tp-no-service')).toHaveTextContent(tf('noActiveService'));
-    expect((screen.getByTestId('tp-service') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByTestId('tp-service')).toHaveTextContent(tf('servicePlaceholder'));
     expect(salvar().disabled).toBe(true);
   });
 
@@ -273,9 +276,9 @@ describe('modo "Novo" — versão do zero', () => {
   it('trocar o serviço marca o formulário como sujo', () => {
     montar();
 
-    fireEvent.change(screen.getByTestId('tp-service'), { target: { value: 'svc-2' } });
+    escolherNoCombo('tp-service', 'Cuidador'); // svc-2 = Cuidador (weeklyHours null: sem sufixo)
 
-    expect((screen.getByTestId('tp-service') as HTMLSelectElement).value).toBe('svc-2');
+    expect(screen.getByTestId('tp-service')).toHaveTextContent('Cuidador');
     expect(onDirty).toHaveBeenCalled();
   });
 });
@@ -373,16 +376,16 @@ describe('"Salvar" fica travado até TODA regra passar', () => {
     montar({ patientDiagnoses: [] });
     preencherTudo();
     expect(salvar().disabled).toBe(false);
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: '' } });
-    expect(salvar().disabled).toBe(true);
-    const opcoes = Array.from((screen.getByTestId('tp-modality') as HTMLSelectElement).options).map((o) => o.value).filter(Boolean);
-    expect(opcoes).toEqual(['IN_PERSON', 'ONLINE', 'HYBRID']);
-    expect(screen.getByText(ptBR.admin.patients.detail.therapeuticProjectCard.modalityOptions.ONLINE)).toBeInTheDocument();
+    cleanup();
+    montar({ patientDiagnoses: [] });
+    const opcoes = Array.from(listaDoMulti('tp-modality').querySelectorAll('li[role="option"]')).map((o) => o.textContent);
+    expect(opcoes).toEqual(['Presencial', 'On-line', 'Híbrida']); // IN_PERSON, ONLINE, HYBRID — sem linha de limpar
+    expect(opcoes).toContain(ptBR.admin.patients.detail.therapeuticProjectCard.modalityOptions.ONLINE);
     cleanup();
     montar({ from: { ...VERSAO, modality: null } });
-    expect((screen.getByTestId('tp-modality') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByTestId('tp-modality')).toHaveTextContent(tf('modalityPlaceholder'));
     expect(salvar().disabled).toBe(true);
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     expect(salvar().disabled).toBe(false);
   });
 
@@ -807,7 +810,7 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
 
   it('catálogo vazio/403: mensagem "No hay segmentos activos" e "Salvar" bloqueado em "Nuevo"', () => {
     montar({ patientDiagnoses: [], catalogs: { ...CATALOGOS, segments: [] } });
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'HYBRID' } });
+    escolherNoCombo('tp-modality', 'Híbrida'); // HYBRID = Híbrida
     fireEvent.click(screen.getByTestId('icd-pick-a'));
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'x' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'y' } });
@@ -920,7 +923,7 @@ describe('spec 048 — "Todavía no hay registro" / "No necesita" no corpo envia
       from: { ...VERSAO, contactStatus: [{ kind: 'COVERAGE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }] },
       initialContactStatus: [{ kind: 'COVERAGE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }],
     });
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     fireEvent.click(salvar());
     expect(onSubmit.mock.calls[0][0].contactStatus).toEqual({ COVERAGE: 'NOT_NEEDED' });
   });
@@ -931,7 +934,7 @@ describe('spec 048 — "Todavía no hay registro" / "No necesita" no corpo envia
       initialContactStatus: [{ kind: 'CARE_TEAM', status: 'PENDING', pendingSince: '2026-10-01T12:00:00.000Z', deadlineDate: '2026-10-16' }],
     });
     marcar('tp-careTeam-pending');
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     fireEvent.click(salvar());
     expect(onSubmit.mock.calls[0][0].contactStatus).toEqual({});
   });

@@ -40,7 +40,6 @@ import {
 } from '@domain/entities/TherapeuticProject';
 import type { TherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { Select } from '@presentation/components/atoms/Select';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 import { TherapeuticProjectContactField } from './TherapeuticProjectContactField';
 import { Input } from '@presentation/components/atoms/Input';
@@ -257,11 +256,11 @@ export function TherapeuticProjectForm({
               ? lockedText(lockedServiceLabel(), 'tp-service-locked')
               : (
                 <>
-                  <Select
+                  <Combobox
                     id="tp-service"
                     inputSize="compact"
                     value={contractedServiceId}
-                    onValueChange={touch(setContractedServiceId)}
+                    onChange={touch(setContractedServiceId)}
                     placeholder={tf('servicePlaceholder')}
                     options={activeServices.map((s) => ({
                       value: s.id,
@@ -283,11 +282,11 @@ export function TherapeuticProjectForm({
           </FormField>
 
           <FormField label={tc('modality')} htmlFor="tp-modality" labelSize="compact" required>
-            <Select
+            <Combobox
               id="tp-modality"
               inputSize="compact"
               value={modality}
-              onValueChange={(v) => touch(setModality)(v as TherapeuticModality)}
+              onChange={(v) => touch(setModality)(v as TherapeuticModality)}
               placeholder={tf('modalityPlaceholder')}
               options={THERAPEUTIC_MODALITIES.map((m) => ({ value: m, label: t(`admin.patients.detail.therapeuticProjectCard.modalityOptions.${m}`, m) }))}
               data-testid="tp-modality"
