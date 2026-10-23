@@ -64,7 +64,7 @@ function useMapPoints<P>(kind: MapKind, filters: WorkersMapFilters | PatientsMap
     // Ao RELIGAR: só apaga os pontos se a pergunta mudou. Apagar sempre parecia
     // seguro e não era — o seletor da âncora desliga ao trocar de aba e religa
     // ao voltar, com o MESMO escopo; zerar ali esvaziava a lista de opções e o
-    // `SearchableSelect`, sem achar o valor selecionado, voltava ao placeholder:
+    // `seletor antigo`, sem achar o valor selecionado, voltava ao placeholder:
     // a âncora continuava ativa e a tela dizia que não havia nenhuma.
     if (enabled) {
       setState((s) => (loadedKey === key

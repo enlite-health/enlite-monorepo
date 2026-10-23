@@ -41,7 +41,7 @@ type Common = {
   searchPlaceholder?: string;
   noResultsLabel?: string;
   /**
-   * BUSCA NO SERVIDOR (portada do SearchableSelect). Quando presente, o filtro
+   * BUSCA NO SERVIDOR (portada do seletor antigo). Quando presente, o filtro
    * local só vale enquanto `options` NÃO é a resposta do termo digitado; o texto
    * é devolvido aqui com debounce para o pai buscar.
    */
@@ -63,7 +63,7 @@ export type ComboboxProps = Common &
         multiple?: false;
         value: string;
         onChange: (value: string) => void;
-        /** 1ª linha que volta o valor a `''` (o placeholder selecionável do SelectField). */
+        /** 1ª linha que volta o valor a `''` (o placeholder selecionável do seletor antigo). */
         clearLabel?: string;
       }
     | { multiple: true; value: string[]; onChange: (values: string[]) => void }

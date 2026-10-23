@@ -132,7 +132,7 @@ const normaliza = (s: string): string => normalizeText(s.trim());
  *
  * Filtra no CLIENTE, sobre a árvore já montada — nada muda no que é gravado (a `cells` marcada
  * fica no `Set` da página, intacta; esta função só decide o que a grade DESENHA). Casa por três
- * campos, com `normalizeText` (minúsculo + sem diacrítico — o MESMO util do `SearchableSelect`,
+ * campos, com `normalizeText` (minúsculo + sem diacrítico — o MESMO util do `seletor antigo`,
  * D209 do gate `revisao-pr`: 32 dos 96 rótulos do painel têm acento — "Gestión a la Vista",
  * "Mensajería", "Dirección", "Diagnóstico", "Preselección", "Números clave", "Analítica",
  * "Importación" — e `toLowerCase()` sozinho não casa "gestion" com "Gestión"):

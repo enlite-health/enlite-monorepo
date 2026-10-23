@@ -28,7 +28,7 @@ interface Props {
 
 /**
  * Professional-data section of the worker edit drawer. Compact DS fields:
- * SelectField for single enums, MultiSelect for arrays, InputWithIcon for text.
+ * seletor antigo for single enums, MultiSelect for arrays, InputWithIcon for text.
  * Option labels reuse the existing workerDetailLabels resolvers.
  */
 export function WorkerEditProfessionalFields({ control, register }: Props): JSX.Element {

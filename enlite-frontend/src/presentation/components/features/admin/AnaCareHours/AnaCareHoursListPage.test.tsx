@@ -335,7 +335,7 @@ describe('AnaCareHoursListPage', () => {
 });
 
 describe('AnaCareHoursListPage — alturas dos seletores (spec 070)', () => {
-  it('POSITIVO — filtro de prestador com a altura compacta (h-12) que o ProviderFilterCombobox dava', () => {
+  it('POSITIVO — filtro de prestador com a altura compacta (h-12) que o seletor antigo dava', () => {
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
     const gatilho = screen.getByTestId('anacare-hours-provider-filter');
     expect(gatilho.className).toContain('h-12');

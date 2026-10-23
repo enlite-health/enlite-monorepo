@@ -671,7 +671,7 @@ describe('Combobox múltipla (herdada do MultiSelect)', () => {
       expect(trigger().className).toContain(cls);
     });
 
-    it('inputSize padrão é default (h-[60px]), igual a Select/SelectField', () => {
+    it('inputSize padrão é default (h-[60px]), igual ao seletor antigo', () => {
       renderSingle();
       expect(trigger().className).toContain('h-[60px]');
       expect(trigger().className).not.toContain('h-12');

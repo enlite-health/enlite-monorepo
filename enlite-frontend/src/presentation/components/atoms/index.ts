@@ -14,8 +14,6 @@ export type { MetricAccent } from './MetricCard';
 export { PageContainer } from './PageContainer';
 export { PercentageDisplay } from './PercentageDisplay';
 export { ProgressBar } from './ProgressBar';
-export { Select } from './Select';
-export type { SelectProps, SelectOption } from './Select';
 export { VacancyStatusBadge } from './VacancyStatusBadge';
 export {
   Table,
