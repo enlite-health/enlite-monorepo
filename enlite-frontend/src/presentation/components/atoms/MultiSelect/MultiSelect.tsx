@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text/Text';
 import { inputWrapperClasses, type InputSize } from '../Input/inputClasses';
 import type { SelectOption } from '../Select/Select';
+import { normalizeText } from '@presentation/utils/normalizeText';
 
 export interface MultiSelectProps {
   options: SelectOption[];
@@ -13,6 +14,10 @@ export interface MultiSelectProps {
   inputSize?: InputSize;
   disabled?: boolean;
   id?: string;
+  /** Opt-in (spec 060): campo de busca dentro do painel. Default false = DOM de sempre. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  noResultsLabel?: string;
 }
 
 export function MultiSelect({
@@ -23,12 +28,29 @@ export function MultiSelect({
   inputSize = 'compact',
   disabled = false,
   id,
+  searchable = false,
+  searchPlaceholder,
+  noResultsLabel,
 }: MultiSelectProps): JSX.Element {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    setQuery('');
+  }, []);
+
+  const toggleOpen = useCallback(() => {
+    if (open) close();
+    else setOpen(true);
+  }, [open, close]);
+
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus();
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -56,12 +78,12 @@ export function MultiSelect({
     (e: React.KeyboardEvent<HTMLButtonElement>) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        setOpen((prev) => !prev);
+        toggleOpen();
       } else if (e.key === 'Escape') {
         close();
       }
     },
-    [close],
+    [close, toggleOpen],
   );
 
   const handleOptionKeyDown = useCallback(
@@ -76,6 +98,25 @@ export function MultiSelect({
     [toggle, close],
   );
 
+  const needle = normalizeText(query.trim());
+  const visible =
+    searchable && needle ? options.filter((o) => normalizeText(o.label).includes(needle)) : options;
+
+  const handleSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        close();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        containerRef.current?.querySelector<HTMLButtonElement>('[role="option"] button')?.focus();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+      }
+    },
+    [close],
+  );
+
   const buttonLabel =
     value.length === 0
       ? placeholder
@@ -85,6 +126,38 @@ export function MultiSelect({
 
   const wrapperClasses = inputWrapperClasses({ size: inputSize, disabled });
 
+  const panelClasses = 'absolute z-50 w-full mt-1 bg-white border border-[#D9D9D9] rounded-[10px] shadow-lg py-1';
+  const scrollClasses = 'overflow-y-auto max-h-60';
+
+  const list = (cls: string) => (
+    <ul role="listbox" aria-multiselectable="true" className={cls}>
+      {visible.map((opt) => {
+        const checked = value.includes(opt.value);
+        return (
+          <li key={opt.value} role="option" aria-selected={checked}>
+            <button
+              type="button"
+              onKeyDown={(e) => handleOptionKeyDown(e, opt.value)}
+              onClick={() => toggle(opt.value)}
+              className="w-full flex items-center gap-2 px-4 py-2 hover:bg-gray-50 transition-colors text-left"
+            >
+              <input
+                type="checkbox"
+                readOnly
+                checked={checked}
+                tabIndex={-1}
+                className="pointer-events-none accent-primary w-4 h-4 shrink-0"
+              />
+              <Text as="span" size="sm" weight="medium" color="secondary">
+                {opt.label}
+              </Text>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
   return (
     <div ref={containerRef} className="relative w-full" id={id}>
       <button
@@ -93,7 +166,7 @@ export function MultiSelect({
         aria-expanded={open}
         aria-haspopup="listbox"
         onKeyDown={handleKeyDown}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={toggleOpen}
         className={[
           wrapperClasses,
           'flex items-center justify-between cursor-pointer select-none text-left',
@@ -121,37 +194,28 @@ export function MultiSelect({
         />
       </button>
 
-      {open && (
-        <ul
-          role="listbox"
-          aria-multiselectable="true"
-          className="absolute z-50 w-full mt-1 bg-white border border-[#D9D9D9] rounded-[10px] shadow-lg py-1 overflow-y-auto max-h-60"
-        >
-          {options.map((opt) => {
-            const checked = value.includes(opt.value);
-            return (
-              <li key={opt.value} role="option" aria-selected={checked}>
-                <button
-                  type="button"
-                  onKeyDown={(e) => handleOptionKeyDown(e, opt.value)}
-                  onClick={() => toggle(opt.value)}
-                  className="w-full flex items-center gap-2 px-4 py-2 hover:bg-gray-50 transition-colors text-left"
-                >
-                  <input
-                    type="checkbox"
-                    readOnly
-                    checked={checked}
-                    tabIndex={-1}
-                    className="pointer-events-none accent-primary w-4 h-4 shrink-0"
-                  />
-                  <Text as="span" size="sm" weight="medium" color="secondary">
-                    {opt.label}
-                  </Text>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {open && !searchable && list(`${panelClasses} ${scrollClasses}`)}
+      {open && searchable && (
+        <div className={`${panelClasses} flex flex-col`}>
+          <input
+            ref={searchRef}
+            type="text"
+            data-testid={`${id}-search`}
+            aria-label={t('common.multiSelect.searchAriaLabel')}
+            placeholder={searchPlaceholder ?? t('common.multiSelect.searchPlaceholder')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            className="mx-2 mb-1 px-3 py-2 text-sm border border-[#D9D9D9] rounded-[8px] outline-none focus:border-primary"
+          />
+          {visible.length === 0 ? (
+            <Text as="p" size="sm" color="muted" className="px-4 py-2" data-testid={`${id}-no-results`}>
+              {noResultsLabel ?? t('common.multiSelect.noResults')}
+            </Text>
+          ) : (
+            list(scrollClasses)
+          )}
+        </div>
       )}
     </div>
   );

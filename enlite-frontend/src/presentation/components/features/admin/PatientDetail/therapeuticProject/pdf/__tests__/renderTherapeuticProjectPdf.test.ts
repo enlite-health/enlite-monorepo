@@ -355,4 +355,21 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     const externas = fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => /^https?:/i.test(u));
     expect(externas).toEqual([]);
   });
+
+  it('spec 060: as atividades saem A–Z no PDF, independentemente da ordem gravada', async () => {
+    const { text } = await texto({
+      ...fullInput,
+      version: {
+        ...version,
+        activities: [
+          { id: 'z', label: 'Zeta-actividad-test' },
+          { id: 'a', label: 'Abeja-actividad-test' },
+          { id: 'm', label: 'Mesa-actividad-test' },
+        ],
+      },
+    });
+    const pos = ['Abeja-actividad-test', 'Mesa-actividad-test', 'Zeta-actividad-test'].map((l) => text.indexOf(l));
+    expect(pos.every((i) => i >= 0)).toBe(true);
+    expect(pos).toEqual([...pos].sort((a, b) => a - b));
+  });
 });

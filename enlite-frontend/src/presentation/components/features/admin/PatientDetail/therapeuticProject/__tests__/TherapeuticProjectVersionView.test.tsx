@@ -375,3 +375,21 @@ describe('spec 048 — "Todavía no hay registro — vence el DD/MM" / "No neces
     expect(screen.queryByTestId('tpv-contact-status')).not.toBeInTheDocument();
   });
 });
+
+describe('atividades A–Z na exibição (spec 060)', () => {
+  const DESORDENADAS = [
+    { id: 'ac1', label: 'Zeta actividad' },
+    { id: 'ac2', label: 'Árbol actividad' },
+    { id: 'ac3', label: 'Mesa actividad' },
+    { id: 'ac4', label: 'Abeja actividad' },
+  ];
+  const lis = () => Array.from(screen.getByTestId('tpv-activities').querySelectorAll('li')).map((li) => li.textContent);
+
+  it('completo: A–Z; compacto: as 3 primeiras do ORDENADO (ordena antes do corte)', () => {
+    const { unmount } = montar({ activities: DESORDENADAS });
+    expect(lis()).toEqual(['Abeja actividad', 'Árbol actividad', 'Mesa actividad', 'Zeta actividad']);
+    unmount();
+    montar({ activities: DESORDENADAS }, { compact: true });
+    expect(lis()).toEqual(['Abeja actividad', 'Árbol actividad', 'Mesa actividad']);
+  });
+});
