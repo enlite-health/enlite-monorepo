@@ -34,6 +34,7 @@ import {
 import {
   readPatientStatusApi, countOutboundSince, readTrail, countTrail, putMove, chooseReasonInModal,
 } from '../helpers/funnel-move-e2e-helper';
+import { escolherNaListaAberta } from '../helpers/combobox';
 import { runMatchApi, readFunnelApi, gotoVacancyDetail, switchToKanban } from '../helpers/compativeis-e2e-helper';
 import { readItineraryApi, type ReadItineraryResult, type ItineraryResponseDto } from '../helpers/itinerario-e2e-helper';
 import {
@@ -341,19 +342,17 @@ test.describe('cadeia-completa @integration', () => {
 
       /**
        * Aba Itinerario aberta: "Asignar" do slot → modal → busca pelo rótulo visível → confirmar. Devolve o POST.
-       * `listed` = nº de opções esperado na lista aberta (o `SearchableSelect` abre com 1 linha de placeholder a mais).
+       * `listed` = nº de opções esperado na lista aberta (o `Combobox` abre com 1 linha de placeholder a mais; a busca só existe com >= 3 opções).
        */
       const allocateOnScreen = async (serviceId: string, slotId: string, label: string, listed?: number): Promise<Response> => {
         await openFixedSchedule(page, serviceId); // a faixa mora na aba "Horario fijo" da tela do serviço (spec 069)
         await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
         const modal = page.getByTestId('itinerario-editar-modal');
         await expect(modal).toBeVisible();
-        await modal.getByTestId('itinerario-editar-prestador').click();
+        const prestador = modal.getByTestId('itinerario-editar-prestador');
+        await prestador.click();
         if (listed !== undefined) await expect(modal.getByRole('listbox').getByRole('option')).toHaveCount(listed + 1);
-        const search = modal.getByPlaceholder('Buscar...');
-        await search.click();
-        await search.pressSequentially(label, { delay: 20 });
-        await modal.getByRole('option', { name: label }).click();
+        await escolherNaListaAberta(page, prestador, label, { exato: false });
         const [postResp] = await Promise.all([
           page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slotId}/allocations`)),
           modal.getByTestId('itinerario-editar-guardar').click(),
