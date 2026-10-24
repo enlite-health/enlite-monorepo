@@ -8,7 +8,7 @@
  *
  *  1. feliz: vaga com serviço abre no form de edição com profissões/sexo/dia de pagamento `disabled` e os
  *     links da ficha; clique real no link do sexo abre a ficha na aba Servicio Contratado; o sexo é mudado
- *     NO SERVIÇO pela UI da ficha (drawer, click + selectOption) e a vaga passa a mostrar o valor novo;
+ *     NO SERVIÇO pela UI da ficha (drawer, click + escolherNoCombo) e a vaga passa a mostrar o valor novo;
  *  2. alt: PUT com `required_sex` na vaga com serviço → 422 com `locked_fields` ⊇ required_sex (contrato
  *     de API, via `request`) e o banco não muda;
  *  3. alt: vaga SEM serviço abre com os 3 campos habilitados, sem links, e salva `required_sex` pela tela.
@@ -19,6 +19,7 @@ import { insertTestPatient, cleanupTestPatient, insertBaseVacancy, cleanupVacanc
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
 const STAFF: MockUser = { uid: `e2e-vaga-campos-servico-${Date.now()}`, email: `e2e.vaga-campos-servico.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
@@ -81,7 +82,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
       await expect(page.getByTestId(`locked-field-link-${id}`)).toHaveAttribute('href', fichaUrl);
     }
     // Valores vindos do serviço (RECRUITMENT_FIELDS_E2E: BOTH / 'dia 5').
-    await expect(page.getByTestId('required-sex-select')).toHaveValue('BOTH');
+    await expect(page.getByTestId('required-sex-select')).toContainText('Indistinto'); // BOTH = Indistinto
     await expect(page.getByTestId('payment-day-input')).toHaveValue(RECRUITMENT_FIELDS_E2E.paymentDay);
 
     // Clique real no link (abre em nova aba): a URL é a da ficha na aba do serviço. A edição segue na aba
@@ -99,7 +100,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
     await expect(page.getByTestId(`contracted-service-row-${serviceId}`)).toBeVisible({ timeout: 20_000 });
     await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId('svc-requiredSex-1').selectOption('F');
+    await escolherNoCombo(page, page.getByTestId('svc-requiredSex-1'), 'Femenino'); // F
     const guardou = page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${serviceId}$`).test(r.url()));
     await page.getByTestId(`contracted-service-save-${serviceId}`).click();
     expect((await guardou).status()).toBe(200);
@@ -109,7 +110,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
     // Volta à vaga: o valor novo do serviço aparece (a vaga lê do serviço, não de uma cópia).
     await page.goto(`/admin/vacancies/${vacancyId}/edit`);
     await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByTestId('required-sex-select')).toHaveValue('F');
+    await expect(page.getByTestId('required-sex-select')).toContainText('Femenino'); // F = Femenino
     await expect(page.getByTestId('required-sex-select')).toBeDisabled();
   });
 
@@ -146,7 +147,7 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
       await expect(page.getByTestId(`locked-field-link-${id}`)).toHaveCount(0);
     }
 
-    await page.getByTestId('required-sex-select').selectOption('F');
+    await escolherNoCombo(page, page.getByTestId('required-sex-select'), 'Femenino'); // F = Femenino
 
     const saveBtn = page.getByTestId('create-vacancy-save-btn');
     await expect(saveBtn).toBeEnabled({ timeout: 10_000 });

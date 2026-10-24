@@ -27,7 +27,8 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
-import { primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = `http://id.who.int/icd/entity/e2e-048-${RUN_ID}`;
@@ -59,8 +60,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<voi
 }
 
 async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();
   for (let i = 0; i < n; i++) await opcoes.nth(i).click();
@@ -76,8 +78,9 @@ async function fecharLista(page: Page): Promise<void> {
 }
 
 async function marcarPorTexto(page: Page, id: string, texto: string): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcao = root.locator('li[role="option"]', { hasText: texto });
   await expect(opcao).toBeVisible({ timeout: 10_000 });
   await opcao.locator('button').click();
@@ -97,16 +100,13 @@ async function alternar(escopo: ReturnType<typeof campo>, rotulo: string): Promi
 }
 
 /** Preenche o "Nuevo" até só faltar o que o teste decide (contatos). */
-async function preencherNuevo(page: Page, serviceId: string): Promise<void> {
+async function preencherNuevo(page: Page): Promise<void> {
   await page.getByTestId('tp-new-btn').click();
   await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-  await page.getByTestId('tp-modality').selectOption('HYBRID');
-  // Segmento (MACRO, obrigatório no "Nuevo"): `selectOption` pelo rótulo — o type-ahead do select nativo não é confiável no
-  // Chromium/Linux do CI (medido: o valor ficou vazio no runner), e o segmento não é o que esta spec mede.
-  const segmento = primeiroSegmento().label;
-  await page.locator('#tp-segment').selectOption({ label: segmento });
-  await expect(page.locator('#tp-segment').locator('option:checked')).toHaveText(segmento);
+  await expect(page.getByTestId('tp-service')).toHaveText('Cuidador'); // serviceId = Cuidador (o seed não tem faixa de horário, então não há sufixo de h/sem)
+  await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
+  // Segmento (MACRO, obrigatório no "Nuevo"): escolhido pelo gesto humano no Combobox (abrir, buscar, clicar a opção pelo rótulo).
+  await escolherSegmento(page, primeiroSegmento().label);
   const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
   await page.getByTestId('tp-icd-input').click();
   await page.keyboard.type('sintetico 048');
@@ -183,14 +183,14 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await loginAs(page, operador);
     await page.goto(`/admin/patients/${seed.patientId}`);
     await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
-    await preencherNuevo(page, serviceId);
+    await preencherNuevo(page);
 
     // Responsables: marca -> o select desabilita e o aviso aparece SOB o campo.
     const responsables = campo(page, 'responsibles');
     await alternar(responsables, LABEL_PENDING);
     await expect(responsables.getByLabel(LABEL_PENDING, { exact: true })).toBeChecked();
     await expect(responsables.getByTestId('tp-responsibles-deadline')).toHaveText('Tenés 15 días para completar este campo.');
-    await expect(page.locator('#tp-responsibles button[aria-haspopup="listbox"]')).toBeDisabled();
+    await expect(page.locator('#tp-responsibles')).toBeDisabled();
     const equipo = campo(page, 'careTeam');
     await alternar(equipo, LABEL_PENDING);
     await expect(equipo.getByLabel(LABEL_PENDING, { exact: true })).toBeChecked();
@@ -292,8 +292,8 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await alternar(cobertura, LABEL_WAIVED);
     await expect(cobertura.getByLabel(LABEL_WAIVED, { exact: true })).toBeChecked();
     await expect(cobertura.getByLabel(LABEL_PENDING, { exact: true })).not.toBeChecked();
-    await expect(page.locator('#tp-coverageContacts button[aria-haspopup="listbox"]')).toBeDisabled();
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
+    await expect(page.locator('#tp-coverageContacts')).toBeDisabled();
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
 
     // Já havia campos pendentes (Responsables, Equipo): a confirmação aparece e traz os vencimentos REAIS (herdados).
     await page.getByTestId('tp-save').click();
@@ -329,7 +329,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     await expect(equipo.getByLabel(LABEL_PENDING, { exact: true })).not.toBeChecked();
     await marcarPorTexto(page, 'tp-careTeam', PROFISSIONAL_NOME);
     await expect(page.locator('#tp-careTeam')).toContainText(PROFISSIONAL_NOME);
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
 
     await page.getByTestId('tp-save').click();
     const confirmacao = page.getByTestId('pending-contacts-confirm');

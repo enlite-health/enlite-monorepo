@@ -21,6 +21,7 @@ import {
 import {
   activateRecruitmentViaApi, readItineraryApi, createServiceViaApi, ITINERARIO_STAFF,
 } from '../helpers/itinerario-e2e-helper';
+import { escolherNaListaAberta } from '../helpers/combobox';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
@@ -111,11 +112,9 @@ test.describe('itinerario-aba @integration', () => {
       await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
       const modal = page.getByTestId('itinerario-editar-modal');
       await expect(modal).toBeVisible();
-      await modal.getByTestId('itinerario-editar-prestador').click();
-      const search = modal.getByPlaceholder('Buscar...');
-      await search.click();
-      await page.keyboard.type(wLabel.slice(-10), { delay: 20 });
-      await modal.getByRole('option', { name: wLabel }).click();
+      const prestador = modal.getByTestId('itinerario-editar-prestador');
+      await prestador.click();
+      await escolherNaListaAberta(page, prestador, wLabel, { exato: false });
       const [itinAfterResp, postResp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'GET' && /\/itinerary(\?|$)/.test(r.url()) && r.status() === 200),
         page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slotId}/allocations`)),
@@ -325,10 +324,9 @@ test.describe('itinerario-aba @integration', () => {
       await page.getByTestId(`itinerario-slot-editar-${slot1}`).click();
       const modal = page.getByTestId('itinerario-editar-modal');
       await expect(modal).toBeVisible();
-      await modal.getByTestId('itinerario-editar-prestador').click();
-      await modal.getByPlaceholder('Buscar...').click();
-      await page.keyboard.type(wLabel.slice(-10), { delay: 20 });
-      await modal.getByRole('option', { name: wLabel }).click();
+      const prestador = modal.getByTestId('itinerario-editar-prestador');
+      await prestador.click();
+      await escolherNaListaAberta(page, prestador, wLabel, { exato: false });
       const [postResp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slot1}/allocations`)),
         modal.getByTestId('itinerario-editar-guardar').click(),

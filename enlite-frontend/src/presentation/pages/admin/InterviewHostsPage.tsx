@@ -11,7 +11,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { ActionButton } from '@presentation/components/features/access';
@@ -132,11 +132,11 @@ export default function InterviewHostsPage() {
       <div className="mb-4 flex items-center gap-3">
         <label htmlFor="ih-filter-country" className="text-sm font-medium text-slate-900">{t('admin.interviewHosts.filterCountry')}</label>
         <div className="w-44">
-          <Select
+          <Combobox
             id="ih-filter-country"
             inputSize="dense"
             value={filter}
-            onValueChange={(v) => setFilter(v as CountryFilter)}
+            onChange={(v) => setFilter(v as CountryFilter)}
             options={[
               { value: 'ALL', label: t('admin.interviewHosts.filterAll') },
               { value: 'AR', label: 'AR' },

@@ -1,6 +1,6 @@
 /**
  * Campo "Segmento (Ana Care)" do form do PTI (spec 030, FR-007). Extraído de `TherapeuticProjectForm`
- * (teto de 400 linhas). É MACRO e CLÍNICO: em "Nuevo" é um select obrigatório sobre o catálogo ATIVO;
+ * (teto de 400 linhas). É MACRO e CLÍNICO: em "Nuevo" é um combobox obrigatório sobre o catálogo ATIVO;
  * em "Editar" é TEXTO travado (o servidor herda o segmento da versão de origem), nunca input
  * desabilitado. Versão com `redacted.clinical` mostra o marcador de redigido, não "—".
  * `data-clarity-mask` (lex C8): o rótulo do segmento é dado de saúde.
@@ -8,7 +8,7 @@
 import { useTranslation } from 'react-i18next';
 import type { CatalogSnapshotItem, TherapeuticCatalogItem } from '@domain/entities/TherapeuticProject';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 
 interface Props {
@@ -36,11 +36,11 @@ export function TherapeuticProjectSegmentField({ segments, value, onChange, lock
         </Text>
       ) : (
         <>
-          <Select
+          <Combobox
             id="tp-segment"
             inputSize="compact"
             value={value}
-            onValueChange={onChange}
+            onChange={onChange}
             placeholder={tf('segmentPlaceholder')}
             options={segments.map((s) => ({ value: s.id, label: s.label }))}
             data-clarity-mask="True"

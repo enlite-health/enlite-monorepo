@@ -9,7 +9,7 @@ import {
   PROVIDER_AGE_BANDS,
 } from '@domain/entities/PatientContractedService';
 import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
-import type { SelectOption } from '@presentation/components/molecules/SelectField';
+import { type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 const CARD = 'admin.patients.detail.contractedServicesCard';
 
@@ -20,7 +20,7 @@ const CARD = 'admin.patients.detail.contractedServicesCard';
  */
 export function useContractedServiceOptions(addresses: PatientAddressDetail[]) {
   const { t } = useTranslation();
-  const enumOptions = (values: readonly string[], group: string): SelectOption[] =>
+  const enumOptions = (values: readonly string[], group: string): ComboboxOption[] =>
     values.map((v) => ({ value: v, label: t(`${CARD}.${group}.${v}`, { defaultValue: v }) }));
 
   return {
@@ -32,9 +32,9 @@ export function useContractedServiceOptions(addresses: PatientAddressDetail[]) {
     deviceOptions: DEVICE_TYPE_CODES.map((v) => ({
       value: v,
       label: t(`admin.patients.deviceTypeOptions.${v}`, { defaultValue: v }),
-    })) as SelectOption[],
+    })) as ComboboxOption[],
     // Migration 330: só endereços VIVOS da ficha. Um serviço cujo endereço foi arquivado chega com
     // `addressId` fora desta lista — o select mostra vazio e o checklist acusa SERVICE_ADDRESS.
-    addressOptions: addresses.map((a) => ({ value: a.id, label: patientAddressLabel(a) })) as SelectOption[],
+    addressOptions: addresses.map((a) => ({ value: a.id, label: patientAddressLabel(a) })) as ComboboxOption[],
   };
 }

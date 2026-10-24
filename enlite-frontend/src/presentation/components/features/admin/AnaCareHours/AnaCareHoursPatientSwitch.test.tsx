@@ -19,7 +19,8 @@ function listPatient(anaCareId: string, name?: string): AnaCareListPatient {
   };
 }
 
-const PATIENTS = [listPatient('AC-PAT-0'), listPatient('AC-PAT-6'), listPatient('AC-PAT-7', 'Lucía Fernández QA')];
+// 4 pacientes: sem o atual sobram 3 opções — o mínimo para o Combobox oferecer o campo de busca (SEARCH_MIN_OPTIONS)
+const PATIENTS = [listPatient('AC-PAT-0'), listPatient('AC-PAT-6'), listPatient('AC-PAT-7', 'Lucía Fernández QA'), listPatient('AC-PAT-8')];
 
 function setup(props: Partial<React.ComponentProps<typeof AnaCareHoursPatientSwitch>> = {}) {
   const onSelect = vi.fn();
@@ -71,32 +72,32 @@ describe('AnaCareHoursPatientSwitch', () => {
   it('POSITIVO — as opções EXCLUEM o paciente atual', async () => {
     const { user } = setup();
     await open(user);
-    expect(screen.queryByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-0')).toBeNull();
-    expect(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-6')).toBeInTheDocument();
-    expect(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-7')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Sin vínculo · ID AC-PAT-0' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Lucía Fernández QA' })).toBeInTheDocument();
   });
 
   it('POSITIVO — filtra por ID do Ana Care', async () => {
     const { user } = setup();
     await open(user);
     await user.keyboard('PAT-7');
-    expect(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-7')).toBeInTheDocument();
-    expect(screen.queryByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-6')).toBeNull();
+    expect(screen.getByRole('option', { name: 'Lucía Fernández QA' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeNull();
   });
 
   it('POSITIVO — filtra por nome, sem acento nem maiúscula', async () => {
     const { user } = setup();
     await open(user);
     await user.keyboard('lucia fern');
-    expect(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-7')).toBeInTheDocument();
-    expect(screen.queryByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-6')).toBeNull();
+    expect(screen.getByRole('option', { name: 'Lucía Fernández QA' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeNull();
   });
 
   it('ALTERNATIVO — sem match mostra "Sin resultados" (chave própria) e não navega', async () => {
     const { user, onSelect } = setup();
     await open(user);
     await user.keyboard('zzzz');
-    expect(screen.getByTestId('anacare-hours-patient-switch-combobox-no-match')).toHaveTextContent('admin.anacareHours.detail.patientSwitchNoMatch');
+    expect(screen.getByTestId('anacare-hours-patient-switch-combobox-no-results')).toHaveTextContent('admin.anacareHours.detail.patientSwitchNoMatch');
     expect(onSelect).not.toHaveBeenCalled();
   });
 
@@ -104,7 +105,7 @@ describe('AnaCareHoursPatientSwitch', () => {
     const { user, onSelect } = setup();
     await open(user);
     await user.keyboard('PAT-6');
-    await user.click(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-6'));
+    await user.click(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' }).querySelector('button')!);
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('AC-PAT-6');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -136,8 +137,17 @@ describe('AnaCareHoursPatientSwitch', () => {
     const { user, fetchSpy } = setup();
     await open(user);
     await user.keyboard('PAT-6');
-    await user.click(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-6'));
+    await user.click(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' }).querySelector('button')!);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+});
+
+describe('AnaCareHoursPatientSwitch — altura do seletor de paciente', () => {
+  it('POSITIVO — o gatilho tem a altura compacta (h-12) que o seletor antigo dava, não a h-[60px]', async () => {
+    const { user } = setup();
+    await user.click(icon());
+    expect(field().className).toContain('h-12');
+    expect(field().className).not.toContain('h-[60px]');
   });
 });

@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdminPatientsPage } from '../AdminPatientsPage';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 // ── Dublês ────────────────────────────────────────────────────────────────────
 
@@ -73,12 +74,6 @@ vi.mock('@presentation/components/features/admin/PatientFilters', () => ({
         onChange={(e) => p.onShowDeactivatedChange(e.target.checked)}
       />
     </div>
-  ),
-}));
-
-vi.mock('@presentation/components/atoms/Select', () => ({
-  Select: ({ value, onValueChange }: any) => (
-    <button data-testid="por-pagina" data-value={value} onClick={() => onValueChange('10')}>{value}</button>
   ),
 }));
 
@@ -278,7 +273,7 @@ describe('AdminPatientsPage — paginação', () => {
     const u = user();
     await u.click(screen.getByLabelText('admin.patients.nextPage'));
     expect(ultimosFiltros().offset).toBe('20');
-    await u.click(screen.getByTestId('por-pagina'));
+    await selectCombo(screen.getByRole('combobox'), '10'); // itens por página: 10
     expect(ultimosFiltros()).toMatchObject({ limit: '10', offset: '0' });
   });
 });

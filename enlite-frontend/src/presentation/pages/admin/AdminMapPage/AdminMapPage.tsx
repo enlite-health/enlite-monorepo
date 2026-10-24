@@ -29,7 +29,7 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Button } from '@presentation/components/atoms/Button';
 import { PointsMap } from '@presentation/components/molecules/PointsMap/PointsMap';
 import { CenterLabel, Field, Legend, NoLocationNotice, Step } from './mapSidebar';
@@ -235,7 +235,7 @@ export function AdminMapPage(): JSX.Element {
           <section className="flex flex-col gap-2 rounded-md border border-gray-200 bg-white px-3 py-3" data-testid="map-center-block">
             <Step n={1} title={anchorUi.step} />
             <Field id="map-country" label={t('admin.map.country', 'País')}>
-              <Select data-testid="map-country" id="map-country" inputSize="compact" options={countryOptions} value={country} onValueChange={onCountryChange} />
+              <Combobox data-testid="map-country" id="map-country" inputSize="compact" options={countryOptions} value={country} onChange={onCountryChange} />
             </Field>
             {/* Um seletor só: as duas abas diferem no TEXTO e em qual âncora
                 guardam, não no comportamento. O `key` força remontar ao trocar
@@ -275,22 +275,22 @@ export function AdminMapPage(): JSX.Element {
               <section className="flex flex-col gap-2" data-testid="map-filters-block">
                 <Step n={2} title={t('admin.map.steps.filters', 'Filtros')} />
                 <Field id="map-radius" label={t('admin.map.radius', 'Radio')}>
-                  <Select data-testid="map-radius" id="map-radius" inputSize="compact" options={radiusOptions} value={String(radiusKm)} onValueChange={(v) => setRadiusKm(Number(v))} />
+                  <Combobox data-testid="map-radius" id="map-radius" inputSize="compact" options={radiusOptions} value={String(radiusKm)} onChange={(v) => setRadiusKm(Number(v))} />
                 </Field>
 
                 {kind === 'workers' ? (
                   <>
                     <Field id="map-docs" label={t('admin.map.docs.label', 'Documentación')}>
-                      <Select data-testid="map-docs" id="map-docs" inputSize="compact" options={docsOptions} value={docs} onValueChange={(v) => setDocs(v as Docs)} />
+                      <Combobox data-testid="map-docs" id="map-docs" inputSize="compact" options={docsOptions} value={docs} onChange={(v) => setDocs(v as Docs)} />
                     </Field>
                     <Field id="map-profession" label={t('admin.map.profession.label', 'Profesión')}>
-                      <Select data-testid="map-profession" id="map-profession" inputSize="compact" options={professionOptions} value={profession} onValueChange={setProfession} />
+                      <Combobox data-testid="map-profession" id="map-profession" inputSize="compact" options={professionOptions} value={profession} onChange={setProfession} />
                     </Field>
                   </>
                 ) : (
                   <>
                     <Field id="map-patient-status" label={t('admin.map.patientStatus.label', 'Estado')}>
-                      <Select data-testid="map-patient-status" id="map-patient-status" inputSize="compact" options={patientStatusOptions} value={patientStatus} onValueChange={setPatientStatus} />
+                      <Combobox data-testid="map-patient-status" id="map-patient-status" inputSize="compact" options={patientStatusOptions} value={patientStatus} onChange={setPatientStatus} />
                     </Field>
                     <Checkbox
                       id="map-open-vacancies"

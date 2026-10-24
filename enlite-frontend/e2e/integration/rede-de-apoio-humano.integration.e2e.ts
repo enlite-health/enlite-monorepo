@@ -2,7 +2,7 @@
  * rede-de-apoio-humano.integration.e2e.ts — spec 018, PR-2 (`lex` #4, D-A).
  *
  * Um HUMANO, contra o stack REAL (frontend + API + Postgres, engine de permissão LIGADO), zero
- * mock: click + `keyboard.type` + `selectOption` só no `<select>` nativo. Molde:
+ * mock: click + `keyboard.type` + `escolherNoCombo` (abre o Combobox e clica a opção pelo rótulo). Molde:
  * `rede-de-apoio-por-linha.integration.e2e.ts` (PR-1) + `abac-stack-helper.ts` (grupos ABAC).
  *
  * O que se prova:
@@ -19,6 +19,7 @@ import { runSQL, cleanupPatientDeep } from '../helpers/patient-detail-c-helper';
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -97,7 +98,7 @@ test.describe('spec 018/PR-2 — rede de apoio (contatos externos + marca de eme
     await expect(page.getByTestId('pxc-empty')).toBeVisible();
 
     await page.getByTestId('pxc-add').click();
-    await page.getByTestId('pxc-relation-0').selectOption('TEACHER');
+    await escolherNoCombo(page, page.getByTestId('pxc-relation-0'), 'Docente'); // TEACHER
     await digitar(page, 'pxc-name-0', 'Profesora Sintética');
     await digitar(page, 'pxc-phone-0', '+54 11 5555-0001');
 
@@ -162,7 +163,7 @@ test.describe('spec 018/PR-2 — rede de apoio (contatos externos + marca de eme
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('pxc-name-0')).toHaveValue('Profesora Sintética');
     await page.getByTestId('pxc-add').click();
-    await page.getByTestId('pxc-relation-1').selectOption('NEIGHBOR');
+    await escolherNoCombo(page, page.getByTestId('pxc-relation-1'), 'Vecino/a'); // NEIGHBOR
     await digitar(page, 'pxc-name-1', 'Vecina Sin Telefono');
     const postContato = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes(`/patients/${patientId}/external-contacts`));
     await page.getByTestId('pxc-save').click();

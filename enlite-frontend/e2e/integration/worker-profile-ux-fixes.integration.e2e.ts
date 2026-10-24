@@ -74,17 +74,17 @@ test.describe('@integration Worker profile — correções faladas no UX review'
     const knowledge = page.locator('#knowledgeLevel');
     await expect(profession).toBeVisible({ timeout: 20_000 });
 
-    // Nenhum default pré-selecionado: o valor é '' (placeholder).
-    await expect(profession).toHaveValue('');
-    await expect(knowledge).toHaveValue('');
+    // Nenhum default pré-selecionado: o gatilho mostra o placeholder, não uma opção.
+    await expect(profession).toContainText('Seleccione');
+    await expect(knowledge).toContainText('Seleccione');
 
     // Hints diferenciam Sexo de Género.
     await expect(page.getByText('El sexo que figura en tu documento.')).toBeVisible();
     await expect(page.getByText('El género con el que te identificás.')).toBeVisible();
 
     // Prova visual: campo Sexo com hint (label + hint + select), sem default.
-    // [2] = wrapper do FormField (o [1] é o div interno do próprio SelectField).
-    const sexField = page.locator('#sex').locator('xpath=ancestor::div[contains(@class,"flex-col")][2]');
+    // [1] = wrapper do FormField (o Combobox é `relative w-full`, sem flex-col, entre o gatilho e ele).
+    const sexField = page.locator('#sex').locator('xpath=ancestor::div[contains(@class,"flex-col")][1]');
     await expect(sexField.getByText('El sexo que figura en tu documento.')).toBeVisible();
     await expect(sexField).toHaveScreenshot('sex-field-with-hint.png', { maxDiffPixels: 200 });
   });

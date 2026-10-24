@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { apiError, contact, contractItem, provider, semEnforcement } from './support';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', async () => (await import('./support')).i18nMock);
 const api = vi.hoisted(() => ({
@@ -171,7 +172,7 @@ describe('modal Contrato + 1º termo (novo)', () => {
     const go = vi.fn();
     render(<ContractsCard code="OSDE" onGoToGeneral={go} />);
     fireEvent.click(await screen.findByTestId('contracts-new'));
-    change('contract-new-name', 'Novo'); change('contract-new-country', 'AR');
+    change('contract-new-name', 'Novo'); chooseCombo(screen.getByTestId('contract-new-country'), 'Argentina') /* AR */;
     await waitFor(() => expect(screen.getByTestId('contract-new-hourly-rate')).toBeInTheDocument());
     change('contract-new-hourly-rate', '100'); change('contract-new-tax-rate', '0');
     fireEvent.click(screen.getByTestId('contract-new-submit'));

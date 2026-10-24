@@ -23,6 +23,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedFichaA1Patient, cleanupPatientDeep, type FichaA1Seed } from '../helpers/ficha-a1-helper';
 import { loginComoHumano } from '../helpers/login-humano';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAFF_EMAIL = `e2e.ficha-a1.${Date.now()}@enlite.health`;
 
@@ -85,7 +86,7 @@ test.describe('Entrega A1 — refetch silencioso (item 1+4) e DiscardChangesConf
     await page.getByTestId('edit-general-btn').click();
     const drawer = page.getByTestId('patient-general-edit-drawer');
     await expect(drawer).toBeVisible();
-    await page.getByTestId('pge-sex').selectOption('MALE');
+    await escolherNoCombo(page, page.getByTestId('pge-sex'), 'Masculino'); // MALE
 
     const hits = await contarAparicoesDoSkeleton(page, async () => {
       // Identidade continua na tela DURANTE o save — se a página tivesse caído pro skeleton,

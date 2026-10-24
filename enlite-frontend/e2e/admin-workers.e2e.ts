@@ -20,6 +20,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { execSync } from 'child_process';
+import { escolherNoCombo } from './helpers/combobox';
 
 const FIREBASE_EMULATOR  = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY   = 'test-api-key';
@@ -433,8 +434,8 @@ test.describe('AdminWorkersPage', () => {
     await expect(page.locator('text=Worker Page1 1').first()).toBeVisible({ timeout: 15000 });
 
     // Muda para 10 por página via select
-    const itemsPerPageSelect = page.locator('select').last();
-    await itemsPerPageSelect.selectOption('10');
+    const itemsPerPageSelect = page.getByRole('combobox').last();
+    await escolherNoCombo(page, itemsPerPageSelect, '10'); // 10 = 10
     await page.waitForResponse((r) => r.url().includes('/api/admin/workers') && !r.url().includes('/stats'));
 
     // Botão "próxima página"

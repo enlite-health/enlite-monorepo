@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Download, RefreshCw } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { WorkerFilters } from '@presentation/components/features/admin/WorkerFilters';
 import { WorkerStatsCards } from '@presentation/components/features/admin/WorkerStatsCards';
 import { WorkersTable } from '@presentation/components/features/admin/WorkersTable';
@@ -17,7 +17,6 @@ import { useWorkersData } from '@hooks/admin/useWorkersData';
 import { useCaseOptions } from '@hooks/admin/useCaseOptions';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
-import type { SelectOption } from '@presentation/components/atoms/Select';
 import {
   INITIAL_PROFILE_FILTERS,
   type WorkerProfileFilters,
@@ -54,10 +53,10 @@ export function AdminWorkersPage(): JSX.Element {
   const [profileFilters, setProfileFilters] = useState<WorkerProfileFilters>(INITIAL_PROFILE_FILTERS);
 
   // Filter-options for dropdowns populated from the API
-  const [stateOptions, setStateOptions] = useState<SelectOption[]>([]);
-  const [cityOptions, setCityOptions] = useState<SelectOption[]>([]);
-  const [experienceTypeOptions, setExperienceTypeOptions] = useState<SelectOption[]>([]);
-  const [preferredTypeOptions, setPreferredTypeOptions] = useState<SelectOption[]>([]);
+  const [stateOptions, setStateOptions] = useState<ComboboxOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<ComboboxOption[]>([]);
+  const [experienceTypeOptions, setExperienceTypeOptions] = useState<ComboboxOption[]>([]);
+  const [preferredTypeOptions, setPreferredTypeOptions] = useState<ComboboxOption[]>([]);
 
   const { options: caseOptions, isLoading: isCaseOptionsLoading } = useCaseOptions();
 
@@ -355,7 +354,7 @@ export function AdminWorkersPage(): JSX.Element {
         {/* Pagination */}
         <div className="flex flex-wrap items-center justify-end gap-4 mt-6">
           <div className="w-full sm:w-[164px]">
-            <Select
+            <Combobox
               inputSize="compact"
               options={[
                 { value: '10', label: '10' },
@@ -363,7 +362,7 @@ export function AdminWorkersPage(): JSX.Element {
                 { value: '50', label: '50' },
               ]}
               value={itemsPerPage}
-              onValueChange={handleItemsPerPageChange}
+              onChange={handleItemsPerPageChange}
             />
           </div>
           <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">

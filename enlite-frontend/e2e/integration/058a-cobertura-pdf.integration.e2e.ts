@@ -117,12 +117,13 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
     await page.keyboard.press('Backspace');
     await expect(informada).toHaveValue('');
     for (const nome of [p1.name, p2.name]) {
-      const raiz = page.locator('#pcv-codes');
-      await raiz.locator('button[aria-haspopup="listbox"]').click();
+      const gatilho = page.locator('#pcv-codes'); // o `id` do Combobox é do GATILHO
+      const raiz = gatilho.locator('..'); // o painel mora no pai do gatilho
+      await gatilho.click();
       const opcao = raiz.locator('li[role="option"]', { hasText: nome });
       await expect(opcao).toBeVisible({ timeout: 10_000 });
       await opcao.locator('button').click();
-      await informada.click(); // clique FORA da lista (o campo fica acima dela): o MultiSelect fecha no mousedown externo; nunca Esc (abre o "descartar")
+      await informada.click(); // clique FORA da lista (o campo fica acima dela): o Combobox fecha no mousedown externo; nunca Esc (abre o "descartar")
       await expect(raiz.locator('li[role="option"]').first()).toHaveCount(0);
     }
     await expect(page.getByTestId('pcv-codes-selected')).toContainText(p1.name);

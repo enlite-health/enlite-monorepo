@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import {
   AdminApiService,
   ApiError,
@@ -126,12 +126,12 @@ export function VacancySimulationSection({ bodies }: VacancySimulationSectionPro
         <Text size="sm" color="muted" data-testid="vacancy-simulation-no-cases">{sc('noCases')}</Text>
       )}
       {casesState === 'ready' && cases.length > 0 && (
-        <Select
+        <Combobox
           aria-label={sc('caseLabel')}
           options={cases}
           placeholder={sc('casePlaceholder')}
           value={jobPostingId}
-          onValueChange={setJobPostingId}
+          onChange={setJobPostingId}
           data-testid="vacancy-simulation-case"
         />
       )}

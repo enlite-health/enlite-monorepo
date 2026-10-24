@@ -1,5 +1,5 @@
 import { TFunction } from 'i18next';
-import type { SelectOption } from '@presentation/components/molecules/SelectField';
+import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { buildPendingRows } from '@presentation/utils/pendingRows';
 export type { PublicJobListing } from '@domain/entities/PublicJobListing';
 
@@ -33,20 +33,20 @@ export interface Job {
   detailLink: string;
 }
 
-export const getWorkerTypeOptions = (t: TFunction): SelectOption[] => [
+export const getWorkerTypeOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'acompañante terapéutico', label: t('jobs.types.at') },
   { value: 'acompañante terapéutico (at)', label: t('jobs.types.at_full') },
   { value: 'acompañante terapéutico (at) escolar', label: t('jobs.types.at_school') },
   { value: 'cuidador/a', label: t('jobs.types.caregiver') },
 ];
 
-export const getProvinceOptions = (t: TFunction): SelectOption[] => [
+export const getProvinceOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'caba', label: t('jobs.provinces.caba') },
   { value: 'provincia de buenos aires', label: t('jobs.provinces.buenos_aires') },
   { value: 'provincia de misiones', label: t('jobs.provinces.misiones') },
 ];
 
-export const getLocalityOptions = (): SelectOption[] => [
+export const getLocalityOptions = (): ComboboxOption[] => [
   { value: 'adrogué (internación) y boedo, caba', label: 'Adrogué (Internación) y Boedo, CABA' },
   { value: 'almagro', label: 'Almagro' },
   { value: 'avellaneda', label: 'Avellaneda' },
@@ -124,7 +124,7 @@ export const getLocalityOptions = (): SelectOption[] => [
  * Sobram busca livre, tipo, província, localidade e sexo.
  */
 
-export const getSexOptions = (t: TFunction): SelectOption[] => [
+export const getSexOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'femenino', label: t('jobs.sex.female') },
   { value: 'hombre', label: t('jobs.sex.male') },
   { value: 'indistinto', label: t('jobs.sex.indifferent') },

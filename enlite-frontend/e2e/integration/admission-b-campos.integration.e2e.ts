@@ -30,6 +30,7 @@ import {
 // place completo). O `google-maps-fake.ts` genérico NÃO serve a estes casos: ele dispara ao
 // DIGITAR, o que faria "digitar sem escolher não grava" passar por acidente.
 import { instalarFakeDeGestos, contarChamadasAoGoogle, CABA_CORRIENTES } from '../helpers/google-places-fake-gestos';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -113,7 +114,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const control = page.getByTestId('patient-status-control');
     await expect(control).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('patient-status-select').selectOption('ON_HOLD');
-    await page.getByTestId('patient-status-reason').selectOption('INSURER');
+    await escolherNoCombo(page, page.getByTestId('patient-status-reason'), 'Obra social'); // INSURER
     const note = page.getByTestId('patient-status-note');
     expect(await note.evaluate((el) => el.closest('[data-clarity-mask="True"]') !== null)).toBe(true);
     await note.fill(NOTE);
@@ -204,11 +205,12 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     // (SEARCHING → ACTIVE).
     await page.getByTestId('new-service-btn').click();
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
-    await page.getByTestId('svc-code-1').selectOption('AT');
-    const enderecoRecemCriadoId = runSQL(
-      `SELECT id FROM patient_addresses WHERE patient_id = '${admission.patientId}' AND archived_at IS NULL ORDER BY display_order LIMIT 1`,
+    await escolherNoCombo(page, page.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
+    // o rótulo que a pessoa lê no combo de domicílio = o endereço formatado (ou o cru) da linha recém-criada
+    const enderecoRecemCriadoRotulo = runSQL(
+      `SELECT coalesce(address_formatted, address_raw) FROM patient_addresses WHERE patient_id = '${admission.patientId}' AND archived_at IS NULL ORDER BY display_order LIMIT 1`,
     ).trim();
-    await page.getByTestId('svc-addressId-1').selectOption(enderecoRecemCriadoId);
+    await escolherNoCombo(page, page.getByTestId('svc-addressId-1'), enderecoRecemCriadoRotulo);
     await page.getByTestId('svc-shift-add-1-1').click();
     await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
@@ -313,9 +315,9 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await page.getByTestId('edit-coverage-btn').click();
     const drawer = page.getByTestId('patient-coverage-edit-drawer');
     await expect(drawer).toBeVisible();
-    await page.locator('#pcv-codes button').first().click();
-    await page.locator('#pcv-codes').getByRole('option', { name: 'OSDE', exact: true }).click();
-    await page.locator('#pcv-codes').getByRole('option', { name: 'Swiss Medical', exact: true }).click();
+    await page.locator('#pcv-codes').click();
+    await page.locator('#pcv-codes').locator('..').getByRole('option', { name: 'OSDE', exact: true }).click();
+    await page.locator('#pcv-codes').locator('..').getByRole('option', { name: 'Swiss Medical', exact: true }).click();
     await page.getByTestId('pcv-affiliate').fill('AF-B3-0001');
     await expect(page.getByTestId('pcv-codes-selected')).toContainText('Swiss Medical');
     await page.getByTestId('pcv-save').click();
@@ -339,9 +341,9 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const drawer = page.getByTestId('patient-clinical-edit-drawer');
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('pce-specialty')).toHaveCount(0);
-    await page.locator('#pce-device button').first().click();
-    await page.locator('#pce-device').getByRole('option', { name: 'Domiciliario', exact: true }).click();
-    await page.locator('#pce-device').getByRole('option', { name: 'Escolar', exact: true }).click();
+    await page.locator('#pce-device').click();
+    await page.locator('#pce-device').locator('..').getByRole('option', { name: 'Domiciliario', exact: true }).click();
+    await page.locator('#pce-device').locator('..').getByRole('option', { name: 'Escolar', exact: true }).click();
     const patch = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/clinical$/.test(r.url()));
     await page.getByTestId('pce-save').click();
     expect((await patch).status()).toBe(200);
@@ -365,9 +367,9 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     // Lápis da linha do responsável (só há um) — abre o drawer de UM familiar.
     await page.getByTestId('familiares-card').locator('[data-testid^="familiares-edit-"]').first().click();
     const rel = page.getByTestId('responsible-rel');
-    await expect(rel).toHaveValue('OTHER');
-    expect(await rel.evaluate((el) => (el as HTMLSelectElement).tagName)).toBe('SELECT');
-    await rel.selectOption('PARENT');
+    await expect(rel).toContainText('Otro'); // OTHER
+    await expect(rel).toHaveAttribute('role', 'combobox');
+    await escolherNoCombo(page, rel, 'Madre / Padre'); // PARENT
     await page.getByTestId('responsible-save').click();
     await expect(page.getByTestId('responsible-edit-drawer')).toHaveCount(0, { timeout: 15_000 });
     const card = page.getByTestId('familiares-card');

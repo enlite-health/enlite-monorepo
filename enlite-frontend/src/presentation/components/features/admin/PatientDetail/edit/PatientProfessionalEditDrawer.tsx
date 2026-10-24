@@ -22,9 +22,9 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   patientId: string;
@@ -66,7 +66,7 @@ export function PatientProfessionalEditDrawer({ patientId, professional, onClose
     },
   });
 
-  const specialtyOptions: SelectOption[] = PATIENT_PROFESSIONAL_SPECIALTY_CODES.map((s) => ({
+  const specialtyOptions: ComboboxOption[] = PATIENT_PROFESSIONAL_SPECIALTY_CODES.map((s) => ({
     value: s,
     label: t(`admin.patients.detail.treatingTeamCard.specialtyOptions.${s}`, { defaultValue: s }),
   }));
@@ -162,7 +162,7 @@ export function PatientProfessionalEditDrawer({ patientId, professional, onClose
           </FormField>
           <FormField label={tc('tableSpecialty')} htmlFor="professional-specialty" optional>
             <Controller control={control} name="specialty" render={({ field }) => (
-              <SelectField id="professional-specialty" inputSize="compact" options={specialtyOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="professional-specialty" />
+              <Combobox id="professional-specialty" inputSize="compact" options={specialtyOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="professional-specialty" />
             )} />
           </FormField>
           </div>

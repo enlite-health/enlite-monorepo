@@ -26,6 +26,7 @@ import {
   paso4Motivo, proximaDataNoDia, segundaDaSemana, siguiente, somaDias,
 } from '../helpers/itinerario-069-flow-helper';
 import { nomeDe, semearTitularSegQuaSex } from '../helpers/itinerario-069-seed-helper';
+import { acionarNoCombo, escolherNoComboPorValor } from '../helpers/combobox';
 
 const STAFF = mockAdminUserFor('itinerario-069-nueva');
 
@@ -166,10 +167,13 @@ test.describe('patient-itinerary-069-nueva-sustitucion: o fluxo de 4 passos @int
       const [primeiro, segundo] = await seletores.all();
       const idPrimeiro = (await primeiro.getAttribute('data-testid')) as string;
       const idSegundo = (await segundo.getAttribute('data-testid')) as string;
-      await primeiro.selectOption(m.sub2);
+      await escolherNoComboPorValor(page, primeiro, m.sub2);
       await expect(page.getByTestId(idPrimeiro)).toHaveCount(0, { timeout: 15_000 }); // sub2 está livre → o seletor some
       await expect(page.getByTestId('substitucion-siguiente')).toBeDisabled(); // falta a outra quarta
-      await page.getByTestId(idSegundo).selectOption({ label: 'Nadie todavía' });
+      await acionarNoCombo(page, page.getByTestId(idSegundo), 'Nadie todavía');
+      // "Nadie todavía" resolve o dia: o seletor some e a linha do turno passa a dizer "Nadie todavía" (é o que o gatilho mostrava).
+      await expect(page.getByTestId(idSegundo)).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.getByTestId(idSegundo.replace('substitucion-elegir-', 'substitucion-turno-'))).toContainText('Nadie todavía');
       await expect(page.getByTestId('substitucion-siguiente')).toBeEnabled({ timeout: 15_000 });
       await siguiente(page);
 

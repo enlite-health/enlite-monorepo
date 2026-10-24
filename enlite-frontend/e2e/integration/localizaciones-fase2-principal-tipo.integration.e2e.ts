@@ -18,6 +18,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { insertTestPatient } from '../helpers/db-test-helper';
 import { cleanupPatientDeep, runSQL } from '../helpers/patient-detail-a-helper';
 import { instalarFakeDeGestos, CABA_CORRIENTES } from '../helpers/google-places-fake-gestos';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
@@ -130,9 +131,7 @@ test.describe('Card Localizaciones — Fase 2, PRINCIPAL + TIPO (spec 019) @inte
     await editButtons.first().click();
     await expect(drawer).toBeVisible();
     const tipoSelect = page.getByTestId('pad-type');
-    await tipoSelect.click();
-    await tipoSelect.selectOption('casa_madre');
-    await expect(tipoSelect).toHaveValue('casa_madre');
+    await escolherNoCombo(page, tipoSelect, 'Casa de la madre'); // casa_madre
     const patchTipo1 = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/addresses\//.test(r.url()));
     await page.getByTestId('pad-save').click();
     expect((await patchTipo1).status()).toBe(200);
@@ -142,9 +141,7 @@ test.describe('Card Localizaciones — Fase 2, PRINCIPAL + TIPO (spec 019) @inte
     // ── 5) Editar de novo → "Otro", com texto livre digitado TECLA POR TECLA (nunca fill). ──────
     await editButtons.first().click();
     await expect(drawer).toBeVisible();
-    await tipoSelect.click();
-    await tipoSelect.selectOption('otro');
-    await expect(tipoSelect).toHaveValue('otro');
+    await escolherNoCombo(page, tipoSelect, 'Otro'); // otro
     const campoOtro = page.getByTestId('pad-type-other');
     await campoOtro.click();
     await expect(campoOtro).toBeFocused();
@@ -168,7 +165,7 @@ test.describe('Card Localizaciones — Fase 2, PRINCIPAL + TIPO (spec 019) @inte
     //      isso). Confere que o PATCH sai 200 e que o texto novo PERSISTE após reload. ────────────
     await editButtons.first().click();
     await expect(drawer).toBeVisible();
-    await expect(tipoSelect).toHaveValue('otro');
+    await expect(tipoSelect).toContainText('Otro'); // otro = Otro
     await expect(campoOtro).toHaveValue('Casa de una prima');
     await campoOtro.click();
     await campoOtro.press('Control+A');

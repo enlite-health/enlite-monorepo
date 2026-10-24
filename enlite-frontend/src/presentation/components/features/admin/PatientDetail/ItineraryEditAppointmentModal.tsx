@@ -6,10 +6,9 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Label } from '@presentation/components/atoms/Label';
 import { Input } from '@presentation/components/atoms/Input';
-import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { ActionButton } from '@presentation/components/features/access';
 import { Button } from '@presentation/components/atoms/Button';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { SidePanelShell } from './SidePanelShell';
 import { RemoveFromItineraryPanel } from './RemoveFromItineraryPanel';
 import type { ExitDestination } from '@domain/entities/ServiceTeam';
@@ -89,7 +88,7 @@ export function ItineraryEditAppointmentModal({
   const disabledLabel = `${fieldLabel} !text-[#d9d9d9]`;
   // Disabled do Figma: fundo branco, borda e texto #d9d9d9 (o do atom é fundo cinza e texto #737373).
   const disabledField =
-    '!bg-white [&_select]:!text-[#d9d9d9] [&_svg]:!text-[#d9d9d9]';
+    '!bg-white [&_button]:!text-[#d9d9d9] [&_svg]:!text-[#d9d9d9]';
   // O `Input` sem ícones recebe o `className` NO PRÓPRIO <input> (não num wrapper): sem `[&_input]`.
   const disabledInput = '!bg-white !text-[#d9d9d9] cursor-not-allowed';
 
@@ -116,10 +115,11 @@ export function ItineraryEditAppointmentModal({
 
       <div className="flex flex-col gap-1">
         <Label className={disabledLabel}>{tm('weekday')}</Label>
-        <Select
+        <Combobox
           inputSize="compact"
           disabled
           value={String(slot.weekday)}
+          onChange={() => undefined}
           options={[{ value: String(slot.weekday), label: weekdayName(slot.weekday, i18n.language) }]}
           className={`capitalize ${disabledField}`}
           data-testid="itinerario-editar-dia"
@@ -162,9 +162,9 @@ export function ItineraryEditAppointmentModal({
             {tm('capacityNotInformed')}
           </Text>
         )}
-        {/* SearchableSelect compact é h-10; o desenho pede o campo de 48px (h-12) com texto #737373 de 14px. */}
+        {/* Combobox compact é h-10; o desenho pede o campo de 48px (h-12) com texto #737373 de 14px. */}
         <div className="[&_button]:!h-12 [&_button]:!text-[#737373] [&_button]:!py-0">
-          <SearchableSelect
+          <Combobox
             data-testid="itinerario-editar-prestador"
             inputSize="compact"
             options={workerOptions}
@@ -172,6 +172,7 @@ export function ItineraryEditAppointmentModal({
             onChange={setWorkerId}
             disabled={options === null}
             placeholder={tm('selectPlaceholder')}
+            clearLabel={tm('selectPlaceholder')}
             emptyMessage={tm('noOptions')}
           />
         </div>

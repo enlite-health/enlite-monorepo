@@ -9,6 +9,7 @@ import { backendUrl } from './lancamento-e2e-helper';
 import { derivacaoToken } from './derivacao-e2e-helper';
 import { digitarDataNoCampo } from './itinerario-aba-e2e-helper';
 import { sqlComVars } from './sql-com-vars';
+import { escolherNoComboPorValor } from './combobox';
 
 export type Duracao = 'ONE_DAY' | 'DAYS' | 'PERMANENT';
 
@@ -68,14 +69,14 @@ export async function paso2PorCuantoTiempo(page: Page, tipo: Duracao, desde: str
   return (await cuenta.innerText()).trim();
 }
 
-/** Passo 3 — "Una persona para todos los días": marca o modo e escolhe a pessoa no `<select>`. */
+/** Passo 3 — "Una persona para todos los días": marca o modo e escolhe a pessoa no combobox. */
 export async function paso3UnaPersona(page: Page, workerId: string): Promise<void> {
   const modo = page.getByTestId('substitucion-cobertura-one');
   await modo.locator('label').click();
   await expect(modo).toHaveAttribute('data-selected', 'true');
   const seletor = page.getByTestId('substitucion-persona');
-  await seletor.selectOption(workerId);
-  await expect(seletor).toHaveValue(workerId);
+  await escolherNoComboPorValor(page, seletor, workerId);
+  await expect(page.getByTestId('substitucion-persona-elegida')).toBeVisible();
 }
 
 /** Passo 3 — "Nadie todavía". */
@@ -88,8 +89,7 @@ export async function paso3Nadie(page: Page): Promise<void> {
 /** Passo 4 — motivo (código do catálogo) e, quando a tela pergunta (D = hoje), o destino. */
 export async function paso4Motivo(page: Page, reasonCode: string, destino?: 'RESERVE' | 'LEAVE_SERVICE'): Promise<void> {
   const motivo = page.getByTestId('substitucion-motivo');
-  await motivo.selectOption(reasonCode);
-  await expect(motivo).toHaveValue(reasonCode);
+  await escolherNoComboPorValor(page, motivo, reasonCode);
   if (destino) await page.getByTestId(`substitucion-destino-${destino}`).click();
 }
 

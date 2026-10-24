@@ -9,7 +9,7 @@
 import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, AlertTriangle } from 'lucide-react';
 import { PageContainer, Heading, Text } from '@presentation/components/atoms';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { DashboardSkeleton } from '@presentation/components/ui/skeletons';
 import { useManagementDashboard } from '@hooks/admin/useManagementDashboard';
 import { getScopedCountryOptions } from '@presentation/pages/admin/patientsData';
@@ -55,11 +55,11 @@ export function ManagementDashboardPage(): JSX.Element {
             Pacientes segue este filtro, não tem mais um próprio (D286 + FR-730). */}
         {countryOptions.length > 0 && (
           <div className="w-[210px]" data-testid="mgmt-country-filter">
-            <Select
+            <Combobox
               inputSize="compact"
               options={countryOptions}
               value={country}
-              onValueChange={(value) => setCountry(value as 'AR' | 'BR' | '')}
+              onChange={(value) => setCountry(value as 'AR' | 'BR' | '')}
               placeholder={t('admin.patients.countryOptions.all')}
             />
           </div>

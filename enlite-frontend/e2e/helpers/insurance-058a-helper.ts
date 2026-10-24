@@ -7,6 +7,7 @@
  * Massa SINTÉTICA: nomes `QA058A …`, nenhum dado de pessoa real.
  */
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { escolherNoCombo } from './combobox';
 import { psql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, tokenFor, ABAC_API_URL, type MockUser } from './abac-stack-helper';
 
 export const RUN_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`.toUpperCase();
@@ -153,10 +154,9 @@ export async function substituir(page: Page, testId: string, texto: string): Pro
   return campo.inputValue();
 }
 
-/** Opção de um `<select>` nativo pelo RÓTULO que a pessoa lê. */
+/** Opção de um campo de escolha pelo RÓTULO que a pessoa lê (o gatilho do `Combobox`, spec 070). */
 export async function escolher(page: Page, testId: string, rotulo: string): Promise<void> {
-  await page.getByTestId(testId).selectOption({ label: rotulo });
-  await expect(page.getByTestId(testId).locator('option:checked')).toHaveText(rotulo);
+  await escolherNoCombo(page, page.getByTestId(testId), rotulo);
 }
 
 // ── limpeza ────────────────────────────────────────────────────────────────────────────────────────────────────────

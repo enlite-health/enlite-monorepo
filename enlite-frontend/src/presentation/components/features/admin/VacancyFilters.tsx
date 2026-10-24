@@ -1,9 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { SearchInput } from '@presentation/components/molecules/SearchBar/SearchInput';
-import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
-import { Select, SelectOption } from '@presentation/components/atoms/Select';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { TimeRangeFilter } from './TimeRangeFilter';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 
@@ -22,12 +20,12 @@ interface VacancyFiltersProps {
   onSearchChange: (value: string) => void;
   selectedStatus: string;
   onStatusChange: (value: string) => void;
-  statusOptions: SelectOption[];
+  statusOptions: ComboboxOption[];
   // advanced filters
   advancedFilters: VacancyAdvancedFilters;
   onAdvancedChange: (updates: Partial<VacancyAdvancedFilters>) => void;
-  stateOptions: SelectOption[];
-  cityOptions: SelectOption[];
+  stateOptions: ComboboxOption[];
+  cityOptions: ComboboxOption[];
 }
 
 export function VacancyFilters({
@@ -44,19 +42,19 @@ export function VacancyFilters({
   const { t } = useTranslation();
   const podeBuscarPorNome = useContainerAccess('patient_identity').visible;
 
-  const typeOptions: SelectOption[] = [
+  const typeOptions: ComboboxOption[] = [
     { value: 'AT', label: t('admin.vacancies.filters.type.at') },
     { value: 'CAREGIVER', label: t('admin.vacancies.filters.type.caregiver') },
   ];
 
-  const sexOptions: SelectOption[] = [
+  const sexOptions: ComboboxOption[] = [
     { value: 'F', label: t('admin.vacancies.filters.sex.f') },
     { value: 'M', label: t('admin.vacancies.filters.sex.m') },
     { value: 'BOTH', label: t('admin.vacancies.filters.sex.both') },
   ];
 
   // 0=domingo,1=lunes,...,6=sábado — order: lun..dom to match UX convention
-  const dayOptions: SelectOption[] = [
+  const dayOptions: ComboboxOption[] = [
     { value: '1', label: t('admin.vacancyDetail.vacancyForm.days.lun') },
     { value: '2', label: t('admin.vacancyDetail.vacancyForm.days.mar') },
     { value: '3', label: t('admin.vacancyDetail.vacancyForm.days.mie') },
@@ -108,11 +106,11 @@ export function VacancyFilters({
             <Text size="sm" weight="semibold" color="secondary" className="mb-1">
               {t('admin.vacancies.statusLabel')}
             </Text>
-            <Select
+            <Combobox
               inputSize="compact"
               options={statusOptions}
               value={selectedStatus}
-              onValueChange={onStatusChange}
+              onChange={onStatusChange}
               placeholder={t('admin.vacancies.statusOptions.all')}
             />
           </div>
@@ -125,11 +123,11 @@ export function VacancyFilters({
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.filters.type.label')}
           </Text>
-          <Select
+          <Combobox
             inputSize="compact"
             options={typeOptions}
             value={advancedFilters.workerType}
-            onValueChange={(v) => onAdvancedChange({ workerType: v })}
+            onChange={(v) => onAdvancedChange({ workerType: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
           />
         </div>
@@ -139,12 +137,13 @@ export function VacancyFilters({
             {t('admin.vacancies.filters.province.label')}
           </Text>
           {/* Lista longa (catálogo do banco): combobox com busca — REQ-06, planning 26/08 */}
-          <SearchableSelect
+          <Combobox
             inputSize="compact"
             options={stateOptions}
             value={advancedFilters.state}
             onChange={(v) => onAdvancedChange({ state: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
+            clearLabel={t('admin.vacancies.filters.allOption')}
             searchPlaceholder={t('common.search', 'Buscar...')}
             data-testid="vacancy-filter-province"
           />
@@ -154,12 +153,13 @@ export function VacancyFilters({
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.filters.locality.label')}
           </Text>
-          <SearchableSelect
+          <Combobox
             inputSize="compact"
             options={cityOptions}
             value={advancedFilters.city}
             onChange={(v) => onAdvancedChange({ city: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
+            clearLabel={t('admin.vacancies.filters.allOption')}
             searchPlaceholder={t('common.search', 'Buscar...')}
             data-testid="vacancy-filter-locality"
           />
@@ -169,11 +169,11 @@ export function VacancyFilters({
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.filters.sex.label')}
           </Text>
-          <Select
+          <Combobox
             inputSize="compact"
             options={sexOptions}
             value={advancedFilters.requiredSex}
-            onValueChange={(v) => onAdvancedChange({ requiredSex: v })}
+            onChange={(v) => onAdvancedChange({ requiredSex: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
           />
         </div>
@@ -182,7 +182,8 @@ export function VacancyFilters({
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.filters.days.label')}
           </Text>
-          <MultiSelect
+          <Combobox
+            multiple
             options={dayOptions}
             value={advancedFilters.days}
             onChange={(v) => onAdvancedChange({ days: v })}

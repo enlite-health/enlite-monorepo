@@ -128,7 +128,7 @@ describe('filtraBlocosPorTexto (US-21, FR-720 — busca da tela de permissões)'
   // "Preselección", "Números clave", "Analítica", "Importación"…) — digitar
   // sem acento (o que qualquer teclado ES-AR sem morto faz) tinha que achar
   // "nenhum resultado" para permissão que existe. `normalizeText` (o MESMO
-  // util do `SearchableSelect`) fecha isso.
+  // util do `seletor antigo`) fecha isso.
   it('🔒 "gestion" (sem acento) bate rótulo de TELA "Gestión a la Vista"', () => {
     const comAcento = montaBlocosPorTela(CATALOG, {
       ...rotulos,

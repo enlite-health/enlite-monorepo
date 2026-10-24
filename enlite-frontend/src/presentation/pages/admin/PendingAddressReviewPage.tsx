@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle, Loader2 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import {
   Table,
   TableHeader,
@@ -91,18 +92,16 @@ export function PendingAddressReviewPage() {
         <Text as="span" size="sm" weight="medium" color="muted">
           {t('admin.pendingAddressReview.pendingCount', { count: items.length })}
         </Text>
-        <select
+        <Combobox
           value={statusFilter}
-          onChange={e => handleFilterChange(e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 font-lexend text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          onChange={handleFilterChange}
+          inputSize="compact"
+          className="w-56"
           aria-label={s('filterStatus.all')}
-        >
-          <option value="">{s('filterStatus.all')}</option>
-          <option value="SEARCHING">{s('filterStatus.SEARCHING')}</option>
-          <option value="SEARCHING_REPLACEMENT">{s('filterStatus.SEARCHING_REPLACEMENT')}</option>
-          <option value="RAPID_RESPONSE">{s('filterStatus.RAPID_RESPONSE')}</option>
-          <option value="CLOSED">{s('filterStatus.CLOSED')}</option>
-        </select>
+          placeholder={s('filterStatus.all')}
+          clearLabel={s('filterStatus.all')}
+          options={(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'CLOSED'] as const).map((k) => ({ value: k, label: s(`filterStatus.${k}`) }))}
+        />
       </div>
 
       {error && (

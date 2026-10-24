@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -54,13 +55,14 @@ afterEach(() => {
 
 async function pickCaseAndRun(): Promise<void> {
   const select = await screen.findByTestId('ai-prompt-preview-case');
-  fireEvent.change(select, { target: { value: CASE_ID } });
+  chooseCombo(select, '101');
   fireEvent.click(screen.getByTestId('ai-prompt-preview-run'));
 }
 
 describe('AiPromptPreviewPanel', () => {
   it('lista os casos da listagem de vacantes, sem rascunhos', async () => {
     render(<AiPromptPreviewPanel slug="VACANCY_DESCRIPTION" body="texto" />);
+    fireEvent.click(await screen.findByTestId('ai-prompt-preview-case'));
     expect(await screen.findByRole('option', { name: '101' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '999' })).not.toBeInTheDocument();
   });
@@ -69,7 +71,7 @@ describe('AiPromptPreviewPanel', () => {
     render(<AiPromptPreviewPanel slug="VACANCY_DESCRIPTION" body="texto" />);
     const select = await screen.findByTestId('ai-prompt-preview-case');
     expect(screen.getByTestId('ai-prompt-preview-run')).toBeDisabled();
-    fireEvent.change(select, { target: { value: CASE_ID } });
+    chooseCombo(select, '101');
     expect(screen.getByTestId('ai-prompt-preview-run')).toBeEnabled();
   });
 
