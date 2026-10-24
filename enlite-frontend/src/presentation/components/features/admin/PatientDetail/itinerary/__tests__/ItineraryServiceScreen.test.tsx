@@ -91,6 +91,12 @@ describe('ItineraryServiceScreen — cabeçalho', () => {
     expectNoRawEnumLeaks(container);
   });
 
+
+  it('Clarity: o endereço do paciente está dentro de um nó data-clarity-mask (lex C2.1, molde LocalizacoesCard)', () => {
+    renderScreen();
+    expect(screen.getByText('Av. Colón 1234, Córdoba').closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
   it('(ajuste d) a vaga é o CHIP lilás do mockup — "Vacante CASO EN1412#01 · 3 en Respuesta Rápida" — e não o texto "Equipo de Respuesta Rápida: 3 de 10"', () => {
     renderScreen();
     const chip = screen.getByTestId('itinerario-servico-reserva');

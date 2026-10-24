@@ -138,7 +138,7 @@ export function ItineraryEditAppointmentModal({
         />
       </div>
 
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1" data-clarity-mask="True">
         <Label className={fieldLabel}>{tm('entryAddress')}</Label>
         <Input
           inputSize="compact"

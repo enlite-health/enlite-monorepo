@@ -117,6 +117,13 @@ describe('PatientKanbanSubcards (es)', () => {
     );
   });
 
+  it('o link "ver vacante" tem aria-label traduzido (nunca a chave crua)', () => {
+    renderSubcards([service({ liveVacancyId: 'v-9' })]);
+    const label = screen.getByTestId('patient-kanban-subcard-vacancy').getAttribute('aria-label') ?? '';
+    expect(label).toMatch(/^Ver vacante de /);
+    expect(label).not.toContain('viewVacancyAria');
+  });
+
   it('a linha do par tem role="group" (G2, achado 10 — aria-label num div sem role é ignorado pelo AT)', () => {
     renderSubcards([service()]);
     expect(screen.getByTestId('patient-kanban-subcard')).toHaveAttribute('role', 'group');

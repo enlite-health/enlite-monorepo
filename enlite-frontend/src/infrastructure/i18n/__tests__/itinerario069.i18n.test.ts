@@ -47,6 +47,8 @@ const F6_ERROR_CODES = [
   'REASON_REQUIRED', 'SUBSTITUTION_SHIFTS_MISMATCH', 'WORKER_HAS_PENDING_ENTRY', 'REQUEST_ALREADY_UNDONE', 'REQUEST_NOT_UNDOABLE',
   'NOTHING_TO_COVER', 'ALLOCATION_RESTORE_CONFLICT', 'ITINERARY_SLOT_CAPACITY_EXCEEDED', 'SUBSTITUTION_NO_SHIFTS_IN_PERIOD', 'ABSENCE_ALREADY_EXISTS',
   'WORKER_HAS_SCHEDULED_EXIT', 'WORKER_HAS_SCHEDULED_EXIT_UNDATED', 'ALREADY_COVERED', 'ABSENCE_CANCELLED',
+  // gate 069: o pedido/cobertura agora devolve estes (antes 500)
+  'SERVICE_TEAM_NOT_SELECTED', 'SERVICE_TEAM_ALREADY_REJECTED', 'NOT_FOUND',
 ];
 const NOTIFICATION_KEYS = [
   'itineraryUncoveredText', 'itineraryUncoveredShifts_one', 'itineraryUncoveredShifts_other', 'itineraryUncoveredServices_one', 'itineraryUncoveredServices_other',
@@ -136,6 +138,15 @@ describe('itinerário 069 — i18n es + pt-BR', () => {
       expect(get(json, 'admin.patients.detail.serviceTeam.substitution.anaCareNotice')).toBeUndefined();
       expect(get(json, `${ITIN}.eventsPanel`)).toBeUndefined();
       expect(get(json, `${ITIN}.newSubstitutionModal`)).toBeUndefined();
+    }
+  });
+
+  it('gate 069: o link "ver vacante" do subcard do Kanban tem rótulo em es e pt-BR, com {{service}}', () => {
+    const key = 'admin.patients.detail.contractedServicesCard.viewVacancyAria';
+    for (const json of [esJson, ptBRJson]) {
+      const text = get(json, key);
+      expect(typeof text === 'string' && text.length > 0, key).toBe(true);
+      expect(vars(text as string)).toEqual(['service']);
     }
   });
 });
