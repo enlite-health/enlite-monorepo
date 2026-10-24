@@ -32,8 +32,12 @@ export interface Cenario {
 }
 
 /** Um serviço seg/qua/sex, `providers_needed = 1`, o titular alocado nas 3 faixas e dois candidatos livres. */
-export async function semearTitularSegQuaSex(request: APIRequestContext, opts: { alocar?: boolean } = {}): Promise<Cenario> {
-  const seed = await seedDerivablePatient(request, { status: 'SEARCHING', services: [{ schedule: SEG_QUA_SEX }] });
+export async function semearTitularSegQuaSex(
+  request: APIRequestContext,
+  /** `schedule`: outras 3 faixas no lugar de seg/qua/sex (specs cujo cenário não pode depender do dia em que rodam); o default não muda. */
+  opts: { alocar?: boolean; schedule?: typeof SEG_QUA_SEX } = {},
+): Promise<Cenario> {
+  const seed = await seedDerivablePatient(request, { status: 'SEARCHING', services: [{ schedule: opts.schedule ?? SEG_QUA_SEX }] });
   try {
     const [svc] = seed.services;
     sqlComVars("UPDATE patient_contracted_services SET providers_needed = 1 WHERE id = :'id'::uuid", { id: svc.serviceId });
