@@ -166,7 +166,7 @@ describe('AdminVacanciesPage — no duplicate filter options', () => {
       const values = options.map((o) => o.value);
       const emptyValues = values.filter((v) => v === '');
 
-      // seletor antigo adds ONE placeholder option with value="".
+      // the Combobox adds ONE placeholder option with value="".
       // No additional empty-value options should exist from the data.
       expect(emptyValues.length).toBeLessThanOrEqual(1);
     });

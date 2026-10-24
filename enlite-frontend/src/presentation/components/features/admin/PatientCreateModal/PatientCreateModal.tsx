@@ -204,7 +204,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             </FormField>
             {/* Required, no preselection — drives the legal regime (Ley 25.326 vs
                 LGPD) and the panel's country filter (abac-pais-fase1 5.1). */}
-            {/* The message is rendered by seletor antigo (which also reddens the
+            {/* The message is rendered by the Combobox (which also reddens the
                 border); passing it to FormField too would print it twice. */}
             <FormField label={tc('country')} htmlFor="pc-country" required>
               <Controller

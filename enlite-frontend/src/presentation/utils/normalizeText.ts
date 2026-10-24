@@ -2,16 +2,10 @@
  * normalizeText — minúsculo + sem diacrítico, para busca/filtro de texto no
  * cliente (`toLowerCase()` sozinho não casa "Gestión" com "gestion").
  *
- * Extraído de `seletor antigo.tsx` (achado do gate `revisao-pr` no PR-8a,
- * 018-grupos-fixos-busca): a busca da tela de permissões
- * (`screenTreeModel.ts`) precisava do MESMO comportamento, e duplicar a
- * função em vez de compartilhar teria deixado as duas divergirem no primeiro
- * ajuste. `seletor antigo.tsx` não migrou para este util no mesmo PR — a
- * régua do projeto é 100% de cobertura por arquivo TOCADO, e o arquivo tinha
- * (e continua tendo) 1 branch pré-existente sem cobertura (`handleOpen`,
- * `if (disabled) return`, nada a ver com a normalização) que não é dívida
- * deste PR. Migrar `seletor antigo.tsx` para este util fica para quem
- * fechar aquela cobertura, ou para o Gabriel decidir puxar separado.
+ * Util compartilhado: o Combobox (que filtra as próprias opções) e a busca da
+ * tela de permissões (`screenTreeModel.ts`) usam o MESMO comportamento daqui,
+ * para que as duas não divirjam no primeiro ajuste. Quem precisar de busca
+ * insensível a acento no cliente importa este util em vez de duplicar a função.
  */
 export function normalizeText(text: string): string {
   return text

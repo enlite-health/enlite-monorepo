@@ -671,7 +671,7 @@ describe('Combobox múltipla (herdada do atom antigo)', () => {
       expect(trigger().className).toContain(cls);
     });
 
-    it('inputSize padrão é default (h-[60px]), igual ao seletor antigo', () => {
+    it('inputSize padrão é default (h-[60px]), o tamanho padrão dos campos de formulário', () => {
       renderSingle();
       expect(trigger().className).toContain('h-[60px]');
       expect(trigger().className).not.toContain('h-12');

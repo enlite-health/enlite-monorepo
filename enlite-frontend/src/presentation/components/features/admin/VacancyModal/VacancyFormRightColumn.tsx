@@ -89,7 +89,7 @@ export function VacancyFormRightColumn({
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
-  // molecule wrappers (InputWithIcon/seletor antigo) and read-only divs.
+  // molecule wrappers (InputWithIcon/Combobox) and read-only divs.
   const patientDis = !patientSelected
     ? 'pointer-events-none select-none [&_.bg-white]:!bg-[#f3f4f6]'
     : '';
