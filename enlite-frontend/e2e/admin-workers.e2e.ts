@@ -435,8 +435,9 @@ test.describe('AdminWorkersPage', () => {
 
     // Muda para 10 por página via select
     const itemsPerPageSelect = page.getByRole('combobox').last();
+    const resposta = page.waitForResponse((r) => r.url().includes('/api/admin/workers') && !r.url().includes('/stats'));
     await escolherNoCombo(page, itemsPerPageSelect, '10'); // 10 = 10
-    await page.waitForResponse((r) => r.url().includes('/api/admin/workers') && !r.url().includes('/stats'));
+    await resposta;
 
     // Botão "próxima página"
     const nextBtn = page.getByRole('button', { name: /Próxima página/i });

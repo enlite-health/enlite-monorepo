@@ -400,14 +400,14 @@ test.describe('BlockedAttemptsPage — visual proof', () => {
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });
 
     const select = page.locator('[data-testid="blocked-filters"]').getByRole('combobox').first();
-    await escolherNoCombo(page, select, 'Registro incompleto'); // registration_incomplete = Registro incompleto
-
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/recruitment/blocked-attempts') &&
         resp.status() === 200,
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, select, 'Registro incompleto'); // registration_incomplete = Registro incompleto
+    await resposta;
 
     await expect(page.locator('text=María González').first()).toBeVisible({ timeout: 20000 });
 

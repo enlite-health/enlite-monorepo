@@ -233,13 +233,13 @@ test.describe('AdminPatientsPage', () => {
     await expect(page.locator('text=Alomon, Francisco').first()).toBeVisible({ timeout: 15000 });
 
     // Select "Precisa atención" option
-    await escolherNoCombo(page, page.getByTestId('filter-attention'), 'Precisa atenção'); // needs_attention
-
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/patients') &&
         resp.url().includes('needs_attention=true'),
     );
+    await escolherNoCombo(page, page.getByTestId('filter-attention'), 'Precisa atenção'); // needs_attention
+    await resposta;
 
     expect(capturedUrl).toContain('needs_attention=true');
   });
@@ -257,13 +257,13 @@ test.describe('AdminPatientsPage', () => {
     await page.goto('/admin/patients');
     await expect(page.locator('text=Alomon, Francisco').first()).toBeVisible({ timeout: 15000 });
 
-    await escolherNoCombo(page, page.getByTestId('filter-dependency'), 'Grave'); // SEVERE
-
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/patients') &&
         resp.url().includes('dependency_level=SEVERE'),
     );
+    await escolherNoCombo(page, page.getByTestId('filter-dependency'), 'Grave'); // SEVERE
+    await resposta;
 
     expect(capturedUrl).toContain('dependency_level=SEVERE');
   });
@@ -353,10 +353,11 @@ test.describe('AdminPatientsPage', () => {
     await expect(page.locator('text=Page1').first()).toBeVisible({ timeout: 15000 });
 
     // Change to 10 per page
-    await escolherNoCombo(page, page.getByRole('combobox').last(), '10');
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (r) => r.url().includes('/api/admin/patients') && !r.url().includes('/stats'),
     );
+    await escolherNoCombo(page, page.getByRole('combobox').last(), '10');
+    await resposta;
 
     const nextBtn = page.getByRole('button', { name: /Próxima página/i });
     await expect(nextBtn).not.toBeDisabled();
