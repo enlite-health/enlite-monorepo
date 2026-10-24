@@ -216,7 +216,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           {
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT',
             professional_profile: 'perfil sintético', providers_needed: 2,
-            authorized_hours: '20', weekly_hours: '20', care_location: 'HOME',
+            authorized_hours: '20', care_location: 'HOME',
             start_date: '2026-09-01',
             supervision_frequency: 'DAYS_30', guard_shift: 'MORNING',
             active: true, ended_at: null, country: 'AR',
@@ -229,13 +229,17 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       .mockResolvedValueOnce({
         rows: [
           {
-            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1', weekly_hours: '20',
+            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1',
             active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
             first_name_encrypted: 'enc-first', last_name_encrypted: 'enc-last',
           },
         ],
       }) // providers
+      // Spec 056: o horário vem de `horario_do_servico(id, $2::date)`, não da coluna `pcs.schedule`.
+      .mockResolvedValueOnce({
+        rows: [{ id: 'svc-1', schedule: [{ dayOfWeek: 1, startTime: '20:00', endTime: '08:00', durationMinutes: 720 }] }],
+      }) // schedules
       // Spec 018, PR-6 / spec 047 F2: vaga viva DESTE serviço (id, caso, ordinal, status, link) — exercita
       // o Map de `fetchLiveVacancies` (o outro teste da suíte cobre o caso "nenhuma vaga viva").
       .mockResolvedValueOnce({
@@ -244,6 +248,10 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           status: 'SEARCHING',
         }],
       }) // live vacancy
+      // Spec 056: a autorização corrente (vigente hoje) — validTo da API é inclusivo (upper − 1 dia).
+      .mockResolvedValueOnce({
+        rows: [{ contracted_service_id: 'svc-1', id: 'auth-1', hours: '120', valid: '[2026-01-01,2027-01-01)' }],
+      }) // authorizations
       // Spec 058: pagador vigente, histórico e preço/imposto do serviço -- 3 queries EM LOTE, uma por função, qualquer que seja o nº de serviços.
       .mockResolvedValueOnce({ rows: [LINK_ROW] }) // payerAtMany
       .mockResolvedValueOnce({ rows: [LINK_ROW] }) // payerHistoryMany
@@ -255,12 +263,13 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const enc = makeEncryptionService();
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID, undefined, new Date('2026-10-19T15:00:00Z'));
 
-    expect(queryImpl).toHaveBeenCalledTimes(14);
+    expect(queryImpl).toHaveBeenCalledTimes(16);
     expect(result!.contractedServices).toHaveLength(1);
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
       id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
-      authorizedHours: 20, weeklyHours: 20, // string → Number
+      scheduleHours: 12, // string → Number
+      authorization: { id: 'auth-1', hours: 120, validFrom: '2026-01-01', validTo: '2026-12-31' },
       deviceTypes: ['HOME'],
       // Spec 058: asOf = dia de operação do país do paciente (AR) no requestNow; pagador/preço/imposto/divergência crus.
       asOf: '2026-10-19',
@@ -270,6 +279,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       coverageMatch: { state: 'MATCH' },
     });
     expect(svc.payerHistory).toHaveLength(1);
+    expect(svc).not.toHaveProperty('legacyAuthorizedHours'); // a linha crua traz authorized_hours: '20' e a ficha NÃO a expõe
     expect(svc).not.toHaveProperty('hourlyValue');
     expect(result!.coverage).toMatchObject({ displaySource: 'INFORMED', display: 'OSDE' });
     // A1 (047): o objeto INTEIRO, com as 4 chaves e nenhuma a mais.
@@ -278,13 +288,17 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     });
     expect(Object.keys(svc.liveVacancy!).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'status']);
     // O SQL lê o caso do fragmento com dono (046) e só vagas vivas — e NÃO toca social_short_links.
-    const sqlVaga = String(queryImpl.mock.calls[10][0]);
+    const sqlVaga = String(queryImpl.mock.calls[11][0]);
+    expect(String(queryImpl.mock.calls[10][0])).toContain('horario_do_servico(id, $2::date)');
+    expect(queryImpl.mock.calls[10][1]).toEqual([['svc-1'], '2026-10-19']);
+    expect(queryImpl.mock.calls[12][1]).toEqual([['svc-1'], '2026-10-19']);
+    expect(svc.schedule).toEqual([{ dayOfWeek: 1, startTime: '20:00', endTime: '08:00', durationMinutes: 720 }]);
     expect(sqlVaga).toContain(`${VACANCY_CASE_NUMBER_SQL} AS case_number`);
     expect(sqlVaga).not.toContain('social_short_links');
     expect(sqlVaga).toContain('jp.deleted_at IS NULL');
     expect(svc.providers).toHaveLength(1);
     expect(svc.providers[0]).toMatchObject({
-      id: 'prov-1', workerId: 'w-1', workerName: 'dec(enc-first) dec(enc-last)', weeklyHours: 20,
+      id: 'prov-1', workerId: 'w-1', workerName: 'dec(enc-first) dec(enc-last)',
     });
   });
 
@@ -301,7 +315,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
         rows: [
           {
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT', professional_profile: null,
-            providers_needed: null, authorized_hours: null, weekly_hours: null, care_location: null,
+            providers_needed: null, authorized_hours: null, care_location: null,
             start_date: null,
             supervision_frequency: null, guard_shift: null, active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
@@ -313,14 +327,16 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       .mockResolvedValueOnce({
         rows: [
           {
-            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1', weekly_hours: null,
+            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1',
             active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
             first_name_encrypted: null, last_name_encrypted: null,
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [{ id: 'svc-1', schedule: null }] }) // schedules (056)
       .mockResolvedValueOnce({ rows: [] }) // live vacancies (spec 018, PR-6) — nenhuma
+      .mockResolvedValueOnce({ rows: [] }) // authorizations (056) — nenhuma
       .mockResolvedValueOnce({ rows: [] }) // payerAtMany -- sem vínculo
       .mockResolvedValueOnce({ rows: [] }) // payerHistoryMany
       .mockResolvedValueOnce({ rows: [] }); // priceStateMany
@@ -332,10 +348,11 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const svc = result!.contractedServices[0];
     expect(svc.deviceTypes).toEqual([]); // device de OUTRO serviço não vaza
     expect(svc.providers[0].workerName).toBeNull();
-    expect(svc.providers[0].weeklyHours).toBeNull();
+    expect(svc.providers[0]).not.toHaveProperty('weeklyHours');
+    expect(svc).not.toHaveProperty('legacyAuthorizedHours');
+    expect(svc.authorization).toBeNull();
     // Lote sem buraco: o serviço sem vínculo aparece como NO_CONTRACT (nunca ausente).
     expect(svc).toMatchObject({ payer: { state: 'NO_CONTRACT' }, payerHistory: [], price: { state: 'NO_CONTRACT' }, tax: { state: 'NO_CONTRACT' }, coverageMatch: { state: 'NO_PAYER' } });
-    expect(svc.authorizedHours).toBeNull();
   });
 });
 

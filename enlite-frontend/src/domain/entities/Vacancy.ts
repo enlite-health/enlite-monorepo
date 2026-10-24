@@ -81,6 +81,8 @@ export interface AdminVacancyDetail {
   vacancy_number: number | null;
   /** FK para patients */
   patient_id: string | null;
+  /** Serviço contratado de onde a vaga nasceu (`null` = criada direto): o atalho "Ver itinerario" abre a aba direto nele (spec 069). */
+  contracted_service_id?: string | null;
   patient_first_name: string | null;
   patient_last_name: string | null;
   /**

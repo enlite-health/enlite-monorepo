@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS uq_job_postings_vaga_viva_por_servico;

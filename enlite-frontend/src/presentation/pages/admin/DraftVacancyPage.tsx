@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight, Eye, FileText } from 'lucide-react';
+import { weeklyHoursOf } from '@domain/scheduleHours';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -18,7 +19,7 @@ import { DraftVacancyTodoCard } from '@presentation/components/features/admin/Va
 import { formatDayMonth, formatDateTime } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
 import {
   daysWithAttendanceCount,
-  weeklyHoursFromSchedule,
+  normalizedScheduleToShifts,
   type NormalizedSchedule,
 } from '@presentation/components/features/admin/VacancyDetail/draftVacancySchedule';
 import {
@@ -179,7 +180,7 @@ export default function DraftVacancyPage() {
   const rawAddress = vacancy.patient_address_formatted ?? vacancy.patient_address_raw ?? null;
   const addressDisplayValue = !hasAddressCell ? notVisible : (rawAddress ?? emptyValue);
 
-  const weeklyHours = weeklyHoursFromSchedule(schedule);
+  const weeklyHours = weeklyHoursOf(normalizedScheduleToShifts(schedule));
   const daysCount = daysWithAttendanceCount(schedule);
   const isDefaultSalary = vacancy.salary_text === 'A convenir';
   const createdLabel = formatDayMonth(vacancy.created_at, i18n.language);

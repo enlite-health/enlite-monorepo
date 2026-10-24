@@ -103,6 +103,26 @@ jest.mock('@shared/logging', () => ({
   loggingAls: { getStore: jest.fn().mockReturnValue(undefined) },
 }));
 
+const mockCountVigente = jest.fn().mockResolvedValue(0);
+jest.mock('@modules/case', () => ({ countVigenteForVacancy: (...args: any[]) => (mockCountVigente as any)(...args) }));
+
+jest.mock('@shared/database/actorContext', () => ({
+  withActorContext: async (pool: any, fn: (c: any) => Promise<unknown>) => {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      const r = await fn(c);
+      await c.query('COMMIT');
+      return r;
+    } catch (e) {
+      await c.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
+  },
+}));
+
 jest.mock('@shared/database/requestDbSession', () => ({
   withSystemDbContext: (_label: string, fn: () => Promise<unknown>) => fn(),
 }));
@@ -600,6 +620,58 @@ describe('VacancyCrudController', () => {
 
       await flushImmediates();
       expect(mockPurgeExecute).toHaveBeenCalledWith('jp-1');
+    });
+
+    it('com alocação vigente (count 3) → 409 VACANCY_HAS_ACTIVE_ALLOCATIONS { count: 3 }; ROLLBACK; nenhum UPDATE de deleted_at; nenhum audit', async () => {
+      mockCountVigente.mockResolvedValueOnce(3);
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] })
+        .mockResolvedValue({});
+      const req = makeReq({ params: { id: 'jp-1' } });
+      const res = makeRes();
+
+      await controller.deleteVacancy(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false, code: 'VACANCY_HAS_ACTIVE_ALLOCATIONS', error: 'Vacancy has active itinerary allocations', details: { count: 3 },
+      });
+      expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClientQuery.mock.calls.some((c: unknown[]) => String(c[0]).includes('deleted_at = NOW()'))).toBe(false);
+      expect(mockAuditVacancyDeleted).not.toHaveBeenCalled();
+    });
+
+    it('a guarda roda NO client da transação (o mesmo do BEGIN), nunca no pool: countVigenteForVacancy chamado com (client da transação, id, Date)', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] })
+        .mockResolvedValue({ rows: [] });
+      const req = makeReq({ params: { id: 'jp-1' } });
+
+      await controller.deleteVacancy(req, makeRes());
+
+      const [arg0, arg1, arg2] = mockCountVigente.mock.calls[0];
+      expect(arg0).toBe(mockClient);
+      expect(arg0).not.toBe((controller as any).db);
+      expect(arg1).toBe('jp-1');
+      expect(arg2).toBeInstanceOf(Date);
+      const order = mockClientQuery.mock.invocationCallOrder;
+      const beginAt = order[0];
+      const updateIdx = mockClientQuery.mock.calls.findIndex((c: unknown[]) => String(c[0]).includes('deleted_at = NOW()'));
+      expect(beginAt).toBeLessThan(mockCountVigente.mock.invocationCallOrder[0]);
+      expect(mockCountVigente.mock.invocationCallOrder[0]).toBeLessThan(order[updateIdx]);
+    });
+
+    it('vaga inexistente → 404 sem consultar a guarda', async () => {
+      mockClientQuery.mockResolvedValueOnce({}).mockResolvedValueOnce({ rows: [] }).mockResolvedValue({});
+      const res = makeRes();
+
+      await controller.deleteVacancy(makeReq({ params: { id: 'jp-sumiu' } }), res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(mockCountVigente).not.toHaveBeenCalled();
     });
 
     it('erro dentro da transação (ex: auditVacancyDeleted lança) → ROLLBACK + rethrow → 500', async () => {

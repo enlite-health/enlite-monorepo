@@ -21,7 +21,7 @@ import {
   type ValidateBatchCommand,
   type ValidateShiftCommand,
 } from './types';
-import { allShiftsOf, filterPatients, originCounts, validationProgress, type AnaCareHoursClientFilters } from './selectors';
+import { allShiftsOf, filterPatients, originCounts, totalHours, validationProgress, type AnaCareHoursClientFilters } from './selectors';
 
 export type AnaCareHoursMonthFilters = AnaCareHoursClientFilters;
 
@@ -95,14 +95,15 @@ export function assertValidContestCommand(command: Pick<ContestShiftCommand, 're
  * (`AnaCareListPatient`, F6.3) — o Fake simula em memória o que o backend real faz em SQL
  * (`anacare_patient_month`/`anacare_patient_month_provider`, ver fase-6.md). Usa os MESMOS
  * agregadores de `selectors.ts` que o DETALHE usa (`allShiftsOf`, `validationProgress`,
- * `originCounts`) — nunca recalcula a régua à mão de novo.
+ * `originCounts`, `totalHours`) — nunca recalcula a régua à mão de novo.
  */
 function aggregatePatientForList(patient: AnaCarePatient): AnaCareListPatient {
   const shifts = allShiftsOf(patient);
   const progress = validationProgress(shifts);
   const origins = originCounts(shifts);
-  const hoursActualSum = shifts.reduce((acc, s) => acc + (s.hoursActual ?? 0), 0);
-  const hoursScheduledSumMissingActual = shifts.reduce((acc, s) => acc + (s.hoursActual === null ? s.hoursScheduled : 0), 0);
+  // Spec 056 (⚑D): a MESMA soma do detalhe (`totalHours`); o previsto dos turnos sem realizada é a diferença.
+  const hoursActualSum = totalHours(shifts, 'zero');
+  const hoursScheduledSumMissingActual = totalHours(shifts, 'scheduled') - totalHours(shifts, 'zero');
   return {
     anaCareId: patient.anaCareId,
     name: patient.name,

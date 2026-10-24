@@ -20,8 +20,6 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
     listContractedServices: (...a: unknown[]) => mockList(...a),
     createContractedService: vi.fn(),
     updateContractedService: vi.fn(),
-    associateProvider: vi.fn(),
-    updateProvider: vi.fn(),
   },
 }));
 const mockForService = vi.fn();
@@ -52,7 +50,7 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: patientDetailFixture.id, serviceCode: 'AT', professionalProfile: null,
-  providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
+  providersNeeded: 2, authorization: null, scheduleHours: 20, careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS, startDate: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,

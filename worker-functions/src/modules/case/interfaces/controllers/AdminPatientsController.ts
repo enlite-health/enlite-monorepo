@@ -36,6 +36,7 @@ import {
   PatientStatusPermissionError,
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
+  PatientStatusLockedByAllocationError,
   SuspensionExitReasonRequiredError,
 } from '../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
@@ -395,6 +396,11 @@ export class AdminPatientsController {
       }
       if (err instanceof SuspensionExitReasonRequiredError) {
         res.status(422).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
+      // D489/D530: prestador com alocação viva no itinerário. Só a contagem — sem nome (PII).
+      if (err instanceof PatientStatusLockedByAllocationError) {
+        res.status(422).json({ success: false, error: err.message, code: err.code, details: { allocations: err.allocations } });
         return;
       }
       // Decisão do Gabriel 07/09. `details.missing` tem o MESMO formato do 422 do

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { weeklyHoursOf } from '@domain/scheduleHours';
 import {
   buildScheduleGrid,
   daysWithAttendanceCount,
   formatScheduleTime,
-  weeklyHoursFromSchedule,
+  normalizedScheduleToShifts,
   type NormalizedSchedule,
 } from '../draftVacancySchedule';
 
@@ -40,7 +41,7 @@ describe('draftVacancySchedule — a grade de 7 dias (F24/F28)', () => {
     expect(domingo.blocks).toHaveLength(0);
   });
 
-  it('weeklyHoursFromSchedule soma todos os blocos de todos os dias', () => {
+  it('weeklyHoursOf soma todos os blocos de todos os dias', () => {
     const schedule: NormalizedSchedule = {
       lunes: [{ start: '08:00', end: '14:00' }], // 6h
       martes: [{ start: '14:00', end: '20:00' }], // 6h
@@ -51,16 +52,16 @@ describe('draftVacancySchedule — a grade de 7 dias (F24/F28)', () => {
         { start: '16:00', end: '20:00' }, // 4h
       ],
     };
-    expect(weeklyHoursFromSchedule(schedule)).toBe(32);
+    expect(weeklyHoursOf(normalizedScheduleToShifts(schedule))).toBe(32);
   });
 
-  it('weeklyHoursFromSchedule trata virada de meia-noite (end < start)', () => {
+  it('weeklyHoursOf trata virada de meia-noite (end < start)', () => {
     const schedule: NormalizedSchedule = { sabado: [{ start: '22:00', end: '02:00' }] };
-    expect(weeklyHoursFromSchedule(schedule)).toBe(4);
+    expect(weeklyHoursOf(normalizedScheduleToShifts(schedule))).toBe(4);
   });
 
-  it('weeklyHoursFromSchedule(null) é 0', () => {
-    expect(weeklyHoursFromSchedule(null)).toBe(0);
+  it('weeklyHoursOf(shifts de null) é 0', () => {
+    expect(weeklyHoursOf(normalizedScheduleToShifts(null))).toBe(0);
   });
 
   it('formatScheduleTime: sem zero à esquerda na hora, minutos só quando ≠ :00 (protótipo v3)', () => {

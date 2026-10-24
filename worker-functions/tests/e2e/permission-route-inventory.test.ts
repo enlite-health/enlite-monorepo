@@ -348,13 +348,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/template-drafts → messaging:read',
         'GET /api/admin/terminology/search → patient_clinical:read',
         'PATCH /api/admin/patients/:id/contracted-services/:sid → patient_services:update',
-        'PATCH /api/admin/patients/:id/contracted-services/:sid/providers/:pid → patient_services:update',
+        'GET /api/admin/patients/:id/contracted-services/:sid/authorizations → patient_services:read', // spec 056 — horas autorizadas com vigência
+        'POST /api/admin/patients/:id/contracted-services/:sid/authorizations → patient_services:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/authorizations/:aid/supersede → patient_services:update',
         'PATCH /api/admin/patients/:id/diagnoses/:did → patient_clinical:update',
         'PATCH /api/admin/patients/:patientId/addresses/:addressId → patient_address:update',
         'POST /api/admin/catalogs/insurance-providers → catalog_insurance_providers:create',
         'POST /api/admin/map/corridor → patient_address:read',
         'POST /api/admin/patients/:id/contracted-services → patient_services:create',
-        'POST /api/admin/patients/:id/contracted-services/:sid/providers → patient_services:update',
         'POST /api/admin/patients/:id/diagnoses → patient_clinical:create',
         'POST /api/admin/patients/map → patient_address:read',
         'POST /api/admin/template-drafts → messaging:create',
@@ -381,6 +382,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:read',
         'POST /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:create',
         'PATCH /api/admin/therapeutic-catalogs/segments/:itemId → catalog_therapeutic_segments:update',
+        // Motivos de saída (migration 492) — kind fora do laço terapêutico, célula literal própria.
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:read',
+        'POST /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:create',
+        'PATCH /api/admin/therapeutic-catalogs/service-exit-reasons/:itemId → catalog_service_exit_reasons:update',
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons/options → patient_services:read',
         // anacare-conferencia-de-horas, fase 1 (migration 437) — `anacare_hours:read` para ver
         // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
         'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',
@@ -391,6 +397,33 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/anacare-hours/shifts/:shiftId/validate → anacare_hours:validate',
         'POST /api/admin/anacare-hours/shifts/:shiftId/contest → anacare_hours:validate',
         'POST /api/admin/anacare-hours/sync → anacare_hours:validate',
+        'GET /api/admin/patients/:id/itinerary → patient_services:read', // cadeia Fase 7 — leitura do itinerário (D433/D434)
+        'GET /api/admin/patients/:id/itinerary/events → patient_services:read', // D445.3 — "Próximos eventos/Substituição", leitura calculada
+        'GET /api/admin/patients/:id/contracted-services/:sid/itinerary/changes → patient_services:read', // itinerario-trocas Fase 2 (C9) — registro de trocas, leitura
+        'GET /api/admin/patients/kanban/services → patient_services:read', // cadeia Fase 8 — agregado do subcard (Plano B)
+        'GET /api/admin/patients/:id/contracted-services/:sid/team → patient_services:read', // cadeia Fase 10 — quadro C (calculado)
+        'POST /api/admin/patients/:id/contracted-services/:sid/team/reject → patient_service_team:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/team/revert → patient_service_team:update',
+        'GET /api/admin/patients/:id/contracted-services/:sid/team/:workerId/contact → patient_services:read', // painel do prestador (D447) — contact log, leitura
+        'POST /api/admin/patients/:id/contracted-services/:sid/team/:workerId/contact → patient_service_team:update', // painel do prestador (D447) — registra contato
+        'GET /api/admin/patients/:id/contracted-services/:sid/allocation-options → patient_services:read', // cadeia Fase 11 — escritores do itinerário
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots → patient_itinerary:update',
+        'PATCH /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId/end → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId/allocations → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/end → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/replace → patient_itinerary:update', // D445.5 — reemplazo permanente
+        'POST /api/admin/patients/:id/itinerary/assemble → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/absences → patient_itinerary:update', // cadeia Fase 13 — substituição pontual
+        'PATCH /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/substitute → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/cancel → patient_itinerary:update',
+        // spec 069 — pedido de substituição (parte dias): leituras em patient_services:read, pré-visão e criação em patient_itinerary:update.
+        'GET /api/admin/patients/:id/contracted-services/:sid/substitution-requests → patient_services:read',
+        'GET /api/admin/patients/:id/contracted-services/:sid/substitution-requests/outgoing-options → patient_services:read',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/preview → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/:rid/undo → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/:rid/cover → patient_itinerary:update',
         // spec 029 (prompts de IA editáveis) — as 6 rotas de `ai-prompts`.
         'GET /api/admin/ai-prompts → ai_prompt:read',
         'GET /api/admin/ai-prompts/:slug → ai_prompt:read',

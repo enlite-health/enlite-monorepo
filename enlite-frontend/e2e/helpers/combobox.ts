@@ -41,6 +41,25 @@ export async function escolherNoCombo(
 }
 
 /**
+ * Escolhe no combobox que o teste JÁ abriu (ex.: para contar as linhas antes de escolher). O campo de busca só existe com >= 3
+ * opções: com menos, clica direto a linha. `exato: false` quando a linha traz marca à direita do rótulo (nome acessível = rótulo + marca).
+ */
+export async function escolherNaListaAberta(
+  page: Page,
+  gatilho: Locator,
+  rotulo: string,
+  opts?: { exato?: boolean },
+): Promise<void> {
+  const busca = buscaDo(gatilho);
+  if ((await busca.count()) > 0) {
+    await expect(busca).toBeFocused();
+    await page.keyboard.type(rotulo, { delay: 20 });
+  }
+  await page.getByRole('option', { name: rotulo, exact: opts?.exato ?? true }).click();
+  await expect(gatilho).toContainText(rotulo);
+}
+
+/**
  * Combobox de AÇÃO: o gatilho não guarda a escolha (ex.: "Ver como grupo" no rodapé da sidebar, que dispara a simulação e segue
  * mostrando o placeholder). Mesmo gesto — abrir, buscar, clicar a opção pelo rótulo —, sem conferir o texto do gatilho; o efeito
  * (banner, menu) é a asserção do teste.
@@ -48,6 +67,16 @@ export async function escolherNoCombo(
 export async function acionarNoCombo(page: Page, alvo: Locator | string, rotulo: string, opts?: { buscar?: string }): Promise<void> {
   await abrir(page, alvo, opts?.buscar ?? rotulo);
   await page.getByRole('option', { name: rotulo, exact: true }).click();
+}
+
+/**
+ * Combobox de escolha única quando o teste só conhece o VALOR (código/id de seed, ex.: `OTHER`, o id de um prestador) e não o rótulo:
+ * abre o gatilho e clica a linha cujo `data-value` é o valor. O gesto continua sendo o clique humano na linha do painel.
+ */
+export async function escolherNoComboPorValor(page: Page, alvo: Locator | string, valor: string): Promise<void> {
+  const gatilho = await abrir(page, alvo);
+  await page.locator(`ul[role="listbox"] li[role="option"][data-value="${valor}"] button`).click();
+  await expect(gatilho).toHaveAttribute('aria-expanded', 'false');
 }
 
 /** Combobox `multiple`: marca cada rótulo (o painel fica aberto) e fecha com Esc no fim. */

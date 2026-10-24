@@ -1,4 +1,13 @@
 import { GetManagementDashboardUseCase } from '../GetManagementDashboardUseCase';
+import type { ServiceHoursSummary, ServiceHoursSummaryPort } from '../ServiceHoursSummaryPort';
+
+/** Porta stub: horas do SERVIÇO (spec 056). */
+function hoursStub(partial: Partial<ServiceHoursSummary> = {}): ServiceHoursSummaryPort {
+  const summary: ServiceHoursSummary = {
+    total: 0, cobertas: 0, servicesWithSchedule: 0, servicesWithoutSchedule: 0, ...partial,
+  };
+  return { readServiceHours: jest.fn().mockResolvedValue(summary) };
+}
 
 /**
  * Ordem das queries:
@@ -10,15 +19,14 @@ import { GetManagementDashboardUseCase } from '../GetManagementDashboardUseCase'
  *   4. patients activos              → rows [{activos}]
  *   5. pacientes estados (CHEGANDO)  → rows [{solicitudes,entrevista_agendada,en_admision,en_busca}]
  *   6. ubicaciones ativas            → rows [{ubicaciones}]
- *   7. horas ativas (schedules)      → rows [{schedule}]
- *   8. workers agregados             → rows [{leads,completos,incompletos,nuevos}]
- *   9. funnel por etapa (LEGADO)     → rows [{k,count}]
- *  10. esperando agenda (fila real)  → rows [{esperando}]
- *  11. alocados (ana_care_status)    → rows [{activos, cubriendo_guardias}]
- *  12. blocked (pessoas, vaga viva)  → rows [{bloqueados}] — alimenta TANTO
+ *   7. workers agregados             → rows [{leads,completos,incompletos,nuevos}]
+ *   8. funnel por etapa (LEGADO)     → rows [{k,count}]
+ *   9. esperando agenda (fila real)  → rows [{esperando}]
+ *  10. alocados (ana_care_status)    → rows [{activos, cubriendo_guardias}]
+ *  11. blocked (pessoas, vaga viva)  → rows [{bloqueados}] — alimenta TANTO
  *      funnel.bloqueados QUANTO prioridades.bloqueadosAlPostularse (mesma fonte
  *      já recortada a vaga viva + não desativado, ver GetManagementDashboardUseCase).
- *  13. encuadres semana (data antiga ∪ evento aberto) → rows [{agendados}]
+ *  12. encuadres semana (data antiga ∪ evento aberto) → rows [{agendados}]
  */
 interface FunnelWorkerRow {
   worker_id: string;
@@ -55,7 +63,6 @@ function mockDb(
   esperandoAgenda = 0,
   estados: EstadosRow = { solicitudes: 0, entrevista_agendada: 0, en_admision: 0, en_busca: 0 },
   ubicaciones = 0,
-  horasAtivas: Array<{ schedule: unknown }> = [],
 ): { query: jest.Mock } {
   const query = jest
     .fn()
@@ -65,7 +72,6 @@ function mockDb(
     .mockResolvedValueOnce({ rows: [patient] })
     .mockResolvedValueOnce({ rows: [estados] })
     .mockResolvedValueOnce({ rows: [{ ubicaciones }] })
-    .mockResolvedValueOnce({ rows: horasAtivas })
     .mockResolvedValueOnce({ rows: [worker] })
     .mockResolvedValueOnce({ rows: funnel })
     .mockResolvedValueOnce({ rows: [{ esperando: esperandoAgenda }] })
@@ -83,13 +89,12 @@ const CALL = {
   patients: 3,
   estados: 4,
   ubicaciones: 5,
-  horasAtivas: 6,
-  workers: 7,
-  funnelLegado: 8,
-  esperando: 9,
-  alocados: 10,
-  blocked: 11,
-  encuadres: 12,
+  workers: 6,
+  funnelLegado: 7,
+  esperando: 8,
+  alocados: 9,
+  blocked: 10,
+  encuadres: 11,
 } as const;
 
 function armedRow(partial: Partial<ArmedRow>): ArmedRow {
@@ -165,11 +170,12 @@ describe('GetManagementDashboardUseCase', () => {
       // Linha CHEGANDO (Diego): estados atuais, exclusivos por precedência
       { solicitudes: 2, entrevista_agendada: 1, en_admision: 5, en_busca: 112 },
       339, // ubicaciones distintas de pacientes ativos
-      // Horas ativas (vagas status=ACTIVE): 4h com schedule + 1 sem
-      [{ schedule: [{ dayOfWeek: 3, startTime: '08:00', endTime: '12:00' }] }, { schedule: null }],
     );
 
-    const useCase = new GetManagementDashboardUseCase(db as never);
+    const useCase = new GetManagementDashboardUseCase(
+      db as never,
+      hoursStub({ total: 40, cobertas: 20, servicesWithSchedule: 3, servicesWithoutSchedule: 1 }),
+    );
     const result = await useCase.execute();
 
     expect(result).toEqual({
@@ -202,13 +208,13 @@ describe('GetManagementDashboardUseCase', () => {
         sobrepoe: true,
       },
       horas: {
-        totais: 10, // 4h + 6h (vagas vivas)
-        aPreencher: 6, // só o POR_ARMAR com schedule
-        ativas: 4, // vaga ACTIVE com schedule de 4h
-        ativasConSchedule: 1,
+        totais: 40, // total do serviço (vaga viva)
+        aPreencher: 20, // total − cobertas
+        ativas: 20, // cobertas do serviço
+        ativasConSchedule: 3,
         ativasSinSchedule: 1,
-        coberturaConSchedule: 2,
-        coberturaSinSchedule: 2,
+        coberturaConSchedule: 3,
+        coberturaSinSchedule: 1,
       },
       prioridades: {
         completosEsperandoAgendamiento: 569,
@@ -259,7 +265,25 @@ describe('GetManagementDashboardUseCase', () => {
         nuevosCompletosMes: 14,
       },
     });
-    expect(db.query).toHaveBeenCalledTimes(13);
+    expect(db.query).toHaveBeenCalledTimes(12);
+  });
+
+  it('horasAtivas vem das cobertas do serviço, não do schedule da vaga', async () => {
+    const db = mockDb(
+      [armedRow({ id: 'c1', schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] })],
+      [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0,
+    );
+    const hours = hoursStub({ total: 40, cobertas: 20, servicesWithSchedule: 2, servicesWithoutSchedule: 1 });
+
+    const result = await new GetManagementDashboardUseCase(db as never, hours).execute({ countries: ['AR'], requested: 'AR' });
+
+    expect(result.horas.ativas).toBe(20);
+    expect(result.horas.totais).toBe(40);
+    expect(result.horas.aPreencher).toBe(20);
+    expect(result.horas.ativasConSchedule).toBe(2);
+    expect(result.horas.ativasSinSchedule).toBe(1);
+    expect(hours.readServiceHours).toHaveBeenCalledTimes(1); // uma leitura só, repassada ao armed
+    expect(hours.readServiceHours).toHaveBeenCalledWith(['AR']);
   });
 
   it('trata status/etapas ausentes como zero (sem chaves parciais)', async () => {
@@ -274,7 +298,7 @@ describe('GetManagementDashboardUseCase', () => {
       0,
     );
 
-    const useCase = new GetManagementDashboardUseCase(db as never);
+    const useCase = new GetManagementDashboardUseCase(db as never, hoursStub());
     const result = await useCase.execute();
 
     expect(result.bigNumbers).toEqual({
@@ -322,7 +346,7 @@ describe('GetManagementDashboardUseCase', () => {
       .mockResolvedValueOnce({ rows: [] }) // funil por prestador
       .mockResolvedValueOnce({ rows: [{ k: 'ACTIVE', count: 5 }] }); // jobs
 
-    const useCase = new GetManagementDashboardUseCase({ query } as never);
+    const useCase = new GetManagementDashboardUseCase({ query } as never, hoursStub());
     const result = await useCase.execute();
 
     expect(result.bigNumbers.equiposArmados).toBe(0);
@@ -337,7 +361,7 @@ describe('GetManagementDashboardUseCase', () => {
     // com pool mockado, a trava é a FORMA da query — os predicados não podem
     // sumir num refactor. A prova com dado real é a task 6.1.
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0);
-    await new GetManagementDashboardUseCase(db as never).execute();
+    await new GetManagementDashboardUseCase(db as never, hoursStub()).execute();
 
     const [estadosSql, estadosParams] = db.query.mock.calls[CALL.estados];
     expect(estadosSql).toContain('admission_appointments');
@@ -352,15 +376,12 @@ describe('GetManagementDashboardUseCase', () => {
     const [ubicacionesSql] = db.query.mock.calls[CALL.ubicaciones];
     expect(ubicacionesSql).toContain('DISTINCT'); // dedup — 566 linhas cruas viram 339 reais
     expect(ubicacionesSql).toContain("p.status = 'ACTIVE'");
-
-    const [horasAtivasSql] = db.query.mock.calls[CALL.horasAtivas];
-    expect(horasAtivasSql).toContain("jp.status = 'ACTIVE'"); // em atendimento ≠ vivo (busca)
   });
 
   it('capacidade de encuadres é config: 60 no env muda o denominador sem código', async () => {
     process.env.ENCUADRE_WEEKLY_CAPACITY = '60';
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 30);
-    const result = await new GetManagementDashboardUseCase(db as never).execute();
+    const result = await new GetManagementDashboardUseCase(db as never, hoursStub()).execute();
 
     expect(result.encuadres.pctCapacidadeSemana).toEqual({ agendados: 30, capacidade: 60, pct: 50 });
   });
@@ -368,18 +389,18 @@ describe('GetManagementDashboardUseCase', () => {
   it('capacidade zerada ou inválida OMITE o percentual (nunca divisão por zero)', async () => {
     process.env.ENCUADRE_WEEKLY_CAPACITY = '0';
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 5);
-    const result = await new GetManagementDashboardUseCase(db as never).execute();
+    const result = await new GetManagementDashboardUseCase(db as never, hoursStub()).execute();
     expect(result.encuadres.pctCapacidadeSemana).toBeUndefined();
 
     process.env.ENCUADRE_WEEKLY_CAPACITY = 'oitenta';
     const db2 = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 5);
-    const result2 = await new GetManagementDashboardUseCase(db2 as never).execute();
+    const result2 = await new GetManagementDashboardUseCase(db2 as never, hoursStub()).execute();
     expect(result2.encuadres.pctCapacidadeSemana).toBeUndefined();
   });
 
   it('filtro por período: repassa os dias ao funil por prestador e ecoa no payload', async () => {
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0);
-    const result = await new GetManagementDashboardUseCase(db as never).execute({ funnelPeriodDays: 7 });
+    const result = await new GetManagementDashboardUseCase(db as never, hoursStub()).execute({ funnelPeriodDays: 7 });
 
     expect(result.funnelPorPrestador.periodoDias).toBe(7);
     const [funnelSql, funnelParams] = db.query.mock.calls[CALL.funnelPorPrestador];
@@ -389,7 +410,7 @@ describe('GetManagementDashboardUseCase', () => {
 
   it('sem período: query do funil não tem predicado de data e periodoDias é null', async () => {
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0);
-    const result = await new GetManagementDashboardUseCase(db as never).execute();
+    const result = await new GetManagementDashboardUseCase(db as never, hoursStub()).execute();
 
     expect(result.funnelPorPrestador.periodoDias).toBeNull();
     const [funnelSql, funnelParams] = db.query.mock.calls[CALL.funnelPorPrestador];
@@ -399,7 +420,7 @@ describe('GetManagementDashboardUseCase', () => {
 
   it('conta entrevistas da semana no fuso da OPERAÇÃO: data antiga ∪ participação ativa em evento aberto', async () => {
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 7);
-    const result = await new GetManagementDashboardUseCase(db as never).execute();
+    const result = await new GetManagementDashboardUseCase(db as never, hoursStub()).execute();
 
     expect(result.encuadres.agendadosEstaSemana).toBe(7);
     expect(result.encuadres).not.toHaveProperty('semDataRegistrada'); // saiu com o estágio
@@ -420,7 +441,7 @@ describe('GetManagementDashboardUseCase', () => {
 
   it('não conta paciente apagado em pacientesActivos', async () => {
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0);
-    await new GetManagementDashboardUseCase(db as never).execute();
+    await new GetManagementDashboardUseCase(db as never, hoursStub()).execute();
 
     const patientsSql: string = db.query.mock.calls[CALL.patients][0];
     expect(patientsSql).toContain('FROM patients');
@@ -438,7 +459,7 @@ describe('GetManagementDashboardUseCase', () => {
       0,
       0,
     );
-    const useCase = new GetManagementDashboardUseCase(db as never);
+    const useCase = new GetManagementDashboardUseCase(db as never, hoursStub());
     await expect(useCase.execute()).rejects.toThrow();
   });
 
@@ -452,7 +473,7 @@ describe('GetManagementDashboardUseCase', () => {
    */
   it('país explícito (["AR"]) vira predicado em TODA consulta que toca patients/job_postings/workers', async () => {
     const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0);
-    const result = await new GetManagementDashboardUseCase(db as never).execute({
+    const result = await new GetManagementDashboardUseCase(db as never, hoursStub()).execute({
       countries: ['AR'],
       requested: 'AR',
     });
@@ -475,10 +496,6 @@ describe('GetManagementDashboardUseCase', () => {
     const [ubicacionesSql, ubicacionesParams] = db.query.mock.calls[CALL.ubicaciones];
     expect(ubicacionesSql).toContain('p.country = ANY($1::bpchar[])');
     expect(ubicacionesParams).toEqual([['AR']]);
-
-    const [horasSql, horasParams] = db.query.mock.calls[CALL.horasAtivas];
-    expect(horasSql).toContain('jp.country = ANY($1::bpchar[])');
-    expect(horasParams).toEqual([['AR']]);
 
     const [workersSql, workersParams] = db.query.mock.calls[CALL.workers];
     expect(workersSql).toContain('w.country = ANY($1::bpchar[])');

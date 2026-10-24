@@ -348,6 +348,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // explícitos abaixo.
       'catalog_therapeutic_objectives:read',
       'catalog_therapeutic_activities:read',
+      // Motivos de saída (492): mesma família, célula literal própria.
+      'catalog_service_exit_reasons:read',
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
       // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos recursos. Nesta rodada
@@ -414,6 +416,7 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_therapeutic_project:create', 'patient_therapeutic_project:update',
       'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update',
       'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update',
+      'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update',
       'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update',
       'user_management:create', 'user_management:update',
       'vacancy:create', 'vacancy:update',
@@ -429,6 +432,12 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // fixture de 2 rotas deste teste não as declara, por isso aparecem aqui como as demais
       // células de rota real acima (mesmo padrão de `patient_therapeutic_project:*` etc.).
       'anacare_hours:read', 'anacare_hours:validate', 'anacare_hours:export',
+      // cadeia Fase 10 (28/09) — quadro C: TEM rota própria (adminServiceTeamRoutes.ts, POST
+      // …/team/reject|revert), mas o fixture deste teste não a declara — mesma classe de dashboard_zones:read/worker_address:read.
+      'patient_service_team:update',
+      // cadeia Fase 11 (28/09) — itinerário: TEM rota própria (adminItineraryWriteRoutes.ts), mas
+      // o fixture deste teste não a declara — mesma classe de patient_service_team:update acima.
+      'patient_itinerary:update',
       // Spec 024 (D1/D2/D401, 21/09): DECLARADAS por rota real em `adminWorkerRoutes.ts`
       // (`tag:*`) e `recruitmentRoutes.ts` (`recruitment_blocked:read`) — o fixture de 2 rotas
       // deste teste não as declara, por isso aparecem aqui como as demais células de rota real

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text/Text';
@@ -11,6 +11,8 @@ export interface ComboboxOption {
   disabled?: boolean;
   /** Texto extra que a busca casa e a tela não exibe (ex.: CNPJ, sigla). */
   searchText?: string;
+  /** Marca à direita do rótulo na lista (ex.: estado do prestador). A busca continua só pelo `label`/`searchText`. */
+  adornment?: ReactNode;
 }
 
 /**
@@ -72,7 +74,7 @@ export type ComboboxProps = Common &
 const PANEL_CLASSES =
   'absolute z-50 w-full bg-white border border-[#D9D9D9] rounded-[10px] shadow-lg py-1';
 const SCROLL_CLASSES = 'overflow-y-auto max-h-60';
-/** Altura que o painel pode ocupar (busca + lista de 15rem + respiro): abaixo disso no rodape da tela, ele abre para CIMA. */
+/** Altura que o painel pode ocupar (busca + lista de 15rem + respiro): abaixo disso no rodapé da tela, ele abre para CIMA. */
 const PANEL_ROOM_PX = 320;
 
 export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Combobox(props, ref) {
@@ -141,7 +143,7 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
     else openPanel();
   }, [open, close, openPanel]);
 
-  // Gatilho no pe da janela (ex.: rodape da sidebar): sem espaco embaixo e com mais espaco em cima, o painel abre para cima.
+  // Gatilho no pé da janela (ex.: rodapé da sidebar): sem espaço embaixo e com mais espaço em cima, o painel abre para cima.
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
     const { top, bottom } = triggerRef.current.getBoundingClientRect();
@@ -300,10 +302,10 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
 
   const wrapperClasses = inputWrapperClasses({ size: inputSize, error: !!error, disabled });
 
-  const renderRow = (opt: { value: string; label: string; disabled?: boolean }) => {
+  const renderRow = (opt: ComboboxOption) => {
     const checked = props.multiple ? props.value.includes(opt.value) : props.value === opt.value;
     return (
-      <li key={opt.value} role="option" aria-selected={checked}>
+      <li key={opt.value} role="option" aria-selected={checked} data-value={opt.value}>
         <button
           type="button"
           disabled={opt.disabled}
@@ -325,9 +327,18 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
               className="pointer-events-none accent-primary w-4 h-4 shrink-0"
             />
           )}
-          <Text as="span" size="sm" weight="medium" color="secondary">
-            {opt.label}
-          </Text>
+          {opt.adornment ? (
+            <span className="flex flex-1 items-center justify-between gap-3">
+              <Text as="span" size="sm" weight="medium" color="secondary" className="truncate">
+                {opt.label}
+              </Text>
+              {opt.adornment}
+            </span>
+          ) : (
+            <Text as="span" size="sm" weight="medium" color="secondary">
+              {opt.label}
+            </Text>
+          )}
         </button>
       </li>
     );

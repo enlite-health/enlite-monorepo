@@ -236,8 +236,8 @@ export class MessagingController {
       });
     const resolvedWorkerId = resolvedWorkerRes?.rows[0]?.id ?? null;
 
-    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao). resolvedWorkerId já foi
-    // resolvido acima (reaproveitado, não repete a busca por telefone).
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao). digitsOnly acima só
+    // resolve o worker_id pelo telefone normalizado — não é gravado na tabela.
     await this.db
       .query(
         `INSERT INTO whatsapp_bulk_dispatch_logs

@@ -11,6 +11,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { operationDateOf } from '@shared/locale/operationDate';
+import { countVigenteForService } from './VacancyAllocationProbe';
 import { ContractedServiceContractLinkWriter } from './contractedServiceContractLinkWriter';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
 import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
@@ -24,6 +25,11 @@ import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
+import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours';
+import { replaceServiceSlots } from './ServiceSlotWriter';
+import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
+import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
+import { fetchServiceSchedules } from './ContractedServiceDetailMapper';
 import {
   batchEntry,
   derivePayerCoverageMatch,
@@ -37,12 +43,16 @@ import { priceStateMany, type PriceState, type TaxState } from './contractedServ
 import { readCoverageEntries } from './patientCoverageRead';
 
 /**
- * Slot de horário do encuadre — o MESMO formato que `scheduleToJsonb` persiste em
- * `job_postings.schedule` (array; `normalizeSchedule` já lê). `dayOfWeek`: 0 = domingo.
+ * Turno do horário na ESCRITA (spec 056): início + duração; o fim nunca é gravado. `dayOfWeek`: 0 = domingo.
  */
 export interface ContractedServiceScheduleSlot {
   dayOfWeek: number;
   startTime: string;
+  durationMinutes: number;
+}
+
+/** Turno do horário na LEITURA: `horario_do_servico(id, asOf)` — o `endTime` é derivado (início + duração). */
+export interface ContractedServiceScheduleView extends ContractedServiceScheduleSlot {
   endTime: string;
 }
 
@@ -70,6 +80,18 @@ export class ServiceFieldRequiredByLiveVacancyError extends Error {
   }
 }
 
+/** 058 REGRA-05 (041): `addressId` diferente do atual com vaga viva ou alocação vigente — mudou o local = serviço novo. 422 via `insuranceErrorBody`. */
+export class ServiceAddressLockedError extends Error {
+  readonly httpStatus = 422;
+  readonly code = 'SERVICE_ADDRESS_LOCKED';
+  readonly details: { reason: 'LIVE_VACANCY' | 'ALLOCATION' };
+  constructor(reason: 'LIVE_VACANCY' | 'ALLOCATION') {
+    super(`service address cannot change: ${reason}`);
+    this.name = 'ServiceAddressLockedError';
+    this.details = { reason };
+  }
+}
+
 const ADDRESS_FK = 'pcs_address_same_patient_fk';
 
 function isAddressFkViolation(err: unknown): boolean {
@@ -83,8 +105,10 @@ export interface ContractedServiceDetail {
   serviceCode: string;
   professionalProfile: string | null;
   providersNeeded: number | null;
-  authorizedHours: number | null;
-  weeklyHours: number | null;
+  /** Autorização corrente e vigente hoje (spec 056, dono: `contracted_service_authorization`) — null = nenhuma. */
+  authorization: CurrentAuthorization | null;
+  /** Σ das faixas vigentes hoje (`computeScheduleWeeklyHours(schedule)`) — o horário é das faixas, não de coluna (spec 056). */
+  scheduleHours: number;
   careLocation: string | null;
   startDate: string | null;
   supervisionFrequency: string | null;
@@ -94,7 +118,7 @@ export interface ContractedServiceDetail {
   /** Endereço do paciente onde o serviço é prestado (migration 330) — null = ainda não vinculado. */
   addressId: string | null;
   /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
-  schedule: ContractedServiceScheduleSlot[] | null;
+  schedule: ContractedServiceScheduleView[] | null;
   /**
    * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros são COPIADOS para a vaga na ativação;
    * `workerAttributes` e `dailyObs` são SÓ FICHA (nunca copiados). Texto livre: nunca em log (lex T.4).
@@ -134,8 +158,6 @@ export interface ContractedServiceWriteInput {
   serviceCode?: string;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  authorizedHours?: number | null;
-  weeklyHours?: number | null;
   careLocation?: string | null;
   startDate?: string | null;
   supervisionFrequency?: string | null;
@@ -184,15 +206,12 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['serviceCode', 'service_code'],
   ['professionalProfile', 'professional_profile'],
   ['providersNeeded', 'providers_needed'],
-  ['authorizedHours', 'authorized_hours'],
-  ['weeklyHours', 'weekly_hours'],
   ['careLocation', 'care_location'],
   ['startDate', 'start_date'],
   ['supervisionFrequency', 'supervision_frequency'],
   ['guardShift', 'guard_shift'],
   ['providerAgeBand', 'provider_age_band'],
   ['addressId', 'address_id'],
-  ['schedule', 'schedule'],
   ['requiredProfessions', 'required_professions'],
   ['requiredSex', 'required_sex'],
   ['requiredExperience', 'required_experience'],
@@ -202,30 +221,18 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['dailyObs', 'daily_obs'],
 ];
 
-/**
- * `schedule` é JSONB e chega como ARRAY JS: o driver `pg` serializa objeto como JSON, mas array
- * JS vira ARRAY Postgres (`{...}`), que o JSONB recusa. Só esta coluna precisa do stringify.
- */
-function toColumnValue(key: keyof ContractedServiceWriteInput, value: unknown): unknown {
-  if (key === 'schedule' && value != null) return JSON.stringify(value);
-  return value;
-}
-
 interface ServiceRow {
   id: string;
   patient_id: string;
   service_code: string;
   professional_profile: string | null;
   providers_needed: number | null;
-  authorized_hours: string | null;
-  weekly_hours: string | null;
   care_location: string | null;
   start_date: string | null;
   supervision_frequency: string | null;
   guard_shift: string | null;
   provider_age_band: string | null;
   address_id: string | null;
-  schedule: ContractedServiceScheduleSlot[] | null;
   required_professions: string[] | null;
   required_sex: string | null;
   required_experience: string | null;
@@ -248,6 +255,10 @@ export class PatientContractedServiceRepository {
 
   constructor(
     private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
+    /** Injeção só para o unitário; os call sites de produção não mudam — o default é o escritor real das faixas. */
+    private readonly replaceSlots: typeof replaceServiceSlots = replaceServiceSlots,
+    /** ⚑13 (spec 056): editar o horário muda o denominador da régua → recalcula o estado na MESMA transação. */
+    private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
   ) {}
 
   private get pool(): Pool {
@@ -272,6 +283,9 @@ export class PatientContractedServiceRepository {
     const providers = await this.providerRepo.listForService(row.id);
     // Spec 018 PR-6 / spec 047 F2: a MESMA leitura do mapper da ficha (`fetchLiveVacancies`) — um dono só.
     const liveVacancy = (await fetchLiveVacancies(cli, [row.id])).get(row.id) ?? null;
+    // Spec 058 (B1): agenda e autorização no dia de operação do serviço — as MESMAS funções da ficha (`ContractedServiceDetailMapper`).
+    const schedule = (await fetchServiceSchedules(cli, [row.id], asOf)).get(row.id) ?? null;
+    const authorization = (await fetchCurrentAuthorizations(cli, [row.id], asOf)).get(row.id) ?? null;
     const [payers, histories, prices, coverageEntries] = await Promise.all([
       payerAtMany(cli, [row.id], asOf),
       payerHistoryMany(cli, [row.id]),
@@ -287,15 +301,15 @@ export class PatientContractedServiceRepository {
       serviceCode: row.service_code,
       professionalProfile: row.professional_profile,
       providersNeeded: row.providers_needed,
-      authorizedHours: row.authorized_hours != null ? Number(row.authorized_hours) : null,
-      weeklyHours: row.weekly_hours != null ? Number(row.weekly_hours) : null,
+      authorization,
+      scheduleHours: computeScheduleWeeklyHours(schedule),
       careLocation: row.care_location,
       startDate: row.start_date,
       supervisionFrequency: row.supervision_frequency,
       guardShift: row.guard_shift,
       providerAgeBand: row.provider_age_band,
       addressId: row.address_id,
-      schedule: row.schedule,
+      schedule,
       requiredProfessions: row.required_professions,
       requiredSex: row.required_sex,
       requiredExperience: row.required_experience,
@@ -379,7 +393,7 @@ export class PatientContractedServiceRepository {
           const value = input[key];
           if (value !== undefined) {
             cols.push(col);
-            values.push(toColumnValue(key, value));
+            values.push(value);
           }
         }
         const placeholders = cols.map((_, i) => `$${i + 1}`);
@@ -390,6 +404,12 @@ export class PatientContractedServiceRepository {
         const serviceId = ins.rows[0].id;
         if (input.deviceTypeCodes && input.deviceTypeCodes.length > 0) {
           await this.replaceDevices(serviceId, input.deviceTypeCodes, cli);
+        }
+        // Spec 056: as faixas são o dono do horário — gravadas na MESMA transação, só quando o corpo manda
+        // `schedule` (chave ausente = nada a fazer). Falhar aqui desfaz o INSERT acima (nada de faixa sem
+        // serviço nem serviço com faixa velha).
+        if (input.schedule !== undefined) {
+          await this.replaceSlots(cli, serviceId, input.schedule ?? null, input.actorUid);
         }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0];
@@ -426,8 +446,25 @@ export class PatientContractedServiceRepository {
   }
 
   /**
-   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada e
-   * status fora de `DE_BAJA`/`CLOSED`). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
+   * 058 REGRA-05 (041): `addressId` DIFERENTE do atual com vaga viva ou alocação vigente → 422 `SERVICE_ADDRESS_LOCKED`. O formulário reenvia o mesmo
+   * `addressId` em todo PATCH (`ContractedServiceFormRow.tsx:201,215`): igual ao atual NÃO é mudança. ⚑ padrão: `null` diferente do atual também conta
+   * (limpar o local de um serviço em uso é mudar o local — plan §1 P6, já decidido pelo cto). Locka o serviço (mesma ordem do `refuseClearWhenLiveVacancy`).
+   */
+  private async refuseAddressChangeWhenInUse(cli: PoolClient, serviceId: string, next: string | null, requestNow: Date): Promise<void> {
+    const cur = await cli.query<{ address_id: string | null; country: string }>(
+      'SELECT address_id, country FROM patient_contracted_services WHERE id = $1 FOR UPDATE',
+      [serviceId],
+    );
+    const current = cur.rows[0];
+    if (!current || current.address_id === next) return;
+    const live = await cli.query(`SELECT 1 FROM job_postings WHERE contracted_service_id = $1 AND ${liveVacancySql('')} LIMIT 1`, [serviceId]);
+    if ((live.rowCount ?? live.rows.length) > 0) throw new ServiceAddressLockedError('LIVE_VACANCY');
+    if ((await countVigenteForService(cli, serviceId, operationDateOf(current.country, requestNow))) > 0) throw new ServiceAddressLockedError('ALLOCATION');
+  }
+
+  /**
+   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada,
+   * `deleted_at IS NULL`, qualquer status — vaga CLOSED/DE_BAJA ainda ocupa o serviço; spec 056 ⚑E). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
    * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
    * depois enxerga o commit do outro. Client = `withActorContext` (com identidade), nunca `connect()` cru.
    */
@@ -474,6 +511,7 @@ export class PatientContractedServiceRepository {
             await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
           }
         }
+        if (patch.addressId !== undefined) await this.refuseAddressChangeWhenInUse(cli, serviceId, patch.addressId, requestNow);
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
@@ -482,7 +520,7 @@ export class PatientContractedServiceRepository {
         };
         for (const [key, col] of WRITABLE_COLUMNS) {
           const value = patch[key];
-          if (value !== undefined) push(col, toColumnValue(key, value));
+          if (value !== undefined) push(col, value);
         }
         if (patch.active !== undefined) {
           push('active', patch.active);
@@ -491,7 +529,8 @@ export class PatientContractedServiceRepository {
         if (patch.deviceTypeCodes !== undefined) {
           await this.replaceDevices(serviceId, patch.deviceTypeCodes, cli);
         }
-        if (sets.length > 0) {
+        // `schedule` não é coluna: PATCH só com horário ainda carimba autoria/`updated_at` (e detecta serviço inexistente).
+        if (sets.length > 0 || patch.schedule !== undefined) {
           params.push(patch.actorUid);
           sets.push(`updated_by = $${params.length}`);
           sets.push('updated_at = NOW()');
@@ -502,12 +541,21 @@ export class PatientContractedServiceRepository {
         // F3/F5: valor mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
         for (const [field, key] of GUARDED_FIELDS) await recordFieldChange(cli, serviceId, field, before.get(field), patch[key]);
         await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
-        const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
-        // Baixa: o vínculo vivo com a obra social acaba junto (senão o serviço novo do paciente bate em TWO_PAYERS_OVERLAP).
-        if (patch.active === false && sel.rows[0]) {
-          await new ContractedServiceContractLinkWriter().endOnServiceClose(cli, serviceId, operationDateOf(sel.rows[0].country, requestNow), patch.actorUid);
+        // Spec 056: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch: chave ausente não toca).
+        if (patch.schedule !== undefined) {
+          await this.replaceSlots(cli, serviceId, patch.schedule ?? null, patch.actorUid);
         }
-        return sel.rows[0] ?? null;
+        const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
+        const updated = sel.rows[0] ?? null;
+        // Passo 7 (P§6): derivação no fim da transação. Erro (≠ NotReady, absorvido pela própria classe) desfaz tudo.
+        if (patch.schedule !== undefined && updated !== null) {
+          await this.derivation.run(cli, updated.patient_id, new Date());
+        }
+        // Baixa: o vínculo vivo com a obra social acaba junto (senão o serviço novo do paciente bate em TWO_PAYERS_OVERLAP).
+        if (patch.active === false && updated !== null) {
+          await new ContractedServiceContractLinkWriter().endOnServiceClose(cli, serviceId, operationDateOf(updated.country, requestNow), patch.actorUid);
+        }
+        return updated;
       });
       if (row === null) return null;
       return this.decorate(row, this.pool, requestNow);

@@ -95,6 +95,29 @@ describe('AnaCareHoursSyncController', () => {
     }
   });
 
+  it('runner de produção recebe o leitor de validação da factory', () => {
+    // Observável pelo mesmo meio dos outros deps (singletons estáticos do controller): o runner
+    // criado por `defaultRunnerFactory` tem de usar O MESMO `shiftValidationReader` de `sharedDeps`.
+    type Statics = { sharedRunner: unknown; sharedDeps: { shiftValidationReader: unknown } | null | undefined; defaultRunnerFactory: () => { shiftValidationReader: unknown } | null };
+    const statics = AnaCareHoursSyncController as unknown as Statics;
+    const prev = process.env.ANACARE_HOURS_SOURCE;
+    const prevRunner = statics.sharedRunner;
+    const prevDeps = statics.sharedDeps;
+    process.env.ANACARE_HOURS_SOURCE = 'fake';
+    statics.sharedRunner = undefined;
+    statics.sharedDeps = undefined;
+    try {
+      const runner = statics.defaultRunnerFactory();
+      const deps = (statics as { sharedDeps: { shiftValidationReader: unknown } | null }).sharedDeps;
+      expect(deps?.shiftValidationReader).toBeDefined();
+      expect(runner?.shiftValidationReader).toBe(deps?.shiftValidationReader);
+    } finally {
+      process.env.ANACARE_HOURS_SOURCE = prev;
+      statics.sharedRunner = prevRunner;
+      statics.sharedDeps = prevDeps;
+    }
+  });
+
   it('defaultRunnerFactory: 503 quando ANACARE_HOURS_SOURCE não está configurada (fail-closed real)', async () => {
     const prev = process.env.ANACARE_HOURS_SOURCE;
     delete process.env.ANACARE_HOURS_SOURCE;

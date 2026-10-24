@@ -18,6 +18,8 @@ interface RejectionReasonSelectProps {
   /** Padrão 'rejection': gera rejection-modal, rejection-option-*, rejection-confirm, rejection-cancel
    * (os mesmos testids de hoje, que funil-vacante e encuadre-rejection leem). */
   testIdPrefix?: string;
+  /** Fase 2 (D2): opções JÁ rotuladas (o catálogo de motivos de saída). Quando presente, substitui `options` e o rótulo não passa pelo i18n. */
+  labeledOptions?: readonly { value: string; label: string }[];
 }
 
 export function RejectionReasonSelect({
@@ -29,9 +31,11 @@ export function RejectionReasonSelect({
   confirmKey = 'admin.kanban.rejectionModal.confirm',
   cancelKey = 'admin.kanban.rejectionModal.cancel',
   testIdPrefix = 'rejection',
+  labeledOptions,
 }: RejectionReasonSelectProps) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState('');
+  const items: readonly { value: string; label: string }[] = labeledOptions ?? options.map((value) => ({ value, label: t(`${optionKeyPrefix}.${value}`) }));
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" data-testid={`${testIdPrefix}-modal`}>
@@ -41,7 +45,7 @@ export function RejectionReasonSelect({
         </Heading>
 
         <div className="flex flex-col gap-2 mb-6">
-          {options.map((value) => (
+          {items.map(({ value, label }) => (
             <label
               key={value}
               data-testid={`${testIdPrefix}-option-${value.toLowerCase().replace(/_/g, '-')}`}
@@ -60,7 +64,7 @@ export function RejectionReasonSelect({
                 className="accent-purple-600"
               />
               <Text as="span" size="sm" weight="medium" className="text-primary">
-                {t(`${optionKeyPrefix}.${value}`)}
+                {label}
               </Text>
             </label>
           ))}

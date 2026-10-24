@@ -7,6 +7,8 @@ interface NumericFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   id: string;
   label: string;
   testId: string;
+  /** Classe da célula (o FormField) — a linha de campos alinha por `subgrid` (fieldGrid.ts). */
+  cellClassName?: string;
 }
 
 /** Quanto tempo o aviso "só números" fica na tela depois da última letra recusada. */
@@ -33,7 +35,7 @@ const avisoPara = (key: string): 'letra' | 'virgula' | null => {
 // `forwardRef`: o `register()` do react-hook-form entrega um `ref`, e `ref` NÃO atravessa um
 // componente de função como prop — sem isto o RHF não liga no input (valor pré-carregado some).
 export const NumericField = forwardRef<HTMLInputElement, NumericFieldProps>(function NumericField(
-  { id, label, testId, ...input },
+  { id, label, testId, cellClassName, ...input },
   ref,
 ): JSX.Element {
   const { t } = useTranslation();
@@ -53,7 +55,8 @@ export const NumericField = forwardRef<HTMLInputElement, NumericFieldProps>(func
   };
 
   return (
-    <FormField
+    <FormField labelSize="compact"
+      className={cellClassName}
       label={label}
       htmlFor={id}
       optional

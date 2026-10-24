@@ -1,0 +1,280 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  computeServiceCoverage,
+  type ServiceCoverageSlot,
+  type ServiceWeeklyCoveredHours,
+  type ItineraryAssignmentStatus,
+} from '../ServiceCoverageCalculator';
+// Import só de TIPO — o critério 8 proíbe tocar `AddressAvailabilityCalculator.ts`; o teste
+// importa apenas o tipo (regra (ii)) e, à parte, a função pura (regra (iii)) para provar que as
+// duas grandezas não podem ser confundidas nem por engano.
+import type { AddressAvailability } from '../../application/AddressAvailabilityCalculator';
+import {
+  computeAddressAvailability,
+  type ActiveVacancy,
+} from '../../application/AddressAvailabilityCalculator';
+
+// FATO-06 (2026-09-23a#FATO-06): seg-sex 08:00-20:00 (5 × 12h = 60h) com 1 alocação vigente cada;
+// sáb-dom 08:00-20:00 (12h cada, 24h no total) SEM alocação. É esta fixture que o P15 sabota.
+const FATO06_WEEKDAY_SLOTS: ServiceCoverageSlot[] = [1, 2, 3, 4, 5].map((weekday) => ({
+  weekday,
+  startTime: '08:00',
+  durationMinutes: 720,
+  assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' as const }],
+}));
+
+const FATO06_WEEKEND_SLOTS: ServiceCoverageSlot[] = [6, 0].map((weekday) => ({
+  weekday,
+  startTime: '08:00',
+  durationMinutes: 720,
+  assignments: [],
+}));
+
+const FATO06_SLOTS: ServiceCoverageSlot[] = [...FATO06_WEEKDAY_SLOTS, ...FATO06_WEEKEND_SLOTS];
+
+describe('computeServiceCoverage', () => {
+  it('reemplazo permanente: titular ACTIVE com validTo=D-1 + novo desde D — cobertas iguais antes de D, e depois de D o slot conta uma vez', () => {
+    const slots: ServiceCoverageSlot[] = [
+      {
+        weekday: 1,
+        startTime: '08:00',
+        durationMinutes: 240,
+        assignments: [
+          { validFrom: '2026-09-01', validTo: '2026-10-04', status: 'ACTIVE' },
+          { validFrom: '2026-10-05', validTo: null, status: 'ACTIVE' },
+        ],
+      },
+    ];
+    const cobertasAt = (asOf: string) => computeServiceCoverage({ slots, asOf }).cobertas;
+    expect(cobertasAt('2026-09-29')).toBe(4); // antes de D: o titular cobre
+    expect(cobertasAt('2026-10-04')).toBe(4); // D-1: ainda o titular
+    expect(cobertasAt('2026-10-05')).toBe(4); // D: o novo cobre, o slot conta UMA vez
+    // contraste: o titular gravado como ENDED (defeito anterior) zerava HOJE
+    const ended: ServiceCoverageSlot[] = [
+      { ...slots[0], assignments: [{ validFrom: '2026-09-01', validTo: '2026-10-04', status: 'ENDED' }, slots[0].assignments[1]] },
+    ];
+    expect(computeServiceCoverage({ slots: ended, asOf: '2026-09-29' }).cobertas).toBe(0);
+  });
+
+  it('total e cobertas do mesmo laço: 3 faixas (240, 720, 1440), só a de 720 coberta → total 40, cobertas 12', () => {
+    const active = [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' as const }];
+    const r = computeServiceCoverage({
+      slots: [
+        { weekday: 1, startTime: '08:00', durationMinutes: 240, assignments: [] },
+        { weekday: 2, startTime: '08:00', durationMinutes: 720, assignments: active },
+        { weekday: 3, startTime: '00:00', durationMinutes: 1440, assignments: [] },
+      ],
+      asOf: '2026-09-28',
+    });
+    expect(r.total).toBe(40);
+    expect(r.cobertas).toBe(12);
+  });
+
+  it('FATO-06: 84 de faixa / 60 cobertas', () => {
+    const result = computeServiceCoverage({
+      slots: FATO06_SLOTS,
+      asOf: '2026-09-28',
+    });
+    expect(result.total).toBe(84);
+    expect(result.cobertas).toBe(60);
+  });
+
+  it('sem alocação vigente: 0/120', () => {
+    const result = computeServiceCoverage({
+      slots: [
+        { weekday: 1, startTime: '08:00', durationMinutes: 720, assignments: [] },
+      ],
+      asOf: '2026-09-28',
+    });
+    expect(result.total).toBe(12);
+    expect(result.cobertas).toBe(0);
+  });
+
+  describe('vigência (comparação de string YYYY-MM-DD, sem Date)', () => {
+    const slotWith = (validFrom: string, validTo: string | null, status: ItineraryAssignmentStatus): ServiceCoverageSlot => ({
+      weekday: 1,
+      startTime: '08:00',
+      durationMinutes: 240,
+      assignments: [{ validFrom, validTo, status }],
+    });
+
+    it('validFrom = asOf → conta', () => {
+      const r = computeServiceCoverage({
+        slots: [slotWith('2026-09-28', null, 'ACTIVE')],
+        asOf: '2026-09-28',
+      });
+      expect(r.cobertas).toBe(4);
+    });
+
+    it('validTo = asOf → conta (inclusivo: o último dia trabalhado)', () => {
+      const r = computeServiceCoverage({
+        slots: [slotWith('2026-09-01', '2026-09-28', 'ACTIVE')],
+        asOf: '2026-09-28',
+      });
+      expect(r.cobertas).toBe(4);
+    });
+
+    it('validTo = véspera de asOf → NÃO conta', () => {
+      const r = computeServiceCoverage({
+        slots: [slotWith('2026-09-01', '2026-09-27', 'ACTIVE')],
+        asOf: '2026-09-28',
+      });
+      expect(r.cobertas).toBe(0);
+    });
+
+    it('validFrom = amanhã de asOf → NÃO conta', () => {
+      const r = computeServiceCoverage({
+        slots: [slotWith('2026-09-29', null, 'ACTIVE')],
+        asOf: '2026-09-28',
+      });
+      expect(r.cobertas).toBe(0);
+    });
+
+    it('status ENDED (mesmo dentro da vigência) → NÃO conta', () => {
+      const r = computeServiceCoverage({
+        slots: [slotWith('2026-09-01', '2026-10-01', 'ENDED')],
+        asOf: '2026-09-28',
+      });
+      expect(r.cobertas).toBe(0);
+    });
+
+    it('status CANCELLED (mesmo dentro da vigência) → NÃO conta', () => {
+      const r = computeServiceCoverage({
+        slots: [slotWith('2026-09-01', '2026-10-01', 'CANCELLED')],
+        asOf: '2026-09-28',
+      });
+      expect(r.cobertas).toBe(0);
+    });
+  });
+
+  it('P2 — 2 alocações vigentes no MESMO slot contam as horas do slot uma vez só', () => {
+    const r = computeServiceCoverage({
+      slots: [
+        {
+          weekday: 1,
+          startTime: '08:00',
+          durationMinutes: 240,
+          assignments: [
+            { validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
+            { validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
+          ],
+        },
+      ],
+      asOf: '2026-09-28',
+    });
+    expect(r.cobertas).toBe(4);
+  });
+
+  it('soma durationMinutes, não fim − início', () => {
+    const r = computeServiceCoverage({
+      slots: [
+        {
+          weekday: 6,
+          startTime: '20:00',
+          durationMinutes: 720, // turno noturno: 20:00 → 08:00 do dia seguinte (fim − início daria negativo)
+          assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
+        },
+      ],
+      asOf: '2026-09-28',
+    });
+    expect(r.cobertas).toBe(12);
+    expect(r.slots[0]!.hours).toBe(12);
+  });
+
+  it('frações: 08:00-08:20 × 3 slots vigentes → 1 (exato, sem deriva de ponto flutuante)', () => {
+    const slot = (weekday: number): ServiceCoverageSlot => ({
+      weekday,
+      startTime: '08:00',
+      durationMinutes: 20,
+      assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
+    });
+    const r = computeServiceCoverage({
+      slots: [slot(1), slot(2), slot(3)],
+      asOf: '2026-09-28',
+    });
+    expect(r.cobertas).toBe(1);
+  });
+
+  it('uma faixa de 240 min coberta → total 4, cobertas 4', () => {
+    const r = computeServiceCoverage({
+      slots: [
+        {
+          weekday: 1,
+          startTime: '08:00',
+          durationMinutes: 240,
+          assignments: [{ validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
+        },
+      ],
+      asOf: '2026-09-28',
+    });
+    expect(r.total).toBe(4);
+    expect(r.cobertas).toBe(4);
+  });
+});
+
+// ── DX-7.4 — a régua tripla de "grandezas diferentes" (Plano B) ────────────────────────────────
+describe('DX-7.4 — ServiceCoverageCalculator não se confunde com AddressAvailabilityCalculator', () => {
+  it('(i) fonte: o arquivo de produção não cita AddressAvailabilityCalculator/computeAddressAvailability/contracted_service_providers — só código', () => {
+    const filePath = path.join(__dirname, '../ServiceCoverageCalculator.ts');
+    const source = fs.readFileSync(filePath, 'utf8');
+    const lines = source.split('\n');
+
+    const forbidden = [
+      /from\s+['"][^'"]*AddressAvailabilityCalculator['"]/,
+      /computeAddressAvailability\s*\(/,
+      /contracted_service_providers/,
+    ];
+    for (const line of lines) {
+      for (const pattern of forbidden) {
+        expect(pattern.test(line)).toBe(false);
+      }
+    }
+
+    // Controle positivo: o critério 11 (a fonte é o itinerário, não a alocação antiga) precisa
+    // estar citado em algum lugar do arquivo — se este teste passasse com o arquivo vazio, a
+    // régua (i) não provaria nada.
+    expect(/patient_itinerary_assignment/.test(source)).toBe(true);
+  });
+
+  it('(ii) tipo: ocupação por endereço (number cru) não é atribuível a ServiceWeeklyCoveredHours', () => {
+    const addressAvailability: AddressAvailability = {
+      totalCoveredHours: 40,
+      maxHours: 168,
+      isFull: false,
+      perDay: [],
+      activeVacanciesCount: 1,
+      hasUnknownSchedule: false,
+    };
+    // @ts-expect-error — ocupação por endereço (number cru) não é ServiceWeeklyCoveredHours
+    const x: ServiceWeeklyCoveredHours = addressAvailability.totalCoveredHours;
+    expect(x).toBe(40); // só para o `x` não ficar "unused" — o teste é a linha de cima
+  });
+
+  it('(iii) valor: o MESMO cenário (1 vaga/serviço, 40h de schedule, 0 alocação) dá números diferentes nas duas funções — ocupação de slot × cobertura por pessoa (F14)', () => {
+    const vacancy: ActiveVacancy = {
+      id: 'vacancy-1',
+      patient_address_id: 'address-1',
+      status: 'SEARCHING',
+      schedule: [1, 2, 3, 4, 5].map((dayOfWeek) => ({ dayOfWeek, startTime: '08:00', endTime: '16:00' })),
+    };
+    const availability = computeAddressAvailability('address-1', [vacancy]);
+    expect(availability.totalCoveredHours).toBe(40);
+
+    const coverage = computeServiceCoverage({
+      slots: [1, 2, 3, 4, 5].map((weekday) => ({
+        weekday,
+        startTime: '08:00',
+        durationMinutes: 480,
+        assignments: [], // 0 alocação: a vaga existe (ocupa o endereço), ninguém está alocado ainda
+      })),
+      asOf: '2026-09-28',
+    });
+    expect(coverage.cobertas).toBe(0);
+
+    // Esperado: `totalCoveredHours` mede a VAGA ocupando o endereço; `cobertas` mede QUANTAS
+    // horas têm ALGUÉM alocado. Uma vaga aberta sem prestador ocupa o endereço (40) e não cobre
+    // ninguém (0) — são a mesma janela de horário, duas grandezas diferentes.
+    expect(availability.totalCoveredHours).not.toBe(coverage.cobertas as number);
+  });
+});

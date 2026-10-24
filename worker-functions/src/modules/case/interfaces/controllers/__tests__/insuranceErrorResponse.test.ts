@@ -15,6 +15,11 @@ describe('insuranceErrorBody', () => {
     expect(insuranceErrorBody(pg('P0001', c))).toEqual({ status: 422, body: { success: false, error: c, code: c } });
   });
 
+  it('P0001_CODES inclui os 4 códigos da Parte B (país, capacidade da faixa, quantidade abaixo da ocupação, quantidade não pode limpar)', () => {
+    expect(P0001_CODES).toEqual(expect.arrayContaining(['UNKNOWN_COUNTRY', 'ITINERARY_SLOT_CAPACITY_EXCEEDED', 'PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'PROVIDERS_NEEDED_CANNOT_CLEAR']));
+    expect(insuranceErrorBody(pg('P0001', 'ITINERARY_SLOT_CAPACITY_EXCEEDED'))).toEqual({ status: 422, body: { success: false, error: 'ITINERARY_SLOT_CAPACITY_EXCEEDED', code: 'ITINERARY_SLOT_CAPACITY_EXCEEDED' } });
+  });
+
   it('P0001 com mensagem DESCONHECIDA não é mapeado (vira 500 + alarme, nunca um 422 chutado)', () => {
     expect(insuranceErrorBody(pg('P0001', 'alguma outra exceção de plpgsql'))).toBeNull();
   });

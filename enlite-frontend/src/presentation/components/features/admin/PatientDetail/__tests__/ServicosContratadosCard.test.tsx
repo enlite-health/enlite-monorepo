@@ -65,8 +65,8 @@ const SERVICE: PatientContractedServiceDetail = {
   serviceCode: 'AT',
   professionalProfile: 'Perfil sintético — busca AT con experiencia en movilidad reducida.',
   providersNeeded: 2,
-  authorizedHours: 20,
-  weeklyHours: 20,
+  authorization: null,
+  scheduleHours: 20,
   careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS,
   startDate: '2026-09-01T00:00:00.000Z',
@@ -83,7 +83,7 @@ const SERVICE: PatientContractedServiceDetail = {
   country: 'AR',
   deviceTypes: ['HOME'],
   providers: [
-    { id: 'p1', serviceId: 'svc-1', workerId: 'w1', workerName: 'Ana Fixture', weeklyHours: 20, active: true, endedAt: null, country: 'AR', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
+    { id: 'p1', serviceId: 'svc-1', workerId: 'w1', workerName: 'Ana Fixture', active: true, endedAt: null, country: 'AR', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
   ],
   createdAt: '2026-09-01T00:00:00Z',
   updatedAt: '2026-09-01T00:00:00Z',
@@ -92,8 +92,8 @@ const SERVICE: PatientContractedServiceDetail = {
 const ADDRESS_HOME = { ...patientDetailFixture.addresses[0], id: 'addr-home', addressFormatted: 'Rua Augusta, 975 - Centro', addressRaw: null };
 const ADDRESS_SCHOOL = { ...patientDetailFixture.addresses[0], id: 'addr-school', addressFormatted: null, addressRaw: 'Av. Cruzeiro do Sul, 1212' };
 const SCHEDULE = [
-  { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-  { dayOfWeek: 3, startTime: '08:00', endTime: '12:00' },
+  { dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
+  { dayOfWeek: 3, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
 ];
 
 /**
@@ -188,7 +188,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
   it('serviço mínimo (tudo null): dispositivo e lugar viram "—", quantidade "—", badge de baixa aparece, nunca quebra', () => {
     const minimal: PatientContractedServiceDetail = {
       id: 'svc-min', patientId: patientDetailFixture.id, serviceCode: 'CAREGIVER', professionalProfile: null,
-      providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
+      providersNeeded: null, authorization: null, scheduleHours: 0, careLocation: null,
       ...CONTRACT_058_DEFAULTS, startDate: null, supervisionFrequency: null, guardShift: null,
       providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
       addressId: null,
@@ -691,5 +691,25 @@ describe('🔴 D113 — patient.addresses redigido (null) não quebra o card', (
     ).not.toThrow();
 
     expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-1');
+  });
+});
+
+// 29/09: o quadro C (ServiceTeamSection/Board) SAIU deste card — o antigo describe "Quadro C
+// (DX-10.9)" que provava seleção de linha ➜ selectionNonce ➜ ServiceTeamSection mudou de casa
+// junto com o quadro. Cobertura equivalente agora vive em `EncuadreTab.test.tsx` (mesmo
+// comportamento de seleção, sem o efeito colateral de abrir o drawer — a tabela desta aba não abre
+// drawer nenhum). O teste abaixo prova que o clique na linha aqui CONTINUA só abrindo o drawer,
+// sem nenhum estado de seleção de quadro C — não sobrou state morto no card.
+describe('clique na linha (pós-mudança do quadro C): só abre o drawer, sem seleção/nonce', () => {
+  it('duas linhas: nenhuma ganha aria-selected, nenhum estado de seleção de quadro C sobrevive no card', () => {
+    const svc2: PatientContractedServiceDetail = { ...SERVICE, id: 'svc-2', serviceCode: 'CAREGIVER' };
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE, svc2] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-2'));
+
+    expect(screen.getByTestId('contracted-service-row-svc-2').getAttribute('aria-selected')).toBeNull();
+    expect(screen.getByTestId('contracted-service-row-svc-1').getAttribute('aria-selected')).toBeNull();
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeTruthy();
   });
 });

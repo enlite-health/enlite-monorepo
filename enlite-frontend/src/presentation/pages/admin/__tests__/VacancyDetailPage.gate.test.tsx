@@ -213,3 +213,38 @@ describe('VacancyDetailPage — containers por célula (D286 fase 2)', () => {
     expect(aba('links')).toBeInTheDocument();
   });
 });
+
+describe('VacancyDetailPage — atalho para o itinerário do paciente (spec 041 R4)', () => {
+  const comPaciente = (patient_id: string | null, contracted_service_id: string | null = null) =>
+    vi.mocked(useVacancyDetail).mockReturnValue({
+      vacancy: { ...mockVacancy, patient_id, contracted_service_id } as any,
+      isLoading: false,
+      error: null,
+      refetch: mockRefetch,
+    });
+
+  it('com patient_id e SERVIÇO de origem: leva a /admin/patients/:id?tab=itinerary&serviceId=:sid (a aba abre direto no serviço, spec 069)', async () => {
+    comEnforcement([], 'off');
+    comPaciente('pat-42', 'svc-7');
+    mockNavigate.mockClear();
+    renderPage();
+    await userEvent.click(screen.getByTestId('vacancy-view-patient-itinerary'));
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/patients/pat-42?tab=itinerary&serviceId=svc-7');
+  });
+
+  it('com patient_id mas vaga criada direto (sem serviço): segue para a aba SEM serviceId (cai na lista)', async () => {
+    comEnforcement([], 'off');
+    comPaciente('pat-42', null);
+    mockNavigate.mockClear();
+    renderPage();
+    await userEvent.click(screen.getByTestId('vacancy-view-patient-itinerary'));
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/patients/pat-42?tab=itinerary');
+  });
+
+  it('sem patient_id: o botão não aparece', () => {
+    comEnforcement([], 'off');
+    comPaciente(null);
+    renderPage();
+    expect(screen.queryByTestId('vacancy-view-patient-itinerary')).not.toBeInTheDocument();
+  });
+});

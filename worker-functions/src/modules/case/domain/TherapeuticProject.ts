@@ -54,8 +54,9 @@ export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'seg
 export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
 
 /**
- * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. `segments` fica como era:
- * Ordem, sem descrição. Checagem POSITIVA: kind novo nasce sem descrição.
+ * Spec 061: só estes kinds têm a coluna `description` (migration 547) e ordem alfabética. `segments` e o
+ * catálogo extra da stage (motivos de saída, 492) NÃO — para eles a ordem manual, o campo Ordem e o SQL
+ * sem `description` ficam como antes. Checagem POSITIVA: kind novo nasce sem descrição.
  */
 export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
 export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WITH_DESCRIPTION.includes(kind);

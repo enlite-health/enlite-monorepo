@@ -19,6 +19,7 @@ import {
 import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
 import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWriter";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
+import { slotVigenteSql } from "@shared/sql/serviceScheduleSql";
 
 /** Paciente inexistente (ou soft-deletado). O controller mapeia para 404. */
 export class PatientNotFoundForRecruitmentError extends Error {
@@ -171,7 +172,7 @@ export class ActivateRecruitmentUseCase {
     const serviceRes = await client.query<{
       id: string;
       providers_needed: number | null;
-      schedule: unknown;
+      has_schedule: boolean;
       live_address_id: string | null;
       required_professions: string[] | null;
       required_sex: string | null;
@@ -181,7 +182,9 @@ export class ActivateRecruitmentUseCase {
     }>(
       // Spec 027 Fase 3 (D508): SÓ os 5 campos que a vaga copia. `worker_attributes`/`daily_obs` ficam na
       // ficha e NÃO são lidos aqui (não são usados: nem pelo portão, nem pela cópia).
-      `SELECT pcs.id, pcs.providers_needed, pcs.schedule,
+      `SELECT pcs.id, pcs.providers_needed,
+                EXISTS (SELECT 1 FROM patient_itinerary_slot s
+                         WHERE s.contracted_service_id = pcs.id AND ${slotVigenteSql('s')}) AS has_schedule,
                 pcs.required_professions, pcs.required_sex, pcs.required_experience,
                 pcs.work_schedule, pcs.payment_day,
                 pa.id AS live_address_id
@@ -205,9 +208,8 @@ export class ActivateRecruitmentUseCase {
       throw new ServiceAlreadyRecruitingError(liveVacancyRes.rows[0].id);
     }
 
-    const hasSchedule =
-      Array.isArray(service.schedule) &&
-      (service.schedule as unknown[]).length > 0;
+    // Spec 056: "tem horário" = ≥ 1 faixa vigente hoje (o serviço não carrega mais `schedule`).
+    const hasSchedule = service.has_schedule;
     const { missing, ready } = computeRecruitmentReadiness({
       serviceHasAddress: service.live_address_id != null,
       serviceHasSchedule: hasSchedule,
@@ -250,7 +252,7 @@ export class ActivateRecruitmentUseCase {
       // F6: a faixa etária também NÃO é copiada — a vaga deriva de `provider_age_band` do serviço (`applyEffectiveAgeRange`).
       age_range_min: null,
       age_range_max: null,
-      // F2: o horário NÃO é copiado — a vaga lê do serviço (`service.schedule` só serve ao gate de prontidão acima).
+      // F2: o horário NÃO é copiado — a vaga lê do serviço (`service.has_schedule` só serve ao gate de prontidão acima).
       schedule: null,
       // F5: a quantidade também NÃO é copiada — a vaga lê `patient_contracted_services.providers_needed` pela peça.
       providers_needed: null,

@@ -15,6 +15,7 @@ import {
   seedActivatablePatient, seedWorker, cleanupWorker, readContractedServices, readVacanciesByService,
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-c-helper';
+import { seedLegacyAllocationSql } from '../helpers/alocacao-antiga-e2e-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
@@ -141,14 +142,13 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
     await forceSelect(page, page.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
     await forceFill(page.getByTestId('svc-providersNeeded-1'), '2');
-    await forceFill(page.getByTestId('svc-weeklyHours-1'), '20');
     await forceSelect(page, page.getByTestId('svc-careLocation-1'), 'Domicilio'); // HOME
     // Migration 330: o serviço aponta para UM endereço da ficha (o seed cria 1) — sem isso o
     // checklist acusa SERVICE_ADDRESS e o activate recusa (422), em vez de multiplicar vagas.
     await forceSelect(page, page.getByTestId('svc-addressId-1'), 'Av. Corrientes 1234, CABA, AR'); // seed.addressId
     // Decisão do Gabriel 07/09: serviço ativo SEM horário bloqueia o activate (SERVICE_SCHEDULE).
     // Este spec ativa o paciente mais abaixo e espera 200 — então os serviços nascem com horário.
-    await forceClick(page.getByTestId('day-schedule-add-monday'));
+    await forceClick(page.getByTestId('svc-shift-add-1-1'));
     await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService1 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
@@ -158,14 +158,17 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     // prestadores existe) — o form "novo" some e entra o form do serviço 1.
     await expect(page.getByTestId(`contracted-service-form-${service1Id}`)).toBeVisible({ timeout: 15_000 });
 
-    // ── Associa 1 prestador ao 1º serviço, ainda neste drawer ──
-    await forceFill(page.getByTestId(`provider-search-${service1Id}`), worker.name.slice(0, 12));
-    await expect(page.locator(`[data-testid^="provider-hit-"]`).first()).toBeVisible({ timeout: 10_000 });
-    await forceClick(page.locator(`[data-testid^="provider-hit-"]`).first());
-    await forceFill(page.getByTestId(`provider-weekly-hours-${service1Id}`), '20');
-    const associate = page.waitForResponse((r) => r.request().method() === 'POST' && /\/providers$/.test(r.url()));
-    await forceClick(page.getByTestId(`provider-associate-${service1Id}`));
-    await associate;
+    // ── Fase 14: a alocação antiga não se escreve mais pela tela. A linha antiga do 1º serviço
+    //    nasce por SQL (como as de produção existem) e o drawer, relido, a mostra só leitura.
+    //    Limpeza: `cleanupPatientDeep` do `afterAll` apaga o serviço e a linha sai por CASCADE,
+    //    antes do `cleanupWorker` (o `worker_id` dela não tem ON DELETE). ──
+    seedLegacyAllocationSql(service1Id, worker.workerId, 20);
+    await forceClick(page.getByLabel('Cerrar'));
+    await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toHaveCount(0);
+    await openDetail(page, seed.patientId);
+    await forceClick(page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }));
+    await forceClick(page.getByTestId(`contracted-service-edit-${service1Id}`));
+    await expect(page.getByTestId(`providers-section-${service1Id}`)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(worker.name)).toBeVisible();
     await forceClick(page.getByLabel('Cerrar'));
     await page.waitForTimeout(400);
@@ -175,10 +178,9 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceClick(page.getByTestId('new-service-btn'));
     // O índice visual conta os existentes: com 1 serviço na ficha o form novo é "Servicio 2".
     await forceSelect(page, page.getByTestId('svc-code-2'), 'Cuidador'); // CAREGIVER
-    await forceFill(page.getByTestId('svc-weeklyHours-2'), '10');
     await forceSelect(page, page.getByTestId('svc-careLocation-2'), 'Escuela'); // SCHOOL
     await forceSelect(page, page.getByTestId('svc-addressId-2'), 'Av. Corrientes 1234, CABA, AR'); // seed.addressId
-    await forceClick(page.getByTestId('day-schedule-add-wednesday'));
+    await forceClick(page.getByTestId('svc-shift-add-2-3'));
     await preencherRecrutamentoPelaTela(page, 2); // spec 027 Fase 3: o portão exige os 5 campos
     const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));

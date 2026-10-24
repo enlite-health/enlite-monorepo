@@ -57,8 +57,6 @@ export const PR8B_ROTAS_CREATE_UPDATE: readonly RotaCreateUpdate[] = [
     cells: ['patient_services:update', 'vacancy:update'],
     source: 'adminPatientsRoutes.ts:255-256',
   },
-  { method: 'POST', path: '/api/admin/patients/:id/contracted-services/:sid/providers', actions: ['update'], source: 'adminPatientsRoutes.ts:260' },
-  { method: 'PATCH', path: '/api/admin/patients/:id/contracted-services/:sid/providers/:pid', actions: ['update'], source: 'adminPatientsRoutes.ts:263' },
   { method: 'POST', path: '/api/admin/patients/:id/diagnoses', actions: ['create'], source: 'adminPatientsRoutes.ts:273' },
   { method: 'PATCH', path: '/api/admin/patients/:id/diagnoses/:did', actions: ['update'], source: 'adminPatientsRoutes.ts:276' },
   { method: 'PATCH', path: '/api/admin/patients/:id/general', actions: ['update'], source: 'adminPatientsRoutes.ts:305' },

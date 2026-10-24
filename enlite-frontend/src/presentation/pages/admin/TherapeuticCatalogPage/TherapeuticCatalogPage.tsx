@@ -1,6 +1,6 @@
 /**
  * TherapeuticCatalogPage — administração de UM catálogo do projeto terapêutico (spec 017, D299):
- * objetivos específicos, rotina e atividades e segmentos Ana Care (spec 030) (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
+ * objetivos específicos, rotina e atividades, (change itinerario-trocas) motivos de saída do serviço e segmentos Ana Care (spec 030) (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
  * Uma TELA por lista e uma célula por lista (decisão do Gabriel, 08/09) — o componente é o mesmo, parametrizado por `kind`;
  * a rota, a célula e o título mudam.
  *
@@ -14,10 +14,12 @@ import { useTranslation } from 'react-i18next';
 import { ListChecks, Edit2, Plus } from 'lucide-react';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import {
+  SERVICE_EXIT_REASON_KIND,
+  catalogHasDescription,
+  SERVICE_EXIT_REASON_RESOURCE,
   THERAPEUTIC_CATALOG_RESOURCE,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogItem,
-  catalogHasDescription,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -31,8 +33,18 @@ import { catalogRefusalMessage } from './catalogRefusalMessage';
 import { segmentDisplayLabel } from './catalogSegment';
 import { sortAlphabeticallyEs } from '@presentation/components/features/admin/PatientDetail/therapeuticProject/alphabeticalOrder';
 
-/** Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030). */
-type ManagedCatalogKind = TherapeuticCatalogKind;
+/**
+ * Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030) e
+ * (change itinerario-trocas) os motivos de saída do serviço — o mesmo conjunto de `AdminCatalogKind`.
+ */
+type ManagedCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND;
+
+const CATALOG_RESOURCE: Readonly<Record<ManagedCatalogKind, string>> = {
+  'specific-objectives': THERAPEUTIC_CATALOG_RESOURCE['specific-objectives'],
+  activities: THERAPEUTIC_CATALOG_RESOURCE.activities,
+  segments: THERAPEUTIC_CATALOG_RESOURCE.segments,
+  [SERVICE_EXIT_REASON_KIND]: SERVICE_EXIT_REASON_RESOURCE,
+};
 
 interface Props {
   kind: ManagedCatalogKind;
@@ -42,6 +54,7 @@ interface Props {
 const KIND_KEY: Readonly<Record<ManagedCatalogKind, string>> = {
   'specific-objectives': 'specificObjectives',
   activities: 'activities',
+  [SERVICE_EXIT_REASON_KIND]: 'serviceExitReasons',
   segments: 'segments',
 };
 
@@ -49,7 +62,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const tr = (k: string, o?: Record<string, unknown>) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
-  const resource = THERAPEUTIC_CATALOG_RESOURCE[kind];
+  const resource = CATALOG_RESOURCE[kind];
 
   // Trava de rota pela célula de LEITURA deste catálogo (defesa em profundidade; quem manda é o 403
   // do backend). Só nega com o engine ligado (D268/D286).
@@ -62,12 +75,13 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const writeGates = {
     'specific-objectives': useActionGate('catalog_therapeutic_objectives', 'update'),
     activities: useActionGate('catalog_therapeutic_activities', 'update'),
+    'service-exit-reasons': useActionGate('catalog_service_exit_reasons', 'update'),
     segments: useActionGate('catalog_therapeutic_segments', 'update'),
   } as const;
   const writeGate = writeGates[kind];
 
   const [items, setItems] = useState<TherapeuticCatalogItem[]>([]);
-  // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; `segments` segue na ordem do servidor.
+  // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; `segments` e motivos de saída seguem na ordem do servidor.
   const showOrder = !catalogHasDescription(kind);
   const shownItems = showOrder ? items : sortAlphabeticallyEs(items);
   // Segmentos (spec 030): só objetivos/atividades se vinculam; `null` = sem célula (403) ou catálogo sem vínculo.
@@ -143,7 +157,10 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         </ActionButton>
       </div>
 
-      <Text size="sm" color="muted" className="mb-6">{tr(`kinds.${KIND_KEY[kind]}.subtitle`)}</Text>
+      <Text size="sm" color="muted" className={kind === SERVICE_EXIT_REASON_KIND ? 'mb-2' : 'mb-6'}>{tr(`kinds.${KIND_KEY[kind]}.subtitle`)}</Text>
+      {kind === SERVICE_EXIT_REASON_KIND && (
+        <Text size="sm" className="mb-6" data-testid="catalog-guidance">{tr('kinds.serviceExitReasons.guidance')}</Text>
+      )}
 
       {actionError && (
         <div className="mb-4 border border-red-300 bg-red-50 rounded-lg px-4 py-3" role="alert" data-testid="therapeutic-catalog-action-error">

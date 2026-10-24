@@ -21,7 +21,6 @@ function mockFetch(payload: unknown, status = 200, contentType = 'application/js
 
 const PATIENT_ID = 'p1';
 const SERVICE_ID = 's1';
-const PROVIDER_ID = 'pr1';
 
 describe('AdminContractedServicesApiService', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -54,24 +53,6 @@ describe('AdminContractedServicesApiService', () => {
     expect(init.method).toBe('PATCH');
   });
 
-  it('associateProvider: POST em /:sid/providers', async () => {
-    const f = mockFetch({ success: true, data: { id: PROVIDER_ID, workerId: 'w1' } });
-    const out = await AdminContractedServicesApiService.associateProvider(PATIENT_ID, SERVICE_ID, { workerId: 'w1' });
-    expect(out).toEqual({ id: PROVIDER_ID, workerId: 'w1' });
-    const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain(`/contracted-services/${SERVICE_ID}/providers`);
-    expect(init.method).toBe('POST');
-  });
-
-  it('updateProvider: PATCH em /:sid/providers/:pid — sem DELETE (lex C-e.2)', async () => {
-    const f = mockFetch({ success: true, data: { id: PROVIDER_ID, active: false } });
-    const out = await AdminContractedServicesApiService.updateProvider(PATIENT_ID, SERVICE_ID, PROVIDER_ID, { active: false });
-    expect(out).toEqual({ id: PROVIDER_ID, active: false });
-    const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain(`/providers/${PROVIDER_ID}`);
-    expect(init.method).toBe('PATCH');
-  });
-
   it('activateRecruitment: POST em /:sid/activate-recruitment, sem corpo — 201 com vacancyId/patientStatus/statusChanged', async () => {
     const f = mockFetch({ success: true, data: { vacancyId: 'v1', patientStatus: 'SEARCHING', statusChanged: true } }, 201);
     const out = await AdminContractedServicesApiService.activateRecruitment(PATIENT_ID, SERVICE_ID);
@@ -97,13 +78,13 @@ describe('AdminContractedServicesApiService', () => {
   });
 
   it('erro do backend (success:false) vira ContractedServiceApiError com status/code/details', async () => {
-    mockFetch({ success: false, error: 'Worker already actively allocated to this service', code: 'PROVIDER_ALREADY_ACTIVE' }, 409);
+    mockFetch({ success: false, error: 'conflito', code: 'SERVICE_CONFLICT' }, 409);
     await expect(
-      AdminContractedServicesApiService.associateProvider(PATIENT_ID, SERVICE_ID, { workerId: 'w1' }),
+      AdminContractedServicesApiService.updateContractedService(PATIENT_ID, SERVICE_ID, { active: false }),
     ).rejects.toMatchObject({
       name: 'ContractedServiceApiError',
       status: 409,
-      code: 'PROVIDER_ALREADY_ACTIVE',
+      code: 'SERVICE_CONFLICT',
     });
   });
 
@@ -130,5 +111,309 @@ describe('AdminContractedServicesApiService', () => {
   it('erro do backend sem campo `error` cai no fallback "HTTP <status>"', async () => {
     mockFetch({ success: false }, 500);
     await expect(AdminContractedServicesApiService.listContractedServices(PATIENT_ID)).rejects.toMatchObject({ message: 'HTTP 500' });
+  });
+
+  it('listKanbanServices: sem país — GET sem query string', async () => {
+    const f = mockFetch({ success: true, data: { patients: [] } });
+    const out = await AdminContractedServicesApiService.listKanbanServices();
+    expect(out).toEqual({ patients: [] });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/patients/kanban/services');
+    expect(url).not.toContain('?');
+    expect(init.method).toBe('GET');
+  });
+
+  it('listKanbanServices: com país — GET com ?country=AR', async () => {
+    const f = mockFetch({
+      success: true,
+      data: { patients: [{ patientId: 'p1', asOf: '2026-09-27', services: [] }] },
+    });
+    const out = await AdminContractedServicesApiService.listKanbanServices('AR');
+    expect(out).toEqual({ patients: [{ patientId: 'p1', asOf: '2026-09-27', services: [] }] });
+    const [url] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/patients/kanban/services?country=AR');
+  });
+
+  it('listKanbanServices: 403 vira ContractedServiceApiError com status 403', async () => {
+    mockFetch({ success: false, error: 'sem célula' }, 403);
+    await expect(AdminContractedServicesApiService.listKanbanServices('AR')).rejects.toMatchObject({
+      name: 'ContractedServiceApiError',
+      status: 403,
+    });
+  });
+
+  // Substituição pontual (Fase 13, DX-13.7/13.8/13.11): 3 ações sobre a ausência, cada uma 1
+  // método = 1 chamada; nenhuma delas traz nome/dado do prestador na resposta.
+  const ALLOCATION_ID = 'a1';
+  const ABSENCE_ID = 'ab1';
+  const ABSENCE_OPEN = { absenceId: ABSENCE_ID, allocationId: ALLOCATION_ID, date: '2026-10-05', substituteWorkerId: 'w2', status: 'OPEN' as const };
+
+  it('registerAbsence: POST em /itinerary/allocations/:allocationId/absences com { date, substituteWorkerId }', async () => {
+    const f = mockFetch({ success: true, data: ABSENCE_OPEN }, 201);
+    const out = await AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, {
+      date: '2026-10-05',
+      substituteWorkerId: 'w2',
+      reasonCategory: 'OTHER',
+    });
+    expect(out).toEqual(ABSENCE_OPEN);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(
+      `/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/allocations/${ALLOCATION_ID}/absences`,
+    );
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05', substituteWorkerId: 'w2', reasonCategory: 'OTHER' });
+  });
+
+  it('registerAbsence: sem substituteWorkerId — corpo sem a chave (dia sem cobertura)', async () => {
+    const f = mockFetch({ success: true, data: { ...ABSENCE_OPEN, substituteWorkerId: null } }, 201);
+    await AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', reasonCategory: 'OTHER' });
+    const [, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05', reasonCategory: 'OTHER' });
+  });
+
+  it('registerAbsence: 422 NOT_SELECTED_FOR_SERVICE vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'não selecionado', code: 'NOT_SELECTED_FOR_SERVICE' }, 422);
+    await expect(
+      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', reasonCategory: 'OTHER' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code: 'NOT_SELECTED_FOR_SERVICE' });
+  });
+
+  it('registerAbsence: 409 ITINERARY_OVERLAP vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'conflito', code: 'ITINERARY_OVERLAP' }, 409);
+    await expect(
+      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', substituteWorkerId: 'w2', reasonCategory: 'OTHER' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 409, code: 'ITINERARY_OVERLAP' });
+  });
+
+  it('endAllocation (Fase 4): POST em /itinerary/allocations/:allocationId/end com { reasonCategory, destination }', async () => {
+    const data = { allocationId: ALLOCATION_ID, status: 'ENDED' as const, validTo: '2026-09-30', destination: 'LEAVE_SERVICE' as const };
+    const f = mockFetch({ success: true, data });
+    const out = await AdminContractedServicesApiService.endAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, {
+      reasonCategory: 'OTHER',
+      destination: 'LEAVE_SERVICE',
+    });
+    expect(out).toEqual(data);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/allocations/${ALLOCATION_ID}/end`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE' });
+  });
+
+  it.each(['REASON_REQUIRED', 'DESTINATION_REQUIRED', 'SERVICE_TEAM_WORKER_ALLOCATED'])('endAllocation: 422 %s vira ContractedServiceApiError com o code', async (code) => {
+    mockFetch({ success: false, code }, 422);
+    await expect(
+      AdminContractedServicesApiService.endAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { reasonCategory: 'OTHER', destination: 'RESERVE' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code });
+  });
+
+  it('replaceAllocation (058): POST em /itinerary/allocations/:id/replace com { newWorkerId, fromDate, reasonCategory, destination }', async () => {
+    const data = { replacedAllocationId: ALLOCATION_ID };
+    const f = mockFetch({ success: true, data });
+    const body = { newWorkerId: 'w2', fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' as const };
+    await AdminContractedServicesApiService.replaceAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, body);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/allocations/${ALLOCATION_ID}/replace`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it.each(['REASON_REQUIRED', 'DESTINATION_REQUIRED', 'DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED', 'ITINERARY_OVERLAP', 'ALLOCATION_NOT_ACTIVE'])('replaceAllocation: 4xx %s vira ContractedServiceApiError com code', async (code) => {
+    mockFetch({ success: false, code }, 422);
+    await expect(
+      AdminContractedServicesApiService.replaceAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { newWorkerId: 'w2', fromDate: '2026-10-21', reasonCategory: 'OTHER', destination: 'RESERVE' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code });
+  });
+
+  it('endAllocation (058): com cancelScheduled true o corpo viaja inteiro', async () => {
+    const f = mockFetch({ success: true, data: { allocationId: ALLOCATION_ID, status: 'ENDED', validTo: '2026-09-30', destination: 'LEAVE_SERVICE' } });
+    const body = { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE' as const, cancelScheduled: true };
+    await AdminContractedServicesApiService.endAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, body);
+    const [, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it('endAllocation (058): 409 WORKER_HAS_SCHEDULED_ATTENDANCES expõe code e details (datas)', async () => {
+    const details = { substitutionDates: ['2026-10-26'], futureEntryFrom: null };
+    mockFetch({ success: false, error: 'x', code: 'WORKER_HAS_SCHEDULED_ATTENDANCES', details }, 409);
+    await expect(
+      AdminContractedServicesApiService.endAllocation(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { reasonCategory: 'OTHER', destination: 'LEAVE_SERVICE' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 409, code: 'WORKER_HAS_SCHEDULED_ATTENDANCES', details });
+  });
+
+  it('setAbsenceSubstitute: PATCH em /itinerary/absences/:absenceId/substitute com { substituteWorkerId }', async () => {
+    const f = mockFetch({ success: true, data: ABSENCE_OPEN });
+    const out = await AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, 'w2');
+    expect(out).toEqual(ABSENCE_OPEN);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/itinerary/absences/${ABSENCE_ID}/substitute`);
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ substituteWorkerId: 'w2' });
+  });
+
+  it('setAbsenceSubstitute: null TIRA o substituto — o corpo leva a chave com null, nunca omitida', async () => {
+    const f = mockFetch({ success: true, data: { ...ABSENCE_OPEN, substituteWorkerId: null } });
+    await AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, null);
+    const [, init] = f.mock.calls[0] as [string, RequestInit];
+    const parsed = JSON.parse(init.body as string);
+    expect(parsed).toHaveProperty('substituteWorkerId', null);
+    expect(Object.keys(parsed)).toEqual(['substituteWorkerId']);
+  });
+
+  it('setAbsenceSubstitute: 422 ABSENCE_CANCELLED vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'ausência cancelada', code: 'ABSENCE_CANCELLED' }, 422);
+    await expect(
+      AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, 'w2'),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code: 'ABSENCE_CANCELLED' });
+  });
+
+  it('cancelAbsence: POST em /itinerary/absences/:absenceId/cancel, sem corpo', async () => {
+    const f = mockFetch({ success: true, data: { ...ABSENCE_OPEN, status: 'CANCELLED' } });
+    const out = await AdminContractedServicesApiService.cancelAbsence(PATIENT_ID, SERVICE_ID, ABSENCE_ID);
+    expect(out).toEqual({ ...ABSENCE_OPEN, status: 'CANCELLED' });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/itinerary/absences/${ABSENCE_ID}/cancel`);
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('cancelAbsence: 404 NOT_FOUND vira ContractedServiceApiError com status 404', async () => {
+    mockFetch({ success: false, error: 'não encontrada', code: 'NOT_FOUND' }, 404);
+    await expect(
+      AdminContractedServicesApiService.cancelAbsence(PATIENT_ID, SERVICE_ID, ABSENCE_ID),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 404, code: 'NOT_FOUND' });
+  });
+
+  describe('itinerário (Fase 12, DX-12.6)', () => {
+    const SLOT_ID = 'sl1';
+    const WORKER_ID = 'w1';
+    const OVERLAP_BODY = {
+      success: false,
+      error: 'conflito de horário',
+      code: 'ITINERARY_OVERLAP',
+      existing: { serviceId: 's9', weekday: 1, startTime: '08:00', endTime: '12:00' },
+      requested: { serviceId: SERVICE_ID, weekday: 1, startTime: '10:00', endTime: '14:00' },
+      sameAddress: false,
+      minGapMinutes: 45,
+    };
+
+    it('getItinerary: GET em /patients/:id/itinerary, devolve o itinerário', async () => {
+      const data = { patientId: PATIENT_ID, asOf: '2026-10-07', services: [], alerts: [], horizonDays: 7 };
+      const f = mockFetch({ success: true, data });
+      const out = await AdminContractedServicesApiService.getItinerary(PATIENT_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(new RegExp(`/api/admin/patients/${PATIENT_ID}/itinerary$`));
+      expect(init.method).toBe('GET');
+      expect(init.body).toBeUndefined();
+    });
+
+    it('assembleItinerary: POST em /patients/:id/itinerary/assemble sem corpo; 422 vira ContractedServiceApiError com code', async () => {
+      const data = { patientId: PATIENT_ID, assembledAt: '2026-09-30T18:00:00.000Z' };
+      const f = mockFetch({ success: true, data }, 201);
+      const out = await AdminContractedServicesApiService.assembleItinerary(PATIENT_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(new RegExp(`/api/admin/patients/${PATIENT_ID}/itinerary/assemble$`));
+      expect(init.method).toBe('POST');
+      expect(init.body).toBeUndefined();
+
+      mockFetch({ success: false, code: 'SERVICE_WITHOUT_SLOT', services: [] }, 422);
+      await expect(AdminContractedServicesApiService.assembleItinerary(PATIENT_ID)).rejects.toMatchObject({ status: 422, code: 'SERVICE_WITHOUT_SLOT' });
+    });
+
+    it('getAllocationOptions: GET em /:sid/allocation-options, devolve { serviceId, vacancyId, options }', async () => {
+      const data = { serviceId: SERVICE_ID, vacancyId: 'v1', options: [{ workerId: WORKER_ID, displayName: null, vacancyId: 'v1' }] };
+      const f = mockFetch({ success: true, data });
+      const out = await AdminContractedServicesApiService.getAllocationOptions(PATIENT_ID, SERVICE_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(new RegExp(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/allocation-options$`));
+      expect(init.method).toBe('GET');
+      expect(init.body).toBeUndefined();
+    });
+
+    it('allocate: POST em /itinerary/slots/:slotId/allocations com { workerId }', async () => {
+      const data = { allocationId: 'al1', slotId: SLOT_ID, workerId: WORKER_ID, applicationId: 'a1', validFrom: '2026-10-07', status: 'ACTIVE' };
+      const f = mockFetch({ success: true, data }, 201);
+      const out = await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(
+        new RegExp(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/slots/${SLOT_ID}/allocations$`),
+      );
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({ workerId: WORKER_ID });
+    });
+
+    it('allocate: 409 ITINERARY_OVERLAP com existing/requested → err.overlap preenchido com os 4 campos da API', async () => {
+      mockFetch(OVERLAP_BODY, 409);
+      const err = await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ContractedServiceApiError);
+      const apiErr = err as ContractedServiceApiError;
+      expect(apiErr.status).toBe(409);
+      expect(apiErr.code).toBe('ITINERARY_OVERLAP');
+      expect(apiErr.overlap).toEqual({
+        existing: OVERLAP_BODY.existing,
+        requested: OVERLAP_BODY.requested,
+        sameAddress: false,
+        minGapMinutes: 45,
+      });
+    });
+
+    it('allocate: 409 com minGapMinutes null (mesmo endereço) → overlap.minGapMinutes null', async () => {
+      mockFetch({ ...OVERLAP_BODY, sameAddress: true, minGapMinutes: null }, 409);
+      const err = (await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID).catch((e: unknown) => e)) as ContractedServiceApiError;
+      expect(err.overlap).toMatchObject({ sameAddress: true, minGapMinutes: null });
+    });
+
+    it('allocate: 422 sem existing/requested → err.overlap undefined, err.code preenchido', async () => {
+      mockFetch({ success: false, error: 'já alocado', code: 'ALREADY_ALLOCATED_IN_SLOT' }, 422);
+      const err = (await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID).catch((e: unknown) => e)) as ContractedServiceApiError;
+      expect(err).toBeInstanceOf(ContractedServiceApiError);
+      expect(err.status).toBe(422);
+      expect(err.code).toBe('ALREADY_ALLOCATED_IN_SLOT');
+      expect(err.overlap).toBeUndefined();
+    });
+
+    it('ContractedServiceApiError sem os campos de conflito (só code/details) → overlap undefined', () => {
+      const err = new ContractedServiceApiError('x', 422, { code: 'C', details: { slotId: 'sl1' } });
+      expect(err.code).toBe('C');
+      expect(err.details).toEqual({ slotId: 'sl1' });
+      expect(err.overlap).toBeUndefined();
+    });
+  });
+
+  it('listAuthorizations: GET, devolve o array authorizations', async () => {
+    const f = mockFetch({ success: true, data: { authorizations: [{ id: 'a1' }] } });
+    const out = await AdminContractedServicesApiService.listAuthorizations(PATIENT_ID, SERVICE_ID);
+    expect(out).toEqual([{ id: 'a1' }]);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/authorizations`);
+    expect(init.method).toBe('GET');
+  });
+
+  it('createAuthorization: POST com o corpo (validTo inclusivo)', async () => {
+    const f = mockFetch({ success: true, data: { id: 'a1' } }, 201);
+    const body = { hours: 40, validFrom: '2026-10-01', validTo: '2026-10-31' };
+    await AdminContractedServicesApiService.createAuthorization(PATIENT_ID, SERVICE_ID, body);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/contracted-services/${SERVICE_ID}/authorizations`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual(body);
+  });
+
+  it('supersedeAuthorization: POST em /authorizations/:aid/supersede', async () => {
+    const f = mockFetch({ success: true, data: { id: 'a2' } }, 201);
+    await AdminContractedServicesApiService.supersedeAuthorization(PATIENT_ID, SERVICE_ID, 'a1', { hours: 1, validFrom: '2026-10-01', validTo: '2026-10-02' });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/authorizations/a1/supersede`);
+    expect(init.method).toBe('POST');
+  });
+
+  it('createAuthorization: 409 vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'overlap', code: 'AUTHORIZATION_OVERLAPS' }, 409);
+    await expect(
+      AdminContractedServicesApiService.createAuthorization(PATIENT_ID, SERVICE_ID, { hours: 1, validFrom: '2026-10-01', validTo: '2026-10-02' }),
+    ).rejects.toMatchObject({ status: 409, code: 'AUTHORIZATION_OVERLAPS' });
   });
 });
