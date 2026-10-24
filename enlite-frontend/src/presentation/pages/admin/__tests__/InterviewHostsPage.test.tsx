@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), create: vi.fn(),
 vi.mock('@infrastructure/http/AdminInterviewHostApiService', () => ({ AdminInterviewHostApiService: api }));
 
 import InterviewHostsPage from '../InterviewHostsPage';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 const host = (over: Partial<InterviewHost> & { id: string }): InterviewHost => ({
   email: `${over.id}@enlite.health`, displayName: `Nombre ${over.id}`, countries: ['AR'], doesEnquadre: true, doesAdmission: true,
@@ -47,11 +48,11 @@ describe('InterviewHostsPage', () => {
   it('filtro por país: quem atende os dois aparece nos dois filtros', async () => {
     mount();
     await screen.findByText('Mayra Vega');
-    await userEvent.selectOptions(screen.getByLabelText('País'), 'BR');
+    await selectCombo(screen.getByLabelText('País'), 'BR');
     expect(screen.getByText('Mayra Vega')).toBeInTheDocument();
     expect(screen.getByText('Ana Joulie')).toBeInTheDocument();
     expect(screen.queryByText('Florencia Uberti')).toBeNull();
-    await userEvent.selectOptions(screen.getByLabelText('País'), 'AR');
+    await selectCombo(screen.getByLabelText('País'), 'AR');
     expect(screen.getByText('Mayra Vega')).toBeInTheDocument();
     expect(screen.queryByText('Ana Joulie')).toBeNull();
   });

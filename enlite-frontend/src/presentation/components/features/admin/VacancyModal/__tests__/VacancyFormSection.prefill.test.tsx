@@ -101,7 +101,7 @@ async function selectCaseAndFillMinimum(caseNumber: number) {
   if (!target) {
     throw new Error(`opção "${label}" não encontrada entre: ${options.map((o) => o.textContent).join(', ')}`);
   }
-  await userEvent.click(target);
+  await userEvent.click(target.querySelector('button') as HTMLElement); // o clique real cai no <button> da linha
 
   await userEvent.click(await screen.findByTestId('profession-checkbox-AT'));
 

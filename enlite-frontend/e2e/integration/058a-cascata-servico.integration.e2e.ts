@@ -183,8 +183,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await expect(page.getByTestId('svc-contract-provider-lock')).toBeVisible();
     const selectObra = page.getByTestId('svc-contract-provider');
     await expect(selectObra).toBeDisabled();
-    await expect(selectObra).toHaveValue(pa.code);
-    await expect(selectObra.locator('option:checked')).toHaveText(pa.name);
+    await expect(selectObra).toContainText(pa.name); // o gatilho mostra o pagador JÁ ESCOLHIDO pelo nome (pa.code é só o valor interno)
     await escolher(page, 'svc-contract-contract', ca2.name);
     await expect(page.getByTestId('svc-contract-preview-price')).toContainText(V1800);
     await expect(page.getByTestId('svc-contract-preview-tax')).toContainText('21 %');

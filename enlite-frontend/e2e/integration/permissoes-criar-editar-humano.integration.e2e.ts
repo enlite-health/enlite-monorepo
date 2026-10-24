@@ -256,12 +256,14 @@ test.describe('Permissões criar × editar — prova humana contra o backend rea
     await expect(page).toHaveURL(/\/admin\/vacancies\/new$/, { timeout: 10_000 });
     await expect(page.getByTestId('create-vacancy-save-btn')).toBeVisible({ timeout: 10_000 });
 
-    const caseSearch = page.getByPlaceholder(/[Bb]uscar|[Cc]aso/).first();
-    if (await caseSearch.count() > 0) {
-      await caseSearch.click();
-      await page.keyboard.type('PR8b');
-      await expect(caseSearch).toHaveValue(/PR8b/);
-    }
+    // O seletor de caso é um Combobox: o campo de busca só existe com o painel aberto (abre o gatilho antes de digitar).
+    const gatilhoCaso = page.getByTestId('case-select').getByRole('combobox');
+    await expect(gatilhoCaso).toBeVisible({ timeout: 10_000 });
+    await gatilhoCaso.click();
+    const caseSearch = page.getByTestId('case-select').locator('input[type="text"]');
+    await expect(caseSearch).toBeFocused();
+    await page.keyboard.type('PR8b');
+    await expect(caseSearch).toHaveValue(/PR8b/);
 
     await page.screenshot({ path: 'test-results/pr8b-8b9-a-create-form.png', fullPage: false });
   });

@@ -12,6 +12,7 @@ import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixtu
 import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 /**
  * O CATÁLOGO vem da API, não de uma constante do painel — é a mudança da
@@ -188,8 +189,8 @@ describe('PatientChatIdsCard', () => {
     );
     await screen.findByTestId('chat-id-FAMILY-value');
 
-    const novo = screen.getByTestId('chat-ids-MANAGEMENT-select') as HTMLSelectElement;
-    expect(novo.value).toBe('120363090000000009@g.us');
+    const novo = screen.getByTestId('chat-ids-MANAGEMENT-select');
+    expect(novo).toHaveTextContent('120363090000000009@g.us'); // sem candidato, o rótulo é o próprio id
   });
 
   it('o drawer só aparece depois do clique', async () => {
@@ -304,8 +305,8 @@ describe('PatientChatIdsCard', () => {
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
-    fireEvent.change(screen.getByTestId('chat-ids-PROVIDERS-select'), { target: { value: PROVIDERS } });
+    chooseCombo(screen.getByTestId('chat-ids-FAMILY-select'), 'Flia Perez'); // FAMILY
+    chooseCombo(screen.getByTestId('chat-ids-PROVIDERS-select'), 'Prestadores Perez'); // PROVIDERS
     fireEvent.click(screen.getByTestId('chat-ids-save'));
 
     await waitFor(() => expect(updatePatientChatIds).toHaveBeenCalledWith(patientDetailMinimal.id, {
@@ -321,12 +322,11 @@ describe('PatientChatIdsCard', () => {
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
+    chooseCombo(screen.getByTestId('chat-ids-FAMILY-select'), 'Flia Perez'); // FAMILY
 
-    const providersSelect = screen.getByTestId('chat-ids-PROVIDERS-select') as HTMLSelectElement;
-    const values = Array.from(providersSelect.querySelectorAll('option')).map(o => o.value);
-    expect(values).not.toContain(FAMILY);
-    expect(values).toContain(PROVIDERS);
+    const labels = comboLabels(screen.getByTestId('chat-ids-PROVIDERS-select'));
+    expect(labels).not.toContain('Flia Perez'); // FAMILY
+    expect(labels).toContain('Prestadores Perez'); // PROVIDERS
   });
 
   it('salvar vazio desvincula (null em todos os papéis)', async () => {
@@ -358,13 +358,13 @@ describe('PatientChatIdsCard', () => {
     await screen.findByTestId('chat-id-FAMILY-value');
     fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
 
-    const familySelect = screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement;
-    expect(familySelect.value).toBe(FAMILY);
-    expect((screen.getByTestId('chat-ids-PROVIDERS-select') as HTMLSelectElement).value).toBe(PROVIDERS);
+    const familySelect = screen.getByTestId('chat-ids-FAMILY-select');
+    expect(familySelect).toHaveTextContent(FAMILY); // sem busca ainda: o rótulo é o próprio id
+    expect(screen.getByTestId('chat-ids-PROVIDERS-select')).toHaveTextContent(PROVIDERS);
 
-    // Chave duplicada no <select> é warning do React e option fantasma na tela.
-    const values = Array.from(familySelect.querySelectorAll('option')).map(o => o.value);
-    expect(values.length).toBe(new Set(values).size);
+    // Chave duplicada na lista é warning do React e opção fantasma na tela.
+    const labels = comboLabels(familySelect);
+    expect(labels.length).toBe(new Set(labels).size);
   });
 
   it('a UI torna impossível escolher o mesmo grupo nos dois papéis', async () => {
@@ -374,11 +374,10 @@ describe('PatientChatIdsCard', () => {
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByTestId('chat-ids-PROVIDERS-select'), { target: { value: FAMILY } });
-    // Tentar pôr o MESMO grupo em família não pega: a option foi removida.
-    fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
-
-    expect((screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement).value).toBe('');
+    chooseCombo(screen.getByTestId('chat-ids-PROVIDERS-select'), 'Flia Perez'); // FAMILY = Flia Perez
+    // Pôr o MESMO grupo em família é impossível: a opção foi removida da lista.
+    expect(comboLabels(screen.getByTestId('chat-ids-FAMILY-select'))).not.toContain('Flia Perez');
+    expect(screen.getByTestId('chat-ids-FAMILY-select')).toHaveTextContent(ptBR.admin.patients.detail.chatIdsCard.choose);
     fireEvent.click(screen.getByTestId('chat-ids-save'));
     await waitFor(() => expect(updatePatientChatIds).toHaveBeenCalledWith(patientDetailMinimal.id, {
       chatIds: { FAMILY: null, PROVIDERS: FAMILY, HEALTH_PLAN: null },
@@ -396,9 +395,7 @@ describe('PatientChatIdsCard', () => {
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
 
     await waitFor(() => expect(screen.getByTestId(`chat-candidate-${FAMILY}`)).toHaveTextContent(FAMILY));
-    const options = Array.from(
-      (screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement).querySelectorAll('option'),
-    ).map(o => o.textContent);
+    const options = comboLabels(screen.getByTestId('chat-ids-FAMILY-select'));
     expect(options).toContain(FAMILY); // rótulo cai no próprio id
   });
 
@@ -460,9 +457,9 @@ describe('PatientChatIdsCard', () => {
     fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
     await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
 
-    const select = screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement;
-    const values = Array.from(select.options).map((o) => o.value).filter(Boolean);
-    expect(values.slice(0, 2)).toEqual([PROVIDERS, FAMILY]);
+    const select = screen.getByTestId('chat-ids-FAMILY-select');
+    const labels = comboLabels(select).filter((l) => l !== ptBR.admin.patients.detail.chatIdsCard.choose);
+    expect(labels.slice(0, 2)).toEqual(['Prestadores Perez', 'Flia Perez']); // PROVIDERS, FAMILY
   });
 
   // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
@@ -481,13 +478,13 @@ describe('PatientChatIdsCard', () => {
       fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
       fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
       await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
-      fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
+      chooseCombo(screen.getByTestId('chat-ids-FAMILY-select'), 'Flia Perez'); // FAMILY
 
       fireEvent.click(screen.getByTestId('chat-ids-backdrop'));
       expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
       fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
-      expect((screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement).value).toBe(FAMILY);
+      expect(screen.getByTestId('chat-ids-FAMILY-select')).toHaveTextContent('Flia Perez'); // FAMILY
     });
 
     it('"Descartar cambios" fecha de verdade', async () => {
@@ -496,7 +493,7 @@ describe('PatientChatIdsCard', () => {
       fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
       fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
       await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
-      fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
+      chooseCombo(screen.getByTestId('chat-ids-FAMILY-select'), 'Flia Perez'); // FAMILY
 
       fireEvent.click(screen.getByTestId('chat-ids-backdrop'));
       fireEvent.click(screen.getByTestId('discard-changes-discard'));
@@ -509,7 +506,7 @@ describe('PatientChatIdsCard', () => {
       fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
       fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
       await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
-      fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
+      chooseCombo(screen.getByTestId('chat-ids-FAMILY-select'), 'Flia Perez'); // FAMILY
       fireEvent.click(screen.getByTestId('chat-ids-save'));
       await waitFor(() => expect(updatePatientChatIds).toHaveBeenCalled());
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();

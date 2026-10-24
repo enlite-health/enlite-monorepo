@@ -20,7 +20,8 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 /** Só letras: sequência longa de dígitos é lida como documento/telefone e recusada (guarda de PII do servidor). */
@@ -69,8 +70,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
 
 /** Multi-select do DS: marca as N primeiras opções pelo mouse e fecha pelo gatilho (o Escape chegaria ao drawer). */
 async function marcarOpcoes(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  const gatilho = root.locator('button[aria-haspopup="listbox"]');
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  const gatilho = gatilhoDoCampo;
   await gatilho.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();
@@ -172,10 +174,10 @@ test.describe('spec 061 — atividade do catálogo com título + descrição: do
     const drawer = page.getByTestId('therapeutic-project-drawer');
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
 
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('IN_PERSON');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
+    await expect(page.getByTestId('tp-modality')).toContainText('Presencial');
     const segmento = primeiroSegmento();
-    expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
+    expect(await escolherSegmento(page, segmento.label)).toBe(segmento.label);
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
     await page.keyboard.type('sintetico');
@@ -189,13 +191,13 @@ test.describe('spec 061 — atividade do catálogo com título + descrição: do
     await marcarOpcoes(page, 'tp-specificObjectives', 1);
 
     // A atividade do catálogo é achada pela busca do campo (digitando) e marcada pelo mouse.
-    const gatilho = page.locator('#tp-activities').locator('button[aria-haspopup="listbox"]');
+    const gatilho = page.locator('#tp-activities');
     await gatilho.click();
     const busca = page.getByTestId('tp-activities-search');
     await busca.click();
     await expect(busca).toBeFocused();
     await page.keyboard.type(`SINTETICO-${SUFIXO}`);
-    const opcoes = page.locator('#tp-activities [role="option"]');
+    const opcoes = page.locator('#tp-activities').locator('..').locator('[role="option"]');
     await expect(opcoes).toHaveCount(1);
     expect(((await opcoes.first().textContent()) ?? '').trim()).toContain(TITULO);
     await opcoes.first().locator('button').click();

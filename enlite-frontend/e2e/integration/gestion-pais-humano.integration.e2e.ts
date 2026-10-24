@@ -17,6 +17,7 @@
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { execSync } from 'child_process';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const BACKEND_URL = process.env.PW_BACKEND_URL || 'http://localhost:8080';
@@ -195,9 +196,9 @@ test.describe('Gestión a la Vista — filtro de país (PR-9, `lex` #9) @integra
     // ALL (união AR+BR): 2 (AR) + 1 (BR) = 3 pacientes ativos.
     await expect(pacientesActivosValue).toHaveText('3', { timeout: 20_000 });
 
-    const select = page.getByTestId('mgmt-country-filter').locator('select');
+    const select = page.getByTestId('mgmt-country-filter').getByRole('combobox');
     await expect(select).toBeVisible();
-    await select.selectOption('BR');
+    await escolherNoCombo(page, select, 'Brasil'); // BR = Brasil
 
     // Só BR: 1 paciente ativo — o número mudou de verdade (contagem real, não fixture).
     await expect(pacientesActivosValue).toHaveText('1', { timeout: 20_000 });
@@ -212,13 +213,12 @@ test.describe('Gestión a la Vista — filtro de país (PR-9, `lex` #9) @integra
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-content')).toBeVisible({ timeout: 20_000 });
 
-    const select = page.getByTestId('mgmt-country-filter').locator('select');
-    const optionValues = await select.locator('option').evaluateAll((opts) =>
-      opts.map((o) => (o as HTMLOptionElement).value),
-    );
+    const select = page.getByTestId('mgmt-country-filter').getByRole('combobox');
+    await select.click(); // as opções só existem com o painel aberto
+    const optionLabels = await page.getByRole('option').allTextContents();
 
-    expect(optionValues).toContain('AR');
-    expect(optionValues).not.toContain('BR');
+    expect(optionLabels).toContain('Argentina'); // AR
+    expect(optionLabels).not.toContain('Brasil'); // BR
   });
 
   test('alt 2: pedido forjado `?country=BR` com conta só-AR → tela de erro (403 no servidor)', async ({ page }) => {

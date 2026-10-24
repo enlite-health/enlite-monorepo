@@ -18,6 +18,7 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
+import { escolherNoComboPorValor } from '../helpers/combobox';
 import {
   seedDerivablePatient, selectedWorker, allocateWorker, derivacaoToken, type DerivableSeed, type DerivableServiceSpec,
 } from '../helpers/derivacao-e2e-helper';
@@ -96,7 +97,7 @@ test.describe('D489/D530 — estado travado por alocação viva no itinerário @
       await expect(select.locator('option[value="ON_HOLD"]')).toBeEnabled();
 
       await select.selectOption('ON_HOLD');
-      await page.getByTestId('patient-status-reason').selectOption('SCHOOL');
+      await escolherNoComboPorValor(page, page.getByTestId('patient-status-reason'), 'SCHOOL');
       const save = page.getByTestId('patient-status-save');
       await expect(save).toBeEnabled();
       await save.click();

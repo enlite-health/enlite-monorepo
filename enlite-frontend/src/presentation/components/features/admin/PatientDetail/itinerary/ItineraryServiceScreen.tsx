@@ -5,7 +5,7 @@ import { Card } from '@presentation/components/organisms/Card';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ProgressBar } from '@presentation/components/atoms/ProgressBar';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { ActionButton } from '@presentation/components/features/access';
 import { useServiceExitReasonOptions } from '@hooks/admin/useServiceExitReasonOptions';
 import { useServiceOccurrences } from '@hooks/admin/useServiceOccurrences';
@@ -184,14 +184,16 @@ export function ItineraryServiceScreen({
                       {ts('workerFilter')}
                     </Text>
                   </label>
-                  <Select
+                  <Combobox
                     id={`itinerario-filtro-prestador-${serviceId}`}
                     inputSize="compact"
-                    className="w-[200px] [&_select]:!text-primary"
+                    className="w-[200px] [&_button]:!text-primary"
                     data-testid="itinerario-filtro-prestador"
                     value={workerFilter}
-                    onValueChange={setWorkerFilter}
-                    options={[{ value: '', label: ts('workerFilterAll') }, ...people.map((p) => ({ value: p.id, label: p.label }))]}
+                    onChange={setWorkerFilter}
+                    placeholder={ts('workerFilterAll')}
+                    clearLabel={ts('workerFilterAll')}
+                    options={people.map((p) => ({ value: p.id, label: p.label }))}
                   />
                 </div>
               }

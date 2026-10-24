@@ -16,7 +16,7 @@
  *
  * Design-system components used:
  *   - FormField  → replaces FieldGroup
- *   - SelectField → replaces raw <select> (via Controller)
+ *   - Combobox → replaces raw <select> (via Controller)
  *   - InputWithIcon → replaces raw <input> + INPUT_CLS
  */
 
@@ -26,7 +26,7 @@ import { MapPin } from 'lucide-react';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
-import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { VacancyDaySchedulePicker } from './VacancyDaySchedulePicker';
@@ -89,7 +89,7 @@ export function VacancyFormRightColumn({
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
-  // molecule wrappers (InputWithIcon/SelectField) and read-only divs.
+  // molecule wrappers (InputWithIcon/Combobox) and read-only divs.
   const patientDis = !patientSelected
     ? 'pointer-events-none select-none [&_.bg-white]:!bg-[#f3f4f6]'
     : '';
@@ -111,7 +111,7 @@ export function VacancyFormRightColumn({
             name="status"
             control={control}
             render={({ field }) => (
-              <SelectField
+              <Combobox
                 value={field.value ?? ''}
                 onChange={(v) => field.onChange(v)}
                 options={STATUS_OPTIONS.map((o) => ({
@@ -119,6 +119,7 @@ export function VacancyFormRightColumn({
                   label: tf(`statusOptions.${o}`),
                 }))}
                 placeholder={tp('statusPlaceholder')}
+                clearLabel={tp('statusPlaceholder')}
                 data-testid="status-select"
               />
             )}

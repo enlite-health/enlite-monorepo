@@ -14,7 +14,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { FIELD_CELL, FIELD_GRID } from './fieldGrid';
 import type { RecruitmentFormValues } from './contractedServiceRecruitmentForm';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 /**
  * Spec 027 Fase 3 (D507/D508): os 7 campos de recrutamento do serviço contratado, extraídos de
@@ -36,8 +36,8 @@ export function ContractedServiceRecruitmentFields({ index, control, register, d
   const { t } = useTranslation();
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
   // Vocabulário já traduzido pelo formulário de vaga — um dono só para estes rótulos.
-  const sexOptions: SelectOption[] = REQUIRED_SEX_OPTIONS.map((o) => ({ value: o, label: t(`${VACANCY_FORM}.sexOptions.${o}`) }));
-  const scheduleOptions: SelectOption[] = WORK_SCHEDULE_OPTIONS.map((o) => ({ value: o, label: t(`${VACANCY_FORM}.workScheduleOptions.${o}`) }));
+  const sexOptions: ComboboxOption[] = REQUIRED_SEX_OPTIONS.map((o) => ({ value: o, label: t(`${VACANCY_FORM}.sexOptions.${o}`) }));
+  const scheduleOptions: ComboboxOption[] = WORK_SCHEDULE_OPTIONS.map((o) => ({ value: o, label: t(`${VACANCY_FORM}.workScheduleOptions.${o}`) }));
 
   return (
     <div className="flex flex-col gap-3" data-testid={`svc-recruitment-${index}`}>
@@ -71,12 +71,12 @@ export function ContractedServiceRecruitmentFields({ index, control, register, d
         {/* Sem campo de motivo, de propósito: o motivo é clínico e nunca se registra (D507 item 4). */}
         <FormField labelSize="compact" className={FIELD_CELL} label={te('requiredSex')} htmlFor={`svc-requiredSex-${index}`} required hint={te('requiredSexHint')} hintBelow>
           <Controller control={control} name="requiredSex" render={({ field }) => (
-            <SelectField id={`svc-requiredSex-${index}`} inputSize="compact" options={sexOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={disabled} data-testid={`svc-requiredSex-${index}`} />
+            <Combobox id={`svc-requiredSex-${index}`} inputSize="compact" options={sexOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={disabled} data-testid={`svc-requiredSex-${index}`} />
           )} />
         </FormField>
         <FormField labelSize="compact" className={FIELD_CELL} label={te('workSchedule')} htmlFor={`svc-workSchedule-${index}`} required>
           <Controller control={control} name="workSchedule" render={({ field }) => (
-            <SelectField id={`svc-workSchedule-${index}`} inputSize="compact" options={scheduleOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={disabled} data-testid={`svc-workSchedule-${index}`} />
+            <Combobox id={`svc-workSchedule-${index}`} inputSize="compact" options={scheduleOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={disabled} data-testid={`svc-workSchedule-${index}`} />
           )} />
         </FormField>
       </div>

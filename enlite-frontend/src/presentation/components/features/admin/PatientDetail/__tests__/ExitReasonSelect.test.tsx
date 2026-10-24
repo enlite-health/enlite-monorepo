@@ -3,7 +3,8 @@
  * (mockado); o valor é o `code`; falha do GET mostra aviso; lista ausente (null) não derruba a tela.
  */
 import { describe, it, expect, beforeAll, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -36,13 +37,10 @@ describe('ExitReasonSelect', () => {
     });
     const onChange = vi.fn();
     render(<ExitReasonSelect value="" onChange={onChange} data-testid="r" />);
-    const select = screen.getByTestId('r') as HTMLSelectElement;
-    expect(Array.from(select.options).map((o) => [o.value, o.textContent])).toEqual([
-      ['', 'Motivo del cambio'],
-      ['OTHER', 'Otro'],
-      ['abc-123', 'Cambio de disponibilidad'],
-    ]);
-    fireEvent.change(select, { target: { value: 'abc-123' } });
+    const select = screen.getByTestId('r');
+    expect(select).toHaveTextContent('Motivo del cambio'); // placeholder
+    expect(comboLabels(select)).toEqual(['Otro', 'Cambio de disponibilidad']);
+    chooseCombo(select, 'Cambio de disponibilidad'); // abc-123
     expect(onChange).toHaveBeenCalledWith('abc-123');
     expect(screen.queryByTestId('r-erro')).toBeNull();
   });
@@ -51,12 +49,12 @@ describe('ExitReasonSelect', () => {
     mockHook.mockReturnValue({ options: [], status: 'error' });
     render(<ExitReasonSelect value="" onChange={vi.fn()} data-testid="r" />);
     expect(screen.getByTestId('r-erro').textContent).toContain('No se pudieron cargar los motivos');
-    expect((screen.getByTestId('r') as HTMLSelectElement).options).toHaveLength(1);
+    expect(comboLabels(screen.getByTestId('r'))).toEqual([]);
   });
 
   it('options null/undefined (resposta sem a lista) não quebra a tela', () => {
     mockHook.mockReturnValue({ options: null, status: 'ok' });
     render(<ExitReasonSelect value="" onChange={vi.fn()} data-testid="r" />);
-    expect((screen.getByTestId('r') as HTMLSelectElement).options).toHaveLength(1);
+    expect(comboLabels(screen.getByTestId('r'))).toEqual([]);
   });
 });

@@ -7,12 +7,12 @@
  * de domicílio. Por isso o passo 2 em diante só existe depois daqui: na aba de
  * prestadores a âncora é um PACIENTE, na de pacientes é um PRESTADOR.
  *
- * O seletor é o mesmo `SearchableSelect` de antes (sem portal — lex 02/09, C-1)
+ * O seletor é o Combobox (sem portal — lex 02/09, C-1)
  * e continua mascarado para o Clarity: as opções são "nome · bairro" de pessoa.
  */
 import { MapPinned } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Field } from './mapSidebar';
 
 /** Quem o mapa toma como referência: o centro do raio e o destino das rotas. */
@@ -68,7 +68,7 @@ export function AnchorPicker({
    * isto hoje (o nome do prestador é cifrado — ver `useAnchorCandidates`).
    */
   onSearchChange?: (text: string) => void;
-  /** O termo a que `options` já corresponde — ver `SearchableSelect`. */
+  /** O termo a que `options` já corresponde (a resposta do servidor, não o que está sendo digitado). */
   serverSearchTerm?: string;
   emptyMessage?: string;
 }): JSX.Element {
@@ -83,11 +83,14 @@ export function AnchorPicker({
   return (
     <Field id={id} label={label} group>
       <div data-testid={id} data-clarity-mask="True" onFocusCapture={onTouch} onClick={onTouch}>
-        <SearchableSelect
+        <Combobox
+          inputSize="compact"
+          id={id}
+          aria-labelledby={`${id}-label`}
           options={options}
           value={value}
           onChange={onChange}
-          placeholder={placeholder}
+          placeholder={placeholder} clearLabel={placeholder}
           searchPlaceholder={searchPlaceholder}
           onSearchChange={onSearchChange}
           serverSearchTerm={serverSearchTerm}

@@ -17,6 +17,7 @@ import type { AllocationOptionsLoad, UsePatientItineraryResult } from '@hooks/ad
 import { PatientItineraryTab } from '../PatientItineraryTab';
 import { patientDetailFixture } from './patientDetailFixture';
 import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 // Catálogo de motivos de saída (Fase 2): o diálogo de motivo lê `useServiceExitReasonOptions`; aqui um catálogo fixo.
 vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
@@ -345,8 +346,9 @@ describe('PatientItineraryTab — a aba do itinerário (spec 069)', () => {
       renderTab();
       fireEvent.click(await screen.findByTestId('itinerario-proximo-asignar-slot-1-2026-09-30'));
       expect(screen.getByTestId('itinerario-fluxo-ponto-de-montagem')).toHaveAttribute('data-intent', 'assign');
+      fireEvent.click(await screen.findByTestId('sustitucion-cubrir-persona'));
       await screen.findByRole('option', { name: 'Caro Fixture' });
-      fireEvent.change(screen.getByTestId('sustitucion-cubrir-persona'), { target: { value: 'w-9' } });
+      chooseCombo(screen.getByTestId('sustitucion-cubrir-persona'), 'Caro Fixture'); // w-9;
       const eventCalls = mockGetItineraryEvents.mock.calls.length;
       fireEvent.click(screen.getByTestId('sustitucion-cubrir-confirmar'));
       await waitFor(() => expect(mockSetAbsenceSubstitute).toHaveBeenCalledWith(PATIENT.id, 'svc-1', 'ab-2', 'w-9'));
@@ -514,7 +516,7 @@ describe('PatientItineraryTab — a aba do itinerário (spec 069)', () => {
     async function openQuitarPanel() {
       fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
       fireEvent.click(await screen.findByTestId('itinerario-quitar-w-titular'));
-      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'NOVO_DO_ADMIN' } });
+      chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Cambio de disponibilidad'); // NOVO_DO_ADMIN;
     }
 
     it('confirmar chama endAllocation(paciente, serviço, alocação, { motivo, destino }), faz refresh + recarrega os eventos e fecha o modal', async () => {
@@ -663,7 +665,7 @@ describe('PatientItineraryTab — a aba do itinerário (spec 069)', () => {
       abrirHorarioFijo();
       fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
       fireEvent.click(await screen.findByTestId('itinerario-quitar-w-segundo'));
-      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'NOVO_DO_ADMIN' } });
+      chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Cambio de disponibilidad'); // NOVO_DO_ADMIN;
       fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
       fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
       await waitFor(() => expect(mockEndAllocation).toHaveBeenCalledTimes(1));

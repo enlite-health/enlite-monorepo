@@ -40,8 +40,7 @@ import {
 } from '@domain/entities/TherapeuticProject';
 import type { TherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { Select } from '@presentation/components/atoms/Select';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { TherapeuticProjectContactField } from './TherapeuticProjectContactField';
 import { Input } from '@presentation/components/atoms/Input';
 import { Text } from '@presentation/components/atoms/Text';
@@ -257,11 +256,11 @@ export function TherapeuticProjectForm({
               ? lockedText(lockedServiceLabel(), 'tp-service-locked')
               : (
                 <>
-                  <Select
+                  <Combobox
                     id="tp-service"
                     inputSize="compact"
                     value={contractedServiceId}
-                    onValueChange={touch(setContractedServiceId)}
+                    onChange={touch(setContractedServiceId)}
                     placeholder={tf('servicePlaceholder')}
                     options={activeServices.map((s) => ({
                       value: s.id,
@@ -283,11 +282,11 @@ export function TherapeuticProjectForm({
           </FormField>
 
           <FormField label={tc('modality')} htmlFor="tp-modality" labelSize="compact" required>
-            <Select
+            <Combobox
               id="tp-modality"
               inputSize="compact"
               value={modality}
-              onValueChange={(v) => touch(setModality)(v as TherapeuticModality)}
+              onChange={(v) => touch(setModality)(v as TherapeuticModality)}
               placeholder={tf('modalityPlaceholder')}
               options={THERAPEUTIC_MODALITIES.map((m) => ({ value: m, label: t(`admin.patients.detail.therapeuticProjectCard.modalityOptions.${m}`, m) }))}
               data-testid="tp-modality"
@@ -333,12 +332,12 @@ export function TherapeuticProjectForm({
             {/* `isMacroLocked` só é `true` com `isEditing` (⇒ `from !== null`, checado ali em cima) — `from!` fecha o tipo sem reabrir um `?? []` de fato inatingível. */}
             {isMacroLocked('specificObjectiveIds')
               ? lockedList(from!.specificObjectives, 'tp-specificObjectives-locked')
-              : <MultiSelect id="tp-specificObjectives" options={optionsOf('specific-objectives', from?.specificObjectives, specificObjectiveIds)} value={specificObjectiveIds} onChange={touch(setSpecificObjectiveIds)} placeholder={tf('selectPlaceholder')} />}
+              : <Combobox multiple id="tp-specificObjectives" options={optionsOf('specific-objectives', from?.specificObjectives, specificObjectiveIds)} value={specificObjectiveIds} onChange={touch(setSpecificObjectiveIds)} placeholder={tf('selectPlaceholder')} inputSize="compact" />}
           </FormField>
           <FormField label={tc('activitiesPlan')} htmlFor="tp-activities" labelSize="compact" required={!isMacroLocked('activityIds')}>
             {isMacroLocked('activityIds')
               ? lockedList(sortAlphabeticallyEs(from!.activities), 'tp-activities-locked')
-              : <MultiSelect id="tp-activities" searchable options={optionsOf('activities', from?.activities, activityIds)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} />}
+              : <Combobox multiple id="tp-activities" options={optionsOf('activities', from?.activities, activityIds)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} inputSize="compact" />}
           </FormField>
           {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
           <div className="grid grid-cols-2 gap-4">

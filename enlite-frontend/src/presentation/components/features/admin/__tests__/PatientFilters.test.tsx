@@ -9,6 +9,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 import { PatientFilters } from '../PatientFilters';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -97,9 +98,9 @@ describe('PatientFilters — oráculo por célula', () => {
 
   it('país: sem `selectedCountry` o select nasce vazio; escolher chama onCountryChange', () => {
     const props = montar({ onCountryChange: vi.fn(), countryOptions: [{ value: 'AR', label: 'AR' }, { value: 'BR', label: 'BR' }] });
-    const select = screen.getByTestId('patient-country-filter').querySelector('select') as HTMLSelectElement;
-    expect(select.value).toBe('');
-    fireEvent.change(select, { target: { value: 'BR' } });
+    const select = screen.getByTestId('patient-country-filter').querySelector('button[role="combobox"]') as HTMLElement;
+    expect(select).toHaveTextContent('admin.patients.countryOptions.all'); // vazio mostra o placeholder
+    chooseCombo(select, 'BR'); // BR = BR
     expect(props.onCountryChange).toHaveBeenCalledWith('BR');
   });
 

@@ -15,6 +15,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { E2E_EMAIL, loginAsStaffOffline } from './helpers/kanban-notes-e2e-helper';
+import { escolherNoCombo } from './helpers/combobox';
 
 
 // ── Mock data ─────────────────────────────────────────────────────────────────
@@ -358,14 +359,14 @@ test.describe('BlockedAttemptsPage', () => {
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });
 
     // Select reason filter
-    const select = page.locator('[data-testid="blocked-filters"] select').first();
-    await select.selectOption('worker_disabled');
-
-    await page.waitForResponse(
+    const select = page.locator('[data-testid="blocked-filters"]').getByRole('combobox').first();
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/recruitment/blocked-attempts') &&
         resp.url().includes('reason=worker_disabled'),
     );
+    await escolherNoCombo(page, select, 'Worker desactivado'); // worker_disabled = Worker desactivado
+    await resposta;
 
     const filtered = capturedUrls.find((u) => u.includes('reason=worker_disabled'));
     expect(filtered).toBeDefined();

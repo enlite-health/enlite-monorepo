@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import { useServiceExitReasonOptions } from '@hooks/admin/useServiceExitReasonOptions';
 
@@ -21,12 +21,12 @@ export function ExitReasonSelect({ value, onChange, 'data-testid': testId = 'exi
   const { options, status } = useServiceExitReasonOptions();
   return (
     <>
-      <Select
+      <Combobox
         inputSize="compact"
         data-testid={testId}
         options={(options ?? []).map((o) => ({ value: o.code, label: o.label }))}
         value={value}
-        onValueChange={onChange}
+        onChange={onChange}
         placeholder={t('admin.patients.detail.serviceTeam.substitution.reasonPlaceholder')}
         aria-label={t('admin.patients.detail.serviceTeam.substitution.reason')}
       />

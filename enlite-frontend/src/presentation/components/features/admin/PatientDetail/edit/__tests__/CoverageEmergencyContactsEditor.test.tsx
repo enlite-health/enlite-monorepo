@@ -19,6 +19,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 
 import { CoverageEmergencyContactsEditor } from '../CoverageEmergencyContactsEditor';
 import { invalidCoverageContacts, contactFieldErrors } from '../coverageContactValidation';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const te = (k: string): string => t(`admin.patients.editDrawer.${k}`);
 const tc = (k: string): string => t(`admin.patients.detail.coverageCard.${k}`);
@@ -46,12 +47,12 @@ describe('CoverageEmergencyContactsEditor', () => {
     ];
     const onChange = montar(lista);
     expect(screen.queryByTestId('pcv-contacts-empty')).toBeNull();
-    const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
-    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+    const select = screen.getByTestId('pcv-contact-kind-0');
+    expect(comboLabels(select)).toEqual([
       tc('emergencyContactKinds.DIRECT_PROFESSIONAL'), tc('emergencyContactKinds.PUBLIC_EMERGENCY_SERVICE'),
       tc('emergencyContactKinds.PRIVATE_AMBULANCE'), tc('emergencyContactKinds.INSURANCE_EMERGENCY'),
     ]);
-    fireEvent.change(select, { target: { value: 'DIRECT_PROFESSIONAL' } });
+    chooseCombo(select, tc('emergencyContactKinds.DIRECT_PROFESSIONAL'));
     expect(onChange).toHaveBeenLastCalledWith([{ id: 'c1', kind: 'DIRECT_PROFESSIONAL', name: 'Ambulancia', phone: '0800' }, lista[1]]);
     fireEvent.change(screen.getByTestId('pcv-contact-name-1'), { target: { value: 'Central X' } });
     expect(onChange).toHaveBeenLastCalledWith([lista[0], { id: 'c2', kind: 'PUBLIC_EMERGENCY_SERVICE', name: 'Central X', phone: '107' }]);
@@ -79,8 +80,10 @@ describe('CoverageEmergencyContactsEditor', () => {
   it('lex C3 (LISTA A2): sem `allowDirectProfessional` (o DEFAULT esconde) o select NÃO oferece "Profissional direto" — o servidor recusaria com 403', () => {
     const onChange = vi.fn();
     render(<CoverageEmergencyContactsEditor value={[{ id: 'c1', kind: 'PRIVATE_AMBULANCE', name: 'A', phone: '1' }]} onChange={onChange} />);
-    const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
-    expect(Array.from(select.options).map((o) => o.value)).toEqual(['PUBLIC_EMERGENCY_SERVICE', 'PRIVATE_AMBULANCE', 'INSURANCE_EMERGENCY']);
+    const select = screen.getByTestId('pcv-contact-kind-0');
+    expect(comboLabels(select)).toEqual([
+      tc('emergencyContactKinds.PUBLIC_EMERGENCY_SERVICE'), tc('emergencyContactKinds.PRIVATE_AMBULANCE'), tc('emergencyContactKinds.INSURANCE_EMERGENCY'),
+    ]);
   });
 
   it('invalidCoverageContacts: vazio é válido; nome/telefone em branco ou acima do teto invalidam; espaços contam como branco', () => {

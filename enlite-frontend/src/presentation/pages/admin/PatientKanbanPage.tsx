@@ -6,13 +6,13 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
-import { Select } from '@presentation/components/atoms/Select';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { useToast } from '@presentation/hooks/useToast';
 import { usePatientKanban } from '@hooks/admin/usePatientKanban';
 import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 import { friendlyStatusMessage } from '@presentation/utils/patientStatusMessages';
 import { PatientKanbanBoard } from '@presentation/components/features/admin/PatientDetail/kanban/PatientKanbanBoard';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 /** Patient lifecycle kanban page. Route: /admin/patients/kanban. */
 export function PatientKanbanPage(): JSX.Element {
@@ -36,11 +36,11 @@ export function PatientKanbanPage(): JSX.Element {
         <div className="flex items-center gap-2" data-testid="patients-view-toggle">
           {/* 210px: cabe "Todos los países" sem cortar (ver PatientFilters) */}
           <div className="w-[210px]" data-testid="patient-country-filter">
-            <Select
+            <Combobox
               inputSize="compact"
               options={countryOptions}
               value={country}
-              onValueChange={setCountry}
+              onChange={setCountry}
               placeholder={t('admin.patients.countryOptions.all')}
             />
           </div>

@@ -13,6 +13,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { escolherNoCombo } from './helpers/combobox';
 import { execSync } from 'child_process';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
@@ -162,14 +163,14 @@ async function mockWorkersApis(page: Page, workers = MOCK_WORKERS_VALIDATED): Pr
   });
 }
 
-/** Returns the <select> element inside the Documentación filter wrapper. */
+/** Returns the Documentación filter wrapper (o gatilho do Combobox mora dentro dele). */
 function getDocsSelect(page: Page) {
-  return page.locator('[data-testid="filter-docs-status"] select');
+  return page.locator('[data-testid="filter-docs-status"]');
 }
 
-/** Returns the <select> element inside the Validación filter wrapper. */
+/** Returns the Validación filter wrapper (o gatilho do Combobox mora dentro dele). */
 function getValidationSelect(page: Page) {
-  return page.locator('[data-testid="filter-validation-status"] select');
+  return page.locator('[data-testid="filter-validation-status"]');
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -251,10 +252,8 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
 
     const validationSelect = getValidationSelect(page);
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
-    await validationSelect.selectOption('all_validated');
-
     // Aguarda requisição com o filtro correto
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -262,6 +261,8 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_validated=all_validated'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
+    await resposta;
 
     const lastUrl = capturedUrls[capturedUrls.length - 1];
     expect(lastUrl).toContain('docs_validated=all_validated');
@@ -283,16 +284,16 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
 
     // Seleciona "Todos validados"
-    await validationSelect.selectOption('all_validated');
-
     // Aguarda que a lista seja atualizada
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
         !resp.url().includes('/case-options'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
+    await resposta;
 
     // Aguarda a tabela estar visível
     await expect(page.getByText('Ana Validada')).toBeVisible({ timeout: 10000 });
@@ -341,8 +342,7 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
 
     // Seleciona "Todos validados"
-    await validationSelect.selectOption('all_validated');
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -350,9 +350,11 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_validated=all_validated'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
+    await resposta;
 
-    // Volta para "Todos" (valor vazio = placeholder)
-    await validationSelect.selectOption('');
+    // Volta para "Todos": o Combobox não tem linha de limpar (o placeholder não é opção); quem limpa é o botão "Limpiar"
+    await page.getByRole('button', { name: 'Limpiar', exact: true }).click();
 
     // Aguarda a próxima request sem docs_validated
     await page.waitForResponse(
@@ -412,8 +414,7 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
 
     // Seleciona "Completos" em Documentación
-    await docsSelect.selectOption('complete');
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -421,10 +422,11 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_complete=complete'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, docsSelect, 'Completos'); // complete = Completos
+    await resposta;
 
     // Seleciona "Falta validación" em Validación
-    await validationSelect.selectOption('pending_validation');
-    await page.waitForResponse(
+    const respostaValidacion = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -433,6 +435,8 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_validated=pending_validation'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Falta validación'); // pending_validation = Falta validación
+    await respostaValidacion;
 
     const lastUrl = capturedUrls[capturedUrls.length - 1];
     expect(lastUrl).toContain('docs_complete=complete');

@@ -23,6 +23,7 @@ import { backendUrl } from '../helpers/lancamento-e2e-helper';
 import { seedItinerary, seedTitularAllocation, cleanupItinerary, type ItinerarySeed } from '../helpers/itinerary-db-helper';
 import { openUpcomingDays } from '../helpers/itinerario-aba-e2e-helper';
 import { abrirNuevaSustitucion, confirmarPedido, paso1QuienNoViene, paso2PorCuantoTiempo, paso3UnaPersona, siguiente, somaDias, irParaSemanaPeloCalendario } from '../helpers/itinerario-069-flow-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAMP = Date.now().toString(36);
 const ADMIN: MockUser = { uid: `e2e-motivo-subst-${STAMP}`, email: `e2e.motivo.subst.${STAMP}@enlite.test`, role: 'admin', country: 'AR' };
@@ -100,12 +101,14 @@ test.describe('patient-itinerary — motivo obrigatório na substituição de um
     const data = await preencherSubstituicao(page, seed, seed.freeSubstituteWorkerId);
 
     // O campo de motivo lista o catálogo ativo: o item criado pelo admin e os antigos.
-    const opcoes = (await page.getByTestId('substitucion-motivo').locator('option').allInnerTexts()).map((t) => t.trim());
+    await page.getByTestId('substitucion-motivo').click();
+    const opcoes = (await page.locator('ul[role="listbox"] li[role="option"]').allInnerTexts()).map((t) => t.trim());
+    await page.keyboard.press('Escape');
     expect(opcoes).toContain(NOVO);
     expect(opcoes).toContain(ROTULO_ANTIGO);
 
     await expect(page.getByTestId('substitucion-confirmar')).toBeDisabled(); // falta o motivo
-    await page.getByTestId('substitucion-motivo').selectOption({ label: NOVO });
+    await escolherNoCombo(page, page.getByTestId('substitucion-motivo'), NOVO);
     await expect(page.getByTestId('substitucion-confirmar')).toBeEnabled();
     const resp = await confirmarPedido(page);
     expect(resp.status()).toBe(201);

@@ -9,8 +9,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { ServiceShiftEditor } from './ServiceShiftEditor';
 import { shiftsToSlots, slotsToShifts, weeklyHoursOf } from '@domain/scheduleHours';
 import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
@@ -281,13 +280,13 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       <div className={FIELD_GRID}>
         <FormField labelSize="compact" className={FIELD_CELL} label={te('selectServiceCode')} htmlFor={`svc-code-${index}`} required>
           <Controller control={control} name="serviceCode" render={({ field }) => (
-            <SelectField id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
+            <Combobox id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
           )} />
         </FormField>
         <NumericField cellClassName={FIELD_CELL} id={`svc-providersNeeded-${index}`} label={te('providersNeeded')} testId={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
         <FormField labelSize="compact" className={FIELD_CELL} label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
           <Controller control={control} name="careLocation" render={({ field }) => (
-            <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
+            <Combobox id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
           )} />
         </FormField>
         {/* Migration 330: o ENDEREÇO (ponteiro para a ficha) é distinto do "lugar" (Casa/Escola) e do dispositivo. Linha inteira
@@ -302,11 +301,11 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             <AvisoAmbar testId={`svc-address-none-${index}`}>{te('serviceAddressNone')}</AvisoAmbar>
           )}
           <Controller control={control} name="addressId" render={({ field }) => (
-            <SelectField
+            <Combobox
               id={`svc-addressId-${index}`}
               inputSize="compact"
               options={addressOptions}
-              placeholder={te('selectPlaceholder')}
+              placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')}
               value={field.value}
               onChange={field.onChange}
               disabled={addresses.length === 0}
@@ -319,17 +318,17 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         </FormField>
         <FormField labelSize="compact" className={FIELD_CELL} label={te('supervisionFrequency')} htmlFor={`svc-supervisionFrequency-${index}`} optional>
           <Controller control={control} name="supervisionFrequency" render={({ field }) => (
-            <SelectField id={`svc-supervisionFrequency-${index}`} inputSize="compact" options={supervisionOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-supervisionFrequency-${index}`} />
+            <Combobox id={`svc-supervisionFrequency-${index}`} inputSize="compact" options={supervisionOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-supervisionFrequency-${index}`} />
           )} />
         </FormField>
         <FormField labelSize="compact" className={FIELD_CELL} label={te('guardShift')} htmlFor={`svc-guardShift-${index}`} optional>
           <Controller control={control} name="guardShift" render={({ field }) => (
-            <SelectField id={`svc-guardShift-${index}`} inputSize="compact" options={guardShiftOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-guardShift-${index}`} />
+            <Combobox id={`svc-guardShift-${index}`} inputSize="compact" options={guardShiftOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-guardShift-${index}`} />
           )} />
         </FormField>
         <FormField labelSize="compact" className={FIELD_CELL} label={te('providerAgeBand')} htmlFor={`svc-providerAgeBand-${index}`} optional>
           <Controller control={control} name="providerAgeBand" render={({ field }) => (
-            <SelectField id={`svc-providerAgeBand-${index}`} inputSize="compact" options={providerAgeBandOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-providerAgeBand-${index}`} />
+            <Combobox id={`svc-providerAgeBand-${index}`} inputSize="compact" options={providerAgeBandOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-providerAgeBand-${index}`} />
           )} />
         </FormField>
       </div>
@@ -366,7 +365,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
 
       <FormField labelSize="compact" label={te('deviceTypes')} htmlFor={`svc-devices-${index}`} optional>
         <Controller control={control} name="deviceTypeCodes" render={({ field }) => (
-          <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id={`svc-devices-${index}`} />
+          <Combobox multiple options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id={`svc-devices-${index}`} inputSize="compact" />
         )} />
       </FormField>
 

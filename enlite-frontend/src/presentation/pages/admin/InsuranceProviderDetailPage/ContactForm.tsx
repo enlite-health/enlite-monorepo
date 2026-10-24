@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@presentation/components/atoms/Input';
-import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
 import { Field } from './Field';
 import { FormModal } from './FormModal';
 import { WORKER_DOCUMENT_TYPES } from '@domain/entities/Worker';
 import { validateContactDraft, type ContactDraft } from './contactDraft';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   title: string;
@@ -62,13 +62,13 @@ export function ContactForm({ title, initial, submitting, error, onSubmit, onCan
           <Input inputSize="compact" id="contact-email" type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} data-testid="contact-email" />
         </Field>
         <Field label={t(`${NS}.documentType`)} optional htmlFor="contact-documentType">
-          <Select
+          <Combobox
             inputSize="compact"
             id="contact-documentType"
             value={draft.documentType}
             placeholder={t(`${NS}.documentNone`)}
             options={WORKER_DOCUMENT_TYPES.map((d) => ({ value: d, label: t(`admin.patients.detail.documentTypes.${d}`) }))}
-            onValueChange={(v) => set('documentType', v as ContactDraft['documentType'])}
+            onChange={(v) => set('documentType', v as ContactDraft['documentType'])}
             data-testid="contact-documentType"
           />
         </Field>

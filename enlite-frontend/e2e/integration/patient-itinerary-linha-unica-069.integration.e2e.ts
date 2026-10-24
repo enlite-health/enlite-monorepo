@@ -26,6 +26,7 @@ import {
 } from '../helpers/itinerario-069-flow-helper';
 import { SEG_QUA_SEX } from '../helpers/itinerario-069-seed-helper';
 import { expectLinhaUnica } from '../helpers/itinerario-linha-unica-helper';
+import { escolherNoComboPorValor } from '../helpers/combobox';
 
 const STAFF = mockAdminUserFor('itinerario-linha-unica-069');
 const MOTIVO_LONGO = 'Licencia médica prolongada por intervención quirúrgica programada';
@@ -152,7 +153,7 @@ test.describe('patient-itinerary-linha-unica-069: nomes e labels longos não que
         await expectLinhaUnica(page, 'Modal passo 3', 8);
         await imprimir(page, 'modal-paso-3-nomes-longos', largura, 'substitucion-flujo');
         await siguiente(page);
-        await page.getByTestId('substitucion-motivo').selectOption(codigoMotivo);
+        await escolherNoComboPorValor(page, page.getByTestId('substitucion-motivo'), codigoMotivo);
         await expect(page.getByTestId('substitucion-resumen-bloque')).toBeVisible();
         const p4 = await expectLinhaUnica(page, 'Modal passo 4', 4);
         expect(p4.truncados, 'Modal passo 4: nome longo cortado de verdade').toBeGreaterThan(0);

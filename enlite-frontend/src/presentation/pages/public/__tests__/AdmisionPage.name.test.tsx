@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AdmisionPage from '../AdmisionPage';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 const createLead = vi.fn();
 vi.mock('@infrastructure/http/LeadsApiService', () => ({
@@ -28,7 +29,7 @@ vi.mock('@infrastructure/http/AdmissionApiService', () => ({
 function preencher(nome: string | null) {
   // serviceType e requesterType também são obrigatórios — sem eles o zod barra
   // por OUTRO motivo e o teste do nome não estaria medindo o que diz medir.
-  fireEvent.change(screen.getByTestId('lead-serviceType'), { target: { value: 'cuidadores' } });
+  chooseCombo(screen.getByTestId('lead-serviceType'), /cuidadores/i); // cuidadores = Cuidadores
   fireEvent.click(screen.getByTestId('lead-requesterType-patient'));
   if (nome !== null) {
     fireEvent.change(screen.getByTestId('lead-name'), { target: { value: nome } });

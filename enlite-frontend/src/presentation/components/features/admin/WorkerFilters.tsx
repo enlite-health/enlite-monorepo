@@ -1,8 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
-import { Select, SelectOption } from '@presentation/components/atoms/Select';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
-import { SearchableSelect, SearchableSelectOption } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { WorkerTagMultiSelect } from './WorkerTagMultiSelect';
 import { AdminWorkerProfileFilters } from './AdminWorkerProfileFilters';
 import type { WorkerProfileFilters } from './workerProfileFiltersConfig';
@@ -15,11 +14,11 @@ interface WorkerFiltersProps {
   onSearchChange: (value: string) => void;
   selectedDocsStatus: string;
   onDocsStatusChange: (value: string) => void;
-  docsStatusOptions: SelectOption[];
+  docsStatusOptions: ComboboxOption[];
   selectedValidationStatus: string;
   onValidationStatusChange: (value: string) => void;
-  validationStatusOptions: SelectOption[];
-  caseOptions: SearchableSelectOption[];
+  validationStatusOptions: ComboboxOption[];
+  caseOptions: ComboboxOption[];
   selectedCaseId: string;
   onCaseChange: (value: string) => void;
   isCaseOptionsLoading?: boolean;
@@ -30,10 +29,10 @@ interface WorkerFiltersProps {
   // profile filters
   profileFilters: WorkerProfileFilters;
   onProfileFiltersChange: (updates: Partial<WorkerProfileFilters>) => void;
-  stateOptions: SelectOption[];
-  cityOptions: SelectOption[];
-  experienceTypeOptions: SelectOption[];
-  preferredTypeOptions: SelectOption[];
+  stateOptions: ComboboxOption[];
+  cityOptions: ComboboxOption[];
+  experienceTypeOptions: ComboboxOption[];
+  preferredTypeOptions: ComboboxOption[];
   /** Checkbox "Mostrar desactivados" (D-2026-09-28). */
   showDeactivated: boolean;
   onShowDeactivatedChange: (value: boolean) => void;
@@ -133,11 +132,12 @@ export function WorkerFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.workers.caseLabel', 'Caso')}
           </label>
-          <SearchableSelect
+          <Combobox
+            inputSize="compact"
             options={caseOptions}
             value={selectedCaseId}
             onChange={onCaseChange}
-            placeholder={t('admin.workers.caseOptions.all', 'Todos')}
+            placeholder={t('admin.workers.caseOptions.all', 'Todos')} clearLabel={t('admin.workers.caseOptions.all', 'Todos')}
             searchPlaceholder={t('admin.workers.caseSearchPlaceholder', 'Buscar caso...')}
             disabled={isCaseOptionsLoading}
           />
@@ -148,11 +148,11 @@ export function WorkerFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.workers.docsLabel', 'Documentación')}
           </label>
-          <Select
+          <Combobox
             inputSize="compact"
             options={docsStatusOptions}
             value={selectedDocsStatus}
-            onValueChange={onDocsStatusChange}
+            onChange={onDocsStatusChange}
             placeholder={t('admin.workers.docsOptions.all', 'Todos')}
           />
         </div>
@@ -162,11 +162,11 @@ export function WorkerFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.workers.filters.validation', 'Validación')}
           </label>
-          <Select
+          <Combobox
             inputSize="compact"
             options={validationStatusOptions}
             value={selectedValidationStatus}
-            onValueChange={onValidationStatusChange}
+            onChange={onValidationStatusChange}
             placeholder={t('admin.workers.docsOptions.all', 'Todos')}
           />
         </div>

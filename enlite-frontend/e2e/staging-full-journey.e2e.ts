@@ -31,16 +31,13 @@
  *
  * SELETORES REAIS — resultado da inspeção dos componentes:
  *
- * MultiSelect (src/presentation/components/molecules/MultiSelect.tsx):
- *   - O componente recebe `testId` prop e gera `data-testid="${testId}-trigger"` no div clicável
- *     e `data-testid="${testId}-dropdown"` no container de opções.
- *   - testIds em uso no formulário:
- *     "languages"          → trigger: [data-testid="languages-trigger"]
- *     "experience-types"   → trigger: [data-testid="experience-types-trigger"]
- *     "preferred-types"    → trigger: [data-testid="preferred-types-trigger"]
- *     "preferred-age-range"→ trigger: [data-testid="preferred-age-range-trigger"]
- *   - Para selecionar opção: clicar no trigger → dropdown abre → clicar num div filho com o texto.
- *   - Fechar: clicar fora do container (mousedown outside).
+ * Combobox `multiple` (src/presentation/components/atoms/Combobox/Combobox.tsx):
+ *   - O `data-testid` fica no GATILHO (`button role="combobox"`); o painel é `ul[role="listbox"]`
+ *     com `li[role="option"] > button`.
+ *   - testIds em uso no formulário (gatilho): "languages", "experience-types", "preferred-types",
+ *     "preferred-age-range".
+ *   - Para selecionar opção: clicar no gatilho → painel abre → clicar a opção pelo rótulo.
+ *   - Fechar: Esc.
  *
  * DayScheduleEditor (src/presentation/components/molecules/DayScheduleEditor/DayScheduleEditor.tsx):
  *   - NÃO tem toggle/switch. Para ativar um dia, clicar no botão "+"
@@ -63,6 +60,7 @@ import { test, expect, type Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+import { escolherNoCombo, escolherPrimeiroNoCombo } from './helpers/combobox';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -194,47 +192,13 @@ async function firebaseSignIn(
 // ── MultiSelect helpers ───────────────────────────────────────────────────────
 
 /**
- * Clica no trigger do MultiSelect, seleciona a primeira opção disponível e fecha.
- *
- * Seletor correto: o componente MultiSelect recebe `testId` e renderiza:
- *   - data-testid="${testId}-trigger"  → div clicável para abrir
- *   - data-testid="${testId}-dropdown" → container das opções (visível quando aberto)
- *   - Opções: divs filho do dropdown com texto da label
+ * Abre o Combobox `multiple` pelo data-testid (no GATILHO), marca a primeira opção e fecha (Esc).
+ * Gatilho = `button role="combobox"`; painel = `ul[role="listbox"]` com `li[role="option"] > button`.
  */
 async function selectFirstMultiSelectOption(page: Page, testId: string): Promise<boolean> {
-  const triggerLocator = page.locator(`[data-testid="${testId}-trigger"]`);
-  const dropdownLocator = page.locator(`[data-testid="${testId}-dropdown"]`);
-
-  const triggerVisible = await triggerLocator.isVisible({ timeout: 5_000 }).catch(() => false);
-  if (!triggerVisible) {
-    console.log(`[MULTISELECT] ${testId}-trigger não visível — pulando`);
-    return false;
-  }
-
-  // Abrir dropdown
-  await triggerLocator.click();
-  await page.waitForTimeout(300);
-
-  // Aguardar dropdown aparecer
-  const dropdownVisible = await dropdownLocator.isVisible({ timeout: 3_000 }).catch(() => false);
-  if (!dropdownVisible) {
-    console.log(`[MULTISELECT] ${testId}-dropdown não apareceu após click — pulando`);
-    return false;
-  }
-
-  // Selecionar primeira opção (div filho do dropdown)
-  const firstOption = dropdownLocator.locator('div').first();
-  const optionVisible = await firstOption.isVisible({ timeout: 2_000 }).catch(() => false);
-  if (optionVisible) {
-    await firstOption.click();
-    console.log(`[MULTISELECT] ${testId}: primeira opção selecionada`);
-  }
-
-  // Fechar clicando fora (o componente usa mousedown outside)
-  await page.mouse.click(10, 10);
-  await page.waitForTimeout(200);
-
-  return true;
+  const feito = await escolherPrimeiroNoCombo(page, `[data-testid="${testId}"]`);
+  console.log(`[MULTISELECT] ${testId}: ${feito ? 'primeira opção selecionada' : 'gatilho não visível — pulando'}`);
+  return feito;
 }
 
 // ── DayScheduleEditor helpers ────────────────────────────────────────────────
@@ -456,30 +420,30 @@ test.describe('Staging Full Journey — Navegador Real (CORS corrigido)', () => 
       await cpfInput.fill('20-12345678-9');
     }
 
-    // ── SelectField — Sexo ────────────────────────────────────────────────────
-    // SelectField renderiza um <select> nativo com id="sex"
-    const sexSelect = page.locator('select#sex');
+    // ── Combobox — Sexo ────────────────────────────────────────────────────
+    // Combobox: o gatilho (button) leva o id="sex"
+    const sexSelect = page.locator('#sex');
     if (await sexSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await sexSelect.selectOption('male');
+      await escolherNoCombo(page, sexSelect, 'Masculino'); // male
     }
 
     // ── SelectField — Gênero ─────────────────────────────────────────────────
-    const genderSelect = page.locator('select#gender');
+    const genderSelect = page.locator('#gender');
     if (await genderSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await genderSelect.selectOption('male');
+      await escolherNoCombo(page, genderSelect, 'Masculino'); // male
     }
 
     // ── SelectField — Profissão ───────────────────────────────────────────────
     // CAREGIVER: não exige at_certificate, evita exigência de 3 docs extras
-    const professionSelect = page.locator('select#profession');
+    const professionSelect = page.locator('#profession');
     if (await professionSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await professionSelect.selectOption('CAREGIVER');
+      await escolherNoCombo(page, professionSelect, 'Cuidador(a)'); // CAREGIVER
     }
 
     // ── SelectField — Nível de conhecimento ──────────────────────────────────
-    const knowledgeSelect = page.locator('select#knowledgeLevel');
+    const knowledgeSelect = page.locator('#knowledgeLevel');
     if (await knowledgeSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await knowledgeSelect.selectOption('TERTIARY');
+      await escolherNoCombo(page, knowledgeSelect, 'Terciario'); // TERTIARY
     }
 
     // ── Input — Certificado profissional ─────────────────────────────────────
@@ -489,27 +453,25 @@ test.describe('Staging Full Journey — Navegador Real (CORS corrigido)', () => 
     }
 
     // ── SelectField — Anos de experiência ────────────────────────────────────
-    const yearsSelect = page.locator('select#yearsExperience');
+    const yearsSelect = page.locator('#yearsExperience');
     if (await yearsSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await yearsSelect.selectOption('0_2');
+      await escolherNoCombo(page, yearsSelect, '0-2 años'); // 0_2
     }
 
     // ── MultiSelect — Idiomas ─────────────────────────────────────────────────
-    // testId="languages" → trigger: [data-testid="languages-trigger"]
-    //                      dropdown: [data-testid="languages-dropdown"]
-    // Opções: div filho do dropdown com texto "Español", "Português", "Inglés"
+    // data-testid="languages" → gatilho do Combobox; opções: "Español", "Português", "Inglés"
     await selectFirstMultiSelectOption(page, 'languages');
 
     // ── MultiSelect — Tipos de experiência ───────────────────────────────────
-    // testId="experience-types" → trigger: [data-testid="experience-types-trigger"]
+    // data-testid="experience-types" (gatilho)
     await selectFirstMultiSelectOption(page, 'experience-types');
 
     // ── MultiSelect — Tipos preferidos ───────────────────────────────────────
-    // testId="preferred-types" → trigger: [data-testid="preferred-types-trigger"]
+    // data-testid="preferred-types" (gatilho)
     await selectFirstMultiSelectOption(page, 'preferred-types');
 
     // ── MultiSelect — Faixa etária preferida ─────────────────────────────────
-    // testId="preferred-age-range" → trigger: [data-testid="preferred-age-range-trigger"]
+    // data-testid="preferred-age-range" (gatilho)
     await selectFirstMultiSelectOption(page, 'preferred-age-range');
 
     await captureEvidence(page, '02b-general-info-filled.png');

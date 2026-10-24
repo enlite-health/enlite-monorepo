@@ -21,7 +21,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Label } from '@presentation/components/atoms/Label';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
 import { segmentSelectOptions } from './catalogSegment';
 
@@ -177,10 +177,11 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
           {segments !== null && (
             <div>
               <Label htmlFor="therapeutic-catalog-segment">{tr('form.segment')}</Label>
-              <Select
+              <Combobox
                 id="therapeutic-catalog-segment"
                 value={segmentId}
-                onValueChange={setSegmentId}
+                onChange={setSegmentId}
+                placeholder={tr('form.segmentNone')}
                 options={[
                   { value: '', label: tr('form.segmentNone') },
                   ...segmentSelectOptions(segments, segmentId, (l) => tr('form.segmentInactive', { label: l })),

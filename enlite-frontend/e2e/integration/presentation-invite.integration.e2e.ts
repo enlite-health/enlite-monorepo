@@ -18,6 +18,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import { insertTestPatient, cleanupTestPatient, insertBaseVacancy, cleanupVacancies, insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { openKanban } from '../helpers/talentumWebhookHelper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const EMULATOR = 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
@@ -103,7 +104,7 @@ test.describe('Convite à reunión de presentación: config, tarjeta e lista (RE
     await expect(page.getByTestId('pi-form')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('pi-meet-link').fill('https://zoom.us/j/123');
     await page.getByTestId('pi-schedule-label').fill('Todos los martes a las 18:00 (hora de Buenos Aires)');
-    await page.getByTestId('pi-template').selectOption(TEMPLATE);
+    await escolherNoCombo(page, page.getByTestId('pi-template'), TEMPLATE); // slug = rótulo (template elegível, sem sufixo)
     await page.getByTestId('pi-enabled').check();
     await page.getByTestId('pi-save').click();
     await expect(page.getByTestId('pi-error')).toBeVisible({ timeout: 15_000 });

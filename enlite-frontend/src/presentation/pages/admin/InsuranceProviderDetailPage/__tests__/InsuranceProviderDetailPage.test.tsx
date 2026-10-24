@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { apiError, comCelulas, contractItem, provider, semEnforcement } from './support';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', async () => (await import('./support')).i18nMock);
 const api = vi.hoisted(() => ({
@@ -49,7 +50,7 @@ describe('InsuranceProviderDetailPage', () => {
     renderPage();
     fireEvent.click(await screen.findByTestId('contracts-new'));
     fireEvent.change(screen.getByTestId('contract-new-name'), { target: { value: 'X' } });
-    fireEvent.change(screen.getByTestId('contract-new-country'), { target: { value: 'AR' } });
+    chooseCombo(screen.getByTestId('contract-new-country'), 'Argentina'); // AR
     await waitFor(() => expect(screen.getByTestId('contract-new-valid-from')).toHaveValue('2026-10-19'));
     fireEvent.change(screen.getByTestId('contract-new-hourly-rate'), { target: { value: '80' } });
     fireEvent.change(screen.getByTestId('contract-new-tax-rate'), { target: { value: '21' } });

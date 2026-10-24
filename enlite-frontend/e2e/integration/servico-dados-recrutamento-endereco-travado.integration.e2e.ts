@@ -18,6 +18,7 @@ import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { seedDerivablePatient, selectedWorker, allocateWorker } from '../helpers/derivacao-e2e-helper';
 import { insertSecondAddress } from '../helpers/itinerario-escrita-e2e-helper';
+import { escolherNoComboPorValor } from '../helpers/combobox';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
 const STAFF: MockUser = { uid: `e2e-endereco-travado-${Date.now()}`, email: `e2e.endereco-travado.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
@@ -68,7 +69,7 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
     await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByTestId('svc-addressId-1').selectOption(segundo);
+    await escolherNoComboPorValor(page, page.getByTestId('svc-addressId-1'), segundo);
     const [patch] = await Promise.all([
       page.waitForResponse((r) => ehPatchDoServico(serviceId)(r.request())),
       page.getByTestId(`contracted-service-save-${serviceId}`).click(),
@@ -89,7 +90,7 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
     await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByTestId('svc-addressId-1').selectOption(segundo);
+    await escolherNoComboPorValor(page, page.getByTestId('svc-addressId-1'), segundo);
     const [patch] = await Promise.all([
       page.waitForResponse((r) => ehPatchDoServico(serviceId)(r.request())),
       page.getByTestId(`contracted-service-save-${serviceId}`).click(),
@@ -103,7 +104,9 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
     const aviso = page.getByTestId('svc-address-locked-1');
     await expect(aviso).toContainText('el servicio tiene una vacante activa');
     await expect(aviso).toBeInViewport();
-    await expect(page.getByTestId('svc-addressId-1')).toHaveValue(addressId);
+    await page.getByTestId('svc-addressId-1').click();
+    await expect(page.locator(`li[role="option"][data-value="${addressId}"]`)).toHaveAttribute('aria-selected', 'true'); // o gatilho voltou ao endereço SALVO
+    await page.keyboard.press('Escape');
     await expect(page.getByTestId(`contracted-service-error-${serviceId}`)).toHaveCount(0); // não cai no erro genérico
     expect(enderecoDoServico(serviceId)).toBe(addressId);
   });
@@ -124,7 +127,7 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
       await abrirCardDoServico(page, seed.patientId, svc.serviceId);
       await page.getByTestId(`contracted-service-edit-${svc.serviceId}`).click();
       await expect(page.getByTestId(`contracted-service-form-${svc.serviceId}`)).toBeVisible({ timeout: 15_000 });
-      await page.getByTestId('svc-addressId-1').selectOption(segundo);
+      await escolherNoComboPorValor(page, page.getByTestId('svc-addressId-1'), segundo);
       const [patch] = await Promise.all([
         page.waitForResponse((r) => ehPatchDoServico(svc.serviceId)(r.request())),
         page.getByTestId(`contracted-service-save-${svc.serviceId}`).click(),
@@ -136,7 +139,9 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
       const aviso = page.getByTestId('svc-address-locked-1');
       await expect(aviso).toContainText('ya tiene prestadores asignados');
       await expect(aviso).toBeInViewport();
-      await expect(page.getByTestId('svc-addressId-1')).toHaveValue(original);
+      await page.getByTestId('svc-addressId-1').click();
+      await expect(page.locator(`li[role="option"][data-value="${original}"]`)).toHaveAttribute('aria-selected', 'true'); // o gatilho voltou ao endereço SALVO
+      await page.keyboard.press('Escape');
       expect(enderecoDoServico(svc.serviceId)).toBe(original);
       expect(sqlComVars("SELECT status FROM patient_itinerary_assignment WHERE id = :'id'::uuid", { id: aloc.allocationId! })).toBe('ACTIVE');
     } finally {
