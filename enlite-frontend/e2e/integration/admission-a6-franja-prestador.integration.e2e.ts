@@ -17,6 +17,7 @@ import {
   seedActivatablePatientA6, readVacancyAgeRangeForService, readProviderAgeBand,
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-a6-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -56,9 +57,10 @@ async function forceClick(locator: Locator): Promise<void> {
   await locator.evaluate((el: HTMLElement) => el.click());
 }
 
-async function forceSelect(locator: Locator, value: string): Promise<void> {
+/** Escolhe pelo RÓTULO que a pessoa lê, no combo (spec 070): abre o gatilho, busca (se houver) e clica a opção. */
+async function forceSelect(page: Page, locator: Locator, rotulo: string): Promise<void> {
   await locator.scrollIntoViewIfNeeded();
-  await locator.selectOption(value);
+  await escolherNoCombo(page, locator, rotulo);
 }
 
 async function openDetail(page: Page, patientId: string): Promise<void> {
@@ -107,10 +109,10 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     // ── Abre o drawer, cria o serviço com a franja "30 a 45 años" ──
     await forceClick(page.getByTestId('new-service-btn'));
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
-    await forceSelect(page.getByTestId('svc-code-1'), 'AT');
-    await forceSelect(page.getByTestId('svc-providerAgeBand-1'), 'AGE_30_45');
+    await forceSelect(page, page.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
+    await forceSelect(page, page.getByTestId('svc-providerAgeBand-1'), '30 a 45 Años'); // AGE_30_45
     // Migration 330: sem endereço vinculado o activate recusa (SERVICE_ADDRESS).
-    await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
+    await forceSelect(page, page.getByTestId('svc-addressId-1'), 'Av. Corrientes 1234, CABA, AR'); // seed.addressId
     // Decisão do Gabriel 07/09: sem horário o activate também recusa (SERVICE_SCHEDULE) — este
     // spec ativa mais abaixo esperando 200, então o serviço nasce com horário.
     await forceClick(page.getByTestId('svc-shift-add-1-1'));

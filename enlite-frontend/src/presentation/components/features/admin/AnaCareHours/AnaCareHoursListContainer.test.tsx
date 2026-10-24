@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { AnaCareHoursListContainer } from './AnaCareHoursListContainer';
+import { formatMonthLabel } from './selectors';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareMonthSnapshot, TriggerSyncResult } from './types';
@@ -195,7 +197,8 @@ describe('AnaCareHoursListContainer — mês EXIBIDO no seletor × mês ENVIADO 
     };
   }
 
-  const select = () => screen.getByLabelText('admin.anacareHours.monthAriaLabel') as HTMLSelectElement;
+  const select = () => screen.getByLabelText('admin.anacareHours.monthAriaLabel'); // gatilho do Combobox
+  const mes = (iso: string) => formatMonthLabel(iso, 'es');
   const syncButton = () => screen.getByTestId('anacare-hours-sync-button');
 
   beforeEach(() => {
@@ -208,9 +211,9 @@ describe('AnaCareHoursListContainer — mês EXIBIDO no seletor × mês ENVIADO 
     await act(async () => r.resolveMonth(AGO));
     await waitFor(() => expect(select()).toBeInTheDocument());
 
-    fireEvent.change(select(), { target: { value: SEP } });
+    chooseCombo(select(), mes(SEP));
     // NÃO resolve o snapshot de SEP — a janela de carregamento em que o bug vivia.
-    expect(select().value).toBe(SEP);
+    expect(select()).toHaveTextContent(mes(SEP));
     fireEvent.click(syncButton());
 
     expect(r.syncCalls.map((c) => c.month)).toEqual([SEP]);
@@ -222,13 +225,13 @@ describe('AnaCareHoursListContainer — mês EXIBIDO no seletor × mês ENVIADO 
     await act(async () => r.resolveMonth(AGO));
     await waitFor(() => expect(select()).toBeInTheDocument());
 
-    fireEvent.change(select(), { target: { value: SEP } });
+    chooseCombo(select(), mes(SEP));
     await act(async () => r.resolveMonth(SEP));
-    await waitFor(() => expect(select().value).toBe(SEP));
+    await waitFor(() => expect(select()).toHaveTextContent(mes(SEP)));
 
     // Volta para AGO — o fetch de agosto fica em voo (refetch real leva centenas de ms).
-    fireEvent.change(select(), { target: { value: AGO } });
-    expect(select().value).toBe(AGO);
+    chooseCombo(select(), mes(AGO));
+    expect(select()).toHaveTextContent(mes(AGO));
     fireEvent.click(syncButton());
 
     expect(r.syncCalls.map((c) => c.month)).toEqual([AGO]);
@@ -245,7 +248,7 @@ describe('AnaCareHoursListContainer — mês EXIBIDO no seletor × mês ENVIADO 
     expect(screen.getByTestId('anacare-hours-sync-progress')).toBeInTheDocument();
 
     // Troca de mês no MEIO da corrida de agosto (rodada 1 ainda em voo).
-    fireEvent.change(select(), { target: { value: SEP } });
+    chooseCombo(select(), mes(SEP));
 
     await act(async () => r.resolveSync(syncResult({ nextCursor: 5, reservationsProcessed: 10 })));
     await act(async () => r.resolveMonth(SEP));

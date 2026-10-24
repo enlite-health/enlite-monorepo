@@ -10,6 +10,7 @@ import type { UseServiceOccurrencesResult } from '@hooks/admin/useServiceOccurre
 import { initI18n } from './i18nSetup';
 import { expectNoRawEnumLeaks } from '../../../../../../../test/rawEnumLeakGuard';
 import { ItineraryServiceScreen } from '../ItineraryServiceScreen';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const useOccurrences = vi.fn<[string, string, string, number?], UseServiceOccurrencesResult>();
 vi.mock('@hooks/admin/useServiceOccurrences', () => ({
@@ -162,16 +163,16 @@ describe('ItineraryServiceScreen — Próximos días', () => {
     expect(props.onSubstitutionFlow).toHaveBeenLastCalledWith({ kind: 'assign', event: EVENTS[2] });
   });
 
-  it('(ajuste a) o filtro é o Select do design system, NA LINHA do seletor de semana (junto de "Ir a esta semana"), e não um <select> solto numa linha própria', () => {
+  it('(ajuste a) o filtro é o Combobox do design system, NA LINHA do seletor de semana (junto de "Ir a esta semana"), e não um campo solto numa linha própria', () => {
     renderScreen();
     const row = screen.getByTestId('itinerario-semana');
     const select = within(row).getByTestId('itinerario-filtro-prestador');
     expect(within(row).getByTestId('itinerario-semana-atual')).toBeInTheDocument();
     expect(within(row).getByTestId('itinerario-semana-rotulo')).toBeInTheDocument();
     expect(within(row).getByLabelText('Prestador')).toBe(select);
-    // o átomo `Select` desenha o campo (borda do input, chevron); o `<select>` cru não tinha nem um nem outro
+    // o átomo `Combobox` desenha o campo (borda do input, chevron)
     expect(select.parentElement?.querySelector('svg')).not.toBeNull();
-    expect(select.parentElement?.className).toContain('border-[1.5px]');
+    expect(select.className).toContain('border-[1.5px]');
     // mesmo eixo vertical: seletor, filtro e "Ir a esta semana" são filhos da MESMA linha flex
     expect(row.className).toContain('items-center');
   });
@@ -199,31 +200,31 @@ describe('ItineraryServiceScreen — Próximos días', () => {
   it('filtro por prestador (N7): opções = pessoas da semana, sem repetir; filtra por titular, substituto ou quem atende', () => {
     renderScreen();
     const select = screen.getByTestId('itinerario-filtro-prestador');
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['Todos', 'Lucía Fernández', 'Martín Gómez']);
+    expect(comboLabels(select)).toEqual(['Todos', 'Lucía Fernández', 'Martín Gómez']);
 
-    fireEvent.change(select, { target: { value: 'w-martin' } });
+    chooseCombo(select, 'Martín Gómez'); // w-martin;
     expect(screen.getAllByTestId(/^itinerario-proximo-slot-/)).toHaveLength(1);
     expect(screen.getByTestId('itinerario-proximo-slot-wed-2026-10-21')).toBeInTheDocument();
 
     // a Lucía é titular do turno coberto E do turno substituído E da ausência sem cobertura
-    fireEvent.change(select, { target: { value: 'w-lucia' } });
+    chooseCombo(select, 'Lucía Fernández'); // w-lucia;
     expect(screen.getAllByTestId(/^itinerario-proximo-slot-/)).toHaveLength(3);
 
-    fireEvent.change(select, { target: { value: '' } });
+    chooseCombo(select, 'Todos'); // ''
     expect(screen.getAllByTestId(/^itinerario-proximo-slot-/)).toHaveLength(3);
   });
 
   it('trocar de semana zera o filtro (o prestador escolhido pode nem existir na outra semana)', () => {
     renderScreen();
-    fireEvent.change(screen.getByTestId('itinerario-filtro-prestador'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('itinerario-filtro-prestador'), 'Martín Gómez'); // w-martin;
     fireEvent.click(screen.getByTestId('itinerario-semana-seguinte'));
-    expect(screen.getByTestId('itinerario-filtro-prestador')).toHaveValue('');
+    expect(screen.getByTestId('itinerario-filtro-prestador')).toHaveTextContent('Todos');
   });
 
   it('nomes ausentes (sem a célula) viram o rótulo "Prestador sin nombre · …" no filtro', () => {
     useOccurrences.mockReturnValue(occurrences({ events: [ev({ titularDisplayName: null, workerDisplayName: null, titularWorkerId: 'worker-0000-bbbb2222', workerId: 'worker-0000-bbbb2222' })] }));
     renderScreen();
-    expect(within(screen.getByTestId('itinerario-filtro-prestador')).getByText('Prestador sin nombre · bbbb2222')).toBeInTheDocument();
+    expect(comboLabels(screen.getByTestId('itinerario-filtro-prestador'))).toContain('Prestador sin nombre · bbbb2222');
   });
 
   it.each(['idle', 'loading'] as const)('status %s → "Cargando…", sem tabela e sem opções no filtro', (status) => {
@@ -231,7 +232,7 @@ describe('ItineraryServiceScreen — Próximos días', () => {
     renderScreen();
     expect(screen.getByTestId('itinerario-proximos-carregando')).toHaveTextContent('Cargando los turnos de la semana…');
     expect(screen.queryByTestId('itinerario-proximos-tabela')).toBeNull();
-    expect(within(screen.getByTestId('itinerario-filtro-prestador')).getAllByRole('option')).toHaveLength(1);
+    expect(comboLabels(screen.getByTestId('itinerario-filtro-prestador'))).toEqual(['Todos']);
   });
 
   it('erro e 403 → alert com mensagem de produto, sem código cru', () => {

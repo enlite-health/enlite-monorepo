@@ -209,7 +209,7 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
 
     // A mesma marca aparece no dropdown de escolha do prestador (digitando, como pessoa).
     await modal.getByTestId('itinerario-editar-prestador').click();
-    await modal.getByPlaceholder('Buscar...').click();
+    await expect(modal.getByTestId('itinerario-editar-prestador-search')).toBeFocused(); // a busca do combo abre focada (>= 3 opções)
     await page.keyboard.type('Sofia', { delay: 20 });
     const option = modal.getByRole('option', { name: new RegExp(seed.names.selected) });
     await expect(option).toBeVisible();

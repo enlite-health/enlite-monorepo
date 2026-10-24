@@ -20,6 +20,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { AiPromptsPage } from '../AiPromptsPage';
 import { AdminApiService, type AiPrompt } from '@infrastructure/http/AdminApiService';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -93,7 +94,7 @@ beforeEach(() => {
   vi.mocked(AdminApiService.undoAiPrompt).mockReset();
   vi.mocked(AdminApiService.simulateVacancyCreation).mockReset();
   vi.mocked(AdminApiService.listVacancies).mockReset().mockResolvedValue({
-    data: [{ id: '11111111-1111-4111-8111-111111111111', caso: 'Caso 101', isDraft: false }],
+    data: [{ id: '11111111-1111-4111-8111-111111111111', caseNumber: 101, caseOrdinal: null, isDraft: false }],
     total: 1,
   });
 });
@@ -143,7 +144,7 @@ describe('AiPromptsPage — simulador de vacante FORA das abas (T073)', () => {
     usedSlugs: ['VACANCY_DESCRIPTION', 'PRESCREENING_AT'] as AiPrompt['slug'][],
   };
   const simular = async () => {
-    fireEvent.change(await screen.findByTestId('vacancy-simulation-case'), { target: { value: CASE_ID } });
+    chooseCombo(await screen.findByTestId('vacancy-simulation-case'), '101');
     fireEvent.click(screen.getByTestId('vacancy-simulation-run'));
     await screen.findByTestId('vacancy-simulation-result');
   };

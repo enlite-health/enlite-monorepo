@@ -41,14 +41,14 @@ describe('PatientServiceEditDrawer', () => {
   it('renderiza com o serviceType atual pré-selecionado', () => {
     render(<PatientServiceEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('patient-service-edit-drawer')).toBeVisible();
-    const btn = document.querySelector('#psv-serviceType button') as HTMLElement;
+    const btn = document.querySelector('#psv-serviceType') as HTMLElement;
     expect(btn).toHaveTextContent('Acompañante Terapéutico');
   });
 
   it('trocar o serviço e salvar chama updatePatientSection só com o payload novo', async () => {
     const onSaved = vi.fn();
     render(<PatientServiceEditDrawer patient={patient} onClose={vi.fn()} onSaved={onSaved} />);
-    fireEvent.click(document.querySelector('#psv-serviceType button') as HTMLElement);
+    fireEvent.click(document.querySelector('#psv-serviceType') as HTMLElement);
     const listbox = await screen.findByRole('listbox');
     fireEvent.click(screen.getByRole('option', { name: /Cuidador/i }).querySelector('button') as HTMLElement);
     expect(listbox).toBeInTheDocument();
@@ -75,7 +75,7 @@ describe('PatientServiceEditDrawer', () => {
 
   it('paciente sem serviceType (null) → multi-select nasce vazio', () => {
     render(<PatientServiceEditDrawer patient={{ ...patient, serviceType: null }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    const btn = document.querySelector('#psv-serviceType button') as HTMLElement;
+    const btn = document.querySelector('#psv-serviceType') as HTMLElement;
     expect(btn).toHaveTextContent('Seleccioná…');
   });
 
@@ -89,7 +89,7 @@ describe('PatientServiceEditDrawer', () => {
 
   it('COM mudança → Escape abre confirmação; backdrop e X seguem a mesma régua', async () => {
     render(<PatientServiceEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.click(document.querySelector('#psv-serviceType button') as HTMLElement);
+    fireEvent.click(document.querySelector('#psv-serviceType') as HTMLElement);
     await screen.findByRole('listbox');
     fireEvent.click(screen.getByRole('option', { name: /Cuidador/i }).querySelector('button') as HTMLElement);
 
@@ -109,7 +109,7 @@ describe('PatientServiceEditDrawer', () => {
   it('"Descartar cambios" fecha de verdade', async () => {
     const onClose = vi.fn();
     render(<PatientServiceEditDrawer patient={patient} onClose={onClose} onSaved={vi.fn()} />);
-    fireEvent.click(document.querySelector('#psv-serviceType button') as HTMLElement);
+    fireEvent.click(document.querySelector('#psv-serviceType') as HTMLElement);
     await screen.findByRole('listbox');
     fireEvent.click(screen.getByRole('option', { name: /Cuidador/i }).querySelector('button') as HTMLElement);
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -120,7 +120,7 @@ describe('PatientServiceEditDrawer', () => {
   it('SALVAR nunca pergunta, mesmo com mudança pendente', async () => {
     const onSaved = vi.fn();
     render(<PatientServiceEditDrawer patient={patient} onClose={vi.fn()} onSaved={onSaved} />);
-    fireEvent.click(document.querySelector('#psv-serviceType button') as HTMLElement);
+    fireEvent.click(document.querySelector('#psv-serviceType') as HTMLElement);
     await screen.findByRole('listbox');
     fireEvent.click(screen.getByRole('option', { name: /Cuidador/i }).querySelector('button') as HTMLElement);
     fireEvent.click(screen.getByTestId('psv-save'));

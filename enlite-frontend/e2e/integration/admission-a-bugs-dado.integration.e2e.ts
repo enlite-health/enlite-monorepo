@@ -146,7 +146,7 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     const drawer = page.getByTestId('responsible-edit-drawer');
     await expect(drawer).toBeVisible();
     // O drawer carrega o documento em claro (lex A1: mascarar aqui seria teatro).
-    await expect(page.getByTestId('responsible-documentType')).toHaveValue('DNI');
+    await expect(page.getByTestId('responsible-documentType')).toContainText('DNI');
     await expect(page.getByTestId('responsible-documentNumber')).toHaveValue(seed.responsible.documentNumber);
     await expect(drawer).toHaveScreenshot('bloco-a-drawer-familiares.png', { maxDiffPixelRatio: 0.05 });
 

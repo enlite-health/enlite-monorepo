@@ -18,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { MemoryRouter } from 'react-router-dom';
 import { ApiError } from '@infrastructure/http/ApiError';
 
@@ -129,12 +130,13 @@ describe('VacancyFormSection — modo edit: reset() carrega a vaga inteira', () 
     await waitFor(() => expect(screen.getByTestId('vacancy-form')).toBeInTheDocument());
     await waitFor(() => expect(screen.getByTestId('profession-checkbox-AT')).toBeChecked());
 
-    const ageSelect = screen.getByTestId('age-range-select') as HTMLSelectElement;
+    const ageSelect = screen.getByTestId('age-range-select');
     // Já vem em '25_35' (min=25,max=35, reset) — troca pra outro bucket pra
     // provar que o setValue repassado por `VacancyFormSection` (a função
     // anônima que aparecia com 0% de cobertura) roda de ponta a ponta.
-    await userEvent.selectOptions(ageSelect, '18_25');
-    expect(ageSelect).toHaveValue('18_25');
+    expect(ageSelect).toHaveTextContent('25 - 35');
+    await selectCombo(ageSelect, '18 - 25'); // 18_25
+    expect(ageSelect).toHaveTextContent('18 - 25');
   });
 
   it('submit em modo edit: chama updateVacancy (não createVacancy) com o id existente', async () => {

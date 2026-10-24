@@ -21,6 +21,7 @@ function t(key: string, opts?: any): string {
   if (typeof opts === 'object' && typeof opts?.defaultValue === 'string') return opts.defaultValue;
   return key;
 }
+const EXIT = ptBR.admin.patients.suspensionExitReasonOptions;
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 
 const updatePatientStatus = vi.fn();
@@ -34,6 +35,7 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import { PatientStatusControl } from '../PatientStatusControl';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 /** A lista que o SERVIDOR devolveria (spec 051): todos os outros clínicos, sem bloqueio. O controle filtra o atual. */
 const ALL_STATUSES = ['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED'];
@@ -68,7 +70,7 @@ describe('PatientStatusControl', () => {
     await ready(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
     const select = screen.getByTestId('patient-status-select') as HTMLSelectElement;
     expect(select.value).toBe('ACTIVE');
-    const values = [...select.options].map((o) => o.value).filter(Boolean); // o SelectField sempre emite a option de placeholder
+    const values = [...select.options].map((o) => o.value).filter(Boolean); // o <select> nativo sempre emite a option de placeholder
     expect(values).toEqual(['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED']);
     expect([...select.options].map((o) => o.textContent)).toContain('Em espera');
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();
@@ -79,15 +81,16 @@ describe('PatientStatusControl', () => {
     const onSaved = vi.fn();
     await ready(<PatientStatusControl patient={active} onSaved={onSaved} />);
     fireEvent.change(screen.getByTestId('patient-status-select'), { target: { value: 'ON_HOLD' } });
-    const reason = screen.getByTestId('patient-status-reason') as HTMLSelectElement;
-    expect([...reason.options].map((o) => o.value)).toEqual(['', 'SCHOOL', 'INSURER', 'OTHER']);
+    const reason = screen.getByTestId('patient-status-reason');
+    // a linha "—" limpa o motivo; depois vêm SCHOOL, INSURER, OTHER
+    expect(comboLabels(reason)).toEqual(['—', 'Escola', 'Convênio / obra social', 'Outro']);
     const note = screen.getByTestId('patient-status-note');
     expect(note.tagName).toBe('TEXTAREA');
     expect(note).toHaveAttribute('maxlength', '2000');
     expect(note.parentElement).toHaveAttribute('data-clarity-mask', 'True');
     // sem motivo, o botão fica travado (a regra é do servidor, mas a tela não manda lixo)
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();
-    fireEvent.change(reason, { target: { value: 'INSURER' } });
+    chooseCombo(reason, 'Convênio / obra social'); // INSURER
     fireEvent.change(note, { target: { value: 'Sin autorización de la obra social' } });
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(updatePatientStatus).toHaveBeenCalledWith(active.id, {
@@ -105,7 +108,7 @@ describe('PatientStatusControl', () => {
     await ready(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
     const selects = screen.getAllByTestId('patient-status-select');
     fireEvent.change(selects[1], { target: { value: 'ON_HOLD' } });
-    fireEvent.change(screen.getByTestId('patient-status-reason'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('patient-status-reason'), 'Outro'); // OTHER
     fireEvent.click(screen.getAllByTestId('patient-status-save')[1]);
     await waitFor(() => expect(updatePatientStatus).toHaveBeenCalledWith(active.id, { status: 'ON_HOLD', onHoldReason: 'OTHER', onHoldNote: null }));
   });
@@ -172,14 +175,14 @@ describe('PatientStatusControl', () => {
 
   it('paciente em espera: motivo atual visível; nota redigida → textarea desabilitado e sem valor', async () => {
     await ready(<PatientStatusControl patient={{ ...active, status: 'ON_HOLD', onHoldReason: 'SCHOOL', onHoldNote: null, onHoldNoteRedacted: true }} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('patient-status-reason')).toHaveValue('SCHOOL');
+    expect(screen.getByTestId('patient-status-reason')).toHaveTextContent('Escola'); // SCHOOL
     expect(screen.getByTestId('patient-status-note')).toBeDisabled();
     expect(screen.getByTestId('patient-status-note')).toHaveValue('');
   });
 
   it('nota REDIGIDA: mudar só o motivo NÃO manda a chave onHoldNote (o servidor a trataria como apagamento)', async () => {
     await ready(<PatientStatusControl patient={{ ...active, status: 'ON_HOLD', onHoldReason: 'SCHOOL', onHoldNote: null, onHoldNoteRedacted: true }} onSaved={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('patient-status-reason'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('patient-status-reason'), 'Outro'); // OTHER
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(updatePatientStatus).toHaveBeenCalledTimes(1));
     const payload = updatePatientStatus.mock.calls[0][1] as Record<string, unknown>;
@@ -207,9 +210,9 @@ describe('PatientStatusControl', () => {
 
   it('em espera sem motivo gravado (legado): o select de motivo abre vazio e Guardar espera o motivo', async () => {
     await ready(<PatientStatusControl patient={{ ...active, status: 'ON_HOLD', onHoldReason: null, onHoldNote: null }} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('patient-status-reason')).toHaveValue('');
+    expect(screen.getByTestId('patient-status-reason')).toHaveTextContent('—'); // vazio
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();
-    fireEvent.change(screen.getByTestId('patient-status-reason'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('patient-status-reason'), 'Outro'); // OTHER
     expect(screen.getByTestId('patient-status-save')).not.toBeDisabled();
   });
 
@@ -247,10 +250,11 @@ describe('PatientStatusControl', () => {
     const onSaved = vi.fn();
     await ready(<PatientStatusControl patient={{ ...active, status: 'SUSPENDED' }} onSaved={onSaved} />);
     fireEvent.change(screen.getByTestId('patient-status-select'), { target: { value: 'SEARCHING' } });
-    const exitReason = screen.getByTestId('patient-status-exit-reason') as HTMLSelectElement;
-    expect([...exitReason.options].map((o) => o.value)).toEqual(['', 'RESUMED_SERVICE', 'FAMILY_REQUESTED', 'NEEDS_NEW_WORKER', 'WRONG_STATUS', 'OTHER']);
+    const exitReason = screen.getByTestId('patient-status-exit-reason');
+    // "—" limpa; depois RESUMED_SERVICE, FAMILY_REQUESTED, NEEDS_NEW_WORKER, WRONG_STATUS, OTHER
+    expect(comboLabels(exitReason)).toEqual(['—', EXIT.RESUMED_SERVICE, EXIT.FAMILY_REQUESTED, EXIT.NEEDS_NEW_WORKER, EXIT.WRONG_STATUS, EXIT.OTHER]);
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();
-    fireEvent.change(exitReason, { target: { value: 'RESUMED_SERVICE' } });
+    chooseCombo(exitReason, EXIT.RESUMED_SERVICE);
     expect(screen.getByTestId('patient-status-save')).not.toBeDisabled();
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(updatePatientStatus).toHaveBeenCalledWith(active.id, { status: 'SEARCHING', suspensionExitReason: 'RESUMED_SERVICE' }));
@@ -266,7 +270,7 @@ describe('PatientStatusControl', () => {
     updatePatientStatus.mockRejectedValueOnce(new PatientApiError('nope', 422, { code: 'SUSPENSION_EXIT_REASON_REQUIRED' }));
     await ready(<PatientStatusControl patient={{ ...active, status: 'SUSPENDED' }} onSaved={vi.fn()} />);
     fireEvent.change(screen.getByTestId('patient-status-select'), { target: { value: 'REPLACEMENT' } });
-    fireEvent.change(screen.getByTestId('patient-status-exit-reason'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('patient-status-exit-reason'), EXIT.OTHER); // OTHER
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(screen.getByTestId('patient-status-error')).toHaveTextContent('Para tirar o paciente de «Suspenso», escolha o motivo.'));
   });

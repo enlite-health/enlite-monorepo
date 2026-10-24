@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { apiError, comCelulas, contractItem, okTerm, semEnforcement } from './support';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', async () => (await import('./support')).i18nMock);
 const api = vi.hoisted(() => ({
@@ -78,7 +79,7 @@ describe('ContractsCard — novo contrato + 1º termo', () => {
   it('o "hoje" do país vem da API (for-service) ao escolher o país e vira o início do 1º termo', async () => {
     await openForm();
     expect(screen.getByTestId('contract-new-as-of-loading')).toBeInTheDocument();
-    change('contract-new-country', 'BR');
+    chooseCombo(screen.getByTestId('contract-new-country'), 'Brasil') /* BR */;
     await waitFor(() => expect(api.listProvidersForService).toHaveBeenCalledWith('BR'));
     await waitFor(() => expect(screen.getByTestId('contract-new-valid-from')).toHaveValue('2026-10-19'));
     expect(screen.getByTestId('contract-new-valid-from')).toHaveAttribute('min', '2026-10-19');
@@ -89,7 +90,7 @@ describe('ContractsCard — novo contrato + 1º termo', () => {
     api.createContract.mockResolvedValue(contractItem({ id: 'k2' }));
     await openForm();
     change('contract-new-name', ' Contrato SP ');
-    change('contract-new-country', 'BR');
+    chooseCombo(screen.getByTestId('contract-new-country'), 'Brasil') /* BR */;
     await waitFor(() => expect(screen.getByTestId('contract-new-valid-from')).toHaveValue('2026-10-19'));
     change('contract-new-hourly-rate', '80');
     change('contract-new-tax-rate', '0');
@@ -102,7 +103,7 @@ describe('ContractsCard — novo contrato + 1º termo', () => {
   it('imposto vazio impede o envio', async () => {
     await openForm();
     change('contract-new-name', 'X');
-    change('contract-new-country', 'AR');
+    chooseCombo(screen.getByTestId('contract-new-country'), 'Argentina') /* AR */;
     await waitFor(() => expect(screen.getByTestId('contract-new-valid-from')).toHaveValue('2026-10-19'));
     change('contract-new-hourly-rate', '80');
     fireEvent.click(screen.getByTestId('contract-new-submit'));
@@ -114,7 +115,7 @@ describe('ContractsCard — novo contrato + 1º termo', () => {
     api.createContract.mockRejectedValue(apiError(422, 'PAYER_KIND_REQUIRED'));
     await openForm();
     change('contract-new-name', 'X');
-    change('contract-new-country', 'AR');
+    chooseCombo(screen.getByTestId('contract-new-country'), 'Argentina') /* AR */;
     await waitFor(() => expect(screen.getByTestId('contract-new-valid-from')).toHaveValue('2026-10-19'));
     change('contract-new-hourly-rate', '80');
     change('contract-new-tax-rate', '21');

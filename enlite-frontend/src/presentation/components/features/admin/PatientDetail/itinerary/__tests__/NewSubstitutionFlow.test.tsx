@@ -11,6 +11,7 @@ import type { PatientItineraryEvent } from '@domain/entities/PatientItinerary';
 import { initI18n } from './i18nSetup';
 import { expectNoRawEnumLeaks } from '../../../../../../../test/rawEnumLeakGuard';
 import { NewSubstitutionFlow } from '../NewSubstitutionFlow';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('@infrastructure/http/AdminSubstitutionRequestsApiService', () => ({
   AdminSubstitutionRequestsApiService: { outgoingOptions: vi.fn(), preview: vi.fn(), create: vi.fn() },
@@ -107,7 +108,7 @@ async function goToStep4(mode: 'nobody' | 'one', type: 'DAYS' | 'PERMANENT' = 'D
   if (mode === 'nobody') fireEvent.click(radioOf('substitucion-cobertura-nobody'));
   else {
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
   }
   await waitFor(() => expect(screen.getByTestId('substitucion-siguiente')).toBeEnabled());
   next();
@@ -302,9 +303,9 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     await goToStep3();
     fireEvent.click(radioOf('substitucion-cobertura-one'));
     const select = screen.getByTestId('substitucion-persona');
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['Elegir persona', 'Martín Gómez', 'Bia Costa']);
+    expect(comboLabels(select)).toEqual(['Martín Gómez', 'Bia Costa']);
     expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
-    fireEvent.change(select, { target: { value: 'w-martin' } });
+    chooseCombo(select, 'Martín Gómez'); // w-martin;
     expect(screen.getByTestId('substitucion-persona-elegida')).toHaveTextContent('Martín Gómez');
     expect(screen.getByTestId('substitucion-persona-elegida')).toHaveTextContent('Equipo de Respuesta Rápida');
     await waitFor(() => expect(screen.getByTestId('substitucion-estado-2026-11-09|sl-0')).toHaveAttribute('data-state', 'free'));
@@ -317,14 +318,14 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     conflictStates = { 'w-martin|2026-11-09': 'conflict' };
     await goToStep3();
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
     const note = await screen.findByTestId('substitucion-conflicto-2026-11-09|sl-0');
     expect(note).toHaveTextContent('Martín ya atiende a otro paciente el lunes de 10:00 a 14:00.');
     expect(note).toHaveAttribute('role', 'alert');
     expect(screen.getByTestId('substitucion-estado-2026-11-09|sl-0')).toHaveTextContent('Conflicto');
     expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
     expect(screen.getByTestId('substitucion-bloqueo')).toHaveTextContent('Resolvé cada día para continuar.');
-    fireEvent.change(screen.getByTestId('substitucion-elegir-2026-11-09|sl-0'), { target: { value: '__nobody__' } });
+    chooseCombo(screen.getByTestId('substitucion-elegir-2026-11-09|sl-0'), 'Nadie todavía'); // __nobody__;
     await waitFor(() => expect(screen.getByTestId('substitucion-siguiente')).toBeEnabled());
     expect(screen.queryByTestId('substitucion-conflicto-2026-11-09|sl-0')).toBeNull();
   });
@@ -333,11 +334,11 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     conflictStates = { 'w-martin|2026-11-09': 'conflict' };
     await goToStep3();
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
     await screen.findByTestId('substitucion-conflicto-2026-11-09|sl-0');
     const pick = screen.getByTestId('substitucion-elegir-2026-11-09|sl-0');
-    expect(within(pick).getAllByRole('option').map((o) => o.textContent)).toEqual(['Elegir otra persona para ese día', 'Nadie todavía', 'Bia Costa']);
-    fireEvent.change(pick, { target: { value: 'w-bia' } });
+    expect(comboLabels(pick)).toEqual(['Nadie todavía', 'Bia Costa']);
+    chooseCombo(pick, 'Bia Costa'); // w-bia;
     await waitFor(() => expect(screen.getByTestId('substitucion-siguiente')).toBeEnabled());
     expect(preview).toHaveBeenLastCalledWith('p-1', 's-1', expect.objectContaining({ candidateWorkerIds: ['w-bia', 'w-martin'] }));
   });
@@ -346,7 +347,7 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     conflictStates = { 'w-martin|2026-11-20': 'unknown' };
     await goToStep3();
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
     expect(await screen.findByTestId('substitucion-estado-2026-11-20|sl-1')).toHaveTextContent('No se pudo verificar');
     expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
   });
@@ -355,7 +356,7 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     await goToStep3();
     preview.mockImplementation((_p: string, _s: string, body: Body) => (body.candidateWorkerIds.length > 0 ? Promise.reject(new Error('boom')) : previewImpl(body)));
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
     expect(await screen.findByTestId('substitucion-conflicto-error')).toHaveTextContent('No se pudo verificar el horario de la persona. Probá de nuevo.');
     expect(screen.getByTestId('substitucion-estado-2026-11-09|sl-0')).toHaveTextContent('No se pudo verificar');
     expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
@@ -366,7 +367,7 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     let resolve: (v: unknown) => void = () => undefined;
     preview.mockImplementation((_p: string, _s: string, body: Body) => (body.candidateWorkerIds.length > 0 ? new Promise((r) => (resolve = r)) : previewImpl(body)));
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
     expect(await screen.findByTestId('substitucion-estado-2026-11-09|sl-0')).toHaveTextContent('Verificando…');
     expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
     resolve(await previewImpl({ type: 'DAYS', from: '2026-11-09', to: '2026-11-20', candidateWorkerIds: ['w-martin'] }));
@@ -380,14 +381,12 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     const first = screen.getByTestId('substitucion-elegir-2026-11-09|sl-0');
     const second = screen.getByTestId('substitucion-elegir-2026-11-20|sl-1');
     expect(first).toHaveAttribute('aria-label', 'Quién cubre el Lun 09 · 09–17');
-    fireEvent.change(first, { target: { value: 'w-martin' } });
+    chooseCombo(first, 'Martín Gómez'); // w-martin;
     await waitFor(() => expect(screen.getByTestId('substitucion-estado-2026-11-09|sl-0')).toHaveTextContent('Libre'));
     expect(screen.getByTestId('substitucion-siguiente')).toBeDisabled();
-    fireEvent.change(second, { target: { value: '__nobody__' } });
+    chooseCombo(second, 'Nadie todavía'); // __nobody__;
     expect(screen.getByTestId('substitucion-turno-2026-11-20|sl-1')).toHaveTextContent('Nadie todavía');
     await waitFor(() => expect(screen.getByTestId('substitucion-siguiente')).toBeEnabled());
-    fireEvent.change(second, { target: { value: '' } }); // voltar ao placeholder não resolve nada
-    expect(screen.getByTestId('substitucion-turno-2026-11-20|sl-1')).toHaveTextContent('Nadie todavía');
   });
 
   it('"No vuelve más" não oferece "uma pessoa por día" (o pedido leva UMA pessoa para todas as franjas)', async () => {
@@ -400,12 +399,11 @@ describe('Passo 3 — ¿Quién la cubre? (P16: abre SEM escolha)', () => {
     conflictStates = { 'w-martin|2026-11-09': 'conflict' };
     await goToStep3();
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
-    fireEvent.change(await screen.findByTestId('substitucion-elegir-2026-11-09|sl-0'), { target: { value: '__nobody__' } });
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-bia' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
+    chooseCombo(await screen.findByTestId('substitucion-elegir-2026-11-09|sl-0'), 'Nadie todavía'); // __nobody__;
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Bia Costa'); // w-bia;
     await waitFor(() => expect(screen.getByTestId('substitucion-estado-2026-11-09|sl-0')).toHaveTextContent('Libre'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: '' } });
-    expect(screen.queryByTestId('substitucion-persona-elegida')).toBeNull();
+    expect(screen.getByTestId('substitucion-persona-elegida')).toHaveTextContent('Bia Costa');
   });
 
   it('pool com falha: aviso e só "Nadie todavía" possível; pool carregando: texto', async () => {
@@ -432,8 +430,8 @@ describe('Passo 4 — Motivo y resumen', () => {
     expect(screen.getByTestId('substitucion-paso')).toHaveTextContent('Paso 4 de 4');
     expect(screen.getByRole('heading', { name: 'Motivo y resumen' })).toBeInTheDocument();
     expect(screen.getByTestId('substitucion-confirmar')).toBeDisabled();
-    expect(within(screen.getByTestId('substitucion-motivo')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Motivo del cambio', 'Vacaciones', 'Otro']);
-    fireEvent.change(screen.getByTestId('substitucion-motivo'), { target: { value: 'VACATION' } });
+    expect(comboLabels(screen.getByTestId('substitucion-motivo'))).toEqual(['Vacaciones', 'Otro']);
+    chooseCombo(screen.getByTestId('substitucion-motivo'), 'Vacaciones'); // VACATION;
     expect(screen.getByTestId('substitucion-confirmar')).toBeEnabled();
     const summary = screen.getByTestId('substitucion-resumen');
     expect(summary).toHaveTextContent('Vas a registrar:');
@@ -450,7 +448,7 @@ describe('Passo 4 — Motivo y resumen', () => {
 
   it('confirmar envia UM POST com o contrato: período, motivo e cada turno com `substituteWorkerId` (null = Nadie todavía); sucesso chama onCreated', async () => {
     const { props } = await goToStep4('nobody');
-    fireEvent.change(screen.getByTestId('substitucion-motivo'), { target: { value: 'VACATION' } });
+    chooseCombo(screen.getByTestId('substitucion-motivo'), 'Vacaciones'); // VACATION;
     fireEvent.click(screen.getByTestId('substitucion-confirmar'));
     await waitFor(() => expect(props.onCreated).toHaveBeenCalledTimes(1));
     expect(create).toHaveBeenCalledTimes(1);
@@ -462,7 +460,7 @@ describe('Passo 4 — Motivo y resumen', () => {
 
   it('com substituto: o bloco mostra a pessoa e o PAPEL ("Respuesta rápida"); o POST leva o id dela em cada turno', async () => {
     const { props } = await goToStep4('one');
-    fireEvent.change(screen.getByTestId('substitucion-motivo'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('substitucion-motivo'), 'Otro'); // OTHER;
     const block = screen.getByTestId('substitucion-resumen-bloque');
     expect(block).toHaveTextContent('Martín Gómez');
     expect(screen.getByTestId('substitucion-resumen-bloque-papel')).toHaveTextContent('Respuesta rápida');
@@ -476,8 +474,8 @@ describe('Passo 4 — Motivo y resumen', () => {
     conflictStates = { 'w-martin|2026-11-09': 'conflict' };
     await goToStep3();
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-martin' } });
-    fireEvent.change(await screen.findByTestId('substitucion-elegir-2026-11-09|sl-0'), { target: { value: '__nobody__' } });
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Martín Gómez'); // w-martin;
+    chooseCombo(await screen.findByTestId('substitucion-elegir-2026-11-09|sl-0'), 'Nadie todavía'); // __nobody__;
     await waitFor(() => expect(screen.getByTestId('substitucion-siguiente')).toBeEnabled());
     next();
     expect(screen.getByTestId('substitucion-resumen-bloque-salvo')).toHaveTextContent('salvo lun 9: nadie');
@@ -500,7 +498,7 @@ describe('Passo 4 — Motivo y resumen', () => {
     expect(screen.getByTestId('substitucion-resumen-canceladas')).toHaveTextContent('Se cancelan 3 sustituciones ya cargadas desde esa fecha');
     expect(screen.getByTestId('substitucion-resumen-limpias')).toHaveTextContent('1 turno en el que cubría queda Sin cubrir');
     expect(screen.queryByTestId('substitucion-destino')).toBeNull();
-    fireEvent.change(screen.getByTestId('substitucion-motivo'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('substitucion-motivo'), 'Otro'); // OTHER;
     fireEvent.click(screen.getByTestId('substitucion-confirmar'));
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create).toHaveBeenCalledWith('p-1', 's-1', { type: 'PERMANENT', outgoingWorkerId: 'w-lucia', from: '2026-12-01', reasonCategory: 'OTHER', substituteWorkerId: null });
@@ -542,7 +540,7 @@ describe('Passo 4 — Motivo y resumen', () => {
     fireEvent.click(radioOf('substitucion-cobertura-nobody'));
     await waitFor(() => expect(screen.getByTestId('substitucion-siguiente')).toBeEnabled());
     next();
-    fireEvent.change(screen.getByTestId('substitucion-motivo'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('substitucion-motivo'), 'Otro'); // OTHER;
     expect(screen.getByTestId('substitucion-destino')).toBeInTheDocument();
     expect(screen.getByTestId('substitucion-confirmar')).toBeDisabled();
     fireEvent.click(screen.getByTestId('substitucion-destino-RESERVE'));
@@ -555,7 +553,7 @@ describe('Passo 4 — Motivo y resumen', () => {
   it('erro do POST por CÓDIGO: mensagem traduzida (nunca o código cru), o modal fica aberto e "Confirmar" volta; código desconhecido/sem código → mensagem genérica', async () => {
     create.mockRejectedValueOnce(new ContractedServiceApiError('x', 409, { code: 'ABSENCE_ALREADY_EXISTS' }));
     const { props, container } = await goToStep4('nobody');
-    fireEvent.change(screen.getByTestId('substitucion-motivo'), { target: { value: 'VACATION' } });
+    chooseCombo(screen.getByTestId('substitucion-motivo'), 'Vacaciones'); // VACATION;
     fireEvent.click(screen.getByTestId('substitucion-confirmar'));
     expect(await screen.findByTestId('substitucion-error')).toHaveTextContent('Ya hay una falta cargada en uno de esos turnos.');
     expect(container).not.toHaveTextContent('ABSENCE_ALREADY_EXISTS');
@@ -581,8 +579,8 @@ describe('Passo 4 — Motivo y resumen', () => {
     allocationOptions.mockResolvedValue({ vacancyId: 'v', options: [{ workerId: 'w-0000-sem-nome-aaaa1111', displayName: null, vacancyId: 'v', status: 'SELECTED' }] });
     await goToStep3();
     fireEvent.click(radioOf('substitucion-cobertura-one'));
-    expect(within(screen.getByTestId('substitucion-persona')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Elegir persona', 'Prestador sin nombre · aaaa1111']);
-    fireEvent.change(screen.getByTestId('substitucion-persona'), { target: { value: 'w-0000-sem-nome-aaaa1111' } });
+    expect(comboLabels(screen.getByTestId('substitucion-persona'))).toEqual(['Prestador sin nombre · aaaa1111']);
+    chooseCombo(screen.getByTestId('substitucion-persona'), 'Prestador sin nombre · aaaa1111'); // w-0000-sem-nome-aaaa1111;
     expect(screen.getByTestId('substitucion-persona-elegida')).toHaveTextContent('Prestador sin nombre · aaaa1111');
   });
 
@@ -590,7 +588,7 @@ describe('Passo 4 — Motivo y resumen', () => {
     let resolve: (v: unknown) => void = () => undefined;
     create.mockImplementationOnce(() => new Promise((r) => (resolve = r)));
     const { props } = await goToStep4('nobody');
-    fireEvent.change(screen.getByTestId('substitucion-motivo'), { target: { value: 'VACATION' } });
+    chooseCombo(screen.getByTestId('substitucion-motivo'), 'Vacaciones'); // VACATION;
     fireEvent.click(screen.getByTestId('substitucion-confirmar'));
     expect(screen.getByTestId('substitucion-confirmar')).toHaveTextContent('Confirmando…');
     expect(screen.getByTestId('substitucion-confirmar')).toBeDisabled();

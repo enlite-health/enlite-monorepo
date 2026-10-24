@@ -7,7 +7,7 @@ import { Typography } from '@presentation/components/atoms/Typography';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
 import { VacancyFilters, type VacancyAdvancedFilters } from '@presentation/components/features/admin/VacancyFilters';
 import { VacanciesTable } from '@presentation/components/features/admin/VacanciesTable';
@@ -17,7 +17,6 @@ import { useTableSort } from '@hooks/useTableSort';
 import type { VacancySortKey } from '@presentation/components/features/admin/VacanciesTable';
 import { getStatusOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
-import type { SelectOption } from '@presentation/components/atoms/Select';
 
 const INITIAL_ADVANCED: VacancyAdvancedFilters = {
   workerType: '',
@@ -41,8 +40,8 @@ export function AdminVacanciesPage(): JSX.Element {
   const [advancedFilters, setAdvancedFilters] = useState<VacancyAdvancedFilters>(INITIAL_ADVANCED);
   const { sort, toggle: toggleSort } = useTableSort<VacancySortKey>();
 
-  const [stateOptions, setStateOptions] = useState<SelectOption[]>([]);
-  const [cityOptions, setCityOptions] = useState<SelectOption[]>([]);
+  const [stateOptions, setStateOptions] = useState<ComboboxOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<ComboboxOption[]>([]);
 
   useEffect(() => {
     AdminApiService.getVacancyFilterOptions()
@@ -320,7 +319,7 @@ export function AdminVacanciesPage(): JSX.Element {
         {/* Pagination */}
         <div className="flex flex-wrap items-center justify-end gap-4 mt-6">
           <div className="w-full sm:w-[164px]">
-            <Select
+            <Combobox
               inputSize="compact"
               options={[
                 { value: '10', label: '10' },
@@ -328,7 +327,7 @@ export function AdminVacanciesPage(): JSX.Element {
                 { value: '50', label: '50' },
               ]}
               value={itemsPerPage}
-              onValueChange={handleItemsPerPageChange}
+              onChange={handleItemsPerPageChange}
             />
           </div>
           <Typography variant="body" weight="medium" className="text-gray-800 font-lexend text-base">

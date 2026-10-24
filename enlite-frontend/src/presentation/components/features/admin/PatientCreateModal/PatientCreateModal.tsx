@@ -11,8 +11,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 
 interface PatientCreateModalProps {
@@ -103,17 +102,17 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const documentTypeOptions: SelectOption[] = DOCUMENT_TYPES.map((d) => ({
+  const documentTypeOptions: ComboboxOption[] = DOCUMENT_TYPES.map((d) => ({
     value: d,
     label: t(`admin.patients.detail.documentTypes.${d}`, { defaultValue: d }),
   }));
-  const serviceTypeOptions: SelectOption[] = SERVICE_TYPES.map((s) => ({
+  const serviceTypeOptions: ComboboxOption[] = SERVICE_TYPES.map((s) => ({
     value: s,
     label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }),
   }));
   // Same AR|BR source the panel's country FILTER uses, so the values a patient
   // can be created with always match the values it can be filtered by.
-  const countryOptions: SelectOption[] = getCountryOptions(t);
+  const countryOptions: ComboboxOption[] = getCountryOptions(t);
 
   const onSubmit = async (values: CreateFormValues): Promise<void> => {
     setSubmitError(null);
@@ -205,18 +204,18 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             </FormField>
             {/* Required, no preselection — drives the legal regime (Ley 25.326 vs
                 LGPD) and the panel's country filter (abac-pais-fase1 5.1). */}
-            {/* The message is rendered by SelectField (which also reddens the
+            {/* The message is rendered by the Combobox (which also reddens the
                 border); passing it to FormField too would print it twice. */}
             <FormField label={tc('country')} htmlFor="pc-country" required>
               <Controller
                 control={control}
                 name="country"
                 render={({ field }) => (
-                  <SelectField
+                  <Combobox
                     id="pc-country"
                     inputSize="compact"
                     options={countryOptions}
-                    placeholder={tc('countryPlaceholder')}
+                    placeholder={tc('countryPlaceholder')} clearLabel={tc('countryPlaceholder')}
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     error={errors.country ? tc('countryRequired') : undefined}
@@ -239,10 +238,10 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                 control={control}
                 name="documentType"
                 render={({ field }) => (
-                  <SelectField
+                  <Combobox
                     inputSize="compact"
                     options={documentTypeOptions}
-                    placeholder={tc('unset')}
+                    placeholder={tc('unset')} clearLabel={tc('unset')}
                     value={field.value}
                     onChange={field.onChange}
                     data-testid="pc-documentType"
@@ -275,12 +274,14 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                 control={control}
                 name="serviceType"
                 render={({ field }) => (
-                  <MultiSelect
+                  <Combobox
+                    multiple
                     options={serviceTypeOptions}
                     value={field.value}
                     onChange={field.onChange}
                     placeholder={tc('unset')}
                     id="pc-serviceType"
+                    inputSize="compact"
                   />
                 )}
               />

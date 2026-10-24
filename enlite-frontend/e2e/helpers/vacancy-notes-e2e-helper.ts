@@ -43,6 +43,7 @@ import {
   cleanupTestWorker,
 } from './db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from './wja-test-helper';
+import { escolherNoCombo } from './combobox';
 import { runSQL } from './patient-detail-a-helper';
 import type { MockUser } from './abac-stack-helper';
 
@@ -64,6 +65,13 @@ export function cleanupMockStaff(u: MockUser): void {
 // ── Formulário da aba "Anotaciones" ──────────────────────────────────────────
 
 export type VacancyNoteCategory = 'DIVULGACAO' | 'CONTATO' | 'OUTRO';
+
+/** Rótulo (es) que a pessoa lê no Combobox de categoria — `admin.vacancyDetail.notes.categoryOptions`. */
+const ROTULO_CATEGORIA: Record<VacancyNoteCategory, string> = {
+  DIVULGACAO: 'Difusión',
+  CONTATO: 'Contacto',
+  OUTRO: 'Otro',
+};
 
 export interface CreateNoteViaUiOpts {
   /** Quando informado, digita o "cuándo" como `hoje − daysAgo` (fuso de Buenos
@@ -141,7 +149,7 @@ export async function createNoteViaUi(page: Page, opts: CreateNoteViaUiOpts): Pr
     await typeWhen(page, when, target);
   }
 
-  await page.getByTestId('vacancy-note-category').selectOption(category);
+  await escolherNoCombo(page, page.getByTestId('vacancy-note-category'), ROTULO_CATEGORIA[category]);
 
   const contactInput = page.getByTestId('vacancy-note-contact');
   await contactInput.click();

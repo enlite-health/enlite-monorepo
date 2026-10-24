@@ -21,6 +21,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
+import { escolherNaListaAberta } from '../helpers/combobox';
 import {
   mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR, readPatientKanbanColumn,
 } from '../helpers/lancamento-e2e-helper';
@@ -99,11 +100,9 @@ test.describe('patient-itinerary-montar: "Itinerario listo" pela tela @integrati
       await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
       const modal = page.getByTestId('itinerario-editar-modal');
       await expect(modal).toBeVisible();
-      await modal.getByTestId('itinerario-editar-prestador').click();
-      const search = modal.getByPlaceholder('Buscar...');
-      await search.click();
-      await page.keyboard.type(wLabel.slice(-10), { delay: 20 });
-      await modal.getByRole('option', { name: wLabel }).click();
+      const prestador = modal.getByTestId('itinerario-editar-prestador');
+      await prestador.click();
+      await escolherNaListaAberta(page, prestador, wLabel, { exato: false });
       const [postResp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slotId}/allocations`)),
         modal.getByTestId('itinerario-editar-guardar').click(),

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { PersonAvatar } from '@presentation/components/atoms/PersonAvatar';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PreviewConflict, PreviewShift } from '@domain/entities/SubstitutionRequest';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
@@ -78,15 +78,15 @@ export function StepWhoCovers({ draft, onChange, shifts, candidates, candidatesS
         </div>
         {typeof who === 'string' && conflictNoteFor(who, shift)}
         {showPicker && (
-          <Select
+          <Combobox
             inputSize="compact"
             aria-label={picker === 'always' ? ts('perDay.pickFor', { day: shiftChipLabel(shift.date, shift.startTime, shift.endTime, i18n.language) }) : ts('pickOtherForDay')}
             data-testid={`substitucion-elegir-${key}`}
-            className="[&_select]:!text-primary"
+            className="[&_button]:!text-primary"
             placeholder={picker === 'always' ? ts('pickPerson') : ts('pickOtherForDay')}
             value={picker === 'onConflict' && !(key in draft.dayChoices) ? '' : who === undefined ? '' : who === null ? NOBODY : who}
             options={options}
-            onValueChange={(value) => {
+            onChange={(value) => {
               if (value === '') return;
               onChange({ dayChoices: { ...draft.dayChoices, [key]: value === NOBODY ? null : value } });
             }}
@@ -125,15 +125,15 @@ export function StepWhoCovers({ draft, onChange, shifts, candidates, candidatesS
         >
           {mode === 'one' && (
             <>
-              <Select
+              <Combobox
                 inputSize="compact"
                 aria-label={ts('pickPerson')}
                 data-testid="substitucion-persona"
-                className="[&_select]:!text-primary"
+                className="[&_button]:!text-primary"
                 placeholder={ts('pickPerson')}
                 value={draft.person ?? ''}
                 options={personOptions}
-                onValueChange={(value) => onChange({ person: value === '' ? null : value, dayChoices: {} })}
+                onChange={(value) => onChange({ person: value === '' ? null : value, dayChoices: {} })}
               />
               {person && (
                 <div className="flex min-w-0 items-center gap-2.5" data-testid="substitucion-persona-elegida">

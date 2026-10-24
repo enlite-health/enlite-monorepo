@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -59,8 +60,8 @@ describe('botão Exportar — LISTA', () => {
     expect(screen.getByTestId('anacare-hours-export-desde')).toHaveValue('2026-08-01');
     expect(screen.getByTestId('anacare-hours-export-hasta')).toHaveValue('2026-08-31');
     await user.click(screen.getByTestId('anacare-hours-export-patient'));
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-0')).toBeInTheDocument();
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-6')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-0' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeInTheDocument();
     expect(getMonth).toHaveBeenCalledTimes(1); // zero GET novo: o diálogo usa o snapshot que a lista já tem
   });
 
@@ -81,12 +82,11 @@ describe('botão Exportar — DETALHE', () => {
     render(<AnaCareHoursDetailContainer service={service} axonicoService={AXONICO} patientDocumentService={DOC} exportService={exportService()} month="2026-08" patientId="AC-PAT-0" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-export-button')).toBeEnabled());
     await user.click(screen.getByTestId('anacare-hours-export-button'));
-    expect(screen.getByTestId('anacare-hours-export-patient')).toHaveValue('Sin vínculo · ID AC-PAT-0');
+    expect(screen.getByTestId('anacare-hours-export-patient')).toHaveTextContent('Sin vínculo · ID AC-PAT-0');
     expect(screen.getByTestId('anacare-hours-export-desde')).toHaveValue('2026-08-01');
     expect(screen.getByTestId('anacare-hours-export-hasta')).toHaveValue('2026-08-31');
     await user.click(screen.getByTestId('anacare-hours-export-patient'));
-    await user.clear(screen.getByTestId('anacare-hours-export-patient'));
-    expect(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-6')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeInTheDocument();
     expect(getRetrato).toHaveBeenCalledTimes(1);
     expect(getMonth).not.toHaveBeenCalled();
   });
@@ -99,11 +99,7 @@ describe('botão Exportar — DETALHE', () => {
     render(<AnaCareHoursDetailContainer service={service} axonicoService={AXONICO} patientDocumentService={DOC} exportService={exp} month="2026-08" patientId="AC-PAT-0" onBack={onBack} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-export-button')).toBeEnabled());
     await user.click(screen.getByTestId('anacare-hours-export-button'));
-    const input = screen.getByTestId('anacare-hours-export-patient');
-    await user.click(input);
-    await user.clear(input);
-    await user.keyboard('AC-PAT-6');
-    await user.click(screen.getByTestId('anacare-hours-export-patient-option-AC-PAT-6'));
+    await selectCombo(screen.getByTestId('anacare-hours-export-patient'), 'Sin vínculo · ID AC-PAT-6');
     await user.click(screen.getByTestId('anacare-hours-export-confirm'));
     expect(exp.exportPatientRange).toHaveBeenCalledWith({ patientId: 'AC-PAT-6', desde: '2026-08-01', hasta: '2026-08-31' });
     expect(onBack).not.toHaveBeenCalled();
@@ -140,9 +136,8 @@ describe('ícone "Cambiar de paciente" — DETALHE (spec 032, FR-006)', () => {
     expect(screen.getByRole('heading', { level: 1 })).toContainElement(screen.getByTestId('anacare-hours-patient-switch-button'));
     await user.click(screen.getByTestId('anacare-hours-patient-switch-button'));
     await user.click(screen.getByTestId('anacare-hours-patient-switch-combobox'));
-    expect(screen.queryByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-0')).toBeNull();
-    await user.keyboard('PAT-6');
-    await user.click(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-6'));
+    expect(screen.queryByRole('option', { name: 'Sin vínculo · ID AC-PAT-0' })).toBeNull();
+    await user.click(screen.getByRole('option', { name: 'Sin vínculo · ID AC-PAT-6' }).querySelector('button')!);
     expect(onSwitchPatient).toHaveBeenCalledWith('AC-PAT-6');
     expect(getRetrato).toHaveBeenCalledTimes(1);
     expect(getMonth).not.toHaveBeenCalled();

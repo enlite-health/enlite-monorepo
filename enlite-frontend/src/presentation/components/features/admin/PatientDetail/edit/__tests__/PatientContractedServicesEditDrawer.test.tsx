@@ -12,6 +12,7 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import { PatientContractedServicesEditDrawer } from '../PatientContractedServicesEditDrawer';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const mockList = vi.fn();
 vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
@@ -142,7 +143,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     const onSaved = vi.fn();
     montar({ kind: 'new' }, { onSaved });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByTestId('svc-code-2'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-2'), 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await screen.findByTestId('contracted-service-form-novo');
     expect(screen.queryByTestId('contracted-service-new')).toBeNull();
@@ -156,7 +157,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     (await api()).createContractedService = vi.fn().mockResolvedValue(criado) as never;
     montar({ kind: 'new' });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await screen.findByTestId('contracted-service-form-novo');
     expect(screen.queryByTestId('contracted-service-new')).toBeNull();
@@ -186,7 +187,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     (await api()).createContractedService = vi.fn().mockResolvedValue(undefined) as never; // API antiga sem corpo
     montar({ kind: 'new' });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await screen.findByTestId('contracted-service-form-novo');
 
@@ -194,7 +195,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     mockList.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     const { unmount } = montar({ kind: 'new' });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getAllByTestId('svc-code-1')[0], { target: { value: 'AT' } });
+    chooseCombo(screen.getAllByTestId('svc-code-1')[0], 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getAllByTestId('contracted-service-new-save')[0]);
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
     expect(screen.getAllByTestId('contracted-service-new').length).toBeGreaterThan(0);
@@ -308,11 +309,11 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
       const onSaved = vi.fn();
       montar({ kind: 'new' }, { onSaved });
       await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
-      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-provider') as HTMLSelectElement).options).map((o) => o.value)).toContain('OSDE'));
-      fireEvent.change(screen.getByTestId('svc-contract-1-provider'), { target: { value: 'OSDE' } });
-      await waitFor(() => expect(Array.from((screen.getByTestId('svc-contract-1-contract') as HTMLSelectElement).options).map((o) => o.value)).toContain('ct-1'));
-      fireEvent.change(screen.getByTestId('svc-contract-1-contract'), { target: { value: 'ct-1' } });
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
+      await waitFor(() => expect(comboLabels(screen.getByTestId('svc-contract-1-provider'))).toContain('OSDE') /* OSDE */);
+      chooseCombo(screen.getByTestId('svc-contract-1-provider'), 'OSDE');
+      await waitFor(() => expect(comboLabels(screen.getByTestId('svc-contract-1-contract'))).toContain('Plan 210') /* ct-1 */);
+      chooseCombo(screen.getByTestId('svc-contract-1-contract'), 'Plan 210'); // ct-1
       await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
       fireEvent.click(screen.getByTestId('contracted-service-new-save'));
       await screen.findByTestId('contracted-service-form-novo');

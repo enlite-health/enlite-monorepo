@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { apiError, comCelulas, provider, semEnforcement } from './support';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', async () => (await import('./support')).i18nMock);
 const api = vi.hoisted(() => ({ patchProvider: vi.fn() }));
@@ -35,7 +36,7 @@ describe('GeneralCard', () => {
     const onSaved = renderCard();
     fireEvent.click(screen.getByTestId('provider-general-edit'));
     change('provider-general-taxId-input', '  30-12345678-9 ');
-    change('provider-general-payerKind-input', 'PREPAGA');
+    chooseCombo(screen.getByTestId('provider-general-payerKind-input'), 'Prepaga'); // PREPAGA
     fireEvent.click(screen.getByTestId('provider-general-save'));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(api.patchProvider).toHaveBeenCalledWith('OSDE', { taxId: '30-12345678-9', payerKind: 'PREPAGA' });
@@ -69,7 +70,7 @@ describe('GeneralCard', () => {
   it('depois de classificado não existe a opção "sem classificar"', () => {
     renderCard({ payerKind: 'OBRA_SOCIAL' });
     fireEvent.click(screen.getByTestId('provider-general-edit'));
-    const options = Array.from(screen.getByTestId('provider-general-payerKind-input').querySelectorAll('option')).map((o) => o.textContent);
+    const options = comboLabels(screen.getByTestId('provider-general-payerKind-input'));
     expect(options).not.toContain('Sem classificar');
     expect(options).toContain('Prepaga');
   });

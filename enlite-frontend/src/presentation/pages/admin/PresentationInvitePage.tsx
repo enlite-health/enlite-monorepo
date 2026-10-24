@@ -14,6 +14,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { Label } from '@presentation/components/atoms/Label';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 type SaveState = { status: 'idle' | 'saving' | 'saved' | 'error'; error?: string };
@@ -83,16 +84,16 @@ export function PresentationInvitePage() {
           </div>
           <div>
             <Label htmlFor="pi-template">{t('admin.presentationInvite.template')}</Label>
-            <select id="pi-template" data-testid="pi-template" disabled={!canWrite} value={form.templateSlug}
-              onChange={(e) => { setForm((f) => ({ ...f, templateSlug: e.target.value, enabled: f.enabled && !!e.target.value })); setSave({ status: 'idle' }); }}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50">
-              <option value="">—</option>
-              {settings.templates.map((tp) => (
-                <option key={tp.slug} value={tp.slug} disabled={!tp.eligible && tp.reason !== 'INACTIVE'}>
-                  {tp.slug}{tp.reason ? ` — ${t(`admin.presentationInvite.ineligible.${tp.reason}`)}` : ''}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <Combobox id="pi-template" data-testid="pi-template" disabled={!canWrite} value={form.templateSlug}
+                onChange={(slug) => { setForm((f) => ({ ...f, templateSlug: slug, enabled: f.enabled && !!slug })); setSave({ status: 'idle' }); }}
+                placeholder="—" clearLabel="—"
+                options={settings.templates.map((tp) => ({
+                  value: tp.slug,
+                  label: `${tp.slug}${tp.reason ? ` — ${t(`admin.presentationInvite.ineligible.${tp.reason}`)}` : ''}`,
+                  disabled: !tp.eligible && tp.reason !== 'INACTIVE',
+                }))} />
+            </div>
             <Text size="xs" color="secondary" className="mt-1">{t('admin.presentationInvite.templateHint')}</Text>
           </div>
           <label className="flex items-center gap-2">

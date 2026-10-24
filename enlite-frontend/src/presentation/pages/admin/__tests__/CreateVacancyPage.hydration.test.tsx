@@ -93,15 +93,15 @@ function renderPage() {
   );
 }
 
-// case-select is a SearchableSelect (custom dropdown), not a native <select>.
-// To pick a case: click the trigger button to open the listbox, then click the
+// case-select is a Combobox (custom dropdown), not a native <select>.
+// To pick a case: click the trigger to open the listbox, then click the
 // option with the matching label.
 async function pickCase(caseLabel: string): Promise<void> {
   const wrapper = await screen.findByTestId('case-select');
-  const trigger = within(wrapper).getByRole('button');
+  const trigger = within(wrapper).getByRole('combobox');
   await userEvent.click(trigger);
   const option = await screen.findByRole('option', { name: caseLabel });
-  await userEvent.click(option);
+  await userEvent.click(option.querySelector('button') as HTMLElement); // o clique real cai no <button> da linha
 }
 
 describe('CreateVacancyPage — patient hydration smoke', () => {

@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
-import { Select, SelectOption } from '@presentation/components/atoms/Select';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface PatientFiltersProps {
   searchValue: string;
@@ -17,14 +17,14 @@ interface PatientFiltersProps {
   onSpecialtyChange: (value: string) => void;
   selectedDependency: string;
   onDependencyChange: (value: string) => void;
-  attentionOptions: SelectOption[];
-  reasonOptions: SelectOption[];
-  specialtyOptions: SelectOption[];
-  dependencyOptions: SelectOption[];
+  attentionOptions: ComboboxOption[];
+  reasonOptions: ComboboxOption[];
+  specialtyOptions: ComboboxOption[];
+  dependencyOptions: ComboboxOption[];
   /** Fase 4 — country scope (optional; omit to hide the country filter). */
   selectedCountry?: string;
   onCountryChange?: (value: string) => void;
-  countryOptions?: SelectOption[];
+  countryOptions?: ComboboxOption[];
   /** Checkbox "Mostrar desactivados" (D-2026-09-28). */
   showDeactivated: boolean;
   onShowDeactivatedChange: (value: boolean) => void;
@@ -119,11 +119,11 @@ export function PatientFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.attentionLabel')}
           </label>
-          <Select
+          <Combobox
             inputSize="compact"
             options={attentionOptions}
             value={selectedAttention}
-            onValueChange={onAttentionChange}
+            onChange={onAttentionChange}
             placeholder={t('admin.patients.attentionOptions.all')}
           />
         </div>
@@ -134,11 +134,11 @@ export function PatientFilters({
             <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
               {t('admin.patients.reasonLabel')}
             </label>
-            <Select
+            <Combobox
               inputSize="compact"
               options={reasonOptions}
               value={selectedReason}
-              onValueChange={onReasonChange}
+              onChange={onReasonChange}
               placeholder={t('admin.patients.reasonOptions.all')}
             />
           </div>
@@ -150,11 +150,11 @@ export function PatientFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.specialtyLabel')}
           </label>
-          <Select
+          <Combobox
             inputSize="compact"
             options={specialtyOptions}
             value={selectedSpecialty}
-            onValueChange={onSpecialtyChange}
+            onChange={onSpecialtyChange}
             placeholder={t('admin.patients.specialtyOptions.all')}
           />
         </div>
@@ -167,11 +167,11 @@ export function PatientFilters({
             <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
               {t('admin.patients.countryLabel')}
             </label>
-            <Select
+            <Combobox
               inputSize="compact"
               options={countryOptions!}
               value={selectedCountry ?? ''}
-              onValueChange={onCountryChange!}
+              onChange={onCountryChange!}
               placeholder={t('admin.patients.countryOptions.all')}
             />
           </div>
@@ -183,11 +183,11 @@ export function PatientFilters({
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.dependencyLabel')}
           </label>
-          <Select
+          <Combobox
             inputSize="compact"
             options={dependencyOptions}
             value={selectedDependency}
-            onValueChange={onDependencyChange}
+            onChange={onDependencyChange}
             placeholder={t('admin.patients.dependencyOptions.all')}
           />
         </div>

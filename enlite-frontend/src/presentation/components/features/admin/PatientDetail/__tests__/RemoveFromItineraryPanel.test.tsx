@@ -19,6 +19,7 @@ beforeAll(async () => {
   });
 });
 import { RemoveFromItineraryPanel } from '../RemoveFromItineraryPanel';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
   useServiceExitReasonOptions: () => ({
@@ -33,8 +34,8 @@ vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
 function renderPanel(over: Partial<Parameters<typeof RemoveFromItineraryPanel>[0]> = {}) {
   const onConfirm = vi.fn();
   const onCancel = vi.fn();
-  render(<RemoveFromItineraryPanel workerLabel="Ana Fixture" onConfirm={onConfirm} onCancel={onCancel} {...over} />);
-  return { onConfirm, onCancel };
+  const { unmount } = render(<RemoveFromItineraryPanel workerLabel="Ana Fixture" onConfirm={onConfirm} onCancel={onCancel} {...over} />);
+  return { onConfirm, onCancel, unmount };
 }
 
 beforeEach(() => {
@@ -49,23 +50,25 @@ describe('RemoveFromItineraryPanel', () => {
   });
 
   it('Confirmar fica desabilitado: sem nada, só com motivo, só com destino', () => {
-    const { onConfirm } = renderPanel();
+    const { onConfirm, unmount } = renderPanel();
     const confirm = screen.getByTestId('itinerario-quitar-confirmar');
     expect(confirm).toBeDisabled();
 
-    fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Otro'); // OTHER
     expect(confirm).toBeDisabled();
-    fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: '' } });
+    unmount(); // o Combobox não limpa a escolha (sem `clearLabel`): "só com destino" parte de um painel novo
 
+    renderPanel({ onConfirm });
+    const confirmNew = screen.getByTestId('itinerario-quitar-confirmar');
     fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
-    expect(confirm).toBeDisabled();
-    fireEvent.click(confirm);
+    expect(confirmNew).toBeDisabled();
+    fireEvent.click(confirmNew);
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('com motivo E destino habilita; Confirmar entrega (motivo, destino)', () => {
     const { onConfirm } = renderPanel();
-    fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'DESISTENCIA_DO_PRESTADOR' } });
+    chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Desistencia del prestador'); // DESISTENCIA_DO_PRESTADOR;
     fireEvent.click(screen.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE'));
     const confirm = screen.getByTestId('itinerario-quitar-confirmar');
     expect(confirm).toBeEnabled();
@@ -75,7 +78,7 @@ describe('RemoveFromItineraryPanel', () => {
 
   it('enviando (submitting) desabilita o Confirmar mesmo com os dois campos', () => {
     renderPanel({ submitting: true });
-    fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+    chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Otro'); // OTHER;
     fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
     expect(screen.getByTestId('itinerario-quitar-confirmar')).toBeDisabled();
   });
@@ -95,7 +98,7 @@ describe('RemoveFromItineraryPanel', () => {
     const SCHEDULED = { substitutionDates: ['2026-10-26', '2026-11-02'], futureEntryFrom: null };
 
     function preencher() {
-      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Otro'); // OTHER;
       fireEvent.click(screen.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE'));
     }
 
@@ -124,7 +127,7 @@ describe('RemoveFromItineraryPanel', () => {
 
     it('sem scheduled: onConfirm segue com 2 argumentos (sem o terceiro)', () => {
       const { onConfirm } = renderPanel();
-      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      chooseCombo(screen.getByTestId('itinerario-quitar-motivo'), 'Otro'); // OTHER;
       fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
       fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
       expect(onConfirm).toHaveBeenCalledWith('OTHER', 'RESERVE');

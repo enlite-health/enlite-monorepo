@@ -7,7 +7,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Input } from '@presentation/components/atoms/Input';
 import type { BlockedReason } from '@domain/entities/BlockedAttempt';
 
@@ -48,10 +48,10 @@ export function BlockedAttemptsFilters({
   return (
     <div className="flex flex-wrap gap-3 mb-4" data-testid="blocked-filters">
       <div className="w-full sm:w-64">
-        <Select
+        <Combobox
           options={reasonOptions}
           value={reason}
-          onValueChange={(v) => onReasonChange(v as BlockedReason | '')}
+          onChange={(v) => onReasonChange(v as BlockedReason | '')}
           aria-label={ba('filters.reason')}
           inputSize="compact"
         />

@@ -7,7 +7,7 @@ import type { TFunction } from 'i18next';
 import { Mail, Phone, Calendar, Video, CheckCircle2, User } from 'lucide-react';
 import { Heading, Text, Button } from '@presentation/components/atoms';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { SelectField } from '@presentation/components/molecules/SelectField';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { COUNTRY_TIME_ZONE } from '@presentation/utils/countryTimeZone';
 import {
@@ -170,10 +170,11 @@ export default function AdmisionPage({ country }: AdmisionPageProps): JSX.Elemen
                 control={control}
                 name="serviceType"
                 render={({ field }) => (
-                  <SelectField
+                  <Combobox
                     data-testid="lead-serviceType"
                     options={serviceOptions}
                     placeholder={t('admission.form.serviceType.placeholder')}
+                    clearLabel={t('admission.form.serviceType.placeholder')}
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     onBlur={field.onBlur}

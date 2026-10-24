@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { expectNoRawEnumLeaks } from '../../../../../test/rawEnumLeakGuard';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
@@ -544,14 +545,14 @@ describe('TherapeuticCatalogPage — vínculo de segmento (spec 030, F4)', () =>
     await renderPage('specific-objectives');
 
     fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-obj2'));
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-segment-select'), { target: { value: '' } });
+    await selectCombo(screen.getByTestId('therapeutic-catalog-segment-select'), COPY.form.segmentNone);
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
     await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'obj2', { segmentId: null }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
 
     fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Nuevo objetivo' } });
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-segment-select'), { target: { value: 'seg-on' } });
+    await selectCombo(screen.getByTestId('therapeutic-catalog-segment-select'), SEG_ON.label); // seg-on
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
     await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('specific-objectives', { label: 'Nuevo objetivo', segmentId: 'seg-on' }));
   });

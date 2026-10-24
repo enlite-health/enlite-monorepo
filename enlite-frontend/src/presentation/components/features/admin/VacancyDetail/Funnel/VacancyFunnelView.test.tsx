@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { VacancyFunnelView } from './VacancyFunnelView';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
@@ -219,9 +220,9 @@ describe('VacancyFunnelView', () => {
     });
     render(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
-    await userEvent.selectOptions(screen.getByTestId('funnel-filter-registration'), 'INCOMPLETE');
+    await selectCombo(screen.getByTestId('funnel-filter-registration'), 'admin.vacancyDetail.funnelTable.registration.incomplete'); // INCOMPLETE
     expect(screen.getAllByTestId('mock-row').map((n) => n.textContent)).toEqual(['b']);
-    await userEvent.selectOptions(screen.getByTestId('funnel-filter-registration'), 'COMPLETE');
+    await selectCombo(screen.getByTestId('funnel-filter-registration'), 'admin.vacancyDetail.funnelTable.registration.complete'); // COMPLETE
     expect(screen.getAllByTestId('mock-row').map((n) => n.textContent)).toEqual(['a']);
   });
 

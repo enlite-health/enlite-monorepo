@@ -15,8 +15,8 @@ import { mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from 
 import { loginAs } from '../helpers/abac-stack-helper';
 import { openItineraryTab, openUpcomingDays } from '../helpers/itinerario-aba-e2e-helper';
 import { CADEIA_FORBIDDEN_HOSTS } from '../helpers/cadeia-completa-e2e-helper';
-import { criarPedidoViaApi, diaDoBanco, hojeDoBanco, irParaSemanaPeloCalendario, segundaDaSemana, somaDias } from '../helpers/itinerario-069-flow-helper';
-import { nomeDe, semearTitularSegQuaSex } from '../helpers/itinerario-069-seed-helper';
+import { criarPedidoViaApi, diaDaSemana, diaDoBanco, hojeDoBanco, irParaSemanaPeloCalendario, segundaDaSemana, somaDias } from '../helpers/itinerario-069-flow-helper';
+import { SEG_QUA_SEX, nomeDe, semearTitularSegQuaSex } from '../helpers/itinerario-069-seed-helper';
 
 const STAFF = mockAdminUserFor('itinerario-069-proximos');
 
@@ -24,6 +24,18 @@ function vigiarHosts(page: Page): () => string[] {
   const hosts: string[] = [];
   page.on('request', (r) => hosts.push(new URL(r.url()).hostname));
   return () => hosts.filter((h) => CADEIA_FORBIDDEN_HOSTS.test(h));
+}
+
+/**
+ * Três faixas em dias consecutivos que COMEÇAM em hoje (fuso de Buenos Aires, lido do banco): o cenário do teste FELIZ não pode depender do dia em
+ * que ele roda. A faixa só vale de hoje em diante, então com seg/qua/sex fixos a "Esta semana" ficava SEM turno num sábado (ou domingo, ou depois da
+ * sexta) e a tabela nem renderizava. Com "hoje" entre as faixas há SEMPRE um turno hoje na semana corrente, e na semana seguinte as 3 faixas caem
+ * (cada dia da semana ocorre uma vez em qualquer semana). `dow`: 0 = domingo, a convenção do banco e do slot; o slot id vem na ordem crescente de `dow`.
+ */
+function faixasAPartirDeHoje(hoje: string): { schedule: typeof SEG_QUA_SEX; dows: number[] } {
+  const dow0 = diaDaSemana(hoje);
+  const dows = [0, 1, 2].map((i) => (dow0 + i) % 7).sort((a, b) => a - b);
+  return { dows, schedule: dows.map((dayOfWeek) => ({ dayOfWeek, startTime: '08:00', durationMinutes: 240 })) };
 }
 
 test.use({ video: 'on' }); // evidência: o vídeo da execução vai anexado ao relatório (top-level: `video` força worker novo)
@@ -36,7 +48,9 @@ test.describe('patient-itinerary-069-proximos-dias: tabela da semana e seletor d
 
   test('FELIZ: a semana corrente em tabela; a semana seguinte (seta) traz as 3 faixas do titular, com o nome dele', async ({ page, request }, testInfo) => {
     const proibidos = vigiarHosts(page);
-    const m = await semearTitularSegQuaSex(request);
+    const hoje = hojeDoBanco();
+    const { schedule, dows } = faixasAPartirDeHoje(hoje);
+    const m = await semearTitularSegQuaSex(request, { schedule });
     try {
       const nomeTitular = await nomeDe(request, m.patientId, m.serviceId, m.titular);
       await loginAs(page, STAFF);
@@ -48,12 +62,16 @@ test.describe('patient-itinerary-069-proximos-dias: tabela da semana e seletor d
       const cabecalho = page.getByTestId('itinerario-proximos-tabela').getByRole('columnheader');
       await expect(cabecalho).toHaveText(['Día', 'Horario', 'Quién atiende', 'Acción']);
 
-      // Semana seguinte (seta real): seg, qua e sex — uma linha por turno, todas com o titular e a ação "Cambiar".
+      // Semana corrente: o turno de HOJE está na tabela, com o titular (independe do dia da semana e de já ter passado das 08:00).
+      const slotHoje = m.slotIds[dows.indexOf(diaDaSemana(hoje))];
+      await expect(page.getByTestId(`itinerario-proximo-${slotHoje}-${hoje}`)).toContainText(nomeTitular);
+
+      // Semana seguinte (seta real): as 3 faixas — uma linha por turno, todas com o titular e a ação "Cambiar".
       await page.getByTestId('itinerario-semana-seguinte').click();
       await expect(page.getByTestId('itinerario-semana-relativo')).toHaveText('La semana que viene');
-      const segundaSeguinte = somaDias(segundaDaSemana(hojeDoBanco()), 7);
+      const segundaSeguinte = somaDias(segundaDaSemana(hoje), 7);
       for (const [i, slotId] of m.slotIds.entries()) {
-        const data = somaDias(segundaSeguinte, [0, 2, 4][i]);
+        const data = somaDias(segundaSeguinte, (dows[i] + 6) % 7); // segunda = +0 ... domingo = +6
         const linha = page.getByTestId(`itinerario-proximo-${slotId}-${data}`);
         await expect(linha).toBeVisible({ timeout: 15_000 });
         await expect(linha).toContainText(nomeTitular);
