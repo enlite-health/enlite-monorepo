@@ -290,6 +290,22 @@ describe('PatientStatusControl', () => {
     expect(byValue('ON_HOLD').textContent).toBe('Em espera');
   });
 
+  it('alocação viva (ACTIVE_ALLOCATION): TODO destino desabilitado e o aviso visível; sem alocação não há aviso (D489/D530)', async () => {
+    getPatientStatusOptions.mockResolvedValue(serverOptions(['SEARCHING', 'ON_HOLD'], { SEARCHING: ['ACTIVE_ALLOCATION'], ON_HOLD: ['ACTIVE_ALLOCATION'] }));
+    await ready(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
+    const opts = [...(screen.getByTestId('patient-status-select') as HTMLSelectElement).options].filter((o) => o.value !== 'ACTIVE');
+    expect(opts.length).toBe(2);
+    opts.forEach((o) => expect(o).toBeDisabled());
+    expect(opts.map((o) => o.textContent)).toEqual(['Busca', 'Em espera']); // sem "(falta: ACTIVE_ALLOCATION)"
+    expect(screen.getByTestId('patient-status-locked-notice')).toHaveTextContent(/prestador/i);
+  });
+
+  it('sem alocação viva não há aviso de trava', async () => {
+    getPatientStatusOptions.mockResolvedValue(serverOptions(['ON_HOLD']));
+    await ready(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
+    expect(screen.queryByTestId('patient-status-locked-notice')).toBeNull();
+  });
+
   it('completar o dado que falta (mesmo status, completeness.missing muda) relê a lista e habilita a opção, sem remontar', async () => {
     const withMissing = { ...active, completeness: { ...active.completeness, missing: ['SERVICE_SCHEDULE' as const] } };
     getPatientStatusOptions.mockResolvedValueOnce(serverOptions(['SEARCHING'], { SEARCHING: ['SERVICE_SCHEDULE'] }));

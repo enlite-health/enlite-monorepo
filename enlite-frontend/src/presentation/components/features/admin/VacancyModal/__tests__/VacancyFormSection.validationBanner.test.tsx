@@ -71,6 +71,7 @@ describe('VacancyFormSection — banner de validação (US-D6, lex D6.1)', () =>
     // Campos que ficam inválidos com o form vazio (menos "Estado", que tem default):
     expect(banner).toHaveTextContent('admin.vacancyModal.professionalType');
     expect(banner).toHaveTextContent('admin.vacancyModal.serviceAddress');
+    expect(banner).toHaveTextContent('admin.vacancyModal.providersNeeded'); // §N: quantidade nasce vazia e obrigatória
     expect(banner).toHaveTextContent('admin.vacancyModal.schedule');
     // a vaga não tem link de reunião: esse rótulo não existe mais (spec 068).
     expect(banner.textContent).not.toContain('meetLink');

@@ -28,6 +28,8 @@ export interface CatalogSnapshotItem {
 export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentId?: string | null;
   segmentLabel?: string | null;
+  /** Só o catálogo de motivos de saída tem: identificador estável que as marcas referenciam. */
+  code?: string;
   /** Spec 061: descrição congelada com a versão; ausente em versão antiga ou item sem descrição. */
   description?: string | null;
 }
@@ -171,6 +173,29 @@ export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKin
   segments: 'catalog_therapeutic_segments',
 };
 
+/**
+ * Catálogo de motivos de saída do serviço (change itinerario-trocas-motivos-e-figma, D1): usa o mesmo
+ * mecanismo dos catálogos, mas FICA FORA de `TherapeuticCatalogKind`/`THERAPEUTIC_CATALOG_KINDS` — o projeto
+ * terapêutico e a tela dele nunca o veem.
+ */
+export const SERVICE_EXIT_REASON_KIND = 'service-exit-reasons';
+export const SERVICE_EXIT_REASON_RESOURCE = 'catalog_service_exit_reasons';
+export type AdminCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND;
+
+/**
+ * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. `segments` e o catálogo de
+ * motivos de saída ficam como eram: Ordem, sem descrição. Espelho de `catalogHasDescription` do backend
+ * (checagem POSITIVA — kind novo nasce sem descrição).
+ */
+export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
+export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WITH_DESCRIPTION.includes(kind);
+
+/** Opção de motivo para quem registra uma troca (GET …/service-exit-reasons/options). */
+export interface ServiceExitReasonOption {
+  code: string;
+  label: string;
+}
+
 export interface TherapeuticCatalogItem {
   id: string;
   label: string;
@@ -185,14 +210,6 @@ export interface TherapeuticCatalogItem {
   /** Spec 061: só objetivos/atividades; `null`/ausente = sem descrição. */
   description?: string | null;
 }
-
-/**
- * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. `segments` fica como era:
- * Ordem, sem descrição. Espelho de `catalogHasDescription` do backend (checagem POSITIVA — kind novo nasce
- * sem descrição).
- */
-export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
-export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WITH_DESCRIPTION.includes(kind);
 
 /** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor (`segments`). */
 export const CATALOG_LABEL_MAX = 200;

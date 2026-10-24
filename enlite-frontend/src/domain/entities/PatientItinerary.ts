@@ -1,0 +1,148 @@
+/**
+ * Itinerário do paciente (Fase 12, DX-12.6) — espelho do contrato publicado de
+ * `GET /api/admin/patients/:id/itinerary` (`CASE/interfaces/validators/itinerarySchemas.ts`) e do
+ * corpo do 409 `ITINERARY_OVERLAP` (`AdminItineraryWriteController.ts`). Datas em `YYYY-MM-DD`
+ * (string, nunca `Date`); `asOf` é a data de operação calculada pela API — o front nunca lê o relógio.
+ */
+
+export type PatientItineraryAssignmentStatus = 'ACTIVE' | 'ENDED' | 'CANCELLED';
+
+/** Uma alocação do slot. `displayName` vem `null` fora de vigência ou sem a célula de nome do prestador. */
+export interface PatientItineraryAssignment {
+  workerId: string;
+  applicationId: string;
+  validFrom: string;
+  validTo: string | null;
+  status: PatientItineraryAssignmentStatus;
+  allocationId: string;
+  displayName: string | null;
+}
+
+/** Uma faixa semanal do serviço (`weekday` 0 = domingo … 6 = sábado). */
+export interface PatientItinerarySlot {
+  id: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  /** Duração em minutos (1..1440) — a fonte; `endTime` é derivado. */
+  durationMinutes: number;
+  assignments: PatientItineraryAssignment[];
+}
+
+/** Reserva da vaga viva do serviço (Equipo de Respuesta Rápida, spec 056 §6): `null` = sem vaga viva ("sin vacante", nunca 0). */
+export interface ServiceReserve {
+  count: number;
+  /** Sempre 10 hoje; vem da API, nunca fixado no cliente. */
+  minimum: number;
+}
+
+export interface PatientItineraryService {
+  contractedServiceId: string;
+  /**
+   * Spec 069 (FR-03): TURNOS "Sin cubrir" nos próximos `PatientItinerary.horizonDays` dias — o aviso
+   * temporário do cartão, SEPARADO do estado estrutural (`cobertas`/`scheduleHours`). Vem do GET.
+   */
+  uncoveredShifts: number;
+  /** Soma das faixas do serviço (horas/semana) — dono único, vem da API (spec 056). */
+  scheduleHours: number;
+  cobertas: number;
+  reserve: ServiceReserve | null;
+  /** Quantidade de prestadores por faixa (pcs.providers_needed); null = não informada (nunca 1 por padrão, §N). */
+  providersNeeded: number | null;
+  slots: PatientItinerarySlot[];
+}
+
+/** Ausência sem substituto a partir de `asOf` (Fase 13) — sem `workerId` nem nome. */
+export interface PatientItineraryAlert {
+  serviceId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface PatientItinerary {
+  patientId: string;
+  asOf: string;
+  services: PatientItineraryService[];
+  alerts: PatientItineraryAlert[];
+  /** Horizonte do aviso "sin cubrir" em dias (a API manda; nenhum texto leva um número fixo). */
+  horizonDays: number;
+  /** `max(assembled_at)` da montagem ("Itinerario listo"), ISO UTC; `null` = nunca montado (Fase 3, C8). */
+  assembledAt: string | null;
+}
+
+/** Um lado do conflito do 409 — só ids de serviço, dia e horário (nada de nome/endereço). */
+export interface ItineraryOverlapSide {
+  serviceId: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+}
+
+/** O detalhe do 409 `ITINERARY_OVERLAP`: `minGapMinutes` vem SEMPRE da API (a folga mora no SQL). */
+export interface ItineraryOverlapDetail {
+  existing: ItineraryOverlapSide;
+  requested: ItineraryOverlapSide;
+  sameAddress: boolean;
+  minGapMinutes: number | null;
+}
+
+/**
+ * Vigente: ACTIVE e `asOf` dentro de `[validFrom, validTo]` (`validTo` inclusivo). Comparação de
+ * string `YYYY-MM-DD`, `asOf` da API. Espelho declarado do dono no backend:
+ * `worker-functions/src/modules/case/domain/ServiceCoverageCalculator.ts` (`isVigente`) — mudou lá,
+ * muda aqui (DX-12.11).
+ */
+export function isVigenteAt(assignment: PatientItineraryAssignment, asOf: string): boolean {
+  return (
+    assignment.status === 'ACTIVE' &&
+    assignment.validFrom <= asOf &&
+    (assignment.validTo === null || assignment.validTo >= asOf)
+  );
+}
+
+/** "cobertas/horário" do serviço (ex.: "20/40") — `scheduleHours` é a soma das faixas, sempre número. */
+export function coverageHoursPair(cobertas: number, scheduleHours: number): string {
+  return `${cobertas}/${scheduleHours}`;
+}
+
+// ── "Próximos eventos/Substituição" (D445.3) — GET .../itinerary/events ─────────────────────
+
+export type ItineraryEventStatus = 'covered' | 'substituted' | 'uncovered';
+
+/** Uma ocorrência (faixa × data) — espelho do `PatientItineraryEventView` do backend (D445.3). */
+export interface PatientItineraryEvent {
+  date: string;
+  weekday: number;
+  serviceId: string;
+  slotId: string;
+  /** `null` = faixa sem alocação vigente na data (spec 069, FR-12): "Sin cubrir". */
+  assignmentId: string | null;
+  startTime: string;
+  endTime: string;
+  titularWorkerId: string | null;
+  titularDisplayName: string | null;
+  status: ItineraryEventStatus;
+  workerId: string | null;
+  workerDisplayName: string | null;
+  substituteWorkerId: string | null;
+  substituteDisplayName: string | null;
+  absenceId: string | null;
+  /** Pedido de substituição a que o turno pertence (`null` = sem pedido). */
+  requestId: string | null;
+}
+
+export interface PatientItineraryEventsResult {
+  patientId: string;
+  from: string;
+  to: string;
+  events: PatientItineraryEvent[];
+}
+
+export type SlotCapacityState = 'AVAILABLE' | 'FULL' | 'NOT_INFORMED';
+
+/** `null` = capacidade não informada (estado de LEITURA, não erro): "Agregar" disponível + nota. Com número: cheia quando vigentes >= número. */
+export function slotCapacityState(providersNeeded: number | null, vigentes: number): SlotCapacityState {
+  if (providersNeeded === null) return 'NOT_INFORMED';
+  return vigentes < providersNeeded ? 'AVAILABLE' : 'FULL';
+}

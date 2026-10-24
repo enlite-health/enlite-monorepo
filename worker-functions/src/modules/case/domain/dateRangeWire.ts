@@ -58,6 +58,17 @@ export function reinsertClosed(lower: string, newFrom: string): string | null {
   return isSameStart(lower, newFrom) ? null : `[${lower},${newFrom})`;
 }
 
+/**
+ * Fecha a faixa de texto `range` (`[desde,)` ou `[desde,até)`) em `hoje`, EXCLUSIVO: `[desde, hoje)` (vigente até ontem). Faixa que nasceu `hoje`
+ * (`desde = hoje`) fica `'empty'` — "nunca vigente" (o `daterange` vazio do banco). `hoje` antes do início lança (o banco também recusaria).
+ */
+export function closeRangeAt(range: string, hoje: string): string {
+  assertIso(hoje);
+  const { validFrom } = toWire(range);
+  if (hoje < validFrom) throw new Error('hoje anterior ao início da faixa');
+  return hoje === validFrom ? 'empty' : `[${validFrom},${hoje})`;
+}
+
 /** O novo vínculo começa no mesmo dia do vivo -> `SAME_START_USE_CORRECTION` (recusado antes do banco). */
 export function isSameStart(lower: string, newFrom: string): boolean {
   assertIso(lower);

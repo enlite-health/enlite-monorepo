@@ -84,6 +84,7 @@ export class AnaCareHoursSyncController {
             undefined,
             deps.patientMonthRepository,
             deps.syncRunRepository,
+            deps.shiftValidationReader,
           )
         : null;
     }

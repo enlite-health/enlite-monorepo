@@ -2,6 +2,7 @@
  * Grep-teste da T046 (spec 058): a conversão `daterange '[)'` <-> wire mora SÓ em `case/domain/dateRangeWire.ts`.
  * Nenhum outro arquivo de `src` (fora de testes) pode escrever `upper(valid)`/`lower(valid)`/`upper_inf(valid)`, `inclusiveValidTo*`,
  * `::daterange` ou o literal `'[)'`. (SQL de migration mora em `migrations/`, fora de `src`.)
+ * A interinidade da 056 acabou na Parte B: nenhum arquivo tem exceção.
  * Controle: o padrão TEM de casar nos exemplos ruins (um grep que não acha nada é "não medi") e o scanner TEM de enxergar arquivos.
  */
 import * as fs from 'fs';

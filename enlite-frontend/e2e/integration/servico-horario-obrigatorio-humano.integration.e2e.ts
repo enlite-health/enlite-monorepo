@@ -102,7 +102,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     await expect(page.getByTestId('svc-schedule-none-1')).toBeVisible();
 
     // ── 5. Preencher o horário como humano: clicar no dia, e o aviso some ──
-    await page.getByTestId('day-schedule-add-monday').click();
+    await page.getByTestId('svc-shift-add-1-1').click();
     await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     // o aviso âmbar some assim que existe um slot — o operador vê a pendência sair na hora
     await expect(page.getByTestId('svc-schedule-none-1')).toHaveCount(0);
@@ -266,6 +266,65 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       expect(status).toBe('ACTIVE');
     } finally {
       cleanupPatientDeep(s4.patientId);
+    }
+  });
+
+  // 041 R5 (PEND-09) — spec 056: o editor de turnos (Inicio/Fin/Todo el día) é compacto; 1 turno em cada dia útil.
+  test('041 R5 — cria 1 turno em cada dia útil, salva e a ficha relida mostra 5 dias; o editor cabe em ≤ 420 px; Fin = Inicio é recusado', async ({ page }) => {
+    const s5 = seedActivatablePatient(730000);
+    try {
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
+      await page.goto(`/admin/patients/${s5.patientId}`);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+      await page.getByTestId('new-service-btn').click();
+      await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
+      await page.getByTestId('svc-code-1').selectOption('AT');
+      await page.getByTestId('svc-addressId-1').selectOption(s5.addressId);
+
+      // 1 turno em cada dia útil (clique humano no "+" de cada dia; o editor de turnos não tem "Copiar a…")
+      for (const d of [1, 2, 3, 4, 5]) {
+        await page.getByTestId(`svc-shift-add-1-${d}`).click();
+        await expect(page.getByTestId(`svc-shift-remove-1-${d}-0`)).toBeVisible();
+      }
+      await expect(page.getByTestId('svc-shift-remove-1-6-0')).toHaveCount(0);
+
+      // Medida: 1 turno em CADA um dos 7 dias — o editor cabe em 420 px (1366×768, sem rolar o editor)
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.getByTestId('svc-shift-add-1-6').click();
+      await page.getByTestId('svc-shift-add-1-0').click();
+      const editor = page.getByTestId('svc-shift-editor-1');
+      const box = await editor.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeLessThanOrEqual(420);
+      // volta ao pedido: só seg-sex
+      await page.getByTestId('svc-shift-remove-1-6-0').click();
+      await page.getByTestId('svc-shift-remove-1-0-0').click();
+
+      // Fin = Inicio: recusado em tela, com mensagem (o turno nasce 09:00–17:00; Fin é um TimeSelect de botões)
+      await page.getByTestId('svc-shift-end-1-1-0').click();
+      await page.getByTestId('svc-shift-end-1-1-0-option-09:00').click(); // fim = início
+      await expect(page.getByTestId('svc-shift-error-1-1-0')).toContainText('Todo el día');
+      await page.getByTestId('svc-shift-end-1-1-0').click();
+      await page.getByTestId('svc-shift-end-1-1-0-option-17:00').click();
+      await expect(page.getByTestId('svc-shift-error-1-1-0')).toHaveCount(0);
+
+      const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
+      await page.getByTestId('contracted-service-new-save').click();
+      const body = (await (await created).json()) as { data: { id: string; schedule: Array<{ dayOfWeek: number }> } };
+      expect(body.data.schedule.map((x) => x.dayOfWeek).sort()).toEqual([1, 2, 3, 4, 5]);
+
+      // Relê a ficha: 5 dias persistidos
+      await page.reload();
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+      await page.getByTestId(`contracted-service-edit-${body.data.id}`).click();
+      for (const d of [1, 2, 3, 4, 5]) {
+        await expect(page.getByTestId(`svc-shift-remove-1-${d}-0`)).toBeVisible();
+      }
+      await expect(page.getByTestId('svc-shift-remove-1-6-0')).toHaveCount(0);
+      // o dono do horário é a faixa vigente (spec 056), não `pcs.schedule`
+      expect(runSQL(`SELECT count(*) FROM patient_itinerary_slot WHERE contracted_service_id = '${body.data.id}' AND upper_inf(valid)`).split('\n')[0].trim()).toBe('5');
+    } finally {
+      cleanupPatientDeep(s5.patientId);
     }
   });
 });

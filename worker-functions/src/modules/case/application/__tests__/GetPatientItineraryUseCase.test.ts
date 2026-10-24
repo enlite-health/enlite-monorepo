@@ -1,0 +1,329 @@
+/**
+ * GetPatientItineraryUseCase — fase 7, DX-7.6.
+ *
+ * `reader` injetado (dublê puro, sem transação/banco): cobre agrupamento por serviço, o `asOf`
+ * pelo fuso do PAÍS do paciente (nunca o relógio do processo — `localParts`/`countryToTimezone`,
+ * as mesmas funções da Fase 6) e o 404 quando o leitor devolve `null`.
+ */
+import { GetPatientItineraryUseCase, PatientNotFoundForItineraryError, type PatientItineraryReaderPort } from '../GetPatientItineraryUseCase';
+import type { ItineraryRows } from '../../infrastructure/PatientItineraryReader';
+
+const PID = 'p-1';
+
+/** Dublê do leitor do quadro C (056 §9): nenhum serviço com equipe → `reserve: null`. */
+const noTeam = { readMany: jest.fn().mockResolvedValue([]) };
+
+function readerWith(rows: ItineraryRows | null): PatientItineraryReaderPort {
+  return { readPatientItinerary: jest.fn().mockResolvedValue(rows) };
+}
+
+/** Dublê do KMS (Fase 12): decifra `v` como `dec:v` — nenhum KMS real no unit. */
+function kmsDouble(): { decrypt: jest.Mock } {
+  return { decrypt: jest.fn(async (v: string) => `dec:${v}`) };
+}
+
+describe('GetPatientItineraryUseCase', () => {
+  it('asOf usa o fuso do PAÍS do paciente, não o relógio do processo — AR: 02:30Z ainda é dia 27 em Buenos Aires', async () => {
+    const reader = readerWith({ country: 'AR', services: [], slots: [] });
+    const useCase = new GetPatientItineraryUseCase(reader, kmsDouble(), noTeam);
+
+    const result = await useCase.execute(PID, new Date('2026-09-28T02:30:00Z'));
+
+    expect(result.asOf).toBe('2026-09-27');
+  });
+
+  it('mesma hora UTC, paciente BR: 02:30Z ainda é dia 27 em São Paulo (mesmo offset -03)', async () => {
+    const reader = readerWith({ country: 'BR', services: [], slots: [] });
+    const useCase = new GetPatientItineraryUseCase(reader, kmsDouble(), noTeam);
+
+    const result = await useCase.execute(PID, new Date('2026-09-28T02:30:00Z'));
+
+    expect(result.asOf).toBe('2026-09-27');
+  });
+
+  it('a virada: 03:30Z já é dia 28 em Buenos Aires (fuso vem de countryToTimezone, não do processo — passa em qualquer fuso de runner)', async () => {
+    const reader = readerWith({ country: 'AR', services: [], slots: [] });
+    const useCase = new GetPatientItineraryUseCase(reader, kmsDouble(), noTeam);
+
+    const result = await useCase.execute(PID, new Date('2026-09-28T03:30:00Z'));
+
+    expect(result.asOf).toBe('2026-09-28');
+  });
+
+  it('assembledAt: sem linha de montagem → null (campo presente); com montagem → a string ISO do leitor, intacta', async () => {
+    const semMontagem = new GetPatientItineraryUseCase(readerWith({ country: 'AR', services: [], slots: [] }), kmsDouble(), noTeam);
+    const r1 = await semMontagem.execute(PID, new Date('2026-09-28T03:30:00Z'));
+    expect(r1).toHaveProperty('assembledAt', null);
+
+    const nuncaMontado = new GetPatientItineraryUseCase(
+      readerWith({ country: 'AR', services: [], slots: [], assembledAt: null }),
+      kmsDouble(),
+      noTeam,
+    );
+    expect((await nuncaMontado.execute(PID, new Date('2026-09-28T03:30:00Z'))).assembledAt).toBeNull();
+
+    const montado = new GetPatientItineraryUseCase(
+      readerWith({ country: 'AR', services: [], slots: [], assembledAt: '2026-09-30T18:05:09.123Z' }),
+      kmsDouble(),
+      noTeam,
+    );
+    expect((await montado.execute(PID, new Date('2026-09-28T03:30:00Z'))).assembledAt).toBe('2026-09-30T18:05:09.123Z');
+  });
+
+  it('agrupamento: 2 serviços, 3 slots, 1 alocação vigente — cobertas certas, na ordem do leitor', async () => {
+    const rows: ItineraryRows = {
+      country: 'AR',
+      services: [
+        { id: 'svc-a' },
+        { id: 'svc-b', },
+      ],
+      slots: [
+        // svc-a, slot coberto: alocação ACTIVE vigente em 2026-09-27 (validFrom passado, sem fim).
+        {
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
+          assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+        },
+        // svc-a, slot ativo mas sem alocação → não coberto.
+        {
+          id: 's2', contractedServiceId: 'svc-a', weekday: 2, startTime: '08:00', durationMinutes: 120, endTime: '10:00',
+          assignmentId: null, workerId: null, applicationId: null, validFrom: null, validTo: null, status: null,
+        },
+        // svc-b, único slot, sem alocação → não coberto, cobertas = 0.
+        {
+          id: 's3', contractedServiceId: 'svc-b', weekday: 3, startTime: '08:00', durationMinutes: 60, endTime: '09:00',
+          assignmentId: null, workerId: null, applicationId: null, validFrom: null, validTo: null, status: null,
+        },
+      ],
+    };
+    const useCase = new GetPatientItineraryUseCase(readerWith(rows), kmsDouble(), noTeam);
+
+    const result = await useCase.execute(PID, new Date('2026-09-27T15:00:00Z'));
+
+    expect(result.asOf).toBe('2026-09-27');
+    expect(result.services).toHaveLength(2);
+    expect(result.services[0]).toMatchObject({
+      contractedServiceId: 'svc-a',
+      scheduleHours: 6,
+      cobertas: 4,
+    });
+    expect(result.services[0].slots).toHaveLength(2);
+    expect(result.services[0].slots[0].assignments).toEqual([
+      {
+        workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+        allocationId: 'asg-1', displayName: null,
+      },
+    ]);
+    expect(result.services[1]).toMatchObject({
+      contractedServiceId: 'svc-b',
+      scheduleHours: 1,
+      cobertas: 0,
+    });
+    expect(result.services[1].slots).toHaveLength(1);
+  });
+
+  it('providersNeeded por serviço sai do leitor: 3 → 3 e NULL → null no resultado', async () => {
+    const reader = readerWith({ country: 'AR', services: [{ id: 'svc-a', providersNeeded: 3 }, { id: 'svc-b', providersNeeded: null }], slots: [] });
+    const result = await new GetPatientItineraryUseCase(reader, kmsDouble(), noTeam).execute(PID, new Date('2026-09-27T15:00:00Z'));
+    expect(result.services.map((s) => s.providersNeeded)).toEqual([3, null]);
+  });
+
+  it('serviço sem slot algum → slots: [], cobertas: 0 (nenhuma linha de slot para ele no leitor)', async () => {
+    const rows: ItineraryRows = {
+      country: 'AR',
+      services: [{ id: 'svc-c', }],
+      slots: [],
+    };
+    const useCase = new GetPatientItineraryUseCase(readerWith(rows), kmsDouble(), noTeam);
+
+    const result = await useCase.execute(PID, new Date('2026-09-27T15:00:00Z'));
+
+    expect(result.services).toEqual([
+      { contractedServiceId: 'svc-c', providersNeeded: null, scheduleHours: 0, cobertas: 0, reserve: null, uncoveredShifts: 0, slots: [] },
+    ]);
+  });
+
+  describe('"Sin cubrir" (spec 069): alerts[], uncoveredShifts e horizonDays saem das MESMAS ocorrências', () => {
+    const slot = (id: string, weekday: number, start = '08:00', end = '12:00') => ({
+      slotId: id, serviceId: 'svc-a', weekday, startTime: start, endTime: end, validFrom: '2026-01-01', validTo: null,
+    });
+    const titular = { assignmentId: 'asg-1', slotId: 's1', workerId: 'w-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' as const };
+    // Itinerário MONTADO (`assembledAt`): o universo do "Sin cubrir" (P13). Sem isto nenhum turno conta.
+    const baseRows: ItineraryRows = {
+      assembledAt: '2026-09-01T12:00:00.000Z',
+      country: 'AR',
+      services: [{ id: 'svc-a' }],
+      slots: [
+        {
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
+          assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+        },
+      ],
+    };
+    // 2026-09-27 é domingo; hoje (AR) = 27/09; a janela é 27/09 … 03/10. Segundas: 28/09 e (fora) 05/10.
+    const now = new Date('2026-09-27T15:00:00Z');
+
+    it('universo P13: itinerário NÃO montado → faixa sem ninguém NÃO é "Sin cubrir" (alerts [], uncoveredShifts 0); montado, a MESMA entrada conta', async () => {
+      const occurrences = { slots: [slot('m', 1), slot('t', 1, '14:00', '18:00')], assignments: [], absences: [] };
+      const naoMontado = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, assembledAt: null, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(naoMontado.alerts).toEqual([]);
+      expect(naoMontado.services[0].uncoveredShifts).toBe(0);
+      const montado = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(montado.services[0].uncoveredShifts).toBe(2);
+      expect(montado.alerts).toHaveLength(2);
+    });
+
+    it('universo P13: montado mas em estado manual travado (ON_HOLD) → alerts [] e uncoveredShifts 0; ACTIVE com a MESMA entrada conta', async () => {
+      const occurrences = { slots: [slot('m', 1), slot('t', 1, '14:00', '18:00')], assignments: [], absences: [] };
+      const emEspera = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, patientStatus: 'ON_HOLD', occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(emEspera.alerts).toEqual([]);
+      expect(emEspera.services[0].uncoveredShifts).toBe(0);
+      const ativo = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, patientStatus: 'ACTIVE', occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(ativo.services[0].uncoveredShifts).toBe(2);
+    });
+
+    it('sem ocorrências lidas → alerts [], uncoveredShifts 0, horizonDays 7', async () => {
+      const result = await new GetPatientItineraryUseCase(readerWith(baseRows), kmsDouble(), noTeam).execute(PID, now);
+      expect(result.alerts).toEqual([]);
+      expect(result.services[0].uncoveredShifts).toBe(0);
+      expect(result.horizonDays).toBe(7);
+    });
+
+    it('ausência sem substituto na janela entra; a de ontem e a de hoje+7 saem; cobertas IGUAL com ou sem ausência', async () => {
+      const occurrences = {
+        slots: [slot('s1', 1), slot('s0', 0), slot('s6', 6)], // seg, dom (hoje), sáb
+        assignments: [titular, { ...titular, assignmentId: 'asg-0', slotId: 's0' }, { ...titular, assignmentId: 'asg-6', slotId: 's6' }],
+        absences: [
+          { absenceId: 'ab-hoje', assignmentId: 'asg-0', onDate: '2026-09-27', substituteWorkerId: null, requestId: 'r1' }, // hoje
+          { absenceId: 'ab-sab', assignmentId: 'asg-6', onDate: '2026-09-26', substituteWorkerId: null, requestId: 'r1' }, // ontem (fora do recorte)
+        ],
+      };
+      const semAusencia = await new GetPatientItineraryUseCase(readerWith(baseRows), kmsDouble(), noTeam).execute(PID, now);
+      const comAusencia = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+
+      expect(comAusencia.alerts).toEqual([{ serviceId: 'svc-a', date: '2026-09-27', startTime: '08:00', endTime: '12:00' }]);
+      expect(comAusencia.services[0].uncoveredShifts).toBe(1);
+      expect(comAusencia.services[0].cobertas).toBe(semAusencia.services[0].cobertas);
+      expect({ ...comAusencia.services[0], uncoveredShifts: 0 }).toEqual(semAusencia.services[0]);
+    });
+
+    it('FR-12: faixa SEM alocação vigente é "Sin cubrir" — 2 faixas no mesmo dia = 2 turnos, só dentro do horizonte (hoje+6 entra, hoje+7 não)', async () => {
+      // 28/09 (seg) tem 2 faixas sem ninguém; 03/10 (sáb = hoje+6) entra; 04/10 (dom = hoje+7) não.
+      const occurrences = {
+        slots: [slot('m', 1, '08:00', '12:00'), slot('t', 1, '14:00', '18:00'), slot('sab', 6), slot('dom', 0)],
+        assignments: [],
+        absences: [],
+      };
+      const result = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(result.alerts.map((a) => `${a.date} ${a.startTime}`)).toEqual(['2026-09-27 08:00', '2026-09-28 08:00', '2026-09-28 14:00', '2026-10-03 08:00']);
+      expect(result.alerts.some((a) => a.date === '2026-10-04')).toBe(false);
+      expect(result.services[0].uncoveredShifts).toBe(4);
+    });
+
+    it('fuso: 2026-11-03T02:30Z é 02/11 em AR — a janela começa em 02/11 (SANIDADE: em UTC já seria 03/11)', async () => {
+      const instante = new Date('2026-11-03T02:30:00Z');
+      expect(instante.toISOString().slice(0, 10)).toBe('2026-11-03');
+      // 02/11/2026 é segunda; faixa de segunda sem ninguém: ocorrência 02/11 só existe se o "hoje" for o de Buenos Aires.
+      const occurrences = { slots: [slot('seg', 1)], assignments: [], absences: [] };
+      const result = await new GetPatientItineraryUseCase(readerWith({ ...baseRows, occurrences }), kmsDouble(), noTeam).execute(PID, instante);
+      expect(result.asOf).toBe('2026-11-02');
+      expect(result.alerts.map((a) => a.date)).toEqual(['2026-11-02', '2026-11-09'].filter((d) => d <= '2026-11-08'));
+    });
+
+    it('os alertas e a contagem são POR serviço: o turno de outro serviço não entra no cartão deste', async () => {
+      const rows: ItineraryRows = { ...baseRows, services: [{ id: 'svc-a' }, { id: 'svc-b' }] };
+      const occurrences = { slots: [slot('s1', 1), { ...slot('sb', 1), serviceId: 'svc-b' }], assignments: [], absences: [] };
+      const result = await new GetPatientItineraryUseCase(readerWith({ ...rows, occurrences }), kmsDouble(), noTeam).execute(PID, now);
+      expect(result.services.map((s) => [s.contractedServiceId, s.uncoveredShifts])).toEqual([['svc-a', 1], ['svc-b', 1]]);
+      expect(result.alerts).toHaveLength(2);
+    });
+  });
+
+  describe('[12.9] nome do prestador por célula', () => {
+    const rowsComNome: ItineraryRows = {
+      country: 'AR',
+      services: [{ id: 'svc-a' }],
+      slots: [
+        {
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
+          assignmentId: 'asg-old', workerId: 'w-old', applicationId: 'wja-0', validFrom: '2026-01-01', validTo: '2026-06-30', status: 'ENDED',
+          firstNameEncrypted: 'old-f', lastNameEncrypted: 'old-l',
+        },
+        {
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', durationMinutes: 240, endTime: '12:00',
+          assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+          firstNameEncrypted: 'f1', lastNameEncrypted: 'l1',
+        },
+      ],
+    };
+    const now = new Date('2026-09-27T15:00:00Z'); // asOf AR = 2026-09-27
+
+    it('cells sem worker_contact:read → displayName null e 0 chamadas ao decrypt', async () => {
+      const kms = kmsDouble();
+      const result = await new GetPatientItineraryUseCase(readerWith(rowsComNome), kms, noTeam).execute(PID, now, ['patient_services:read']);
+
+      const assignments = result.services[0].slots[0].assignments;
+      console.log('[12.9]', 'sem-celula', assignments.length, kms.decrypt.mock.calls.length);
+      expect(kms.decrypt).toHaveBeenCalledTimes(0);
+      expect(assignments.map((a) => [a.allocationId, a.displayName])).toEqual([
+        ['asg-old', null],
+        ['asg-1', null],
+      ]);
+    });
+
+    it('alocação vigente com a célula → o nome (só a vigente decifra); cobertas IGUAL com e sem nome', async () => {
+      const kms = kmsDouble();
+      const comNome = await new GetPatientItineraryUseCase(readerWith(rowsComNome), kms, noTeam).execute(PID, now, ['worker_contact:read']);
+      const semNome = await new GetPatientItineraryUseCase(readerWith(rowsComNome), kmsDouble(), noTeam).execute(PID, now, []);
+
+      console.log('[12.9]', 'com-celula', kms.decrypt.mock.calls.length, comNome.services[0].cobertas);
+      expect(comNome.services[0].slots[0].assignments.map((a) => [a.allocationId, a.displayName])).toEqual([
+        ['asg-old', null],
+        ['asg-1', 'dec:f1 dec:l1'],
+      ]);
+      expect(kms.decrypt.mock.calls.map((c) => c[0]).sort()).toEqual(['f1', 'l1']);
+      expect(comNome.services[0].cobertas).toBe(4);
+      expect(semNome.services[0].cobertas).toBe(comNome.services[0].cobertas);
+    });
+
+    it('cells omitido (engine OFF, null) → o nome aparece, como o quadro C', async () => {
+      const result = await new GetPatientItineraryUseCase(readerWith(rowsComNome), kmsDouble(), noTeam).execute(PID, now);
+
+      expect(result.services[0].slots[0].assignments[1].displayName).toBe('dec:f1 dec:l1');
+    });
+  });
+
+  it('leitor devolve null → PatientNotFoundForItineraryError com o patientId', async () => {
+    const useCase = new GetPatientItineraryUseCase(readerWith(null), kmsDouble(), noTeam);
+
+    await expect(useCase.execute(PID)).rejects.toBeInstanceOf(PatientNotFoundForItineraryError);
+    await expect(useCase.execute(PID)).rejects.toMatchObject({ patientId: PID });
+  });
+
+  it('056 §9: reserve por serviço — vaga viva com 2 em QRT e 1 alocado → {count:1, minimum:10}; serviço sem vaga viva → null', async () => {
+    const rows: ItineraryRows = { country: 'AR', services: [{ id: 'svc-a' }, { id: 'svc-b' }], slots: [] };
+    const teamReader = {
+      readMany: jest.fn().mockResolvedValue([
+        {
+          serviceId: 'svc-a', country: 'AR', liveVacancyId: 'v-a',
+          candidacies: [
+            { workerId: 'w1', vacancyId: 'v-a', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null },
+            { workerId: 'w2', vacancyId: 'v-a', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null },
+          ],
+          assignments: [
+            { workerId: 'w1', serviceId: 'svc-a', vacancyId: 'v-a', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', firstNameEncrypted: null, lastNameEncrypted: null },
+          ],
+          marks: [],
+        },
+        { serviceId: 'svc-b', country: 'AR', liveVacancyId: null, candidacies: [], assignments: [], marks: [] },
+      ]),
+    };
+
+    const result = await new GetPatientItineraryUseCase(readerWith(rows), kmsDouble(), teamReader).execute(PID, new Date('2026-09-27T15:00:00Z'));
+
+    expect(teamReader.readMany).toHaveBeenCalledWith(['svc-a', 'svc-b']);
+    expect(result.services.map((sv) => [sv.contractedServiceId, sv.reserve])).toEqual([
+      ['svc-a', { count: 1, minimum: 10 }],
+      ['svc-b', null],
+    ]);
+  });
+});

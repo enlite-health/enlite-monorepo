@@ -2,7 +2,7 @@
  * patient-kanban-suspendido-saida-motivo.integration.e2e.ts @integration
  *
  * PONTA A PONTA SEM MOCK: navegador real → worker-functions real (Docker) → Postgres real →
- * Firebase Auth EMULATOR real (`loginComoHumano`: click + `keyboard.type`, régua humana D287).
+ * auth pelo mock do stack de CI (`loginComoStaffMock`: click + `keyboard.type`; token `mock_*`, padrão kanban-pacientes).
  * Arrasto real via mouse (`dndKitDrag`, o helper compatível com o `PointerSensor` do dnd-kit —
  * nada de `dragTo()` genérico nem `page.evaluate` simulando o drop).
  *
@@ -18,11 +18,12 @@
 import { test, expect } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { loginComoHumano } from '../helpers/login-humano';
+import { loginComoStaffMock } from '../helpers/login-mock-staff';
+import type { MockUser } from '../helpers/abac-stack-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import { confirmKanbanSuspensionExit } from '../helpers/kanban-suspension-exit-helper';
 
-const STAFF_EMAIL = `e2e.486kanban.${Date.now()}@enlite.health`;
+const STAFF: MockUser = { uid: 'e2e-int-admin-486-kanban', email: 'admin.486.kanban@e2e.test', role: 'admin', country: 'AR' };
 const STAMP = Date.now().toString().slice(-6);
 
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on' });
@@ -31,15 +32,11 @@ test.describe('Kanban — saída de SUSPENDED pede motivo no arrasto (decisão d
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(180_000);
 
-  test.afterAll(() => {
-    runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
-  });
-
   test('feliz: arrastar Suspendido → Búsqueda abre o diálogo; confirmar move o card e grava o motivo', async ({ page }) => {
     const { patientId } = insertTestPatient({ status: 'SUSPENDED', firstName: 'D486Kanban', lastName: `Feliz${STAMP}` });
     try {
-      await loginComoHumano(page, STAFF_EMAIL, 'E2E D486 Kanban');
-      const actorUid = runSQL(`SELECT firebase_uid FROM users WHERE email = '${STAFF_EMAIL}'`).trim();
+      await loginComoStaffMock(page, STAFF, 'E2E D486 Kanban');
+      const actorUid = STAFF.uid; // principal.id do token mock (AuthMiddleware.ts:156-157)
       await page.goto('/admin/patients/kanban');
 
       const card = page.locator(`[data-testid="kanban-draggable-${patientId}"]`);
@@ -83,7 +80,7 @@ test.describe('Kanban — saída de SUSPENDED pede motivo no arrasto (decisão d
         putChamado = true;
         return route.continue();
       });
-      await loginComoHumano(page, STAFF_EMAIL, 'E2E D486 Kanban');
+      await loginComoStaffMock(page, STAFF, 'E2E D486 Kanban');
       await page.goto('/admin/patients/kanban');
 
       const card = page.locator(`[data-testid="kanban-draggable-${patientId}"]`);
@@ -111,7 +108,7 @@ test.describe('Kanban — saída de SUSPENDED pede motivo no arrasto (decisão d
   test('alt2: arrastar entre colunas que NÃO são Suspendido (Activo → Suspendido) segue instantâneo, sem diálogo', async ({ page }) => {
     const { patientId } = insertTestPatient({ status: 'ACTIVE', firstName: 'D486Kanban', lastName: `Alt2${STAMP}` });
     try {
-      await loginComoHumano(page, STAFF_EMAIL, 'E2E D486 Kanban');
+      await loginComoStaffMock(page, STAFF, 'E2E D486 Kanban');
       await page.goto('/admin/patients/kanban');
 
       const card = page.locator(`[data-testid="kanban-draggable-${patientId}"]`);

@@ -72,8 +72,8 @@ const servico = (over: Partial<PatientContractedServiceDetail> = {}): PatientCon
   serviceCode: 'AT',
   professionalProfile: null,
   providersNeeded: 1,
-  authorizedHours: 20,
-  weeklyHours: 20,
+  authorization: null,
+  scheduleHours: 20,
   careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS,
   startDate: null,
@@ -170,7 +170,7 @@ const onDirty = vi.fn();
 const montar = (over: Partial<Props> = {}) =>
   render(
     <TherapeuticProjectForm
-      services={over.services ?? [servico(), servico({ id: 'svc-2', serviceCode: 'CAREGIVER', weeklyHours: null })]}
+      services={over.services ?? [servico(), servico({ id: 'svc-2', serviceCode: 'CAREGIVER', scheduleHours: 0 })]}
       servicesRedacted={over.servicesRedacted ?? false}
       patientDiagnoses={over.patientDiagnoses ?? DIAGS}
       catalogs={over.catalogs ?? CATALOGOS}
@@ -243,7 +243,7 @@ describe('modo "Novo" — versão do zero', () => {
     expect(select.value).toBe('svc-1');
     const opcoes = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
     expect(opcoes).toContain('Acompanhante Terapêutico · 20 h/sem');
-    expect(opcoes).toContain('Cuidador'); // `weeklyHours: null` → sem o sufixo
+    expect(opcoes).toContain('Cuidador'); // `scheduleHours: 0` → sem o sufixo
     expect(screen.queryByTestId('tp-no-service')).not.toBeInTheDocument();
   });
 

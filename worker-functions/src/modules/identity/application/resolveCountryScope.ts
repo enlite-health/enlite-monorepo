@@ -92,7 +92,7 @@ const DOCUMENTED_MULTI_COUNTRY_GRANT_SQL = `
        AND gcs.granted_by IS NULL
   ) AS documented`;
 
-async function actorEffectiveCountries(db: Pool, uid: string): Promise<CountryCode[]> {
+export async function actorEffectiveCountries(db: Pool, uid: string): Promise<CountryCode[]> {
   const { rows } = await db.query<{ countries: CountryCode[] | null }>(EFFECTIVE_COUNTRIES_SQL, [uid]);
   return rows[0]?.countries ?? [];
 }

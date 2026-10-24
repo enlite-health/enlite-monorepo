@@ -52,8 +52,8 @@ test.describe('vacancy-locked-fields — 5 campos de recrutamento vindos do serv
     const svc = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services`, {
       headers: AUTH_HEADERS,
       data: {
-        serviceCode: 'AT', providersNeeded: 1, weeklyHours: 20, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
-        addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+        serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
+        addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       },
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);

@@ -75,12 +75,21 @@ export function computeActualHours(source: Pick<SourceShiftDTO, 'actualStart' | 
 }
 
 /**
+ * DONO ÚNICO da hora de um turno (056 T5.1): validado => `approvedHours`; senão a hora real
+ * (check-in/checkout). Detalhe (`mapShift`) e agregado da lista (`aggregatePatientMonth`) leem
+ * daqui — nunca recalculam por conta própria.
+ */
+export function horaDoTurno(source: Pick<SourceShiftDTO, 'actualStart' | 'actualEnd'>, validation?: ValidationRow): number | null {
+  return validation?.status === 'validado' ? validation.approvedHours : computeActualHours(source);
+}
+
+/**
  * `canReadNote` — espelha a célula clínica (`patient_clinical:read`, backlog D345, mas o
  * contrato já reserva o corte: sem a célula a nota NUNCA sai no payload, mesmo cifrada).
  */
 export function mapShift(source: SourceShiftDTO, validation: ValidationRow | undefined, canReadNote: boolean, decryptedNote: string | null): AnaCareShift {
   const status = STATUS_MAP[validation?.status ?? 'pendente'];
-  const hoursActual = status === 'validado' ? validation!.approvedHours : computeActualHours(source);
+  const hoursActual = horaDoTurno(source, validation);
   const origin = source.checkinSource === null ? 'sin_checkin' : source.checkinSource;
 
   const shift: AnaCareShift = {

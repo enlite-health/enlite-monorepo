@@ -135,6 +135,10 @@ export async function installAuthInterceptors(page: Page, u: MockUser): Promise<
   await page.route('**/v1/me/authz', swapToken);
   // spec 026 (F3/T3.6): rotas de simulação de grupo, mesmo `/v1/me/*`.
   await page.route('**/v1/me/simulation**', swapToken);
+  // ds-table-nao-regressao (Fase 9, gate parcial #1): `ManagementDashboardApiService`/
+  // `ZoneAnalyticsApiService` chamam `/analytics/dashboard/*` — SEM o segmento `/api/` que o
+  // padrão acima já troca. Mesmo swap de auth, nenhum mock de resposta.
+  await page.route('**/analytics/**', swapToken);
 }
 
 /** Login como uma pessoa faz: clica no campo, digita, clica no botão. */

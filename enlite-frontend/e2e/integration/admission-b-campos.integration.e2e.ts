@@ -209,7 +209,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
       `SELECT id FROM patient_addresses WHERE patient_id = '${admission.patientId}' AND archived_at IS NULL ORDER BY display_order LIMIT 1`,
     ).trim();
     await page.getByTestId('svc-addressId-1').selectOption(enderecoRecemCriadoId);
-    await page.getByTestId('day-schedule-add-monday').click();
+    await page.getByTestId('svc-shift-add-1-1').click();
     await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await page.getByTestId('contracted-service-new-save').click();

@@ -126,7 +126,6 @@ const contractedServiceProviderSchema = z
     serviceId: z.string(),
     workerId: z.string(),
     workerName: z.string().nullable(),
-    weeklyHours: z.number().nullable(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),
@@ -191,8 +190,10 @@ const contractedServiceSchema = z
     serviceCode: z.string(),
     professionalProfile: z.string().nullable(),
     providersNeeded: z.number().nullable(),
-    authorizedHours: z.number().nullable(),
-    weeklyHours: z.number().nullable(),
+    authorization: z
+      .object({ id: z.string(), hours: z.number(), validFrom: isoDate, validTo: isoDate })
+      .nullable(),
+    scheduleHours: z.number(),
     careLocation: z.string().nullable(),
     startDate: isoDate.nullable(),
     // Spec 058 (§G/§P/§D): pagador, preço e imposto NA data `asOf` (dia de operação do país do serviço). `names: null` /
@@ -210,7 +211,7 @@ const contractedServiceSchema = z
     // Migration 330: ponteiro para o endereço + horário do encuadre (array do DayScheduleEditor).
     addressId: z.string().nullable(),
     schedule: z
-      .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() }))
+      .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), durationMinutes: z.number(), endTime: z.string() }))
       .nullable(),
     // Spec 047 (F2): vaga viva do serviço — allow-list de 4 chaves (`.strict()`: campo a mais quebra o parse).
     // `null` + `liveVacancyRedacted: false` = sem vaga; `null` + `true` = o ator não lê vagas (não é "sem vaga").

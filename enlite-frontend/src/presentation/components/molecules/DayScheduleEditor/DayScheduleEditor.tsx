@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, X } from 'lucide-react';
+import { Copy, Plus, X } from 'lucide-react';
 import { TimeSelect } from '@presentation/components/atoms/TimeSelect/TimeSelect';
 import { Text } from '@presentation/components/atoms/Text';
+import { copySlotsToDays, isValidRange } from './copySlotsToDays';
 
 /**
  * Slot canônico (formato JSONB usado no backend e em worker availability).
@@ -33,6 +34,9 @@ export function DayScheduleEditor({
   dayLabelI18nKey,
 }: DayScheduleEditorProps): JSX.Element {
   const { t } = useTranslation();
+  const [copyFrom, setCopyFrom] = useState<number | null>(null);
+  const [targets, setTargets] = useState<number[]>([]);
+  const [conflictDays, setConflictDays] = useState<number[]>([]);
 
   const slotsByDay = useMemo(() => {
     const map = new Map<number, DayScheduleSlot[]>();
@@ -82,58 +86,64 @@ export function DayScheduleEditor({
       ? dayLabelI18nKey(dayKey)
       : t(`workerRegistration.availability.${dayKey}`);
 
+  const shortFor = (dayKey: string): string => t(`workerRegistration.availability.${dayKey}Short`);
+
+  const openCopy = (dayIndex: number): void => {
+    setConflictDays([]);
+    setTargets([]);
+    setCopyFrom(copyFrom === dayIndex ? null : dayIndex);
+  };
+
+  const toggleTarget = (dayIndex: number): void =>
+    setTargets((prev) => (prev.includes(dayIndex) ? prev.filter((d) => d !== dayIndex) : [...prev, dayIndex]));
+
+  const applyCopy = (): void => {
+    if (copyFrom === null) return;
+    const { next, conflictDays: conflicts } = copySlotsToDays(value, copyFrom, targets);
+    onChange(next);
+    setConflictDays(conflicts);
+    setCopyFrom(null);
+    setTargets([]);
+  };
+
+  const chip = (active: boolean): string =>
+    `px-2 py-0.5 rounded-pill border text-xs transition-colors disabled:opacity-50 ${
+      active ? 'bg-primary text-white border-primary' : 'border-gray-600 text-gray-800 hover:border-primary'
+    }`;
+
   return (
-    <div className="flex flex-col gap-4" data-testid="day-schedule-editor">
+    <div className="flex flex-col" data-testid="day-schedule-editor">
       {DAY_KEYS.map((dayKey, dayIndex) => {
         const daySlots = slotsByDay.get(dayIndex) ?? [];
         const isEnabled = daySlots.length > 0;
+        const hasInvalid = daySlots.some((slot) => !isValidRange(slot));
 
         return (
           <div
             key={dayKey}
             data-testid={`day-schedule-row-${dayKey}`}
-            className={`flex flex-col px-4 py-4 rounded-card border-2 transition-all duration-200 ${
-              isEnabled ? 'border-primary gap-3' : 'border-gray-600 gap-2'
-            }`}
+            className="flex flex-col gap-1 py-1.5 border-b border-gray-600 last:border-b-0"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Text
                 as="span"
                 size="base"
                 weight="medium"
                 color={isEnabled ? 'primary' : 'secondary'}
+                className="w-24 shrink-0"
               >
                 {labelFor(dayKey)}
               </Text>
 
-              <div className="flex items-center gap-3">
-                <Text as="span" size="sm" color="secondary">
-                  {isEnabled
-                    ? t('workerRegistration.availability.timeSlotsCount', { count: daySlots.length })
-                    : t('workerRegistration.availability.timeSlots')}
-                </Text>
-
-                <button
-                  type="button"
-                  onClick={() => addSlot(dayIndex)}
-                  disabled={disabled}
-                  aria-label={t('workerRegistration.availability.addSlot', { defaultValue: 'Agregar horario' })}
-                  data-testid={`day-schedule-add-${dayKey}`}
-                  className="p-2 rounded-pill bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  <Plus className="w-4 h-4 text-white" strokeWidth={2.5} />
-                </button>
-              </div>
-            </div>
-
-            {isEnabled && (
-              <div className="flex flex-wrap items-center gap-2 mt-2">
+              <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
                 {daySlots.map((slot, slotIndex) => (
-                  <div key={slotIndex} className="flex items-center gap-2">
-                    {slotIndex > 0 && (
-                      <Text as="span" size="sm" color="secondary">|</Text>
-                    )}
-                    <div className="flex items-center gap-1 px-2 py-1 bg-primary rounded-input font-lexend text-white text-sm">
+                  <div key={slotIndex} className="flex items-center gap-1">
+                    <div
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-input font-lexend text-white text-sm ${
+                        isValidRange(slot) ? 'bg-primary' : 'bg-red-600'
+                      }`}
+                      aria-invalid={!isValidRange(slot)}
+                    >
                       <TimeSelect
                         value={slot.startTime}
                         onChange={(e) => updateSlot(dayIndex, slotIndex, 'startTime', e.target.value)}
@@ -151,7 +161,6 @@ export function DayScheduleEditor({
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />
                     </div>
-
                     <button
                       type="button"
                       onClick={() => removeSlot(dayIndex, slotIndex)}
@@ -164,6 +173,88 @@ export function DayScheduleEditor({
                     </button>
                   </div>
                 ))}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {isEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => openCopy(dayIndex)}
+                    disabled={disabled || hasInvalid}
+                    aria-expanded={copyFrom === dayIndex}
+                    data-testid={`day-schedule-copy-${dayKey}`}
+                    className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+                  >
+                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                    {t('workerRegistration.availability.copyTo')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => addSlot(dayIndex)}
+                  disabled={disabled}
+                  aria-label={t('workerRegistration.availability.addSlot', { defaultValue: 'Agregar horario' })}
+                  data-testid={`day-schedule-add-${dayKey}`}
+                  className="p-1.5 rounded-pill bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4 text-white" strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
+
+            {hasInvalid && (
+              <Text as="span" size="xs" className="text-red-600" data-testid={`day-schedule-invalid-${dayKey}`}>
+                {t('workerRegistration.availability.invalidRange')}
+              </Text>
+            )}
+
+            {conflictDays.includes(dayIndex) && (
+              <Text as="span" size="xs" color="secondary" data-testid={`day-schedule-conflict-${dayKey}`}>
+                {t('workerRegistration.availability.copyConflict', { days: labelFor(dayKey) })}
+              </Text>
+            )}
+
+            {copyFrom === dayIndex && (
+              <div className="flex flex-wrap items-center gap-1.5" data-testid={`day-schedule-copy-panel-${dayKey}`}>
+                {DAY_KEYS.map((k, i) =>
+                  i === dayIndex ? null : (
+                    <button
+                      key={k}
+                      type="button"
+                      aria-pressed={targets.includes(i)}
+                      onClick={() => toggleTarget(i)}
+                      data-testid={`day-schedule-copy-target-${k}`}
+                      className={chip(targets.includes(i))}
+                    >
+                      {shortFor(k)}
+                    </button>
+                  ),
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTargets([1, 2, 3, 4, 5].filter((d) => d !== dayIndex))}
+                  data-testid="day-schedule-copy-weekdays"
+                  className={chip(false)}
+                >
+                  {t('workerRegistration.availability.copyWeekdays')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargets([0, 1, 2, 3, 4, 5, 6].filter((d) => d !== dayIndex))}
+                  data-testid="day-schedule-copy-all"
+                  className={chip(false)}
+                >
+                  {t('workerRegistration.availability.copyAll')}
+                </button>
+                <button
+                  type="button"
+                  onClick={applyCopy}
+                  disabled={targets.length === 0}
+                  data-testid="day-schedule-copy-apply"
+                  className="px-3 py-0.5 rounded-pill bg-primary text-white text-xs disabled:opacity-50"
+                >
+                  {t('workerRegistration.availability.copyApply')}
+                </button>
               </div>
             )}
           </div>

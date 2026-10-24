@@ -20,6 +20,7 @@
 import { Pool } from 'pg';
 import { AdminPatientsController } from '@modules/case/interfaces/controllers/AdminPatientsController';
 import type { Request, Response } from 'express';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const NOTE = 'C1B-nota-clinica-irrecuperavel-4f7a: la obra social pidió resumen de historia clínica';
@@ -73,13 +74,13 @@ describe('C1 — a nota clínica de ON_HOLD sobrevive a quem não pode lê-la (P
        VALUES ($1,'Calle C1B 1',1) RETURNING id`,
       [patientId],
     )).rows[0].id;
-    await pool.query(
+    const sid = (await pool.query<{ id: string }>(
       `INSERT INTO patient_contracted_services
-         (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
-       VALUES ($1,'AT',true,'AR','c1b-onhold-e2e','c1b-onhold-e2e',$2,
-               '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
+         (patient_id, service_code, active, country, created_by, updated_by, address_id)
+       VALUES ($1,'AT',true,'AR','c1b-onhold-e2e','c1b-onhold-e2e',$2) RETURNING id`,
       [patientId, addr],
-    );
+    )).rows[0].id;
+    await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'c1b-onhold-e2e'); // spec 056: horário = faixa em patient_itinerary_slot
   });
 
   afterAll(async () => {

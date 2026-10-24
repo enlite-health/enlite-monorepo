@@ -14,7 +14,7 @@ import {
   CATALOG_LABEL_MAX,
   CATALOG_TITLE_MAX,
   type TherapeuticCatalogItem,
-  type TherapeuticCatalogKind,
+  type AdminCatalogKind,
   catalogHasDescription,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -37,7 +37,7 @@ export interface CatalogItemFormData {
 }
 
 interface Props {
-  kind: TherapeuticCatalogKind;
+  kind: AdminCatalogKind;
   item: TherapeuticCatalogItem | null;
   /** Segmentos (inclui inativos) — `null`/ausente = sem célula de segmentos ou catálogo sem vínculo: o campo some. */
   segments?: TherapeuticCatalogItem[] | null;

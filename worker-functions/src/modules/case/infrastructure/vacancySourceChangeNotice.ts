@@ -29,14 +29,14 @@ export function isSourceChangeField(value: string): value is SourceChangeField {
 interface SlotLike {
   dayOfWeek: number;
   startTime: string;
-  endTime: string;
+  durationMinutes: number;
 }
 
 /** Forma canônica do horário: slots como texto, ordenados — reenviar o mesmo conteúdo em outra ordem NÃO é mudança. */
 function canonicalSchedule(value: unknown): string {
   const slots = (value ?? []) as SlotLike[];
   return slots
-    .map((s) => `${s.dayOfWeek}|${s.startTime}|${s.endTime}`)
+    .map((s) => `${s.dayOfWeek}|${s.startTime}|${s.durationMinutes}`)
     .sort()
     .join(';');
 }
@@ -87,8 +87,10 @@ export async function captureFieldBefore(
 ): Promise<unknown> {
   if (patched === undefined) return undefined;
   const col = GUARDED_SERVICE_COLUMNS[field];
+  // O horário não é mais coluna do serviço (spec 056): o "antes" é a leitura derivada das faixas vigentes hoje.
+  const select = field === 'schedule' ? 'horario_do_servico($1, CURRENT_DATE) AS schedule' : col;
   const { rows } = await cli.query<Record<string, unknown>>(
-    `SELECT ${col} FROM patient_contracted_services WHERE id = $1 FOR UPDATE`,
+    `SELECT ${select} FROM patient_contracted_services WHERE id = $1 FOR UPDATE`,
     [serviceId],
   );
   return rows[0]?.[col] ?? null;

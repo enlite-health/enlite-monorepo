@@ -1,0 +1,198 @@
+/**
+ * PatientItineraryReader — leitura crua do itinerário de um paciente (fase 7, DX-7.6).
+ *
+ * `readPatientItinerary` roda TUDO dentro de `inPatientTransaction` (RLS de país; memória
+ * `connect-cru-sem-actor-context-da-500`): as 3 leituras (paciente, serviços ativos, slots +
+ * alocações) usam o MESMO client de transação — nunca `pool.query` cru, que chegaria sem
+ * `app.user_country` e a policy da 411 recusaria. O pool também não é pego no construtor nem no
+ * topo do módulo: `inPatientTransaction` já cuida disso.
+ *
+ * Datas e horas saem do banco como TEXTO (`to_char`) — o driver `pg` converteria `date`/`time` em
+ * `Date` à meia-noite LOCAL do processo, e o fuso do Cloud Run não é o do teste nem o do usuário
+ * (a conversão certa é `GetPatientItineraryUseCase` + `localParts`).
+ *
+ * Nome só CIFRADO, só da alocação (quem decifra é o caso de uso, com a célula — Fase 12, DX-12.5);
+ * nenhum telefone; nenhuma leitura da tabela de alocação antiga — a alocação antiga não entra na
+ * conta nova (critério 11).
+ */
+import type { PoolClient } from 'pg';
+import { inPatientTransaction } from '../application/patientTransaction';
+import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
+import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
+import { readOccurrenceInputsByPatient, EMPTY_OCCURRENCE_INPUTS, type OccurrenceInputs } from './occurrenceInputs';
+import { UNCOVERED_HORIZON_DAYS } from '../domain/serviceOccurrences';
+
+export type { ItineraryAssignmentStatus };
+
+export interface ItineraryServiceRow {
+  id: string;
+  /** `pcs.providers_needed`; `null` = não informada (estado de leitura — nunca "1"). Opcional: o agregado do Kanban reusa este tipo e não lê. */
+  providersNeeded?: number | null;
+}
+
+/**
+ * Uma linha por par (slot, alocação) — `LEFT JOIN`, então um slot sem alocação vem com todos os
+ * campos de alocação `null` (uma linha só, não zero).
+ */
+export interface ItinerarySlotRow {
+  id: string;
+  contractedServiceId: string;
+  weekday: number;
+  startTime: string;
+  durationMinutes: number;
+  /** DERIVADO (início + duração; nunca gravado). */
+  endTime: string;
+  assignmentId: string | null;
+  workerId: string | null;
+  applicationId: string | null;
+  validFrom: string | null;
+  validTo: string | null;
+  status: ItineraryAssignmentStatus | null;
+  /**
+   * Fase 12 (DX-12.5 (1)): o nome CIFRADO do prestador da alocação (`null` sem alocação). OPCIONAIS —
+   * o agregado do Kanban (`PatientKanbanServicesReader`) usa o mesmo tipo e não lê nome.
+   */
+  firstNameEncrypted?: string | null;
+  lastNameEncrypted?: string | null;
+}
+
+export interface ItineraryRows {
+  country: string;
+  services: ItineraryServiceRow[];
+  slots: ItinerarySlotRow[];
+  /**
+   * Spec 069 (FR-12): faixas × alocações × ausências vivas de uma janela SUPERCONJUNTO de `[hoje, hoje + horizonte]` (a data de
+   * operação do país nunca é menor que a UTC − 1 nem maior que a UTC); a expansão e o recorte exato são do caso de uso.
+   * Opcional: o agregado do Kanban reusa este tipo.
+   */
+  occurrences?: OccurrenceInputs;
+  /**
+   * Fase 3 (C8): `max(assembled_at)` de `patient_itinerary_assembly` (482, log append-only), ISO UTC;
+   * `null` = nunca montado. Opcional — o agregado do Kanban reusa este tipo e não lê montagem.
+   */
+  assembledAt?: string | null;
+  /** `patients.status` (2º fato do universo do "Sin cubrir", P13). Opcional como `assembledAt`. */
+  patientStatus?: string | null;
+}
+
+interface PatientCountryRow {
+  id: string;
+  country: string;
+  status: string | null;
+}
+
+interface ServiceRow {
+  id: string;
+  providers_needed: number | null;
+}
+
+interface SlotJoinRow {
+  id: string;
+  contracted_service_id: string;
+  weekday: number;
+  start_time: string;
+  duration_minutes: number;
+  slot_end: string;
+  assignment_id: string | null;
+  worker_id: string | null;
+  application_id: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  status: ItineraryAssignmentStatus | null;
+  first_name_encrypted: string | null;
+  last_name_encrypted: string | null;
+}
+
+interface AssembledAtRow {
+  assembled_at: string | null;
+}
+
+export class PatientItineraryReader {
+  /** `null` = paciente inexistente, soft-deletado, ou de outro país (RLS) — o caso de uso mapeia para 404. */
+  async readPatientItinerary(patientId: string): Promise<ItineraryRows | null> {
+    return inPatientTransaction((client) => this.run(client, patientId));
+  }
+
+  private async run(client: PoolClient, patientId: string): Promise<ItineraryRows | null> {
+    const patientRes = await client.query<PatientCountryRow>(
+      `SELECT id, country, status FROM patients WHERE id = $1 AND deleted_at IS NULL`,
+      [patientId],
+    );
+    if ((patientRes.rowCount ?? 0) === 0) return null;
+    const { country, status: patientStatus } = patientRes.rows[0];
+
+    // Só serviço ATIVO: serviço baixado não tem cobertura a medir.
+    const servicesRes = await client.query<ServiceRow>(
+      `SELECT id, providers_needed
+         FROM patient_contracted_services
+        WHERE patient_id = $1 AND active
+        ORDER BY created_at, id`,
+      [patientId],
+    );
+
+    const slotsRes = await client.query<SlotJoinRow>(
+      `SELECT s.id, s.contracted_service_id, s.weekday,
+              to_char(s.start_time, 'HH24:MI') AS start_time,
+              s.duration_minutes,
+              ${slotEndTimeSql('s')} AS slot_end,
+              a.id AS assignment_id, a.worker_id, a.application_id,
+              to_char(a.valid_from, 'YYYY-MM-DD') AS valid_from,
+              to_char(a.valid_to, 'YYYY-MM-DD') AS valid_to,
+              a.status,
+              w.first_name_encrypted, w.last_name_encrypted
+         FROM patient_itinerary_slot s
+         JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
+         LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
+         LEFT JOIN workers w ON w.id = a.worker_id
+        WHERE pcs.patient_id = $1 AND pcs.active AND ${slotVigenteSql('s')}
+        ORDER BY s.contracted_service_id, s.weekday, s.start_time, a.valid_from`,
+      [patientId],
+    );
+
+    // Ocorrências (spec 069, FR-12): UMA leitura compartilhada com a agenda e o Kanban. Janela superconjunto em SQL:
+    // [CURRENT_DATE - 1, CURRENT_DATE + horizonte]; `expandServiceOccurrences` + `uncoveredDayAlerts` recortam a janela do país.
+    const occurrences = (
+      await readOccurrenceInputsByPatient(client, {
+        scopeSql: 'pcs.patient_id = $1 AND pcs.active',
+        fromSql: 'CURRENT_DATE - 1',
+        toSql: `CURRENT_DATE + ${UNCOVERED_HORIZON_DAYS}`,
+        params: [patientId],
+      })
+    ).get(patientId) ?? EMPTY_OCCURRENCE_INPUTS;
+
+    // Montagem (482): UMA linha, `max` → `null` sem montagem. Texto ISO UTC (nunca `Date` do driver).
+    const assembledRes = await client.query<AssembledAtRow>(
+      `SELECT to_char(max(assembled_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS assembled_at
+         FROM patient_itinerary_assembly
+        WHERE patient_id = $1`,
+      [patientId],
+    );
+
+    return {
+      country,
+      services: servicesRes.rows.map((r) => ({
+        id: r.id,
+        providersNeeded: r.providers_needed,
+      })),
+      slots: slotsRes.rows.map((r) => ({
+        id: r.id,
+        contractedServiceId: r.contracted_service_id,
+        weekday: r.weekday,
+        startTime: r.start_time,
+        durationMinutes: r.duration_minutes,
+        endTime: r.slot_end,
+        assignmentId: r.assignment_id,
+        workerId: r.worker_id,
+        applicationId: r.application_id,
+        validFrom: r.valid_from,
+        validTo: r.valid_to,
+        status: r.status,
+        firstNameEncrypted: r.first_name_encrypted,
+        lastNameEncrypted: r.last_name_encrypted,
+      })),
+      occurrences,
+      assembledAt: assembledRes.rows[0]?.assembled_at ?? null,
+      patientStatus: patientStatus ?? null,
+    };
+  }
+}

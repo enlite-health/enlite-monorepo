@@ -339,17 +339,6 @@ describe('PatientService.moveStatus v2', () => {
     expect(new PatientStatusTransitionError(null, 'ACTIVE').message).toBe('Patient status transition not allowed: null → ACTIVE');
   });
 
-  it('C5: DEMOÇÃO de estado clínico para o funil consulta a tabela e é RECUSADA (nada é gravado, nota intacta)', async () => {
-    db('ACTIVE', [['ACTIVE', 'ON_HOLD']]); // o seed da 315 não tem ACTIVE → ADMISSION
-    await expect(service.moveStatus(PID, 'ADMISSION', { changeSource: 'kanban' })).rejects.toMatchObject({
-      name: 'PatientStatusTransitionError', code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from: 'ACTIVE', to: 'ADMISSION',
-    });
-    const c = calls();
-    expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
-    expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
-    expect(c[c.length - 1].sql).toBe('ROLLBACK');
-  });
-
   // ── Saída de SUSPENDED com motivo (migration 486, decisão do Gabriel 29/09/2026) ──────────────
   describe('saída de SUSPENDED com motivo', () => {
     it('SUSPENDED → SEARCHING sem motivo (admin_panel) → SuspensionExitReasonRequiredError, ROLLBACK, nenhum UPDATE', async () => {
@@ -409,6 +398,17 @@ describe('PatientService.moveStatus v2', () => {
         code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
       });
     });
+  });
+
+  it('C5: DEMOÇÃO de estado clínico para o funil consulta a tabela e é RECUSADA (nada é gravado, nota intacta)', async () => {
+    db('ACTIVE', [['ACTIVE', 'ON_HOLD']]); // o seed da 315 não tem ACTIVE → ADMISSION
+    await expect(service.moveStatus(PID, 'ADMISSION', { changeSource: 'kanban' })).rejects.toMatchObject({
+      name: 'PatientStatusTransitionError', code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from: 'ACTIVE', to: 'ADMISSION',
+    });
+    const c = calls();
+    expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
+    expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+    expect(c[c.length - 1].sql).toBe('ROLLBACK');
   });
 });
 

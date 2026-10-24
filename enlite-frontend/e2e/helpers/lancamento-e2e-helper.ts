@@ -16,7 +16,8 @@
 import * as http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { insertTestPatient, insertTestWorker } from './db-test-helper';
+import { insertTestPatient } from './db-test-helper';
+import { insertAptoWorker } from './eligibility-worker-helper';
 import { runSQL, cleanupPatientDeep } from './patient-detail-a-helper';
 import { tokenFor, loginAs, type MockUser } from './abac-stack-helper';
 import { seedMockStaff, cleanupMockStaff } from './lancamento-leituras-helper';
@@ -281,10 +282,9 @@ export async function loginAndMockAi(page: Page, user: MockUser): Promise<void> 
 export interface ContractedServiceBody {
   serviceCode: 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST';
   providersNeeded: number;
-  weeklyHours: number;
   careLocation: string;
   addressId: string;
-  schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+  schedule?: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
 }
 
 /**
@@ -318,6 +318,10 @@ export interface SeedLaunchablePatientOpts {
   status: string;
   lat: number;
   lng: number;
+  /** Faixas do serviço semeado (default: 1 faixa seg 08:00, 240 min = 4 h). Vivem em `patient_itinerary_slot`. */
+  schedule?: ContractedServiceBody['schedule'];
+  /** `providers_needed` do serviço semeado (default 1). A Trava A (058b) recusa alocar além dele num mesmo slot. */
+  providersNeeded?: number;
 }
 
 export interface SeedLaunchablePatientResult {
@@ -329,7 +333,7 @@ export interface SeedLaunchablePatientResult {
 }
 
 /**
- * Paciente com endereço (status/lat/lng dados) + 1 serviço contratado (AT, 20h, 1 faixa) criado
+ * Paciente com endereço (status/lat/lng dados) + 1 serviço contratado (AT, 1 faixa seg 08-12 = 4 h, ou `opts.schedule`) criado
  * pela API real com token de `tokenFor` (molde `vacancy-draft-wizard-locked...:212-224` /
  * `_prints-antes-fase-6...:86-98`). `cleanup()` chama `cleanupPatientDeep`, que já apaga
  * `job_postings`/`patient_contracted_services`/`patient_addresses` do paciente.
@@ -338,7 +342,7 @@ export async function seedLaunchablePatient(
   request: APIRequestContext,
   opts: SeedLaunchablePatientOpts,
 ): Promise<SeedLaunchablePatientResult> {
-  const { status, lat, lng } = opts;
+  const { status, lat, lng, schedule, providersNeeded = 1 } = opts;
   const { patientId, addressId } = insertTestPatient({
     status,
     withAddress: true,
@@ -352,24 +356,13 @@ export async function seedLaunchablePatient(
   }
 
   const token = tokenFor(MOCK_STAFF);
-  const svcRes = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: {
-      serviceCode: 'AT',
-      providersNeeded: 1,
-      weeklyHours: 20,
-      careLocation: 'HOME',
-      ...RECRUITMENT_FIELDS_E2E,
-      addressId,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
-    },
+  const serviceId = await postContractedServiceViaApi(request, token, patientId, {
+    serviceCode: 'AT',
+    providersNeeded,
+    careLocation: 'HOME',
+    addressId,
+    schedule: schedule ?? [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
   });
-  if (!svcRes.ok()) {
-    throw new Error(
-      `seedLaunchablePatient: POST contracted-services falhou ${svcRes.status()}: ${await svcRes.text()}`,
-    );
-  }
-  const serviceId = ((await svcRes.json()) as { data: { id: string } }).data.id;
 
   const cleanup = (): void => {
     cleanupPatientDeep(patientId);
@@ -382,7 +375,7 @@ export async function seedLaunchablePatient(
 export function seedWorkersNear(lat: number, lng: number, n: number): string[] {
   const ids: string[] = [];
   for (let i = 0; i < n; i++) {
-    ids.push(insertTestWorker({ occupation: 'AT', lat: lat + 0.0009 * (i + 1), lng }));
+    ids.push(insertAptoWorker({ occupation: 'AT', lat: lat + 0.0009 * (i + 1), lng }).workerId);
   }
   return ids;
 }
@@ -479,12 +472,21 @@ export async function publishOnTalentumPage(page: Page, vacancyId: string): Prom
 }
 
 /**
+ * Abre `/admin/patients/kanban` e espera o board renderizar (regra 10: sem `fill()`, nenhum
+ * aqui). Base de `readPatientKanbanColumn` abaixo e do `openPatientKanban` de
+ * `kanban-subcard-e2e-helper.ts` (G2, achado 7 — as mesmas 2 linhas não se copiam duas vezes).
+ */
+export async function openPatientKanbanBoard(page: Page): Promise<void> {
+  await page.goto('/admin/patients/kanban');
+  await expect(page.locator('[data-testid="patient-kanban-board"]')).toBeVisible({ timeout: 20_000 });
+}
+
+/**
  * Id da coluna `kanban-column-*` que contém `patient-kanban-card-<p>` (mesma seleção de
  * `kanban-pacientes.integration.e2e.ts:110-111` / P1), depois de `scrollIntoViewIfNeeded`.
  */
 export async function readPatientKanbanColumn(page: Page, patientId: string): Promise<string> {
-  await page.goto('/admin/patients/kanban');
-  await expect(page.locator('[data-testid="patient-kanban-board"]')).toBeVisible({ timeout: 20_000 });
+  await openPatientKanbanBoard(page);
   const card = page.getByTestId(`patient-kanban-card-${patientId}`);
   await expect(card).toBeVisible({ timeout: 15_000 });
   await card.scrollIntoViewIfNeeded();

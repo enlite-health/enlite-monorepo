@@ -9,13 +9,13 @@ describe('contractedServiceScheduleText — o MESMO texto que a vaga mostra', ()
 
   it('agrupa dias com a mesma faixa, como a vaga', () => {
     expect(contractedServiceScheduleText([
-      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 3, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 5, startTime: '14:00', endTime: '18:00' },
+      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
+      { dayOfWeek: 3, startTime: '08:00', endTime: '12:00', durationMinutes: 240 },
+      { dayOfWeek: 5, startTime: '14:00', endTime: '18:00', durationMinutes: 240 },
     ])).toBe('Lunes, Miércoles 08:00-12:00 | Viernes 14:00-18:00');
   });
 
   it('slot sem hora (dado corrompido) serializa vazio → null, nunca string vazia na tela', () => {
-    expect(contractedServiceScheduleText([{ dayOfWeek: 1, startTime: '', endTime: '' }])).toBeNull();
+    expect(contractedServiceScheduleText([{ dayOfWeek: 1, startTime: '', endTime: '', durationMinutes: 0 }])).toBeNull();
   });
 });

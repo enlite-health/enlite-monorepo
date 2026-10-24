@@ -33,7 +33,8 @@ import { VacancyDaySchedulePicker } from './VacancyDaySchedulePicker';
 import { LockedFieldBadgeLink } from './LockedFieldBadgeLink';
 import type { VacancyFormData } from '../vacancy-form-schema';
 import { STATUS_OPTIONS } from '../vacancy-form-schema';
-import { computeWeeklyHours } from '../vacancyScheduleUtils';
+import { weeklyHoursOf } from '@domain/scheduleHours';
+import { scheduleValueToShifts } from '../vacancyScheduleUtils';
 import { READONLY_CLS } from './vacancyFormShared';
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,7 @@ export function VacancyFormRightColumn({
 
   // Auto-computed from the current schedule field — re-renders on schedule change.
   const schedule = useWatch({ control, name: 'schedule' }) ?? [];
-  const weeklyHours = computeWeeklyHours(schedule);
+  const weeklyHours = weeklyHoursOf(scheduleValueToShifts(schedule));
 
   return (
     <div className="space-y-6">
@@ -262,7 +263,7 @@ export function VacancyFormRightColumn({
           type="number"
           min={1}
           disabled={isProvidersLocked}
-          {...register('providers_needed', { valueAsNumber: true })}
+          {...register('providers_needed', { setValueAs: (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v)) })}
           data-testid="providers-needed-input"
           error={
             errors.providers_needed

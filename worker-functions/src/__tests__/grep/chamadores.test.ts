@@ -20,6 +20,8 @@ const CONTRACTS_CTRL = `${C}/interfaces/controllers/AdminInsuranceContractsContr
 const LINK_CTRL = `${C}/interfaces/controllers/AdminContractedServiceContractLinkController.ts`;
 const PATIENT_SVC_CTRL = `${C}/interfaces/controllers/AdminPatientContractedServicesController.ts`;
 const PATIENT_VIEW = `${C}/interfaces/AdminPatientView.ts`;
+const AUTH_READ = `${C}/infrastructure/contractedServiceAuthorizationRead.ts`;
+const QUERY_HELPER = `${C}/infrastructure/PatientDetailQueryHelper.ts`;
 
 /** símbolo -> arquivos permitidos (definição + chamadores). */
 const PERMITIDOS: Record<string, string[]> = {
@@ -30,6 +32,8 @@ const PERMITIDOS: Record<string, string[]> = {
   termView: [TERM_READ, PRICE_READ, CONTRACTS_CTRL],
   redactTermForActor: [ACCESS, CONTRACTS_CTRL],
   projectContractedServiceForActor: [ACCESS, PATIENT_VIEW, PATIENT_SVC_CTRL, LINK_CTRL],
+  fetchCurrentAuthorizations: [AUTH_READ, MAPPER, REPO_SVC],
+  fetchServiceSchedules: [MAPPER, REPO_SVC],
 };
 
 function usos(simbolo: string, arquivos: Record<string, string>): string[] {
@@ -66,5 +70,26 @@ describe('grep-teste Rv29: chamadores das leituras e da projeção', () => {
   it.each(Object.keys(PERMITIDOS))('%s é de fato usado por cada arquivo permitido (a lista não envelhece sobrando nome)', (simbolo) => {
     const achados = usos(simbolo, conteudo);
     for (const f of PERMITIDOS[simbolo]) expect(achados).toContain(f);
+  });
+});
+
+describe('nota 2: SQL de agenda/autorização inline fora das funções donas', () => {
+  const INLINE = /horario_do_servico\(|contracted_service_authorization/;
+  const todos = fontesSrc();
+  const conteudo: Record<string, string> = Object.fromEntries(todos.map((f) => [f, ler(f)]));
+
+  it('o detector casa um intruso plantado e o dono real (controle positivo)', () => {
+    expect(INLINE.test('SELECT horario_do_servico(id, $2::date)')).toBe(true);
+    expect(INLINE.test(semComentarios(conteudo[MAPPER]))).toBe(true);
+  });
+
+  it.each([REPO_SVC, QUERY_HELPER])('%s não tem SQL inline de horario_do_servico( nem de contracted_service_authorization', (f) => {
+    expect(INLINE.test(semComentarios(conteudo[f]))).toBe(false);
+  });
+
+  it('no mapper horario_do_servico( aparece UMA vez (dentro de fetchServiceSchedules) e contracted_service_authorization nenhuma', () => {
+    const codigo = semComentarios(conteudo[MAPPER]);
+    expect((codigo.match(/horario_do_servico\(/g) ?? []).length).toBe(1);
+    expect(/contracted_service_authorization/.test(codigo)).toBe(false);
   });
 });

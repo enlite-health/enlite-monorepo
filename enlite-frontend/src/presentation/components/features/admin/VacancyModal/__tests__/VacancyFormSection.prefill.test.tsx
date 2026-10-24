@@ -110,6 +110,8 @@ async function selectCaseAndFillMinimum(caseNumber: number) {
   )[0];
   await userEvent.click(addSlotBtn);
 
+  await userEvent.type(await screen.findByTestId('providers-needed-input'), '1');
+
   await waitFor(() => expect(screen.getByTestId('header-save-btn')).not.toBeDisabled());
 }
 

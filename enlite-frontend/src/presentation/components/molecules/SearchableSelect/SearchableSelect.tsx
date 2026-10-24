@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
 
 export interface SearchableSelectOption {
   value: string;
   label: string;
+  /** Marca à direita do rótulo na lista (ex.: estado do prestador). A busca continua só pelo `label`. */
+  adornment?: ReactNode;
 }
 
 interface SearchableSelectProps {
@@ -235,7 +237,14 @@ export function SearchableSelect({
                       : 'hover:bg-[#F3E8FF] text-[#374151]'
                   }`}
                 >
-                  {option.label}
+                  {option.adornment ? (
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="truncate">{option.label}</span>
+                      {option.adornment}
+                    </span>
+                  ) : (
+                    option.label
+                  )}
                 </li>
               ))}
               {filteredOptions.length === 0 && (
