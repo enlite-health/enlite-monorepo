@@ -637,9 +637,10 @@ describe('MessageComposer', () => {
       expect(body).not.toContain('<li>');
     });
 
-    it('CO2: a dica de markdown aparece com o texto do pt-BR', () => {
+    it('CO2: a dica de markdown NÃO aparece (removida a pedido)', () => {
       render(<MessageComposer patientId="p1" />);
-      expect(screen.getByTestId('composer-markdown-hint')).toHaveTextContent(PT.markdownHint);
+      expect(screen.queryByTestId('composer-markdown-hint')).toBeNull();
+      expect(screen.getByTestId('composer-counter')).toBeInTheDocument();
     });
 
     it('CO3: sem a prop, o contador mostra 0/4000', () => {

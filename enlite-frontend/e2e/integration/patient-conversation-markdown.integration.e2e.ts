@@ -32,7 +32,7 @@ let groupId = '';
 
 const AUTORA: MockUser = { uid: AUTORA_UID, email: AUTORA_EMAIL, role: 'recruiter', country: 'AR' };
 
-/** Abre a ficha, o painel e confere idioma (es) e a dica de Markdown do compositor. */
+/** Abre a ficha, o painel e confere idioma (es) e que a dica de Markdown não existe mais. */
 async function abrirPainel(page: Page): Promise<void> {
   await loginAs(page, AUTORA);
   await page.goto(`/admin/patients/${patientId}`);
@@ -41,8 +41,7 @@ async function abrirPainel(page: Page): Promise<void> {
   await handleBtn.click();
   await expect(page.getByTestId('patient-conversation-panel')).toHaveClass(/translate-x-0/);
   await expect(page.getByTestId('conversation-panel-header')).toHaveText('Mensajes');
-  await expect(page.getByTestId('composer-markdown-hint')).toBeVisible();
-  await expect(page.getByTestId('composer-markdown-hint')).toContainText('Acepta Markdown');
+  await expect(page.getByTestId('composer-markdown-hint')).toHaveCount(0);
 }
 
 /** Foca o editor como um humano (click + foco conferido) e devolve o locator. */

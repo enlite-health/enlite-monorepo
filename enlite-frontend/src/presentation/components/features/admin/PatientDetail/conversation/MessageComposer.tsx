@@ -275,10 +275,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           <EditorContent editor={editor} />
         </div>
 
-        <div className="flex items-start justify-between gap-2">
-          <Text size="xs" className="text-gray-600" data-testid="composer-markdown-hint">
-            {tc('markdownHint')}
-          </Text>
+        <div className="flex items-start justify-end gap-2">
           <Text
             size="xs"
             className={tooLong ? 'text-red-600' : 'text-gray-600'}
