@@ -83,7 +83,8 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
     const rotulos = novoPaciente(652000); versoes[rotulos.patientId] = versaoDoProjeto(rotulos);
     const oculto = novoPaciente(653000); versoes[oculto.patientId] = versaoDoProjeto(oculto);
     // Paciente "rótulos": nada informado e UM rótulo cru que o catálogo não conhece.
-    runSQL(`UPDATE patients SET insurance_informed = NULL WHERE id = '${rotulos.patientId}'`);
+    // Spec 071: o drawer não edita mais a cobertura informada; o paciente "feliz" nasce sem ela.
+    runSQL(`UPDATE patients SET insurance_informed = NULL WHERE id IN ('${rotulos.patientId}', '${feliz.patientId}')`);
     runSQL(`INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, source) VALUES ('${rotulos.patientId}', 1, 'QA058A rotulo sin catalogo', 'clickup')`);
     // Paciente "oculto": informada e verificada existem — quem não lê a cobertura não pode vê-las em lugar nenhum.
     runSQL(`INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, source, provider_code) VALUES ('${oculto.patientId}', 1, '${p1.name}', 'admin_manual', '${p1.code}')`);
@@ -99,23 +100,18 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
     dropActors();
   });
 
-  test('FELIZ: tira a cobertura informada e marca 2 obras sociais do catálogo -> o cartão mostra os nomes do catálogo -> o PDF imprime "Cobertura médica" com eles', async ({ page }) => {
+  test('FELIZ: marca 2 obras sociais do catálogo -> o cartão mostra os nomes do catálogo -> o PDF imprime "Cobertura médica" com eles', async ({ page }) => {
     const feliz = pacientes[0];
     await loginAs(page, ator.user);
     await abrirCartao(page, feliz);
-    // As DUAS linhas: a informada (semente) e a verificada (vazia).
-    await expect(page.getByTestId('coverage-informed')).toContainText('OSDE');
+    // As DUAS linhas vazias: a informada (sem semente) e a verificada.
+    await expect(page.getByTestId('coverage-informed')).toContainText('—');
     await expect(page.getByTestId('coverage-verified-value')).toHaveText('—');
 
     await page.getByTestId('edit-coverage-btn').click();
     const drawer = page.getByTestId('patient-coverage-edit-drawer');
     await expect(drawer).toBeVisible();
-    const informada = page.getByTestId('pcv-name');
-    await informada.click();
-    await expect(informada).toBeFocused();
-    await page.keyboard.press('ControlOrMeta+A');
-    await page.keyboard.press('Backspace');
-    await expect(informada).toHaveValue('');
+    const titulo = drawer.getByRole('heading', { level: 3 });
     for (const nome of [p1.name, p2.name]) {
       const gatilho = page.locator('#pcv-codes'); // o `id` do Combobox é do GATILHO
       const raiz = gatilho.locator('..'); // o painel mora no pai do gatilho
@@ -123,7 +119,7 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
       const opcao = raiz.locator('li[role="option"]', { hasText: nome });
       await expect(opcao).toBeVisible({ timeout: 10_000 });
       await opcao.locator('button').click();
-      await informada.click(); // clique FORA da lista (o campo fica acima dela): o Combobox fecha no mousedown externo; nunca Esc (abre o "descartar")
+      await titulo.click(); // clique FORA da lista (o título fica acima dela): o Combobox fecha no mousedown externo; nunca Esc (abre o "descartar")
       await expect(raiz.locator('li[role="option"]').first()).toHaveCount(0);
     }
     await expect(page.getByTestId('pcv-codes-selected')).toContainText(p1.name);
