@@ -3531,8 +3531,6 @@
         "contactEmail": "Email de contacto",
         "documentType": "Tipo de documento",
         "documentNumber": "Número de documento",
-        "healthInsuranceName": "Nombre de la cobertura",
-        "serviceType": "Tipo de servicio",
         "saveError": "Error al crear el paciente",
         "birthDate": "Fecha de nacimiento"
       },
