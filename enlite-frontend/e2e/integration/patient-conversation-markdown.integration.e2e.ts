@@ -144,4 +144,38 @@ test.describe('Chat interno por paciente — markdown na mensagem (spec 072) @in
     await expect(link).toHaveCount(1);
     await expect(link).toHaveAttribute('rel', /noopener/);
   });
+
+  test('E4 tabela e riscado digitados — table com 2 th e td, e um del', async ({ page }) => {
+    await abrirPainel(page);
+    await focarEditor(page);
+    const linhas = ['| col a | col b |', '|---|---|', '| um | dois |', '| tres | quatro |'];
+    for (const [i, linha] of linhas.entries()) {
+      if (i > 0) await page.keyboard.press('Shift+Enter');
+      await page.keyboard.type(linha);
+    }
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('texto ~~errado~~ fim');
+
+    const body = await enviar(page);
+    await expect(body.locator('table')).toHaveCount(1);
+    await expect(body.locator('th')).toHaveCount(2);
+    expect(await body.locator('td').count()).toBeGreaterThanOrEqual(2);
+    await expect(body.locator('del')).toHaveText('errado');
+  });
+
+  test('E5 tabela COLADA — as linhas coladas continuam sendo uma table', async ({ page }) => {
+    await abrirPainel(page);
+    await focarEditor(page);
+    // Cola como o navegador faz: evento paste com text/plain no editor (sem clipboard real).
+    await page.getByTestId('composer-editor').evaluate((el) => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', '| col a | col b |\n|---|---|\n| um | dois |');
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+
+    const body = await enviar(page);
+    await expect(body.locator('table')).toHaveCount(1);
+    await expect(body.locator('th')).toHaveCount(2);
+    expect(await body.locator('td').count()).toBeGreaterThanOrEqual(2);
+  });
 });
