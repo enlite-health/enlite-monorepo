@@ -156,9 +156,8 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     await selectCombo(screen.getByTestId('pce-hasCud'), 'Não');
     // hasConsent: true → '' (tri-state "unset" = "—", strToBool cai no branch `return null` — linhas 56-57)
     await selectCombo(screen.getByTestId('pce-hasConsent'), '—');
-    // serviceType: ['AT'] → ['AT', 'CAREGIVER'] via MultiSelect (abre pelo botão com o valor atual)
-    fireEvent.click(screen.getByText('Acompanhante Terapêutico'));
-    fireEvent.click(screen.getByText('Cuidador'));
+    // tipo de serviço não é mais editável aqui (spec 071)
+    expect(document.querySelector('#pce-serviceType')).toBeNull();
 
     fireEvent.click(screen.getByTestId('pce-save'));
 
@@ -166,11 +165,22 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', {
       deviceTypes: ['HOME', 'SCHOOL'],
       dependencyLevel: 'MODERATE',
-      serviceType: ['AT', 'CAREGIVER'],
       hasJudicialProtection: true,
       hasCud: false,
       hasConsent: null,
     });
+    expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('serviceType');
+  });
+
+  it('salvar só a dependência: sem campo de tipo de serviço e o payload não leva serviceType', async () => {
+    const { container } = render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(container.querySelector('#pce-serviceType')).toBeNull();
+    await selectCombo(screen.getByTestId('pce-dependency'), 'Moderada'); // MODERATE = Moderada
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    const payload = updatePatientSection.mock.calls[0][2];
+    expect(payload).toEqual({ dependencyLevel: 'MODERATE' });
+    expect(payload).not.toHaveProperty('serviceType');
   });
 
   it('paciente mínimo (todos os campos vazios/null): sem mudança não chama a API — cobre os defaults `?? null`/`?? []`/boolToStr(null)', async () => {
@@ -263,7 +273,7 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
       expect(drawer.textContent).not.toMatch(/\(opcional\)/);
       // só rótulos com texto — a lupa da busca também é um <label for> (clicar nela foca o input), sem texto
       const labels = Array.from(drawer.querySelectorAll('label')).filter((l) => l.textContent?.trim());
-      expect(labels.length).toBeGreaterThanOrEqual(8);
+      expect(labels.length).toBeGreaterThanOrEqual(7);
       for (const l of labels) {
         expect(l.className).toMatch(/text-\[12px\]/);
         expect(l.className).toMatch(/\btext-primary\b/);

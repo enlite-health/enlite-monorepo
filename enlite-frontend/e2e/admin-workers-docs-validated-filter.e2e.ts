@@ -252,10 +252,8 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
 
     const validationSelect = getValidationSelect(page);
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
-    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
-
     // Aguarda requisição com o filtro correto
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -263,6 +261,8 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_validated=all_validated'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
+    await resposta;
 
     const lastUrl = capturedUrls[capturedUrls.length - 1];
     expect(lastUrl).toContain('docs_validated=all_validated');
@@ -284,16 +284,16 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
 
     // Seleciona "Todos validados"
-    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
-
     // Aguarda que a lista seja atualizada
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
         !resp.url().includes('/case-options'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
+    await resposta;
 
     // Aguarda a tabela estar visível
     await expect(page.getByText('Ana Validada')).toBeVisible({ timeout: 10000 });
@@ -342,8 +342,7 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
 
     // Seleciona "Todos validados"
-    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -351,6 +350,8 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_validated=all_validated'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Todos validados'); // all_validated = Todos validados
+    await resposta;
 
     // Volta para "Todos": o Combobox não tem linha de limpar (o placeholder não é opção); quem limpa é o botão "Limpiar"
     await page.getByRole('button', { name: 'Limpiar', exact: true }).click();
@@ -413,8 +414,7 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
     await expect(validationSelect).toBeVisible({ timeout: 5000 });
 
     // Seleciona "Completos" em Documentación
-    await escolherNoCombo(page, docsSelect, 'Completos'); // complete = Completos
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -422,10 +422,11 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_complete=complete'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, docsSelect, 'Completos'); // complete = Completos
+    await resposta;
 
     // Seleciona "Falta validación" em Validación
-    await escolherNoCombo(page, validationSelect, 'Falta validación'); // pending_validation = Falta validación
-    await page.waitForResponse(
+    const respostaValidacion = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/workers') &&
         !resp.url().includes('/stats') &&
@@ -434,6 +435,8 @@ test.describe('AdminWorkersPage — Filtros docs_complete e docs_validated indep
         resp.url().includes('docs_validated=pending_validation'),
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, validationSelect, 'Falta validación'); // pending_validation = Falta validación
+    await respostaValidacion;
 
     const lastUrl = capturedUrls[capturedUrls.length - 1];
     expect(lastUrl).toContain('docs_complete=complete');

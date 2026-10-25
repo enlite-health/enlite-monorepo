@@ -12,7 +12,7 @@ import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Co
 export const ADDRESS_TYPE_OTHER_MAX = 40;
 
 interface Props {
-  /** `''` representa "sin especificar" (`address_type = NULL`) — o placeholder do `seletor antigo`. */
+  /** `''` representa "sin especificar" (`address_type = NULL`) — a opção de placeholder do Combobox. */
   addressType: PatientAddressType | '';
   addressTypeOther: string;
   onAddressTypeChange: (value: PatientAddressType | '') => void;

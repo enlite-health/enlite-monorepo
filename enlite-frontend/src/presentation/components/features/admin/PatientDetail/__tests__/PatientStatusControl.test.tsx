@@ -70,7 +70,7 @@ describe('PatientStatusControl', () => {
     await ready(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
     const select = screen.getByTestId('patient-status-select') as HTMLSelectElement;
     expect(select.value).toBe('ACTIVE');
-    const values = [...select.options].map((o) => o.value).filter(Boolean); // o seletor antigo sempre emite a option de placeholder
+    const values = [...select.options].map((o) => o.value).filter(Boolean); // o <select> nativo sempre emite a option de placeholder
     expect(values).toEqual(['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED']);
     expect([...select.options].map((o) => o.textContent)).toContain('Em espera');
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();

@@ -360,13 +360,13 @@ test.describe('BlockedAttemptsPage', () => {
 
     // Select reason filter
     const select = page.locator('[data-testid="blocked-filters"]').getByRole('combobox').first();
-    await escolherNoCombo(page, select, 'Worker desactivado'); // worker_disabled = Worker desactivado
-
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/recruitment/blocked-attempts') &&
         resp.url().includes('reason=worker_disabled'),
     );
+    await escolherNoCombo(page, select, 'Worker desactivado'); // worker_disabled = Worker desactivado
+    await resposta;
 
     const filtered = capturedUrls.find((u) => u.includes('reason=worker_disabled'));
     expect(filtered).toBeDefined();
