@@ -37,20 +37,26 @@ describe('PatientCreateModal', () => {
     fireEvent.click(screen.getByTestId('pc-save'));
     await waitFor(() => expect(createPatient).toHaveBeenCalledWith({
       firstName: 'Nina', country: 'AR', lastName: undefined, birthDate: '2015-06-20', phoneWhatsapp: '+5491100000031', contactEmail: undefined,
-      documentType: undefined, documentNumber: undefined, healthInsuranceName: undefined, serviceType: undefined,
+      documentType: undefined, documentNumber: undefined,
     }));
+    const sent = createPatient.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('healthInsuranceName');
+    expect(sent).not.toHaveProperty('serviceType');
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('new-1'));
   });
 
-  it('tipo de documento e serviço requerido entram quando escolhidos', async () => {
+  it('tipo de documento entra quando escolhido; cobertura e serviço não existem no cadastro', async () => {
     const { container } = render(<PatientCreateModal onClose={vi.fn()} onCreated={vi.fn()} />);
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
     chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
     chooseCombo(screen.getByTestId('pc-documentType'), 'DNI'); // DNI = DNI
-    fireEvent.click(container.querySelector('#pc-serviceType') as HTMLElement);
-    fireEvent.click(screen.getByText('Cuidador'));
+    expect(screen.queryByTestId('pc-insName')).toBeNull();
+    expect(container.querySelector('#pc-serviceType')).toBeNull();
     fireEvent.click(screen.getByTestId('pc-save'));
-    await waitFor(() => expect(createPatient).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'DNI', serviceType: ['CAREGIVER'] })));
+    await waitFor(() => expect(createPatient).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'DNI' })));
+    const sent = createPatient.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('healthInsuranceName');
+    expect(sent).not.toHaveProperty('serviceType');
   });
 
   it('nome vazio não chama a API; erro com mensagem → inline; erro não-Error → genérica', async () => {
