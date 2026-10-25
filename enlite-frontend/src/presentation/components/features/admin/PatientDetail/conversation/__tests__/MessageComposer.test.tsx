@@ -37,9 +37,11 @@ const translations = ptBR as Record<string, unknown>;
 function resolve(key: string): unknown {
   return key.split('.').reduce((acc: any, part) => acc?.[part], translations);
 }
-function t(key: string, fallback?: string): string {
+function t(key: string, fallback?: string | Record<string, unknown>): string {
   const raw = resolve(key);
-  return typeof raw === 'string' ? raw : (fallback ?? key);
+  if (typeof raw !== 'string') return typeof fallback === 'string' ? fallback : key;
+  const opts = typeof fallback === 'object' && fallback !== null ? fallback : {};
+  return raw.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => String(opts[k] ?? `{{${k}}}`));
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }) }));
 
@@ -616,5 +618,55 @@ describe('MessageComposer', () => {
 
     await user.type(editor, ' mais texto');
     expect(screen.queryByTestId('composer-send-error')).not.toBeInTheDocument();
+  });
+
+  describe('markdown e limite (spec 072, T5)', () => {
+    it('CO1: o corpo enviado é o texto CRU digitado (sem <strong>/<li>), com a quebra', async () => {
+      postConversationMessage.mockResolvedValue({ id: 'm-1' });
+      render(<MessageComposer patientId="p1" />);
+      const editor = screen.getByTestId('composer-editor');
+      const user = userEvent.setup();
+      await user.click(editor);
+      await user.type(editor, '**a**{Shift>}{Enter}{/Shift}- b');
+      fireEvent.click(screen.getByTestId('composer-send-btn'));
+
+      await waitFor(() => expect(postConversationMessage).toHaveBeenCalledTimes(1));
+      const body = postConversationMessage.mock.calls[0][1].body as string;
+      expect(body).toContain('**a**\n- b');
+      expect(body).not.toContain('<strong>');
+      expect(body).not.toContain('<li>');
+    });
+
+    it('CO2: a dica de markdown aparece com o texto do pt-BR', () => {
+      render(<MessageComposer patientId="p1" />);
+      expect(screen.getByTestId('composer-markdown-hint')).toHaveTextContent(PT.markdownHint);
+    });
+
+    it('CO3: sem a prop, o contador mostra 0/4000', () => {
+      render(<MessageComposer patientId="p1" />);
+      expect(screen.getByTestId('composer-counter').textContent).toBe('0/4000');
+    });
+
+    it('CO4: acima de maxChars o envio é desabilitado e o aviso aparece', async () => {
+      render(<MessageComposer patientId="p1" maxChars={10} />);
+      const editor = screen.getByTestId('composer-editor');
+      const user = userEvent.setup();
+      await user.click(editor);
+      await user.type(editor, 'abcdefghijk');
+
+      expect(screen.getByTestId('composer-send-btn')).toBeDisabled();
+      expect(screen.getByTestId('composer-too-long')).toBeInTheDocument();
+    });
+
+    it('CO5: exatamente maxChars mantém o envio habilitado e sem aviso', async () => {
+      render(<MessageComposer patientId="p1" maxChars={10} />);
+      const editor = screen.getByTestId('composer-editor');
+      const user = userEvent.setup();
+      await user.click(editor);
+      await user.type(editor, 'abcdefghij');
+
+      expect(screen.getByTestId('composer-send-btn')).not.toBeDisabled();
+      expect(screen.queryByTestId('composer-too-long')).not.toBeInTheDocument();
+    });
   });
 });
