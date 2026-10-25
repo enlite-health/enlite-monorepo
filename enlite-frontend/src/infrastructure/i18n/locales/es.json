@@ -3277,7 +3277,6 @@
       "editDrawer": {
         "generalTitle": "Editar información general",
         "clinicalTitle": "Editar diagnóstico",
-        "serviceTitle": "Editar servicios contratados",
         "save": "Guardar",
         "close": "Cerrar",
         "unset": "—",
@@ -3532,9 +3531,7 @@
         "contactEmail": "Email de contacto",
         "documentType": "Tipo de documento",
         "documentNumber": "Número de documento",
-        "coverageSection": "Cobertura médica",
         "healthInsuranceName": "Nombre de la cobertura",
-        "serviceSection": "Servicio requerido",
         "serviceType": "Tipo de servicio",
         "saveError": "Error al crear el paciente",
         "birthDate": "Fecha de nacimiento"
