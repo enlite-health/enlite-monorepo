@@ -7,7 +7,7 @@
  * de domicílio. Por isso o passo 2 em diante só existe depois daqui: na aba de
  * prestadores a âncora é um PACIENTE, na de pacientes é um PRESTADOR.
  *
- * O seletor é o mesmo `seletor antigo` de antes (sem portal — lex 02/09, C-1)
+ * O seletor é o Combobox (sem portal — lex 02/09, C-1)
  * e continua mascarado para o Clarity: as opções são "nome · bairro" de pessoa.
  */
 import { MapPinned } from 'lucide-react';
@@ -68,7 +68,7 @@ export function AnchorPicker({
    * isto hoje (o nome do prestador é cifrado — ver `useAnchorCandidates`).
    */
   onSearchChange?: (text: string) => void;
-  /** O termo a que `options` já corresponde — ver `seletor antigo`. */
+  /** O termo a que `options` já corresponde (a resposta do servidor, não o que está sendo digitado). */
   serverSearchTerm?: string;
   emptyMessage?: string;
 }): JSX.Element {

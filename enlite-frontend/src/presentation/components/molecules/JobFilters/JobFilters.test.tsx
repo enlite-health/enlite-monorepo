@@ -34,7 +34,7 @@ describe('JobFilters — 4 Combobox (spec 070)', () => {
     expect(p.onSexoChange).toHaveBeenCalledWith('nandu');
   });
 
-  it('altura h-[60px] do seletor antigo (default) e a opção "Todos" (valor vazio) já na lista', () => {
+  it('altura h-[60px] do Combobox (default) e a opção "Todos" (valor vazio) já na lista', () => {
     montar();
     const gatilho = screen.getByRole('combobox', { name: 'jobs.filterLabels.jobTypes' });
     expect(gatilho.className).toContain('h-[60px]');

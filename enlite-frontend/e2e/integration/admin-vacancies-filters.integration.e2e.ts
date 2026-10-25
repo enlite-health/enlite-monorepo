@@ -322,14 +322,14 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
 
     // Apply Tipo = AT (2nd combobox)
     const selects = filterBar(page).getByRole('combobox');
-    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
-
     // Wait for filter request to complete
-    await page.waitForResponse((res) =>
+    const resposta = page.waitForResponse((res) =>
       res.url().includes('/api/admin/vacancies') &&
       !res.url().includes('filter-options') &&
       !res.url().includes('stats'),
     );
+    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
+    await resposta;
 
     // Small stable delay for any animations
     await page.waitForTimeout(300);

@@ -111,23 +111,23 @@ test.describe('Entrega A1 — refetch silencioso (item 1+4) e DiscardChangesConf
 
     const coverageCard = page.getByTestId('cobertura-medica-card');
     await expect(coverageCard).toBeVisible({ timeout: 20_000 });
-    // Baseline: seed não grava `insurance_informed` (o dono único da cobertura informada, spec 058) —
-    // "Nombre de la Cobertura" nasce vazio ("—"). Prova que o valor que aparecer depois veio do PATCH
-    // desta edição, não de outra fonte.
+    // Baseline: seed não grava `affiliate_id` — a credencial nasce vazia ("—"). Prova que o valor que
+    // aparecer depois veio do PATCH desta edição, não de outra fonte.
     await expect(coverageCard).toContainText('—');
 
     await page.getByTestId('edit-coverage-btn').click();
     const drawer = page.getByTestId('patient-coverage-edit-drawer');
     await expect(drawer).toBeVisible();
 
-    const novoNome = `Cobertura Humano ${seed.stamp}`;
-    const campo = page.getByTestId('pcv-name');
+    const novoAfiliado = `AF-HUMANO-${seed.stamp}`;
+    await expect(coverageCard).not.toContainText(novoAfiliado);
+    const campo = page.getByTestId('pcv-affiliate');
     // Clique triplo seleciona a linha inteira (o `Meta+A` do macOS não é confiável no Chromium
     // headless) — depois digitar por cima substitui a seleção, como um humano faria.
     await campo.click({ clickCount: 3 });
     await expect(campo).toBeFocused();
-    await page.keyboard.type(novoNome);
-    await expect(campo).toHaveValue(novoNome);
+    await page.keyboard.type(novoAfiliado);
+    await expect(campo).toHaveValue(novoAfiliado);
 
     const hits = await contarAparicoesDoSkeleton(page, async () => {
       const generalCardStillThere = page.getByTestId('patient-general-info-card');
@@ -139,7 +139,7 @@ test.describe('Entrega A1 — refetch silencioso (item 1+4) e DiscardChangesConf
     });
 
     expect(hits, 'skeleton NUNCA deve aparecer durante o refetch pós-save de outro card (A1)').toBe(0);
-    await expect(coverageCard).toContainText(novoNome, { timeout: 10_000 });
+    await expect(coverageCard).toContainText(novoAfiliado, { timeout: 10_000 });
   });
 
   test('A2. recarregar a página: o skeleton APARECE no load inicial — prova que o instrumento detecta skeleton de verdade', async ({ page }) => {

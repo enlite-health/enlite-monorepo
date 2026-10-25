@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { PatientCreateModal } from './PatientCreateModal';
 import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
@@ -65,13 +65,6 @@ function chooseCountry(value: string) {
 
 /** The mocked `t` echoes the key, so this is the country error's rendered text. */
 const COUNTRY_ERROR = 'admin.patients.create.countryRequired';
-
-/** Opens the serviceType MultiSelect (a button/listbox, not a <select>). */
-function openServiceTypes() {
-  const trigger = document.getElementById('pc-serviceType') as HTMLElement; // o id é do gatilho
-  fireEvent.click(trigger);
-  return trigger.parentElement as HTMLElement;
-}
 
 describe('PatientCreateModal — country selector', () => {
   beforeEach(() => {
@@ -149,7 +142,7 @@ describe('PatientCreateModal — country selector', () => {
     fillFirstName();
     submit();
 
-    // The error surfaces (rendered by seletor antigo, once — not duplicated by FormField).
+    // The error surfaces (rendered by the Combobox, once — not duplicated by FormField).
     const shown = await screen.findAllByText(COUNTRY_ERROR);
     expect(shown).toHaveLength(1);
 
@@ -269,7 +262,8 @@ describe('PatientCreateModal — country selector', () => {
     fireEvent.change(screen.getByTestId('pc-email'), { target: { value: 'ana@enlite.health' } });
     chooseCombo(screen.getByTestId('pc-documentType'), 'DNI'); // DNI = DNI
     fireEvent.change(screen.getByTestId('pc-documentNumber'), { target: { value: ' 12345678 ' } });
-    fireEvent.change(screen.getByTestId('pc-insName'), { target: { value: ' OSDE ' } });
+    expect(screen.queryByTestId('pc-insName')).toBeNull();
+    expect(document.querySelector('#pc-serviceType')).toBeNull();
     // Spec 058: o nº de afiliado saiu do cadastro (o back recusa `healthInsuranceMemberId` com 422); o campo não existe mais.
     expect(screen.queryByTestId('pc-insMember')).toBeNull();
     submit();
@@ -283,25 +277,9 @@ describe('PatientCreateModal — country selector', () => {
       contactEmail: 'ana@enlite.health',
       documentType: 'DNI',
       documentNumber: '12345678',
-      healthInsuranceName: 'OSDE',
-      // Nothing was picked in the MultiSelect: an empty array is dropped, not sent as [].
-      serviceType: undefined,
     });
-  });
-
-  it('g2. sends the selected service types', async () => {
-    renderModal();
-    fillFirstName();
-    chooseCountry('AR');
-
-    const wrapper = openServiceTypes();
-    fireEvent.click(within(wrapper).getByText('AT'));
-    fireEvent.click(within(wrapper).getByText('NURSE'));
-    submit();
-
-    await waitFor(() => expect(mockCreatePatient).toHaveBeenCalledTimes(1));
-    expect(mockCreatePatient).toHaveBeenCalledWith(
-      expect.objectContaining({ serviceType: ['AT', 'NURSE'] }),
-    );
+    const sent = mockCreatePatient.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('healthInsuranceName');
+    expect(sent).not.toHaveProperty('serviceType');
   });
 });
