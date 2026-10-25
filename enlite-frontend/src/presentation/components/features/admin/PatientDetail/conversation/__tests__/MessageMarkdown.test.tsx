@@ -185,3 +185,84 @@ describe('segurança', () => {
     expect(links[0].getAttribute('href')?.startsWith('mailto:')).toBe(true);
   });
 });
+
+describe('GFM (spec 072b): tabela e facilitadores', () => {
+  const TABLE = '| col a | col b |\n|---|---|\n| um | dois |\n| tres | quatro |';
+
+  it('G1 tabela GFM vira table/th/td com o texto', () => {
+    const { container } = renderBody(TABLE);
+    expect(container.querySelectorAll('table')).toHaveLength(1);
+    const ths = container.querySelectorAll('th');
+    expect(Array.from(ths).map((n) => n.textContent)).toEqual(['col a', 'col b']);
+    expect(Array.from(container.querySelectorAll('td')).map((n) => n.textContent)).toEqual([
+      'um', 'dois', 'tres', 'quatro',
+    ]);
+    expect(container.querySelector('table')?.parentElement?.className).toContain('overflow-x-auto');
+  });
+
+  it('G2 ~~riscado~~ vira del', () => {
+    const { container } = renderBody('texto ~~errado~~ aqui');
+    expect(container.querySelectorAll('del')).toHaveLength(1);
+    expect(container.querySelector('del')?.textContent).toBe('errado');
+  });
+
+  it('G3 task list vira 2 checkbox somente leitura, 1 marcado', () => {
+    const { container } = renderBody('- [x] feito\n- [ ] pendente');
+    const boxes = container.querySelectorAll('input');
+    expect(boxes).toHaveLength(2);
+    boxes.forEach((b) => {
+      expect(b.getAttribute('type')).toBe('checkbox');
+      expect(b.disabled).toBe(true);
+    });
+    expect(container.querySelectorAll('input:checked')).toHaveLength(1);
+  });
+
+  it('G4 URL solta vira link seguro', () => {
+    const { container } = renderBody('veja https://exemplo.test/p agora');
+    const a = container.querySelector('a');
+    expect(a?.getAttribute('href')).toBe('https://exemplo.test/p');
+    expect(a?.getAttribute('rel')).toBe('noopener noreferrer nofollow');
+  });
+
+  it('G5 www.exemplo.test vira link http(s)', () => {
+    const { container } = renderBody('veja www.exemplo.test agora');
+    const a = container.querySelector('a');
+    expect(a?.getAttribute('href')).toMatch(/^https?:\/\/www\.exemplo\.test/);
+    expect(a?.getAttribute('rel')).toBe('noopener noreferrer nofollow');
+  });
+
+  it('G6 img (crua ou markdown) em célula: crua vira texto, 0 img', () => {
+    const { container } = renderBody(
+      '| a | b |\n|---|---|\n| <img src=x onerror=alert(1)> | ![x](https://exemplo.test/a.png) |',
+    );
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('td')?.textContent).toContain('<img');
+  });
+
+  it('G7 javascript: solto e em célula não vira link', () => {
+    const { container } = renderBody('javascript:alert(1)\n\n| a |\n|---|\n| [x](javascript:alert(1)) |');
+    expect(container.querySelectorAll('a[href^="javascript"]')).toHaveLength(0);
+    expect(container.querySelector('td a')).toBeNull();
+  });
+
+  it('G8 input cru no corpo vira texto, 0 input[type=text]', () => {
+    const { container } = renderBody('antes <input type="text"> depois');
+    expect(container.querySelectorAll('input[type="text"]')).toHaveLength(0);
+    expect(container.querySelectorAll('input')).toHaveLength(0);
+    expect(container.textContent).toContain('<input');
+  });
+
+  it('G9 nota de rodapé fica fora: sem âncora #, sup ou section', () => {
+    const { container } = renderBody('a[^1]\n\n[^1]: b');
+    expect(container.querySelectorAll('a[href^="#"]')).toHaveLength(0);
+    expect(container.querySelectorAll('a')).toHaveLength(0);
+    expect(container.querySelectorAll('sup')).toHaveLength(0);
+    expect(container.querySelectorAll('section')).toHaveLength(0);
+  });
+
+  it('G10 menção dentro de célula vira chip', () => {
+    renderBody('| quem |\n|---|\n| <@u1> |', ['u1']);
+    const chip = screen.getByTestId('mention-chip');
+    expect(chip.closest('td')).not.toBeNull();
+  });
+});

@@ -1,5 +1,6 @@
 import type { ReactNode, JSX } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 /** Mesma regra de `<@uid>` que o compositor grava no corpo da mensagem. */
 export const MENTION_PATTERN = /<@([^>]+)>/g;
@@ -7,11 +8,12 @@ export const MENTION_PATTERN = /<@([^>]+)>/g;
 const MENTION_HREF = /^#mention-(\d+)$/;
 const SAFE_LINK = /^(https?:\/\/|mailto:)/i;
 
-/** Whitelist (plan D3): quem liberar `img`/`table` edita esta lista E o teste de segurança. */
+/** Whitelist (plan D3): quem liberar `img` edita esta lista E o teste de segurança. */
 const ALLOWED = [
   'p', 'br', 'strong', 'em', 'ul', 'ol', 'li',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'blockquote', 'code', 'pre', 'a', 'hr',
+  'table', 'thead', 'tbody', 'tr', 'th', 'td', 'del', 'input',
 ];
 
 const BLOCK_TEXT = 'whitespace-pre-wrap break-words';
@@ -60,6 +62,19 @@ function buildComponents(uids: string[], renderMention: (uid: string) => ReactNo
       }
       return <span>{children}</span>;
     },
+    table: ({ children }) => (
+      <div className="overflow-x-auto">
+        <table className="border-collapse text-xs">{children}</table>
+      </div>
+    ),
+    th: ({ children }) => (
+      <th className="border border-gray-200 bg-gray-100 px-2 py-1 text-left font-semibold">{children}</th>
+    ),
+    td: ({ children }) => <td className="border border-gray-200 px-2 py-1">{children}</td>,
+    del: ({ children }) => <del className="line-through">{children}</del>,
+    // Só a caixinha da task list do GFM, sempre somente leitura; qualquer outro type não renderiza.
+    input: ({ type, checked }) =>
+      type === 'checkbox' ? <input type="checkbox" checked={!!checked} disabled readOnly /> : null,
     p: ({ children }) => <p className={BLOCK_TEXT}>{children}</p>,
     li: ({ children }) => <li className={BLOCK_TEXT}>{children}</li>,
     blockquote: ({ children }) => (
@@ -92,6 +107,7 @@ export function MessageMarkdown({ body, mentions, renderMention }: MessageMarkdo
   return (
     <div className="text-sm break-words [&>*+*]:mt-5">
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         allowedElements={ALLOWED}
         unwrapDisallowed
         components={buildComponents(uids, renderMention)}
