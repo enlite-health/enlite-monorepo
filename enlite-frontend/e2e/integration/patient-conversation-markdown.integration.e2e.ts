@@ -32,7 +32,7 @@ let groupId = '';
 
 const AUTORA: MockUser = { uid: AUTORA_UID, email: AUTORA_EMAIL, role: 'recruiter', country: 'AR' };
 
-/** Abre a ficha, o painel e confere idioma (es) e a dica de Markdown do compositor. */
+/** Abre a ficha, o painel e confere idioma (es) e que a dica de Markdown não existe mais. */
 async function abrirPainel(page: Page): Promise<void> {
   await loginAs(page, AUTORA);
   await page.goto(`/admin/patients/${patientId}`);
@@ -41,8 +41,7 @@ async function abrirPainel(page: Page): Promise<void> {
   await handleBtn.click();
   await expect(page.getByTestId('patient-conversation-panel')).toHaveClass(/translate-x-0/);
   await expect(page.getByTestId('conversation-panel-header')).toHaveText('Mensajes');
-  await expect(page.getByTestId('composer-markdown-hint')).toBeVisible();
-  await expect(page.getByTestId('composer-markdown-hint')).toContainText('Acepta Markdown');
+  await expect(page.getByTestId('composer-markdown-hint')).toHaveCount(0);
 }
 
 /** Foca o editor como um humano (click + foco conferido) e devolve o locator. */
@@ -144,5 +143,39 @@ test.describe('Chat interno por paciente — markdown na mensagem (spec 072) @in
     const link = body.locator('a[href="https://exemplo.test/p"][target="_blank"]');
     await expect(link).toHaveCount(1);
     await expect(link).toHaveAttribute('rel', /noopener/);
+  });
+
+  test('E4 tabela e riscado digitados — table com 2 th e td, e um del', async ({ page }) => {
+    await abrirPainel(page);
+    await focarEditor(page);
+    const linhas = ['| col a | col b |', '|---|---|', '| um | dois |', '| tres | quatro |'];
+    for (const [i, linha] of linhas.entries()) {
+      if (i > 0) await page.keyboard.press('Shift+Enter');
+      await page.keyboard.type(linha);
+    }
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('texto ~~errado~~ fim');
+
+    const body = await enviar(page);
+    await expect(body.locator('table')).toHaveCount(1);
+    await expect(body.locator('th')).toHaveCount(2);
+    expect(await body.locator('td').count()).toBeGreaterThanOrEqual(2);
+    await expect(body.locator('del')).toHaveText('errado');
+  });
+
+  test('E5 tabela COLADA — as linhas coladas continuam sendo uma table', async ({ page }) => {
+    await abrirPainel(page);
+    await focarEditor(page);
+    // Cola como o navegador faz: evento paste com text/plain no editor (sem clipboard real).
+    await page.getByTestId('composer-editor').evaluate((el) => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', '| col a | col b |\n|---|---|\n| um | dois |');
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+
+    const body = await enviar(page);
+    await expect(body.locator('table')).toHaveCount(1);
+    await expect(body.locator('th')).toHaveCount(2);
+    expect(await body.locator('td').count()).toBeGreaterThanOrEqual(2);
   });
 });
