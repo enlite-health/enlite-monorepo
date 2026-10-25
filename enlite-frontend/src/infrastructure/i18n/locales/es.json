@@ -4652,6 +4652,9 @@
           },
           "composer": {
             "placeholder": "Escribí un mensaje…",
+            "markdownHint": "Acepta Markdown: **negrita**, *cursiva*, listas con \"-\" y enlaces [texto](https://…)",
+            "counter": "{{count}}/{{max}}",
+            "tooLong": "El mensaje supera el límite de {{max}} caracteres",
             "send": "Enviar",
             "attach": "Adjuntar",
             "discardConfirm": "¿Descartar el mensaje sin enviar?",
