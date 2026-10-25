@@ -185,11 +185,10 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     await expect(page.getByTestId('patient-contact-email')).toHaveText(seed.contactEmail, { timeout: 15_000 });
   });
 
-  test('A3 (criação) — "Nuevo paciente" com cobertura e e-mail → a ficha mostra os dois', async ({ page }, testInfo) => {
+  test('A3 (criação) — "Nuevo paciente" não tem campo de cobertura; com e-mail → a ficha mostra o e-mail e a cobertura fica vazia', async ({ page }, testInfo) => {
     await loginAsRealStaff(page);
     const stamp = Date.now().toString().slice(-6);
     const firstName = `NuevoBlocoA${stamp}`;
-    const coverage = `Swiss Medical e2e ${stamp}`;
     const email = `nuevo.${stamp}@example.test`;
 
     await page.goto('/admin/patients');
@@ -199,7 +198,7 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     await page.getByTestId('pc-lastName').fill('Modal');
     await page.getByTestId('pc-phone').fill('+5491100000031');
     await page.getByTestId('pc-email').fill(email);
-    await page.getByTestId('pc-insName').fill(coverage);
+    await expect(page.getByTestId('pc-insName')).toHaveCount(0);
     await page.getByTestId('pc-save').click();
     await expect(page.getByTestId('patient-create-modal')).toHaveCount(0, { timeout: 15_000 });
 
@@ -207,13 +206,13 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     expect(createdViaModalId).toMatch(/^[0-9a-f-]{36}$/);
     const cols = readPatientCoverageColumns(createdViaModalId);
     testInfo.annotations.push({ type: 'evidência', description: `A3 — colunas do paciente criado pelo modal: ${JSON.stringify(cols)}` });
-    expect(cols.insuranceInformed).toBe(coverage); // spec 058: a chave de fio `healthInsuranceName` grava no dono `insurance_informed`
+    expect(cols.insuranceInformed).toBe('<NULL>'); // spec 071: o modal não grava cobertura; o helper devolve '<NULL>' para a coluna nula
 
     const data = await openDetail(page, createdViaModalId);
-    expect(data.insuranceInformed).toBe(coverage);
+    expect(data.insuranceInformed ?? null).toBeNull();
     expect(data.contactEmail).toBe(email);
     await expect(page.getByTestId('patient-contact-email')).toHaveText(email, { timeout: 30_000 });
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
-    await expect(page.getByTestId('cobertura-medica-card')).toContainText(coverage);
+    await expect(page.getByTestId('coverage-informed')).toContainText('—');
   });
 });

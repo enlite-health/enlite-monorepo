@@ -26,7 +26,6 @@ interface Props {
 const DEPENDENCY_LEVELS = ['SEVERE', 'VERY_SEVERE', 'MODERATE', 'MILD'] as const;
 // US-B8 (spec 012, `2026-08-26a#DEC-09`): "Especialidad" SAIU do drawer — o segmento vira máscara
 // do projeto terapêutico, derivado do CID; o segmento continua chegando pelo espelho do ClickUp.
-const SERVICE_TYPES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 const CLOSE_MS = 300;
 /** Teto das observações gerais (REQ-01). O banco é TEXT; o teto é da tela, para o contador ter referência. */
 export const GENERAL_NOTES_MAX = 4000;
@@ -48,7 +47,6 @@ const schema = z.object({
   // US-B4: códigos de `device_types` (multi) — texto livre dava 23503 (FK desde a 308).
   deviceTypes: z.array(z.string()),
   dependencyLevel: z.string(),
-  serviceType: z.array(z.string()),
   hasJudicialProtection: z.string(),
   hasCud: z.string(),
   hasConsent: z.string(),
@@ -95,7 +93,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const { t } = useTranslation();
   const td = (k: string) => t(`admin.patients.detail.${k}`);
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
-  const tc = (k: string) => t(`admin.patients.create.${k}`);
 
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -108,7 +105,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
       emergencyInstructions: patient.emergencyInstructions ?? '',
       deviceTypes: patient.deviceTypes ?? [],
       dependencyLevel: patient.dependencyLevel ?? '',
-      serviceType: patient.serviceType ?? [],
       hasJudicialProtection: boolToStr(patient.hasJudicialProtection),
       hasCud: boolToStr(patient.hasCud),
       hasConsent: boolToStr(patient.hasConsent),
@@ -152,7 +148,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
 
   const dependencyOptions: ComboboxOption[] = DEPENDENCY_LEVELS.map((d) => ({ value: d, label: t(`admin.patients.dependencyOptions.${d}`, { defaultValue: d }) }));
   const deviceOptions: ComboboxOption[] = DEVICE_TYPE_CODES.map((d) => ({ value: d, label: t(`admin.patients.deviceTypeOptions.${d}`, { defaultValue: d }) }));
-  const serviceOptions: ComboboxOption[] = SERVICE_TYPES.map((s) => ({ value: s, label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }) }));
   const boolOptions: ComboboxOption[] = BOOL_VALUES.map((v) => ({
     value: v,
     label: v === '' ? te('unset') : v === 'true' ? t('common.yes', 'Sí') : t('common.no', 'No'),
@@ -169,8 +164,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
     const devs = values.deviceTypes;
     if ([...devs].sort().join(',') !== [...(patient.deviceTypes ?? [])].sort().join(',')) payload.deviceTypes = devs;
     if (nz(values.dependencyLevel) !== (patient.dependencyLevel ?? null)) payload.dependencyLevel = nz(values.dependencyLevel);
-    const svc = values.serviceType;
-    if (JSON.stringify(svc) !== JSON.stringify(patient.serviceType ?? [])) payload.serviceType = svc;
     if (strToBool(values.hasJudicialProtection) !== (patient.hasJudicialProtection ?? null)) payload.hasJudicialProtection = strToBool(values.hasJudicialProtection);
     if (strToBool(values.hasCud) !== (patient.hasCud ?? null)) payload.hasCud = strToBool(values.hasCud);
     if (strToBool(values.hasConsent) !== (patient.hasConsent ?? null)) payload.hasConsent = strToBool(values.hasConsent);
@@ -249,11 +242,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
               <FormField label={te('deviceType')} htmlFor="pce-device" labelSize="compact">
                 <Controller control={control} name="deviceTypes" render={({ field }) => (
                   <Combobox multiple options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-device" inputSize="compact" />
-                )} />
-              </FormField>
-              <FormField label={tc('serviceType')} htmlFor="pce-serviceType" labelSize="compact">
-                <Controller control={control} name="serviceType" render={({ field }) => (
-                  <Combobox multiple options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-serviceType" inputSize="compact" />
                 )} />
               </FormField>
             </div>
