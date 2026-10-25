@@ -2,7 +2,7 @@
  * MessageMarkdown — testes unitários (spec 072, T1): formatação, menção e compatibilidade.
  * Textos sintéticos, não clínicos.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MessageMarkdown } from '../MessageMarkdown';
 
@@ -118,5 +118,70 @@ describe('compatibilidade', () => {
 
   it('C2 4000 asteriscos renderizam sem lançar', () => {
     expect(() => renderBody('*'.repeat(4000))).not.toThrow();
+  });
+});
+
+describe('segurança', () => {
+  const pwn = () => (window as unknown as { __pwn?: unknown }).__pwn;
+  beforeEach(() => {
+    delete (window as unknown as { __pwn?: unknown }).__pwn;
+  });
+
+  it('S1 HTML cru não vira elemento e aparece como texto', () => {
+    const { container } = renderBody('<script>window.__pwn=1</script><img src=x onerror="window.__pwn=1">');
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(pwn()).toBeUndefined();
+    expect(container.textContent).toContain('<script>');
+  });
+
+  it('S2 esquemas perigosos não viram link', () => {
+    const { container } = renderBody(
+      '[a](javascript:window.__pwn=1) [b](data:text/html;base64,AAAA) [c](vbscript:x) [d]( jAvAsCrIpT:window.__pwn=1)',
+    );
+    expect(
+      container.querySelector('a[href^="javascript" i], a[href^="data" i], a[href^="vbscript" i]'),
+    ).toBeNull();
+    expect(pwn()).toBeUndefined();
+  });
+
+  it('S3 link https abre em nova aba com rel seguro', () => {
+    const { container } = renderBody('[doc](https://exemplo.test/p)');
+    const links = container.querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('https://exemplo.test/p');
+    expect(links[0].getAttribute('target')).toBe('_blank');
+    const rel = links[0].getAttribute('rel') ?? '';
+    expect(rel).toContain('noopener');
+    expect(rel).toContain('noreferrer');
+    expect(rel).toContain('nofollow');
+  });
+
+  it('S4 imagem markdown não vira img', () => {
+    const { container } = renderBody('![x](https://tracker.test/pixel.png)');
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('S5 HTML cru de âncora não vira a', () => {
+    const { container } = renderBody('<a href="javascript:alert(1)">x</a>');
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.textContent).toContain('<a href=');
+  });
+
+  it('S6 link relativo, protocol-relative e âncora não viram a', () => {
+    const { container } = renderBody('[r](/admin/pacientes) [s](//evil.test/x) [t](#ancora)');
+    expect(container.querySelector('a')).toBeNull();
+  });
+
+  it('S7 tel, ftp e file não viram a', () => {
+    const { container } = renderBody('[u](tel:+000) [v](ftp://x.test/f) [w](file:///etc/x)');
+    expect(container.querySelector('a')).toBeNull();
+  });
+
+  it('S8 mailto vira link', () => {
+    const { container } = renderBody('[m](mailto:time@exemplo.test)');
+    const links = container.querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')?.startsWith('mailto:')).toBe(true);
   });
 });
