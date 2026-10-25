@@ -55,6 +55,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { configureMentionSuggestion } from '@presentation/components/features/mentions/createMentionSuggestion';
 import { mentionChipRenderText, mentionChipRenderHTML } from '@presentation/components/features/mentions/mentionChip';
 import { AttachmentPicker } from './AttachmentPicker';
+import { pastePlainTextAsHardBreaks } from './pastePlainTextAsHardBreaks';
 
 /** `q` ausente/vazio agora é aceito pelo backend (item 1, revoga D-06) — `0` deixa o TipTap
  * chamar `items()` a partir do próprio `@`, sem exigir nenhum caractere depois. */
@@ -153,6 +154,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
         }),
       ],
       editorProps: {
+        clipboardTextParser: pastePlainTextAsHardBreaks,
         attributes: {
           'data-testid': 'composer-editor',
           role: 'textbox',
