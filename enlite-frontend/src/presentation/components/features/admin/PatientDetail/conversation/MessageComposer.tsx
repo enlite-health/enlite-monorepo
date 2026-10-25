@@ -64,6 +64,9 @@ const MENTION_MIN_QUERY_LENGTH = 0;
  * é o corte da VISÃO DE TOPO; "Mostrar todos" (via `staffDirectoryStore.loadAll`) é quem busca a
  * lista inteira, até o teto do backend (200). */
 const MENTION_MAX_RESULTS = 5;
+/** Limite do corpo da mensagem. */
+// espelha worker-functions/src/modules/conversation/interfaces/validators/conversationSchemas.ts:8 (z.string().min(1).max(4000))
+export const MESSAGE_BODY_MAX_CHARS = 4000;
 
 export interface MessageComposerHandle {
   /** true se há rascunho (texto OU anexo) não vazio — quem embrulha usa para decidir se pergunta
@@ -82,18 +85,25 @@ export interface MessageComposerProps {
   onSent?: (result: CreateConversationMessageResult) => void;
   /** Chamado quando o rascunho pode ser perdido de verdade (vazio, ou descarte confirmado). */
   onClose?: () => void;
+  /** Limite de caracteres do corpo (default `MESSAGE_BODY_MAX_CHARS`). */
+  maxChars?: number;
 }
 
 export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposerProps>(
-  function MessageComposer({ patientId, rootMessageId, onSent, onClose }, ref): JSX.Element {
+  function MessageComposer(
+    { patientId, rootMessageId, onSent, onClose, maxChars = MESSAGE_BODY_MAX_CHARS },
+    ref,
+  ): JSX.Element {
     const { t } = useTranslation();
-    const tc = (key: string): string => t(`admin.patients.detail.conversation.composer.${key}`);
+    const tc = (key: string, opts?: Record<string, unknown>): string =>
+      t(`admin.patients.detail.conversation.composer.${key}`, opts);
     const te = useCallback(
       (key: string): string => t(`admin.patients.detail.conversation.errors.${key}`),
       [t],
     );
 
     const [isEmpty, setIsEmpty] = useState(true);
+    const [bodyLength, setBodyLength] = useState(0);
     const [fileIds, setFileIds] = useState<string[]>([]);
     /** Muda a cada `clearDraft()` — força o `AttachmentPicker` a REMONTAR (perde os chips e o
      * contador interno de "5 no máximo"), já que ele é quem dono do estado visual dos anexos
@@ -153,6 +163,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
       },
       onUpdate: ({ editor: current }) => {
         setIsEmpty(current.getText().trim().length === 0);
+        setBodyLength(current.getText().length);
         setSendError(null); // corrigir o rascunho depois de um erro esconde o aviso antigo
       },
     }, []);
@@ -160,6 +171,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     const clearDraft = useCallback((): void => {
       editor?.commands.clearContent(true);
       setIsEmpty(true);
+      setBodyLength(0);
       setFileIds([]);
       setAttachmentPickerResetKey((n) => n + 1);
     }, [editor]);
@@ -169,6 +181,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
       onClose?.();
     }, [clearDraft, onClose]);
 
+    const tooLong = bodyLength > maxChars;
     const isDirty = !isEmpty || fileIds.length > 0;
 
     const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
@@ -262,6 +275,25 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           <EditorContent editor={editor} />
         </div>
 
+        <div className="flex items-start justify-between gap-2">
+          <Text size="xs" className="text-gray-600" data-testid="composer-markdown-hint">
+            {tc('markdownHint')}
+          </Text>
+          <Text
+            size="xs"
+            className={tooLong ? 'text-red-600' : 'text-gray-600'}
+            role={tooLong ? 'alert' : undefined}
+            data-testid="composer-counter"
+          >
+            {tc('counter', { count: bodyLength, max: maxChars })}
+          </Text>
+        </div>
+        {tooLong && (
+          <Text size="xs" className="text-red-600" data-testid="composer-too-long">
+            {tc('tooLong', { max: maxChars })}
+          </Text>
+        )}
+
         {sendError && (
           <Text size="xs" role="alert" className="text-red-600" data-testid="composer-send-error">
             {sendError}
@@ -282,7 +314,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
             variant="primary"
             size="sm"
             data-testid="composer-send-btn"
-            disabled={isEmpty || isUploading}
+            disabled={isEmpty || isUploading || tooLong}
             onClick={handleSend}
           >
             {tc('send')}

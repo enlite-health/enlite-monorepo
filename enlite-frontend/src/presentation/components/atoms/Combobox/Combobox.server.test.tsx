@@ -7,7 +7,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 /**
- * Os 30 casos do seletor antigo (spec 070 T2), reescritos contra o Combobox.
+ * Os 30 casos do modo local (spec 070 T2), exercidos contra o Combobox.
  * Diferenças deliberadas, todas por contrato novo e não por afrouxamento:
  * - a linha "Todos" agora é `clearLabel="Todos"` (antes era implícita);
  * - o gatilho é `role=combobox` e o vazio é `${id}-no-results`;
@@ -30,7 +30,7 @@ const digitar = (v: string): void => {
 };
 const rotulos = (): (string | null)[] => screen.getAllByRole('option').map((o) => o.textContent);
 
-describe('Combobox (modo local, casos do seletor antigo)', () => {
+describe('Combobox (modo local, casos de base)', () => {
   it('renders with placeholder when no value selected', () => {
     render(ui({ placeholder: 'Todos' }));
     expect(screen.getByRole('combobox')).toHaveTextContent('Todos');
@@ -96,7 +96,7 @@ describe('Combobox (modo local, casos do seletor antigo)', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 
-  it('rótulo acessível vem de aria-label (o seletor antigo tinha prop label)', () => {
+  it('rótulo acessível vem de aria-label (o Combobox não tem prop label)', () => {
     render(ui({ 'aria-label': 'Caso clínico' }));
     expect(screen.getByRole('combobox', { name: 'Caso clínico' })).toBeInTheDocument();
   });

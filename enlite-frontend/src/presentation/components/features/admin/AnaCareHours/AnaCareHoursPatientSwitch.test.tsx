@@ -144,7 +144,7 @@ describe('AnaCareHoursPatientSwitch', () => {
 });
 
 describe('AnaCareHoursPatientSwitch — altura do seletor de paciente', () => {
-  it('POSITIVO — o gatilho tem a altura compacta (h-12) que o seletor antigo dava, não a h-[60px]', async () => {
+  it('POSITIVO — o gatilho tem a altura compacta (h-12) não a h-[60px]', async () => {
     const { user } = setup();
     await user.click(icon());
     expect(field().className).toContain('h-12');

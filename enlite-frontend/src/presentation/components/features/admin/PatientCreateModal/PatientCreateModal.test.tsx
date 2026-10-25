@@ -149,7 +149,7 @@ describe('PatientCreateModal — country selector', () => {
     fillFirstName();
     submit();
 
-    // The error surfaces (rendered by seletor antigo, once — not duplicated by FormField).
+    // The error surfaces (rendered by the Combobox, once — not duplicated by FormField).
     const shown = await screen.findAllByText(COUNTRY_ERROR);
     expect(shown).toHaveLength(1);
 
