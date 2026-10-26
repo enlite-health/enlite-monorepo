@@ -11,6 +11,9 @@ interface Props {
   testIdSuffix: string;
 }
 
+/** O turno padrão de uma linha nova (editor do serviço e campo da guardia): um dono só. */
+export const NEW_SHIFT = { startTime: '09:00', endTime: '17:00' };
+
 export const isEqualWithoutAllDay = (sh: ServiceShiftFormValue): boolean => !sh.allDay && sh.startTime === sh.endTime;
 export const minutesOf = (sh: ServiceShiftFormValue): number | null => (sh.allDay ? 1440 : isEqualWithoutAllDay(sh) ? null : shiftMinutes(sh.startTime, sh.endTime));
 

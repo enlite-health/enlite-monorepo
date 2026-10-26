@@ -3346,6 +3346,11 @@
           "allDayRange": "Dia inteiro · 24 h",
           "allDayCompact": "24 h",
           "equalUseAllDay": "Para 24 h use 'Dia inteiro'",
+          "template": {
+            "label": "Guardia predefinida",
+            "apply": "Aplicar",
+            "placeholder": "Escolha uma guardia"
+          },
           "hours": "{{hours}} h",
           "nextDay": "(+1)",
           "add": "Adicionar turno",

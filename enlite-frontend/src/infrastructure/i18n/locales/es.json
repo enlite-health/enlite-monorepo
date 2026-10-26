@@ -3425,6 +3425,11 @@
           "allDayRange": "Todo el día · 24 h",
           "allDayCompact": "24 h",
           "equalUseAllDay": "Para 24 h use 'Todo el día'",
+          "template": {
+            "label": "Guardia predefinida",
+            "apply": "Aplicar",
+            "placeholder": "Elegí una guardia"
+          },
           "hours": "{{hours}} h",
           "nextDay": "(+1)",
           "add": "Agregar turno",

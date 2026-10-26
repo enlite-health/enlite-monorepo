@@ -4,7 +4,7 @@ import { Plus, X } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { shiftEndTime, type ServiceShiftFormValue } from '@domain/scheduleHours';
 import type { ShiftTemplateItem } from '@domain/entities/TherapeuticProject';
-import { ShiftTimeRow, isEqualWithoutAllDay, minutesOf } from '@presentation/components/features/admin/PatientDetail/edit/ShiftTimeRow';
+import { ShiftTimeRow, NEW_SHIFT, isEqualWithoutAllDay, minutesOf } from '@presentation/components/features/admin/PatientDetail/edit/ShiftTimeRow';
 
 interface Props {
   value: ShiftTemplateItem[];
@@ -14,7 +14,7 @@ interface Props {
   disabled?: boolean;
 }
 
-const NEW_ROW: ServiceShiftFormValue = { dayOfWeek: 0, startTime: '09:00', endTime: '17:00', allDay: false };
+const NEW_ROW: ServiceShiftFormValue = { dayOfWeek: 0, ...NEW_SHIFT, allDay: false };
 
 const toRow = (item: ShiftTemplateItem): ServiceShiftFormValue => ({
   dayOfWeek: 0,

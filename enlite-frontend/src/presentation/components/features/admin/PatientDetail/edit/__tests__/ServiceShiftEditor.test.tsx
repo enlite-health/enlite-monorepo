@@ -7,7 +7,16 @@ import { useState } from 'react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { ServiceShiftEditor, type ServiceShiftFormValue } from '../ServiceShiftEditor';
+
+const GUARDIA = {
+  id: 'g1', code: 'G1', label: 'Guardia 6 + 6 + 12', active: true,
+  items: [{ startTime: '08:00', durationMinutes: 360 }, { startTime: '14:00', durationMinutes: 360 }, { startTime: '20:00', durationMinutes: 720 }],
+};
+vi.mock('@hooks/admin/useServiceShiftTemplateOptions', () => ({
+  useServiceShiftTemplateOptions: () => ({ options: [GUARDIA], status: 'ok' }),
+}));
 
 beforeAll(async () => {
   await i18n.use(initReactI18next).init({
@@ -85,5 +94,37 @@ describe('ServiceShiftEditor', () => {
     render(<Harness initial={[TURNO]} onValidityChange={vi.fn()} />);
     expect(screen.getByTestId('svc-shift-copy-1-1')).toBeTruthy();
     expect(screen.queryByTestId('svc-shift-copy-1-3')).toBeNull();
+  });
+
+  it('E1 aplicar guardia de 3 turnos em seg e ter gera 6 turnos', () => {
+    render(<Harness initial={[]} onValidityChange={vi.fn()} />);
+    chooseCombo(screen.getByTestId('svc-shift-template-select-1'), 'Guardia 6 + 6 + 12');
+    fireEvent.click(screen.getByTestId('svc-shift-template-day-1-1'));
+    fireEvent.click(screen.getByTestId('svc-shift-template-day-1-2'));
+    fireEvent.click(screen.getByTestId('svc-shift-template-apply-1'));
+    for (const d of [1, 2]) for (const i of [0, 1, 2]) expect(screen.getByTestId(`svc-shift-start-1-${d}-${i}`)).toBeTruthy();
+    expect(screen.queryByTestId('svc-shift-start-1-1-3')).toBeNull();
+    expect(screen.queryByTestId('svc-shift-start-1-3-0')).toBeNull();
+  });
+
+  it('E2 aplicar desabilitado sem guardia ou sem dia', () => {
+    render(<Harness initial={[]} onValidityChange={vi.fn()} />);
+    const apply = screen.getByTestId('svc-shift-template-apply-1');
+    expect(apply).toBeDisabled();
+    fireEvent.click(screen.getByTestId('svc-shift-template-day-1-1'));
+    expect(apply).toBeDisabled();
+    chooseCombo(screen.getByTestId('svc-shift-template-select-1'), 'Guardia 6 + 6 + 12');
+    expect(apply).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('svc-shift-template-day-1-1'));
+    expect(apply).toBeDisabled();
+  });
+
+  it('E3 conflito mostra o aviso no dia', () => {
+    render(<Harness initial={[{ dayOfWeek: 2, startTime: '10:00', endTime: '12:00', allDay: false }]} onValidityChange={vi.fn()} />);
+    chooseCombo(screen.getByTestId('svc-shift-template-select-1'), 'Guardia 6 + 6 + 12');
+    fireEvent.click(screen.getByTestId('svc-shift-template-day-1-2'));
+    fireEvent.click(screen.getByTestId('svc-shift-template-apply-1'));
+    expect(screen.getByTestId('svc-shift-copy-conflict-1-2')).toBeTruthy();
+    expect(screen.getByTestId('svc-shift-start-1-2-0').textContent).toContain('10:00');
   });
 });

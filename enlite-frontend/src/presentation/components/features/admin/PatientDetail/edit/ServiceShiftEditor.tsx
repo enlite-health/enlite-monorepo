@@ -4,7 +4,8 @@ import { Copy, Plus, X } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { copyShiftsToDays, type ServiceShiftFormValue } from '@domain/scheduleHours';
 
-import { ShiftTimeRow, isEqualWithoutAllDay, minutesOf } from './ShiftTimeRow';
+import { ShiftTimeRow, NEW_SHIFT, isEqualWithoutAllDay, minutesOf } from './ShiftTimeRow';
+import { ApplyShiftTemplate, DayChips, DAY_KEYS, chip } from './ApplyShiftTemplate';
 
 export type { ServiceShiftFormValue };
 
@@ -17,14 +18,6 @@ interface Props {
   onValidityChange?: (valid: boolean) => void;
   disabled?: boolean;
 }
-
-const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-const NEW_SHIFT = { startTime: '09:00', endTime: '17:00' };
-
-const chip = (active: boolean): string =>
-  `px-2 py-0.5 rounded-pill border text-xs transition-colors disabled:opacity-50 ${
-    active ? 'bg-primary text-white border-primary' : 'border-gray-600 text-gray-800 hover:border-primary'
-  }`;
 
 /**
  * Editor de turnos do serviço contratado (spec 056, plan §7): por dia, N turnos com Inicio / Fin /
@@ -62,6 +55,7 @@ export function ServiceShiftEditor({ index, value, onChange, onValidityChange, d
 
   return (
     <div className="flex flex-col" data-testid={`svc-shift-editor-${index}`}>
+      <ApplyShiftTemplate index={index} value={value} disabled={disabled} onApply={({ next, conflictDays: conflicts }) => { onChange(next); setConflictDays(conflicts); }} />
       {DAY_KEYS.map((dayKey, day) => (
         <div key={dayKey} className="flex flex-col gap-1 py-1.5 border-b border-gray-600 last:border-b-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -101,13 +95,7 @@ export function ServiceShiftEditor({ index, value, onChange, onValidityChange, d
           )}
           {copyFrom === day && (
             <div className="flex flex-wrap items-center gap-1.5" data-testid={`svc-shift-copy-panel-${index}-${day}`}>
-              {DAY_KEYS.map((k, i) =>
-                i === day ? null : (
-                  <button key={k} type="button" aria-pressed={targets.includes(i)} onClick={() => toggleTarget(i)} data-testid={`svc-shift-copy-target-${index}-${k}`} className={chip(targets.includes(i))}>
-                    {t(`workerRegistration.availability.${k}Short`)}
-                  </button>
-                ),
-              )}
+              <DayChips exclude={day} selected={targets} onToggle={toggleTarget} testId={(_d, k) => `svc-shift-copy-target-${index}-${k}`} />
               <button type="button" onClick={() => setTargets([1, 2, 3, 4, 5].filter((d) => d !== day))} data-testid={`svc-shift-copy-weekdays-${index}`} className={chip(false)}>
                 {t('workerRegistration.availability.copyWeekdays')}
               </button>
