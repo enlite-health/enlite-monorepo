@@ -3342,6 +3342,8 @@
           "start": "Início",
           "end": "Fim",
           "allDay": "Dia inteiro",
+          "allDayRange": "Dia inteiro · 24 h",
+          "allDayCompact": "24 h",
           "equalUseAllDay": "Para 24 h use 'Dia inteiro'",
           "hours": "{{hours}} h",
           "nextDay": "(+1)",
