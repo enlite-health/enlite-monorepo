@@ -4370,6 +4370,7 @@
               "pickPerson": "Elegir persona",
               "pickOtherForDay": "Elegir otra persona para ese día",
               "conflict": "{{name}} ya atiende a otro paciente el {{weekday}} de {{start}} a {{end}}.",
+              "conflictAllDay": "{{name}} ya atiende a otro paciente el {{weekday}} todo el día.",
               "loadingCandidates": "Cargando quién puede cubrir…",
               "candidatesError": "No se pudo cargar la lista de quién puede cubrir.",
               "previewError": "No se pudo verificar el horario de la persona. Probá de nuevo.",

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { shiftRangeLabel } from './itinerary/shiftRange';
 import { Link } from 'react-router-dom';
 import { Eye } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -130,7 +131,7 @@ export function ItineraryEditAppointmentModal({
         <Label className={disabledLabel}>{tm('schedule')}</Label>
         <Input
           inputSize="compact"
-          value={`${slot.startTime} - ${slot.endTime}`}
+          value={shiftRangeLabel(t, slot)}
           disabled
           readOnly
           className={disabledInput}

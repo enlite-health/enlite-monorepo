@@ -62,9 +62,14 @@ describe('ItineraryEditAppointmentModal', () => {
     expect(screen.getByTestId('itinerario-editar-dia').tagName).toBe('BUTTON');
     expect(screen.getByTestId('itinerario-editar-dia')).toHaveTextContent('lunes');
     expect(screen.getByTestId('itinerario-editar-horario')).toBeDisabled();
-    expect(screen.getByTestId('itinerario-editar-horario')).toHaveValue('08:00 - 12:00');
+    expect(screen.getByTestId('itinerario-editar-horario')).toHaveValue('08:00 – 12:00');
     // Figma: o VALOR também fica no cinza de desabilitado (#d9d9d9), não só o rótulo.
     expect(screen.getByTestId('itinerario-editar-horario').className).toContain('!text-[#d9d9d9]');
+  });
+
+  it('slot 08:00 a 08:00 mostra Todo el día · 24 h', () => {
+    renderModal({ slot: { weekday: 1, startTime: '08:00', endTime: '08:00' } });
+    expect(screen.getByTestId('itinerario-editar-horario')).toHaveValue('Todo el día · 24 h');
   });
 
   it('"Dirección de entrada" é só leitura, com o endereço do serviço', () => {
