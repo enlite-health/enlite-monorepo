@@ -178,4 +178,19 @@ test.describe('Chat interno por paciente — markdown na mensagem (spec 072) @in
     await expect(body.locator('th')).toHaveCount(2);
     expect(await body.locator('td').count()).toBeGreaterThanOrEqual(2);
   });
+
+  test('E6 tabela COLADA com linha em branco entre as linhas — renderiza como table', async ({ page }) => {
+    await abrirPainel(page);
+    await focarEditor(page);
+    await page.getByTestId('composer-editor').evaluate((el) => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', '| col a | col b |\n\n|---|---|\n\n| um | dois |\n\n| tres | quatro |');
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+
+    const body = await enviar(page);
+    await expect(body.locator('table')).toHaveCount(1);
+    await expect(body.locator('th')).toHaveCount(2);
+    await expect(body.locator('td')).toHaveCount(4);
+  });
 });

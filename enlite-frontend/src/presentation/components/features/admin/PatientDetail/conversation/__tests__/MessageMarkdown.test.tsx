@@ -266,3 +266,42 @@ describe('GFM (spec 072b): tabela e facilitadores', () => {
     expect(chip.closest('td')).not.toBeNull();
   });
 });
+
+describe('tabela colada com linhas em branco (spec 072c)', () => {
+  it('R1 conteúdo com linha em branco entre as linhas vira 1 table, 3 th, 6 tr no tbody', () => {
+    const linhas = ['| Item | Status | Detalhe |', '|---|---|---|'];
+    for (let i = 1; i <= 6; i += 1) linhas.push(`| item ${i} | ok | detalhe ${i} |`);
+    const { container } = renderBody(linhas.join('\n\n'));
+    expect(container.querySelectorAll('table')).toHaveLength(1);
+    expect(container.querySelectorAll('th')).toHaveLength(3);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(6);
+    expect(container.querySelectorAll('td')).toHaveLength(18);
+  });
+});
+
+describe('conteúdo literal colado pelo Gabriel (spec 072c)', () => {
+  const LITERAL = `| Item | Status | Detalhe |
+
+|---|---|---|
+
+| Mensagens do paciente com formatação | ✅ Em produção (25/10) | O campo "Mensajes" aceita negrito, itálico, listas com "-" e links |
+
+| Mensagens antigas | ✅ | O que já tinha * ou ** passa a aparecer formatado |
+
+| Segurança | ✅ | HTML e links perigosos aparecem como texto, sem executar nada |
+
+| Limite de tamanho | ✅ | Contador 0/4000 no campo; acima disso o botão Enviar fica desativado |
+
+| Idiomas | ✅ | Dica em espanhol e português |
+
+| Testado | ✅ | Testes automáticos + teste manual em homologação |`;
+
+  it('R2 vira 1 table, 3 th, 6 tr no tbody, 18 td e a 1ª linha tem o status', () => {
+    const { container } = renderBody(LITERAL);
+    expect(container.querySelectorAll('table')).toHaveLength(1);
+    expect(container.querySelectorAll('th')).toHaveLength(3);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(6);
+    expect(container.querySelectorAll('td')).toHaveLength(18);
+    expect(container.querySelector('tbody tr td:nth-child(2)')?.textContent).toContain('✅ Em produção (25/10)');
+  });
+});
