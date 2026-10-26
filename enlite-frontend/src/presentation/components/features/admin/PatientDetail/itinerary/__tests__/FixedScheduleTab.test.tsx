@@ -71,6 +71,13 @@ describe('FixedScheduleTab', () => {
     expect(rows[2].querySelector('.sr-only')).toHaveTextContent('lunes');
   });
 
+  it('faixa de 08:00 + 1440 mostra Todo el día · 24 h, nunca 08:00 – 08:00', () => {
+    const allDay = { ...SERVICE, slots: [{ id: 'slot-24', weekday: 3, startTime: '08:00', endTime: '08:00', durationMinutes: 1440, assignments: [] }] };
+    renderTab({ service: allDay });
+    expect(screen.getByTestId('itinerario-slot-horario-slot-24')).toHaveTextContent('Todo el día · 24 h');
+    expect(screen.queryByText('08:00 – 08:00')).toBeNull();
+  });
+
   it('faixa noturna diz que termina no dia seguinte; faixa sem prestador vigente mostra "Sin asignar" e segue editável', () => {
     const { props } = renderTab();
     expect(screen.getByTestId('itinerario-dia-svc-1-2-slot-tue')).toHaveTextContent('termina al día siguiente');
@@ -106,8 +113,8 @@ describe('FixedScheduleTab', () => {
   it('a recusa da última ação continua aparecendo: sobreposição com os 2 horários e a folga; outro código pela tradução; sem erro, nada', () => {
     const overlap = { existing: { serviceId: 's', weekday: 1, startTime: '09:00', endTime: '13:00' }, requested: { serviceId: 's', weekday: 1, startTime: '12:00', endTime: '14:00' }, sameAddress: false, minGapMinutes: 60 };
     const a = renderTab({ actionError: { code: 'ITINERARY_OVERLAP', overlap } });
-    expect(screen.getByTestId('itinerario-sobreposicao-erro')).toHaveTextContent('lunes 09:00-13:00');
-    expect(screen.getByTestId('itinerario-sobreposicao-erro')).toHaveTextContent('lunes 12:00-14:00');
+    expect(screen.getByTestId('itinerario-sobreposicao-erro')).toHaveTextContent('lunes 09:00 – 13:00');
+    expect(screen.getByTestId('itinerario-sobreposicao-erro')).toHaveTextContent('lunes 12:00 – 14:00');
     expect(screen.getByTestId('itinerario-sobreposicao-erro')).toHaveTextContent('60');
     a.unmount();
     const b = renderTab({ actionError: { code: 'ITINERARY_OVERLAP', overlap: { ...overlap, minGapMinutes: null } } });
