@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { TimeSelect } from '@presentation/components/atoms/TimeSelect/TimeSelect';
 import { Text } from '@presentation/components/atoms/Text';
-import { shiftMinutes, type ServiceShiftFormValue } from '@domain/scheduleHours';
+import { type ServiceShiftFormValue } from '@domain/scheduleHours';
+import { minutesOf } from './shiftRowValues';
 
 interface Props {
   value: ServiceShiftFormValue;
@@ -10,12 +11,6 @@ interface Props {
   /** Compõe os `data-testid` (`svc-shift-start-${testIdSuffix}` …). */
   testIdSuffix: string;
 }
-
-/** O turno padrão de uma linha nova (editor do serviço e campo da guardia): um dono só. */
-export const NEW_SHIFT = { startTime: '09:00', endTime: '17:00' };
-
-export const isEqualWithoutAllDay = (sh: ServiceShiftFormValue): boolean => !sh.allDay && sh.startTime === sh.endTime;
-export const minutesOf = (sh: ServiceShiftFormValue): number | null => (sh.allDay ? 1440 : isEqualWithoutAllDay(sh) ? null : shiftMinutes(sh.startTime, sh.endTime));
 
 /** Início · Fin · "Todo el día" · horas (+1) de UM turno — a mesma linha do editor de turnos do serviço e do catálogo de guardias (074). */
 export function ShiftTimeRow({ value: sh, onChange, disabled = false, testIdSuffix: id }: Props): JSX.Element {

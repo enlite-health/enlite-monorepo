@@ -4,8 +4,9 @@ import { Copy, Plus, X } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { copyShiftsToDays, type ServiceShiftFormValue } from '@domain/scheduleHours';
 
-import { ShiftTimeRow, NEW_SHIFT, isEqualWithoutAllDay, minutesOf } from './ShiftTimeRow';
-import { ApplyShiftTemplate, DayChips, DAY_KEYS, chip } from './ApplyShiftTemplate';
+import { ShiftTimeRow } from './ShiftTimeRow';
+import { ApplyShiftTemplate, DayChips } from './ApplyShiftTemplate';
+import { NEW_SHIFT, isEqualWithoutAllDay, minutesOf, DAY_KEYS, chip } from './shiftRowValues';
 
 export type { ServiceShiftFormValue };
 

@@ -4,7 +4,8 @@ import { Plus, X } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { shiftEndTime, type ServiceShiftFormValue } from '@domain/scheduleHours';
 import type { ShiftTemplateItem } from '@domain/entities/TherapeuticProject';
-import { ShiftTimeRow, NEW_SHIFT, isEqualWithoutAllDay, minutesOf } from '@presentation/components/features/admin/PatientDetail/edit/ShiftTimeRow';
+import { ShiftTimeRow } from '@presentation/components/features/admin/PatientDetail/edit/ShiftTimeRow';
+import { NEW_SHIFT, isEqualWithoutAllDay, minutesOf } from '@presentation/components/features/admin/PatientDetail/edit/shiftRowValues';
 
 interface Props {
   value: ShiftTemplateItem[];

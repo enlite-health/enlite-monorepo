@@ -4,13 +4,7 @@ import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import { applyTemplateToDays, type CopyShiftsResult, type ServiceShiftFormValue } from '@domain/scheduleHours';
 import { useServiceShiftTemplateOptions } from '@hooks/admin/useServiceShiftTemplateOptions';
-
-export const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-
-export const chip = (active: boolean): string =>
-  `px-2 py-0.5 rounded-pill border text-xs transition-colors disabled:opacity-50 ${
-    active ? 'bg-primary text-white border-primary' : 'border-gray-600 text-gray-800 hover:border-primary'
-  }`;
+import { DAY_KEYS, chip } from './shiftRowValues';
 
 /** Os botões de dia (Dom–Sáb) do "Copiar a…" e do "Guardia predefinida": o mesmo recorte, o mesmo estilo. `testId` monta o `data-testid` de cada um. */
 export function DayChips({ exclude, selected, onToggle, testId }: { exclude?: number; selected: number[]; onToggle: (day: number) => void; testId: (day: number, key: string) => string }): JSX.Element {
