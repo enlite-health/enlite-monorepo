@@ -1,5 +1,5 @@
 /**
- * servico-aplicar-guardia.integration.e2e.ts @integration — spec 074: aplicar uma guardia predefinida aos dias do
+ * patient-itinerary-074-aplicar-guardia.integration.e2e.ts @integration — spec 074: aplicar uma guardia predefinida aos dias do
  * serviço contratado, exercitado por um HUMANO contra o stack REAL (frontend + API + Postgres), sem mock de dado de
  * negócio — só a auth é o mock do stack (`loginAs`). Régua humana (memória `e2e-humano-nao-e-fill`): clique real no
  * select de guardia, nos botões de dia e em "Aplicar"; a hora do turno extra é escolhida no TimeSelect; o que o

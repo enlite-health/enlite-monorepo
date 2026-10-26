@@ -1,5 +1,5 @@
 /**
- * itinerario-turno-24h.integration.e2e.ts @integration — spec 074: o rótulo do turno no itinerário. Uma faixa de
+ * patient-itinerary-074-turno-24h.integration.e2e.ts @integration — spec 074: o rótulo do turno no itinerário. Uma faixa de
  * 1440 min é "Todo el día · 24 h" (pt-BR "Dia inteiro · 24 h"), nunca "08:00 – 08:00"; uma guardia de 3 turnos mostra as
  * 3 faixas "HH:MM – HH:MM" (a da noite atravessa a meia-noite: "20:00 – 08:00").
  *
