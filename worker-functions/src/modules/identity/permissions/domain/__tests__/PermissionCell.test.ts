@@ -79,9 +79,10 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     const porVariavel = [
       'patient_therapeutic_project', 'catalog_therapeutic_objectives',
       'catalog_therapeutic_activities', 'catalog_therapeutic_segments', 'catalog_service_exit_reasons',
+      'catalog_service_shift_templates',
     ];
     expect([...SPLIT_RESOURCES].sort()).toEqual([...literais, ...porVariavel].sort());
-    expect(SPLIT_RESOURCES.size).toBe(22);
+    expect(SPLIT_RESOURCES.size).toBe(23);
     // `recruitment` saiu com o dashboard de recrutamento (sem rota nem create/update no catálogo).
     expect(SPLIT_RESOURCES.has('recruitment')).toBe(false);
     expect(CELL_DESCRIPTION['recruitment:create']).toBeUndefined();

@@ -387,6 +387,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:create',
         'PATCH /api/admin/therapeutic-catalogs/service-exit-reasons/:itemId → catalog_service_exit_reasons:update',
         'GET /api/admin/therapeutic-catalogs/service-exit-reasons/options → patient_services:read',
+        // Guardias predefinidas (migration 550, spec 074) — mesmo molde dos motivos de saída.
+        'GET /api/admin/therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:read',
+        'POST /api/admin/therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:create',
+        'PATCH /api/admin/therapeutic-catalogs/service-shift-templates/:itemId → catalog_service_shift_templates:update',
+        'GET /api/admin/therapeutic-catalogs/service-shift-templates/options → patient_services:read',
         // anacare-conferencia-de-horas, fase 1 (migration 437) — `anacare_hours:read` para ver
         // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
         'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',
