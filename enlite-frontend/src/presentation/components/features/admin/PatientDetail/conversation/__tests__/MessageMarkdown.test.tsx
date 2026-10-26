@@ -266,3 +266,15 @@ describe('GFM (spec 072b): tabela e facilitadores', () => {
     expect(chip.closest('td')).not.toBeNull();
   });
 });
+
+describe('tabela colada com linhas em branco (spec 072c)', () => {
+  it('R1 conteúdo com linha em branco entre as linhas vira 1 table, 3 th, 6 tr no tbody', () => {
+    const linhas = ['| Item | Status | Detalhe |', '|---|---|---|'];
+    for (let i = 1; i <= 6; i += 1) linhas.push(`| item ${i} | ok | detalhe ${i} |`);
+    const { container } = renderBody(linhas.join('\n\n'));
+    expect(container.querySelectorAll('table')).toHaveLength(1);
+    expect(container.querySelectorAll('th')).toHaveLength(3);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(6);
+    expect(container.querySelectorAll('td')).toHaveLength(18);
+  });
+});

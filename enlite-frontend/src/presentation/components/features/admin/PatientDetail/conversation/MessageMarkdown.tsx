@@ -1,6 +1,7 @@
 import type { ReactNode, JSX } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { normalizeLooseTables } from './normalizeLooseTables';
 
 /** Mesma regra de `<@uid>` que o compositor grava no corpo da mensagem. */
 export const MENTION_PATTERN = /<@([^>]+)>/g;
@@ -103,7 +104,7 @@ function buildComponents(uids: string[], renderMention: (uid: string) => ReactNo
  * log (o corpo pode ser texto clínico).
  */
 export function MessageMarkdown({ body, mentions, renderMention }: MessageMarkdownProps): JSX.Element {
-  const { text, uids } = replaceMentions(body, mentions);
+  const { text, uids } = replaceMentions(normalizeLooseTables(body), mentions);
   return (
     <div className="text-sm break-words [&>*+*]:mt-5">
       <ReactMarkdown
