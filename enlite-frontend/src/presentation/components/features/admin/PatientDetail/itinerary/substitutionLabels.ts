@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 import { weekdayName } from '../substitutionDates';
+import { shiftRangeLabel } from './shiftRange';
 import { dateLocaleOf, formatWeekDate, weekdayOfDate } from './weekRange';
 
 /** "lun" / "Lun": os 3 primeiros caracteres do nome do dia (o mesmo recorte do cartão do serviço). */
@@ -8,13 +9,10 @@ export function shortWeekday(date: string, language: string, capitalize: boolean
   return capitalize ? name.charAt(0).toUpperCase() + name.slice(1) : name;
 }
 
-/** "09" / "09:30": a hora cheia perde os minutos (o chip do turno é curto: "09–17"). */
-const hourOf = (hhmm: string): string => (hhmm.endsWith(':00') ? hhmm.slice(0, 2) : hhmm.slice(0, 5));
-
 /** "Lun 09 · 09–17" — o chip de um turno no passo 2/3 (dia da semana curto, dia do mês, início–fim). */
-export function shiftChipLabel(date: string, startTime: string | null, endTime: string | null, language: string): string {
+export function shiftChipLabel(t: TFunction, date: string, startTime: string | null, endTime: string | null, language: string): string {
   const day = date.slice(8, 10);
-  const hours = startTime && endTime ? ` · ${hourOf(startTime)}–${hourOf(endTime)}` : '';
+  const hours = startTime && endTime ? ` · ${shiftRangeLabel(t, { startTime, endTime }, 'compact')}` : '';
   return `${shortWeekday(date, language, true)} ${day}${hours}`;
 }
 
