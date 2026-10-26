@@ -461,6 +461,57 @@ describe('buildReparentQueries', () => {
     expect(docsCleanup!.params).toEqual(['abs-uuid']);
   });
 
+  // ── whatsapp_bulk_dispatch_logs: CHECK (phone IS NULL) NOT VALID (migration 475) ──────
+  // NOT VALID poupa linha antiga até o 1º UPDATE; o reaponte É um UPDATE. Sem zerar phone na
+  // mesma instrução, toda ficha antiga com disparo em massa derrubava o merge inteiro
+  // (vínculo self-service em prd: 0 sucessos em 14–26/10/2026).
+  it('whatsapp_bulk_dispatch_logs: reaponte zera phone NA MESMA instrução que troca worker_id', () => {
+    const queries = buildReparentQueries('surv-uuid', 'abs-uuid', MOCK_DISCOVERED_FKS);
+    const wbdl = queries.filter(q => q.description.includes(':whatsapp_bulk_dispatch_logs:'));
+
+    expect(wbdl).toHaveLength(1);
+    expect(wbdl[0].sql).toBe(
+      'UPDATE whatsapp_bulk_dispatch_logs SET worker_id = $1, phone = NULL WHERE worker_id = $2',
+    );
+    expect(wbdl[0].params).toEqual(['surv-uuid', 'abs-uuid']);
+  });
+
+  it('whatsapp_bulk_dispatch_logs: zera phone também se a descoberta a classificar como N:1', () => {
+    const asNto1: FkTableInfo[] = [
+      { table: 'whatsapp_bulk_dispatch_logs', fk_column: 'worker_id', strategy: 'upsert_delete', unique_cols: ['worker_id', 'job_posting_id'] },
+    ];
+    const queries = buildReparentQueries('s', 'a', asNto1);
+    const update = queries.find(q => q.description.startsWith('reparent:Nto1_update:'));
+
+    expect(update).toBeDefined();
+    expect(update!.sql).toBe(
+      'UPDATE whatsapp_bulk_dispatch_logs SET worker_id = $1, phone = NULL WHERE worker_id = $2',
+    );
+  });
+
+  it('GARANTIA: toda outra tabela gera exatamente o SQL de antes (sem phone, sem coluna extra)', () => {
+    const queries = buildReparentQueries('surv-uuid', 'abs-uuid', MOCK_DISCOVERED_FKS);
+    const others = queries.filter(q => !q.description.includes(':whatsapp_bulk_dispatch_logs:'));
+
+    expect(others.length).toBeGreaterThan(20);
+    for (const q of others) {
+      expect(q.sql).not.toMatch(/phone/);
+      expect(q.sql).not.toMatch(/\$1,/);
+    }
+
+    // Byte a byte: o UPDATE simples segue o template original para cada tabela 'update'.
+    const simpleUpdates = MOCK_DISCOVERED_FKS.filter(
+      cfg => cfg.strategy === 'update' && cfg.table !== 'whatsapp_bulk_dispatch_logs',
+    );
+    expect(simpleUpdates.length).toBeGreaterThan(10);
+    for (const cfg of simpleUpdates) {
+      const q = queries.find(x => x.description === `reparent:update:${cfg.table}:worker_id`);
+      expect(q).toBeDefined();
+      expect(q!.sql).toBe(`UPDATE ${cfg.table} SET worker_id = $1 WHERE worker_id = $2`);
+      expect(q!.params).toEqual(['surv-uuid', 'abs-uuid']);
+    }
+  });
+
   it('tabela com fk_column diferente de worker_id gera SQL com a coluna correta', () => {
     const customFks: FkTableInfo[] = [
       { table: 'some_audit', fk_column: 'reviewed_by_worker_id', strategy: 'update', unique_cols: [] },
