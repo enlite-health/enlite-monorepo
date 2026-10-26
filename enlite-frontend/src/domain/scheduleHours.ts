@@ -84,6 +84,22 @@ export interface CopyShiftsResult {
   conflictDays: number[];
 }
 
+/** Acrescenta candidatos a `value` sem nunca substituir: idêntico é ignorado; inválido ou sobreposto (semana circular) mantém o existente e marca o dia. */
+function mergeIntoDays(value: ReadonlyArray<ServiceShiftFormValue>, candidates: ServiceShiftFormValue[]): CopyShiftsResult {
+  const next = [...value];
+  const conflictDays: number[] = [];
+  for (const candidate of candidates) {
+    if (next.some((e) => e.dayOfWeek === candidate.dayOfWeek && e.startTime === candidate.startTime && e.endTime === candidate.endTime && e.allDay === candidate.allDay)) continue;
+    const cand = weekInterval(candidate);
+    if (cand === null || next.some((e) => { const iv = weekInterval(e); return iv !== null && overlapsInWeek(iv, cand); })) {
+      if (!conflictDays.includes(candidate.dayOfWeek)) conflictDays.push(candidate.dayOfWeek);
+      continue;
+    }
+    next.push(candidate);
+  }
+  return { next, conflictDays };
+}
+
 /**
  * "Copiar a…" do editor de turnos do serviço (058 P5d). ACRESCENTA — nunca substitui o destino: turno idêntico já existente é ignorado em
  * silêncio; turno que sobrepõe (em minutos da semana) QUALQUER turno existente mantém o existente e o dia entra em `conflictDays`.
@@ -91,22 +107,30 @@ export interface CopyShiftsResult {
  */
 export function copyShiftsToDays(value: ReadonlyArray<ServiceShiftFormValue>, fromDay: number, targetDays: number[]): CopyShiftsResult {
   const source = value.filter((s) => s.dayOfWeek === fromDay);
-  const next = [...value];
-  const conflictDays: number[] = [];
+  const candidates: ServiceShiftFormValue[] = [];
   for (const day of targetDays) {
     if (day === fromDay) continue;
-    let conflict = false;
-    for (const s of source) {
-      const candidate = { ...s, dayOfWeek: day };
-      if (next.some((e) => e.dayOfWeek === day && e.startTime === candidate.startTime && e.endTime === candidate.endTime && e.allDay === candidate.allDay)) continue;
-      const cand = weekInterval(candidate);
-      if (cand === null || next.some((e) => { const iv = weekInterval(e); return iv !== null && overlapsInWeek(iv, cand); })) {
-        conflict = true;
-        continue;
-      }
-      next.push(candidate);
-    }
-    if (conflict) conflictDays.push(day);
+    for (const s of source) candidates.push({ ...s, dayOfWeek: day });
   }
-  return { next, conflictDays };
+  return mergeIntoDays(value, candidates);
+}
+
+const hhmmOfMinutes = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Guardia predefinida (074): aplica os itens `{startTime, durationMinutes}` aos dias pelo MESMO detector do "Copiar a…". Item de 1440 vira `allDay` com `endTime = startTime` (convenção do ServiceShiftEditor). */
+export function applyTemplateToDays(
+  value: ReadonlyArray<ServiceShiftFormValue>,
+  items: ReadonlyArray<{ startTime: string; durationMinutes: number }>,
+  targetDays: number[],
+): CopyShiftsResult {
+  const candidates: ServiceShiftFormValue[] = [];
+  for (const dayOfWeek of targetDays) {
+    for (const it of items) {
+      const startTime = it.startTime.slice(0, 5);
+      const allDay = it.durationMinutes === 1440;
+      const endTime = allDay ? startTime : hhmmOfMinutes((((toMinutes(startTime) ?? 0) + it.durationMinutes) % 1440));
+      candidates.push({ dayOfWeek, startTime, endTime, allDay });
+    }
+  }
+  return mergeIntoDays(value, candidates);
 }
