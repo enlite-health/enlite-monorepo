@@ -40,6 +40,7 @@ import {
   updateCatalogItemSchemaFor,
 } from '../validators/therapeuticProjectSchemas';
 import type { AdminCatalogKind } from '../../domain/serviceExitReason';
+import { catalogItemParamsSchema, invalidBody, actorUidOf } from './catalogControllerHelpers';
 import { ServiceExitReasonReader } from '../../infrastructure/ServiceExitReasonReader';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { THERAPEUTIC_FIELD_CLASS } from '../../domain/TherapeuticProject';
@@ -48,12 +49,7 @@ import { TerminologyUnavailableError } from '@modules/terminology/domain/Unavail
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const versionParamsSchema = z.object({ id: z.string().uuid(), vid: z.string().uuid() });
-const catalogItemParamsSchema = z.object({ itemId: z.string().uuid() });
 
-const invalidBody = (res: Response, error: z.ZodError): void => {
-  // Só NOMES de campo, nunca o valor: o corpo carrega texto clínico (lex C6).
-  res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(error.flatten().fieldErrors) } });
-};
 
 /**
  * AdminTherapeuticProjectsController — o Projeto Terapêutico versionado (spec 017, D299) e os
@@ -107,7 +103,7 @@ export class AdminTherapeuticProjectsController {
   }
 
   private actorUid(req: Request): string {
-    return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
+    return actorUidOf(req);
   }
 
   /**

@@ -6,6 +6,8 @@ import { AdminTherapeuticProjectsController, type RequestWithTherapeuticContactC
 import { THERAPEUTIC_PROJECT_RESOURCE, therapeuticTrailAction } from '../../application/therapeuticProjectAccess';
 import { THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_CATALOG_RESOURCE } from '../../domain/TherapeuticProject';
 import { SERVICE_EXIT_REASON_KIND } from '../../domain/serviceExitReason';
+import { SERVICE_SHIFT_TEMPLATE_KIND } from '../../domain/serviceShiftTemplate';
+import { AdminServiceShiftTemplatesController } from '../controllers/AdminServiceShiftTemplatesController';
 
 /**
  * Rotas do Projeto Terapêutico (spec 017, D299) — router PRÓPRIO, montado em `/api/admin`, na
@@ -27,6 +29,7 @@ export function createAdminTherapeuticProjectsRoutes(
   controller: AdminTherapeuticProjectsController,
   authMiddleware: AuthMiddleware,
   permissions: PermissionMiddleware,
+  shiftTemplates: AdminServiceShiftTemplatesController = new AdminServiceShiftTemplatesController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -110,6 +113,20 @@ export function createAdminTherapeuticProjectsRoutes(
   // Quem registra a troca lê a lista de motivos ativos sem ser admin de catálogo.
   router.get(`/therapeutic-catalogs/${SERVICE_EXIT_REASON_KIND}/options`, staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
     controller.listServiceExitReasonOptions(req, res),
+  );
+
+  // ── Guardias predefinidas (550, spec 074): mesmo molde dos motivos de saída, controller próprio.
+  router.get(`/therapeutic-catalogs/${SERVICE_SHIFT_TEMPLATE_KIND}`, staffOnly, perm.require('catalog_service_shift_templates', 'read'), (req: Request, res: Response) =>
+    shiftTemplates.listShiftTemplates(req, res),
+  );
+  router.post(`/therapeutic-catalogs/${SERVICE_SHIFT_TEMPLATE_KIND}`, staffOnly, perm.require('catalog_service_shift_templates', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    shiftTemplates.createShiftTemplate(req, res),
+  );
+  router.patch(`/therapeutic-catalogs/${SERVICE_SHIFT_TEMPLATE_KIND}/:itemId`, staffOnly, perm.require('catalog_service_shift_templates', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    shiftTemplates.updateShiftTemplate(req, res),
+  );
+  router.get(`/therapeutic-catalogs/${SERVICE_SHIFT_TEMPLATE_KIND}/options`, staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
+    shiftTemplates.listShiftTemplateOptions(req, res),
   );
 
   return router;
