@@ -419,8 +419,8 @@ test.describe('cadeia-completa @integration', () => {
         if (!body.existing || !body.requested) throw new Error('passo 7: 409 sem existing/requested');
         const erro = page.getByTestId('itinerario-sobreposicao-erro');
         await expect(erro).toBeVisible();
-        await expect(erro).toContainText(`${body.existing.startTime}-${body.existing.endTime}`);
-        await expect(erro).toContainText(`${body.requested.startTime}-${body.requested.endTime}`);
+        await expect(erro).toContainText(`${body.existing.startTime} – ${body.existing.endTime}`);
+        await expect(erro).toContainText(`${body.requested.startTime} – ${body.requested.endTime}`);
         await expect(erro).toContainText(String(body.minGapMinutes));
 
         const late = await allocateOnScreen(Y.serviceLateId, slotLate.id, waLabelY);
