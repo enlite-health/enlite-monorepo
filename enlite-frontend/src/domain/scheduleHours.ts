@@ -115,7 +115,11 @@ export function copyShiftsToDays(value: ReadonlyArray<ServiceShiftFormValue>, fr
   return mergeIntoDays(value, candidates);
 }
 
-const hhmmOfMinutes = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+/** Fim (`HH:MM`, módulo 24 h) de um turno que começa em `startTime` e dura `durationMinutes`. */
+export function shiftEndTime(startTime: string, durationMinutes: number): string {
+  const m = ((toMinutes(startTime.slice(0, 5)) ?? 0) + durationMinutes) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
 
 /** Guardia predefinida (074): aplica os itens `{startTime, durationMinutes}` aos dias pelo MESMO detector do "Copiar a…". Item de 1440 vira `allDay` com `endTime = startTime` (convenção do ServiceShiftEditor). */
 export function applyTemplateToDays(
@@ -128,7 +132,7 @@ export function applyTemplateToDays(
     for (const it of items) {
       const startTime = it.startTime.slice(0, 5);
       const allDay = it.durationMinutes === 1440;
-      const endTime = allDay ? startTime : hhmmOfMinutes((((toMinutes(startTime) ?? 0) + it.durationMinutes) % 1440));
+      const endTime = allDay ? startTime : shiftEndTime(startTime, it.durationMinutes);
       candidates.push({ dayOfWeek, startTime, endTime, allDay });
     }
   }

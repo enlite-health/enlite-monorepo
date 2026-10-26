@@ -6229,6 +6229,10 @@
       "copiarParaTraduzir": "copiar o original para traduzir"
     },
     "therapeuticCatalog": {
+      "shiftTemplates": {
+        "addItem": "Adicionar turno",
+        "removeItem": "Remover turno"
+      },
       "kinds": {
         "specificObjectives": {
           "title": "Objetivos específicos do projeto terapêutico",
