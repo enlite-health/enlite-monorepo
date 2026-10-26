@@ -461,3 +461,44 @@ describe('catalogRefusalMessage — a recusa em frase de tela', () => {
     expect(catalogRefusalMessage(null, t)).toBe('null');
   });
 });
+
+describe('TherapeuticCatalogFormModal — guardia predefinida (spec 074)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    onSave.mockResolvedValue(undefined);
+  });
+
+  async function renderGuardia() {
+    const utils = render(<TherapeuticCatalogFormModal kind="service-shift-templates" item={null} onSave={onSave} onClose={onClose} />);
+    await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
+    return utils;
+  }
+
+  it('M1 guardia: salvar envia items', async () => {
+    await renderGuardia();
+    fireEvent.change(textoInput(), { target: { value: 'Guardia 6 + 6' } });
+    fireEvent.click(screen.getByTestId('shift-template-add'));
+    fireEvent.click(screen.getByTestId('svc-shift-allday-0'));
+    expect(screen.getByTestId('therapeutic-catalog-not-retroactive')).toHaveTextContent(COPY.shiftTemplates.notRetroactive);
+    expect(screen.queryByTestId('therapeutic-catalog-order-input')).toBeNull();
+    await act(async () => { fireEvent.click(salvar()); });
+    expect(onSave).toHaveBeenCalledWith({ label: 'Guardia 6 + 6', items: [{ startTime: '09:00', durationMinutes: 1440 }] });
+  });
+
+  it('M2 guardia sem turno: salvar desabilitado', async () => {
+    await renderGuardia();
+    fireEvent.change(textoInput(), { target: { value: 'Guardia vacía' } });
+    expect(salvar()).toBeDisabled();
+  });
+
+  it('M3 guardia: 422 de sobreposição mostra a mensagem e o modal fica aberto', async () => {
+    onSave.mockRejectedValue(Object.assign(new Error('Shift template items overlap'), { status: 422, code: 'SHIFT_TEMPLATE_ITEMS_OVERLAP' }));
+    await renderGuardia();
+    fireEvent.change(textoInput(), { target: { value: 'Guardia solapada' } });
+    fireEvent.click(screen.getByTestId('shift-template-add'));
+    await act(async () => { fireEvent.click(salvar()); });
+    expect(await screen.findByTestId('therapeutic-catalog-form-error')).toHaveTextContent(COPY.shiftTemplates.overlap);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('therapeutic-catalog-form-modal')).toBeInTheDocument();
+  });
+});

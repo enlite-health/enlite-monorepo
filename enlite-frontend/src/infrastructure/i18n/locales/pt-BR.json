@@ -6230,6 +6230,8 @@
     },
     "therapeuticCatalog": {
       "shiftTemplates": {
+        "notRetroactive": "Os serviços já cadastrados não mudam.",
+        "overlap": "Há turnos que se sobrepõem dentro da guardia.",
         "addItem": "Adicionar turno",
         "removeItem": "Remover turno"
       },
