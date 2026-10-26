@@ -1381,6 +1381,7 @@
       "catalogActivities": "Rotina e atividades",
       "catalogSegments": "Segmentos (Ana Care)",
       "catalogServiceExitReasons": "Motivos de saída",
+      "catalogServiceShiftTemplates": "Guardias",
       "aiPrompts": "Prompts de IA",
       "interviewHosts": "Entrevistadores",
       "insuranceProviders": "Obras sociais"
@@ -5154,6 +5155,7 @@
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
             "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
             "catalog_service_exit_reasons": "Catálogo de motivos de saída do serviço",
+            "catalog_service_shift_templates": "Catálogo de guardias predefinidas",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferência de horas do Ana Care",
             "patient_conversation": "Conversa do paciente",
@@ -5647,6 +5649,9 @@
         },
         "patients.catalogServiceExitReasons": {
           "label": "Pacientes: Catálogo de motivos de saída"
+        },
+        "patients.catalogServiceShiftTemplates": {
+          "label": "Pacientes: Catálogo de guardias predefinidas"
         },
         "account.tactiq": {
           "label": "Meu perfil: Tactiq"
@@ -6252,6 +6257,10 @@
           "title": "Motivos de saída",
           "subtitle": "As opções que a equipe escolhe ao registrar a saída de um prestador de um serviço. Editadas aqui, sem deploy. Desativar não apaga: registros anteriores guardam o motivo que tinham.",
           "guidance": "Categorias genéricas, sem dado de saúde."
+        },
+        "serviceShiftTemplates": {
+          "title": "Guardias predefinidas",
+          "subtitle": "Modelos de turnos que a coordenação aplica ao cadastrar um serviço."
         }
       },
       "newItem": "Nova opção",

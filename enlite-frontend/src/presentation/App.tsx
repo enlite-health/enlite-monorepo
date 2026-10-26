@@ -286,6 +286,7 @@ export function App() {
           <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
           <Route path="catalogos/motivos-de-salida" element={<TherapeuticCatalogPage kind="service-exit-reasons" />} />
+          <Route path="catalogos/guardias" element={<TherapeuticCatalogPage kind="service-shift-templates" />} />
           <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           {/* Perfil da conta logada (Identidade · Tactiq · Idioma · Accesos · Sair). Sem chave `screen:*`: é a conta do
