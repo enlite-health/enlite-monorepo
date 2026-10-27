@@ -179,15 +179,19 @@ describe('PatientService — native write path (migration 251)', () => {
     expect(nativeArg.status).toBe('SOLICITANTE');
   });
 
-  it('a3. throws when no contact channel at all (no phone, no email, no responsible)', async () => {
-    await expect(
-      service.createNativePatient(makeNativeInput({ phoneWhatsapp: null }), {
-        origin: 'web_form',
-        status: 'SOLICITANTE',
-      }),
-    ).rejects.toThrow(/contato/i);
+  it('a3. creates with only name and country — no phone, no email, no responsible', async () => {
+    mockInsertNative.mockResolvedValueOnce({ id: 'nat-a3', created: true });
 
-    expect(mockInsertNative).not.toHaveBeenCalled();
+    const result = await service.createNativePatient(
+      makeNativeInput({ lastName: undefined, phoneWhatsapp: null }),
+      { origin: 'admin_manual', status: 'ADMISSION' },
+    );
+
+    expect(result).toEqual({ id: 'nat-a3', created: true });
+    expect(mockInsertNative).toHaveBeenCalledTimes(1);
+    const nativeArg = mockInsertNative.mock.calls[0][0] as PatientIdentityNativeInsertInput;
+    expect(nativeArg.phoneWhatsapp).toBeNull();
+    expect(nativeArg.contactEmailEncrypted).toBeNull();
   });
 
   // ── d. KMS encryption of contact email ────────────────────────────────────
