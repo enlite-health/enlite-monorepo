@@ -9,7 +9,7 @@ import {
   type TactiqMeetingItem,
   type TactiqTranscriptPage,
 } from '../../application/ports/TactiqPorts';
-import { classifyMcpFailure, parseMcpJson, pingVerdict } from './tactiqMcpProtocol';
+import { classifyMcpFailure, parseMcpJson, parseMeetingSearch, pingVerdict } from './tactiqMcpProtocol';
 
 const CALL_TIMEOUT_MS = 20_000;
 
@@ -32,15 +32,7 @@ export class TactiqMcpClient implements TactiqMcpPort {
 
   async searchMeetings(accessToken: string, input: { query: string; dateFrom: string; dateTo: string }): Promise<TactiqMeetingItem[]> {
     const raw = parseMcpJson(await this.callTool(accessToken, 'search_meetings', input));
-    const items = Array.isArray((raw as { meetings?: unknown })?.meetings)
-      ? (raw as { meetings: unknown[] }).meetings
-      : Array.isArray(raw) ? raw : [];
-    return items.flatMap((m) => {
-      const r = m as Record<string, unknown>;
-      return typeof r.id === 'string' && typeof r.title === 'string' && typeof r.createdAt === 'string'
-        ? [{ id: r.id, title: r.title, createdAt: r.createdAt, durationSeconds: Number(r.durationSeconds) || 0 }]
-        : [];
-    });
+    return parseMeetingSearch(raw);
   }
 
   async getTranscriptPage(accessToken: string, meetingId: string, page: number): Promise<TactiqTranscriptPage> {
