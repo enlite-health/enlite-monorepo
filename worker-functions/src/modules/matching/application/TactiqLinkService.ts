@@ -247,6 +247,11 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     return tokens.accessToken;
   }
 
+  /** Porta da importação: conta que já importou com sucesso desde o vínculo não é "conta errada" por uma reunião não gravada. */
+  hasImportedSinceLinked(email: string): Promise<boolean> {
+    return this.repo.hasImportedSinceLinked(email);
+  }
+
   /** O Tactiq recusou o token (401/403) durante a importação: o vínculo caiu. `true` só quando MUDOU (uma transição, um aviso). */
   async markBroken(email: string, outcome: 'invalid_grant' | 'unauthorized' = 'unauthorized'): Promise<boolean> {
     const now = this.now();
