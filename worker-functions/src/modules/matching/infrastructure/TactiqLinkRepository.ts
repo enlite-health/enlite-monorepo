@@ -53,6 +53,27 @@ export class TactiqLinkRepository {
     return new Map(rows.map((r) => [r.e, r.status]));
   }
 
+  /**
+   * Conta CERTA? O responsável já teve reunião importada com sucesso (`import_status = 'done'`, com `import_matched` na trilha) desde o
+   * `created_at` do vínculo (primeiro vínculo; revincular não zera). Cobre as DUAS fontes da importação: admissão e enquadre.
+   */
+  async hasImportedSinceLinked(email: string, ex: Db = this.db): Promise<boolean> {
+    const { rows } = await ex.query<{ imported: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM tactiq_links l
+          WHERE lower(l.host_email) = lower($1)
+            AND (EXISTS (SELECT 1 FROM admission_appointments a
+                           JOIN admission_events ev ON ev.appointment_id = a.id AND ev.kind = 'import_matched'
+                          WHERE lower(a.host_email) = lower($1) AND a.import_status = 'done' AND ev.at >= l.created_at)
+              OR EXISTS (SELECT 1 FROM enquadre_events e
+                           JOIN enquadre_event_trail t ON t.event_id = e.id AND t.kind = 'import_matched'
+                          WHERE lower(e.host_email) = lower($1) AND e.import_status = 'done' AND t.at >= l.created_at))
+       ) AS imported`,
+      [email],
+    );
+    return rows[0]?.imported === true;
+  }
+
   async listActiveRoster(ex: Db = this.db): Promise<RosterHost[]> {
     const { rows } = await ex.query<RosterHost>(`SELECT id, email, country FROM interview_hosts WHERE active = true ORDER BY email`);
     return rows;

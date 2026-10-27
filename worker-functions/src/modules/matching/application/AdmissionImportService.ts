@@ -293,10 +293,12 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
 
   // ── caminhos sem importação (cada um: UMA transação curta com estado + trilha) ─────────────────────
 
-  /** 0 candidatas: espera (tentativa n); 72 h -> `expired`; a conta não vê reunião nenhuma depois de 3 h -> conta errada. */
+  /** 0 candidatas: espera (tentativa n); 72 h -> `expired`; depois de 3 h sem ver reunião: conta errada, salvo se a conta já importou com sucesso (aí só expira). */
   private async noMatch(a: S, reason: 'not_found' | 'code_mismatch', now: Date, expired: boolean): Promise<ImportOutcome> {
     if (expired) return this.expire(a, reason);
     if (reason === 'not_found' && now.getTime() - (a.conference_ended_at as Date).getTime() >= WRONG_ACCOUNT_AFTER_MS) {
+      // Conta que já importou com sucesso desde o vínculo é CERTA: uma reunião não gravada (extensão off, celular) só expira — o vínculo fica.
+      if (await this.deps.tokens.hasImportedSinceLinked(a.host_email)) return this.expire(a, 'not_found');
       const changed = await this.deps.tokens.markWrongAccount(a.host_email);
       await this.setBlocked(a, 'wrong_account');
       this.log.error({ [this.naming.idKey]: a.id, reason: 'wrong_account', linkChanged: changed }, `${this.naming.prefix}.import_blocked`);
