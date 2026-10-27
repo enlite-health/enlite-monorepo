@@ -4,7 +4,6 @@ import {
   PatientIdentityRepository,
   PatientIdentityNativeInsertInput,
 } from '../infrastructure/PatientIdentityRepository';
-import { validateContactChannel } from '../domain/PatientResponsible';
 import { AttentionReason } from '../domain/enums/AttentionReason';
 import { upsertPatientRelated, type PatientRelatedUpsertDeps } from './PatientRelatedUpsert';
 import { inPatientTransaction, CaseNumberConflictRetry, rethrowAsCaseNumberRetry } from './patientTransaction';
@@ -41,7 +40,7 @@ export interface PatientNativeCreatorDeps {
 
 /**
  * Creates a native patient (web-form lead or manual admin creation) inside a
- * single Postgres transaction. Reuses the contact-channel validation, the
+ * single Postgres transaction. Reuses the
  * case_number conflict handling, the KMS encryption of the responsibles, and
  * upsertRelated for clinical/responsibles/addresses/professionals.
  */
@@ -50,16 +49,9 @@ export async function createNativePatient(
   input: CreateNativePatientInput,
   opts: CreateNativePatientOptions,
 ): Promise<{ id: string; created: true }> {
-  // Contact-channel invariant (same validator as the ClickUp path). A native
-  // patient's own contact email (new column, migration 251) is ALSO a valid
-  // channel, so skip the responsible/phone check when it's present.
-  const primary = input.responsibles?.find(r => r.isPrimary);
-  if (!opts.contactEmail?.trim()) {
-    validateContactChannel({
-      patientPhoneWhatsapp: input.phoneWhatsapp,
-      primaryResponsible:   primary,
-    });
-  }
+  // No contact-channel invariant here: a native patient's own email and phone
+  // are optional (owner decision) — only name and country are required, enforced
+  // at the edge schemas. The ClickUp import keeps its own validator.
 
   // Encrypt the contact email with the SAME KMSEncryptionService the
   // responsibles use for email_encrypted (base64 ciphertext, null when empty).
