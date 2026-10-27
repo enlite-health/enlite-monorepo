@@ -90,6 +90,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   catalog_therapeutic_activities: 'Pacientes',
   // Motivos de saída do serviço (migration 492): catálogo global de categorias genéricas, sem dado de saúde.
   catalog_service_exit_reasons: 'Pacientes',
+  // Guardias predefinidas (migration 550, spec 074): catálogo global de modelos de turnos, sem dado de saúde.
+  catalog_service_shift_templates: 'Pacientes',
   // US-17 (spec 018, PR-7, migration 430): catálogo dos segmentos da Ana Care, mesma família.
   catalog_therapeutic_segments: 'Pacientes',
   // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345): célula PRÓPRIA, fora de qualquer
@@ -304,6 +306,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // fase 1, F8/F9): órfã — coberta por `catalog_therapeutic_activities:create`/`update` explícitos.
   'catalog_service_exit_reasons:read':
     'Ver o catálogo de MOTIVOS DE SAÍDA do serviço (lista global de categorias genéricas, sem dado de paciente).',
+  'catalog_service_shift_templates:read':
+    'Ver o catálogo de GUARDIAS PREDEFINIDAS (modelos globais de turnos, sem dado de paciente).',
   'catalog_therapeutic_segments:read':
     'Ver o catálogo de SEGMENTOS da Ana Care (US-17, lista global, sem dado de paciente).',
   // `catalog_therapeutic_segments:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
@@ -452,6 +456,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'catalog_therapeutic_activities:update': 'Renomear e desativar atividade do catálogo (backoffice).',
   'catalog_service_exit_reasons:create': 'Adicionar motivo de saída novo ao catálogo (backoffice).',
   'catalog_service_exit_reasons:update': 'Renomear e desativar motivo de saída do catálogo (backoffice).',
+  'catalog_service_shift_templates:create': 'Adicionar guardia predefinida ao catálogo (backoffice).',
+  'catalog_service_shift_templates:update': 'Renomear, trocar os turnos e desativar guardia predefinida (backoffice).',
   'catalog_therapeutic_segments:create': 'Adicionar segmento novo ao catálogo (backoffice).',
   'catalog_therapeutic_segments:update': 'Renomear e desativar segmento do catálogo (backoffice).',
   'user_management:create': 'Criar conta nova de staff.',
@@ -603,6 +609,7 @@ export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
   'catalog_therapeutic_activities',
   'catalog_therapeutic_segments',
   'catalog_service_exit_reasons',
+  'catalog_service_shift_templates',
 ]);
 
 export function isSplitResource(resource: string): boolean {

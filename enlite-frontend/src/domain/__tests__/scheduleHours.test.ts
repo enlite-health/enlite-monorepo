@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shiftMinutes, weeklyHoursOf, copyShiftsToDays, type ServiceShiftFormValue } from '../scheduleHours';
+import { shiftMinutes, weeklyHoursOf, copyShiftsToDays, applyTemplateToDays, type ServiceShiftFormValue } from '../scheduleHours';
 
 describe('shiftMinutes (regra única de horas, spec 056)', () => {
   it('20:00 → 08:00 atravessa a meia-noite: 720', () => expect(shiftMinutes('20:00', '08:00')).toBe(720));
@@ -63,5 +63,47 @@ describe('copyShiftsToDays (minutos da semana)', () => {
     expect(r.conflictDays).toEqual([2]);
     expect(r.next).toHaveLength(2);
     expect(r.next).toContainEqual(existing);
+  });
+});
+
+describe('applyTemplateToDays', () => {
+  const sh = (dayOfWeek: number, startTime: string, endTime: string, allDay = false): ServiceShiftFormValue => ({ dayOfWeek, startTime, endTime, allDay });
+  const guardia = [
+    { startTime: '08:00', durationMinutes: 360 },
+    { startTime: '14:00', durationMinutes: 360 },
+    { startTime: '20:00', durationMinutes: 720 },
+  ];
+
+  it('G1 dias vazios seg-sex com guardia de 3 itens geram 15 turnos', () => {
+    const r = applyTemplateToDays([], guardia, [1, 2, 3, 4, 5]);
+    expect(r.conflictDays).toEqual([]);
+    expect(r.next).toHaveLength(15);
+    expect(r.next[0]).toEqual(sh(1, '08:00', '14:00'));
+    expect(r.next[2]).toEqual(sh(1, '20:00', '08:00'));
+  });
+
+  it('G2 turno idêntico já existente é ignorado sem conflito', () => {
+    const r = applyTemplateToDays([sh(1, '08:00', '14:00')], [guardia[0]], [1]);
+    expect(r.conflictDays).toEqual([]);
+    expect(r.next).toHaveLength(1);
+  });
+
+  it('G3 dia com 09:00-17:00 mantém o existente, entra o que não sobrepõe e marca o dia', () => {
+    const existing = sh(1, '09:00', '17:00');
+    const r = applyTemplateToDays([existing], guardia, [1]);
+    expect(r.conflictDays).toEqual([1]);
+    expect(r.next).toEqual([existing, sh(1, '20:00', '08:00')]);
+  });
+
+  it('G4 20:00 por 720 no sábado conflita com domingo 06:00 existente (semana circular)', () => {
+    const existing = sh(0, '06:00', '07:00');
+    const r = applyTemplateToDays([existing], [guardia[2]], [6]);
+    expect(r.conflictDays).toEqual([6]);
+    expect(r.next).toEqual([existing]);
+  });
+
+  it('G5 item de 1440 vira turno allDay', () => {
+    const r = applyTemplateToDays([], [{ startTime: '08:00', durationMinutes: 1440 }], [2]);
+    expect(r.next).toEqual([sh(2, '08:00', '08:00', true)]);
   });
 });

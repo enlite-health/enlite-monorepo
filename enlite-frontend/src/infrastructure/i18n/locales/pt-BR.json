@@ -1381,6 +1381,7 @@
       "catalogActivities": "Rotina e atividades",
       "catalogSegments": "Segmentos (Ana Care)",
       "catalogServiceExitReasons": "Motivos de saída",
+      "catalogServiceShiftTemplates": "Guardias",
       "aiPrompts": "Prompts de IA",
       "interviewHosts": "Entrevistadores",
       "insuranceProviders": "Obras sociais"
@@ -3342,7 +3343,14 @@
           "start": "Início",
           "end": "Fim",
           "allDay": "Dia inteiro",
+          "allDayRange": "Dia inteiro · 24 h",
+          "allDayCompact": "24 h",
           "equalUseAllDay": "Para 24 h use 'Dia inteiro'",
+          "template": {
+            "label": "Guardia predefinida",
+            "apply": "Aplicar",
+            "placeholder": "Escolha uma guardia"
+          },
           "hours": "{{hours}} h",
           "nextDay": "(+1)",
           "add": "Adicionar turno",
@@ -4289,6 +4297,7 @@
               "pickPerson": "Escolher pessoa",
               "pickOtherForDay": "Escolher outra pessoa para esse dia",
               "conflict": "{{name}} já atende outro paciente em {{weekday}}, das {{start}} às {{end}}.",
+              "conflictAllDay": "{{name}} já atende outro paciente em {{weekday}}, o dia inteiro.",
               "loadingCandidates": "Carregando quem pode cobrir…",
               "candidatesError": "Não foi possível carregar a lista de quem pode cobrir.",
               "previewError": "Não foi possível verificar o horário da pessoa. Tente de novo.",
@@ -5151,6 +5160,7 @@
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
             "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
             "catalog_service_exit_reasons": "Catálogo de motivos de saída do serviço",
+            "catalog_service_shift_templates": "Catálogo de guardias predefinidas",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferência de horas do Ana Care",
             "patient_conversation": "Conversa do paciente",
@@ -5644,6 +5654,9 @@
         },
         "patients.catalogServiceExitReasons": {
           "label": "Pacientes: Catálogo de motivos de saída"
+        },
+        "patients.catalogServiceShiftTemplates": {
+          "label": "Pacientes: Catálogo de guardias predefinidas"
         },
         "account.tactiq": {
           "label": "Meu perfil: Tactiq"
@@ -6226,6 +6239,12 @@
       "copiarParaTraduzir": "copiar o original para traduzir"
     },
     "therapeuticCatalog": {
+      "shiftTemplates": {
+        "notRetroactive": "Os serviços já cadastrados não mudam.",
+        "overlap": "Há turnos que se sobrepõem dentro da guardia.",
+        "addItem": "Adicionar turno",
+        "removeItem": "Remover turno"
+      },
       "kinds": {
         "specificObjectives": {
           "title": "Objetivos específicos do projeto terapêutico",
@@ -6243,6 +6262,10 @@
           "title": "Motivos de saída",
           "subtitle": "As opções que a equipe escolhe ao registrar a saída de um prestador de um serviço. Editadas aqui, sem deploy. Desativar não apaga: registros anteriores guardam o motivo que tinham.",
           "guidance": "Categorias genéricas, sem dado de saúde."
+        },
+        "serviceShiftTemplates": {
+          "title": "Guardias predefinidas",
+          "subtitle": "Modelos de turnos que a coordenação aplica ao cadastrar um serviço."
         }
       },
       "newItem": "Nova opção",

@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { isAllDayShift } from './shiftRange';
 import { TriangleAlert } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PreviewConflict } from '@domain/entities/SubstitutionRequest';
@@ -36,12 +37,17 @@ export function ConflictNote({ conflict, name, testId }: { conflict: PreviewConf
     <div className="flex items-start gap-2.5 rounded-xl border-[1.5px] border-[#D99A1B] bg-[#FFF1D1] px-3 py-2.5 text-[#4A2F00]" role="alert" data-testid={testId}>
       <TriangleAlert size={18} className="shrink-0 text-[#8A5200]" aria-hidden="true" />
       <Text as="span" size="sm" color="inherit">
-        {t('admin.patients.detail.itinerary.flow.whoCovers.conflict', {
-          name: name.split(' ')[0],
-          weekday: weekdayName(overlap.weekday, i18n.language),
-          start: overlap.startTime,
-          end: endTimeOf(overlap.startTime, overlap.durationMinutes),
-        })}
+        {isAllDayShift(overlap)
+          ? t('admin.patients.detail.itinerary.flow.whoCovers.conflictAllDay', {
+              name: name.split(' ')[0],
+              weekday: weekdayName(overlap.weekday, i18n.language),
+            })
+          : t('admin.patients.detail.itinerary.flow.whoCovers.conflict', {
+              name: name.split(' ')[0],
+              weekday: weekdayName(overlap.weekday, i18n.language),
+              start: overlap.startTime,
+              end: endTimeOf(overlap.startTime, overlap.durationMinutes),
+            })}
       </Text>
     </div>
   );

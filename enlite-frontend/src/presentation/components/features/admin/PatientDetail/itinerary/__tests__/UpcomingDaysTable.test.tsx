@@ -77,6 +77,12 @@ describe('UpcomingDaysTable', () => {
     expectNoRawEnumLeaks(container);
   });
 
+  it('turno 08:00 a 08:00 mostra Todo el día · 24 h, nunca 08:00 – 08:00', () => {
+    renderTable([event({ date: '2026-11-05', weekday: 4, slotId: 'slot-thu', startTime: '08:00', endTime: '08:00' })]);
+    expect(screen.getAllByText('Todo el día · 24 h').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('08:00 – 08:00')).toBeNull();
+  });
+
   it('turno coberto: dia por extenso, chip de horário, "8 h", titular com "Titular" e botão Cambiar', () => {
     const { onChange } = renderTable([COVERED]);
     const row = screen.getByTestId('itinerario-proximo-slot-mon-2026-11-02');

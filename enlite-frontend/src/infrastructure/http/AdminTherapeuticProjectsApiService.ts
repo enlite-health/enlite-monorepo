@@ -8,6 +8,8 @@ import type {
   TherapeuticCatalogItem,
   AdminCatalogKind,
   ServiceExitReasonOption,
+  ShiftTemplate,
+  ShiftTemplateItem,
   TherapeuticFieldClass,
   TherapeuticProjectVersion,
 } from '@domain/entities/TherapeuticProject';
@@ -118,6 +120,29 @@ class AdminTherapeuticProjectsApiServiceClass {
   async listServiceExitReasonOptions(): Promise<ServiceExitReasonOption[]> {
     const { items } = await this.request<{ items: ServiceExitReasonOption[] }>('GET', '/api/admin/therapeutic-catalogs/service-exit-reasons/options');
     return items;
+  }
+
+  /** GET /api/admin/therapeutic-catalogs/service-shift-templates (spec 074). */
+  async listShiftTemplates(opts: { includeInactive?: boolean } = {}): Promise<ShiftTemplate[]> {
+    const qs = opts.includeInactive ? '?includeInactive=true' : '';
+    const { items } = await this.request<{ kind: string; items: ShiftTemplate[] }>('GET', `/api/admin/therapeutic-catalogs/service-shift-templates${qs}`);
+    return items;
+  }
+
+  /** GET …/service-shift-templates/options — só ativas, com os turnos; sob `patient_services:read`. */
+  async listShiftTemplateOptions(): Promise<ShiftTemplate[]> {
+    const { items } = await this.request<{ items: ShiftTemplate[] }>('GET', '/api/admin/therapeutic-catalogs/service-shift-templates/options');
+    return items;
+  }
+
+  /** POST …/service-shift-templates */
+  async createShiftTemplate(body: { label: string; items: ShiftTemplateItem[] }): Promise<ShiftTemplate> {
+    return this.request<ShiftTemplate>('POST', '/api/admin/therapeutic-catalogs/service-shift-templates', body);
+  }
+
+  /** PATCH …/service-shift-templates/:itemId — `items` presente substitui os turnos; sem DELETE (soft delete por `active`). */
+  async updateShiftTemplate(itemId: string, body: { label?: string; active?: boolean; items?: ShiftTemplateItem[] }): Promise<ShiftTemplate> {
+    return this.request<ShiftTemplate>('PATCH', `/api/admin/therapeutic-catalogs/service-shift-templates/${itemId}`, body);
   }
 
   /** POST /api/admin/therapeutic-catalogs/<kind> */

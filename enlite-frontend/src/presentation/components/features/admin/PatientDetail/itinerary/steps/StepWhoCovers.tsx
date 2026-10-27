@@ -66,7 +66,7 @@ export function StepWhoCovers({ draft, onChange, shifts, candidates, candidatesS
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="flex h-7 w-[130px] items-center justify-center whitespace-nowrap rounded-full bg-[#F1E8FF] text-[#3B0A8C]" {...NOWRAP}>
             <Text as="span" size="xs" weight="medium" color="inherit" className="whitespace-nowrap">
-              {shiftChipLabel(shift.date, shift.startTime, shift.endTime, i18n.language)}
+              {shiftChipLabel(t, shift.date, shift.startTime, shift.endTime, i18n.language)}
             </Text>
           </span>
           {typeof who === 'string' && <ConflictBadge state={stateOf(who, shift)} testId={`substitucion-estado-${key}`} />}
@@ -80,7 +80,7 @@ export function StepWhoCovers({ draft, onChange, shifts, candidates, candidatesS
         {showPicker && (
           <Combobox
             inputSize="compact"
-            aria-label={picker === 'always' ? ts('perDay.pickFor', { day: shiftChipLabel(shift.date, shift.startTime, shift.endTime, i18n.language) }) : ts('pickOtherForDay')}
+            aria-label={picker === 'always' ? ts('perDay.pickFor', { day: shiftChipLabel(t, shift.date, shift.startTime, shift.endTime, i18n.language) }) : ts('pickOtherForDay')}
             data-testid={`substitucion-elegir-${key}`}
             className="[&_button]:!text-primary"
             placeholder={picker === 'always' ? ts('pickPerson') : ts('pickOtherForDay')}

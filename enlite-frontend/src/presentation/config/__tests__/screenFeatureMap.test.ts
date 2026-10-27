@@ -50,6 +50,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'catalogos/objetivos-especificos', 'catalogos/actividades',
   // Fase 1 itinerario-trocas: motivos de saída do serviço — célula própria (`catalog_service_exit_reasons:read`).
   'catalogos/motivos-de-salida',
+  // Spec 074: guardias predefinidas — célula própria (`catalog_service_shift_templates:read`).
+  'catalogos/guardias',
   // Spec 029: prompts de IA — gateada pela célula própria (`ai_prompt:read`), não por país; mesmo caso
   // de tags/plantillas/catálogos acima (tela de configuração global, sem chave `screen:*` no manifest).
   'prompts-ia',
