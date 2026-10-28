@@ -47,7 +47,7 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
   const hostOptions = [...new Set([...hosts, ...(filters.host ? [filters.host] : [])])].map((h) => ({ value: h, label: h }));
 
   return (
-    <div className="mb-4 flex flex-wrap items-end gap-3">
+    <div className="flex flex-wrap items-end gap-3">
       <Field id="enq-from" label={t('admin.enquadres.filters.from')}>
         <Input id="enq-from" type="date" inputSize="dense" value={from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-from" />
       </Field>
