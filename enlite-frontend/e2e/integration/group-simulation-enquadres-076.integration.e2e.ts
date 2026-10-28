@@ -181,8 +181,12 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
     expect(resp.status()).toBe(403);
     expect((await resp.json()).code).toBe('COUNTRY_SCOPE_REQUIRED');
 
-    await expect(page.getByTestId('enquadres-error')).toContainText('Tu usuario no tiene un país asignado para ver esta lista.', { timeout: 20_000 });
+    await expect(page.getByTestId('enquadres-error')).toContainText('No tenés acceso al país elegido para esta lista.', { timeout: 20_000 });
     await expect(page.getByTestId('enquadres-retry')).toBeVisible();
+    // Estado estável: nada esmaecido nem "carregando" (a região aria-busy só existe fora do erro; o fade de entrada de 220ms termina).
+    await expect(page.getByTestId('enquadres-error')).toHaveCSS('opacity', '1');
+    await expect(page.getByTestId('enquadres-page').locator('xpath=..')).toHaveCSS('opacity', '1');
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
     await expect(page.getByTestId('enquadres-retry')).toHaveText('Intentar de nuevo');
     await expect(page.getByTestId('enquadres-row')).toHaveCount(0);
     await expect(page.getByTestId('enquadres-totals')).toHaveCount(0);

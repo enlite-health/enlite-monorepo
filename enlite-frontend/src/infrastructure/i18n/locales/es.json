@@ -6899,7 +6899,7 @@
         "ENQUADRE_LIST_RANGE_INCOMPLETE": "Completá las dos fechas: Desde y Hasta.",
         "ENQUADRE_LIST_RANGE_INVERTED": "La fecha Hasta no puede ser anterior a Desde.",
         "ENQUADRE_LIST_RANGE_TOO_LONG": "El período no puede superar 92 días.",
-        "COUNTRY_SCOPE_REQUIRED": "Tu usuario no tiene un país asignado para ver esta lista.",
+        "COUNTRY_SCOPE_REQUIRED": "No tenés acceso al país elegido para esta lista.",
         "INVALID_COUNTRY": "El país elegido no es válido.",
         "generic": "No pudimos cargar los encuadres. Probá de nuevo."
       }
