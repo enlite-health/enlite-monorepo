@@ -28,6 +28,9 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
     if (ev.key === 'Enter' && ev.target === ev.currentTarget) open();
   };
   const reason = e.importBlocked?.reason;
+  const blockedText = reason
+    ? t('admin.enquadres.importBlocked', { reason: t(`admin.vacancyDetail.enquadre.seals.blockedReasons.${reason}`, { defaultValue: reason }) })
+    : '';
 
   return (
     <TableRow data-testid="enquadres-row" data-event-id={e.id} data-phase={e.phase} tabIndex={0} onClick={open} onKeyDown={onKeyDown}>
@@ -36,7 +39,11 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
           <Text as="span" size="sm" weight="medium" color="inherit">{`${date} ${time}`}</Text>
         </Link>
       </TableCell>
-      <TableCell data-clarity-mask="True" data-testid="enquadres-row-host">{e.hostName}</TableCell>
+      <TableCell unwrapped className="max-w-[260px]" data-clarity-mask="True" data-testid="enquadres-row-host">
+        <span title={e.hostName} className="block truncate">
+          <Text as="span" size="sm" color="inherit">{e.hostName}</Text>
+        </span>
+      </TableCell>
       <TableCell className="whitespace-nowrap" data-testid="enquadres-row-case">{`${formatVacancyCase(e.caseNumber, e.caseOrdinal)} · ${e.eventCode}`}</TableCell>
       <TableCell data-testid="enquadres-row-convoked">{e.convokedCount}</TableCell>
       <TableCell unwrapped className="whitespace-nowrap">
@@ -44,14 +51,10 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
           {t(`admin.vacancyDetail.enquadre.${ENQUADRE_PHASE_KEY[e.phase]}`)}
         </SealChip>
       </TableCell>
-      <TableCell unwrapped>
+      <TableCell unwrapped className="w-full max-w-0">
         {reason && (
-          <span data-testid="enquadres-import-blocked" data-reason={reason}>
-            <Text as="span" size="xs" weight="medium" color="inherit" className="text-amber-700">
-              {t('admin.enquadres.importBlocked', {
-                reason: t(`admin.vacancyDetail.enquadre.seals.blockedReasons.${reason}`, { defaultValue: reason }),
-              })}
-            </Text>
+          <span data-testid="enquadres-import-blocked" data-reason={reason} title={blockedText} className="block truncate">
+            <Text as="span" size="xs" weight="medium" color="inherit" className="text-amber-700">{blockedText}</Text>
           </span>
         )}
       </TableCell>
