@@ -15,7 +15,7 @@ import { timeZoneForCountry } from '../PatientDetail/admission/admissionTime';
 import { dateAndTime } from '../VacancyDetail/Enquadre/enquadreEventTime';
 import { ENQUADRE_PHASE_KEY, ENQUADRE_PHASE_TONE } from '../VacancyDetail/Enquadre/enquadreEventPhase';
 
-export const enquadreDeepLink = (e: Pick<EnquadreGlobalListItem, 'jobPostingId' | 'id'>): string =>
+const enquadreDeepLink = (e: Pick<EnquadreGlobalListItem, 'jobPostingId' | 'id'>): string =>
   `/admin/vacancies/${encodeURIComponent(e.jobPostingId)}?tab=enquadre&event=${encodeURIComponent(e.id)}`;
 
 export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }): JSX.Element {
