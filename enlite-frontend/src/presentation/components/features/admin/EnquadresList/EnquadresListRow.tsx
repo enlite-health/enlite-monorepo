@@ -31,15 +31,15 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
 
   return (
     <TableRow data-testid="enquadres-row" data-event-id={e.id} data-phase={e.phase} tabIndex={0} onClick={open} onKeyDown={onKeyDown}>
-      <TableCell unwrapped>
+      <TableCell unwrapped className="whitespace-nowrap">
         <Link to={href} onClick={(ev) => ev.stopPropagation()} className="text-primary underline" data-testid="enquadres-row-link">
           <Text as="span" size="sm" weight="medium" color="inherit">{`${date} ${time}`}</Text>
         </Link>
       </TableCell>
       <TableCell data-clarity-mask="True" data-testid="enquadres-row-host">{e.hostName}</TableCell>
-      <TableCell data-testid="enquadres-row-case">{`${formatVacancyCase(e.caseNumber, e.caseOrdinal)} · ${e.eventCode}`}</TableCell>
+      <TableCell className="whitespace-nowrap" data-testid="enquadres-row-case">{`${formatVacancyCase(e.caseNumber, e.caseOrdinal)} · ${e.eventCode}`}</TableCell>
       <TableCell data-testid="enquadres-row-convoked">{e.convokedCount}</TableCell>
-      <TableCell unwrapped>
+      <TableCell unwrapped className="whitespace-nowrap">
         <SealChip tone={ENQUADRE_PHASE_TONE[e.phase]} testId="enquadres-row-phase">
           {t(`admin.vacancyDetail.enquadre.${ENQUADRE_PHASE_KEY[e.phase]}`)}
         </SealChip>

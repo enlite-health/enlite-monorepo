@@ -13,7 +13,7 @@ export function EnquadresTable({ items }: { items: readonly EnquadreGlobalListIt
     <Table>
       <TableHeader>
         {COLUMNS.map((c) => (
-          <TableHead key={c}>{t(`admin.enquadres.columns.${c}`)}</TableHead>
+          <TableHead key={c} className="whitespace-nowrap">{t(`admin.enquadres.columns.${c}`)}</TableHead>
         ))}
       </TableHeader>
       <TableBody>

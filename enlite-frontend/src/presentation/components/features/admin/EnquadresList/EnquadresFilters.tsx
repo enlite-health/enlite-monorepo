@@ -49,13 +49,13 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
   return (
     <div className="flex flex-wrap lg:flex-nowrap items-end gap-2">
       <Field id="enq-from" label={t('admin.enquadres.filters.from')} className="shrink-0">
-        <Input id="enq-from" className="!w-[130px]" type="date" inputSize="dense" value={from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-from" />
+        <Input id="enq-from" className="!w-[120px]" type="date" inputSize="dense" value={from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-from" />
       </Field>
       <Field id="enq-to" label={t('admin.enquadres.filters.to')} className="shrink-0">
-        <Input id="enq-to" className="!w-[130px]" type="date" inputSize="dense" value={to} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-to" />
+        <Input id="enq-to" className="!w-[120px]" type="date" inputSize="dense" value={to} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-to" />
       </Field>
       <Field id="enq-status" label={t('admin.enquadres.filters.status')}>
-        <div className="w-[184px] shrink-0">
+        <div className="w-[178px] shrink-0">
           <Combobox
             id="enq-status"
             multiple
@@ -68,8 +68,8 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
           />
         </div>
       </Field>
-      <Field id="enq-host" label={t('admin.enquadres.filters.host')}>
-        <div className="w-[104px] shrink-0">
+      <Field id="enq-host" label={t('admin.enquadres.filters.host')} className="lg:flex-1 lg:min-w-[120px]">
+        <div className="w-full">
           <Combobox
             id="enq-host"
             inputSize="dense"
@@ -97,7 +97,7 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
           </div>
         </Field>
       )}
-      <Field id="enq-search" label={t('admin.enquadres.filters.search')} className="lg:flex-1 lg:min-w-[184px]">
+      <Field id="enq-search" label={t('admin.enquadres.filters.search')} className="lg:flex-1 lg:min-w-[150px]">
         <Input id="enq-search" inputSize="dense" value={q} maxLength={50} placeholder={t('admin.enquadres.filters.searchPlaceholder')} onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-search" />
       </Field>
       <Button variant="outline" size="sm" className="h-[35px] shrink-0" onClick={apply} data-testid="enquadres-filter-apply">{t('admin.enquadres.filters.apply')}</Button>
