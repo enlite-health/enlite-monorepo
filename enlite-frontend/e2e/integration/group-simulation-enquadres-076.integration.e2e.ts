@@ -49,6 +49,17 @@ async function digitarData(page: Page, campo: Locator, iso: string): Promise<voi
   await expect(campo).toHaveValue(iso);
 }
 
+/** Espera a rolagem assentar: o topo do `enquadre-tab` (qualquer container que role) não muda por 300ms seguidos. */
+async function esperarAbaAssentar(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __abaY?: number; __abaDesde?: number };
+    const y = document.querySelector('[data-testid="enquadre-tab"]')?.getBoundingClientRect().y;
+    if (y === undefined) return false;
+    if (w.__abaY === undefined || Math.abs(w.__abaY - y) > 0.5) { w.__abaY = y; w.__abaDesde = performance.now(); return false; }
+    return performance.now() - (w.__abaDesde ?? 0) >= 300;
+  }, undefined, { timeout: 15_000, polling: 50 });
+}
+
 async function periodoNaTela(page: Page): Promise<{ from: string; to: string }> {
   return {
     from: await page.getByTestId('enquadres-filter-from').inputValue(),
@@ -129,9 +140,15 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
     await page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.n1}"]`).getByTestId('enquadres-row-host').click();
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${seed.vacancyId}\\?tab=enquadre&event=${seed.events.n1}`));
     await expect(page.getByTestId('enquadre-tab')).toHaveAttribute('data-selected-event', seed.events.n1, { timeout: 20_000 });
-    // O deep link rola sozinho até o Kanban (sem scroll manual) e leva o foco ao título do evento.
-    await expect(page.getByTestId('enquadre-tab')).toBeInViewport({ timeout: 10_000 });
-    await expect(page.getByTestId('enquadre-kanban-title')).toBeInViewport();
+    // O deep link rola sozinho até o Kanban (sem scroll manual): espera a rolagem ASSENTAR (topo da aba estável por 300ms),
+    // a aba fica no topo da tela e o cabeçalho da 1ª coluna ("Convocados") aparece INTEIRO (toBeInViewport sem ratio aprovou o defeito).
+    await esperarAbaAssentar(page);
+    const topoDaAba = (await page.getByTestId('enquadre-tab').boundingBox())?.y ?? Number.NaN;
+    expect(topoDaAba, `topo do enquadre-tab = ${topoDaAba}px (esperado 0..160)`).toBeGreaterThanOrEqual(0);
+    expect(topoDaAba, `topo do enquadre-tab = ${topoDaAba}px (esperado 0..160)`).toBeLessThanOrEqual(160);
+    await expect(page.getByTestId('enquadre-kanban-title')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('kanban-column-CONVOKED').locator(':scope > div').first()).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('enquadre-kanban-title')).toBeFocused();
 
     // Voltar do navegador: a lista volta com as MESMAS datas (na URL e nos campos) e os mesmos totais.
     await page.goBack();

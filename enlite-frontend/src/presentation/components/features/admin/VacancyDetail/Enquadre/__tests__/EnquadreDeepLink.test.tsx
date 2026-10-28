@@ -50,11 +50,23 @@ describe('EnquadreTab: rolagem ao abrir o evento', () => {
   beforeEach(() => { scroll = vi.fn(); Element.prototype.scrollIntoView = scroll as never; });
   afterEach(() => { Element.prototype.scrollIntoView = original; });
 
+  it('o scroll espera o kanban carregar: com o evento ainda carregando nada rolou', async () => {
+    let release: (v: never) => void = () => undefined;
+    getEvent.mockReturnValue(new Promise((res) => { release = res as never; }));
+    mount('?tab=enquadre&event=ev-01');
+    await screen.findByTestId('enquadre-kanban-loading');
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(scroll).not.toHaveBeenCalled();
+    release(undefined as never);
+  });
+
   it('🔴 ?event=<id da vaga> rola 1× até a aba e leva o foco ao título do kanban', async () => {
     mount('?tab=enquadre&event=ev-01');
     const tab = await screen.findByTestId('enquadre-tab');
     await waitFor(() => expect(tab).toHaveAttribute('data-selected-event', 'ev-01'));
     const title = await screen.findByTestId('enquadre-kanban-title');
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1)); // só depois do kanban carregar (altura final), no próximo frame
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(scroll.mock.instances[0]).toBe(tab);
     expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
@@ -65,9 +77,10 @@ describe('EnquadreTab: rolagem ao abrir o evento', () => {
     mount('?tab=enquadre');
     await userEvent.click(await screen.findByTestId('enquadre-event-row-ev-02'));
     await screen.findByTestId('enquadre-kanban-header');
-    expect(scroll).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByTestId('enquadre-kanban-back'));
     await screen.findByTestId('enquadre-event-row-ev-02');
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
     expect(scroll).toHaveBeenCalledTimes(1);
   });
 
