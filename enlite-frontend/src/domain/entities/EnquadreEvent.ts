@@ -102,3 +102,53 @@ export interface CreateEnquadreEventInput {
   durationMinutes: number;
   workerIds: string[];
 }
+
+/** Status do EVENTO (não a fase): o filtro da lista global (spec 076) e `status` da linha. */
+export type EnquadreEventStatus = 'open' | 'closed' | 'cancelled';
+
+/**
+ * Uma linha da lista GLOBAL de enquadres (spec 076, `GET /api/admin/enquadre-events`). Sem nome de paciente, de convocado,
+ * e-mail ou telefone (FR-21): só código, caso, entrevistador (nome de exibição de staff) e contagens. `startsAt` já vem no
+ * fuso do país do evento; a tela formata com o mesmo helper da aba da vaga.
+ */
+export interface EnquadreGlobalListItem {
+  id: string;
+  jobPostingId: string;
+  caseNumber: number | null;
+  caseOrdinal: number | null;
+  eventCode: string;
+  startsAt: string;
+  endsAt: string;
+  country: 'AR' | 'BR';
+  hostName: string;
+  status: EnquadreEventStatus;
+  phase: EnquadreEventPhase;
+  convokedCount: number;
+  /** Motivo (código fechado) quando a importação da esteira está `blocked`; `null` nos demais estados. */
+  importBlocked: { reason: string } | null;
+}
+
+/**
+ * A página + os totais do conjunto filtrado INTEIRO (`total`/`convokedTotal` vêm do servidor: a tela nunca soma a página).
+ * `range.from/to` chegam como texto `YYYY-MM-DD`; `defaulted` = o servidor aplicou a semana atual.
+ */
+export interface EnquadreGlobalList {
+  items: EnquadreGlobalListItem[];
+  total: number;
+  convokedTotal: number;
+  hosts: string[];
+  range: { from: string; to: string; defaulted: boolean };
+  scope: { countries: string[]; requested: string };
+}
+
+export interface EnquadreGlobalListParams {
+  /** `YYYY-MM-DD`. Só vão à URL as DUAS juntas; uma sozinha é descartada (o servidor responde 400). */
+  from?: string;
+  to?: string;
+  status?: readonly EnquadreEventStatus[];
+  host?: string;
+  country?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}

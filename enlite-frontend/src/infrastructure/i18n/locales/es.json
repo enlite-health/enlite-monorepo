@@ -1366,6 +1366,7 @@
       "workers": "Prestadores",
       "blockedAttempts": "Postulaciones bloqueadas",
       "patients": "Pacientes",
+      "enquadres": "Encuadres",
       "tags": "Etiquetas",
       "dedup": "Duplicados",
       "adminSection": "Administración",
@@ -5755,6 +5756,9 @@
             "termValue": "Valor hora e impuesto del término del contrato",
             "patients": "Pacientes vinculados"
           }
+        },
+        "enquadres": {
+          "label": "Encuadres"
         }
       }
     },
@@ -6848,6 +6852,54 @@
         },
         "caseNumber": "Caso {{number}}",
         "noCase": "Sin número de caso"
+      }
+    },
+    "enquadres": {
+      "title": "Encuadres",
+      "filters": {
+        "from": "Desde",
+        "to": "Hasta",
+        "status": "Estado",
+        "statusAll": "Todos los estados",
+        "host": "Entrevistador",
+        "hostAll": "Todos los entrevistadores",
+        "country": "País",
+        "countryAll": "Todos los países",
+        "search": "Buscar",
+        "searchPlaceholder": "ENC-… o número de caso",
+        "apply": "Aplicar"
+      },
+      "status": {
+        "open": "Abierto",
+        "closed": "Cerrado",
+        "cancelled": "Cancelado"
+      },
+      "columns": {
+        "dateTime": "Fecha y hora",
+        "host": "Entrevistador",
+        "case": "Caso",
+        "convoked": "Convocados",
+        "state": "Estado",
+        "import": "Importación"
+      },
+      "totals": {
+        "enquadres_one": "{{count}} encuadre",
+        "enquadres_other": "{{count}} encuadres",
+        "convoked_one": "{{count}} convocado",
+        "convoked_other": "{{count}} convocados"
+      },
+      "empty": "No hay encuadres entre {{from}} y {{to}}.",
+      "loadError": "No pudimos cargar los encuadres.",
+      "retry": "Intentar de nuevo",
+      "importBlocked": "Importación bloqueada: {{reason}}",
+      "helpNotIndicator21": "Esta lista cuenta eventos de encuadre (de cualquier estado) y sus convocados activos. No coincide con el indicador \"Encuadres agendados esta semana\" de Gestión a la Vista, que cuenta personas por vacante, solo de eventos abiertos y con otros criterios.",
+      "errors": {
+        "ENQUADRE_LIST_RANGE_INCOMPLETE": "Completá las dos fechas: Desde y Hasta.",
+        "ENQUADRE_LIST_RANGE_INVERTED": "La fecha Hasta no puede ser anterior a Desde.",
+        "ENQUADRE_LIST_RANGE_TOO_LONG": "El período no puede superar 92 días.",
+        "COUNTRY_SCOPE_REQUIRED": "Tu usuario no tiene un país asignado para ver esta lista.",
+        "INVALID_COUNTRY": "El país elegido no es válido.",
+        "generic": "No pudimos cargar los encuadres. Probá de nuevo."
       }
     }
   },

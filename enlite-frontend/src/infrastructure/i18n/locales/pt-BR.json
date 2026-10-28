@@ -1366,6 +1366,7 @@
       "workers": "Prestadores",
       "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
+      "enquadres": "Enquadres",
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
@@ -5676,6 +5677,9 @@
             "termValue": "Valor-hora e imposto do termo do contrato",
             "patients": "Pacientes vinculados"
           }
+        },
+        "enquadres": {
+          "label": "Enquadres"
         }
       }
     },
@@ -6769,6 +6773,54 @@
         },
         "caseNumber": "Caso {{number}}",
         "noCase": "Sem número de caso"
+      }
+    },
+    "enquadres": {
+      "title": "Enquadres",
+      "filters": {
+        "from": "De",
+        "to": "Até",
+        "status": "Status",
+        "statusAll": "Todos os status",
+        "host": "Entrevistador",
+        "hostAll": "Todos os entrevistadores",
+        "country": "País",
+        "countryAll": "Todos os países",
+        "search": "Buscar",
+        "searchPlaceholder": "ENC-… ou número do caso",
+        "apply": "Aplicar"
+      },
+      "status": {
+        "open": "Aberto",
+        "closed": "Encerrado",
+        "cancelled": "Cancelado"
+      },
+      "columns": {
+        "dateTime": "Data e hora",
+        "host": "Entrevistador",
+        "case": "Caso",
+        "convoked": "Convocados",
+        "state": "Estado",
+        "import": "Importação"
+      },
+      "totals": {
+        "enquadres_one": "{{count}} enquadre",
+        "enquadres_other": "{{count}} enquadres",
+        "convoked_one": "{{count}} convocado",
+        "convoked_other": "{{count}} convocados"
+      },
+      "empty": "Não há enquadres entre {{from}} e {{to}}.",
+      "loadError": "Não conseguimos carregar os enquadres.",
+      "retry": "Tentar de novo",
+      "importBlocked": "Importação bloqueada: {{reason}}",
+      "helpNotIndicator21": "Esta lista conta eventos de enquadre (de qualquer status) e seus convocados ativos. Não bate com o indicador \"Enquadres agendados esta semana\" da Gestão à Vista, que conta pessoas por vaga, só de eventos abertos e com outros critérios.",
+      "errors": {
+        "ENQUADRE_LIST_RANGE_INCOMPLETE": "Preencha as duas datas: De e Até.",
+        "ENQUADRE_LIST_RANGE_INVERTED": "A data final não pode ser anterior à inicial.",
+        "ENQUADRE_LIST_RANGE_TOO_LONG": "O período não pode passar de 92 dias.",
+        "COUNTRY_SCOPE_REQUIRED": "Seu usuário não tem um país atribuído para ver esta lista.",
+        "INVALID_COUNTRY": "O país escolhido não é válido.",
+        "generic": "Não conseguimos carregar os enquadres. Tente de novo."
       }
     }
   },

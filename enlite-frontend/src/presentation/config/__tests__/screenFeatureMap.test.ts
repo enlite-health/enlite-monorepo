@@ -61,6 +61,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'entrevistadores',
   // Spec 058: cadastro da obra social — gateado pelas células próprias (`catalog_insurance_providers:*`...), não por país.
   'obras-sociales', 'obras-sociales/:code',
+  // Spec 076: lista global de enquadres — gateada pelas DUAS células (`enquadre_event:read` + `vacancy:read`, `openWith: 'all'`), não por país (FR-03).
+  'enquadres',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */
