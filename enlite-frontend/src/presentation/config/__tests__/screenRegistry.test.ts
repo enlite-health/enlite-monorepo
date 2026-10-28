@@ -220,3 +220,17 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(() => screenById('nao.existe')).toThrow(/desconhecida/);
   });
 });
+
+describe('SCREEN_REGISTRY — lista global de enquadres (spec 076)', () => {
+  it('a tela `enquadres` abre com as duas células (`openWith: all`), está em /admin/enquadres e a rota existe no App.tsx', () => {
+    const t = screenById('enquadres');
+    expect(t.route).toBe('/admin/enquadres');
+    expect(t.cells).toEqual(['enquadre_event:read', 'vacancy:read']);
+    expect(t.openWith).toBe('all');
+    expect(APP_TSX).toMatch(/path="enquadres"/);
+  });
+
+  it('só a tela de enquadres usa `openWith` (o OU das demais não muda)', () => {
+    expect(SCREEN_REGISTRY.filter((s) => s.openWith !== undefined).map((s) => s.id)).toEqual(['enquadres']);
+  });
+});

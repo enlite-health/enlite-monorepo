@@ -43,6 +43,11 @@ export interface ScreenDef {
   containers?: readonly ScreenContainer[];
   /** Abas da tela, na ordem — uma aba só existe se algum container dela for legível. */
   tabs?: readonly string[];
+  /**
+   * Como as `cells` da tela abrem o menu e a rota: `'all'` = EXIGE TODAS (o "E"); ausente = basta UMA (o "OU", o de toda
+   * tela existente). Só vale para `cells` — containers e abas seguem no OU. Spec 076: a lista global lê duas coisas.
+   */
+  openWith?: 'all';
 }
 
 import { ADMIN_USERS_PATH } from './adminHome';
@@ -278,6 +283,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },
   // Spec 055: quem atende enquadre e admissão (tabela interview_hosts). `update` cobre a busca de candidatos, agregar, editar e quitar.
   { id: 'interviewHosts', route: '/admin/entrevistadores', cells: ['interview_host:read', 'interview_host:update'] },
+  // Spec 076: lista global de enquadres. O endpoint exige AS DUAS células (cruza evento e vaga) — por isso `openWith: 'all'`.
+  { id: 'enquadres', route: '/admin/enquadres', cells: ['enquadre_event:read', 'vacancy:read'], openWith: 'all' },
   { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
 ];
 

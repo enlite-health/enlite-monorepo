@@ -6,7 +6,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
 import { ADMIN_USERS_PATH } from './adminHome';
-import { MapPin } from 'lucide-react';
+import { CalendarDays, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -92,6 +92,11 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.patients', 'Pacientes'),
       href: '/admin/patients',
+    },
+    {
+      icon: <CalendarDays className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.enquadres', 'Encuadres'),
+      href: '/admin/enquadres',
     },
     {
       icon: <MapPin className="w-6 h-6" strokeWidth={2} />,

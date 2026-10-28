@@ -38,6 +38,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { screenById } from '@presentation/config/screenRegistry';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { useVacancyTabParam } from './VacancyDetail/useVacancyTabParam';
 
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -49,7 +50,7 @@ export default function VacancyDetailPage() {
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
+  const [activeTab, setActiveTab] = useVacancyTabParam();
   const [showPublishedRedirectBanner, setShowPublishedRedirectBanner] = useState(false);
   // D286: uma aba existe se algum container dela for legível (Encuadres = funil/match/convites,
   // Talentum = prescreening/talentum, Links = a vaga). O card Paciente é célula do PACIENTE.

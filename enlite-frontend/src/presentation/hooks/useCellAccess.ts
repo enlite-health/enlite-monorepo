@@ -160,5 +160,6 @@ export function screenVisibleFor(
 ): boolean {
   if (enforcement !== 'on') return true;
   const abrem = screen.cells && screen.cells.length > 0 ? screen.cells : cellsOfScreen(screen);
-  return abrem.some((cell) => permissions?.includes(cell));
+  const has = (cell: string) => !!permissions?.includes(cell);
+  return screen.openWith === 'all' ? abrem.every(has) : abrem.some(has);
 }

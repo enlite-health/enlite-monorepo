@@ -2,10 +2,13 @@
  * EnquadreTab — aba "Enquadre" do detalhe da vaga (spec 052): o cabeçalho (criar evento + contador de completados sem
  * evento), os estados carregando/erro/vazio e a tabela de eventos. Molde: AdmissionTab (mesma anatomia).
  *
- * "Crear evento" é `ActionButton` (`enquadre_event:create`). `createOpen` monta o drawer; o clique
- * na linha guarda `selectedEventId` e a aba troca a lista pelo kanban do evento ("← Eventos" volta e recarrega).
+ * "Crear evento" é `ActionButton` (`enquadre_event:create`). `createOpen` monta o drawer. O evento aberto vive na URL
+ * (`?event=`, spec 076): o clique na linha faz PUSH (o voltar do navegador desfaz a seleção) e a aba troca a lista pelo kanban
+ * do evento ("← Eventos" apaga `event` com `replace` e recarrega). O kanban só monta com a lista da vaga carregada E o id
+ * dentro dela: id inexistente ou de OUTRA vaga cai na lista (FR-16) e `getEvent` nunca é chamado para ele.
  */
-import { useState, type JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CalendarPlus, Loader2 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -30,10 +33,31 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
   const available = useEnquadreAvailableWorkers(vacancyId);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const eventParam = searchParams.get('event');
+  // Só vale o id que a lista DESTA vaga contém (nunca monta o kanban antes de conferir a lista).
+  const selectedEventId = status === 'ok' && eventParam !== null && events.some((e) => e.id === eventParam) ? eventParam : null;
+
+  const setEvent = (eventId: string | null, replace: boolean): void => {
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (eventId === null) n.delete('event');
+        else n.set('event', eventId);
+        return n;
+      },
+      { replace },
+    );
+  };
+
+  // Lista carregada e o id não está nela (outra vaga, inexistente): apaga `event` e fica na lista.
+  useEffect(() => {
+    if (status === 'ok' && eventParam !== null && selectedEventId === null) setEvent(null, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, eventParam, selectedEventId]);
 
   const backToList = (): void => {
-    setSelectedEventId(null);
+    setEvent(null, true);
     void reload();
     void available.reload();
   };
@@ -85,7 +109,7 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
         </div>
       )}
       {status === 'ok' && events.length > 0 && (
-        <EnquadreEventsTable vacancyId={vacancyId} events={events} now={now()} onSelect={setSelectedEventId} />
+        <EnquadreEventsTable vacancyId={vacancyId} events={events} now={now()} onSelect={(id) => setEvent(id, false)} />
       )}
 
       {createOpen && (

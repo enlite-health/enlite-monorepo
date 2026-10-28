@@ -172,7 +172,8 @@ describe('useAdminNavItems — Mapa (REQ-04): item de topo, por célula da tela 
   ])('%s: "Mapa" aponta para /admin/mapa, logo depois de Pacientes', (_label, permissions, enforcement) => {
     comContrato(permissions, enforcement);
 
-    const items = itens();
+    // "Encuadres" (spec 076) entra logo depois de Pacientes quando o ator tem as duas células; o Mapa segue o item de topo anterior a ele.
+    const items = itens().filter((item) => item.href !== '/admin/enquadres');
     const mapIdx = items.findIndex((item) => item.href === '/admin/mapa');
 
     expect(mapIdx).toBeGreaterThan(-1);
