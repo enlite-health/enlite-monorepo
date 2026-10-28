@@ -480,6 +480,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
         'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
         'POST /api/admin/me/tactiq-link → own_tactiq_link:create',
+        // spec 076: lista GLOBAL de enquadres (cross-vacante) — duas células encadeadas, `+` no inventário.
+        'GET /api/admin/enquadre-events → enquadre_event:read+vacancy:read',
         // spec 052 (eventos de enquadre, `adminEnquadreEventRoutes.ts`): família admin.vacancies, células enquadre_event/enquadre_summary/enquadre_result.
         'GET /api/admin/vacancies/:vacancyId/enquadre-events → enquadre_event:read',
         'GET /api/admin/vacancies/:vacancyId/enquadre-events/:eventId → enquadre_event:read',

@@ -454,7 +454,7 @@ export function hasValidEmail(email: string | null): boolean {
   return typeof email === 'string' && EMAIL.safeParse(email.trim()).success;
 }
 
-function inZone(d: Date, zone: string): string {
+export function inZone(d: Date, zone: string): string {
   return DateTime.fromJSDate(d, { zone }).toISO({ suppressMilliseconds: true }) as string;
 }
 

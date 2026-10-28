@@ -132,6 +132,9 @@ import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEv
 import { EnquadreSummaryDownload } from '@modules/matching/application/EnquadreSummaryDownload';
 import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
 import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
+import { createAdminEnquadreEventListRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventListRoutes';
+import { EnquadreEventListController } from '@modules/matching/interfaces/controllers/EnquadreEventListController';
+import { EnquadreEventGlobalList } from '@modules/matching/application/EnquadreEventGlobalList';
 import { createAdminInterviewHostRoutes } from '@modules/matching/interfaces/routes/adminInterviewHostRoutes';
 import { InterviewHostController } from '@modules/matching/interfaces/controllers/InterviewHostController';
 import { InterviewHostService } from '@modules/matching/application/InterviewHostService';
@@ -680,6 +683,12 @@ const enquadreEventController = new EnquadreEventController(
   new EnquadreSummaryDownload({ db: admissionDb }),
 );
 app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
+// Spec 076: lista GLOBAL de enquadres (cross-vacante). Duas células: enquadre_event:read + vacancy:read.
+app.use('/api/admin', createAdminEnquadreEventListRoutes(
+  authMiddleware,
+  permissionMiddleware,
+  new EnquadreEventListController(admissionDb, new EnquadreEventGlobalList({ db: admissionDb })),
+));
 
 // Spec 055: tela Entrevistadores (quem atende enquadre e admissão, amarrado a usuário staff ativo). Células interview_host:read|update.
 app.use('/api/admin', createAdminInterviewHostRoutes(
