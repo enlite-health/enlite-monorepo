@@ -84,6 +84,7 @@
     "searchCountry": "Buscar país...",
     "previousPage": "Página anterior",
     "nextPage": "Próxima página",
+    "pageRange": "{{start}} - {{end}} de {{total}}",
     "view": "Ver",
     "all": "Todos",
     "allFeminine": "Todas",
