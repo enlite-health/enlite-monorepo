@@ -40,7 +40,9 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
     const err = validateRange(from, to);
     setRangeError(err);
     if (err) return;
-    onChange({ from, to, q: q.trim(), page: 1 });
+    // Só grava as datas na URL se a pessoa as MUDOU: senão o favorito viraria a semana fixa que o servidor resolveu.
+    const changed = from !== (filters.from || shownRange?.from || '') || to !== (filters.to || shownRange?.to || '');
+    onChange({ ...(changed ? { from, to } : {}), q: q.trim(), page: 1 });
     setDraft({});
   };
   const onEnter = (ev: KeyboardEvent<HTMLInputElement>): void => { if (ev.key === 'Enter') apply(); };
@@ -92,6 +94,7 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
           <Combobox
             id="enq-host"
             inputSize="dense"
+            placeholder={t('admin.enquadres.filters.hostAll')}
             value={filters.host}
             clearLabel={t('admin.enquadres.filters.hostAll')}
             onChange={(v) => onChange({ host: v, page: 1 })}

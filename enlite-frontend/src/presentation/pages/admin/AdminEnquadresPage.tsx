@@ -19,12 +19,8 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useEnquadresList } from '@hooks/admin/useEnquadresList';
 import { EnquadresFilters } from '@presentation/components/features/admin/EnquadresList/EnquadresFilters';
 import { EnquadresTable } from '@presentation/components/features/admin/EnquadresList/EnquadresTable';
+import { formatDdMmYyyy } from '@presentation/components/features/admin/PatientDetail/ddMmDate';
 import { parse, serialize, type EnquadresListFilters } from '@presentation/components/features/admin/EnquadresList/enquadresListParams';
-
-const brDate = (ymd: string): string => {
-  const [y, m, d] = ymd.split('-');
-  return y && m && d ? `${d}/${m}/${y}` : ymd;
-};
 
 export default function AdminEnquadresPage() {
   const { t } = useTranslation();
@@ -97,7 +93,7 @@ export default function AdminEnquadresPage() {
             {data.items.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
                 <Text size="sm" color="muted" data-testid="enquadres-empty">
-                  {t('admin.enquadres.empty', { from: brDate(data.range.from), to: brDate(data.range.to) })}
+                  {t('admin.enquadres.empty', { from: formatDdMmYyyy(data.range.from), to: formatDdMmYyyy(data.range.to) })}
                 </Text>
               </div>
             ) : (

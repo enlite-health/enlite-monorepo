@@ -173,4 +173,25 @@ describe('AdminEnquadresPage', () => {
     expect((await screen.findByTestId('enquadres-range-error')).textContent).toBe('La fecha Hasta no puede ser anterior a Desde.');
     expect(api.listAll).toHaveBeenCalledTimes(1);
   });
+
+  it('🔴 Aplicar só com busca/status NÃO grava as datas da semana na URL; mudando uma data, grava as DUAS', async () => {
+    api.listAll.mockResolvedValue(list([item({ id: 'a' })]));
+    mount();
+    await screen.findByTestId('enquadres-row');
+    await userEvent.type(screen.getByTestId('enquadres-filter-search'), 'ENC-A');
+    await userEvent.click(screen.getByTestId('enquadres-filter-apply'));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/admin/enquadres?q=ENC-A'));
+    const to = screen.getByTestId('enquadres-filter-to');
+    await userEvent.clear(to);
+    await userEvent.type(to, '2026-10-30');
+    await userEvent.click(screen.getByTestId('enquadres-filter-apply'));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/admin/enquadres?from=2026-10-26&to=2026-10-30&q=ENC-A'));
+  });
+
+  it('entrevistador sem seleção mostra "Todos los entrevistadores" no próprio campo', async () => {
+    api.listAll.mockResolvedValue(list([item({ id: 'a' })]));
+    mount();
+    await screen.findByTestId('enquadres-row');
+    expect(within(screen.getByTestId('enquadres-filter-host')).getByText('Todos los entrevistadores')).toBeInTheDocument();
+  });
 });
