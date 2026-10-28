@@ -127,6 +127,13 @@ describe('EnquadreEventGlobalList', () => {
     expect(out.range).toEqual({ from: '2026-10-26', to: '2026-11-01', defaulted: true });
   });
 
+  it('país fora de AR/BR é erro explícito (nunca cai em AR calado) e a mensagem leva só o código', async () => {
+    const { uc } = build([row({ country: 'UY' })]);
+    await expect(uc.execute(INPUT)).rejects.toThrow('unsupported country: UY');
+    const nulo = build([row({ country: null })]);
+    await expect(nulo.uc.execute(INPUT)).rejects.toThrow('unsupported country');
+  });
+
   it('range.defaulted só quando o cliente não mandou datas', async () => {
     const { uc } = build([row()]);
     const out = await uc.execute({ ...INPUT, from: '2026-10-01', to: '2026-10-31' });

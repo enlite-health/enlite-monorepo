@@ -330,6 +330,19 @@ describe('lista global de enquadres — HTTP real, banco real, engine LIGADO (sp
     expect(incompleto.body.code).toBe('ENQUADRE_LIST_RANGE_INCOMPLETE');
   });
 
+  it('5b. entrevistadores: período vazio ainda traz os do país do ator; entrevistador de OUTRO país não entra', async () => {
+    const hostBR = `Entrevistadora BR Sintetica ${RUN}`;
+    await evento({ vac: vacAR, startsAt: ba('2031-11-10', '10:00'), host: HOST_NAME });
+    await evento({ vac: vacBR, country: 'BR', startsAt: ba('2031-11-10', '11:00'), host: hostBR });
+    const vazio = await get('?from=2035-01-01&to=2035-01-01');
+    expect(vazio.status).toBe(200);
+    expect(vazio.body.data.items).toHaveLength(0); // controle: o período está mesmo vazio
+    const hosts = vazio.body.data.hosts as string[];
+    expect(hosts).toContain(HOST_NAME);
+    expect(hosts).not.toContain(hostBR);
+    expect(new Set(hosts).size).toBe(hosts.length); // distintos
+  });
+
   it('7. privacidade: a resposta inteira não tem nome/sobrenome/e-mail do paciente, do convocado nem do entrevistador', async () => {
     const id = await evento({ vac: vacAR, startsAt: ba('2031-09-10', '10:00'), host: HOST_NAME_2, importStatus: 'blocked', blockedReason: 'meet_scope_missing' });
     await participante(id, vacAR, await novoWorker(), 'closed');

@@ -10,6 +10,8 @@ import type { EnquadreEventStatus } from '../domain/enquadreEvent';
  * - Filtro Desde/Hasta em dias de calendário de `OPERATION_TIMEZONE` (`::timestamp AT TIME ZONE`, hora de parede: independe
  *   do `TimeZone` da sessão).
  * - `enquadre_events` não tem RLS: o predicado `country = ANY($1)` vai SEMPRE.
+ * - `hosts` = entrevistadores DISTINTOS de TODOS os eventos do escopo de país (ignora período/status/host/busca), até 200:
+ *   o filtro de entrevistador nunca fica sem opções só porque o período está vazio.
  * - Convocados = participações sem `release_kind = 'removed'` (ativas + `closed` + `cancelled`).
  * - Nada de identidade: nem nome/e-mail do entrevistador (`host_email` não é lido), nem do paciente, nem do convocado.
  */
@@ -79,7 +81,10 @@ WITH win AS (
 ), tot AS (SELECT count(*)::int AS total, COALESCE(sum(convoked), 0)::int AS convoked_total FROM fc)
 SELECT tot.total, tot.convoked_total,
        to_char(rng.d_from, 'YYYY-MM-DD') AS range_from, to_char(rng.d_to, 'YYYY-MM-DD') AS range_to,
-       (SELECT COALESCE(array_agg(DISTINCT host_display_name ORDER BY host_display_name), '{}') FROM base) AS hosts,
+       (SELECT COALESCE(array_agg(h.name ORDER BY h.name), '{}') FROM (
+          SELECT DISTINCT e.host_display_name AS name FROM enquadre_events e
+           WHERE e.country = ANY($1::text[]) AND e.host_display_name IS NOT NULL
+           ORDER BY e.host_display_name LIMIT 200) h) AS hosts,
        page.*
   FROM tot CROSS JOIN rng
   LEFT JOIN LATERAL (SELECT * FROM fc ORDER BY starts_at ASC, id ASC LIMIT $9::int OFFSET $10::int) page ON true`;

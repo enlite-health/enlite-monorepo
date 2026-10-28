@@ -52,6 +52,15 @@ export interface EnquadreEventGlobalListDeps {
   now?: () => Date;
 }
 
+/**
+ * País do evento, EXPLÍCITO: valor fora de `AdmissionCountry` é erro (nunca "cai em AR" calado, que daria o fuso errado).
+ * A mensagem leva só o código do país — sem PII. O módulo não tem `assertNever`; o padrão é o guard `isAdmissionCountry`.
+ */
+function toAdmissionCountry(value: string | null): AdmissionCountry {
+  if (value !== null && isAdmissionCountry(value)) return value;
+  throw new Error(`Enquadre event with unsupported country: ${String(value)}`);
+}
+
 export class EnquadreEventGlobalList {
   private readonly repo: Pick<EnquadreEventListRepository, 'list'>;
   private readonly now: () => Date;
@@ -89,7 +98,7 @@ export class EnquadreEventGlobalList {
   }
 
   private toItem(r: EnquadreListRow, now: Date): EnquadreGlobalListItem {
-    const country: AdmissionCountry = isAdmissionCountry(r.country ?? '') ? (r.country as AdmissionCountry) : 'AR';
+    const country = toAdmissionCountry(r.country);
     const tz = getAdmissionCountryConfig(country).timezone;
     const status = r.status as EnquadreEventStatus;
     return {
