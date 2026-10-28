@@ -67,21 +67,17 @@ export default function AdminEnquadresPage() {
   return (
     <PageContainer>
       <div data-testid="enquadres-page">
-        {/* Cartão do cabeçalho + filtros: a mesma peça de Pacientes/Prestadores (faixa branca h-24 + corpo com borda #D9D9D9) */}
-        <div className="flex flex-col mb-6">
-          <div className="bg-white rounded-t-[20px] border-2 border-b-0 border-[#D9D9D9] h-24 flex items-center px-7">
-            <Heading level={1} className="text-[#737373] font-poppins text-2xl">{t('admin.enquadres.title')}</Heading>
-          </div>
-          <div className="bg-white rounded-b-[20px] border-r-2 border-b-2 border-l-2 border-[#D9D9D9] px-7 py-5">
-            <Text size="sm" color="muted" className="mb-4" data-testid="enquadres-help">{t('admin.enquadres.helpNotIndicator21')}</Text>
-            <EnquadresFilters
-              filters={filters}
-              shownRange={data ? { from: data.range.from, to: data.range.to } : null}
-              hosts={data?.hosts ?? []}
-              countries={data?.scope.countries ?? []}
-              onChange={update}
-            />
-          </div>
+        {/* Cartão único (mesmas classes de Pacientes/Prestadores: fundo branco, borda #D9D9D9, raio 20px, px-7); título e ajuda juntos */}
+        <div className="bg-white rounded-[20px] border-2 border-[#D9D9D9] px-7 py-5 mb-6">
+          <Heading level={1} className="text-[#737373] font-poppins text-2xl mb-1" data-testid="enquadres-title">{t('admin.enquadres.title')}</Heading>
+          <Text size="sm" color="muted" className="mb-4" data-testid="enquadres-help">{t('admin.enquadres.helpNotIndicator21')}</Text>
+          <EnquadresFilters
+            filters={filters}
+            shownRange={data ? { from: data.range.from, to: data.range.to } : null}
+            hosts={data?.hosts ?? []}
+            countries={data?.scope.countries ?? []}
+            onChange={update}
+          />
         </div>
 
         {status === 'error' ? (

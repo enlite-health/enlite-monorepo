@@ -21,8 +21,8 @@ interface Props {
   onChange: (next: Partial<EnquadresListFilters>) => void;
 }
 
-const Field = ({ id, label, children }: { id: string; label: string; children: JSX.Element }): JSX.Element => (
-  <div className="flex flex-col gap-1">
+const Field = ({ id, label, children, className = '' }: { id: string; label: string; children: JSX.Element; className?: string }): JSX.Element => (
+  <div className={`flex flex-col gap-1 ${className}`}>
     <label htmlFor={id} className="text-sm font-medium text-slate-900">{label}</label>
     {children}
   </div>
@@ -47,15 +47,15 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
   const hostOptions = [...new Set([...hosts, ...(filters.host ? [filters.host] : [])])].map((h) => ({ value: h, label: h }));
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <Field id="enq-from" label={t('admin.enquadres.filters.from')}>
-        <Input id="enq-from" type="date" inputSize="dense" value={from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-from" />
+    <div className="flex flex-wrap lg:flex-nowrap items-end gap-2">
+      <Field id="enq-from" label={t('admin.enquadres.filters.from')} className="shrink-0">
+        <Input id="enq-from" className="!w-[130px]" type="date" inputSize="dense" value={from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-from" />
       </Field>
-      <Field id="enq-to" label={t('admin.enquadres.filters.to')}>
-        <Input id="enq-to" type="date" inputSize="dense" value={to} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-to" />
+      <Field id="enq-to" label={t('admin.enquadres.filters.to')} className="shrink-0">
+        <Input id="enq-to" className="!w-[130px]" type="date" inputSize="dense" value={to} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-to" />
       </Field>
       <Field id="enq-status" label={t('admin.enquadres.filters.status')}>
-        <div className="w-56">
+        <div className="w-[184px] shrink-0">
           <Combobox
             id="enq-status"
             multiple
@@ -69,7 +69,7 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
         </div>
       </Field>
       <Field id="enq-host" label={t('admin.enquadres.filters.host')}>
-        <div className="w-56">
+        <div className="w-[104px] shrink-0">
           <Combobox
             id="enq-host"
             inputSize="dense"
@@ -97,10 +97,10 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
           </div>
         </Field>
       )}
-      <Field id="enq-search" label={t('admin.enquadres.filters.search')}>
+      <Field id="enq-search" label={t('admin.enquadres.filters.search')} className="lg:flex-1 lg:min-w-[184px]">
         <Input id="enq-search" inputSize="dense" value={q} maxLength={50} placeholder={t('admin.enquadres.filters.searchPlaceholder')} onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-search" />
       </Field>
-      <Button variant="outline" size="sm" onClick={apply} data-testid="enquadres-filter-apply">{t('admin.enquadres.filters.apply')}</Button>
+      <Button variant="outline" size="sm" className="h-[35px] shrink-0" onClick={apply} data-testid="enquadres-filter-apply">{t('admin.enquadres.filters.apply')}</Button>
       {rangeError && (
         <p role="alert" className="w-full text-sm text-red-600" data-testid="enquadres-range-error">{t(`admin.enquadres.errors.${rangeError}`)}</p>
       )}
