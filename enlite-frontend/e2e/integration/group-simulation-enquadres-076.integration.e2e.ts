@@ -10,6 +10,8 @@
  *             -> voltar do navegador -> a lista com os MESMOS `from`/`to` e os mesmos totais. Há 1 evento com importação travada.
  *  2 alt    — período sem evento: `enquadres-empty` com o intervalo e "0 encuadres · 0 convocados".
  *  3 alt    — staff só com `vacancy:read`: item ausente do menu, `/admin/enquadres` direto termina fora da lista e a API responde 403.
+ *  4 alt    — recusa do SERVIDOR: ator só-AR abre `?country=BR`, a API responde 403 `COUNTRY_SCOPE_REQUIRED` e a tela mostra a mensagem
+ *             traduzida (pelo `code`) + "Reintentar", sem nenhuma linha.
  *
  * ⚠️ Precisa do engine ABAC LIGADO — por isso o token `group-simulation-enquadres-076` (prefixo de arquivo) entra na `--grep` do job
  * `integration-e2e-group-simulation`. Rodar local = o job do CI: `ABAC_API_URL`, `ABAC_TEST_DB_URL`, `E2E_PG_CONTAINER`.
@@ -166,5 +168,23 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
       failOnStatusCode: false,
     });
     expect(res.status()).toBe(403);
+  });
+
+  test('enquadre-076 alternativo 3 — recusa do servidor: ator só-AR em ?country=BR vê a mensagem do code COUNTRY_SCOPE_REQUIRED e o botão de tentar de novo, sem linhas', async ({ page }) => {
+    await loginAs(page, chefe);
+    await abrirListaPeloMenu(page); // controle positivo: com o país do ator a lista abre e tem linhas
+    await expect(page.getByTestId('enquadres-row').first()).toBeVisible();
+
+    const recusa = page.waitForResponse((r) => r.url().includes('/api/admin/enquadre-events') && r.url().includes('country=BR'));
+    await page.goto('/admin/enquadres?country=BR');
+    const resp = await recusa;
+    expect(resp.status()).toBe(403);
+    expect((await resp.json()).code).toBe('COUNTRY_SCOPE_REQUIRED');
+
+    await expect(page.getByTestId('enquadres-error')).toContainText('Tu usuario no tiene un país asignado para ver esta lista.', { timeout: 20_000 });
+    await expect(page.getByTestId('enquadres-retry')).toBeVisible();
+    await expect(page.getByTestId('enquadres-retry')).toHaveText('Intentar de nuevo');
+    await expect(page.getByTestId('enquadres-row')).toHaveCount(0);
+    await expect(page.getByTestId('enquadres-totals')).toHaveCount(0);
   });
 });
