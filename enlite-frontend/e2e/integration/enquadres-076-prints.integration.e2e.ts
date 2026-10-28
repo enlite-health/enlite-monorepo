@@ -36,6 +36,17 @@ async function print(page: Page, nome: string, comUrl = false): Promise<void> {
   if (comUrl) writeFileSync(join(OUT, `${nome}.url.txt`), `${page.url()}\n`);
 }
 
+/** Espera a rolagem assentar: o topo do `enquadre-tab` (qualquer container que role) não muda por 300ms seguidos. */
+async function esperarAbaAssentar(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __abaY?: number; __abaDesde?: number };
+    const y = document.querySelector('[data-testid="enquadre-tab"]')?.getBoundingClientRect().y;
+    if (y === undefined) return false;
+    if (w.__abaY === undefined || Math.abs(w.__abaY - y) > 0.5) { w.__abaY = y; w.__abaDesde = performance.now(); return false; }
+    return performance.now() - (w.__abaDesde ?? 0) >= 300;
+  }, undefined, { timeout: 15_000, polling: 50 });
+}
+
 async function listaPronta(page: Page): Promise<void> {
   await expect(page.getByTestId('enquadres-totals')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId('enquadres-region')).toHaveAttribute('aria-busy', 'false');
@@ -117,9 +128,18 @@ test.describe('enquadres-076-prints — prints da lista global de enquadres (spe
     await expect(page).toHaveURL(new RegExp(`tab=enquadre&event=${seed.events.n1}`));
     await expect(page.getByTestId('enquadre-tab')).toHaveAttribute('data-selected-event', seed.events.n1, { timeout: 20_000 });
     await expect(page.getByTestId('enquadre-kanban')).toBeVisible({ timeout: 20_000 });
-    await page.locator('[data-testid="enquadre-tab"][data-selected-event]').scrollIntoViewIfNeeded(); // rola até a aba/quadro, como a pessoa faria
-    await page.waitForTimeout(800);
+    await esperarAbaAssentar(page); // a rolagem é do próprio deep link (nenhum scroll manual): espera o topo da aba ficar estável 300ms
+    await expect(page.getByTestId('kanban-column-CONVOKED').locator(':scope > div').first()).toBeInViewport({ ratio: 1 });
     await print(page, '05-kanban-deep-link', true);
+    if (process.env.PRINT_076_1280) { // mesma tela a 1280x800 (conferência do coordenador)
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.reload();
+      await expect(page.getByTestId('enquadre-kanban')).toBeVisible({ timeout: 20_000 });
+      await page.evaluate(() => { const w = window as unknown as { __abaY?: number }; delete w.__abaY; });
+      await esperarAbaAssentar(page);
+      await page.screenshot({ path: process.env.PRINT_076_1280 });
+      await page.setViewportSize({ width: 1440, height: 900 });
+    }
 
     // 06 — voltar do navegador: a lista com os mesmos filtros.
     await page.goBack();
