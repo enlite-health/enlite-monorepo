@@ -6785,6 +6785,7 @@
         "statusAll": "Todos os status",
         "host": "Entrevistador",
         "hostAll": "Todos os entrevistadores",
+        "hostPlaceholder": "Todos",
         "country": "País",
         "countryAll": "Todos os países",
         "search": "Buscar",

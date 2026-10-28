@@ -188,10 +188,10 @@ describe('AdminEnquadresPage', () => {
     await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/admin/enquadres?from=2026-10-26&to=2026-10-30&q=ENC-A'));
   });
 
-  it('entrevistador sem seleção mostra "Todos los entrevistadores" no próprio campo', async () => {
+  it('entrevistador sem seleção mostra "Todos" no próprio campo', async () => {
     api.listAll.mockResolvedValue(list([item({ id: 'a' })]));
     mount();
     await screen.findByTestId('enquadres-row');
-    expect(within(screen.getByTestId('enquadres-filter-host')).getByText('Todos los entrevistadores')).toBeInTheDocument();
+    expect(within(screen.getByTestId('enquadres-filter-host')).getByText('Todos', { exact: true })).toBeInTheDocument();
   });
 });

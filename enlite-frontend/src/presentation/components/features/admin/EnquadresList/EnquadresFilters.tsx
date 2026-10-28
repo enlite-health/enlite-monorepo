@@ -94,7 +94,7 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
           <Combobox
             id="enq-host"
             inputSize="dense"
-            placeholder={t('admin.enquadres.filters.hostAll')}
+            placeholder={t('admin.enquadres.filters.hostPlaceholder')}
             value={filters.host}
             clearLabel={t('admin.enquadres.filters.hostAll')}
             onChange={(v) => onChange({ host: v, page: 1 })}

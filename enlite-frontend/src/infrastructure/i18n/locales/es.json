@@ -6864,6 +6864,7 @@
         "statusAll": "Todos los estados",
         "host": "Entrevistador",
         "hostAll": "Todos los entrevistadores",
+        "hostPlaceholder": "Todos",
         "country": "País",
         "countryAll": "Todos los países",
         "search": "Buscar",
