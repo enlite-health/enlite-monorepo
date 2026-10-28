@@ -81,7 +81,7 @@ describe('AdminEnquadresPage', () => {
     api.listAll.mockRejectedValueOnce(new ApiError({ success: false, error: 'x', code: 'COUNTRY_SCOPE_REQUIRED' }, 403));
     api.listAll.mockResolvedValueOnce(list([item({ id: 'a' })]));
     mount();
-    expect((await screen.findByTestId('enquadres-error')).textContent).toContain('No tenés acceso al país elegido para esta lista.');
+    expect((await screen.findByTestId('enquadres-error')).textContent).toContain('No tenés acceso a los países de esta lista.');
     await userEvent.click(screen.getByTestId('enquadres-retry'));
     expect(await screen.findByTestId('enquadres-row')).toBeInTheDocument();
     expect(api.listAll).toHaveBeenCalledTimes(2);
