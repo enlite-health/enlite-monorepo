@@ -47,9 +47,9 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
   const hostOptions = [...new Set([...hosts, ...(filters.host ? [filters.host] : [])])].map((h) => ({ value: h, label: h }));
 
   return (
-    <div className="flex flex-wrap items-end gap-x-2 gap-y-3">
+    <div className="flex flex-wrap items-end gap-x-1.5 gap-y-3">
       {/* Grupo A (período, estado, país) e grupo B (entrevistador, busca, Aplicar): cada grupo não quebra por dentro; sem espaço lado a lado, o B desce INTEIRO e o Aplicar fica sempre ao lado do Buscar. */}
-      <div className="flex items-end gap-2 shrink-0">
+      <div className="flex items-end gap-1.5 shrink-0">
       <Field id="enq-from" label={t('admin.enquadres.filters.from')} className="shrink-0">
         <Input id="enq-from" className="!w-[148px]" type="date" inputSize="dense" value={from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-from" />
       </Field>
@@ -57,7 +57,7 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
         <Input id="enq-to" className="!w-[148px]" type="date" inputSize="dense" value={to} onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-to" />
       </Field>
       <Field id="enq-status" label={t('admin.enquadres.filters.status')}>
-        <div className="w-[178px] shrink-0">
+        <div className="w-[186px] shrink-0">
           <Combobox
             id="enq-status"
             multiple
@@ -86,8 +86,8 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
         </Field>
       )}
       </div>
-      <div className="flex items-end gap-2 flex-1 min-w-[528px]">
-      <Field id="enq-host" label={t('admin.enquadres.filters.host')} className="flex-1 min-w-[225px]">
+      <div className="flex items-end gap-1.5 flex-1 min-w-[532px]">
+      <Field id="enq-host" label={t('admin.enquadres.filters.host')} className="flex-1 min-w-[233px]">
         <div className="w-full">
           <Combobox
             id="enq-host"
@@ -101,7 +101,7 @@ export function EnquadresFilters({ filters, shownRange, hosts, countries, onChan
           />
         </div>
       </Field>
-      <Field id="enq-search" label={t('admin.enquadres.filters.search')} className="flex-1 min-w-[192px]">
+      <Field id="enq-search" label={t('admin.enquadres.filters.search')} className="flex-1 min-w-[200px]">
         <Input id="enq-search" inputSize="dense" value={q} maxLength={50} placeholder={t('admin.enquadres.filters.searchPlaceholder')} onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))} onKeyDown={onEnter} data-testid="enquadres-filter-search" />
       </Field>
       <Button variant="outline" size="sm" className="h-[35px] shrink-0" onClick={apply} data-testid="enquadres-filter-apply">{t('admin.enquadres.filters.apply')}</Button>

@@ -101,10 +101,12 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
       await expect(page.locator(`[data-testid="enquadres-row"][data-event-id="${id}"]`)).toBeVisible();
     }
     await expect(page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.n1}"]`)).toHaveCount(0);
-    // O evento com importação travada mostra o aviso com o motivo traduzido.
+    // O evento com importação travada mostra o chip "Bloqueada" com o motivo traduzido no title.
     const travada = page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.e3}"]`).getByTestId('enquadres-import-blocked');
     await expect(travada).toHaveAttribute('data-reason', 'no_link');
-    await expect(travada).toContainText('Importación bloqueada: El responsable no vinculó su cuenta de Tactiq');
+    await expect(travada).toHaveText('Bloqueada');
+    await expect(travada).toHaveAttribute('title', 'Importación bloqueada: El responsable no vinculó su cuenta de Tactiq');
+    await expect(travada).toHaveAttribute('aria-label', 'Importación bloqueada: El responsable no vinculó su cuenta de Tactiq');
 
     // Semana seguinte: Desde/Hasta digitados, "Aplicar" clicado.
     const semana1 = { from: somaDias(semana0.from, 7), to: somaDias(semana0.to, 7) };

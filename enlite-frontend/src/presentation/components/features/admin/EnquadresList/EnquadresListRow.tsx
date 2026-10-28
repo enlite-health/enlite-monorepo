@@ -11,6 +11,7 @@ import { TableCell, TableRow } from '@presentation/components/atoms/Table';
 import type { EnquadreGlobalListItem } from '@domain/entities/EnquadreEvent';
 import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 import { SealChip } from '../PatientDetail/admission/AdmissionSeals';
+import { IMPORT_SEAL_TONE } from '../PatientDetail/admission/sealTones';
 import { timeZoneForCountry } from '../PatientDetail/admission/admissionTime';
 import { dateAndTime } from '../VacancyDetail/Enquadre/enquadreEventTime';
 import { ENQUADRE_PHASE_KEY, ENQUADRE_PHASE_TONE } from '../VacancyDetail/Enquadre/enquadreEventPhase';
@@ -39,7 +40,7 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
           <Text as="span" size="sm" weight="medium" color="inherit">{`${date} ${time}`}</Text>
         </Link>
       </TableCell>
-      <TableCell unwrapped className="max-w-[260px]" data-clarity-mask="True" data-testid="enquadres-row-host">
+      <TableCell unwrapped className="min-w-[208px] max-w-[260px]" data-clarity-mask="True" data-testid="enquadres-row-host">
         <span title={e.hostName} className="block truncate">
           <Text as="span" size="sm" color="inherit">{e.hostName}</Text>
         </span>
@@ -51,10 +52,12 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
           {t(`admin.vacancyDetail.enquadre.${ENQUADRE_PHASE_KEY[e.phase]}`)}
         </SealChip>
       </TableCell>
-      <TableCell unwrapped className="w-full max-w-0">
+      <TableCell unwrapped className="whitespace-nowrap">
         {reason && (
-          <span data-testid="enquadres-import-blocked" data-reason={reason} title={blockedText} className="block truncate">
-            <Text as="span" size="xs" weight="medium" color="inherit" className="text-amber-700">{blockedText}</Text>
+          <span data-testid="enquadres-import-blocked" data-reason={reason} role="group" title={blockedText} aria-label={blockedText} className="inline-block whitespace-nowrap">
+            <SealChip tone={IMPORT_SEAL_TONE.blocked} testId="enquadres-import-chip">
+              {t('admin.patients.detail.admissionTab.seal.importStatus.blocked')}
+            </SealChip>
           </span>
         )}
       </TableCell>

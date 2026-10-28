@@ -121,7 +121,7 @@ describe('AdminEnquadresPage', () => {
     expect(screen.getByTestId('where').textContent).toContain('event=ev1');
   });
 
-  it('evento com importação bloqueada mostra o motivo traduzido; motivo desconhecido cai no código cru', async () => {
+  it('evento com importação bloqueada mostra o chip "Bloqueada" e o motivo traduzido no title e no aria-label; motivo desconhecido cai no código cru', async () => {
     api.listAll.mockResolvedValue(list([
       item({ id: 'a', importBlocked: { reason: 'meet_scope_missing' } }),
       item({ id: 'b', importBlocked: { reason: 'motivo_novo' } }),
@@ -130,8 +130,11 @@ describe('AdminEnquadresPage', () => {
     mount();
     const blocked = await screen.findAllByTestId('enquadres-import-blocked');
     expect(blocked).toHaveLength(2);
-    expect(blocked[0].textContent).toBe('Importación bloqueada: Falta el permiso de Google Meet');
-    expect(blocked[1].textContent).toBe('Importación bloqueada: motivo_novo');
+    expect(blocked[0].textContent).toBe('Bloqueada');
+    expect(blocked[0]).toHaveAttribute('title', 'Importación bloqueada: Falta el permiso de Google Meet');
+    expect(blocked[0]).toHaveAttribute('aria-label', 'Importación bloqueada: Falta el permiso de Google Meet');
+    expect(blocked[1]).toHaveAttribute('title', 'Importación bloqueada: motivo_novo');
+    expect(blocked[1]).toHaveAttribute('data-reason', 'motivo_novo');
   });
 
   it('🔴 fuso: o mesmo instante sai 14:00 no evento AR e 22:00 no evento BR (mapa trocado)', async () => {
