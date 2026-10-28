@@ -5,7 +5,7 @@
  * "Encerrar" só habilita em `pending_close`; fora disso o MOTIVO fica escrito na tela (não só em `title`, que não
  * aparece em print nem no toque) e ligado ao botão por `aria-describedby`.
  */
-import type { JSX } from 'react';
+import { useEffect, useRef, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Video } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -38,6 +38,9 @@ export function EnquadreEventKanbanHeader({ event: e, timeZone, now, onBack, onM
   const closeBlocked = e.phase !== 'pending_close';
   // Sem a célula o botão "Encerrar" some; o texto que o explica some junto (senão sobra um motivo sem botão).
   const canClose = !useActionGate('enquadre_result', 'update').denied;
+  // Deep link / clique na linha: o kanban acabou de abrir, o foco vai ao título (spec 076). preventScroll: quem rola é a aba.
+  const titleRowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { titleRowRef.current?.querySelector<HTMLElement>('[data-testid="enquadre-kanban-title"]')?.focus({ preventScroll: true }); }, []);
   const blockedId = `enquadre-kanban-close-blocked-${e.id}`;
 
   return (
@@ -54,8 +57,8 @@ export function EnquadreEventKanbanHeader({ event: e, timeZone, now, onBack, onM
         </button>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <Heading level={2} weight="semibold" color="secondary" data-testid="enquadre-kanban-title" data-clarity-mask="True">
+        <div ref={titleRowRef} className="flex flex-wrap items-center gap-3 min-w-0">
+          <Heading level={2} weight="semibold" color="secondary" tabIndex={-1} className="outline-none" data-testid="enquadre-kanban-title" data-clarity-mask="True">
             {te('kanban.title', { date, start, end })} · {e.hostName}
           </Heading>
           <SealChip tone={ENQUADRE_PHASE_TONE[e.phase]} testId="enquadre-kanban-phase">{te(ENQUADRE_PHASE_KEY[e.phase])}</SealChip>

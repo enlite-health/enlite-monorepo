@@ -7,7 +7,7 @@
  * do evento ("← Eventos" apaga `event` com `replace` e recarrega). O kanban só monta com a lista da vaga carregada E o id
  * dentro dela: id inexistente ou de OUTRA vaga cai na lista (FR-16) e `getEvent` nunca é chamado para ele.
  */
-import { useEffect, useState, type JSX } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CalendarPlus, Loader2 } from 'lucide-react';
@@ -56,6 +56,18 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, eventParam, selectedEventId]);
 
+  // Abrir um evento (deep link ou clique na linha) rola a página até a aba: o kanban nasce abaixo da dobra do cabeçalho da
+  // vaga. Dispara só quando `selectedEventId` MUDA para um id (trocar de coluna, re-render ou "← Eventos" não rolam).
+  // Molde: ThreadView (`prefers-reduced-motion` + `scrollIntoView?.` porque o jsdom não o tem).
+  const tabRef = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
+    [],
+  );
+  useEffect(() => {
+    if (selectedEventId) tabRef.current?.scrollIntoView?.({ block: 'start', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+  }, [selectedEventId, prefersReducedMotion]);
+
   const backToList = (): void => {
     setEvent(null, true);
     void reload();
@@ -64,7 +76,7 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
 
   if (selectedEventId) {
     return (
-      <div className="flex flex-col gap-4" data-testid="enquadre-tab" data-selected-event={selectedEventId}>
+      <div ref={tabRef} className="flex flex-col gap-4" data-testid="enquadre-tab" data-selected-event={selectedEventId}>
         <EnquadreEventKanban vacancyId={vacancyId} eventId={selectedEventId} now={now} onBack={backToList} />
       </div>
     );

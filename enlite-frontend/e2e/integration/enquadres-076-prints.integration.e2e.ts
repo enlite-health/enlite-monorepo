@@ -117,8 +117,8 @@ test.describe('enquadres-076-prints — prints da lista global de enquadres (spe
     await expect(page).toHaveURL(new RegExp(`tab=enquadre&event=${seed.events.n1}`));
     await expect(page.getByTestId('enquadre-tab')).toHaveAttribute('data-selected-event', seed.events.n1, { timeout: 20_000 });
     await expect(page.getByTestId('enquadre-kanban')).toBeVisible({ timeout: 20_000 });
-    await page.locator('[data-testid="enquadre-tab"][data-selected-event]').scrollIntoViewIfNeeded(); // rola até a aba/quadro, como a pessoa faria
-    await page.waitForTimeout(800);
+    await expect(page.getByTestId('enquadre-tab')).toBeInViewport({ timeout: 10_000 }); // a rolagem é do próprio deep link (nenhum scroll manual)
+    await page.waitForTimeout(400);
     await print(page, '05-kanban-deep-link', true);
 
     // 06 — voltar do navegador: a lista com os mesmos filtros.

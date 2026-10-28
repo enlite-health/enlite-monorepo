@@ -129,6 +129,9 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
     await page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.n1}"]`).getByTestId('enquadres-row-host').click();
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${seed.vacancyId}\\?tab=enquadre&event=${seed.events.n1}`));
     await expect(page.getByTestId('enquadre-tab')).toHaveAttribute('data-selected-event', seed.events.n1, { timeout: 20_000 });
+    // O deep link rola sozinho até o Kanban (sem scroll manual) e leva o foco ao título do evento.
+    await expect(page.getByTestId('enquadre-tab')).toBeInViewport({ timeout: 10_000 });
+    await expect(page.getByTestId('enquadre-kanban-title')).toBeInViewport();
 
     // Voltar do navegador: a lista volta com as MESMAS datas (na URL e nos campos) e os mesmos totais.
     await page.goBack();

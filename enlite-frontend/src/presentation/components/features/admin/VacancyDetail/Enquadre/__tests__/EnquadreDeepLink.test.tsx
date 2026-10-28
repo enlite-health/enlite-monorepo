@@ -44,6 +44,40 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); getEvent.mockRestore(); restore(); });
 
+describe('EnquadreTab: rolagem ao abrir o evento', () => {
+  let scroll: ReturnType<typeof vi.fn>;
+  const original = Element.prototype.scrollIntoView;
+  beforeEach(() => { scroll = vi.fn(); Element.prototype.scrollIntoView = scroll as never; });
+  afterEach(() => { Element.prototype.scrollIntoView = original; });
+
+  it('🔴 ?event=<id da vaga> rola 1× até a aba e leva o foco ao título do kanban', async () => {
+    mount('?tab=enquadre&event=ev-01');
+    const tab = await screen.findByTestId('enquadre-tab');
+    await waitFor(() => expect(tab).toHaveAttribute('data-selected-event', 'ev-01'));
+    const title = await screen.findByTestId('enquadre-kanban-title');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.instances[0]).toBe(tab);
+    expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
+    expect(title).toHaveFocus();
+  });
+
+  it('sem `event` na URL não rola; clicar na linha rola 1×; "← Eventos" não rola', async () => {
+    mount('?tab=enquadre');
+    await userEvent.click(await screen.findByTestId('enquadre-event-row-ev-02'));
+    await screen.findByTestId('enquadre-kanban-header');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByTestId('enquadre-kanban-back'));
+    await screen.findByTestId('enquadre-event-row-ev-02');
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem `event` na URL a lista carrega e nada rola', async () => {
+    mount('?tab=enquadre');
+    await screen.findByTestId('enquadre-event-row-ev-01');
+    expect(scroll).not.toHaveBeenCalled();
+  });
+});
+
 describe('EnquadreTab: evento pela URL', () => {
   it('?event=<id da vaga> abre o kanban do evento', async () => {
     mount('?tab=enquadre&event=ev-01');
