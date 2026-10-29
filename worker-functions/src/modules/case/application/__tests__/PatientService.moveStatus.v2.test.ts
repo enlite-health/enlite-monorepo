@@ -49,6 +49,9 @@ const FICHA_COMPLETA: {
   active_service_count: string;
   services_without_address_count: string;
   services_without_schedule_count: string;
+  /** Neutros por padrão (status null ≠ ADMISSION): estes testes medem FSM/limpeza, não o diagnóstico. */
+  status: string | null;
+  active_diagnosis_count: string;
 } = {
   birth_date: '1980-01-01',
   has_consent: true,
@@ -58,6 +61,8 @@ const FICHA_COMPLETA: {
   active_service_count: '1',
   services_without_address_count: '0',
   services_without_schedule_count: '0',
+  status: null,
+  active_diagnosis_count: '0',
 };
 
 /** Banco de mentira: status atual + quais transições existem (+ o que falta na ficha). */
@@ -206,6 +211,57 @@ describe('PatientService.moveStatus v2', () => {
       db('ON_HOLD', [['ON_HOLD', 'SEARCHING']]);
       await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({
         id: PID, status: 'SEARCHING',
+      });
+    });
+  });
+
+  // ── Diagnóstico CID-11 obrigatório na SAÍDA de ADMISSION (pedido do Javier) ─────────────────
+  describe('guarda de diagnóstico ao sair de ADMISSION', () => {
+    const SEM_DIAG = { status: 'ADMISSION', active_diagnosis_count: '0' };
+    const COM_DIAG = { status: 'ADMISSION', active_diagnosis_count: '1' };
+
+    it('ADMISSION → SEARCHING (kanban) SEM diagnóstico ativo é RECUSADO com DIAGNOSIS, ROLLBACK, nenhum UPDATE', async () => {
+      db('ADMISSION', [['ADMISSION', 'SEARCHING']], SEM_DIAG);
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).rejects.toMatchObject({
+        name: 'PatientStatusNotReadyError',
+        code: 'PATIENT_STATUS_NOT_READY',
+        to: 'SEARCHING',
+        missing: ['DIAGNOSIS'],
+      });
+      const c = calls();
+      expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+      expect(c[c.length - 1].sql).toBe('ROLLBACK');
+    });
+
+    it('ADMISSION → SEARCHING COM diagnóstico ativo passa', async () => {
+      db('ADMISSION', [['ADMISSION', 'SEARCHING']], COM_DIAG);
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+    });
+
+    it('ADMISSION → PENDING_ADMISSION (movimento dentro do funil) sem diagnóstico também é recusado: não sai de ADMISSION', async () => {
+      db('ADMISSION', [], SEM_DIAG);
+      await expect(service.moveStatus(PID, 'PENDING_ADMISSION', { changeSource: 'kanban' })).rejects.toMatchObject({
+        code: 'PATIENT_STATUS_NOT_READY',
+        missing: ['DIAGNOSIS'],
+      });
+    });
+
+    it.each(['ALTA', 'DISCHARGED'])('ADMISSION → %s (descarte) NÃO exige diagnóstico', async (to) => {
+      db('ADMISSION', [['ADMISSION', to]], SEM_DIAG);
+      await expect(service.moveStatus(PID, to as never, { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: to });
+      // e nem leu a completude: o destino isento não cobra código nenhum
+      expect(calls().some((x) => /services_without_schedule_count/.test(x.sql))).toBe(false);
+    });
+
+    it('paciente FORA de ADMISSION (PENDING_ADMISSION → ON_HOLD/SEARCHING) sem diagnóstico não é afetado', async () => {
+      db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'SEARCHING']], { status: 'PENDING_ADMISSION', active_diagnosis_count: '0' });
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+    });
+
+    it('ADMISSION → ACTIVE sem diagnóstico e sem endereço: os dois acusam juntos, DIAGNOSIS por último', async () => {
+      db('ADMISSION', [['ADMISSION', 'ACTIVE']], { ...SEM_DIAG, active_address_count: '0' });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+        missing: ['ADDRESS', 'DIAGNOSIS'],
       });
     });
   });

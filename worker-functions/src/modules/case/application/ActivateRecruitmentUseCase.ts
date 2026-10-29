@@ -147,6 +147,7 @@ export class ActivateRecruitmentUseCase {
       case_number: number | null;
       insurance_informed: string | null;
       has_verified_active_coverage: boolean;
+      active_dx_count: string;
     }>(
       `SELECT id, status, case_number,
                 insurance_informed,
@@ -158,7 +159,10 @@ export class ActivateRecruitmentUseCase {
                   SELECT 1 FROM patient_insurance_verified piv
                   JOIN insurance_providers ip ON ip.code = piv.provider_code AND ip.active
                   WHERE piv.patient_id = patients.id
-                ) AS has_verified_active_coverage
+                ) AS has_verified_active_coverage,
+                -- CID-11 (pedido do Javier): só a CONTAGEM de linhas ATIVAS (qualquer source), nunca o valor. Alias dx: a guarda S.5 do teste barra o termo por extenso no SQL.
+                (SELECT COUNT(*) FROM patient_diagnoses pdx
+                  WHERE pdx.patient_id = patients.id AND pdx.active) AS active_dx_count
            FROM patients
           WHERE id = $1 AND deleted_at IS NULL
           FOR UPDATE`,
@@ -167,7 +171,7 @@ export class ActivateRecruitmentUseCase {
     if ((patientRes.rowCount ?? 0) === 0) {
       throw new PatientNotFoundForRecruitmentError(patientId);
     }
-    const { status, case_number, insurance_informed, has_verified_active_coverage } = patientRes.rows[0];
+    const { status, case_number, insurance_informed, has_verified_active_coverage, active_dx_count } = patientRes.rows[0];
 
     const serviceRes = await client.query<{
       id: string;
@@ -215,6 +219,8 @@ export class ActivateRecruitmentUseCase {
       serviceHasSchedule: hasSchedule,
       insuranceInformed: insurance_informed,
       hasVerifiedActiveCoverage: has_verified_active_coverage,
+      patientStatus: status,
+      activeDiagnosisCount: Number(active_dx_count),
       serviceRecruitmentFields: {
         requiredProfessions: service.required_professions,
         requiredSex: service.required_sex,

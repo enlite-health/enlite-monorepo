@@ -20,6 +20,8 @@ import {
   RecruitmentNotReadyError,
 } from '../../application/ActivateRecruitmentUseCase';
 import { vacancyActorFromRequest } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
+import { clinicalCellsOf } from '../../application/patientClinicalAccess';
+import { exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
 import { insuranceErrorBody } from './insuranceErrorResponse';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
@@ -206,11 +208,13 @@ export class AdminPatientContractedServicesController {
         return;
       }
       if (err instanceof RecruitmentNotReadyError) {
+        // `DIAGNOSIS` sai como `CLINICAL_DATA` para quem não lê `patient_clinical` (a recusa é a mesma).
+        const cells = clinicalCellsOf(req);
         res.status(422).json({
           success: false,
-          error: err.message,
+          error: exposeBlockingMessage(err.message, cells),
           code: 'PATIENT_NOT_READY',
-          details: { missing: err.missing },
+          details: { missing: exposeBlockingCodes(err.missing, cells) },
         });
         return;
       }

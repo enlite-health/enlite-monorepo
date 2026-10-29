@@ -492,6 +492,31 @@ describe('AdminPatientContractedServicesController', () => {
       });
     });
 
+    describe('DIAGNOSIS no 422 (pedido do Javier): "sem diagnóstico" é dado clínico', () => {
+      const run = async (cells: readonly string[] | null) => {
+        const { RecruitmentNotReadyError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+        const useCase = { execute: jest.fn().mockRejectedValue(new RecruitmentNotReadyError(PATIENT_ID, SERVICE_ID, ['SERVICE_SCHEDULE', 'DIAGNOSIS'])) };
+        const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
+        const res = mockRes();
+        await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, permissionCells: cells }), res);
+        expect(res.status).toHaveBeenCalledWith(422);
+        return res.json.mock.calls[0][0];
+      };
+
+      it('ator COM patient_clinical:read → details.missing traz DIAGNOSIS', async () => {
+        const body = await run(['patient_services:write', 'patient_clinical:read']);
+        expect(body.code).toBe('PATIENT_NOT_READY');
+        expect(body.details.missing).toEqual(['SERVICE_SCHEDULE', 'DIAGNOSIS']);
+      });
+
+      it('ator SEM patient_clinical:read → 422 mantido, código genérico CLINICAL_DATA, e DIAGNOSIS não aparece em lugar nenhum da resposta', async () => {
+        const body = await run(['patient_services:write']);
+        expect(body.code).toBe('PATIENT_NOT_READY');
+        expect(body.details.missing).toEqual(['SERVICE_SCHEDULE', 'CLINICAL_DATA']);
+        expect(JSON.stringify(body)).not.toContain('DIAGNOSIS');
+      });
+    });
+
     it('500 em erro genérico (instância de Error)', async () => {
       const useCase = { execute: jest.fn().mockRejectedValue(new Error('boom')) };
       const controller = new AdminPatientContractedServicesController({} as never, useCase as never);

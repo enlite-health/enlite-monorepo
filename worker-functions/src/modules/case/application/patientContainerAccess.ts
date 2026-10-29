@@ -42,6 +42,8 @@
  * (LGPD art. 11 §5).
  */
 
+import { CLINICAL_DATA_GENERIC_CODE } from '../domain/PatientCompleteness';
+
 export const PATIENT_CONTAINERS = [
   'identity',
   'clinical',
@@ -95,6 +97,9 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
     'deviceType', 'deviceTypes', 'additionalComments', 'additionalCommentsUpdatedAt', 'additionalCommentsUpdatedBy',
     'emergencyInstructions', 'emergencyInstructionsUpdatedAt', 'emergencyInstructionsUpdatedBy', 'onHoldNote',
     'hasJudicialProtection', 'hasCud', 'hasConsent',
+    // Contagem de diagnósticos ativos (insumo do `DIAGNOSIS` da completude): redigida junto com `diagnoses`,
+    // para "sem diagnóstico" não vazar por um 0 a quem não lê o container clínico.
+    'activeDiagnosisCount',
   ],
   careTeam: ['professionals'],
   // externalContacts/emergencyContactRef: spec 018, PR-2 (contatos externos + marca de emergência).
@@ -187,6 +192,7 @@ const COMPLETENESS_CODE_CONTAINER: Readonly<Record<string, PatientContainer>> = 
   CONTRACTED_SERVICE: 'services',
   CONSENT: 'clinical',
   BIRTH_DATE: 'identity',
+  DIAGNOSIS: 'clinical',
 };
 
 export function projectCompletenessByContainers<
@@ -197,10 +203,37 @@ export function projectCompletenessByContainers<
     const container = COMPLETENESS_CODE_CONTAINER[code];
     return container === undefined ? true : reads[container];
   };
-  const missing = completeness.missing.filter(visible);
-  const blocking = completeness.blocking.filter(visible);
-  if (missing.length === completeness.missing.length && blocking.length === completeness.blocking.length) return completeness;
+  // `DIAGNOSIS` é a exceção: a TRAVA vale para todo mundo (o gate do servidor recalcula do banco), então
+  // quem não lê `clinical` recebe o código GENÉRICO no lugar — a pendência aparece, o NOME clínico não.
+  const generic = (code: string): string =>
+    code === 'DIAGNOSIS' && !reads.clinical ? CLINICAL_DATA_GENERIC_CODE : code;
+  const keep = (code: string): boolean => code === 'DIAGNOSIS' || visible(code);
+  const missing = completeness.missing.filter(keep).map(generic);
+  const blocking = completeness.blocking.filter(keep).map(generic);
+  const changed = missing.length !== completeness.missing.length
+    || blocking.length !== completeness.blocking.length
+    || missing.some((c, i) => c !== completeness.missing[i]);
+  if (!changed) return completeness;
   return { ...completeness, missing, blocking, ready: missing.length === 0, canActivate: blocking.length === 0 };
+}
+
+/**
+ * Os códigos de um 422 "paciente não pronto" (`PATIENT_STATUS_NOT_READY`, `PATIENT_NOT_READY`) e o
+ * `blockedBy` da lista de destinos, projetados para o ator: `DIAGNOSIS` vira o genérico
+ * `CLINICAL_DATA` para quem não lê `patient_clinical` (mesma razão de `projectCompletenessByContainers`).
+ * A recusa em si NÃO muda — só o nome do item.
+ */
+export function exposeBlockingCodes<T extends string>(
+  codes: readonly T[],
+  cells: readonly string[] | null | undefined,
+): Array<T | typeof CLINICAL_DATA_GENERIC_CODE> {
+  const clinical = canReadPatientContainer(cells, 'clinical');
+  return codes.map((c) => (c === 'DIAGNOSIS' && !clinical ? CLINICAL_DATA_GENERIC_CODE : c));
+}
+
+/** A mensagem de um erro de "não pronto" cita os códigos; troca `DIAGNOSIS` pelo genérico para quem não lê o clínico. */
+export function exposeBlockingMessage(message: string, cells: readonly string[] | null | undefined): string {
+  return canReadPatientContainer(cells, 'clinical') ? message : message.replace(/\bDIAGNOSIS\b/g, CLINICAL_DATA_GENERIC_CODE);
 }
 
 /** Os containers efetivamente SERVIDOS nesta resposta — o que a trilha registra (`lex` D/C8). */

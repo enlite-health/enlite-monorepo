@@ -31,6 +31,8 @@ export async function loadPatientCompleteness(
     active_service_count: string;
     services_without_address_count: string;
     services_without_schedule_count: string;
+    status: string | null;
+    active_diagnosis_count: string;
   }>(
     `SELECT
        p.birth_date,
@@ -54,7 +56,13 @@ export async function loadPatientCompleteness(
        (SELECT COUNT(*) FROM patient_contracted_services pcs
          WHERE pcs.patient_id = p.id AND pcs.active
            AND ${serviceWithoutScheduleSql('pcs')})
-                                                                     AS services_without_schedule_count
+                                                                     AS services_without_schedule_count,
+       p.status,
+       -- Diagnóstico CID-11 (pedido do Javier): SÓ a contagem de linhas ATIVAS, de qualquer source
+       -- (PANEL/CLICKUP/BACKFILL). O valor (texto clínico) nunca é selecionado. RLS de patient_diagnoses
+       -- (migration 413) = "paciente-pai visível": não depende de célula clínica do ator.
+       (SELECT COUNT(*) FROM patient_diagnoses pdx
+         WHERE pdx.patient_id = p.id AND pdx.active)                 AS active_diagnosis_count
      FROM patients p
     WHERE p.id = $1 AND p.deleted_at IS NULL`,
     [patientId],
@@ -74,5 +82,7 @@ export async function loadPatientCompleteness(
     activeContractedServiceCount: Number(row.active_service_count),
     activeContractedServicesWithoutAddressCount: Number(row.services_without_address_count),
     activeContractedServicesWithoutScheduleCount: Number(row.services_without_schedule_count),
+    status: row.status,
+    activeDiagnosisCount: Number(row.active_diagnosis_count),
   });
 }

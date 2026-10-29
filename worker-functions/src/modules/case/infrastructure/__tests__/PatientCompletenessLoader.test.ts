@@ -26,6 +26,8 @@ const FICHA_COMPLETA = {
   active_service_count: '1',
   services_without_address_count: '0',
   services_without_schedule_count: '0',
+  status: 'ADMISSION',
+  active_diagnosis_count: '1',
 };
 
 function clientQueDevolve(rows: Array<Record<string, unknown>>): {
@@ -117,5 +119,39 @@ describe('loadPatientCompleteness', () => {
     ]);
     const r = await loadPatientCompleteness(client, PID);
     expect(r.missing).toContain('RESPONSIBLE');
+  });
+
+  // ── Diagnóstico CID-11 obrigatório na saída da ADMISSION (pedido do Javier) ─────────────────
+  describe('DIAGNOSIS', () => {
+    it('ADMISSION com 0 diagnósticos ativos → DIAGNOSIS em missing (a contagem chega como STRING)', async () => {
+      const { client } = clientQueDevolve([{ ...FICHA_COMPLETA, status: 'ADMISSION', active_diagnosis_count: '0' }]);
+      const r = await loadPatientCompleteness(client, PID);
+      expect(r.missing).toEqual(['DIAGNOSIS']);
+    });
+
+    it('ADMISSION com ≥1 diagnóstico ativo → nada falta', async () => {
+      const { client } = clientQueDevolve([{ ...FICHA_COMPLETA, status: 'ADMISSION', active_diagnosis_count: '2' }]);
+      expect((await loadPatientCompleteness(client, PID)).missing).toEqual([]);
+    });
+
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE', 'ACTIVE', 'SEARCHING', 'DISCHARGED'])(
+      'paciente em %s (fora de ADMISSION) sem diagnóstico → NÃO é afetado',
+      async (status) => {
+        const { client } = clientQueDevolve([{ ...FICHA_COMPLETA, status, active_diagnosis_count: '0' }]);
+        expect((await loadPatientCompleteness(client, PID)).missing).toEqual([]);
+      },
+    );
+
+    it('o SELECT conta SÓ linhas ativas de patient_diagnoses (qualquer source) e NUNCA seleciona o valor clínico', async () => {
+      const { client, sqls } = clientQueDevolve([FICHA_COMPLETA]);
+      await loadPatientCompleteness(client, PID);
+      const sql = sqls[0];
+      expect(sql).toMatch(/SELECT COUNT\(\*\) FROM patient_diagnoses pdx\s+WHERE pdx\.patient_id = p\.id AND pdx\.active\)/);
+      // qualquer source conta: não pode haver filtro por origem
+      expect(sql).not.toMatch(/pdx\.source/);
+      // privacidade: nenhuma coluna de valor (título/código/uri) do diagnóstico sai deste SELECT
+      expect(sql).not.toMatch(/concept_(title|code|uri|group)/);
+      expect(sqls).toHaveLength(1);
+    });
   });
 });

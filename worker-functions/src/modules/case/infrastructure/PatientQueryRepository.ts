@@ -169,6 +169,10 @@ export class PatientQueryRepository {
                         ON pa.id = pcs.address_id AND pa.archived_at IS NULL
                  WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
                                AS "hasActiveServiceWithoutAddress",
+        -- Diagnóstico CID-11 (pedido do Javier): só a EXISTÊNCIA de ≥1 linha ATIVA (qualquer source) — nunca o valor.
+        -- Alimenta DIAGNOSIS no derivado needsAttention (mesma regra de MISSING_SQL.DIAGNOSIS).
+        EXISTS (SELECT 1 FROM patient_diagnoses pdx WHERE pdx.patient_id = p.id AND pdx.active)
+                               AS "hasActiveDiagnosis",
         -- Decisão do Gabriel 07/09: serviço ativo sem horário (nenhuma faixa vigente hoje; spec 056) → SERVICE_SCHEDULE.
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  WHERE pcs.patient_id = p.id AND pcs.active
@@ -276,6 +280,8 @@ export class PatientQueryRepository {
         activeContractedServicesWithoutAddressCount: row.hasActiveServiceWithoutAddress === true ? 1 : 0,
         activeContractedServicesWithoutScheduleCount:
           row.hasActiveServiceWithoutSchedule === true ? 1 : 0,
+        status: (row.status as string | null) ?? null,
+        activeDiagnosisCount: row.hasActiveDiagnosis === true ? 1 : 0,
         now,
       });
       const isActivatableStatus = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(
