@@ -19,6 +19,7 @@
 
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 import { hasActiveDiagnosisSql } from '@shared/sql/patientDiagnosisSql';
+import { ADMISSION_FUNNEL_STATUSES, CLINICAL_PATIENT_STATUSES } from './enums/PatientStatus';
 
 export const PATIENT_COMPLETENESS_CODES = [
   'ADDRESS',
@@ -48,7 +49,7 @@ export const PATIENT_COMPLETENESS_CODES = [
    * Diagnóstico CID-11 obrigatório na ENTRADA em atendimento (pedido do Javier, decisão do Gabriel): o
    * paciente continua nascendo sem diagnóstico, mas só entra em atendimento (`CARE_ENTRY_STATUSES`) — e só
    * tem recrutamento ativado — com ≥1 linha ATIVA em `patient_diagnoses`, QUALQUER `source` (PANEL, CLICKUP,
-   * BACKFILL). Só é avaliado nos estágios pré-atendimento (`PRE_CARE_STATUSES`): quem já está em atendimento
+   * BACKFILL). Só é avaliado nos estágios pré-atendimento (`ADMISSION_FUNNEL_STATUSES`): quem já está em atendimento
    * não é afetado. Ver `isDiagnosisMissing`.
    */
   'DIAGNOSIS',
@@ -66,21 +67,21 @@ export type PatientCompletenessCode = (typeof PATIENT_COMPLETENESS_CODES)[number
 export const CLINICAL_DATA_GENERIC_CODE = 'CLINICAL_DATA' as const;
 
 /**
- * Estágios PRÉ-ATENDIMENTO: o paciente ainda está no funil de admissão, sem prestador em campo.
- * Andar ENTRE eles é livre (Kanban do funil). É de onde a trava do diagnóstico parte.
+ * Estágios PRÉ-ATENDIMENTO = o funil de admissão (`ADMISSION_FUNNEL_STATUSES`, dono: `enums/PatientStatus.ts`).
+ * Alias de leitura, não uma lista nova. Andar ENTRE eles é livre (Kanban do funil); é de onde a trava parte.
  */
-export const PRE_CARE_STATUSES = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'] as const;
+const PRE_CARE: readonly string[] = ADMISSION_FUNNEL_STATUSES;
 
 /**
  * Estados de ATENDIMENTO que um paciente pré-atendimento só pode ENTRAR com ≥1 diagnóstico CID-11
- * ATIVO (qualquer `source`). ALTA e DISCHARGED (descarte) ficam de fora de propósito: cancelar não
- * pode ficar preso a um diagnóstico que nunca vai existir. Paciente que já está num destes estados
- * não é afetado (a regra só olha a ENTRADA). Pedido do Javier, decisão do Gabriel.
+ * ATIVO (qualquer `source`) = `CLINICAL_PATIENT_STATUSES` menos ALTA e DISCHARGED (descarte: cancelar não
+ * pode ficar preso a um diagnóstico que nunca vai existir). Derivada do dono, não listada. Paciente que já
+ * está num destes estados não é afetado (a regra só olha a ENTRADA). Pedido do Javier, decisão do Gabriel.
  */
-export const CARE_ENTRY_STATUSES = ['SEARCHING', 'ACTIVE', 'ON_HOLD', 'REPLACEMENT', 'SUSPENDED'] as const;
+export const CARE_ENTRY_STATUSES = CLINICAL_PATIENT_STATUSES.filter((s) => s !== 'ALTA' && s !== 'DISCHARGED');
 
 const isPreCareStatus = (status: string | null | undefined): boolean =>
-  (PRE_CARE_STATUSES as readonly (string | null | undefined)[]).includes(status);
+  (PRE_CARE as readonly (string | null | undefined)[]).includes(status);
 
 /**
  * "Falta o diagnóstico?" — fonte ÚNICA da condição: o checklist (`computePatientCompleteness`), o gate
@@ -151,7 +152,7 @@ export const SEARCHING_FORA_DO_FLUXO_CODES = [
  *   ativado (portanto já passou pelo gate completo uma vez); exigir de novo endereço e
  *   consentimento aqui seria reabrir a admissão no meio de uma troca urgente de prestadora.
  * - Demais estados: nada. Pausa e saída não pedem dado nenhum.
- * - `fromStatus` (3º parâmetro): se for um estágio pré-atendimento (`PRE_CARE_STATUSES`) e o destino for de
+ * - `fromStatus` (3º parâmetro): se for um estágio pré-atendimento (`ADMISSION_FUNNEL_STATUSES`) e o destino for de
  *   atendimento (`CARE_ENTRY_STATUSES`), soma `DIAGNOSIS`. Andar entre os estágios pré-atendimento, ALTA e
  *   DISCHARGED não cobram.
  * - `foraDoFluxo` (spec 051): só SEARCHING muda — ver `SEARCHING_FORA_DO_FLUXO_CODES`.
@@ -457,7 +458,7 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
   // !hasConsent — `null` e `false` contam como ausente, igual ao JS.
   CONSENT: (p) => `${p}.has_consent IS NOT TRUE`,
   // isDiagnosisMissing(status, activeDiagnosisCount) — só pré-atendimento, sem nenhuma linha ATIVA em patient_diagnoses.
-  DIAGNOSIS: (p) => `(COALESCE(${p}.status, '') IN (${PRE_CARE_STATUSES.map((s) => `'${s}'`).join(', ')})
+  DIAGNOSIS: (p) => `(COALESCE(${p}.status, '') IN (${PRE_CARE.map((s) => `'${s}'`).join(', ')})
         AND NOT ${hasActiveDiagnosisSql(`${p}.id`)})`,
 };
 

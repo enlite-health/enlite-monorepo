@@ -13,6 +13,8 @@
 
 import { execSync } from 'child_process';
 
+// Cópia deliberada: nenhum helper de e2e/ importa de src/ (padrão do diretório, medido por grep). Dono: ADMISSION_FUNNEL_STATUSES
+// em src/domain/entities/patientEnums.ts (= PRE_CARE da trava do diagnóstico, PatientCompleteness.ts do backend).
 const PRE_CARE_STATUSES = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'];
 
 // ── Constants ───────────────────────────────────────────────────────────────

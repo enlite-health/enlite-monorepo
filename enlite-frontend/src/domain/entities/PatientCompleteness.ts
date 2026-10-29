@@ -88,12 +88,6 @@ export const RECRUITMENT_BLOCKING_CODES = [
 ] as const;
 
 /**
- * Estágios PRÉ-ATENDIMENTO — espelha `PRE_CARE_STATUSES` do backend. Neles o diagnóstico CID-11 é exigido
- * para ENTRAR em atendimento (SEARCHING, ACTIVE, ON_HOLD, REPLACEMENT, SUSPENDED); andar entre eles é livre.
- */
-export const PRE_CARE_STATUSES = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'] as const;
-
-/**
  * Qual pendência de diagnóstico a ficha tem, lida do checklist que o SERVIDOR devolveu (a única fonte —
  * o front não conta diagnósticos: quem não lê o container clínico nem recebe a lista). `DIAGNOSIS` para
  * quem lê; `CLINICAL_DATA` para quem não lê; `null` quando nada falta (inclusive fora de ADMISSION).

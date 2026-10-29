@@ -6,6 +6,7 @@
  * corpo do arquivo.
  */
 import { describe, it, expect } from 'vitest';
+import { ADMISSION_FUNNEL_STATUSES } from '../patientEnums';
 import {
   PATIENT_COMPLETENESS_CODES,
   ACTIVATION_BLOCKING_CODES,
@@ -14,7 +15,6 @@ import {
   isPlaceholderCoverageValue,
   recruitmentMissingCodes,
   diagnosisGapOf,
-  PRE_CARE_STATUSES,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
@@ -165,7 +165,7 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
     expect(diagnosisGapOf({ missing: ['ADDRESS', 'COVERAGE'] })).toBeNull();
     expect(diagnosisGapOf({ missing: [] })).toBeNull();
     expect(diagnosisGapOf(undefined)).toBeNull();
-    expect(PRE_CARE_STATUSES).toEqual(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION']);
+    expect(ADMISSION_FUNNEL_STATUSES).toEqual(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION']); // o pré-atendimento é o funil
   });
 
   // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida

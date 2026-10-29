@@ -1,3 +1,4 @@
+import { ADMISSION_FUNNEL_STATUSES } from '../enums/PatientStatus';
 import {
   computePatientCompleteness,
   isMinor,
@@ -14,7 +15,6 @@ import {
   isPlaceholderCoverageValue,
   computeRecruitmentReadiness,
   CLINICAL_DATA_GENERIC_CODE,
-  PRE_CARE_STATUSES,
   CARE_ENTRY_STATUSES,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
@@ -453,9 +453,9 @@ describe('DIAGNOSIS no checklist e na troca de status (pedido do Javier / decis�
     });
   });
 
-  it('PRE_CARE_STATUSES e CARE_ENTRY_STATUSES são as constantes do conceito (e não se cruzam)', () => {
-    expect([...PRE_CARE_STATUSES]).toEqual(PRE_CARE);
-    expect([...CARE_ENTRY_STATUSES]).toEqual(CARE);
+  it('o pré-atendimento é o funil (ADMISSION_FUNNEL_STATUSES) e CARE_ENTRY_STATUSES é o clínico sem ALTA/DISCHARGED (e não se cruzam)', () => {
+    expect([...ADMISSION_FUNNEL_STATUSES].sort()).toEqual([...PRE_CARE].sort()); // o dono é o enum do funil
+    expect([...CARE_ENTRY_STATUSES].sort()).toEqual([...CARE].sort());
     expect(PRE_CARE.some((s) => (CARE as readonly string[]).includes(s))).toBe(false);
   });
 
@@ -485,7 +485,7 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
         /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\s+AND NOT EXISTS \(SELECT 1 FROM patient_itinerary_slot s_ws WHERE s_ws\.contracted_service_id = pcs\.id AND s_ws\.valid @> CURRENT_DATE\)\)/,
       CONSENT: /p\.has_consent IS NOT TRUE/,
       // Só nos 3 estágios pré-atendimento, e só linha ATIVA de patient_diagnoses (qualquer source).
-      DIAGNOSIS: /COALESCE\(p\.status, ''\) IN \('SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'\)\s+AND NOT EXISTS \(SELECT 1 FROM patient_diagnoses pdx WHERE pdx\.patient_id = p\.id AND pdx\.active\)/,
+      DIAGNOSIS: /COALESCE\(p\.status, ''\) IN \('SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'\)\s+AND NOT EXISTS \(SELECT 1 FROM patient_diagnoses pdx WHERE pdx\.patient_id = p\.id AND pdx\.active\)/,
     };
     for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);
     expect(Object.keys(clausulaDe).sort()).toEqual([...PATIENT_COMPLETENESS_CODES].sort());
