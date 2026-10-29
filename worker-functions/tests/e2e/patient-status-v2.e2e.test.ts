@@ -28,6 +28,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'ps-v2-admin-uid';
@@ -87,6 +88,9 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
       await semearFaixas(pool, svc, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'ps-v2-e2e'); // spec 056: o horário é faixa em patient_itinerary_slot
       if (id === lead) leadServiceId = svc;
     }
+    // Pedido do Javier: sair de ADMISSION (6d: → PENDING_ADMISSION) exige ≥1 diagnóstico CID-11 ATIVO. Esta suíte mede a
+    // FSM do funil, não o diagnóstico (suíte própria: `patient-diagnosis-gate-admission.e2e.test.ts`).
+    await seedPatientDiagnosis(pool, lead);
   });
 
   afterAll(async () => {
