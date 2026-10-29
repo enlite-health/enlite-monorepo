@@ -22,6 +22,11 @@ export const adminPatientsListSchema = z.object({
    * Mesmo padrão de `needs_attention` — string 'true'/'false' coerced no repo.
    */
   include_deactivated: z.enum(['true', 'false']).optional(),
+  /**
+   * Lista da operação sem os DISCHARGED (baja). Opt-in: ausente/'false' = comportamento de hoje
+   * (Kanban e dashboard não mandam). A tela manda 'true' com "Mostrar desactivados" desmarcado.
+   */
+  exclude_discharged: z.enum(['true', 'false']).optional(),
   attention_reason: z.string().optional(),
   clinical_specialty: z.enum(CLINICAL_SPECIALTIES as [string, ...string[]]).optional(),
   dependency_level: z.enum(DEPENDENCY_LEVELS as [string, ...string[]]).optional(),
