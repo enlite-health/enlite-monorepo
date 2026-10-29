@@ -29,7 +29,7 @@ export class UncoveredAlertReader {
   async readUniverse(client: PoolClient, country: string, asOf: string): Promise<UniversePatient[]> {
     const { from, to } = uncoveredWindow(asOf);
     const byPatient = await readOccurrenceInputsByPatient(client, {
-      scopeSql: 'pcs.active AND p.country = $1',
+      scopeSql: 'pcs.active AND p.country = $1 AND p.is_test = false',
       extraJoin: 'JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL',
       fromSql: '$2::date',
       toSql: '$3::date',
@@ -57,7 +57,7 @@ export class UncoveredAlertReader {
               ) AS patient_name
          FROM patients p
          JOIN patient_contracted_services pcs ON pcs.patient_id = p.id AND pcs.active
-        WHERE p.id = ANY($1::uuid[]) AND p.deleted_at IS NULL`,
+        WHERE p.id = ANY($1::uuid[]) AND p.deleted_at IS NULL AND p.is_test = false`,
       [patientIds],
     );
     return res.rows.map((r) => ({ patientId: r.patient_id, serviceId: r.service_id, patientName: r.patient_name, serviceCode: r.service_code }));

@@ -99,7 +99,9 @@ function makeFixture(): FakeDb {
 }
 
 /** Interpreta `DELETE FROM <table> WHERE ...` contra a fixture mutável. */
-function makeFakeClient(db: FakeDb): PoolClient {
+function makeFakeClient(db: FakeDb, active: { workers?: string[]; jobs?: string[] } = {}): PoolClient {
+  const activeWorkers = new Set(active.workers ?? []);
+  const activeJobs = new Set(active.jobs ?? []);
   const query = jest.fn(async (sql: string, params?: unknown[]) => {
     const trimmed = sql.trim();
 
@@ -115,12 +117,12 @@ function makeFakeClient(db: FakeDb): PoolClient {
       const before = db.workers.length;
       // Honra `AND auth_uid <> $1` quando o SQL o traz (sem o predicado, apaga todo is_test).
       const poupa = trimmed.includes('auth_uid <> $1') ? String(params?.[0]) : null;
-      db.workers = db.workers.filter(w => !w.is_test || (poupa !== null && w.auth_uid === poupa));
+      db.workers = db.workers.filter(w => !w.is_test || activeWorkers.has(w.id) || (poupa !== null && w.auth_uid === poupa));
       return { rows: [], rowCount: before - db.workers.length };
     }
     if (table === 'job_postings') {
       const before = db.job_postings.length;
-      db.job_postings = db.job_postings.filter(j => !j.is_test);
+      db.job_postings = db.job_postings.filter(j => !j.is_test || activeJobs.has(j.id));
       return { rows: [], rowCount: before - db.job_postings.length };
     }
     if (!(CHILD_TABLES as readonly string[]).includes(table)) {
@@ -129,8 +131,8 @@ function makeFakeClient(db: FakeDb): PoolClient {
 
     // Subquery avaliada contra o ESTADO ATUAL (não um snapshot pré-calculado) —
     // é isso que expõe erro de ordem (parent deletado antes do filho).
-    const testWorkerIds = new Set(db.workers.filter(w => w.is_test).map(w => w.id));
-    const testJobIds = new Set(db.job_postings.filter(j => j.is_test).map(j => j.id));
+    const testWorkerIds = new Set(db.workers.filter(w => w.is_test && !activeWorkers.has(w.id)).map(w => w.id));
+    const testJobIds = new Set(db.job_postings.filter(j => j.is_test && !activeJobs.has(j.id)).map(j => j.id));
     const hasJobPostingClause = trimmed.includes('job_posting_id IN');
 
     const rows = db[table as keyof FakeDb] as Row[];
@@ -230,5 +232,52 @@ describe('CleanupTestFixturesUseCase', () => {
 
     // Nenhum dado foi apagado — fixture intacta (transação não commitou).
     expect(db.workers).toHaveLength(2);
+  });
+
+  describe('proteção de fixture com alocação ACTIVE (SUP-F1-22)', () => {
+    const sqls = async (db: FakeDb, active = {}) => {
+      const client = makeFakeClient(db, active);
+      const result = await new CleanupTestFixturesUseCase(makePool(client)).execute();
+      const all = (client.query as jest.Mock).mock.calls.map(c => String(c[0]));
+      return { result, all };
+    };
+
+    it('os 2 DELETE finais e os filhos carregam NOT EXISTS + ACTIVE', async () => {
+      const { all } = await sqls(makeFixture());
+      const finals = all.filter(q => /^DELETE FROM (workers|job_postings) /.test(q.trim()));
+      expect(finals).toHaveLength(2);
+      for (const q of finals) {
+        expect(q).toContain('NOT EXISTS');
+        expect(q).toContain("'ACTIVE'");
+        expect(q).toContain('patient_itinerary_assignment');
+      }
+      const children = all.filter(q => /^DELETE FROM (?!workers |job_postings )\w+/.test(q.trim()));
+      expect(children).toHaveLength(7);
+      for (const q of children) {
+        expect(q).toContain('NOT EXISTS');
+        expect(q).toContain("'ACTIVE'");
+      }
+    });
+
+    it('worker is_test com alocação ACTIVE permanece e a contagem reflete só os apagados', async () => {
+      const db = makeFixture();
+      db.workers.push({ id: 'w-test-active', is_test: true });
+      db.worker_service_areas.push({ id: 'sa-3', worker_id: 'w-test-active' });
+      const { result } = await sqls(db, { workers: ['w-test-active'] });
+
+      expect(result.deleted.workers).toBe(1); // só w-test
+      expect(result.deleted.worker_service_areas).toBe(1); // só sa-1
+      expect(db.workers.map(w => w.id).sort()).toEqual(['w-real', 'w-test-active']);
+      expect(db.worker_service_areas.map(r => r.id).sort()).toEqual(['sa-2', 'sa-3']);
+    });
+
+    it('job_posting is_test com alocação ACTIVE permanece', async () => {
+      const db = makeFixture();
+      const { result } = await sqls(db, { jobs: ['jp-test'] });
+
+      expect(result.deleted.job_postings).toBe(0);
+      expect(db.job_postings.map(j => j.id).sort()).toEqual(['jp-real', 'jp-test']);
+      expect(db.messaging_outbox.map(r => r.id)).toContain('mo-3'); // filho do job protegido fica
+    });
   });
 });
