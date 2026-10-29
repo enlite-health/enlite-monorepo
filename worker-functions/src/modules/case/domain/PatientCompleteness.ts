@@ -77,13 +77,13 @@ export function isDiagnosisMissing(status: string | null | undefined, activeDiag
 }
 
 /**
- * Destinos que NÃO exigem diagnóstico ao sair de ADMISSION: as SAÍDAS do funil por descarte —
- * `ALTA` e `DISCHARGED` (baja). São as duas únicas setas de ADMISSION para fora do ciclo de
- * atendimento em `patient_status_transitions` (migration 428 + ALTA/DISCHARGED do funil;
- * `PatientStatus.ts` ClinicalPatientStatus). Cancelar/arquivar/descartar uma solicitação não pode
- * ficar presa à digitação de um diagnóstico que nunca vai existir.
+ * Destinos que NÃO exigem diagnóstico ao sair de ADMISSION: (1) o DESCARTE — `ALTA` e `DISCHARGED`
+ * (migration 498, `('ADMISSION','ALTA')`/`('ADMISSION','DISCHARGED')`): cancelar/arquivar não pode
+ * ficar preso a um diagnóstico que nunca vai existir; (2) a VOLTA/movimento no funil —
+ * `PENDING_ADMISSION` e `SOLICITANTE` (decisão do Gabriel: a trava é só para a FRENTE). Bloqueiam:
+ * SEARCHING, ACTIVE, ON_HOLD, REPLACEMENT e SUSPENDED, mais a ativação de recrutamento em ADMISSION.
  */
-export const DIAGNOSIS_EXEMPT_TARGET_STATUSES = ['ALTA', 'DISCHARGED'] as const;
+export const DIAGNOSIS_EXEMPT_TARGET_STATUSES = ['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE'] as const;
 
 /**
  * QA-caça rodada 1 / decisão do Gabriel 03/09 (D255): dos códigos de
@@ -146,7 +146,7 @@ export const SEARCHING_FORA_DO_FLUXO_CODES = [
  *   consentimento aqui seria reabrir a admissão no meio de uma troca urgente de prestadora.
  * - Demais estados: nada. Pausa e saída não pedem dado nenhum.
  * - `fromStatus = 'ADMISSION'` (3º parâmetro): soma `DIAGNOSIS` para todo destino que não seja
- *   `DIAGNOSIS_EXEMPT_TARGET_STATUSES`. Vale também para o movimento DENTRO do funil (ex.:
+ *   `DIAGNOSIS_EXEMPT_TARGET_STATUSES`. O movimento DENTRO do funil (ex.:
  *   ADMISSION → PENDING_ADMISSION): a regra é "não sai de ADMISSION sem diagnóstico".
  * - `foraDoFluxo` (spec 051): só SEARCHING muda — ver `SEARCHING_FORA_DO_FLUXO_CODES`.
  */
@@ -158,7 +158,7 @@ export function blockingCodesForStatusChange(
   // `DIAGNOSIS` está em ACTIVATION_BLOCKING_CODES (a ficha o mostra como bloqueante), mas na TROCA DE STATUS ele só vale
   // por UM caminho — sair de ADMISSION (abaixo). Tirá-lo do alvo evita cobrá-lo de quem chega a ACTIVE de outro estado.
   const base = blockingCodesForTarget(toStatus, foraDoFluxo).filter((c) => c !== 'DIAGNOSIS');
-  // Diagnóstico: SAIR de ADMISSION para qualquer destino que não seja descarte (ALTA/DISCHARGED).
+  // Diagnóstico: SAIR de ADMISSION para qualquer destino à FRENTE (fora de DIAGNOSIS_EXEMPT_TARGET_STATUSES).
   // `fromStatus` ausente = o chamador não está perguntando por uma saída de ADMISSION.
   const leavingAdmission =
     fromStatus === DIAGNOSIS_REQUIRED_STATUS &&

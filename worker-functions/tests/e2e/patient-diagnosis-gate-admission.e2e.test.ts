@@ -5,7 +5,7 @@
  * API real (Docker, USE_MOCK_AUTH) + Postgres real. O paciente continua nascendo sem diagnóstico; o que
  * esta suíte prova é a trava no SERVIDOR (o front só apresenta):
  *   1. GET /patients/:id → `completeness.missing` traz DIAGNOSIS em ADMISSION sem diagnóstico ATIVO;
- *   2. PUT /status ADMISSION → PENDING_ADMISSION sem diagnóstico → 422 PATIENT_STATUS_NOT_READY com DIAGNOSIS;
+ *   2. PUT /status ADMISSION → SEARCHING sem diagnóstico → 422 PATIENT_STATUS_NOT_READY com DIAGNOSIS;
  *      diagnóstico só INATIVO continua barrando; ALTA (descarte) NÃO exige;
  *   3. um diagnóstico ATIVO de QUALQUER source (PANEL, CLICKUP, BACKFILL) libera;
  *   4. activate-recruitment em ADMISSION sem diagnóstico → 422 PATIENT_NOT_READY com DIAGNOSIS, e SEM vaga;
@@ -76,15 +76,15 @@ describe('Diagnóstico obrigatório na saída da ADMISSION @integration', () => 
     expect(c.missing).not.toContain('DIAGNOSIS');
   });
 
-  it('2. ADMISSION → PENDING_ADMISSION sem diagnóstico: 422 com DIAGNOSIS, status intacto; só diagnóstico INATIVO continua barrando', async () => {
+  it('2. ADMISSION → SEARCHING sem diagnóstico: 422 com DIAGNOSIS, status intacto; só diagnóstico INATIVO continua barrando', async () => {
     const { id } = await paciente('ADMISSION');
-    let r = await put(id, { status: 'PENDING_ADMISSION', changeSource: 'kanban' });
+    let r = await put(id, { status: 'SEARCHING', changeSource: 'kanban' });
     expect(r.status).toBe(422);
-    expect(r.data).toMatchObject({ code: 'PATIENT_STATUS_NOT_READY', details: { to: 'PENDING_ADMISSION', missing: ['DIAGNOSIS'] } });
+    expect(r.data).toMatchObject({ code: 'PATIENT_STATUS_NOT_READY', details: { to: 'SEARCHING', missing: ['DIAGNOSIS'] } });
     expect(await statusOf(id)).toBe('ADMISSION');
 
     await seedPatientDiagnosis(pool, id, { active: false });
-    r = await put(id, { status: 'PENDING_ADMISSION', changeSource: 'kanban' });
+    r = await put(id, { status: 'SEARCHING', changeSource: 'kanban' });
     expect(r.status).toBe(422);
     expect(r.data.details.missing).toEqual(['DIAGNOSIS']);
     expect(await statusOf(id)).toBe('ADMISSION');
@@ -93,9 +93,9 @@ describe('Diagnóstico obrigatório na saída da ADMISSION @integration', () => 
   it.each(['PANEL', 'CLICKUP', 'BACKFILL'] as const)('3. diagnóstico ATIVO de source %s libera a saída de ADMISSION', async (source) => {
     const { id } = await paciente('ADMISSION');
     await seedPatientDiagnosis(pool, id, { source });
-    const r = await put(id, { status: 'PENDING_ADMISSION', changeSource: 'kanban' });
+    const r = await put(id, { status: 'SEARCHING', changeSource: 'kanban' });
     expect(r.status).toBe(200);
-    expect(await statusOf(id)).toBe('PENDING_ADMISSION');
+    expect(await statusOf(id)).toBe('SEARCHING');
   });
 
   it('4. ALTA (descarte) a partir de ADMISSION NÃO exige diagnóstico', async () => {
@@ -103,6 +103,13 @@ describe('Diagnóstico obrigatório na saída da ADMISSION @integration', () => 
     const r = await put(id, { status: 'ALTA', changeSource: 'admin_panel' });
     expect(r.status).toBe(200);
     expect(await statusOf(id)).toBe('ALTA');
+  });
+
+  it.each(['PENDING_ADMISSION', 'SOLICITANTE'])('4b. ADMISSION → %s (volta/movimento no funil) sem diagnóstico → 200', async (to) => {
+    const { id } = await paciente('ADMISSION');
+    const r = await put(id, { status: to, changeSource: 'kanban' });
+    expect(r.status).toBe(200);
+    expect(await statusOf(id)).toBe(to);
   });
 
   it('5. activate-recruitment em ADMISSION sem diagnóstico: 422 PATIENT_NOT_READY com DIAGNOSIS e NENHUMA vaga; com diagnóstico, 201', async () => {
@@ -128,7 +135,7 @@ describe('Diagnóstico obrigatório na saída da ADMISSION @integration', () => 
   it('7. nenhuma resposta carrega o VALOR do diagnóstico (só o código DIAGNOSIS)', async () => {
     const { id } = await paciente('ADMISSION');
     await seedPatientDiagnosis(pool, id, { active: false });
-    const r = await put(id, { status: 'PENDING_ADMISSION', changeSource: 'kanban' });
+    const r = await put(id, { status: 'SEARCHING', changeSource: 'kanban' });
     expect(JSON.stringify(r.data)).not.toContain('Diagnóstico sintético e2e');
   });
 });

@@ -238,16 +238,8 @@ describe('PatientService.moveStatus v2', () => {
       await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
     });
 
-    it('ADMISSION → PENDING_ADMISSION (movimento dentro do funil) sem diagnóstico também é recusado: não sai de ADMISSION', async () => {
-      db('ADMISSION', [], SEM_DIAG);
-      await expect(service.moveStatus(PID, 'PENDING_ADMISSION', { changeSource: 'kanban' })).rejects.toMatchObject({
-        code: 'PATIENT_STATUS_NOT_READY',
-        missing: ['DIAGNOSIS'],
-      });
-    });
-
-    it.each(['ALTA', 'DISCHARGED'])('ADMISSION → %s (descarte) NÃO exige diagnóstico', async (to) => {
-      db('ADMISSION', [['ADMISSION', to]], SEM_DIAG);
+    it.each(['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE'])('ADMISSION → %s (descarte ou volta no funil) NÃO exige diagnóstico', async (to) => {
+      db('ADMISSION', [['ADMISSION', to]], SEM_DIAG); // funil↔funil nem consulta a FSM
       await expect(service.moveStatus(PID, to as never, { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: to });
       // e nem leu a completude: o destino isento não cobra código nenhum
       expect(calls().some((x) => /services_without_schedule_count/.test(x.sql))).toBe(false);

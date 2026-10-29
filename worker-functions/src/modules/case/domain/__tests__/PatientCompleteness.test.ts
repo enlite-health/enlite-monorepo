@@ -410,14 +410,14 @@ describe('DIAGNOSIS no checklist e na troca de status (pedido do Javier / decis�
   });
 
   describe('blockingCodesForStatusChange(to, foraDoFluxo, from)', () => {
-    it.each(['ACTIVE', 'SEARCHING', 'REPLACEMENT', 'ON_HOLD', 'SUSPENDED', 'PENDING_ADMISSION', 'SOLICITANTE'])(
+    it.each(['ACTIVE', 'SEARCHING', 'REPLACEMENT', 'ON_HOLD', 'SUSPENDED'])(
       'ADMISSION → %s exige DIAGNOSIS',
       (to) => {
         expect(blockingCodesForStatusChange(to, false, 'ADMISSION')).toContain('DIAGNOSIS');
       },
     );
 
-    it.each(['ALTA', 'DISCHARGED'])('ADMISSION → %s (descarte) NÃO exige DIAGNOSIS', (to) => {
+    it.each(['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE'])('ADMISSION → %s (descarte ou volta no funil) NÃO exige DIAGNOSIS', (to) => {
       expect(blockingCodesForStatusChange(to, false, 'ADMISSION')).not.toContain('DIAGNOSIS');
     });
 

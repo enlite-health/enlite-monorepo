@@ -184,8 +184,8 @@ describe('F3 — regras próprias da lista', () => {
       const r = await lista('ADMISSION', null, SEM, 'kanban'); // kanban: D469 só deixa o funil ir a SEARCHING por ele
       const por = (st: string) => r.options.find((o) => o.status === st);
       expect(por('SEARCHING')?.blockedBy).toContain('DIAGNOSIS');
-      expect(por('PENDING_ADMISSION')?.blockedBy).toEqual(['DIAGNOSIS']);
-      expect(por('SOLICITANTE')?.blockedBy).toEqual(['DIAGNOSIS']);
+      expect(por('PENDING_ADMISSION')).toEqual({ status: 'PENDING_ADMISSION', via: 'fluxo' }); // volta/movimento no funil: livre
+      expect(por('SOLICITANTE')).toEqual({ status: 'SOLICITANTE', via: 'fluxo' });
       expect(por('ALTA')).toEqual({ status: 'ALTA', via: 'fluxo' });
       expect(por('DISCHARGED')).toEqual({ status: 'DISCHARGED', via: 'fluxo' });
     });
