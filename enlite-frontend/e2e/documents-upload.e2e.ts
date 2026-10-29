@@ -222,8 +222,8 @@ test.describe('Documents Upload Flow - E2E', () => {
       // 4. Blue border must appear (uploaded state).
       await expect(slot.locator('[data-state="uploaded"]')).toBeVisible({ timeout: 10000 });
       // 5. Delete and view action buttons must be visible.
-      await expect(slot.locator('[aria-label="Remover documento"]')).toBeVisible();
-      await expect(slot.locator('[aria-label="Visualizar documento"]')).toBeVisible();
+      await expect(slot.locator('[aria-label="Quitar documento"]')).toBeVisible();
+      await expect(slot.locator('[aria-label="Ver documento"]')).toBeVisible();
       // 6. Card must no longer be a clickable button.
       await expect(slot.locator('[role="button"]')).not.toBeVisible();
     });
@@ -378,7 +378,7 @@ test.describe('Documents Upload Flow - E2E', () => {
 
     const slot = page.locator('[data-testid="doc-slot-resume_cv"]');
     // Wait for the delete button — it only renders when isUploaded=true.
-    await expect(slot.locator('[aria-label="Remover documento"]')).toBeVisible({ timeout: 10000 });
+    await expect(slot.locator('[aria-label="Quitar documento"]')).toBeVisible({ timeout: 10000 });
 
     let deleteCalled = false;
     await page.route('**/api/workers/me/documents/**', async (route) => {
@@ -394,7 +394,7 @@ test.describe('Documents Upload Flow - E2E', () => {
       }
     });
 
-    await slot.locator('[aria-label="Remover documento"]').click();
+    await slot.locator('[aria-label="Quitar documento"]').click();
 
     // Card must return to empty/clickable state.
     await expect(slot.locator('[role="button"]')).toBeVisible({ timeout: 10000 });
@@ -458,7 +458,7 @@ test.describe('Documents Upload Flow - E2E', () => {
       });
     });
 
-    await slot.locator('[aria-label="Visualizar documento"]').click();
+    await slot.locator('[aria-label="Ver documento"]').click();
     await page.waitForTimeout(500);
     expect(viewUrlCalled).toBe(true);
   });

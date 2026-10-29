@@ -77,6 +77,8 @@
     }
   },
   "common": {
+    "optional": "(opcional)",
+    "progress": "Progreso",
     "home": "Inicio",
     "communication": "Comunicación",
     "notifications": "Notificaciones",
@@ -669,6 +671,8 @@
   },
   "documents": {
     "title": "Documentos",
+    "removeAria": "Quitar documento",
+    "viewAria": "Ver documento",
     "resumeCv": "Currículum",
     "identity": "DNI - Frente",
     "identityBack": "DNI - Dorso",
