@@ -106,7 +106,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
   let staff: { user: MockUser; groupId: string };
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(700000); // faixa própria (700000–789999)
+    seed = seedActivatablePatient(700000, { withDiagnosis: false }); // faixa própria (700000–789999)
     seedIcd();
     staff = semearStaff('tp017');
   });
@@ -323,7 +323,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
 
 /** Semeia paciente + serviço CAREGIVER (pré-condição; o fluxo do serviço tem e2e próprio). */
 function semearPacienteComServico(base: number): { patientId: string; serviceId: string } {
-  const p = seedActivatablePatient(base);
+  const p = seedActivatablePatient(base, { withDiagnosis: false });
   const serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${p.patientId}', 'CAREGIVER', 20, '${p.addressId}', 'e2e-030', 'e2e-030') RETURNING id`).split('\n')[0].trim();
   expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
   return { patientId: p.patientId, serviceId };
