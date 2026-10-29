@@ -101,3 +101,49 @@ describe('GeocodingService.geocodeBatch — PII guard', () => {
     expect(warnSpy.mock.calls[0].join(' ')).not.toContain(SENSITIVE_ADDRESS.substring(0, 50));
   });
 });
+
+describe('GeocodingService.geocode — locationType / partialMatch (spec 077)', () => {
+  const okResponse = (geometryExtra: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    data: {
+      status: 'OK',
+      results: [
+        {
+          formatted_address: 'Calle Falsa 123, CABA',
+          place_id: 'pid',
+          types: ['street_address'],
+          address_components: [],
+          geometry: { location: { lat: -34.6, lng: -58.4 }, ...geometryExtra },
+          ...extra,
+        },
+      ],
+    },
+  });
+
+  beforeEach(() => {
+    process.env.GOOGLE_MAPS_API_KEY = 'fake-key-for-test';
+    mockGeocode.mockReset();
+  });
+  afterEach(() => {
+    delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
+  it('ROOFTOP + partial_match=true -> locationType ROOFTOP, partialMatch true', async () => {
+    mockGeocode.mockResolvedValue(okResponse({ location_type: 'ROOFTOP' }, { partial_match: true }));
+    const r = await new GeocodingService().geocode('Calle Falsa 123');
+    expect(r?.locationType).toBe('ROOFTOP');
+    expect(r?.partialMatch).toBe(true);
+  });
+
+  it('location_type ausente -> UNKNOWN', async () => {
+    mockGeocode.mockResolvedValue(okResponse({}));
+    const r = await new GeocodingService().geocode('Calle Falsa 123');
+    expect(r?.locationType).toBe('UNKNOWN');
+    expect(r?.partialMatch).toBe(false);
+  });
+
+  it('location_type fora do enum -> UNKNOWN', async () => {
+    mockGeocode.mockResolvedValue(okResponse({ location_type: 'WHATEVER' }));
+    const r = await new GeocodingService().geocode('Calle Falsa 123');
+    expect(r?.locationType).toBe('UNKNOWN');
+  });
+});

@@ -185,7 +185,7 @@ describe('geocodePatientAddressesBestEffort', () => {
       });
 
       expect(geocoder.geocodeBatch).not.toHaveBeenCalled();
-      expect(out).toEqual([{ address: a, lat: -34.6, lng: -58.38 }]);
+      expect(out).toMatchObject([{ address: a, lat: -34.6, lng: -58.38 }]);
     });
 
     it('chama o Google SÓ para o endereço novo, preservando a ordem', async () => {
@@ -202,8 +202,8 @@ describe('geocodePatientAddressesBestEffort', () => {
 
       expect(geocodeBatch).toHaveBeenCalledTimes(1);
       expect(geocodeBatch.mock.calls[0][0]).toEqual(['Av. Colón 500, Córdoba']);
-      expect(out[0]).toEqual({ address: conhecido, lat: -34.6, lng: -58.38 });
-      expect(out[1]).toEqual({ address: novo, lat: -31.4, lng: -64.18 });
+      expect(out[0]).toMatchObject({ address: conhecido, lat: -34.6, lng: -58.38 });
+      expect(out[1]).toMatchObject({ address: novo, lat: -31.4, lng: -64.18 });
     });
 
     it('sem o mapa de conhecidos, o comportamento é o de sempre', async () => {
@@ -215,5 +215,40 @@ describe('geocodePatientAddressesBestEffort', () => {
 
       expect(geocodeBatch).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('qualidade do geocode (spec 077)', () => {
+  const a = makeAddress({ addressFormatted: 'Av. X 100, CABA' });
+
+  it('ROOFTOP + partialMatch=false -> os 3 campos preenchidos', async () => {
+    const geocoder = makeGeocoder([{ ...fakeGeoResult(-34.6, -58.4), locationType: 'ROOFTOP', partialMatch: false }]);
+    const [out] = await geocodePatientAddressesBestEffort([a], geocoder);
+    expect(out.geocode_quality).toBe('ROOFTOP');
+    expect(out.geocode_partial_match).toBe(false);
+    expect(out.geocoded_at).toBeInstanceOf(Date);
+  });
+
+  it('geocode falhou (null) -> os 3 campos NULL, nunca UNKNOWN inventado', async () => {
+    const [out] = await geocodePatientAddressesBestEffort([a], makeGeocoder([null]));
+    expect([out.geocode_quality, out.geocode_partial_match, out.geocoded_at]).toEqual([null, null, null]);
+    const [thrown] = await geocodePatientAddressesBestEffort([a], makeGeocoder(new Error('quota')));
+    expect([thrown.geocode_quality, thrown.geocode_partial_match, thrown.geocoded_at]).toEqual([null, null, null]);
+  });
+
+  it('APPROXIMATE + partialMatch=true -> gravado como veio (confiabilidade é derivada depois)', async () => {
+    const geocoder = makeGeocoder([{ ...fakeGeoResult(-34.6, -58.4), locationType: 'APPROXIMATE', partialMatch: true }]);
+    const [out] = await geocodePatientAddressesBestEffort([a], geocoder);
+    expect(out.geocode_quality).toBe('APPROXIMATE');
+    expect(out.geocode_partial_match).toBe(true);
+  });
+
+  it('coordenada conhecida preserva a qualidade já gravada (não zera no refresh)', async () => {
+    const at = new Date('2026-10-01T00:00:00Z');
+    const known = new Map([['Av. X 100, CABA', { lat: -34.6, lng: -58.4, geocode_quality: 'RANGE_INTERPOLATED' as const, geocode_partial_match: false, geocoded_at: at }]]);
+    const geocoder = makeGeocoder([]);
+    const [out] = await geocodePatientAddressesBestEffort([a], geocoder, { known });
+    expect(geocoder.geocodeBatch).not.toHaveBeenCalled();
+    expect([out.geocode_quality, out.geocode_partial_match, out.geocoded_at]).toEqual(['RANGE_INTERPOLATED', false, at]);
   });
 });

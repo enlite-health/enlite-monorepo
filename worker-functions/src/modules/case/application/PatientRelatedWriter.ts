@@ -8,7 +8,7 @@
  * No business logic — only persistence.
  */
 
-import { geocodePatientAddressesBestEffort } from '../infrastructure/geocodePatientAddresses';
+import { geocodePatientAddressesBestEffort, type KnownCoords } from '../infrastructure/geocodePatientAddresses';
 import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 import { PatientAddress, PatientProfessional } from '../../../infrastructure/repositories/PatientRepository';
 import { patientHasActiveDefaultAddress } from '../infrastructure/PatientAddressQueryHelper';
@@ -69,8 +69,12 @@ export async function replacePatientAddresses(
     is_default: boolean;
     lat: string | number | null;
     lng: string | number | null;
+    geocode_quality: KnownCoords['geocode_quality'] | null;
+    geocode_partial_match: boolean | null;
+    geocoded_at: Date | null;
   }>(
-    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes, is_default, lat, lng
+    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes, is_default, lat, lng,
+            geocode_quality, geocode_partial_match, geocoded_at
        FROM patient_addresses
       WHERE patient_id = $1
         AND archived_at IS NULL
@@ -106,12 +110,17 @@ export async function replacePatientAddresses(
    * o endereço volta a ser resolvido. É essa a metade que impede o conserto de
    * virar "nunca mais geocodifica".
    */
-  const conhecidas = new Map<string, { lat: number; lng: number }>();
+  const conhecidas = new Map<string, KnownCoords>();
   for (const r of existing) {
     const texto = (r.address_formatted ?? '').trim();
     if (!texto || r.lat === null || r.lng === null) continue;
     const lat = Number(r.lat); const lng = Number(r.lng);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) conhecidas.set(texto, { lat, lng });
+    if (Number.isFinite(lat) && Number.isFinite(lng)) conhecidas.set(texto, {
+      lat, lng,
+      geocode_quality: r.geocode_quality ?? null,
+      geocode_partial_match: r.geocode_partial_match ?? null,
+      geocoded_at: r.geocoded_at ?? null,
+    });
   }
 
   // Best-effort geocoding — never blocks the upsert. Failures persist
@@ -161,7 +170,10 @@ export async function replacePatientAddresses(
            city              = $5,
            neighborhood      = $6,
            lat               = $7,
-           lng               = $8
+           lng               = $8,
+           geocode_quality       = $9,
+           geocode_partial_match = $10,
+           geocoded_at           = $11
          WHERE id = $1`,
         [
           existingForSlot.id,
@@ -172,6 +184,9 @@ export async function replacePatientAddresses(
           a.neighborhood ?? null,
           g.lat,
           g.lng,
+          g.geocode_quality,
+          g.geocode_partial_match,
+          g.geocoded_at,
         ],
       );
       continue;
@@ -204,8 +219,9 @@ export async function replacePatientAddresses(
       `INSERT INTO patient_addresses
          (patient_id, address_formatted, address_raw,
           display_order, state, city, neighborhood, lat, lng,
+          geocode_quality, geocode_partial_match, geocoded_at,
           logistics_corridor, access_notes, is_default)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id`,
       [
         patientId,
@@ -217,6 +233,9 @@ export async function replacePatientAddresses(
         a.neighborhood ?? null,
         g.lat,
         g.lng,
+        g.geocode_quality,
+        g.geocode_partial_match,
+        g.geocoded_at,
         existingForSlot?.logistics_corridor ?? null,
         existingForSlot?.access_notes ?? null,
         isDefault,
