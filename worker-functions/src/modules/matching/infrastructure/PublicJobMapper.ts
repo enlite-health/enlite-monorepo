@@ -96,7 +96,7 @@ export function mapPublicJobRow(row: PublicJobRow): PublicJobDto {
     country: row.country ?? null,
     age_range_min: row.age_range_min ?? null,
     age_range_max: row.age_range_max ?? null,
-    whatsapp_url: row.whatsapp_url ?? null,
+    can_apply: row.can_apply === true,
     schedule_week: buildScheduleWeek(row.schedule),
   };
 }

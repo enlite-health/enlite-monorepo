@@ -2,6 +2,8 @@ import {
   SystemNotificationPublisher,
   buildAdmissionTactiqLinkPayload,
   buildPtContactsPendingPayload,
+  buildItineraryUncoveredShiftsPayload,
+  SYSTEM_ITINERARY_ACTOR_UID,
   SYSTEM_ADMISSION_ACTOR_UID,
   SYSTEM_NOTIFICATION_ACTOR_UID,
 } from '../SystemNotificationPublisher';
@@ -93,5 +95,30 @@ describe('SystemNotificationPublisher — aviso do vínculo do Tactiq (spec 049 
     expect(() => buildAdmissionTactiqLinkPayload('ana@example.test')).toThrow(/conjunto fechado/);
     await expect(new SystemNotificationPublisher(r as never).publishAdmissionTactiqLinkRequired({} as never, { recipientUid: 'op1', reason: 'x' })).rejects.toThrow();
     expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('SystemNotificationPublisher — aviso diário do itinerário (spec 069 F4)', () => {
+  const item = { patientId: 'p1', serviceId: 's1', shifts: 2, firstDate: '2026-11-02' };
+
+  it('UM evento (sentinela do sistema, sem paciente/conversa) + UMA notificação para o destinatário, com payload só-ids', async () => {
+    const r = repo();
+    const id = await new SystemNotificationPublisher(r as never).publishItineraryUncoveredShifts({} as never, { recipientUid: 'u1', operationDate: '2026-11-02', items: [item] });
+    expect(id).toBe('ev-1');
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'ITINERARY_UNCOVERED_SHIFTS', actorUid: SYSTEM_ITINERARY_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload: { operationDate: '2026-11-02', items: [item] } },
+      {},
+    );
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['u1'], {});
+  });
+
+  it('o builder é FECHADO: campo extra (nome) não entra; valores fora do contrato lançam', () => {
+    const comNome = { ...item, patientName: 'Ana Silva' } as typeof item;
+    expect(JSON.stringify(buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [comNome] }))).not.toContain('Ana Silva');
+    expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '02/11/2026', items: [item] })).toThrow(/fora do contrato/);
+    expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [] })).toThrow(/fora do contrato/);
+    expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [{ ...item, shifts: 0 }] })).toThrow(/fora do contrato/);
+    expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [{ ...item, shifts: 1.5 }] })).toThrow(/fora do contrato/);
+    expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [{ ...item, firstDate: 'amanhã' }] })).toThrow(/fora do contrato/);
   });
 });

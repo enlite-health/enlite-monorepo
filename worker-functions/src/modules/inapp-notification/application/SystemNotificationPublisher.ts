@@ -15,11 +15,35 @@ import {
   type AdmissionTactiqExtensionPayload,
   type AdmissionTactiqExtensionState,
   type PtContactsPendingPayload,
+  type ItineraryUncoveredShiftsPayload,
 } from '../infrastructure/NotificationRepository';
 
 export const SYSTEM_NOTIFICATION_ACTOR_UID = 'system:pt-contact-reminders';
 /** Sentinela do aviso automático da admissão (spec 049 T9): sem autor humano, sem FK (461). */
 export const SYSTEM_ADMISSION_ACTOR_UID = 'system:admission';
+
+/** Sentinela do aviso diário do itinerário (spec 069 F4): sem autor humano, sem FK (461). */
+export const SYSTEM_ITINERARY_ACTOR_UID = 'system:itinerary-daily';
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Payload fechado do aviso diário de turnos sin cubrir: `operationDate` + itens de 4 chaves (ids e números). Reconstrói cada item
+ * chave a chave — qualquer campo extra (nome, texto) que alguém passe NÃO entra. Valor fora do formato é erro de programação (lança).
+ */
+export function buildItineraryUncoveredShiftsPayload(input: {
+  operationDate: string;
+  items: ReadonlyArray<{ patientId: string; serviceId: string; shifts: number; firstDate: string }>;
+}): ItineraryUncoveredShiftsPayload {
+  const badItem = input.items.some((i) => !Number.isInteger(i.shifts) || i.shifts < 1 || !ISO_DATE.test(i.firstDate));
+  if (!ISO_DATE.test(input.operationDate) || input.items.length === 0 || badItem) {
+    throw new Error('itinerary_uncovered_shifts_payload: valor fora do contrato');
+  }
+  return {
+    operationDate: input.operationDate,
+    items: input.items.map((i) => ({ patientId: i.patientId, serviceId: i.serviceId, shifts: i.shifts, firstDate: i.firstDate })),
+  };
+}
 
 const ADMISSION_TACTIQ_REASONS: readonly AdmissionTactiqLinkReason[] = ['missing', 'broken', 'wrong_account'];
 
@@ -120,6 +144,30 @@ export class SystemNotificationPublisher {
         conversationId: null,
         messageId: null,
         payload,
+      },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Spec 069 F4: UM aviso agregado (evento + 1 notificação) por destinatário e dia, com os turnos sin cubrir dos próximos 7 dias
+   * (payload só-ids, resolvido na tela). O `client` é a transação do chamador — o despacho (PK dia × destinatário) vai na MESMA
+   * transação, é isso que dá a idempotência. Devolve o id do evento.
+   */
+  async publishItineraryUncoveredShifts(
+    client: PoolClient,
+    input: { recipientUid: string; operationDate: string; items: ReadonlyArray<{ patientId: string; serviceId: string; shifts: number; firstDate: string }> },
+  ): Promise<string> {
+    const eventId = await this.repository.insertEvent(
+      {
+        typeCode: 'ITINERARY_UNCOVERED_SHIFTS',
+        actorUid: SYSTEM_ITINERARY_ACTOR_UID,
+        patientId: null,
+        conversationId: null,
+        messageId: null,
+        payload: buildItineraryUncoveredShiftsPayload({ operationDate: input.operationDate, items: input.items }),
       },
       client,
     );

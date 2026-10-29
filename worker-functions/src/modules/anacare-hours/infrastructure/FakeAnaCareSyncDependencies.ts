@@ -18,11 +18,13 @@ import type {
   EnliteDirectorySource,
   PatientMonthSyncRepository,
   ShiftSyncFreshness,
+  ShiftValidationReader,
   SyncRunConclusion,
   SyncRunProgress,
   SyncRunRepository,
 } from '../domain/AnaCareHoursSyncPorts';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../domain/AnaCarePatientMonth';
+import type { ValidationRow } from './ShiftHoursValidationRepository';
 import { aggregatePatientMonth } from '../application/AnaCarePatientMonthAggregator';
 import { FakeAnaCareShiftsSource } from './FakeAnaCareShiftsSource';
 import { AnaCarePatientMonthCollisionError } from './AnaCarePatientMonthRepository';
@@ -30,6 +32,13 @@ import { AnaCarePatientMonthCollisionError } from './AnaCarePatientMonthReposito
 function nonEmpty(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+/** Default em memória: nenhuma validação (mapa vazio) — tudo cai na hora real. */
+export class FakeShiftValidationReader implements ShiftValidationReader {
+  async getByShiftIds(): Promise<Map<string, ValidationRow>> {
+    return new Map();
+  }
 }
 
 export class FakeEnliteDirectory implements EnliteDirectorySource {

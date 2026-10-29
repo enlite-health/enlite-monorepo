@@ -38,6 +38,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { screenById } from '@presentation/config/screenRegistry';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { useVacancyTabParam } from './VacancyDetail/useVacancyTabParam';
 
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -49,7 +50,7 @@ export default function VacancyDetailPage() {
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
+  const [activeTab, setActiveTab] = useVacancyTabParam();
   const [showPublishedRedirectBanner, setShowPublishedRedirectBanner] = useState(false);
   // D286: uma aba existe se algum container dela for legível (Encuadres = funil/match/convites,
   // Talentum = prescreening/talentum, Links = a vaga). O card Paciente é célula do PACIENTE.
@@ -170,6 +171,18 @@ export default function VacancyDetailPage() {
             {pageTitle}
           </Heading>
         </div>
+        {/* Spec 041 R4 (DEC-04, Q1): atalho para a aba Itinerario do paciente da vaga. Só navega — a
+            aba é do container `patient_services` e a ficha aplica o gate dela. */}
+        {vacancy.patient_id && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="vacancy-view-patient-itinerary"
+            onClick={() => navigate(`/admin/patients/${vacancy.patient_id}?tab=itinerary${vacancy.contracted_service_id ? `&serviceId=${vacancy.contracted_service_id}` : ''}`)}
+          >
+            {t('admin.vacancyDetail.viewPatientItinerary')}
+          </Button>
+        )}
       </div>
 
       {/* Linha 1: assimétrica — coluna esquerda fixa 404px, direita flex-1 */}

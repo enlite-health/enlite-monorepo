@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
+import type { PatientCompletenessCode } from '@domain/entities/PatientCompleteness';
 import type { PatientDetail, UpdatePatientStatusPayload } from '@domain/entities/PatientDetail';
 import { ON_HOLD_REASONS, isClinicalPatientStatus } from '@domain/entities/patientEnums';
 import { usePatientStatusOptions } from '@hooks/admin/usePatientStatusOptions';
-import { refusalFromError } from '@domain/entities/PatientStatusRefusal';
+import { ACTIVE_ALLOCATION_BLOCK, refusalFromError } from '@domain/entities/PatientStatusRefusal';
 import { friendlyStatusMessage, missingItemsLabel } from '@presentation/utils/patientStatusMessages';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
@@ -13,8 +14,8 @@ import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { buttonClasses } from '@presentation/components/atoms/Button/buttonClasses';
 import { ChevronDown } from 'lucide-react';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { SuspensionExitReasonSelect } from './SuspensionExitReasonSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   patient: PatientDetail;
@@ -71,7 +72,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const canSave = changed && (!goingOnHold || reason !== '') && (!leavingSuspended || exitReason !== '') && !busy;
 
   const label = (s: string) => t(`admin.patients.statusOptions.${s}`, s);
-  const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
+  const reasonOptions: ComboboxOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
   // Estado atual + SÓ o que o servidor devolveu. Sem lista (carregando ou falha) só o atual — nunca o catálogo inteiro.
   const optionsReady = optionsState.phase === 'ready';
   // Recorte de APRESENTAÇÃO da ficha (spec ponto 1: o funil fica como hoje): a lista do servidor pode trazer
@@ -82,7 +83,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
     ...offered
       .filter((o) => o.status !== current)
       .map((o) => {
-        const items = missingItemsLabel(t, o.blockedBy);
+        const items = missingItemsLabel(t, o.blockedBy?.filter((c): c is PatientCompletenessCode => c !== ACTIVE_ALLOCATION_BLOCK));
         return {
           value: o.status,
           label: items ? ts('blockedOption', { status: label(o.status), items }) : label(o.status),
@@ -90,6 +91,9 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
         };
       }),
   ];
+
+  // D489/D530: alocação viva no itinerário trava TODO destino; o aviso é visível, não só o option desabilitado.
+  const lockedByAllocation = offered.some((o) => o.blockedBy?.includes(ACTIVE_ALLOCATION_BLOCK));
 
   const handleSave = async (): Promise<void> => {
     setError(null);
@@ -161,6 +165,9 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
           {ts('save')}
         </Button>
       </div>
+      {lockedByAllocation && (
+        <Text size="sm" className="text-amber-700" data-testid="patient-status-locked-notice">{ts('friendly.lockedByAllocation')}</Text>
+      )}
       {optionsState.phase === 'error' && (
         <div className="flex items-center gap-2" data-testid="patient-status-options-error">
           <Text size="sm" className="text-red-600">{ts('optionsLoadError')}</Text>
@@ -172,11 +179,11 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
       {goingOnHold && (
         <>
           <FormField label={ts('reason')} htmlFor="patient-status-reason" required>
-            <SelectField
+            <Combobox
               id="patient-status-reason"
               inputSize="compact"
               options={reasonOptions}
-              placeholder={t('admin.patients.editDrawer.unset')}
+              placeholder={t('admin.patients.editDrawer.unset')} clearLabel={t('admin.patients.editDrawer.unset')}
               value={reason}
               onChange={(v) => setReason(v)}
               data-testid="patient-status-reason"

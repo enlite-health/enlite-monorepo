@@ -12,7 +12,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { patientSearchOptions } from './patientOptions';
 import { PatientSwapIcon } from './PatientSwapIcon';
-import { ProviderFilterCombobox } from './ProviderFilterCombobox';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import type { AnaCareListPatient } from './types';
 
 interface AnaCareHoursPatientSwitchProps {
@@ -66,15 +66,16 @@ export function AnaCareHoursPatientSwitch({ patients, currentPatientId, onSelect
           <div role="dialog" aria-modal="true" aria-labelledby="anacare-hours-patient-switch-title" className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 flex flex-col gap-4">
             <Heading level={3} id="anacare-hours-patient-switch-title">{t(`${I18N}.patientSwitchTitle`)}</Heading>
             <div className="flex flex-col gap-1.5">
-              <ProviderFilterCombobox
+              <Combobox
+                inputSize="compact"
                 id={FIELD_ID}
+                data-testid={FIELD_ID}
                 options={options}
                 value=""
-                onValueChange={handleChoose}
+                onChange={handleChoose}
                 placeholder={t(`${I18N}.patientSwitchPlaceholder`)}
-                ariaLabel={label}
-                noMatchLabel={t(`${I18N}.patientSwitchNoMatch`)}
-                hideAllOption
+                aria-label={label}
+                noResultsLabel={t(`${I18N}.patientSwitchNoMatch`)}
               />
               <Text size="xs" color="muted" data-testid="anacare-hours-patient-switch-help">{t('admin.anacareHours.export.help')}</Text>
               {patients.length === 0 && (

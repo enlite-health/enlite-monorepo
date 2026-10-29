@@ -14,6 +14,7 @@
  */
 
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // ── Mock identities ───────────────────────────────────────────────────────────
 
@@ -229,8 +230,8 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Tipo is the 2nd select (0-indexed: 0=status, 1=type)
-    const selects = page.locator('select');
+    // Tipo é o 2º combobox da barra (0-indexed: 0=status, 1=type)
+    const selects = filterBar(page).getByRole('combobox');
 
     const reqWait = page.waitForRequest((req) =>
       req.url().includes('/api/admin/vacancies') &&
@@ -238,7 +239,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !req.url().includes('stats') &&
       req.url().includes('worker_type=AT'),
     );
-    await selects.nth(1).selectOption('AT');
+    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
     const req = await reqWait;
     expect(req.url()).toContain('worker_type=AT');
   });
@@ -248,8 +249,8 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Sexo is the 5th select (0=status,1=type,2=province,3=city,4=sex)
-    const selects = page.locator('select');
+    // Sexo é o 5º combobox da barra (0=status,1=type,2=province,3=city,4=sex)
+    const selects = filterBar(page).getByRole('combobox');
 
     const reqWait = page.waitForRequest((req) =>
       req.url().includes('/api/admin/vacancies') &&
@@ -257,8 +258,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !req.url().includes('stats') &&
       req.url().includes('required_sex=F'),
     );
-    // Selects nativos restantes: status(0), type(1), sex(2) — Provincia/Localidad/horários viraram combobox.
-    await selects.nth(2).selectOption('F');
+    await escolherNoCombo(page, selects.nth(4), 'Femenino'); // F = Femenino
     const req = await reqWait;
     expect(req.url()).toContain('required_sex=F');
   });
@@ -320,16 +320,16 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Apply Tipo = AT (2nd select)
-    const selects = page.locator('select');
-    await selects.nth(1).selectOption('AT');
-
+    // Apply Tipo = AT (2nd combobox)
+    const selects = filterBar(page).getByRole('combobox');
     // Wait for filter request to complete
-    await page.waitForResponse((res) =>
+    const resposta = page.waitForResponse((res) =>
       res.url().includes('/api/admin/vacancies') &&
       !res.url().includes('filter-options') &&
       !res.url().includes('stats'),
     );
+    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
+    await resposta;
 
     // Small stable delay for any animations
     await page.waitForTimeout(300);
@@ -345,9 +345,9 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Apply Tipo = AT (2nd select)
-    const selects = page.locator('select');
-    await selects.nth(1).selectOption('AT');
+    // Apply Tipo = AT (2nd combobox)
+    const selects = filterBar(page).getByRole('combobox');
+    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
 
     // Limpiar button should appear
     const clearBtn = filterBar(page).getByText('Limpiar filtros');
@@ -355,7 +355,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
 
     await clearBtn.click();
 
-    // After clear, the Tipo select should be back to empty
-    await expect(selects.nth(1)).toHaveValue('');
+    // After clear, the Tipo combobox should be back to the placeholder
+    await expect(selects.nth(1)).toHaveText('Todos');
   });
 });

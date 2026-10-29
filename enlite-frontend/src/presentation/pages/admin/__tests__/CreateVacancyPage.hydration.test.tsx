@@ -61,7 +61,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     generateAIContent: vi.fn(),
     createVacancy: vi.fn(),
     updateVacancy: vi.fn(),
-    updateVacancyMeetLinks: vi.fn(),
     // Draft-check: return empty so the resume dialog never opens in these tests
     listDraftsForPatient: vi.fn().mockResolvedValue([]),
     // Address-has-vacancy guard: return empty so the dialog never opens in these tests
@@ -94,15 +93,15 @@ function renderPage() {
   );
 }
 
-// case-select is a SearchableSelect (custom dropdown), not a native <select>.
-// To pick a case: click the trigger button to open the listbox, then click the
+// case-select is a Combobox (custom dropdown), not a native <select>.
+// To pick a case: click the trigger to open the listbox, then click the
 // option with the matching label.
 async function pickCase(caseLabel: string): Promise<void> {
   const wrapper = await screen.findByTestId('case-select');
-  const trigger = within(wrapper).getByRole('button');
+  const trigger = within(wrapper).getByRole('combobox');
   await userEvent.click(trigger);
   const option = await screen.findByRole('option', { name: caseLabel });
-  await userEvent.click(option);
+  await userEvent.click(option.querySelector('button') as HTMLElement); // o clique real cai no <button> da linha
 }
 
 describe('CreateVacancyPage — patient hydration smoke', () => {
@@ -161,8 +160,8 @@ describe('CreateVacancyPage — patient hydration smoke', () => {
 
     await pickCase('CASO 99');
 
-    // Picking a case is necessary but not sufficient — schedule, profession,
-    // meet link and address are still required by the schema.
+    // Picking a case is necessary but not sufficient — schedule, profession
+    // and address are still required by the schema.
     await waitFor(() => {
       expect(AdminApiService.getPatientById).toHaveBeenCalled();
     });

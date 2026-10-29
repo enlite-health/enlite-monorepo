@@ -9,10 +9,9 @@ import {
   WORKER_TRASTORNO_TYPES,
 } from '@domain/entities/Worker';
 import { Text } from '@presentation/components/atoms/Text';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import {
   getKnowledgeLevelLabel,
   getYearsExperienceLabel,
@@ -29,7 +28,7 @@ interface Props {
 
 /**
  * Professional-data section of the worker edit drawer. Compact DS fields:
- * SelectField for single enums, MultiSelect for arrays, InputWithIcon for text.
+ * Combobox for single enums, MultiSelect for arrays, InputWithIcon for text.
  * Option labels reuse the existing workerDetailLabels resolvers.
  */
 export function WorkerEditProfessionalFields({ control, register }: Props): JSX.Element {
@@ -37,14 +36,14 @@ export function WorkerEditProfessionalFields({ control, register }: Props): JSX.
   const tm = (k: string, def: string) => t(`admin.workerDetail.editModal.${k}`, { defaultValue: def });
 
   // occupation == enum de profession (mig 076) → reusa os labels de profissão
-  const occupationOpts: SelectOption[] = WORKER_OCCUPATIONS.map((v) => ({
+  const occupationOpts: ComboboxOption[] = WORKER_OCCUPATIONS.map((v) => ({
     value: v, label: t(`admin.workerDetail.professionValue.${v}`, { defaultValue: v }),
   }));
-  const knowledgeOpts: SelectOption[] = WORKER_KNOWLEDGE_LEVELS.map((v) => ({ value: v, label: getKnowledgeLevelLabel(t, v) ?? v }));
-  const yearsOpts: SelectOption[] = WORKER_YEARS_EXPERIENCE.map((v) => ({ value: v, label: getYearsExperienceLabel(t, v) ?? v }));
-  const ageOpts: SelectOption[] = WORKER_AGE_RANGES.map((v) => ({ value: v, label: getAgeRangeLabel(t, v) }));
-  const langOpts: SelectOption[] = WORKER_LANGUAGES.map((v) => ({ value: v, label: getLanguageLabel(t, v) }));
-  const trastornoOpts: SelectOption[] = WORKER_TRASTORNO_TYPES.map((v) => ({ value: v, label: getExperienceTypeLabel(t, v) }));
+  const knowledgeOpts: ComboboxOption[] = WORKER_KNOWLEDGE_LEVELS.map((v) => ({ value: v, label: getKnowledgeLevelLabel(t, v) ?? v }));
+  const yearsOpts: ComboboxOption[] = WORKER_YEARS_EXPERIENCE.map((v) => ({ value: v, label: getYearsExperienceLabel(t, v) ?? v }));
+  const ageOpts: ComboboxOption[] = WORKER_AGE_RANGES.map((v) => ({ value: v, label: getAgeRangeLabel(t, v) }));
+  const langOpts: ComboboxOption[] = WORKER_LANGUAGES.map((v) => ({ value: v, label: getLanguageLabel(t, v) }));
+  const trastornoOpts: ComboboxOption[] = WORKER_TRASTORNO_TYPES.map((v) => ({ value: v, label: getExperienceTypeLabel(t, v) }));
 
   return (
     <div className="flex flex-col gap-4 pt-2 border-t border-slate-100">
@@ -55,17 +54,17 @@ export function WorkerEditProfessionalFields({ control, register }: Props): JSX.
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField label={t('admin.workerDetail.occupation')} htmlFor="we-occupation">
           <Controller control={control} name="occupation" render={({ field }) => (
-            <SelectField inputSize="compact" options={occupationOpts} placeholder={tm('unset', '—')} value={field.value} onChange={field.onChange} data-testid="we-occupation" />
+            <Combobox inputSize="compact" options={occupationOpts} placeholder={tm('unset', '—')} clearLabel={tm('unset', '—')} value={field.value} onChange={field.onChange} data-testid="we-occupation" />
           )} />
         </FormField>
         <FormField label={t('admin.workerDetail.knowledgeLevel')} htmlFor="we-knowledge">
           <Controller control={control} name="knowledgeLevel" render={({ field }) => (
-            <SelectField inputSize="compact" options={knowledgeOpts} placeholder={tm('unset', '—')} value={field.value} onChange={field.onChange} data-testid="we-knowledge" />
+            <Combobox inputSize="compact" options={knowledgeOpts} placeholder={tm('unset', '—')} clearLabel={tm('unset', '—')} value={field.value} onChange={field.onChange} data-testid="we-knowledge" />
           )} />
         </FormField>
         <FormField label={t('admin.workerDetail.yearsExperience')} htmlFor="we-years">
           <Controller control={control} name="yearsExperience" render={({ field }) => (
-            <SelectField inputSize="compact" options={yearsOpts} placeholder={tm('unset', '—')} value={field.value} onChange={field.onChange} data-testid="we-years" />
+            <Combobox inputSize="compact" options={yearsOpts} placeholder={tm('unset', '—')} clearLabel={tm('unset', '—')} value={field.value} onChange={field.onChange} data-testid="we-years" />
           )} />
         </FormField>
         <FormField label={t('admin.workerDetail.titleCertificate')} htmlFor="we-title">
@@ -75,23 +74,23 @@ export function WorkerEditProfessionalFields({ control, register }: Props): JSX.
 
       <FormField label={t('admin.workerDetail.experienceTypes')}>
         <Controller control={control} name="experienceTypes" render={({ field }) => (
-          <MultiSelect options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-experienceTypes" />
+          <Combobox multiple options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-experienceTypes" inputSize="compact" />
         )} />
       </FormField>
       <FormField label={t('admin.workerDetail.preferredTypes')}>
         <Controller control={control} name="preferredTypes" render={({ field }) => (
-          <MultiSelect options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-preferredTypes" />
+          <Combobox multiple options={trastornoOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-preferredTypes" inputSize="compact" />
         )} />
       </FormField>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField label={t('admin.workerDetail.preferredAgeRange')}>
           <Controller control={control} name="preferredAgeRange" render={({ field }) => (
-            <MultiSelect options={ageOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-ageRange" />
+            <Combobox multiple options={ageOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-ageRange" inputSize="compact" />
           )} />
         </FormField>
         <FormField label={t('admin.workerDetail.languages')}>
           <Controller control={control} name="languages" render={({ field }) => (
-            <MultiSelect options={langOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-languages" />
+            <Combobox multiple options={langOpts} value={field.value} onChange={field.onChange} placeholder={tm('unset', '—')} id="we-languages" inputSize="compact" />
           )} />
         </FormField>
       </div>

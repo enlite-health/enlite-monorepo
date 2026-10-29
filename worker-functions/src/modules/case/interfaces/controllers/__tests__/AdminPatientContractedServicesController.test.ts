@@ -16,7 +16,9 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn(), loggingAls: { getS
 import { AdminPatientContractedServicesController } from '../AdminPatientContractedServicesController';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../../infrastructure/PatientContractedServiceRepository';
-import { ProviderAlreadyActiveError } from '../../../infrastructure/ContractedServiceProviderRepository';
+import { SlotHasActiveAllocationError } from '../../../application/ItinerarySlotWriteUseCase';
+import { ServiceSlotOverlapError } from '../../../infrastructure/ServiceSlotWriter';
+import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import type { Response } from 'express';
 
@@ -226,7 +228,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(null) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -234,7 +236,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, patientId: 'outro-paciente' }) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -247,6 +249,38 @@ describe('AdminPatientContractedServicesController', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ADDRESS_NOT_OF_PATIENT' }));
     });
 
+    it('422 SLOT_HAS_ACTIVE_ALLOCATION nomeando o slot quando o sync recusa desativar slot alocado (D442)', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new SlotHasActiveAllocationError('svc', 'slot-1')) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { schedule: null } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, code: 'SLOT_HAS_ACTIVE_ALLOCATION', details: { slotId: 'slot-1' } }),
+      );
+      expect(reportError).not.toHaveBeenCalled();
+      console.log('[12.P4]', 'status', res.status.mock.calls[0][0], 'code', res.json.mock.calls[0][0].code);
+    });
+
+    it('ServiceSlotOverlapError → 409 SLOT_OVERLAP (PATCH e POST), sem reportError', async () => {
+      const body = { schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }] };
+      const repo = {
+        findById: jest.fn().mockResolvedValue(SERVICE),
+        update: jest.fn().mockRejectedValue(new ServiceSlotOverlapError('svc')),
+        create: jest.fn().mockRejectedValue(new ServiceSlotOverlapError('svc')),
+      };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'SLOT_OVERLAP' }));
+      const res2 = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { serviceCode: 'AT', ...body } }), res2);
+      expect(res2.status).toHaveBeenCalledWith(409);
+      expect(res2.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SLOT_OVERLAP' }));
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('422 SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY quando o repo recusa apagar o horário com vaga viva (F2)', async () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new ServiceFieldRequiredByLiveVacancyError('schedule', ['vac-1'])) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
@@ -256,11 +290,21 @@ describe('AdminPatientContractedServicesController', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', details: { field: 'schedule', vacancyIds: ['vac-1'] } }));
     });
 
+    it.each(['UNKNOWN_COUNTRY', 'ITINERARY_SLOT_CAPACITY_EXCEEDED', 'PROVIDERS_NEEDED_BELOW_OCCUPANCY', 'PROVIDERS_NEEDED_CANNOT_CLEAR'])('P0001 %s → 422 com o próprio código, sem reportError', async (code) => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(Object.assign(new Error(code), { code: 'P0001' })) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: code, code });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('200 quando atualiza com sucesso', async () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
@@ -278,7 +322,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(null) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
@@ -294,7 +338,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new Error('boom')) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
 
@@ -302,146 +346,8 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue('x') };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-
-  describe('associateProvider', () => {
-    it('400 params inválidos', async () => {
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never);
-      const res = mockRes();
-      await controller.associateProvider(mockReq({ params: { id: PATIENT_ID, sid: 'x' }, body: { workerId: WORKER_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-
-    it('400 body inválido (workerId ausente)', async () => {
-      const repo = { findById: jest.fn() };
-      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
-      const res = mockRes();
-      await controller.associateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: {} }), res);
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(repo.findById).not.toHaveBeenCalled();
-    });
-
-    it('404 quando o serviço não existe ou é de outro paciente', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue(null) };
-      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
-      const res = mockRes();
-      await controller.associateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { workerId: WORKER_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(404);
-    });
-
-    it('201 quando associa com sucesso', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, country: 'AR' }) };
-      const providerRepo = { associate: jest.fn().mockResolvedValue({ id: PROVIDER_ID }) };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.associateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { workerId: WORKER_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(201);
-      expect(providerRepo.associate.mock.calls[0][0]).toMatchObject({ serviceId: SERVICE_ID, workerId: WORKER_ID, country: 'AR', actorUid: 'uid-1' });
-    });
-
-    it('409 quando o par já está ativo', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue(SERVICE) };
-      const providerRepo = { associate: jest.fn().mockRejectedValue(new ProviderAlreadyActiveError(SERVICE_ID, WORKER_ID)) };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.associateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { workerId: WORKER_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(409);
-    });
-
-    it('500 em erro genérico', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue(SERVICE) };
-      const providerRepo = { associate: jest.fn().mockRejectedValue(new Error('boom')) };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.associateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { workerId: WORKER_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-
-    it('500 quando rejeita com algo que não é Error', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue(SERVICE) };
-      const providerRepo = { associate: jest.fn().mockRejectedValue('x') };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.associateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { workerId: WORKER_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-
-  describe('updateProvider', () => {
-    it('400 params inválidos', async () => {
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: 'x' }, body: {} }), res);
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-
-    it('400 body inválido (active:true — só false é caminho de baixa)', async () => {
-      const repo = { findById: jest.fn() };
-      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: true } }), res);
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(repo.findById).not.toHaveBeenCalled();
-    });
-
-    it('404 quando o serviço não existe/é de outro paciente', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue(null) };
-      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
-      expect(res.status).toHaveBeenCalledWith(404);
-    });
-
-    it('404 quando o :pid não pertence ao serviço', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, providers: [] }) };
-      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
-      expect(res.status).toHaveBeenCalledWith(404);
-    });
-
-    it('200 quando atualiza com sucesso (baixa)', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, providers: [{ id: PROVIDER_ID }] }) };
-      const providerRepo = { update: jest.fn().mockResolvedValue({ id: PROVIDER_ID, active: false }) };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(providerRepo.update.mock.calls[0]).toEqual([PROVIDER_ID, { active: false, actorUid: 'uid-1' }]);
-    });
-
-    it('500 em erro genérico', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, providers: [{ id: PROVIDER_ID }] }) };
-      const providerRepo = { update: jest.fn().mockRejectedValue(new Error('boom')) };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-
-    it('500 quando rejeita com algo que não é Error', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, providers: [{ id: PROVIDER_ID }] }) };
-      const providerRepo = { update: jest.fn().mockRejectedValue('x') };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-
-    // C8: `update()` devolve null quando a linha sumiu entre o findById e o UPDATE — 200 com
-    // `data: null` mente para um cliente que tipa o campo como não-nulo
-    // (AdminContractedServicesApiService.ts:126). O irmão `update` do serviço já devolve 404.
-    it('C8: 404 (nunca 200 com data:null) quando a alocação some entre a leitura e a escrita', async () => {
-      const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, providers: [{ id: PROVIDER_ID }] }) };
-      const providerRepo = { update: jest.fn().mockResolvedValue(null) };
-      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
-      const res = mockRes();
-      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
-      expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json.mock.calls[0][0]).toEqual({ success: false, error: 'Provider allocation not found' });
     });
   });
 
@@ -456,7 +362,7 @@ describe('AdminPatientContractedServicesController', () => {
       const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
       const res = mockRes();
-      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 10 }, user: naoAdmin }), res);
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { providersNeeded: 10 }, user: naoAdmin }), res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(repo.update).toHaveBeenCalled();
     });
@@ -470,7 +376,7 @@ describe('AdminPatientContractedServicesController', () => {
   describe('activateRecruitment', () => {
     it('400 quando params inválidos', async () => {
       const useCase = { execute: jest.fn() };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: 'not-a-uuid', sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(400);
@@ -479,7 +385,7 @@ describe('AdminPatientContractedServicesController', () => {
 
     it('201 quando o use case cria a vaga — devolve vacancyId/patientStatus/statusChanged', async () => {
       const useCase = { execute: jest.fn().mockResolvedValue({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true }) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, user: { uid: 'staff-uid-1', roles: ['admin'] } }), res);
       expect(useCase.execute).toHaveBeenCalledWith(
@@ -498,7 +404,7 @@ describe('AdminPatientContractedServicesController', () => {
       const useCase = { execute: jest.fn().mockResolvedValue({
         vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
       }) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(201);
@@ -513,7 +419,7 @@ describe('AdminPatientContractedServicesController', () => {
     // uid do req autenticado — não só "truthy" ou "não nulo".
     it('spec 029 — 3º argumento de execute() é o HumanActor derivado do uid autenticado da request (mock.calls[0][2])', async () => {
       const useCase = { execute: jest.fn().mockResolvedValue({ vacancyId: 'vac-2', patientStatus: 'ADMISSION', statusChanged: false }) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       const authenticatedUid = 'staff-uid-autenticado-2';
       await controller.activateRecruitment(
@@ -531,7 +437,7 @@ describe('AdminPatientContractedServicesController', () => {
     // igual ao comportamento anterior a esta mudança.
     it('spec 029 — request sem user.uid → 3º argumento cai para SYSTEM/actorUserId null (nunca "unknown")', async () => {
       const useCase = { execute: jest.fn().mockResolvedValue({ vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false }) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(
         mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, user: { roles: ['admin'] } }),
@@ -545,7 +451,7 @@ describe('AdminPatientContractedServicesController', () => {
     it('404 quando o paciente não existe', async () => {
       const { PatientNotFoundForRecruitmentError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
       const useCase = { execute: jest.fn().mockRejectedValue(new PatientNotFoundForRecruitmentError(PATIENT_ID)) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
@@ -555,7 +461,7 @@ describe('AdminPatientContractedServicesController', () => {
     it('404 quando o serviço não existe / é de outro paciente / está inativo', async () => {
       const { ServiceNotFoundForRecruitmentError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
       const useCase = { execute: jest.fn().mockRejectedValue(new ServiceNotFoundForRecruitmentError(PATIENT_ID, SERVICE_ID)) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
@@ -565,7 +471,7 @@ describe('AdminPatientContractedServicesController', () => {
     it('409 quando o serviço já tem vaga viva — devolve o vacancyId existente', async () => {
       const { ServiceAlreadyRecruitingError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
       const useCase = { execute: jest.fn().mockRejectedValue(new ServiceAlreadyRecruitingError('vac-old')) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(409);
@@ -575,7 +481,7 @@ describe('AdminPatientContractedServicesController', () => {
     it('422 quando o gate recusa — devolve PATIENT_NOT_READY com details.missing', async () => {
       const { RecruitmentNotReadyError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
       const useCase = { execute: jest.fn().mockRejectedValue(new RecruitmentNotReadyError(PATIENT_ID, SERVICE_ID, ['SERVICE_SCHEDULE'])) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(422);
@@ -588,7 +494,7 @@ describe('AdminPatientContractedServicesController', () => {
 
     it('500 em erro genérico (instância de Error)', async () => {
       const useCase = { execute: jest.fn().mockRejectedValue(new Error('boom')) };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
@@ -596,7 +502,7 @@ describe('AdminPatientContractedServicesController', () => {
 
     it('500 quando rejeita com algo que não é Error', async () => {
       const useCase = { execute: jest.fn().mockRejectedValue('rejeição crua') };
-      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);

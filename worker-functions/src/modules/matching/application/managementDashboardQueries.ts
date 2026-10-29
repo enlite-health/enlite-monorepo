@@ -32,7 +32,7 @@ import {
   CURRENT_WEEK_START_SQL,
 } from '../domain/interviewSchedule';
 import type { CountryCode } from '@shared/domain/countryCodes';
-import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { workerAptoSql } from '@shared/database/workerAptoSql';
 
 /** Linha de contagem simples chave→valor. */
 export interface CountRow {
@@ -128,20 +128,6 @@ export function ubicacionesActivasQuery(db: Pool, countries: CountryCode[]) {
   );
 }
 
-/** Horas EM ATENDIMENTO (linha RODANDO, D2): vagas `status='ACTIVE'`. */
-export function horasAtivasQuery(db: Pool, countries: CountryCode[]) {
-  return db.query<{ schedule: unknown }>(
-    `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule
-       FROM job_postings jp
-       ${vacancyEffectiveJoinSql('jp')}
-       JOIN patients p ON p.id = jp.patient_id
-      WHERE jp.deleted_at IS NULL AND jp.is_draft = false AND jp.status = 'ACTIVE'
-        AND p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false
-        AND ${countryPredicateSql('jp', 1)}`,
-    [countries],
-  );
-}
-
 /** Cadastros de prestadores (leads/completos/incompletos/novos no mês). */
 export function workerCadastrosQuery(db: Pool, countries: CountryCode[]) {
   return db.query<{
@@ -179,7 +165,11 @@ export function funnelLegadoQuery(db: Pool, countries: CountryCode[]) {
   );
 }
 
-/** "Completos esperando agenda" — pessoas distintas em vaga viva. */
+/**
+ * "Completos esperando agenda" — pessoas distintas em vaga viva. 067 (FR-06): é o conceito Completado/convocável (a fila de
+ * "ligar primeiro" para marcar o encuadre), então só entra quem está APTO — o mesmo recorte do Kanban e do seletor de convocados.
+ * Qualificado não apto está em Bloqueados e não pode ser agendado (`workerAptoSql` = o dono `fn_worker_is_apto`).
+ */
 export function esperandoAgendaQuery(db: Pool, countries: CountryCode[]) {
   return db.query<{ esperando: number }>(
     `SELECT COUNT(DISTINCT wja.worker_id)::int AS esperando
@@ -187,6 +177,7 @@ export function esperandoAgendaQuery(db: Pool, countries: CountryCode[]) {
        JOIN job_postings jp ON jp.id = wja.job_posting_id
        JOIN workers      w  ON w.id  = wja.worker_id
       WHERE wja.application_funnel_stage = 'QUALIFIED'
+        AND ${workerAptoSql('w.id')}
         AND ${LIVE_JOB_POSTING_SQL}
         AND w.merged_into_id IS NULL
         -- fila de contato: quem deu baixa não deve ser ligado

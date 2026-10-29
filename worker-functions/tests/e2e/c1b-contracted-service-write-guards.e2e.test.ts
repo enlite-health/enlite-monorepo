@@ -83,13 +83,13 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
     expect(out.status).toBe(400);
     expect(Number((await svc()).hourly_value)).toBe(LEGADO);
     // controle positivo: o MESMO ator, sem a chave legada, edita o serviço
-    const [req2, res2, out2] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 22 }, ['admin']);
+    const [req2, res2, out2] = reqRes({ id: patientId, sid: serviceId }, { providersNeeded: 2 }, ['admin']);
     await controller.update(req2, res2);
     expect(out2.status).toBe(200);
   });
 
   it('C4-c. `recruiter` editando OUTRO campo passa; o preço do termo que ele não vê sai REDACTED e a coluna legada continua intacta', async () => {
-    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 20 }, ['recruiter']);
+    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { providersNeeded: 2 }, ['recruiter']);
     await controller.update(req, res);
     expect(out.status).toBe(200);
     // Spec 047 (F2): sem decisão do engine o papel `recruiter` também não lê a vaga — `null` + redigida:true.
@@ -103,7 +103,7 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
 
   // 07/09 — o papel deixou de ser nível: com o engine decidindo, só a célula conta.
   it('C4-d. engine decidiu: `recruiter` COM `patient_contract_value:read` lê o preço do termo (e continua sem a vaga)', async () => {
-    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 20 }, ['recruiter'], ['patient_services:write', 'patient_contract_value:read']);
+    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { providersNeeded: 2 }, ['recruiter'], ['patient_services:write', 'patient_contract_value:read']);
     await controller.update(req, res);
     expect(out.status).toBe(200);
     // As duas redações são independentes: lê o preço (patient_contract_value:read) e NÃO lê a vaga (sem vacancy:read).
@@ -114,7 +114,7 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
   });
 
   it('C4-e. engine decidiu: `admin` SEM a célula → preço REDACTED na leitura — o papel não abre mais nada', async () => {
-    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 10 }, ['admin'], ['patient_services:write']);
+    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { providersNeeded: 2 }, ['admin'], ['patient_services:write']);
     await controller.update(req, res);
     expect(out.status).toBe(200);
     const { data } = out.body as Body;

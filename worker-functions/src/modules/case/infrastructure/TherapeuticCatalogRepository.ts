@@ -3,10 +3,12 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import {
   THERAPEUTIC_CATALOG_TABLE,
+  catalogHasDescription,
   type CatalogSnapshotItem,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogSnapshotItem,
 } from '../domain/TherapeuticProject';
+import { SERVICE_EXIT_REASON_KIND, SERVICE_EXIT_REASON_TABLE, type AdminCatalogKind } from '../domain/serviceExitReason';
 
 export interface CatalogItem {
   id: string;
@@ -18,6 +20,10 @@ export interface CatalogItem {
   updatedAt: string;
   /** Só objetivos/atividades (migration 430) — a tabela `therapeutic_segments` não tem esta coluna. */
   segmentId?: string | null;
+  /** Só o catálogo de motivos de saída (migration 492) — código estável que as marcas referenciam. */
+  code?: string;
+  /** Só objetivos/atividades (migration 547) — `therapeutic_segments` não tem esta coluna. */
+  description?: string | null;
 }
 
 interface CatalogRow {
@@ -29,6 +35,8 @@ interface CatalogRow {
   created_at: string;
   updated_at: string;
   segment_id?: string | null;
+  code?: string;
+  description?: string | null;
 }
 
 /** Rótulo já existe entre os ATIVOS (índice `uq_<tabela>_label_ativo`, 415). */
@@ -55,6 +63,12 @@ export class CatalogSegmentInvalidError extends Error {
   }
 }
 
+/** Tabela por kind: os 3 terapêuticos (domínio) + o de motivos de saída, que NÃO entra em `THERAPEUTIC_CATALOG_TABLE`. */
+const ADMIN_CATALOG_TABLE: Readonly<Record<AdminCatalogKind, string>> = {
+  ...THERAPEUTIC_CATALOG_TABLE,
+  [SERVICE_EXIT_REASON_KIND]: SERVICE_EXIT_REASON_TABLE,
+};
+
 const isLabelUnique = (err: unknown): boolean =>
   typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505'
   && /_label_ativo/.test(String((err as { constraint?: string }).constraint ?? ''));
@@ -70,6 +84,10 @@ const toItem = (r: CatalogRow): CatalogItem => ({
   // Só entra quando a linha TEM a coluna (objetivos/atividades) — `segments` não tem `segment_id`,
   // e o mock de teste sem a chave não pode ganhar `segmentId: undefined` (quebraria o `toEqual` exato).
   ...(r.segment_id !== undefined ? { segmentId: r.segment_id } : {}),
+  // Idem `code` (492): só o catálogo de motivos de saída tem a coluna.
+  ...(r.code !== undefined ? { code: r.code } : {}),
+  // Idem `segment_id`: só entra quando a linha TEM a coluna `description` (547).
+  ...(r.description !== undefined ? { description: r.description } : {}),
 });
 
 /**
@@ -85,14 +103,17 @@ export class TherapeuticCatalogRepository {
     return this.poolMemo;
   }
 
-  private table(kind: TherapeuticCatalogKind): string {
-    return THERAPEUTIC_CATALOG_TABLE[kind];
+  private table(kind: AdminCatalogKind): string {
+    return ADMIN_CATALOG_TABLE[kind];
   }
 
-  async list(kind: TherapeuticCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<CatalogItem[]> {
+  async list(kind: AdminCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<CatalogItem[]> {
     const where = opts.includeInactive ? '' : 'WHERE active';
+    // Só atividades/objetivos (spec 061) são alfabéticos; `segments` e o catálogo de motivos de saída
+    // mantêm a ordem manual de antes.
+    const orderBy = catalogHasDescription(kind) ? 'lower(label)' : 'active DESC, sort_order, lower(label)';
     const res = await this.pool.query<CatalogRow>(
-      `SELECT * FROM ${this.table(kind)} ${where} ORDER BY active DESC, sort_order, lower(label)`,
+      `SELECT * FROM ${this.table(kind)} ${where} ORDER BY ${orderBy}`,
     );
     return res.rows.map(toItem);
   }
@@ -105,8 +126,8 @@ export class TherapeuticCatalogRepository {
    */
   async snapshotOf(kind: TherapeuticCatalogKind, ids: readonly string[], cli: Pool | PoolClient = this.pool): Promise<TherapeuticCatalogSnapshotItem[]> {
     const unique = [...new Set(ids)];
-    const res = await cli.query<{ id: string; label: string; segment_id: string | null; segment_label: string | null }>(
-      `SELECT c.id, c.label, c.segment_id, s.label AS segment_label
+    const res = await cli.query<{ id: string; label: string; description: string | null; segment_id: string | null; segment_label: string | null }>(
+      `SELECT c.id, c.label, c.description, c.segment_id, s.label AS segment_label
          FROM ${this.table(kind)} c
          LEFT JOIN therapeutic_segments s ON s.id = c.segment_id
         WHERE c.active AND c.id = ANY($1::uuid[]) ORDER BY c.sort_order, lower(c.label)`,
@@ -115,7 +136,7 @@ export class TherapeuticCatalogRepository {
     const found = new Set(res.rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
     if (missing.length > 0) throw new CatalogItemsUnknownError(kind, missing);
-    return res.rows.map((r) => ({ id: r.id, label: r.label, segmentId: r.segment_id, segmentLabel: r.segment_label }));
+    return res.rows.map((r) => ({ id: r.id, label: r.label, ...(r.description ? { description: r.description } : {}), segmentId: r.segment_id, segmentLabel: r.segment_label }));
   }
 
   /**
@@ -145,7 +166,7 @@ export class TherapeuticCatalogRepository {
     if (res.rows.length === 0) throw new CatalogSegmentInvalidError();
   }
 
-  async create(kind: TherapeuticCatalogKind, input: { label: string; sortOrder?: number; segmentId?: string | null; actorUid: string }): Promise<CatalogItem> {
+  async create(kind: AdminCatalogKind, input: { label: string; sortOrder?: number; segmentId?: string | null; description?: string | null; actorUid: string }): Promise<CatalogItem> {
     if (input.segmentId !== undefined && input.segmentId !== null) await this.assertSegmentActive(input.segmentId);
     try {
       const row = await withActorContext(this.pool, async (cli) => {
@@ -159,6 +180,11 @@ export class TherapeuticCatalogRepository {
         if (input.segmentId !== undefined) {
           params.push(input.segmentId);
           cols.push('segment_id');
+          placeholders.push(`$${params.length}`);
+        }
+        if (catalogHasDescription(kind) && input.description !== undefined) {
+          params.push(input.description);
+          cols.push('description');
           placeholders.push(`$${params.length}`);
         }
         params.push(input.actorUid);
@@ -181,9 +207,9 @@ export class TherapeuticCatalogRepository {
 
   /** Merge Patch: chave ausente não toca a coluna. `active:false` carimba `deactivated_at`; `true` limpa. */
   async update(
-    kind: TherapeuticCatalogKind,
+    kind: AdminCatalogKind,
     id: string,
-    patch: { label?: string; sortOrder?: number; segmentId?: string | null; active?: boolean; actorUid: string },
+    patch: { label?: string; sortOrder?: number; segmentId?: string | null; description?: string | null; active?: boolean; actorUid: string },
   ): Promise<CatalogItem | null> {
     if (patch.segmentId !== undefined && patch.segmentId !== null) await this.assertSegmentActive(patch.segmentId);
     const sets: string[] = [];
@@ -195,6 +221,7 @@ export class TherapeuticCatalogRepository {
     if (patch.label !== undefined) push('label', patch.label);
     if (patch.sortOrder !== undefined) push('sort_order', patch.sortOrder);
     if (patch.segmentId !== undefined) push('segment_id', patch.segmentId);
+    if (catalogHasDescription(kind) && patch.description !== undefined) push('description', patch.description);
     if (patch.active !== undefined) {
       push('active', patch.active);
       sets.push(patch.active ? 'deactivated_at = NULL' : 'deactivated_at = NOW()');

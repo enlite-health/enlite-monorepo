@@ -6,7 +6,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Input } from '@presentation/components/atoms/Input';
-import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { Field } from './Field';
@@ -15,6 +14,7 @@ import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApi
 import { CONTRACT_COUNTRIES, type ContractCountry, type CreateInsuranceContractBody } from '@domain/entities/InsuranceContract';
 import { TermFields } from './TermFields';
 import { useTermDraft } from './termDraft';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   submitting: boolean;
@@ -85,13 +85,13 @@ export function ContractForm({ submitting, error, errorAction, onSubmit, onCance
           <Input inputSize="compact" id="contract-new-name" value={name} maxLength={160} onChange={(e) => setName(e.target.value)} data-testid="contract-new-name" />
         </Field>
         <Field label={t(`${NS}.contractForm.country`)} required htmlFor="contract-new-country">
-          <Select
+          <Combobox
             inputSize="compact"
             id="contract-new-country"
             value={country}
             placeholder={t(`${NS}.contractForm.countryPlaceholder`)}
             options={CONTRACT_COUNTRIES.map((c) => ({ value: c, label: t(`${NS}.countryOptions.${c}`) }))}
-            onValueChange={(v) => setCountry(v as ContractCountry | '')}
+            onChange={(v) => setCountry(v as ContractCountry | '')}
             data-testid="contract-new-country"
           />
         </Field>

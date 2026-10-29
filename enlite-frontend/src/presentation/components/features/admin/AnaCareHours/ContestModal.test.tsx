@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 import { ContestModal } from './ContestModal';
 import { CONTEST_NOTE_MAX_LENGTH, CONTEST_REASONS } from './types';
 
@@ -19,9 +20,8 @@ vi.mock('react-i18next', () => ({
 describe('ContestModal — 1.5b (D344)', () => {
   it('POSITIVO — lista as 4 opções de motivo fechado (no_asistio, horario_distinto, horas_mal_cargadas, otro)', () => {
     render(<ContestModal shiftDate="14/08" onConfirm={vi.fn()} onCancel={vi.fn()} />);
-    const select = screen.getByTestId('anacare-hours-contest-reason') as HTMLSelectElement;
-    const values = Array.from(select.options).map((o) => o.value).filter(Boolean);
-    expect(values).toEqual([...CONTEST_REASONS]);
+    // o mock de `t` devolve o último segmento da chave = o próprio valor do motivo
+    expect(comboLabels(screen.getByTestId('anacare-hours-contest-reason'))).toEqual([...CONTEST_REASONS]);
   });
 
   it('NEGATIVO — confirmar fica desabilitado sem motivo escolhido', () => {
@@ -32,7 +32,7 @@ describe('ContestModal — 1.5b (D344)', () => {
   it('POSITIVO — escolher um motivo habilita confirmar mesmo com nota vazia (nota é opcional)', () => {
     const onConfirm = vi.fn();
     render(<ContestModal shiftDate="14/08" onConfirm={onConfirm} onCancel={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'no_asistio' } });
+    chooseCombo(screen.getByTestId('anacare-hours-contest-reason'), 'no_asistio');
     expect(screen.getByTestId('anacare-hours-contest-confirm')).not.toBeDisabled();
     fireEvent.click(screen.getByTestId('anacare-hours-contest-confirm'));
     expect(onConfirm).toHaveBeenCalledWith('no_asistio', '');
@@ -41,7 +41,7 @@ describe('ContestModal — 1.5b (D344)', () => {
   it('POSITIVO — nota preenchida é enviada trimada junto do motivo', () => {
     const onConfirm = vi.fn();
     render(<ContestModal shiftDate="14/08" onConfirm={onConfirm} onCancel={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('anacare-hours-contest-reason'), 'otro');
     fireEvent.change(screen.getByTestId('anacare-hours-contest-note'), { target: { value: '  nota com espaço  ' } });
     fireEvent.click(screen.getByTestId('anacare-hours-contest-confirm'));
     expect(onConfirm).toHaveBeenCalledWith('otro', 'nota com espaço');
@@ -49,7 +49,7 @@ describe('ContestModal — 1.5b (D344)', () => {
 
   it(`NEGATIVO — nota acima de ${CONTEST_NOTE_MAX_LENGTH} caracteres desabilita confirmar, mesmo com motivo escolhido`, () => {
     render(<ContestModal shiftDate="14/08" onConfirm={vi.fn()} onCancel={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('anacare-hours-contest-reason'), 'otro');
     // maxLength do <textarea> é CONTEST_NOTE_MAX_LENGTH+1, então dá pra digitar 1 a mais e disparar o estado overLimit.
     fireEvent.change(screen.getByTestId('anacare-hours-contest-note'), { target: { value: 'x'.repeat(CONTEST_NOTE_MAX_LENGTH + 1) } });
     expect(screen.getByTestId('anacare-hours-contest-confirm')).toBeDisabled();

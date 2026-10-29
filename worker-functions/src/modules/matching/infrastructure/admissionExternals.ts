@@ -33,6 +33,8 @@ import { validEnquadreSummaryJson } from './doubles/enquadreSummaryFixtures';
 export interface AdmissionExternalsEnv {
   NODE_ENV?: string;
   ADMISSION_EXTERNALS?: string;
+  /** Marcador explícito de stage (`stage`); a prd não o define. */
+  ENLITE_DEPLOY_ENV?: string;
   /** Só em modo dublê: `unavailable` troca o Calendar dublê por um que FALHA de propósito (stack do e2e, docker-compose.test.yml). */
   ADMISSION_CALENDAR_DOUBLE?: string;
 }
@@ -94,7 +96,9 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
   const isTest = env.NODE_ENV === 'test';
   const wantsFake = isTest || env.ADMISSION_EXTERNALS === 'fake';
 
-  if (env.NODE_ENV === 'production' && env.ADMISSION_EXTERNALS === 'fake') {
+  // A stage roda NODE_ENV=production; o dublê só é aceito com o marcador explícito de stage (teste nunca toca canal real).
+  // Sem o marcador (prd), `fake` em production continua proibido.
+  if (env.NODE_ENV === 'production' && env.ADMISSION_EXTERNALS === 'fake' && env.ENLITE_DEPLOY_ENV !== 'stage') {
     throw new Error('createAdmissionExternals: ADMISSION_EXTERNALS=fake é proibido em produção');
   }
   if (isTest && env.ADMISSION_EXTERNALS === 'real') {

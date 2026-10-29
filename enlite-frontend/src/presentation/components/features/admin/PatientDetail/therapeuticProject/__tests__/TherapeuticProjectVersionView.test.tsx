@@ -46,8 +46,8 @@ const SERVICO: PatientContractedServiceDetail = {
   serviceCode: 'AT',
   professionalProfile: null,
   providersNeeded: 1,
-  authorizedHours: 20,
-  weeklyHours: 20,
+  authorization: null,
+  scheduleHours: 20,
   careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS,
   startDate: null,
@@ -373,5 +373,49 @@ describe('spec 048 — "Todavía no hay registro — vence el DD/MM" / "No neces
   it('no modo compacto (card) o bloco de contatos nem existe', () => {
     montar({ contactStatus: [{ kind: 'CARE_TEAM', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }] }, { compact: true });
     expect(screen.queryByTestId('tpv-contact-status')).not.toBeInTheDocument();
+  });
+});
+
+describe('atividades A–Z na exibição (spec 060)', () => {
+  const DESORDENADAS = [
+    { id: 'ac1', label: 'Zeta actividad' },
+    { id: 'ac2', label: 'Árbol actividad' },
+    { id: 'ac3', label: 'Mesa actividad' },
+    { id: 'ac4', label: 'Abeja actividad' },
+  ];
+  const lis = () => Array.from(screen.getByTestId('tpv-activities').querySelectorAll('li')).map((li) => li.textContent);
+
+  it('completo: A–Z; compacto: as 3 primeiras do ORDENADO (ordena antes do corte)', () => {
+    const { unmount } = montar({ activities: DESORDENADAS });
+    expect(lis()).toEqual(['Abeja actividad', 'Árbol actividad', 'Mesa actividad', 'Zeta actividad']);
+    unmount();
+    montar({ activities: DESORDENADAS }, { compact: true });
+    expect(lis()).toEqual(['Abeja actividad', 'Árbol actividad', 'Mesa actividad']);
+  });
+});
+
+describe('título + descrição do catálogo congelados na versão (spec 061)', () => {
+  it('mostra a descrição sob o título de objetivo e de atividade; item sem descrição não renderiza o nó', () => {
+    montar({
+      specificObjectives: [
+        { id: 'o1', label: 'TITULO-SINTETICO-OBJ', description: 'DESCRIPCION-SINTETICA-OBJ' },
+        { id: 'o2', label: 'TITULO-SINTETICO-OBJ-2' },
+      ],
+      activities: [
+        { id: 'a1', label: 'TITULO-SINTETICO-ACT', description: 'DESCRIPCION-SINTETICA-ACT' },
+        { id: 'a2', label: 'Otra actividad', description: null },
+      ],
+    });
+    expect(screen.getByTestId('tpv-specific-description-o1')).toHaveTextContent('DESCRIPCION-SINTETICA-OBJ');
+    expect(screen.getByTestId('tpv-activities-description-a1')).toHaveTextContent('DESCRIPCION-SINTETICA-ACT');
+    // Contraste AAA (#374151 = 10,3:1 sobre branco): o `muted` é gray-700 translúcido (~2:1).
+    for (const id of ['tpv-specific-description-o1', 'tpv-activities-description-a1']) {
+      expect(screen.getByTestId(id)).toHaveClass('text-[#374151]');
+      expect(screen.getByTestId(id)).not.toHaveClass('text-gray-700');
+    }
+    expect(screen.queryByTestId('tpv-specific-description-o2')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tpv-activities-description-a2')).not.toBeInTheDocument();
+    // O título segue visível (a descrição é ACRÉSCIMO).
+    expect(screen.getByTestId('tpv-specific')).toHaveTextContent('TITULO-SINTETICO-OBJ');
   });
 });

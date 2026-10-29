@@ -5,6 +5,7 @@ import { avaliarTroca, trocaPassaPelaGuarda } from './PatientStatusWriter';
 import { PATIENT_STATUSES, type PatientStatus } from '../domain/enums/PatientStatus';
 import { blockingCodesForStatusChange, type PatientCompletenessCode } from '../domain/PatientCompleteness';
 import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
+import { countVivasForPatient } from '../infrastructure/VacancyAllocationProbe';
 
 /**
  * Spec 051 (F3) — a LISTA de destinos de estado que o servidor aceitaria para este paciente e este
@@ -19,11 +20,17 @@ import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLo
 /** `fluxo` = tem linha na FSM; `permissao` = fora da FSM, liberada pela célula do destino. */
 export type ViaDaTroca = 'fluxo' | 'permissao';
 
+/** D489/D530: o paciente tem prestador com alocação VIVA no itinerário — toda troca manual é recusada. */
+export const ACTIVE_ALLOCATION_BLOCK = 'ACTIVE_ALLOCATION' as const;
+
 export interface PatientStatusOption {
   status: PatientStatus;
   via: ViaDaTroca;
-  /** Códigos de completude que faltam para ESTE destino; ausente quando nada falta. */
-  blockedBy?: PatientCompletenessCode[];
+  /**
+   * Por que ESTE destino está bloqueado: códigos de completude que faltam e/ou `ACTIVE_ALLOCATION`
+   * (alocação viva — vale para TODOS os destinos); ausente quando nada bloqueia.
+   */
+  blockedBy?: Array<PatientCompletenessCode | typeof ACTIVE_ALLOCATION_BLOCK>;
 }
 
 export interface PatientStatusOptions {
@@ -65,6 +72,12 @@ export async function loadStatusOptions(
     const a = avaliarTroca({ from: current, to: para, naFsm: naFsm.has(para), cells, changeSource });
     if (a.resultado === 'dentro_do_fluxo') aceitos.push({ status: para, via: 'fluxo' });
     else if (a.resultado === 'fora_do_fluxo_permitida') aceitos.push({ status: para, via: 'permissao' });
+  }
+
+  // D489/D530: com alocação viva o PUT recusa TODA troca manual (a lista só é pedida com origem manual) —
+  // então todo destino sai bloqueado, e a completude nem precisa ser lida.
+  if (await countVivasForPatient(client, patientId) > 0) {
+    return { current, changeSource, options: aceitos.map((o) => ({ ...o, blockedBy: [ACTIVE_ALLOCATION_BLOCK] })) };
   }
 
   // Completude lida uma vez, só se algum destino pede algo. Motivo de ON_HOLD e de saída de

@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { comboLabels, selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { ManagementDashboardPage } from '../ManagementDashboardPage';
 import { ManagementDashboardApiService } from '@infrastructure/http/ManagementDashboardApiService';
 import type { ManagementDashboardData } from '@domain/entities/ManagementDashboard';
@@ -47,8 +47,8 @@ function payloadWith(countries: Array<'AR' | 'BR'>, requested: 'AR' | 'BR' | 'AL
     prioridades: { completosEsperandoAgendamiento: 0, registrosIncompletos: 0, bloqueadosAlPostularse: 0 },
     funnelPorPrestador: {
       total: 0, recorte: 'vagas-vivas', periodoDias: null, bloqueados: 0,
-      porEtapa: { somavel: false, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
-      consolidado: { somavel: true, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
+      porEtapa: { somavel: false, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, BLOQUEADO: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
+      consolidado: { somavel: true, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, BLOQUEADO: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
     },
     funnel: { invitados: 0, bloqueados: 0, preScreening: 0, completos: 0, seleccionados: 0, rechazados: 0 },
     encuadres: { agendadosEstaSemana: 0 },
@@ -71,13 +71,14 @@ describe('ManagementDashboardPage — seletor de país (PR-9, L9-4)', () => {
 
     await waitFor(() => expect(screen.getByTestId('mgmt-country-filter')).toBeInTheDocument());
     const select = within(screen.getByTestId('mgmt-country-filter')).getByRole('combobox');
-    const optionTexts = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+    const optionTexts = comboLabels(select);
 
     expect(optionTexts).toContain('Argentina');
     expect(optionTexts).toContain('Brasil');
     expect(optionTexts).not.toContain('Portugal');
-    // Só as 2 jurisdições do ator + o placeholder "Todos" — nunca uma 4ª opção.
-    expect(optionTexts).toHaveLength(3);
+    // Só as 2 jurisdições do ator — nunca uma 3ª opção; o "Todos" é o placeholder do gatilho, não uma linha.
+    expect(optionTexts).toHaveLength(2);
+    expect(select).toHaveTextContent('Todos los países');
   });
 
   it('ator SÓ com AR (multi-país sem grant documentado, ou simplesmente 1 país): 1 opção só, sem BR', async () => {
@@ -86,7 +87,7 @@ describe('ManagementDashboardPage — seletor de país (PR-9, L9-4)', () => {
 
     await waitFor(() => expect(screen.getByTestId('mgmt-country-filter')).toBeInTheDocument());
     const select = within(screen.getByTestId('mgmt-country-filter')).getByRole('combobox');
-    const optionTexts = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+    const optionTexts = comboLabels(select);
 
     expect(optionTexts).toContain('Argentina');
     expect(optionTexts).not.toContain('Brasil');
@@ -100,7 +101,7 @@ describe('ManagementDashboardPage — seletor de país (PR-9, L9-4)', () => {
     expect(screen.getByTestId('mgmt-pacientes-stub')).toHaveAttribute('data-country', '');
 
     const select = within(screen.getByTestId('mgmt-country-filter')).getByRole('combobox');
-    await userEvent.selectOptions(select, 'BR');
+    await selectCombo(select, 'Brasil'); // BR
 
     await waitFor(() => {
       const calls = vi.mocked(ManagementDashboardApiService.getManagementDashboard).mock.calls;

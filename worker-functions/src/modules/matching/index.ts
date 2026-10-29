@@ -45,7 +45,6 @@ export { WJAFunnelTableController } from './interfaces/controllers/WJAFunnelTabl
 export { EncuadreDashboardController } from './interfaces/controllers/EncuadreDashboardController';
 export { VacanciesController } from './interfaces/controllers/VacanciesController';
 export { VacancyMatchController } from './interfaces/controllers/VacancyMatchController';
-export { VacancyMeetLinksController } from './interfaces/controllers/VacancyMeetLinksController';
 export { VacancyTalentumController } from './interfaces/controllers/VacancyTalentumController';
 export { TalentumWebhookController } from './interfaces/controllers/TalentumWebhookController';
 export { AnalyticsController } from './interfaces/controllers/AnalyticsController';

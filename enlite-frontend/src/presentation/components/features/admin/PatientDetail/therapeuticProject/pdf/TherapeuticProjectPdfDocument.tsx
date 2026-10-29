@@ -14,6 +14,7 @@ import {
   NOT_DOMESTIC_TITLE, NOT_DOMESTIC, NOT_DOMESTIC_OUTRO, FUNDAMENTAL_RULE, FIXED_SECTIONS_SERVICE_CODE,
 } from './pdfFixedTexts';
 import { formatIsoDateEsAr, implementationPeriodText, type PdfContact, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
+import { sortAlphabeticallyEs } from '../alphabeticalOrder';
 
 const PRIMARY = '#180149';
 const GRAY = '#737373';
@@ -29,6 +30,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', marginBottom: 2 },
   bullet: { width: 12 },
   label: { fontWeight: 500 },
+  // Spec 061: a descrição do item fica sob o título, recuada na altura do texto do bullet.
+  itemDescription: { marginLeft: 12, marginBottom: 3, color: '#404040' },
   paragraph: { marginBottom: 6, textAlign: 'justify' },
   // Sem itálico: só Regular/Medium estão registradas (lex C11 — nenhuma fonte extra é buscada).
   redacted: { color: GRAY, marginBottom: 6 },
@@ -42,6 +45,16 @@ function Bullet({ children }: { children: string }): JSX.Element {
     <View style={styles.row}>
       <Text style={styles.bullet}>•</Text>
       <Text style={{ flex: 1 }}>{children}</Text>
+    </View>
+  );
+}
+
+/** Título do catálogo como bullet e, se a versão congelou uma descrição, o texto logo abaixo (spec 061). */
+function ItemWithDescription({ title, description }: { title: string; description?: string | null }): JSX.Element {
+  return (
+    <View>
+      <Bullet>{title}</Bullet>
+      {description ? <Text style={styles.itemDescription}>{description}</Text> : null}
     </View>
   );
 }
@@ -221,10 +234,10 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {clinicalRedacted || v.generalObjective === null ? <Redacted /> : <Text style={styles.paragraph}>{v.generalObjective}</Text>}
 
         <SectionTitle>{PDF_SECTIONS.specificObjectives}</SectionTitle>
-        {v.specificObjectives.map((o) => <Bullet key={o.id}>{o.label}</Bullet>)}
+        {v.specificObjectives.map((o) => <ItemWithDescription key={o.id} title={o.label} description={o.description} />)}
 
         <SectionTitle>{PDF_SECTIONS.activities}</SectionTitle>
-        {v.activities.map((a) => <Bullet key={a.id}>{a.label}</Bullet>)}
+        {sortAlphabeticallyEs(v.activities).map((a) => <ItemWithDescription key={a.id} title={a.label} description={a.description} />)}
 
         {/* VIII e IX — texto fixo (constante, sem dado pessoal) do serviço de CUIDADORES (Ana, 08/09 — D301.1).
             Decide pelo `service_code` CONGELADO na versão (417): não depende de célula nem do serviço vivo. */}

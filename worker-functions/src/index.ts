@@ -31,8 +31,20 @@ import {
   AdminPatientContractedServicesController,
   AdminTherapeuticProjectsController,
   createAdminTherapeuticProjectsRoutes,
+  AdminServiceTeamController,
+  createAdminServiceTeamRoutes,
+  AdminServiceTeamContactController,
+  createAdminServiceTeamContactRoutes,
+  AdminItineraryWriteController,
+  createAdminItineraryWriteRoutes,
+  AdminItineraryChangesController,
+  createAdminItineraryChangesRoutes,
+  AdminSubstitutionRequestController,
+  createAdminSubstitutionRequestRoutes,
   TherapeuticContactRemindersInternalController,
   createTherapeuticContactRemindersInternalRoutes,
+  ItineraryDailyInternalController,
+  createItineraryDailyInternalRoutes,
   createAdminPatientsRoutes,
   createAdminInsuranceRoutes,
   AdminInsuranceProviderContactsController,
@@ -88,11 +100,11 @@ import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplication
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
-import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
+import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
@@ -120,6 +132,9 @@ import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEv
 import { EnquadreSummaryDownload } from '@modules/matching/application/EnquadreSummaryDownload';
 import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
 import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
+import { createAdminEnquadreEventListRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventListRoutes';
+import { EnquadreEventListController } from '@modules/matching/interfaces/controllers/EnquadreEventListController';
+import { EnquadreEventGlobalList } from '@modules/matching/application/EnquadreEventGlobalList';
 import { createAdminInterviewHostRoutes } from '@modules/matching/interfaces/routes/adminInterviewHostRoutes';
 import { InterviewHostController } from '@modules/matching/interfaces/controllers/InterviewHostController';
 import { InterviewHostService } from '@modules/matching/application/InterviewHostService';
@@ -269,7 +284,6 @@ const workerTimelineController = new WorkerTimelineController(DatabaseConnection
 const adminPatientsController = new AdminPatientsController();
 const publicVacancyController = new PublicVacancyController();
 const interviewSlotsController = new InterviewSlotsController();
-const vacancyMeetLinksController = new VacancyMeetLinksController();
 const vacancySocialLinksController = new VacancySocialLinksController();
 const vacancyAddressReviewController = new VacancyAddressReviewController();
 const publicJobsController = new PublicJobsController();
@@ -669,6 +683,12 @@ const enquadreEventController = new EnquadreEventController(
   new EnquadreSummaryDownload({ db: admissionDb }),
 );
 app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
+// Spec 076: lista GLOBAL de enquadres (cross-vacante). Duas células: enquadre_event:read + vacancy:read.
+app.use('/api/admin', createAdminEnquadreEventListRoutes(
+  authMiddleware,
+  permissionMiddleware,
+  new EnquadreEventListController(admissionDb, new EnquadreEventGlobalList({ db: admissionDb })),
+));
 
 // Spec 055: tela Entrevistadores (quem atende enquadre e admissão, amarrado a usuário staff ativo). Células interview_host:read|update.
 app.use('/api/admin', createAdminInterviewHostRoutes(
@@ -703,6 +723,16 @@ app.use(
   createAdminTherapeuticProjectsRoutes(new AdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
 );
 
+// ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
+app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
+app.use('/api/admin', createAdminServiceTeamContactRoutes(new AdminServiceTeamContactController(), authMiddleware, permissionMiddleware));
+
+// ========== Itinerário — escritores (cadeia Fase 11) ==========
+app.use('/api/admin', createAdminItineraryWriteRoutes(new AdminItineraryWriteController(), authMiddleware, permissionMiddleware));
+app.use('/api/admin', createAdminItineraryChangesRoutes(new AdminItineraryChangesController(), authMiddleware, permissionMiddleware));
+// Spec 069 — pedido de substituição (lista, pré-visão, criação)
+app.use('/api/admin', createAdminSubstitutionRequestRoutes(new AdminSubstitutionRequestController(), authMiddleware, permissionMiddleware));
+
 // ========== Conferência de horas do Ana Care (spec anacare-conferencia-de-horas, fase 1) ==========
 app.use(
   '/api/admin',
@@ -736,7 +766,6 @@ app.use('/api/admin', createAdminVacanciesRoutes(
   vacancyCrudController,
   vacancyTalentumController,
   vacancyMatchController,
-  vacancyMeetLinksController,
   vacancySocialLinksController,
   funnelController,
   dashboardController,
@@ -803,7 +832,7 @@ const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, 
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool));
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -817,6 +846,14 @@ app.use(
   systemContextMiddleware('job:pt-contact-reminders'),
   internalAuthMiddleware,
   createTherapeuticContactRemindersInternalRoutes(new TherapeuticContactRemindersInternalController()),
+);
+
+// spec 069 F4: rotina diária do itinerário (derivação do estado → alerta "Sin cubrir"; Cloud Scheduler, 06:00 America/Argentina/Buenos_Aires).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:itinerary-daily'),
+  internalAuthMiddleware,
+  createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
 );
 
 // spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).

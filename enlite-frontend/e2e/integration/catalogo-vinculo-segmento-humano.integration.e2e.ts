@@ -15,7 +15,8 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   cleanupStaffAndGroup, grantCell, loginAs, psql, safeSql, scalar, seedStaffInGroup, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 /** Só letras: sequência longa de dígitos é lida como documento/telefone e recusada (guarda de PII do servidor). */
@@ -60,13 +61,11 @@ async function abrirCatalogo(page: Page, user: MockUser): Promise<void> {
   await expect(page.getByTestId('therapeutic-catalog-table')).toBeVisible({ timeout: 30_000 });
 }
 
-/** O select do modal como um humano: click, foco, TECLADO (type-ahead do select nativo), valor lido da tela. */
+/** O combo do modal como um humano: abre o gatilho, busca, clica a opção; o rótulo é lido da tela. */
 async function escolherNoModal(page: Page, rotulo: string): Promise<string> {
   const campo = page.getByTestId('therapeutic-catalog-segment-select');
-  await campo.click();
-  await expect(campo).toBeFocused();
-  await page.keyboard.type(rotulo.slice(0, 4));
-  return (await campo.locator('option:checked').innerText()).trim();
+  await escolherNoCombo(page, campo, rotulo);
+  return (await campo.innerText()).trim();
 }
 
 test.use({ viewport: { width: 1600, height: 1000 } });
@@ -108,8 +107,12 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
 
   test('feliz: modal do objetivo → segmento pelo teclado → salva → a coluna mostra o rótulo → segment_id no banco → "Nuevo" do PTI com esse segmento lista o objetivo PRIMEIRO', async ({ page }) => {
     const segmento = seg();
-    // Pré-condição do "primeiro": o objetivo semeado é o ÚLTIMO por ordem (nenhum outro com sort_order >= o dele).
-    expect(Number(scalar(`SELECT count(*) FROM therapeutic_specific_objectives WHERE active AND id <> '${objFeliz}' AND sort_order >= 99999`))).toBe(0);
+    // Pré-condição do "primeiro" (spec 061: a lista é A–Z, `sort_order` não ordena mais objetivos): SEM o vínculo o objetivo
+    // semeado NÃO seria o primeiro — algum outro ativo vem antes dele no critério do idioma (Intl.Collator 'es', calculado AQUI).
+    const es = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
+    const outrosRotulos = psql(`SELECT label FROM therapeutic_specific_objectives WHERE active AND id <> '${objFeliz}'`).split('\n').map((l) => l.trim()).filter(Boolean);
+    expect(outrosRotulos.length).toBeGreaterThan(0); // controle de não-vacuidade
+    expect(outrosRotulos.some((l) => es.compare(l, OBJ_FELIZ) < 0)).toBe(true);
     expect(segmentoNoBanco(objFeliz)).toBe('NULL');
 
     await abrirCatalogo(page, admin.user);
@@ -119,7 +122,7 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
     await page.getByTestId(`therapeutic-catalog-edit-${objFeliz}`).click();
     const modal = page.getByTestId('therapeutic-catalog-form-modal');
     await expect(modal).toBeVisible();
-    await expect(page.getByTestId('therapeutic-catalog-segment-select')).toHaveValue('');
+    await expect(page.getByTestId('therapeutic-catalog-segment-select')).toContainText('Sin segmento'); // '' = Sin segmento
     expect(await escolherNoModal(page, segmento.label)).toBe(segmento.label);
     await expect(modal).toHaveScreenshot('catalogo-vinculo-modal-segmento.png', { maxDiffPixelRatio: 0.02 });
 
@@ -138,9 +141,9 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
     await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('tp-new-btn').click();
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
-    expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
-    const root = page.locator('#tp-specificObjectives');
-    const gatilho = root.locator('button[aria-haspopup="listbox"]');
+    expect(await escolherSegmento(page, segmento.label)).toBe(segmento.label);
+    const gatilho = page.locator('#tp-specificObjectives'); // o `id` do Combobox é do GATILHO
+    const root = gatilho.locator('..'); // o painel mora no pai do gatilho
     await gatilho.click();
     const opcoes = root.locator('[role="option"]');
     await expect(opcoes.first()).toBeVisible();
@@ -157,11 +160,8 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
     await page.getByTestId(`therapeutic-catalog-edit-${objInativo}`).click();
     const campo = page.getByTestId('therapeutic-catalog-segment-select');
     await expect(campo).toBeVisible();
-    expect((await campo.locator('option:checked').innerText()).trim()).toBe(`${SEG_DESLIGADO} (inactivo)`);
-    await campo.click();
-    await expect(campo).toBeFocused();
-    await page.keyboard.type('Sin '); // type-ahead até "Sin segmento" (1ª opção; o vínculo inativo é a última)
-    await expect(campo).toHaveValue('');
+    expect((await campo.innerText()).trim()).toBe(`${SEG_DESLIGADO} (inactivo)`);
+    await escolherNoCombo(page, campo, 'Sin segmento'); // '' = Sin segmento
 
     const patched = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes(`/therapeutic-catalogs/specific-objectives/${objInativo}`));
     await page.getByTestId('therapeutic-catalog-form-save').click();

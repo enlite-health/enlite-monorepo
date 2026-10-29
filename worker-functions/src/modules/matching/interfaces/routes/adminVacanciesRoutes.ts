@@ -3,7 +3,6 @@ import { VacanciesController } from '../controllers/VacanciesController';
 import { VacanciesAuxController } from '../controllers/VacanciesAuxController';
 import { VacancyTalentumController } from '../controllers/VacancyTalentumController';
 import { VacancyMatchController } from '../controllers/VacancyMatchController';
-import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
 import { WJAFunnelController } from '../controllers/WJAFunnelController';
 import { WJAFunnelTableController } from '../controllers/WJAFunnelTableController';
 import { WJAContactNotesController } from '../controllers/WJAContactNotesController';
@@ -60,7 +59,6 @@ export function createAdminVacanciesRoutes(
   vacancyCrudController: VacancyCrudController,
   vacancyTalentumController: VacancyTalentumController,
   vacancyMatchController: VacancyMatchController,
-  vacancyMeetLinksController: VacancyMeetLinksController,
   vacancySocialLinksController: VacancySocialLinksController,
   funnelController: WJAFunnelController,
   dashboardController: EncuadreDashboardController,
@@ -169,16 +167,6 @@ export function createAdminVacanciesRoutes(
   );
   router.post('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), perm.require('prescreening', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.savePrescreeningConfig(req, res),
-  );
-
-  // ── Meet Links (VacancyMeetLinksController) ───────────────────────────────────
-  // Static lookup route MUST come before dynamic /:id/meet-links to prevent the
-  // express router from treating "meet-links" as the :id param.
-  router.post('/vacancies/meet-links/lookup', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
-    vacancyMeetLinksController.lookupMeetDatetime(req, res),
-  );
-  router.put('/vacancies/:id/meet-links', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
-    vacancyMeetLinksController.updateMeetLinks(req, res),
   );
 
   // ── Social Short Links (VacancySocialLinksController) ────────────────────────

@@ -30,9 +30,9 @@ const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?
 const TAG = 'vls-fecho-e2e';
 
 // dayOfWeek: 1 = lunes, 3 = miercoles, 5 = viernes (DAY_KEYS_ES, dateFormatters.ts)
-const SCHEDULE_V1 = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
-const SCHEDULE_V2 = [{ dayOfWeek: 3, startTime: '14:00', endTime: '18:00' }];
-const SCHEDULE_V3 = [{ dayOfWeek: 5, startTime: '09:00', endTime: '13:00' }];
+const SCHEDULE_V1 = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
+const SCHEDULE_V2 = [{ dayOfWeek: 3, startTime: '14:00', durationMinutes: 240 }];
+const SCHEDULE_V3 = [{ dayOfWeek: 5, startTime: '09:00', endTime: '13:00' }]; // vaga MANUAL: formato da vaga (coluna própria)
 // O GET admin e o detalhe público devolvem o horário no formato da VAGA (`normalizeSchedule`), não o do serviço.
 const GET_V1 = { lunes: [{ start: '08:00', end: '12:00' }] };
 const GET_V2 = { miercoles: [{ start: '14:00', end: '18:00' }] };
@@ -246,8 +246,10 @@ describe('Vaga lê do serviço contratado — fecho por API (vaga-le-do-servico-
     expect(semQuantidade.data.details.field).toBe('providers_needed');
 
     // A recusa não escreveu nada: nem no serviço, nem aviso, e a vaga segue lendo o valor original.
-    const svc = (await pool.query(`SELECT schedule, providers_needed FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0];
-    expect(svc).toEqual({ schedule: SCHEDULE_V1, providers_needed: 2 });
+    const svc = (await pool.query(
+      `SELECT horario_do_servico(id, CURRENT_DATE) AS schedule, providers_needed FROM patient_contracted_services WHERE id = $1`, [serviceId],
+    )).rows[0];
+    expect(svc).toEqual({ schedule: [{ ...SCHEDULE_V1[0], endTime: '12:00' }], providers_needed: 2 });
     const intacta = await getAdmin(vacancyId);
     expect(intacta.schedule).toEqual(GET_V1);
     expect(intacta.providers_needed).toBe('2');
@@ -314,19 +316,20 @@ describe('Vaga lê do serviço contratado — fecho por API (vaga-le-do-servico-
     expect(await colunasDaVaga(outra.vacancyId)).toEqual(COLUNAS_MIGRADAS_NULAS);
   });
 
-  it('6. vaga encerrada (CLOSED) mostra o valor ATUAL do serviço depois de um PATCH, sem aviso', async () => {
+  it('6. vaga encerrada (CLOSED) mostra o valor ATUAL do serviço depois de um PATCH e recebe aviso (⚑E: não apagada conta como viva)', async () => {
     const { patientId, serviceId, vacancyId } = await seedPublicada();
     await pool.query(`UPDATE job_postings SET status = 'CLOSED' WHERE id = $1`, [vacancyId]); // arranjo: o encerramento em si não está sob teste
 
     const patch = await patchServico(patientId, serviceId, { schedule: SCHEDULE_V2, providersNeeded: 4, providerAgeBand: 'AGE_30_45' });
-    expect(patch.status).toBe(200); // sem vaga viva, nada recusa
+    expect(patch.status).toBe(200); // a mudança não APAGA nenhum campo exigido: nada recusa
 
     const d = await getAdmin(vacancyId);
     expect(d.status).toBe('CLOSED');
     expect(d.schedule).toEqual(GET_V2);
     expect(d.providers_needed).toBe('4');
     expect([d.age_range_min, d.age_range_max]).toEqual([30, 44]);
-    expect(d.source_change_notices).toEqual([]); // encerrada não recebe aviso
+    // ⚑E (056): CLOSED não apagada CONTA como viva — recebe os 3 avisos (só `deleted_at` tira a vaga de cena)
+    expect(camposDosAvisos(d).sort()).toEqual(['age_range', 'providers_needed', 'schedule']);
     expect(await colunasDaVaga(vacancyId)).toEqual(COLUNAS_MIGRADAS_NULAS);
   });
 });

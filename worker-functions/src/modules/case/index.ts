@@ -234,10 +234,29 @@ export {
 export { AdminInsuranceProvidersController } from './interfaces/controllers/AdminInsuranceProvidersController';
 export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
 export { AdminPatientContractedServicesController } from './interfaces/controllers/AdminPatientContractedServicesController';
+// Fase 7 (DX-7.8): o contrato publicado da leitura do itinerário.
+export { patientItineraryResponseSchema } from './interfaces/validators/itinerarySchemas';
 export { AdminTherapeuticProjectsController } from './interfaces/controllers/AdminTherapeuticProjectsController';
+export { AdminServiceShiftTemplatesController } from './interfaces/controllers/AdminServiceShiftTemplatesController';
 export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminTherapeuticProjectsRoutes';
+// Cadeia Fase 10 (DX-10.7): quadro C (Servicio Contratado).
+export { AdminServiceTeamController } from './interfaces/controllers/AdminServiceTeamController';
+export { createAdminServiceTeamRoutes } from './interfaces/routes/adminServiceTeamRoutes';
+export { AdminServiceTeamContactController } from './interfaces/controllers/AdminServiceTeamContactController';
+export { createAdminServiceTeamContactRoutes } from './interfaces/routes/adminServiceTeamContactRoutes';
+// Cadeia Fase 11 (DX-11.9): os 7 escritores do itinerário.
+export { AdminItineraryWriteController } from './interfaces/controllers/AdminItineraryWriteController';
+export { createAdminItineraryWriteRoutes } from './interfaces/routes/adminItineraryWriteRoutes';
+// Itinerário-trocas Fase 2 (C9): leitura do registro de trocas.
+export { AdminItineraryChangesController } from './interfaces/controllers/AdminItineraryChangesController';
+export { createAdminItineraryChangesRoutes } from './interfaces/routes/adminItineraryChangesRoutes';
+// Spec 069: o pedido de substituição.
+export { AdminSubstitutionRequestController } from './interfaces/controllers/AdminSubstitutionRequestController';
+export { createAdminSubstitutionRequestRoutes } from './interfaces/routes/adminSubstitutionRequestRoutes';
 export { TherapeuticContactRemindersInternalController } from './interfaces/controllers/TherapeuticContactRemindersInternalController';
 export { createTherapeuticContactRemindersInternalRoutes } from './interfaces/routes/therapeuticContactRemindersInternalRoutes';
+export { ItineraryDailyInternalController } from './interfaces/controllers/ItineraryDailyInternalController';
+export { createItineraryDailyInternalRoutes } from './interfaces/routes/itineraryDailyInternalRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';
@@ -265,3 +284,5 @@ export {
   LEAD_SERVICE_TO_PROFESSION,
 } from './interfaces/validators/publicLeadSchema';
 export type { PublicLeadBody, LeadServiceSlug } from './interfaces/validators/publicLeadSchema';
+export { ServiceHoursSummaryReader } from './infrastructure/ServiceHoursSummaryReader';
+export { countVigenteForVacancy } from './infrastructure/VacancyAllocationProbe';

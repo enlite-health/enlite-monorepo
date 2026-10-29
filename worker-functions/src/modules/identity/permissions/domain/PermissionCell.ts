@@ -88,11 +88,21 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_therapeutic_project: 'Pacientes',
   catalog_therapeutic_objectives: 'Pacientes',
   catalog_therapeutic_activities: 'Pacientes',
+  // Motivos de saída do serviço (migration 492): catálogo global de categorias genéricas, sem dado de saúde.
+  catalog_service_exit_reasons: 'Pacientes',
+  // Guardias predefinidas (migration 550, spec 074): catálogo global de modelos de turnos, sem dado de saúde.
+  catalog_service_shift_templates: 'Pacientes',
   // US-17 (spec 018, PR-7, migration 430): catálogo dos segmentos da Ana Care, mesma família.
   catalog_therapeutic_segments: 'Pacientes',
   // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345): célula PRÓPRIA, fora de qualquer
   // grupo padrão — vizinho de paciente (turnos/horas do Ana Care), não um container da ficha.
   anacare_hours: 'Pacientes',
+  // Cadeia Fase 10 (DX-10.1): rejeitar/reverter no quadro C (Servicio Contratado). Recurso novo
+  // com ação de domínio (`update`, nunca `write` — ressalva (b')); não entra em SPLIT_RESOURCES.
+  patient_service_team: 'Pacientes',
+  // Fase 11 (DX-11.1): montar o itinerário (slots, alocações, montado). Recurso novo com ação de
+  // domínio (`update`, nunca `write` — mesma ressalva da Fase 10); não entra em SPLIT_RESOURCES.
+  patient_itinerary: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -294,6 +304,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o catálogo de ROTINA E ATIVIDADES do projeto terapêutico (lista global, sem dado de paciente).',
   // `catalog_therapeutic_activities:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
   // fase 1, F8/F9): órfã — coberta por `catalog_therapeutic_activities:create`/`update` explícitos.
+  'catalog_service_exit_reasons:read':
+    'Ver o catálogo de MOTIVOS DE SAÍDA do serviço (lista global de categorias genéricas, sem dado de paciente).',
+  'catalog_service_shift_templates:read':
+    'Ver o catálogo de GUARDIAS PREDEFINIDAS (modelos globais de turnos, sem dado de paciente).',
   'catalog_therapeutic_segments:read':
     'Ver o catálogo de SEGMENTOS da Ana Care (US-17, lista global, sem dado de paciente).',
   // `catalog_therapeutic_segments:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
@@ -440,6 +454,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'catalog_therapeutic_objectives:update': 'Renomear e desativar objetivo específico do catálogo (backoffice).',
   'catalog_therapeutic_activities:create': 'Adicionar atividade nova ao catálogo (backoffice).',
   'catalog_therapeutic_activities:update': 'Renomear e desativar atividade do catálogo (backoffice).',
+  'catalog_service_exit_reasons:create': 'Adicionar motivo de saída novo ao catálogo (backoffice).',
+  'catalog_service_exit_reasons:update': 'Renomear e desativar motivo de saída do catálogo (backoffice).',
+  'catalog_service_shift_templates:create': 'Adicionar guardia predefinida ao catálogo (backoffice).',
+  'catalog_service_shift_templates:update': 'Renomear, trocar os turnos e desativar guardia predefinida (backoffice).',
   'catalog_therapeutic_segments:create': 'Adicionar segmento novo ao catálogo (backoffice).',
   'catalog_therapeutic_segments:update': 'Renomear e desativar segmento do catálogo (backoffice).',
   'user_management:create': 'Criar conta nova de staff.',
@@ -481,6 +499,20 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Exportar em planilha (xlsx, abas Sintético e Analítico) as horas de um paciente num período, '
     + 'para o financeiro. Exige também anacare_hours:read; o NOME do paciente no arquivo segue sob '
     + 'patient_identity:read e o do prestador sob worker_contact:read (sem elas, sai "Sin vínculo · ID").',
+
+  // ── Cadeia Fase 10 (DX-10.1) — quadro C (Servicio Contratado): recurso novo, ação de domínio.
+  'patient_service_team:update':
+    'Rejeitar e reverter a rejeição de um prestador no quadro de ENCUADRE de um serviço '
+    + 'contratado (sempre com motivo de lista fechada). Não aloca nem desaloca, não move a '
+    + 'candidatura na vaga e não adiciona prestador.',
+
+  // ── Fase 11 (DX-11.1) — montar o itinerário do paciente: faixas semanais, alocação/desalocação
+  //    de prestador em Selecionado (C), e a marca de montado.
+  'patient_itinerary:update':
+    'Montar o itinerário do paciente: criar, editar e encerrar faixas semanais de um serviço '
+    + 'contratado, alocar e encerrar a alocação de um prestador que está em Selecionado (C) '
+    + 'daquele serviço, e marcar o itinerário como montado. Não move o paciente de coluna nem '
+    + 'rejeita prestador.',
 
   // ── Spec 024 (D1/D401, 21/09) — o catálogo de Etiquetas é DADO diferente do perfil do
   //    prestador: `tag:*` sai de `worker:*`. Atribuir/remover etiqueta DE UM prestador
@@ -576,6 +608,8 @@ export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
   'catalog_therapeutic_objectives',
   'catalog_therapeutic_activities',
   'catalog_therapeutic_segments',
+  'catalog_service_exit_reasons',
+  'catalog_service_shift_templates',
 ]);
 
 export function isSplitResource(resource: string): boolean {

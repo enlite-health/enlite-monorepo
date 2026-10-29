@@ -6,7 +6,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
 import { ADMIN_USERS_PATH } from './adminHome';
-import { MapPin } from 'lucide-react';
+import { CalendarDays, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -92,6 +92,11 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.patients', 'Pacientes'),
       href: '/admin/patients',
+    },
+    {
+      icon: <CalendarDays className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.enquadres', 'Encuadres'),
+      href: '/admin/enquadres',
     },
     {
       icon: <MapPin className="w-6 h-6" strokeWidth={2} />,
@@ -192,6 +197,24 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.catalogActivities', 'Rutina y actividades'),
       href: '/admin/catalogos/actividades',
+    },
+    {
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+      ),
+      label: t('admin.nav.catalogServiceExitReasons', 'Motivos de salida'),
+      href: '/admin/catalogos/motivos-de-salida',
+    },
+    {
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+      ),
+      label: t('admin.nav.catalogServiceShiftTemplates', 'Guardias'),
+      href: '/admin/catalogos/guardias',
     },
     {
       icon: (

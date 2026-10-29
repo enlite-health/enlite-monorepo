@@ -42,6 +42,7 @@ vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
 }));
 
 import { PatientCoverageEditDrawer } from '../PatientCoverageEditDrawer';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const entry = (code: string, name: string, source: string) => ({ code, name, mapped: true, source });
 const coverageOf = (...entries: ReturnType<typeof entry>[]) => ({ display: 'OSDE 210', displaySource: 'INFORMED' as const, entries });
@@ -64,10 +65,10 @@ describe('PatientCoverageEditDrawer', () => {
 
   it('carrega os valores atuais e o catálogo (opção nova vinda do endpoint aparece pelo NOME do banco, não pelo código)', async () => {
     const { container } = render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('pcv-name')).toHaveValue('OSDE 210');
+    expect(screen.queryByTestId('pcv-name')).toBeNull();
     expect(screen.getByTestId('pcv-affiliate')).toHaveValue('AF-1');
     await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes button') as HTMLElement);
+    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
     expect(await screen.findByText('Swiss Medical')).toBeInTheDocument();
     expect(screen.getByText('Nueva OS (nombre del banco)')).toBeInTheDocument();
     expect(screen.queryByText('NUEVA_OS_E2E')).not.toBeInTheDocument();
@@ -79,22 +80,23 @@ describe('PatientCoverageEditDrawer', () => {
     const onSaved = vi.fn();
     const { container } = render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={onSaved} />);
     await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes button') as HTMLElement);
+    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
     fireEvent.click(await screen.findByText('Swiss Medical'));
     fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'AF-2' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', {
       affiliateId: 'AF-2', insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL'],
     }));
+    expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('healthInsuranceName');
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
-  it('sem mudança → fecha sem PATCH; limpar nome → null; erro do PATCH → mensagem; catálogo falhando → só o que a ficha já trouxe (sem seed no front)', async () => {
+  it('sem mudança → fecha sem PATCH; limpar afiliado → null; erro do PATCH → mensagem; catálogo falhando → só o que a ficha já trouxe (sem seed no front)', async () => {
     const onClose = vi.fn();
     listInsuranceProviders.mockRejectedValueOnce(new Error('offline'));
     const { container } = render(<PatientCoverageEditDrawer patient={patient} onClose={onClose} onSaved={vi.fn()} />);
     await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes button') as HTMLElement);
+    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
     // Sem catálogo não há lista inventada no front (o seed dos 33 saiu): só a verificada que a ficha trouxe, pelo nome que ela trouxe.
     expect(screen.queryByText('Galeno')).not.toBeInTheDocument();
     expect(screen.getAllByText('OSDE').length).toBeGreaterThan(0);
@@ -103,9 +105,10 @@ describe('PatientCoverageEditDrawer', () => {
     expect(updatePatientSection).not.toHaveBeenCalled();
 
     updatePatientSection.mockRejectedValueOnce(new Error('422 código'));
-    fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { healthInsuranceName: null }));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { affiliateId: null }));
+    expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('healthInsuranceName');
     expect(await screen.findByTestId('pcv-error')).toHaveTextContent('422 código');
     updatePatientSection.mockRejectedValueOnce('x');
     fireEvent.click(screen.getByTestId('pcv-save'));
@@ -128,7 +131,7 @@ describe('PatientCoverageEditDrawer', () => {
     updatePatientSection.mockClear();
     // Adiciona um profissional direto (com espaços) → createCoverageEmergencyContact, com trim.
     fireEvent.click(screen.getByTestId('pcv-contact-add'));
-    fireEvent.change(screen.getByTestId('pcv-contact-kind-1'), { target: { value: 'DIRECT_PROFESSIONAL' } });
+    chooseCombo(screen.getByTestId('pcv-contact-kind-1'), 'Profissional direto'); // DIRECT_PROFESSIONAL
     fireEvent.change(screen.getByTestId('pcv-contact-name-1'), { target: { value: '  Dra. Pérez  ' } });
     fireEvent.change(screen.getByTestId('pcv-contact-phone-1'), { target: { value: ' 11-5555 ' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
@@ -235,8 +238,8 @@ describe('PatientCoverageEditDrawer', () => {
     for (const marcador of [true, undefined]) {
       const r = render(<PatientCoverageEditDrawer patient={{ ...patient, coverageEmergencyContacts: [], coverageDirectProfessionalRedacted: marcador }} onClose={vi.fn()} onSaved={vi.fn()} />);
       fireEvent.click(screen.getByTestId('pcv-contact-add'));
-      const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
-      expect(Array.from(select.options).map((o) => o.value)).not.toContain('DIRECT_PROFESSIONAL');
+      const select = screen.getByTestId('pcv-contact-kind-0');
+      expect(comboLabels(select)).not.toContain('Profissional direto'); // DIRECT_PROFESSIONAL
       r.unmount();
     }
   });
@@ -287,10 +290,10 @@ describe('PatientCoverageEditDrawer', () => {
 
   it('paciente sem cobertura nenhuma (nulls / codes ausentes): campos vazios; escolher um código manda só os códigos', async () => {
     const { container } = render(<PatientCoverageEditDrawer patient={{ ...patient, insuranceInformed: null, affiliateId: null, insuranceVerifiedCodes: undefined as never, coverage: { display: null, displaySource: 'NONE', entries: [] } }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    expect(screen.getByTestId('pcv-name')).toHaveValue('');
+    expect(screen.queryByTestId('pcv-name')).toBeNull();
     expect(screen.getByTestId('pcv-affiliate')).toHaveValue('');
     await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes button') as HTMLElement);
+    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
     fireEvent.click(await screen.findByText('Swiss Medical'));
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { insuranceVerifiedCodes: ['SWISS_MEDICAL'] }));
@@ -324,7 +327,7 @@ describe('PatientCoverageEditDrawer', () => {
     expect(screen.getByTestId('pcv-codes-selected')).not.toHaveTextContent('Galeno');
 
     // Abrindo o multi-select, GALENO não vem marcado — não é o multi-select quem o controla.
-    fireEvent.click(container.querySelector('#pcv-codes button') as HTMLElement);
+    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
     const listbox = await screen.findByRole('listbox');
     const galenoOption = within(listbox).getByRole('option', { name: 'Galeno' });
     expect(galenoOption.getAttribute('aria-selected')).toBe('false');
@@ -342,7 +345,7 @@ describe('PatientCoverageEditDrawer', () => {
     const onSaved = vi.fn();
     const { container } = render(<PatientCoverageEditDrawer patient={patientWithMixedOrigins} onClose={vi.fn()} onSaved={onSaved} />);
     await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes button') as HTMLElement);
+    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
     const listbox = await screen.findByRole('listbox');
     const osdeOption = within(listbox).getByRole('option', { name: 'OSDE' });
     fireEvent.click(osdeOption.querySelector('button') as HTMLElement); // desmarca o único editável
@@ -379,20 +382,20 @@ describe('PatientCoverageEditDrawer', () => {
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
     });
 
-    it('COM mudança (nome) → Escape abre confirmação em vez de fechar', () => {
+    it('COM mudança (afiliado) → Escape abre confirmação em vez de fechar', () => {
       render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'Nueva OS' } });
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
     });
 
     it('"Seguir editando" mantém o drawer aberto e o valor digitado', () => {
       render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'Nueva OS' } });
       fireEvent.keyDown(document, { key: 'Escape' });
       fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
-      expect(screen.getByTestId('pcv-name')).toHaveValue('Nueva OS');
+      expect(screen.getByTestId('pcv-affiliate')).toHaveValue('Nueva OS');
       expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
     });
 
@@ -400,7 +403,7 @@ describe('PatientCoverageEditDrawer', () => {
       vi.useFakeTimers();
       const onClose = vi.fn();
       render(<PatientCoverageEditDrawer patient={patient} onClose={onClose} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'Nueva OS' } });
       fireEvent.keyDown(document, { key: 'Escape' });
       fireEvent.click(screen.getByTestId('discard-changes-discard'));
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
@@ -422,7 +425,7 @@ describe('PatientCoverageEditDrawer', () => {
     it('SALVAR nunca pergunta, mesmo com mudança pendente', async () => {
       const onSaved = vi.fn();
       render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={onSaved} />);
-      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'Nueva OS' } });
       fireEvent.click(screen.getByTestId('pcv-save'));
       await waitFor(() => expect(onSaved).toHaveBeenCalled());
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();

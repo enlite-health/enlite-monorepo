@@ -123,6 +123,7 @@
 import { execFileSync } from 'child_process';
 import * as http from 'http';
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo, rotuloDoMes } from '../helpers/combobox';
 
 const DB_URL = process.env.ANACARE_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TENANT = '00000000-0000-0000-0000-000000000001';
@@ -471,7 +472,7 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     await abrirPeloMenu(page);
 
     // mês padrão é o CORRENTE — navega pelo seletor até o piso (MONTH_FLOOR), como um humano faria.
-    await page.getByLabel('Mes', { exact: true }).selectOption(MONTH_FLOOR);
+    await escolherNoCombo(page, page.getByLabel('Mes', { exact: true }), rotuloDoMes(MONTH_FLOOR));
     // Espera o fetch do mês novo terminar (`isLoadingSelectedMonth`, `AnaCareHoursListPage.tsx`)
     // — sem isto o banner pode ainda estar mostrando o snapshot do mês ANTERIOR (o corrente,
     // default) no instante da leitura (achado desta retomada, medido no caso 2 — mesma classe de
@@ -507,7 +508,7 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
 
     await loginAs(page, COMPLETO);
     await abrirPeloMenu(page);
-    await page.getByLabel('Mes', { exact: true }).selectOption(MONTH_FLOOR);
+    await escolherNoCombo(page, page.getByLabel('Mes', { exact: true }), rotuloDoMes(MONTH_FLOOR));
     // Espera o fetch do mês novo terminar ANTES de ler o banner — achado desta retomada: sem
     // isto, o teste podia ler o banner do mês CORRENTE (default, ainda em memória por um
     // instante) em vez do MONTH_FLOOR recém-selecionado. Medido: `Received: 49` (número do mês

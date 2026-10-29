@@ -25,8 +25,6 @@ const DATABASE_URL =
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
 const RUN = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-const FUTURE = '2099-08-10T13:00:00.000Z';
-const MEET_LINK = 'https://meet.example.test/aaa-bbbb-ccc';
 
 describe('qualificar não enfileira convite de entrevista (spec 052, Fase 4)', () => {
   let pool: Pool;
@@ -55,9 +53,9 @@ describe('qualificar não enfileira convite de entrevista (spec 052, Fase 4)', (
     );
     patientId = pat.rows[0].id;
     const vac = await pool.query(
-      `INSERT INTO job_postings (title, patient_id, status, is_draft, country, is_test, case_number, meet_link_1, meet_datetime_1)
-       VALUES ($1, $2, 'SEARCHING', false, 'AR', true, $3, $4, $5) RETURNING id`,
-      [`Q052 ${RUN}`, patientId, 810000 + Math.floor(Math.random() * 90000), MEET_LINK, FUTURE],
+      `INSERT INTO job_postings (title, patient_id, status, is_draft, country, is_test, case_number)
+       VALUES ($1, $2, 'SEARCHING', false, 'AR', true, $3) RETURNING id`,
+      [`Q052 ${RUN}`, patientId, 810000 + Math.floor(Math.random() * 90000)],
     );
     vacancyId = vac.rows[0].id;
     const w = await pool.query(

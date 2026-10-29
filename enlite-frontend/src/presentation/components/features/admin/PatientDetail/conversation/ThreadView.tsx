@@ -9,9 +9,8 @@ import { Text } from '@presentation/components/atoms/Text';
 import { InlineLoadingState } from '@presentation/components/molecules/InlineLoadingState/InlineLoadingState';
 import { MessageAvatar } from './MessageAvatar';
 import { MessageAttachments } from './MessageAttachments';
+import { MessageMarkdown } from './MessageMarkdown';
 import { formatMessageDateTime } from './messageDateFormat';
-
-const MENTION_PATTERN = /<@([^>]+)>/g;
 
 /** Chip de UMA menção confirmada — nome de exibição, nesta ordem (item 5a, change
  * 022-ux-mencao-e-notificacao, F19/F20): 1) `mentionDisplayNames[uid]` resolvido pelo SERVIDOR
@@ -19,7 +18,7 @@ const MENTION_PATTERN = /<@([^>]+)>/g;
  * `useStaffDisplayName` (cache do navegador / perfil próprio) como FALLBACK, não fonte única —
  * cobre o caso de payload antigo/mock sem o campo novo; 3) o próprio uid, se nada resolver.
  * Componente separado (não só `<span>`) porque a resolução de nome usa um hook —
- * `renderMessageBody` abaixo é uma função pura, não pode chamar hook direto. */
+ * o render do corpo (`MessageMarkdown`) é puro e recebe o chip por callback, não pode chamar hook direto. */
 function MentionChip({ uid, serverName }: { uid: string; serverName: string | null | undefined }): JSX.Element {
   const cachedName = useStaffDisplayName(uid);
   const displayName = serverName ?? cachedName;
@@ -31,47 +30,6 @@ function MentionChip({ uid, serverName }: { uid: string; serverName: string | nu
       @{displayName}
     </span>
   );
-}
-
-/**
- * Corpo da mensagem com `<@uid>` renderizado como CHIP. `mentions` chega do backend como a lista
- * de uids CONFIRMADOS (`ConversationRepository.fetchMentionsByMessageIds`) — em ORDEM ALFABÉTICA
- * do uid, não na ordem em que os tokens foram digitados no texto (decisão do B1). Por isso o
- * casamento é por UID — o próprio valor já está dentro do token (`<@uid>`, capturado em
- * `match[1]`) — e NUNCA por posição/índice: com 2+ menções, a ordem alfabética e a ordem de
- * digitação divergem, e casar pelo índice trocava o rótulo entre elas (achado real, spec 022 B2 —
- * numa conversa clínica, atribuía a cobrança à pessoa errada). `mentions` funciona como o
- * conjunto de uids CONFIRMADOS pelo servidor: um token com a forma `<@x>` que não está nesse
- * conjunto cai pro texto cru, sem chip (nunca quebra a tela, mas também nunca finge confirmação
- * que o servidor não deu).
- *
- * Reaproveitada pelo `MessageContent` abaixo — MESMA regra de renderização nos dois lugares
- * (mensagem de topo e reply) que `ConversationPanel.tsx` usa, sem duplicar a lógica de parsing.
- * Não exportada: nada fora deste arquivo importa a função diretamente (só via `MessageContent`).
- */
-function renderMessageBody(
-  body: string,
-  mentions: readonly string[],
-  mentionDisplayNames: Readonly<Record<string, string | null>> = {},
-): ReactNode[] {
-  const confirmedUids = new Set(mentions);
-  const parts: ReactNode[] = [];
-  let lastIndex = 0;
-  MENTION_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null = MENTION_PATTERN.exec(body);
-  while (match !== null) {
-    if (match.index > lastIndex) parts.push(body.slice(lastIndex, match.index));
-    const uid = match[1];
-    if (confirmedUids.has(uid)) {
-      parts.push(<MentionChip key={`mention-${match.index}`} uid={uid} serverName={mentionDisplayNames[uid]} />);
-    } else {
-      parts.push(body.slice(match.index, match.index + match[0].length));
-    }
-    lastIndex = match.index + match[0].length;
-    match = MENTION_PATTERN.exec(body);
-  }
-  if (lastIndex < body.length) parts.push(body.slice(lastIndex));
-  return parts;
 }
 
 /**
@@ -178,10 +136,16 @@ export function MessageContent({ message, patientId, footer, highlighted = false
           {dateLabel}
         </Text>
       </div>
-      <div data-testid="message-body" className="whitespace-pre-wrap break-words text-sm">
+      <div data-testid="message-body" className="break-words text-sm">
         {message.deletedAt
           ? <em>{td('deleted', 'Mensagem apagada')}</em>
-          : renderMessageBody(message.body, message.mentions, message.mentionDisplayNames)}
+          : (
+            <MessageMarkdown
+              body={message.body}
+              mentions={message.mentions}
+              renderMention={(uid) => <MentionChip uid={uid} serverName={message.mentionDisplayNames?.[uid]} />}
+            />
+          )}
       </div>
       {/* Mensagem apagada nunca mostra anexo (corpo cifrado já foi zerado — D-04/soft delete). */}
       {!message.deletedAt && <MessageAttachments patientId={patientId} attachments={message.attachments} />}

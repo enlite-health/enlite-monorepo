@@ -20,6 +20,7 @@ const createPatient = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { createPatient: (...a: unknown[]) => createPatient(...a) } }));
 
 import { PatientCreateModal } from '../PatientCreateModal';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 describe('PatientCreateModal', () => {
   beforeEach(() => createPatient.mockReset().mockResolvedValue({ id: 'new-1' }));
@@ -28,7 +29,7 @@ describe('PatientCreateModal', () => {
     const onCreated = vi.fn();
     render(<PatientCreateModal onClose={vi.fn()} onCreated={onCreated} />);
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: '  Nina ' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
     const birth = screen.getByTestId('pc-birthDate');
     expect(birth).toHaveAttribute('type', 'date');
     fireEvent.change(birth, { target: { value: '2015-06-20' } });
@@ -36,20 +37,26 @@ describe('PatientCreateModal', () => {
     fireEvent.click(screen.getByTestId('pc-save'));
     await waitFor(() => expect(createPatient).toHaveBeenCalledWith({
       firstName: 'Nina', country: 'AR', lastName: undefined, birthDate: '2015-06-20', phoneWhatsapp: '+5491100000031', contactEmail: undefined,
-      documentType: undefined, documentNumber: undefined, healthInsuranceName: undefined, serviceType: undefined,
+      documentType: undefined, documentNumber: undefined,
     }));
+    const sent = createPatient.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('healthInsuranceName');
+    expect(sent).not.toHaveProperty('serviceType');
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('new-1'));
   });
 
-  it('tipo de documento e serviço requerido entram quando escolhidos', async () => {
+  it('tipo de documento entra quando escolhido; cobertura e serviço não existem no cadastro', async () => {
     const { container } = render(<PatientCreateModal onClose={vi.fn()} onCreated={vi.fn()} />);
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
-    fireEvent.change(screen.getByTestId('pc-documentType'), { target: { value: 'DNI' } });
-    fireEvent.click(container.querySelector('#pc-serviceType button') as HTMLElement);
-    fireEvent.click(screen.getByText('Cuidador'));
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
+    chooseCombo(screen.getByTestId('pc-documentType'), 'DNI'); // DNI = DNI
+    expect(screen.queryByTestId('pc-insName')).toBeNull();
+    expect(container.querySelector('#pc-serviceType')).toBeNull();
     fireEvent.click(screen.getByTestId('pc-save'));
-    await waitFor(() => expect(createPatient).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'DNI', serviceType: ['CAREGIVER'] })));
+    await waitFor(() => expect(createPatient).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'DNI' })));
+    const sent = createPatient.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('healthInsuranceName');
+    expect(sent).not.toHaveProperty('serviceType');
   });
 
   it('nome vazio não chama a API; erro com mensagem → inline; erro não-Error → genérica', async () => {
@@ -59,7 +66,7 @@ describe('PatientCreateModal', () => {
     expect(createPatient).not.toHaveBeenCalled();
     createPatient.mockRejectedValueOnce(new Error('Validação de contato'));
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
     fireEvent.click(screen.getByTestId('pc-save'));
     expect(await screen.findByTestId('pc-error')).toHaveTextContent('Validação de contato');
     createPatient.mockRejectedValueOnce('x');
@@ -81,7 +88,7 @@ describe('PatientCreateModal', () => {
   it('e-mail inválido: a mensagem de validação aparece e a API não é chamada', async () => {
     render(<PatientCreateModal onClose={vi.fn()} onCreated={vi.fn()} />);
     fireEvent.change(screen.getByTestId('pc-firstName'), { target: { value: 'Ana' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'AR' } });
+    chooseCombo(screen.getByTestId('pc-country'), 'Argentina'); // AR = Argentina
     fireEvent.change(screen.getByTestId('pc-email'), { target: { value: 'nao-e-email' } });
     fireEvent.click(screen.getByTestId('pc-save'));
     await waitFor(() => expect(screen.getAllByText(/email/i).length).toBeGreaterThan(0));

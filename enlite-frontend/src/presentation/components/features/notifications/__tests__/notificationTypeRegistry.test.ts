@@ -5,6 +5,9 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { AdminNotification } from '@infrastructure/http/AdminNotificationApiService';
+import i18next from 'i18next';
+import esJson from '@infrastructure/i18n/locales/es.json';
+import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { getNotificationTypeHandler } from '../notificationTypeRegistry';
 
 const t = vi.fn((key: string, opts?: Record<string, unknown>) => `${key}:${JSON.stringify(opts ?? {})}`);
@@ -154,5 +157,68 @@ describe('ADMISSION_TACTIQ_EXTENSION_CHANGED (spec 050, F15)', () => {
     const h = getNotificationTypeHandler('ADMISSION_TACTIQ_EXTENSION_CHANGED');
     expect(h.buildText(ext(null), t)).toBe('admin.notifications.tactiqExtension.missing:{}');
     expect(h.buildText(ext('qualquer'), t)).toBe('admin.notifications.tactiqExtension.missing:{}');
+  });
+});
+
+// Spec 069 (FR-35): o aviso diário "Sin cubrir" — o servidor manda só ids, contagem e data; o TEXTO vive aqui.
+describe('ITINERARY_UNCOVERED_SHIFTS (spec 069, FR-35)', () => {
+  const item = (patientId: string, serviceId: string, shifts: number, firstDate: string) => ({ patientId, serviceId, shifts, firstDate });
+  const aviso = (items: ReturnType<typeof item>[] | null) =>
+    notif({
+      typeCode: 'ITINERARY_UNCOVERED_SHIFTS',
+      actorUid: 'system:itinerary-daily',
+      actorDisplayName: null,
+      patientId: null,
+      patientDisplayName: null,
+      messageId: null,
+      payload: items === null ? null : { operationDate: '2026-11-02', items },
+    });
+  const handler = () => getNotificationTypeHandler('ITINERARY_UNCOVERED_SHIFTS');
+  const ITEMS = [item('p-b', 's-b', 3, '2026-11-05'), item('p-a', 's-a', 2, '2026-11-03')];
+
+  it('texto: soma dos turnos e nº de serviços, CADA UM com a sua chave de plural (turnos e serviços não compartilham `count`)', () => {
+    expect(handler().buildText(aviso(ITEMS), t)).toBe(
+      'admin.notifications.itineraryUncoveredText:{"shifts":"admin.notifications.itineraryUncoveredShifts:{\\"count\\":5}","services":"admin.notifications.itineraryUncoveredServices:{\\"count\\":2}"}',
+    );
+  });
+
+  // D5 (QA caça): "1 turnos sin cubrir" — o plural de "turno" seguia a contagem de SERVIÇOS. Aqui o i18next REAL renderiza os dois idiomas.
+  it.each([
+    ['es', esJson, [[1, 1, '1 turno sin cubrir en 1 servicio'], [5, 2, '5 turnos sin cubrir en 2 servicios'], [4, 1, '4 turnos sin cubrir en 1 servicio'], [3, 3, '3 turnos sin cubrir en 3 servicios']]],
+    ['pt-BR', ptBRJson, [[1, 1, '1 turno sem cobertura em 1 serviço'], [5, 2, '5 turnos sem cobertura em 2 serviços'], [3, 3, '3 turnos sem cobertura em 3 serviços'], [4, 1, '4 turnos sem cobertura em 1 serviço']]],
+  ] as const)('texto renderizado (%s) pluraliza turno(s) pelos TURNOS e servicio(s) pelos SERVIÇOS', async (lng, json, casos) => {
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } }, interpolation: { escapeValue: false } });
+    for (const [shifts, services, esperado] of casos) {
+      // `services` serviços, o total de `shifts` turnos repartido no primeiro (os demais com 0 não existem: cada item tem ≥ 1 turno)
+      const items = Array.from({ length: services }, (_, i) => item(`p${i}`, `s${i}`, i === 0 ? shifts - (services - 1) : 1, '2026-11-03'));
+      expect(handler().buildText(aviso(items), i18n.t.bind(i18n) as never)).toBe(esperado);
+    }
+  });
+
+  it('o clique abre o serviço MAIS URGENTE (primeiro turno mais cedo) direto na aba, por ?tab=itinerary&serviceId=', () => {
+    expect(handler().getDeepLink(aviso(ITEMS))).toEqual({ path: '/admin/patients/p-a?tab=itinerary&serviceId=s-a' });
+  });
+
+  it('linhas do cartão: ator "Enlite", contexto "Itinerario" e o primeiro turno em DD/MM', () => {
+    const n = aviso(ITEMS);
+    expect(handler().actorLabel?.(n, t)).toBe('admin.notifications.ptContactsPendingActor:{}');
+    expect(handler().contextLine?.(n, t)).toBe('admin.notifications.itineraryUncoveredContext:{}');
+    expect(handler().detailLine?.(n, t)).toBe('admin.notifications.itineraryUncoveredDetail:{"date":"03/11"}');
+  });
+
+  it('payload ausente/vazio: texto zerado, sem link e sem detalhe — nunca crash', () => {
+    for (const n of [aviso(null), aviso([])]) {
+      expect(handler().buildText(n, t)).toBe(
+        'admin.notifications.itineraryUncoveredText:{"shifts":"admin.notifications.itineraryUncoveredShifts:{\\"count\\":0}","services":"admin.notifications.itineraryUncoveredServices:{\\"count\\":0}"}',
+      );
+      expect(handler().getDeepLink(n)).toBeNull();
+      expect(handler().detailLine?.(n, t)).toBeNull();
+    }
+  });
+
+  it('payload de OUTRO tipo (sem `items`) é tratado como vazio', () => {
+    const n = notif({ typeCode: 'ITINERARY_UNCOVERED_SHIFTS', payload: { reason: 'missing' } as never });
+    expect(handler().getDeepLink(n)).toBeNull();
   });
 });

@@ -28,7 +28,7 @@ export interface PublicJobRow {
   country: string | null;            // jp.country — null-safe for legacy records
   age_range_min: number | null;      // jp.age_range_min — AT professional age range
   age_range_max: number | null;      // jp.age_range_max — AT professional age range
-  whatsapp_url: string | null;       // jp.talentum_whatsapp_url
+  can_apply: boolean;                // spec 067 FR-14/15: jp.talentum_whatsapp_url preenchido (o LINK nao sai desta rota)
 }
 
 /**
@@ -78,6 +78,6 @@ export interface PublicJobDto {
   country: string | null;
   age_range_min: number | null;
   age_range_max: number | null;
-  whatsapp_url: string | null;
+  can_apply: boolean;
   schedule_week: ScheduleWeekDto | null;
 }

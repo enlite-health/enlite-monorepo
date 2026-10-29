@@ -1,17 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdminInsuranceApiService } from '@infrastructure/http/AdminInsuranceApiService';
 import { CONTRACT_COUNTRIES, type InsuranceContractItem } from '@domain/entities/InsuranceContract';
+import { Lock } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { insuranceErrorText } from '@presentation/utils/insuranceErrors';
 import { contractTermTexts } from '../contractedServicePriceText';
 import { AvisoAmbar } from './AvisoAmbar';
 import type { ContractCascadeValue } from './contractCascadeValue';
+import { FIELD_CELL, FIELD_GRID } from './fieldGrid';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 const CARD = 'admin.patients.detail.contractedServicesCard';
+
+/** Passo numerado da cascata. O círculo (22px) fica CENTRADO no input: rótulo 12px×1,5 (18) + vão (4) + metade do input de 48 − metade do círculo = 35. */
+function Step({ n, children }: { n: number; children: ReactNode }): JSX.Element {
+  return (
+    <div className="grid grid-cols-[22px_minmax(0,1fr)] items-start gap-x-2.5" data-testid={`cascade-step-${n}`}>
+      <span aria-hidden="true" className="mt-[35px] grid h-[22px] w-[22px] place-items-center rounded-full bg-primary font-lexend text-xs font-semibold text-white" data-testid={`cascade-step-${n}-badge`}>{n}</span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
 
 interface Props {
   /** Prefixo dos testids (`<prefix>-provider`, `-contract`, `-valid-from`, `-valid-to`, `-term-preview`). */
@@ -35,7 +47,7 @@ interface Props {
  */
 export function ContractCascade({ idPrefix, country, value, onChange, lockedProvider = null, disabled = false }: Props): JSX.Element {
   const { t, i18n } = useTranslation();
-  const [providers, setProviders] = useState<SelectOption[]>([]);
+  const [providers, setProviders] = useState<ComboboxOption[]>([]);
   const [contracts, setContracts] = useState<InsuranceContractItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [providersLoaded, setProvidersLoaded] = useState(false);
@@ -73,13 +85,13 @@ export function ContractCascade({ idPrefix, country, value, onChange, lockedProv
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerCode, validCountry]);
 
-  const providerOptions = useMemo<SelectOption[]>(
+  const providerOptions = useMemo<ComboboxOption[]>(
     () => (lockedProvider && !providers.some((p) => p.value === lockedProvider.code)
       ? [{ value: lockedProvider.code, label: lockedProvider.name }, ...providers]
       : providers),
     [providers, lockedProvider],
   );
-  const contractOptions = useMemo<SelectOption[]>(() => contracts.map((c) => ({ value: c.id, label: c.name })), [contracts]);
+  const contractOptions = useMemo<ComboboxOption[]>(() => contracts.map((c) => ({ value: c.id, label: c.name })), [contracts]);
   const chosen = contracts.find((c) => c.id === value.contractId) ?? null;
   const preview = chosen ? contractTermTexts(t, chosen.currentTerm.state === 'OK' ? chosen.currentTerm : (chosen.futureTerms[0] ?? chosen.currentTerm), i18n.language) : null;
 
@@ -87,61 +99,82 @@ export function ContractCascade({ idPrefix, country, value, onChange, lockedProv
     return <AvisoAmbar testId={`${idPrefix}-no-country`}>{t(`${CARD}.cascade.noCountry`)}</AvisoAmbar>;
   }
 
+  const locked = lockedProvider !== null;
+
   return (
     <div className="flex flex-col gap-3" data-testid={`${idPrefix}-cascade`}>
       {loadError && <AvisoAmbar testId={`${idPrefix}-load-error`}>{loadError}</AvisoAmbar>}
       {providersLoaded && providerOptions.length === 0 && !loadError && (
         <AvisoAmbar testId={`${idPrefix}-no-providers`}>{t(`${CARD}.cascade.noProviders`)}</AvisoAmbar>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label={t(`${CARD}.cascade.provider`)} htmlFor={`${idPrefix}-provider`} optional>
-          <SelectField
-            id={`${idPrefix}-provider`}
-            inputSize="compact"
-            options={providerOptions}
-            placeholder={t('admin.patients.editDrawer.selectPlaceholder')}
-            value={providerCode}
-            // Trocar a obra social zera o contrato: a lista de um não vale para o outro.
-            onChange={(code) => onChange({ ...value, providerCode: code, contractId: '' })}
-            disabled={disabled || lockedProvider !== null}
-            data-testid={`${idPrefix}-provider`}
-          />
+      <Step n={1}>
+        <FormField label={t(`${CARD}.cascade.provider`)} htmlFor={`${idPrefix}-provider`} labelSize="compact" required={!locked}>
+          {/* Travada: o cadeado (SVG) no lugar da seta — a obra social só muda por correção ou por serviço novo. */}
+          <div className="relative [&_svg.lucide-chevron-down]:hidden" data-locked={locked || undefined}>
+            <Combobox
+              id={`${idPrefix}-provider`}
+              inputSize="compact"
+              options={providerOptions}
+              placeholder={t('admin.patients.editDrawer.selectPlaceholder')}
+              clearLabel={t('admin.patients.editDrawer.selectPlaceholder')}
+              value={providerCode}
+              // Trocar a obra social zera o contrato: a lista de um não vale para o outro.
+              onChange={(code) => onChange({ ...value, providerCode: code, contractId: '' })}
+              disabled={disabled || locked}
+              data-testid={`${idPrefix}-provider`}
+            />
+            {locked && <Lock aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#737373]" data-testid={`${idPrefix}-provider-lock`} />}
+          </div>
         </FormField>
-        <FormField label={t(`${CARD}.cascade.contract`)} htmlFor={`${idPrefix}-contract`} optional>
-          <SelectField
+        {locked && <Text size="xs" color="tertiary" className="mt-1" data-testid={`${idPrefix}-provider-locked-hint`}>{t(`${CARD}.cascade.lockedHint`)}</Text>}
+      </Step>
+      <Step n={2}>
+        <FormField label={t(`${CARD}.cascade.contract`)} htmlFor={`${idPrefix}-contract`} labelSize="compact" required>
+          <Combobox
             id={`${idPrefix}-contract`}
             inputSize="compact"
             options={contractOptions}
-            placeholder={t('admin.patients.editDrawer.selectPlaceholder')}
+            placeholder={t(`${CARD}.cascade.contractPlaceholder`)}
+            clearLabel={t(`${CARD}.cascade.contractPlaceholder`)}
             value={value.contractId}
             onChange={(id) => onChange({ ...value, contractId: id })}
             disabled={disabled || !providerCode}
             data-testid={`${idPrefix}-contract`}
           />
         </FormField>
-        <FormField label={t(`${CARD}.cascade.validFrom`)} htmlFor={`${idPrefix}-valid-from`} optional>
-          <InputWithIcon
-            id={`${idPrefix}-valid-from`}
-            type="date"
-            inputSize="compact"
-            value={value.validFrom}
-            onChange={(e) => onChange({ ...value, validFrom: e.target.value })}
-            disabled={disabled}
-            data-testid={`${idPrefix}-valid-from`}
-          />
-        </FormField>
-        <FormField label={t(`${CARD}.cascade.validTo`)} htmlFor={`${idPrefix}-valid-to`} optional hint={t(`${CARD}.cascade.validToHint`)} hintBelow>
-          <InputWithIcon
-            id={`${idPrefix}-valid-to`}
-            type="date"
-            inputSize="compact"
-            value={value.validTo}
-            onChange={(e) => onChange({ ...value, validTo: e.target.value })}
-            disabled={disabled}
-            data-testid={`${idPrefix}-valid-to`}
-          />
-        </FormField>
-      </div>
+      </Step>
+      <Step n={3}>
+        <div className={FIELD_GRID}>
+          <FormField className={FIELD_CELL} label={t(`${CARD}.cascade.validFrom`)} htmlFor={`${idPrefix}-valid-from`} labelSize="compact" required>
+            <InputWithIcon
+              id={`${idPrefix}-valid-from`}
+              type="date"
+              inputSize="compact"
+              value={value.validFrom}
+              onChange={(e) => onChange({ ...value, validFrom: e.target.value })}
+              disabled={disabled}
+              data-testid={`${idPrefix}-valid-from`}
+            />
+          </FormField>
+          <FormField
+            className={FIELD_CELL}
+            label={t(`${CARD}.cascade.validTo`)}
+            htmlFor={`${idPrefix}-valid-to`}
+            labelSize="compact"
+            labelExtra={<Text as="span" size="2xs" color="tertiary">{t(`${CARD}.cascade.noEndMark`)}</Text>}
+          >
+            <InputWithIcon
+              id={`${idPrefix}-valid-to`}
+              type="date"
+              inputSize="compact"
+              value={value.validTo}
+              onChange={(e) => onChange({ ...value, validTo: e.target.value })}
+              disabled={disabled}
+              data-testid={`${idPrefix}-valid-to`}
+            />
+          </FormField>
+        </div>
+      </Step>
       {chosen && preview && (
         <div className="flex flex-wrap gap-x-6 gap-y-1" data-testid={`${idPrefix}-term-preview`}>
           <Text as="span" size="sm" color="secondary">{t(`${CARD}.tableValue`)}: <Text as="span" size="sm" weight="medium" data-testid={`${idPrefix}-preview-price`}>{preview.price}</Text></Text>

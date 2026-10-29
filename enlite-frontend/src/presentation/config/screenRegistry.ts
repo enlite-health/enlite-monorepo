@@ -43,6 +43,11 @@ export interface ScreenDef {
   containers?: readonly ScreenContainer[];
   /** Abas da tela, na ordem — uma aba só existe se algum container dela for legível. */
   tabs?: readonly string[];
+  /**
+   * Como as `cells` da tela abrem o menu e a rota: `'all'` = EXIGE TODAS (o "E"); ausente = basta UMA (o "OU", o de toda
+   * tela existente). Só vale para `cells` — containers e abas seguem no OU. Spec 076: a lista global lê duas coisas.
+   */
+  openWith?: 'all';
 }
 
 import { ADMIN_USERS_PATH } from './adminHome';
@@ -89,7 +94,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -116,12 +121,12 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('admission', 'patient_admission', ['read', 'create', 'update', 'resend_message', 'release_paid_rehearsal', 'retry_summary'], 'admission'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),
-      // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado
-      // completo, que vive só na aba Serviço contratado — uma célula, uma aba.
-      c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService'),
+      c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService', 'itinerary'),
       // O VALOR-HORA do serviço contratado é dado próprio (era "só admin" por papel; D293): quem
       // tem `patient_services:read` vê o serviço, mas o preço só sai com esta célula.
       c('contractValue', 'patient_contract_value', ['read'], 'contractedService'),
+      // cadeia Fase 12 (D442): a ação de alocar; a leitura é `patient_services:read`.
+      c('itinerary', 'patient_itinerary', ['update'], 'itinerary'),
       // Spec 047 (F1): a aba Vacante saiu; o bloco desce para Serviço Contratado, abaixo dos serviços.
       // Célula e container NÃO mudam — só a aba a que pertencem (o card 5 cria a aba Admissão, com container próprio).
       c('vacancies', 'vacancy', ['read'], 'contractedService'),
@@ -136,6 +141,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   // Spec 017 (D299.3): os 2 catálogos do projeto terapêutico — uma tela e uma célula por lista (tipo de patologia deriva do CID-11, sem tela).
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },
   { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update'] },
+  { id: 'patients.catalogServiceExitReasons', route: '/admin/catalogos/motivos-de-salida', cells: ['catalog_service_exit_reasons:read', 'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update'] },
+  { id: 'patients.catalogServiceShiftTemplates', route: '/admin/catalogos/guardias', cells: ['catalog_service_shift_templates:read', 'catalog_service_shift_templates:create', 'catalog_service_shift_templates:update'] },
   { id: 'patients.catalogSegments', route: '/admin/catalogos/segmentos', cells: ['catalog_therapeutic_segments:read', 'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update'] },
   // Spec 058 (Parte A): cadastro da obra social. A lista abre e cria (só o nome); o detalhe é uma página de CARTÕES, um container por
   // dado — cada um com a célula do que ele lê/escreve. O valor-hora do termo é `patient_contract_value` (a mesma da ficha do paciente).
@@ -276,6 +283,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },
   // Spec 055: quem atende enquadre e admissão (tabela interview_hosts). `update` cobre a busca de candidatos, agregar, editar e quitar.
   { id: 'interviewHosts', route: '/admin/entrevistadores', cells: ['interview_host:read', 'interview_host:update'] },
+  // Spec 076: lista global de enquadres. O endpoint exige AS DUAS células (cruza evento e vaga) — por isso `openWith: 'all'`.
+  { id: 'enquadres', route: '/admin/enquadres', cells: ['enquadre_event:read', 'vacancy:read'], openWith: 'all' },
   { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
 ];
 

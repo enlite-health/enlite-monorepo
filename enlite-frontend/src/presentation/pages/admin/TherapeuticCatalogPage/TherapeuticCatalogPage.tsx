@@ -1,6 +1,6 @@
 /**
  * TherapeuticCatalogPage — administração de UM catálogo do projeto terapêutico (spec 017, D299):
- * objetivos específicos, rotina e atividades e segmentos Ana Care (spec 030) (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
+ * objetivos específicos, rotina e atividades, (change itinerario-trocas) motivos de saída do serviço e segmentos Ana Care (spec 030) (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
  * Uma TELA por lista e uma célula por lista (decisão do Gabriel, 08/09) — o componente é o mesmo, parametrizado por `kind`;
  * a rota, a célula e o título mudam.
  *
@@ -14,9 +14,16 @@ import { useTranslation } from 'react-i18next';
 import { ListChecks, Edit2, Plus } from 'lucide-react';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import {
+  SERVICE_EXIT_REASON_KIND,
+  catalogHasDescription,
+  SERVICE_EXIT_REASON_RESOURCE,
+  SERVICE_SHIFT_TEMPLATE_KIND,
+  SERVICE_SHIFT_TEMPLATE_RESOURCE,
   THERAPEUTIC_CATALOG_RESOURCE,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogItem,
+  type ShiftTemplate,
+  type ShiftTemplateItem,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -28,9 +35,28 @@ import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { TherapeuticCatalogFormModal, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
 import { segmentDisplayLabel } from './catalogSegment';
+import { shiftEndTime } from '@domain/scheduleHours';
+import { shiftRangeLabel } from '@presentation/components/features/admin/PatientDetail/itinerary/shiftRange';
+import { sortAlphabeticallyEs } from '@presentation/components/features/admin/PatientDetail/therapeuticProject/alphabeticalOrder';
 
-/** Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030). */
-type ManagedCatalogKind = TherapeuticCatalogKind;
+/**
+ * Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030) e
+ * (change itinerario-trocas) os motivos de saída do serviço — o mesmo conjunto de `AdminCatalogKind`.
+ */
+type ManagedCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND | typeof SERVICE_SHIFT_TEMPLATE_KIND;
+
+/** Linha da tabela; a guardia predefinida (spec 074) chega com `items` e sem Ordem/descrição/segmento. */
+type CatalogRow = TherapeuticCatalogItem & { items?: ShiftTemplateItem[] };
+
+const templateRow = (tpl: ShiftTemplate): CatalogRow => ({ id: tpl.id, label: tpl.label, active: tpl.active, items: tpl.items, sortOrder: 0, deactivatedAt: null, createdAt: '', updatedAt: '' });
+
+const CATALOG_RESOURCE: Readonly<Record<ManagedCatalogKind, string>> = {
+  'specific-objectives': THERAPEUTIC_CATALOG_RESOURCE['specific-objectives'],
+  activities: THERAPEUTIC_CATALOG_RESOURCE.activities,
+  segments: THERAPEUTIC_CATALOG_RESOURCE.segments,
+  [SERVICE_EXIT_REASON_KIND]: SERVICE_EXIT_REASON_RESOURCE,
+  [SERVICE_SHIFT_TEMPLATE_KIND]: SERVICE_SHIFT_TEMPLATE_RESOURCE,
+};
 
 interface Props {
   kind: ManagedCatalogKind;
@@ -40,14 +66,16 @@ interface Props {
 const KIND_KEY: Readonly<Record<ManagedCatalogKind, string>> = {
   'specific-objectives': 'specificObjectives',
   activities: 'activities',
+  [SERVICE_EXIT_REASON_KIND]: 'serviceExitReasons',
   segments: 'segments',
+  [SERVICE_SHIFT_TEMPLATE_KIND]: 'serviceShiftTemplates',
 };
 
 export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const tr = (k: string, o?: Record<string, unknown>) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
-  const resource = THERAPEUTIC_CATALOG_RESOURCE[kind];
+  const resource = CATALOG_RESOURCE[kind];
 
   // Trava de rota pela célula de LEITURA deste catálogo (defesa em profundidade; quem manda é o 403
   // do backend). Só nega com o engine ligado (D268/D286).
@@ -60,11 +88,18 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const writeGates = {
     'specific-objectives': useActionGate('catalog_therapeutic_objectives', 'update'),
     activities: useActionGate('catalog_therapeutic_activities', 'update'),
+    'service-exit-reasons': useActionGate('catalog_service_exit_reasons', 'update'),
     segments: useActionGate('catalog_therapeutic_segments', 'update'),
+    'service-shift-templates': useActionGate('catalog_service_shift_templates', 'update'),
   } as const;
   const writeGate = writeGates[kind];
 
-  const [items, setItems] = useState<TherapeuticCatalogItem[]>([]);
+  const isTemplate = kind === SERVICE_SHIFT_TEMPLATE_KIND;
+  const [items, setItems] = useState<CatalogRow[]>([]);
+  // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; `segments` e motivos de saída seguem na ordem do servidor.
+  // A guardia predefinida (spec 074) também não tem Ordem: lista A–Z, com os turnos sob o rótulo.
+  const showOrder = !catalogHasDescription(kind) && !isTemplate;
+  const shownItems = showOrder ? items : sortAlphabeticallyEs(items);
   // Segmentos (spec 030): só objetivos/atividades se vinculam; `null` = sem célula (403) ou catálogo sem vínculo.
   const [segments, setSegments] = useState<TherapeuticCatalogItem[] | null>(null);
   const hasSegmentLink = kind === 'specific-objectives' || kind === 'activities';
@@ -72,7 +107,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [formModal, setFormModal] = useState<{ open: boolean; item: TherapeuticCatalogItem | null }>({ open: false, item: null });
+  const [formModal, setFormModal] = useState<{ open: boolean; item: CatalogRow | null }>({ open: false, item: null });
 
   const fetchItems = useCallback(async () => {
     try {
@@ -80,7 +115,9 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
       setLoadError(null);
       // includeInactive: quem administra precisa ver o que está desligado para poder reativar.
       const [itemsRes, segmentsRes] = await Promise.allSettled([
-        AdminTherapeuticProjectsApiService.listCatalog(kind, { includeInactive: true }),
+        isTemplate
+          ? AdminTherapeuticProjectsApiService.listShiftTemplates({ includeInactive: true }).then((list) => list.map(templateRow))
+          : AdminTherapeuticProjectsApiService.listCatalog(kind as TherapeuticCatalogKind, { includeInactive: true }),
         hasSegmentLink ? AdminTherapeuticProjectsApiService.listCatalog('segments', { includeInactive: true }) : Promise.resolve(null),
       ]);
       if (itemsRes.status === 'rejected') throw itemsRes.reason;
@@ -92,25 +129,30 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [kind, hasSegmentLink]);
+  }, [kind, hasSegmentLink, isTemplate]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
   async function handleFormSave(data: CatalogItemFormData): Promise<void> {
-    if (formModal.item) {
-      await AdminTherapeuticProjectsApiService.updateCatalogItem(kind, formModal.item.id, data);
+    if (isTemplate) {
+      const body = { label: data.label ?? '', items: data.items ?? [] };
+      if (formModal.item) await AdminTherapeuticProjectsApiService.updateShiftTemplate(formModal.item.id, body);
+      else await AdminTherapeuticProjectsApiService.createShiftTemplate(body);
+    } else if (formModal.item) {
+      await AdminTherapeuticProjectsApiService.updateCatalogItem(kind as TherapeuticCatalogKind, formModal.item.id, data);
     } else {
-      await AdminTherapeuticProjectsApiService.createCatalogItem(kind, data);
+      await AdminTherapeuticProjectsApiService.createCatalogItem(kind as TherapeuticCatalogKind, { ...data, label: data.label ?? '' });
     }
     setFormModal({ open: false, item: null });
     setActionError(null);
     await fetchItems();
   }
 
-  async function handleToggleActive(item: TherapeuticCatalogItem): Promise<void> {
+  async function handleToggleActive(item: CatalogRow): Promise<void> {
     try {
       setActionError(null);
-      await AdminTherapeuticProjectsApiService.updateCatalogItem(kind, item.id, { active: !item.active });
+      if (isTemplate) await AdminTherapeuticProjectsApiService.updateShiftTemplate(item.id, { active: !item.active });
+      else await AdminTherapeuticProjectsApiService.updateCatalogItem(kind as TherapeuticCatalogKind, item.id, { active: !item.active });
       await fetchItems();
     } catch (err: unknown) {
       setActionError(catalogRefusalMessage(err, t));
@@ -138,7 +180,10 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         </ActionButton>
       </div>
 
-      <Text size="sm" color="muted" className="mb-6">{tr(`kinds.${KIND_KEY[kind]}.subtitle`)}</Text>
+      <Text size="sm" color="muted" className={kind === SERVICE_EXIT_REASON_KIND ? 'mb-2' : 'mb-6'}>{tr(`kinds.${KIND_KEY[kind]}.subtitle`)}</Text>
+      {kind === SERVICE_EXIT_REASON_KIND && (
+        <Text size="sm" className="mb-6" data-testid="catalog-guidance">{tr('kinds.serviceExitReasons.guidance')}</Text>
+      )}
 
       {actionError && (
         <div className="mb-4 border border-red-300 bg-red-50 rounded-lg px-4 py-3" role="alert" data-testid="therapeutic-catalog-action-error">
@@ -160,20 +205,38 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto" data-testid="therapeutic-catalog-table">
           <Table>
             <TableHeader>
-              <TableHead>{tr('table.order')}</TableHead>
-              <TableHead>{tr('table.label')}</TableHead>
+              {showOrder && <TableHead>{tr('table.order')}</TableHead>}
+              <TableHead>{tr(catalogHasDescription(kind) ? 'table.title' : 'table.label')}</TableHead>
               {segments !== null && <TableHead>{tr('table.segment')}</TableHead>}
               <TableHead>{tr('table.status')}</TableHead>
               <TableHead align="right">{tr('table.actions')}</TableHead>
             </TableHeader>
             <TableBody>
-              {items.map((item) => (
+              {shownItems.map((item) => (
                 <TableRow key={item.id} clickable={false} data-testid={`therapeutic-catalog-row-${item.id}`}>
-                  <TableCell unwrapped>
-                    <Text as="span" size="sm" color="muted" className="font-mono">{item.sortOrder}</Text>
-                  </TableCell>
+                  {showOrder && (
+                    <TableCell unwrapped>
+                      <Text as="span" size="sm" color="muted" className="font-mono">{item.sortOrder}</Text>
+                    </TableCell>
+                  )}
                   <TableCell unwrapped>
                     <Text as="span" size="sm" color={item.active ? 'primary' : 'muted'} data-testid={`therapeutic-catalog-label-${item.id}`}>{item.label}</Text>
+                    {item.items && (
+                      <Text size="xs" color="tertiary" className="mt-0.5" data-testid={`therapeutic-catalog-shifts-${item.id}`}>
+                        {item.items.map((it) => shiftRangeLabel(t, { startTime: it.startTime, endTime: shiftEndTime(it.startTime, it.durationMinutes), durationMinutes: it.durationMinutes }, 'full')).join(' · ')}
+                      </Text>
+                    )}
+                    {!showOrder && item.description && (
+                      <Text
+                        size="xs"
+                        color="tertiary"
+                        className="mt-0.5 line-clamp-2"
+                        title={item.description}
+                        data-testid={`therapeutic-catalog-description-${item.id}`}
+                      >
+                        {item.description}
+                      </Text>
+                    )}
                   </TableCell>
                   {segments !== null && (
                     <TableCell unwrapped>
@@ -223,6 +286,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
 
       {formModal.open && (
         <TherapeuticCatalogFormModal
+          kind={kind}
           item={formModal.item}
           segments={segments}
           onSave={handleFormSave}

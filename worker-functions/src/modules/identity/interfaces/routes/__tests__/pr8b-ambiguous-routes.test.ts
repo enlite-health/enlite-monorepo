@@ -94,7 +94,7 @@ const CASOS: CasoAmbiguo[] = [
     buildRouter: (perm) =>
       createAdminVacanciesRoutes(
         autoDouble(), autoDouble(), autoDouble(), autoDouble(), autoDouble(), autoDouble(),
-        autoDouble(), autoDouble(), autoDouble(), authComoUid('u'), perm,
+        autoDouble(), autoDouble(), authComoUid('u'), perm,
       ),
   },
   {

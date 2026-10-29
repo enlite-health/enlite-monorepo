@@ -28,6 +28,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { execSync } from 'child_process';
+import { escolherNoCombo } from './helpers/combobox';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY  = 'test-api-key';
@@ -232,14 +233,13 @@ test.describe('AdminPatientsPage', () => {
     await expect(page.locator('text=Alomon, Francisco').first()).toBeVisible({ timeout: 15000 });
 
     // Select "Precisa atención" option
-    const attentionSelect = page.locator('select').first();
-    await attentionSelect.selectOption('needs_attention');
-
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/patients') &&
         resp.url().includes('needs_attention=true'),
     );
+    await escolherNoCombo(page, page.getByTestId('filter-attention'), 'Precisa atenção'); // needs_attention
+    await resposta;
 
     expect(capturedUrl).toContain('needs_attention=true');
   });
@@ -257,14 +257,13 @@ test.describe('AdminPatientsPage', () => {
     await page.goto('/admin/patients');
     await expect(page.locator('text=Alomon, Francisco').first()).toBeVisible({ timeout: 15000 });
 
-    const dependencySelect = page.locator('[data-testid="filter-dependency"] select');
-    await dependencySelect.selectOption('SEVERE');
-
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/patients') &&
         resp.url().includes('dependency_level=SEVERE'),
     );
+    await escolherNoCombo(page, page.getByTestId('filter-dependency'), 'Grave'); // SEVERE
+    await resposta;
 
     expect(capturedUrl).toContain('dependency_level=SEVERE');
   });
@@ -354,11 +353,11 @@ test.describe('AdminPatientsPage', () => {
     await expect(page.locator('text=Page1').first()).toBeVisible({ timeout: 15000 });
 
     // Change to 10 per page
-    const itemsPerPageSelect = page.locator('select').last();
-    await itemsPerPageSelect.selectOption('10');
-    await page.waitForResponse(
+    const resposta = page.waitForResponse(
       (r) => r.url().includes('/api/admin/patients') && !r.url().includes('/stats'),
     );
+    await escolherNoCombo(page, page.getByRole('combobox').last(), '10');
+    await resposta;
 
     const nextBtn = page.getByRole('button', { name: /Próxima página/i });
     await expect(nextBtn).not.toBeDisabled();

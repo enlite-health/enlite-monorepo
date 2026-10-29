@@ -32,6 +32,7 @@ import {
   PatientStatusTransitionError,
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
+  PatientStatusLockedByAllocationError,
   SuspensionExitReasonRequiredError,
 } from '../../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
@@ -145,6 +146,16 @@ describe('AdminPatientsController — bloco B', () => {
         code: 'PATIENT_STATUS_NOT_READY',
         details: { to: 'ACTIVE', missing: ['ADDRESS', 'SERVICE_SCHEDULE'] },
       });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('alocação viva no itinerário → 422 PATIENT_STATUS_LOCKED_BY_ALLOCATION só com a contagem (sem nome), sem reportError (D489/D530)', async () => {
+      const moveStatus = jest.fn().mockRejectedValueOnce(new PatientStatusLockedByAllocationError(2));
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes({ id: ID }, { status: 'ON_HOLD', changeSource: 'kanban' });
+      await ctrl.updatePatientStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(bodyOf(res)).toMatchObject({ success: false, code: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION', details: { allocations: 2 } });
       expect(reportError).not.toHaveBeenCalled();
     });
 

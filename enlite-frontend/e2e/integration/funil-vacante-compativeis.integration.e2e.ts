@@ -54,12 +54,13 @@ const MOCK_STAFF: MockUser = {
 };
 const MOCK_TOKEN = tokenFor(MOCK_STAFF);
 
-/** A ordem das 8 colunas do quadro B, fonte única `funnelTabsConfig.ts:20-30` (critério 3). */
+/** A ordem das 9 colunas do quadro B (spec 067: Bloqueados antes de Completado), fonte única `funnelTabsConfig.ts`. */
 const KANBAN_COLUMN_ORDER = [
   'COMPATIBLE',
   'INVITED',
   'INICIADO',
   'PRE_SCREENING',
+  'BLOQUEADO',
   'COMPLETED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM',
@@ -151,7 +152,7 @@ test.describe('funil da vacante — Compatíveis nos 3 lugares @integration', ()
       const kanbanCounts = await readCompatibleCountsOnScreen(page, seed.vacancyId);
       const kanbanInvited = await readStageCount(page, 'kanban-column-INVITED-count');
       const columnIds = await readKanbanColumnIdsInOrder(page);
-      const emptyColumns = page.getByTestId(/kanban-column-(IN_PROGRESS|BLOQUEADO)$/);
+      const emptyColumns = page.getByTestId(/kanban-column-IN_PROGRESS$/);
 
       // API: readFunnelApi (stages.COMPATIBLE) + GET /vacancies (stageCounts.COMPATIBLE).
       const funnelApiData = (await readFunnelApi(request, MOCK_TOKEN, seed.vacancyId)) as {
@@ -187,9 +188,9 @@ test.describe('funil da vacante — Compatíveis nos 3 lugares @integration', ()
       expect(listaInvited, 'linhas da Lista com data-stage=INVITED').toBe(1);
       expect(kanbanInvited, 'kanban kanban-column-INVITED-count').toBe(1);
 
-      // Critério 3: a lista literal das 9 colunas, na ordem, e 0 para IN_PROGRESS|BLOQUEADO.
+      // Critério 3: a lista literal das 9 colunas, na ordem (Bloqueados é coluna desde a spec 067), e 0 para IN_PROGRESS.
       expect(columnIds, 'ordem das 9 colunas do kanban').toEqual([...KANBAN_COLUMN_ORDER]);
-      await expect(emptyColumns, 'IN_PROGRESS/BLOQUEADO não são coluna').toHaveCount(0);
+      await expect(emptyColumns, 'IN_PROGRESS não é coluna (dobrada em Pre Screening)').toHaveCount(0);
 
       // Critério 8: nenhuma request de match ENQUANTO a lista de vacantes esteve aberta;
       // controle positivo: a própria GET /vacancies aconteceu nessa janela.

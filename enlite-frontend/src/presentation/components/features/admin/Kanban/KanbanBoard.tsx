@@ -128,6 +128,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
     id: c.id,
     color: c.color,
     droppable: c.droppable,
+    cancelDrop: c.cancelDrop,
     title: t(`admin.kanban.columns.${c.id}`),
   }));
 

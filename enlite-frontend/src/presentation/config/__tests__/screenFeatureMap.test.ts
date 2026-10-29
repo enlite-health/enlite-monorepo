@@ -48,6 +48,10 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
   // Spec 017: os 3 catálogos do projeto terapêutico — gateados pela célula própria de cada um, não por país.
   'catalogos/objetivos-especificos', 'catalogos/actividades',
+  // Fase 1 itinerario-trocas: motivos de saída do serviço — célula própria (`catalog_service_exit_reasons:read`).
+  'catalogos/motivos-de-salida',
+  // Spec 074: guardias predefinidas — célula própria (`catalog_service_shift_templates:read`).
+  'catalogos/guardias',
   // Spec 029: prompts de IA — gateada pela célula própria (`ai_prompt:read`), não por país; mesmo caso
   // de tags/plantillas/catálogos acima (tela de configuração global, sem chave `screen:*` no manifest).
   'prompts-ia',
@@ -57,6 +61,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'entrevistadores',
   // Spec 058: cadastro da obra social — gateado pelas células próprias (`catalog_insurance_providers:*`...), não por país.
   'obras-sociales', 'obras-sociales/:code',
+  // Spec 076: lista global de enquadres — gateada pelas DUAS células (`enquadre_event:read` + `vacancy:read`, `openWith: 'all'`), não por país (FR-03).
+  'enquadres',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */

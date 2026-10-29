@@ -37,6 +37,7 @@ import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import InterviewHostsPage from './pages/admin/InterviewHostsPage';
+import AdminEnquadresPage from './pages/admin/AdminEnquadresPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
 import { AiPromptsPage } from './pages/admin/AiPromptsPage/AiPromptsPage';
 import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
@@ -271,6 +272,8 @@ export function App() {
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="entrevistadores" element={<InterviewHostsPage />} />
+          {/* Spec 076: lista global de enquadres. Sem chave `screen:*` nem FeatureRouteGate (FR-03): a trava é a das duas células, na página. */}
+          <Route path="enquadres" element={<AdminEnquadresPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
           <Route path="prompts-ia" element={<AiPromptsPage />} />
           <Route path="plantillas" element={<TemplateCatalogPage />} />
@@ -285,6 +288,8 @@ export function App() {
           {/* Spec 017: uma TELA por catálogo do projeto terapêutico (célula própria cada); sem `screen:*` no manifest, como patient-chat-roles. */}
           <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
+          <Route path="catalogos/motivos-de-salida" element={<TherapeuticCatalogPage kind="service-exit-reasons" />} />
+          <Route path="catalogos/guardias" element={<TherapeuticCatalogPage kind="service-shift-templates" />} />
           <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           {/* Perfil da conta logada (Identidade · Tactiq · Idioma · Accesos · Sair). Sem chave `screen:*`: é a conta do

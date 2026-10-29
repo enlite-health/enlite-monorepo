@@ -10,7 +10,7 @@
  *    "Editar" apagaria em silêncio um item que o servidor ainda tem no snapshot.
  *  · O corpo enviado leva os textos com `trim` — espaço não é conteúdo clínico.
  *
- * `IcdSearchCombobox` é dublê (REQ-21: o código do CID não passa por aqui); `MultiSelect`/`Select`
+ * `IcdSearchCombobox` é dublê (REQ-21: o código do CID não passa por aqui); `Combobox`/`Select`
  * são os REAIS — a régua é o que o operador consegue fazer na tela, não o que a prop aceita.
  */
 import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
@@ -27,6 +27,7 @@ import type {
 } from '@domain/entities/PatientDetail';
 import type { TherapeuticCatalogItem, TherapeuticFieldClass, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import type { TherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
 // ── i18n mock (molde `PatientDetailCards.gate.test.tsx`) ─────────────────────
@@ -72,8 +73,8 @@ const servico = (over: Partial<PatientContractedServiceDetail> = {}): PatientCon
   serviceCode: 'AT',
   professionalProfile: null,
   providersNeeded: 1,
-  authorizedHours: 20,
-  weeklyHours: 20,
+  authorization: null,
+  scheduleHours: 20,
   careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS,
   startDate: null,
@@ -170,7 +171,7 @@ const onDirty = vi.fn();
 const montar = (over: Partial<Props> = {}) =>
   render(
     <TherapeuticProjectForm
-      services={over.services ?? [servico(), servico({ id: 'svc-2', serviceCode: 'CAREGIVER', weeklyHours: null })]}
+      services={over.services ?? [servico(), servico({ id: 'svc-2', serviceCode: 'CAREGIVER', scheduleHours: 0 })]}
       servicesRedacted={over.servicesRedacted ?? false}
       patientDiagnoses={over.patientDiagnoses ?? DIAGS}
       catalogs={over.catalogs ?? CATALOGOS}
@@ -193,23 +194,27 @@ const montar = (over: Partial<Props> = {}) =>
 
 const salvar = () => screen.getByTestId('tp-save') as HTMLButtonElement;
 
-/** A lista aberta do MultiSelect real (o `ul[role=listbox]`), abrindo-o se estiver fechado. */
+/** A lista aberta do Combobox real (o `id` é do GATILHO; o `ul[role=listbox]` mora no pai dele), abrindo-o se estiver fechado. */
 function listaDoMulti(id: string): HTMLElement {
-  const raiz = document.getElementById(id)!;
-  const gatilho = raiz.querySelector('button')!;
+  const gatilho = document.getElementById(id)!;
   if (gatilho.getAttribute('aria-expanded') !== 'true') fireEvent.click(gatilho);
-  return raiz.querySelector('ul[role="listbox"]') as HTMLElement;
+  return gatilho.parentElement!.querySelector('ul[role="listbox"]') as HTMLElement;
 }
 
-/** Marca/desmarca a opção com aquele rótulo no MultiSelect real (o operador clicando, não a prop). */
+/** Marca/desmarca a opção com aquele rótulo no Combobox real (o operador clicando, não a prop). */
 function alternarNoMulti(id: string, label: string): void {
   const alvo = within(listaDoMulti(id)).getByText(label);
   fireEvent.click(alvo.closest('button')!);
 }
 
-function preencherTudo(): void {
-  fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'HYBRID' } });
-  fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
+/** Escolhe o rótulo num Combobox de escolha única (id = do gatilho): o operador abrindo e clicando. */
+function escolherNoCombo(id: string, label: string): void {
+  alternarNoMulti(id, label);
+}
+
+function preencherTudo(opts: { semSegmento?: boolean } = {}): void {
+  escolherNoCombo('tp-modality', 'Híbrida'); // HYBRID = Híbrida
+  if (!opts.semSegmento) chooseCombo(screen.getByTestId('tp-segment'), 'Segmento A');
   fireEvent.click(screen.getByTestId('icd-pick-a'));
   fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: '  contexto clínico  ' } });
   fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: '  objetivo geral  ' } });
@@ -239,26 +244,24 @@ describe('modo "Novo" — versão do zero', () => {
   it('serviço: pré-seleciona o primeiro ATIVO e rotula com as horas quando existem', () => {
     montar();
 
-    const select = screen.getByTestId('tp-service') as HTMLSelectElement;
-    expect(select.value).toBe('svc-1');
-    const opcoes = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+    expect(screen.getByTestId('tp-service')).toHaveTextContent('Acompanhante Terapêutico · 20 h/sem'); // svc-1
+    const opcoes = Array.from(listaDoMulti('tp-service').querySelectorAll('li[role="option"]')).map((o) => o.textContent);
     expect(opcoes).toContain('Acompanhante Terapêutico · 20 h/sem');
-    expect(opcoes).toContain('Cuidador'); // `weeklyHours: null` → sem o sufixo
+    expect(opcoes).toContain('Cuidador'); // `scheduleHours: 0` → sem o sufixo
     expect(screen.queryByTestId('tp-no-service')).not.toBeInTheDocument();
   });
 
   it('serviço INATIVO não entra na lista de escolha', () => {
     montar({ services: [servico(), servico({ id: 'svc-morto', active: false, serviceCode: 'CAREGIVER' })] });
 
-    const select = screen.getByTestId('tp-service') as HTMLSelectElement;
-    expect(Array.from(select.querySelectorAll('option')).map((o) => (o as HTMLOptionElement).value)).toEqual(['', 'svc-1']);
+    expect(Array.from(listaDoMulti('tp-service').querySelectorAll('li[role="option"]'))).toHaveLength(1); // só svc-1, o inativo fica fora
   });
 
   it('🔴 sem NENHUM serviço ativo: aviso âmbar e "Salvar" travado (não há o que vincular)', () => {
     montar({ services: [servico({ active: false })] });
 
     expect(screen.getByTestId('tp-no-service')).toHaveTextContent(tf('noActiveService'));
-    expect((screen.getByTestId('tp-service') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByTestId('tp-service')).toHaveTextContent(tf('servicePlaceholder'));
     expect(salvar().disabled).toBe(true);
   });
 
@@ -274,9 +277,9 @@ describe('modo "Novo" — versão do zero', () => {
   it('trocar o serviço marca o formulário como sujo', () => {
     montar();
 
-    fireEvent.change(screen.getByTestId('tp-service'), { target: { value: 'svc-2' } });
+    escolherNoCombo('tp-service', 'Cuidador'); // svc-2 = Cuidador (weeklyHours null: sem sufixo)
 
-    expect((screen.getByTestId('tp-service') as HTMLSelectElement).value).toBe('svc-2');
+    expect(screen.getByTestId('tp-service')).toHaveTextContent('Cuidador');
     expect(onDirty).toHaveBeenCalled();
   });
 });
@@ -374,16 +377,16 @@ describe('"Salvar" fica travado até TODA regra passar', () => {
     montar({ patientDiagnoses: [] });
     preencherTudo();
     expect(salvar().disabled).toBe(false);
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: '' } });
-    expect(salvar().disabled).toBe(true);
-    const opcoes = Array.from((screen.getByTestId('tp-modality') as HTMLSelectElement).options).map((o) => o.value).filter(Boolean);
-    expect(opcoes).toEqual(['IN_PERSON', 'ONLINE', 'HYBRID']);
-    expect(screen.getByText(ptBR.admin.patients.detail.therapeuticProjectCard.modalityOptions.ONLINE)).toBeInTheDocument();
+    cleanup();
+    montar({ patientDiagnoses: [] });
+    const opcoes = Array.from(listaDoMulti('tp-modality').querySelectorAll('li[role="option"]')).map((o) => o.textContent);
+    expect(opcoes).toEqual(['Presencial', 'On-line', 'Híbrida']); // IN_PERSON, ONLINE, HYBRID — sem linha de limpar
+    expect(opcoes).toContain(ptBR.admin.patients.detail.therapeuticProjectCard.modalityOptions.ONLINE);
     cleanup();
     montar({ from: { ...VERSAO, modality: null } });
-    expect((screen.getByTestId('tp-modality') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByTestId('tp-modality')).toHaveTextContent(tf('modalityPlaceholder'));
     expect(salvar().disabled).toBe(true);
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     expect(salvar().disabled).toBe(false);
   });
 
@@ -553,6 +556,15 @@ describe('🔒 D328/ADR-4 — campo MACRO trava na edição, nunca vira input de
 
     expect(screen.getByTestId('tp-specificObjectives-locked')).toHaveTextContent('—');
     expect(screen.getByTestId('tp-activities-locked')).toHaveTextContent('—');
+  });
+
+  it('spec 060: atividades travadas (MACRO) saem A–Z, sem mudar a versão de origem', () => {
+    const atividades = [item('ac1', 'Zeta actividad'), item('ac2', 'Árbol actividad'), item('ac3', 'Abeja actividad')];
+    montar({ from: { ...VERSAO, activities: atividades } });
+
+    const lis = Array.from(screen.getByTestId('tp-activities-locked').querySelectorAll('li')).map((li) => li.textContent);
+    expect(lis).toEqual(['Abeja actividad', 'Árbol actividad', 'Zeta actividad']);
+    expect(atividades.map((a) => a.id)).toEqual(['ac1', 'ac2', 'ac3']);
   });
 
   it('serviço travado cujo id não existe em `services` (removido/de outro paciente): cai no id cru, não quebra', () => {
@@ -772,11 +784,10 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
 
   it('obrigatório em "Nuevo": tudo preenchido menos o segmento trava "Salvar"; escolher destrava e vai no corpo', () => {
     montar({ patientDiagnoses: [] });
-    preencherTudo();
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: '' } });
+    preencherTudo({ semSegmento: true });
     expect(salvar().disabled).toBe(true);
 
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-B' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento B');
     expect(salvar().disabled).toBe(false);
     fireEvent.click(salvar());
 
@@ -799,7 +810,7 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
 
   it('catálogo vazio/403: mensagem "No hay segmentos activos" e "Salvar" bloqueado em "Nuevo"', () => {
     montar({ patientDiagnoses: [], catalogs: { ...CATALOGOS, segments: [] } });
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'HYBRID' } });
+    escolherNoCombo('tp-modality', 'Híbrida'); // HYBRID = Híbrida
     fireEvent.click(screen.getByTestId('icd-pick-a'));
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'x' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'y' } });
@@ -822,6 +833,9 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
   it('C8: select e texto travado levam `data-clarity-mask`', () => {
     const { unmount } = montar();
     expect(screen.getByTestId('tp-segment')).toHaveAttribute('data-clarity-mask', 'True');
+    // o painel aberto (busca + opções) também é mascarado: os rótulos do catálogo são dado de saúde
+    fireEvent.click(screen.getByTestId('tp-segment'));
+    expect(screen.getByTestId('tp-segment').parentElement!.querySelector('ul[role="listbox"]')!.parentElement).toHaveAttribute('data-clarity-mask', 'True');
     unmount();
     montar({ from: { ...VERSAO, segment: { id: 'seg-A', label: 'Segmento A' } } });
     expect(screen.getByTestId('tp-segment-locked')).toHaveAttribute('data-clarity-mask', 'True');
@@ -830,7 +844,7 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
   it('o segmento escolhido filtra objetivos: os dele primeiro, os sem vínculo depois, o de outro segmento fora', () => {
     montar({ patientDiagnoses: [], catalogs: catalogoComVinculos() });
 
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento A');
 
     const opcoes = Array.from(listaDoMulti('tp-specificObjectives').querySelectorAll('li')).map((li) => li.textContent);
     expect(opcoes).toEqual(['Objetivo 1', 'Objetivo sem vínculo']);
@@ -838,10 +852,10 @@ describe('campo "Segmento (Ana Care)" (spec 030)', () => {
 
   it('item já escolhido continua na lista mesmo depois de trocar para outro segmento', () => {
     montar({ patientDiagnoses: [], catalogs: catalogoComVinculos() });
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-B' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento B');
     alternarNoMulti('tp-specificObjectives', 'Objetivo 2');
 
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
+    chooseCombo(screen.getByTestId('tp-segment'), 'Segmento A');
 
     expect(within(listaDoMulti('tp-specificObjectives')).getByText('Objetivo 2')).toBeInTheDocument();
   });
@@ -912,7 +926,7 @@ describe('spec 048 — "Todavía no hay registro" / "No necesita" no corpo envia
       from: { ...VERSAO, contactStatus: [{ kind: 'COVERAGE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }] },
       initialContactStatus: [{ kind: 'COVERAGE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }],
     });
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     fireEvent.click(salvar());
     expect(onSubmit.mock.calls[0][0].contactStatus).toEqual({ COVERAGE: 'NOT_NEEDED' });
   });
@@ -923,8 +937,51 @@ describe('spec 048 — "Todavía no hay registro" / "No necesita" no corpo envia
       initialContactStatus: [{ kind: 'CARE_TEAM', status: 'PENDING', pendingSince: '2026-10-01T12:00:00.000Z', deadlineDate: '2026-10-16' }],
     });
     marcar('tp-careTeam-pending');
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     fireEvent.click(salvar());
     expect(onSubmit.mock.calls[0][0].contactStatus).toEqual({});
+  });
+});
+
+// ── Atividades A–Z e busca — spec 060 ────────────────────────────────────────
+
+describe('campo de atividades: A–Z e busca (spec 060)', () => {
+  const catalogoDesordenado = (): TherapeuticCatalogs => ({
+    'specific-objectives': [item('so2', 'Objetivo 2'), item('so1', 'Objetivo 1')],
+    activities: [item('ac1', 'Zeta actividad'), item('ac2', 'Árbol actividad'), item('ac3', 'Abeja actividad')],
+    segments: [item('seg-A', 'Segmento A')],
+  });
+  const rotulosDe = (id: string) => Array.from(listaDoMulti(id).querySelectorAll('li')).map((li) => li.textContent);
+
+  it('(a) atividades saem A–Z; objetivos seguem a ordem do catálogo', () => {
+    montar({ patientDiagnoses: [], catalogs: catalogoDesordenado() });
+
+    expect(rotulosDe('tp-activities')).toEqual(['Abeja actividad', 'Árbol actividad', 'Zeta actividad']);
+    expect(rotulosDe('tp-specificObjectives')).toEqual(['Objetivo 2', 'Objetivo 1']);
+    expect(screen.queryByTestId('tp-specificObjectives-search')).not.toBeInTheDocument();
+  });
+
+  it('(b) digitar "arbol" na busca deixa só "Árbol actividad"', () => {
+    montar({ patientDiagnoses: [], catalogs: catalogoDesordenado() });
+    listaDoMulti('tp-activities');
+
+    fireEvent.change(screen.getByTestId('tp-activities-search'), { target: { value: 'arbol' } });
+
+    expect(rotulosDe('tp-activities')).toEqual(['Árbol actividad']);
+  });
+
+  it('(c) filtrar, marcar a atividade filtrada e salvar leva o id dela em activityIds (além do já marcado)', () => {
+    montar({
+      patientDiagnoses: [],
+      catalogs: { ...CATALOGOS, // 3 opções: a busca só aparece com >= SEARCH_MIN_OPTIONS (regra do Combobox, não do site)
+      activities: [item('ac1', 'Atividade 1'), item('ac2', 'Árbol actividad'), item('ac3', 'Zeta actividad')] },
+    });
+    preencherTudo(); // marca 'Atividade 1' (ac1)
+    listaDoMulti('tp-activities');
+    fireEvent.change(screen.getByTestId('tp-activities-search'), { target: { value: 'arbol' } });
+    alternarNoMulti('tp-activities', 'Árbol actividad');
+    fireEvent.click(salvar());
+
+    expect(onSubmit.mock.calls[0][0].activityIds).toEqual(['ac1', 'ac2']);
   });
 });

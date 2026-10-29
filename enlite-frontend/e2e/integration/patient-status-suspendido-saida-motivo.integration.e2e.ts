@@ -28,6 +28,7 @@ import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const STAFF: MockUser = { uid: 'e2e-int-admin-486-ficha', email: 'admin.486.ficha@e2e.test', role: 'admin', country: 'AR' };
 const STAMP = Date.now().toString().slice(-6);
@@ -54,7 +55,7 @@ test.describe('Saída de SUSPENDED com motivo (migration 486, decisão do Gabrie
       const save = page.getByTestId('patient-status-save');
       await expect(save).toBeDisabled();
 
-      await exitReason.selectOption('RESUMED_SERVICE');
+      await escolherNoCombo(page, exitReason, 'Retomó el servicio (fin de vacaciones/internación)'); // RESUMED_SERVICE
       await expect(save).toBeEnabled();
       await expect(page).toHaveScreenshot('d486-feliz-motivo-selecionado.png', { maxDiffPixelRatio: 0.05 });
       await save.click();
@@ -130,12 +131,12 @@ test.describe('Saída de SUSPENDED com motivo (migration 486, decisão do Gabrie
       await expect(save).toBeDisabled();
 
       // só o motivo de espera: continua desabilitado (falta o de saída de SUSPENDED)
-      await waitReason.selectOption('SCHOOL');
+      await escolherNoCombo(page, waitReason, 'Escuela'); // SCHOOL
       await expect(save).toBeDisabled();
 
       // só o de saída (limpando o de espera não é uma opção real — o de espera é obrigatório
       // independente de SUSPENDED): com os dois, habilita.
-      await exitReason.selectOption('OTHER');
+      await escolherNoCombo(page, exitReason, 'Otro'); // OTHER
       await expect(save).toBeEnabled();
       await expect(page).toHaveScreenshot('d486-alt2-dois-motivos.png', { maxDiffPixelRatio: 0.05 });
       await save.click();

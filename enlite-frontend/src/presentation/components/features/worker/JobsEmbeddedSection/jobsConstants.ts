@@ -1,5 +1,5 @@
 import { TFunction } from 'i18next';
-import type { SelectOption } from '@presentation/components/molecules/SelectField';
+import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { buildPendingRows } from '@presentation/utils/pendingRows';
 export type { PublicJobListing } from '@domain/entities/PublicJobListing';
 
@@ -28,24 +28,25 @@ export interface Job {
   daysAndHours: string;
   ageRange: string;
   profile: string;
-  whatsappLink: string;
+  /** Spec 067 FR-15: a vaga é postulável. O link da Talentum não vem no feed público (só no 200 de track-channel). */
+  canApply: boolean;
   detailLink: string;
 }
 
-export const getWorkerTypeOptions = (t: TFunction): SelectOption[] => [
+export const getWorkerTypeOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'acompañante terapéutico', label: t('jobs.types.at') },
   { value: 'acompañante terapéutico (at)', label: t('jobs.types.at_full') },
   { value: 'acompañante terapéutico (at) escolar', label: t('jobs.types.at_school') },
   { value: 'cuidador/a', label: t('jobs.types.caregiver') },
 ];
 
-export const getProvinceOptions = (t: TFunction): SelectOption[] => [
+export const getProvinceOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'caba', label: t('jobs.provinces.caba') },
   { value: 'provincia de buenos aires', label: t('jobs.provinces.buenos_aires') },
   { value: 'provincia de misiones', label: t('jobs.provinces.misiones') },
 ];
 
-export const getLocalityOptions = (): SelectOption[] => [
+export const getLocalityOptions = (): ComboboxOption[] => [
   { value: 'adrogué (internación) y boedo, caba', label: 'Adrogué (Internación) y Boedo, CABA' },
   { value: 'almagro', label: 'Almagro' },
   { value: 'avellaneda', label: 'Avellaneda' },
@@ -123,7 +124,7 @@ export const getLocalityOptions = (): SelectOption[] => [
  * Sobram busca livre, tipo, província, localidade e sexo.
  */
 
-export const getSexOptions = (t: TFunction): SelectOption[] => [
+export const getSexOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'femenino', label: t('jobs.sex.female') },
   { value: 'hombre', label: t('jobs.sex.male') },
   { value: 'indistinto', label: t('jobs.sex.indifferent') },
@@ -145,7 +146,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes a viernes de 09:00 a 15:00 hs.',
     ageRange: '25 a 40 años',
     profile: 'AT con experiencia en casos complejos de salud mental y trastornos de personalidad.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20736',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/736/',
   },
   {
@@ -162,7 +163,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes y jueves de 11:00 a 14:00. (A partir de mayo se suma el viernes).',
     ageRange: '20 a 45 años (Sugerido)',
     profile: 'Profesional mujer con formación en AT y experiencia en discapacidad intelectual y comunicación.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20732',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/732/',
   },
   {
@@ -179,7 +180,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes, miércoles y viernes 8-12h; martes y jueves 10-14h.',
     ageRange: 'Adulto',
     profile: 'Profesional con experiencia en discapacidad infantil y entorno educativo.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20735',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/735/',
   },
   {
@@ -196,7 +197,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes a sábados de 08:30 a 11:30.',
     ageRange: 'Adolescente (15 años)',
     profile: 'Profesional independiente masculino con experiencia en adolescentes.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20734',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/734/',
   },
   {
@@ -213,7 +214,7 @@ export const MOCK_JOBS: Job[] = [
     daysAndHours: 'Lunes a viernes de 13:00 a 17:00.',
     ageRange: '20 a 30 años',
     profile: 'AT mujer con formación en discapacidad o integración escolar.',
-    whatsappLink: 'https://wa.me/5491127227852?text=Hola!%20Estoy%20interesado%20en%20la%20posición%20de%20CASO%20733',
+    canApply: false, // scraper legado: sem id real não há como postular
     detailLink: 'https://jobs.enlite.health/es/vagas/733/',
   },
 ];

@@ -9,8 +9,12 @@ interface KanbanColumnProps {
   count: number;
   color: string;
   droppable?: boolean;
+  /** Registrada para colisão (useDroppable ligado) sem ser destino válido: sem destaque; o shell cancela o drop. */
+  cancelDrop?: boolean;
   /** Alert-styled header (red tone) for columns that need operator attention, e.g. BLOQUEADO */
   alert?: boolean;
+  /** Ícone "i" ao lado do título (Figma 11340:76576) — opcional, cabeçalho expandido só. */
+  headerIcon?: React.ReactNode;
   /** True enquanto um card está sendo arrastado — realça as colunas que aceitam drop
    *  (verde) e esmaece as que não aceitam, pra guiar o operador até o alvo certo. */
   dragActive?: boolean;
@@ -34,7 +38,9 @@ export function KanbanColumn({
   count,
   color,
   droppable = true,
+  cancelDrop = false,
   alert = false,
+  headerIcon,
   dragActive = false,
   collapsed = false,
   onToggleCollapse,
@@ -42,13 +48,13 @@ export function KanbanColumn({
   children,
 }: KanbanColumnProps) {
   const { t } = useTranslation();
-  const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable });
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: !droppable && !cancelDrop });
 
   const validDropTarget = dragActive && droppable;
 
   // Prioridade: hover ativo (roxo forte) > destino válido durante drag (verde) >
   // destino inválido durante drag (esmaecido) > alert > default.
-  const stateClass = isOver
+  const stateClass = isOver && droppable
     ? 'border-purple-400 bg-purple-50/50 ring-2 ring-purple-300'
     : validDropTarget
       ? 'border-green-400 bg-green-50/50 ring-2 ring-green-200'
@@ -119,6 +125,7 @@ export function KanbanColumn({
           <Typography variant="body" weight="semibold" className={`truncate ${alert ? 'text-red-700 text-sm' : 'text-[#180149] text-sm'}`}>
             {title}
           </Typography>
+          {headerIcon}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {countBadge}

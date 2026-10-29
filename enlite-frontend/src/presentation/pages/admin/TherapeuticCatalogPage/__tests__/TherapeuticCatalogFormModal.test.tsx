@@ -7,8 +7,9 @@
  * peça é justamente esse par de callbacks.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { expectNoRawEnumLeaks } from '../../../../../test/rawEnumLeakGuard';
 import type { TherapeuticCatalogItem } from '@domain/entities/TherapeuticProject';
 
@@ -47,7 +48,7 @@ const onClose = vi.fn();
 
 /** Renderiza e espera o `requestAnimationFrame` do slide-in (o painel entra em `show`). */
 async function renderModal(alvo: TherapeuticCatalogItem | null = null) {
-  const utils = render(<TherapeuticCatalogFormModal item={alvo} onSave={onSave} onClose={onClose} />);
+  const utils = render(<TherapeuticCatalogFormModal kind="segments" item={alvo} onSave={onSave} onClose={onClose} />);
   await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
   return utils;
 }
@@ -90,7 +91,7 @@ describe('TherapeuticCatalogFormModal — criar × editar', () => {
 
   it('o `requestAnimationFrame` do slide-in é cancelado ao desmontar (nada roda depois)', async () => {
     const cancel = vi.spyOn(window, 'cancelAnimationFrame');
-    const { unmount } = render(<TherapeuticCatalogFormModal item={null} onSave={onSave} onClose={onClose} />);
+    const { unmount } = render(<TherapeuticCatalogFormModal kind="segments" item={null} onSave={onSave} onClose={onClose} />);
     // Antes do frame: o painel está fora da tela e o fundo transparente.
     expect(document.querySelector('form')).toHaveClass('translate-x-full');
     unmount();
@@ -286,10 +287,10 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
   const SEG_A = item({ id: 'seg-a', label: 'AT para Pacientes con TEA', sortOrder: 1 });
   const SEG_B = item({ id: 'seg-b', label: 'AT para Salud Mental', sortOrder: 2 });
   const SEG_OFF = item({ id: 'seg-off', label: 'Segmento viejo', sortOrder: 3, active: false });
-  const segmentoSelect = () => screen.getByTestId('therapeutic-catalog-segment-select') as HTMLSelectElement;
+  const segmentoSelect = () => screen.getByTestId('therapeutic-catalog-segment-select');
 
   async function renderComSegmentos(alvo: TherapeuticCatalogItem | null, segments: TherapeuticCatalogItem[] | null) {
-    const utils = render(<TherapeuticCatalogFormModal item={alvo} segments={segments} onSave={onSave} onClose={onClose} />);
+    const utils = render(<TherapeuticCatalogFormModal kind="specific-objectives" item={alvo} segments={segments} onSave={onSave} onClose={onClose} />);
     await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
     return utils;
   }
@@ -302,9 +303,10 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
   it('com a lista de segmentos o campo "Segmento" aparece e oferece "sem segmento" + os ATIVOS', async () => {
     await renderComSegmentos(null, [SEG_A, SEG_B, SEG_OFF]);
     expect(screen.getByLabelText(COPY.form.segment)).toBe(segmentoSelect());
-    const rotulos = Array.from(segmentoSelect().options).map((o) => o.textContent);
+    expect(segmentoSelect()).toHaveTextContent(COPY.form.segmentNone); // vazio mostra "Sem segmento"
+    fireEvent.click(segmentoSelect());
+    const rotulos = within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
     expect(rotulos).toEqual([COPY.form.segmentNone, SEG_A.label, SEG_B.label]);
-    expect(segmentoSelect()).toHaveValue('');
   });
 
   it('`null` (conta sem a célula de segmentos) esconde o campo, e o resto salva sem `segmentId`', async () => {
@@ -318,27 +320,126 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
 
   it('vínculo a segmento INATIVO aparece como "<rótulo> (inactivo)" e pode ser limpo (`segmentId: null`)', async () => {
     await renderComSegmentos(item({ segmentId: 'seg-off' }), [SEG_A, SEG_OFF]);
-    expect(segmentoSelect()).toHaveValue('seg-off');
+    expect(segmentoSelect()).toHaveTextContent('Segmento viejo (inactivo)'); // seg-off
+    fireEvent.click(segmentoSelect());
     expect(screen.getByRole('option', { name: 'Segmento viejo (inactivo)' })).toBeInTheDocument();
-
-    fireEvent.change(segmentoSelect(), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('option', { name: COPY.form.segmentNone }).querySelector('button')!);
     fireEvent.click(salvar());
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Mejorar autonomía', sortOrder: 7, segmentId: null }));
+    // Spec 061: objetivo/atividade em edição manda SÓ o que mudou (sem label inalterado, sem ordem).
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ segmentId: null }));
   });
 
   it('submit envia o `segmentId` escolhido; sem mexer no campo NÃO envia (o inativo vinculado não é re-mandado)', async () => {
     const primeira = await renderComSegmentos(null, [SEG_A, SEG_B]);
     fireEvent.change(textoInput(), { target: { value: 'Aseo personal' } });
-    fireEvent.change(segmentoSelect(), { target: { value: 'seg-b' } });
+    await selectCombo(segmentoSelect(), SEG_B.label); // seg-b = AT para Salud Mental
     fireEvent.click(salvar());
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Aseo personal', segmentId: 'seg-b' }));
 
     onSave.mockClear();
     primeira.unmount();
     const { unmount } = await renderComSegmentos(item({ segmentId: 'seg-off', label: 'Otro' }), [SEG_OFF]);
+    fireEvent.change(textoInput(), { target: { value: 'Otro 2' } });
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro', sortOrder: 7 }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro 2' }));
     unmount();
+  });
+});
+
+// ── Spec 061 — objetivo/atividade: título 150 + descrição 1000, sem Ordem ───────────────────────────
+
+describe('TherapeuticCatalogFormModal — título e descrição (spec 061)', () => {
+  const descInput = () => screen.getByTestId('therapeutic-catalog-description-input');
+  const descCount = () => screen.getByTestId('therapeutic-catalog-description-count');
+  const labelCount = () => screen.getByTestId('therapeutic-catalog-label-count');
+
+  async function renderKind(kind: 'activities' | 'specific-objectives' | 'segments', alvo: TherapeuticCatalogItem | null) {
+    const utils = render(<TherapeuticCatalogFormModal kind={kind} item={alvo} onSave={onSave} onClose={onClose} />);
+    await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
+    return utils;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    onSave.mockResolvedValue(undefined);
+  });
+
+  it.each(['activities', 'specific-objectives'] as const)('%s: NÃO existe o input de ordem nem a ajuda; existe a descrição', async (kind) => {
+    await renderKind(kind, item({ sortOrder: 7 }));
+    expect(screen.queryByTestId('therapeutic-catalog-order-input')).toBeNull();
+    expect(screen.queryByText(COPY.form.sortOrderHelp)).toBeNull();
+    expect(screen.getByLabelText(COPY.form.title)).toBe(textoInput());
+    expect(screen.getByLabelText(COPY.form.description)).toBe(descInput());
+  });
+
+  it('segments: o input de ordem continua e NÃO há descrição', async () => {
+    await renderKind('segments', item());
+    expect(ordemInput()).toHaveValue(7);
+    expect(screen.queryByTestId('therapeutic-catalog-description-input')).toBeNull();
+  });
+
+  it('criar: título e descrição digitados vão no onSave; contadores n/150 e n/1000', async () => {
+    await renderKind('activities', null);
+    expect(labelCount()).toHaveTextContent('0/150');
+    expect(descCount()).toHaveTextContent('0/1000');
+    fireEvent.change(textoInput(), { target: { value: 'TITULO-SINTETICO-1' } });
+    fireEvent.change(descInput(), { target: { value: '  DESCRIPCION-SINTETICA-1  ' } });
+    expect(descCount()).toHaveTextContent('23/1000');
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'TITULO-SINTETICO-1', description: 'DESCRIPCION-SINTETICA-1' }));
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('sortOrder');
+  });
+
+  it('criar com título de 151 desabilita Salvar (150 ainda salva)', async () => {
+    await renderKind('activities', null);
+    fireEvent.change(textoInput(), { target: { value: 'a'.repeat(151) } });
+    expect(labelCount()).toHaveTextContent('151/150');
+    expect(labelCount()).toHaveClass('text-red-600');
+    expect(salvar()).toBeDisabled();
+    fireEvent.change(textoInput(), { target: { value: 'a'.repeat(150) } });
+    expect(salvar()).not.toBeDisabled();
+  });
+
+  it('descrição de 1001 desabilita Salvar; 1000 salva', async () => {
+    await renderKind('specific-objectives', null);
+    fireEvent.change(textoInput(), { target: { value: 'TITULO-SINTETICO-2' } });
+    fireEvent.change(descInput(), { target: { value: 'd'.repeat(1001) } });
+    expect(descCount()).toHaveClass('text-red-600');
+    expect(salvar()).toBeDisabled();
+    fireEvent.change(descInput(), { target: { value: 'd'.repeat(1000) } });
+    expect(salvar()).not.toBeDisabled();
+  });
+
+  it('item ANTIGO com título de 155: mudar só a descrição habilita Salvar e o payload NÃO leva label', async () => {
+    const antigo = 'T'.repeat(155);
+    await renderKind('activities', item({ label: antigo, description: null }));
+    expect(labelCount()).toHaveTextContent('155/150');
+    expect(labelCount()).not.toHaveClass('text-red-600');
+    fireEvent.change(descInput(), { target: { value: 'DESCRIPCION-SINTETICA-3' } });
+    expect(salvar()).not.toBeDisabled();
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ description: 'DESCRIPCION-SINTETICA-3' }));
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('label');
+  });
+
+  it('renomear o item de 155 para 151 desabilita Salvar (título mudou, teto vale)', async () => {
+    await renderKind('activities', item({ label: 'T'.repeat(155) }));
+    fireEvent.change(textoInput(), { target: { value: 'U'.repeat(151) } });
+    expect(labelCount()).toHaveClass('text-red-600');
+    expect(salvar()).toBeDisabled();
+  });
+
+  it('esvaziar a descrição de um item que tinha manda `description: null` (limpa)', async () => {
+    await renderKind('activities', item({ description: 'DESCRIPCION-SINTETICA-4' }));
+    expect(descInput()).toHaveValue('DESCRIPCION-SINTETICA-4');
+    fireEvent.change(descInput(), { target: { value: '   ' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ description: null }));
+  });
+
+  it('editar sem mudar nada: nada a salvar (Salvar desabilitado, sem PATCH vazio)', async () => {
+    await renderKind('activities', item({ description: 'DESCRIPCION-SINTETICA-5' }));
+    expect(salvar()).toBeDisabled();
   });
 });
 
@@ -358,5 +459,46 @@ describe('catalogRefusalMessage — a recusa em frase de tela', () => {
 
   it('`null` (typeof "object", mas sem status) não explode ao ler o status', () => {
     expect(catalogRefusalMessage(null, t)).toBe('null');
+  });
+});
+
+describe('TherapeuticCatalogFormModal — guardia predefinida (spec 074)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    onSave.mockResolvedValue(undefined);
+  });
+
+  async function renderGuardia() {
+    const utils = render(<TherapeuticCatalogFormModal kind="service-shift-templates" item={null} onSave={onSave} onClose={onClose} />);
+    await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
+    return utils;
+  }
+
+  it('M1 guardia: salvar envia items', async () => {
+    await renderGuardia();
+    fireEvent.change(textoInput(), { target: { value: 'Guardia 6 + 6' } });
+    fireEvent.click(screen.getByTestId('shift-template-add'));
+    fireEvent.click(screen.getByTestId('svc-shift-allday-0'));
+    expect(screen.getByTestId('therapeutic-catalog-not-retroactive')).toHaveTextContent(COPY.shiftTemplates.notRetroactive);
+    expect(screen.queryByTestId('therapeutic-catalog-order-input')).toBeNull();
+    await act(async () => { fireEvent.click(salvar()); });
+    expect(onSave).toHaveBeenCalledWith({ label: 'Guardia 6 + 6', items: [{ startTime: '09:00', durationMinutes: 1440 }] });
+  });
+
+  it('M2 guardia sem turno: salvar desabilitado', async () => {
+    await renderGuardia();
+    fireEvent.change(textoInput(), { target: { value: 'Guardia vacía' } });
+    expect(salvar()).toBeDisabled();
+  });
+
+  it('M3 guardia: 422 de sobreposição mostra a mensagem e o modal fica aberto', async () => {
+    onSave.mockRejectedValue(Object.assign(new Error('Shift template items overlap'), { status: 422, code: 'SHIFT_TEMPLATE_ITEMS_OVERLAP' }));
+    await renderGuardia();
+    fireEvent.change(textoInput(), { target: { value: 'Guardia solapada' } });
+    fireEvent.click(screen.getByTestId('shift-template-add'));
+    await act(async () => { fireEvent.click(salvar()); });
+    expect(await screen.findByTestId('therapeutic-catalog-form-error')).toHaveTextContent(COPY.shiftTemplates.overlap);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('therapeutic-catalog-form-modal')).toBeInTheDocument();
   });
 });

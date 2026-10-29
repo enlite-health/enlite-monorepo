@@ -46,7 +46,8 @@ export interface PublicVacancyDetail {
   schedule_days_hours: string | null;
   salary_text: string | null;
   talentum_description: string | null;
-  talentum_whatsapp_url: string | null;
+  /** Spec 067 FR-14/15: a vaga aceita postulação. O LINK da Talentum não sai desta rota pública — vem só no 200 de track-channel. */
+  can_apply: boolean;
   patient_zone: string | null;
   country: string | null;
   created_at: string;
@@ -80,6 +81,8 @@ export interface AdminVacancyDetail {
   vacancy_number: number | null;
   /** FK para patients */
   patient_id: string | null;
+  /** Serviço contratado de onde a vaga nasceu (`null` = criada direto): o atalho "Ver itinerario" abre a aba direto nele (spec 069). */
+  contracted_service_id?: string | null;
   patient_first_name: string | null;
   patient_last_name: string | null;
   /**
@@ -132,16 +135,6 @@ export interface AdminVacancyDetail {
    *  (Talentum). Drafts are hidden from the public listing. Flipped to false
    *  by PublishVacancyToTalentumUseCase. Migration 168. */
   is_draft?: boolean;
-  meet_link_1: string | null;
-  meet_datetime_1: string | null;
-  meet_link_2: string | null;
-  meet_datetime_2: string | null;
-  meet_link_3: string | null;
-  meet_datetime_3: string | null;
-  /** Slot RECORRENTE semanal da reunión de presentación (mig 291): 0=domingo … 6=sábado; hora LOCAL da vaga. */
-  meet_recurring_weekday?: number | null;
-  meet_recurring_time?: string | null;
-  meet_recurring_link?: string | null;
   social_short_links: Record<string, string> | null;
   encuadres: Array<Encuadre>;
   publications: Array<{

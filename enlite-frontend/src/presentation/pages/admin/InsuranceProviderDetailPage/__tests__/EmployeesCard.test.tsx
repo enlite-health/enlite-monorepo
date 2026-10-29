@@ -2,7 +2,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WORKER_DOCUMENT_TYPES } from '@domain/entities/Worker';
+import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { apiError, comCelulas, contact, semEnforcement } from './support';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', async () => (await import('./support')).i18nMock);
 const api = vi.hoisted(() => ({ listContacts: vi.fn(), createContact: vi.fn(), patchContact: vi.fn(), retireContact: vi.fn() }));
@@ -33,8 +35,8 @@ describe('EmployeesCard', () => {
     render(<EmployeesCard code="OSDE" />);
     await screen.findByTestId('employee-name-c1');
     fireEvent.click(screen.getByTestId('employees-new'));
-    const values = Array.from(screen.getByTestId('contact-documentType').querySelectorAll('option')).map((o) => o.getAttribute('value')).filter(Boolean);
-    expect(values).toEqual([...WORKER_DOCUMENT_TYPES]);
+    const labels = comboLabels(screen.getByTestId('contact-documentType'));
+    expect(labels).toEqual(WORKER_DOCUMENT_TYPES.map((d) => ptBR.admin.patients.detail.documentTypes[d]));
   });
 
   it('Novo: só nome, cargo e telefone; opcionais vazios ficam fora do corpo', async () => {
@@ -57,7 +59,7 @@ describe('EmployeesCard', () => {
     change('contact-fullName', 'Fulana');
     change('contact-roleTitle', 'Auditora');
     change('contact-phone', '1');
-    change('contact-documentType', 'DNI');
+    chooseCombo(screen.getByTestId('contact-documentType'), 'DNI');
     fireEvent.click(screen.getByTestId('contact-save'));
     expect(screen.getByTestId('contact-problem')).toHaveTextContent('Informe o tipo e o número do documento juntos');
     expect(api.createContact).not.toHaveBeenCalled();

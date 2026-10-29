@@ -2,7 +2,7 @@
  * Partes PURAS do cliente MCP do Tactiq — separadas do transporte para serem testadas sem rede.
  * Nada aqui devolve ou registra conteúdo de reunião; só desfechos fechados.
  */
-import { TactiqTransientError, TactiqUnauthorizedError } from '../../application/ports/TactiqPorts';
+import { TactiqTransientError, TactiqUnauthorizedError, type TactiqMeetingItem } from '../../application/ports/TactiqPorts';
 
 /** O texto JSON do primeiro bloco `text` de um resultado de tool (formato do MCP). `null` se não houver/não parsear. */
 export function parseMcpJson(result: unknown): unknown {
@@ -35,4 +35,19 @@ export function classifyMcpFailure(err: unknown): Error {
   const e = err as { code?: unknown; name?: string };
   if (e?.name === 'UnauthorizedError' || e?.code === 401 || e?.code === 403) return new TactiqUnauthorizedError();
   return new TactiqTransientError(typeof e?.code === 'number' ? `mcp_http_${e.code}` : 'mcp_transport');
+}
+
+/**
+ * Corpo do `search_meetings` → itens. Formato real do MCP (medido 27/10): `{ results: [{ id, title, createdAt,
+ * durationSeconds, attendees, url, snippet? }] }`. `meetings` e array cru ficam por compat. Item sem id/title/createdAt cai.
+ */
+export function parseMeetingSearch(raw: unknown): TactiqMeetingItem[] {
+  const envelope = raw as { results?: unknown; meetings?: unknown } | null;
+  const items = ([envelope?.results, envelope?.meetings, raw].find(Array.isArray) as unknown[] | undefined) ?? [];
+  return items.flatMap((m) => {
+    const r = m as Record<string, unknown>;
+    return typeof r?.id === 'string' && typeof r.title === 'string' && typeof r.createdAt === 'string'
+      ? [{ id: r.id, title: r.title, createdAt: r.createdAt, durationSeconds: Number(r.durationSeconds) || 0 }]
+      : [];
+  });
 }

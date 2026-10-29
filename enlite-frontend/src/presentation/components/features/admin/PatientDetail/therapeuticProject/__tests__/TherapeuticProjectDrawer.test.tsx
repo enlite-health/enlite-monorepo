@@ -21,6 +21,7 @@ import type { TherapeuticCatalogItem, TherapeuticProjectVersion } from '@domain/
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { ContactStatusEntry } from '@domain/entities/TherapeuticProject';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
 // ── i18n mock (molde `PatientDetailCards.gate.test.tsx`) ─────────────────────
@@ -104,8 +105,8 @@ const SERVICO: PatientContractedServiceDetail = {
   serviceCode: 'AT',
   professionalProfile: null,
   providersNeeded: 1,
-  authorizedHours: 20,
-  weeklyHours: 20,
+  authorization: null,
+  scheduleHours: 20,
   careLocation: 'HOME',
   ...CONTRACT_058_DEFAULTS,
   startDate: null,
@@ -216,11 +217,15 @@ function catalogosOk(): void {
 /** Espera o formulário (os 3 catálogos resolvidos) aparecer. */
 const esperarFormulario = () => screen.findByTestId('therapeutic-project-form');
 
+/** Escolhe o rótulo num Combobox de escolha única (id = do gatilho). */
+function escolherNoCombo(id: string, label: string): void {
+  alternarNoMulti(id, label);
+}
+
 function alternarNoMulti(id: string, label: string): void {
-  const raiz = document.getElementById(id)!;
-  const gatilho = raiz.querySelector('button')!;
+  const gatilho = document.getElementById(id)!; // o `id` do Combobox é do gatilho
   if (gatilho.getAttribute('aria-expanded') !== 'true') fireEvent.click(gatilho);
-  const lista = raiz.querySelector('ul[role="listbox"]') as HTMLElement;
+  const lista = gatilho.parentElement!.querySelector('ul[role="listbox"]') as HTMLElement;
   fireEvent.click(within(lista).getByText(label).closest('button')!);
 }
 
@@ -469,11 +474,11 @@ describe('modo `new` — os catálogos antes do formulário', () => {
     montar({ mode: 'new' }, { patient: { ...PACIENTE, externalContacts: undefined, coverageEmergencyContacts: undefined } });
     await esperarFormulario();
 
-    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!.querySelector('button')!);
+    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!);
     abrir('tp-externalContacts');
-    expect(document.getElementById('tp-externalContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-externalContacts')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
     abrir('tp-coverageContacts');
-    expect(document.getElementById('tp-coverageContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-coverageContacts')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
   });
 
   // D113 — o mesmo `?? []` do teste acima, mas para os QUATRO containers cruzados que faltavam
@@ -493,11 +498,11 @@ describe('modo `new` — os catálogos antes do formulário', () => {
     });
     await esperarFormulario();
 
-    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!.querySelector('button')!);
+    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!);
     abrir('tp-responsibles');
-    expect(document.getElementById('tp-responsibles')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-responsibles')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
     abrir('tp-careTeam');
-    expect(document.getElementById('tp-careTeam')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    expect(document.getElementById('tp-careTeam')!.parentElement!.querySelectorAll('li[role="option"]')).toHaveLength(0);
   });
 });
 
@@ -510,8 +515,8 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     montar({ mode: 'new' });
     await esperarFormulario();
 
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'IN_PERSON' } });
-    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'segments-1' } });
+    escolherNoCombo('tp-modality', 'Presencial'); // IN_PERSON = Presencial
+    chooseCombo(screen.getByTestId('tp-segment'), 'Rótulo segments');
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'contexto novo' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'objetivo novo' } });
     alternarNoMulti('tp-specificObjectives', 'Rótulo specific-objectives');
@@ -692,7 +697,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     catalogosOk();
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
 
     vi.useFakeTimers();
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -711,7 +716,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     catalogosOk();
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByTestId('therapeutic-project-backdrop'));
@@ -727,7 +732,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     catalogosOk();
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
 
     fireEvent.click(screen.getByText(ptBR.common.cancel));
 
@@ -740,7 +745,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     mockCreateVersion.mockResolvedValue(CRIADA);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
 
     vi.useFakeTimers();
@@ -782,7 +787,7 @@ describe('spec 048 — passo de confirmação com campo pendente (dentro do draw
     mockCreateVersion.mockResolvedValue(CRIADA);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
     expect(screen.queryByTestId('pending-contacts-confirm')).not.toBeInTheDocument();
     expect(mockCreateVersion).toHaveBeenCalledTimes(1);
@@ -828,7 +833,7 @@ describe('spec 048 — passo de confirmação com campo pendente (dentro do draw
     montar({ mode: 'edit', version: { ...VERSAO, contactStatus: [PEND_RESP] } }, { contactReminderDates: ['2026-10-12', '2026-10-15'] });
     await esperarFormulario();
     expect((screen.getByTestId('tp-responsibles-pending') as HTMLInputElement).checked).toBe(true);
-    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    escolherNoCombo('tp-modality', 'On-line'); // ONLINE = On-line
     fireEvent.click(screen.getByTestId('tp-save'));
     expect(screen.getByTestId('pending-contacts-list')).toHaveTextContent('Responsáveis — vence em 16/10');
     expect(screen.getByTestId('pending-contacts-reminders')).toHaveTextContent('12/10, 15/10');

@@ -1,10 +1,11 @@
 /**
- * Spec 030 (F3) — o campo "Segmento (Ana Care)" do form do PTI, escolhido como um HUMANO: click no
- * select nativo `#tp-segment`, foco conferido, TECLADO (`keyboard.type` das primeiras letras do rótulo
- * — o type-ahead do select nativo escolhe a opção sem abrir popup) e o valor LIDO DA TELA devolvido.
- * Compartilhado pelos specs que criam versão "Nuevo" (o segmento é obrigatório lá).
+ * Spec 030 (F3) / 070 — o campo "Segmento (Ana Care)" do form do PTI, escolhido como um HUMANO: abre o
+ * `Combobox` `#tp-segment` (o gatilho), busca pelo rótulo (quando há campo de busca), clica a opção e LÊ o
+ * valor DA TELA (o texto do gatilho). Compartilhado pelos specs que criam versão "Nuevo" (o segmento é
+ * obrigatório lá).
  */
 import { expect, type Page } from '@playwright/test';
+import { escolherNoCombo } from './combobox';
 import { runSQL } from './patient-detail-c-helper';
 
 /** Primeiro segmento ATIVO do catálogo (seed 495, ordem do banco) — o que o teclado vai escolher no form. */
@@ -14,11 +15,8 @@ export function primeiroSegmento(): { id: string; label: string } {
   return { id, label };
 }
 
-export async function escolherSegmentoPeloTeclado(page: Page, rotuloEsperado: string): Promise<string> {
+export async function escolherSegmento(page: Page, rotulo: string): Promise<string> {
   const campo = page.locator('#tp-segment');
-  await campo.click();
-  await expect(campo).toBeFocused();
-  await page.keyboard.type(rotuloEsperado.slice(0, 4));
-  await expect(campo).not.toHaveValue('');
-  return (await campo.locator('option:checked').innerText()).trim();
+  await escolherNoCombo(page, campo, rotulo);
+  return ((await campo.innerText()) ?? '').trim();
 }

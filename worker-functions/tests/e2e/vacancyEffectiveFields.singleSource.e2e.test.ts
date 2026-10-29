@@ -12,11 +12,14 @@
  * prompt/payload a partir da linha é provada nos unitários (TalentumDescriptionService.test.ts, VacancyTalentumController.test.ts).
  * Roda no CI pelo `npm run test:e2e` (jest.config.e2e.js, `tests/e2e/**.test.ts`, backend-e2e.yml).
  */
+import { ServiceHoursSummaryReader } from '../../src/modules/case/infrastructure/ServiceHoursSummaryReader';
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
 import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveRequiredSexSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
+import { withSystemDbContext, releaseDbSession, type DbSession } from '../../src/shared/database/requestDbSession';
+import { loggingAls } from '../../src/shared/logging';
 import { fetchPatientDetail } from '../../src/modules/case/infrastructure/PatientDetailQueryHelper';
 import { loadVacancyDescriptionInput } from '../../src/modules/integration/infrastructure/TalentumDescriptionService';
 import { loadVacancyForAiContent } from '../../src/modules/matching/interfaces/controllers/vacancyAiContentQuery';
@@ -24,7 +27,6 @@ import { FindNearbyVacanciesForWorkerUseCase } from '../../src/modules/matching/
 import { GetZoneAnalyticsUseCase } from '../../src/modules/matching/application/GetZoneAnalyticsUseCase';
 import { MatchmakingService } from '../../src/modules/matching/infrastructure/MatchmakingService';
 import { GetArmedCasesUseCase } from '../../src/modules/matching/application/GetArmedCasesUseCase';
-import { horasAtivasQuery } from '../../src/modules/matching/application/managementDashboardQueries';
 import { runHardFilter } from '../../src/modules/matching/infrastructure/MatchmakingHardFilterQuery';
 import { JobPostingARRepository } from '../../src/modules/matching/infrastructure/JobPostingARRepository';
 import { PublicVacancyController } from '../../src/modules/matching/interfaces/controllers/PublicVacancyController';
@@ -37,17 +39,22 @@ const UID = 'vls-f1-staff-uid';
 const TAG = 'vls-f1';
 
 /** A = o que a cópia da vaga e o serviço têm no início. X = o que o serviço passa a ter (a vaga NÃO é tocada). */
-const SCHEDULE_A = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
-const SCHEDULE_X = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45' }];
+// Spec 056: o horário do SERVIÇO são faixas (`patient_itinerary_slot`: início + duração); o fim é derivado.
+const SCHEDULE_A = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
+const SCHEDULE_X = [{ dayOfWeek: 3, startTime: '14:15', durationMinutes: 270 }];
+/** O que o consumidor devolve para X (`horario_do_servico`): o mesmo turno + `endTime` derivado (14:15 + 270 min). */
+const SCHEDULE_X_VIEW = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45', durationMinutes: 270 }];
+/** Vaga MANUAL (sem serviço) segue com o próprio `job_postings.schedule` legado (início/fim) — não é o horário do serviço. */
+const VAGA_MANUAL_A = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+const VAGA_MANUAL_X = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45' }];
 
-/** A lista F1 do `fatos-medidos.md`, na ordem. O teste afirma que são 12 (eram 13; o 11 saiu) e que o corpo cobre cada um. */
+/** A lista F1 do `fatos-medidos.md`, na ordem. O teste afirma que são 10 (eram 13; o 5, o 6 e o 11 saíram) e que o corpo cobre cada um. */
 const LEITORES_F1 = [
   '1 case/infrastructure/PatientDetailQueryHelper.ts (-> AddressAvailabilityCalculator)',
   '2 integration/infrastructure/TalentumDescriptionService.ts',
   '3 matching/interfaces/controllers/VacancyTalentumController.ts',
   '4 matching/application/FindNearbyVacanciesForWorkerUseCase.ts',
-  '5 matching/application/GetArmedCasesUseCase.ts',
-  '6 matching/application/managementDashboardQueries.ts',
+  // 5 (GetArmedCasesUseCase, horas) e 6 (leitor das horas ativas) saíram na 056/T4.2: as horas vêm do serviço (ServiceHoursSummaryReader); a numeração dos demais foi mantida.
   '7 matching/infrastructure/MatchmakingHardFilterQuery.ts',
   '8 matching/infrastructure/JobPostingARRepository.ts (findActivePublic)',
   '9 matching/interfaces/controllers/PublicVacancyController.ts',
@@ -120,11 +127,19 @@ async function seed(opts: {
   );
   if (withService) {
     await admin.query(
-      `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, schedule, providers_needed, address_id, provider_age_band)
-       VALUES ($1, $2, 'AT', 'AR', $3, $3, $4::jsonb, $6, $5, $7)`,
-      [serviceId, patientId, TAG, opts.serviceSchedule === null ? null : JSON.stringify(opts.serviceSchedule ?? SCHEDULE_A), addressId,
+      `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, providers_needed, address_id, provider_age_band)
+       VALUES ($1, $2, 'AT', 'AR', $3, $3, $5, $4, $6)`,
+      [serviceId, patientId, TAG, addressId,
         opts.serviceProviders === undefined ? 1 : opts.serviceProviders, opts.serviceBand ?? null],
     );
+    // o horário do serviço = faixas vigentes (null = sem faixa = "sem horário")
+    for (const t of (opts.serviceSchedule === null ? [] : ((opts.serviceSchedule as typeof SCHEDULE_A | undefined) ?? SCHEDULE_A))) {
+      await admin.query(
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, '[2026-01-01,)', $5, $5)`,
+        [serviceId, t.dayOfWeek, t.startTime, t.durationMinutes, TAG],
+      );
+    }
   }
   await admin.query(
     `INSERT INTO job_postings (id, title, case_number, patient_id, patient_address_id, contracted_service_id, schedule,
@@ -132,7 +147,7 @@ async function seed(opts: {
                                age_range_min, age_range_max)
      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ${withService ? `'{}'::text[]` : `ARRAY['AT']`}, 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb, $11, $12)`,
     [vacancyId, `CASO ${caseNumber}`, caseNumber, patientId, addressId, withService ? serviceId : null,
-      withService ? null : JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft,
+      withService ? null : JSON.stringify(opts.vacancySchedule === undefined ? VAGA_MANUAL_A : opts.vacancySchedule), status, draft,
       withService ? null : opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders,
       withService ? null : opts.vacancyAge?.[0] ?? null, withService ? null : opts.vacancyAge?.[1] ?? null],
   );
@@ -145,8 +160,21 @@ const setServiceProviders = (ctx: Ctx, n: number | null) =>
 const setServiceBand = (ctx: Ctx, band: string | null) =>
   admin.query(`UPDATE patient_contracted_services SET provider_age_band = $2 WHERE id = $1`, [ctx.serviceId, band]);
 
-const setServiceSchedule = (ctx: Ctx, schedule: unknown) =>
-  admin.query(`UPDATE patient_contracted_services SET schedule = $2::jsonb WHERE id = $1`, [ctx.serviceId, schedule === null ? null : JSON.stringify(schedule)]);
+/** Troca o horário do serviço: fecha as faixas vigentes (até hoje) e abre as novas (a partir de hoje) — a mesma regra do escritor. */
+const setServiceSchedule = async (ctx: Ctx, schedule: typeof SCHEDULE_X | null) => {
+  await admin.query(
+    `UPDATE patient_itinerary_slot SET valid = daterange(lower(valid), CURRENT_DATE, '[)')
+      WHERE contracted_service_id = $1 AND upper_inf(valid)`,
+    [ctx.serviceId],
+  );
+  for (const t of schedule ?? []) {
+    await admin.query(
+      `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, daterange(CURRENT_DATE, NULL, '[)'), $5, $5)`,
+      [ctx.serviceId, t.dayOfWeek, t.startTime, t.durationMinutes, TAG],
+    );
+  }
+};
 
 async function seedWorker(availabilityDays: number[]): Promise<string> {
   const id = randomUUID();
@@ -224,21 +252,6 @@ const LEITORES: Leitor[] = [
         /column jp\.patient_zone does not exist/,
       );
       return { sawA: true, sawX: true }; // sem observação possível: veja `defeitoPreexistente` abaixo
-    },
-  },
-  {
-    n: 5, nome: 'GetArmedCasesUseCase.execute (horas totais)',
-    probe: async () => {
-      const r = await new GetArmedCasesUseCase(identityPool).execute(['AR']);
-      return { sawA: r.horasTotais === 4, sawX: r.horasTotais === 4.5 };
-    },
-  },
-  {
-    n: 6, nome: 'horasAtivasQuery (dashboard de gestão)',
-    seed: () => seed({ status: 'ACTIVE' }),
-    probe: async () => {
-      const { rows } = await horasAtivasQuery(identityPool, ['AR']);
-      return probeJson(rows);
     },
   },
   {
@@ -325,6 +338,8 @@ interface LeitorQtd {
   seed?: () => Promise<Ctx>;
   /** Devolve o que o leitor mostra como quantidade ('2' | '7' | outro), ou null se não mostra. */
   probe: (ctx: Ctx) => Promise<string | null>;
+  /** O que o `probe` devolve antes/depois do UPDATE para 7 (default '2' -> '7'). */
+  esperado?: { antes: string; depois: string };
 }
 
 const LEITORES_QTD: LeitorQtd[] = [
@@ -346,10 +361,18 @@ const LEITORES_QTD: LeitorQtd[] = [
   },
   {
     nome: 'GetArmedCasesUseCase.execute (serviço NULL = SEM_CONFIG; com valor = POR_ARMAR)',
+    // Trava B (migration 544): limpar `providers_needed` é recusado (PROVIDERS_NEEDED_CANNOT_CLEAR). A transição provável é
+    // NULL -> 7 (SEM_CONFIG -> POR_ARMAR); com 2 -> 7 o bucket não muda (sem encuadres, ambos POR_ARMAR) e o teste não provaria nada.
+    seed: () => seed({ serviceProviders: null }),
+    esperado: { antes: 'SEM_CONFIG', depois: 'POR_ARMAR' },
     probe: async () => {
-      const r = await new GetArmedCasesUseCase(identityPool).execute(['AR']);
-      if (r.porArmar === 1 && r.semConfig === 0) return '2';
-      if (r.porArmar === 0 && r.semConfig === 1) return '7';
+      // As horas vêm do `PatientKanbanServicesReader`/`inPatientTransaction`, que em produção rodam sob o contexto da request
+      // (ALS: uid+país → GUCs na transação). Aqui o `connect()` é CRU de propósito (ver o Proxy do beforeAll) e não há request:
+      // o contexto de sistema declarado entrega a identidade que a policy de país de `patients` exige.
+      const r = await withSystemDbContext('job:test-armed-cases', () =>
+        new GetArmedCasesUseCase(identityPool, new ServiceHoursSummaryReader()).execute(['AR']));
+      if (r.porArmar === 1 && r.semConfig === 0) return 'POR_ARMAR';
+      if (r.porArmar === 0 && r.semConfig === 1) return 'SEM_CONFIG';
       return `porArmar=${r.porArmar} semConfig=${r.semConfig}`;
     },
   },
@@ -418,10 +441,10 @@ afterAll(async () => {
 beforeEach(wipe);
 
 describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SERVIÇO (app_runtime, banco real)', () => {
-  it('são 12 leitores, na mesma ordem e nomes da lista F1', () => {
-    expect(LEITORES_F1).toHaveLength(12);
+  it('são 10 leitores, na mesma ordem e nomes da lista F1', () => {
+    expect(LEITORES_F1).toHaveLength(10);
     expect(LEITORES.map((l) => l.n)).toEqual(LEITORES_F1.map((s) => Number(s.split(' ')[0])));
-    expect(LEITORES).toHaveLength(12);
+    expect(LEITORES).toHaveLength(10);
   });
 
   it('a sessão do leitor é app_runtime (e a "crua" também), não a dona', async () => {
@@ -453,7 +476,7 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
 
   describe('casos adicionais', () => {
     it('vaga SEM serviço devolve o próprio horário da vaga', async () => {
-      const ctx = await seed({ withService: false, vacancySchedule: SCHEDULE_X });
+      const ctx = await seed({ withService: false, vacancySchedule: VAGA_MANUAL_X });
       const res = mockRes();
       await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
       // o GET admin normaliza o horário para o formato por dia da semana; o conteúdo (14:15-18:45) é o da vaga
@@ -481,8 +504,8 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
         const visivelAR = await identityPool.query(`SELECT id FROM patient_contracted_services WHERE id = $1`, [ctx.serviceId]);
         const visivelBR = await br.query(`SELECT id FROM patient_contracted_services WHERE id = $1`, [ctx.serviceId]);
         const efetivoBR = await br.query(
-          `SELECT CASE WHEN jp.contracted_service_id IS NOT NULL THEN e.schedule ELSE jp.schedule END AS schedule
-             FROM job_postings jp LEFT JOIN patient_contracted_services e ON e.id = jp.contracted_service_id WHERE jp.id = $1`,
+          `SELECT CASE WHEN jp.contracted_service_id IS NOT NULL THEN horario_do_servico(jp.contracted_service_id, CURRENT_DATE) ELSE jp.schedule END AS schedule
+             FROM job_postings jp WHERE jp.id = $1`,
           [ctx.vacancyId],
         );
         console.info(`[singleSource] RLS: AR vê o serviço=${visivelAR.rowCount}; BR vê o serviço=${visivelBR.rowCount}; horário efetivo lido por BR=${JSON.stringify(efetivoBR.rows[0])}`);
@@ -498,9 +521,22 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       const { rows } = await admin.query(
         `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'job_postings' ORDER BY ordinal_position`,
       );
-      expect(JOB_POSTING_COLUMNS).toEqual(rows.map((r) => r.column_name));
+      expect(JOB_POSTING_COLUMNS).toEqual(
+        rows.map((r) => r.column_name),
+      );
     });
   });
+
+  // PUT: client cru sem identidade (a restrição do orquestrador). DELETE: client cru + withActorContext com o contexto da request = identidade.
+  /** Roda `fn` como uma request staff AR (molde `asRequest` de patient-diagnoses-rls-context.e2e.test.ts): DbSession + ALS. */
+  async function asStaffRequest<T>(fn: () => Promise<T>): Promise<T> {
+    const session: DbSession = { context: { kind: 'staff', uid: UID, country: 'AR' }, released: false };
+    try {
+      return await loggingAls.run({ traceId: 'vls-f1-delete', dbSession: session }, fn);
+    } finally {
+      await releaseDbSession(session);
+    }
+  }
 
   describe('leitor 13 — client cru sem identidade (restrição do orquestrador)', () => {
     it('PUT e DELETE de vaga COM serviço não estouram rls_session_without_identity, e o PUT traz o horário do SERVIÇO', async () => {
@@ -513,11 +549,11 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       console.info(`[singleSource] PUT -> status ${put.statusCode} ${JSON.stringify(put.body).slice(0, 160)}`);
       expect(JSON.stringify(put.body)).not.toMatch(/rls_session_without_identity/);
       expect(put.statusCode).toBe(200);
-      expect((put.body as { data: { schedule: unknown } }).data.schedule).toEqual(SCHEDULE_X);
+      expect((put.body as { data: { schedule: unknown } }).data.schedule).toEqual(SCHEDULE_X_VIEW);
       expect((await admin.query(`SELECT schedule FROM job_postings WHERE id = $1`, [ctx.vacancyId])).rows[0].schedule).toBeNull(); // a coluna da vaga segue NULL (F7)
 
       const del = mockRes();
-      await crud.deleteVacancy(asReq({ params: { id: ctx.vacancyId }, user: { uid: UID } }), asRes(del));
+      await asStaffRequest(() => crud.deleteVacancy(asReq({ params: { id: ctx.vacancyId }, user: { uid: UID } }), asRes(del)));
       console.info(`[singleSource] DELETE -> status ${del.statusCode} ${JSON.stringify(del.body).slice(0, 160)}`);
       expect(JSON.stringify(del.body)).not.toMatch(/rls_session_without_identity/);
       expect(del.statusCode).toBe(200);
@@ -526,7 +562,7 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
     it('a sessão crua REPRODUZ o RAISE ao tocar o serviço (o controle positivo do instrumento)', async () => {
       const ctx = await seed({ draft: true });
       await expect(
-        barePool.query(`SELECT e.schedule FROM job_postings jp LEFT JOIN patient_contracted_services e ON e.id = jp.contracted_service_id WHERE jp.id = $1`, [ctx.vacancyId]),
+        barePool.query(`SELECT e.providers_needed FROM job_postings jp LEFT JOIN patient_contracted_services e ON e.id = jp.contracted_service_id WHERE jp.id = $1`, [ctx.vacancyId]),
       ).rejects.toThrow(/rls_session_without_identity/);
       const soVaga = await barePool.query(`SELECT id FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
       expect(soVaga.rowCount).toBe(1); // job_postings sozinho passa, como medido na stage
@@ -540,14 +576,15 @@ describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE 
   });
 
   describe.each(LEITORES_QTD.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {
-    it('UPDATE em pcs.providers_needed (vaga intocada) -> a saída passa de 2 para 7', async () => {
+    it('UPDATE em pcs.providers_needed (vaga intocada) -> a saída muda para a do valor 7 (default: de 2 para 7)', async () => {
+      const esperado = leitor.esperado ?? { antes: '2', depois: '7' };
       const ctx = await (leitor.seed ?? (() => seed({ serviceProviders: 2 })))();
       const antes = await leitor.probe(ctx);
-      expect(antes).toBe('2'); // controle positivo: o instrumento enxerga o valor inicial
-      await setServiceProviders(ctx, leitor.nome.startsWith('GetArmedCasesUseCase') ? null : 7);
+      expect(antes).toBe(esperado.antes); // controle positivo: o instrumento enxerga o valor inicial
+      await setServiceProviders(ctx, 7);
       const copia = await admin.query(`SELECT providers_needed FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
       expect(copia.rows[0].providers_needed).toBeNull(); // a coluna da vaga segue NULL (F7: não há mais cópia)
-      expect(await leitor.probe(ctx)).toBe('7');
+      expect(await leitor.probe(ctx)).toBe(esperado.depois);
     });
   });
 

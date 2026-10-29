@@ -11,8 +11,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 
 interface PatientCreateModalProps {
@@ -22,7 +21,6 @@ interface PatientCreateModalProps {
 }
 
 const DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
-const SERVICE_TYPES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 const CLOSE_MS = 300;
 
 // Mirrors the backend zod validator (createPatientSchema). Only firstName is
@@ -42,8 +40,6 @@ const createSchema = z.object({
   contactEmail: z.union([z.literal(''), z.string().trim().email()]),
   documentType: z.string(),
   documentNumber: z.string().trim(),
-  healthInsuranceName: z.string().trim(),
-  serviceType: z.array(z.string()),
 });
 
 type CreateFormValues = z.infer<typeof createSchema>;
@@ -81,8 +77,6 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
       contactEmail: '',
       documentType: '',
       documentNumber: '',
-      healthInsuranceName: '',
-      serviceType: [],
     },
   });
 
@@ -103,17 +97,13 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const documentTypeOptions: SelectOption[] = DOCUMENT_TYPES.map((d) => ({
+  const documentTypeOptions: ComboboxOption[] = DOCUMENT_TYPES.map((d) => ({
     value: d,
     label: t(`admin.patients.detail.documentTypes.${d}`, { defaultValue: d }),
   }));
-  const serviceTypeOptions: SelectOption[] = SERVICE_TYPES.map((s) => ({
-    value: s,
-    label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }),
-  }));
   // Same AR|BR source the panel's country FILTER uses, so the values a patient
   // can be created with always match the values it can be filtered by.
-  const countryOptions: SelectOption[] = getCountryOptions(t);
+  const countryOptions: ComboboxOption[] = getCountryOptions(t);
 
   const onSubmit = async (values: CreateFormValues): Promise<void> => {
     setSubmitError(null);
@@ -132,8 +122,6 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
       contactEmail: clean(values.contactEmail),
       documentType: clean(values.documentType),
       documentNumber: clean(values.documentNumber),
-      healthInsuranceName: clean(values.healthInsuranceName),
-      serviceType: values.serviceType.length > 0 ? values.serviceType : undefined,
     };
 
     setBusy(true);
@@ -205,18 +193,18 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             </FormField>
             {/* Required, no preselection — drives the legal regime (Ley 25.326 vs
                 LGPD) and the panel's country filter (abac-pais-fase1 5.1). */}
-            {/* The message is rendered by SelectField (which also reddens the
+            {/* The message is rendered by the Combobox (which also reddens the
                 border); passing it to FormField too would print it twice. */}
             <FormField label={tc('country')} htmlFor="pc-country" required>
               <Controller
                 control={control}
                 name="country"
                 render={({ field }) => (
-                  <SelectField
+                  <Combobox
                     id="pc-country"
                     inputSize="compact"
                     options={countryOptions}
-                    placeholder={tc('countryPlaceholder')}
+                    placeholder={tc('countryPlaceholder')} clearLabel={tc('countryPlaceholder')}
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     error={errors.country ? tc('countryRequired') : undefined}
@@ -239,10 +227,10 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                 control={control}
                 name="documentType"
                 render={({ field }) => (
-                  <SelectField
+                  <Combobox
                     inputSize="compact"
                     options={documentTypeOptions}
-                    placeholder={tc('unset')}
+                    placeholder={tc('unset')} clearLabel={tc('unset')}
                     value={field.value}
                     onChange={field.onChange}
                     data-testid="pc-documentType"
@@ -252,38 +240,6 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             </FormField>
             <FormField label={tc('documentNumber')} htmlFor="pc-documentNumber" optional>
               <InputWithIcon id="pc-documentNumber" inputSize="compact" data-testid="pc-documentNumber" {...register('documentNumber')} />
-            </FormField>
-          </div>
-
-          {/* Cobertura médica */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-            <Text size="sm" weight="semibold" color="secondary" className="sm:col-span-2">
-              {tc('coverageSection')}
-            </Text>
-            <FormField label={tc('healthInsuranceName')} htmlFor="pc-insName" optional className="sm:col-span-2">
-              <InputWithIcon id="pc-insName" inputSize="compact" data-testid="pc-insName" {...register('healthInsuranceName')} />
-            </FormField>
-          </div>
-
-          {/* Servicio requerido */}
-          <div className="flex flex-col gap-4 pt-2 border-t border-slate-100">
-            <Text size="sm" weight="semibold" color="secondary">
-              {tc('serviceSection')}
-            </Text>
-            <FormField label={tc('serviceType')} htmlFor="pc-serviceType" optional>
-              <Controller
-                control={control}
-                name="serviceType"
-                render={({ field }) => (
-                  <MultiSelect
-                    options={serviceTypeOptions}
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder={tc('unset')}
-                    id="pc-serviceType"
-                  />
-                )}
-              />
             </FormField>
           </div>
 

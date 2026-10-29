@@ -67,7 +67,6 @@ const PATIENT_ADDRESS = {
 };
 
 const CREATED_VACANCY_ID = 'vac-fullflow-new';
-const MEET_LINK = 'https://meet.google.com/xyz-abcd-pqr';
 
 // Payload FULL retornado pelo GET /vacancies/:id em Step 1 edit mode.
 // Importante: contém todos os campos que o `reset(...)` do RHF lê em
@@ -95,12 +94,6 @@ const FULL_VACANCY = {
   daily_obs: '',
   published_at: null,
   closes_at: null,
-  meet_link_1: MEET_LINK,
-  meet_link_2: null,
-  meet_link_3: null,
-  meet_datetime_1: '2026-05-12T15:00:00-03:00',
-  meet_datetime_2: null,
-  meet_datetime_3: null,
   patient_first_name: PATIENT_DETAIL.firstName,
   patient_last_name: PATIENT_DETAIL.lastName,
   caseNumber: CASE_OPTION.caseNumber,
@@ -204,22 +197,6 @@ function installMocks(page: Page): void {
     }),
   );
 
-  // POST /vacancies/meet-links/lookup — onBlur normaliza
-  page.route('**/api/admin/vacancies/meet-links/lookup', (route: Route) => {
-    const body = route.request().postDataJSON() as { link: string };
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: {
-          normalized: body.link.startsWith('http') ? body.link : `https://${body.link}`,
-          datetime: '2026-05-12T15:00:00-03:00',
-        },
-      }),
-    });
-  });
-
   // POST /vacancies (create) — retorna a vaga criada
   page.route('**/api/admin/vacancies', (route: Route) => {
     if (route.request().method() === 'POST') {
@@ -229,29 +206,6 @@ function installMocks(page: Page): void {
         body: JSON.stringify({
           success: true,
           data: { id: CREATED_VACANCY_ID, title: FULL_VACANCY.title, status: 'PENDING_ACTIVATION' },
-        }),
-      });
-    } else {
-      route.continue();
-    }
-  });
-
-  // PUT /vacancies/:id/meet-links
-  page.route(`**/api/admin/vacancies/${CREATED_VACANCY_ID}/meet-links`, (route: Route) => {
-    if (route.request().method() === 'PUT') {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            meet_link_1: MEET_LINK,
-            meet_datetime_1: '2026-05-12T15:00:00-03:00',
-            meet_link_2: null,
-            meet_datetime_2: null,
-            meet_link_3: null,
-            meet_datetime_3: null,
-          },
         }),
       });
     } else {
@@ -353,12 +307,6 @@ test.describe('CreateVacancy — flow completo Step 1 → Step 2 → Voltar → 
       .first();
     await addSlotBtn.click();
 
-    // Meet link
-    const meetInput = page.locator('[data-testid="meet-link-0"]');
-    await meetInput.fill(MEET_LINK);
-    await meetInput.blur();
-    await expect(meetInput).toHaveValue(MEET_LINK);
-
     // Click Continuar — vai pro Step 2
     await page.getByTestId('create-vacancy-save-btn').click();
     await expect(page).toHaveURL(
@@ -389,8 +337,8 @@ test.describe('CreateVacancy — flow completo Step 1 → Step 2 → Voltar → 
     await expect(linkedBtn).toBeVisible({ timeout: 8_000 });
     await expect(linkedBtn).toHaveClass(/border-primary/);
 
-    // Meet link populado
-    await expect(page.locator('[data-testid="meet-link-0"]')).toHaveValue(MEET_LINK);
+    // A vaga não tem campo de link de reunião (spec 068)
+    await expect(page.locator('[data-testid="meet-link-0"]')).toHaveCount(0);
 
     // Botão Continuar HABILITADO (regression — antes do fix ficava travado em
     // disabled porque o gate `formComplete` ficava preso em false durante a

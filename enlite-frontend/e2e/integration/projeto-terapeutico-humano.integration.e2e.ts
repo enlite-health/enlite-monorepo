@@ -28,7 +28,8 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = 'http://id.who.int/icd/entity/e2e-tp-017';
@@ -50,8 +51,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
 /** Abre um multi-select do DS e marca as N primeiras opções pelo mouse; fecha a lista clicando no gatilho de novo
  * (o `Escape` do multi-select também chega ao drawer, que desde 15/09 abre o "¿Descartar los cambios?" e tapa a tela). */
 async function marcarOpcoes(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  const gatilho = root.locator('button[aria-haspopup="listbox"]');
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  const gatilho = gatilhoDoCampo;
   await gatilho.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();
@@ -148,14 +150,14 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect.poll(async () => { const b = await drawer.boundingBox(); return b ? Math.round(b.x + b.width) : 0; }).toBe(1600);
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
     // D301.3a (Ana): modalidade obrigatória — select nativo; o valor é lido de volta da tela.
-    await expect(page.getByTestId('tp-modality')).toHaveValue('');
-    await page.getByTestId('tp-modality').selectOption('HYBRID');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID');
+    await expect(page.getByTestId('tp-modality')).toContainText('Elegí la modalidad');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
+    await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
     // spec 030: o segmento é obrigatório no "Nuevo" — pelo teclado, valor lido da tela.
     const segmento = primeiroSegmento();
-    expect(await escolherSegmentoPeloTeclado(page, segmento.label)).toBe(segmento.label);
+    expect(await escolherSegmento(page, segmento.label)).toBe(segmento.label);
 
     // CID pelo combobox REAL: digita como humano, escolhe a opção.
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
@@ -215,9 +217,9 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     // PR-7 (D328): editar a vigente trava os campos MACRO como TEXTO (objetivo geral, segmento…); só os MICRO mudam.
     await expect(page.getByTestId('tp-generalObjective-locked')).toHaveText('Objetivo general digitado por humano 017');
     await expect(page.getByTestId('tp-segment-locked')).toHaveText(segmento.label); // spec 030: o segmento herda da origem
-    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID'); // a edição parte da versão de origem
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await expect(page.getByTestId('tp-modality')).toContainText('Híbrida'); // a edição parte da versão de origem
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
+    await expect(page.getByTestId('tp-modality')).toContainText('On-line');
     const edited = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
     const body11 = (await (await edited).json()) as { data: { id: string; version: string; editedFromVersionId: string; generalObjective: string; modality: string; segment: { label: string } | null } };
@@ -286,9 +288,9 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await opcao.click();
     await digitar(page, '#tp-clinicalContext', 'Contexto que no debe persistir 017');
     await digitar(page, '#tp-generalObjective', 'Objetivo que no debe persistir 017');
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
-    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
-    await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista (ORDER BY sort_order, lower(label))
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
+    await escolherSegmento(page, primeiroSegmento().label);
+    await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista: `segmentOptions` (sem `alphabetical` p/ objetivos) põe os do segmento escolhido antes dos sem vínculo, na ordem da API (`ORDER BY lower(label)`, spec 061)
     await marcarOpcoes(page, 'tp-activities', 1);
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
@@ -297,7 +299,8 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect(page.getByTestId('tp-save')).toBeEnabled();
 
     // Enquanto o formulário está aberto, o backoffice desativa exatamente a opção escolhida.
-    const primeira = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order, lower(label) LIMIT 1`).split('\n')[0].trim();
+    // Mesma regra da tela (segmentOptions.ts + API): do segmento escolhido primeiro, depois os sem vínculo; dentro de cada bloco `lower(label)`; outro segmento fica de fora.
+    const primeira = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active AND (segment_id = '${primeiroSegmento().id}' OR segment_id IS NULL) ORDER BY (segment_id IS NULL), lower(label) LIMIT 1`).split('\n')[0].trim();
     expect(primeira).toMatch(/^[0-9a-f-]{36}$/);
     runSQL(`UPDATE therapeutic_specific_objectives SET active = false, deactivated_at = now(), updated_by = 'e2e-017' WHERE id = '${primeira}'`);
     try {
@@ -397,7 +400,7 @@ test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await page.getByTestId('tp-modality').selectOption('HYBRID');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
     await page.keyboard.type('sintetico');
@@ -420,7 +423,7 @@ test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na
     await expect(page.locator('#tp-endDate')).toHaveValue('2026-12-31');
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    const lido = await escolherSegmentoPeloTeclado(page, segmento.label);
+    const lido = await escolherSegmento(page, segmento.label);
     expect(lido).toBe(segmento.label);
     await expect(page.getByTestId('tp-segment')).toHaveAttribute('data-clarity-mask', 'True');
     await expect(page.getByTestId('tp-save')).toBeEnabled();

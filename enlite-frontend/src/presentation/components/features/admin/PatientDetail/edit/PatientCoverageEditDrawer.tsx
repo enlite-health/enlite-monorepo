@@ -7,10 +7,9 @@ import type { PatientDetail, PatientCoverageSectionPayload, InsuranceProvider } 
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import type { SelectOption } from '@presentation/components/molecules/SelectField';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { CoverageEmergencyContactsEditor } from './CoverageEmergencyContactsEditor';
@@ -51,7 +50,6 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<InsuranceProvider[]>([]);
-  const [name, setName] = useState(patient.insuranceInformed ?? '');
   const [affiliate, setAffiliate] = useState(patient.affiliateId ?? '');
 
   const coverageEntries = patient.coverage?.entries
@@ -92,7 +90,6 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   // ver o comentário da função acima), então comparar `selected` contra ele é a mesma régua
   // que `onSubmit` já usa pra decidir o PATCH.
   const isDirty =
-    name !== (patient.insuranceInformed ?? '') ||
     affiliate !== (patient.affiliateId ?? '') ||
     [...selected].sort().join(',') !== [...editableInitialCodes].sort().join(',') ||
     contactsDirty;
@@ -112,7 +109,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   const labelOf = (code: string): string =>
     catalog.find((p) => p.code === code)?.name ?? mappedEntries.find((e) => e.code === code)?.name ?? code;
   // Opções = catálogo vivo (fonte do dropdown) + o que já está marcado e ainda não veio na lista (leitura lenta/falha).
-  const options: SelectOption[] = [
+  const options: ComboboxOption[] = [
     ...catalog.map((p) => ({ value: p.code, label: p.name })),
     ...selected.filter((c) => !catalog.some((p) => p.code === c)).map((c) => ({ value: c, label: labelOf(c) })),
   ];
@@ -121,7 +118,6 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
     setSubmitError(null);
     const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
     const payload: PatientCoverageSectionPayload = {};
-    if (nz(name) !== (patient.insuranceInformed ?? null)) payload.healthInsuranceName = nz(name);
     if (nz(affiliate) !== (patient.affiliateId ?? null)) payload.affiliateId = nz(affiliate);
     // A baseline é o que o PAINEL já tinha gravado (editableInitialCodes) — não a união com o
     // ClickUp. Comparar contra a união faria um "sem mudança nenhuma" no editável disparar um
@@ -205,9 +201,6 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
-          <FormField label={tc('informed')} htmlFor="pcv-name" optional>
-            <InputWithIcon id="pcv-name" inputSize="compact" value={name} onChange={(e) => setName(e.target.value)} data-testid="pcv-name" />
-          </FormField>
           <FormField label={tc('verified')} htmlFor="pcv-codes" optional>
             {(lockedEntries.length > 0 || unmappedCount > 0) && (
               // QA 🟡3: origem ClickUp — chip SEM controle de remoção (não faz parte do
@@ -226,7 +219,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
                 )}
               </div>
             )}
-            <MultiSelect id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('selectPlaceholder')} />
+            <Combobox multiple id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('selectPlaceholder')} inputSize="compact" />
             {/* O que está marcado, por extenso: o botão do MultiSelect só diz "N seleccionados". */}
             <div className="flex flex-wrap gap-1 mt-1" data-testid="pcv-codes-selected">
               {selected.map((code) => (

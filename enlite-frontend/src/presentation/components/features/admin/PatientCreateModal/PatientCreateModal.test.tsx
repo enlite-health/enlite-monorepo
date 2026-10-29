@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { PatientCreateModal } from './PatientCreateModal';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 /**
  * PatientCreateModal — country selector (abac-pais-fase1 task 5.1).
@@ -53,19 +54,17 @@ function submit() {
   fireEvent.click(screen.getByTestId('pc-save'));
 }
 
+const COUNTRY_LABEL: Record<string, string> = {
+  AR: 'admin.patients.countryOptions.AR',
+  BR: 'admin.patients.countryOptions.BR',
+  '': 'admin.patients.create.countryPlaceholder', // a linha que limpa (clearLabel = placeholder)
+};
 function chooseCountry(value: string) {
-  fireEvent.change(screen.getByTestId('pc-country'), { target: { value } });
+  chooseCombo(screen.getByTestId('pc-country'), COUNTRY_LABEL[value]);
 }
 
 /** The mocked `t` echoes the key, so this is the country error's rendered text. */
 const COUNTRY_ERROR = 'admin.patients.create.countryRequired';
-
-/** Opens the serviceType MultiSelect (a button/listbox, not a <select>). */
-function openServiceTypes() {
-  const wrapper = document.getElementById('pc-serviceType') as HTMLElement;
-  fireEvent.click(within(wrapper).getByRole('button'));
-  return wrapper;
-}
 
 describe('PatientCreateModal — country selector', () => {
   beforeEach(() => {
@@ -77,15 +76,15 @@ describe('PatientCreateModal — country selector', () => {
   it('a. renders the country select with AR and BR and no preselected value', () => {
     renderModal();
 
-    const select = screen.getByTestId('pc-country') as HTMLSelectElement;
+    const select = screen.getByTestId('pc-country');
     expect(select).toBeInTheDocument();
-    // Empty = the placeholder option. A preselected 'AR' would silently
+    // Empty = the placeholder shown on the trigger. A preselected 'AR' would silently
     // reintroduce the bug this task exists to kill.
-    expect(select.value).toBe('');
+    expect(select).toHaveTextContent(COUNTRY_LABEL['']);
 
-    const values = Array.from(select.querySelectorAll('option')).map((o) => o.value);
-    expect(values).toContain('AR');
-    expect(values).toContain('BR');
+    const labels = comboLabels(select);
+    expect(labels).toContain(COUNTRY_LABEL.AR);
+    expect(labels).toContain(COUNTRY_LABEL.BR);
   });
 
   // ── b. Required — blocks submit ────────────────────────────────────────────
@@ -103,8 +102,8 @@ describe('PatientCreateModal — country selector', () => {
   it('b2. still blocks submit when the country is cleared back to the placeholder', async () => {
     renderModal();
     fillFirstName();
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'BR' } });
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: '' } });
+    chooseCountry('BR');
+    chooseCountry('');
     submit();
 
     await waitFor(() => {
@@ -116,7 +115,7 @@ describe('PatientCreateModal — country selector', () => {
   it("c. sends country:'BR' when Brasil is chosen", async () => {
     renderModal();
     fillFirstName('João');
-    fireEvent.change(screen.getByTestId('pc-country'), { target: { value: 'BR' } });
+    chooseCountry('BR');
     submit();
 
     await waitFor(() => expect(mockCreatePatient).toHaveBeenCalledTimes(1));
@@ -143,7 +142,7 @@ describe('PatientCreateModal — country selector', () => {
     fillFirstName();
     submit();
 
-    // The error surfaces (rendered by SelectField, once — not duplicated by FormField).
+    // The error surfaces (rendered by the Combobox, once — not duplicated by FormField).
     const shown = await screen.findAllByText(COUNTRY_ERROR);
     expect(shown).toHaveLength(1);
 
@@ -261,9 +260,10 @@ describe('PatientCreateModal — country selector', () => {
     fireEvent.change(screen.getByTestId('pc-lastName'), { target: { value: '  Silva  ' } });
     fireEvent.change(screen.getByTestId('pc-phone'), { target: { value: ' +5491100000 ' } });
     fireEvent.change(screen.getByTestId('pc-email'), { target: { value: 'ana@enlite.health' } });
-    fireEvent.change(screen.getByTestId('pc-documentType'), { target: { value: 'DNI' } });
+    chooseCombo(screen.getByTestId('pc-documentType'), 'DNI'); // DNI = DNI
     fireEvent.change(screen.getByTestId('pc-documentNumber'), { target: { value: ' 12345678 ' } });
-    fireEvent.change(screen.getByTestId('pc-insName'), { target: { value: ' OSDE ' } });
+    expect(screen.queryByTestId('pc-insName')).toBeNull();
+    expect(document.querySelector('#pc-serviceType')).toBeNull();
     // Spec 058: o nº de afiliado saiu do cadastro (o back recusa `healthInsuranceMemberId` com 422); o campo não existe mais.
     expect(screen.queryByTestId('pc-insMember')).toBeNull();
     submit();
@@ -277,25 +277,9 @@ describe('PatientCreateModal — country selector', () => {
       contactEmail: 'ana@enlite.health',
       documentType: 'DNI',
       documentNumber: '12345678',
-      healthInsuranceName: 'OSDE',
-      // Nothing was picked in the MultiSelect: an empty array is dropped, not sent as [].
-      serviceType: undefined,
     });
-  });
-
-  it('g2. sends the selected service types', async () => {
-    renderModal();
-    fillFirstName();
-    chooseCountry('AR');
-
-    const wrapper = openServiceTypes();
-    fireEvent.click(within(wrapper).getByText('AT'));
-    fireEvent.click(within(wrapper).getByText('NURSE'));
-    submit();
-
-    await waitFor(() => expect(mockCreatePatient).toHaveBeenCalledTimes(1));
-    expect(mockCreatePatient).toHaveBeenCalledWith(
-      expect.objectContaining({ serviceType: ['AT', 'NURSE'] }),
-    );
+    const sent = mockCreatePatient.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('healthInsuranceName');
+    expect(sent).not.toHaveProperty('serviceType');
   });
 });

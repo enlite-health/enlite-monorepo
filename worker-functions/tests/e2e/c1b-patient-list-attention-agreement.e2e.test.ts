@@ -15,6 +15,8 @@ import { Pool } from 'pg';
 import { PatientQueryRepository } from '@modules/case/infrastructure/PatientQueryRepository';
 import { computePatientCompleteness, ACTIVATABLE_STATUSES, patientNeedsAttentionSql } from '@modules/case/domain/PatientCompleteness';
 import type { AdminPatientsListParams } from '@modules/case/interfaces/validators/adminPatientsListSchema';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'C1B-attention-%';
@@ -74,11 +76,12 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         }
         // Migration 330: "completo" exige o serviço APONTANDO para o endereço; o cenário
         // `servicoSemEndereco` deixa address_id NULL de propósito.
-        await pool.query(
-          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE).
-          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2,'[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
+        const sid = (await pool.query<{ id: string }>(
+          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE) — spec 056: faixa em patient_itinerary_slot.
+          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2) RETURNING id`,
           [id, 'servicoSemEndereco' in c && c.servicoSemEndereco ? null : addr],
-        );
+        )).rows[0].id;
+        await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'c1b-e2e');
       }
     }
     // CR-3 (achado do gate revisao-pr): o controle positivo do teste 'g' precisa de uma linha
@@ -178,10 +181,10 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                         LEFT JOIN patient_addresses sa ON sa.id = s.address_id AND sa.archived_at IS NULL
                        WHERE s.patient_id = p.id AND s.active AND sa.id IS NULL))::int AS svc_noaddr,
-             -- Decisão do Gabriel 07/09: serviço ativo sem horário (NULL ou array vazio).
+             -- Decisão do Gabriel 07/09: serviço ativo sem horário — spec 056: nenhuma faixa vigente (mesmo fragmento de produção).
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                        WHERE s.patient_id = p.id AND s.active
-                         AND (s.schedule IS NULL OR jsonb_array_length(s.schedule) = 0)))::int AS svc_nosched,
+                         AND ${serviceWithoutScheduleSql('s')}))::int AS svc_nosched,
              ${patientNeedsAttentionSql('p')} AS sql_flag
         FROM patients p
        WHERE p.deleted_at IS NULL`);

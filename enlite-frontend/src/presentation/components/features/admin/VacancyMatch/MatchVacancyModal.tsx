@@ -10,10 +10,8 @@ import { ResendConfirmDialog } from './ResendConfirmDialog';
 import { MatchCriteriaChips } from './MatchCriteriaChips';
 import { MatchBucketSection } from './MatchBucketSection';
 import { MatchTotalsMarker } from './MatchTotalsMarker';
-import { MatchMissingMeetLinksAlert } from './MatchMissingMeetLinksAlert';
 import {
   bucketize,
-  hasAnyMeetLink,
   MATCH_RADIUS_KM,
   type VacancyForMatch,
 } from './matchModalHelpers';
@@ -47,8 +45,6 @@ export function MatchVacancyModal({
   const [confirmTarget, setConfirmTarget] = useState<SavedCandidate[] | null>(
     null,
   );
-
-  const meetLinksOk = useMemo(() => hasAnyMeetLink(vacancy), [vacancy]);
 
   const buckets = useMemo(
     () => bucketize(results?.candidates ?? []),
@@ -96,7 +92,7 @@ export function MatchVacancyModal({
   // Dispara o envio em background. Se algum candidato já foi notificado, abre a
   // confirmação de re-envio antes; senão, enfileira direto no painel flutuante.
   function startInvite(candidates: SavedCandidate[]) {
-    if (!meetLinksOk || candidates.length === 0) return;
+    if (candidates.length === 0) return;
     const anyAlreadyNotified = candidates.some((c) => c.messagedAt != null);
     if (anyAlreadyNotified) {
       setConfirmTarget(candidates);
@@ -140,10 +136,6 @@ export function MatchVacancyModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-gray-100">
-          {!meetLinksOk && (
-            <MatchMissingMeetLinksAlert vacancyId={vacancyId} onClose={onClose} />
-          )}
-
           {(isLoading || isRunning) && !results && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -199,7 +191,7 @@ export function MatchVacancyModal({
             <Button
               variant="primary"
               size="md"
-              disabled={selectedIds.size === 0 || !meetLinksOk}
+              disabled={selectedIds.size === 0}
               onClick={handleInviteSelected}
             >
               {t('admin.match.inviteSelected', { count: selectedIds.size })}
