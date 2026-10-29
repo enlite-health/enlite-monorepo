@@ -76,6 +76,26 @@ const ALLOWED_FILES: Record<string, string> = {
     'canonicaliza addressType só para comparar fontes internamente (staff/admin) — módulo reconciliation, rotas admin ainda não montadas em nenhum bootstrap; nunca projeta pra rota pública/prestador.',
 };
 
+/**
+ * Spec 077 (§8.3 + decisão P3, 29/10): superfície do ITINERÁRIO do prestador (`GET /api/workers/me/itinerary`).
+ * Não está em `publicSurface()` (vive em modules/case), então entra na varredura do teste 2 por nome.
+ */
+function itinerarySurface(): string[] {
+  return walk(SRC).filter((p) => /WorkerItinerary/.test(path.basename(p)));
+}
+
+/**
+ * Exceção NOMEADA da 077 — vale SÓ para `pa.lat`/`pa.lng` (nunca address_formatted/address_raw, nunca as strings do teste 1,
+ * nunca texto de endereço). Por arquivo, sem exceção por pasta. O controller só repassa o envelope: não precisa de entrada.
+ */
+const POINT_EXCEPTION_FILES: Record<string, string> = {
+  'src/modules/case/infrastructure/WorkerItineraryReader.ts':
+    'spec 077 §8.3 + decisão P3 29/10: sai só `patient_point` lat/lng DEGRADADO a 20 m (`degradePoint20m`), para o attendance-service; nenhum texto de endereço.',
+};
+
+/** Texto de endereço que a P3 proíbe na superfície do itinerário do prestador. */
+const ADDRESS_TEXT_STRINGS = ['address_summary', 'addressSummary', 'neighborhood', 'locality'];
+
 function isAllowed(absPath: string): string | null {
   const rel = path.relative(path.dirname(SRC), absPath).replace(/\\/g, '/');
   for (const suffix of Object.keys(ALLOWED_FILES)) {
@@ -89,7 +109,7 @@ describe('endereço do paciente não sai do perímetro do staff (lex C2.2/C2.5; 
     expect(publicSurface().length).toBeGreaterThan(0);
   });
 
-  it.each(['access_notes', 'accessNotes', 'logistics_corridor', 'logisticsCorridor', 'address_type', 'addressType'])(
+  it.each(['access_notes', 'accessNotes', 'logistics_corridor', 'logisticsCorridor', 'address_type', 'addressType', 'address_summary', 'addressSummary'])(
     '%s: 0 ocorrências fora da lista NOMEADA de arquivos permitidos',
     (needle) => {
       const offenders = walk(SRC)
@@ -99,10 +119,24 @@ describe('endereço do paciente não sai do perímetro do staff (lex C2.2/C2.5; 
     },
   );
 
-  it('address_formatted / lat / lng de patient_addresses: nenhum arquivo da superfície pública os projeta', () => {
-    const offenders = publicSurface().filter((p) => {
+  it('address_formatted / lat / lng de patient_addresses: nenhum arquivo da superfície pública projeta (exceção nomeada 077: só lat/lng no Reader)', () => {
+    const surface = Array.from(new Set([...publicSurface(), ...itinerarySurface()]));
+    const offenders = surface.filter((p) => {
       const s = fs.readFileSync(p, 'utf8');
-      return /patient_addresses/.test(s) && /address_formatted|\bpa\.lat\b|\bpa\.lng\b|address_raw/.test(s);
+      if (!/patient_addresses/.test(s)) return false;
+      const rel = path.relative(path.dirname(SRC), p).replace(/\\/g, '/');
+      const pointOk = Object.keys(POINT_EXCEPTION_FILES).some((suffix) => rel.endsWith(suffix));
+      return /address_formatted|address_raw/.test(s) || (!pointOk && /\bpa\.lat\b|\bpa\.lng\b/.test(s));
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it('itinerário do prestador (077/P3): nenhum texto de endereço (address_summary/neighborhood/locality) nos arquivos WorkerItinerary*', () => {
+    const surface = itinerarySurface();
+    expect(surface.length).toBeGreaterThan(0);
+    const offenders = surface.filter((p) => {
+      const s = fs.readFileSync(p, 'utf8');
+      return ADDRESS_TEXT_STRINGS.some((n) => s.includes(n));
     });
     expect(offenders).toEqual([]);
   });
