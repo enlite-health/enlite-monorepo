@@ -22,6 +22,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -87,6 +88,8 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
         [id, addressId],
       )).rows[0].id;
       await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'qacaca-item1-e2e');
+      // Pedido do Javier: "completo" num estágio pré-atendimento também exige ≥1 diagnóstico CID-11 ATIVO.
+      await seedPatientDiagnosis(pool, id);
     }
     return id;
   }

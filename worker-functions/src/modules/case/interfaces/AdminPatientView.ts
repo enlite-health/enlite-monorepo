@@ -122,6 +122,8 @@ export function patientDetailCompleteness(patient: unknown, cells?: readonly str
 function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResult {
   const detail = patient as {
     birthDate: string | Date | null;
+    status?: string | null;
+    activeDiagnosisCount?: number;
     hasConsent: boolean | null;
     insuranceInformed: string | null;
     addresses?: Array<{ id: string }>;
@@ -156,5 +158,9 @@ function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResu
     activeContractedServicesWithoutScheduleCount: activeServices.filter(
       (s) => !Array.isArray(s.schedule) || s.schedule.length === 0,
     ).length,
+    status: detail.status ?? null,
+    // Contagem de diagnósticos ativos lida no SQL do detalhe (nunca o valor). Ausente = 0 → em ADMISSION acusa DIAGNOSIS,
+    // o lado seguro (a trava continua valendo); o loader do writer recalcula do banco de qualquer jeito.
+    activeDiagnosisCount: Number(detail.activeDiagnosisCount ?? 0),
   });
 }

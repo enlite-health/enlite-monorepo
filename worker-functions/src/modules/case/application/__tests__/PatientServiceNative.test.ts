@@ -222,6 +222,10 @@ describe('PatientService — native write path (migration 251)', () => {
       seen.push({ sql, params });
       // v2 (spec 012): o serviço lê o status atual (FOR UPDATE) antes de escrever.
       if (sql.startsWith('SELECT status FROM patients')) return { rowCount: 1, rows: [{ status: 'ADMISSION' }] };
+      // Sair de ADMISSION agora lê a completude (DIAGNOSIS, pedido do Javier): paciente COM diagnóstico ativo.
+      if (/services_without_schedule_count/.test(sql)) {
+        return { rowCount: 1, rows: [{ birth_date: '1980-01-01', has_consent: true, insurance_informed: 'OSDE', active_address_count: '1', active_responsible_count: '0', active_service_count: '1', services_without_address_count: '0', services_without_schedule_count: '0', status: 'ADMISSION', active_diagnosis_count: '1' }] };
+      }
       if (/^UPDATE patients/.test(sql)) return { rowCount: 1, rows: [{ id: 'nat-004' }] };
       return { rows: [], rowCount: 0 };
     };

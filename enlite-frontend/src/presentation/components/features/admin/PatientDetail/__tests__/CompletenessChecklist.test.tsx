@@ -158,4 +158,63 @@ describe('CompletenessChecklist (spec 014 US-D1, lex D1.1/D1.2, D255)', () => {
     expect(screen.getByText('Listo para activar')).toBeInTheDocument();
     expect(screen.getAllByTestId('completeness-pending-item')).toHaveLength(4);
   });
+
+  // ── Pedido do Javier: diagnóstico CID-11 obrigatório na saída da admissão ───────────────────
+  describe('DIAGNOSIS / CLINICAL_DATA', () => {
+    it('DIAGNOSIS em blocking → "Para activar falta: Diagnóstico" (es-AR), clicável, nenhum código cru', async () => {
+      const user = userEvent.setup();
+      const onFocusItem = vi.fn();
+      const { container } = render(
+        <CompletenessChecklist
+          completeness={completeness({ missing: ['DIAGNOSIS'], blocking: ['DIAGNOSIS'], ready: false, canActivate: false })}
+          onFocusItem={onFocusItem}
+        />,
+      );
+      expect(screen.getByText('Para activar falta:')).toBeInTheDocument();
+      expect(screen.getAllByTestId('completeness-item')).toHaveLength(1);
+      await user.click(screen.getByText('Diagnóstico'));
+      expect(onFocusItem).toHaveBeenCalledWith('DIAGNOSIS');
+      expect(screen.queryByText('DIAGNOSIS')).not.toBeInTheDocument();
+      expectNoRawEnumLeaks(container);
+    });
+
+    it('CLINICAL_DATA (quem não lê o clínico) → item GENÉRICO "Datos clínicos", nunca a palavra Diagnóstico', async () => {
+      const user = userEvent.setup();
+      const onFocusItem = vi.fn();
+      const { container } = render(
+        <CompletenessChecklist
+          completeness={completeness({ missing: ['CLINICAL_DATA'], blocking: ['CLINICAL_DATA'], ready: false, canActivate: false })}
+          onFocusItem={onFocusItem}
+        />,
+      );
+      expect(screen.getByText('Datos clínicos')).toBeInTheDocument();
+      expect(screen.queryByText('Diagnóstico')).not.toBeInTheDocument();
+      await user.click(screen.getByText('Datos clínicos'));
+      expect(onFocusItem).toHaveBeenCalledWith('CLINICAL_DATA');
+      expectNoRawEnumLeaks(container);
+    });
+
+    it('pt-BR: rótulos traduzidos (Diagnóstico / Dados clínicos), nada de texto fixo em espanhol', async () => {
+      await i18n.changeLanguage('pt-BR');
+      try {
+        const { unmount } = render(
+          <CompletenessChecklist
+            completeness={completeness({ missing: ['DIAGNOSIS'], blocking: ['DIAGNOSIS'], ready: false, canActivate: false })}
+            onFocusItem={vi.fn()}
+          />,
+        );
+        expect(screen.getByText('Diagnóstico')).toBeInTheDocument();
+        unmount();
+        render(
+          <CompletenessChecklist
+            completeness={completeness({ missing: ['CLINICAL_DATA'], blocking: ['CLINICAL_DATA'], ready: false, canActivate: false })}
+            onFocusItem={vi.fn()}
+          />,
+        );
+        expect(screen.getByText('Dados clínicos')).toBeInTheDocument();
+      } finally {
+        await i18n.changeLanguage('es');
+      }
+    });
+  });
 });

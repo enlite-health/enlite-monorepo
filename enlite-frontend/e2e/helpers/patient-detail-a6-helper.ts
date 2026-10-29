@@ -26,6 +26,16 @@ export function seedActivatablePatientA6(): { patientId: string; addressId: stri
     VALUES ('${patientId}', 'Av. A6 999, CABA, AR', 'Av. A6 999, CABA', -34.60, -58.38, 1, 'manual', NOW(), NOW())
   `);
   runSQL(`UPDATE patients SET case_number = ${910000 + Number(stamp) % 90000} WHERE id = '${patientId}'`);
+  // Pedido do Javier: ativar recrutamento com o paciente pré-atendimento (PENDING_ADMISSION) exige ≥1 diagnóstico CID-11 ATIVO.
+  runSQL(`
+    INSERT INTO patient_diagnoses (
+      patient_id, terminology_system, concept_uri, concept_code, concept_title, concept_language,
+      concept_group, catalog_release, source, is_primary, active, created_by, updated_by
+    ) VALUES (
+      '${patientId}', 'ICD-11', 'http://id.who.int/icd/release/11/e2e-sintetico/6A02', '6A02',
+      'Diagnóstico sintético e2e', 'es', '06', '2026-01', 'PANEL', true, true, 'e2e', 'e2e'
+    )
+  `);
   // Migration 330: o serviço aponta para o endereço — o teste vincula no drawer antes de ativar.
   const addressId = runSQL(`SELECT id FROM patient_addresses WHERE patient_id = '${patientId}' ORDER BY created_at LIMIT 1`);
   return { patientId, addressId, stamp };

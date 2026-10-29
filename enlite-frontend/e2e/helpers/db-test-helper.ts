@@ -13,6 +13,10 @@
 
 import { execSync } from 'child_process';
 
+// Cópia deliberada: nenhum helper de e2e/ importa de src/ (padrão do diretório, medido por grep). Dono: ADMISSION_FUNNEL_STATUSES
+// em src/domain/entities/patientEnums.ts (= PRE_CARE da trava do diagnóstico, PatientCompleteness.ts do backend).
+const PRE_CARE_STATUSES = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'];
+
 // ── Constants ───────────────────────────────────────────────────────────────
 
 // `E2E_PG_CONTAINER` permite apontar para um stack isolado por projeto docker (`docker compose -p`)
@@ -52,6 +56,13 @@ export interface InsertTestPatientOpts {
    * (null nos dois) — passe true/uma string quando o teste for ATIVAR o paciente. */
   hasConsent?: boolean;
   insuranceInformed?: string;
+  /**
+   * Diagnóstico CID-11 ATIVO sintético em `patient_diagnoses` (pedido do Javier: ENTRAR em atendimento — e ativar
+   * recrutamento — a partir de um estágio pré-atendimento exige ≥1). Default = status pré-atendimento (SOLICITANTE,
+   * PENDING_ADMISSION, ADMISSION): quem semeia paciente nesses estágios quase sempre vai ativá-lo/movê-lo, e esses
+   * testes medem OUTRA coisa. Passe `false` para provar a TRAVA. O título é sintético: nenhum texto clínico real.
+   */
+  withDiagnosis?: boolean;
 }
 
 export interface InsertTestPatientResult {
@@ -77,6 +88,7 @@ export function insertTestPatient(
     addressLng = -58.3816,
     hasConsent,
     insuranceInformed,
+    withDiagnosis = PRE_CARE_STATUSES.includes(status),
   } = opts;
 
   const clickupTaskId = `E2E-INT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -111,6 +123,18 @@ export function insertTestPatient(
     if (hasConsent !== undefined) sets.push(`has_consent = ${hasConsent}`);
     if (insuranceInformed !== undefined) sets.push(`insurance_informed = '${insuranceInformed}'`);
     runSQL(`UPDATE patients SET ${sets.join(', ')} WHERE id = '${patientId}'`);
+  }
+
+  if (withDiagnosis) {
+    runSQL(`
+      INSERT INTO patient_diagnoses (
+        patient_id, terminology_system, concept_uri, concept_code, concept_title, concept_language,
+        concept_group, catalog_release, source, is_primary, active, created_by, updated_by
+      ) VALUES (
+        '${patientId}', 'ICD-11', 'http://id.who.int/icd/release/11/e2e-sintetico/6A02', '6A02',
+        'Diagnóstico sintético e2e', 'es', '06', '2026-01', 'PANEL', true, true, 'e2e', 'e2e'
+      )
+    `);
   }
 
   let addressId: string | null = null;

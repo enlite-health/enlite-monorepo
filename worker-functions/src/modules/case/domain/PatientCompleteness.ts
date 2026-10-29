@@ -2,7 +2,7 @@
  * PatientCompleteness — critério único de "pronto para ativar" (spec 014, US-D1, SUP-D1).
  *
  * Lex D1.1/D1.2 (specs/013-admissao-c-servicio-contratado/lex-veredito.md): os códigos do
- * checklist vivem SÓ aqui (constante única, sem item clínico) e a MESMA função alimenta:
+ * checklist vivem SÓ aqui (constante única) e a MESMA função alimenta:
  *   - `GET /api/admin/patients/:id` → `completeness: { missing, ready }` (só no detalhe — a
  *     lista/kanban continuam com o booleano `needsAttention` + enum fechado `attentionReasons`).
  *   - `ActivatePatientUseCase` → a MESMA regra decide se `POST /activate` aceita ou rejeita
@@ -10,9 +10,16 @@
  *
  * SUP-D1: se o critério abaixo estiver errado, a LISTA de códigos muda — a mecânica (função
  * única lida pelos dois lados) não.
+ *
+ * ⚠️ DIAGNOSIS (decisão do Gabriel, pedido do Javier): o checklist TEM um item clínico — "existe ≥1
+ * diagnóstico CID-11 ativo". O que é clínico é o VALOR do diagnóstico; aqui só circula a EXISTÊNCIA
+ * (uma contagem). O código nunca carrega texto, e quem não lê o container clínico nunca o recebe:
+ * recebe `CLINICAL_DATA` (genérico) no lugar — ver `CLINICAL_DATA_GENERIC_CODE`.
  */
 
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+import { hasActiveDiagnosisSql } from '@shared/sql/patientDiagnosisSql';
+import { ADMISSION_FUNNEL_STATUSES, CLINICAL_PATIENT_STATUSES } from './enums/PatientStatus';
 
 export const PATIENT_COMPLETENESS_CODES = [
   'ADDRESS',
@@ -38,9 +45,52 @@ export const PATIENT_COMPLETENESS_CODES = [
    */
   'SERVICE_SCHEDULE',
   'CONSENT',
+  /**
+   * Diagnóstico CID-11 obrigatório na ENTRADA em atendimento (pedido do Javier, decisão do Gabriel): o
+   * paciente continua nascendo sem diagnóstico, mas só entra em atendimento (`CARE_ENTRY_STATUSES`) — e só
+   * tem recrutamento ativado — com ≥1 linha ATIVA em `patient_diagnoses`, QUALQUER `source` (PANEL, CLICKUP,
+   * BACKFILL). Só é avaliado nos estágios pré-atendimento (`ADMISSION_FUNNEL_STATUSES`): quem já está em atendimento
+   * não é afetado. Ver `isDiagnosisMissing`.
+   */
+  'DIAGNOSIS',
 ] as const;
 
 export type PatientCompletenessCode = (typeof PATIENT_COMPLETENESS_CODES)[number];
+
+/**
+ * Código GENÉRICO que substitui `DIAGNOSIS` na saída para quem NÃO lê o container clínico
+ * (`patient_clinical:read`). Mesma razão de `diagnoses: null` (nunca `[]`) na ficha: "sem
+ * diagnóstico" é informação clínica e não pode vazar por ausência. A trava continua valendo para
+ * esse ator; só o NOME do item some. Não entra em `PATIENT_COMPLETENESS_CODES` (nunca é calculado
+ * — é só uma projeção de saída, feita em `patientContainerAccess`).
+ */
+export const CLINICAL_DATA_GENERIC_CODE = 'CLINICAL_DATA' as const;
+
+/**
+ * Estágios PRÉ-ATENDIMENTO = o funil de admissão (`ADMISSION_FUNNEL_STATUSES`, dono: `enums/PatientStatus.ts`).
+ * Alias de leitura, não uma lista nova. Andar ENTRE eles é livre (Kanban do funil); é de onde a trava parte.
+ */
+const PRE_CARE: readonly string[] = ADMISSION_FUNNEL_STATUSES;
+
+/**
+ * Estados de ATENDIMENTO que um paciente pré-atendimento só pode ENTRAR com ≥1 diagnóstico CID-11
+ * ATIVO (qualquer `source`) = `CLINICAL_PATIENT_STATUSES` menos ALTA e DISCHARGED (descarte: cancelar não
+ * pode ficar preso a um diagnóstico que nunca vai existir). Derivada do dono, não listada. Paciente que já
+ * está num destes estados não é afetado (a regra só olha a ENTRADA). Pedido do Javier, decisão do Gabriel.
+ */
+export const CARE_ENTRY_STATUSES = CLINICAL_PATIENT_STATUSES.filter((s) => s !== 'ALTA' && s !== 'DISCHARGED');
+
+const isPreCareStatus = (status: string | null | undefined): boolean =>
+  (PRE_CARE as readonly (string | null | undefined)[]).includes(status);
+
+/**
+ * "Falta o diagnóstico?" — fonte ÚNICA da condição: o checklist (`computePatientCompleteness`), o gate
+ * de recrutamento (`computeRecruitmentReadiness`) e o SQL do filtro (`MISSING_SQL.DIAGNOSIS`) leem a
+ * mesma regra: paciente pré-atendimento com contagem < 1 (e não "!== 0": NaN/undefined nunca passam por "tem").
+ */
+export function isDiagnosisMissing(status: string | null | undefined, activeDiagnosisCount: number): boolean {
+  return isPreCareStatus(status) && !(activeDiagnosisCount >= 1);
+}
 
 /**
  * QA-caça rodada 1 / decisão do Gabriel 03/09 (D255): dos códigos de
@@ -57,6 +107,10 @@ export const ACTIVATION_BLOCKING_CODES = [
   'ADDRESS',
   'SERVICE_ADDRESS',
   'SERVICE_SCHEDULE',
+  // Pedido do Javier: a admissão só "fecha" com ≥1 diagnóstico ativo. Em `completeness.blocking` o item aparece sob
+  // "Para activar falta:" (e não como mera recomendação) — mas o código só é calculado com o paciente pré-atendimento
+  // (`isDiagnosisMissing`), então para ACTIVE vindo de outro estado esta entrada nunca acusa nada.
+  'DIAGNOSIS',
 ] as const;
 
 /**
@@ -98,12 +152,27 @@ export const SEARCHING_FORA_DO_FLUXO_CODES = [
  *   ativado (portanto já passou pelo gate completo uma vez); exigir de novo endereço e
  *   consentimento aqui seria reabrir a admissão no meio de uma troca urgente de prestadora.
  * - Demais estados: nada. Pausa e saída não pedem dado nenhum.
+ * - `fromStatus` (3º parâmetro): se for um estágio pré-atendimento (`ADMISSION_FUNNEL_STATUSES`) e o destino for de
+ *   atendimento (`CARE_ENTRY_STATUSES`), soma `DIAGNOSIS`. Andar entre os estágios pré-atendimento, ALTA e
+ *   DISCHARGED não cobram.
  * - `foraDoFluxo` (spec 051): só SEARCHING muda — ver `SEARCHING_FORA_DO_FLUXO_CODES`.
  */
 export function blockingCodesForStatusChange(
   toStatus: string,
   foraDoFluxo = false,
+  fromStatus: string | null = null,
 ): readonly PatientCompletenessCode[] {
+  // `DIAGNOSIS` está em ACTIVATION_BLOCKING_CODES (a ficha o mostra como bloqueante), mas na TROCA DE STATUS ele só vale
+  // por UM caminho — entrar em atendimento vindo do pré-atendimento (abaixo). Tirá-lo do alvo evita cobrá-lo de quem chega a ACTIVE de outro estado.
+  const base = blockingCodesForTarget(toStatus, foraDoFluxo).filter((c) => c !== 'DIAGNOSIS');
+  // Diagnóstico: ENTRAR em atendimento vindo de qualquer estágio pré-atendimento. `fromStatus` ausente = o
+  // chamador não está perguntando por uma transição de origem pré-atendimento.
+  const enteringCare =
+    isPreCareStatus(fromStatus) && (CARE_ENTRY_STATUSES as readonly string[]).includes(toStatus);
+  return enteringCare ? [...base, 'DIAGNOSIS'] : base;
+}
+
+function blockingCodesForTarget(toStatus: string, foraDoFluxo: boolean): readonly PatientCompletenessCode[] {
   if (toStatus === 'ACTIVE') return ACTIVATION_BLOCKING_CODES;
   if (foraDoFluxo && toStatus === 'SEARCHING') return SEARCHING_FORA_DO_FLUXO_CODES;
   if ((SCHEDULE_REQUIRED_STATUSES as readonly string[]).includes(toStatus)) {
@@ -136,6 +205,8 @@ export const RECRUITMENT_BLOCKING_CODES = [
   'SERVICE_WORK_SCHEDULE',
   'SERVICE_PAYMENT_DAY',
   'COVERAGE',
+  // Diagnóstico CID-11 (pedido do Javier): ativar recrutamento com o paciente pré-atendimento exige ≥1 ativo.
+  'DIAGNOSIS',
 ] as const;
 
 /**
@@ -207,6 +278,10 @@ export interface RecruitmentReadinessInput {
    * Spec 027 Fase 3: os 5 campos copiados do serviço `:sid`. Ausente = nenhum preenchido (conta como faltando).
    */
   serviceRecruitmentFields?: ServiceRecruitmentFields;
+  /** `patients.status` lido na MESMA transação do gate — `DIAGNOSIS` só é cobrado em estágio pré-atendimento. */
+  patientStatus: string | null;
+  /** Linhas ATIVAS de `patient_diagnoses` do paciente (qualquer `source`). Só a contagem — nunca o valor. */
+  activeDiagnosisCount: number;
 }
 
 export interface RecruitmentReadinessResult {
@@ -225,6 +300,7 @@ export function computeRecruitmentReadiness(
   if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
     missing.push('COVERAGE');
   }
+  if (isDiagnosisMissing(input.patientStatus, input.activeDiagnosisCount)) missing.push('DIAGNOSIS');
   return { missing, ready: missing.length === 0 };
 }
 
@@ -249,6 +325,10 @@ export interface PatientCompletenessInput {
    * num teste só de nulidade. Zero quando não há serviço.
    */
   activeContractedServicesWithoutScheduleCount: number;
+  /** `patients.status` — `DIAGNOSIS` só é avaliado em estágio pré-atendimento (`isDiagnosisMissing`). */
+  status: string | null;
+  /** Linhas ATIVAS de `patient_diagnoses` (qualquer `source`). Só a contagem; o valor é texto clínico e nunca entra aqui. */
+  activeDiagnosisCount: number;
   /** Data de referência para o cálculo de idade — injetável nos testes; default `new Date()`. */
   now?: Date;
 }
@@ -317,6 +397,9 @@ export function computePatientCompleteness(
   if (!input.hasConsent) {
     missing.push('CONSENT');
   }
+  if (isDiagnosisMissing(input.status, input.activeDiagnosisCount)) {
+    missing.push('DIAGNOSIS');
+  }
 
   const blocking = missing.filter((code) =>
     (ACTIVATION_BLOCKING_CODES as readonly PatientCompletenessCode[]).includes(code),
@@ -374,6 +457,9 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
           AND ${serviceWithoutScheduleSql('pcs')})`,
   // !hasConsent — `null` e `false` contam como ausente, igual ao JS.
   CONSENT: (p) => `${p}.has_consent IS NOT TRUE`,
+  // isDiagnosisMissing(status, activeDiagnosisCount) — só pré-atendimento, sem nenhuma linha ATIVA em patient_diagnoses.
+  DIAGNOSIS: (p) => `(COALESCE(${p}.status, '') IN (${PRE_CARE.map((s) => `'${s}'`).join(', ')})
+        AND NOT ${hasActiveDiagnosisSql(`${p}.id`)})`,
 };
 
 /**

@@ -16,13 +16,20 @@ const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
  * `caseBase` separa a faixa de `case_number` por spec: duas specs semeadas no MESMO segundo (o C
  * e o humano rodam em workers paralelos) davam o mesmo `stamp` → `patients_case_number_active_unique`.
  */
-export function seedActivatablePatient(caseBase = 900000): { patientId: string; addressId: string; stamp: string } {
+export function seedActivatablePatient(
+  caseBase = 900000,
+  opts: { withDiagnosis?: boolean } = {},
+): { patientId: string; addressId: string; stamp: string } {
   const stamp = Date.now().toString().slice(-6);
   // Spec 014 (SUP-D1): `POST /activate` agora também exige consentimento + cobertura informada
   // — sem isto o passo "ativar" deste teste (regressão do bloco C) voltaria 422.
   const { patientId, addressId } = insertTestPatient({
     status: 'PENDING_ADMISSION', firstName: 'BlocoC', lastName: `Servicio${stamp}`,
     withAddress: true, hasConsent: true, insuranceInformed: 'OSDE',
+    // Default de `insertTestPatient` (pré-atendimento ⇒ ≥1 diagnóstico ativo, para os specs que ativam/movem o paciente).
+    // Os specs que CADASTRAM o projeto terapêutico pela tela passam `false`: o form do PT pré-preenche os chips com os
+    // diagnósticos ativos do paciente (TherapeuticProjectForm.tsx:117-118), e a URI sintética não existe no catálogo CID-11 (422).
+    withDiagnosis: opts.withDiagnosis,
   });
   runSQL(`UPDATE patients SET case_number = ${caseBase + Number(stamp) % 90000} WHERE id = '${patientId}'`);
   // Migration 330: o teste precisa do id do endereço para vincular o serviço no drawer.

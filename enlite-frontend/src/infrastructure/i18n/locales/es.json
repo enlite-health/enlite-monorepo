@@ -3804,6 +3804,7 @@
           "devices": "Dispositivo",
           "patologiesUnavailable": "No se pudo cargar el diagnóstico.",
           "patologiesEmpty": "Sin diagnósticos registrados.",
+          "patologiesRequiredHint": "Es obligatorio para avanzar la admisión.",
           "patologiesNoPermission": "No tenés permiso para ver el diagnóstico.",
           "patologiesPrimaryBadge": "Principal",
           "patologies": "Patologías",
@@ -4562,7 +4563,9 @@
             "SERVICE_REQUIRED_EXPERIENCE": "Experiencia requerida del servicio",
             "SERVICE_WORK_SCHEDULE": "Jornada del servicio",
             "SERVICE_PAYMENT_DAY": "Día de pago del servicio",
-            "CONSENT": "Consentimiento"
+            "CONSENT": "Consentimiento",
+            "DIAGNOSIS": "Diagnóstico",
+            "CLINICAL_DATA": "Datos clínicos"
           }
         },
         "viewInKanban": "Ver en Kanban",

@@ -16,7 +16,7 @@ import { useActionGate, useCanActivateRecruitment, useContainerAccess } from '@p
 import { useToast } from '@presentation/hooks/useToast';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
-import { recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
+import { diagnosisGapOf, recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
 import { runActivateRecruitmentClick } from './activateRecruitmentClick';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ServiceVacancyCells } from './ServiceVacancyCells';
@@ -104,6 +104,7 @@ function ServiceRow({
   addresses,
   insuranceInformed,
   hasVerifiedActiveCoverage,
+  diagnosisGap,
   onOpen,
   onEdit,
   onActivated,
@@ -117,6 +118,8 @@ function ServiceRow({
   insuranceInformed: string | null;
   /** Hotfix gate-cobertura-verificada-vacante (28/09) — ver `PatientDetail.hasVerifiedActiveCoverage`. */
   hasVerifiedActiveCoverage?: boolean;
+  /** Pedido do Javier: pendência de diagnóstico da ficha (só existe com o paciente em ADMISSION). */
+  diagnosisGap?: 'DIAGNOSIS' | 'CLINICAL_DATA' | null;
   onOpen: (service: PatientContractedServiceDetail) => void;
   onEdit: (service: PatientContractedServiceDetail) => void;
   onActivated: () => void;
@@ -220,6 +223,7 @@ function ServiceRow({
                 insuranceInformed,
                 hasVerifiedActiveCoverage,
                 serviceRecruitmentFields: service,
+                diagnosisGap,
               })}
               onActivated={onActivated}
               t={t}
@@ -343,6 +347,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
                 addresses={patient.addresses ?? []}
                 insuranceInformed={patient.insuranceInformed}
                 hasVerifiedActiveCoverage={patient.hasVerifiedActiveCoverage}
+                diagnosisGap={diagnosisGapOf(patient.completeness)}
                 onOpen={setSelected}
                 onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}
                 onActivated={() => onSaved?.()}

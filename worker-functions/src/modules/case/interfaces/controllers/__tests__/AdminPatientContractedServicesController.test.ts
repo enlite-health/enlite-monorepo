@@ -414,6 +414,22 @@ describe('AdminPatientContractedServicesController', () => {
       });
     });
 
+    it.each([
+      ['sem patient_clinical:read', ['patient_services:update'], ['SERVICE_SCHEDULE', 'CLINICAL_DATA']],
+      ['com patient_clinical:read', ['patient_services:update', 'patient_clinical:read'], ['SERVICE_SCHEDULE', 'DIAGNOSIS']],
+    ])('201 patientNotMoved.missing passa por exposeBlockingCodes — ator %s', async (_n, cells, esperado) => {
+      const useCase = { execute: jest.fn().mockResolvedValue({
+        vacancyId: 'vac-4', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE', 'DIAGNOSIS'] },
+      }) };
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, permissionCells: cells }), res);
+      expect(res.status).toHaveBeenCalledWith(201);
+      const body = res.json.mock.calls[0][0];
+      expect(body.data.patientNotMoved).toEqual({ missing: esperado });
+      if (!cells.includes('patient_clinical:read')) expect(JSON.stringify(body)).not.toContain('DIAGNOSIS');
+    });
+
     // spec 029 — achado: o botão gravava SYSTEM/actor_user_id null mesmo com operador humano
     // autenticado. Prova por posição do argumento (`mock.calls[0][2]`), igualdade exata com o
     // uid do req autenticado — não só "truthy" ou "não nulo".
@@ -489,6 +505,31 @@ describe('AdminPatientContractedServicesController', () => {
         success: false,
         code: 'PATIENT_NOT_READY',
         details: { missing: ['SERVICE_SCHEDULE'] },
+      });
+    });
+
+    describe('DIAGNOSIS no 422 (pedido do Javier): "sem diagnóstico" é dado clínico', () => {
+      const run = async (cells: readonly string[] | null) => {
+        const { RecruitmentNotReadyError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+        const useCase = { execute: jest.fn().mockRejectedValue(new RecruitmentNotReadyError(PATIENT_ID, SERVICE_ID, ['SERVICE_SCHEDULE', 'DIAGNOSIS'])) };
+        const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
+        const res = mockRes();
+        await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, permissionCells: cells }), res);
+        expect(res.status).toHaveBeenCalledWith(422);
+        return res.json.mock.calls[0][0];
+      };
+
+      it('ator COM patient_clinical:read → details.missing traz DIAGNOSIS', async () => {
+        const body = await run(['patient_services:write', 'patient_clinical:read']);
+        expect(body.code).toBe('PATIENT_NOT_READY');
+        expect(body.details.missing).toEqual(['SERVICE_SCHEDULE', 'DIAGNOSIS']);
+      });
+
+      it('ator SEM patient_clinical:read → 422 mantido, código genérico CLINICAL_DATA, e DIAGNOSIS não aparece em lugar nenhum da resposta', async () => {
+        const body = await run(['patient_services:write']);
+        expect(body.code).toBe('PATIENT_NOT_READY');
+        expect(body.details.missing).toEqual(['SERVICE_SCHEDULE', 'CLINICAL_DATA']);
+        expect(JSON.stringify(body)).not.toContain('DIAGNOSIS');
       });
     });
 

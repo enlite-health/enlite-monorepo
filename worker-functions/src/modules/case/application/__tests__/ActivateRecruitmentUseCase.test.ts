@@ -60,6 +60,8 @@ interface DispatchOpts {
     insurance_informed?: string | null;
     /** Hotfix gate-cobertura-verificada-vacante (28/09) — default false (mesma régua do legado). */
     has_verified_active_coverage?: boolean;
+    /** Diagnósticos CID-11 ATIVOS (pedido do Javier). Default '1' (tem): estes testes medem as outras travas; os de diagnóstico declaram '0'. */
+    active_dx_count?: string;
   } | null;
   serviceRow?: {
     id: string;
@@ -99,7 +101,7 @@ function makeClient(opts: DispatchOpts) {
     }
     if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
       if (!opts.patientRow) return { rowCount: 0, rows: [] };
-      const { id, status, case_number, insurance_informed, has_verified_active_coverage } = opts.patientRow;
+      const { id, status, case_number, insurance_informed, has_verified_active_coverage, active_dx_count } = opts.patientRow;
       return {
         rowCount: 1,
         rows: [{
@@ -108,6 +110,7 @@ function makeClient(opts: DispatchOpts) {
           case_number,
           insurance_informed: insurance_informed ?? null,
           has_verified_active_coverage: has_verified_active_coverage ?? false,
+          active_dx_count: active_dx_count ?? '1',
         }],
       };
     }
@@ -445,6 +448,73 @@ describe('ActivateRecruitmentUseCase', () => {
     expect(svcSql).not.toMatch(/pcs\.schedule/);
   });
 
+  // Diagnóstico CID-11 obrigatório (pedido do Javier): ativar recrutamento ENQUANTO está em ADMISSION exige ≥1 ativo.
+  describe('DIAGNOSIS — gate de ativação de recrutamento', () => {
+    it('ADMISSION sem diagnóstico ativo → 422 (RecruitmentNotReadyError) com DIAGNOSIS; nenhuma vaga criada', async () => {
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },
+        serviceRow: READY_SERVICE,
+      });
+      await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
+      await expect(promise).rejects.toMatchObject({ missing: ['DIAGNOSIS'] });
+      expect(mockBuildInsertParams).not.toHaveBeenCalled();
+      expect(mockMovePatientStatus).not.toHaveBeenCalled();
+    });
+
+    it('ADMISSION com ≥1 diagnóstico ativo → cria a vaga', async () => {
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' },
+        serviceRow: READY_SERVICE,
+      });
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
+    });
+
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE'])(
+      'foguete com o paciente em %s (pré-atendimento) sem diagnóstico ativo → 422 com DIAGNOSIS e nenhuma vaga',
+      async (status) => {
+        const { promise } = run({
+          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },
+          serviceRow: READY_SERVICE,
+        });
+        await expect(promise).rejects.toMatchObject({ missing: ['DIAGNOSIS'] });
+        expect(mockBuildInsertParams).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE'])(
+      'foguete com o paciente em %s COM diagnóstico ativo → cria a vaga',
+      async (status) => {
+        const { promise } = run({
+          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' },
+          serviceRow: READY_SERVICE,
+        });
+        await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
+      },
+    );
+
+    it.each(['ACTIVE', 'SEARCHING', 'ON_HOLD'])(
+      'paciente já em atendimento (%s) sem diagnóstico ativo → NÃO é afetado: a vaga é criada',
+      async (status) => {
+        const { promise } = run({
+          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },
+          serviceRow: READY_SERVICE,
+        });
+        await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
+      },
+    );
+
+    it('o SELECT do paciente conta SÓ patient_diagnoses.active e nunca seleciona o valor clínico', async () => {
+      const { client } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+      });
+      await client.query.mock.results[0]?.value;
+      const sql = String(client.query.mock.calls.map((c: unknown[]) => c[0]).find((q: unknown) => String(q).includes('FOR UPDATE') && String(q).includes('FROM patients')));
+      expect(sql).toMatch(/SELECT COUNT\(\*\) FROM patient_diagnoses pdx\s+WHERE pdx\.patient_id = patients\.id AND pdx\.active\)/);
+      expect(sql).not.toMatch(/concept_(title|code|uri|group)/);
+    });
+  });
+
   it('422 — COVERAGE: placeholder (FR-122) conta como ausente; "Particular" (FR-121) passa', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: '0' },
@@ -565,7 +635,7 @@ describe('ActivateRecruitmentUseCase', () => {
     const client = {
       query: jest.fn(async (sql: string) => {
         if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular' }] };
+          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular', active_dx_count: '1' }] };
         }
         if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
           return { rowCount: undefined, rows: [] };
@@ -587,7 +657,7 @@ describe('ActivateRecruitmentUseCase', () => {
           return {};
         }
         if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular' }] };
+          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular', active_dx_count: '1' }] };
         }
         if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
           return { rowCount: 1, rows: [READY_SERVICE] };
@@ -713,7 +783,7 @@ describe('ActivateRecruitmentUseCase', () => {
           }
           if (sql.includes('INSERT INTO job_posting_audit_log')) return { rows: [] };
           if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }] };
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' }] };
           }
           if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
             return { rowCount: 1, rows: [READY_SERVICE] };
@@ -760,7 +830,7 @@ describe('ActivateRecruitmentUseCase', () => {
         query: jest.fn(async (sql: string) => {
           if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) return {};
           if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }] };
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' }] };
           }
           if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
             return { rowCount: 1, rows: [READY_SERVICE] };

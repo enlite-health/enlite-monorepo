@@ -31,6 +31,7 @@ import {
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -76,6 +77,8 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
        VALUES ($1, 'Fora', 'Fluxo', 'AR', $2) RETURNING id`,
       [`${TAG}${sufixo}`, status],
     )).rows[0].id;
+    // Pedido do Javier: sair de ADMISSION exige ≥1 diagnóstico CID-11 ATIVO (o d469 move ADMISSION → SEARCHING).
+    if (status === 'ADMISSION') await seedPatientDiagnosis(admin, id);
     if (servico !== 'nenhum') {
       const addr = (await admin.query<{ id: string }>(
         `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1, 'Calle Fluxo 1', 1) RETURNING id`,
@@ -100,6 +103,7 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
 
   async function limparTudo(): Promise<void> {
     const ids = (await admin.query<{ id: string }>(`SELECT id FROM patients WHERE clickup_task_id LIKE $1`, [`${TAG}%`])).rows.map((r) => r.id);
+    await admin.query(`DELETE FROM patient_diagnoses WHERE patient_id = ANY($1)`, [ids]);
     await admin.query(`DELETE FROM patient_status_history WHERE patient_id = ANY($1)`, [ids]);
     await admin.query(`DELETE FROM patient_contracted_services WHERE patient_id = ANY($1)`, [ids]);
     await admin.query(`DELETE FROM patient_addresses WHERE patient_id = ANY($1)`, [ids]);
