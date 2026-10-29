@@ -50,6 +50,9 @@ const COMPLETENESS_TAB: Record<PatientCompletenessCode, PatientTab> = {
   // Decisão do Gabriel 07/09: serviço sem horário — o editor de horário vive no mesmo drawer.
   SERVICE_SCHEDULE: 'contractedService',
   CONSENT: 'clinicalData',
+  // Pedido do Javier: o diagnóstico CID-11 mora no card clínico (e o genérico, para quem não lê, aponta para o mesmo).
+  DIAGNOSIS: 'clinicalData',
+  CLINICAL_DATA: 'clinicalData',
 };
 
 const COUNTRY_FLAG: Record<string, string> = {

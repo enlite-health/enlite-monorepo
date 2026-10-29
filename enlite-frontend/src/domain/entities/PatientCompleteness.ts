@@ -1,7 +1,11 @@
 /**
  * PatientCompleteness — espelha `worker-functions/src/modules/case/domain/PatientCompleteness.ts`
- * (spec 014 US-D1, lex D1.1/D1.2). Códigos administrativos, sem item clínico — a MESMA lista que
- * o backend usa tanto no checklist (`GET /:id`) quanto no gate de `POST /activate`.
+ * (spec 014 US-D1, lex D1.1/D1.2). A MESMA lista que o backend usa tanto no checklist (`GET /:id`)
+ * quanto nos gates de troca de status e de ativação de recrutamento.
+ *
+ * `DIAGNOSIS` (pedido do Javier) é o único código que nomeia dado clínico, e circula só como
+ * EXISTÊNCIA ("falta ≥1 diagnóstico CID-11 ativo"), nunca como valor. Quem não lê `patient_clinical`
+ * nunca o recebe: o servidor manda `CLINICAL_DATA` no lugar (mesma pendência, nome genérico).
  */
 
 export const PATIENT_COMPLETENESS_CODES = [
@@ -18,6 +22,16 @@ export const PATIENT_COMPLETENESS_CODES = [
    */
   'SERVICE_SCHEDULE',
   'CONSENT',
+  /**
+   * Pedido do Javier: o paciente só sai de ADMISSION (e só ativa recrutamento enquanto está nela) com ≥1
+   * diagnóstico CID-11 ATIVO. Só aparece em `completeness.missing` quando o paciente está em ADMISSION.
+   */
+  'DIAGNOSIS',
+  /**
+   * Código de SAÍDA, nunca calculado: o que o servidor manda no lugar de `DIAGNOSIS` para quem não tem
+   * `patient_clinical:read` (a trava vale igual; o nome clínico não vaza). Espelha `CLINICAL_DATA_GENERIC_CODE`.
+   */
+  'CLINICAL_DATA',
 ] as const;
 
 export type PatientCompletenessCode = (typeof PATIENT_COMPLETENESS_CODES)[number];
@@ -32,6 +46,8 @@ export const ACTIVATION_BLOCKING_CODES = [
   'ADDRESS',
   'SERVICE_ADDRESS',
   'SERVICE_SCHEDULE',
+  // Pedido do Javier: a admissão só "fecha" com ≥1 diagnóstico ativo (só é calculado com o paciente em ADMISSION).
+  'DIAGNOSIS',
 ] as const;
 
 /*
@@ -67,7 +83,26 @@ export const RECRUITMENT_BLOCKING_CODES = [
   'SERVICE_WORK_SCHEDULE',
   'SERVICE_PAYMENT_DAY',
   'COVERAGE',
+  // Pedido do Javier: ativar recrutamento ENQUANTO o paciente está em ADMISSION exige ≥1 diagnóstico ativo.
+  'DIAGNOSIS',
 ] as const;
+
+/** O paciente está nesta etapa quando o diagnóstico é exigido — espelha `DIAGNOSIS_REQUIRED_STATUS` do backend. */
+export const DIAGNOSIS_REQUIRED_STATUS = 'ADMISSION' as const;
+
+/**
+ * Qual pendência de diagnóstico a ficha tem, lida do checklist que o SERVIDOR devolveu (a única fonte —
+ * o front não conta diagnósticos: quem não lê o container clínico nem recebe a lista). `DIAGNOSIS` para
+ * quem lê; `CLINICAL_DATA` para quem não lê; `null` quando nada falta (inclusive fora de ADMISSION).
+ */
+export function diagnosisGapOf(
+  completeness: { missing: readonly string[] } | null | undefined,
+): 'DIAGNOSIS' | 'CLINICAL_DATA' | null {
+  const missing = completeness?.missing ?? [];
+  if (missing.includes('DIAGNOSIS')) return 'DIAGNOSIS';
+  if (missing.includes('CLINICAL_DATA')) return 'CLINICAL_DATA';
+  return null;
+}
 
 /** Os 5 campos do serviço que a vaga copia (D508) — `workerAttributes`/`dailyObs` ficam fora: são só ficha e opcionais. */
 export interface ServiceRecruitmentFields {
@@ -120,19 +155,22 @@ export interface RecruitmentReadinessInput {
   hasVerifiedActiveCoverage?: boolean;
   /** Spec 027 Fase 3: os 5 campos copiados do serviço. Ausente = nenhum preenchido (faltando). */
   serviceRecruitmentFields?: ServiceRecruitmentFields;
+  /** Pendência de diagnóstico da ficha (`diagnosisGapOf(patient.completeness)`); ausente = nada falta. */
+  diagnosisGap?: 'DIAGNOSIS' | 'CLINICAL_DATA' | null;
 }
 
 /** Códigos que faltam para ESTE serviço poder ativar recrutamento — vazio = pronto. */
 export function recruitmentMissingCodes(
   input: RecruitmentReadinessInput,
-): Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> {
-  const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
+): Array<(typeof RECRUITMENT_BLOCKING_CODES)[number] | 'CLINICAL_DATA'> {
+  const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number] | 'CLINICAL_DATA'> = [];
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
   missing.push(...serviceRecruitmentMissingCodes(input.serviceRecruitmentFields));
   if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
     missing.push('COVERAGE');
   }
+  if (input.diagnosisGap) missing.push(input.diagnosisGap);
   return missing;
 }
 
