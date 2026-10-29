@@ -28,6 +28,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'ps-v2-admin-uid';
@@ -87,7 +88,6 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
       await semearFaixas(pool, svc, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'ps-v2-e2e'); // spec 056: o horário é faixa em patient_itinerary_slot
       if (id === lead) leadServiceId = svc;
     }
-
   });
 
   afterAll(async () => {
@@ -197,6 +197,8 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     // permitido (D469) e `admin_panel` recusado — coberto pelo unit `PatientService.moveStatus.v2`
     // e pelo e2e de tela `funil-vacante-lancamento-rascunho`.
     await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [lead]);
+    // Pedido do Javier: o foguete com o paciente pré-atendimento (PENDING_ADMISSION) exige ≥1 diagnóstico ATIVO. Andar no funil (6b/6d) segue livre sem ele.
+    await seedPatientDiagnosis(pool, lead);
     const activated = await api.post(`/api/admin/patients/${lead}/contracted-services/${leadServiceId}/activate-recruitment`, {}, asAdmin);
     expect(activated.status).toBe(201);
     expect(activated.data.data.patientStatus).toBe('SEARCHING');

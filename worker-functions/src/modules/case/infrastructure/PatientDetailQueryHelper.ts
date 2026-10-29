@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { activeDiagnosisCountSql } from '@shared/sql/patientDiagnosisSql';
 import type {
   PatientDetailRow,
   PatientResponsibleDetail,
@@ -116,8 +117,7 @@ const PATIENT_DETAIL_SQL = `
              WHERE piv.patient_id = p.id)
                              AS "hasVerifiedActiveCoverage",
     -- Diagnóstico CID-11 (pedido do Javier): só a CONTAGEM de linhas ativas (qualquer source) — nunca o valor.
-    (SELECT COUNT(*)::int FROM patient_diagnoses pdx
-      WHERE pdx.patient_id = p.id AND pdx.active)
+    ${activeDiagnosisCountSql('p.id')}::int
                              AS "activeDiagnosisCount",
     COALESCE((SELECT array_agg(pdt.device_type ORDER BY d.sort_order, d.code)
                 FROM patient_device_types pdt

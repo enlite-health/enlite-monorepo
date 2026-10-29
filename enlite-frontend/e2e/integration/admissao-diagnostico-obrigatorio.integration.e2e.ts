@@ -1,9 +1,9 @@
 /**
  * admissao-diagnostico-obrigatorio.integration.e2e.ts @integration — pedido do Javier (operação),
- * decisão do Gabriel: o diagnóstico CID-11 é OBRIGATÓRIO na SAÍDA da admissão.
+ * decisão do Gabriel: o diagnóstico CID-11 é OBRIGATÓRIO na ENTRADA em atendimento (vindo de SOLICITANTE, PENDING_ADMISSION ou ADMISSION).
  *
  * O paciente continua nascendo em ADMISSION sem diagnóstico; o que ele não faz sem ≥1 diagnóstico
- * ATIVO é sair de ADMISSION — aqui, pelo caminho que o operador usa na ficha: o foguete
+ * ATIVO é entrar em atendimento (andar entre os estágios do funil é livre) — aqui, pelo caminho que o operador usa na ficha: o foguete
  * "Activar reclutamiento" (cria a vaga e move o paciente para Búsqueda). A trava é do SERVIDOR; a
  * tela só a antecipa (checklist, asterisco `required`, foguete desabilitado com o motivo).
  *

@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+import { activeDiagnosisCountSql } from '@shared/sql/patientDiagnosisSql';
 import {
   computePatientCompleteness,
   type PatientCompletenessResult,
@@ -61,8 +62,7 @@ export async function loadPatientCompleteness(
        -- Diagnóstico CID-11 (pedido do Javier): SÓ a contagem de linhas ATIVAS, de qualquer source
        -- (PANEL/CLICKUP/BACKFILL). O valor (texto clínico) nunca é selecionado. RLS de patient_diagnoses
        -- (migration 413) = "paciente-pai visível": não depende de célula clínica do ator.
-       (SELECT COUNT(*) FROM patient_diagnoses pdx
-         WHERE pdx.patient_id = p.id AND pdx.active)                 AS active_diagnosis_count
+       ${activeDiagnosisCountSql('p.id')}                             AS active_diagnosis_count
      FROM patients p
     WHERE p.id = $1 AND p.deleted_at IS NULL`,
     [patientId],

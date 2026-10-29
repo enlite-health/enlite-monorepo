@@ -469,8 +469,31 @@ describe('ActivateRecruitmentUseCase', () => {
       await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
     });
 
-    it.each(['PENDING_ADMISSION', 'SOLICITANTE', 'ACTIVE', 'SEARCHING', 'ON_HOLD'])(
-      'paciente em %s (fora de ADMISSION) sem diagnóstico ativo → NÃO é afetado: a vaga é criada',
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE'])(
+      'foguete com o paciente em %s (pré-atendimento) sem diagnóstico ativo → 422 com DIAGNOSIS e nenhuma vaga',
+      async (status) => {
+        const { promise } = run({
+          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },
+          serviceRow: READY_SERVICE,
+        });
+        await expect(promise).rejects.toMatchObject({ missing: ['DIAGNOSIS'] });
+        expect(mockBuildInsertParams).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE'])(
+      'foguete com o paciente em %s COM diagnóstico ativo → cria a vaga',
+      async (status) => {
+        const { promise } = run({
+          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' },
+          serviceRow: READY_SERVICE,
+        });
+        await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
+      },
+    );
+
+    it.each(['ACTIVE', 'SEARCHING', 'ON_HOLD'])(
+      'paciente já em atendimento (%s) sem diagnóstico ativo → NÃO é afetado: a vaga é criada',
       async (status) => {
         const { promise } = run({
           patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },

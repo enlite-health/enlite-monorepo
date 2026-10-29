@@ -18,6 +18,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const TAG = 'activation-e2e-%';
@@ -46,11 +47,14 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     coverage?: string | null;
     caseNumber?: number;
   }): Promise<string> {
-    return (await pool.query<{ id: string }>(
+    const id = (await pool.query<{ id: string }>(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, insurance_informed)
        VALUES ($1, 'Activation', 'E2E', 'AR', 'PENDING_ADMISSION', $2, $3) RETURNING id`,
       [opts.tag, opts.caseNumber ?? null, opts.coverage ?? null],
     )).rows[0].id;
+    // Pedido do Javier: ativar recrutamento com o paciente pré-atendimento exige ≥1 diagnóstico ATIVO (esta suíte mede as outras travas).
+    await seedPatientDiagnosis(pool, id);
+    return id;
   }
 
   beforeAll(async () => {

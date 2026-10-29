@@ -1,15 +1,17 @@
 /**
- * patient-diagnosis-gate-admission.e2e.test.ts @integration — diagnóstico CID-11 obrigatório na SAÍDA da
- * ADMISSION (pedido do Javier / decisão do Gabriel).
+ * patient-diagnosis-gate-admission.e2e.test.ts @integration — diagnóstico CID-11 obrigatório na ENTRADA em
+ * atendimento, vindo de qualquer estágio pré-atendimento (SOLICITANTE, PENDING_ADMISSION, ADMISSION) —
+ * pedido do Javier / decisão do Gabriel.
  *
  * API real (Docker, USE_MOCK_AUTH) + Postgres real. O paciente continua nascendo sem diagnóstico; o que
  * esta suíte prova é a trava no SERVIDOR (o front só apresenta):
- *   1. GET /patients/:id → `completeness.missing` traz DIAGNOSIS em ADMISSION sem diagnóstico ATIVO;
+ *   1. GET /patients/:id → `completeness.missing` traz DIAGNOSIS em estágio pré-atendimento sem diagnóstico ATIVO;
  *   2. PUT /status ADMISSION → SEARCHING sem diagnóstico → 422 PATIENT_STATUS_NOT_READY com DIAGNOSIS;
- *      diagnóstico só INATIVO continua barrando; ALTA (descarte) NÃO exige;
+ *      diagnóstico só INATIVO continua barrando; ALTA (descarte) e andar entre os estágios pré-atendimento NÃO exigem;
+ *      o desvio em dois passos (ADMISSION → PENDING_ADMISSION livre, PENDING_ADMISSION → SEARCHING barrado);
  *   3. um diagnóstico ATIVO de QUALQUER source (PANEL, CLICKUP, BACKFILL) libera;
- *   4. activate-recruitment em ADMISSION sem diagnóstico → 422 PATIENT_NOT_READY com DIAGNOSIS, e SEM vaga;
- *   5. paciente FORA de ADMISSION (PENDING_ADMISSION) sem diagnóstico NÃO é afetado (ativa recrutamento).
+ *   4. activate-recruitment com o paciente pré-atendimento sem diagnóstico → 422 PATIENT_NOT_READY com DIAGNOSIS, e SEM vaga;
+ *   5. paciente JÁ em atendimento (SEARCHING → ACTIVE) sem diagnóstico NÃO é afetado.
  * O valor do diagnóstico nunca entra no corpo de nenhuma resposta (só o código DIAGNOSIS).
  */
 import { Pool } from 'pg';
@@ -126,10 +128,42 @@ describe('Diagnóstico obrigatório na saída da ADMISSION @integration', () => 
     expect(r.status).toBe(201);
   });
 
-  it('6. paciente FORA de ADMISSION (PENDING_ADMISSION) sem diagnóstico NÃO é afetado: ativa recrutamento (201)', async () => {
+  it('6. o desvio em dois passos está fechado: ADMISSION → PENDING_ADMISSION dá 200, mas PENDING_ADMISSION → SEARCHING sem diagnóstico dá 422', async () => {
+    const { id } = await paciente('ADMISSION');
+    let r = await put(id, { status: 'PENDING_ADMISSION', changeSource: 'kanban' });
+    expect(r.status).toBe(200);
+    r = await put(id, { status: 'SEARCHING', changeSource: 'kanban' });
+    expect(r.status).toBe(422);
+    expect(r.data).toMatchObject({ code: 'PATIENT_STATUS_NOT_READY', details: { to: 'SEARCHING', missing: ['DIAGNOSIS'] } });
+    expect(await statusOf(id)).toBe('PENDING_ADMISSION');
+  });
+
+  it('6b. SOLICITANTE → SEARCHING sem diagnóstico: 422; com diagnóstico, 200', async () => {
+    const { id } = await paciente('SOLICITANTE');
+    let r = await put(id, { status: 'SEARCHING', changeSource: 'kanban' });
+    expect(r.status).toBe(422);
+    expect(r.data.details.missing).toEqual(['DIAGNOSIS']);
+    await seedPatientDiagnosis(pool, id);
+    r = await put(id, { status: 'SEARCHING', changeSource: 'kanban' });
+    expect(r.status).toBe(200);
+  });
+
+  it('6c. activate-recruitment com o paciente em PENDING_ADMISSION sem diagnóstico: 422 e nenhuma vaga; com diagnóstico, 201', async () => {
     const { id, sid } = await paciente('PENDING_ADMISSION', true);
-    const r = await api.post(`/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`, {}, asAdmin);
+    const url = `/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`;
+    let r = await api.post(url, {}, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data).toMatchObject({ code: 'PATIENT_NOT_READY', details: { missing: ['DIAGNOSIS'] } });
+    expect((await pool.query(`SELECT 1 FROM job_postings WHERE patient_id = $1`, [id])).rowCount).toBe(0);
+    await seedPatientDiagnosis(pool, id);
+    r = await api.post(url, {}, asAdmin);
     expect(r.status).toBe(201);
+  });
+
+  it('6d. paciente JÁ em atendimento (SEARCHING → ACTIVE) sem diagnóstico NÃO é afetado: a regra só olha a entrada', async () => {
+    const { id } = await paciente('SEARCHING', true);
+    const r = await put(id, { status: 'ACTIVE', changeSource: 'kanban' });
+    expect(r.status).toBe(200);
   });
 
   it('7. nenhuma resposta carrega o VALOR do diagnóstico (só o código DIAGNOSIS)', async () => {

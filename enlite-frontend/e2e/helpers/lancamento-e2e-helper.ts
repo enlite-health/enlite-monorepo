@@ -323,8 +323,8 @@ export interface SeedLaunchablePatientOpts {
   /** `providers_needed` do serviço semeado (default 1). A Trava A (058b) recusa alocar além dele num mesmo slot. */
   providersNeeded?: number;
   /**
-   * Diagnóstico CID-11 ativo semeado (pedido do Javier: ADMISSION → fora, e o foguete em ADMISSION, exigem ≥1).
-   * Default = o de `insertTestPatient` (`status === 'ADMISSION'`). `false` prova a TRAVA (ADMISSION sem diagnóstico).
+   * Diagnóstico CID-11 ativo semeado (pedido do Javier: entrar em atendimento, e o foguete, a partir do pré-atendimento exigem ≥1).
+   * Default = o de `insertTestPatient` (estágios pré-atendimento). `false` prova a TRAVA.
    */
   withDiagnosis?: boolean;
 }

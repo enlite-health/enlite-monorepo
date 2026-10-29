@@ -195,6 +195,11 @@ const COMPLETENESS_CODE_CONTAINER: Readonly<Record<string, PatientContainer>> = 
   DIAGNOSIS: 'clinical',
 };
 
+/** A ÚNICA troca `DIAGNOSIS` → `CLINICAL_DATA`: quem não lê o container clínico nunca recebe o nome clínico. */
+function exposeDiagnosisCode(code: string, canReadClinical: boolean): string {
+  return code === 'DIAGNOSIS' && !canReadClinical ? CLINICAL_DATA_GENERIC_CODE : code;
+}
+
 export function projectCompletenessByContainers<
   C extends { missing: readonly string[]; blocking: readonly string[]; ready: boolean; canActivate: boolean },
 >(completeness: C, cells: readonly string[] | null | undefined): C {
@@ -205,8 +210,7 @@ export function projectCompletenessByContainers<
   };
   // `DIAGNOSIS` é a exceção: a TRAVA vale para todo mundo (o gate do servidor recalcula do banco), então
   // quem não lê `clinical` recebe o código GENÉRICO no lugar — a pendência aparece, o NOME clínico não.
-  const generic = (code: string): string =>
-    code === 'DIAGNOSIS' && !reads.clinical ? CLINICAL_DATA_GENERIC_CODE : code;
+  const generic = (code: string): string => exposeDiagnosisCode(code, reads.clinical);
   const keep = (code: string): boolean => code === 'DIAGNOSIS' || visible(code);
   const missing = completeness.missing.filter(keep).map(generic);
   const blocking = completeness.blocking.filter(keep).map(generic);
@@ -228,7 +232,7 @@ export function exposeBlockingCodes<T extends string>(
   cells: readonly string[] | null | undefined,
 ): Array<T | typeof CLINICAL_DATA_GENERIC_CODE> {
   const clinical = canReadPatientContainer(cells, 'clinical');
-  return codes.map((c) => (c === 'DIAGNOSIS' && !clinical ? CLINICAL_DATA_GENERIC_CODE : c));
+  return codes.map((c) => exposeDiagnosisCode(c, clinical) as T | typeof CLINICAL_DATA_GENERIC_CODE);
 }
 
 /** A mensagem de um erro de "não pronto" cita os códigos; troca `DIAGNOSIS` pelo genérico para quem não lê o clínico. */

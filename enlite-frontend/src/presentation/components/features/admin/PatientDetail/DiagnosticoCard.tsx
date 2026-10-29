@@ -6,7 +6,7 @@ import { Label } from '@presentation/components/atoms/Label';
 import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { sortDiagnosesForCard } from '@domain/entities/diagnosisDisplay';
-import { DIAGNOSIS_REQUIRED_STATUS } from '@domain/entities/PatientCompleteness';
+import { PRE_CARE_STATUSES } from '@domain/entities/PatientCompleteness';
 import { PatientClinicalEditDrawer } from './edit/PatientClinicalEditDrawer';
 import { ClinicalLongText } from './ClinicalLongText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -77,8 +77,8 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
   // Pedido do Javier: o item "Diagnóstico" do checklist (e o genérico, para quem não lê o clínico) abre o mesmo drawer.
   useAutoOpenDrawer(focusRequest, 'DIAGNOSIS', () => setEditing(true));
   useAutoOpenDrawer(focusRequest, 'CLINICAL_DATA', () => setEditing(true));
-  // Pedido do Javier: o diagnóstico é OBRIGATÓRIO enquanto o paciente está em ADMISSION (trava na saída da etapa).
-  const diagnosisRequired = patient.status === DIAGNOSIS_REQUIRED_STATUS;
+  // Pedido do Javier: o diagnóstico é OBRIGATÓRIO nos 3 estágios pré-atendimento (trava na entrada em atendimento).
+  const diagnosisRequired = (PRE_CARE_STATUSES as readonly (string | null)[]).includes(patient.status);
 
   // US-B4: dispositivos por catálogo, traduzidos. US-B8: "Tipos de patologías - ICHOM" /
   // "Especialidad" saíram do card (o segmento é máscara do projeto terapêutico, não da admissão).

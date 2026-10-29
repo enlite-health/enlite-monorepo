@@ -216,7 +216,7 @@ describe('PatientService.moveStatus v2', () => {
   });
 
   // ── Diagnóstico CID-11 obrigatório na SAÍDA de ADMISSION (pedido do Javier) ─────────────────
-  describe('guarda de diagnóstico ao sair de ADMISSION', () => {
+  describe('guarda de diagnóstico na ENTRADA em atendimento (origem pré-atendimento)', () => {
     const SEM_DIAG = { status: 'ADMISSION', active_diagnosis_count: '0' };
     const COM_DIAG = { status: 'ADMISSION', active_diagnosis_count: '1' };
 
@@ -238,16 +238,31 @@ describe('PatientService.moveStatus v2', () => {
       await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
     });
 
-    it.each(['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE'])('ADMISSION → %s (descarte ou volta no funil) NÃO exige diagnóstico', async (to) => {
+    it.each(['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE'])('ADMISSION → %s (descarte ou andar no funil) NÃO exige diagnóstico', async (to) => {
       db('ADMISSION', [['ADMISSION', to]], SEM_DIAG); // funil↔funil nem consulta a FSM
       await expect(service.moveStatus(PID, to as never, { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: to });
       // e nem leu a completude: o destino isento não cobra código nenhum
       expect(calls().some((x) => /services_without_schedule_count/.test(x.sql))).toBe(false);
     });
 
-    it('paciente FORA de ADMISSION (PENDING_ADMISSION → ON_HOLD/SEARCHING) sem diagnóstico não é afetado', async () => {
-      db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'SEARCHING']], { status: 'PENDING_ADMISSION', active_diagnosis_count: '0' });
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE'])('%s → SEARCHING sem diagnóstico ativo é RECUSADO com DIAGNOSIS (o desvio dos dois passos está fechado)', async (from) => {
+      db(from, [[from, 'SEARCHING']], { status: from, active_diagnosis_count: '0' });
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).rejects.toMatchObject({
+        code: 'PATIENT_STATUS_NOT_READY',
+        to: 'SEARCHING',
+        missing: ['DIAGNOSIS'],
+      });
+      expect(calls().some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+    });
+
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE'])('%s → SEARCHING COM diagnóstico ativo passa', async (from) => {
+      db(from, [[from, 'SEARCHING']], { status: from, active_diagnosis_count: '1' });
       await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+    });
+
+    it('paciente JÁ em atendimento (SEARCHING → ACTIVE) sem diagnóstico não é afetado: a regra só olha a ENTRADA', async () => {
+      db('SEARCHING', [['SEARCHING', 'ACTIVE']], { status: 'SEARCHING', active_diagnosis_count: '0' });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
     });
 
     it('ADMISSION → ACTIVE sem diagnóstico e sem endereço: os dois acusam juntos, DIAGNOSIS por último', async () => {

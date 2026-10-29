@@ -22,8 +22,8 @@ const LE = ['patient:read', 'patient_clinical:read', 'patient_address:read', 'pa
 const NAO_LE = LE.filter((c) => c !== 'patient_clinical:read');
 
 describe('patientDetailCompleteness — DIAGNOSIS', () => {
-  it('ADMISSION com 0 diagnósticos ativos, ator com leitura clínica → missing [DIAGNOSIS]', () => {
-    const r = patientDetailCompleteness({ ...base, status: 'ADMISSION', activeDiagnosisCount: 0 }, LE);
+  it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s com 0 diagnósticos ativos, ator com leitura clínica → missing [DIAGNOSIS]', (status) => {
+    const r = patientDetailCompleteness({ ...base, status, activeDiagnosisCount: 0 }, LE);
     expect(r.missing).toEqual(['DIAGNOSIS']);
     expect(r.ready).toBe(false);
   });
@@ -40,8 +40,8 @@ describe('patientDetailCompleteness — DIAGNOSIS', () => {
     expect(patientDetailCompleteness({ ...base, status: 'ADMISSION', activeDiagnosisCount: 2 }, NAO_LE).missing).toEqual([]);
   });
 
-  it.each(['PENDING_ADMISSION', 'SOLICITANTE', 'ACTIVE', 'SEARCHING', 'DISCHARGED'])(
-    'paciente em %s (fora de ADMISSION) sem diagnóstico → não é afetado',
+  it.each(['ACTIVE', 'SEARCHING', 'ON_HOLD', 'DISCHARGED'])(
+    'paciente em %s (já em atendimento ou saído) sem diagnóstico → não é afetado',
     (status) => {
       expect(patientDetailCompleteness({ ...base, status, activeDiagnosisCount: 0 }, LE).missing).toEqual([]);
     },
@@ -49,5 +49,9 @@ describe('patientDetailCompleteness — DIAGNOSIS', () => {
 
   it('contagem AUSENTE no detalhe conta como 0 → em ADMISSION acusa (lado seguro, nunca "tem")', () => {
     expect(patientDetailCompleteness({ ...base, status: 'ADMISSION' }, LE).missing).toEqual(['DIAGNOSIS']);
+  });
+
+  it('status AUSENTE no detalhe (legado NULL) → não é pré-atendimento, não acusa DIAGNOSIS', () => {
+    expect(patientDetailCompleteness({ ...base, activeDiagnosisCount: 0 }, LE).missing).toEqual([]);
   });
 });

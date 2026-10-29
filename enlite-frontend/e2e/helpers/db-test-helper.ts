@@ -13,6 +13,8 @@
 
 import { execSync } from 'child_process';
 
+const PRE_CARE_STATUSES = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'];
+
 // ── Constants ───────────────────────────────────────────────────────────────
 
 // `E2E_PG_CONTAINER` permite apontar para um stack isolado por projeto docker (`docker compose -p`)
@@ -53,10 +55,10 @@ export interface InsertTestPatientOpts {
   hasConsent?: boolean;
   insuranceInformed?: string;
   /**
-   * Diagnóstico CID-11 ATIVO sintético em `patient_diagnoses` (pedido do Javier: sair de ADMISSION — e ativar
-   * recrutamento nela — exige ≥1). Default = `status === 'ADMISSION'`: quem semeia um paciente em ADMISSION quase
-   * sempre vai ativá-lo/movê-lo, e esses testes medem OUTRA coisa. Passe `false` para provar a TRAVA (paciente em
-   * ADMISSION SEM diagnóstico). O título é sintético: nenhum texto clínico real.
+   * Diagnóstico CID-11 ATIVO sintético em `patient_diagnoses` (pedido do Javier: ENTRAR em atendimento — e ativar
+   * recrutamento — a partir de um estágio pré-atendimento exige ≥1). Default = status pré-atendimento (SOLICITANTE,
+   * PENDING_ADMISSION, ADMISSION): quem semeia paciente nesses estágios quase sempre vai ativá-lo/movê-lo, e esses
+   * testes medem OUTRA coisa. Passe `false` para provar a TRAVA. O título é sintético: nenhum texto clínico real.
    */
   withDiagnosis?: boolean;
 }
@@ -84,7 +86,7 @@ export function insertTestPatient(
     addressLng = -58.3816,
     hasConsent,
     insuranceInformed,
-    withDiagnosis = status === 'ADMISSION',
+    withDiagnosis = PRE_CARE_STATUSES.includes(status),
   } = opts;
 
   const clickupTaskId = `E2E-INT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

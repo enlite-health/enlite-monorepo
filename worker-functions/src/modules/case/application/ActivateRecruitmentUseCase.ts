@@ -1,3 +1,4 @@
+import { activeDiagnosisCountSql } from "@shared/sql/patientDiagnosisSql";
 import * as functions from "firebase-functions";
 import type { PoolClient } from "pg";
 import { inPatientTransaction } from "./patientTransaction";
@@ -161,8 +162,7 @@ export class ActivateRecruitmentUseCase {
                   WHERE piv.patient_id = patients.id
                 ) AS has_verified_active_coverage,
                 -- CID-11 (pedido do Javier): só a CONTAGEM de linhas ATIVAS (qualquer source), nunca o valor. Alias dx: a guarda S.5 do teste barra o termo por extenso no SQL.
-                (SELECT COUNT(*) FROM patient_diagnoses pdx
-                  WHERE pdx.patient_id = patients.id AND pdx.active) AS active_dx_count
+                ${activeDiagnosisCountSql('patients.id')} AS active_dx_count
            FROM patients
           WHERE id = $1 AND deleted_at IS NULL
           FOR UPDATE`,

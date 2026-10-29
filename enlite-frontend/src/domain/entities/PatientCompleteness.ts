@@ -23,8 +23,8 @@ export const PATIENT_COMPLETENESS_CODES = [
   'SERVICE_SCHEDULE',
   'CONSENT',
   /**
-   * Pedido do Javier: o paciente só sai de ADMISSION (e só ativa recrutamento enquanto está nela) com ≥1
-   * diagnóstico CID-11 ATIVO. Só aparece em `completeness.missing` quando o paciente está em ADMISSION.
+   * Pedido do Javier: o paciente só ENTRA em atendimento (e só ativa recrutamento) com ≥1 diagnóstico
+   * CID-11 ATIVO. Só aparece em `completeness.missing` quando o paciente está num estágio pré-atendimento.
    */
   'DIAGNOSIS',
   /**
@@ -46,7 +46,7 @@ export const ACTIVATION_BLOCKING_CODES = [
   'ADDRESS',
   'SERVICE_ADDRESS',
   'SERVICE_SCHEDULE',
-  // Pedido do Javier: a admissão só "fecha" com ≥1 diagnóstico ativo (só é calculado com o paciente em ADMISSION).
+  // Pedido do Javier: a admissão só "fecha" com ≥1 diagnóstico ativo (só é calculado com o paciente pré-atendimento).
   'DIAGNOSIS',
 ] as const;
 
@@ -83,12 +83,15 @@ export const RECRUITMENT_BLOCKING_CODES = [
   'SERVICE_WORK_SCHEDULE',
   'SERVICE_PAYMENT_DAY',
   'COVERAGE',
-  // Pedido do Javier: ativar recrutamento ENQUANTO o paciente está em ADMISSION exige ≥1 diagnóstico ativo.
+  // Pedido do Javier: ativar recrutamento com o paciente pré-atendimento exige ≥1 diagnóstico ativo.
   'DIAGNOSIS',
 ] as const;
 
-/** O paciente está nesta etapa quando o diagnóstico é exigido — espelha `DIAGNOSIS_REQUIRED_STATUS` do backend. */
-export const DIAGNOSIS_REQUIRED_STATUS = 'ADMISSION' as const;
+/**
+ * Estágios PRÉ-ATENDIMENTO — espelha `PRE_CARE_STATUSES` do backend. Neles o diagnóstico CID-11 é exigido
+ * para ENTRAR em atendimento (SEARCHING, ACTIVE, ON_HOLD, REPLACEMENT, SUSPENDED); andar entre eles é livre.
+ */
+export const PRE_CARE_STATUSES = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'] as const;
 
 /**
  * Qual pendência de diagnóstico a ficha tem, lida do checklist que o SERVIDOR devolveu (a única fonte —

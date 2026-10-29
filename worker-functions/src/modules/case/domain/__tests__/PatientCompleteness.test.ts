@@ -14,6 +14,8 @@ import {
   isPlaceholderCoverageValue,
   computeRecruitmentReadiness,
   CLINICAL_DATA_GENERIC_CODE,
+  PRE_CARE_STATUSES,
+  CARE_ENTRY_STATUSES,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
@@ -28,8 +30,8 @@ const baseInput = {
   activeContractedServiceCount: 1,
   activeContractedServicesWithoutAddressCount: 0,
   activeContractedServicesWithoutScheduleCount: 0,
-  // Neutro para o DIAGNOSIS (só avaliado em ADMISSION): os testes antigos não dependem dele.
-  status: 'PENDING_ADMISSION' as string | null,
+  // Neutro para o DIAGNOSIS (só avaliado em estágio pré-atendimento): os testes antigos não dependem dele.
+  status: 'ACTIVE' as string | null,
   activeDiagnosisCount: 0,
   now: NOW,
 };
@@ -211,7 +213,7 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
-      status: 'PENDING_ADMISSION',
+      status: 'ACTIVE',
       activeDiagnosisCount: 0,
       now: NOW,
     });
@@ -351,7 +353,7 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
-      status: 'PENDING_ADMISSION',
+      status: 'ACTIVE',
       activeDiagnosisCount: 0,
       now: NOW,
     });
@@ -376,7 +378,7 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
-      status: 'PENDING_ADMISSION',
+      status: 'ACTIVE',
       activeDiagnosisCount: 0,
       now: NOW,
     });
@@ -386,59 +388,75 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
 });
 
 describe('DIAGNOSIS no checklist e na troca de status (pedido do Javier / decisão do Gabriel)', () => {
-  it('ADMISSION sem diagnóstico ativo → DIAGNOSIS em missing E em blocking (a ficha o mostra como o que falta para fechar a admissão)', () => {
-    const r = computePatientCompleteness({ ...baseInput, status: 'ADMISSION', activeDiagnosisCount: 0 });
+  const PRE_CARE = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'] as const;
+  const CARE = ['SEARCHING', 'ACTIVE', 'ON_HOLD', 'REPLACEMENT', 'SUSPENDED'] as const;
+
+  it.each(PRE_CARE)('%s sem diagnóstico ativo → DIAGNOSIS em missing E em blocking (o que falta para entrar em atendimento)', (st) => {
+    const r = computePatientCompleteness({ ...baseInput, status: st, activeDiagnosisCount: 0 });
     expect(r.missing).toEqual(['DIAGNOSIS']);
     expect(r.blocking).toEqual(['DIAGNOSIS']);
     expect(r.canActivate).toBe(false);
     expect(r.ready).toBe(false);
   });
 
-  it('ADMISSION com ≥1 diagnóstico ativo → nada falta', () => {
-    expect(computePatientCompleteness({ ...baseInput, status: 'ADMISSION', activeDiagnosisCount: 1 }).missing).toEqual([]);
+  it.each(PRE_CARE)('%s com ≥1 diagnóstico ativo → nada falta', (st) => {
+    expect(computePatientCompleteness({ ...baseInput, status: st, activeDiagnosisCount: 1 }).missing).toEqual([]);
   });
 
-  it.each(['PENDING_ADMISSION', 'SOLICITANTE', 'ACTIVE', 'SEARCHING', 'DISCHARGED', null])(
-    'paciente em %p (fora de ADMISSION) sem diagnóstico → NÃO acusa DIAGNOSIS',
+  it.each([...CARE, 'ALTA', 'DISCHARGED', null])(
+    'paciente em %p (já em atendimento, ou saído) sem diagnóstico → NÃO acusa DIAGNOSIS',
     (st) => {
       expect(computePatientCompleteness({ ...baseInput, status: st, activeDiagnosisCount: 0 }).missing).toEqual([]);
     },
   );
 
-  it('contagem inválida (NaN) em ADMISSION conta como FALTANDO, nunca como "tem" (contagem zero/lixo é falha)', () => {
+  it('contagem inválida (NaN) num estágio pré-atendimento conta como FALTANDO, nunca como "tem" (contagem zero/lixo é falha)', () => {
     expect(computePatientCompleteness({ ...baseInput, status: 'ADMISSION', activeDiagnosisCount: NaN }).missing).toEqual(['DIAGNOSIS']);
   });
 
   describe('blockingCodesForStatusChange(to, foraDoFluxo, from)', () => {
-    it.each(['ACTIVE', 'SEARCHING', 'REPLACEMENT', 'ON_HOLD', 'SUSPENDED'])(
-      'ADMISSION → %s exige DIAGNOSIS',
-      (to) => {
-        expect(blockingCodesForStatusChange(to, false, 'ADMISSION')).toContain('DIAGNOSIS');
+    it.each(PRE_CARE.flatMap((from) => CARE.map((to) => [from, to] as const)))(
+      '%s → %s exige DIAGNOSIS',
+      (from, to) => {
+        expect(blockingCodesForStatusChange(to, false, from)).toContain('DIAGNOSIS');
       },
     );
 
-    it.each(['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE'])('ADMISSION → %s (descarte ou volta no funil) NÃO exige DIAGNOSIS', (to) => {
-      expect(blockingCodesForStatusChange(to, false, 'ADMISSION')).not.toContain('DIAGNOSIS');
+    it('o desvio dos dois passos: ADMISSION → PENDING_ADMISSION é livre, mas PENDING_ADMISSION → SEARCHING cobra', () => {
+      expect(blockingCodesForStatusChange('PENDING_ADMISSION', false, 'ADMISSION')).not.toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('SEARCHING', false, 'PENDING_ADMISSION')).toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('SEARCHING', false, 'SOLICITANTE')).toContain('DIAGNOSIS');
     });
 
-    it.each(['ACTIVE', 'SEARCHING', 'DISCHARGED', 'ADMISSION'])('sair de PENDING_ADMISSION/ACTIVE para %s (fora de ADMISSION) NÃO exige DIAGNOSIS', (to) => {
-      expect(blockingCodesForStatusChange(to, false, 'PENDING_ADMISSION')).not.toContain('DIAGNOSIS');
-      expect(blockingCodesForStatusChange(to, false, 'ACTIVE')).not.toContain('DIAGNOSIS');
-    });
+    it.each(PRE_CARE.flatMap((from) => ['ALTA', 'DISCHARGED', ...PRE_CARE].map((to) => [from, to] as const)))(
+      '%s → %s (descarte ou andar entre os estágios pré-atendimento) NÃO exige DIAGNOSIS',
+      (from, to) => {
+        expect(blockingCodesForStatusChange(to, false, from)).not.toContain('DIAGNOSIS');
+      },
+    );
 
-    it('sem `from` (chamador que não pergunta por saída de ADMISSION) → comportamento de antes, sem DIAGNOSIS', () => {
+    it.each(CARE.flatMap((from) => [...CARE, 'ALTA', 'DISCHARGED', ...PRE_CARE].map((to) => [from, to] as const)))(
+      'paciente já em %s → %s NÃO exige DIAGNOSIS (a regra só olha a entrada)',
+      (from, to) => {
+        expect(blockingCodesForStatusChange(to, false, from)).not.toContain('DIAGNOSIS');
+      },
+    );
+
+    it('sem `from` (chamador que não pergunta pela origem) → comportamento de antes, sem DIAGNOSIS', () => {
       expect(blockingCodesForStatusChange('ACTIVE')).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
       expect(blockingCodesForStatusChange('SEARCHING', true)).not.toContain('DIAGNOSIS');
     });
 
-    it('acumula com o que o destino já cobrava (ADMISSION → ACTIVE = checklist bloqueante + DIAGNOSIS)', () => {
+    it('acumula com o que o destino já cobrava (pré-atendimento → ACTIVE = checklist bloqueante + DIAGNOSIS)', () => {
       expect(blockingCodesForStatusChange('ACTIVE', false, 'ADMISSION')).toEqual([...ACTIVATION_BLOCKING_CODES]);
-      expect(blockingCodesForStatusChange('SEARCHING', true, 'ADMISSION')).toContain('SERVICE_SCHEDULE');
+      expect(blockingCodesForStatusChange('SEARCHING', true, 'PENDING_ADMISSION')).toContain('SERVICE_SCHEDULE');
     });
+  });
 
-    it('ADMISSION → ADMISSION (reenviar o mesmo estado) não exige DIAGNOSIS', () => {
-      expect(blockingCodesForStatusChange('ADMISSION', false, 'ADMISSION')).not.toContain('DIAGNOSIS');
-    });
+  it('PRE_CARE_STATUSES e CARE_ENTRY_STATUSES são as constantes do conceito (e não se cruzam)', () => {
+    expect([...PRE_CARE_STATUSES]).toEqual(PRE_CARE);
+    expect([...CARE_ENTRY_STATUSES]).toEqual(CARE);
+    expect(PRE_CARE.some((s) => (CARE as readonly string[]).includes(s))).toBe(false);
   });
 
   it('CLINICAL_DATA é o genérico e NÃO é um código calculado (fora de PATIENT_COMPLETENESS_CODES)', () => {
@@ -466,8 +484,8 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       SERVICE_SCHEDULE:
         /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\s+AND NOT EXISTS \(SELECT 1 FROM patient_itinerary_slot s_ws WHERE s_ws\.contracted_service_id = pcs\.id AND s_ws\.valid @> CURRENT_DATE\)\)/,
       CONSENT: /p\.has_consent IS NOT TRUE/,
-      // Só em ADMISSION, e só linha ATIVA de patient_diagnoses (qualquer source).
-      DIAGNOSIS: /COALESCE\(p\.status, ''\) = 'ADMISSION'\s+AND NOT EXISTS \(SELECT 1 FROM patient_diagnoses pdx WHERE pdx\.patient_id = p\.id AND pdx\.active\)/,
+      // Só nos 3 estágios pré-atendimento, e só linha ATIVA de patient_diagnoses (qualquer source).
+      DIAGNOSIS: /COALESCE\(p\.status, ''\) IN \('SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'\)\s+AND NOT EXISTS \(SELECT 1 FROM patient_diagnoses pdx WHERE pdx\.patient_id = p\.id AND pdx\.active\)/,
     };
     for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);
     expect(Object.keys(clausulaDe).sort()).toEqual([...PATIENT_COMPLETENESS_CODES].sort());
@@ -560,14 +578,14 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
   });
 
   describe('DIAGNOSIS no gate de recrutamento (pedido do Javier)', () => {
-    it('ADMISSION sem diagnóstico ativo → DIAGNOSIS em missing; ready false', () => {
-      expect(computeRecruitmentReadiness({ ...READY, activeDiagnosisCount: 0 })).toEqual({ missing: ['DIAGNOSIS'], ready: false });
+    it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s sem diagnóstico ativo → DIAGNOSIS em missing; ready false', (st) => {
+      expect(computeRecruitmentReadiness({ ...READY, patientStatus: st, activeDiagnosisCount: 0 })).toEqual({ missing: ['DIAGNOSIS'], ready: false });
     });
-    it('ADMISSION com ≥1 diagnóstico ativo → pronto', () => {
-      expect(computeRecruitmentReadiness({ ...READY, activeDiagnosisCount: 1 })).toEqual({ missing: [], ready: true });
+    it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s com ≥1 diagnóstico ativo → pronto', (st) => {
+      expect(computeRecruitmentReadiness({ ...READY, patientStatus: st, activeDiagnosisCount: 1 })).toEqual({ missing: [], ready: true });
     });
-    it.each(['SEARCHING', 'ACTIVE', 'PENDING_ADMISSION', 'SOLICITANTE', null])(
-      'paciente fora de ADMISSION (%p) sem diagnóstico → NÃO é afetado',
+    it.each(['SEARCHING', 'ACTIVE', 'ON_HOLD', null])(
+      'paciente já em atendimento (%p) sem diagnóstico → NÃO é afetado',
       (st) => {
         expect(computeRecruitmentReadiness({ ...READY, patientStatus: st, activeDiagnosisCount: 0 })).toEqual({ missing: [], ready: true });
       },

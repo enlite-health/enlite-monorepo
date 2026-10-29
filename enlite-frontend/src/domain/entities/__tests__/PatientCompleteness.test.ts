@@ -14,7 +14,7 @@ import {
   isPlaceholderCoverageValue,
   recruitmentMissingCodes,
   diagnosisGapOf,
-  DIAGNOSIS_REQUIRED_STATUS,
+  PRE_CARE_STATUSES,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
@@ -165,7 +165,7 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
     expect(diagnosisGapOf({ missing: ['ADDRESS', 'COVERAGE'] })).toBeNull();
     expect(diagnosisGapOf({ missing: [] })).toBeNull();
     expect(diagnosisGapOf(undefined)).toBeNull();
-    expect(DIAGNOSIS_REQUIRED_STATUS).toBe('ADMISSION');
+    expect(PRE_CARE_STATUSES).toEqual(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION']);
   });
 
   // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida

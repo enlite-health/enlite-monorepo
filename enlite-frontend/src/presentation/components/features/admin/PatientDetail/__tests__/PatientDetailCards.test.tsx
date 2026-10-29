@@ -522,16 +522,16 @@ describe('DiagnosticoCard', () => {
     expect(screen.getByText(/Observações gerais/)).toBeInTheDocument();
   });
 
-  // ── Pedido do Javier: diagnóstico obrigatório enquanto o paciente está em ADMISSION ──
-  it('ADMISSION: o rótulo das patologías leva a marcação `required` (asterisco, o mesmo padrão do Label) e, sem diagnóstico, a dica de obrigatório', () => {
-    render(<DiagnosticoCard patient={{ ...patientDetailFixture, status: 'ADMISSION', diagnoses: [], diagnosesUnavailable: false }} />);
+  // ── Pedido do Javier: diagnóstico obrigatório nos 3 estágios pré-atendimento ──
+  it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s (pré-atendimento): o rótulo das patologías leva a marcação `required` (asterisco, o mesmo padrão do Label) e, sem diagnóstico, a dica de obrigatório', (status) => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, status, diagnoses: [], diagnosesUnavailable: false }} />);
     const label = screen.getByTestId('diagnostico-card-required-label');
     expect(label).toHaveTextContent(ptBR.admin.patients.detail.diagnosisCard.patologies);
     expect(label.querySelector('span')?.textContent).toBe('*');
     expect(screen.getByTestId('diagnostico-card-patologias-empty').textContent).toContain(ptBR.admin.patients.detail.diagnosisCard.patologiesRequiredHint);
   });
 
-  it('fora de ADMISSION (ACTIVE): sem asterisco e sem a dica — a regra é só da saída da admissão', () => {
+  it('em atendimento (ACTIVE): sem asterisco e sem a dica — a regra é só da saída da admissão', () => {
     render(<DiagnosticoCard patient={{ ...patientDetailFixture, status: 'ACTIVE', diagnoses: [], diagnosesUnavailable: false }} />);
     expect(screen.queryByTestId('diagnostico-card-required-label')).not.toBeInTheDocument();
     expect(screen.getByTestId('diagnostico-card-patologias-empty').textContent).not.toContain(ptBR.admin.patients.detail.diagnosisCard.patologiesRequiredHint);

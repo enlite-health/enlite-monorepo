@@ -195,7 +195,10 @@ export class AdminPatientContractedServicesController {
           vacancyId: result.vacancyId,
           patientStatus: result.patientStatus,
           statusChanged: result.statusChanged,
-          ...(result.patientNotMoved ? { patientNotMoved: result.patientNotMoved } : {}),
+          // `missing` pode trazer `DIAGNOSIS`: sai como `CLINICAL_DATA` para quem não lê `patient_clinical`.
+          ...(result.patientNotMoved
+            ? { patientNotMoved: { missing: exposeBlockingCodes(result.patientNotMoved.missing, clinicalCellsOf(req)) } }
+            : {}),
         },
       });
     } catch (err: unknown) {

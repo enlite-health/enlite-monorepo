@@ -123,8 +123,8 @@ describe('loadPatientCompleteness', () => {
 
   // ── Diagnóstico CID-11 obrigatório na saída da ADMISSION (pedido do Javier) ─────────────────
   describe('DIAGNOSIS', () => {
-    it('ADMISSION com 0 diagnósticos ativos → DIAGNOSIS em missing (a contagem chega como STRING)', async () => {
-      const { client } = clientQueDevolve([{ ...FICHA_COMPLETA, status: 'ADMISSION', active_diagnosis_count: '0' }]);
+    it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s com 0 diagnósticos ativos → DIAGNOSIS em missing (a contagem chega como STRING)', async (status) => {
+      const { client } = clientQueDevolve([{ ...FICHA_COMPLETA, status, active_diagnosis_count: '0' }]);
       const r = await loadPatientCompleteness(client, PID);
       expect(r.missing).toEqual(['DIAGNOSIS']);
     });
@@ -134,8 +134,8 @@ describe('loadPatientCompleteness', () => {
       expect((await loadPatientCompleteness(client, PID)).missing).toEqual([]);
     });
 
-    it.each(['PENDING_ADMISSION', 'SOLICITANTE', 'ACTIVE', 'SEARCHING', 'DISCHARGED'])(
-      'paciente em %s (fora de ADMISSION) sem diagnóstico → NÃO é afetado',
+    it.each(['ACTIVE', 'SEARCHING', 'ON_HOLD', 'DISCHARGED'])(
+      'paciente em %s (já em atendimento ou saído) sem diagnóstico → NÃO é afetado',
       async (status) => {
         const { client } = clientQueDevolve([{ ...FICHA_COMPLETA, status, active_diagnosis_count: '0' }]);
         expect((await loadPatientCompleteness(client, PID)).missing).toEqual([]);
