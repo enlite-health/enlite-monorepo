@@ -13,12 +13,28 @@ jest.mock('@modules/identity', () => ({
 // cai em 500 (visto no RED: "Cannot read properties of undefined").
 jest.mock('@shared/logging', () => ({ reportError: jest.fn(), loggingAls: { getStore: jest.fn().mockReturnValue(undefined) } }));
 
+// spec 079: captura o 3º argumento (`accepts`) com que o controller compõe o use case padrão.
+const mockCaptured: { accepts?: (field: string, value: unknown) => boolean } = {};
+jest.mock('../../../application/LinkExistingVacancyUseCase', () => {
+  const actual = jest.requireActual('../../../application/LinkExistingVacancyUseCase');
+  return {
+    ...actual,
+    LinkExistingVacancyUseCase: class extends actual.LinkExistingVacancyUseCase {
+      constructor(repo: never, audit: never, accepts: (field: string, value: unknown) => boolean) {
+        super(repo, audit, accepts);
+        mockCaptured.accepts = accepts;
+      }
+    },
+  };
+});
+
 import { AdminPatientContractedServicesController } from '../AdminPatientContractedServicesController';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../../infrastructure/PatientContractedServiceRepository';
 import {
   ServiceAlreadyRecruitingError, VacancyNotLinkableError, LinkBlockedError,
 } from '../../../application/LinkExistingVacancyUseCase';
+import { PatientNotFoundForRecruitmentError, ServiceNotFoundForRecruitmentError } from '../../../application/ActivateRecruitmentUseCase';
 import { SlotHasActiveAllocationError } from '../../../application/ItinerarySlotWriteUseCase';
 import { ServiceSlotOverlapError } from '../../../infrastructure/ServiceSlotWriter';
 import { reportError } from '@shared/logging';
@@ -579,6 +595,68 @@ describe('AdminPatientContractedServicesController', () => {
       await controller.previewLinkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID } }), res2);
       expect(res2.status).toHaveBeenCalledWith(status);
       expect(res2.json).toHaveBeenCalledWith(body);
+    });
+
+    it('404 NOT_FOUND quando paciente ou serviço não existem (vínculo e prévia)', async () => {
+      for (const mk of [() => new PatientNotFoundForRecruitmentError(PATIENT_ID), () => new ServiceNotFoundForRecruitmentError(PATIENT_ID, SERVICE_ID)]) {
+        const uc = { confirm: jest.fn().mockRejectedValue(mk()), preview: jest.fn().mockRejectedValue(mk()) };
+        const controller = make(uc);
+        const res1 = mockRes();
+        await controller.linkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID } }), res1);
+        expect(res1.status).toHaveBeenCalledWith(404);
+        expect(res1.json).toHaveBeenCalledWith({ success: false, code: 'NOT_FOUND' });
+        const res2 = mockRes();
+        await controller.previewLinkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID } }), res2);
+        expect(res2.status).toHaveBeenCalledWith(404);
+        expect(res2.json).toHaveBeenCalledWith({ success: false, code: 'NOT_FOUND' });
+      }
+    });
+
+    it('erro inesperado -> 500 com reportError só com ids (vínculo e prévia), sem vazar o erro', async () => {
+      (reportError as jest.Mock).mockClear();
+      const boom = new Error('db down');
+      const uc = { confirm: jest.fn().mockRejectedValue(boom), preview: jest.fn().mockRejectedValue('texto') };
+      const controller = make(uc);
+      const res1 = mockRes();
+      await controller.linkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID } }), res1);
+      expect(res1.status).toHaveBeenCalledWith(500);
+      expect(res1.json).toHaveBeenCalledWith({ success: false, error: 'Failed to link existing vacancy' });
+      expect(reportError).toHaveBeenCalledWith(boom, { source: 'AdminPatientContractedServicesController:linkExistingVacancy', patientId: PATIENT_ID, serviceId: SERVICE_ID });
+      const res2 = mockRes();
+      await controller.previewLinkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID } }), res2);
+      expect(res2.status).toHaveBeenCalledWith(500);
+      expect(reportError).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'texto' }), { source: 'AdminPatientContractedServicesController:previewLinkExistingVacancy', patientId: PATIENT_ID, serviceId: SERVICE_ID });
+    });
+
+    it('composição padrão: o `accepts` injetado aceita qualquer valor (spec 079 §4 literal; ⚑2 pendente)', () => {
+      new AdminPatientContractedServicesController({} as never, {} as never);
+      expect(mockCaptured.accepts?.('work_schedule', { qualquer: 1 })).toBe(true);
+    });
+
+    it('body ausente (undefined) cai em {} -> 400 sem chamar o use case (vínculo e prévia)', async () => {
+      const uc = { confirm: jest.fn(), preview: jest.fn() };
+      const controller = make(uc);
+      const res1 = mockRes();
+      await controller.linkExistingVacancy(mockReq({ params, body: undefined }), res1);
+      expect(res1.status).toHaveBeenCalledWith(400);
+      expect(uc.confirm).not.toHaveBeenCalled();
+      const res2 = mockRes();
+      await controller.previewLinkExistingVacancy(mockReq({ params, body: undefined }), res2);
+      expect(res2.status).toHaveBeenCalledWith(200);
+    });
+
+    it('400 com params inválidos (id/sid não-uuid) sem chamar o use case', async () => {
+      const uc = { confirm: jest.fn(), preview: jest.fn() };
+      const controller = make(uc);
+      const bad = { id: 'x', sid: SERVICE_ID };
+      const res1 = mockRes();
+      await controller.linkExistingVacancy(mockReq({ params: bad, body: { vacancyId: VAC_ID } }), res1);
+      const res2 = mockRes();
+      await controller.previewLinkExistingVacancy(mockReq({ params: bad, body: { vacancyId: VAC_ID } }), res2);
+      expect(res1.status).toHaveBeenCalledWith(400);
+      expect(res2.status).toHaveBeenCalledWith(400);
+      expect(uc.confirm).not.toHaveBeenCalled();
+      expect(uc.preview).not.toHaveBeenCalled();
     });
 
     it('400 com body inválido (vínculo sem vacancyId; prévia com chave extra) sem chamar o use case', async () => {
