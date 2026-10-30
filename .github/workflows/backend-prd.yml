@@ -187,6 +187,12 @@ jobs:
             PERISKOPE_PHONE=5491176360496
             PERISKOPE_WEBHOOK_ENABLED=true
             TEMPLATE_SUBMISSION_ENABLED=true
+            # spec 078, ato (k): aviso GRAVE do Sol. SOL_TWILIO_FROM = o MESMO número do backend (decisão 30/10).
+            # Template pendente de aprovação na Meta: até aprovar, o envio vira `falha` com motivo (fail-closed).
+            SOL_TWILIO_FROM=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
+            SOL_TWILIO_CONTENT_SID_GRAVE=HX3c500ca31c7bc20d98e9a1bfb75ddb5a
+            SOL_AVISO_GRAVE_REENVIO_HORAS=4
+            FRONTEND_URL=https://app.enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
@@ -206,6 +212,7 @@ jobs:
             TWILIO_VERIFY_SERVICE_SID=twilio-verify-service-sid:latest
             ANACARE_USERNAME=anacare-username:latest
             ANACARE_PASS=anacare-pass:latest
+            SOL_AVISO_GRAVE_DESTINATARIOS=sol-aviso-grave-destinatarios:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
