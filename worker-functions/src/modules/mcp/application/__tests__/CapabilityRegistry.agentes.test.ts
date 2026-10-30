@@ -13,6 +13,7 @@ import { AgentesReporteLerCapability } from '../capabilities/AgentesReporteLerCa
 import { AgentesPlacarLerCapability } from '../capabilities/AgentesPlacarLerCapability';
 import { AgentesPedidoDepositarCapability } from '../capabilities/AgentesPedidoDepositarCapability';
 import { AgentesMedicaoRegistrarCapability } from '../capabilities/AgentesMedicaoRegistrarCapability';
+import { AgentesAprovacaoVerificarCapability } from '../capabilities/AgentesAprovacaoVerificarCapability';
 import { AgentesAvisoReenviarCapability } from '../capabilities/AgentesAvisoReenviarCapability';
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -39,6 +40,7 @@ function makeRepo() {
     lerPlacar: jest.fn().mockResolvedValue({ veredictos: 0 }),
     depositarPedido: jest.fn().mockResolvedValue({ pedido_id: UUID_A, atitude_id: UUID_A }),
     registrarMedicao: jest.fn().mockResolvedValue({ id: UUID_A }),
+    verificarAprovacao: jest.fn().mockResolvedValue({ valida: true, acao: 'aceitar' }),
   };
 }
 
@@ -61,6 +63,7 @@ function makeRegistry(rl?: WriteRateLimiter) {
     agentesPedidoDepositar: new AgentesPedidoDepositarCapability(r),
     agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(r),
     agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisos),
+    agentesAprovacaoVerificar: new AgentesAprovacaoVerificarCapability(r),
     auditor,
     writeRateLimiter: rl,
   });
@@ -190,6 +193,47 @@ describe('agentes.aviso.reenviar — quem pode chamar (M3b-2, item 57)', () => {
     expect(spy).toHaveBeenCalledWith('sol-fila:agentes.aviso.reenviar');
     await expect(handler('agentes.aviso.reenviar')({ agora: 'ontem' })).rejects.toThrow();
     await expect(handler('agentes.aviso.reenviar')({ pedido_id: UUID_A })).rejects.toThrow(); // campo extra recusado
+  });
+});
+
+describe('agentes.aprovacao.verificar — quem pode chamar (M1.3.1, itens 20/48)', () => {
+  it('a forma do secret do sol-propagador tem SÓ esta capability', () => {
+    expect(principalFromSecret('sol-propagador').allowedCapabilities).toEqual(['agentes.aprovacao.verificar']);
+    expect(AGENTES_PRINCIPAL_CAPABILITIES['sol-propagador']).toEqual(['agentes.aprovacao.verificar']);
+  });
+
+  it('sol-propagador vê e chama (leitura: fora do balde de escrita); maria, sol-fila e sol-supervisor não veem', async () => {
+    const rl = new WriteRateLimiter();
+    const spy = jest.spyOn(rl, 'consume');
+    const { registry, repo } = makeRegistry(rl);
+    for (const quem of ['maria', 'sol-fila', 'sol-supervisor'] as const) {
+      expect(register(registry, () => principalFromSecret(quem)).names).not.toContain('agentes.aprovacao.verificar');
+    }
+    const prop = register(registry, () => principalFromSecret('sol-propagador'));
+    expect(prop.names).toEqual(['agentes.aprovacao.verificar']);
+    const out = await prop.handler('agentes.aprovacao.verificar')({ aprovacao_id: UUID_A });
+    expect(JSON.parse(out.content[0].text)).toEqual({ valida: true, acao: 'aceitar' });
+    expect(repo.verificarAprovacao).toHaveBeenCalledWith('sol-propagador', UUID_A);
+    expect(spy).not.toHaveBeenCalled();
+    expect(AGENTES_WRITE_CAPABILITIES).not.toContain('agentes.aprovacao.verificar');
+  });
+
+  it('maria chamando (principal trocado depois do registro) → recusada, repositório intocado', async () => {
+    const { registry, repo } = makeRegistry();
+    let atual = principalFromSecret('sol-propagador');
+    const { handler } = register(registry, () => atual);
+    atual = principalFromSecret('maria');
+    await expect(handler('agentes.aprovacao.verificar')({ aprovacao_id: UUID_A })).rejects.toThrow(/not allowed for maria/);
+    expect(repo.verificarAprovacao).not.toHaveBeenCalled();
+  });
+
+  it('uuid inválido e campo extra → recusados antes do repositório', async () => {
+    const { registry, repo } = makeRegistry();
+    const { handler } = register(registry, () => principalFromSecret('sol-propagador'));
+    await expect(handler('agentes.aprovacao.verificar')({ aprovacao_id: 'nao-e-uuid' })).rejects.toThrow();
+    await expect(handler('agentes.aprovacao.verificar')({})).rejects.toThrow();
+    await expect(handler('agentes.aprovacao.verificar')({ aprovacao_id: UUID_A, extra: 1 })).rejects.toThrow();
+    expect(repo.verificarAprovacao).not.toHaveBeenCalled();
   });
 });
 

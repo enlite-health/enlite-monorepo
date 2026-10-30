@@ -83,6 +83,16 @@ export interface PlacarResult {
   }>;
 }
 
+export interface AprovacaoVerificada {
+  valida: boolean;
+  acao: 'aceitar' | 'negar' | 'descrever' | null;
+  pedido_id: string | null;
+  atitude_id: string | null;
+  atitude_versao: number | null;
+  atitude_atual: boolean;
+  decidido_em: string | null;
+}
+
 const actorOf = (principal: string) => systemActor(`mcp:${principal}`);
 
 /** O que o depósito pede ao aviso (M3b-2): in-app dentro da transação, WhatsApp depois do commit. Só o ID — nenhum texto do pedido. */
@@ -324,6 +334,40 @@ export class AgentesRepository {
           [m.metrica, m.escopo, m.de, m.ate, m.valor, m.n, m.medido_em, m.motivo, m.pedido_id ?? null],
         );
         return { id: rows[0].id };
+      },
+      actorOf(principal),
+    );
+  }
+
+  /** Id de aprovação = `id` do evento. Só leitura; inexistente => `valida=false, acao=null`. */
+  async verificarAprovacao(principal: string, aprovacaoId: string): Promise<AprovacaoVerificada> {
+    return withActorContext(
+      this.pool,
+      async (c) => {
+        const { rows } = await c.query<{
+          acao: AprovacaoVerificada['acao']; pedido_id: string; atitude_id: string; atitude_versao: number;
+          atitude_atual: boolean; ts: Date;
+        }>(
+          `SELECT e.acao, e.pedido_id, e.atitude_id, a.versao AS atitude_versao, e.ts,
+                  a.versao = (SELECT max(x.versao) FROM agentes.pedido_atitudes x WHERE x.pedido_id = e.pedido_id) AS atitude_atual
+             FROM agentes.pedido_eventos e
+             JOIN agentes.pedido_atitudes a ON a.id = e.atitude_id AND a.pedido_id = e.pedido_id
+            WHERE e.id = $1`,
+          [aprovacaoId],
+        );
+        if (rows.length === 0) {
+          return { valida: false, acao: null, pedido_id: null, atitude_id: null, atitude_versao: null, atitude_atual: false, decidido_em: null };
+        }
+        const r = rows[0];
+        return {
+          valida: r.acao === 'aceitar' && r.atitude_atual,
+          acao: r.acao,
+          pedido_id: r.pedido_id,
+          atitude_id: r.atitude_id,
+          atitude_versao: Number(r.atitude_versao),
+          atitude_atual: r.atitude_atual,
+          decidido_em: new Date(r.ts).toISOString(),
+        };
       },
       actorOf(principal),
     );

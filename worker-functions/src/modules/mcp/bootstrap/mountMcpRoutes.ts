@@ -64,6 +64,7 @@ import { AgentesReporteLerCapability } from '../application/capabilities/Agentes
 import { AgentesPlacarLerCapability } from '../application/capabilities/AgentesPlacarLerCapability';
 import { AgentesPedidoDepositarCapability } from '../application/capabilities/AgentesPedidoDepositarCapability';
 import { AgentesMedicaoRegistrarCapability } from '../application/capabilities/AgentesMedicaoRegistrarCapability';
+import { AgentesAprovacaoVerificarCapability } from '../application/capabilities/AgentesAprovacaoVerificarCapability';
 import { AgentesAvisoReenviarCapability } from '../application/capabilities/AgentesAvisoReenviarCapability';
 import { criarAvisoPedidoService } from '../../agentes/infrastructure/criarAvisoPedidoService';
 import { criarWhatsappAviso, type TwilioContentSender } from '../../agentes/infrastructure/avisoWhatsapp';
@@ -227,6 +228,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?
     agentesPedidoDepositar: new AgentesPedidoDepositarCapability(agentesRepo),
     agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(agentesRepo),
     agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisoPedidos),
+    agentesAprovacaoVerificar: new AgentesAprovacaoVerificarCapability(agentesRepo),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });

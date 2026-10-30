@@ -18,6 +18,8 @@ export const AGENTES_PRINCIPAL_CAPABILITIES = {
     'agentes.aviso.reenviar',
   ],
   maria: ['agentes.placar.ler', 'agentes.reporte.registrar'],
+  // Propagador (item 20/48): só confere se um id de aprovação é um ACEITAR vigente. Nenhuma outra capability.
+  'sol-propagador': ['agentes.aprovacao.verificar'],
 } as const;
 
 export type AgentesPrincipalName = keyof typeof AGENTES_PRINCIPAL_CAPABILITIES;

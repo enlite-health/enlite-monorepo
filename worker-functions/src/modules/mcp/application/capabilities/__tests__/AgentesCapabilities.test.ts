@@ -1,5 +1,6 @@
 import { AgentesVeredictoRegistrarCapability } from '../AgentesVeredictoRegistrarCapability';
 import { AgentesReporteRegistrarCapability } from '../AgentesReporteRegistrarCapability';
+import { AgentesAprovacaoVerificarCapability } from '../AgentesAprovacaoVerificarCapability';
 import { AgentesReporteLerCapability } from '../AgentesReporteLerCapability';
 import { AgentesPlacarLerCapability } from '../AgentesPlacarLerCapability';
 import { AgentesPedidoDepositarCapability } from '../AgentesPedidoDepositarCapability';
@@ -17,6 +18,7 @@ function makeRepo() {
     lerPlacar: jest.fn().mockResolvedValue({}),
     depositarPedido: jest.fn().mockResolvedValue({ pedido_id: UUID_A, atitude_id: UUID_B }),
     registrarMedicao: jest.fn().mockResolvedValue({ id: UUID_A }),
+    verificarAprovacao: jest.fn().mockResolvedValue({ valida: true }),
   };
 }
 const asRepo = (r: ReturnType<typeof makeRepo>) => r as unknown as AgentesRepository;
@@ -246,5 +248,30 @@ describe('agentes.medicao.registrar — formato', () => {
     const cap = new AgentesMedicaoRegistrarCapability(asRepo(repo));
     await expect(cap.execute(medicao(over), 'sol-fila')).rejects.toThrow();
     expect(repo.registrarMedicao).not.toHaveBeenCalled();
+  });
+});
+
+describe('agentes.aprovacao.verificar — formato', () => {
+  it('uuid válido chega ao repositório com o principal sol-propagador', async () => {
+    const repo = makeRepo();
+    const cap = new AgentesAprovacaoVerificarCapability(asRepo(repo));
+    await expect(cap.execute({ aprovacao_id: UUID_A }, 'sol-propagador')).resolves.toEqual({ valida: true });
+    expect(repo.verificarAprovacao).toHaveBeenCalledWith('sol-propagador', UUID_A);
+  });
+
+  it.each([
+    ['uuid inválido', { aprovacao_id: 'abc' }],
+    ['sem aprovacao_id', {}],
+    ['campo extra', { aprovacao_id: UUID_A, texto: 'x' }],
+  ])('%s → recusado, repositório intocado', async (_n, args) => {
+    const repo = makeRepo();
+    const cap = new AgentesAprovacaoVerificarCapability(asRepo(repo));
+    await expect(cap.execute(args, 'sol-propagador')).rejects.toThrow();
+    expect(repo.verificarAprovacao).not.toHaveBeenCalled();
+  });
+
+  it('sem principal: recusa (fail-closed)', async () => {
+    const cap = new AgentesAprovacaoVerificarCapability(asRepo(makeRepo()));
+    await expect(cap.execute({ aprovacao_id: UUID_A })).rejects.toThrow(/principal ausente/);
   });
 });
