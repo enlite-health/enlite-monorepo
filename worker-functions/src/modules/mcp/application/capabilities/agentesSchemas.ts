@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isRealCivilDate } from '../../../../shared/locale/civilClock';
 
 /**
  * Formato dos payloads das capabilities `agentes.*` (spec 078, M3a-2).
@@ -29,8 +30,7 @@ export const MOTIVOS_MEDICAO = ['linha_de_base', 'antes', 'depois'] as const;
 /** Data de calendário `YYYY-MM-DD` (coluna `date`), existente de verdade (2026-02-30 é recusado). */
 export const DATA_DIA = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((d) => new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d, { message: 'data inexistente' });
+  .refine(isRealCivilDate, { message: 'data inexistente' });
 
 export const CASOS_REPORTE = ['leve', 'meta', 'reforco'] as const;
 export const SENSORES = ['silente', 'handover_orfao', 'juiz', 'scrubber', 'notario', 'validador'] as const;
