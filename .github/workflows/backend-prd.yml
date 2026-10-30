@@ -190,7 +190,7 @@ jobs:
             # spec 078, ato (k): aviso GRAVE do Sol. SOL_TWILIO_FROM = o MESMO número do backend (decisão 30/10).
             # Template pendente de aprovação na Meta: até aprovar, o envio vira `falha` com motivo (fail-closed).
             SOL_TWILIO_FROM=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
-            SOL_TWILIO_CONTENT_SID_GRAVE=HX3c500ca31c7bc20d98e9a1bfb75ddb5a
+            SOL_TWILIO_CONTENT_SID_GRAVE=HX1148e6db5ee181e5da04777e4a1122b1
             SOL_AVISO_GRAVE_REENVIO_HORAS=4
             FRONTEND_URL=https://app.enlite.health
           secrets: |
