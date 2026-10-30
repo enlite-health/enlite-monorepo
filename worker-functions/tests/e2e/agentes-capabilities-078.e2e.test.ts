@@ -158,6 +158,34 @@ describe('capabilities agentes.* contra o banco (spec 078, M3a-2)', () => {
     expect(chaves.filter((k) => /trecho|resumo|texto/i.test(k))).toEqual([]);
   });
 
+  it('M4.4.1 sensor validador: ref da lista NUNCA -> nunca; ref fora da lista -> NÃO grave; scrubber -> dado; notário -> acao_fabricada (4 sintéticos)', async () => {
+    const op = `${operador}-vd`;
+    const base = { operador: op, inbox, nota: undefined, juiz_versao: undefined, cruza_areas: false, avaliado_em: '2026-10-20T12:00:00Z' };
+    const mk = (conv: string, sensor: string, regra: string) =>
+      veredicto(conv, { ...base, sensor, achados: [{ tipo: 'violacao', regra_ref: regra, gravidade: 'alta' }] });
+    const vNunca = await veredictoCap.execute(mk('v1', 'validador', 'nunca-garantir-vaga#ffffffffffff'), 'sol-supervisor');
+    const vFora = await veredictoCap.execute(mk('v2', 'validador', 'tom-informal#aaaaaaaaaaaa'), 'sol-supervisor');
+    const scr = await veredictoCap.execute(mk('v3', 'scrubber', 'pii#cccccccccccc'), 'sol-supervisor');
+    const not = await veredictoCap.execute(mk('v4', 'notario', 'acao#dddddddddddd'), 'sol-supervisor');
+    const janela = { operador: op, de: '2026-10-01T00:00:00Z', ate: '2026-10-29T00:00:00Z' };
+
+    const p = await placarCap.execute({ ...janela, nunca_refs: ['nunca-garantir-vaga#ffffffffffff'] }, 'maria');
+    expect(p.veredictos).toBe(4);
+    const por = Object.fromEntries(p.graves.map((g) => [g.veredicto_id, g]));
+    expect(por[vNunca.id]).toMatchObject({ sensor: 'validador', gatilho: 'nunca', regra_ref: 'nunca-garantir-vaga#ffffffffffff' });
+    expect(por[vFora.id]).toBeUndefined(); // controle negativo: validador SEM ref na lista não é grave
+    expect(por[scr.id]).toMatchObject({ gatilho: 'dado' });
+    expect(por[not.id]).toMatchObject({ gatilho: 'acao_fabricada' });
+    expect(p.graves).toHaveLength(3);
+
+    // sem a lista, o validador deixa de ser grave (o gatilho (a) depende do registro)
+    const sem = await placarCap.execute(janela, 'maria');
+    expect(sem.graves.map((g) => g.veredicto_id)).not.toContain(vNunca.id);
+
+    await admin.query(`DELETE FROM agentes.veredicto_achados WHERE veredicto_id IN (SELECT id FROM agentes.veredictos WHERE operador = $1)`, [op]);
+    await admin.query(`DELETE FROM agentes.veredictos WHERE operador = $1`, [op]);
+  });
+
   it('placar.ler graves: scrubber=dado, notário=acao_fabricada, regra NUNCA=nunca; "alta" do juiz sem NUNCA NÃO entra (3 graves de 4)', async () => {
     const op = `${operador}-gr`;
     const base = { operador: op, inbox, nota: undefined, juiz_versao: undefined, cruza_areas: false, avaliado_em: '2026-10-20T12:00:00Z' };

@@ -3,6 +3,7 @@ import {
   buildAdmissionTactiqLinkPayload,
   buildPtContactsPendingPayload,
   buildItineraryUncoveredShiftsPayload,
+  buildPedidoIaAplicarPayload,
   SYSTEM_ITINERARY_ACTOR_UID,
   SYSTEM_ADMISSION_ACTOR_UID,
   SYSTEM_NOTIFICATION_ACTOR_UID,
@@ -142,5 +143,34 @@ describe('SystemNotificationPublisher.publishPedidoIa (spec 078, M3b-2)', () => 
     const r = repo();
     expect(await new SystemNotificationPublisher(r as never).publishPedidoIa({} as never, { typeCode: 'PEDIDO_IA_NOVO', recipientUids: [] })).toBeNull();
     expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('SystemNotificationPublisher.publishPedidoIaAplicar (spec 078, M4.4.2)', () => {
+  const PID = '11111111-1111-4111-8111-111111111111';
+
+  it('UM evento com payload só-ids e UMA notificação por decisor (deduplicado); grave -> prazo hoje', async () => {
+    const r = repo();
+    const id = await new SystemNotificationPublisher(r as never).publishPedidoIaAplicar({} as never, { pedidoId: PID, degrau: 3, grave: true, recipientUids: ['u1', 'u2', 'u1'] });
+    expect(id).toBe('ev-1');
+    expect(r.insertEvent).toHaveBeenCalledTimes(1);
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'PEDIDO_IA_APLICAR', actorUid: SYSTEM_SOL_FILA_ACTOR_UID, patientId: null, conversationId: null, messageId: null,
+        payload: { pedido_id: PID, degrau: 3, grave: true, prazo: 'hoje' } },
+      expect.anything(),
+    );
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['u1', 'u2'], expect.anything());
+  });
+
+  it('não grave -> prazo semana; sem decisor NUNCA cria evento', async () => {
+    expect(buildPedidoIaAplicarPayload({ pedidoId: PID, degrau: 4, grave: false })).toEqual({ pedido_id: PID, degrau: 4, grave: false, prazo: 'semana' });
+    const r = repo();
+    expect(await new SystemNotificationPublisher(r as never).publishPedidoIaAplicar({} as never, { pedidoId: PID, degrau: 3, grave: false, recipientUids: [] })).toBeNull();
+    expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+
+  it('payload fora do contrato lança (degrau 1, id que não é uuid)', () => {
+    expect(() => buildPedidoIaAplicarPayload({ pedidoId: PID, degrau: 1, grave: false })).toThrow();
+    expect(() => buildPedidoIaAplicarPayload({ pedidoId: 'assunto do pedido', degrau: 3, grave: false })).toThrow();
   });
 });

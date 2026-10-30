@@ -33,7 +33,7 @@ export const DATA_DIA = z
   .refine((d) => new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d, { message: 'data inexistente' });
 
 export const CASOS_REPORTE = ['leve', 'meta', 'reforco'] as const;
-export const SENSORES = ['silente', 'handover_orfao', 'juiz', 'scrubber', 'notario'] as const;
+export const SENSORES = ['silente', 'handover_orfao', 'juiz', 'scrubber', 'notario', 'validador'] as const;
 export const GRAVIDADES = ['baixa', 'media', 'alta'] as const;
 export const GRAVE_GATILHOS = ['nenhum', 'nunca', 'dado', 'acao_fabricada'] as const;
 

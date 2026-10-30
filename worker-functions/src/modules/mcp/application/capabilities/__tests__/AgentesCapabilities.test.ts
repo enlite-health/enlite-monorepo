@@ -106,6 +106,17 @@ describe('agentes.veredicto.registrar — formato', () => {
     expect(repo.registrarVeredicto).not.toHaveBeenCalled();
   });
 
+  it('sensor `validador` (M4.4.1) é aceito, sem nota e sem versão de juiz; com nota é recusado', async () => {
+    const repo = makeRepo();
+    const cap = new AgentesVeredictoRegistrarCapability(asRepo(repo));
+    const v = veredicto({ sensor: 'validador', nota: undefined, juiz_versao: undefined });
+    await expect(cap.execute(v, 'sol-supervisor')).resolves.toEqual({ id: UUID_A });
+    expect(repo.registrarVeredicto).toHaveBeenCalledWith('sol-supervisor', expect.objectContaining({ sensor: 'validador' }));
+    repo.registrarVeredicto.mockClear();
+    await expect(cap.execute(veredicto({ sensor: 'validador' }), 'sol-supervisor')).rejects.toThrow(); // nota/versão são só do juiz
+    expect(repo.registrarVeredicto).not.toHaveBeenCalled();
+  });
+
   it('sem principal: recusa (fail-closed)', async () => {
     const cap = new AgentesVeredictoRegistrarCapability(asRepo(makeRepo()));
     await expect(cap.execute(veredicto())).rejects.toThrow(/principal ausente/);

@@ -7,7 +7,7 @@ import {
   type PedidoIa,
 } from '../../domain/PedidoIa';
 import type { PedidoIaRepositoryPort } from '../../domain/PedidoIaRepositoryPort';
-import { DecidirPedidoIaUseCase, ListarPedidosIaUseCase, ObterPedidoIaUseCase } from '../PedidosIaUseCases';
+import { DecidirPedidoIaUseCase, type AvisoAplicarPort, ListarPedidosIaUseCase, ObterPedidoIaUseCase } from '../PedidosIaUseCases';
 
 const PEDIDO: PedidoIa = {
   id: 'p1', assunto: 'a', descricao: 'd', autor: 'sol', area: 'recrutamento', grave_gatilho: 'nenhum', status: 'novo',
@@ -66,5 +66,58 @@ describe('pedidos IA — use cases (spec 078, M3b-1)', () => {
     await new ListarPedidosIaUseCase(repo).execute({ area: 'recrutamento', status: 'novo', grave: false });
     expect(repo.listar).toHaveBeenCalledWith({ area: 'recrutamento', status: 'novo', grave: false });
     expect(repo.decidir).not.toHaveBeenCalled();
+  });
+});
+
+describe('gatilho (d): aceitar em degrau 3/4 avisa os decisores (spec 078, M4.4.2)', () => {
+  const comDegrau = (degrau: number, grave = 'nenhum') =>
+    fakeRepo({
+      obter: jest.fn(async () => ({
+        ...PEDIDO, grave_gatilho: grave,
+        atitude_atual: { versao: 1, degrau, conteudo: 'c', caso_teste: 't', metrica_alvo: 'm', janela: '7d', gatilho_rollback: 'r' },
+      })),
+    });
+  const aviso = (): AvisoAplicarPort & { notificar: jest.Mock } => ({ notificar: jest.fn(async () => undefined) });
+
+  it.each([[3], [4]])('degrau %i: UMA notificação, grave=false', async (degrau) => {
+    const a = aviso();
+    await new DecidirPedidoIaUseCase(comDegrau(degrau), a).execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' });
+    expect(a.notificar).toHaveBeenCalledTimes(1);
+    expect(a.notificar).toHaveBeenCalledWith({ pedidoId: 'p1', degrau, grave: false });
+  });
+
+  it.each([[0], [1], [2]])('degrau %i: ZERO notificações (controle negativo)', async (degrau) => {
+    const a = aviso();
+    await new DecidirPedidoIaUseCase(comDegrau(degrau), a).execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' });
+    expect(a.notificar).not.toHaveBeenCalled();
+  });
+
+  it('pedido grave: grave=true (o prazo "hoje" é derivado no publisher)', async () => {
+    const a = aviso();
+    await new DecidirPedidoIaUseCase(comDegrau(3, 'nunca'), a).execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' });
+    expect(a.notificar).toHaveBeenCalledWith({ pedidoId: 'p1', degrau: 3, grave: true });
+  });
+
+  it('negar e descrever em degrau 3: ZERO notificações', async () => {
+    const a = aviso();
+    const uc = new DecidirPedidoIaUseCase(comDegrau(3), a);
+    await uc.execute({ pedidoId: 'p1', acao: 'negar', actorUid: 'u1', motivo: 'm' });
+    await uc.execute({ pedidoId: 'p1', acao: 'descrever', actorUid: 'u1', comentario: 'c' });
+    expect(a.notificar).not.toHaveBeenCalled();
+  });
+
+  it('o aviso que falha NÃO desfaz o aceite: devolve o resultado e reporta o erro', async () => {
+    const a = { notificar: jest.fn(async () => { throw new Error('boom'); }) };
+    const onErro = jest.fn();
+    const out = await new DecidirPedidoIaUseCase(comDegrau(3), a, onErro).execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' });
+    expect(out).toEqual({ evento_id: 'e1', status: 'aceito' });
+    expect(onErro).toHaveBeenCalledWith(expect.any(Error), 'DecidirPedidoIaUseCase:avisarAplicar');
+  });
+
+  it('decisão já registrada (409) não avisa', async () => {
+    const a = aviso();
+    const repo = { ...comDegrau(3), decidir: jest.fn(async () => { throw new DecisaoJaRegistradaError(); }) };
+    await expect(new DecidirPedidoIaUseCase(repo, a).execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' })).rejects.toBeInstanceOf(DecisaoJaRegistradaError);
+    expect(a.notificar).not.toHaveBeenCalled();
   });
 });

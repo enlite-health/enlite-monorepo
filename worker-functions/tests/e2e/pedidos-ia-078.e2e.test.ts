@@ -52,7 +52,7 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
   }
 
   /** Pedido sintético com N atitudes (versões 1..N). Devolve o id do pedido e os ids das atitudes por versão. */
-  async function novoPedido(opts: { versoes?: number; grave?: string; area?: string; descricao?: string } = {}) {
+  async function novoPedido(opts: { versoes?: number; grave?: string; area?: string; descricao?: string; degrau?: number } = {}) {
     const p = await admin.query(
       `INSERT INTO agentes.pedidos (assunto, descricao, autor, area, grave_gatilho, registro_versao)
        VALUES ('assunto sintetico', $3, 'sol', $1, $2, 'r1') RETURNING id`,
@@ -63,8 +63,8 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
     for (let v = 1; v <= (opts.versoes ?? 1); v++) {
       const a = await admin.query(
         `INSERT INTO agentes.pedido_atitudes (pedido_id, versao, degrau, conteudo, caso_teste, metrica_alvo, janela, gatilho_rollback)
-         VALUES ($1,$2,1,$3,'caso','metrica','7d','rollback') RETURNING id`,
-        [pedidoId, v, `conteudo v${v}`],
+         VALUES ($1,$2,$4,$3,'caso','metrica','7d','rollback') RETURNING id`,
+        [pedidoId, v, `conteudo v${v}`, opts.degrau ?? 1],
       );
       atitudes.push(a.rows[0].id as string);
     }
@@ -78,6 +78,7 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
 
   async function limparPedidos(): Promise<void> {
     const ids = `(SELECT id FROM agentes.pedidos WHERE area = $1)`;
+    await admin.query(`DELETE FROM notification_events WHERE type_code = 'PEDIDO_IA_APLICAR' AND payload->>'pedido_id' IN (SELECT id::text FROM agentes.pedidos WHERE area = $1)`, [AREA]);
     await admin.query(`DELETE FROM agentes.pedido_eventos WHERE pedido_id IN ${ids}`, [AREA]);
     await admin.query(`DELETE FROM agentes.pedido_atitudes WHERE pedido_id IN ${ids}`, [AREA]);
     await admin.query(`DELETE FROM agentes.pedido_origens WHERE pedido_id IN ${ids}`, [AREA]);
@@ -231,6 +232,35 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
     expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.decisor)).status).toBe(409);
     expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/negar`, U.decisor, { motivo: 'depois' })).status).toBe(409);
     expect(await eventos(pedidoId)).toHaveLength(1);
+  });
+
+  const avisosAplicar = async (pedidoId: string, uid: string) =>
+    (await admin.query(
+      `SELECT e.payload, e.actor_uid FROM notification_events e JOIN notifications n ON n.event_id = e.id
+        WHERE e.type_code = 'PEDIDO_IA_APLICAR' AND e.payload->>'pedido_id' = $1 AND n.recipient_uid = $2`, [pedidoId, uid])).rows;
+  const limparAvisosAplicar = () =>
+    admin.query(`DELETE FROM notification_events WHERE type_code = 'PEDIDO_IA_APLICAR' AND payload->>'pedido_id' IN (SELECT id::text FROM agentes.pedidos WHERE area = $1)`, [AREA]);
+
+  it('gatilho (d) M4.4.2: aceitar em degrau 3 -> 1 PEDIDO_IA_APLICAR por decisor (leitor 0), payload só-ids, prazo semana; degrau 1 -> 0; grave -> hoje', async () => {
+    const d3 = await novoPedido({ degrau: 3 });
+    expect((await http('POST', `/api/admin/pedidos-ia/${d3.pedidoId}/aceitar`, U.decisor)).status).toBe(200);
+    const a3 = await avisosAplicar(d3.pedidoId, U.decisor);
+    expect(a3).toHaveLength(1);
+    expect(a3[0]).toEqual({ payload: { pedido_id: d3.pedidoId, degrau: 3, grave: false, prazo: 'semana' }, actor_uid: 'system:sol-fila' });
+    expect(await avisosAplicar(d3.pedidoId, U.leitor)).toHaveLength(0); // quem não decide não recebe
+
+    const d1 = await novoPedido({ degrau: 1 });
+    expect((await http('POST', `/api/admin/pedidos-ia/${d1.pedidoId}/aceitar`, U.decisor)).status).toBe(200);
+    expect(await avisosAplicar(d1.pedidoId, U.decisor)).toHaveLength(0);
+
+    const g4 = await novoPedido({ degrau: 4, grave: 'dado' });
+    expect((await http('POST', `/api/admin/pedidos-ia/${g4.pedidoId}/aceitar`, U.decisor)).status).toBe(200);
+    expect((await avisosAplicar(g4.pedidoId, U.decisor))[0].payload).toEqual({ pedido_id: g4.pedidoId, degrau: 4, grave: true, prazo: 'hoje' });
+
+    const n3 = await novoPedido({ degrau: 3 });
+    expect((await http('POST', `/api/admin/pedidos-ia/${n3.pedidoId}/negar`, U.decisor, { motivo: 'não' })).status).toBe(200);
+    expect(await avisosAplicar(n3.pedidoId, U.decisor)).toHaveLength(0);
+    await limparAvisosAplicar();
   });
 
   it('negar: sem motivo -> 400 (nada gravado); com motivo -> 200, status negado, motivo no evento', async () => {
