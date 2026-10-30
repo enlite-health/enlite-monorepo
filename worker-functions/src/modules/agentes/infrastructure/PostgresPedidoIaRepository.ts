@@ -72,6 +72,10 @@ export class PostgresPedidoIaRepository implements PedidoIaRepositoryPort {
             [i.pedidoId],
           );
           if (!at.rows[0]) throw new PedidoNaoEncontradoError();
+          // Serializa as decisões da MESMA atitude: `descrever` checa "já decidido" e depois insere; sem lock,
+          // um `aceitar` concorrente entra entre a checagem e o INSERT. As tabelas são INSERT-only para o runtime
+          // (sem UPDATE), então `FOR UPDATE` não serve: o lock é advisory, escopo de transação (solta no COMMIT).
+          await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`pedido_atitude:${at.rows[0].id}`]);
           if (i.acao === 'descrever') {
             const dec = await c.query(
               `SELECT 1 FROM agentes.pedido_eventos WHERE atitude_id = $1 AND acao IN ('aceitar', 'negar') LIMIT 1`,
