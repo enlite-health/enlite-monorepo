@@ -46,7 +46,7 @@ const PATIENT_VACANCIES_SQL = `
  * to keep the controller and PatientQueryRepository within the 400-line limit.
  */
 export async function fetchPatientVacancies(
-  pool: Pool,
+  pool: Pick<Pool, 'query'>, // Pool ou PoolClient (vínculo 079 roda na transação)
   patientId: string,
 ): Promise<PatientVacancyRow[]> {
   const result = await pool.query<{
