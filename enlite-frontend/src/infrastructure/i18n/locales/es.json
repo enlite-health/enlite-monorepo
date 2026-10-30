@@ -4103,6 +4103,53 @@
             "endHint": "Terminar vínculo · elegís el último día vigente.",
             "newServiceTitle": "Ahora lo cubre otra obra social",
             "newServiceHint": "Crear un servicio nuevo · otra obra social es otra admisión."
+          },
+          "linkExistingVacancy": {
+            "button": "Vincular vacante existente",
+            "aria": "Vincular vacante existente a {{service}}",
+            "modalTitle": "Vincular vacante existente al servicio",
+            "selectLabel": "Vacante del paciente",
+            "selectPlaceholder": "Elegí una vacante",
+            "noCandidates": "Este paciente no tiene vacantes sin servicio para vincular.",
+            "loading": "Cargando…",
+            "previewTitle": "Qué cambia al vincular",
+            "colField": "Campo",
+            "colVacancyNow": "Vacante hoy",
+            "colWillBe": "Pasa a valer",
+            "colOrigin": "Origen",
+            "originService": "Servicio",
+            "originNone": "Sin valor",
+            "noChanges": "Ningún campo cambia.",
+            "blockedTitle": "Todavía no se puede vincular",
+            "confirm": "Vincular",
+            "cancel": "Cancelar",
+            "success": "Vacante vinculada al servicio.",
+            "warning": {
+              "PROVIDERS_NEEDED_NOT_INTEGER": "La cantidad de prestadores de la vacante no es un número entero: el servicio no recibe ese valor.",
+              "AGE_RANGE_NO_EXACT_BAND": "La franja etaria de la vacante no coincide con ninguna franja del servicio: elegí la franja en el servicio.",
+              "VALUE_OUTSIDE_SERVICE_DOMAIN": "El valor de la vacante no es aceptado por el servicio: completá ese campo en el servicio."
+            },
+            "blocker": {
+              "ADDRESS_MISMATCH": "La dirección de la vacante es distinta de la del servicio."
+            },
+            "error": {
+              "VACANCY_NOT_LINKABLE": "Esa vacante ya no se puede vincular.",
+              "SERVICE_ALREADY_RECRUITING": "El servicio ya tiene una vacante.",
+              "LINK_BLOCKED": "El vínculo fue bloqueado. Revisá lo que falta.",
+              "ADDRESS_NOT_OF_PATIENT": "La dirección de la vacante no pertenece a este paciente.",
+              "generic": "No se pudo vincular la vacante."
+            },
+            "field": {
+              "required_professions": "Profesiones",
+              "required_experience": "Experiencia requerida",
+              "work_schedule": "Jornada",
+              "payment_day": "Día de pago",
+              "required_sex": "Sexo del prestador",
+              "providers_needed": "Cantidad de prestadores",
+              "age_range": "Franja etaria del prestador",
+              "schedule": "Horarios",
+              "address": "Dirección"
+            }
           }
         },
         "serviceTeam": {

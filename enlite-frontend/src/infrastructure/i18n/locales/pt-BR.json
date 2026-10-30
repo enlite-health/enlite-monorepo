@@ -4024,6 +4024,53 @@
             "endHint": "Encerrar vínculo · você escolhe o último dia vigente.",
             "newServiceTitle": "Agora outra obra social cobre",
             "newServiceHint": "Criar um serviço novo · outra obra social é outra admissão."
+          },
+          "linkExistingVacancy": {
+            "button": "Vincular vaga existente",
+            "aria": "Vincular vaga existente a {{service}}",
+            "modalTitle": "Vincular vaga existente ao serviço",
+            "selectLabel": "Vaga do paciente",
+            "selectPlaceholder": "Escolha uma vaga",
+            "noCandidates": "Este paciente não tem vaga sem serviço para vincular.",
+            "loading": "Carregando…",
+            "previewTitle": "O que muda ao vincular",
+            "colField": "Campo",
+            "colVacancyNow": "Vaga hoje",
+            "colWillBe": "Passa a valer",
+            "colOrigin": "Origem",
+            "originService": "Serviço",
+            "originNone": "Sem valor",
+            "noChanges": "Nenhum campo muda.",
+            "blockedTitle": "Não dá para vincular ainda",
+            "confirm": "Vincular",
+            "cancel": "Cancelar",
+            "success": "Vaga vinculada ao serviço.",
+            "warning": {
+              "PROVIDERS_NEEDED_NOT_INTEGER": "A quantidade de prestadores da vaga não é um número inteiro: o serviço não recebe esse valor.",
+              "AGE_RANGE_NO_EXACT_BAND": "A faixa etária da vaga não corresponde a nenhuma faixa do serviço: escolha a faixa no serviço.",
+              "VALUE_OUTSIDE_SERVICE_DOMAIN": "O valor da vaga não é aceito pelo serviço: preencha esse campo no serviço."
+            },
+            "blocker": {
+              "ADDRESS_MISMATCH": "O endereço da vaga é diferente do endereço do serviço."
+            },
+            "error": {
+              "VACANCY_NOT_LINKABLE": "Essa vaga não pode mais ser vinculada.",
+              "SERVICE_ALREADY_RECRUITING": "O serviço já tem uma vaga.",
+              "LINK_BLOCKED": "O vínculo foi bloqueado. Revise o que falta.",
+              "ADDRESS_NOT_OF_PATIENT": "O endereço da vaga não pertence a este paciente.",
+              "generic": "Não foi possível vincular a vaga."
+            },
+            "field": {
+              "required_professions": "Profissões",
+              "required_experience": "Experiência exigida",
+              "work_schedule": "Jornada",
+              "payment_day": "Dia de pagamento",
+              "required_sex": "Sexo do prestador",
+              "providers_needed": "Quantidade de prestadores",
+              "age_range": "Faixa etária do prestador",
+              "schedule": "Horários",
+              "address": "Endereço"
+            }
           }
         },
         "serviceTeam": {

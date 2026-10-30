@@ -24,6 +24,8 @@ export class ContractedServiceApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly details?: Record<string, unknown>;
+  /** Spec 079: topo do corpo dos 409/422 do vínculo. */
+  readonly vacancyId?: string; readonly reason?: string; readonly blockers?: string[];
   /** Só no 409 `ITINERARY_OVERLAP` (Fase 12, DX-12.6): os 2 horários em conflito, vindos da API. */
   readonly overlap?: ItineraryOverlapDetail;
 
@@ -33,6 +35,9 @@ export class ContractedServiceApiError extends Error {
     this.status = status;
     this.code = body?.code;
     this.details = body?.details;
+    this.vacancyId = body?.vacancyId;
+    this.reason = body?.reason;
+    this.blockers = body?.blockers;
     if (body?.existing && body.requested) {
       this.overlap = {
         existing: body.existing,
@@ -53,6 +58,9 @@ interface ApiErrorResponse {
   error: string;
   code?: string;
   details?: Record<string, unknown>;
+  vacancyId?: string;
+  reason?: string;
+  blockers?: string[];
   /** Corpo do 409 `ITINERARY_OVERLAP` (`AdminItineraryWriteController`) — campos no topo do corpo. */
   existing?: ItineraryOverlapDetail['existing'];
   requested?: ItineraryOverlapDetail['requested'];

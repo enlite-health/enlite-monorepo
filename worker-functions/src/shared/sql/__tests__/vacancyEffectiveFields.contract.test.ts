@@ -67,6 +67,13 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
     ],
     motivo: 'ESCRITOR (F2/F6/057): UPDATE do enrichment (inclui required_sex/professions/experience e payment_day), sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
   },
+  'src/modules/case/infrastructure/LinkExistingVacancyRepository.ts': {
+    rules: [
+      'schedule:alias', 'providers_needed:alias', 'age_range_min:alias', 'age_range_max:alias',
+      'required_sex:alias', 'required_professions:alias', 'required_experience:alias', 'work_schedule:alias', 'payment_day:alias',
+    ],
+    motivo: 'spec 079: lê a vaga legada sem serviço — cru = efetivo — para alimentar o serviço e zerar; o use case rejeita contracted_service_id não nulo (ALREADY_LINKED) antes de usar os valores, e o UPDATE filtra contracted_service_id IS NULL.',
+  },
 };
 
 const KEYWORDS = new Set([

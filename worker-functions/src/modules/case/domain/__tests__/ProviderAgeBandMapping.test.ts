@@ -6,6 +6,7 @@ import {
   PROVIDER_AGE_BAND_TO_VACANCY_RANGE,
   CLICKUP_AGE_LABEL_TO_PROVIDER_AGE_BAND,
   applyEffectiveAgeRange,
+  providerAgeBandForVacancyRange,
 } from '../ProviderAgeBandMapping';
 import { PROVIDER_AGE_BANDS } from '../enums/ContractedService';
 
@@ -87,5 +88,20 @@ describe('applyEffectiveAgeRange — o ÚNICO ponto que deriva a faixa da vaga (
 
   it('linha sem a coluna auxiliar (leitor que não a selecionou) passa como veio', () => {
     expect(applyEffectiveAgeRange({ age_range_min: 20, age_range_max: 29 })).toEqual({ age_range_min: 20, age_range_max: 29 });
+  });
+});
+
+describe('providerAgeBandForVacancyRange (inversa)', () => {
+  it.each([
+    [20, 29, 'AGE_20_30'],
+    [30, 44, 'AGE_30_45'],
+    [45, null, 'AGE_45_PLUS'],
+    [null, null, null],
+    [undefined, undefined, null],
+    [20, 30, null],
+    [18, null, null],
+    [null, 29, null],
+  ])('(%s,%s) → %s', (min, max, esperado) => {
+    expect(providerAgeBandForVacancyRange(min as number | null | undefined, max as number | null | undefined)).toBe(esperado);
   });
 });
