@@ -17,6 +17,8 @@ export interface PatientVacancyRow {
   title: string | null;
   status: string | null;
   isDraft: boolean;
+  /** Serviço contratado ao qual a vaga está vinculada (null = sem vínculo). */
+  contractedServiceId: string | null;
   createdAt: Date;
 }
 
@@ -29,6 +31,7 @@ const PATIENT_VACANCIES_SQL = `
     jp.title,
     jp.status,
     jp.is_draft      AS "isDraft",
+    jp.contracted_service_id AS "contractedServiceId",
     jp.created_at    AS "createdAt"
   FROM job_postings jp
   LEFT JOIN patients p ON p.id = jp.patient_id
@@ -54,6 +57,7 @@ export async function fetchPatientVacancies(
     title: string | null;
     status: string | null;
     isDraft: boolean;
+    contractedServiceId: string | null;
     createdAt: Date;
   }>(PATIENT_VACANCIES_SQL, [patientId]);
 
@@ -65,6 +69,7 @@ export async function fetchPatientVacancies(
     title: row.title,
     status: row.status,
     isDraft: row.isDraft === true,
+    contractedServiceId: row.contractedServiceId ?? null,
     createdAt: row.createdAt,
   }));
 }
