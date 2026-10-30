@@ -1,3 +1,4 @@
+import { addCivilDays } from '@shared/locale/civilClock';
 /**
  * dateRangeWire — DONO ÚNICO da conversão `daterange '[)'` (banco) <-> `{ validFrom, validTo | null }` (fio) — spec 058 §3.2 §V, plan §1.2 (B2).
  *
@@ -22,8 +23,7 @@ function assertIso(value: string): void {
 /** `iso` deslocado em `days` dias (UTC puro, sem fuso). */
 function shiftDay(iso: string, days: number): string {
   assertIso(iso);
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  return addCivilDays(iso, days);
 }
 
 /** O dia seguinte a `iso` (ex.: o dia do `NO_TERM` é o dia seguinte ao `validTo` do último termo). */
