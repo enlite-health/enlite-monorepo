@@ -29,6 +29,9 @@ export interface PedidoEvento {
 export interface PedidoIa {
   id: string;
   assunto: string;
+  /** Inteira no detalhe; na lista vem truncada em 200 chars com `descricao_truncada: true`. */
+  descricao: string;
+  descricao_truncada?: boolean;
   autor: string;
   area: string;
   grave_gatilho: string;

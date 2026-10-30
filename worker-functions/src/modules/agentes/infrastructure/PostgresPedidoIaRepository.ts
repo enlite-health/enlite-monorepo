@@ -16,7 +16,7 @@ import type { PedidoIaRepositoryPort } from '../domain/PedidoIaRepositoryPort';
  * Tudo em `withActorContext` (a RLS exige `app.user_uid`; `connect()` cru dá 500/zero linhas).
  */
 const SELECT_PEDIDOS = `
-  SELECT p.id, p.assunto, p.autor, p.area, p.grave_gatilho, s.status,
+  SELECT p.id, p.assunto, p.descricao, p.autor, p.area, p.grave_gatilho, s.status,
          p.criado_em, floor(extract(epoch FROM (now() - p.criado_em)) / 3600)::int AS idade_h,
          (SELECT to_jsonb(a) FROM (
             SELECT versao, degrau, conteudo, caso_teste, metrica_alvo, janela, gatilho_rollback
@@ -30,7 +30,16 @@ const SELECT_PEDIDOS = `
 
 interface Row extends Omit<PedidoIa, 'criado_em'> { criado_em: Date }
 
+const LIMITE_DESCRICAO_LISTA = 200;
 const toPedido = (r: Row): PedidoIa => ({ ...r, criado_em: new Date(r.criado_em).toISOString() });
+/** Lista: descrição truncada em 200 caracteres (code points) com a marca `descricao_truncada`. */
+const paraLista = (r: Row): PedidoIa => {
+  const p = toPedido(r);
+  const pontos = Array.from(p.descricao);
+  return pontos.length > LIMITE_DESCRICAO_LISTA
+    ? { ...p, descricao: pontos.slice(0, LIMITE_DESCRICAO_LISTA).join(''), descricao_truncada: true }
+    : { ...p, descricao_truncada: false };
+};
 
 export class PostgresPedidoIaRepository implements PedidoIaRepositoryPort {
   constructor(private readonly pool: Pool) {}
@@ -42,7 +51,7 @@ export class PostgresPedidoIaRepository implements PedidoIaRepositoryPort {
     if (f.status !== undefined) { params.push(f.status); where.push(`s.status = $${params.length}`); }
     if (f.grave !== undefined) where.push(f.grave ? `p.grave_gatilho <> 'nenhum'` : `p.grave_gatilho = 'nenhum'`);
     const sql = `${SELECT_PEDIDOS}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY p.criado_em DESC, p.id`;
-    return withActorContext(this.pool, async (c) => (await c.query<Row>(sql, params)).rows.map(toPedido));
+    return withActorContext(this.pool, async (c) => (await c.query<Row>(sql, params)).rows.map(paraLista));
   }
 
   async obter(id: string): Promise<PedidoIa | null> {

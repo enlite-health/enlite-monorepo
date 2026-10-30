@@ -10,7 +10,7 @@ import type { PedidoIaRepositoryPort } from '../../domain/PedidoIaRepositoryPort
 import { DecidirPedidoIaUseCase, ListarPedidosIaUseCase, ObterPedidoIaUseCase } from '../PedidosIaUseCases';
 
 const PEDIDO: PedidoIa = {
-  id: 'p1', assunto: 'a', autor: 'sol', area: 'recrutamento', grave_gatilho: 'nenhum', status: 'novo',
+  id: 'p1', assunto: 'a', descricao: 'd', autor: 'sol', area: 'recrutamento', grave_gatilho: 'nenhum', status: 'novo',
   criado_em: '2026-10-30T00:00:00.000Z', idade_h: 1, atitude_atual: null, eventos: [],
 };
 

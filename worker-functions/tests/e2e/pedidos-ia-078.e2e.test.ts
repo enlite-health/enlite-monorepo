@@ -52,11 +52,11 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
   }
 
   /** Pedido sintético com N atitudes (versões 1..N). Devolve o id do pedido e os ids das atitudes por versão. */
-  async function novoPedido(opts: { versoes?: number; grave?: string; area?: string } = {}) {
+  async function novoPedido(opts: { versoes?: number; grave?: string; area?: string; descricao?: string } = {}) {
     const p = await admin.query(
       `INSERT INTO agentes.pedidos (assunto, descricao, autor, area, grave_gatilho, registro_versao)
-       VALUES ('assunto sintetico', 'descricao sintetica', 'sol', $1, $2, 'r1') RETURNING id`,
-      [opts.area ?? AREA, opts.grave ?? 'nenhum'],
+       VALUES ('assunto sintetico', $3, 'sol', $1, $2, 'r1') RETURNING id`,
+      [opts.area ?? AREA, opts.grave ?? 'nenhum', opts.descricao ?? 'descricao sintetica'],
     );
     const pedidoId = p.rows[0].id as string;
     const atitudes: string[] = [];
@@ -156,6 +156,22 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
     expect(um.body.data.id).toBe(pedidoId);
 
     expect(await nEventos()).toBe(antes); // item 51 (controle): GET sem decidir = 0 linhas de evento
+  });
+
+  it('descricao: o detalhe traz inteira; a lista corta em 200 chars com descricao_truncada=true (curta: false)', async () => {
+    const longa = 'x'.repeat(150) + 'y'.repeat(150);
+    const longo = await novoPedido({ descricao: longa, area: `${AREA}-d` });
+    const curto = await novoPedido({ area: `${AREA}-d` });
+    const um = await http('GET', `/api/admin/pedidos-ia/${longo.pedidoId}`, U.leitor);
+    expect(um.body.data.descricao).toBe(longa);
+    const lista = await http('GET', `/api/admin/pedidos-ia?area=${AREA}-d`, U.leitor);
+    const l = lista.body.data.find((p: any) => p.id === longo.pedidoId);
+    const c = lista.body.data.find((p: any) => p.id === curto.pedidoId);
+    expect(l).toMatchObject({ descricao: longa.slice(0, 200), descricao_truncada: true });
+    expect(c).toMatchObject({ descricao: 'descricao sintetica', descricao_truncada: false });
+    expect((await http('GET', `/api/admin/pedidos-ia/${curto.pedidoId}`, U.leitor)).body.data.descricao).toBe('descricao sintetica');
+    await admin.query(`DELETE FROM agentes.pedido_atitudes WHERE pedido_id IN (SELECT id FROM agentes.pedidos WHERE area = $1)`, [`${AREA}-d`]);
+    await admin.query(`DELETE FROM agentes.pedidos WHERE area = $1`, [`${AREA}-d`]);
   });
 
   it('filtros: status, grave e área; filtro inválido -> 400; id malformado ou inexistente -> 404', async () => {

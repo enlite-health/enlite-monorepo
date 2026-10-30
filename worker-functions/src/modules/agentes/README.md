@@ -7,9 +7,10 @@ Células: `pedidos_ia:read` (GET) e `pedidos_ia:decidir` (POST). Sem credencial 
 - `GET /pedidos-ia?area=&status=&grave=` -> 200 `data: Pedido[]` (mais novo primeiro).
   `status` in novo|aceito|negado|redirecionado; `grave` true|false (true = `grave_gatilho` != nenhum); outro valor 400 `INVALID_QUERY`.
 - `GET /pedidos-ia/:id` -> 200 `data: Pedido`; id inexistente ou não-uuid 404 `NOT_FOUND`.
-- `Pedido = {id, assunto, autor, area, grave_gatilho, status, criado_em, idade_h,
+- `Pedido = {id, assunto, descricao, autor, area, grave_gatilho, status, criado_em, idade_h,
   atitude_atual:{versao,degrau,conteudo,caso_teste,metrica_alvo,janela,gatilho_rollback},
   eventos:[{acao,actor_uid,actor_kind,ts,motivo?,comentario?}]}`. `status` vem da view `pedido_status` (último evento).
+- `descricao`: inteira no `GET :id`; na lista vem cortada em 200 caracteres, com `descricao_truncada: true` (false se coube).
 - Ler não grava nada. O filtro por área é só parâmetro; restringir pelo nível de acesso do gestor é da M6.
 
 ## Decisão (`pedidos_ia:decidir`) — cada POST grava 1 linha em `pedido_eventos`
