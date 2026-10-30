@@ -285,6 +285,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'interviewHosts', route: '/admin/entrevistadores', cells: ['interview_host:read', 'interview_host:update'] },
   // Spec 076: lista global de enquadres. O endpoint exige AS DUAS células (cruza evento e vaga) — por isso `openWith: 'all'`.
   { id: 'enquadres', route: '/admin/enquadres', cells: ['enquadre_event:read', 'vacancy:read'], openWith: 'all' },
+  // Spec 078 (M3b-1): pedidos do Sol. `read` abre a tela; `decidir` mostra Aceitar / Negar / Descrever o que fazer.
+  { id: 'pedidosIa', route: '/admin/pedidos-ia', cells: ['pedidos_ia:read', 'pedidos_ia:decidir'] },
   { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
 ];
 

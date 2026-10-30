@@ -1390,7 +1390,8 @@
       "catalogServiceShiftTemplates": "Guardias",
       "aiPrompts": "Prompts de IA",
       "interviewHosts": "Entrevistadores",
-      "insuranceProviders": "Obras sociais"
+      "insuranceProviders": "Obras sociais",
+      "pedidosIa": "Pedidos da IA"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -5690,6 +5691,9 @@
         },
         "enquadres": {
           "label": "Enquadres"
+        },
+        "pedidosIa": {
+          "label": "Pedidos da IA"
         }
       }
     },
@@ -6832,6 +6836,94 @@
         "COUNTRY_SCOPE_REQUIRED": "Você não tem acesso aos países desta lista.",
         "INVALID_COUNTRY": "O país escolhido não é válido.",
         "generic": "Não conseguimos carregar os enquadres. Tente de novo."
+      }
+    },
+    "pedidosIa": {
+      "title": "Pedidos da IA",
+      "subtitle": "Pedidos do Sol como publicações: aceite, negue ou descreva o que fazer.",
+      "loading": "Carregando…",
+      "authzError": "Não foi possível carregar suas permissões. Tente recarregar a página.",
+      "readOnlyNotice": "Somente leitura: você não tem permissão para decidir sobre os pedidos.",
+      "empty": "Não há pedidos com esses filtros.",
+      "filters": {
+        "area": "Área",
+        "status": "Status",
+        "ordem": "Ordenar por idade",
+        "todas": "Todas as áreas",
+        "todos": "Todos os status",
+        "maisNovos": "Mais novos primeiro",
+        "maisAntigos": "Mais antigos primeiro"
+      },
+      "status": {
+        "novo": "Novo",
+        "aceito": "Aceito",
+        "negado": "Negado",
+        "redirecionado": "Redirecionado"
+      },
+      "badge": {
+        "novo": "NOVO",
+        "grave": "GRAVE"
+      },
+      "meta": {
+        "autor": "Autor",
+        "area": "Área"
+      },
+      "age": {
+        "hours": "há {{count}} h",
+        "days": "há {{count}} d"
+      },
+      "detail": {
+        "show": "Ver detalhe",
+        "hide": "Ocultar detalhe",
+        "descricao": "Descrição",
+        "atitude": "Atitude proposta",
+        "versao": "Versão",
+        "degrau": "Degrau",
+        "conteudo": "Conteúdo",
+        "casoTeste": "Caso de teste",
+        "medicao": "Medição",
+        "janela": "janela",
+        "rollback": "Gatilho de rollback",
+        "semAtitude": "Sem atitude proposta.",
+        "historico": "Histórico de eventos",
+        "semEventos": "Ainda sem eventos."
+      },
+      "acao": {
+        "aceitar": "Aceitou",
+        "negar": "Negou",
+        "descrever": "Descreveu o que fazer"
+      },
+      "actor": {
+        "humano": "pessoa",
+        "agente": "agente",
+        "sistema": "sistema"
+      },
+      "actions": {
+        "aceitar": "Aceitar",
+        "negar": "Negar",
+        "descrever": "Descrever o que fazer"
+      },
+      "modal": {
+        "cancel": "Cancelar",
+        "negar": {
+          "title": "Negar o pedido",
+          "label": "Motivo (obrigatório)",
+          "required": "Escreva o motivo para poder negar.",
+          "confirm": "Negar pedido"
+        },
+        "descrever": {
+          "title": "Descrever o que fazer",
+          "label": "Comentário (obrigatório)",
+          "required": "Escreva o comentário para poder enviar.",
+          "confirm": "Enviar comentário"
+        }
+      },
+      "errors": {
+        "forbidden": "Você não tem permissão para decidir sobre este pedido.",
+        "notFound": "O pedido não existe mais.",
+        "alreadyDecided": "Este pedido já tem uma decisão registrada.",
+        "required": "Falta o texto obrigatório.",
+        "generic": "Não foi possível concluir a operação. Tente novamente."
       }
     }
   },

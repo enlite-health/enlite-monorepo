@@ -6,7 +6,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
 import { ADMIN_USERS_PATH } from './adminHome';
-import { CalendarDays, MapPin } from 'lucide-react';
+import { CalendarDays, Inbox, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -179,6 +179,12 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.interviewHosts', 'Entrevistadores'),
       href: '/admin/entrevistadores',
+    },
+    {
+      // Spec 078 (M3b-1): pedidos do Sol. O item some sem `pedidos_ia:read` (registro de telas → `screenVisibleFor`).
+      icon: <Inbox className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.pedidosIa', 'Pedidos de la IA'),
+      href: '/admin/pedidos-ia',
     },
     {
       icon: (

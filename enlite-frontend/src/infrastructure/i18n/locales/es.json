@@ -1390,7 +1390,8 @@
       "catalogServiceShiftTemplates": "Guardias",
       "aiPrompts": "Prompts de IA",
       "interviewHosts": "Entrevistadores",
-      "insuranceProviders": "Obras sociales"
+      "insuranceProviders": "Obras sociales",
+      "pedidosIa": "Pedidos de la IA"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -5769,6 +5770,9 @@
         },
         "enquadres": {
           "label": "Encuadres"
+        },
+        "pedidosIa": {
+          "label": "Pedidos de la IA"
         }
       }
     },
@@ -6911,6 +6915,94 @@
         "COUNTRY_SCOPE_REQUIRED": "No tenés acceso a los países de esta lista.",
         "INVALID_COUNTRY": "El país elegido no es válido.",
         "generic": "No pudimos cargar los encuadres. Probá de nuevo."
+      }
+    },
+    "pedidosIa": {
+      "title": "Pedidos de la IA",
+      "subtitle": "Pedidos del Sol como publicaciones: aceptá, negá o describí qué hacer.",
+      "loading": "Cargando…",
+      "authzError": "No se pudieron cargar tus permisos. Probá recargar la página.",
+      "readOnlyNotice": "Solo lectura: no tenés permiso para decidir sobre los pedidos.",
+      "empty": "No hay pedidos con estos filtros.",
+      "filters": {
+        "area": "Área",
+        "status": "Estado",
+        "ordem": "Ordenar por antigüedad",
+        "todas": "Todas las áreas",
+        "todos": "Todos los estados",
+        "maisNovos": "Más nuevos primero",
+        "maisAntigos": "Más antiguos primero"
+      },
+      "status": {
+        "novo": "Nuevo",
+        "aceito": "Aceptado",
+        "negado": "Negado",
+        "redirecionado": "Redirigido"
+      },
+      "badge": {
+        "novo": "NUEVO",
+        "grave": "GRAVE"
+      },
+      "meta": {
+        "autor": "Autor",
+        "area": "Área"
+      },
+      "age": {
+        "hours": "hace {{count}} h",
+        "days": "hace {{count}} d"
+      },
+      "detail": {
+        "show": "Ver detalle",
+        "hide": "Ocultar detalle",
+        "descricao": "Descripción",
+        "atitude": "Actitud propuesta",
+        "versao": "Versión",
+        "degrau": "Escalón",
+        "conteudo": "Contenido",
+        "casoTeste": "Caso de prueba",
+        "medicao": "Medición",
+        "janela": "ventana",
+        "rollback": "Disparador de reversión",
+        "semAtitude": "Sin actitud propuesta.",
+        "historico": "Historial de eventos",
+        "semEventos": "Sin eventos todavía."
+      },
+      "acao": {
+        "aceitar": "Aceptó",
+        "negar": "Negó",
+        "descrever": "Describió qué hacer"
+      },
+      "actor": {
+        "humano": "persona",
+        "agente": "agente",
+        "sistema": "sistema"
+      },
+      "actions": {
+        "aceitar": "Aceptar",
+        "negar": "Negar",
+        "descrever": "Describir qué hacer"
+      },
+      "modal": {
+        "cancel": "Cancelar",
+        "negar": {
+          "title": "Negar el pedido",
+          "label": "Motivo (obligatorio)",
+          "required": "Escribí el motivo para poder negar.",
+          "confirm": "Negar pedido"
+        },
+        "descrever": {
+          "title": "Describir qué hacer",
+          "label": "Comentario (obligatorio)",
+          "required": "Escribí el comentario para poder enviarlo.",
+          "confirm": "Enviar comentario"
+        }
+      },
+      "errors": {
+        "forbidden": "No tenés permiso para decidir sobre este pedido.",
+        "notFound": "El pedido ya no existe.",
+        "alreadyDecided": "Este pedido ya tiene una decisión registrada.",
+        "required": "Falta el texto obligatorio.",
+        "generic": "No se pudo completar la operación. Probá de nuevo."
       }
     }
   },
