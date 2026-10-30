@@ -5,6 +5,8 @@
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@presentation/components/atoms/Table';
+import { Text } from '@presentation/components/atoms/Text';
 import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox/Combobox';
 import { missingItemsLabel } from '@presentation/utils/patientStatusMessages';
 import { AdminLinkExistingVacancyApiService } from '@infrastructure/http/AdminLinkExistingVacancyApiService';
@@ -23,6 +25,13 @@ interface Props {
 }
 
 const DASH = '—';
+const VACANCY_FORM = 'admin.vacancyDetail.vacancyForm';
+/** Campo da prévia -> chave i18n do enum (a mesma do formulário da vaga / edição do serviço). */
+const ENUM_KEY: Record<string, string> = {
+  required_sex: 'sexOptions',
+  work_schedule: 'workScheduleOptions',
+  required_professions: 'professionOptions',
+};
 
 function formatValue(v: unknown): string {
   if (v == null) return DASH;
@@ -104,16 +113,23 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
 
   const blockerText = (code: string): string =>
     code === 'ADDRESS_MISMATCH' ? k('blocker.ADDRESS_MISMATCH') : missingItemsLabel(t, [code as PatientCompletenessCode]);
+  const enumLabel = (field: string, value: unknown): string =>
+    String(t(`${VACANCY_FORM}.${ENUM_KEY[field]}.${String(value)}`, { defaultValue: String(value) }));
+  const display = (field: string, v: unknown): string => {
+    if (!ENUM_KEY[field] || v == null) return formatValue(v);
+    if (Array.isArray(v)) return v.length ? v.map((x) => enumLabel(field, x)).join(', ') : DASH;
+    return enumLabel(field, v);
+  };
   const origin: Record<string, string> = { SERVICE: k('originService'), VACANCY: k('originVacancy'), NONE: k('originNone') };
   const blockers = preview?.blockers.length ? preview.blockers : error?.code === 'LINK_BLOCKED' ? error.blockers ?? [] : [];
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} data-testid="link-existing-vacancy-modal">
-      <div className="bg-white rounded-card shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4"
+      <div className="bg-white rounded-card shadow-xl w-full max-w-2xl max-h-[90vh] text-left overflow-y-auto p-6 flex flex-col gap-4"
         role="dialog" aria-modal="true" aria-label={k('modalTitle')}>
         <h2 className="text-lg font-semibold">{k('modalTitle')}</h2>
-        <p className="text-sm text-gray-600">{serviceLabel}</p>
+        <Text size="sm" color="tertiary">{serviceLabel}</Text>
 
         {candidates === null ? (
           <p>{k('loading')}</p>
@@ -130,21 +146,20 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
             {preview.rows.length === 0 ? (
               <p>{k('noChanges')}</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left">
-                    <th>{k('colField')}</th><th>{k('colVacancyNow')}</th><th>{k('colWillBe')}</th><th>{k('colOrigin')}</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableHead>{k('colField')}</TableHead><TableHead>{k('colVacancyNow')}</TableHead>
+                  <TableHead>{k('colWillBe')}</TableHead><TableHead>{k('colOrigin')}</TableHead>
+                </TableHeader>
+                <TableBody>
                   {preview.rows.map((r) => (
-                    <tr key={r.field}>
-                      <td>{k(`field.${r.field}`)}</td><td>{formatValue(r.vacancyValue)}</td>
-                      <td>{formatValue(r.effectiveValue)}</td><td>{origin[r.origin]}</td>
-                    </tr>
+                    <TableRow key={r.field}>
+                      <TableCell>{k(`field.${r.field}`)}</TableCell><TableCell>{display(r.field, r.vacancyValue)}</TableCell>
+                      <TableCell>{display(r.field, r.effectiveValue)}</TableCell><TableCell>{origin[r.origin]}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             )}
             {preview.warnings.length > 0 && (
               <ul data-testid="link-existing-vacancy-warnings" className="list-disc pl-5 text-sm text-amber-700">

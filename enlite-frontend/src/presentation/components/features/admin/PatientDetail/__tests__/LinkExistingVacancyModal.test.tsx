@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
 import { LinkExistingVacancyModal } from '../LinkExistingVacancyModal';
 import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import { AdminLinkExistingVacancyApiService } from '@infrastructure/http/AdminLinkExistingVacancyApiService';
@@ -125,5 +126,25 @@ describe('LinkExistingVacancyModal', () => {
     fireEvent.click(btn);
     expect((await screen.findByRole('alert')).textContent).toBe(K.error.LINK_BLOCKED);
     expect(screen.getByTestId('link-existing-vacancy-blockers').textContent).toContain(K.blocker.ADDRESS_MISMATCH);
+  });
+
+  it('prévia traduz enums (sem BOTH/part-time/AT crus) e o diálogo é alinhado à esquerda', async () => {
+    P.preview.mockResolvedValueOnce({ candidates: [CAND], preview: null }).mockResolvedValueOnce({
+      candidates: [CAND],
+      preview: prev({ rows: [
+        { field: 'required_sex', vacancyValue: 'BOTH', effectiveValue: 'BOTH', origin: 'SERVICE' },
+        { field: 'work_schedule', vacancyValue: 'part-time', effectiveValue: 'part-time', origin: 'SERVICE' },
+        { field: 'required_professions', vacancyValue: ['AT'], effectiveValue: ['AT'], origin: 'SERVICE' },
+      ] }),
+    });
+    await openAndChoose();
+    const box = await screen.findByTestId('link-existing-vacancy-preview');
+    expectNoRawEnumLeaks(box);
+    const vf = translations.admin.vacancyDetail.vacancyForm;
+    expect(box.textContent).toContain(vf.sexOptions.BOTH);
+    expect(box.textContent).toContain(vf.workScheduleOptions['part-time']);
+    expect(box.textContent).toContain(vf.professionOptions.AT);
+    expect(box.textContent).not.toMatch(/part-time|\bAT\b/);
+    expect(screen.getByRole('dialog').className).toContain('text-left');
   });
 });
