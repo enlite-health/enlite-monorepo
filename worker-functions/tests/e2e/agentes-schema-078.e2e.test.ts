@@ -36,6 +36,11 @@ const COLUNAS_ESPERADAS: Record<string, Record<string, string>> = {
     autor: 'text',
     operador: 'text',
     area: 'text',
+    caso: 'text',
+    regra_ref: 'text',
+    ocorrencias: 'smallint',
+    janela_de: 'date',
+    janela_ate: 'date',
     observacao: 'text',
     regra_proposta: 'text',
     criado_em: 'timestamp with time zone',
@@ -62,7 +67,7 @@ describe('schema agentes (spec 078, migration 551)', () => {
       `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'agentes' AND c.relkind IN ('r','v') ORDER BY c.relname`,
     );
-    expect(rows.map((r) => r.relname)).toEqual([...TABELAS, 'pedido_status'].sort());
+    expect(rows.map((r) => r.relname)).toEqual([...TABELAS, 'pedido_status', 'placar_diario'].sort());
   });
 
   it.each(Object.keys(COLUNAS_ESPERADAS))('11. %s: a lista de colunas é FECHADA (nome + tipo)', async (tabela) => {
@@ -103,6 +108,19 @@ describe('schema agentes (spec 078, migration 551)', () => {
     expect(rows.map((r) => r.def)).toEqual([
       expect.stringContaining('<= 500'),
       expect.stringContaining('<= 300'),
+    ]);
+  });
+
+  it('11. placar_diario (view): lista fechada de colunas, sem coluna de texto além de operador e regra_ref', async () => {
+    const { rows } = await pool.query(
+      `SELECT a.attname AS coluna, format_type(a.atttypid, a.atttypmod) AS tipo
+         FROM pg_attribute a
+        WHERE a.attrelid = 'agentes.placar_diario'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum`,
+    );
+    expect(rows.map((r) => `${r.coluna}:${r.tipo}`)).toEqual([
+      'operador:text', 'dia:date', 'regra_ref:text', 'violacoes:bigint',
+      'conversas_avaliadas:bigint', 'nota_media:numeric(5,2)', 'cruza_areas:bigint',
     ]);
   });
 });

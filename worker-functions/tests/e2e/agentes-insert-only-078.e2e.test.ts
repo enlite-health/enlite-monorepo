@@ -93,7 +93,7 @@ describe('schema agentes — INSERT-only, CHECKs e unicidades (spec 078, migrati
   it('controle positivo: INSERT válido em cada uma das 9 tabelas -> 1 linha', async () => {
     const v = await veredicto();
     await um(`INSERT INTO agentes.veredicto_achados (veredicto_id, tipo, regra_ref, gravidade) VALUES ($1,'violacao','01-principios#0123456789ab','alta') RETURNING id`, [v]);
-    const r = await um(`INSERT INTO agentes.reportes (autor, operador, area, observacao) VALUES ('gestor-1','luz','recrutamento','respondeu fora do tom') RETURNING id`);
+    const r = await um(`INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao) VALUES ('gestor-1','luz','recrutamento','leve','tom#0123456789ab','2026-10-01','2026-10-07','respondeu fora do tom') RETURNING id`);
     await client.query(`INSERT INTO agentes.reporte_veredictos (reporte_id, veredicto_id) VALUES ($1,$2)`, [r, v]);
     const p = await pedido();
     const a = await atitude(p);
@@ -134,12 +134,74 @@ describe('schema agentes — INSERT-only, CHECKs e unicidades (spec 078, migrati
   });
 
   it('17/18. reporte com observacao de 501 caracteres -> 23514; com 500 entra', async () => {
-    const q = `INSERT INTO agentes.reportes (autor, operador, area, observacao) VALUES ('g','luz','recrutamento',$1)`;
+    const q = `INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao) VALUES ('g','luz','recrutamento','leve','r#1','2026-10-01','2026-10-07',$1)`;
     expect(await sqlState(q, ['x'.repeat(501)])).toBe('23514');
     expect(await sqlState(q, ['x'.repeat(500)])).toBe('NENHUM-ERRO');
     expect(await sqlState(
-      `INSERT INTO agentes.reportes (autor, operador, area, observacao, regra_proposta) VALUES ('g','luz','recrutamento','ok',$1)`, ['r'.repeat(301)],
+      `INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao, regra_proposta) VALUES ('g','luz','recrutamento','leve','r#2','2026-10-01','2026-10-07','ok',$1)`, ['r'.repeat(301)],
     )).toBe('23514');
+  });
+
+  it('reporte tipado: caso fora da lista -> 23514; leve/reforco sem regra_ref -> 23514; meta sem regra_ref entra; janela invertida -> 23514; ocorrencias < 0 -> 23514', async () => {
+    const q = (caso: string, regra: string | null, de = '2026-10-01', ate = '2026-10-07', oc: number | null = 1) =>
+      sqlState(
+        `INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, ocorrencias, janela_de, janela_ate, observacao)
+         VALUES ('g','luz','recrutamento',$1,$2,$5,$3,$4,'o')`,
+        [caso, regra, de, ate, oc],
+      );
+    expect(await q('grave', 'r#1')).toBe('23514');
+    expect(await q('leve', null)).toBe('23514');
+    expect(await q('reforco', null)).toBe('23514');
+    expect(await q('meta', null)).toBe('NENHUM-ERRO');
+    expect(await q('reforco', 'r#1', '2026-10-08', '2026-10-07')).toBe('23514');
+    expect(await q('leve', 'r#9', '2026-10-01', '2026-10-07', -1)).toBe('23514');
+    expect(await q('leve', 'r#9', '2026-10-01', '2026-10-01', 0)).toBe('NENHUM-ERRO'); // janela de 1 dia e 0 ocorrências valem
+    expect(await q('leve', 'r'.repeat(201))).toBe('23514');
+  });
+
+  it('reporte duplicado (operador, caso, regra_ref, janela) -> 23505; vale também para meta (regra_ref NULL); outra janela ou outro caso entra', async () => {
+    const q = (caso: string, regra: string | null, ate = '2026-10-07', operador = 'luz') =>
+      sqlState(
+        `INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao)
+         VALUES ('g',$4,'recrutamento',$1,$2,'2026-10-01',$3,'o')`,
+        [caso, regra, ate, operador],
+      );
+    expect(await q('leve', 'tom#1')).toBe('NENHUM-ERRO');
+    expect(await q('leve', 'tom#1')).toBe('23505');
+    expect(await q('meta', null)).toBe('NENHUM-ERRO');
+    expect(await q('meta', null)).toBe('23505');
+    expect(await q('leve', 'tom#1', '2026-10-08')).toBe('NENHUM-ERRO');
+    expect(await q('reforco', 'tom#1')).toBe('NENHUM-ERRO');
+    expect(await q('leve', 'tom#1', '2026-10-07', 'outro-op')).toBe('NENHUM-ERRO');
+  });
+
+  it('placar_diario: 2 veredictos no mesmo dia -> 1 linha por regra_ref com as contagens; dia sem violação -> 1 linha com regra_ref NULL; acerto não vira linha', async () => {
+    const ins = (conv: string, nota: number, cruza: boolean, em: string) =>
+      um(
+        `INSERT INTO agentes.veredictos (operador, sensor, inbox, conversa_ref, ultima_msg_ref, nota, cruza_areas, juiz_versao, avaliado_em)
+         VALUES ('op-view','juiz','ar-1',$1,'m',$2,$3,'jv1',$4) RETURNING id`,
+        [conv, nota, cruza, em],
+      );
+    const ach = (v: string, tipo: string, regra: string, grav: string | null) =>
+      client.query(`INSERT INTO agentes.veredicto_achados (veredicto_id, tipo, regra_ref, gravidade) VALUES ($1,$2,$3,$4)`, [v, tipo, regra, grav]);
+    const v1 = await ins('conv-a', 4, true, '2026-10-15T15:00:00Z');
+    const v2 = await ins('conv-b', 8, false, '2026-10-15T18:00:00Z');
+    await ach(v1, 'violacao', 'tom#aaa', 'alta');
+    await ach(v1, 'violacao', 'canal#bbb', 'baixa');
+    await ach(v2, 'violacao', 'tom#aaa', 'media');
+    await ach(v2, 'acerto', 'prazo#ccc', null);
+    await ins('conv-c', 9, false, '2026-10-16T15:00:00Z'); // outro dia, sem achado
+
+    const { rows } = await client.query(
+      `SELECT operador, to_char(dia,'YYYY-MM-DD') AS dia, regra_ref, violacoes::int AS violacoes,
+              conversas_avaliadas::int AS conversas, nota_media::float8 AS nota, cruza_areas::int AS cruza
+         FROM agentes.placar_diario WHERE operador = 'op-view' ORDER BY dia, regra_ref NULLS LAST`,
+    );
+    expect(rows).toEqual([
+      { operador: 'op-view', dia: '2026-10-15', regra_ref: 'canal#bbb', violacoes: 1, conversas: 2, nota: 6, cruza: 1 },
+      { operador: 'op-view', dia: '2026-10-15', regra_ref: 'tom#aaa', violacoes: 2, conversas: 2, nota: 6, cruza: 1 },
+      { operador: 'op-view', dia: '2026-10-16', regra_ref: null, violacoes: 0, conversas: 1, nota: 9, cruza: 0 },
+    ]);
   });
 
   it('19. pedido: conteudo da atitude > 4000 -> 23514; área > 40 -> 23514; pedido sem atitude não tem evento (FK)', async () => {
@@ -155,7 +217,7 @@ describe('schema agentes — INSERT-only, CHECKs e unicidades (spec 078, migrati
 
   it('19. origem do pedido é reporte OU veredicto (nunca os dois, nunca nenhum) -> 23514', async () => {
     const p = await pedido();
-    const r = await um(`INSERT INTO agentes.reportes (autor, operador, area, observacao) VALUES ('g','luz','x','o') RETURNING id`);
+    const r = await um(`INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao) VALUES ('g','luz','x','leve','r#3','2026-10-01','2026-10-07','o') RETURNING id`);
     const v = await veredicto();
     const q = `INSERT INTO agentes.pedido_origens (pedido_id, reporte_id, veredicto_id) VALUES ($1,$2,$3)`;
     expect(await sqlState(q, [p, r, v])).toBe('23514');
@@ -235,11 +297,11 @@ describe('schema agentes — INSERT-only, CHECKs e unicidades (spec 078, migrati
   it('RLS: app_runtime SEM identidade (sem app.user_uid) não insere (42501) e não lê; app_system com system_context passa', async () => {
     await client.query(`SELECT set_config('app.user_uid', '', true)`);
     expect(await sqlState(
-      `INSERT INTO agentes.reportes (autor, operador, area, observacao) VALUES ('g','luz','x','o')`,
+      `INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao) VALUES ('g','luz','x','leve','r#3','2026-10-01','2026-10-07','o')`,
     )).toBe('42501');
     // com identidade, grava uma linha; sem identidade, o SELECT devolve 0
     await client.query(`SELECT set_config('app.user_uid', 'qa-078-staff', true)`);
-    await client.query(`INSERT INTO agentes.reportes (autor, operador, area, observacao) VALUES ('g','luz','x','o')`);
+    await client.query(`INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao) VALUES ('g','luz','x','leve','r#3','2026-10-01','2026-10-07','o')`);
     expect((await client.query(`SELECT count(*)::int AS c FROM agentes.reportes`)).rows[0].c).toBe(1);
     await client.query(`SELECT set_config('app.user_uid', '', true)`);
     expect((await client.query(`SELECT count(*)::int AS c FROM agentes.reportes`)).rows[0].c).toBe(0);

@@ -1,6 +1,6 @@
 -- Migration 551: schema `agentes` — placar, reportes e fila de pedidos (spec 078, M3a-1, Q2 do plano-M3)
 --
--- 9 tabelas INSERT-only + 1 view. Nenhum texto de conversa mora aqui (D514: o dado é único e
+-- 9 tabelas INSERT-only + 2 views (`pedido_status`, `placar_diario`). Nenhum texto de conversa mora aqui (D514: o dado é único e
 -- a conversa tem dono — a inbox): veredicto/achado/reporte guardam REFERÊNCIAS (ids, slugs, hashes)
 -- e campos curtos com teto de tamanho no banco. "Status" de pedido NUNCA é coluna: é a view
 -- `agentes.pedido_status` (último evento). A auditoria da decisão (item 51) é a própria
@@ -50,16 +50,30 @@ CREATE TABLE IF NOT EXISTS agentes.veredicto_achados (
 );
 CREATE INDEX IF NOT EXISTS ix_veredicto_achados_veredicto ON agentes.veredicto_achados (veredicto_id);
 
--- ── 3. reportes — o aviso do gestor (sem trecho de conversa) ──────────────────────────────────────
+-- ── 3. reportes — o aviso do gestor/da Maria (colunas TIPADAS; sem trecho de conversa) ────────────
+-- `caso` (leve | meta | reforço), `regra_ref` (NULL só no caso `meta`), `ocorrencias` e a janela [janela_de, janela_ate]
+-- são colunas, não texto empacotado em `observacao` (que segue <= 500 e impessoal). A Maria roda todo dia: a
+-- duplicata (mesmo operador, caso, regra e janela) é barrada NO BANCO (23505) — índice único abaixo.
 CREATE TABLE IF NOT EXISTS agentes.reportes (
   id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   autor          text        NOT NULL CHECK (char_length(autor) BETWEEN 1 AND 80),
   operador       text        NOT NULL CHECK (char_length(operador) BETWEEN 1 AND 40),
   area           text        NOT NULL CHECK (char_length(area) BETWEEN 1 AND 40),
+  caso           text        NOT NULL CHECK (caso IN ('leve','meta','reforco')),
+  regra_ref      text        CHECK (char_length(regra_ref) BETWEEN 1 AND 200),
+  ocorrencias    smallint    CHECK (ocorrencias >= 0),
+  janela_de      date        NOT NULL,
+  janela_ate     date        NOT NULL,
   observacao     text        NOT NULL CHECK (char_length(observacao) BETWEEN 1 AND 500),
   regra_proposta text        CHECK (char_length(regra_proposta) BETWEEN 1 AND 300),
-  criado_em      timestamptz NOT NULL DEFAULT now()
+  criado_em      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT reportes_regra_ref_so_nula_na_meta CHECK (caso = 'meta' OR regra_ref IS NOT NULL),
+  CONSTRAINT reportes_janela_valida             CHECK (janela_ate >= janela_de)
 );
+-- Dedup no banco. `COALESCE(regra_ref,'')` de propósito: num UNIQUE comum NULL != NULL, e o reporte `meta`
+-- (regra_ref NULL) repetiria todo dia sem nunca colidir (NULLS NOT DISTINCT exigiria PG15+, não medido no Cloud SQL).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_reportes_dedup
+  ON agentes.reportes (operador, caso, COALESCE(regra_ref, ''), janela_de, janela_ate);
 
 -- ── 4. reporte_veredictos — a evidência por ID (M:N) ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS agentes.reporte_veredictos (
@@ -159,6 +173,38 @@ SELECT p.id AS pedido_id,
        END AS status
   FROM agentes.pedidos p;
 
+-- ── 10b. view da linha de base do placar: derivada dos veredictos, NUNCA gravada (D516) ───────────
+-- 1 linha por (operador, dia, regra_ref com violação). O dia é o de Buenos Aires (a operação é na Argentina).
+-- Os números do DIA (conversas, nota média, cruza_areas) vêm de TODOS os veredictos do dia, não só dos que têm
+-- violação; dia sem nenhuma violação aparece em 1 linha com regra_ref NULL e violacoes 0 (senão a linha de base
+-- perderia os dias bons). `conversas_avaliadas` = conversas distintas (inbox, conversa_ref); `cruza_areas` = nº de
+-- veredictos do dia com cruza_areas; `nota_media` só conta veredictos com nota (sensor juiz). Acerto não vira linha.
+-- security_invoker: respeita a RLS de quem lê (455), como `pedido_status`.
+CREATE OR REPLACE VIEW agentes.placar_diario WITH (security_invoker = true) AS
+WITH dia AS (
+  SELECT v.operador,
+         (v.avaliado_em AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS dia,
+         count(DISTINCT (v.inbox, v.conversa_ref))                          AS conversas_avaliadas,
+         avg(v.nota)::numeric(5,2)                                          AS nota_media,
+         count(*) FILTER (WHERE v.cruza_areas)                              AS cruza_areas
+    FROM agentes.veredictos v
+   GROUP BY 1, 2
+), viol AS (
+  SELECT v.operador,
+         (v.avaliado_em AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS dia,
+         a.regra_ref,
+         count(*)                                                           AS violacoes
+    FROM agentes.veredicto_achados a
+    JOIN agentes.veredictos v ON v.id = a.veredicto_id
+   WHERE a.tipo = 'violacao'
+   GROUP BY 1, 2, 3
+)
+SELECT d.operador, d.dia, vi.regra_ref,
+       COALESCE(vi.violacoes, 0) AS violacoes,
+       d.conversas_avaliadas, d.nota_media, d.cruza_areas
+  FROM dia d
+  LEFT JOIN viol vi ON vi.operador = d.operador AND vi.dia = d.dia;
+
 -- ── 11. RLS (molde 461): sistema passa; staff com identidade passa ────────────────────────────────
 DO $$
 DECLARE t text;
@@ -193,7 +239,7 @@ BEGIN
     EXECUTE format('GRANT SELECT, INSERT ON agentes.veredictos, agentes.veredicto_achados, agentes.reportes,
       agentes.reporte_veredictos, agentes.pedidos, agentes.pedido_atitudes, agentes.pedido_origens,
       agentes.pedido_eventos, agentes.medicoes TO %I', r);
-    EXECUTE format('GRANT SELECT ON agentes.pedido_status TO %I', r);
+    EXECUTE format('GRANT SELECT ON agentes.pedido_status, agentes.placar_diario TO %I', r);
     EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA agentes FROM %I', r);
   END LOOP;
 END $$;
@@ -202,3 +248,5 @@ COMMENT ON SCHEMA agentes IS
   'Pessoas artificiais (spec 078): placar, reportes e fila de pedidos. INSERT-only para o app; sem texto de conversa.';
 COMMENT ON VIEW agentes.pedido_status IS
   'Status do pedido = ação do ÚLTIMO evento: sem evento novo; aceitar aceito; negar negado; descrever redirecionado.';
+COMMENT ON VIEW agentes.placar_diario IS
+  'Linha de base do placar por operador/dia/regra (derivada dos veredictos, nunca gravada): violações, conversas avaliadas, nota média, cruza_areas. Dia de Buenos Aires.';
