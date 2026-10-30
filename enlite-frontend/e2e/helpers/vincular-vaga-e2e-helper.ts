@@ -104,19 +104,23 @@ export function seedLegacyVacancy(
 
 /**
  * Serviço contratado ATIVO do paciente (service_code AT) vinculado ao endereço `addressId`, SEM vaga e SEM os 5 campos de
- * recrutamento (a vaga legada os alimenta). `withSchedule=false` = sem NENHUMA linha em `patient_itinerary_slot` (o
+ * recrutamento (a vaga legada os alimenta), salvo `requiredExperience` (serviço com um campo próprio). `withSchedule=false` = sem NENHUMA linha em `patient_itinerary_slot` (o
  * alternativo "sem faixa vigente" do portão); `true` = 1 faixa vigente (480 + coluna `valid`/`duration_minutes`,
  * molde `transicao-estado-051`). `seedActivatablePatient` NÃO cria serviço, por isso esta função existe.
  */
 export function seedContractedService(
   patientId: string,
-  opts: { addressId: string | null; withSchedule: boolean },
+  opts: { addressId: string | null; withSchedule: boolean; requiredExperience?: string },
 ): { serviceId: string } {
   const serviceId = runSQL(
     `WITH ins AS (INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id) ` +
     `VALUES ('${patientId}', 'AT', true, 'AR', 'e2e079', 'e2e079', ${opts.addressId ? `'${opts.addressId}'` : 'NULL'}) RETURNING id) SELECT id FROM ins`,
   );
   if (!serviceId) throw new Error('seedContractedService: INSERT sem id');
+  // Campo JÁ preenchido no serviço com valor diferente do da vaga: é o único que a prévia lista (a vaga entrega o resto igual).
+  if (opts.requiredExperience !== undefined) {
+    runSQL(`UPDATE patient_contracted_services SET required_experience = ${sqlTexto(opts.requiredExperience)} WHERE id = '${serviceId}'`);
+  }
   if (opts.withSchedule) {
     runSQL(
       `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by) ` +

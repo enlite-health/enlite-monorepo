@@ -27,7 +27,7 @@ export type LinkBlockerCode = 'ADDRESS_MISMATCH' | (typeof RECRUITMENT_BLOCKING_
 
 export type VacancyNotLinkableReason = 'NOT_FOUND' | 'OTHER_PATIENT' | 'ALREADY_LINKED' | 'DELETED' | 'DE_BAJA';
 
-export type LinkOrigin = 'SERVICE' | 'VACANCY' | 'NONE';
+export type LinkOrigin = 'SERVICE' | 'NONE';
 
 export interface LinkPreviewRow {
   field: LinkField;

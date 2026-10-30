@@ -120,7 +120,7 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
     if (Array.isArray(v)) return v.length ? v.map((x) => enumLabel(field, x)).join(', ') : DASH;
     return enumLabel(field, v);
   };
-  const origin: Record<string, string> = { SERVICE: k('originService'), VACANCY: k('originVacancy'), NONE: k('originNone') };
+  const origin: Record<string, string> = { SERVICE: k('originService'), NONE: k('originNone') };
   const blockers = preview?.blockers.length ? preview.blockers : error?.code === 'LINK_BLOCKED' ? error.blockers ?? [] : [];
 
   return (

@@ -4038,7 +4038,6 @@
             "colWillBe": "Passa a valer",
             "colOrigin": "Origem",
             "originService": "Serviço",
-            "originVacancy": "Vaga → serviço",
             "originNone": "Sem valor",
             "noChanges": "Nenhum campo muda.",
             "blockedTitle": "Não dá para vincular ainda",

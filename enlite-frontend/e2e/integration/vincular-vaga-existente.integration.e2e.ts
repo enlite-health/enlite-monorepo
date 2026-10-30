@@ -26,6 +26,9 @@ import {
 } from '../helpers/vincular-vaga-e2e-helper';
 import { formatVacancyCase } from '../../src/domain/value-objects/caseNumberFormat';
 
+/** Valor que o serviço JÁ tem (≠ do da vaga, 'experiencia e2e'): a única linha que a prévia deve listar. */
+const EXPERIENCIA_DO_SERVICO = 'experiencia del servicio e2e';
+
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const uid = `e2e-079-staff-${RUN_ID}`;
 const staff = { uid, email: `${uid}@e2e.test`, role: 'admin', country: 'AR' };
@@ -87,7 +90,9 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
   test('feliz: escolhe a vaga, vê a prévia, confirma — Kanban intacto, serviço alimentado, os 2 botões somem', async ({ page }) => {
     const seed = seedActivatablePatient(761000);
     patients.push(seed.patientId);
-    const { serviceId } = seedContractedService(seed.patientId, { addressId: seed.addressId, withSchedule: true });
+    const { serviceId } = seedContractedService(seed.patientId, {
+      addressId: seed.addressId, withSchedule: true, requiredExperience: EXPERIENCIA_DO_SERVICO,
+    });
     const vaga = seedLegacyVacancy(seed.patientId, { addressId: seed.addressId });
     workers.push(vaga.workerId);
 
@@ -100,12 +105,22 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
 
     const previa = page.getByTestId('link-existing-vacancy-preview');
     await expect(previa).toBeVisible();
-    await expect(previa).toContainText('Vacante → servicio');
+    // Prévia só do que MUDA: a vaga entrega o resto com o mesmo valor, então só `required_experience` (valor do serviço ≠ da vaga).
+    const linhas = previa.locator('tbody tr');
+    await expect(linhas).toHaveCount(1);
+    const celulas = linhas.first().locator('td');
+    await expect(celulas.nth(0)).toHaveText('Experiencia requerida');
+    await expect(celulas.nth(1)).toHaveText(RECRUITMENT_FIELDS_E2E.requiredExperience);
+    await expect(celulas.nth(2)).toHaveText(EXPERIENCIA_DO_SERVICO);
+    await expect(celulas.nth(3)).toHaveText('Servicio');
+    await expect(previa).not.toContainText('Vacante → servicio');
     await expect(page.getByTestId('link-existing-vacancy-blockers')).toHaveCount(0);
     const confirmar = page.getByTestId('link-existing-vacancy-confirm');
     await expect(confirmar).toBeEnabled();
 
     // Medição (não olho): rótulos de Campo e Origen ocupam UMA linha.
+    const qtdCelulas = await page.locator('[data-testid="link-preview-cell-field"], [data-testid="link-preview-cell-origin"]').count();
+    expect(qtdCelulas, 'células de Campo/Origen medidas').toBeGreaterThan(0);
     for (const tid of ['link-preview-cell-field', 'link-preview-cell-origin']) {
       const cells = page.getByTestId(tid);
       const n = await cells.count();
@@ -134,9 +149,10 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
     expect(readVacancyKanbanFingerprint(vaga.vacancyId)).toEqual(antes);
     expect(readVacancyServiceFields(vaga.vacancyId).contracted_service_id).toBe(serviceId);
     const servico = readServiceRecruitmentFields(serviceId);
+    // o serviço recebeu os campos que estavam vazios e MANTEVE o required_experience próprio (não foi sobrescrito pela vaga)
     expect(servico).toMatchObject({
       required_sex: RECRUITMENT_FIELDS_E2E.requiredSex,
-      required_experience: RECRUITMENT_FIELDS_E2E.requiredExperience,
+      required_experience: EXPERIENCIA_DO_SERVICO,
       work_schedule: RECRUITMENT_FIELDS_E2E.workSchedule,
       payment_day: RECRUITMENT_FIELDS_E2E.paymentDay,
     });

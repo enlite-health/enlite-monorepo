@@ -60,7 +60,7 @@ describe('LinkExistingVacancyModal', () => {
   it('escolher chama a prévia com vacancyId e a tabela mostra só as rows', async () => {
     P.preview.mockResolvedValueOnce({ candidates: [CAND], preview: null }).mockResolvedValueOnce({
       candidates: [CAND],
-      preview: prev({ rows: [{ field: 'payment_day', vacancyValue: null, effectiveValue: [5, 10], origin: 'VACANCY' }] }),
+      preview: prev({ rows: [{ field: 'payment_day', vacancyValue: null, effectiveValue: [5, 10], origin: 'SERVICE' }] }),
     });
     await openAndChoose();
     const box = await screen.findByTestId('link-existing-vacancy-preview');
@@ -68,7 +68,7 @@ describe('LinkExistingVacancyModal', () => {
     expect(box.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(box.textContent).toContain(K.field.payment_day);
     expect(box.textContent).toContain('5, 10');
-    expect(box.textContent).toContain(K.originVacancy);
+    expect(box.textContent).toContain(K.originService);
   });
 
   it('aviso traduzido com o nome do campo', async () => {
@@ -132,9 +132,9 @@ describe('LinkExistingVacancyModal', () => {
     P.preview.mockResolvedValueOnce({ candidates: [CAND], preview: null }).mockResolvedValueOnce({
       candidates: [CAND],
       preview: prev({ rows: [
-        { field: 'required_sex', vacancyValue: 'BOTH', effectiveValue: 'BOTH', origin: 'SERVICE' },
-        { field: 'work_schedule', vacancyValue: 'part-time', effectiveValue: 'part-time', origin: 'SERVICE' },
-        { field: 'required_professions', vacancyValue: ['AT'], effectiveValue: ['AT'], origin: 'SERVICE' },
+        { field: 'required_sex', vacancyValue: 'M', effectiveValue: 'BOTH', origin: 'SERVICE' },
+        { field: 'work_schedule', vacancyValue: 'full-time', effectiveValue: 'part-time', origin: 'SERVICE' },
+        { field: 'required_professions', vacancyValue: ['NURSE'], effectiveValue: ['AT'], origin: 'SERVICE' },
       ] }),
     });
     await openAndChoose();
