@@ -87,10 +87,18 @@ export function seedLegacyVacancy(
     `WITH ins AS (INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source) ` +
     `VALUES ('${workerId}', '${vacancyId}', 'COMPLETED', 'talentum') RETURNING id) SELECT id FROM ins`,
   );
-  const encuadreId = runSQL(
-    `WITH ins AS (INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado) ` +
-    `VALUES ('${workerId}', '${vacancyId}', 'Prestador Fixture QA', 'PENDIENTE') RETURNING id) SELECT id FROM ins`,
-  );
+  // Inserir a candidatura JÁ cria o encuadre (trigger: `encuadres_worker_job_unique` barra o 2º INSERT — medido na 1ª execução
+  // contra banco). Então o encuadre é LIDO, e só semeado à mão se o trigger não o tiver criado.
+  const lerEncuadre = (): string => runSQL(`SELECT id FROM encuadres WHERE worker_id = '${workerId}' AND job_posting_id = '${vacancyId}'`);
+  let encuadreId = lerEncuadre();
+  if (!encuadreId) {
+    runSQL(
+      `WITH ins AS (INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, resultado) ` +
+      `VALUES ('${workerId}', '${vacancyId}', 'Prestador Fixture QA', 'PENDIENTE') RETURNING id) SELECT id FROM ins`,
+    );
+    encuadreId = lerEncuadre();
+  }
+  if (!encuadreId) throw new Error('seedLegacyVacancy: vaga sem encuadre');
   return { vacancyId, caseNumber, caseOrdinal: Number(ordinal), applicationId, encuadreId, workerId };
 }
 
