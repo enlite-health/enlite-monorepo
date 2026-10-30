@@ -5,11 +5,10 @@
  *   - `POST /patients/:id/contracted-services/:sid/link-existing-vacancy/preview` (candidatas + prévia, NÃO grava);
  *   - `POST /patients/:id/contracted-services/:sid/link-existing-vacancy` (confirmação).
  *
- * API real + Postgres real, com o engine ABAC LIGADO na API (`PERMISSION_ENGINE_ENABLED=true` +
- * `admin.patients` + catálogo sincronizado): staff entra por GRUPO, e o 403 vem da célula que falta, não do papel.
- * Stack: docker-compose.yml + docker-compose.test.yml + um override com PERMISSION_ENGINE_ENABLED=true,
- * PERMISSION_ENFORCED_ROUTES (famílias admin.*), PERMISSION_CATALOG_SYNC_ENABLED=true, PERMISSION_CACHE_TTL_MS=0 e
- * `iam.rollout_state permission_groups_migrated=done` (gate D117). Sem o engine o caso 1 (403) falha por construção.
+ * API real + Postgres real para os casos 2-9 (o engine ABAC NÃO é necessário neles; o compose do CI sobe a API sem
+ * `PERMISSION_ENGINE_ENABLED`). O caso 1 (403 por célula) monta o router REAL (`createAdminPatientsRoutes`) EM PROCESSO via
+ * `montarAppDeFamilia`, com o engine ligado nesse processo (`admin.patients` + `admin.vacancies` enforçadas) e o grant
+ * vindo de `iam.*` no Postgres real; o controller é um espião, então "nada gravado" = o handler nunca foi chamado.
  *
  * Side-effects outbound: nenhum. `LinkExistingVacancyUseCase`/`Repository` só fazem SELECT/UPDATE no Postgres e
  * `logFieldChangesSafe` (job_posting_audit_log); sem Talentum/Periskope/Twilio/Ana Care no caminho (grep = 0). A
@@ -17,7 +16,7 @@
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
-import { tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E } from './helpers/permissionFamilyHarness';
+import { tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, montarAppDeFamilia, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 
@@ -187,25 +186,63 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
   });
 
   // ── 1. permissão ────────────────────────────────────────────────────────────────────────────────────────────
-  it('1. sem vacancy:update (só patient_services:update) → 403 nas 2 rotas; sem patient_services:update → 403 nas 2; nada gravado', async () => {
-    const c = await cenario('perm');
-    const vagaAntes = await fotoVaga(c.vagaId);
-    const servicoAntes = await fotoServico(c.serviceId);
-    const auditAntes = await nAudit(c.vagaId);
+  it('1. sem vacancy:update (só patient_services:update) → 403 nas 2 rotas; sem patient_services:update → 403 nas 2; handler nunca chamado', async () => {
+    const envAnterior: Record<string, string | undefined> = {};
+    const setEnv = (k: string, v: string): void => {
+      if (!(k in envAnterior)) envAnterior[k] = process.env[k];
+      process.env[k] = v;
+    };
+    setEnv('USE_MOCK_AUTH', 'true');
+    setEnv('PERMISSION_ENGINE_ENABLED', 'true');
+    setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients,admin.vacancies');
+    setEnv('PERMISSION_CACHE_TTL_MS', '0');
+    setEnv('DATABASE_URL', DATABASE_URL);
 
-    for (const uid of [U.soServicos, U.soVaga]) {
-      const p = await preview(c, uid, c.vagaId);
-      const k = await confirmar(c, uid, c.vagaId);
-      expect([uid, p.status]).toEqual([uid, 403]);
-      expect([uid, k.status]).toEqual([uid, 403]);
+    const { createAdminPatientsRoutes } = await import('@modules/case');
+    const alcancou = jest.fn((_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) =>
+      res.status(200).json({ success: true }));
+    const services = { previewLinkExistingVacancy: alcancou, linkExistingVacancy: alcancou };
+    let app: AppDeFamilia | undefined;
+    try {
+      app = await montarAppDeFamilia({
+        enforcedRoutes: 'admin.patients,admin.vacancies',
+        montarRotas: ({ app: express, auth, permissions }) =>
+          express.use('/api/admin', createAdminPatientsRoutes(
+            {} as never, auth, permissions, {} as never, {} as never, {} as never, {} as never, {} as never,
+            services as never, {} as never, {} as never,
+            {} as never, {} as never, {} as never, // contactRows, externalContacts, emergencyContact (defaults abririam o pool)
+          )),
+      });
+      const raiz = `/api/admin/patients/00000000-0000-4000-8000-000000000a79/contracted-services/00000000-0000-4000-8000-000000000b79/link-existing-vacancy`;
+      const chamar = async (caminho: string, uid: string): Promise<number> => {
+        const res = await fetch(`${app!.url}${caminho}`, {
+          method: 'POST',
+          headers: { Authorization: tokenMock(uid, 'admin', 'AR'), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vacancyId: '00000000-0000-4000-8000-000000000c79' }),
+        });
+        return res.status;
+      };
+
+      for (const uid of [U.soServicos, U.soVaga]) {
+        expect([uid, 'preview', await chamar(`${raiz}/preview`, uid)]).toEqual([uid, 'preview', 403]);
+        expect([uid, 'confirmar', await chamar(raiz, uid)]).toEqual([uid, 'confirmar', 403]);
+      }
+      expect(alcancou).not.toHaveBeenCalled(); // nenhuma negação chegou ao handler: nada lido nem gravado
+
+      // contraprova: quem tem as DUAS células passa nas duas rotas (a negação acima vem da célula, não de token/país quebrado)
+      expect(await chamar(`${raiz}/preview`, U.completo)).toBe(200);
+      expect(await chamar(raiz, U.completo)).toBe(200);
+      expect(alcancou).toHaveBeenCalledTimes(2);
+    } finally {
+      await app?.fechar();
+      const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+      await DatabaseConnection.getInstance().close();
+      for (const [k, v] of Object.entries(envAnterior)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
     }
-    // contraprova: quem tem as DUAS células entra (a negação acima vem da célula, não de token/país quebrado)
-    expect((await preview(c, U.completo)).status).toBe(200);
-
-    expect(await fotoVaga(c.vagaId)).toEqual(vagaAntes);
-    expect(await fotoServico(c.serviceId)).toEqual(servicoAntes);
-    expect(await nAudit(c.vagaId)).toBe(auditAntes);
-  });
+  }, 30000);
 
   // ── 2. candidatas ───────────────────────────────────────────────────────────────────────────────────────────
   it('2. prévia sem vacancyId → candidatas = só a vaga legada elegível (fora: outro paciente, já vinculada, apagada, DE_BAJA)', async () => {
