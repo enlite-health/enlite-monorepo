@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
+import { ACESSO_MASTER_GROUP_ID } from '@domain/entities/AccessMaster';
 import {
   AdminPermissionsApiService,
   type CatalogCategory,
@@ -133,6 +134,23 @@ function GroupDetail(): JSX.Element {
     }
     return [...porUid.values()];
   }, [members, candidates]);
+
+  // Spec 078: célula `somenteAcessoMaster` (pedidos_ia:*) só aparece no Acesso Master (id fixo, o
+  // mesmo do anti-lockout) — nos demais grupos ela nem entra na grade, e o PUT não a manda (o
+  // servidor a recusaria com 422 `master_only_cell`).
+  const isMaster = group?.id === ACESSO_MASTER_GROUP_ID;
+  const catalogDoGrupo = useMemo(
+    () => (isMaster
+      ? catalog
+      : catalog
+        .map((cat) => ({ ...cat, cells: cat.cells.filter((c) => !c.somenteAcessoMaster) }))
+        .filter((cat) => cat.cells.length > 0)),
+    [catalog, isMaster],
+  );
+  const chavesSoMaster = useMemo(
+    () => new Set(catalog.flatMap((cat) => cat.cells).filter((c) => c.somenteAcessoMaster).map((c) => `${c.resource}:${c.action}`)),
+    [catalog],
+  );
 
   const diffCelulas = useMemo(
     () => cellDiff(group?.cells ?? [], cells),
@@ -341,14 +359,14 @@ function GroupDetail(): JSX.Element {
           <Heading level={3} weight="semibold" color="primary"><span id="sec-cells">{t('admin.access.group.cellsTitle')}</span></Heading>
           {catalog.length > 0 && (
             <Text as="span" size="xs" color="secondary" className="shrink-0">
-              {t('admin.access.group.cells.selected', { total: contaSelecionadas(catalog, cells) })}
+              {t('admin.access.group.cells.selected', { total: contaSelecionadas(catalogDoGrupo, cells) })}
             </Text>
           )}
         </div>
 
         {/* Busca/filtro (US-21, FR-720): só sobre o que a grade DESENHA — o conjunto marcado que
             fica fora do filtro não muda e vai junto no PUT (contracts/permissions-split.md). */}
-        {catalog.length > 0 && (
+        {catalogDoGrupo.length > 0 && (
           <Input
             id="g-cells-search"
             type="search"
@@ -364,7 +382,7 @@ function GroupDetail(): JSX.Element {
 
         {/* D286: por TELA → container → ações (a matriz recurso × ação saiu; ver ScreenTree). */}
         <ScreenTree
-          catalog={catalog}
+          catalog={catalogDoGrupo}
           selected={cells}
           saved={group.cells}
           editable={editableContent}
@@ -395,7 +413,11 @@ function GroupDetail(): JSX.Element {
               /* Sem motivo: o servidor o aceita nulo para células
                  (`set_group_permissions` não o exige), e um campo obrigatório
                  que ninguém preenche colhe "ok" e "." — pedido do Gabriel. */
-              onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(group.id, [...cells].sort(), null))}
+              onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(
+                group.id,
+                [...cells].filter((k) => isMaster || !chavesSoMaster.has(k)).sort(),
+                null,
+              ))}
             >
               {t('admin.access.group.cellsSave')}
             </ActionButton>
