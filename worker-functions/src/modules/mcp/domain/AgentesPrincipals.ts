@@ -13,6 +13,7 @@ export const AGENTES_PRINCIPAL_CAPABILITIES = {
   'sol-fila': [
     'agentes.reporte.ler',
     'agentes.placar.ler',
+    'agentes.indicadores.ler',
     'agentes.pedido.depositar',
     'agentes.medicao.registrar',
     'agentes.aviso.reenviar',

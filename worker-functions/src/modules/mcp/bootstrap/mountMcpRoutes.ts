@@ -62,6 +62,7 @@ import { AgentesVeredictoRegistrarCapability } from '../application/capabilities
 import { AgentesReporteRegistrarCapability } from '../application/capabilities/AgentesReporteRegistrarCapability';
 import { AgentesReporteLerCapability } from '../application/capabilities/AgentesReporteLerCapability';
 import { AgentesPlacarLerCapability } from '../application/capabilities/AgentesPlacarLerCapability';
+import { AgentesIndicadoresLerCapability } from '../application/capabilities/AgentesIndicadoresLerCapability';
 import { AgentesPedidoDepositarCapability } from '../application/capabilities/AgentesPedidoDepositarCapability';
 import { AgentesMedicaoRegistrarCapability } from '../application/capabilities/AgentesMedicaoRegistrarCapability';
 import { AgentesAprovacaoVerificarCapability } from '../application/capabilities/AgentesAprovacaoVerificarCapability';
@@ -225,6 +226,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?
     agentesReporteRegistrar: new AgentesReporteRegistrarCapability(agentesRepo),
     agentesReporteLer: new AgentesReporteLerCapability(agentesRepo),
     agentesPlacarLer: new AgentesPlacarLerCapability(agentesRepo),
+    agentesIndicadoresLer: new AgentesIndicadoresLerCapability(agentesRepo),
     agentesPedidoDepositar: new AgentesPedidoDepositarCapability(agentesRepo),
     agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(agentesRepo),
     agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisoPedidos),

@@ -26,6 +26,7 @@ import type { AgentesVeredictoRegistrarCapability } from './capabilities/Agentes
 import type { AgentesReporteRegistrarCapability } from './capabilities/AgentesReporteRegistrarCapability';
 import type { AgentesReporteLerCapability } from './capabilities/AgentesReporteLerCapability';
 import type { AgentesPlacarLerCapability } from './capabilities/AgentesPlacarLerCapability';
+import type { AgentesIndicadoresLerCapability } from './capabilities/AgentesIndicadoresLerCapability';
 import type { AgentesPedidoDepositarCapability } from './capabilities/AgentesPedidoDepositarCapability';
 import type { AgentesMedicaoRegistrarCapability } from './capabilities/AgentesMedicaoRegistrarCapability';
 import type { AgentesAprovacaoVerificarCapability } from './capabilities/AgentesAprovacaoVerificarCapability';
@@ -80,6 +81,7 @@ interface RegistryDeps {
   agentesReporteRegistrar?: AgentesReporteRegistrarCapability;
   agentesReporteLer?: AgentesReporteLerCapability;
   agentesPlacarLer?: AgentesPlacarLerCapability;
+  agentesIndicadoresLer?: AgentesIndicadoresLerCapability;
   agentesPedidoDepositar?: AgentesPedidoDepositarCapability;
   agentesMedicaoRegistrar?: AgentesMedicaoRegistrarCapability;
   agentesAvisoReenviar?: AgentesAvisoReenviarCapability;
@@ -165,6 +167,7 @@ export class CapabilityRegistry {
       agentesReporteRegistrar,
       agentesReporteLer,
       agentesPlacarLer,
+      agentesIndicadoresLer,
       agentesPedidoDepositar,
       agentesMedicaoRegistrar,
       agentesAvisoReenviar,
@@ -176,6 +179,7 @@ export class CapabilityRegistry {
       agentesReporteRegistrar,
       agentesReporteLer,
       agentesPlacarLer,
+      agentesIndicadoresLer,
       agentesPedidoDepositar,
       agentesMedicaoRegistrar,
       agentesAvisoReenviar,

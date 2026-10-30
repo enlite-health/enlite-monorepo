@@ -1,6 +1,8 @@
 import type { Pool, PoolClient } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
 import { systemActor } from '@shared/audit/actorSource';
+import { COUNTRY_CODES } from '@shared/domain/countryCodes';
+import { funnelLegadoQuery, workerCadastrosQuery } from '../../matching/application/managementDashboardQueries';
 
 /**
  * Porta de banco das capabilities `agentes.*` (spec 078, M3a-2) sobre o schema `agentes` (migration 551).
@@ -99,6 +101,14 @@ const actorOf = (principal: string) => systemActor(`mcp:${principal}`);
 export interface AvisoDoDeposito {
   naTransacao(c: PoolClient, i: { pedidoId: string; grave: boolean }): Promise<unknown>;
   whatsappGrave(pedidoId: string): Promise<void>;
+}
+
+export interface IndicadoresResult {
+  de: string;
+  ate: string;
+  cadastros_completos: { total: number; no_periodo: number };
+  vagas_selecionadas: { no_periodo: number };
+  fonte: 'analytics.management_dashboard';
 }
 
 export class AgentesRepository {
@@ -367,6 +377,33 @@ export class AgentesRepository {
           atitude_versao: Number(r.atitude_versao),
           atitude_atual: r.atitude_atual,
           decidido_em: new Date(r.ts).toISOString(),
+        };
+      },
+      actorOf(principal),
+    );
+  }
+
+  /**
+   * Linha de base (item 41): as MESMAS queries do painel de gestão (`workerCadastrosQuery`, `funnelLegadoQuery`),
+   * recortadas em `[de, ate)`. Só contagens. Países = todos (o painel sem `?country=`).
+   */
+  async lerIndicadores(principal: string, p: { de: string; ate: string }): Promise<IndicadoresResult> {
+    return withActorContext(
+      this.pool,
+      async (c) => {
+        const periodo = { de: p.de, ate: p.ate };
+        const countries = [...COUNTRY_CODES];
+        const [workers, funil] = await Promise.all([
+          workerCadastrosQuery(c, countries, periodo),
+          funnelLegadoQuery(c, countries, periodo),
+        ]);
+        const w = workers.rows[0] ?? { completos: 0, nuevos: 0 };
+        return {
+          de: p.de,
+          ate: p.ate,
+          cadastros_completos: { total: Number(w.completos), no_periodo: Number(w.nuevos) },
+          vagas_selecionadas: { no_periodo: Number(funil.rows.find((r) => r.k === 'SELECTED')?.count ?? 0) },
+          fonte: 'analytics.management_dashboard' as const,
         };
       },
       actorOf(principal),

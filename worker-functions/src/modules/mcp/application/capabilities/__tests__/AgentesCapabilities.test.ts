@@ -2,6 +2,7 @@ import { AgentesVeredictoRegistrarCapability } from '../AgentesVeredictoRegistra
 import { AgentesReporteRegistrarCapability } from '../AgentesReporteRegistrarCapability';
 import { AgentesAprovacaoVerificarCapability } from '../AgentesAprovacaoVerificarCapability';
 import { AgentesReporteLerCapability } from '../AgentesReporteLerCapability';
+import { AgentesIndicadoresLerCapability } from '../AgentesIndicadoresLerCapability';
 import { AgentesPlacarLerCapability } from '../AgentesPlacarLerCapability';
 import { AgentesPedidoDepositarCapability } from '../AgentesPedidoDepositarCapability';
 import { AgentesMedicaoRegistrarCapability } from '../AgentesMedicaoRegistrarCapability';
@@ -19,6 +20,7 @@ function makeRepo() {
     depositarPedido: jest.fn().mockResolvedValue({ pedido_id: UUID_A, atitude_id: UUID_B }),
     registrarMedicao: jest.fn().mockResolvedValue({ id: UUID_A }),
     verificarAprovacao: jest.fn().mockResolvedValue({ valida: true }),
+    lerIndicadores: jest.fn().mockResolvedValue({ fonte: 'analytics.management_dashboard' }),
   };
 }
 const asRepo = (r: ReturnType<typeof makeRepo>) => r as unknown as AgentesRepository;
@@ -273,5 +275,35 @@ describe('agentes.aprovacao.verificar — formato', () => {
   it('sem principal: recusa (fail-closed)', async () => {
     const cap = new AgentesAprovacaoVerificarCapability(asRepo(makeRepo()));
     await expect(cap.execute({ aprovacao_id: UUID_A })).rejects.toThrow(/principal ausente/);
+  });
+});
+
+describe('agentes.indicadores.ler — formato', () => {
+  const ok = { de: '2026-10-01', ate: '2026-10-08' };
+
+  it('janela válida chega ao repositório com o principal', async () => {
+    const repo = makeRepo();
+    const cap = new AgentesIndicadoresLerCapability(asRepo(repo));
+    await expect(cap.execute(ok, 'sol-fila')).resolves.toEqual({ fonte: 'analytics.management_dashboard' });
+    expect(repo.lerIndicadores).toHaveBeenCalledWith('sol-fila', ok);
+  });
+
+  it.each([
+    ['de igual a ate', { de: '2026-10-01', ate: '2026-10-01' }],
+    ['de depois de ate', { de: '2026-10-09', ate: '2026-10-08' }],
+    ['campo extra', { ...ok, operador: 'luz' }],
+    ['data inexistente', { de: '2026-02-30', ate: '2026-03-05' }],
+    ['formato ISO com hora', { de: '2026-10-01T00:00:00Z', ate: '2026-10-08T00:00:00Z' }],
+    ['sem ate', { de: '2026-10-01' }],
+  ])('recusa antes do banco: %s', async (_nome, args) => {
+    const repo = makeRepo();
+    const cap = new AgentesIndicadoresLerCapability(asRepo(repo));
+    await expect(cap.execute(args, 'sol-fila')).rejects.toThrow();
+    expect(repo.lerIndicadores).not.toHaveBeenCalled();
+  });
+
+  it('sem principal → fail-closed', async () => {
+    const cap = new AgentesIndicadoresLerCapability(asRepo(makeRepo()));
+    await expect(cap.execute(ok)).rejects.toThrow(/principal ausente/);
   });
 });

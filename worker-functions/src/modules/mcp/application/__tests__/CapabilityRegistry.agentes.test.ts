@@ -13,6 +13,7 @@ import { AgentesReporteLerCapability } from '../capabilities/AgentesReporteLerCa
 import { AgentesPlacarLerCapability } from '../capabilities/AgentesPlacarLerCapability';
 import { AgentesPedidoDepositarCapability } from '../capabilities/AgentesPedidoDepositarCapability';
 import { AgentesMedicaoRegistrarCapability } from '../capabilities/AgentesMedicaoRegistrarCapability';
+import { AgentesIndicadoresLerCapability } from '../capabilities/AgentesIndicadoresLerCapability';
 import { AgentesAprovacaoVerificarCapability } from '../capabilities/AgentesAprovacaoVerificarCapability';
 import { AgentesAvisoReenviarCapability } from '../capabilities/AgentesAvisoReenviarCapability';
 
@@ -41,6 +42,7 @@ function makeRepo() {
     depositarPedido: jest.fn().mockResolvedValue({ pedido_id: UUID_A, atitude_id: UUID_A }),
     registrarMedicao: jest.fn().mockResolvedValue({ id: UUID_A }),
     verificarAprovacao: jest.fn().mockResolvedValue({ valida: true, acao: 'aceitar' }),
+    lerIndicadores: jest.fn().mockResolvedValue({ fonte: 'analytics.management_dashboard' }),
   };
 }
 
@@ -60,6 +62,7 @@ function makeRegistry(rl?: WriteRateLimiter) {
     agentesReporteRegistrar: new AgentesReporteRegistrarCapability(r),
     agentesReporteLer: new AgentesReporteLerCapability(r),
     agentesPlacarLer: new AgentesPlacarLerCapability(r),
+    agentesIndicadoresLer: new AgentesIndicadoresLerCapability(r),
     agentesPedidoDepositar: new AgentesPedidoDepositarCapability(r),
     agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(r),
     agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisos),
@@ -94,7 +97,7 @@ describe('principais do schema agentes — a lista de capabilities de cada um', 
   it('a forma do secret vira ServicePrincipal e as listas são as combinadas', () => {
     expect(principalFromSecret('sol-supervisor').allowedCapabilities).toEqual(['agentes.veredicto.registrar']);
     expect([...principalFromSecret('sol-fila').allowedCapabilities].sort()).toEqual(
-      ['agentes.aviso.reenviar', 'agentes.medicao.registrar', 'agentes.pedido.depositar', 'agentes.placar.ler', 'agentes.reporte.ler'],
+      ['agentes.aviso.reenviar', 'agentes.indicadores.ler', 'agentes.medicao.registrar', 'agentes.pedido.depositar', 'agentes.placar.ler', 'agentes.reporte.ler'],
     );
     expect([...principalFromSecret('maria').allowedCapabilities].sort()).toEqual(
       ['agentes.placar.ler', 'agentes.reporte.registrar'],
@@ -234,6 +237,43 @@ describe('agentes.aprovacao.verificar — quem pode chamar (M1.3.1, itens 20/48)
     await expect(handler('agentes.aprovacao.verificar')({})).rejects.toThrow();
     await expect(handler('agentes.aprovacao.verificar')({ aprovacao_id: UUID_A, extra: 1 })).rejects.toThrow();
     expect(repo.verificarAprovacao).not.toHaveBeenCalled();
+  });
+});
+
+describe('agentes.indicadores.ler — quem pode chamar (spec 078, item 41)', () => {
+  const JANELA = { de: '2026-10-01', ate: '2026-10-08' };
+
+  it('só a sol-fila vê e chama; maria e sol-supervisor não; é leitura (fora do balde de escrita)', async () => {
+    const rl = new WriteRateLimiter();
+    const spy = jest.spyOn(rl, 'consume');
+    const { registry, repo } = makeRegistry(rl);
+    for (const quem of ['maria', 'sol-supervisor', 'sol-propagador'] as const) {
+      expect(register(registry, () => principalFromSecret(quem)).names).not.toContain('agentes.indicadores.ler');
+    }
+    const fila = register(registry, () => principalFromSecret('sol-fila'));
+    expect(fila.names).toContain('agentes.indicadores.ler');
+    const out = await fila.handler('agentes.indicadores.ler')(JANELA);
+    expect(JSON.parse(out.content[0].text)).toEqual({ fonte: 'analytics.management_dashboard' });
+    expect(repo.lerIndicadores).toHaveBeenCalledWith('sol-fila', JANELA);
+    expect(spy).not.toHaveBeenCalled();
+    expect(AGENTES_WRITE_CAPABILITIES).not.toContain('agentes.indicadores.ler');
+  });
+
+  it('maria chamando (principal trocado depois do registro) → recusada, repositório intocado', async () => {
+    const { registry, repo } = makeRegistry();
+    let atual = principalFromSecret('sol-fila');
+    const { handler } = register(registry, () => atual);
+    atual = principalFromSecret('maria');
+    await expect(handler('agentes.indicadores.ler')(JANELA)).rejects.toThrow(/not allowed for maria/);
+    expect(repo.lerIndicadores).not.toHaveBeenCalled();
+  });
+
+  it('de >= ate e campo extra → recusados antes do repositório', async () => {
+    const { registry, repo } = makeRegistry();
+    const { handler } = register(registry, () => principalFromSecret('sol-fila'));
+    await expect(handler('agentes.indicadores.ler')({ de: '2026-10-08', ate: '2026-10-08' })).rejects.toThrow();
+    await expect(handler('agentes.indicadores.ler')({ ...JANELA, extra: 1 })).rejects.toThrow();
+    expect(repo.lerIndicadores).not.toHaveBeenCalled();
   });
 });
 

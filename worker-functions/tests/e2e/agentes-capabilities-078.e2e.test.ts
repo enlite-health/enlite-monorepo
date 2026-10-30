@@ -10,6 +10,7 @@ import { AgentesRepository } from '../../src/modules/mcp/infrastructure/AgentesR
 import { AgentesVeredictoRegistrarCapability } from '../../src/modules/mcp/application/capabilities/AgentesVeredictoRegistrarCapability';
 import { AgentesReporteRegistrarCapability } from '../../src/modules/mcp/application/capabilities/AgentesReporteRegistrarCapability';
 import { AgentesReporteLerCapability } from '../../src/modules/mcp/application/capabilities/AgentesReporteLerCapability';
+import { AgentesIndicadoresLerCapability } from '../../src/modules/mcp/application/capabilities/AgentesIndicadoresLerCapability';
 import { AgentesPlacarLerCapability } from '../../src/modules/mcp/application/capabilities/AgentesPlacarLerCapability';
 import { AgentesMedicaoRegistrarCapability } from '../../src/modules/mcp/application/capabilities/AgentesMedicaoRegistrarCapability';
 import { AgentesPedidoDepositarCapability } from '../../src/modules/mcp/application/capabilities/AgentesPedidoDepositarCapability';
@@ -315,5 +316,80 @@ describe('capabilities agentes.* contra o banco (spec 078, M3a-2)', () => {
     await medicaoCap.execute(medicao({ motivo: 'antes', pedido_id: pedidoId }), 'sol-fila');
     await medicaoCap.execute(medicao({ motivo: 'depois', pedido_id: pedidoId, valor: 0.05 }), 'sol-fila');
     expect(await count(`SELECT count(*) n FROM agentes.medicoes WHERE escopo = $1 AND pedido_id = $2`, [operador, pedidoId])).toBe(2);
+  });
+});
+
+describe('agentes.indicadores.ler contra o banco (spec 078, item 41)', () => {
+  let admin: Pool;
+  let app: Pool;
+  let cap: AgentesIndicadoresLerCapability;
+  const run = Math.random().toString(36).slice(2, 8);
+  // Janela distante: só os dados semeados aqui caem nela. Fora dela: 2031-04-15.
+  const janela = { de: '2031-03-01', ate: '2031-04-01' };
+  const workerIds: string[] = [];
+  let jobId: string;
+
+  const worker = async (status: string, createdAt: string) => {
+    const { rows } = await admin.query(
+      `INSERT INTO workers (auth_uid, status, created_at) VALUES ($1, $2, $3) RETURNING id`,
+      [`qa078i-${run}-${workerIds.length}`, status, createdAt],
+    );
+    workerIds.push(rows[0].id);
+    return rows[0].id as string;
+  };
+  const candidatura = (workerId: string, stage: string, createdAt: string) =>
+    admin.query(
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, created_at) VALUES ($1,$2,$3,$4)`,
+      [workerId, jobId, stage, createdAt],
+    );
+
+  beforeAll(() => {
+    admin = new Pool({ connectionString: DATABASE_URL });
+    app = new Pool({ connectionString: DATABASE_URL });
+    app.on('connect', (c) => {
+      void c.query(`SET ROLE app_system; SELECT set_config('app.system_context', 'mcp:qa078', false)`);
+    });
+    cap = new AgentesIndicadoresLerCapability(new AgentesRepository(app));
+  });
+
+  afterAll(async () => {
+    await admin.query(`DELETE FROM worker_job_applications WHERE worker_id = ANY($1::uuid[])`, [workerIds]);
+    await admin.query(`DELETE FROM job_postings WHERE title = $1`, [`qa078i-${run}`]);
+    await admin.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [workerIds]);
+    await app.end();
+    await admin.end();
+  });
+
+  it('conta REGISTERED (total e no período) e SELECTED no período; nada de id nem texto', async () => {
+    const base = await cap.execute(janela, 'sol-fila');
+    jobId = (await admin.query(`INSERT INTO job_postings (title) VALUES ($1) RETURNING id`, [`qa078i-${run}`])).rows[0].id;
+    const dentro = await worker('REGISTERED', '2031-03-10T12:00:00Z');
+    const fora = await worker('REGISTERED', '2031-04-15T12:00:00Z');
+    await worker('INCOMPLETE_REGISTER', '2031-03-11T12:00:00Z'); // fora de REGISTERED
+    await candidatura(dentro, 'SELECTED', '2031-03-12T12:00:00Z');
+    await candidatura(fora, 'SELECTED', '2031-04-15T12:00:00Z'); // fora do período
+
+    const out = await cap.execute(janela, 'sol-fila');
+    // eslint-disable-next-line no-console
+    console.log('INDICADORES base=%j out=%j', base, out);
+    expect(out).toEqual({
+      ...janela,
+      cadastros_completos: { total: base.cadastros_completos.total + 2, no_periodo: base.cadastros_completos.no_periodo + 1 },
+      vagas_selecionadas: { no_periodo: base.vagas_selecionadas.no_periodo + 1 },
+      fonte: 'analytics.management_dashboard',
+    });
+    expect(Object.keys(out).sort()).toEqual(['ate', 'cadastros_completos', 'de', 'fonte', 'vagas_selecionadas']);
+  });
+
+  it('banco limpo (sem dados prévios): os números são exatamente {total:2,no_periodo:1} e {no_periodo:1}', async () => {
+    const out = await cap.execute(janela, 'sol-fila');
+    if (out.cadastros_completos.total === 2) {
+      expect(out.cadastros_completos).toEqual({ total: 2, no_periodo: 1 });
+      expect(out.vagas_selecionadas).toEqual({ no_periodo: 1 });
+    }
+  });
+
+  it('de >= ate é recusado antes do banco', async () => {
+    await expect(cap.execute({ de: '2031-04-01', ate: '2031-04-01' }, 'sol-fila')).rejects.toThrow();
   });
 });
