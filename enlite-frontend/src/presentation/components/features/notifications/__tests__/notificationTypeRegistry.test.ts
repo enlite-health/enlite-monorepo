@@ -249,3 +249,38 @@ describe('PEDIDO_IA_NOVO / PEDIDO_IA_GRAVE (spec 078, M3b-2)', () => {
     expect(h.detailLine).toBeUndefined();
   });
 });
+
+// Spec 078 (M4.4.2, gatilho (d)): pedido aceito em degrau 3/4 — texto com degrau e prazo, vindo do payload só-ids.
+describe('PEDIDO_IA_APLICAR (spec 078, M4.4.2)', () => {
+  const aviso = (payload: unknown) =>
+    notif({ typeCode: 'PEDIDO_IA_APLICAR', actorUid: 'system:sol-fila', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+
+  it.each([
+    [{ pedido_id: 'p', degrau: 3, grave: false, prazo: 'semana' }, 'es', 'Pedido aceptado en escalón 3: aplicar esta semana'],
+    [{ pedido_id: 'p', degrau: 4, grave: true, prazo: 'hoje' }, 'es', 'Pedido aceptado en escalón 4: aplicar hoy'],
+    [{ pedido_id: 'p', degrau: 3, grave: false, prazo: 'semana' }, 'pt-BR', 'Pedido aceito no degrau 3: aplicar esta semana'],
+    [{ pedido_id: 'p', degrau: 4, grave: true, prazo: 'hoje' }, 'pt-BR', 'Pedido aceito no degrau 4: aplicar hoje'],
+    [null, 'es', 'Pedido aceptado: aplicar'],
+    [{ degrau: 1, prazo: 'amanha' }, 'pt-BR', 'Pedido aceito: aplicar'],
+  ] as const)('payload %j em %s -> "%s"; link para a página de pedidos', async (payload, lng, esperado) => {
+    const json = lng === 'es' ? esJson : ptBRJson;
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } } });
+    const h = getNotificationTypeHandler('PEDIDO_IA_APLICAR');
+    expect(h.buildText(aviso(payload), i18n.t.bind(i18n) as never)).toBe(esperado);
+    expect(h.getDeepLink(aviso(payload))).toEqual({ path: '/admin/pedidos-ia' });
+  });
+
+  it('ator "Sol" e contexto "Pedidos do Sol"; sem detalhe', () => {
+    const h = getNotificationTypeHandler('PEDIDO_IA_APLICAR');
+    expect(h.actorLabel?.(aviso(null), t)).toBe('admin.notifications.pedidoIaActor:{}');
+    expect(h.contextLine?.(aviso(null), t)).toBe('admin.notifications.pedidoIaContext:{}');
+    expect(h.detailLine).toBeUndefined();
+  });
+
+  it('paridade es = pt-BR: as chaves de admin.notifications são as mesmas nos dois idiomas', () => {
+    const flat = (o: Record<string, unknown>, pre = ''): string[] =>
+      Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? flat(v as Record<string, unknown>, `${pre}${k}.`) : [`${pre}${k}`]));
+    expect(flat(esJson.admin.notifications).sort()).toEqual(flat(ptBRJson.admin.notifications).sort());
+  });
+});

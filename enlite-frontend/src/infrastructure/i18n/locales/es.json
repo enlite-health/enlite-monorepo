@@ -6446,6 +6446,12 @@
       "itineraryUncoveredDetail": "Primer turno sin cubrir: {{date}}",
       "pedidoIaNovo": "Nuevo pedido del Sol",
       "pedidoIaGrave": "Pedido grave del Sol espera tu decisión",
+      "pedidoIaAplicar": "Pedido aceptado en escalón {{degrau}}: aplicar {{prazo}}",
+      "pedidoIaAplicarSemDados": "Pedido aceptado: aplicar",
+      "pedidoIaAplicarPrazo": {
+        "hoje": "hoy",
+        "semana": "esta semana"
+      },
       "pedidoIaActor": "Sol",
       "pedidoIaContext": "Pedidos del Sol"
     },
