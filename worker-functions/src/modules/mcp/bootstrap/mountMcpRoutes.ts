@@ -57,6 +57,13 @@ import { SetWorkerAvailabilityUseCase } from '../../worker/application/SetWorker
 import { CaseMemoryRepository } from '../../worker/infrastructure/CaseMemoryRepository';
 import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
 import { ApplyToVacancyUseCase } from '../../matching/application/ApplyToVacancyUseCase';
+import { AgentesRepository } from '../infrastructure/AgentesRepository';
+import { AgentesVeredictoRegistrarCapability } from '../application/capabilities/AgentesVeredictoRegistrarCapability';
+import { AgentesReporteRegistrarCapability } from '../application/capabilities/AgentesReporteRegistrarCapability';
+import { AgentesReporteLerCapability } from '../application/capabilities/AgentesReporteLerCapability';
+import { AgentesPlacarLerCapability } from '../application/capabilities/AgentesPlacarLerCapability';
+import { AgentesPedidoDepositarCapability } from '../application/capabilities/AgentesPedidoDepositarCapability';
+import { AgentesMedicaoRegistrarCapability } from '../application/capabilities/AgentesMedicaoRegistrarCapability';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
@@ -133,6 +140,9 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   // Camada A: dossiê da Luz (worker_case_memory).
   const caseMemoryRepo = new CaseMemoryRepository(dbPool);
 
+  // Schema `agentes` (spec 078): quem enxerga cada capability é a allowlist do principal, não o registro.
+  const agentesRepo = new AgentesRepository(dbPool);
+
   const getWorkerById = new GetWorkerByIdUseCase(new WorkerRepository(pubsub));
 
   const registry = new CapabilityRegistry({
@@ -205,6 +215,12 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     applicationsList: new WorkerApplicationsListCapability(
       new ListWorkerApplicationsUseCase(dbPool),
     ),
+    agentesVeredictoRegistrar: new AgentesVeredictoRegistrarCapability(agentesRepo),
+    agentesReporteRegistrar: new AgentesReporteRegistrarCapability(agentesRepo),
+    agentesReporteLer: new AgentesReporteLerCapability(agentesRepo),
+    agentesPlacarLer: new AgentesPlacarLerCapability(agentesRepo),
+    agentesPedidoDepositar: new AgentesPedidoDepositarCapability(agentesRepo),
+    agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(agentesRepo),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });

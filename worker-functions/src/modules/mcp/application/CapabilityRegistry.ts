@@ -22,6 +22,13 @@ import type { WorkerAvailabilityGetCapability } from './capabilities/WorkerAvail
 import type { WorkerApplicationRegisterCapability } from './capabilities/WorkerApplicationRegisterCapability';
 import type { HandoverNotifyCapability } from './capabilities/HandoverNotifyCapability';
 import type { WorkerApplicationsListCapability } from './capabilities/WorkerApplicationsListCapability';
+import type { AgentesVeredictoRegistrarCapability } from './capabilities/AgentesVeredictoRegistrarCapability';
+import type { AgentesReporteRegistrarCapability } from './capabilities/AgentesReporteRegistrarCapability';
+import type { AgentesReporteLerCapability } from './capabilities/AgentesReporteLerCapability';
+import type { AgentesPlacarLerCapability } from './capabilities/AgentesPlacarLerCapability';
+import type { AgentesPedidoDepositarCapability } from './capabilities/AgentesPedidoDepositarCapability';
+import type { AgentesMedicaoRegistrarCapability } from './capabilities/AgentesMedicaoRegistrarCapability';
+import { AGENTES_WRITE_CAPABILITIES } from '../domain/AgentesPrincipals';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
@@ -36,7 +43,8 @@ interface CapabilityEntry {
   name: string;
   description: string;
   inputShape: Record<string, unknown>;
-  execute: (args: unknown) => Promise<unknown>;
+  /** `principalName` = o principal da request (as capabilities `agentes.*` carimbam o ator com ele). */
+  execute: (args: unknown, principalName?: string) => Promise<unknown>;
 }
 
 interface RegistryDeps {
@@ -65,6 +73,13 @@ interface RegistryDeps {
   applicationsList: WorkerApplicationsListCapability;
   /** Mapa paciente <-> ClickUp <-> Periskope em massa (tasks 86ajy0859/86ajy085a). */
   patientChatMap: PatientChatMapCapability;
+  /** Schema `agentes` (spec 078, M3a-2): placar, reportes e fila de pedidos. Só registradas quando o repositório é injetado. */
+  agentesVeredictoRegistrar?: AgentesVeredictoRegistrarCapability;
+  agentesReporteRegistrar?: AgentesReporteRegistrarCapability;
+  agentesReporteLer?: AgentesReporteLerCapability;
+  agentesPlacarLer?: AgentesPlacarLerCapability;
+  agentesPedidoDepositar?: AgentesPedidoDepositarCapability;
+  agentesMedicaoRegistrar?: AgentesMedicaoRegistrarCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -83,6 +98,7 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.availability.set',
   'worker.application.register',
   'handover.notify',
+  ...AGENTES_WRITE_CAPABILITIES,
 ]);
 
 export class CapabilityRegistry {
@@ -141,7 +157,32 @@ export class CapabilityRegistry {
       applicationsList,
       patientChatMap,
       dbQuery,
+      agentesVeredictoRegistrar,
+      agentesReporteRegistrar,
+      agentesReporteLer,
+      agentesPlacarLer,
+      agentesPedidoDepositar,
+      agentesMedicaoRegistrar,
     } = this.deps;
+
+    const agentes = [
+      agentesVeredictoRegistrar,
+      agentesReporteRegistrar,
+      agentesReporteLer,
+      agentesPlacarLer,
+      agentesPedidoDepositar,
+      agentesMedicaoRegistrar,
+    ]
+      .filter((cap): cap is NonNullable<typeof cap> => cap !== undefined)
+      .map((cap) => {
+        const meta = cap.constructor as unknown as { NAME: string; DESCRIPTION: string; INPUT_SHAPE: Record<string, unknown> };
+        return {
+          name: meta.NAME,
+          description: meta.DESCRIPTION,
+          inputShape: meta.INPUT_SHAPE,
+          execute: (args: unknown, principalName?: string) => cap.execute(args, principalName),
+        };
+      });
 
     return [
       {
@@ -415,6 +456,7 @@ export class CapabilityRegistry {
             },
           ]
         : []),
+      ...agentes,
     ];
   }
 
@@ -451,16 +493,18 @@ export class CapabilityRegistry {
 
           // Rate limit guard for write capabilities
           if (WRITE_CAPABILITY_NAMES.has(entry.name)) {
-            const workerId =
-              extractWorkerId(args) ?? 'unknown';
-            const rlKey = `${principal.name}:${workerId}:${entry.name}`;
+            // Sem `workerId` (capabilities `agentes.*`, `handover.notify`) o balde é por principal+capability.
+            const workerId = extractWorkerId(args);
+            const rlKey = workerId
+              ? `${principal.name}:${workerId}:${entry.name}`
+              : `${principal.name}:${entry.name}`;
             const rlResult = rateLimiter.consume(rlKey);
             if (!rlResult.allowed) {
               throw new RateLimitExceededError(entry.name, rlResult.retryAfterMs);
             }
           }
 
-          const result = await entry.execute(args);
+          const result = await entry.execute(args, principal.name);
           const workerId = extractWorkerId(args);
           auditor.emit({
             timestamp: new Date().toISOString(),
