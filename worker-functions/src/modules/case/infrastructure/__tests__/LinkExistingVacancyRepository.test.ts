@@ -55,18 +55,26 @@ describe('LinkExistingVacancyRepository', () => {
 
   it('feedService({}) não faz query', async () => {
     const { client, query } = cliente();
-    await repo.feedService(client, 's1', {});
+    await repo.feedService(client, 's1', {}, 'uid-1');
     expect(query).toHaveBeenCalledTimes(0);
   });
 
-  it('feedService com 2 campos usa só os 2 (+ updated_at), parâmetros posicionais', async () => {
+  it('feedService com 2 campos usa só os 2 (+ updated_by + updated_at), parâmetros posicionais', async () => {
     const { client, query } = cliente();
-    await repo.feedService(client, 's1', { payment_day: '5', providers_needed: 3 });
+    await repo.feedService(client, 's1', { payment_day: '5', providers_needed: 3 }, 'uid-1');
     expect(query).toHaveBeenCalledTimes(1);
     const sql = sqlOf(query);
-    expect(sql).toContain('UPDATE patient_contracted_services SET payment_day = $2, providers_needed = $3, updated_at = NOW() WHERE id = $1');
+    expect(sql).toContain('UPDATE patient_contracted_services SET payment_day = $2, providers_needed = $3, updated_by = $4, updated_at = NOW() WHERE id = $1');
     expect(sql).not.toContain('work_schedule');
-    expect(query.mock.calls[0][1]).toEqual(['s1', '5', 3]);
+    expect(query.mock.calls[0][1]).toEqual(['s1', '5', 3, 'uid-1']);
+  });
+
+  it('feedService grava updated_by = $n com o uid do ator (último parâmetro), só quando há feed', async () => {
+    const { client, query } = cliente();
+    await repo.feedService(client, 's1', { work_schedule: 'L-V' }, 'uid-ator');
+    const sql = sqlOf(query);
+    expect(sql).toMatch(/updated_by = \$3, updated_at = NOW\(\)/);
+    expect(query.mock.calls[0][1]).toEqual(['s1', 'L-V', 'uid-ator']);
   });
 
   it('linkVacancyAndClear: 1 única query, 9 colunas = NULL, nunca salary_text/worker_profile_sought/patient_address_id', async () => {

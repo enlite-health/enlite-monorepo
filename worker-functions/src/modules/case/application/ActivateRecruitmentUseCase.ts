@@ -21,6 +21,7 @@ import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWr
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
 import {
   lockRecruitmentContext,
+  readinessInputFromContext,
   PatientNotFoundForRecruitmentError,
   ServiceNotFoundForRecruitmentError,
   ServiceAlreadyRecruitingError,
@@ -124,25 +125,9 @@ export class ActivateRecruitmentUseCase {
     actor?: HumanActor,
   ): Promise<ActivateRecruitmentResult> {
     const { patient, service } = await lockRecruitmentContext(client, patientId, serviceId);
-    const { status, case_number, insurance_informed, has_verified_active_coverage, active_dx_count } = patient;
+    const { status, case_number } = patient;
 
-    // Spec 056: "tem horário" = ≥ 1 faixa vigente hoje (o serviço não carrega mais `schedule`).
-    const hasSchedule = service.has_schedule;
-    const { missing, ready } = computeRecruitmentReadiness({
-      serviceHasAddress: service.live_address_id != null,
-      serviceHasSchedule: hasSchedule,
-      insuranceInformed: insurance_informed,
-      hasVerifiedActiveCoverage: has_verified_active_coverage,
-      patientStatus: status,
-      activeDiagnosisCount: Number(active_dx_count),
-      serviceRecruitmentFields: {
-        requiredProfessions: service.required_professions,
-        requiredSex: service.required_sex,
-        requiredExperience: service.required_experience,
-        workSchedule: service.work_schedule,
-        paymentDay: service.payment_day,
-      },
-    });
+    const { missing, ready } = computeRecruitmentReadiness(readinessInputFromContext({ patient, service }));
     if (!ready) {
       throw new RecruitmentNotReadyError(patientId, serviceId, missing);
     }

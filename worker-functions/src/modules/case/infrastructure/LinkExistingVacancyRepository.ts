@@ -98,8 +98,11 @@ export class LinkExistingVacancyRepository {
     return { provider_age_band: res.rows[0].provider_age_band ?? null };
   }
 
-  /** UPDATE só das colunas presentes no feed; feed vazio = nenhuma query. */
-  async feedService(client: PoolClient, serviceId: string, feed: ServiceFeed): Promise<void> {
+  /**
+   * UPDATE só das colunas presentes no feed; feed vazio = nenhuma query. `actorUid` (uid do ator, como
+   * `PatientContractedServiceRepository` grava em `updated_by`, NOT NULL) carimba a autoria junto de `updated_at`.
+   */
+  async feedService(client: PoolClient, serviceId: string, feed: ServiceFeed, actorUid: string): Promise<void> {
     const params: unknown[] = [serviceId];
     const sets: string[] = [];
     for (const [key, column] of FEED_COLUMNS) {
@@ -109,6 +112,8 @@ export class LinkExistingVacancyRepository {
       sets.push(`${column} = $${params.length}`);
     }
     if (sets.length === 0) return;
+    params.push(actorUid);
+    sets.push(`updated_by = $${params.length}`);
     sets.push('updated_at = NOW()');
     await client.query(`UPDATE patient_contracted_services SET ${sets.join(', ')} WHERE id = $1`, params);
   }

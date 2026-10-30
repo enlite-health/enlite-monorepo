@@ -1,5 +1,6 @@
 import { activeDiagnosisCountSql } from "@shared/sql/patientDiagnosisSql";
 import type { PoolClient } from "pg";
+import type { RecruitmentReadinessInput, ServiceRecruitmentFields } from "../domain/PatientCompleteness";
 import { slotVigenteSql } from "@shared/sql/serviceScheduleSql";
 
 /** Paciente inexistente (ou soft-deletado). O controller mapeia para 404. */
@@ -143,4 +144,31 @@ export async function lockRecruitmentContext(
   }
 
   return { patient, service };
+}
+
+/**
+ * Monta a entrada do portão (`computeRecruitmentReadiness`) a partir do contexto travado. `overrides`
+ * substitui só endereço/campos de recrutamento do serviço (o vínculo passa o serviço "já alimentado em memória").
+ * "Tem horário" = ≥ 1 faixa vigente hoje (spec 056; o serviço não carrega mais `schedule`).
+ */
+export function readinessInputFromContext(
+  ctx: RecruitmentContext,
+  overrides?: { serviceHasAddress?: boolean; serviceRecruitmentFields?: ServiceRecruitmentFields },
+): RecruitmentReadinessInput {
+  const { patient, service } = ctx;
+  return {
+    serviceHasAddress: overrides?.serviceHasAddress ?? service.live_address_id != null,
+    serviceHasSchedule: service.has_schedule,
+    insuranceInformed: patient.insurance_informed,
+    hasVerifiedActiveCoverage: patient.has_verified_active_coverage,
+    patientStatus: patient.status,
+    activeDiagnosisCount: Number(patient.active_dx_count),
+    serviceRecruitmentFields: overrides?.serviceRecruitmentFields ?? {
+      requiredProfessions: service.required_professions,
+      requiredSex: service.required_sex,
+      requiredExperience: service.required_experience,
+      workSchedule: service.work_schedule,
+      paymentDay: service.payment_day,
+    },
+  };
 }
