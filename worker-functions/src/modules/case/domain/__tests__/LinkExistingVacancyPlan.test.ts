@@ -150,7 +150,7 @@ describe('linkExistingVacancyPlan', () => {
     it('(20,29) → AGE_20_30 no feed', () => {
       const r = linkExistingVacancyPlan(emptyVacancy({ age_range_min: 20, age_range_max: 29 }), emptyService(), yes);
       expect(r.serviceFeed.provider_age_band).toBe('AGE_20_30');
-      expect(r.rows.find((x) => x.field === 'age_range')?.origin).toBe('VACANCY');
+      expect(r.rows.find((x) => x.field === 'age_range')).toBeUndefined();
     });
     it('(20,30) sem faixa exata → aviso AGE_RANGE_NO_EXACT_BAND', () => {
       const r = linkExistingVacancyPlan(emptyVacancy({ age_range_min: 20, age_range_max: 30 }), emptyService(), yes);
@@ -218,12 +218,12 @@ describe('linkExistingVacancyPlan', () => {
     it('serviço sem endereço: alimenta', () => {
       const r = linkExistingVacancyPlan(emptyVacancy({ patient_address_id: 'a1' }), emptyService(), yes);
       expect(r.serviceFeed.address_id).toBe('a1');
-      expect(r.rows).toEqual([{ field: 'address', vacancyValue: 'a1', effectiveValue: 'a1', origin: 'VACANCY' }]);
+      expect(r.rows).toEqual([]);
       expect(r.effective.hasAddress).toBe(true);
     });
-    it('vaga sem endereço e serviço com: row SERVICE', () => {
+    it('vaga sem endereço e serviço com: sem linha (a vaga mantém o seu, null)', () => {
       const r = linkExistingVacancyPlan(emptyVacancy(), emptyService({ address_id: 'a2' }), yes);
-      expect(r.rows).toEqual([{ field: 'address', vacancyValue: null, effectiveValue: 'a2', origin: 'SERVICE' }]);
+      expect(r.rows).toEqual([]);
       expect(r.effective.hasAddress).toBe(true);
     });
     it('nenhum dos dois: hasAddress false', () => {
@@ -298,15 +298,28 @@ describe('linkExistingVacancyPlan', () => {
     expect(r.warnings).toEqual([{ field: 'required_sex', code: 'VALUE_OUTSIDE_SERVICE_DOMAIN' }]);
   });
 
-  it('campo alimentado pela vaga aparece em rows com origin VACANCY mesmo com valor igual', () => {
+  it('campo alimentado pela vaga com o MESMO valor NÃO gera linha (required_sex, age_range, address)', () => {
     const r = linkExistingVacancyPlan(
       emptyVacancy({ required_sex: 'F', age_range_min: 20, age_range_max: 29, patient_address_id: 'a1' }),
       emptyService(),
       yes,
     );
-    expect(r.rows).toContainEqual({ field: 'required_sex', vacancyValue: 'F', effectiveValue: 'F', origin: 'VACANCY' });
-    expect(r.rows).toContainEqual({ field: 'age_range', vacancyValue: { min: 20, max: 29 }, effectiveValue: { min: 20, max: 29 }, origin: 'VACANCY' });
-    expect(r.rows).toContainEqual({ field: 'address', vacancyValue: 'a1', effectiveValue: 'a1', origin: 'VACANCY' });
+    expect(r.serviceFeed).toMatchObject({ required_sex: 'F', provider_age_band: 'AGE_20_30', address_id: 'a1' });
+    expect(r.rows).toEqual([]);
+  });
+
+  it('serviço com valor diferente → 1 linha origin SERVICE', () => {
+    const r = linkExistingVacancyPlan(emptyVacancy({ required_sex: 'F' }), emptyService({ required_sex: 'M' }), yes);
+    expect(r.rows).toEqual([{ field: 'required_sex', vacancyValue: 'F', effectiveValue: 'M', origin: 'SERVICE' }]);
+  });
+
+  it('tudo igual → rows vazio', () => {
+    const r = linkExistingVacancyPlan(
+      emptyVacancy({ required_sex: 'F', required_experience: '5', patient_address_id: 'a1' }),
+      emptyService({ required_sex: 'F', required_experience: '5', address_id: 'a1' }),
+      yes,
+    );
+    expect(r.rows).toEqual([]);
   });
 
   it('direção única: serviceFeed só tem chave de campo cujo serviço estava vazio', () => {

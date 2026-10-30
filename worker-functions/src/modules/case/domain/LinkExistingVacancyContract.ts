@@ -39,7 +39,7 @@ export const VACANCY_NOT_LINKABLE_REASONS = [
 ] as const;
 export type VacancyNotLinkableReason = (typeof VACANCY_NOT_LINKABLE_REASONS)[number];
 
-export type LinkOrigin = 'SERVICE' | 'VACANCY' | 'NONE';
+export type LinkOrigin = 'SERVICE' | 'NONE';
 
 export interface LinkPreviewRow {
   field: LinkField;

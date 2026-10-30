@@ -280,10 +280,11 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
     expect(p.blockers).toEqual([]);
     expect(p.canConfirm).toBe(true);
     const campos = (p.rows as Array<{ field: string; origin: string }>);
-    expect(campos.length).toBeGreaterThan(0);
-    // serviço vazio → alimentado pela vaga (VACANCY); o horário NUNCA alimenta: vale a faixa do serviço (SERVICE)
-    for (const row of campos) expect([row.field, row.origin]).toEqual([row.field, row.field === 'schedule' ? 'SERVICE' : 'VACANCY']);
-    expect(campos.map((x) => x.field)).toEqual(expect.arrayContaining(['required_professions', 'work_schedule', 'providers_needed']));
+    // T011c: a prévia lista SÓ o que muda na vaga. Serviço vazio alimentado pela vaga entrega o MESMO dado → sem linha;
+    // o horário nunca alimenta (a vaga perde o schedule) → a única linha é `schedule`.
+    expect(campos.some((x) => x.origin === 'VACANCY')).toBe(false);
+    expect(campos.map((x) => x.field)).not.toEqual(expect.arrayContaining(['required_professions', 'work_schedule', 'providers_needed']));
+    for (const row of campos) expect(row.field).toBe('schedule');
     expect(p.warnings).toEqual([]);
 
     expect(await fotoVaga(c.vagaId)).toEqual(vagaAntes);

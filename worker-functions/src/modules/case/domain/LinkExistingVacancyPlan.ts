@@ -74,7 +74,7 @@ export interface LinkExistingVacancyPlanResult {
   serviceFeed: ServiceFeed;
   /** Só colunas da vaga NÃO vazias (para a auditoria antes→null). */
   vacancyClear: Array<{ column: VacancyServiceOwnedColumn; before: unknown }>;
-  /** Linhas que mudam (vacancyValue ≠ effectiveValue, profundo) OU em que o serviço é alimentado pela vaga (origin VACANCY). */
+  /** Só as linhas em que o valor que a vaga exibe MUDA (vacancyValue ≠ effectiveValue, profundo). */
   rows: LinkPreviewRow[];
   warnings: LinkWarning[];
   addressBlocked: boolean;
@@ -108,8 +108,11 @@ export function linkExistingVacancyPlan(
   const warnings: LinkWarning[] = [];
   let addressBlocked = false;
 
-  const addRow = (field: LinkField, vacancyValue: unknown, effectiveValue: unknown, origin: LinkOrigin): void => {
-    if (origin === 'VACANCY' || !deepEqual(vacancyValue, effectiveValue)) rows.push({ field, vacancyValue, effectiveValue, origin });
+  // Prévia = só o que MUDA no que a vaga exibe. Campo alimentado pela vaga (origem VACANCY) entrega o MESMO
+  // dado ao serviço: não gera linha (decisão do Gabriel, 30/10).
+  const addRow = (field: LinkField, vacancyValue: unknown, effectiveValue: unknown, origin: LinkOrigin | 'VACANCY'): void => {
+    if (origin === 'VACANCY') return;
+    if (!deepEqual(vacancyValue, effectiveValue)) rows.push({ field, vacancyValue, effectiveValue, origin });
   };
   const clearIf = (column: VacancyServiceOwnedColumn, before: unknown, empty: boolean): void => {
     if (!empty) vacancyClear.push({ column, before });
@@ -127,7 +130,7 @@ export function linkExistingVacancyPlan(
     const vVal = vacancy[f];
     const vEmpty = isBlankString(vVal);
     clearIf(f, vVal, vEmpty);
-    let origin: LinkOrigin = 'NONE';
+    let origin: LinkOrigin | 'VACANCY' = 'NONE';
     let effective: string | null = null;
     if (!isBlankString(service[f])) {
       origin = 'SERVICE';
@@ -150,7 +153,7 @@ export function linkExistingVacancyPlan(
     const vVal = vacancy.required_professions;
     const vEmpty = isEmptyList(vVal);
     clearIf('required_professions', vVal, vEmpty);
-    let origin: LinkOrigin = 'NONE';
+    let origin: LinkOrigin | 'VACANCY' = 'NONE';
     let effective: string[] | null = null;
     if (!isEmptyList(service.required_professions)) {
       origin = 'SERVICE';
@@ -172,7 +175,7 @@ export function linkExistingVacancyPlan(
     const vVal = vacancy.providers_needed;
     const vEmpty = isBlankString(vVal);
     clearIf('providers_needed', vVal, vEmpty);
-    let origin: LinkOrigin = 'NONE';
+    let origin: LinkOrigin | 'VACANCY' = 'NONE';
     let effective: number | null = null;
     if (service.providers_needed != null) {
       origin = 'SERVICE';
@@ -198,7 +201,7 @@ export function linkExistingVacancyPlan(
     clearIf('age_range_min', vacancy.age_range_min, min === null);
     clearIf('age_range_max', vacancy.age_range_max, max === null);
     let band: ProviderAgeBand | null = service.provider_age_band;
-    let origin: LinkOrigin = 'NONE';
+    let origin: LinkOrigin | 'VACANCY' = 'NONE';
     if (service.provider_age_band != null) {
       origin = 'SERVICE';
     } else if (min !== null || max !== null) {
@@ -232,11 +235,9 @@ export function linkExistingVacancyPlan(
     if (v != null && s != null) {
       if (v !== s) addressBlocked = true;
     } else if (v != null && s == null) {
-      serviceFeed.address_id = v;
-      rows.push({ field: 'address', vacancyValue: v, effectiveValue: v, origin: 'VACANCY' });
-    } else if (v == null && s != null) {
-      rows.push({ field: 'address', vacancyValue: null, effectiveValue: s, origin: 'SERVICE' });
+      serviceFeed.address_id = v; // mesmo dado → sem linha
     }
+    // v == null && s != null: a vaga mantém patient_address_id próprio (null) → nada muda na vaga → sem linha
   }
 
   return {
