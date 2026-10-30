@@ -383,4 +383,53 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
     expect(await fotoServico(c.serviceId)).toEqual(servicoAntes);
     expect(await nAudit(c.vagaId)).toBe(auditAntes);
   });
+
+  // ── 8. endereço ARQUIVADO (real, não dublê) ─────────────────────────────────────────────────────────────────
+  it('8. serviço sem endereço vivo + vaga com endereço ARQUIVADO → blocker SERVICE_ADDRESS, 422 LINK_BLOCKED e nada gravado', async () => {
+    const patientId = await criarPaciente('arq');
+    const a1 = await criarEndereco(patientId, 'Av. Siempre Viva 742');
+    const serviceId = await criarServico(patientId, a1, { comFaixa: true });
+    const vagaId = await semearVaga(patientId, a1);
+    // arquiva o endereço: o serviço aponta para ele (cru), a vaga também; nenhum endereço vivo sobra
+    await pool.query('UPDATE patient_addresses SET archived_at = now() WHERE id = $1', [a1]);
+    const c: Cenario = { patientId, serviceId, addressId: a1, vagaId };
+    const vagaAntes = await fotoVaga(vagaId);
+    const servicoAntes = await fotoServico(serviceId);
+    const auditAntes = await nAudit(vagaId);
+
+    const p = await preview(c, U.completo, vagaId);
+    expect(p.status).toBe(200);
+    expect(p.data.data.preview.blockers).toContain('SERVICE_ADDRESS');
+    expect(p.data.data.preview.canConfirm).toBe(false);
+
+    const r = await confirmar(c, U.completo, vagaId);
+    expect(r.status).toBe(422);
+    expect(JSON.stringify(r.data)).toContain('LINK_BLOCKED');
+    expect(JSON.stringify(r.data)).toContain('SERVICE_ADDRESS');
+
+    expect(await fotoVaga(vagaId)).toEqual(vagaAntes);
+    expect(await fotoServico(serviceId)).toEqual(servicoAntes);
+    expect(await nAudit(vagaId)).toBe(auditAntes);
+  });
+
+  // ── 9. auditoria com "before" real ──────────────────────────────────────────────────────────────────────────
+  it('9. serviço com endereço A1 ARQUIVADO + vaga com A2 VIVO → 200, serviço passa a A2 e a auditoria guarda before=A1 after=A2', async () => {
+    const patientId = await criarPaciente('aud');
+    const a1 = await criarEndereco(patientId, 'Av. Siempre Viva 742');
+    const serviceId = await criarServico(patientId, a1, { comFaixa: true });
+    const a2 = await criarEndereco(patientId, 'Calle Falsa 123');
+    const vagaId = await semearVaga(patientId, a2);
+    await pool.query('UPDATE patient_addresses SET archived_at = now() WHERE id = $1', [a1]);
+    const c: Cenario = { patientId, serviceId, addressId: a1, vagaId };
+    expect((await fotoServico(serviceId)).address_id).toBe(a1);
+
+    const r = await confirmar(c, U.completo, vagaId);
+    expect([r.status, r.data]).toEqual([200, expect.objectContaining({ success: true })]);
+
+    expect((await fotoServico(serviceId)).address_id).toBe(a2);
+    const { rows } = await pool.query<{ changes: { before: unknown; after: unknown } }>(
+      `SELECT changes FROM job_posting_audit_log WHERE job_posting_id = $1 AND field_name = 'contracted_service.address_id'`, [vagaId]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].changes).toEqual({ before: a1, after: a2 });
+  });
 });
