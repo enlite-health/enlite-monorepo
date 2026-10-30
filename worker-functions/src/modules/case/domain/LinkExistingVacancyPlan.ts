@@ -74,7 +74,7 @@ export interface LinkExistingVacancyPlanResult {
   serviceFeed: ServiceFeed;
   /** Só colunas da vaga NÃO vazias (para a auditoria antes→null). */
   vacancyClear: Array<{ column: VacancyServiceOwnedColumn; before: unknown }>;
-  /** Só as linhas que mudam (vacancyValue ≠ effectiveValue, comparação profunda). */
+  /** Linhas que mudam (vacancyValue ≠ effectiveValue, profundo) OU em que o serviço é alimentado pela vaga (origin VACANCY). */
   rows: LinkPreviewRow[];
   warnings: LinkWarning[];
   addressBlocked: boolean;
@@ -109,7 +109,7 @@ export function linkExistingVacancyPlan(
   let addressBlocked = false;
 
   const addRow = (field: LinkField, vacancyValue: unknown, effectiveValue: unknown, origin: LinkOrigin): void => {
-    if (!deepEqual(vacancyValue, effectiveValue)) rows.push({ field, vacancyValue, effectiveValue, origin });
+    if (origin === 'VACANCY' || !deepEqual(vacancyValue, effectiveValue)) rows.push({ field, vacancyValue, effectiveValue, origin });
   };
   const clearIf = (column: VacancyServiceOwnedColumn, before: unknown, empty: boolean): void => {
     if (!empty) vacancyClear.push({ column, before });
@@ -233,6 +233,7 @@ export function linkExistingVacancyPlan(
       if (v !== s) addressBlocked = true;
     } else if (v != null && s == null) {
       serviceFeed.address_id = v;
+      rows.push({ field: 'address', vacancyValue: v, effectiveValue: v, origin: 'VACANCY' });
     } else if (v == null && s != null) {
       rows.push({ field: 'address', vacancyValue: null, effectiveValue: s, origin: 'SERVICE' });
     }

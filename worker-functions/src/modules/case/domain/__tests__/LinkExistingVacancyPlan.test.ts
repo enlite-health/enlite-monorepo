@@ -150,8 +150,7 @@ describe('linkExistingVacancyPlan', () => {
     it('(20,29) → AGE_20_30 no feed', () => {
       const r = linkExistingVacancyPlan(emptyVacancy({ age_range_min: 20, age_range_max: 29 }), emptyService(), yes);
       expect(r.serviceFeed.provider_age_band).toBe('AGE_20_30');
-      // vaga == efetivo: não muda, logo sem row
-      expect(r.rows.find((x) => x.field === 'age_range')).toBeUndefined();
+      expect(r.rows.find((x) => x.field === 'age_range')?.origin).toBe('VACANCY');
     });
     it('(20,30) sem faixa exata → aviso AGE_RANGE_NO_EXACT_BAND', () => {
       const r = linkExistingVacancyPlan(emptyVacancy({ age_range_min: 20, age_range_max: 30 }), emptyService(), yes);
@@ -219,6 +218,7 @@ describe('linkExistingVacancyPlan', () => {
     it('serviço sem endereço: alimenta', () => {
       const r = linkExistingVacancyPlan(emptyVacancy({ patient_address_id: 'a1' }), emptyService(), yes);
       expect(r.serviceFeed.address_id).toBe('a1');
+      expect(r.rows).toEqual([{ field: 'address', vacancyValue: 'a1', effectiveValue: 'a1', origin: 'VACANCY' }]);
       expect(r.effective.hasAddress).toBe(true);
     });
     it('vaga sem endereço e serviço com: row SERVICE', () => {
@@ -296,6 +296,17 @@ describe('linkExistingVacancyPlan', () => {
     });
     expect(r.serviceFeed).toEqual({ payment_day: '10', required_professions: ['AT'] });
     expect(r.warnings).toEqual([{ field: 'required_sex', code: 'VALUE_OUTSIDE_SERVICE_DOMAIN' }]);
+  });
+
+  it('campo alimentado pela vaga aparece em rows com origin VACANCY mesmo com valor igual', () => {
+    const r = linkExistingVacancyPlan(
+      emptyVacancy({ required_sex: 'F', age_range_min: 20, age_range_max: 29, patient_address_id: 'a1' }),
+      emptyService(),
+      yes,
+    );
+    expect(r.rows).toContainEqual({ field: 'required_sex', vacancyValue: 'F', effectiveValue: 'F', origin: 'VACANCY' });
+    expect(r.rows).toContainEqual({ field: 'age_range', vacancyValue: { min: 20, max: 29 }, effectiveValue: { min: 20, max: 29 }, origin: 'VACANCY' });
+    expect(r.rows).toContainEqual({ field: 'address', vacancyValue: 'a1', effectiveValue: 'a1', origin: 'VACANCY' });
   });
 
   it('direção única: serviceFeed só tem chave de campo cujo serviço estava vazio', () => {
