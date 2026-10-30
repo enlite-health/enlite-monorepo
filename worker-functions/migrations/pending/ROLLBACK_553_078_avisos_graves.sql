@@ -9,3 +9,6 @@
 
 DROP TABLE IF EXISTS agentes.avisos_enviados;
 DELETE FROM notification_types WHERE code IN ('PEDIDO_IA_NOVO', 'PEDIDO_IA_GRAVE');
+
+-- Nota (incidente 30/10/2026): o rollback não depende de REFERENCES — DROP TABLE é privilégio de dono. O REFERENCES em agentes.pedidos
+-- que a 553 concede ao executor é revogado dentro da própria 553, então não há o que desfazer aqui.
