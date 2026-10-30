@@ -128,7 +128,15 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   assistente_maria: 'Operações',
   assistente_lucero: 'Operações',
   assistente_candela: 'Operações',
-  assistente_luz: 'Operações',
+  agentes_placar: 'Operações',
+  agentes_reporte: 'Operações',
+  conhecimento_publico: 'Operações',
+  conhecimento_recrutamento: 'Operações',
+  conhecimento_clinico: 'Operações',
+  conhecimento_financeiro: 'Operações',
+  conhecimento_gestao: 'Operações',
+  conhecimento_coordenacao: 'Operações',
+  conhecimento_tecnico: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -555,7 +563,15 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'assistente_maria:chat': 'Conversar con Maria (gestora de reclutamiento)',
   'assistente_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
   'assistente_candela:chat': 'Conversar con Candela (gestora de coordinación)',
-  'assistente_luz:chat': 'Conversar con Luz (operadora de reclutamiento)',
+  'agentes_placar:read': 'Ver el placar de los agentes (reportes por operador)',
+  'agentes_reporte:registrar': 'Registrar el reporte de un asistente en el placar',
+  'conhecimento_publico:read': 'Leer la gaveta de conocimiento pública',
+  'conhecimento_recrutamento:read': 'Leer la gaveta de conocimiento de reclutamiento',
+  'conhecimento_clinico:read': 'Leer la gaveta de conocimiento clínico (solo estados y conteos)',
+  'conhecimento_financeiro:read': 'Leer la gaveta de conocimiento financiera',
+  'conhecimento_gestao:read': 'Leer la gaveta de conocimiento de gestión',
+  'conhecimento_coordenacao:read': 'Leer la gaveta de conocimiento de coordinación',
+  'conhecimento_tecnico:read': 'Leer la gaveta de conocimiento técnico',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
@@ -739,6 +755,24 @@ export function isOwnCell(key: string): boolean {
  */
 export const ACESSO_MASTER_GROUP_ID = 'a0000000-0000-0000-0000-000000000001';
 
+/** Spec 080 — chat com os assistentes (Master-only, fase A). Ordem do contrato §5. */
+export const ASSISTENTE_CHAT_CELLS: readonly string[] = [
+  'assistente_maria:chat',
+  'assistente_lucero:chat',
+  'assistente_candela:chat',
+];
+
+/** Spec 080 — uma célula por gaveta do Sol (nunca `default`). Ordem do contrato §5. */
+export const CONHECIMENTO_CELLS: readonly string[] = [
+  'conhecimento_publico:read',
+  'conhecimento_recrutamento:read',
+  'conhecimento_clinico:read',
+  'conhecimento_financeiro:read',
+  'conhecimento_gestao:read',
+  'conhecimento_coordenacao:read',
+  'conhecimento_tecnico:read',
+];
+
 /**
  * Células que SÓ o Acesso Master pode ter (decisão do Gabriel, 30/10, spec 078): decidir pedidos
  * da IA é do Acesso Master e de mais ninguém. Não existe grupo "Decisores". O sync do boot continua
@@ -748,10 +782,10 @@ export const ACESSO_MASTER_GROUP_ID = 'a0000000-0000-0000-0000-000000000001';
 export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
   'pedidos_ia:read',
   'pedidos_ia:decidir',
-  'assistente_maria:chat',
-  'assistente_lucero:chat',
-  'assistente_candela:chat',
-  'assistente_luz:chat',
+  ...ASSISTENTE_CHAT_CELLS,
+  'agentes_placar:read',
+  'agentes_reporte:registrar',
+  ...CONHECIMENTO_CELLS,
 ]);
 
 export function isSomenteAcessoMaster(key: string): boolean {

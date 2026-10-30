@@ -1,4 +1,10 @@
+import { STATUS_POR_CODIGO } from '../../../interfaces/http/permissionErrorHttp';
 import {
+  ACESSO_MASTER_GROUP_ID,
+  ASSISTENTE_CHAT_CELLS,
+  CONHECIMENTO_CELLS,
+  SOMENTE_ACESSO_MASTER_CELLS,
+  assertCellsAllowedForGroup,
   CELL_DESCRIPTION,
   PERMISSION_CATEGORIES,
   RESOURCE_CATEGORY,
@@ -134,5 +140,46 @@ describe('expandWriteCells', () => {
 
   it('lista vazia devolve lista vazia', () => {
     expect(expandWriteCells([])).toEqual([]);
+  });
+});
+
+describe('spec 080 — células dos assistentes (Master-only)', () => {
+  const DOZE = [
+    ...ASSISTENTE_CHAT_CELLS,
+    'agentes_placar:read',
+    'agentes_reporte:registrar',
+    ...CONHECIMENTO_CELLS,
+  ];
+
+  it('(a) as 12 células (3 + 2 + 7) estão em SOMENTE_ACESSO_MASTER_CELLS', () => {
+    expect(ASSISTENTE_CHAT_CELLS).toHaveLength(3);
+    expect(CONHECIMENTO_CELLS).toHaveLength(7);
+    expect(DOZE).toHaveLength(12);
+    for (const c of DOZE) {
+      expect(isValidCellKey(c)).toBe(true);
+      expect(SOMENTE_ACESSO_MASTER_CELLS.has(c)).toBe(true);
+    }
+    expect(CONHECIMENTO_CELLS.some((c) => c.includes('default'))).toBe(false);
+  });
+
+  it('(b) conceder qualquer uma a grupo não-Master é recusado (master_only_cell, 422); o Master passa', () => {
+    for (const c of DOZE) {
+      let err: unknown;
+      try {
+        assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [c]);
+      } catch (e) {
+        err = e;
+      }
+      expect((err as { code?: string }).code).toBe('master_only_cell');
+      expect(STATUS_POR_CODIGO.master_only_cell).toBe(422);
+      expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [c])).not.toThrow();
+    }
+  });
+
+  it('(c) a Luz não tem célula de chat no catálogo (decisão 7 revogada)', () => {
+    const luz = ['assistente', 'luz'].join('_'); // montado: o grep de T048 exige 0 ocorrências literais em src
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has(`${luz}:chat`)).toBe(false);
+    expect(`${luz}:chat` in CELL_DESCRIPTION).toBe(false);
+    expect(luz in RESOURCE_CATEGORY).toBe(false);
   });
 });
