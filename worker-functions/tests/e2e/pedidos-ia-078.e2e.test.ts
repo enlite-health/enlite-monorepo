@@ -292,6 +292,23 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
     expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.decisor)).status).toBe(200);
   });
 
+  it('descrever DEPOIS de aceitar ou negar na mesma atitude -> 409 PEDIDO_JA_DECIDIDO e ZERO eventos novos; em pedido novo -> 200 (controle)', async () => {
+    const ctl = await novoPedido();
+    expect((await http('POST', `/api/admin/pedidos-ia/${ctl.pedidoId}/descrever`, U.decisor, { comentario: 'controle' })).status).toBe(200);
+    const ac = await novoPedido();
+    expect((await http('POST', `/api/admin/pedidos-ia/${ac.pedidoId}/aceitar`, U.decisor)).status).toBe(200);
+    const r1 = await http('POST', `/api/admin/pedidos-ia/${ac.pedidoId}/descrever`, U.decisor, { comentario: 'depois do aceite' });
+    expect(r1.status).toBe(409);
+    expect(r1.body.code).toBe('PEDIDO_JA_DECIDIDO');
+    expect((await eventos(ac.pedidoId)).map((e) => e.acao)).toEqual(['aceitar']);
+    const ne = await novoPedido();
+    expect((await http('POST', `/api/admin/pedidos-ia/${ne.pedidoId}/negar`, U.decisor, { motivo: 'm' })).status).toBe(200);
+    const r2 = await http('POST', `/api/admin/pedidos-ia/${ne.pedidoId}/descrever`, U.decisor, { comentario: 'depois do nego' });
+    expect(r2.status).toBe(409);
+    expect(r2.body.code).toBe('PEDIDO_JA_DECIDIDO');
+    expect((await eventos(ne.pedidoId)).map((e) => e.acao)).toEqual(['negar']);
+  });
+
   it('pedido inexistente: POST -> 404; e a view pedido_status cobre os 4 estados', async () => {
     expect((await http('POST', `/api/admin/pedidos-ia/00000000-0000-4000-8000-000000000000/aceitar`, U.decisor)).status).toBe(404);
     const a = await novoPedido(); const b = await novoPedido(); const c = await novoPedido(); const d = await novoPedido();

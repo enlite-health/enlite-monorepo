@@ -5,6 +5,7 @@ import { reportError } from '@shared/logging';
 import {
   ComentarioObrigatorioError,
   DecisaoJaRegistradaError,
+  PedidoJaDecididoError,
   MotivoObrigatorioError,
   PEDIDO_STATUS,
   PedidoNaoEncontradoError,
@@ -93,6 +94,7 @@ export class PedidoIaController {
   private fail(err: unknown, res: Response, method: string): void {
     if (err instanceof PedidoNaoEncontradoError) return void res.status(404).json({ success: false, code: 'NOT_FOUND' });
     if (err instanceof DecisaoJaRegistradaError) return void res.status(409).json({ success: false, code: 'DECISAO_JA_REGISTRADA' });
+    if (err instanceof PedidoJaDecididoError) return void res.status(409).json({ success: false, code: 'PEDIDO_JA_DECIDIDO' });
     if (err instanceof MotivoObrigatorioError) return void res.status(400).json({ success: false, code: 'MOTIVO_OBRIGATORIO' });
     if (err instanceof ComentarioObrigatorioError) return void res.status(400).json({ success: false, code: 'COMENTARIO_OBRIGATORIO' });
     reportError(err instanceof Error ? err : new Error(String(err)), { source: `PedidoIaController:${method}` });

@@ -70,3 +70,7 @@ export class ComentarioObrigatorioError extends Error {
 export class DecisaoJaRegistradaError extends Error {
   constructor() { super('DECISAO_JA_REGISTRADA'); this.name = 'DecisaoJaRegistradaError'; }
 }
+/** `descrever` depois de aceitar/negar na MESMA atitude (spec 078, decisão 3): o pedido já foi decidido, descrever não reabre. */
+export class PedidoJaDecididoError extends Error {
+  constructor() { super('PEDIDO_JA_DECIDIDO'); this.name = 'PedidoJaDecididoError'; }
+}

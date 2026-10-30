@@ -3,6 +3,7 @@ import { withActorContext } from '@shared/database/actorContext';
 import { staffActor } from '@shared/audit/actorSource';
 import {
   DecisaoJaRegistradaError,
+  PedidoJaDecididoError,
   PedidoNaoEncontradoError,
   type DecisaoInput,
   type FiltroPedidos,
@@ -71,6 +72,13 @@ export class PostgresPedidoIaRepository implements PedidoIaRepositoryPort {
             [i.pedidoId],
           );
           if (!at.rows[0]) throw new PedidoNaoEncontradoError();
+          if (i.acao === 'descrever') {
+            const dec = await c.query(
+              `SELECT 1 FROM agentes.pedido_eventos WHERE atitude_id = $1 AND acao IN ('aceitar', 'negar') LIMIT 1`,
+              [at.rows[0].id],
+            );
+            if (dec.rows.length > 0) throw new PedidoJaDecididoError();
+          }
           const ev = await c.query<{ id: string }>(
             `INSERT INTO agentes.pedido_eventos (pedido_id, atitude_id, acao, actor_uid, actor_kind, motivo, comentario)
              VALUES ($1, $2, $3, $4, 'humano', $5, $6) RETURNING id`,

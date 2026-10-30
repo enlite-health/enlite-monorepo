@@ -1,11 +1,13 @@
 import {
   ComentarioObrigatorioError,
   DecisaoJaRegistradaError,
+  PedidoJaDecididoError,
   MotivoObrigatorioError,
   PedidoNaoEncontradoError,
   type DecisaoInput,
   type PedidoIa,
 } from '../../domain/PedidoIa';
+import { PedidoIaController } from '../../interfaces/controllers/PedidoIaController';
 import type { PedidoIaRepositoryPort } from '../../domain/PedidoIaRepositoryPort';
 import { DecidirPedidoIaUseCase, type AvisoAplicarPort, ListarPedidosIaUseCase, ObterPedidoIaUseCase } from '../PedidosIaUseCases';
 
@@ -119,5 +121,20 @@ describe('gatilho (d): aceitar em degrau 3/4 avisa os decisores (spec 078, M4.4.
     const repo = { ...comDegrau(3), decidir: jest.fn(async () => { throw new DecisaoJaRegistradaError(); }) };
     await expect(new DecidirPedidoIaUseCase(repo, a).execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' })).rejects.toBeInstanceOf(DecisaoJaRegistradaError);
     expect(a.notificar).not.toHaveBeenCalled();
+  });
+});
+
+describe('descrever depois de aceitar/negar -> 409 PEDIDO_JA_DECIDIDO (spec 078, decisão 3)', () => {
+  it('o erro do repositório sobe intacto, sem aviso, e o controller responde 409 com o código', async () => {
+    const a = { notificar: jest.fn(async () => undefined) };
+    const repo = fakeRepo({ decidir: jest.fn(async () => { throw new PedidoJaDecididoError(); }) });
+    const uc = new DecidirPedidoIaUseCase(repo, a);
+    await expect(uc.execute({ pedidoId: 'p1', acao: 'descrever', actorUid: 'u1', comentario: 'c' })).rejects.toBeInstanceOf(PedidoJaDecididoError);
+    expect(a.notificar).not.toHaveBeenCalled();
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const ctrl = new PedidoIaController(new ListarPedidosIaUseCase(repo), new ObterPedidoIaUseCase(repo), uc);
+    (ctrl as unknown as { fail: (e: unknown, r: unknown, m: string) => void }).fail(new PedidoJaDecididoError(), res, 'descrever');
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ success: false, code: 'PEDIDO_JA_DECIDIDO' });
   });
 });
