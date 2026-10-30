@@ -26,6 +26,11 @@ export interface ReporteInput {
   autor: string;
   operador: string;
   area: string;
+  caso: string;
+  regra_ref?: string;
+  ocorrencias?: number;
+  janela_de: string;
+  janela_ate: string;
   observacao: string;
   regra_proposta?: string;
   veredicto_ids: string[];
@@ -69,7 +74,7 @@ export interface PlacarResult {
   conversas: number;
   nota_media: number | null;
   cruza_areas: number;
-  por_regra: Array<{ regra_ref: string; violacoes: number; gravidade_maxima: string }>;
+  por_regra: Array<{ regra_ref: string; violacoes: number; gravidade_max: string; veredicto_ids: string[] }>;
   veredicto_ids: string[];
 }
 
@@ -116,15 +121,32 @@ export class AgentesRepository {
     );
   }
 
-  async registrarReporte(principal: string, r: ReporteInput): Promise<{ id: string }> {
+  /** `duplicado: true` quando (operador, caso, regra_ref, janela) já existe (índice `ux_reportes_dedup`): nada é regravado. */
+  async registrarReporte(
+    principal: string,
+    r: ReporteInput,
+  ): Promise<{ id: string; duplicado?: true }> {
     return withActorContext(
       this.pool,
       async (c) => {
         const ins = await c.query<{ id: string }>(
-          `INSERT INTO agentes.reportes (autor, operador, area, observacao, regra_proposta)
-           VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-          [r.autor, r.operador, r.area, r.observacao, r.regra_proposta ?? null],
+          `INSERT INTO agentes.reportes
+             (autor, operador, area, caso, regra_ref, ocorrencias, janela_de, janela_ate, observacao, regra_proposta)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           ON CONFLICT DO NOTHING
+           RETURNING id`,
+          [r.autor, r.operador, r.area, r.caso, r.regra_ref ?? null, r.ocorrencias ?? null,
+           r.janela_de, r.janela_ate, r.observacao, r.regra_proposta ?? null],
         );
+        if (ins.rows.length === 0) {
+          const ex = await c.query<{ id: string }>(
+            `SELECT id FROM agentes.reportes
+              WHERE operador=$1 AND caso=$2 AND COALESCE(regra_ref,'') = COALESCE($3::text,'')
+                AND janela_de=$4 AND janela_ate=$5`,
+            [r.operador, r.caso, r.regra_ref ?? null, r.janela_de, r.janela_ate],
+          );
+          return { id: ex.rows[0].id, duplicado: true as const };
+        }
         const id = ins.rows[0].id;
         for (const vid of new Set(r.veredicto_ids)) {
           await c.query(
@@ -146,9 +168,13 @@ export class AgentesRepository {
       this.pool,
       async (c) => {
         const { rows } = await c.query(
-          `SELECT r.id, r.autor, r.operador, r.area, r.observacao, r.regra_proposta, r.criado_em,
+          `SELECT r.id, r.autor, r.operador, r.area, r.caso, r.regra_ref, r.ocorrencias,
+                  to_char(r.janela_de, 'YYYY-MM-DD') AS janela_de, to_char(r.janela_ate, 'YYYY-MM-DD') AS janela_ate,
+                  r.observacao, r.regra_proposta, r.criado_em,
                   COALESCE((SELECT array_agg(rv.veredicto_id ORDER BY rv.veredicto_id)
-                              FROM agentes.reporte_veredictos rv WHERE rv.reporte_id = r.id), '{}') AS veredicto_ids
+                              FROM agentes.reporte_veredictos rv WHERE rv.reporte_id = r.id), '{}') AS veredicto_ids,
+                  COALESCE((SELECT array_agg(DISTINCT po.pedido_id ORDER BY po.pedido_id)
+                              FROM agentes.pedido_origens po WHERE po.reporte_id = r.id), '{}') AS pedido_ids
              FROM agentes.reportes r
             WHERE ($1::timestamptz IS NULL OR r.criado_em >= $1)
               AND ($2::text IS NULL OR r.operador = $2)
@@ -182,11 +208,14 @@ export class AgentesRepository {
             WHERE operador = $1 AND avaliado_em >= $2 AND avaliado_em < $3`,
           [p.operador, p.de, p.ate],
         );
-        const regras = await c.query<{ regra_ref: string; violacoes: string; gravidade_maxima: string }>(
+        const regras = await c.query<{
+          regra_ref: string; violacoes: string; gravidade_max: string; veredicto_ids: string[];
+        }>(
           `SELECT a.regra_ref,
                   count(*) AS violacoes,
                   CASE max(CASE a.gravidade WHEN 'alta' THEN 3 WHEN 'media' THEN 2 ELSE 1 END)
-                    WHEN 3 THEN 'alta' WHEN 2 THEN 'media' ELSE 'baixa' END AS gravidade_maxima
+                    WHEN 3 THEN 'alta' WHEN 2 THEN 'media' ELSE 'baixa' END AS gravidade_max,
+                  array_agg(DISTINCT a.veredicto_id ORDER BY a.veredicto_id) AS veredicto_ids
              FROM agentes.veredicto_achados a
              JOIN agentes.veredictos v ON v.id = a.veredicto_id
             WHERE a.tipo = 'violacao' AND v.operador = $1 AND v.avaliado_em >= $2 AND v.avaliado_em < $3
@@ -206,7 +235,8 @@ export class AgentesRepository {
           por_regra: regras.rows.map((r) => ({
             regra_ref: r.regra_ref,
             violacoes: Number(r.violacoes),
-            gravidade_maxima: r.gravidade_maxima,
+            gravidade_max: r.gravidade_max,
+            veredicto_ids: r.veredicto_ids,
           })),
           veredicto_ids: b.ids,
         };

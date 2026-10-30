@@ -26,6 +26,13 @@ export const UUID = z.string().uuid();
 export const ISO_DATA = z.string().datetime({ offset: true });
 
 export const MOTIVOS_MEDICAO = ['linha_de_base', 'antes', 'depois'] as const;
+/** Data de calendário `YYYY-MM-DD` (coluna `date`), existente de verdade (2026-02-30 é recusado). */
+export const DATA_DIA = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((d) => new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d, { message: 'data inexistente' });
+
+export const CASOS_REPORTE = ['leve', 'meta', 'reforco'] as const;
 export const SENSORES = ['silente', 'handover_orfao', 'juiz', 'scrubber', 'notario'] as const;
 export const GRAVIDADES = ['baixa', 'media', 'alta'] as const;
 export const GRAVE_GATILHOS = ['nenhum', 'nunca', 'dado', 'acao_fabricada'] as const;

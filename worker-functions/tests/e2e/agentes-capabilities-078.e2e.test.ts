@@ -121,7 +121,7 @@ describe('capabilities agentes.* contra o banco (spec 078, M3a-2)', () => {
   });
 
   it('placar.ler devolve a agregação esperada e NENHUMA chave de texto', async () => {
-    await veredictoCap.execute(
+    const v2 = await veredictoCap.execute(
       veredicto('c2', { sensor: 'silente', nota: undefined, juiz_versao: undefined, cruza_areas: true,
         avaliado_em: '2026-10-16T12:00:00Z',
         achados: [{ tipo: 'violacao', regra_ref: 'tom#aaaaaaaaaaaa', gravidade: 'alta' }] }),
@@ -138,7 +138,9 @@ describe('capabilities agentes.* contra o banco (spec 078, M3a-2)', () => {
     expect(placar.conversas).toBe(2);
     expect(placar.cruza_areas).toBe(1);
     expect(placar.nota_media).toBe(6); // só o juiz tem nota
-    expect(placar.por_regra).toEqual([{ regra_ref: 'tom#aaaaaaaaaaaa', violacoes: 2, gravidade_maxima: 'alta' }]);
+    expect(placar.por_regra).toEqual([
+      { regra_ref: 'tom#aaaaaaaaaaaa', violacoes: 2, gravidade_max: 'alta', veredicto_ids: [veredictoId, v2.id].sort() },
+    ]);
     expect(placar.veredicto_ids).toHaveLength(2);
     expect(placar.veredicto_ids).toContain(veredictoId);
 
@@ -163,24 +165,46 @@ describe('capabilities agentes.* contra o banco (spec 078, M3a-2)', () => {
   let reporteId: string;
   it('reporte.registrar grava reporte + ligação por id; reporte.ler devolve (sem campo de trecho)', async () => {
     const out = await reporteCap.execute(
-      { autor: 'Gestora QA', operador, area, observacao: 'prometeu prazo', veredicto_ids: [veredictoId, veredictoId] },
+      { autor: 'Gestora QA', operador, area, caso: 'leve', regra_ref: 'tom#aaaaaaaaaaaa', ocorrencias: 2,
+        janela_de: '2026-10-22', janela_ate: '2026-10-28', observacao: 'prometeu prazo', veredicto_ids: [veredictoId, veredictoId] },
       'maria',
     );
     reporteId = out.id;
+    expect(out.duplicado).toBeUndefined();
     expect(await count(`SELECT count(*) n FROM agentes.reporte_veredictos WHERE reporte_id = $1`, [reporteId])).toBe(1); // id repetido colapsa
 
     const lido = await reporteLerCap.execute({ operador }, 'sol-fila');
     expect(lido.reportes).toHaveLength(1);
     expect(lido.reportes[0]).toMatchObject({ id: reporteId, area, veredicto_ids: [veredictoId] });
     expect(Object.keys(lido.reportes[0]).sort()).toEqual(
-      ['area', 'autor', 'criado_em', 'id', 'observacao', 'operador', 'regra_proposta', 'veredicto_ids'],
+      ['area', 'autor', 'caso', 'criado_em', 'id', 'janela_ate', 'janela_de', 'observacao', 'ocorrencias', 'operador',
+        'pedido_ids', 'regra_proposta', 'regra_ref', 'veredicto_ids'],
     );
+    expect(lido.reportes[0]).toMatchObject({ caso: 'leve', regra_ref: 'tom#aaaaaaaaaaaa', ocorrencias: 2,
+      janela_de: '2026-10-22', janela_ate: '2026-10-28', pedido_ids: [] }); // ainda sem pedido
+  });
+
+  it('reporte.registrar repetido (mesmo operador, caso, regra_ref, janela) → duplicado:true, mesmo id, nada regravado', async () => {
+    const args = { autor: 'Gestora QA', operador, area, caso: 'leve', regra_ref: 'tom#aaaaaaaaaaaa', ocorrencias: 5,
+      janela_de: '2026-10-22', janela_ate: '2026-10-28', observacao: 'de novo', veredicto_ids: [] };
+    const out = await reporteCap.execute(args, 'maria');
+    expect(out).toEqual({ id: reporteId, duplicado: true });
+    expect(await count(`SELECT count(*) n FROM agentes.reportes WHERE area = $1`, [area])).toBe(1);
+    // meta (regra_ref NULL) também deduplica; outra janela é outro reporte
+    const meta = { ...args, caso: 'meta', regra_ref: undefined };
+    const m1 = await reporteCap.execute(meta, 'maria');
+    const m2 = await reporteCap.execute(meta, 'maria');
+    expect(m1.duplicado).toBeUndefined();
+    expect(m2).toEqual({ id: m1.id, duplicado: true });
+    const outra = await reporteCap.execute({ ...args, janela_de: '2026-10-29', janela_ate: '2026-10-29' }, 'maria');
+    expect(outra.duplicado).toBeUndefined();
+    expect(await count(`SELECT count(*) n FROM agentes.reportes WHERE area = $1`, [area])).toBe(3);
   });
 
   it('reporte com veredicto inexistente: o banco recusa (FK) e nada fica gravado', async () => {
     await expect(
       reporteCap.execute(
-        { autor: 'Gestora QA', operador, area, observacao: 'fantasma', veredicto_ids: ['123e4567-e89b-12d3-a456-426614174999'] },
+        { autor: 'Gestora QA', operador, area, caso: 'leve', regra_ref: 'fantasma#1', janela_de: '2026-10-01', janela_ate: '2026-10-02', observacao: 'fantasma', veredicto_ids: ['123e4567-e89b-12d3-a456-426614174999'] },
         'maria',
       ),
     ).rejects.toThrow();
@@ -204,6 +228,16 @@ describe('capabilities agentes.* contra o banco (spec 078, M3a-2)', () => {
     expect(await count(`SELECT count(*) n FROM agentes.pedido_origens WHERE pedido_id = $1`, [out.pedido_id])).toBe(2);
     const st = await admin.query(`SELECT status FROM agentes.pedido_status WHERE pedido_id = $1`, [out.pedido_id]);
     expect(st.rows[0].status).toBe('novo');
+  });
+
+  it('reporte.ler: reporte que virou pedido → pedido_ids não vazio; reporte sem pedido → []', async () => {
+    const lido = await reporteLerCap.execute({ operador }, 'sol-fila');
+    const pedidoId = (await admin.query(`SELECT id FROM agentes.pedidos WHERE area = $1 LIMIT 1`, [area])).rows[0].id as string;
+    const comPedido = lido.reportes.find((r) => r.id === reporteId);
+    const semPedido = lido.reportes.filter((r) => r.id !== reporteId);
+    expect(comPedido?.pedido_ids).toEqual([pedidoId]);
+    expect(semPedido.length).toBeGreaterThan(0);
+    for (const r of semPedido) expect(r.pedido_ids).toEqual([]);
   });
 
   it('pedido com origem inexistente: transação inteira revertida (nem pedido, nem atitude)', async () => {

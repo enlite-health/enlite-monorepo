@@ -42,6 +42,11 @@ const reporte = (over: Record<string, unknown> = {}) => ({
   autor: 'Gestora Teste',
   operador: 'luz',
   area: 'recrutamento',
+  caso: 'leve',
+  regra_ref: 'tom#28bd0a83fc2c',
+  ocorrencias: 3,
+  janela_de: '2026-10-22',
+  janela_ate: '2026-10-28',
   observacao: 'prometeu prazo que não existe',
   veredicto_ids: [UUID_A],
   ...over,
@@ -118,11 +123,38 @@ describe('agentes.reporte.registrar — formato', () => {
     ['veredicto_ids com valor que não é uuid', { veredicto_ids: ['1; DROP TABLE'] }],
     ['observacao vazia', { observacao: '   ' }],
     ['operador "Luz" (maiúscula)', { operador: 'Luz' }],
+    ['caso fora da lista', { caso: 'grave' }],
+    ['caso leve sem regra_ref', { regra_ref: undefined }],
+    ['caso reforco sem regra_ref', { caso: 'reforco', regra_ref: undefined }],
+    ['regra_ref com frase', { regra_ref: 'prometeu salário fixo' }],
+    ['regra_ref de 201 chars', { regra_ref: 'r'.repeat(201) }],
+    ['ocorrencias negativa', { ocorrencias: -1 }],
+    ['ocorrencias fracionária', { ocorrencias: 1.5 }],
+    ['janela invertida', { janela_de: '2026-10-28', janela_ate: '2026-10-22' }],
+    ['data inexistente (30/fev)', { janela_ate: '2026-02-30' }],
+    ['data com hora', { janela_de: '2026-10-22T00:00:00Z' }],
+    ['sem janela', { janela_de: undefined }],
   ])('recusa antes do banco: %s', async (_nome, over) => {
     const repo = makeRepo();
     const cap = new AgentesReporteRegistrarCapability(asRepo(repo));
     await expect(cap.execute(reporte(over), 'maria')).rejects.toThrow();
     expect(repo.registrarReporte).not.toHaveBeenCalled();
+  });
+});
+
+describe('agentes.reporte.registrar — formas aceitas', () => {
+  it('caso meta pode vir sem regra_ref e sem ocorrencias; janela de 1 dia vale', async () => {
+    const repo = makeRepo();
+    const cap = new AgentesReporteRegistrarCapability(asRepo(repo));
+    await cap.execute(reporte({ caso: 'meta', regra_ref: undefined, ocorrencias: undefined, janela_ate: '2026-10-22' }), 'maria');
+    expect(repo.registrarReporte).toHaveBeenCalledWith('maria', expect.objectContaining({ caso: 'meta' }));
+  });
+
+  it('duplicado devolvido pelo repositório chega ao chamador sem erro', async () => {
+    const repo = makeRepo();
+    repo.registrarReporte.mockResolvedValueOnce({ id: UUID_A, duplicado: true });
+    const cap = new AgentesReporteRegistrarCapability(asRepo(repo));
+    await expect(cap.execute(reporte(), 'maria')).resolves.toEqual({ id: UUID_A, duplicado: true });
   });
 });
 
