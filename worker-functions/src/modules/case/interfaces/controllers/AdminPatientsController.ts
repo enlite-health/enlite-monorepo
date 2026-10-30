@@ -790,7 +790,7 @@ export class AdminPatientsController {
     }
 
     try {
-      const stats = await this.repo.stats(scope.countries);
+      const stats = await this.repo.stats(scope.countries, req.query.exclude_discharged === 'true');
       res.status(200).json({ success: true, data: stats });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));

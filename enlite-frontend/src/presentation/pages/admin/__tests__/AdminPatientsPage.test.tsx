@@ -174,7 +174,7 @@ describe('AdminPatientsPage — filtro vira parâmetro', () => {
     expect(ultimosFiltros()).toEqual({
       search: undefined, needs_attention: undefined, attention_reason: undefined,
       clinical_specialty: undefined, dependency_level: undefined, case_number: undefined,
-      country: undefined, include_deactivated: undefined, limit: '20', offset: '0',
+      country: undefined, include_deactivated: undefined, exclude_discharged: 'true', limit: '20', offset: '0',
     });
   });
 
@@ -231,6 +231,18 @@ describe('AdminPatientsPage — filtro vira parâmetro', () => {
 
     await u.click(screen.getByTestId('f-desactivados'));
     expect(ultimosFiltros().include_deactivated).toBeUndefined();
+  });
+
+  it('lista sem baja: checkbox desmarcado manda exclude_discharged="true"; marcado NÃO manda (traz deletados + DISCHARGED, como hoje)', async () => {
+    render(<AdminPatientsPage />);
+    const u = user();
+    expect(ultimosFiltros().exclude_discharged).toBe('true');
+
+    await u.click(screen.getByTestId('f-desactivados'));
+    expect(ultimosFiltros().exclude_discharged).toBeUndefined();
+
+    await u.click(screen.getByTestId('f-desactivados'));
+    expect(ultimosFiltros().exclude_discharged).toBe('true');
   });
 });
 

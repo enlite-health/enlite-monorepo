@@ -88,6 +88,8 @@ export function AdminPatientsPage(): JSX.Element {
       // Opt-in (D-2026-09-28): só manda o param quando marcado — ausente mantém o
       // default do backend (esconde deleted_at), igual a hoje.
       include_deactivated: showDeactivated ? 'true' : undefined,
+      // Desmarcado = lista (e cards) sem baja; marcado = deletados + DISCHARGED, como antes.
+      exclude_discharged: showDeactivated ? undefined : 'true',
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };

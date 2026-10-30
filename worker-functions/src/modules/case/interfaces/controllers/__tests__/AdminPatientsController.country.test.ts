@@ -137,7 +137,7 @@ describe('AdminPatientsController — filtro país', () => {
     const [req, res] = mockReqRes({ country: 'BR' });
     await controller.getPatientStats(req, res);
     expect(mockResolveCountryScope).toHaveBeenCalledWith(expect.anything(), undefined, 'BR');
-    expect(mockStats).toHaveBeenCalledWith(['BR']);
+    expect(mockStats).toHaveBeenCalledWith(['BR'], false);
   });
 
   it('getPatientStats sem country: resolvedor devolve ALL (união do ator) — repo recebe o array, não undefined', async () => {
@@ -146,7 +146,18 @@ describe('AdminPatientsController — filtro país', () => {
     const [req, res] = mockReqRes({});
     await controller.getPatientStats(req, res);
     expect(mockResolveCountryScope).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
-    expect(mockStats).toHaveBeenCalledWith(['AR', 'BR']);
+    expect(mockStats).toHaveBeenCalledWith(['AR', 'BR'], false);
+  });
+
+  it('getPatientStats: ?exclude_discharged=true chega ao repo como true; ausente ou "false" = false (default não muda)', async () => {
+    mockStats.mockResolvedValue({});
+    mockResolveCountryScope.mockResolvedValue({ countries: ['AR'], requested: 'AR' });
+    const [req, res] = mockReqRes({ country: 'AR', exclude_discharged: 'true' });
+    await controller.getPatientStats(req, res);
+    expect(mockStats).toHaveBeenLastCalledWith(['AR'], true);
+    const [req2, res2] = mockReqRes({ country: 'AR', exclude_discharged: 'false' });
+    await controller.getPatientStats(req2, res2);
+    expect(mockStats).toHaveBeenLastCalledWith(['AR'], false);
   });
 
   it('getPatientStats: país fora do escopo do ator → 403 (nunca chega no repo)', async () => {
