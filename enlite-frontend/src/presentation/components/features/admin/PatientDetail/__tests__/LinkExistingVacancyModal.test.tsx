@@ -139,7 +139,8 @@ describe('LinkExistingVacancyModal', () => {
     });
     await openAndChoose();
     const box = await screen.findByTestId('link-existing-vacancy-preview');
-    expectNoRawEnumLeaks(box);
+    // por célula: textContent da tabela cola as células (BOTHBOTH) e o regex do guard não casaria
+    box.querySelectorAll('td').forEach((td) => expectNoRawEnumLeaks(td as HTMLElement));
     const vf = translations.admin.vacancyDetail.vacancyForm;
     expect(box.textContent).toContain(vf.sexOptions.BOTH);
     expect(box.textContent).toContain(vf.workScheduleOptions['part-time']);
