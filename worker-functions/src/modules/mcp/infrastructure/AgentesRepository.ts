@@ -76,6 +76,11 @@ export interface PlacarResult {
   cruza_areas: number;
   por_regra: Array<{ regra_ref: string; violacoes: number; gravidade_max: string; veredicto_ids: string[] }>;
   veredicto_ids: string[];
+  /** Lista fechada do GRAVE (item 53): um item por violação de gatilho. Só refs, nenhum texto. */
+  graves: Array<{
+    veredicto_id: string; sensor: string; inbox: string; conversa_ref: string; ultima_msg_ref: string;
+    regra_ref: string; gatilho: 'nunca' | 'dado' | 'acao_fabricada'; avaliado_em: string;
+  }>;
 }
 
 const actorOf = (principal: string) => systemActor(`mcp:${principal}`);
@@ -191,7 +196,7 @@ export class AgentesRepository {
   /** Agregados do placar de um operador na janela [de, ate). Sem texto: só contagens, gravidade e ids. */
   async lerPlacar(
     principal: string,
-    p: { operador: string; de: string; ate: string },
+    p: { operador: string; de: string; ate: string; nunca_refs?: string[] },
   ): Promise<PlacarResult> {
     return withActorContext(
       this.pool,
@@ -223,6 +228,24 @@ export class AgentesRepository {
             ORDER BY count(*) DESC, a.regra_ref`,
           [p.operador, p.de, p.ate],
         );
+        // GRAVE (item 53): só 3 gatilhos. Scrubber -> dado; notário -> ação fabricada; regra em nunca_refs -> nunca.
+        // Gravidade 'alta' do juiz, sozinha, NÃO entra. Ordem do CASE = precedência quando mais de um casa.
+        const graves = await c.query<{
+          veredicto_id: string; sensor: string; inbox: string; conversa_ref: string; ultima_msg_ref: string;
+          regra_ref: string; gatilho: 'nunca' | 'dado' | 'acao_fabricada'; avaliado_em: Date;
+        }>(
+          `SELECT * FROM (
+             SELECT v.id AS veredicto_id, v.sensor, v.inbox, v.conversa_ref, v.ultima_msg_ref, a.regra_ref, v.avaliado_em,
+                    CASE WHEN v.sensor = 'scrubber' THEN 'dado'
+                         WHEN v.sensor = 'notario'  THEN 'acao_fabricada'
+                         WHEN a.regra_ref = ANY($4::text[]) THEN 'nunca' END AS gatilho
+               FROM agentes.veredicto_achados a
+               JOIN agentes.veredictos v ON v.id = a.veredicto_id
+              WHERE a.tipo = 'violacao' AND v.operador = $1 AND v.avaliado_em >= $2 AND v.avaliado_em < $3) g
+            WHERE gatilho IS NOT NULL
+            ORDER BY avaliado_em, veredicto_id, regra_ref`,
+          [p.operador, p.de, p.ate, p.nunca_refs ?? []],
+        );
         const b = base.rows[0];
         return {
           operador: p.operador,
@@ -239,6 +262,7 @@ export class AgentesRepository {
             veredicto_ids: r.veredicto_ids,
           })),
           veredicto_ids: b.ids,
+          graves: graves.rows.map((g) => ({ ...g, avaliado_em: new Date(g.avaliado_em).toISOString() })),
         };
       },
       actorOf(principal),

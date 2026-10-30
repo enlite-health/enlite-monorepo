@@ -157,6 +157,38 @@ describe('capabilities agentes.* contra o banco (spec 078, M3a-2)', () => {
     expect(chaves.filter((k) => /trecho|resumo|texto/i.test(k))).toEqual([]);
   });
 
+  it('placar.ler graves: scrubber=dado, notário=acao_fabricada, regra NUNCA=nunca; "alta" do juiz sem NUNCA NÃO entra (3 graves de 4)', async () => {
+    const op = `${operador}-gr`;
+    const base = { operador: op, inbox, nota: undefined, juiz_versao: undefined, cruza_areas: false, avaliado_em: '2026-10-20T12:00:00Z' };
+    const mk = (conv: string, sensor: string, regra: string, extra: Record<string, unknown> = {}) =>
+      veredicto(conv, { ...base, sensor, achados: [{ tipo: 'violacao', regra_ref: regra, gravidade: 'alta' }], ...extra });
+    const scr = await veredictoCap.execute(mk('g1', 'scrubber', 'pii#cccccccccccc'), 'sol-supervisor');
+    const not = await veredictoCap.execute(mk('g2', 'notario', 'acao#dddddddddddd'), 'sol-supervisor');
+    const nun = await veredictoCap.execute(
+      mk('g3', 'juiz', 'nunca-prometer#eeeeeeeeeeee', { nota: 3, juiz_versao: 'juiz-v1' }), 'sol-supervisor');
+    const alta = await veredictoCap.execute(
+      mk('g4', 'juiz', 'tom#aaaaaaaaaaaa', { nota: 4, juiz_versao: 'juiz-v1' }), 'sol-supervisor');
+    const janela = { operador: op, de: '2026-10-01T00:00:00Z', ate: '2026-10-29T00:00:00Z' };
+
+    const p = await placarCap.execute({ ...janela, nunca_refs: ['nunca-prometer#eeeeeeeeeeee'] }, 'maria');
+    expect(p.veredictos).toBe(4);
+    expect(p.graves).toHaveLength(3);
+    const por = Object.fromEntries(p.graves.map((g) => [g.veredicto_id, g]));
+    expect(por[scr.id]).toMatchObject({ sensor: 'scrubber', gatilho: 'dado', inbox, conversa_ref: 'g1', ultima_msg_ref: 'g1-m1', regra_ref: 'pii#cccccccccccc', avaliado_em: '2026-10-20T12:00:00.000Z' });
+    expect(por[not.id]).toMatchObject({ sensor: 'notario', gatilho: 'acao_fabricada' });
+    expect(por[nun.id]).toMatchObject({ sensor: 'juiz', gatilho: 'nunca', regra_ref: 'nunca-prometer#eeeeeeeeeeee' });
+    expect(por[alta.id]).toBeUndefined(); // controle negativo: gravidade alta do juiz, regra fora de nunca_refs
+
+    // sem nunca_refs: a regra NUNCA deixa de ser grave; scrubber e notário seguem
+    const sem = await placarCap.execute(janela, 'maria');
+    expect(sem.graves.map((g) => g.gatilho).sort()).toEqual(['acao_fabricada', 'dado']);
+    // nenhuma chave de texto no item grave
+    expect(Object.keys(p.graves[0]).filter((k) => /trecho|resumo|texto/i.test(k))).toEqual([]);
+
+    await admin.query(`DELETE FROM agentes.veredicto_achados WHERE veredicto_id IN (SELECT id FROM agentes.veredictos WHERE operador = $1)`, [op]);
+    await admin.query(`DELETE FROM agentes.veredictos WHERE operador = $1`, [op]);
+  });
+
   it('placar de operador sem veredicto: zeros e lista vazia (não erro)', async () => {
     const p = await placarCap.execute({ operador: `${operador}-vazio`, de: '2026-10-01T00:00:00Z', ate: '2026-10-29T00:00:00Z' }, 'maria');
     expect(p).toMatchObject({ veredictos: 0, conversas: 0, nota_media: null, cruza_areas: 0, por_regra: [], veredicto_ids: [] });

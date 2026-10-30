@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import type { AgentesRepository, PlacarResult } from '../../infrastructure/AgentesRepository';
-import { ISO_DATA, OPERADOR } from './agentesSchemas';
+import { ISO_DATA, OPERADOR, ref } from './agentesSchemas';
 
 const ArgsShape = {
   operador: OPERADOR,
   de: ISO_DATA,
   ate: ISO_DATA,
+  /** regra_ref das regras NUNCA (lista fechada do GRAVE, item 53): violação delas vira grave `nunca`. Opcional. */
+  nunca_refs: z.array(ref(3, 120)).max(200).optional(),
 };
 
 const ArgsSchema = z
@@ -17,7 +19,7 @@ const ArgsSchema = z
 export class AgentesPlacarLerCapability {
   static readonly NAME = 'agentes.placar.ler';
   static readonly DESCRIPTION =
-    'Scoreboard of one operator in [de, ate): violations per rule ref (count, max severity), average grade, conversation count, cross-area count and verdict ids. No text.';
+    'Scoreboard of one operator in [de, ate): violations per rule ref (count, max severity), average grade, conversation count, cross-area count and verdict ids; plus `graves` (closed list of 3 triggers: scrubber finding = dado, notario finding = acao_fabricada, rule ref in optional nunca_refs = nunca; judge severity alone never counts). No text.';
   static readonly INPUT_SHAPE = ArgsShape;
 
   constructor(private readonly repo: AgentesRepository) {}
