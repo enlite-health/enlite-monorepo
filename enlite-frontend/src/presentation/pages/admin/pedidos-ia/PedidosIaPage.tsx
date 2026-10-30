@@ -21,6 +21,9 @@ import { pedidosIaErrorKey } from './pedidosIaErrors';
 
 const STATUS: readonly PedidoStatus[] = ['novo', 'aceito', 'negado', 'redirecionado'];
 type Ordem = 'novos' | 'antigos';
+// Tinta AAA (>= 7:1 sobre branco) dos filtros: o gatilho padrao do Combobox (#737373) da 4,74:1.
+const FILTRO_VALOR = 'text-[#262626]';
+const FILTRO_PLACEHOLDER = 'text-[#404040]';
 
 export function PedidosIaPage(): JSX.Element {
   const { t } = useTranslation();
@@ -126,6 +129,8 @@ export function PedidosIaPage(): JSX.Element {
         <div className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
           <label htmlFor="pedidos-filtro-area">{t('admin.pedidosIa.filters.area')}</label>
           <Combobox
+            valueClassName={FILTRO_VALOR}
+            placeholderClassName={FILTRO_PLACEHOLDER}
             id="pedidos-filtro-area"
             data-testid="pedidos-filtro-area"
             options={areas.map((a) => ({ value: a, label: a }))}
@@ -138,6 +143,8 @@ export function PedidosIaPage(): JSX.Element {
         <div className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
           <label htmlFor="pedidos-filtro-status">{t('admin.pedidosIa.filters.status')}</label>
           <Combobox
+            valueClassName={FILTRO_VALOR}
+            placeholderClassName={FILTRO_PLACEHOLDER}
             id="pedidos-filtro-status"
             data-testid="pedidos-filtro-status"
             options={STATUS.map((s) => ({ value: s, label: t(`admin.pedidosIa.status.${s}`) }))}
@@ -150,6 +157,8 @@ export function PedidosIaPage(): JSX.Element {
         <div className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
           <label htmlFor="pedidos-ordem">{t('admin.pedidosIa.filters.ordem')}</label>
           <Combobox
+            valueClassName={FILTRO_VALOR}
+            placeholderClassName={FILTRO_PLACEHOLDER}
             id="pedidos-ordem"
             data-testid="pedidos-ordem"
             options={[

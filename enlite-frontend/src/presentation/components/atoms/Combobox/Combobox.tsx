@@ -31,6 +31,10 @@ type Common = {
   inputSize?: InputSize;
   error?: string;
   className?: string;
+  /** Cor/tinta do VALOR escolhido no gatilho (ex.: `text-[#262626]`). Ausente = comportamento de sempre. */
+  valueClassName?: string;
+  /** Cor/tinta do PLACEHOLDER no gatilho. Ausente = comportamento de sempre. */
+  placeholderClassName?: string;
   'data-testid'?: string;
   /**
    * Mascara o campo no session replay (Clarity). Vale no gatilho E no painel aberto: o painel
@@ -87,6 +91,8 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
     inputSize = 'default',
     error,
     className = '',
+    valueClassName,
+    placeholderClassName,
     'data-testid': testId,
     'data-clarity-mask': clarityMask,
     onBlur,
@@ -300,6 +306,8 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
         ? knownLabels[0]
         : t('common.multiSelect.selectedCount', { count: knownLabels.length });
 
+  const triggerTint = knownLabels.length > 0 ? valueClassName : placeholderClassName;
+
   const wrapperClasses = inputWrapperClasses({ size: inputSize, error: !!error, disabled });
 
   const renderRow = (opt: ComboboxOption) => {
@@ -388,8 +396,8 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
           as="span"
           size="sm"
           weight="medium"
-          color={knownLabels.length > 0 ? 'secondary' : 'muted'}
-          className="truncate"
+          color={triggerTint === undefined ? (knownLabels.length > 0 ? 'secondary' : 'muted') : 'inherit'}
+          className={['truncate', triggerTint].filter(Boolean).join(' ')}
         >
           {buttonLabel ?? ''}
         </Text>
