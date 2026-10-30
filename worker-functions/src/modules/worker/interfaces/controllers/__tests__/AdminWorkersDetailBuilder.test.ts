@@ -7,6 +7,7 @@
  */
 import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import { buildWorkerDetailResponse } from '../AdminWorkersDetailBuilder';
+import { WORKER_DETAIL_COLS } from '../AdminWorkersControllerHelpers';
 
 const queries: string[] = [];
 // Mutável por teste: cobre o ramo de comparator do sort() de encuadres
@@ -383,5 +384,32 @@ describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca 
     expect(data.knowledgeLevel).toBeNull();
     expect(data.serviceAreas).toEqual([{ id: 'sa-3', address: null, serviceRadiusKm: null, lat: null, lng: null }]);
     expect(data.location).toEqual({ address: null, city: null, workZone: null, interestZone: null });
+  });
+});
+
+describe('N7 (spec 078 M4.5) — opt-out de mensagens vigente na ficha / by-phone', () => {
+  it('worker com opt-out vigente → opted_out true e opted_out_at preenchido', async () => {
+    const quando = new Date('2026-10-01T12:00:00Z');
+    const data = await buildWorkerDetailResponse(db, enc, gcs, { ...ROW, opted_out: true, opted_out_at: quando }, null);
+    expect(data.opted_out).toBe(true);
+    expect(data.opted_out_at).toBe(quando);
+  });
+
+  it('worker sem opt-out → opted_out false e opted_out_at null', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, { ...ROW, opted_out: false, opted_out_at: null }, null);
+    expect(data.opted_out).toBe(false);
+    expect(data.opted_out_at).toBeNull();
+  });
+
+  it('opt-out aparece mesmo só com worker:read (status operacional, não PII)', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, { ...ROW, opted_out: true, opted_out_at: 'x' }, ['worker:read']);
+    expect(data.opted_out).toBe(true);
+  });
+
+  it('o SELECT da ficha lê o opt-out do predicado único de messaging_opt_out', () => {
+    expect(WORKER_DETAIL_COLS).toContain('messaging_opt_out');
+    expect(WORKER_DETAIL_COLS).toContain('opted_in_at IS NULL');
+    expect(WORKER_DETAIL_COLS).toMatch(/AS opted_out\b/);
+    expect(WORKER_DETAIL_COLS).toMatch(/AS opted_out_at\b/);
   });
 });
