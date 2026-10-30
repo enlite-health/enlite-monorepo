@@ -199,6 +199,8 @@ function pecas() {
     create: responde('cs.create'),
     update: responde('cs.update'),
     activateRecruitment: responde('cs.activateRecruitment'),
+    previewLinkExistingVacancy: responde('cs.previewLinkExistingVacancy'),
+    linkExistingVacancy: responde('cs.linkExistingVacancy'),
   } as unknown as AdminPatientContractedServicesController;
   const diagnoses = {
     list: responde('diag.list'),
@@ -349,6 +351,8 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/abc-123/addresses', 'listPatientAddresses'],
     ['put', '/api/admin/patients/abc-123/status', 'updatePatientStatus'],
     ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/activate-recruitment', 'cs.activateRecruitment'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/link-existing-vacancy/preview', 'cs.previewLinkExistingVacancy'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/link-existing-vacancy', 'cs.linkExistingVacancy'],
     ['get', '/api/admin/patients/abc-123/chat-candidates', 'getChatCandidates'],
     ['put', '/api/admin/patients/abc-123/chat-ids', 'updateChatIds'],
     ['patch', '/api/admin/patients/abc-123/test-flag', 'updatePatientTestFlag'],
