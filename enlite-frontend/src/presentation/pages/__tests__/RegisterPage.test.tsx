@@ -171,6 +171,12 @@ describe('RegisterPage', () => {
       render(<RegisterPage />);
       expect(screen.queryByTestId('checkbox-label-lgpdOptIn')).toBeNull();
     });
+
+    it('link do consentimento aponta para a pagina atual da politica de privacidad', () => {
+      render(<RegisterPage />);
+      const link = screen.getByRole('link', { name: 'register.lgpdTermsLinkText' });
+      expect(link.getAttribute('href')).toBe('https://enlite.health/es/politica-de-privacidad/');
+    });
   });
 
   // ─── Validação do checkbox LGPD ──────────────────────────────────────────
