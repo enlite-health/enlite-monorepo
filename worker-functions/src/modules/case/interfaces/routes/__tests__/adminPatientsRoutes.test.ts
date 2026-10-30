@@ -94,6 +94,9 @@ const ESPERADO: Record<string, string | null> = {
   // 410 de support-network.
   'POST /patients/:id/activate': null,
   'POST /patients/:id/contracted-services/:sid/activate-recruitment': 'patient_services:update',
+  // Spec 079: vincular vaga existente (preview + confirmação) — a MESMA cadeia do foguete.
+  'POST /patients/:id/contracted-services/:sid/link-existing-vacancy/preview': 'patient_services:update',
+  'POST /patients/:id/contracted-services/:sid/link-existing-vacancy': 'patient_services:update',
   'GET /patients/:id/chat-candidates': 'messaging:read',
   'PUT /patients/:id/chat-ids': 'patient_chat:update',
   'PATCH /patients/:id/test-flag': 'patient:update',
@@ -268,8 +271,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 60 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051) + as 3 da autorização de horas do serviço (spec 056)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(60);
+  it('a família declara exatamente 62 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051) + as 3 da autorização de horas do serviço (spec 056) + as 2 do vínculo de vaga existente (spec 079)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(62);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -293,10 +296,24 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(60);
+      expect(scanExpressRouter(router)).toHaveLength(62);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
+  });
+
+  // Spec 079 (SUP-19): as 2 rotas do vínculo têm a MESMA cadeia do foguete, NESTA ordem —
+  // patient_services:update ANTES de vacancy:update (a 1ª negada corta antes de tocar vaga).
+  it.each([
+    'POST /patients/:id/contracted-services/:sid/activate-recruitment',
+    'POST /patients/:id/contracted-services/:sid/link-existing-vacancy/preview',
+    'POST /patients/:id/contracted-services/:sid/link-existing-vacancy',
+  ])('%s encadeia patient_services:update → vacancy:update, nesta ordem', (chave) => {
+    const rota = scanExpressRouter(build()).find((r) => `${r.method} ${r.path}` === chave);
+    expect((rota?.cells ?? []).map((c) => cellKey(c.resource, c.action))).toEqual([
+      'patient_services:update',
+      'vacancy:update',
+    ]);
   });
 
   // As 3 escolhas de célula que NÃO são o óbvio `patient:*`. Se alguém

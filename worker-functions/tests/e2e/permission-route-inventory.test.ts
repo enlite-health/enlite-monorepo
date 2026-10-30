@@ -177,6 +177,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // SUP-19: a vaga nasce daqui). Era só `patient_services:update` até o
         // achado pós-#391 — `vacancy:write` ficava invisível a este teste.
         'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:update+vacancy:update',
+        // Spec 079: vincular vaga existente — mesma cadeia do foguete (ordem SUP-19).
+        'POST /api/admin/patients/:id/contracted-services/:sid/link-existing-vacancy → patient_services:update+vacancy:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/link-existing-vacancy/preview → patient_services:update+vacancy:update',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:create',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:update',
         'POST /api/admin/patients/:id/external-contacts → patient_family:create',
