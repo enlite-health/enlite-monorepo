@@ -19,10 +19,24 @@ import {
   ServiceAlreadyRecruitingError,
   RecruitmentNotReadyError,
 } from '../../application/ActivateRecruitmentUseCase';
+import {
+  LinkExistingVacancyUseCase,
+  VacancyNotLinkableError,
+  LinkBlockedError,
+} from '../../application/LinkExistingVacancyUseCase';
+import { LinkExistingVacancyRepository } from '../../infrastructure/LinkExistingVacancyRepository';
+import { JobPostingAuditRepository } from '../../../matching/infrastructure/JobPostingAuditRepository';
+import type { AcceptsServiceValue } from '../../domain/LinkExistingVacancyPlan';
+import {
+  linkExistingVacancyPreviewBodySchema,
+  linkExistingVacancyConfirmBodySchema,
+} from '../validators/linkExistingVacancySchemas';
 import { vacancyActorFromRequest } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
 import { clinicalCellsOf } from '../../application/patientClinicalAccess';
 import { exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
 import { insuranceErrorBody } from './insuranceErrorResponse';
+
+const ACCEPT_ANY_SERVICE_VALUE: AcceptsServiceValue = () => true; // spec 079 §4 literal; ⚑2 (validar pelo Zod do serviço) pendente de decisão do Gabriel — trocar por contractedServiceValueAccepts se aprovado
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
@@ -43,6 +57,12 @@ export class AdminPatientContractedServicesController {
     private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = new ActivateRecruitmentUseCase(),
     /** `requestNow` único por requisição (spec 058 §H): é dele que o repositório tira o `asOf` do país do serviço. */
     private readonly now: () => Date = () => new Date(),
+    /** Spec 079: vínculo de vaga existente ao serviço (composição aqui, como o foguete). */
+    private readonly linkExistingVacancyUseCase: LinkExistingVacancyUseCase = new LinkExistingVacancyUseCase(
+      new LinkExistingVacancyRepository(),
+      new JobPostingAuditRepository(),
+      ACCEPT_ANY_SERVICE_VALUE,
+    ),
   ) {}
 
   private project(req: Request, service: ContractedServiceDetail) {
@@ -225,5 +245,68 @@ export class AdminPatientContractedServicesController {
       reportError(e, { source: 'AdminPatientContractedServicesController:activateRecruitment', patientId: params.data.id, serviceId: params.data.sid });
       res.status(500).json({ success: false, error: 'Failed to activate recruitment' });
     }
+  }
+
+  /** POST .../:sid/link-existing-vacancy/preview (spec 079). Nunca grava. */
+  async previewLinkExistingVacancy(req: Request, res: Response): Promise<void> {
+    const params = serviceParamsSchema.safeParse(req.params);
+    const body = linkExistingVacancyPreviewBodySchema.safeParse(req.body ?? {});
+    if (!params.success || !body.success) {
+      res.status(400).json({ success: false, error: 'Invalid params' });
+      return;
+    }
+    try {
+      const data = await this.linkExistingVacancyUseCase.preview(params.data.id, params.data.sid, body.data.vacancyId);
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      this.respondLinkError(err, res, 'previewLinkExistingVacancy', params.data);
+    }
+  }
+
+  /** POST .../:sid/link-existing-vacancy (spec 079). Vincula e alimenta o serviço numa transação. */
+  async linkExistingVacancy(req: Request, res: Response): Promise<void> {
+    const params = serviceParamsSchema.safeParse(req.params);
+    const body = linkExistingVacancyConfirmBodySchema.safeParse(req.body ?? {});
+    if (!params.success || !body.success) {
+      res.status(400).json({ success: false, error: 'Invalid params' });
+      return;
+    }
+    try {
+      const data = await this.linkExistingVacancyUseCase.confirm(
+        params.data.id,
+        params.data.sid,
+        body.data.vacancyId,
+        vacancyActorFromRequest(req, 'link_existing_vacancy'),
+      );
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      this.respondLinkError(err, res, 'linkExistingVacancy', params.data);
+    }
+  }
+
+  private respondLinkError(err: unknown, res: Response, op: string, ids: { id: string; sid: string }): void {
+    if (err instanceof PatientNotFoundForRecruitmentError || err instanceof ServiceNotFoundForRecruitmentError) {
+      res.status(404).json({ success: false, code: 'NOT_FOUND' });
+      return;
+    }
+    if (err instanceof ServiceAlreadyRecruitingError) {
+      res.status(409).json({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: err.vacancyId });
+      return;
+    }
+    if (err instanceof VacancyNotLinkableError) {
+      res.status(409).json({ success: false, code: 'VACANCY_NOT_LINKABLE', reason: err.reason });
+      return;
+    }
+    if (err instanceof LinkBlockedError) {
+      res.status(422).json({ success: false, code: 'LINK_BLOCKED', blockers: err.blockers });
+      return;
+    }
+    if (err instanceof AddressNotOfPatientError) {
+      res.status(422).json({ success: false, code: 'ADDRESS_NOT_OF_PATIENT' });
+      return;
+    }
+    const e = err instanceof Error ? err : new Error(String(err));
+    reportError(e, { source: `AdminPatientContractedServicesController:${op}`, patientId: ids.id, serviceId: ids.sid });
+    res.status(500).json({ success: false, error: 'Failed to link existing vacancy' });
   }
 }
