@@ -118,7 +118,7 @@ function submitResponse(overrides: {
 const SERVICE_CODES = resolveServiceMapping('AT');
 
 // Instant fixo (D370) — nunca Date.now() ao vivo neste teste.
-const FIXED_NOW = new Date('2026-09-18T14:32:00');
+const FIXED_NOW = new Date('2026-09-18T17:32:00Z'); // 14:32:00 em Buenos Aires
 // Dia civil como STRING 'YYYY-MM-DD' (nunca Date — a mudança desta frente).
 const SERVICE_DATE = '2026-09-10';
 
@@ -701,6 +701,24 @@ describe('AxonicoApiClient — submitComprobante', () => {
     const body = JSON.parse((init as RequestInit).body as string);
     // service_date = 10/09/2026, relógio fixado em 14:32:00 — nunca a hora real do plantão.
     expect(body.fecha).toBe('10/09/2026 14:32:00');
+  });
+
+  it('fecha usa a hora de Buenos Aires, não a do processo (UTC no Cloud Run)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(submitResponse());
+
+    const client = makeClient(() => new Date('2026-10-29T23:57:39Z'));
+    await client.submitComprobante({
+      historiaClinica: 'HC-123',
+      nroCobertura: 'AF-456',
+      serviceCodes: SERVICE_CODES,
+      serviceDate: '2026-10-29',
+      cantidad: 1,
+    });
+
+    const [, init] = mockFetch.mock.calls[1];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.fecha).toBe('29/10/2026 20:57:39');
   });
 
   it('matricula (detalhe) vem da sessão autenticada, nunca constante literal', async () => {

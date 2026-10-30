@@ -1,3 +1,6 @@
+// Prod (Cloud Run) roda em UTC; dev em São Paulo (-03 = Buenos Aires) mascarava bug de fuso. Fixar UTC nos testes.
+process.env.TZ = 'UTC';
+
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
