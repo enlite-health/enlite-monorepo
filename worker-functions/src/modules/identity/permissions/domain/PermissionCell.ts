@@ -120,6 +120,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   // Spec 029 — mesma casa do `integration`: as rotas vivem no módulo `integration` e na família
   // `admin.integrations`. Sem esta linha o painel mostraria a permissão como "Não categorizado".
   ai_prompt: 'Operações',
+  // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
+  pedidos_ia: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -538,6 +540,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   //    `ai_prompt:restore` (migration 488) NÃO entra: nenhuma rota a cobra ainda (Fase 5).
   'ai_prompt:read': 'Ler o conteúdo e o histórico dos prompts de IA da plataforma, e comparar versões.',
   'ai_prompt:update': 'Salvar e desfazer a última alteração de um prompt de IA.',
+
+  // ── Spec 078 (M3b-1) — as 2 células que `adminPedidosIaRoutes` cobra. Grupo "Decisores de pedidos IA" é da operação (a migration 552 não concede).
+  'pedidos_ia:read': 'Ver os pedidos do Sol e dos gestores.',
+  'pedidos_ia:decidir': 'Aceitar, negar ou redirecionar um pedido.',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.

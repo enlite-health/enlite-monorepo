@@ -132,6 +132,8 @@
     "patient_therapeutic_project:read",
     "patient_therapeutic_project:update",
     "patient_therapeutic_project:waive_contact",
+    "pedidos_ia:decidir",
+    "pedidos_ia:read",
     "permission_management:read",
     "permission_management:write",
     "prescreening:create",
