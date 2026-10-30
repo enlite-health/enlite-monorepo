@@ -31,6 +31,13 @@ describe('LinkExistingVacancyRepository', () => {
     expect(query.mock.calls[0][1]).toEqual(['v1']);
   });
 
+  it('readVacancyForLink: endereço só VIVO (LEFT JOIN com archived_at IS NULL), como o portão do foguete', async () => {
+    const { client, query } = cliente([RAW]);
+    await repo.readVacancyForLink(client, 'v1', { forUpdate: false });
+    expect(sqlOf(query)).toContain('archived_at IS NULL');
+    expect(sqlOf(query)).toContain('LEFT JOIN patient_addresses');
+  });
+
   it('readVacancyForLink: FOR UPDATE só com forUpdate', async () => {
     const a = cliente([RAW]);
     await repo.readVacancyForLink(a.client, 'v1', { forUpdate: true });
@@ -45,9 +52,9 @@ describe('LinkExistingVacancyRepository', () => {
     expect(await repo.readVacancyForLink(client, 'nope', { forUpdate: true })).toBeNull();
   });
 
-  it('readServiceLinkTarget lê só provider_age_band', async () => {
-    const { client, query } = cliente([{ provider_age_band: 'ADULT' }]);
-    expect(await repo.readServiceLinkTarget(client, 's1')).toEqual({ provider_age_band: 'ADULT' });
+  it('readServiceLinkTarget lê provider_age_band e o address_id cru', async () => {
+    const { client, query } = cliente([{ provider_age_band: 'ADULT', address_id: 'A1' }]);
+    expect(await repo.readServiceLinkTarget(client, 's1')).toEqual({ provider_age_band: 'ADULT', raw_address_id: 'A1' });
     expect(sqlOf(query)).toContain('provider_age_band');
     expect(sqlOf(query)).toContain('patient_contracted_services');
     expect(await repo.readServiceLinkTarget(cliente([], 0).client, 's1')).toBeNull();

@@ -57,11 +57,15 @@ export class LinkExistingVacancyRepository {
     opts: { forUpdate: boolean },
   ): Promise<VacancyForLinkRow | null> {
     const res = await client.query<VacancyRawRow>(
-      `SELECT id, patient_id, contracted_service_id, deleted_at, status,
-              required_professions, required_experience, work_schedule, payment_day, required_sex,
-              providers_needed, age_range_min, age_range_max, schedule, patient_address_id
-         FROM job_postings
-        WHERE id = $1${opts.forUpdate ? '\n        FOR UPDATE' : ''}`,
+      // Endereço VIVO da vaga (mesmo critério do portão do foguete): arquivado = ausente. O raw não alimenta nada.
+      `SELECT jp.id, jp.patient_id, jp.contracted_service_id, jp.deleted_at, jp.status,
+              jp.required_professions, jp.required_experience, jp.work_schedule, jp.payment_day, jp.required_sex,
+              jp.providers_needed, jp.age_range_min, jp.age_range_max, jp.schedule,
+              pa.id AS patient_address_id
+         FROM job_postings jp
+         LEFT JOIN patient_addresses pa
+                ON pa.id = jp.patient_address_id AND pa.archived_at IS NULL
+        WHERE jp.id = $1${opts.forUpdate ? '\n        FOR UPDATE OF jp' : ''}`,
       [vacancyId],
     );
     if ((res.rowCount ?? res.rows.length) === 0 || res.rows.length === 0) return null;
@@ -85,17 +89,20 @@ export class LinkExistingVacancyRepository {
     };
   }
 
-  /** Só o que `lockRecruitmentContext` NÃO traz do serviço (a faixa etária). O serviço já está travado por ele. */
+  /**
+   * Só o que `lockRecruitmentContext` NÃO traz do serviço: a faixa etária e o `address_id` CRU (mesmo arquivado —
+   * é o valor que a alimentação sobrescreve, para a auditoria). O serviço já está travado por ele.
+   */
   async readServiceLinkTarget(
     client: PoolClient,
     serviceId: string,
-  ): Promise<Pick<ServiceLinkTarget, 'provider_age_band'> | null> {
-    const res = await client.query<{ provider_age_band: ServiceLinkTarget['provider_age_band'] }>(
-      `SELECT provider_age_band FROM patient_contracted_services WHERE id = $1`,
-      [serviceId],
-    );
+  ): Promise<(Pick<ServiceLinkTarget, 'provider_age_band'> & { raw_address_id: string | null }) | null> {
+    const res = await client.query<{
+      provider_age_band: ServiceLinkTarget['provider_age_band'];
+      address_id: string | null;
+    }>(`SELECT provider_age_band, address_id FROM patient_contracted_services WHERE id = $1`, [serviceId]);
     if (res.rows.length === 0) return null;
-    return { provider_age_band: res.rows[0].provider_age_band ?? null };
+    return { provider_age_band: res.rows[0].provider_age_band ?? null, raw_address_id: res.rows[0].address_id ?? null };
   }
 
   /**

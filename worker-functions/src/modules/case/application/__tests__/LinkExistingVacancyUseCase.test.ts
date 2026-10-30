@@ -23,6 +23,7 @@ import {
   AddressNotOfPatientError,
   ServiceAlreadyRecruitingError,
 } from "../LinkExistingVacancyUseCase";
+import { AddressNotOfPatientError as AddressNotOfPatientErrorRepo } from "../../infrastructure/PatientContractedServiceRepository";
 import type { VacancyForLinkRow } from "../../infrastructure/LinkExistingVacancyRepository";
 
 const P = "patient-1";
@@ -59,7 +60,7 @@ function build(opts: { accepts?: (f: string, v: unknown) => boolean } = {}) {
       { id: "v-baja", caseNumber: 1, caseOrdinal: 3, vacancyNumber: 3, title: "t", status: "DE_BAJA", isDraft: false, contractedServiceId: null, createdAt: new Date() },
     ]),
     readVacancyForLink: jest.fn(async (): Promise<VacancyForLinkRow | null> => vac()),
-    readServiceLinkTarget: jest.fn(async () => ({ provider_age_band: null })),
+    readServiceLinkTarget: jest.fn(async () => ({ provider_age_band: null, raw_address_id: null as string | null })),
     feedService: jest.fn(async () => { calls.push("feed"); }),
     linkVacancyAndClear: jest.fn(async () => { calls.push("link"); return 1; }),
   };
@@ -167,7 +168,8 @@ describe("erros do banco", () => {
   it("23503 (FK composta) -> AddressNotOfPatientError", async () => {
     const t = build();
     t.repo.feedService.mockRejectedValue(Object.assign(new Error("fk"), { code: "23503" }));
-    await expect(t.uc.confirm(P, S, V, actor)).rejects.toBeInstanceOf(AddressNotOfPatientError);
+    await expect(t.uc.confirm(P, S, V, actor)).rejects.toBeInstanceOf(AddressNotOfPatientErrorRepo);
+    expect(AddressNotOfPatientError).toBe(AddressNotOfPatientErrorRepo);
     expect(t.repo.linkVacancyAndClear).not.toHaveBeenCalled();
   });
 
@@ -175,6 +177,34 @@ describe("erros do banco", () => {
     const t = build();
     t.repo.linkVacancyAndClear.mockRejectedValue(new Error("boom"));
     await expect(t.uc.confirm(P, S, V, actor)).rejects.toThrow("boom");
+  });
+});
+
+describe("endereço arquivado conta como ausente (defeito A)", () => {
+  it("serviço e vaga com endereço arquivado (live null) -> prévia SERVICE_ADDRESS; confirmação bloqueia sem gravar", async () => {
+    mockLock.mockResolvedValue(okCtx({ live_address_id: null }));
+    const t = build();
+    t.repo.readServiceLinkTarget.mockResolvedValue({ provider_age_band: null, raw_address_id: "A1" });
+    // o repositório já devolve null para endereço arquivado da vaga
+    t.repo.readVacancyForLink.mockResolvedValue(vac({ patient_address_id: null }));
+    const pv = await t.uc.preview(P, S, V);
+    expect(pv.preview?.blockers).toContain("SERVICE_ADDRESS" as never);
+    expect(pv.preview?.canConfirm).toBe(false);
+    await expect(t.uc.confirm(P, S, V, actor)).rejects.toMatchObject({ name: "LinkBlockedError" });
+    noWrites(t);
+  });
+});
+
+describe("auditoria com before real (defeito E)", () => {
+  it("serviço com address_id cru A1 (arquivado) e vaga com A2 vivo -> feed A2 e before A1", async () => {
+    mockLock.mockResolvedValue(okCtx({ live_address_id: null }));
+    const t = build();
+    t.repo.readServiceLinkTarget.mockResolvedValue({ provider_age_band: null, raw_address_id: "A1" });
+    t.repo.readVacancyForLink.mockResolvedValue(vac({ patient_address_id: "A2" }));
+    await t.uc.confirm(P, S, V, actor);
+    expect(t.repo.feedService).toHaveBeenCalledWith(client, S, expect.objectContaining({ address_id: "A2" }), "uid-1");
+    const fields = ((t.audit.logFieldChangesSafe.mock.calls[0] as unknown[])[1] as { fields: unknown[] }).fields;
+    expect(fields).toContainEqual({ field: "contracted_service.address_id", before: "A1", after: "A2" });
   });
 });
 

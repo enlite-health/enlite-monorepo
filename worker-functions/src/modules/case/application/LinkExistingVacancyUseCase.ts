@@ -30,6 +30,9 @@ import {
   type VacancyNotLinkableReason,
 } from "../domain/LinkExistingVacancyContract";
 
+import { AddressNotOfPatientError } from "../infrastructure/PatientContractedServiceRepository";
+
+export { AddressNotOfPatientError };
 export {
   PatientNotFoundForRecruitmentError,
   ServiceNotFoundForRecruitmentError,
@@ -49,14 +52,6 @@ export class LinkBlockedError extends Error {
   constructor(readonly blockers: LinkBlockerCode[]) {
     super(`Link blocked: ${blockers.join(", ")}`);
     this.name = "LinkBlockedError";
-  }
-}
-
-/** FK composta (address_id, patient_id) recusou o endereço. Controller: 422 ADDRESS_NOT_OF_PATIENT. */
-export class AddressNotOfPatientError extends Error {
-  constructor() {
-    super("Address does not belong to the patient");
-    this.name = "AddressNotOfPatientError";
   }
 }
 
@@ -143,7 +138,7 @@ export class LinkExistingVacancyUseCase {
     serviceId: string,
     ctx: RecruitmentContext,
     vacancy: VacancyForLinkRow,
-  ): Promise<LinkExistingVacancyPlanResult> {
+  ): Promise<{ plan: LinkExistingVacancyPlanResult; serviceBefore: Partial<Record<keyof ServiceFeed, unknown>> }> {
     const elig = vacancyLinkEligibility(vacancy, { patientId });
     if (!elig.eligible) throw new VacancyNotLinkableError(elig.reason);
     const band = await this.repo.readServiceLinkTarget(client, serviceId);
@@ -160,7 +155,18 @@ export class LinkExistingVacancyUseCase {
       address_id: s.live_address_id,
       hasSchedule: s.has_schedule,
     };
-    return linkExistingVacancyPlan(vacancy, target, this.accepts);
+    // Valores CRUS do serviço antes do vínculo (para a auditoria): o endereço cru é o que se perde, mesmo arquivado.
+    const serviceBefore: Partial<Record<keyof ServiceFeed, unknown>> = {
+      required_professions: s.required_professions,
+      required_experience: s.required_experience,
+      work_schedule: s.work_schedule,
+      payment_day: s.payment_day,
+      required_sex: s.required_sex,
+      providers_needed: s.providers_needed,
+      provider_age_band: band.provider_age_band,
+      address_id: band.raw_address_id,
+    };
+    return { plan: linkExistingVacancyPlan(vacancy, target, this.accepts), serviceBefore };
   }
 
   private blockersOf(ctx: RecruitmentContext, plan: LinkExistingVacancyPlanResult): LinkBlockerCode[] {
@@ -203,7 +209,7 @@ export class LinkExistingVacancyUseCase {
 
     const vacancy = await this.repo.readVacancyForLink(client, vacancyId, { forUpdate: false });
     if (!vacancy) throw new VacancyNotLinkableError("NOT_FOUND");
-    const plan = await this.buildPlan(client, patientId, serviceId, ctx, vacancy);
+    const { plan } = await this.buildPlan(client, patientId, serviceId, ctx, vacancy);
     const blockers = this.blockersOf(ctx, plan);
     return {
       candidates,
@@ -224,7 +230,7 @@ export class LinkExistingVacancyUseCase {
     const vacancy = await this.repo.readVacancyForLink(client, vacancyId, { forUpdate: true });
     if (!vacancy) throw new VacancyNotLinkableError("NOT_FOUND");
     // 3. plano (a re-validação mora em buildPlan)
-    const plan = await this.buildPlan(client, patientId, serviceId, ctx, vacancy);
+    const { plan, serviceBefore } = await this.buildPlan(client, patientId, serviceId, ctx, vacancy);
     if (plan.addressBlocked) throw new LinkBlockedError(["ADDRESS_MISMATCH"]);
     // 4. portão com o serviço já alimentado em memória — até aqui NADA foi gravado
     const blockers = this.blockersOf(ctx, plan);
@@ -239,7 +245,7 @@ export class LinkExistingVacancyUseCase {
     } catch (err) {
       const code = pgCode(err);
       if (code === "23505") throw new ServiceAlreadyRecruitingError(vacancyId);
-      if (code === "23503") throw new AddressNotOfPatientError();
+      if (code === "23503") throw new AddressNotOfPatientError(plan.serviceFeed.address_id ?? null);
       throw err;
     }
 
@@ -249,7 +255,7 @@ export class LinkExistingVacancyUseCase {
       ...plan.vacancyClear.map((c) => ({ field: c.column as string, before: c.before, after: null })),
       ...(Object.entries(plan.serviceFeed) as Array<[keyof ServiceFeed, unknown]>).map(([key, value]) => ({
         field: LINK_AUDIT_SERVICE_FIELD_PREFIX + key,
-        before: null,
+        before: serviceBefore[key] ?? null,
         after: value,
       })),
     ];
