@@ -13,6 +13,7 @@ import { test, expect } from '@playwright/test';
 import {
   ABAC_API_URL, cleanupStaffAndGroup, grantCell, loginAs, pollAuthz, safeSql, scalar, seedStaffInGroup, tokenFor, type MockUser,
 } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 import { contarEventos, limparPedidos, seedPedido, ultimoEvento } from '../helpers/pedidos-ia-seed';
 
 const RUN = `${Date.now()}${Math.random().toString(36).slice(2, 5)}`;
@@ -61,7 +62,7 @@ test.describe('pedidos-ia ABAC 078 — read vê, decidir decide, sem célula nã
     await expect(item.first()).toBeVisible({ timeout: 30_000 });
     await item.first().click();
     await expect(page.getByTestId('pedidos-ia-page')).toBeVisible();
-    await page.getByTestId('pedidos-filtro-area').selectOption(AREA);
+    await escolherNoCombo(page, page.getByTestId('pedidos-filtro-area'), AREA);
     const post = page.getByTestId(`pedido-post-${pedidoLeitor}`);
     await expect(post).toBeVisible();
     await expect(page.getByTestId('pedidos-somente-leitura')).toBeVisible();
@@ -77,7 +78,7 @@ test.describe('pedidos-ia ABAC 078 — read vê, decidir decide, sem célula nã
   test('decisor (read + decidir): os 3 botões existem e Aceptar muda o status e grava 1 evento do próprio uid', async ({ page }) => {
     await loginAs(page, DECISOR);
     await page.locator('a[href="/admin/pedidos-ia"]').first().click();
-    await page.getByTestId('pedidos-filtro-area').selectOption(AREA);
+    await escolherNoCombo(page, page.getByTestId('pedidos-filtro-area'), AREA);
     const post = page.getByTestId(`pedido-post-${pedidoDecisor}`);
     await expect(post.getByTestId('pedido-aceitar')).toBeVisible();
     await expect(post.getByTestId('pedido-negar')).toBeVisible();

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { PedidosIaPage } from '../PedidosIaPage';
 import { pedidosIaErrorKey } from '../pedidosIaErrors';
 import { ApiError } from '@infrastructure/http/ApiError';
@@ -139,7 +140,7 @@ describe('PedidosIaPage — post, etiquetas e detalhe', () => {
     await screen.findByText('velho');
     const ordem = () => screen.getAllByRole('article').map((el) => el.getAttribute('data-testid'));
     expect(ordem()).toEqual(['pedido-post-novo', 'pedido-post-velho']);
-    await userEvent.selectOptions(screen.getByTestId('pedidos-ordem'), 'antigos');
+    chooseCombo(screen.getByTestId('pedidos-ordem'), 'admin.pedidosIa.filters.maisAntigos');
     expect(ordem()).toEqual(['pedido-post-velho', 'pedido-post-novo']);
   });
 
@@ -147,9 +148,9 @@ describe('PedidosIaPage — post, etiquetas e detalhe', () => {
     api.list.mockResolvedValue([pedido()]);
     render_();
     await screen.findByText('Assunto sintetico');
-    await userEvent.selectOptions(screen.getByTestId('pedidos-filtro-area'), 'recrutamento');
+    chooseCombo(screen.getByTestId('pedidos-filtro-area'), 'recrutamento');
     await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ area: 'recrutamento', status: undefined }));
-    await userEvent.selectOptions(screen.getByTestId('pedidos-filtro-status'), 'aceito');
+    chooseCombo(screen.getByTestId('pedidos-filtro-status'), 'admin.pedidosIa.status.aceito');
     await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ area: 'recrutamento', status: 'aceito' }));
   });
 });

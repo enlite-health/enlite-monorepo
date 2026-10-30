@@ -15,6 +15,7 @@
  * Escrito para o job padrão do CI (`pr-gate.yml`, `grep:`). Rodar local = o stack do CI; quem prova que PASSA é o CI.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { scanContrastViolations } from '../helpers/contrast-helper';
 import type { MockUser } from '../helpers/abac-stack-helper';
@@ -33,7 +34,7 @@ async function abrirTela(page: Page): Promise<void> {
   await page.goto('/admin/pedidos-ia');
   await expect(page.getByTestId('pedidos-ia-page')).toBeVisible({ timeout: 30_000 });
   // O filtro por área isola o cenário desta rodada (as opções vêm do que a lista já trouxe).
-  await page.getByTestId('pedidos-filtro-area').selectOption(AREA);
+  await escolherNoCombo(page, page.getByTestId('pedidos-filtro-area'), AREA);
 }
 
 test.describe('pedidos-ia 078 — tela dos pedidos do Sol (aceitar, negar, descrever) @integration', () => {

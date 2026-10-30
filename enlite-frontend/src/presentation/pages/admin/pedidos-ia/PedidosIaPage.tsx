@@ -14,6 +14,7 @@ import {
   type Pedido,
   type PedidoStatus,
 } from '@infrastructure/http/AdminPedidosIaApiService';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { PedidoPost } from './PedidoPost';
 import { DecisaoModal, type DecisaoModo } from './DecisaoModal';
 import { pedidosIaErrorKey } from './pedidosIaErrors';
@@ -108,8 +109,6 @@ export function PedidosIaPage(): JSX.Element {
   }
   if (!visible) return <Navigate to="/admin" replace />;
 
-  const campo = 'min-h-[44px] rounded-lg border-2 border-[#595959] bg-white px-2 text-sm text-[#1A1A1A]';
-
   return (
     <div data-testid="pedidos-ia-page" className="mx-auto w-full max-w-4xl space-y-4 overflow-x-hidden">
       <div>
@@ -124,27 +123,43 @@ export function PedidosIaPage(): JSX.Element {
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
-          {t('admin.pedidosIa.filters.area')}
-          <select data-testid="pedidos-filtro-area" className={campo} value={area} onChange={(e) => setArea(e.target.value)}>
-            <option value="">{t('admin.pedidosIa.filters.todas')}</option>
-            {areas.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
-          {t('admin.pedidosIa.filters.status')}
-          <select data-testid="pedidos-filtro-status" className={campo} value={status} onChange={(e) => setStatus(e.target.value as PedidoStatus | '')}>
-            <option value="">{t('admin.pedidosIa.filters.todos')}</option>
-            {STATUS.map((s) => <option key={s} value={s}>{t(`admin.pedidosIa.status.${s}`)}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
-          {t('admin.pedidosIa.filters.ordem')}
-          <select data-testid="pedidos-ordem" className={campo} value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)}>
-            <option value="novos">{t('admin.pedidosIa.filters.maisNovos')}</option>
-            <option value="antigos">{t('admin.pedidosIa.filters.maisAntigos')}</option>
-          </select>
-        </label>
+        <div className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
+          <label htmlFor="pedidos-filtro-area">{t('admin.pedidosIa.filters.area')}</label>
+          <Combobox
+            id="pedidos-filtro-area"
+            data-testid="pedidos-filtro-area"
+            options={areas.map((a) => ({ value: a, label: a }))}
+            value={area}
+            onChange={setArea}
+            placeholder={t('admin.pedidosIa.filters.todas')}
+            clearLabel={t('admin.pedidosIa.filters.todas')}
+          />
+        </div>
+        <div className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
+          <label htmlFor="pedidos-filtro-status">{t('admin.pedidosIa.filters.status')}</label>
+          <Combobox
+            id="pedidos-filtro-status"
+            data-testid="pedidos-filtro-status"
+            options={STATUS.map((s) => ({ value: s, label: t(`admin.pedidosIa.status.${s}`) }))}
+            value={status}
+            onChange={(v) => setStatus(v as PedidoStatus | '')}
+            placeholder={t('admin.pedidosIa.filters.todos')}
+            clearLabel={t('admin.pedidosIa.filters.todos')}
+          />
+        </div>
+        <div className="flex flex-col gap-1 text-sm font-medium text-[#262626]">
+          <label htmlFor="pedidos-ordem">{t('admin.pedidosIa.filters.ordem')}</label>
+          <Combobox
+            id="pedidos-ordem"
+            data-testid="pedidos-ordem"
+            options={[
+              { value: 'novos', label: t('admin.pedidosIa.filters.maisNovos') },
+              { value: 'antigos', label: t('admin.pedidosIa.filters.maisAntigos') },
+            ]}
+            value={ordem}
+            onChange={(v) => setOrdem(v as Ordem)}
+          />
+        </div>
       </div>
 
       {carga === 'loading' && <p className="text-sm text-[#404040]">{t('admin.pedidosIa.loading')}</p>}
