@@ -436,6 +436,12 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/ai-prompts/:slug/undo → ai_prompt:update',
         'POST /api/admin/ai-prompts/simulate-vacancy → ai_prompt:update', // T071
         'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
+        // spec 078 (M3b-1) — a página de pedidos do Sol: ver (read) × aceitar/negar/descrever (decidir).
+        'GET /api/admin/pedidos-ia → pedidos_ia:read',
+        'GET /api/admin/pedidos-ia/:id → pedidos_ia:read',
+        'POST /api/admin/pedidos-ia/:id/aceitar → pedidos_ia:decidir',
+        'POST /api/admin/pedidos-ia/:id/descrever → pedidos_ia:decidir',
+        'POST /api/admin/pedidos-ia/:id/negar → pedidos_ia:decidir',
         // ── spec 022 (chat interno por paciente + anexos + sino de notificações) ──
         // Conversa (Bloco 1/3, `adminConversationRoutes.ts`) — família `admin.patients`,
         // célula NOVA `patient_conversation:*` (D-07, migration 463).

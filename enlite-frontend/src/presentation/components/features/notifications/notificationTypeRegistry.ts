@@ -13,7 +13,7 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ItineraryUncoveredShiftsItem, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
@@ -118,6 +118,34 @@ function itineraryDeepLink(n: AdminNotification): NotificationDeepLink | null {
 /** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
 export const TACTIQ_LINK_PATH = '/admin/mi-cuenta';
 
+/** spec 078 (M3b-2): o aviso do pedido do Sol não carrega assunto nem texto; leva à página de pedidos (sem paciente, sem `focusRequest`). */
+const PEDIDOS_IA_PATH = '/admin/pedidos-ia';
+
+const pedidoIaHandler = (key: 'pedidoIaNovo' | 'pedidoIaGrave'): NotificationTypeHandler => ({
+  buildText: (_n, t) => t(`admin.notifications.${key}`),
+  getDeepLink: () => ({ path: PEDIDOS_IA_PATH }),
+  actorLabel: (_n, t) => t('admin.notifications.pedidoIaActor'),
+  contextLine: (_n, t) => t('admin.notifications.pedidoIaContext'),
+});
+
+/** spec 078 M4.4 (gatilho (d)): pedido aceito em degrau 3/4. Payload estranho/ausente = texto sem degrau e prazo, nunca crash. */
+function pedidoIaAplicarPayload(n: AdminNotification): PedidoIaAplicarPayload | null {
+  const p = n.payload as Partial<PedidoIaAplicarPayload> | null | undefined;
+  return p && (p.degrau === 3 || p.degrau === 4) && (p.prazo === 'hoje' || p.prazo === 'semana') ? (p as PedidoIaAplicarPayload) : null;
+}
+
+const pedidoIaAplicarHandler: NotificationTypeHandler = {
+  buildText: (n, t) => {
+    const p = pedidoIaAplicarPayload(n);
+    return p
+      ? t('admin.notifications.pedidoIaAplicar', { degrau: p.degrau, prazo: t(`admin.notifications.pedidoIaAplicarPrazo.${p.prazo}`) })
+      : t('admin.notifications.pedidoIaAplicarSemDados');
+  },
+  getDeepLink: () => ({ path: PEDIDOS_IA_PATH }),
+  actorLabel: (_n, t) => t('admin.notifications.pedidoIaActor'),
+  contextLine: (_n, t) => t('admin.notifications.pedidoIaContext'),
+};
+
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
     buildText: (n, t) => t('admin.notifications.mentioned', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
@@ -164,6 +192,9 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
       return first ? t('admin.notifications.itineraryUncoveredDetail', { date: first.firstDate.split('-').reverse().slice(0, 2).join('/') }) : null;
     },
   },
+  PEDIDO_IA_NOVO: pedidoIaHandler('pedidoIaNovo'),
+  PEDIDO_IA_GRAVE: pedidoIaHandler('pedidoIaGrave'),
+  PEDIDO_IA_APLICAR: pedidoIaAplicarHandler,
 };
 
 const FALLBACK_HANDLER: NotificationTypeHandler = {

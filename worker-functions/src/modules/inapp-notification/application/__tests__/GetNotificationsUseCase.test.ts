@@ -310,3 +310,19 @@ describe('GetNotificationsUseCase — aviso diário do itinerário (spec 069 F4)
     expect((await run(null)).payload).toBeNull();
   });
 });
+
+describe('GetNotificationsUseCase — PEDIDO_IA_APLICAR (spec 078 M4.4.2): payload só-ids', () => {
+  const apRow = (payload: unknown): NotificationEventRow =>
+    row({ id: 'ap1', typeCode: 'PEDIDO_IA_APLICAR', actorUid: 'system:sol-fila', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, payload: payload as never });
+  const run = async (payload: unknown) => (await new GetNotificationsUseCase(repoWith([apRow(payload)])).execute({ recipientUid: 'me', limit: 20 }))[0];
+
+  it('devolve as 4 chaves; chave extra (assunto) é descartada', async () => {
+    const dto = await run({ pedido_id: 'p1', degrau: 3, grave: true, prazo: 'hoje', assunto: 'texto do pedido' });
+    expect(dto.payload).toEqual({ pedido_id: 'p1', degrau: 3, grave: true, prazo: 'hoje' });
+  });
+
+  it.each([[{ pedido_id: 'p1', degrau: 2, grave: false, prazo: 'semana' }], [{ pedido_id: 'p1', degrau: 3, grave: false, prazo: 'amanha' }], [null], [{}]])(
+    'payload fora do contrato (%j) -> null', async (payload) => {
+      expect((await run(payload)).payload).toBeNull();
+    });
+});

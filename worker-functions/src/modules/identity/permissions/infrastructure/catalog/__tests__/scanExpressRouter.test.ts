@@ -448,6 +448,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'recruitment_blocked:read',
       // Spec 029 (prompts de IA): descrição em CELL_DESCRIPTION; a rota real é adminAiPromptRoutes.
       'ai_prompt:read', 'ai_prompt:update',
+      // Spec 078 (pedidos do Sol): descrição em CELL_DESCRIPTION; a rota real é adminPedidosIaRoutes.
+      'pedidos_ia:read', 'pedidos_ia:decidir',
       // Spec 051 (F1): trocar o status do paciente por FORA da FSM — uma célula por destino; o
       // consumidor é `decidirTrocaForaDoFluxo` (domínio), sem `perm.require` de rota neste PR.
       'patient_status:move_to_searching',

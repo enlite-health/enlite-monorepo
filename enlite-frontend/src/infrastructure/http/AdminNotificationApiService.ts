@@ -17,7 +17,10 @@ export type NotificationTypeCode =
   | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
   | 'ADMISSION_TACTIQ_LINK_REQUIRED'
   | 'ADMISSION_TACTIQ_EXTENSION_CHANGED'
-  | 'ITINERARY_UNCOVERED_SHIFTS';
+  | 'ITINERARY_UNCOVERED_SHIFTS'
+  | 'PEDIDO_IA_NOVO'
+  | 'PEDIDO_IA_GRAVE'
+  | 'PEDIDO_IA_APLICAR';
 
 /** spec 049: SÓ o motivo (nunca e-mail nem token) — o TEXTO vive no cliente (ES/PT na i18n). */
 export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
@@ -53,6 +56,14 @@ export interface ItineraryUncoveredShiftsPayload {
   items: ItineraryUncoveredShiftsItem[];
 }
 
+/** spec 078 M4.4: SÓ ids e enums (nunca assunto nem texto do pedido) — o texto é montado no cliente. */
+export interface PedidoIaAplicarPayload {
+  pedido_id: string;
+  degrau: 3 | 4;
+  grave: boolean;
+  prazo: 'hoje' | 'semana';
+}
+
 export interface AdminNotification {
   id: string;
   typeCode: NotificationTypeCode;
@@ -72,7 +83,7 @@ export interface AdminNotification {
    * fora da resposta HTTP autenticada (regra dura). */
   messageExcerpt: string | null;
   /** spec 048/049: o payload do tipo (`THERAPEUTIC_PROJECT_CONTACTS_PENDING` ou `ADMISSION_TACTIQ_LINK_REQUIRED`); `null` nos de conversa. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | null;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | null;
   /** spec 048: número do Caso do paciente (o sino do PT NUNCA mostra o nome); `null` = paciente sem número. */
   patientCaseNumber?: number | null;
   createdAt: string;
