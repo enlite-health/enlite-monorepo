@@ -11,6 +11,7 @@ import type {
   CreateContractedServiceBody,
   UpdateContractedServiceBody,
 } from '@domain/entities/PatientContractedService';
+import type { LinkConfirmResponse, LinkPreviewResponse } from '@domain/entities/LinkExistingVacancy';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
 import type {
   ItineraryAbsenceResult,
@@ -24,6 +25,10 @@ export class ContractedServiceApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly details?: Record<string, unknown>;
+  /** Spec 079: campos no topo do corpo dos 409/422 do vínculo (`vacancyId`, `reason`, `blockers`). */
+  readonly vacancyId?: string;
+  readonly reason?: string;
+  readonly blockers?: string[];
   /** Só no 409 `ITINERARY_OVERLAP` (Fase 12, DX-12.6): os 2 horários em conflito, vindos da API. */
   readonly overlap?: ItineraryOverlapDetail;
 
@@ -33,6 +38,9 @@ export class ContractedServiceApiError extends Error {
     this.status = status;
     this.code = body?.code;
     this.details = body?.details;
+    this.vacancyId = body?.vacancyId;
+    this.reason = body?.reason;
+    this.blockers = body?.blockers;
     if (body?.existing && body.requested) {
       this.overlap = {
         existing: body.existing,
@@ -53,6 +61,9 @@ interface ApiErrorResponse {
   error: string;
   code?: string;
   details?: Record<string, unknown>;
+  vacancyId?: string;
+  reason?: string;
+  blockers?: string[];
   /** Corpo do 409 `ITINERARY_OVERLAP` (`AdminItineraryWriteController`) — campos no topo do corpo. */
   existing?: ItineraryOverlapDetail['existing'];
   requested?: ItineraryOverlapDetail['requested'];
@@ -173,6 +184,32 @@ class AdminContractedServicesApiServiceClass {
     return this.request<ActivateRecruitmentResult>(
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
+    );
+  }
+
+  /**
+   * POST .../:sid/link-existing-vacancy/preview (spec 079) — sem `vacancyId` lista as candidatas;
+   * com ele devolve também a prévia daquela vaga. 409 `SERVICE_ALREADY_RECRUITING`/`VACANCY_NOT_LINKABLE`
+   * e 422 `LINK_BLOCKED`/`ADDRESS_NOT_OF_PATIENT` viram `ContractedServiceApiError` (`err.code`).
+   */
+  async previewLinkExistingVacancy(
+    patientId: string,
+    serviceId: string,
+    vacancyId?: string,
+  ): Promise<LinkPreviewResponse> {
+    return this.request<LinkPreviewResponse>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/link-existing-vacancy/preview`,
+      vacancyId ? { vacancyId } : {},
+    );
+  }
+
+  /** POST .../:sid/link-existing-vacancy (spec 079) — confirma o vínculo; mesmos erros da prévia. */
+  async linkExistingVacancy(patientId: string, serviceId: string, vacancyId: string): Promise<LinkConfirmResponse> {
+    return this.request<LinkConfirmResponse>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/link-existing-vacancy`,
+      { vacancyId },
     );
   }
 

@@ -77,6 +77,65 @@ describe('AdminContractedServicesApiService', () => {
     ).rejects.toMatchObject({ status: 422, code: 'PATIENT_NOT_READY', details: { missing: ['SERVICE_SCHEDULE'] } });
   });
 
+  describe('vínculo de vaga existente (spec 079)', () => {
+    const BASE = `/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/link-existing-vacancy`;
+    const PREVIEW = { candidates: [], preview: null };
+
+    it('previewLinkExistingVacancy sem vacancyId: POST em /preview com corpo vazio (sem a chave)', async () => {
+      const f = mockFetch({ success: true, data: PREVIEW });
+      const out = await AdminContractedServicesApiService.previewLinkExistingVacancy(PATIENT_ID, SERVICE_ID);
+      expect(out).toEqual(PREVIEW);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain(`${BASE}/preview`);
+      expect(init.method).toBe('POST');
+      const body = JSON.parse(init.body as string);
+      expect(body).toEqual({});
+      expect('vacancyId' in body).toBe(false);
+    });
+
+    it('previewLinkExistingVacancy com vacancyId: manda { vacancyId }', async () => {
+      const f = mockFetch({ success: true, data: PREVIEW });
+      await AdminContractedServicesApiService.previewLinkExistingVacancy(PATIENT_ID, SERVICE_ID, 'v1');
+      const [, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string)).toEqual({ vacancyId: 'v1' });
+    });
+
+    it('linkExistingVacancy: POST em /link-existing-vacancy com { vacancyId } e devolve fedFields', async () => {
+      const data = { vacancyId: 'v1', serviceId: SERVICE_ID, fedFields: ['schedule'] };
+      const f = mockFetch({ success: true, data });
+      const out = await AdminContractedServicesApiService.linkExistingVacancy(PATIENT_ID, SERVICE_ID, 'v1');
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url.endsWith(BASE)).toBe(true);
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({ vacancyId: 'v1' });
+    });
+
+    it('409 SERVICE_ALREADY_RECRUITING expõe code e vacancyId', async () => {
+      mockFetch({ success: false, error: 'x', code: 'SERVICE_ALREADY_RECRUITING', vacancyId: 'v9' }, 409);
+      await expect(AdminContractedServicesApiService.linkExistingVacancy(PATIENT_ID, SERVICE_ID, 'v1'))
+        .rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 409, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: 'v9' });
+    });
+
+    it('409 VACANCY_NOT_LINKABLE expõe code e reason', async () => {
+      mockFetch({ success: false, error: 'x', code: 'VACANCY_NOT_LINKABLE', reason: 'ALREADY_LINKED' }, 409);
+      await expect(AdminContractedServicesApiService.previewLinkExistingVacancy(PATIENT_ID, SERVICE_ID, 'v1'))
+        .rejects.toMatchObject({ status: 409, code: 'VACANCY_NOT_LINKABLE', reason: 'ALREADY_LINKED' });
+    });
+
+    it('422 LINK_BLOCKED expõe code e blockers', async () => {
+      mockFetch({ success: false, error: 'x', code: 'LINK_BLOCKED', blockers: ['ADDRESS_MISMATCH'] }, 422);
+      await expect(AdminContractedServicesApiService.linkExistingVacancy(PATIENT_ID, SERVICE_ID, 'v1'))
+        .rejects.toMatchObject({ status: 422, code: 'LINK_BLOCKED', blockers: ['ADDRESS_MISMATCH'] });
+    });
+
+    it('422 ADDRESS_NOT_OF_PATIENT expõe o code', async () => {
+      mockFetch({ success: false, error: 'x', code: 'ADDRESS_NOT_OF_PATIENT' }, 422);
+      await expect(AdminContractedServicesApiService.linkExistingVacancy(PATIENT_ID, SERVICE_ID, 'v1'))
+        .rejects.toMatchObject({ status: 422, code: 'ADDRESS_NOT_OF_PATIENT' });
+    });
+  });
+
   it('erro do backend (success:false) vira ContractedServiceApiError com status/code/details', async () => {
     mockFetch({ success: false, error: 'conflito', code: 'SERVICE_CONFLICT' }, 409);
     await expect(
