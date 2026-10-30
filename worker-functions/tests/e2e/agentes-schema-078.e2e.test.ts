@@ -45,11 +45,23 @@ const COLUNAS_ESPERADAS: Record<string, Record<string, string>> = {
     regra_proposta: 'text',
     criado_em: 'timestamp with time zone',
   },
+  // migration 553 (M3b-2): a trilha de aviso não tem coluna de número nem de texto do pedido — lista FECHADA
+  avisos_enviados: {
+    id: 'uuid',
+    pedido_id: 'uuid',
+    canal: 'text',
+    destinatario_ref: 'text',
+    tentativa: 'smallint',
+    template_ref: 'text',
+    enviado_em: 'timestamp with time zone',
+    resultado: 'text',
+    motivo: 'text',
+  },
 };
 
 const TABELAS = [
   'veredictos', 'veredicto_achados', 'reportes', 'reporte_veredictos', 'pedidos',
-  'pedido_atitudes', 'pedido_origens', 'pedido_eventos', 'medicoes',
+  'pedido_atitudes', 'pedido_origens', 'pedido_eventos', 'medicoes', 'avisos_enviados',
 ];
 
 describe('schema agentes (spec 078, migration 551)', () => {
@@ -62,7 +74,7 @@ describe('schema agentes (spec 078, migration 551)', () => {
     await pool.end();
   });
 
-  it('0. sanidade: as 9 tabelas e a view existem (o zero das provas abaixo não é banco sem migration)', async () => {
+  it('0. sanidade: as 10 tabelas (551 + 553) e as views existem (o zero das provas abaixo não é banco sem migration)', async () => {
     const { rows } = await pool.query(
       `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'agentes' AND c.relkind IN ('r','v') ORDER BY c.relname`,

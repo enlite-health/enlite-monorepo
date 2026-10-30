@@ -13,7 +13,7 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enli
 
 const TABELAS = [
   'veredictos', 'veredicto_achados', 'reportes', 'reporte_veredictos', 'pedidos',
-  'pedido_atitudes', 'pedido_origens', 'pedido_eventos', 'medicoes',
+  'pedido_atitudes', 'pedido_origens', 'pedido_eventos', 'medicoes', 'avisos_enviados',
 ];
 
 describe('schema agentes — INSERT-only, CHECKs e unicidades (spec 078, migration 551)', () => {
@@ -90,7 +90,7 @@ describe('schema agentes — INSERT-only, CHECKs e unicidades (spec 078, migrati
     expect(await sqlState(`TRUNCATE agentes.${tabela}`)).toBe('42501');
   });
 
-  it('controle positivo: INSERT válido em cada uma das 9 tabelas -> 1 linha', async () => {
+  it('controle positivo: INSERT válido em cada uma das 10 tabelas -> 1 linha', async () => {
     const v = await veredicto();
     await um(`INSERT INTO agentes.veredicto_achados (veredicto_id, tipo, regra_ref, gravidade) VALUES ($1,'violacao','01-principios#0123456789ab','alta') RETURNING id`, [v]);
     const r = await um(`INSERT INTO agentes.reportes (autor, operador, area, caso, regra_ref, janela_de, janela_ate, observacao) VALUES ('gestor-1','luz','recrutamento','leve','tom#0123456789ab','2026-10-01','2026-10-07','respondeu fora do tom') RETURNING id`);
@@ -100,6 +100,7 @@ describe('schema agentes — INSERT-only, CHECKs e unicidades (spec 078, migrati
     await um(`INSERT INTO agentes.pedido_origens (pedido_id, reporte_id) VALUES ($1,$2) RETURNING id`, [p, r]);
     expect(await evento(p, a, 'aceitar')).toBe('NENHUM-ERRO');
     await um(`INSERT INTO agentes.medicoes (metrica, escopo, de, ate, valor, n, motivo) VALUES ('taxa_violacao','luz', now()-interval '7 days', now(), 0.12, 40, 'linha_de_base') RETURNING id`);
+    await um(`INSERT INTO agentes.avisos_enviados (pedido_id, canal, destinatario_ref, tentativa, template_ref, resultado) VALUES ($1,'twilio','ref-1',1,'sol_aviso_grave_v1','stub') RETURNING id`, [p]);
     for (const t of TABELAS) {
       const { rows } = await client.query(`SELECT count(*)::int AS c FROM agentes.${t}`);
       expect({ t, c: rows[0].c }).toEqual({ t, c: 1 });

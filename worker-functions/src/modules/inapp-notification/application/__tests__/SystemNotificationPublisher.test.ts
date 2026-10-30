@@ -6,6 +6,7 @@ import {
   SYSTEM_ITINERARY_ACTOR_UID,
   SYSTEM_ADMISSION_ACTOR_UID,
   SYSTEM_NOTIFICATION_ACTOR_UID,
+  SYSTEM_SOL_FILA_ACTOR_UID,
 } from '../SystemNotificationPublisher';
 
 const base = { patientId: 'p-1', cycleId: 'c-1', versionId: 'v-1', dayOffset: 5 };
@@ -120,5 +121,26 @@ describe('SystemNotificationPublisher — aviso diário do itinerário (spec 069
     expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [{ ...item, shifts: 0 }] })).toThrow(/fora do contrato/);
     expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [{ ...item, shifts: 1.5 }] })).toThrow(/fora do contrato/);
     expect(() => buildItineraryUncoveredShiftsPayload({ operationDate: '2026-11-02', items: [{ ...item, firstDate: 'amanhã' }] })).toThrow(/fora do contrato/);
+  });
+});
+
+describe('SystemNotificationPublisher.publishPedidoIa (spec 078, M3b-2)', () => {
+  it('UM evento sem payload (nem assunto, nem id) e uma notificação por decisor, deduplicado; ator = sentinela da fila', async () => {
+    const r = repo();
+    const id = await new SystemNotificationPublisher(r as never).publishPedidoIa({} as never, { typeCode: 'PEDIDO_IA_GRAVE', recipientUids: ['u1', 'u2', 'u1'] });
+    expect(id).toBe('ev-1');
+    expect(r.insertEvent).toHaveBeenCalledTimes(1);
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'PEDIDO_IA_GRAVE', actorUid: SYSTEM_SOL_FILA_ACTOR_UID, patientId: null, conversationId: null, messageId: null },
+      expect.anything(),
+    );
+    expect(SYSTEM_SOL_FILA_ACTOR_UID).toBe('system:sol-fila');
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['u1', 'u2'], expect.anything());
+  });
+
+  it('sem decisor NUNCA cria evento', async () => {
+    const r = repo();
+    expect(await new SystemNotificationPublisher(r as never).publishPedidoIa({} as never, { typeCode: 'PEDIDO_IA_NOVO', recipientUids: [] })).toBeNull();
+    expect(r.insertEvent).not.toHaveBeenCalled();
   });
 });

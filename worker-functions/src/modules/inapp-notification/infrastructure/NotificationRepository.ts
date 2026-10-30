@@ -42,7 +42,9 @@ export type NotificationTypeCode =
   | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
   | 'ADMISSION_TACTIQ_LINK_REQUIRED'
   | 'ADMISSION_TACTIQ_EXTENSION_CHANGED'
-  | 'ITINERARY_UNCOVERED_SHIFTS';
+  | 'ITINERARY_UNCOVERED_SHIFTS'
+  | 'PEDIDO_IA_NOVO'
+  | 'PEDIDO_IA_GRAVE';
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do

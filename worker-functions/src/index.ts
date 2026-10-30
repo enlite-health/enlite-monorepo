@@ -914,7 +914,7 @@ wirePermissionsModule({
 // ========== MCP Server (feature-gated via MCP_ENABLED=true) ==========
 if (process.env.MCP_ENABLED === 'true') {
   const { mountMcpRoutes } = require('@modules/mcp/bootstrap/mountMcpRoutes') as typeof import('@modules/mcp/bootstrap/mountMcpRoutes');
-  mountMcpRoutes(app, dbPool);
+  mountMcpRoutes(app, dbPool, { twilio: twilioMessagingService });
 }
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========

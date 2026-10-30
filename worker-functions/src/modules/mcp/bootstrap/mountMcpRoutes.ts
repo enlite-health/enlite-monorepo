@@ -64,6 +64,9 @@ import { AgentesReporteLerCapability } from '../application/capabilities/Agentes
 import { AgentesPlacarLerCapability } from '../application/capabilities/AgentesPlacarLerCapability';
 import { AgentesPedidoDepositarCapability } from '../application/capabilities/AgentesPedidoDepositarCapability';
 import { AgentesMedicaoRegistrarCapability } from '../application/capabilities/AgentesMedicaoRegistrarCapability';
+import { AgentesAvisoReenviarCapability } from '../application/capabilities/AgentesAvisoReenviarCapability';
+import { criarAvisoPedidoService } from '../../agentes/infrastructure/criarAvisoPedidoService';
+import { criarWhatsappAviso, type TwilioContentSender } from '../../agentes/infrastructure/avisoWhatsapp';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
@@ -78,7 +81,8 @@ import { systemContextMiddleware } from '@shared/database/systemContextMiddlewar
  * Com MCP_OAUTH_ENABLED=true, monta também o authorization server OAuth 2.1
  * (conector claude.ai) e o /mcp/v1 passa a aceitar access tokens OAuth.
  */
-export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
+/** `twilio`: o serviço de mensageria do boot (o aviso GRAVE do Sol manda pelo número do Sol através dele). Em teste o dublê vale, sempre. */
+export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?: TwilioContentSender } = {}): void {
   const principalRepo = new ServicePrincipalSecretManagerRepo();
   const auditor = new McpAuditLogger();
   const pubsub = new PubSubClient();
@@ -141,7 +145,8 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
   const caseMemoryRepo = new CaseMemoryRepository(dbPool);
 
   // Schema `agentes` (spec 078): quem enxerga cada capability é a allowlist do principal, não o registro.
-  const agentesRepo = new AgentesRepository(dbPool);
+  const avisoPedidos = criarAvisoPedidoService(dbPool, criarWhatsappAviso(process.env, () => opts.twilio));
+  const agentesRepo = new AgentesRepository(dbPool, avisoPedidos);
 
   const getWorkerById = new GetWorkerByIdUseCase(new WorkerRepository(pubsub));
 
@@ -221,6 +226,7 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     agentesPlacarLer: new AgentesPlacarLerCapability(agentesRepo),
     agentesPedidoDepositar: new AgentesPedidoDepositarCapability(agentesRepo),
     agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(agentesRepo),
+    agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisoPedidos),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
     auditor,
   });

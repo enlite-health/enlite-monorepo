@@ -25,6 +25,9 @@ export const SYSTEM_ADMISSION_ACTOR_UID = 'system:admission';
 /** Sentinela do aviso diário do itinerário (spec 069 F4): sem autor humano, sem FK (461). */
 export const SYSTEM_ITINERARY_ACTOR_UID = 'system:itinerary-daily';
 
+/** Sentinela do aviso da fila de pedidos do Sol (spec 078 M3b-2): sem autor humano, sem FK (461). */
+export const SYSTEM_SOL_FILA_ACTOR_UID = 'system:sol-fila';
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -172,6 +175,24 @@ export class SystemNotificationPublisher {
       client,
     );
     await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Spec 078 M3b-2: UM evento + uma notificação por decisor, SEM payload (nem assunto, nem texto, nem id: o aviso só diz que há
+   * pedido; a página é que mostra). Sem destinatário não grava e devolve `null`. O `client` é a transação de quem deposita o pedido.
+   */
+  async publishPedidoIa(
+    client: PoolClient,
+    input: { typeCode: 'PEDIDO_IA_NOVO' | 'PEDIDO_IA_GRAVE'; recipientUids: readonly string[] },
+  ): Promise<string | null> {
+    const uids = [...new Set(input.recipientUids)];
+    if (uids.length === 0) return null;
+    const eventId = await this.repository.insertEvent(
+      { typeCode: input.typeCode, actorUid: SYSTEM_SOL_FILA_ACTOR_UID, patientId: null, conversationId: null, messageId: null },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, uids, client);
     return eventId;
   }
 

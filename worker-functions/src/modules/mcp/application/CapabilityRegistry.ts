@@ -28,6 +28,7 @@ import type { AgentesReporteLerCapability } from './capabilities/AgentesReporteL
 import type { AgentesPlacarLerCapability } from './capabilities/AgentesPlacarLerCapability';
 import type { AgentesPedidoDepositarCapability } from './capabilities/AgentesPedidoDepositarCapability';
 import type { AgentesMedicaoRegistrarCapability } from './capabilities/AgentesMedicaoRegistrarCapability';
+import type { AgentesAvisoReenviarCapability } from './capabilities/AgentesAvisoReenviarCapability';
 import { AGENTES_WRITE_CAPABILITIES } from '../domain/AgentesPrincipals';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
@@ -80,6 +81,7 @@ interface RegistryDeps {
   agentesPlacarLer?: AgentesPlacarLerCapability;
   agentesPedidoDepositar?: AgentesPedidoDepositarCapability;
   agentesMedicaoRegistrar?: AgentesMedicaoRegistrarCapability;
+  agentesAvisoReenviar?: AgentesAvisoReenviarCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
@@ -163,6 +165,7 @@ export class CapabilityRegistry {
       agentesPlacarLer,
       agentesPedidoDepositar,
       agentesMedicaoRegistrar,
+      agentesAvisoReenviar,
     } = this.deps;
 
     const agentes = [
@@ -172,6 +175,7 @@ export class CapabilityRegistry {
       agentesPlacarLer,
       agentesPedidoDepositar,
       agentesMedicaoRegistrar,
+      agentesAvisoReenviar,
     ]
       .filter((cap): cap is NonNullable<typeof cap> => cap !== undefined)
       .map((cap) => {

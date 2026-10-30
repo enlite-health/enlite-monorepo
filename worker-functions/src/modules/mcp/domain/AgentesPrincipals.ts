@@ -15,6 +15,7 @@ export const AGENTES_PRINCIPAL_CAPABILITIES = {
     'agentes.placar.ler',
     'agentes.pedido.depositar',
     'agentes.medicao.registrar',
+    'agentes.aviso.reenviar',
   ],
   maria: ['agentes.placar.ler', 'agentes.reporte.registrar'],
 } as const;
@@ -27,4 +28,5 @@ export const AGENTES_WRITE_CAPABILITIES = [
   'agentes.reporte.registrar',
   'agentes.pedido.depositar',
   'agentes.medicao.registrar',
+  'agentes.aviso.reenviar',
 ] as const;

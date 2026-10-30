@@ -13,6 +13,7 @@ import { AgentesReporteLerCapability } from '../capabilities/AgentesReporteLerCa
 import { AgentesPlacarLerCapability } from '../capabilities/AgentesPlacarLerCapability';
 import { AgentesPedidoDepositarCapability } from '../capabilities/AgentesPedidoDepositarCapability';
 import { AgentesMedicaoRegistrarCapability } from '../capabilities/AgentesMedicaoRegistrarCapability';
+import { AgentesAvisoReenviarCapability } from '../capabilities/AgentesAvisoReenviarCapability';
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const UUID_A = '123e4567-e89b-12d3-a456-426614174000';
@@ -45,6 +46,7 @@ function makeRegistry(rl?: WriteRateLimiter) {
   const repo = makeRepo();
   const r = repo as never;
   const auditor = { emit: jest.fn() };
+  const avisos = { reenviar: jest.fn().mockResolvedValue({ reenviados: 0, escalar: [{ pedido_id: UUID_A }] }) };
   const stub = {} as never;
   const registry = new CapabilityRegistry({
     profileGet: stub, documentsList: stub, vacanciesList: stub, interviewGet: stub, profileUpdate: stub,
@@ -58,10 +60,11 @@ function makeRegistry(rl?: WriteRateLimiter) {
     agentesPlacarLer: new AgentesPlacarLerCapability(r),
     agentesPedidoDepositar: new AgentesPedidoDepositarCapability(r),
     agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(r),
+    agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisos),
     auditor,
     writeRateLimiter: rl,
   });
-  return { registry, repo, auditor };
+  return { registry, repo, auditor, avisos };
 }
 
 type Handler = (args: unknown) => Promise<{ content: Array<{ text: string }> }>;
@@ -88,7 +91,7 @@ describe('principais do schema agentes — a lista de capabilities de cada um', 
   it('a forma do secret vira ServicePrincipal e as listas são as combinadas', () => {
     expect(principalFromSecret('sol-supervisor').allowedCapabilities).toEqual(['agentes.veredicto.registrar']);
     expect([...principalFromSecret('sol-fila').allowedCapabilities].sort()).toEqual(
-      ['agentes.medicao.registrar', 'agentes.pedido.depositar', 'agentes.placar.ler', 'agentes.reporte.ler'],
+      ['agentes.aviso.reenviar', 'agentes.medicao.registrar', 'agentes.pedido.depositar', 'agentes.placar.ler', 'agentes.reporte.ler'],
     );
     expect([...principalFromSecret('maria').allowedCapabilities].sort()).toEqual(
       ['agentes.placar.ler', 'agentes.reporte.registrar'],
@@ -168,7 +171,25 @@ describe('agentes.medicao.registrar — quem pode chamar', () => {
     expect(JSON.parse(out.content[0].text)).toEqual({ id: UUID_A });
     expect(repo.registrarMedicao).toHaveBeenCalledWith('sol-fila', expect.objectContaining({ motivo: 'linha_de_base' }));
     expect(spy).toHaveBeenCalledWith('sol-fila:agentes.medicao.registrar');
-    expect(AGENTES_WRITE_CAPABILITIES).toHaveLength(4);
+    expect(AGENTES_WRITE_CAPABILITIES).toHaveLength(5);
+  });
+});
+
+describe('agentes.aviso.reenviar — quem pode chamar (M3b-2, item 57)', () => {
+  it('só a sol-fila vê e chama; maria e sol-supervisor não; é escrita (balde por principal+capability); `agora` é repassado como Date', async () => {
+    const rl = new WriteRateLimiter();
+    const spy = jest.spyOn(rl, 'consume');
+    const { registry, avisos } = makeRegistry(rl);
+    expect(register(registry, () => principalFromSecret('maria')).names).not.toContain('agentes.aviso.reenviar');
+    expect(register(registry, () => principalFromSecret('sol-supervisor')).names).not.toContain('agentes.aviso.reenviar');
+
+    const { handler } = register(registry, () => principalFromSecret('sol-fila'));
+    const out = await handler('agentes.aviso.reenviar')({ agora: '2026-10-30T12:00:00Z' });
+    expect(JSON.parse(out.content[0].text)).toEqual({ reenviados: 0, escalar: [{ pedido_id: UUID_A }] });
+    expect(avisos.reenviar).toHaveBeenCalledWith(new Date('2026-10-30T12:00:00Z'));
+    expect(spy).toHaveBeenCalledWith('sol-fila:agentes.aviso.reenviar');
+    await expect(handler('agentes.aviso.reenviar')({ agora: 'ontem' })).rejects.toThrow();
+    await expect(handler('agentes.aviso.reenviar')({ pedido_id: UUID_A })).rejects.toThrow(); // campo extra recusado
   });
 });
 

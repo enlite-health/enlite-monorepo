@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
 import { systemActor } from '@shared/audit/actorSource';
 
@@ -85,8 +85,14 @@ export interface PlacarResult {
 
 const actorOf = (principal: string) => systemActor(`mcp:${principal}`);
 
+/** O que o depósito pede ao aviso (M3b-2): in-app dentro da transação, WhatsApp depois do commit. Só o ID — nenhum texto do pedido. */
+export interface AvisoDoDeposito {
+  naTransacao(c: PoolClient, i: { pedidoId: string; grave: boolean }): Promise<unknown>;
+  whatsappGrave(pedidoId: string): Promise<void>;
+}
+
 export class AgentesRepository {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly avisos?: AvisoDoDeposito) {}
 
   /** `duplicado: true` quando a UNIQUE (sensor, inbox, conversa, última msg) já tem o veredicto: nada é regravado. */
   async registrarVeredicto(
@@ -274,7 +280,8 @@ export class AgentesRepository {
     principal: string,
     p: PedidoInput,
   ): Promise<{ pedido_id: string; atitude_id: string }> {
-    return withActorContext(
+    const grave = p.grave_gatilho !== 'nenhum';
+    const r = await withActorContext(
       this.pool,
       async (c) => {
         const ped = await c.query<{ id: string }>(
@@ -296,10 +303,14 @@ export class AgentesRepository {
             [pedidoId, 'reporte_id' in o ? o.reporte_id : null, 'veredicto_id' in o ? o.veredicto_id : null],
           );
         }
+        await this.avisos?.naTransacao(c, { pedidoId, grave });
         return { pedido_id: pedidoId, atitude_id: at.rows[0].id };
       },
       actorOf(principal),
     );
+    // Depois do commit: o WhatsApp de um pedido que não existiu seria pior que nenhum. Falha dele nunca desfaz o pedido.
+    if (grave) await this.avisos?.whatsappGrave(r.pedido_id);
+    return r;
   }
 
   /** Foto datada de um número que muda (linha de base, antes/depois de um pedido). Os CHECKs da tabela são a trava. */
