@@ -17,6 +17,7 @@
  */
 
 import { logger } from '@shared/logging';
+import { countryToTimezone } from '@shared/locale/CountryTimezone';
 import type {
   IAxonicoApiClient,
   AxonicoPatientMatch,
@@ -587,6 +588,8 @@ export class AxonicoApiClient implements IAxonicoApiClient {
 
     // `fecha` = dia civil do pedido (`serviceDate`, string 'YYYY-MM-DD') + hora do INSTANTE do
     // envio (D370) — `this.now()`, nunca `Date.now()` direto, para o teste poder fixar o relógio.
+    // A hora é a de Buenos Aires (não a local do processo): Cloud Run roda em UTC e a hora 3h à
+    // frente tornava a prestação do dia "futura" (400 FECHA DE PRESTACION INCORRECTA).
     const fecha = `${formatDiaCivilParaAxonico(serviceDate)} ${formatTime(this.now())}`;
 
     const buildBody = (session: AxonicoSession) => {
@@ -725,9 +728,17 @@ function formatDiaCivilParaAxonico(diaCivil: string): string {
   return `${day}/${month}/${year}`;
 }
 
-/** `HH:mm:ss`, medido no formato real do Axonico. */
+const HORA_AXONICO = new Intl.DateTimeFormat('en-GB', {
+  timeZone: countryToTimezone('AR'),
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** `HH:mm:ss` no fuso de Buenos Aires (independe do TZ do processo), medido no formato real do Axonico. */
 function formatTime(date: Date): string {
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+  return HORA_AXONICO.format(date);
 }
 
 /**
