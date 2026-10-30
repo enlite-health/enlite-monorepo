@@ -26,6 +26,8 @@ export type PermissionErrorCode =
   | 'system_group'
   /** Célula fora do catálogo ou descontinuada. */
   | 'invalid_cell'
+  /** Célula `somenteAcessoMaster` (spec 078) pedida para um grupo que não é o Acesso Master. */
+  | 'master_only_cell'
   /** Operação exige motivo (concessão de país, override de feature). */
   | 'reason_required'
   /** Deixaria zero gestores com `permission_management:write`. */

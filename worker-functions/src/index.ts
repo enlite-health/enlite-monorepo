@@ -162,6 +162,7 @@ import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMainten
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
+import { createAdminPedidosIaRoutes, createPedidoIaController } from '@modules/agentes';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
@@ -757,6 +758,9 @@ app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware, permissionMi
 // ========== Admin AI Prompts (spec 029, T013 — list/get/update; undo/restore/preview são de fases posteriores) ==========
 app.use('/api/admin', createAdminAiPromptRoutes(new AiPromptController(), authMiddleware, permissionMiddleware));
 
+// ========== Admin Pedidos IA (spec 078, M3b-1 — página de pedidos do Sol; células pedidos_ia:read/decidir) ==========
+app.use('/api/admin', createAdminPedidosIaRoutes(createPedidoIaController(), authMiddleware, permissionMiddleware));
+
 // ========== Worker Context (triage-service / MCP internal) ==========
 app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware, permissionMiddleware));
 
@@ -910,7 +914,7 @@ wirePermissionsModule({
 // ========== MCP Server (feature-gated via MCP_ENABLED=true) ==========
 if (process.env.MCP_ENABLED === 'true') {
   const { mountMcpRoutes } = require('@modules/mcp/bootstrap/mountMcpRoutes') as typeof import('@modules/mcp/bootstrap/mountMcpRoutes');
-  mountMcpRoutes(app, dbPool);
+  mountMcpRoutes(app, dbPool, { twilio: twilioMessagingService });
 }
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========

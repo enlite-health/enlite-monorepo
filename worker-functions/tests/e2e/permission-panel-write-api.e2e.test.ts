@@ -158,6 +158,23 @@ describe('escrita do painel — caminho feliz, efeito no banco (F4)', () => {
     expect(r.rows.map((x) => x.k)).not.toContain('worker:read');
   });
 
+  it('PUT /permissions com pedidos_ia:decidir em grupo comum -> 422 master_only_cell e 0 linhas em group_permissions (spec 078)', async () => {
+    const conjunto = async () => (await pool.query(
+      `SELECT p.resource || ':' || p.action AS k FROM iam.group_permissions gp
+         JOIN iam.permissions p ON p.id = gp.permission_id WHERE gp.group_id = $1 ORDER BY 1`, [idTrabalho])).rows.map((x) => x.k as string);
+    const antes = await conjunto();
+    const res = await chamar('PUT', `/api/admin/permission-groups/${idTrabalho}/permissions`, {
+      cellKeys: ['worker:read', 'pedidos_ia:read', 'pedidos_ia:decidir'],
+    });
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('master_only_cell');
+    const depois = await conjunto();
+    expect(depois.filter((k) => k.startsWith('pedidos_ia:'))).toHaveLength(0);
+    // O PUT inteiro foi recusado: o conjunto anterior do grupo continua exatamente igual.
+    expect(depois).toEqual(antes);
+  });
+
   it('POST /countries concede, e o MOTIVO fica na trilha do grupo', async () => {
     const res = await chamar('POST', `/api/admin/permission-groups/${idTrabalho}/countries`, {
       country: 'BR', reason: 'expansão piloto',

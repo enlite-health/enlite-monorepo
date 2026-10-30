@@ -19,6 +19,7 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
 import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
+import { PedidosIaPage } from './pages/admin/pedidos-ia';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
@@ -299,6 +300,8 @@ export function App() {
               (`?tactiq=linked|error`) tem de sobreviver para o banner do retorno aparecer. */}
           <Route path="mi-cuenta/tactiq" element={<RedirectKeepingSearch to="/admin/mi-cuenta" />} />
           <Route path="dedup" element={<DedupCenterPage />} />
+          {/* Spec 078 (M3b-1): pedidos do Sol. Sem chave `screen:*` nem FeatureRouteGate: a trava é a célula `pedidos_ia:read`, na página. */}
+          <Route path="pedidos-ia" element={<PedidosIaPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />
           <Route path="access/groups/:id" element={<FeatureRouteGate feature="screen:access-permissions"><GroupDetailPage /></FeatureRouteGate>} />

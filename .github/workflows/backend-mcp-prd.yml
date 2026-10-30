@@ -88,7 +88,7 @@ jobs:
             DB_USER=enlite_app
             ABAC_MAIN_POOL_ROLE=app_system
             COUNTRY_RLS_ENABLED=false
-            MCP_PRINCIPAL_NAMES=triage-service\,claude-code\,e2e-prod
+            MCP_PRINCIPAL_NAMES=triage-service\,claude-code\,e2e-prod\,sol-supervisor\,sol-fila\,maria\,sol-propagador
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app

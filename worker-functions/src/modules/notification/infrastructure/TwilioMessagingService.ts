@@ -129,6 +129,8 @@ export class TwilioMessagingService implements IMessagingService {
     to: string,
     contentSid: string,
     contentVariables: Record<string, string>,
+    /** Remetente alternativo (E.164, sem `whatsapp:`): o número do Sol é separado do número da Luz. Omitido = `TWILIO_WHATSAPP_NUMBER`. */
+    fromNumber?: string,
   ): Promise<Result<MessageSentResult>> {
     if (!this.isConfigured || !this.client) {
       return Result.fail<MessageSentResult>('Twilio service not configured.');
@@ -146,7 +148,7 @@ export class TwilioMessagingService implements IMessagingService {
       const statusCallback = process.env.TWILIO_STATUS_CALLBACK_URL || undefined;
 
       const message = await this.client.messages.create({
-        from: `whatsapp:${this.fromNumber}`,
+        from: `whatsapp:${fromNumber ?? this.fromNumber}`,
         to: `whatsapp:${normalizedTo}`,
         contentSid,
         contentVariables: JSON.stringify(contentVariables),

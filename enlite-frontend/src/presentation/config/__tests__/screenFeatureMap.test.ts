@@ -63,6 +63,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'obras-sociales', 'obras-sociales/:code',
   // Spec 076: lista global de enquadres — gateada pelas DUAS células (`enquadre_event:read` + `vacancy:read`, `openWith: 'all'`), não por país (FR-03).
   'enquadres',
+  // Spec 078 (M3b-1): pedidos do Sol — gateada pela célula `pedidos_ia:read` (e `decidir` nos botões), não por país.
+  'pedidos-ia',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */

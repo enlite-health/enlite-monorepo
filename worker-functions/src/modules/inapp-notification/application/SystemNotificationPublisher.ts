@@ -16,6 +16,7 @@ import {
   type AdmissionTactiqExtensionState,
   type PtContactsPendingPayload,
   type ItineraryUncoveredShiftsPayload,
+  type PedidoIaAplicarPayload,
 } from '../infrastructure/NotificationRepository';
 
 export const SYSTEM_NOTIFICATION_ACTOR_UID = 'system:pt-contact-reminders';
@@ -24,6 +25,21 @@ export const SYSTEM_ADMISSION_ACTOR_UID = 'system:admission';
 
 /** Sentinela do aviso diário do itinerário (spec 069 F4): sem autor humano, sem FK (461). */
 export const SYSTEM_ITINERARY_ACTOR_UID = 'system:itinerary-daily';
+
+/** Sentinela do aviso da fila de pedidos do Sol (spec 078 M3b-2): sem autor humano, sem FK (461). */
+export const SYSTEM_SOL_FILA_ACTOR_UID = 'system:sol-fila';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Payload fechado do aviso "aplicar" (spec 078 M4.4, gatilho (d)): id do pedido + degrau (3|4) + grave + prazo. `hoje` se grave, `semana`
+ * se não — o prazo é DERIVADO do `grave`, nunca passado de fora. Valor fora do contrato é erro de programação (lança).
+ */
+export function buildPedidoIaAplicarPayload(input: { pedidoId: string; degrau: number; grave: boolean }): PedidoIaAplicarPayload {
+  if (!UUID_RE.test(input.pedidoId)) throw new Error('PedidoIaAplicarPayload: pedidoId inválido');
+  if (input.degrau !== 3 && input.degrau !== 4) throw new Error('PedidoIaAplicarPayload: degrau fora de {3,4}');
+  return { pedido_id: input.pedidoId, degrau: input.degrau, grave: input.grave, prazo: input.grave ? 'hoje' : 'semana' };
+}
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -172,6 +188,49 @@ export class SystemNotificationPublisher {
       client,
     );
     await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Spec 078 M3b-2: UM evento + uma notificação por decisor, SEM payload (nem assunto, nem texto, nem id: o aviso só diz que há
+   * pedido; a página é que mostra). Sem destinatário não grava e devolve `null`. O `client` é a transação de quem deposita o pedido.
+   */
+  async publishPedidoIa(
+    client: PoolClient,
+    input: { typeCode: 'PEDIDO_IA_NOVO' | 'PEDIDO_IA_GRAVE'; recipientUids: readonly string[] },
+  ): Promise<string | null> {
+    const uids = [...new Set(input.recipientUids)];
+    if (uids.length === 0) return null;
+    const eventId = await this.repository.insertEvent(
+      { typeCode: input.typeCode, actorUid: SYSTEM_SOL_FILA_ACTOR_UID, patientId: null, conversationId: null, messageId: null },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, uids, client);
+    return eventId;
+  }
+
+  /**
+   * Spec 078 M4.4 (gatilho (d)): pedido ACEITO em degrau 3/4 — UM evento com payload só-ids + uma notificação por decisor. Sem destinatário
+   * não grava e devolve `null`. O `client` é a transação de quem notifica.
+   */
+  async publishPedidoIaAplicar(
+    client: PoolClient,
+    input: { pedidoId: string; degrau: number; grave: boolean; recipientUids: readonly string[] },
+  ): Promise<string | null> {
+    const uids = [...new Set(input.recipientUids)];
+    if (uids.length === 0) return null;
+    const eventId = await this.repository.insertEvent(
+      {
+        typeCode: 'PEDIDO_IA_APLICAR',
+        actorUid: SYSTEM_SOL_FILA_ACTOR_UID,
+        patientId: null,
+        conversationId: null,
+        messageId: null,
+        payload: buildPedidoIaAplicarPayload({ pedidoId: input.pedidoId, degrau: input.degrau, grave: input.grave }),
+      },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, uids, client);
     return eventId;
   }
 

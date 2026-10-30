@@ -12,7 +12,7 @@
 
 import { PermissionError } from '../domain/PermissionError';
 import { assertValidReason } from '../domain/PermissionGroup';
-import { expandWriteCells, isValidCellKey } from '../domain/PermissionCell';
+import { assertCellsAllowedForGroup, expandWriteCells, isValidCellKey } from '../domain/PermissionCell';
 import type {
   PermissionCatalogRepository,
   PermissionEventPublisher,
@@ -49,6 +49,9 @@ export class SetGroupPermissionsUseCase {
     if (malformed.length > 0) {
       throw new PermissionError('invalid_cell', `Célula com formato inválido: ${malformed.join(', ')}`);
     }
+
+    // Spec 078: célula só do Acesso Master não entra em outro grupo (antes de tocar o banco).
+    assertCellsAllowedForGroup(input.groupId, requested);
 
     const ids = await this.catalog.idsByCellKey(requested);
     const unknown = requested.filter((key) => !ids.has(key));

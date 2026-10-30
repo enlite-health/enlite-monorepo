@@ -216,6 +216,53 @@ describe('SetGroupPermissionsUseCase', () => {
     expect(repo.setPermissions.mock.calls[0][1]).toHaveLength(2);
   });
 
+  // ── Spec 078 (decisão do Gabriel, 30/10): `pedidos_ia:*` só no Acesso Master.
+  describe('células somenteAcessoMaster', () => {
+    const comPedidos = { ...known, 'pedidos_ia:read': 'id-6', 'pedidos_ia:decidir': 'id-7' };
+    const MASTER = 'a0000000-0000-0000-0000-000000000001';
+
+    it('grupo comum: pedir pedidos_ia:decidir é recusado (master_only_cell) e NADA é gravado', async () => {
+      const repo = makeRepo();
+      const events = makeEvents();
+      const useCase = new SetGroupPermissionsUseCase(repo, makeCatalog(comPedidos), events);
+      const err = await useCase
+        .execute({ tenantId: TENANT, groupId: 'g1', cellKeys: ['vacancy:read', 'pedidos_ia:decidir'] })
+        .catch((e) => e as PermissionError);
+      expect((err as PermissionError).code).toBe('master_only_cell');
+      expect((err as PermissionError).message).toMatch(/pedidos_ia:decidir/);
+      expect(repo.setPermissions).not.toHaveBeenCalled();
+      expect(events.permissionChanged).not.toHaveBeenCalled();
+    });
+
+    it('grupo comum: pedidos_ia:read também é recusado', async () => {
+      const repo = makeRepo();
+      await expect(
+        new SetGroupPermissionsUseCase(repo, makeCatalog(comPedidos), makeEvents()).execute({
+          tenantId: TENANT, groupId: 'g1', cellKeys: ['pedidos_ia:read'],
+        }),
+      ).rejects.toMatchObject({ code: 'master_only_cell' });
+      expect(repo.setPermissions).not.toHaveBeenCalled();
+    });
+
+    it('Acesso Master (id fixo): aceita pedidos_ia:read e :decidir', async () => {
+      const repo = makeRepo(group({ id: MASTER, isSystem: true }));
+      const result = await new SetGroupPermissionsUseCase(repo, makeCatalog(comPedidos), makeEvents()).execute({
+        tenantId: TENANT, groupId: MASTER, cellKeys: ['pedidos_ia:read', 'pedidos_ia:decidir'],
+      });
+      expect(result).toEqual({ cells: 2 });
+      expect(repo.setPermissions).toHaveBeenCalledWith(MASTER, ['id-6', 'id-7'], null);
+    });
+
+    it('o catálogo marca somenteAcessoMaster só nas 2 células (e a recusa vira 422 no HTTP)', () => {
+      const { isSomenteAcessoMaster } = jest.requireActual('../../domain/PermissionCell');
+      const { STATUS_POR_CODIGO } = jest.requireActual('../../../interfaces/http/permissionErrorHttp');
+      expect(isSomenteAcessoMaster('pedidos_ia:read')).toBe(true);
+      expect(isSomenteAcessoMaster('pedidos_ia:decidir')).toBe(true);
+      expect(isSomenteAcessoMaster('ai_prompt:read')).toBe(false);
+      expect(STATUS_POR_CODIGO.master_only_cell).toBe(422);
+    });
+  });
+
   it('chave fora do catálogo aborta ANTES de escrever, dizendo qual', async () => {
     const repo = makeRepo();
     const useCase = new SetGroupPermissionsUseCase(repo, makeCatalog(known), makeEvents());

@@ -11,6 +11,8 @@
  * categoria do recurso — e não conhece banco nem Express.
  */
 
+import { PermissionError } from './PermissionError';
+
 /** Categoria de tela do painel (agrupa as células na matriz). Seed da mig 206. */
 export const PERMISSION_CATEGORIES = [
   'Trabalhadores',
@@ -120,6 +122,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   // Spec 029 — mesma casa do `integration`: as rotas vivem no módulo `integration` e na família
   // `admin.integrations`. Sem esta linha o painel mostraria a permissão como "Não categorizado".
   ai_prompt: 'Operações',
+  // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
+  pedidos_ia: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -538,6 +542,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   //    `ai_prompt:restore` (migration 488) NÃO entra: nenhuma rota a cobra ainda (Fase 5).
   'ai_prompt:read': 'Ler o conteúdo e o histórico dos prompts de IA da plataforma, e comparar versões.',
   'ai_prompt:update': 'Salvar e desfazer a última alteração de um prompt de IA.',
+
+  // ── Spec 078 (M3b-1) — as 2 células que `adminPedidosIaRoutes` cobra. Grupo "Decisores de pedidos IA" é da operação (a migration 552 não concede).
+  'pedidos_ia:read': 'Ver os pedidos do Sol e dos gestores.',
+  'pedidos_ia:decidir': 'Aceitar, negar ou redirecionar um pedido.',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
@@ -653,6 +661,12 @@ export interface PermissionCell {
   ownerService: string;
   /** Preenchido quando a célula sumiu do código — nunca apagamos linha. */
   deprecatedAt?: Date | null;
+  /**
+   * Spec 078 (decisão do Gabriel, 30/10): célula que só pode existir no grupo Acesso Master.
+   * Derivado de `SOMENTE_ACESSO_MASTER_CELLS` (a lista é do código, não do banco) — o painel
+   * esconde a célula dos demais grupos e o `SetGroupPermissionsUseCase` recusa a concessão.
+   */
+  somenteAcessoMaster?: boolean;
 }
 
 /** `recurso` e `ação` aceitos: minúsculas, dígitos e `_` (o formato do seed 206). */
@@ -707,6 +721,43 @@ export function isOwnCell(key: string): boolean {
   // `split(':', 1)[0]` sem ternário/branch: com ou sem ':' na string, o índice 0 sempre existe
   // (é o próprio `key` inteiro quando não há ':'), então não há ramo para cobrir.
   return key.split(':', 1)[0].startsWith(OWN_CELL_RESOURCE_PREFIX);
+}
+
+/**
+ * Id FIXO do grupo Acesso Master (seed 206) — o mesmo UUID que `iam.is_master_member` e
+ * `iam._require_master_membership` (mig 456/458) usam para identificá-lo. Nunca por nome.
+ */
+export const ACESSO_MASTER_GROUP_ID = 'a0000000-0000-0000-0000-000000000001';
+
+/**
+ * Células que SÓ o Acesso Master pode ter (decisão do Gabriel, 30/10, spec 078): decidir pedidos
+ * da IA é do Acesso Master e de mais ninguém. Não existe grupo "Decisores". O sync do boot continua
+ * concedendo ao Acesso Master; a concessão a qualquer outro grupo é recusada no
+ * `SetGroupPermissionsUseCase` (422 `master_only_cell`) e o painel nem as lista.
+ */
+export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
+  'pedidos_ia:read',
+  'pedidos_ia:decidir',
+]);
+
+export function isSomenteAcessoMaster(key: string): boolean {
+  return SOMENTE_ACESSO_MASTER_CELLS.has(key);
+}
+
+/**
+ * Recusa (`master_only_cell`, HTTP 422) a concessão de célula `somenteAcessoMaster` a grupo que
+ * não é o Acesso Master. Único ponto da regra — o use case da matriz e o import da configuração
+ * IAM chamam ESTA função, nunca reimplementam.
+ */
+export function assertCellsAllowedForGroup(groupId: string, cellKeys: readonly string[]): void {
+  if (groupId === ACESSO_MASTER_GROUP_ID) return;
+  const proibidas = cellKeys.filter(isSomenteAcessoMaster);
+  if (proibidas.length > 0) {
+    throw new PermissionError(
+      'master_only_cell',
+      `Célula(s) exclusiva(s) do Acesso Master: ${proibidas.join(', ')}`,
+    );
+  }
 }
 
 /**
