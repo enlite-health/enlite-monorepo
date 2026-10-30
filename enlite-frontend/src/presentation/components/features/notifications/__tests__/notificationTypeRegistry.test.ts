@@ -222,3 +222,30 @@ describe('ITINERARY_UNCOVERED_SHIFTS (spec 069, FR-35)', () => {
     expect(handler().getDeepLink(n)).toBeNull();
   });
 });
+
+// Spec 078 (M3b-2): o aviso do pedido do Sol — sem assunto, sem texto, sem paciente; o clique leva à página de pedidos.
+describe('PEDIDO_IA_NOVO / PEDIDO_IA_GRAVE (spec 078, M3b-2)', () => {
+  const aviso = (typeCode: 'PEDIDO_IA_NOVO' | 'PEDIDO_IA_GRAVE') =>
+    notif({ typeCode, actorUid: 'system:sol-fila', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null });
+
+  it.each([
+    ['PEDIDO_IA_NOVO', 'pedidoIaNovo', 'Novo pedido do Sol', 'Nuevo pedido del Sol'],
+    ['PEDIDO_IA_GRAVE', 'pedidoIaGrave', 'Pedido grave do Sol aguarda sua decisão', 'Pedido grave del Sol espera tu decisión'],
+  ] as const)('%s: chave própria, texto renderizado es/pt-BR e link para a página de pedidos', async (code, key, pt, es) => {
+    const h = getNotificationTypeHandler(code);
+    expect(h.buildText(aviso(code), t)).toBe(`admin.notifications.${key}:{}`);
+    expect(h.getDeepLink(aviso(code))).toEqual({ path: '/admin/pedidos-ia' });
+    for (const [lng, json, esperado] of [['es', esJson, es], ['pt-BR', ptBRJson, pt]] as const) {
+      const i18n = i18next.createInstance();
+      await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } } });
+      expect(h.buildText(aviso(code), i18n.t.bind(i18n) as never)).toBe(esperado);
+    }
+  });
+
+  it('ator "Sol" e contexto "Pedidos do Sol"; sem detalhe (nada do pedido aparece no cartão)', () => {
+    const h = getNotificationTypeHandler('PEDIDO_IA_GRAVE');
+    expect(h.actorLabel?.(aviso('PEDIDO_IA_GRAVE'), t)).toBe('admin.notifications.pedidoIaActor:{}');
+    expect(h.contextLine?.(aviso('PEDIDO_IA_GRAVE'), t)).toBe('admin.notifications.pedidoIaContext:{}');
+    expect(h.detailLine).toBeUndefined();
+  });
+});

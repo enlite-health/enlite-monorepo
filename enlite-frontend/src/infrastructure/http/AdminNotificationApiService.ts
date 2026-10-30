@@ -17,7 +17,9 @@ export type NotificationTypeCode =
   | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
   | 'ADMISSION_TACTIQ_LINK_REQUIRED'
   | 'ADMISSION_TACTIQ_EXTENSION_CHANGED'
-  | 'ITINERARY_UNCOVERED_SHIFTS';
+  | 'ITINERARY_UNCOVERED_SHIFTS'
+  | 'PEDIDO_IA_NOVO'
+  | 'PEDIDO_IA_GRAVE';
 
 /** spec 049: SÓ o motivo (nunca e-mail nem token) — o TEXTO vive no cliente (ES/PT na i18n). */
 export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';

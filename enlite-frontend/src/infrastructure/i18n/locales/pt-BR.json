@@ -6364,7 +6364,11 @@
       "itineraryUncoveredServices_one": "{{count}} serviço",
       "itineraryUncoveredServices_other": "{{count}} serviços",
       "itineraryUncoveredContext": "Itinerário",
-      "itineraryUncoveredDetail": "Primeiro turno sem cobertura: {{date}}"
+      "itineraryUncoveredDetail": "Primeiro turno sem cobertura: {{date}}",
+      "pedidoIaNovo": "Novo pedido do Sol",
+      "pedidoIaGrave": "Pedido grave do Sol aguarda sua decisão",
+      "pedidoIaActor": "Sol",
+      "pedidoIaContext": "Pedidos do Sol"
     },
     "profile": {
       "title": "Meu perfil",

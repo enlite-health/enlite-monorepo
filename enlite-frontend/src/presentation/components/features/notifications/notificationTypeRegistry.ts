@@ -118,6 +118,16 @@ function itineraryDeepLink(n: AdminNotification): NotificationDeepLink | null {
 /** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
 export const TACTIQ_LINK_PATH = '/admin/mi-cuenta';
 
+/** spec 078 (M3b-2): o aviso do pedido do Sol não carrega assunto nem texto; leva à página de pedidos (sem paciente, sem `focusRequest`). */
+const PEDIDOS_IA_PATH = '/admin/pedidos-ia';
+
+const pedidoIaHandler = (key: 'pedidoIaNovo' | 'pedidoIaGrave'): NotificationTypeHandler => ({
+  buildText: (_n, t) => t(`admin.notifications.${key}`),
+  getDeepLink: () => ({ path: PEDIDOS_IA_PATH }),
+  actorLabel: (_n, t) => t('admin.notifications.pedidoIaActor'),
+  contextLine: (_n, t) => t('admin.notifications.pedidoIaContext'),
+});
+
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
     buildText: (n, t) => t('admin.notifications.mentioned', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
@@ -164,6 +174,8 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
       return first ? t('admin.notifications.itineraryUncoveredDetail', { date: first.firstDate.split('-').reverse().slice(0, 2).join('/') }) : null;
     },
   },
+  PEDIDO_IA_NOVO: pedidoIaHandler('pedidoIaNovo'),
+  PEDIDO_IA_GRAVE: pedidoIaHandler('pedidoIaGrave'),
 };
 
 const FALLBACK_HANDLER: NotificationTypeHandler = {
