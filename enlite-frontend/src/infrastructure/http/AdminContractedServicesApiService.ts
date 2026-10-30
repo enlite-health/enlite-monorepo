@@ -24,10 +24,8 @@ export class ContractedServiceApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly details?: Record<string, unknown>;
-  /** Spec 079: campos no topo do corpo dos 409/422 do vínculo (`vacancyId`, `reason`, `blockers`). */
-  readonly vacancyId?: string;
-  readonly reason?: string;
-  readonly blockers?: string[];
+  /** Spec 079: topo do corpo dos 409/422 do vínculo. */
+  readonly vacancyId?: string; readonly reason?: string; readonly blockers?: string[];
   /** Só no 409 `ITINERARY_OVERLAP` (Fase 12, DX-12.6): os 2 horários em conflito, vindos da API. */
   readonly overlap?: ItineraryOverlapDetail;
 
