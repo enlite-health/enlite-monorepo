@@ -11,7 +11,6 @@ import type {
   CreateContractedServiceBody,
   UpdateContractedServiceBody,
 } from '@domain/entities/PatientContractedService';
-import type { LinkConfirmResponse, LinkPreviewResponse } from '@domain/entities/LinkExistingVacancy';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
 import type {
   ItineraryAbsenceResult,
@@ -184,32 +183,6 @@ class AdminContractedServicesApiServiceClass {
     return this.request<ActivateRecruitmentResult>(
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
-    );
-  }
-
-  /**
-   * POST .../:sid/link-existing-vacancy/preview (spec 079) — sem `vacancyId` lista as candidatas;
-   * com ele devolve também a prévia daquela vaga. 409 `SERVICE_ALREADY_RECRUITING`/`VACANCY_NOT_LINKABLE`
-   * e 422 `LINK_BLOCKED`/`ADDRESS_NOT_OF_PATIENT` viram `ContractedServiceApiError` (`err.code`).
-   */
-  async previewLinkExistingVacancy(
-    patientId: string,
-    serviceId: string,
-    vacancyId?: string,
-  ): Promise<LinkPreviewResponse> {
-    return this.request<LinkPreviewResponse>(
-      'POST',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/link-existing-vacancy/preview`,
-      vacancyId ? { vacancyId } : {},
-    );
-  }
-
-  /** POST .../:sid/link-existing-vacancy (spec 079) — confirma o vínculo; mesmos erros da prévia. */
-  async linkExistingVacancy(patientId: string, serviceId: string, vacancyId: string): Promise<LinkConfirmResponse> {
-    return this.request<LinkConfirmResponse>(
-      'POST',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/link-existing-vacancy`,
-      { vacancyId },
     );
   }
 
