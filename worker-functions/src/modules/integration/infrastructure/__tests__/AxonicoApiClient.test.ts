@@ -662,6 +662,72 @@ describe('AxonicoApiClient — checkExistingComprobante', () => {
 // ── submitComprobante ─────────────────────────────────────────────
 
 describe('AxonicoApiClient — submitComprobante', () => {
+  describe('log do fecha enviado (sem PII)', () => {
+    const PARAMS = {
+      historiaClinica: 'HC-123',
+      nroCobertura: 'AF-456',
+      serviceCodes: SERVICE_CODES,
+      serviceDate: SERVICE_DATE,
+      cantidad: 1,
+    };
+    const FECHA_ESPERADA = '10/09/2026 14:32:00';
+
+    function chamadasDeLog() {
+      return [...mockLogger.info.mock.calls, ...mockLogger.error.mock.calls].map(([arg]) => arg);
+    }
+
+    it('(a) 400: loga fecha e serviceDate e o erro continua sendo lançado (mesmo tipo)', async () => {
+      mockFetch.mockResolvedValueOnce(loginResponse());
+      mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'FECHA DE PRESTACION INCORRECTA' }, 400));
+
+      let caught: unknown;
+      try {
+        await makeClient().submitComprobante(PARAMS);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(AxonicoBusinessError);
+      expect((caught as AxonicoBusinessError).status).toBe(400);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fecha: FECHA_ESPERADA,
+          serviceDate: SERVICE_DATE,
+          status: 400,
+          axonicoMessage: expect.stringContaining('FECHA DE PRESTACION INCORRECTA'),
+        })
+      );
+    });
+
+    it('(b) sucesso: loga fecha e serviceDate', async () => {
+      mockFetch.mockResolvedValueOnce(loginResponse());
+      mockFetch.mockResolvedValueOnce(submitResponse());
+
+      await makeClient().submitComprobante(PARAMS);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ fecha: FECHA_ESPERADA, serviceDate: SERVICE_DATE })
+      );
+    });
+
+    it('(c) nenhum log do ponto carrega historia_clinica, nro_cobertura ou matricula', async () => {
+      mockFetch.mockResolvedValueOnce(loginResponse());
+      mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'x' }, 400));
+      await makeClient().submitComprobante(PARAMS).catch(() => undefined);
+      mockFetch.mockResolvedValueOnce(loginResponse());
+      mockFetch.mockResolvedValueOnce(submitResponse());
+      await makeClient().submitComprobante(PARAMS);
+
+      const doPonto = chamadasDeLog().filter((c) => c && 'fecha' in c && 'serviceDate' in c);
+      expect(doPonto).toHaveLength(2); // falha + sucesso — prova que o filtro enxerga os logs
+      for (const c of doPonto) {
+        for (const chave of ['historia_clinica', 'nro_cobertura', 'matricula', 'matricula_solicitante']) {
+          expect(c).not.toHaveProperty(chave);
+        }
+      }
+    });
+  });
+
   it('sucesso: extrai numeroComprobante e codAutorizacion do TOPO da resposta, nunca de detalle[0]', async () => {
     mockFetch.mockResolvedValueOnce(loginResponse());
     mockFetch.mockResolvedValueOnce(
