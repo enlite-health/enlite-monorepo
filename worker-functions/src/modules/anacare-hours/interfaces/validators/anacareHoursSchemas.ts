@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CONTEST_NOTE_MAX_LENGTH, CONTEST_REASONS, VALIDATE_BATCH_MAX_SHIFTS } from '../../domain/AnaCareShift';
+import { isRealCivilDate } from '@shared/locale/civilClock';
 
 export const monthParamsSchema = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) });
 export const monthPatientParamsSchema = monthParamsSchema.extend({ patientId: z.string().min(1) });
@@ -21,10 +22,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((v) => {
-    const d = new Date(`${v}T00:00:00Z`);
-    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
-  });
+  .refine(isRealCivilDate);
 
 const daysInclusive = (desde: string, hasta: string): number =>
   Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / DAY_MS) + 1;

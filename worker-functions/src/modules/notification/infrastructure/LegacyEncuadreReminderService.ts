@@ -40,6 +40,7 @@ export class LegacyEncuadreReminderService {
       meet_link: string | null;
     };
     const dateFormatted = new Date(row.slot_date).toLocaleDateString('es-AR', {
+      timeZone: 'UTC',
       day: '2-digit',
       month: '2-digit',
     });

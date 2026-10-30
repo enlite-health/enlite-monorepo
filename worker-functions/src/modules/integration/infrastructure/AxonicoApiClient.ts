@@ -709,10 +709,6 @@ function parseMatricula(raw: unknown): string | null {
 // Helpers de formato
 // ─────────────────────────────────────────────────────────────────
 
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
 /**
  * `'YYYY-MM-DD'` → `dd/MM/yyyy`, medido no formato real do Axonico. Recebe o dia civil como
  * STRING (nunca `Date` — um dia civil não tem instante, e `Date` obrigaria escolher um fuso).

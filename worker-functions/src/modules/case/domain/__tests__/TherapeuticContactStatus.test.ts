@@ -1,4 +1,5 @@
-import { addCivilDays, deadlineDateOf, localDateOf, sortKinds, REMINDER_DAY_OFFSETS } from '../TherapeuticContactStatus';
+import { addCivilDays } from '@shared/locale/civilClock';
+import { deadlineDateOf, localDateOf, sortKinds, REMINDER_DAY_OFFSETS } from '../TherapeuticContactStatus';
 
 describe('TherapeuticContactStatus (spec 048)', () => {
   it('o dia civil é o do fuso do país: 23:30 em Buenos Aires ainda é o dia anterior ao UTC', () => {

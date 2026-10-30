@@ -15,6 +15,7 @@ import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
+import { utcCivilDayOf } from '@shared/locale/civilClock';
 
 export async function findByCuit(pool: Pool, cuit: string): Promise<Result<Worker | null>> {
   try {
@@ -110,7 +111,7 @@ export async function updateFromImport(
   if (data.birthDate !== undefined && data.birthDate !== null) {
     const dateStr =
       data.birthDate instanceof Date
-        ? data.birthDate.toISOString().split('T')[0]
+        ? utcCivilDayOf(data.birthDate)
         : String(data.birthDate);
     piiToEncrypt['birthDate'] = dateStr;
   }

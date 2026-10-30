@@ -28,6 +28,7 @@ import {
   type AnaCareRetratoStatus,
   type ContestReason,
 } from '../domain/AnaCareShift';
+import { addCivilDays } from '@shared/locale/civilClock';
 
 /** Única fonte hoje (mesma convenção do repositório: constante interna, não parâmetro do chamador). */
 const PATIENT_MONTH_SOURCE = 'anacare';
@@ -301,7 +302,7 @@ export class AnaCareHoursService {
     flags: { canReadProviderName: boolean },
   ): Promise<AnaCarePatient | null> {
     if (!this.source.listShiftsInRange) throw new AnaCareHoursServiceError('FONTE_SEM_INTERVALO');
-    const { shifts: sourceShifts } = await this.source.listShiftsInRange({ from: desde, toExclusive: addOneDay(hasta), patientId });
+    const { shifts: sourceShifts } = await this.source.listShiftsInRange({ from: desde, toExclusive: addCivilDays(hasta, 1), patientId });
     const patients = await this.buildPatients(sourceShifts, false, flags.canReadProviderName, false);
     return patients.find((p) => p.anaCareId === patientId) ?? null;
   }
@@ -424,11 +425,4 @@ export class AnaCareHoursService {
       throw err;
     }
   }
-}
-
-/** `YYYY-MM-DD` + 1 dia (UTC puro, sem fuso) — Hasta inclusivo → `toExclusive` da porta. */
-function addOneDay(isoDate: string): string {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
 }

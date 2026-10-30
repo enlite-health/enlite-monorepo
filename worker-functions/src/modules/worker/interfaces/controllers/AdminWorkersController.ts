@@ -19,6 +19,7 @@ import {
   appendLanguageFilter,
 } from './AdminWorkersListHelpers';
 import { logger, reportError } from '@shared/logging';
+import { operationDateOf } from '@shared/locale/civilClock';
 
 // ── Shared docs_validated enum ────────────────────────────────────────────────
 
@@ -388,7 +389,7 @@ export class AdminWorkersController {
 
     const columns = columnKeys as WorkerExportColumnKey[];
     const statusLabel = status ?? 'ALL';
-    const date = new Date().toISOString().slice(0, 10);
+    const date = operationDateOf('AR', new Date());
 
     try {
       const useCase = new ExportWorkersUseCase();
