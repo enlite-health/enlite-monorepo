@@ -4,8 +4,8 @@ process.env.TZ = 'UTC';
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  maxWorkers: 4,
-  workerIdleMemoryLimit: '1GB',
+  // Fora do CI: 2 workers (10 × ~1,7 GB derrubavam a máquina de 18 GB, 30/10). No CI, o default do jest.
+  ...(process.env.CI ? {} : { maxWorkers: 2 }),
   // R-16 (spec 050): a guarda de rede entra ANTES de qualquer teste; terceiro não conecta. Controle: tests/unit/__tests__/rede-bloqueada.controle.test.ts
   setupFiles: ['<rootDir>/../scripts/rede-bloqueada-em-teste.cjs'],
   // `scripts` entra aqui porque script que escreve em produção (o sync de
