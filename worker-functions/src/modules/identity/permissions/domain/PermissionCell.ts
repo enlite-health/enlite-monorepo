@@ -124,6 +124,11 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   ai_prompt: 'Operações',
   // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
   pedidos_ia: 'Operações',
+  // Spec 080 (assistentes no app) — mesma casa do `pedidos_ia`: rotas na família `admin.integrations`.
+  assistente_maria: 'Operações',
+  assistente_lucero: 'Operações',
+  assistente_candela: 'Operações',
+  assistente_luz: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -546,6 +551,11 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // ── Spec 078 (M3b-1) — as 2 células que `adminPedidosIaRoutes` cobra. Grupo "Decisores de pedidos IA" é da operação (a migration 552 não concede).
   'pedidos_ia:read': 'Ver os pedidos do Sol e dos gestores.',
   'pedidos_ia:decidir': 'Aceitar, negar ou redirecionar um pedido.',
+  // ── Spec 080 — conversar com os assistentes no app. Só o Acesso Master (fase A).
+  'assistente_maria:chat': 'Conversar con Maria (gestora de reclutamiento)',
+  'assistente_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
+  'assistente_candela:chat': 'Conversar con Candela (gestora de coordinación)',
+  'assistente_luz:chat': 'Conversar con Luz (operadora de reclutamiento)',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
@@ -738,6 +748,10 @@ export const ACESSO_MASTER_GROUP_ID = 'a0000000-0000-0000-0000-000000000001';
 export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
   'pedidos_ia:read',
   'pedidos_ia:decidir',
+  'assistente_maria:chat',
+  'assistente_lucero:chat',
+  'assistente_candela:chat',
+  'assistente_luz:chat',
 ]);
 
 export function isSomenteAcessoMaster(key: string): boolean {
