@@ -21,9 +21,9 @@ const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
 /** Schemas que a aplicação lê em runtime (`grep 'FROM <schema>.' src/` + `CREATE SCHEMA` nas migrations). */
-const SCHEMAS = ['public', 'iam', 'terminology'] as const;
+const SCHEMAS = ['public', 'iam', 'terminology', 'agentes'] as const;
 /** Piso por schema: "a query voltou vazia" não pode passar por sucesso, e um schema inteiro fora da régua também não. */
-const PISO_POR_SCHEMA: Record<string, number> = { public: 120, iam: 95, terminology: 3 };
+const PISO_POR_SCHEMA: Record<string, number> = { public: 120, iam: 95, terminology: 3, agentes: 1 };
 const PAPEIS = ['app_runtime', 'app_system'] as const;
 
 /**
