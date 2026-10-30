@@ -20,6 +20,7 @@ import { diagnosisGapOf, recruitmentMissingCodes } from '@domain/entities/Patien
 import { runActivateRecruitmentClick } from './activateRecruitmentClick';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ServiceVacancyCells } from './ServiceVacancyCells';
+import { LinkExistingVacancyAction } from './LinkExistingVacancyAction';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -39,6 +40,15 @@ interface ServicosContratadosCardProps {
 
 const EMPTY = '—';
 
+
+/**
+ * Visibilidade ÚNICA das ações de recrutamento da linha (foguete + "Vincular vaga existente", spec 079):
+ * serviço ativo ∧ sem vaga viva (nem redigida) ∧ ator com as 2 células (`useCanActivateRecruitment`).
+ */
+function useShowRecruitmentActions(service: PatientContractedServiceDetail): boolean {
+  const podeAtivar = useCanActivateRecruitment();
+  return service.active && !service.liveVacancy && !service.liveVacancyRedacted && podeAtivar;
+}
 
 function ActivateRecruitmentAction({
   patientId,
@@ -131,6 +141,7 @@ function ServiceRow({
 }) {
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
   const address = addresses.find((a) => a.id === service.addressId) ?? null;
+  const showRecruitmentActions = useShowRecruitmentActions(service);
   const scheduleText = contractedServiceScheduleText(service.schedule);
 
   return (
@@ -213,7 +224,8 @@ function ServiceRow({
           {/* Spec 018, PR-6: ativar recrutamento é POR SERVIÇO ATIVO — a baixa (não `service.active`)
               não mostra o ícone, é ativação de nada. As 2 células que alimentam o gate (endereço
               vivo + horário) já estão nesta MESMA linha, mais a cobertura do paciente. */}
-          {service.active && (
+          {showRecruitmentActions && (
+            <>
             <ActivateRecruitmentAction
               patientId={patientId}
               service={service}
@@ -228,6 +240,9 @@ function ServiceRow({
               onActivated={onActivated}
               t={t}
             />
+            {/* Spec 079: mesma visibilidade do foguete, mas NUNCA desabilitado por `missing` (o portão é do preview). */}
+            <LinkExistingVacancyAction patientId={patientId} serviceId={service.id} serviceCode={service.serviceCode} onLinked={onActivated} />
+            </>
           )}
           {/* D269/D286: o lápis faz PATCH → mesma régua do "Nuevo" (`useActionGate`, só com enforcement on). */}
           {podeEditar && (
