@@ -126,7 +126,7 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} data-testid="link-existing-vacancy-modal">
-      <div className="bg-white rounded-card shadow-xl w-full max-w-2xl max-h-[90vh] text-left overflow-y-auto p-6 flex flex-col gap-4"
+      <div className="bg-white rounded-card shadow-xl w-full max-w-3xl max-h-[90vh] text-left overflow-y-auto p-6 flex flex-col gap-4"
         role="dialog" aria-modal="true" aria-label={k('modalTitle')}>
         <h2 className="text-lg font-semibold">{k('modalTitle')}</h2>
         <Text size="sm" color="tertiary">{serviceLabel}</Text>
@@ -146,16 +146,18 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
             {preview.rows.length === 0 ? (
               <p>{k('noChanges')}</p>
             ) : (
-              <Table>
+              <Table className="min-w-[36rem]">
                 <TableHeader>
-                  <TableHead>{k('colField')}</TableHead><TableHead>{k('colVacancyNow')}</TableHead>
-                  <TableHead>{k('colWillBe')}</TableHead><TableHead>{k('colOrigin')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{k('colField')}</TableHead><TableHead>{k('colVacancyNow')}</TableHead>
+                  <TableHead>{k('colWillBe')}</TableHead><TableHead className="whitespace-nowrap">{k('colOrigin')}</TableHead>
                 </TableHeader>
                 <TableBody>
                   {preview.rows.map((r) => (
                     <TableRow key={r.field}>
-                      <TableCell>{k(`field.${r.field}`)}</TableCell><TableCell>{display(r.field, r.vacancyValue)}</TableCell>
-                      <TableCell>{display(r.field, r.effectiveValue)}</TableCell><TableCell>{origin[r.origin]}</TableCell>
+                      <TableCell className="whitespace-nowrap" data-testid="link-preview-cell-field">{k(`field.${r.field}`)}</TableCell>
+                      <TableCell className="break-words">{display(r.field, r.vacancyValue)}</TableCell>
+                      <TableCell className="break-words">{display(r.field, r.effectiveValue)}</TableCell>
+                      <TableCell className="whitespace-nowrap" data-testid="link-preview-cell-origin">{origin[r.origin]}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

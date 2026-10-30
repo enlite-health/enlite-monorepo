@@ -105,6 +105,21 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
     const confirmar = page.getByTestId('link-existing-vacancy-confirm');
     await expect(confirmar).toBeEnabled();
 
+    // Medição (não olho): rótulos de Campo e Origen ocupam UMA linha.
+    for (const tid of ['link-preview-cell-field', 'link-preview-cell-origin']) {
+      const cells = page.getByTestId(tid);
+      const n = await cells.count();
+      expect(n, `células ${tid}`).toBeGreaterThan(0);
+      for (let i = 0; i < n; i++) {
+        const cell = cells.nth(i);
+        const m = await cell.locator('> *').first().evaluate((el) => ({
+          h: el.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(el).lineHeight),
+        }));
+        const texto = (await cell.innerText()).trim();
+        expect(m.h, `rótulo "${texto}" quebrou linha (h=${m.h}, lh=${m.lh})`).toBeLessThanOrEqual(m.lh * 1.5);
+      }
+    }
+
     await expect(page.getByTestId('link-existing-vacancy-modal')).toHaveScreenshot('vincular-vaga-modal-previa.png', {
       mask: [page.getByTestId('link-existing-vacancy-combo')], // o rótulo traz o nº do caso (varia por execução)
       maxDiffPixelRatio: 0.02,
