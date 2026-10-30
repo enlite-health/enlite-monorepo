@@ -615,25 +615,42 @@ export class AxonicoApiClient implements IAxonicoApiClient {
       return { ...payload, detalle: [detalle] };
     };
 
-    return this.put<AxonicoSubmitResult>('/api/comprobante', buildBody, async (res) => {
-      const body = (await res.json()) as AxonicoSubmitResponseBody;
-      const numeroComprobante = body.data?.numero_comprobante;
-      // ⚠️ cod_autorizacion vem do TOPO da resposta, não de detalle[0] (que veio `null` na prova
-      // de 18/09/2026) — fixado por teste unitário dedicado.
-      const codAutorizacion = body.data?.cod_autorizacion;
-
-      if (!numeroComprobante || !codAutorizacion) {
-        // Sucesso é status 200 E presença de numero_comprobante (design.md §F1) — não um booleano.
-        throw new AxonicoBusinessError(
-          'PUT',
-          '/api/comprobante',
-          res.status,
-          'HTTP 200 sem numero_comprobante/cod_autorizacion no corpo — resposta inesperada'
-        );
-      }
-
+    let result: AxonicoSubmitResult;
+    try {
+      result = await this.put<AxonicoSubmitResult>('/api/comprobante', buildBody, async (res) => {
+        const body = (await res.json()) as AxonicoSubmitResponseBody;
+        const numeroComprobante = body.data?.numero_comprobante;
+        // ⚠️ cod_autorizacion vem do TOPO da resposta, não de detalle[0] (que veio `null` na prova
+        // de 18/09/2026) — fixado por teste unitário dedicado.
+        const codAutorizacion = body.data?.cod_autorizacion;
+  
+        if (!numeroComprobante || !codAutorizacion) {
+          // Sucesso é status 200 E presença de numero_comprobante (design.md §F1) — não um booleano.
+          throw new AxonicoBusinessError(
+            'PUT',
+            '/api/comprobante',
+            res.status,
+            'HTTP 200 sem numero_comprobante/cod_autorizacion no corpo — resposta inesperada'
+          );
+        }
+  
       return { numeroComprobante, codAutorizacion };
-    });
+      });
+    } catch (err) {
+      // Só `fecha`/`serviceDate`/`status`/`axonicoMessage` — NUNCA historia_clinica, nro_cobertura,
+      // matrícula ou credenciais (PII). O erro tipado segue idêntico para o chamador.
+      logger.error({
+        msg: `${TAG} lançamento falhou — fecha enviado`,
+        fecha,
+        serviceDate,
+        status: (err as { status?: number }).status,
+        axonicoMessage: err instanceof AxonicoBusinessError ? err.message : undefined,
+      });
+      throw err;
+    }
+
+    logger.info({ msg: `${TAG} lançamento concluído — fecha enviado`, fecha, serviceDate });
+    return result;
   }
 
   async getCantidadMaxPrestaciones(): Promise<number | null> {
