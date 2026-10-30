@@ -15,12 +15,12 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedActivatablePatient } from '../helpers/patient-detail-c-helper';
 import {
-  psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, installAuthInterceptors, ABAC_TENANT,
+  safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, installAuthInterceptors, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import {
-  seedContractedService, seedServiceWithoutSchedule, seedLegacyVacancy, createPatientAddress, setServiceAddress,
+  seedContractedService, seedServiceWithoutSchedule, seedLegacyVacancy, createPatientAddress,
   readVacancyKanbanFingerprint, readVacancyServiceFields, readServiceRecruitmentFields, cleanupVincularVaga,
   type LegacyVacancySeed,
 } from '../helpers/vincular-vaga-e2e-helper';
