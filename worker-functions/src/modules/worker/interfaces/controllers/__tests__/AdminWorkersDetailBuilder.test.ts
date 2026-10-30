@@ -395,6 +395,13 @@ describe('N7 (spec 078 M4.5) — opt-out de mensagens vigente na ficha / by-phon
     expect(data.opted_out_at).toBe(quando);
   });
 
+  it('opt-out vigente sem opted_out_at na linha → opted_out_at null (não undefined)', async () => {
+    const { opted_out_at: _omitido, ...semData } = { ...ROW, opted_out: true, opted_out_at: 'x' };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, semData, null);
+    expect(data.opted_out).toBe(true);
+    expect(data.opted_out_at).toBeNull();
+  });
+
   it('worker sem opt-out → opted_out false e opted_out_at null', async () => {
     const data = await buildWorkerDetailResponse(db, enc, gcs, { ...ROW, opted_out: false, opted_out_at: null }, null);
     expect(data.opted_out).toBe(false);
