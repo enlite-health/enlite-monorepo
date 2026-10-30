@@ -72,6 +72,8 @@ export async function lockRecruitmentContext(
   client: PoolClient,
   patientId: string,
   serviceId: string,
+  /** `false` na prévia do vínculo (spec 079 plan §3.4): lê sem travar linha. Default `true` = foguete. */
+  opts: { forUpdate: boolean } = { forUpdate: true },
 ): Promise<RecruitmentContext> {
   const patientRes = await client.query<{
     id: string;
@@ -95,8 +97,7 @@ export async function lockRecruitmentContext(
               -- CID-11 (pedido do Javier): só a CONTAGEM de linhas ATIVAS (qualquer source), nunca o valor. Alias dx: a guarda S.5 do teste barra o termo por extenso no SQL.
               ${activeDiagnosisCountSql('patients.id')} AS active_dx_count
          FROM patients
-        WHERE id = $1 AND deleted_at IS NULL
-        FOR UPDATE`,
+        WHERE id = $1 AND deleted_at IS NULL${opts.forUpdate ? '\n        FOR UPDATE' : ''}`,
     [patientId],
   );
   if ((patientRes.rowCount ?? 0) === 0) {
@@ -126,8 +127,7 @@ export async function lockRecruitmentContext(
          FROM patient_contracted_services pcs
          LEFT JOIN patient_addresses pa
                 ON pa.id = pcs.address_id AND pa.archived_at IS NULL
-        WHERE pcs.id = $1 AND pcs.patient_id = $2 AND pcs.active
-        FOR UPDATE OF pcs`,
+        WHERE pcs.id = $1 AND pcs.patient_id = $2 AND pcs.active${opts.forUpdate ? '\n        FOR UPDATE OF pcs' : ''}`,
     [serviceId, patientId],
   );
   if ((serviceRes.rowCount ?? 0) === 0) {

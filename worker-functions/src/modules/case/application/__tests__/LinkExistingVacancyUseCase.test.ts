@@ -103,6 +103,17 @@ describe("elegibilidade (confirmação)", () => {
   });
 });
 
+describe("lock da prévia (plan §3.4)", () => {
+  it("prévia chama lockRecruitmentContext com forUpdate false; confirmação com true (default)", async () => {
+    const t = build();
+    await t.uc.preview(P, S, V);
+    expect(mockLock).toHaveBeenLastCalledWith(client, P, S, { forUpdate: false });
+    mockLock.mockClear();
+    await t.uc.confirm(P, S, V, actor);
+    expect(mockLock).toHaveBeenLastCalledWith(client, P, S);
+  });
+});
+
 describe("serviço com vaga viva", () => {
   it("lock lança ServiceAlreadyRecruitingError na prévia e na confirmação", async () => {
     mockLock.mockRejectedValue(new ServiceAlreadyRecruitingError("live"));

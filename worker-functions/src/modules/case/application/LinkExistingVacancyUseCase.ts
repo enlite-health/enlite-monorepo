@@ -185,7 +185,7 @@ export class LinkExistingVacancyUseCase {
     serviceId: string,
     vacancyId: string | undefined,
   ): Promise<LinkPreviewResponse> {
-    const ctx = await lockRecruitmentContext(client, patientId, serviceId);
+    const ctx = await lockRecruitmentContext(client, patientId, serviceId, { forUpdate: false });
     const all = await this.repo.listPatientVacanciesForLink(client, patientId);
     const candidates = all
       .filter(

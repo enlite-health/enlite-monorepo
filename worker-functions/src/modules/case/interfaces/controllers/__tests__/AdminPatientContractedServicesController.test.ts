@@ -16,6 +16,9 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn(), loggingAls: { getS
 import { AdminPatientContractedServicesController } from '../AdminPatientContractedServicesController';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../../infrastructure/PatientContractedServiceRepository';
+import {
+  ServiceAlreadyRecruitingError, VacancyNotLinkableError, LinkBlockedError,
+} from '../../../application/LinkExistingVacancyUseCase';
 import { SlotHasActiveAllocationError } from '../../../application/ItinerarySlotWriteUseCase';
 import { ServiceSlotOverlapError } from '../../../infrastructure/ServiceSlotWriter';
 import { reportError } from '@shared/logging';
@@ -552,6 +555,56 @@ describe('AdminPatientContractedServicesController', () => {
 
     it('construtor sem use case injetado constrói o real (pool preguiçoso — não abre conexão)', () => {
       expect(new AdminPatientContractedServicesController()).toBeInstanceOf(AdminPatientContractedServicesController);
+    });
+  });
+
+  describe('linkExistingVacancy / previewLinkExistingVacancy — mapeamento de erros (spec 079)', () => {
+    const VAC_ID = 'eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const params = { id: PATIENT_ID, sid: SERVICE_ID };
+    const make = (useCase: object) => new AdminPatientContractedServicesController({} as never, {} as never, undefined, useCase as never);
+
+    it.each([
+      ['ServiceAlreadyRecruitingError', () => new ServiceAlreadyRecruitingError('vac-live'), 409, { success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: 'vac-live' }],
+      ['VacancyNotLinkableError', () => new VacancyNotLinkableError('DE_BAJA'), 409, { success: false, code: 'VACANCY_NOT_LINKABLE', reason: 'DE_BAJA' }],
+      ['LinkBlockedError', () => new LinkBlockedError(['ADDRESS_MISMATCH']), 422, { success: false, code: 'LINK_BLOCKED', blockers: ['ADDRESS_MISMATCH'] }],
+      ['AddressNotOfPatientError', () => new AddressNotOfPatientError('addr-1'), 422, { success: false, code: 'ADDRESS_NOT_OF_PATIENT' }],
+    ])('%s -> status/corpo no vínculo e na prévia', async (_n, mk, status, body) => {
+      const uc = { confirm: jest.fn().mockRejectedValue(mk()), preview: jest.fn().mockRejectedValue(mk()) };
+      const controller = make(uc);
+      const res1 = mockRes();
+      await controller.linkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID } }), res1);
+      expect(res1.status).toHaveBeenCalledWith(status);
+      expect(res1.json).toHaveBeenCalledWith(body);
+      const res2 = mockRes();
+      await controller.previewLinkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID } }), res2);
+      expect(res2.status).toHaveBeenCalledWith(status);
+      expect(res2.json).toHaveBeenCalledWith(body);
+    });
+
+    it('400 com body inválido (vínculo sem vacancyId; prévia com chave extra) sem chamar o use case', async () => {
+      const uc = { confirm: jest.fn(), preview: jest.fn() };
+      const controller = make(uc);
+      const res1 = mockRes();
+      await controller.linkExistingVacancy(mockReq({ params, body: {} }), res1);
+      expect(res1.status).toHaveBeenCalledWith(400);
+      const res2 = mockRes();
+      await controller.previewLinkExistingVacancy(mockReq({ params, body: { extra: 1 } }), res2);
+      expect(res2.status).toHaveBeenCalledWith(400);
+      expect(uc.confirm).not.toHaveBeenCalled();
+      expect(uc.preview).not.toHaveBeenCalled();
+    });
+
+    it('200 {success,data} no sucesso (vínculo e prévia)', async () => {
+      const uc = { confirm: jest.fn().mockResolvedValue({ linked: true }), preview: jest.fn().mockResolvedValue({ candidates: [], preview: null }) };
+      const controller = make(uc);
+      const res1 = mockRes();
+      await controller.linkExistingVacancy(mockReq({ params, body: { vacancyId: VAC_ID }, user: { uid: 'u1', roles: ['admin'] } }), res1);
+      expect(res1.status).toHaveBeenCalledWith(200);
+      expect(res1.json).toHaveBeenCalledWith({ success: true, data: { linked: true } });
+      const res2 = mockRes();
+      await controller.previewLinkExistingVacancy(mockReq({ params, body: {} }), res2);
+      expect(res2.status).toHaveBeenCalledWith(200);
+      expect(res2.json).toHaveBeenCalledWith({ success: true, data: { candidates: [], preview: null } });
     });
   });
 });
