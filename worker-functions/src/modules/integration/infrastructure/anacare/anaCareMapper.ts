@@ -12,6 +12,7 @@ import type { WorkerMirrorRecord } from '../../domain/WorkerMirrorRecord';
 import type { AnaCareNursePayload } from '../../domain/IAnaCareApiClient';
 import { toNationalAR } from '../../../../shared/utils/phoneNormalization';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
+import { utcCivilDayOf } from '@shared/locale/civilClock';
 
 /**
  * Converte sexo canônico UPPERCASE EN para o código de gênero da API AnaCare.
@@ -38,7 +39,7 @@ export function formatDateYMD(value: string | Date | null | undefined): string |
   if (!value) return undefined;
   const d = value instanceof Date ? value : new Date(value);
   if (isNaN(d.getTime())) return undefined;
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  return utcCivilDayOf(d); // YYYY-MM-DD
 }
 
 /** Retorna undefined se a string for vazia/null — garante que campos vazios sejam OMITIDOS */

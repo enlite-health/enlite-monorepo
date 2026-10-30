@@ -11,6 +11,8 @@ export interface UsePatientsDataFilters {
   country?: string;
   /** Checkbox "Mostrar desactivados" (D-2026-09-28) — mesmo shape de `PatientListFilters`. */
   include_deactivated?: string;
+  /** Lista sem baja — vale para a lista E para os cards (mesmo contador do backend). */
+  exclude_discharged?: string;
   limit?: string;
   offset?: string;
 }
@@ -42,7 +44,7 @@ export function usePatientsData(filters?: UsePatientsDataFilters) {
 
         const [patientsResult, statsResult] = await Promise.all([
           AdminPatientsApiService.listPatients(filters),
-          AdminPatientsApiService.getPatientStats().catch(() => STATS_FALLBACK),
+          AdminPatientsApiService.getPatientStats({ exclude_discharged: filters?.exclude_discharged }).catch(() => STATS_FALLBACK),
         ]);
 
         setPatients(patientsResult.data ?? []);
@@ -66,6 +68,7 @@ export function usePatientsData(filters?: UsePatientsDataFilters) {
     filters?.case_number,
     filters?.country,
     filters?.include_deactivated,
+    filters?.exclude_discharged,
     filters?.limit,
     filters?.offset,
     refreshKey,

@@ -124,8 +124,8 @@ describe('PatientQueryRepository.list', () => {
     // $1 search (trimmed), $2 needsAttention bool, $3 attentionReason,
     // $4 clinicalSpecialty, $5 dependencyLevel, $6 caseNumber, $7 country,
     // $8 reads.family (o ramo do nome do responsável), $9 limit, $10 offset,
-    // $11 include_deactivated (checkbox "Mostrar desactivados" — ausente aqui → false).
-    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0, false]);
+    // $11 include_deactivated (checkbox "Mostrar desactivados" — ausente aqui → false), $12 exclude_discharged (ausente → false).
+    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0, false, false]);
     // lex 08/09: o ramo do responsável é gated pelo parâmetro, não por string SQL montada.
     expect(sql).toMatch(/\$8::boolean AND EXISTS \(\s*SELECT 1 FROM patient_responsibles/);
   });
@@ -527,7 +527,7 @@ describe('PatientQueryRepository.stats', () => {
 
     const result = await repo.stats(['AR', 'BR']);
 
-    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['AR', 'BR']]);
+    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['AR', 'BR'], false]);
     expect(mockPoolQuery.mock.calls[0][0]).toContain('ANY($1::bpchar[])');
     expect(result).toEqual({
       total: 10,
@@ -544,7 +544,7 @@ describe('PatientQueryRepository.stats', () => {
     const repo = new PatientQueryRepository();
 
     await repo.stats(['BR']);
-    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['BR']]);
+    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['BR'], false]);
   });
 });
 
