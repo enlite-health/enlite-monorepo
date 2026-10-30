@@ -10,7 +10,7 @@
  */
 
 import type { Pool, PoolClient } from 'pg';
-import { cellKey } from '../domain/PermissionCell';
+import { assertCellsAllowedForGroup, cellKey } from '../domain/PermissionCell';
 import { STAFF_ACCOUNT_TYPE } from './PgEffectiveAuthzRepository';
 import type { IamConfigSnapshot, IamImportOp, IamImportPlan } from '../application/iamConfig/types';
 import { normalizeSnapshot } from '../application/iamConfig/snapshot';
@@ -240,6 +240,8 @@ export class PgIamConfigRepository {
         await client.query(`SELECT iam.archive_group($1)`, [this.groupId(ctx.groupIds, op.group)]);
         return;
       case 'set_permissions': {
+        // Spec 078: o import também não concede célula `somenteAcessoMaster` a outro grupo.
+        assertCellsAllowedForGroup(this.groupId(ctx.groupIds, op.group), op.cells);
         const ids = await client.query<{ id: string }>(
           `SELECT id FROM iam.permissions WHERE resource || ':' || action = ANY($1) AND deprecated_at IS NULL`,
           [op.cells],

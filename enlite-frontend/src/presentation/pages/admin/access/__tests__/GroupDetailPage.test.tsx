@@ -655,4 +655,45 @@ describe('GroupDetailPage — a regra por componente', () => {
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cells.help.close' }));
     expect(screen.queryByTestId('cell-help')).not.toBeInTheDocument();
   });
+
+  // ── Spec 078 (decisão do Gabriel, 30/10): `pedidos_ia:*` só no Acesso Master.
+  describe('células somenteAcessoMaster', () => {
+    const MASTER_ID = 'a0000000-0000-0000-0000-000000000001';
+    const CATALOGO_COM_PEDIDOS = [
+      ...CATALOGO,
+      { category: 'ops', cells: [
+        { resource: 'pedidos_ia', action: 'read', category: 'ops', ownerService: 'wf', somenteAcessoMaster: true },
+        { resource: 'pedidos_ia', action: 'decidir', category: 'ops', ownerService: 'wf', somenteAcessoMaster: true },
+      ] },
+    ];
+
+    it('grupo comum: a grade NÃO lista pedidos_ia e o PUT não a manda', async () => {
+      postura('write');
+      api.getCatalog.mockResolvedValue(CATALOGO_COM_PEDIDOS);
+      api.getGroup.mockResolvedValue({ ...GRUPO, cells: ['worker:read', 'pedidos_ia:decidir'] });
+      api.setGroupPermissions.mockResolvedValue({ cells: 2 });
+      renderRota(<GroupDetailPage />, ROTA, PATTERN);
+      await screen.findByTestId('g-name-readonly');
+      expect(screen.queryAllByLabelText(/^pedidos_ia:/)).toHaveLength(0);
+      expect(screen.getAllByRole('checkbox', { name: /^worker:read/ }).length).toBeGreaterThan(0);
+      await userEvent.click(screen.getAllByRole('checkbox', { name: /^worker:write/ })[0]);
+      await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
+      await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['worker:read', 'worker:write'], null));
+    });
+
+    it('Acesso Master: lista pedidos_ia SOMENTE LEITURA (sem checkbox) e o PUT preserva as células', async () => {
+      postura('write');
+      api.getCatalog.mockResolvedValue(CATALOGO_COM_PEDIDOS);
+      api.getGroup.mockResolvedValue({ ...GRUPO, id: MASTER_ID, name: 'Acesso Master', isSystem: true, cells: ['worker:read', 'pedidos_ia:read', 'pedidos_ia:decidir'] });
+      api.setGroupPermissions.mockResolvedValue({ cells: 4 });
+      renderRota(<GroupDetailPage />, `/admin/access/groups/${MASTER_ID}`, PATTERN);
+      await screen.findByTestId('g-name-readonly');
+      expect(screen.getAllByLabelText(/^pedidos_ia:decidir/)[0]).toHaveTextContent('✓');
+      expect(screen.queryByRole('checkbox', { name: /^pedidos_ia:/ })).not.toBeInTheDocument();
+      await userEvent.click(screen.getAllByRole('checkbox', { name: /^worker:write/ })[0]);
+      await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
+      await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(
+        MASTER_ID, ['pedidos_ia:decidir', 'pedidos_ia:read', 'worker:read', 'worker:write'], null));
+    });
+  });
 });
