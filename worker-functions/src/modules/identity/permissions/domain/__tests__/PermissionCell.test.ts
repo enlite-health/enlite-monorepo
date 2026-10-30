@@ -176,10 +176,12 @@ describe('spec 080 — células dos assistentes (Master-only)', () => {
     }
   });
 
-  it('(c) a Luz não tem célula de chat no catálogo (decisão 7 revogada)', () => {
-    const luz = ['assistente', 'luz'].join('_'); // montado: o grep de T048 exige 0 ocorrências literais em src
-    expect(SOMENTE_ACESSO_MASTER_CELLS.has(`${luz}:chat`)).toBe(false);
-    expect(`${luz}:chat` in CELL_DESCRIPTION).toBe(false);
-    expect(luz in RESOURCE_CATEGORY).toBe(false);
+  it('(c) toda célula do catálogo que começa com `assistente_` pertence a ASSISTENTE_CHAT_CELLS', () => {
+    const doCatalogo = Object.keys(CELL_DESCRIPTION).filter((k) => k.startsWith('assistente_'));
+    // controle positivo: o filtro acha exatamente as 3 (não 0) — instrumento vivo
+    expect(doCatalogo).toHaveLength(3);
+    expect([...doCatalogo].sort()).toEqual([...ASSISTENTE_CHAT_CELLS].sort());
+    const recursos = Object.keys(RESOURCE_CATEGORY).filter((r) => r.startsWith('assistente_'));
+    expect(recursos).toHaveLength(3);
   });
 });
