@@ -1,148 +1,151 @@
 /**
- * useAssistentes — estado do widget de chat com os asistentes (spec 080, fase A).
- * `listar()` já filtra por célula ABAC no backend: lista vazia (ou falha) = o widget não existe.
- * A aba (agente ativo) é lembrada em `localStorage` (`assistentes.aba`), sempre com try/catch.
+ * useAssistants — state of the assistants chat widget (spec 080, phase A).
+ * `list()` is already filtered by reach in the service: an empty list (or any failure) = the widget does not exist (fail-closed).
+ * The tab (active assistant) is remembered in `localStorage` (`assistants.tab`), always inside try/catch.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AdminAssistentesApiService } from "@infrastructure/http/AdminAssistentesApiService";
+import { AdminAssistantsApiService } from "@infrastructure/http/AdminAssistantsApiService";
 import {
-  AssistenteErro,
-  type Assistente,
-  type AssistenteMensagem,
-} from "@domain/entities/Assistente";
+  AssistantError,
+  type Assistant,
+  type AssistantMessage,
+} from "@domain/entities/Assistant";
 
-export const ABA_STORAGE_KEY = "assistentes.aba";
+export const TAB_STORAGE_KEY = "assistants.tab";
 
-/** Chave i18n (sob `admin.assistentes.`) do aviso de cada erro. */
-export type AssistenteAviso =
-  "teto" | "sinAcceso" | "erroModelo" | "erroIndisponivel" | "erroGenerico";
+/** i18n key (under `admin.assistants.`) of each error notice. */
+export type AssistantNotice =
+  "cap" | "noAccess" | "modelError" | "unavailableError" | "genericError";
 
-export function avisoDoErro(e: unknown): AssistenteAviso {
-  if (!(e instanceof AssistenteErro)) return "erroGenerico";
+export function noticeOfError(e: unknown): AssistantNotice {
+  if (!(e instanceof AssistantError)) return "genericError";
   switch (e.code) {
-    case "TETO_PESSOA_DIA":
-    case "TETO_AGENTE_MES":
-      return "teto";
-    case "SEM_CELULA":
-      return "sinAcceso";
-    case "ERRO_MODELO":
-      return "erroModelo";
-    case "AGENTE_INDISPONIVEL":
-      return "erroIndisponivel";
+    case "PERSON_DAILY_CAP":
+    case "ASSISTANT_MONTHLY_CAP":
+      return "cap";
+    case "NO_REACH":
+      return "noAccess";
+    case "MODEL_ERROR":
+      return "modelError";
+    case "ASSISTANT_UNAVAILABLE":
+      return "unavailableError";
     default:
-      return "erroGenerico";
+      return "genericError";
   }
 }
 
-function lerAba(): string | null {
+function readTab(): string | null {
   try {
-    return window.localStorage.getItem(ABA_STORAGE_KEY);
+    return window.localStorage.getItem(TAB_STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-function gravarAba(slug: string): void {
+function writeTab(slug: string): void {
   try {
-    window.localStorage.setItem(ABA_STORAGE_KEY, slug);
+    window.localStorage.setItem(TAB_STORAGE_KEY, slug);
   } catch {
-    /* sem storage (janela privada): a aba só não é lembrada */
+    /* no storage (private window): the tab is just not remembered */
   }
 }
 
-export interface UseAssistentes {
-  agentes: Assistente[];
-  ativo: Assistente | null;
-  setAba: (slug: string) => void;
-  mensagens: AssistenteMensagem[];
-  aguardando: boolean;
-  aviso: AssistenteAviso | null;
-  naoLidas: number;
-  enviar: (texto: string) => Promise<void>;
-  /** Carrega o histórico do agente ativo (chamado quando o painel abre ou a aba troca). */
-  carregarConversa: () => void;
+export interface UseAssistants {
+  assistants: Assistant[];
+  active: Assistant | null;
+  setTab: (slug: string) => void;
+  messages: AssistantMessage[];
+  waiting: boolean;
+  notice: AssistantNotice | null;
+  /** Sum of the service's `unread_count` over the AVAILABLE assistants in the reach. */
+  unreadTotal: number;
+  send: (text: string) => Promise<void>;
+  /** Loads the active assistant's history (called when the panel opens or the tab changes). */
+  loadConversation: () => void;
 }
 
-export function useAssistentes(): UseAssistentes {
-  const [agentes, setAgentes] = useState<Assistente[]>([]);
-  const [abaSlug, setAbaSlug] = useState<string | null>(() => lerAba());
-  const [porAgente, setPorAgente] = useState<
-    Record<string, AssistenteMensagem[]>
-  >({});
-  const [aguardando, setAguardando] = useState(false);
-  const [aviso, setAviso] = useState<AssistenteAviso | null>(null);
+export function useAssistants(): UseAssistants {
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [tabSlug, setTabSlug] = useState<string | null>(() => readTab());
+  const [bySlug, setBySlug] = useState<Record<string, AssistantMessage[]>>({});
+  const [waiting, setWaiting] = useState(false);
+  const [notice, setNotice] = useState<AssistantNotice | null>(null);
   const seq = useRef(0);
 
   useEffect(() => {
-    let vivo = true;
-    AdminAssistentesApiService.listar()
-      .then((l) => vivo && setAgentes(l))
-      .catch(() => vivo && setAgentes([]));
+    let alive = true;
+    AdminAssistantsApiService.list()
+      .then((l) => alive && setAssistants(l))
+      .catch(() => alive && setAssistants([]));
     return () => {
-      vivo = false;
+      alive = false;
     };
   }, []);
 
-  const ativo = agentes.find((a) => a.slug === abaSlug) ?? agentes[0] ?? null;
+  const active =
+    assistants.find((a) => a.slug === tabSlug) ?? assistants[0] ?? null;
 
-  const setAba = useCallback((slug: string) => {
-    gravarAba(slug);
-    setAbaSlug(slug);
-    setAviso(null);
+  const setTab = useCallback((slug: string) => {
+    writeTab(slug);
+    setTabSlug(slug);
+    setNotice(null);
   }, []);
 
-  const carregarConversa = useCallback(() => {
-    if (!ativo || !ativo.disponivel) return;
-    const slug = ativo.slug;
-    AdminAssistentesApiService.mensagens(slug)
-      // Não atropela o que a pessoa já enviou enquanto o histórico chegava (corrida envio × carga).
+  const loadConversation = useCallback(() => {
+    if (!active || !active.available) return;
+    const slug = active.slug;
+    AdminAssistantsApiService.messages(slug)
+      // Does not trample what the person already sent while the history was arriving (send × load race).
       .then((p) =>
-        setPorAgente((m) =>
-          m[slug]?.length ? m : { ...m, [slug]: p.mensagens },
+        setBySlug((m) =>
+          m[slug]?.length ? m : { ...m, [slug]: p.messages },
         ),
       )
       .catch(() => undefined);
-  }, [ativo]);
+  }, [active]);
 
-  const enviar = useCallback(
-    async (texto: string) => {
-      if (!ativo || !ativo.disponivel || !texto.trim()) return;
-      const slug = ativo.slug;
-      const local: AssistenteMensagem = {
+  const send = useCallback(
+    async (text: string) => {
+      if (!active || !active.available || !text.trim()) return;
+      const slug = active.slug;
+      const local: AssistantMessage = {
         id: `local-${++seq.current}`,
-        autor: "pessoa",
-        texto,
-        ferramentas: [],
-        validador: null,
-        criado_em: new Date().toISOString(),
+        author: "PERSON",
+        text,
+        tools: [],
+        validator: null,
+        created_at: new Date().toISOString(),
       };
-      setPorAgente((m) => ({ ...m, [slug]: [...(m[slug] ?? []), local] }));
-      setAviso(null);
-      setAguardando(true);
+      setBySlug((m) => ({ ...m, [slug]: [...(m[slug] ?? []), local] }));
+      setNotice(null);
+      setWaiting(true);
       try {
-        const r = await AdminAssistentesApiService.enviar(slug, texto);
-        setPorAgente((m) => ({
+        const r = await AdminAssistantsApiService.sendMessage(slug, text);
+        setBySlug((m) => ({
           ...m,
-          [slug]: [...(m[slug] ?? []), r.mensagem],
+          [slug]: [...(m[slug] ?? []), r.message],
         }));
       } catch (e) {
-        setAviso(avisoDoErro(e));
+        setNotice(noticeOfError(e));
       } finally {
-        setAguardando(false);
+        setWaiting(false);
       }
     },
-    [ativo],
+    [active],
   );
 
   return {
-    agentes,
-    ativo,
-    setAba,
-    mensagens: ativo ? (porAgente[ativo.slug] ?? []) : [],
-    aguardando,
-    aviso,
-    naoLidas: agentes.reduce((s, a) => s + a.nao_lidas, 0),
-    enviar,
-    carregarConversa,
+    assistants,
+    active,
+    setTab,
+    messages: active ? (bySlug[active.slug] ?? []) : [],
+    waiting,
+    notice,
+    unreadTotal: assistants.reduce(
+      (s, a) => (a.available ? s + a.unread_count : s),
+      0,
+    ),
+    send,
+    loadConversation,
   };
 }

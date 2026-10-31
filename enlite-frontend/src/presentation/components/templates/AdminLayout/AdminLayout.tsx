@@ -5,7 +5,7 @@ import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useAdminNavItems } from '@presentation/config/adminNavigation';
 import { AppSidebar } from '@presentation/components/templates/DashboardLayout';
-import { AssistentesWidget } from '@presentation/components/features/assistentes/AssistentesWidget';
+import { AssistantsWidget } from '@presentation/components/features/assistants/AssistantsWidget';
 
 export function AdminLayout() {
   const { logout, adminProfile, user } = useAdminAuth();
@@ -57,7 +57,7 @@ export function AdminLayout() {
           <Outlet />
         </div>
       </main>
-      <AssistentesWidget />
+      <AssistantsWidget />
     </div>
   );
 }
