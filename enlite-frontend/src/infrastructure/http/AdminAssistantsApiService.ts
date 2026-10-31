@@ -42,7 +42,7 @@ const CODE_BY_STATUS: Record<number, AssistantErrorCode> = {
 };
 
 /**
- * The service's base: `VITE_ASSISTANTS_SERVICE_URL` (build), never the platform's `VITE_API_WORKER_FUNCTIONS_URL`.
+ * The service's base: `VITE_ASSISTANTS_SERVICE_URL` (build), never the platform's base URL.
  * Pure on purpose: vitest 1.4 does not let a test change the module's `import.meta.env`.
  */
 export function resolveAssistantsBaseUrl(
