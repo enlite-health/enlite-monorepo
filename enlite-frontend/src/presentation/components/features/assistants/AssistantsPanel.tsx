@@ -24,6 +24,19 @@ export function AssistantsPanel({ assistants: a, onClose }: Props) {
     composerRef.current?.focus();
   }, [activeSlug]);
 
+  // Opening a tab (including the panel opening on an already-active one) marks THAT tab read — only if it is
+  // available and has unread messages. Never for the other tabs, never on a timer.
+  const markReadRef = useRef(a.markRead);
+  markReadRef.current = a.markRead;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useEffect(() => {
+    const cur = activeRef.current;
+    if (cur && cur.available && cur.unread_count > 0) {
+      void markReadRef.current(cur.slug);
+    }
+  }, [activeSlug]);
+
   useEffect(() => {
     loadConversation();
   }, [loadConversation]);
@@ -111,6 +124,25 @@ export function AssistantsPanel({ assistants: a, onClose }: Props) {
                 }`}
               >
                 {g.name}
+                {!g.available && (
+                  <span
+                    data-testid={`assistants-tab-soon-${g.slug}`}
+                    className="ml-1 italic"
+                  >
+                    {t("admin.assistants.comingSoon")}
+                  </span>
+                )}
+                {g.available && g.unread_count > 0 && (
+                  <span
+                    data-testid={`assistants-tab-badge-${g.slug}`}
+                    aria-label={t("admin.assistants.unreadBadge", {
+                      count: g.unread_count,
+                    })}
+                    className="ml-1 rounded-full bg-[#262626] px-1.5 text-[10px] text-white"
+                  >
+                    {g.unread_count}
+                  </span>
+                )}
               </button>
             ))}
           </div>

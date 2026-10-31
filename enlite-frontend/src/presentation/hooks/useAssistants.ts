@@ -60,6 +60,8 @@ export interface UseAssistants {
   /** Sum of the service's `unread_count` over the AVAILABLE assistants in the reach. */
   unreadTotal: number;
   send: (text: string) => Promise<void>;
+  /** Marks the assistant's conversation as read; on 204 zeroes ITS badge. A failure (403/5xx) changes nothing. */
+  markRead: (slug: string) => Promise<void>;
   /** Loads the active assistant's history (called when the panel opens or the tab changes). */
   loadConversation: () => void;
 }
@@ -97,12 +99,21 @@ export function useAssistants(): UseAssistants {
     AdminAssistantsApiService.messages(slug)
       // Does not trample what the person already sent while the history was arriving (send × load race).
       .then((p) =>
-        setBySlug((m) =>
-          m[slug]?.length ? m : { ...m, [slug]: p.messages },
-        ),
+        setBySlug((m) => (m[slug]?.length ? m : { ...m, [slug]: p.messages })),
       )
       .catch(() => undefined);
   }, [active]);
+
+  const markRead = useCallback(async (slug: string) => {
+    try {
+      await AdminAssistantsApiService.markRead(slug);
+    } catch {
+      return; // the badge stays; the screen keeps working
+    }
+    setAssistants((l) =>
+      l.map((x) => (x.slug === slug ? { ...x, unread_count: 0 } : x)),
+    );
+  }, []);
 
   const send = useCallback(
     async (text: string) => {
@@ -125,13 +136,15 @@ export function useAssistants(): UseAssistants {
           ...m,
           [slug]: [...(m[slug] ?? []), r.message],
         }));
+        // The reply arrived with the tab open: it is read, so the server marker advances.
+        void markRead(slug);
       } catch (e) {
         setNotice(noticeOfError(e));
       } finally {
         setWaiting(false);
       }
     },
-    [active],
+    [active, markRead],
   );
 
   return {
@@ -146,6 +159,7 @@ export function useAssistants(): UseAssistants {
       0,
     ),
     send,
+    markRead,
     loadConversation,
   };
 }
