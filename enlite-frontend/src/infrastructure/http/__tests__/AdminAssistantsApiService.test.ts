@@ -1,155 +1,288 @@
 /**
- * AdminAssistentesApiService — spec 080 fase A (contrato `rota-mensagens.md`).
+ * AdminAssistantsApiService — spec 080 phase A (contract `rotas-gestoras-service.md`).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AdminAssistentesApiService } from "../AdminAssistentesApiService";
-import { AssistenteErro } from "@domain/entities/Assistente";
+import {
+  AdminAssistantsApiService,
+  resolveAssistantsBaseUrl,
+} from "../AdminAssistantsApiService";
+import { AssistantError } from "@domain/entities/Assistant";
+
+const getIdToken = vi.hoisted(() => vi.fn());
 
 vi.mock("@infrastructure/services/FirebaseAuthService", () => ({
-  FirebaseAuthService: vi.fn().mockImplementation(() => ({
-    getIdToken: () => Promise.resolve("mock-token"),
-  })),
+  FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken })),
 }));
 
-function mockFetch(payload: unknown, status = 200) {
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: status < 400,
-    status,
-    json: () => Promise.resolve(payload),
-  }) as unknown as typeof fetch;
-  return global.fetch as unknown as ReturnType<typeof vi.fn>;
+type Reply = { status?: number; payload?: unknown };
+
+function mockFetch(...replies: Reply[]) {
+  const fn = vi.fn();
+  replies.forEach(({ status = 200, payload = {} }, i) => {
+    const res = {
+      ok: status < 400,
+      status,
+      json:
+        status === 204
+          ? () => Promise.reject(new Error("no body"))
+          : () => Promise.resolve(payload),
+    };
+    if (i === replies.length - 1) fn.mockResolvedValue(res);
+    else fn.mockResolvedValueOnce(res);
+  });
+  global.fetch = fn as unknown as typeof fetch;
+  return fn;
 }
 
 const MSG = {
   id: "m1",
-  autor: "agente",
-  texto: "hola",
-  ferramentas: [],
-  validador: "ok",
-  criado_em: "2026-10-30T10:00:00Z",
+  author: "ASSISTANT",
+  text: "hola",
+  tools: [],
+  validator: "OK",
+  created_at: "2026-10-30T10:00:00Z",
 };
 
-async function erroDe(p: Promise<unknown>): Promise<AssistenteErro> {
+const EXPIRED = {
+  status: 401,
+  payload: { success: false, code: "TOKEN_EXPIRED", message: "x" },
+};
+
+async function errorOf(p: Promise<unknown>): Promise<AssistantError> {
   try {
     await p;
   } catch (e) {
-    return e as AssistenteErro;
+    return e as AssistantError;
   }
-  throw new Error("não lançou");
+  throw new Error("did not throw");
 }
 
-describe("AdminAssistentesApiService", () => {
+describe("AdminAssistantsApiService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getIdToken.mockReset();
+    getIdToken.mockResolvedValue("mock-token");
   });
 
-  it("listar: GET /assistentes com Bearer, devolve o array agentes (corpo sem envelope)", async () => {
-    const agentes = [
+  it("list: GET /assistants with Bearer, returns the assistants array (no envelope)", async () => {
+    const assistants = [
       {
         slug: "maria",
-        nome: "Maria",
-        papel: "gestora",
+        name: "Maria",
+        role: "MANAGER",
         area: "recrutamento",
-        disponivel: true,
-        nao_lidas: 0,
+        available: true,
+        last_at: null,
+        unread_count: 0,
       },
     ];
-    const f = mockFetch({ agentes });
-    expect(await AdminAssistentesApiService.listar()).toEqual(agentes);
+    const f = mockFetch({ payload: { assistants } });
+    expect(await AdminAssistantsApiService.list()).toEqual(assistants);
     const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/api/admin/assistentes");
+    expect(url).toBe("http://localhost:8080/assistants");
     expect(init.method).toBe("GET");
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer mock-token",
     );
   });
 
-  it("listar: aceita também o envelope {success,data}; lista vazia vira []", async () => {
-    mockFetch({ success: true, data: { agentes: [] } });
-    expect(await AdminAssistentesApiService.listar()).toEqual([]);
+  // vitest 1.4 does not let a test change the module's import.meta.env (same gap as the sibling
+  // AdminTherapeuticProjectsApiService.test.ts), so the choice of variable is tested on the pure resolver.
+  it("the base is the service's VITE_ASSISTANTS_SERVICE_URL, never the platform's", () => {
+    expect(
+      resolveAssistantsBaseUrl({
+        VITE_ASSISTANTS_SERVICE_URL: "http://assistants.test",
+        VITE_API_WORKER_FUNCTIONS_URL: "http://platform.test",
+      }),
+    ).toBe("http://assistants.test");
   });
 
-  it("mensagens: GET com limite e antes na query", async () => {
-    const f = mockFetch({ conversa_id: null, mensagens: [] });
-    const out = await AdminAssistentesApiService.mensagens("maria", {
-      limite: 50,
-      antes: "2026-10-30T10:00:00Z",
+  it("the platform's variable alone does NOT set the base (falls to localhost:8080)", () => {
+    expect(
+      resolveAssistantsBaseUrl({
+        VITE_API_WORKER_FUNCTIONS_URL: "http://platform.test",
+      }),
+    ).toBe("http://localhost:8080");
+  });
+
+  it("list: also accepts the {success,data} envelope; empty list stays []", async () => {
+    mockFetch({ payload: { success: true, data: { assistants: [] } } });
+    expect(await AdminAssistantsApiService.list()).toEqual([]);
+  });
+
+  it("messages: GET with limit and before in the query", async () => {
+    const f = mockFetch({ payload: { conversation_id: null, messages: [] } });
+    const out = await AdminAssistantsApiService.messages("maria", {
+      limit: 50,
+      before: "2026-10-30T10:00:00Z",
     });
-    expect(out).toEqual({ conversa_id: null, mensagens: [] });
+    expect(out).toEqual({ conversation_id: null, messages: [] });
     const [url] = f.mock.calls[0] as [string];
-    expect(url).toContain("/api/admin/assistentes/maria/mensagens?");
-    expect(url).toContain("limite=50");
-    expect(url).toContain("antes=2026-10-30T10%3A00%3A00Z");
+    expect(url).toContain("/assistants/maria/messages?");
+    expect(url).toContain("limit=50");
+    expect(url).toContain("before=2026-10-30T10%3A00%3A00Z");
   });
 
-  it("mensagens: sem params não manda query", async () => {
-    const f = mockFetch({ conversa_id: "c1", mensagens: [MSG] });
-    await AdminAssistentesApiService.mensagens("maria");
+  it("messages: without params sends no query", async () => {
+    const f = mockFetch({
+      payload: { conversation_id: "c1", messages: [MSG] },
+    });
+    await AdminAssistantsApiService.messages("maria");
     expect((f.mock.calls[0] as [string])[0]).toMatch(
-      /\/assistentes\/maria\/mensagens$/,
+      /\/assistants\/maria\/messages$/,
     );
   });
 
-  it("enviar: POST com {texto}, devolve conversa, mensagem e turno", async () => {
+  it("sendMessage: POST with {text}, returns conversation, message and turn", async () => {
     const resp = {
-      conversa_id: "c1",
-      mensagem: MSG,
-      turno: { tokens_in: 10, tokens_out: 5, custo_usd: 0.0001 },
+      conversation_id: "c1",
+      message: MSG,
+      turn: { tokens_in: 10, tokens_out: 5, cost_usd: 0.0001 },
     };
-    const f = mockFetch(resp);
-    expect(await AdminAssistentesApiService.enviar("maria", "hola")).toEqual(
-      resp,
-    );
+    const f = mockFetch({ payload: resp });
+    expect(
+      await AdminAssistantsApiService.sendMessage("maria", "hola"),
+    ).toEqual(resp);
     const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/api/admin/assistentes/maria/mensagens");
+    expect(url).toBe("http://localhost:8080/assistants/maria/messages");
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string)).toEqual({ texto: "hola" });
+    expect(JSON.parse(init.body as string)).toEqual({ text: "hola" });
   });
 
-  it("403 SEM_CELULA vira AssistenteErro{code,status}", async () => {
-    mockFetch(
-      { success: false, code: "SEM_CELULA", message: "sin acceso" },
-      403,
+  it("getIdToken is called before EACH send and the token is not reused", async () => {
+    const f = mockFetch({ payload: { assistants: [] } });
+    getIdToken.mockResolvedValueOnce("t1").mockResolvedValueOnce("t2");
+    await AdminAssistantsApiService.list();
+    await AdminAssistantsApiService.list();
+    expect(getIdToken).toHaveBeenCalledTimes(2);
+    const auth = (i: number) =>
+      ((f.mock.calls[i] as [string, RequestInit])[1].headers as Record<
+        string,
+        string
+      >).Authorization;
+    expect(auth(0)).toBe("Bearer t1");
+    expect(auth(1)).toBe("Bearer t2");
+  });
+
+  it("401 TOKEN_EXPIRED: repeats ONCE with a fresh token and succeeds", async () => {
+    const f = mockFetch(EXPIRED, { payload: { assistants: [] } });
+    getIdToken.mockResolvedValueOnce("old").mockResolvedValueOnce("fresh");
+    expect(await AdminAssistantsApiService.list()).toEqual([]);
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(getIdToken).toHaveBeenCalledTimes(2);
+    const h = (f.mock.calls[1] as [string, RequestInit])[1]
+      .headers as Record<string, string>;
+    expect(h.Authorization).toBe("Bearer fresh");
+  });
+
+  it("401 TOKEN_EXPIRED twice: only 1 repetition, then throws the error", async () => {
+    const f = mockFetch(EXPIRED);
+    const e = await errorOf(AdminAssistantsApiService.list());
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(e.code).toBe("TOKEN_EXPIRED");
+    expect(e.status).toBe(401);
+  });
+
+  it("401 TOKEN_INVALID is not repeated", async () => {
+    const f = mockFetch({
+      status: 401,
+      payload: { success: false, code: "TOKEN_INVALID", message: "x" },
+    });
+    const e = await errorOf(AdminAssistantsApiService.list());
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(e.code).toBe("TOKEN_INVALID");
+  });
+
+  it("403 NO_REACH becomes AssistantError{code,status}", async () => {
+    mockFetch({
+      status: 403,
+      payload: { success: false, code: "NO_REACH", message: "sin acceso" },
+    });
+    const e = await errorOf(
+      AdminAssistantsApiService.sendMessage("maria", "x"),
     );
-    const e = await erroDe(AdminAssistentesApiService.enviar("maria", "x"));
-    expect(e).toBeInstanceOf(AssistenteErro);
-    expect(e.code).toBe("SEM_CELULA");
+    expect(e).toBeInstanceOf(AssistantError);
+    expect(e.code).toBe("NO_REACH");
     expect(e.status).toBe(403);
   });
 
   it.each([
-    [429, "TETO_PESSOA_DIA"],
-    [429, "TETO_AGENTE_MES"],
-    [502, "ERRO_MODELO"],
-    [404, "AGENTE_DESCONHECIDO"],
-    [409, "AGENTE_INDISPONIVEL"],
-    [400, "FORMATO_INVALIDO"],
-  ])("%i %s preserva o código do servidor", async (status, code) => {
-    mockFetch({ success: false, code, message: "m" }, status);
-    const e = await erroDe(AdminAssistentesApiService.enviar("maria", "x"));
+    [429, "PERSON_DAILY_CAP"],
+    [429, "ASSISTANT_MONTHLY_CAP"],
+    [502, "MODEL_ERROR"],
+    [503, "PLATFORM_UNAVAILABLE"],
+    [403, "NOT_STAFF"],
+    [409, "ASSISTANT_UNAVAILABLE"],
+    [400, "INVALID_FORMAT"],
+  ])("%i %s keeps the server's code", async (status, code) => {
+    mockFetch({ status, payload: { success: false, code, message: "m" } });
+    const e = await errorOf(
+      AdminAssistantsApiService.sendMessage("maria", "x"),
+    );
     expect(e.code).toBe(code);
     expect(e.status).toBe(status);
   });
 
-  it("sem code no corpo: cai no código do contrato daquele status (429, 502, 403)", async () => {
-    mockFetch({}, 429);
+  it("no code in the body: falls back to the contract's code for that status", async () => {
+    mockFetch({ status: 429 });
     expect(
-      (await erroDe(AdminAssistentesApiService.enviar("maria", "x"))).code,
-    ).toBe("TETO_PESSOA_DIA");
-    mockFetch({}, 502);
+      (await errorOf(AdminAssistantsApiService.sendMessage("maria", "x"))).code,
+    ).toBe("PERSON_DAILY_CAP");
+    mockFetch({ status: 502 });
     expect(
-      (await erroDe(AdminAssistentesApiService.enviar("maria", "x"))).code,
-    ).toBe("ERRO_MODELO");
-    mockFetch({}, 403);
-    expect((await erroDe(AdminAssistentesApiService.listar())).code).toBe(
-      "SEM_CELULA",
+      (await errorOf(AdminAssistantsApiService.sendMessage("maria", "x"))).code,
+    ).toBe("MODEL_ERROR");
+    mockFetch({ status: 403 });
+    expect((await errorOf(AdminAssistantsApiService.list())).code).toBe(
+      "NO_REACH",
     );
   });
 
-  it("status/código fora do contrato vira DESCONHECIDO", async () => {
-    mockFetch({ success: false, code: "XYZ" }, 500);
-    expect((await erroDe(AdminAssistentesApiService.listar())).code).toBe(
-      "DESCONHECIDO",
+  it("status/code outside the contract becomes UNKNOWN", async () => {
+    mockFetch({ status: 500, payload: { success: false, code: "XYZ" } });
+    expect((await errorOf(AdminAssistantsApiService.list())).code).toBe(
+      "UNKNOWN",
     );
+  });
+
+  it("markRead is a POST /assistants/<slug>/read WITHOUT body; 204 is success", async () => {
+    const f = mockFetch({ status: 204 });
+    await expect(
+      AdminAssistantsApiService.markRead("maria"),
+    ).resolves.toBeUndefined();
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:8080/assistants/maria/read");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer mock-token",
+    );
+  });
+
+  it("markRead: fresh getIdToken() before each call", async () => {
+    mockFetch({ status: 204 });
+    await AdminAssistantsApiService.markRead("maria");
+    await AdminAssistantsApiService.markRead("maria");
+    expect(getIdToken).toHaveBeenCalledTimes(2);
+  });
+
+  it("markRead: 401 TOKEN_EXPIRED repeats ONCE with a new token", async () => {
+    const f = mockFetch(EXPIRED, { status: 204 });
+    getIdToken.mockResolvedValueOnce("old").mockResolvedValueOnce("fresh");
+    await AdminAssistantsApiService.markRead("maria");
+    expect(f).toHaveBeenCalledTimes(2);
+    const h = (f.mock.calls[1] as [string, RequestInit])[1]
+      .headers as Record<string, string>;
+    expect(h.Authorization).toBe("Bearer fresh");
+  });
+
+  it("markRead: 403 NO_REACH throws and is not repeated", async () => {
+    const f = mockFetch({
+      status: 403,
+      payload: { success: false, code: "NO_REACH", message: "x" },
+    });
+    const e = await errorOf(AdminAssistantsApiService.markRead("maria"));
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(e.code).toBe("NO_REACH");
   });
 });

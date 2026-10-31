@@ -1,61 +1,69 @@
-/** Asistentes no app (spec 080, fase A) — tipos do contrato `rota-mensagens.md`. */
-export interface Assistente {
+/** Assistants in the app (spec 080, phase A) — types of the `assistants-service` contract (`rotas-gestoras-service.md`). */
+export interface Assistant {
   slug: string;
-  nome: string;
-  papel: string;
-  area: string;
-  /** false = sem runtime na fase A (o seletor mostra "en breve"). */
-  disponivel: boolean;
-  nao_lidas: number;
+  name: string;
+  role: "MANAGER";
+  /** null when the registry cannot tell the area (the picker shows "en breve"). */
+  area: string | null;
+  /** false = no runtime in phase A (the picker shows "en breve"). */
+  available: boolean;
+  /** ISO instant of the last message, or null when there is none. */
+  last_at: string | null;
+  /** Integer >= 0, derived by the service at read time. */
+  unread_count: number;
 }
 
-export type AssistenteAutor = "pessoa" | "agente";
-export type AssistenteValidador =
-  "ok" | "cortado_clinico" | "cortado_pessoal" | null;
+export type AssistantAuthor = "PERSON" | "ASSISTANT";
+export type AssistantValidator = "OK" | "CUT_CLINICAL" | "CUT_PERSONAL" | null;
 
-export interface AssistenteMensagem {
+export interface AssistantMessage {
   id: string;
-  autor: AssistenteAutor;
-  texto: string;
-  ferramentas: string[];
-  validador: AssistenteValidador;
-  criado_em: string;
+  author: AssistantAuthor;
+  text: string;
+  tools: string[];
+  validator: AssistantValidator;
+  created_at: string;
 }
 
-export interface AssistenteMensagensPagina {
-  conversa_id: string | null;
-  mensagens: AssistenteMensagem[];
+export interface AssistantMessagesPage {
+  conversation_id: string | null;
+  messages: AssistantMessage[];
 }
 
-export interface AssistenteTurno {
+export interface AssistantTurn {
   tokens_in: number;
   tokens_out: number;
-  custo_usd: number;
+  cost_usd: number;
 }
 
-export interface AssistenteRespostaEnvio {
-  conversa_id: string;
-  mensagem: AssistenteMensagem;
-  turno: AssistenteTurno;
+export interface AssistantSendResponse {
+  conversation_id: string;
+  message: AssistantMessage;
+  turn: AssistantTurn;
 }
 
-export type AssistenteErroCodigo =
-  | "SEM_CELULA"
-  | "AGENTE_DESCONHECIDO"
-  | "AGENTE_INDISPONIVEL"
-  | "FORMATO_INVALIDO"
-  | "TETO_PESSOA_DIA"
-  | "TETO_AGENTE_MES"
-  | "ERRO_MODELO"
-  | "DESCONHECIDO";
+export type AssistantErrorCode =
+  | "TOKEN_MISSING"
+  | "TOKEN_INVALID"
+  | "TOKEN_EXPIRED"
+  | "NOT_STAFF"
+  | "NO_REACH"
+  | "ASSISTANT_UNAVAILABLE"
+  | "INVALID_FORMAT"
+  | "PERSON_DAILY_CAP"
+  | "ASSISTANT_MONTHLY_CAP"
+  | "MODEL_ERROR"
+  | "INTERNAL_ERROR"
+  | "PLATFORM_UNAVAILABLE"
+  | "UNKNOWN";
 
-export class AssistenteErro extends Error {
-  readonly code: AssistenteErroCodigo;
+export class AssistantError extends Error {
+  readonly code: AssistantErrorCode;
   readonly status: number;
 
-  constructor(code: AssistenteErroCodigo, status: number, message?: string) {
+  constructor(code: AssistantErrorCode, status: number, message?: string) {
     super(message ?? code);
-    this.name = "AssistenteErro";
+    this.name = "AssistantError";
     this.code = code;
     this.status = status;
   }

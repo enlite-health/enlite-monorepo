@@ -1,52 +1,90 @@
 /**
- * AdminAssistentesApiService — chat com os asistentes (spec 080, fase A).
- * Contrato: `specs/080-assistentes-no-app/contratos/rota-mensagens.md`. Molde: `AdminPedidosIaApiService.ts`.
+ * AdminAssistantsApiService — chat with the assistants (spec 080, phase A).
+ * Contract: `specs/080-assistentes-no-app/contratos/rotas-gestoras-service.md` (routes of the `assistants-service`,
+ * called straight from the browser, no proxy). The base comes from `VITE_ASSISTANTS_SERVICE_URL`, never from the platform's.
  *
- * O contrato fixa o corpo de sucesso SEM envelope (`{ agentes }`); aceita-se também `{success:true,data}`.
- * Erro: `{ success:false, code, message }` → `AssistenteErro{code,status}`; status sem código conhecido
- * (403/404/409/429/502) cai no código do contrato daquele status.
+ * Success body has NO envelope (`{ assistants }`); `{success:true,data}` is accepted too. `POST …/read` answers 204.
+ * Error: `{ success:false, code, message }` → `AssistantError{code,status}`; a status without a known code falls back to
+ * the contract's code for that status. 401 `TOKEN_EXPIRED` → ONE retry with a fresh `getIdToken()`, and only one.
  */
 import { FirebaseAuthService } from "@infrastructure/services/FirebaseAuthService";
 import {
-  AssistenteErro,
-  type Assistente,
-  type AssistenteErroCodigo,
-  type AssistenteMensagensPagina,
-  type AssistenteRespostaEnvio,
-} from "@domain/entities/Assistente";
+  AssistantError,
+  type Assistant,
+  type AssistantErrorCode,
+  type AssistantMessagesPage,
+  type AssistantSendResponse,
+} from "@domain/entities/Assistant";
 
-const CODIGOS: readonly AssistenteErroCodigo[] = [
-  "SEM_CELULA",
-  "AGENTE_DESCONHECIDO",
-  "AGENTE_INDISPONIVEL",
-  "FORMATO_INVALIDO",
-  "TETO_PESSOA_DIA",
-  "TETO_AGENTE_MES",
-  "ERRO_MODELO",
+const CODES: readonly AssistantErrorCode[] = [
+  "TOKEN_MISSING",
+  "TOKEN_INVALID",
+  "TOKEN_EXPIRED",
+  "NOT_STAFF",
+  "NO_REACH",
+  "ASSISTANT_UNAVAILABLE",
+  "INVALID_FORMAT",
+  "PERSON_DAILY_CAP",
+  "ASSISTANT_MONTHLY_CAP",
+  "MODEL_ERROR",
+  "INTERNAL_ERROR",
+  "PLATFORM_UNAVAILABLE",
 ];
 
-const CODIGO_POR_STATUS: Record<number, AssistenteErroCodigo> = {
-  400: "FORMATO_INVALIDO",
-  403: "SEM_CELULA",
-  404: "AGENTE_DESCONHECIDO",
-  409: "AGENTE_INDISPONIVEL",
-  429: "TETO_PESSOA_DIA",
-  502: "ERRO_MODELO",
+const CODE_BY_STATUS: Record<number, AssistantErrorCode> = {
+  400: "INVALID_FORMAT",
+  401: "TOKEN_INVALID",
+  403: "NO_REACH",
+  409: "ASSISTANT_UNAVAILABLE",
+  429: "PERSON_DAILY_CAP",
+  502: "MODEL_ERROR",
+  503: "PLATFORM_UNAVAILABLE",
 };
 
-export interface MensagensParams {
-  limite?: number;
-  antes?: string;
+/**
+ * The service's base: `VITE_ASSISTANTS_SERVICE_URL` (build), never the platform's `VITE_API_WORKER_FUNCTIONS_URL`.
+ * Pure on purpose: vitest 1.4 does not let a test change the module's `import.meta.env`.
+ */
+export function resolveAssistantsBaseUrl(
+  env: Record<string, string | undefined> | undefined,
+): string {
+  return env?.VITE_ASSISTANTS_SERVICE_URL || "http://localhost:8080";
 }
 
-class AdminAssistentesApiServiceClass {
-  private readonly authService = new FirebaseAuthService();
-  private readonly baseURL: string;
+export interface MessagesParams {
+  limit?: number;
+  before?: string;
+}
 
-  constructor() {
-    this.baseURL =
-      (import.meta as unknown as { env: Record<string, string> }).env
-        ?.VITE_API_WORKER_FUNCTIONS_URL ?? "http://localhost:8080";
+class AdminAssistantsApiServiceClass {
+  private readonly authService = new FirebaseAuthService();
+
+  private baseURL(): string {
+    return resolveAssistantsBaseUrl(
+      (import.meta as unknown as { env: Record<string, string> }).env,
+    );
+  }
+
+  /** One HTTP call with a token fetched right now; the caller decides whether to repeat. */
+  private async send(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<{ response: Response; json: Record<string, unknown> }> {
+    const token = await this.authService.getIdToken();
+    const response = await fetch(`${this.baseURL()}${path}`, {
+      method,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const json =
+      response.status === 204
+        ? {}
+        : ((await response.json().catch(() => ({}))) as Record<string, unknown>);
+    return { response, json };
   }
 
   private async request<T>(
@@ -54,27 +92,19 @@ class AdminAssistentesApiServiceClass {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const token = await this.authService.getIdToken();
-    const response = await fetch(`${this.baseURL}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    const json = (await response.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
+    let { response, json } = await this.send(method, path, body);
+    if (response.status === 401 && json.code === "TOKEN_EXPIRED") {
+      // the only retry: a fresh token, once
+      ({ response, json } = await this.send(method, path, body));
+    }
     if (!response.ok || json.success === false) {
       const code = typeof json.code === "string" ? json.code : undefined;
-      const conhecido = CODIGOS.find((c) => c === code);
-      const porStatus = CODIGO_POR_STATUS[response.status];
+      const known = CODES.find((c) => c === code);
+      const byStatus = CODE_BY_STATUS[response.status];
       const message =
         typeof json.message === "string" ? json.message : undefined;
-      throw new AssistenteErro(
-        conhecido ?? porStatus ?? "DESCONHECIDO",
+      throw new AssistantError(
+        known ?? byStatus ?? "UNKNOWN",
         response.status,
         message,
       );
@@ -82,38 +112,43 @@ class AdminAssistentesApiServiceClass {
     return (json.success === true && "data" in json ? json.data : json) as T;
   }
 
-  async listar(): Promise<Assistente[]> {
-    const r = await this.request<{ agentes: Assistente[] }>(
+  async list(): Promise<Assistant[]> {
+    const r = await this.request<{ assistants: Assistant[] }>(
       "GET",
-      "/api/admin/assistentes",
+      "/assistants",
     );
-    return r.agentes;
+    return r.assistants;
   }
 
-  async mensagens(
-    agente: string,
-    params: MensagensParams = {},
-  ): Promise<AssistenteMensagensPagina> {
+  async messages(
+    slug: string,
+    params: MessagesParams = {},
+  ): Promise<AssistantMessagesPage> {
     const qs = new URLSearchParams();
-    if (params.limite !== undefined) qs.set("limite", String(params.limite));
-    if (params.antes) qs.set("antes", params.antes);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.before) qs.set("before", params.before);
     const q = qs.toString() ? `?${qs}` : "";
-    return this.request<AssistenteMensagensPagina>(
+    return this.request<AssistantMessagesPage>(
       "GET",
-      `/api/admin/assistentes/${encodeURIComponent(agente)}/mensagens${q}`,
+      `/assistants/${encodeURIComponent(slug)}/messages${q}`,
     );
   }
 
-  async enviar(
-    agente: string,
-    texto: string,
-  ): Promise<AssistenteRespostaEnvio> {
-    return this.request<AssistenteRespostaEnvio>(
+  async sendMessage(slug: string, text: string): Promise<AssistantSendResponse> {
+    return this.request<AssistantSendResponse>(
       "POST",
-      `/api/admin/assistentes/${encodeURIComponent(agente)}/mensagens`,
-      { texto },
+      `/assistants/${encodeURIComponent(slug)}/messages`,
+      { text },
+    );
+  }
+
+  /** POST /assistants/:slug/read, no body; 204 is success. */
+  async markRead(slug: string): Promise<void> {
+    await this.request<unknown>(
+      "POST",
+      `/assistants/${encodeURIComponent(slug)}/read`,
     );
   }
 }
 
-export const AdminAssistentesApiService = new AdminAssistentesApiServiceClass();
+export const AdminAssistantsApiService = new AdminAssistantsApiServiceClass();
