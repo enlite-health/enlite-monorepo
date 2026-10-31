@@ -134,11 +134,11 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     expect(svc.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("no tab is called Luz", async () => {
+  it("tabs are exactly the reach's assistants (no extra tab is added)", async () => {
     svc.list.mockResolvedValue([ag("maria", "Maria"), ag("teresa", "Teresa")]);
     render(<AssistantsWidget />);
     await abrir();
-    expect(tabs().some((t) => /luz/i.test(t.textContent ?? ""))).toBe(false);
+    expect(tabs().map((t) => t.textContent)).toEqual(["Maria", "Teresa"]);
   });
 
   it("tab order = the order of the reach (not sorted by name)", async () => {
