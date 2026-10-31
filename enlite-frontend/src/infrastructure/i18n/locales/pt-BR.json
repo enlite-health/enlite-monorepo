@@ -5143,6 +5143,7 @@
             "export": "Exportar",
             "validate": "Validar",
             "execute": "Executar",
+            "chat": "Conversar",
             "send": "Enviar",
             "disable": "Dar baixa",
             "write": "Criar e editar",
@@ -6894,6 +6895,27 @@
         "INVALID_COUNTRY": "O país escolhido não é válido.",
         "generic": "Não conseguimos carregar os enquadres. Tente de novo."
       }
+    },
+    "assistentes": {
+      "botao": "Assistentes",
+      "titulo": "Assistentes",
+      "tuGrupo": "Seu grupo: {{grupo}} · {{n}} assistentes",
+      "soloMaster": "Somente Acesso Master",
+      "escribiendo": "digitando…",
+      "placeholder": "Escreva sua mensagem…",
+      "enviar": "Enviar",
+      "cerrar": "Fechar",
+      "llevarAlSol": "Levar ao Sol",
+      "verPlacar": "Ver placar",
+      "teto": "Você atingiu o limite de hoje com {{agente}}. Amanhã você pode continuar.",
+      "sinAcceso": "Não consigo ver isso com o seu acesso.",
+      "enBreve": "em breve",
+      "disponible": "disponível",
+      "rodape": "Cada assistente lê a plataforma com o seu nível de acesso. Nenhuma vê o Sol.",
+      "erroModelo": "Não consegui responder agora. Tente novamente em instantes.",
+      "erroSemCelula": "Você não tem acesso a este assistente.",
+      "erroIndisponivel": "Este assistente ainda não está disponível.",
+      "erroGenerico": "Algo deu errado. Tente novamente."
     },
     "pedidosIa": {
       "title": "Pedidos da IA",
