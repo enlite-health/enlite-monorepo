@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import {
   VerificadorIdentidadeServico,
+  criarVerificadorIdentidadeServico,
   lerAllowlistServico,
 } from '../../infrastructure/VerificadorIdentidadeServico';
 
@@ -15,7 +16,9 @@ function negar(res: Response): void {
  * Verifica audiência (no verificador), email_verified e e-mail na allowlist derivada de GCP_PROJECT_ID.
  * A identidade da PESSOA (Authorization) é verificada à parte por requireStaff.
  */
-export function requireServicoAssistentes(verificador: VerificadorIdentidadeServico) {
+export function requireServicoAssistentes(verificadorInjetado?: VerificadorIdentidadeServico) {
+  // Resolvido preguiçosamente (na 1ª chamada), nunca no import; a fábrica só aceita dublê com USE_MOCK_AUTH=true.
+  let padrao: VerificadorIdentidadeServico | undefined;
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const bruto = req.headers[HEADER_SERVICO];
     const header = Array.isArray(bruto) ? bruto[0] : bruto;
@@ -23,6 +26,7 @@ export function requireServicoAssistentes(verificador: VerificadorIdentidadeServ
 
     let payload;
     try {
+      const verificador = verificadorInjetado ?? (padrao ??= criarVerificadorIdentidadeServico());
       payload = await verificador.verificar(header.slice(7));
     } catch {
       return negar(res);

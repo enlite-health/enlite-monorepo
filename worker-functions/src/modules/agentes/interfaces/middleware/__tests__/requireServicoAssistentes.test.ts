@@ -64,6 +64,14 @@ describe('requireServicoAssistentes', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('sem argumento (como no contrato) e sem USE_MOCK_AUTH usa o verificador Google com a audiencia certa', async () => {
+    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: SA, email_verified: true }) });
+    const { res, next } = await chamar(requireServicoAssistentes(), { 'x-enlite-servico': 'Bearer tok' });
+    expect(mockVerifyIdToken).toHaveBeenCalledWith({ idToken: 'tok', audience: AUDIENCIA_ASSISTENTES });
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   it('email_verified=false -> 401', async () => {
     const { res, next } = await chamar(requireServicoAssistentes(falso({ email: SA, email_verified: false })), {
       'x-enlite-servico': 'Bearer tok',
