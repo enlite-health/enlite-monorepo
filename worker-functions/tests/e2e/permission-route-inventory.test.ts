@@ -509,9 +509,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/interview-hosts/candidates → interview_host:update',
         'POST /api/admin/interview-hosts → interview_host:update',
         'PATCH /api/admin/interview-hosts/:id → interview_host:update',
-        // spec 080 (placar e reporte dos assistentes, `adminAssistentesRoutes.ts`): famílias agentes_placar/agentes_reporte, contrato rotas-plataforma-novas.md.
-        'GET /api/admin/agentes/placar → agentes_placar:read',
-        'POST /api/admin/agentes/reportes → agentes_reporte:registrar',
+        // spec 080 (scoreboard and escalations of the assistants, `adminAssistantsRoutes.ts`): families assistant_scoreboard/assistant_escalation, contract rotas-plataforma-novas.md.
+        'GET /api/admin/assistants/scoreboard → assistant_scoreboard:read',
+        'POST /api/admin/assistants/escalations → assistant_escalation:register',
       ].sort(),
     );
   });
@@ -539,12 +539,12 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // `GET /api/admin/me/tactiq-link/callback` entrou na spec 049 (F4): o Tactiq redireciona o NAVEGADOR para o callback,
     // que não carrega Bearer. A isenção é a MARCA da montagem (`exemptHandler` em `tactiqLinkRoutes.ts`); a prova de
     // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:create`), 10 min, ligado ao uid.
-    // `GET /api/admin/assistentes/alcance` entrou na spec 080 (contrato rotas-plataforma-novas.md §1): rota "self": descreve o próprio ator para o
-    // serviço dos assistentes e resolve as células no handler (`req.permissionCells` só nasce dentro do `perm.require`); a isenção é a MARCA da montagem (`exemptHandler`).
+    // `GET /api/admin/assistants/reach` entered with spec 080 (contract rotas-plataforma-novas.md §1): a "self" route: it describes the actor itself to the
+    // assistants service and resolves the cells in the handler (`req.permissionCells` only exists inside `perm.require`); the exemption is the mount MARK (`exemptHandler`).
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'DELETE /v1/me/simulation',
-      'GET /api/admin/assistentes/alcance',
+      'GET /api/admin/assistants/reach',
       'GET /api/admin/auth/profile',
       'GET /api/admin/me/tactiq-link/callback',
       'GET /v1/me/authz',
