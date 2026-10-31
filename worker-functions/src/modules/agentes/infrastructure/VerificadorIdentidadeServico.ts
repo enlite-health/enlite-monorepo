@@ -30,14 +30,30 @@ export class GoogleVerificadorIdentidadeServico implements VerificadorIdentidade
   }
 }
 
+/** Prefixo do token de teste (espelha o `mock_<base64>` da identidade da PESSOA, MockAuthMiddleware). */
+export const PREFIXO_TOKEN_SERVICO_MOCK = 'mock_';
+
 /**
- * Wiring: o verificador de teste só é aceito com USE_MOCK_AUTH=true (mesmo interruptor do e2e).
- * Fora disso, qualquer verificador injetado é ignorado e só o Google vale.
+ * Verificador de TESTE (e2e): lê `mock_<base64 de {email, email_verified, aud}>` e exige a audiência certa,
+ * como o Google exigiria. Nunca é construído fora de USE_MOCK_AUTH=true (ver a fábrica).
+ */
+export class MockVerificadorIdentidadeServico implements VerificadorIdentidadeServico {
+  async verificar(idToken: string): Promise<IdentidadeServico> {
+    if (!idToken.startsWith(PREFIXO_TOKEN_SERVICO_MOCK)) throw new Error('token de teste malformado');
+    const dados = JSON.parse(Buffer.from(idToken.slice(PREFIXO_TOKEN_SERVICO_MOCK.length), 'base64').toString());
+    if (dados?.aud !== AUDIENCIA_ASSISTENTES) throw new Error('Wrong recipient');
+    return { email: dados.email, email_verified: dados.email_verified };
+  }
+}
+
+/**
+ * Wiring: o verificador de teste (injetado ou o mock embutido) só vale com USE_MOCK_AUTH=true (mesmo interruptor
+ * do e2e). Fora disso, qualquer verificador injetado é ignorado e só o Google vale.
  */
 export function criarVerificadorIdentidadeServico(
   verificadorDeTeste?: VerificadorIdentidadeServico,
   env: NodeJS.ProcessEnv = process.env,
 ): VerificadorIdentidadeServico {
-  if (env.USE_MOCK_AUTH === 'true' && verificadorDeTeste) return verificadorDeTeste;
+  if (env.USE_MOCK_AUTH === 'true') return verificadorDeTeste ?? new MockVerificadorIdentidadeServico();
   return new GoogleVerificadorIdentidadeServico();
 }
