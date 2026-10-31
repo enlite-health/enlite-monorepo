@@ -124,19 +124,19 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   ai_prompt: 'Operações',
   // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
   pedidos_ia: 'Operações',
-  // Spec 080 (assistentes no app) — mesma casa do `pedidos_ia`: rotas na família `admin.integrations`.
-  assistente_maria: 'Operações',
-  assistente_lucero: 'Operações',
-  assistente_candela: 'Operações',
-  agentes_placar: 'Operações',
-  agentes_reporte: 'Operações',
-  conhecimento_publico: 'Operações',
-  conhecimento_recrutamento: 'Operações',
-  conhecimento_clinico: 'Operações',
-  conhecimento_financeiro: 'Operações',
-  conhecimento_gestao: 'Operações',
-  conhecimento_coordenacao: 'Operações',
-  conhecimento_tecnico: 'Operações',
+  // Spec 080 (assistants in the app) — same home as `pedidos_ia`: routes in the `admin.integrations` family.
+  assistant_maria: 'Operações',
+  assistant_lucero: 'Operações',
+  assistant_candela: 'Operações',
+  assistant_scoreboard: 'Operações',
+  assistant_escalation: 'Operações',
+  knowledge_public: 'Operações',
+  knowledge_recruitment: 'Operações',
+  knowledge_clinical: 'Operações',
+  knowledge_financial: 'Operações',
+  knowledge_management: 'Operações',
+  knowledge_coordination: 'Operações',
+  knowledge_technical: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -559,19 +559,19 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // ── Spec 078 (M3b-1) — as 2 células que `adminPedidosIaRoutes` cobra. Grupo "Decisores de pedidos IA" é da operação (a migration 552 não concede).
   'pedidos_ia:read': 'Ver os pedidos do Sol e dos gestores.',
   'pedidos_ia:decidir': 'Aceitar, negar ou redirecionar um pedido.',
-  // ── Spec 080 — conversar com os assistentes no app. Só o Acesso Master (fase A).
-  'assistente_maria:chat': 'Conversar con Maria (gestora de reclutamiento)',
-  'assistente_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
-  'assistente_candela:chat': 'Conversar con Candela (gestora de coordinación)',
-  'agentes_placar:read': 'Ver el placar de los agentes (reportes por operador)',
-  'agentes_reporte:registrar': 'Registrar el reporte de un asistente en el placar',
-  'conhecimento_publico:read': 'Leer la gaveta de conocimiento pública',
-  'conhecimento_recrutamento:read': 'Leer la gaveta de conocimiento de reclutamiento',
-  'conhecimento_clinico:read': 'Leer la gaveta de conocimiento clínico (solo estados y conteos)',
-  'conhecimento_financeiro:read': 'Leer la gaveta de conocimiento financiera',
-  'conhecimento_gestao:read': 'Leer la gaveta de conocimiento de gestión',
-  'conhecimento_coordenacao:read': 'Leer la gaveta de conocimiento de coordinación',
-  'conhecimento_tecnico:read': 'Leer la gaveta de conocimiento técnico',
+  // ── Spec 080 — chat with the assistants in the app. Acesso Master only (phase A).
+  'assistant_maria:chat': 'Conversar con Maria (gestora de reclutamiento)',
+  'assistant_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
+  'assistant_candela:chat': 'Conversar con Candela (gestora de coordinación)',
+  'assistant_scoreboard:read': 'Ver el placar de los agentes (reportes por operador)',
+  'assistant_escalation:register': 'Registrar el reporte de un asistente en el placar',
+  'knowledge_public:read': 'Leer la gaveta de conocimiento pública',
+  'knowledge_recruitment:read': 'Leer la gaveta de conocimiento de reclutamiento',
+  'knowledge_clinical:read': 'Leer la gaveta de conocimiento clínico (solo estados y conteos)',
+  'knowledge_financial:read': 'Leer la gaveta de conocimiento financiera',
+  'knowledge_management:read': 'Leer la gaveta de conocimiento de gestión',
+  'knowledge_coordination:read': 'Leer la gaveta de conocimiento de coordinación',
+  'knowledge_technical:read': 'Leer la gaveta de conocimiento técnico',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
@@ -755,22 +755,22 @@ export function isOwnCell(key: string): boolean {
  */
 export const ACESSO_MASTER_GROUP_ID = 'a0000000-0000-0000-0000-000000000001';
 
-/** Spec 080 — chat com os assistentes (Master-only, fase A). Ordem do contrato §5. */
-export const ASSISTENTE_CHAT_CELLS: readonly string[] = [
-  'assistente_maria:chat',
-  'assistente_lucero:chat',
-  'assistente_candela:chat',
+/** Spec 080 — chat with the assistants (Master-only, phase A). Order from contract §5. */
+export const ASSISTANT_CHAT_CELLS: readonly string[] = [
+  'assistant_maria:chat',
+  'assistant_lucero:chat',
+  'assistant_candela:chat',
 ];
 
-/** Spec 080 — uma célula por gaveta do Sol (nunca `default`). Ordem do contrato §5. */
-export const CONHECIMENTO_CELLS: readonly string[] = [
-  'conhecimento_publico:read',
-  'conhecimento_recrutamento:read',
-  'conhecimento_clinico:read',
-  'conhecimento_financeiro:read',
-  'conhecimento_gestao:read',
-  'conhecimento_coordenacao:read',
-  'conhecimento_tecnico:read',
+/** Spec 080 — one cell per Sol compartment (never `default`). Order from contract §5. */
+export const KNOWLEDGE_CELLS: readonly string[] = [
+  'knowledge_public:read',
+  'knowledge_recruitment:read',
+  'knowledge_clinical:read',
+  'knowledge_financial:read',
+  'knowledge_management:read',
+  'knowledge_coordination:read',
+  'knowledge_technical:read',
 ];
 
 /**
@@ -782,10 +782,10 @@ export const CONHECIMENTO_CELLS: readonly string[] = [
 export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
   'pedidos_ia:read',
   'pedidos_ia:decidir',
-  ...ASSISTENTE_CHAT_CELLS,
-  'agentes_placar:read',
-  'agentes_reporte:registrar',
-  ...CONHECIMENTO_CELLS,
+  ...ASSISTANT_CHAT_CELLS,
+  'assistant_scoreboard:read',
+  'assistant_escalation:register',
+  ...KNOWLEDGE_CELLS,
 ]);
 
 export function isSomenteAcessoMaster(key: string): boolean {
