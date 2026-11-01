@@ -272,4 +272,24 @@ describe("AssistantsPanel (spec 080, T162)", () => {
       ).toBe("4");
     },
   );
+
+  it("history fails to load: a visible alert (es), not an empty conversation; pt-BR too", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    svc.messages.mockRejectedValue(new Error("boom"));
+    render(<AssistantsWidget />);
+    await abrir();
+    const alert = await screen.findByTestId("assistants-history-error");
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(alert.textContent).toBe(es.admin.assistants.historyError);
+    expect(screen.queryByTestId("assistants-msg-m1")).toBeNull();
+    expect(ptBR.admin.assistants.historyError).toBeTruthy();
+  });
+
+  it("history loads fine: no history alert", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    render(<AssistantsWidget />);
+    await abrir();
+    await waitFor(() => expect(svc.messages).toHaveBeenCalled());
+    expect(screen.queryByTestId("assistants-history-error")).toBeNull();
+  });
 });

@@ -6995,6 +6995,7 @@
       "noReachError": "No tenés acceso a este asistente.",
       "unavailableError": "Este asistente todavía no está disponible.",
       "genericError": "Algo salió mal. Probá de nuevo.",
+      "historyError": "No pudimos cargar la conversación. Probá de nuevo.",
       "unreadBadge": "{{count}} mensajes sin leer"
     },
     "pedidosIa": {

@@ -57,6 +57,8 @@ export interface UseAssistants {
   messages: AssistantMessage[];
   waiting: boolean;
   notice: AssistantNotice | null;
+  /** The active assistant's history failed to load (shown as a notice; NOT an empty conversation). */
+  historyError: boolean;
   /** Sum of the service's `unread_count` over the AVAILABLE assistants in the reach. */
   unreadTotal: number;
   send: (text: string) => Promise<void>;
@@ -72,6 +74,7 @@ export function useAssistants(): UseAssistants {
   const [bySlug, setBySlug] = useState<Record<string, AssistantMessage[]>>({});
   const [waiting, setWaiting] = useState(false);
   const [notice, setNotice] = useState<AssistantNotice | null>(null);
+  const [historyError, setHistoryError] = useState(false);
   const seq = useRef(0);
 
   useEffect(() => {
@@ -91,17 +94,20 @@ export function useAssistants(): UseAssistants {
     writeTab(slug);
     setTabSlug(slug);
     setNotice(null);
+    setHistoryError(false);
   }, []);
 
   const loadConversation = useCallback(() => {
     if (!active || !active.available) return;
     const slug = active.slug;
+    setHistoryError(false);
     AdminAssistantsApiService.messages(slug)
       // Does not trample what the person already sent while the history was arriving (send × load race).
       .then((p) =>
         setBySlug((m) => (m[slug]?.length ? m : { ...m, [slug]: p.messages })),
       )
-      .catch(() => undefined);
+      // A failed load is shown, never mistaken for an empty conversation (no content is logged).
+      .catch(() => setHistoryError(true));
   }, [active]);
 
   const markRead = useCallback(async (slug: string) => {
@@ -154,6 +160,7 @@ export function useAssistants(): UseAssistants {
     messages: active ? (bySlug[active.slug] ?? []) : [],
     waiting,
     notice,
+    historyError,
     unreadTotal: assistants.reduce(
       (s, a) => (a.available ? s + a.unread_count : s),
       0,

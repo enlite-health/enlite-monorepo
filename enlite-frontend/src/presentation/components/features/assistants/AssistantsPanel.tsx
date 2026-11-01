@@ -179,6 +179,15 @@ export function AssistantsPanel({ assistants: a, onClose }: Props) {
             {t("admin.assistants.typing")}
           </p>
         )}
+        {a.historyError && (
+          <p
+            role="alert"
+            data-testid="assistants-history-error"
+            className="text-sm text-[#262626]"
+          >
+            {t("admin.assistants.historyError")}
+          </p>
+        )}
         {a.notice && (
           <p
             role="alert"
