@@ -5,8 +5,8 @@
  * conforme o alcance que o serviço devolve, abrir, conversar, "en breve" e o badge de nao lidas.
  *
  * O SERVIÇO de assistentes (`assistants-service`) e' substituido NA REDE: `page.route` na origem de
- * `VITE_ASSISTANTS_SERVICE_URL` (o Vite do CI nao a define; o app cai em http://localhost:8080 —
- * `resolveAssistantsBaseUrl`) com respostas fixas. Nenhum componente e' mockado, e nada sai para um
+ * `VITE_ASSISTANTS_SERVICE_URL` (o Vite do CI a define como http://localhost:8080 em
+ * `_frontend-integration.yml`; sem ela o app NAO faz fetch) com respostas fixas. Nenhum componente e' mockado, e nada sai para um
  * serviço real. As rotas `/assistants*` nao colidem com `**\/api/**` (o swap de token do login).
  * O login e' o do stack de CI (`loginComoStaffMock`): Identity Toolkit forjado, click + keyboard.type.
  * Os textos de i18n sao lidos de `es.json` (idioma do painel no spec), nunca digitados aqui.
@@ -20,7 +20,7 @@ const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 // Contra a plataforma real o uid precisa existir em users/iam.user_groups: E2E_ASSISTANTS_UID/_EMAIL apontam o semeado.
 const STAFF: MockUser = { uid: process.env.E2E_ASSISTANTS_UID || `e2e-assistants-${RUN_ID}`, email: process.env.E2E_ASSISTANTS_EMAIL || `e2e-assistants-${RUN_ID}@e2e.test`, role: 'admin', country: 'AR' };
 
-/** Mesma regra do app: sem a variavel, a base do serviço e' http://localhost:8080. */
+/** Origem do serviço: a do Vite do CI (http://localhost:8080); localmente, suba o Vite com a mesma variavel. */
 const SERVICE_ORIGIN = new URL(process.env.VITE_ASSISTANTS_SERVICE_URL || 'http://localhost:8080').origin;
 
 const I18N = JSON.parse(readFileSync('src/infrastructure/i18n/locales/es.json', 'utf8')).admin.assistants as Record<string, string>;
