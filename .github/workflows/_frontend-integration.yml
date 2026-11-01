@@ -149,6 +149,9 @@ jobs:
         working-directory: enlite-frontend
         env:
           VITE_API_WORKER_FUNCTIONS_URL: http://localhost:8080
+          # Spec 080: sem esta variável o widget de assistentes NÃO faz fetch (fail-closed). A spec
+          # `assistants.integration` substitui o serviço NA REDE (page.route) nesta origem.
+          VITE_ASSISTANTS_SERVICE_URL: http://localhost:8080
           # Sem isto a home cai em `/api/jobs`, que dispara RASPAGEM REAL de
           # https://jobs.enlite.health/es/ a partir do runner — a mesma classe de
           # dependência de terceiro pela qual `worker-address-keyboard` está fora
