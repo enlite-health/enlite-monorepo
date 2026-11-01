@@ -88,6 +88,18 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     expect(screen.getAllByTestId("assistants-composer")).toHaveLength(1);
   });
 
+  it("fixed privacy notice (es.json text) is visible and tied to the composer by aria-describedby", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    render(<AssistantsWidget />);
+    await abrir();
+    const notice = screen.getByTestId("assistants-privacy-notice");
+    expect(notice.textContent).toBe(es.admin.assistants.privacyNotice);
+    expect(notice.id).not.toBe("");
+    expect(
+      screen.getByTestId("assistants-composer").getAttribute("aria-describedby"),
+    ).toBe(notice.id);
+  });
+
   it("3 assistants, one available:false: 3 tabs, the unavailable one marked 'en breve'", async () => {
     svc.list.mockResolvedValue([
       ag("maria", "Maria"),

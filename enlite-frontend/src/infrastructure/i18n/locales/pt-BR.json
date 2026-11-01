@@ -6912,6 +6912,7 @@
       "comingSoon": "em breve",
       "available": "disponível",
       "footer": "Cada assistente lê a plataforma com o seu nível de acesso. Nenhuma vê o Sol.",
+      "privacyNotice": "Não escreva dados de pacientes nem dados clínicos: este assistente usa IA e não pode recebê-los.",
       "modelError": "Não consegui responder agora. Tente novamente em instantes.",
       "noReachError": "Você não tem acesso a este assistente.",
       "unavailableError": "Este assistente ainda não está disponível.",

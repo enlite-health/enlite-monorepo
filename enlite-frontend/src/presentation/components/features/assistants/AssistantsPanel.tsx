@@ -1,7 +1,7 @@
 /**
  * AssistantsPanel — 360x480 panel (phone: full screen): header with the assistant (`Combobox` picker if > 1), tabs, conversation and composer. Colors: text #262626, secondary/placeholder #404040 (>= 7:1).
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Combobox } from "@presentation/components/atoms/Combobox/Combobox";
@@ -16,6 +16,7 @@ interface Props {
 export function AssistantsPanel({ assistants: a, onClose }: Props) {
   const { t } = useTranslation();
   const [text, setText] = useState("");
+  const privacyId = useId();
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const { active, assistants, loadConversation } = a;
   const activeSlug = active?.slug;
@@ -206,11 +207,21 @@ export function AssistantsPanel({ assistants: a, onClose }: Props) {
         )}
       </div>
 
-      <div className="flex items-end gap-2 border-t border-gray-600 px-4 py-3">
+      <div className="border-t border-gray-600 px-4 pt-3">
+        <p
+          id={privacyId}
+          data-testid="assistants-privacy-notice"
+          className="text-[11px] text-[#404040]"
+        >
+          {t("admin.assistants.privacyNotice")}
+        </p>
+      </div>
+      <div className="flex items-end gap-2 px-4 py-3">
         <Textarea
           ref={composerRef}
           data-testid="assistants-composer"
           aria-label={t("admin.assistants.placeholder")}
+          aria-describedby={privacyId}
           placeholder={t("admin.assistants.placeholder")}
           rows={2}
           value={text}
