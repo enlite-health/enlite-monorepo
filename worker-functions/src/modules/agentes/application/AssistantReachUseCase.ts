@@ -1,7 +1,7 @@
 import {
   ASSISTANT_CHAT_CELLS,
   KNOWLEDGE_CELLS,
-} from '../../identity/permissions/domain/PermissionCell';
+} from '@modules/identity/permissions';
 
 /** Port: the cells the actor has (same resolution as `GetMyAuthzUseCase`). A failure rejects. */
 export type ResolveActorCells = (uid: string) => Promise<readonly string[]>;

@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
-import { ADMIN_INTEGRATIONS_FAMILY } from '@modules/identity/permissions';
-import { exemptHandler } from '../../../identity/permissions/infrastructure/catalog/permissionMetadata';
+import { ADMIN_INTEGRATIONS_FAMILY, exemptHandler } from '@modules/identity/permissions';
 import { requireAssistantsService } from '../middleware/requireAssistantsService';
 import { AssistantsPlatformController } from '../controllers/AssistantsPlatformController';
 

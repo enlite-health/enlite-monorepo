@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { logger } from '@shared/logging';
 import { principalUid } from '@modules/identity';
-import { ASSISTANT_CHAT_CELLS } from '../../../identity/permissions/domain/PermissionCell';
+import { ASSISTANT_CHAT_CELLS } from '@modules/identity/permissions';
 import type { AssistantReachUseCase, ResolveActorCells } from '../../application/AssistantReachUseCase';
 import {
   escalationFromLegacy,

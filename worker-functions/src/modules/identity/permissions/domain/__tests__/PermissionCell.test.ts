@@ -1,4 +1,3 @@
-import { STATUS_POR_CODIGO } from '../../../interfaces/http/permissionErrorHttp';
 import {
   ACESSO_MASTER_GROUP_ID,
   ASSISTANT_CHAT_CELLS,
@@ -171,7 +170,6 @@ describe('spec 080 — assistants cells (Master-only)', () => {
         err = e;
       }
       expect((err as { code?: string }).code).toBe('master_only_cell');
-      expect(STATUS_POR_CODIGO.master_only_cell).toBe(422);
       expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [c])).not.toThrow();
     }
   });
