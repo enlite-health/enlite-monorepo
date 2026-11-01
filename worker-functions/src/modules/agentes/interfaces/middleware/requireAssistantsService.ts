@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logger } from '@shared/logging';
 import {
   ServiceIdentityVerifier,
   createServiceIdentityVerifier,
@@ -28,7 +29,9 @@ export function requireAssistantsService(injectedVerifier?: ServiceIdentityVerif
     try {
       const verifier = injectedVerifier ?? (fallback ??= createServiceIdentityVerifier());
       payload = await verifier.verify(header.slice(7));
-    } catch {
+    } catch (err) {
+      // Only the error name: the message/stack of the verifier may echo the token. Without this, a wrong audience/SA in PRD is a silent 401.
+      logger.warn({ error: err instanceof Error ? err.name : 'error' }, '[assistants] service identity verification failed');
       return deny(res);
     }
 
