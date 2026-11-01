@@ -38,9 +38,9 @@ function concretizar(path: string): string {
 }
 
 /**
- * As 10 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
+ * As 11 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
  * devolve dado de staff. O que se afirma aqui é o status EXATO de cada uma, para
- * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 11ª).
+ * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 12ª).
  */
 const ISENTAS_ESPERADO: Record<string, number> = {
   'POST /api/admin/setup': 403, // bootstrap desligado por env
@@ -68,6 +68,11 @@ const ISENTAS_ESPERADO: Record<string, number> = {
   // rejeita ANTES de tocar o service/banco: 400 TACTIQ_CALLBACK_INVALID, nada gravado, nada de staff devolvido.
   // O token do prestador é ignorado (a rota não lê identidade).
   'GET /api/admin/me/tactiq-link/callback': 400,
+  // GET /assistants/reach (spec 080, rotas-plataforma-novas §1) — descreve o próprio ator para o assistants-service.
+  // O primeiro guard é `requireAssistantsService()` (header `X-Enlite-Service`, identidade do SERVIÇO), montado ANTES
+  // do `staffOnly`; a varredura só manda o Bearer do prestador, sem esse header, então o guard do serviço barra
+  // primeiro: 401 SERVICE_NOT_AUTHENTICATED (medido). O prestador nunca chega ao handler.
+  'GET /api/admin/assistants/reach': 401,
 };
 
 describe('prestador com token REAL nunca entra no painel (account_type, D294)', () => {
@@ -147,7 +152,7 @@ describe('prestador com token REAL nunca entra no painel (account_type, D294)', 
     expect(declaradas.length).toBeGreaterThan(150);
   });
 
-  it('as rotas ISENTAS são exatamente 10 e cada uma responde ao prestador o que o contrato diz', async () => {
+  it('as rotas ISENTAS são exatamente 11 e cada uma responde ao prestador o que o contrato diz', async () => {
     const isentas = rotas.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual(Object.keys(ISENTAS_ESPERADO).sort());
     for (const rota of isentas) {
