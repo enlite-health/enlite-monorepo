@@ -59,12 +59,26 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // explícitos onde existem.
       'analytics:export',
       'analytics:read',
+      // Spec 080 — Master-only, sem tela (widget flutuante de assistentes, não é rota/tela do registry).
+      'assistant_candela:chat',
+      'assistant_escalation:register',
+      'assistant_lucero:chat',
+      'assistant_maria:chat',
+      'assistant_scoreboard:read',
       'funnel:write',
       'interview:create',
       'interview:delete',
       'interview:read',
       'interview:update',
       'interview:write',
+      // Spec 080 — Master-only, sem tela (widget flutuante de assistentes, não é rota/tela do registry).
+      'knowledge_clinical:read',
+      'knowledge_coordination:read',
+      'knowledge_financial:read',
+      'knowledge_management:read',
+      'knowledge_public:read',
+      'knowledge_recruitment:read',
+      'knowledge_technical:read',
       // Spec 022, Bloco 4 (D-22, citação literal): `own_notifications:*` não tem tela própria
       // no registry (o sino não é uma rota de `App.tsx`, e o teste do registry exige `route`
       // existente) — fica SEM entrada dedicada por desenho do próprio mecanismo, mesmo
