@@ -61,7 +61,7 @@ import { AdminTerminologySearchController } from '@modules/terminology/interface
 import { UserController } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
-import { createMeAuthzRouter, createMeSimulationRouter } from '@modules/identity/permissions';
+import { createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -162,7 +162,7 @@ import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMainten
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
-import { createAdminPedidosIaRoutes, createPedidoIaController } from '@modules/agentes';
+import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes } from '@modules/agentes';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
@@ -760,6 +760,9 @@ app.use('/api/admin', createAdminAiPromptRoutes(new AiPromptController(), authMi
 
 // ========== Admin Pedidos IA (spec 078, M3b-1 — página de pedidos do Sol; células pedidos_ia:read/decidir) ==========
 app.use('/api/admin', createAdminPedidosIaRoutes(createPedidoIaController(), authMiddleware, permissionMiddleware));
+
+// ========== Admin Assistants (spec 080 — platform for the assistants service; cells assistant_*, knowledge_*) ==========
+app.use('/api/admin', createAdminAssistantsRoutes(createAssistantsPlatformController(async (uid) => (await permissionsBoundary.permissions.authz.execute({ uid, tenantId: ENLITE_TENANT_ID })).permissions), authMiddleware, permissionMiddleware));
 
 // ========== Worker Context (triage-service / MCP internal) ==========
 app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware, permissionMiddleware));

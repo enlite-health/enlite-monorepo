@@ -111,6 +111,152 @@ export interface IndicadoresResult {
   fonte: 'analytics.management_dashboard';
 }
 
+/**
+ * Spec 080: the arguments and results of the two extracted functions below are in English (glossary §3/§6.4);
+ * the SQL inside keeps the legacy `agentes.*` columns and values. `escalationFromLegacy` / `escalationResultToLegacy`
+ * are the edge between the legacy body (`ReporteInput`, `{id, duplicado}`) and these arguments.
+ */
+export type EscalationKind = 'LIGHT' | 'META' | 'REINFORCEMENT';
+
+export interface EscalationInput {
+  author: string;
+  operator: string;
+  area: string;
+  kind: EscalationKind;
+  rule_ref?: string;
+  occurrences?: number;
+  window_from: string;
+  window_to: string;
+  note: string;
+  proposed_rule?: string;
+  verdict_ids: string[];
+}
+
+const KIND_TO_CASO: Readonly<Record<EscalationKind, string>> = { LIGHT: 'leve', META: 'meta', REINFORCEMENT: 'reforco' };
+const CASO_TO_KIND: Readonly<Record<string, EscalationKind>> = { leve: 'LIGHT', meta: 'META', reforco: 'REINFORCEMENT' };
+
+/** Legacy body (`caso` leve/meta/reforco, `gestora`-side fields) -> English arguments. An unknown `caso` is rejected. */
+export function escalationFromLegacy(r: ReporteInput): EscalationInput {
+  const kind = CASO_TO_KIND[r.caso];
+  if (!kind) throw new Error(`unknown caso: ${r.caso}`);
+  return {
+    author: r.autor,
+    operator: r.operador,
+    area: r.area,
+    kind,
+    rule_ref: r.regra_ref,
+    occurrences: r.ocorrencias,
+    window_from: r.janela_de,
+    window_to: r.janela_ate,
+    note: r.observacao,
+    proposed_rule: r.regra_proposta,
+    verdict_ids: r.veredicto_ids,
+  };
+}
+
+/** `{id, duplicate}` -> the legacy `{id, duplicado}` that the callers on the legacy side keep seeing. */
+export function escalationResultToLegacy(o: { id: string; duplicate?: true }): { id: string; duplicado?: true } {
+  return o.duplicate ? { id: o.id, duplicado: true as const } : { id: o.id };
+}
+
+/** Shared body (spec 080 T022): the SAME SQL runs under the MCP actor (repository) and on behalf of the person (the Maria tools). */
+export async function registerEscalationWith(c: PoolClient, e: EscalationInput): Promise<{ id: string; duplicate?: true }> {
+    const caso = KIND_TO_CASO[e.kind];
+    const ins = await c.query<{ id: string }>(
+      `INSERT INTO agentes.reportes
+         (autor, operador, area, caso, regra_ref, ocorrencias, janela_de, janela_ate, observacao, regra_proposta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [e.author, e.operator, e.area, caso, e.rule_ref ?? null, e.occurrences ?? null,
+       e.window_from, e.window_to, e.note, e.proposed_rule ?? null],
+    );
+    if (ins.rows.length === 0) {
+      const ex = await c.query<{ id: string }>(
+        `SELECT id FROM agentes.reportes
+          WHERE operador=$1 AND caso=$2 AND COALESCE(regra_ref,'') = COALESCE($3::text,'')
+            AND janela_de=$4 AND janela_ate=$5`,
+        [e.operator, caso, e.rule_ref ?? null, e.window_from, e.window_to],
+      );
+      return { id: ex.rows[0].id, duplicate: true as const };
+    }
+    const id = ins.rows[0].id;
+    for (const vid of new Set(e.verdict_ids)) {
+      await c.query(
+        `INSERT INTO agentes.reporte_veredictos (reporte_id, veredicto_id) VALUES ($1,$2)`,
+        [id, vid],
+      );
+    }
+    return { id };
+}
+
+/** Shared body (spec 080 T022): the SAME SQL runs under the MCP actor (repository) and on behalf of the person (the Maria tools). */
+export async function readScoreboardWith(c: PoolClient, p: { operator: string; from: string; to: string; never_refs?: string[] }): Promise<PlacarResult> {
+    const base = await c.query<{
+      veredictos: string; conversas: string; nota_media: string | null; cruza: string; ids: string[];
+    }>(
+      `SELECT count(*) AS veredictos,
+              count(DISTINCT (inbox, conversa_ref)) AS conversas,
+              avg(nota)::float8 AS nota_media,
+              count(*) FILTER (WHERE cruza_areas) AS cruza,
+              COALESCE(array_agg(id ORDER BY avaliado_em, id), '{}') AS ids
+         FROM agentes.veredictos
+        WHERE operador = $1 AND avaliado_em >= $2 AND avaliado_em < $3`,
+      [p.operator, p.from, p.to],
+    );
+    const rules = await c.query<{
+      regra_ref: string; violacoes: string; gravidade_max: string; veredicto_ids: string[];
+    }>(
+      `SELECT a.regra_ref,
+              count(*) AS violacoes,
+              CASE max(CASE a.gravidade WHEN 'alta' THEN 3 WHEN 'media' THEN 2 ELSE 1 END)
+                WHEN 3 THEN 'alta' WHEN 2 THEN 'media' ELSE 'baixa' END AS gravidade_max,
+              array_agg(DISTINCT a.veredicto_id ORDER BY a.veredicto_id) AS veredicto_ids
+         FROM agentes.veredicto_achados a
+         JOIN agentes.veredictos v ON v.id = a.veredicto_id
+        WHERE a.tipo = 'violacao' AND v.operador = $1 AND v.avaliado_em >= $2 AND v.avaliado_em < $3
+        GROUP BY a.regra_ref
+        ORDER BY count(*) DESC, a.regra_ref`,
+      [p.operator, p.from, p.to],
+    );
+    // SEVERE (item 53): only 3 triggers. Scrubber -> data; notary -> fabricated action; rule in never_refs -> never.
+    // The judge's 'alta' severity, alone, does NOT count. CASE order = precedence when more than one matches.
+    const severe = await c.query<{
+      veredicto_id: string; sensor: string; inbox: string; conversa_ref: string; ultima_msg_ref: string;
+      regra_ref: string; gatilho: 'nunca' | 'dado' | 'acao_fabricada'; avaliado_em: Date;
+    }>(
+      `SELECT * FROM (
+         SELECT v.id AS veredicto_id, v.sensor, v.inbox, v.conversa_ref, v.ultima_msg_ref, a.regra_ref, v.avaliado_em,
+                CASE WHEN v.sensor = 'scrubber' THEN 'dado'
+                     WHEN v.sensor = 'notario'  THEN 'acao_fabricada'
+                     WHEN a.regra_ref = ANY($4::text[]) THEN 'nunca' END AS gatilho
+           FROM agentes.veredicto_achados a
+           JOIN agentes.veredictos v ON v.id = a.veredicto_id
+          WHERE a.tipo = 'violacao' AND v.operador = $1 AND v.avaliado_em >= $2 AND v.avaliado_em < $3) g
+        WHERE gatilho IS NOT NULL
+        ORDER BY avaliado_em, veredicto_id, regra_ref`,
+      [p.operator, p.from, p.to, p.never_refs ?? []],
+    );
+    const b = base.rows[0];
+    return {
+      operador: p.operator,
+      de: p.from,
+      ate: p.to,
+      veredictos: Number(b.veredictos),
+      conversas: Number(b.conversas),
+      nota_media: b.nota_media === null ? null : Number(b.nota_media),
+      cruza_areas: Number(b.cruza),
+      por_regra: rules.rows.map((r) => ({
+        regra_ref: r.regra_ref,
+        violacoes: Number(r.violacoes),
+        gravidade_max: r.gravidade_max,
+        veredicto_ids: r.veredicto_ids,
+      })),
+      veredicto_ids: b.ids,
+      graves: severe.rows.map((g) => ({ ...g, avaliado_em: new Date(g.avaliado_em).toISOString() })),
+    };
+}
+
 export class AgentesRepository {
   constructor(private readonly pool: Pool, private readonly avisos?: AvisoDoDeposito) {}
 
@@ -157,38 +303,7 @@ export class AgentesRepository {
     principal: string,
     r: ReporteInput,
   ): Promise<{ id: string; duplicado?: true }> {
-    return withActorContext(
-      this.pool,
-      async (c) => {
-        const ins = await c.query<{ id: string }>(
-          `INSERT INTO agentes.reportes
-             (autor, operador, area, caso, regra_ref, ocorrencias, janela_de, janela_ate, observacao, regra_proposta)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-           ON CONFLICT DO NOTHING
-           RETURNING id`,
-          [r.autor, r.operador, r.area, r.caso, r.regra_ref ?? null, r.ocorrencias ?? null,
-           r.janela_de, r.janela_ate, r.observacao, r.regra_proposta ?? null],
-        );
-        if (ins.rows.length === 0) {
-          const ex = await c.query<{ id: string }>(
-            `SELECT id FROM agentes.reportes
-              WHERE operador=$1 AND caso=$2 AND COALESCE(regra_ref,'') = COALESCE($3::text,'')
-                AND janela_de=$4 AND janela_ate=$5`,
-            [r.operador, r.caso, r.regra_ref ?? null, r.janela_de, r.janela_ate],
-          );
-          return { id: ex.rows[0].id, duplicado: true as const };
-        }
-        const id = ins.rows[0].id;
-        for (const vid of new Set(r.veredicto_ids)) {
-          await c.query(
-            `INSERT INTO agentes.reporte_veredictos (reporte_id, veredicto_id) VALUES ($1,$2)`,
-            [id, vid],
-          );
-        }
-        return { id };
-      },
-      actorOf(principal),
-    );
+    return withActorContext(this.pool, async (c) => escalationResultToLegacy(await registerEscalationWith(c, escalationFromLegacy(r))), actorOf(principal));
   }
 
   async lerReportes(
@@ -224,75 +339,7 @@ export class AgentesRepository {
     principal: string,
     p: { operador: string; de: string; ate: string; nunca_refs?: string[] },
   ): Promise<PlacarResult> {
-    return withActorContext(
-      this.pool,
-      async (c) => {
-        const base = await c.query<{
-          veredictos: string; conversas: string; nota_media: string | null; cruza: string; ids: string[];
-        }>(
-          `SELECT count(*) AS veredictos,
-                  count(DISTINCT (inbox, conversa_ref)) AS conversas,
-                  avg(nota)::float8 AS nota_media,
-                  count(*) FILTER (WHERE cruza_areas) AS cruza,
-                  COALESCE(array_agg(id ORDER BY avaliado_em, id), '{}') AS ids
-             FROM agentes.veredictos
-            WHERE operador = $1 AND avaliado_em >= $2 AND avaliado_em < $3`,
-          [p.operador, p.de, p.ate],
-        );
-        const regras = await c.query<{
-          regra_ref: string; violacoes: string; gravidade_max: string; veredicto_ids: string[];
-        }>(
-          `SELECT a.regra_ref,
-                  count(*) AS violacoes,
-                  CASE max(CASE a.gravidade WHEN 'alta' THEN 3 WHEN 'media' THEN 2 ELSE 1 END)
-                    WHEN 3 THEN 'alta' WHEN 2 THEN 'media' ELSE 'baixa' END AS gravidade_max,
-                  array_agg(DISTINCT a.veredicto_id ORDER BY a.veredicto_id) AS veredicto_ids
-             FROM agentes.veredicto_achados a
-             JOIN agentes.veredictos v ON v.id = a.veredicto_id
-            WHERE a.tipo = 'violacao' AND v.operador = $1 AND v.avaliado_em >= $2 AND v.avaliado_em < $3
-            GROUP BY a.regra_ref
-            ORDER BY count(*) DESC, a.regra_ref`,
-          [p.operador, p.de, p.ate],
-        );
-        // GRAVE (item 53): só 3 gatilhos. Scrubber -> dado; notário -> ação fabricada; regra em nunca_refs -> nunca.
-        // Gravidade 'alta' do juiz, sozinha, NÃO entra. Ordem do CASE = precedência quando mais de um casa.
-        const graves = await c.query<{
-          veredicto_id: string; sensor: string; inbox: string; conversa_ref: string; ultima_msg_ref: string;
-          regra_ref: string; gatilho: 'nunca' | 'dado' | 'acao_fabricada'; avaliado_em: Date;
-        }>(
-          `SELECT * FROM (
-             SELECT v.id AS veredicto_id, v.sensor, v.inbox, v.conversa_ref, v.ultima_msg_ref, a.regra_ref, v.avaliado_em,
-                    CASE WHEN v.sensor = 'scrubber' THEN 'dado'
-                         WHEN v.sensor = 'notario'  THEN 'acao_fabricada'
-                         WHEN a.regra_ref = ANY($4::text[]) THEN 'nunca' END AS gatilho
-               FROM agentes.veredicto_achados a
-               JOIN agentes.veredictos v ON v.id = a.veredicto_id
-              WHERE a.tipo = 'violacao' AND v.operador = $1 AND v.avaliado_em >= $2 AND v.avaliado_em < $3) g
-            WHERE gatilho IS NOT NULL
-            ORDER BY avaliado_em, veredicto_id, regra_ref`,
-          [p.operador, p.de, p.ate, p.nunca_refs ?? []],
-        );
-        const b = base.rows[0];
-        return {
-          operador: p.operador,
-          de: p.de,
-          ate: p.ate,
-          veredictos: Number(b.veredictos),
-          conversas: Number(b.conversas),
-          nota_media: b.nota_media === null ? null : Number(b.nota_media),
-          cruza_areas: Number(b.cruza),
-          por_regra: regras.rows.map((r) => ({
-            regra_ref: r.regra_ref,
-            violacoes: Number(r.violacoes),
-            gravidade_max: r.gravidade_max,
-            veredicto_ids: r.veredicto_ids,
-          })),
-          veredicto_ids: b.ids,
-          graves: graves.rows.map((g) => ({ ...g, avaliado_em: new Date(g.avaliado_em).toISOString() })),
-        };
-      },
-      actorOf(principal),
-    );
+    return withActorContext(this.pool, (c) => readScoreboardWith(c, { operator: p.operador, from: p.de, to: p.ate, never_refs: p.nunca_refs }), actorOf(principal));
   }
 
   /** pedido + atitude (versão 1) + origens numa transação só; status inicial 'novo' vem da view, não de coluna. */

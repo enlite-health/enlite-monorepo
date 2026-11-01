@@ -1,4 +1,9 @@
 import {
+  ACESSO_MASTER_GROUP_ID,
+  ASSISTANT_CHAT_CELLS,
+  KNOWLEDGE_CELLS,
+  SOMENTE_ACESSO_MASTER_CELLS,
+  assertCellsAllowedForGroup,
   CELL_DESCRIPTION,
   PERMISSION_CATEGORIES,
   RESOURCE_CATEGORY,
@@ -62,11 +67,11 @@ describe('PermissionCell', () => {
 
 // ── spec 018, PR-8b (ADR-2/SUP-30): split write → create+update ────────────────
 describe('SPLIT_RESOURCES / isSplitResource', () => {
-  it('tem exatamente os 17 recursos com write LITERAL na rota + os 5 por variável (22 no total)', () => {
+  it('tem exatamente os 17 resources com write LITERAL na rota + os 5 por variável (22 no total)', () => {
     // 18 literais: `git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v __tests__`
     // menos `permission_management` (medido 15/09, 93 hits — excluir por CAMINHO `__tests__`,
     // nunca por substring "test" na linha, que corta `/workers/:id/test-flag` e
-    // `/patients/:id/test-flag`, ambos `worker`/`patient`, já cobertos aqui → 20 recursos
+    // `/patients/:id/test-flag`, ambos `worker`/`patient`, já cobertos aqui → 20 resources
     // distintos − 1). `worker` SAIU em 21/09 (spec 024, D401): nunca teve `perm.require('worker',
     // 'create', …)` — quem usava `worker:create` era a tag, migrada pra `tag:create` (célula
     // própria, fora do split). `worker` mantém só `:update` daqui pra frente.
@@ -98,7 +103,7 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     expect(CELL_DESCRIPTION['worker:create']).toBeUndefined();
   });
 
-  it('cada um dos 22 recursos splitados tem CELL_DESCRIPTION para create E update', () => {
+  it('cada um dos 22 resources splitados tem CELL_DESCRIPTION para create E update', () => {
     for (const resource of SPLIT_RESOURCES) {
       expect(CELL_DESCRIPTION[cellKey(resource, 'create')]?.trim().length ?? 0).toBeGreaterThan(0);
       expect(CELL_DESCRIPTION[cellKey(resource, 'update')]?.trim().length ?? 0).toBeGreaterThan(0);
@@ -134,5 +139,48 @@ describe('expandWriteCells', () => {
 
   it('lista vazia devolve lista vazia', () => {
     expect(expandWriteCells([])).toEqual([]);
+  });
+});
+
+describe('spec 080 — assistants cells (Master-only)', () => {
+  const TWELVE = [
+    ...ASSISTANT_CHAT_CELLS,
+    'assistant_scoreboard:read',
+    'assistant_escalation:register',
+    ...KNOWLEDGE_CELLS,
+  ];
+
+  it('(a) the 12 cells (3 + 2 + 7) are in SOMENTE_ACESSO_MASTER_CELLS', () => {
+    expect(ASSISTANT_CHAT_CELLS).toHaveLength(3);
+    expect(KNOWLEDGE_CELLS).toHaveLength(7);
+    expect(TWELVE).toHaveLength(12);
+    for (const c of TWELVE) {
+      expect(isValidCellKey(c)).toBe(true);
+      expect(SOMENTE_ACESSO_MASTER_CELLS.has(c)).toBe(true);
+    }
+    expect(KNOWLEDGE_CELLS.some((c) => c.includes('default'))).toBe(false);
+  });
+
+  it('(b) granting any of them to a non-Master group is refused (master_only_cell, 422); the Master passes', () => {
+    for (const c of TWELVE) {
+      let err: unknown;
+      try {
+        assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [c]);
+      } catch (e) {
+        err = e;
+      }
+      expect((err as { code?: string }).code).toBe('master_only_cell');
+      expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [c])).not.toThrow();
+    }
+  });
+
+  it('(c) every catalog `assistant_*:chat` cell belongs to ASSISTANT_CHAT_CELLS', () => {
+    const fromCatalog = Object.keys(CELL_DESCRIPTION).filter((k) => k.startsWith('assistant_') && k.endsWith(':chat'));
+    // positive control: the filter finds exactly the 3 (not 0) — live instrument
+    expect(fromCatalog).toHaveLength(3);
+    expect([...fromCatalog].sort()).toEqual([...ASSISTANT_CHAT_CELLS].sort());
+    const resources = Object.keys(RESOURCE_CATEGORY).filter((r) => r.startsWith('assistant_'));
+    // 3 chat resources + `assistant_scoreboard` + `assistant_escalation` (the `assistant_` prefix is shared with the two non-chat resources)
+    expect(resources).toHaveLength(5);
   });
 });

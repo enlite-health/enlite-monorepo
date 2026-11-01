@@ -44,6 +44,8 @@ export {
   cellKey,
   isValidCellKey,
   parseCellKey,
+  ASSISTANT_CHAT_CELLS,
+  KNOWLEDGE_CELLS,
 } from './domain/PermissionCell';
 export type { PermissionCategory, PermissionCell } from './domain/PermissionCell';
 export { PermissionError, isPermissionError, toPermissionError } from './domain/PermissionError';

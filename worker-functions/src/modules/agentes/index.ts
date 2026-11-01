@@ -5,9 +5,16 @@ import { DecidirPedidoIaUseCase, ListarPedidosIaUseCase, ObterPedidoIaUseCase } 
 import { PedidoAplicarNotifier } from './infrastructure/PedidoAplicarNotifier';
 import { reportError } from '@shared/logging';
 import { PedidoIaController } from './interfaces/controllers/PedidoIaController';
+import { AssistantsPlatformController } from './interfaces/controllers/AssistantsPlatformController';
+import { AssistantReachUseCase, type ResolveActorCells } from './application/AssistantReachUseCase';
+import { withActorContext } from '@shared/database/actorContext';
+import { staffActor } from '@shared/audit/actorSource';
+import { readScoreboardWith, registerEscalationWith } from '../mcp/infrastructure/AgentesRepository';
 
 export { createAdminPedidosIaRoutes } from './interfaces/routes/adminPedidosIaRoutes';
 export { PedidoIaController } from './interfaces/controllers/PedidoIaController';
+export { createAdminAssistantsRoutes } from './interfaces/routes/adminAssistantsRoutes';
+export { AssistantsPlatformController } from './interfaces/controllers/AssistantsPlatformController';
 
 /** Composition root do módulo (usa `getPool()`: a RLS exige o contexto de país/uid da request). */
 export function createPedidoIaController(): PedidoIaController {
@@ -20,4 +27,18 @@ export function createPedidoIaController(): PedidoIaController {
     new ObterPedidoIaUseCase(repo),
     new DecidirPedidoIaUseCase(repo, new PedidoAplicarNotifier(pool), onErro),
   );
+}
+
+/**
+ * Composition root of the assistants routes (spec 080). `resolveCells` = the same resolution as `GetMyAuthzUseCase`
+ * (the wiring in `src/index.ts` injects it; a failure propagates -> 500, never an empty list). FREE OPERATOR: the scoreboard accepts any operator.
+ */
+export function createAssistantsPlatformController(resolveCells: ResolveActorCells): AssistantsPlatformController {
+  const pool = DatabaseConnection.getInstance().getPool();
+  return new AssistantsPlatformController({
+    reach: new AssistantReachUseCase(resolveCells),
+    resolveCells,
+    readScoreboard: (uid, p) => withActorContext(pool, (c) => readScoreboardWith(c, p), staffActor(uid)),
+    registerEscalation: (uid, e) => withActorContext(pool, (c) => registerEscalationWith(c, e), staffActor(uid)),
+  });
 }

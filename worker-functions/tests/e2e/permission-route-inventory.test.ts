@@ -509,11 +509,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/interview-hosts/candidates → interview_host:update',
         'POST /api/admin/interview-hosts → interview_host:update',
         'PATCH /api/admin/interview-hosts/:id → interview_host:update',
+        // spec 080 (scoreboard and escalations of the assistants, `adminAssistantsRoutes.ts`): families assistant_scoreboard/assistant_escalation, contract rotas-plataforma-novas.md.
+        'GET /api/admin/assistants/scoreboard → assistant_scoreboard:read',
+        'POST /api/admin/assistants/escalations → assistant_escalation:register',
       ].sort(),
     );
   });
 
-  it('as isentas são as DEZ decididas, e nenhuma a mais', () => {
+  it('as isentas são as ONZE decididas, e nenhuma a mais', () => {
     // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
@@ -536,9 +539,12 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // `GET /api/admin/me/tactiq-link/callback` entrou na spec 049 (F4): o Tactiq redireciona o NAVEGADOR para o callback,
     // que não carrega Bearer. A isenção é a MARCA da montagem (`exemptHandler` em `tactiqLinkRoutes.ts`); a prova de
     // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:create`), 10 min, ligado ao uid.
+    // `GET /api/admin/assistants/reach` entered with spec 080 (contract rotas-plataforma-novas.md §1): a "self" route: it describes the actor itself to the
+    // assistants service and resolves the cells in the handler (`req.permissionCells` only exists inside `perm.require`); the exemption is the mount MARK (`exemptHandler`).
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'DELETE /v1/me/simulation',
+      'GET /api/admin/assistants/reach',
       'GET /api/admin/auth/profile',
       'GET /api/admin/me/tactiq-link/callback',
       'GET /v1/me/authz',
