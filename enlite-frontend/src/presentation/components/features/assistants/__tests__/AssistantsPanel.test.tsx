@@ -1,6 +1,7 @@
 /**
  * AssistantsPanel — spec 080 (T162). Service mocked by module. Real i18n (es + pt-BR).
  */
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AdminAssistantsApiService } from "@infrastructure/http/AdminAssistantsApiService";
@@ -220,6 +221,20 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     await screen.findByTestId("assistants-msg-m-resp");
     await waitFor(() => expect(svc.markRead).toHaveBeenCalledTimes(2));
     expect(svc.markRead).toHaveBeenLastCalledWith("maria");
+  });
+
+  it("under React.StrictMode (dev server) opening with unread marks read EXACTLY once", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria", true, 2)]);
+    render(
+      <StrictMode>
+        <AssistantsWidget />
+      </StrictMode>,
+    );
+    await abrir();
+    await waitFor(() => expect(svc.markRead).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 200));
+    expect(svc.markRead).toHaveBeenCalledTimes(1);
+    expect(svc.markRead).toHaveBeenCalledWith("maria");
   });
 
   it("an 'en breve' tab never calls markRead, even with unread_count > 0", async () => {

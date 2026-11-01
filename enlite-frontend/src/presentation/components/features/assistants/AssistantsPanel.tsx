@@ -30,10 +30,15 @@ export function AssistantsPanel({ assistants: a, onClose }: Props) {
   markReadRef.current = a.markRead;
   const activeRef = useRef(active);
   activeRef.current = active;
+  // In-flight guard per slug: React.StrictMode (dev server) runs this effect twice on mount, and the unread count only
+  // drops after the POST returns — without the guard the second run would send a duplicate `read`.
+  const markingRef = useRef(new Set<string>());
   useEffect(() => {
     const cur = activeRef.current;
-    if (cur && cur.available && cur.unread_count > 0) {
-      void markReadRef.current(cur.slug);
+    if (cur && cur.available && cur.unread_count > 0 && !markingRef.current.has(cur.slug)) {
+      const slug = cur.slug;
+      markingRef.current.add(slug);
+      void markReadRef.current(slug).finally(() => markingRef.current.delete(slug));
     }
   }, [activeSlug]);
 
