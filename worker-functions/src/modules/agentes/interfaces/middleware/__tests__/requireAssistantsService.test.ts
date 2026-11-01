@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 
+const mockLogger = { warn: jest.fn(), info: jest.fn(), error: jest.fn() };
+jest.mock('@shared/logging', () => ({ logger: mockLogger }));
+
 const mockVerifyIdToken = jest.fn();
 jest.mock('google-auth-library', () => ({
   OAuth2Client: jest.fn().mockImplementation(() => ({ verifyIdToken: mockVerifyIdToken })),
@@ -34,6 +37,7 @@ describe('requireAssistantsService', () => {
     process.env = { ...originalEnv, GCP_PROJECT_ID: 'test-project' };
     delete process.env.USE_MOCK_AUTH;
     mockVerifyIdToken.mockReset();
+    mockLogger.warn.mockReset();
   });
   afterEach(() => {
     process.env = originalEnv;
@@ -63,6 +67,20 @@ describe('requireAssistantsService', () => {
     expect(ASSISTANTS_AUDIENCE).toBe('https://api.enlite.health/assistentes');
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('verifier failure -> logs 1 warn with only the error name, never the token or the message', async () => {
+    const secretToken = 'tok-SECRET-123';
+    class WrongRecipient extends Error {
+      name = 'WrongRecipientError';
+    }
+    mockVerifyIdToken.mockRejectedValue(new WrongRecipient(`Wrong recipient for ${secretToken}`));
+    const mw = requireAssistantsService(new GoogleServiceIdentityVerifier());
+    const { res } = await call(mw, { 'x-enlite-service': `Bearer ${secretToken}` });
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+    expect(mockLogger.warn.mock.calls[0][0]).toEqual({ error: 'WrongRecipientError' });
+    expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain(secretToken);
   });
 
   it('no argument (as in the contract) and no USE_MOCK_AUTH uses the Google verifier with the right audience', async () => {
