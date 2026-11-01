@@ -43,12 +43,13 @@ const CODE_BY_STATUS: Record<number, AssistantErrorCode> = {
 
 /**
  * The service's base: `VITE_ASSISTANTS_SERVICE_URL` (build), never the platform's base URL.
+ * Empty = no service configured = NO FETCH (fail-closed): there is no localhost fallback.
  * Pure on purpose: vitest 1.4 does not let a test change the module's `import.meta.env`.
  */
 export function resolveAssistantsBaseUrl(
   env: Record<string, string | undefined> | undefined,
 ): string {
-  return env?.VITE_ASSISTANTS_SERVICE_URL || "http://localhost:8080";
+  return env?.VITE_ASSISTANTS_SERVICE_URL?.trim() || "";
 }
 
 export interface MessagesParams {
@@ -56,12 +57,18 @@ export interface MessagesParams {
   before?: string;
 }
 
-class AdminAssistantsApiServiceClass {
+export class AdminAssistantsApiServiceClass {
   private readonly authService = new FirebaseAuthService();
 
+  /** `baseUrl` is injectable for tests; by default it is the build's `VITE_ASSISTANTS_SERVICE_URL`. */
+  constructor(private readonly baseUrl?: string) {}
+
   private baseURL(): string {
-    return resolveAssistantsBaseUrl(
-      (import.meta as unknown as { env: Record<string, string> }).env,
+    return (
+      this.baseUrl ??
+      resolveAssistantsBaseUrl(
+        (import.meta as unknown as { env: Record<string, string> }).env,
+      )
     );
   }
 
@@ -71,8 +78,11 @@ class AdminAssistantsApiServiceClass {
     path: string,
     body?: unknown,
   ): Promise<{ response: Response; json: Record<string, unknown> }> {
+    const base = this.baseURL();
+    // Fail-closed: no configured service, no request (the caller sees PLATFORM_UNAVAILABLE).
+    if (!base) throw new AssistantError("PLATFORM_UNAVAILABLE", 0);
     const token = await this.authService.getIdToken();
-    const response = await fetch(`${this.baseURL()}${path}`, {
+    const response = await fetch(`${base}${path}`, {
       method,
       headers: {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
@@ -113,6 +123,7 @@ class AdminAssistantsApiServiceClass {
   }
 
   async list(): Promise<Assistant[]> {
+    if (!this.baseURL()) return []; // no service configured: no widget, no fetch
     const r = await this.request<{ assistants: Assistant[] }>(
       "GET",
       "/assistants",

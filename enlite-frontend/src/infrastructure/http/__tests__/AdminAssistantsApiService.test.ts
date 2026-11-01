@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  AdminAssistantsApiService,
+  AdminAssistantsApiServiceClass,
   resolveAssistantsBaseUrl,
 } from "../AdminAssistantsApiService";
 import { AssistantError } from "@domain/entities/Assistant";
@@ -13,6 +13,11 @@ const getIdToken = vi.hoisted(() => vi.fn());
 vi.mock("@infrastructure/services/FirebaseAuthService", () => ({
   FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken })),
 }));
+
+// The base is injected (vitest 1.4 cannot change import.meta.env); no base = no request.
+const AdminAssistantsApiService = new AdminAssistantsApiServiceClass(
+  "http://localhost:8080",
+);
 
 type Reply = { status?: number; payload?: unknown };
 
@@ -97,12 +102,33 @@ describe("AdminAssistantsApiService", () => {
     ).toBe("http://assistants.test");
   });
 
-  it("the platform's variable alone does NOT set the base (falls to localhost:8080)", () => {
+  it("the platform's variable alone does NOT set the base (stays empty: no localhost fallback)", () => {
     expect(
       resolveAssistantsBaseUrl({
         VITE_API_WORKER_FUNCTIONS_URL: "http://platform.test",
       }),
-    ).toBe("http://localhost:8080");
+    ).toBe("");
+    expect(resolveAssistantsBaseUrl(undefined)).toBe("");
+  });
+
+  it("empty base = fail-closed: list() never calls fetch and returns []", async () => {
+    const f = mockFetch({ payload: { assistants: [{ slug: "x" }] } });
+    const svc = new AdminAssistantsApiServiceClass("");
+    expect(await svc.list()).toEqual([]);
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("empty base: messages/sendMessage/markRead do not fetch either (PLATFORM_UNAVAILABLE)", async () => {
+    const f = mockFetch({ payload: {} });
+    const svc = new AdminAssistantsApiServiceClass("");
+    for (const call of [
+      () => svc.messages("maria"),
+      () => svc.sendMessage("maria", "hi"),
+      () => svc.markRead("maria"),
+    ]) {
+      expect((await errorOf(call())).code).toBe("PLATFORM_UNAVAILABLE");
+    }
+    expect(f).not.toHaveBeenCalled();
   });
 
   it("list: also accepts the {success,data} envelope; empty list stays []", async () => {
