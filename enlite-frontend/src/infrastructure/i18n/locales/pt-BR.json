@@ -6912,12 +6912,11 @@
       "comingSoon": "em breve",
       "available": "disponível",
       "footer": "Cada assistente lê a plataforma com o seu nível de acesso. Nenhuma vê o Sol.",
-      "privacyNotice": "Não escreva dados de pacientes nem dados clínicos: este assistente usa IA e não pode recebê-los.",
+      "privacyNotice": "Não escreva dados clínicos: este assistente usa IA e não pode recebê-los.",
       "modelError": "Não consegui responder agora. Tente novamente em instantes.",
       "noReachError": "Você não tem acesso a este assistente.",
       "unavailableError": "Este assistente ainda não está disponível.",
       "inputClinical": "Não posso receber dados clínicos. Reformule a pergunta sem eles.",
-      "inputPersonalData": "Não posso receber dados pessoais de pacientes. Reformule a pergunta sem eles.",
       "genericError": "Algo deu errado. Tente novamente.",
       "historyError": "Não conseguimos carregar a conversa. Tente de novo.",
       "unreadBadge": "{{count}} mensagens não lidas"

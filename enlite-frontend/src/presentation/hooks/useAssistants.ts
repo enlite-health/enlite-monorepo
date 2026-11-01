@@ -20,7 +20,6 @@ export type AssistantNotice =
   | "modelError"
   | "unavailableError"
   | "inputClinical"
-  | "inputPersonalData"
   | "genericError";
 
 export function noticeOfError(e: unknown): AssistantNotice {
@@ -31,8 +30,6 @@ export function noticeOfError(e: unknown): AssistantNotice {
       return "cap";
     case "INPUT_CLINICAL":
       return "inputClinical";
-    case "INPUT_PERSONAL_DATA":
-      return "inputPersonalData";
     case "NO_REACH":
       return "noAccess";
     case "MODEL_ERROR":
@@ -160,7 +157,7 @@ export function useAssistants(): UseAssistants {
         const n = noticeOfError(e);
         setNotice(n);
         // The server did not store a refused input: it must not stay in the history as if it had been sent.
-        const refused = n === "inputClinical" || n === "inputPersonalData";
+        const refused = n === "inputClinical";
         if (refused) {
           setBySlug((m) => ({
             ...m,

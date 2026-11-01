@@ -241,7 +241,6 @@ describe("AdminAssistantsApiService", () => {
     [409, "ASSISTANT_UNAVAILABLE"],
     [400, "INVALID_FORMAT"],
     [422, "INPUT_CLINICAL"],
-    [422, "INPUT_PERSONAL_DATA"],
   ])("%i %s keeps the server's code", async (status, code) => {
     mockFetch({ status, payload: { success: false, code, message: "m" } });
     const e = await errorOf(

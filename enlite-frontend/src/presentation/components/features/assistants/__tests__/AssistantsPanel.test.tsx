@@ -307,7 +307,6 @@ describe("AssistantsPanel (spec 080, T162)", () => {
 
   it.each([
     ["INPUT_CLINICAL", "inputClinical"],
-    ["INPUT_PERSONAL_DATA", "inputPersonalData"],
   ] as const)(
     "%s: shows the notice, the refused message is not in the history and the text returns to the field",
     async (code, key) => {
