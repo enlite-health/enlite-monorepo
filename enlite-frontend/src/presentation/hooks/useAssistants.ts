@@ -15,7 +15,13 @@ export const TAB_STORAGE_KEY = "assistants.tab";
 
 /** i18n key (under `admin.assistants.`) of each error notice. */
 export type AssistantNotice =
-  "cap" | "noAccess" | "modelError" | "unavailableError" | "genericError";
+  "cap"
+  | "noAccess"
+  | "modelError"
+  | "unavailableError"
+  | "inputClinical"
+  | "inputPersonalData"
+  | "genericError";
 
 export function noticeOfError(e: unknown): AssistantNotice {
   if (!(e instanceof AssistantError)) return "genericError";
@@ -23,6 +29,10 @@ export function noticeOfError(e: unknown): AssistantNotice {
     case "PERSON_DAILY_CAP":
     case "ASSISTANT_MONTHLY_CAP":
       return "cap";
+    case "INPUT_CLINICAL":
+      return "inputClinical";
+    case "INPUT_PERSONAL_DATA":
+      return "inputPersonalData";
     case "NO_REACH":
       return "noAccess";
     case "MODEL_ERROR":
@@ -61,7 +71,8 @@ export interface UseAssistants {
   historyError: boolean;
   /** Sum of the service's `unread_count` over the AVAILABLE assistants in the reach. */
   unreadTotal: number;
-  send: (text: string) => Promise<void>;
+  /** Resolves `{ refused: true }` when the server refused the INPUT (clinical/personal data): the message was not stored. */
+  send: (text: string) => Promise<{ refused: boolean }>;
   /** Marks the assistant's conversation as read; on 204 zeroes ITS badge. A failure (403/5xx) changes nothing. */
   markRead: (slug: string) => Promise<void>;
   /** Loads the active assistant's history (called when the panel opens or the tab changes). */
@@ -123,7 +134,7 @@ export function useAssistants(): UseAssistants {
 
   const send = useCallback(
     async (text: string) => {
-      if (!active || !active.available || !text.trim()) return;
+      if (!active || !active.available || !text.trim()) return { refused: false };
       const slug = active.slug;
       const local: AssistantMessage = {
         id: `local-${++seq.current}`,
@@ -144,8 +155,19 @@ export function useAssistants(): UseAssistants {
         }));
         // The reply arrived with the tab open: it is read, so the server marker advances.
         void markRead(slug);
+        return { refused: false };
       } catch (e) {
-        setNotice(noticeOfError(e));
+        const n = noticeOfError(e);
+        setNotice(n);
+        // The server did not store a refused input: it must not stay in the history as if it had been sent.
+        const refused = n === "inputClinical" || n === "inputPersonalData";
+        if (refused) {
+          setBySlug((m) => ({
+            ...m,
+            [slug]: (m[slug] ?? []).filter((x) => x.id !== local.id),
+          }));
+        }
+        return { refused };
       } finally {
         setWaiting(false);
       }

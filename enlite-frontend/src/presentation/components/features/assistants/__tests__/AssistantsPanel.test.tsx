@@ -292,4 +292,29 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     await waitFor(() => expect(svc.messages).toHaveBeenCalled());
     expect(screen.queryByTestId("assistants-history-error")).toBeNull();
   });
+
+  it.each([
+    ["INPUT_CLINICAL", "inputClinical"],
+    ["INPUT_PERSONAL_DATA", "inputPersonalData"],
+  ] as const)(
+    "%s: shows the notice, the refused message is not in the history and the text returns to the field",
+    async (code, key) => {
+      svc.list.mockResolvedValue([ag("maria", "Maria")]);
+      svc.sendMessage.mockRejectedValue(new AssistantError(code, 422));
+      render(<AssistantsWidget />);
+      await abrir();
+      const composer = screen.getByTestId(
+        "assistants-composer",
+      ) as HTMLTextAreaElement;
+      fireEvent.change(composer, { target: { value: "texto a editar" } });
+      fireEvent.click(screen.getByTestId("assistants-send"));
+      const notice = await screen.findByTestId("assistants-notice");
+      expect(notice.textContent).toBe(
+        (es as any).admin.assistants[key],
+      );
+      expect(screen.queryByText("texto a editar", { selector: "div" })).toBeNull();
+      expect(screen.queryByTestId(/^assistants-msg-/)).toBeNull();
+      await waitFor(() => expect(composer.value).toBe("texto a editar"));
+    },
+  );
 });

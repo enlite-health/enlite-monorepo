@@ -55,17 +55,19 @@ export function AssistantsPanel({ assistants: a, onClose }: Props) {
       : `${g.name} · ${t("admin.assistants.comingSoon")}`,
   }));
 
-  const submit = () => {
+  const submit = async () => {
     if (unavailable || a.waiting || !text.trim()) return;
     const v = text;
     setText("");
-    void a.send(v);
+    const r = await a.send(v);
+    // Refused input (clinical/personal data): the text goes back to the field to be edited, unless the person already typed.
+    if (r?.refused) setText((cur) => cur || v);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      submit();
+      void submit();
     }
   };
 
@@ -221,7 +223,7 @@ export function AssistantsPanel({ assistants: a, onClose }: Props) {
           type="button"
           data-testid="assistants-send"
           disabled={unavailable || a.waiting || !text.trim()}
-          onClick={submit}
+          onClick={() => void submit()}
           className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {t("admin.assistants.send")}

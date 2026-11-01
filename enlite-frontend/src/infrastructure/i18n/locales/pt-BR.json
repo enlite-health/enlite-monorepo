@@ -6915,6 +6915,8 @@
       "modelError": "Não consegui responder agora. Tente novamente em instantes.",
       "noReachError": "Você não tem acesso a este assistente.",
       "unavailableError": "Este assistente ainda não está disponível.",
+      "inputClinical": "Não posso receber dados clínicos. Reformule a pergunta sem eles.",
+      "inputPersonalData": "Não posso receber dados pessoais de pacientes. Reformule a pergunta sem eles.",
       "genericError": "Algo deu errado. Tente novamente.",
       "historyError": "Não conseguimos carregar a conversa. Tente de novo.",
       "unreadBadge": "{{count}} mensagens não lidas"
