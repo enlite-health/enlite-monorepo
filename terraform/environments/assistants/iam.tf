@@ -25,27 +25,56 @@ module "assistants_scheduler_sa" {
   project_roles = []
 }
 
-# -- Secrets: the service reads ONLY app and system (never the owner's) --------------------
-resource "google_secret_manager_secret_iam_member" "assistants_app_accessor" {
+# -- Secrets: the runtime mounts ONLY the two URLs (--set-secrets PG_APP_URL / PG_SYSTEM_URL) --------
+# Nothing in the service's runtime reads the *-password secrets (only the migrate job does, via the deploy SA).
+resource "google_secret_manager_secret_iam_member" "assistants_app_url_accessor" {
   project   = var.project_id
-  secret_id = module.secret_assistants_db_app.secret_id
+  secret_id = module.secret_assistants_db_app_url.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = module.assistants_service_sa.member
 }
 
-resource "google_secret_manager_secret_iam_member" "assistants_system_accessor" {
+resource "google_secret_manager_secret_iam_member" "assistants_system_url_accessor" {
   project   = var.project_id
-  secret_id = module.secret_assistants_db_system.secret_id
+  secret_id = module.secret_assistants_db_system_url.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = module.assistants_service_sa.member
 }
 
-# -- Deploy SA: reads the OWNER secret (runs the migration) and acts as the service SA --
+# -- Deploy SA: reads the OWNER secret (migration) and the app/system passwords (set-password); acts as the service SA --
 resource "google_secret_manager_secret_iam_member" "assistants_owner_accessor_deploy" {
   project   = var.project_id
   secret_id = module.secret_assistants_db_owner.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${var.deploy_sa_email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "assistants_app_accessor_deploy" {
+  project   = var.project_id
+  secret_id = module.secret_assistants_db_app.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${var.deploy_sa_email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "assistants_system_accessor_deploy" {
+  project   = var.project_id
+  secret_id = module.secret_assistants_db_system.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${var.deploy_sa_email}"
+}
+
+# The migrate job starts cloud-sql-proxy on the runner as the deploy SA -> needs cloudsql.client.
+# Restricted to the assistants-db instance (live deploy SA has no cloudsql.client: measured, see PR).
+resource "google_project_iam_member" "deploy_cloudsql_client_assistants" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${var.deploy_sa_email}"
+
+  condition {
+    title       = "only-assistants-db"
+    description = "cloudsql.client only on the assistants-db instance"
+    expression  = "resource.type == \"sqladmin.googleapis.com/Instance\" && resource.name == \"projects/${var.project_id}/instances/${module.sql_assistants.name}\""
+  }
 }
 
 resource "google_service_account_iam_member" "deploy_acts_as_service_sa" {

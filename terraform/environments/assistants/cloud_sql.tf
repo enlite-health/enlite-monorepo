@@ -85,3 +85,31 @@ resource "google_secret_manager_secret_version" "assistants_db_system_v1" {
   secret      = module.secret_assistants_db_system.id
   secret_data = random_password.assistants_system.result
 }
+
+# -- Runtime URLs (PG_APP_URL / PG_SYSTEM_URL): what Cloud Run mounts via --set-secrets ----------
+# Format read by the service's pg Pool (pools.ts `connectionString`; pg-connection-string 2.x):
+# unix socket of `--add-cloudsql-instances` (/cloudsql/<connection_name>), logins born in migration 001.
+# Passwords are alphanumeric (special=false), so no URL-encoding is needed.
+module "secret_assistants_db_app_url" {
+  source                = "../../modules/secret"
+  project_id            = var.project_id
+  secret_id             = "assistants-db-app-url"
+  replication_locations = [var.region]
+}
+
+resource "google_secret_manager_secret_version" "assistants_db_app_url_v1" {
+  secret      = module.secret_assistants_db_app_url.id
+  secret_data = "postgres://assistants_app:${random_password.assistants_app.result}@/${google_sql_database.assistants.name}?host=/cloudsql/${module.sql_assistants.connection_name}"
+}
+
+module "secret_assistants_db_system_url" {
+  source                = "../../modules/secret"
+  project_id            = var.project_id
+  secret_id             = "assistants-db-system-url"
+  replication_locations = [var.region]
+}
+
+resource "google_secret_manager_secret_version" "assistants_db_system_url_v1" {
+  secret      = module.secret_assistants_db_system_url.id
+  secret_data = "postgres://assistants_system:${random_password.assistants_system.result}@/${google_sql_database.assistants.name}?host=/cloudsql/${module.sql_assistants.connection_name}"
+}
