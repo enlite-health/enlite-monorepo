@@ -450,6 +450,13 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'ai_prompt:read', 'ai_prompt:update',
       // Spec 078 (pedidos do Sol): descrição em CELL_DESCRIPTION; a rota real é adminPedidosIaRoutes.
       'pedidos_ia:read', 'pedidos_ia:decidir',
+      // Spec 080 (assistentes no app): 12 células com descrição em CELL_DESCRIPTION; as rotas reais vivem no
+      // assistants-service (não neste fixture de 2 rotas), então saem aqui como complemento.
+      'assistant_maria:chat', 'assistant_lucero:chat', 'assistant_candela:chat',
+      'assistant_scoreboard:read', 'assistant_escalation:register',
+      'knowledge_public:read', 'knowledge_recruitment:read', 'knowledge_clinical:read',
+      'knowledge_financial:read', 'knowledge_management:read', 'knowledge_coordination:read',
+      'knowledge_technical:read',
       // Spec 051 (F1): trocar o status do paciente por FORA da FSM — uma célula por destino; o
       // consumidor é `decidirTrocaForaDoFluxo` (domínio), sem `perm.require` de rota neste PR.
       'patient_status:move_to_searching',
