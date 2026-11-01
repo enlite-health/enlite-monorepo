@@ -17,7 +17,8 @@ import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-const STAFF: MockUser = { uid: `e2e-assistants-${RUN_ID}`, email: `e2e-assistants-${RUN_ID}@e2e.test`, role: 'admin', country: 'AR' };
+// Contra a plataforma real o uid precisa existir em users/iam.user_groups: E2E_ASSISTANTS_UID/_EMAIL apontam o semeado.
+const STAFF: MockUser = { uid: process.env.E2E_ASSISTANTS_UID || `e2e-assistants-${RUN_ID}`, email: process.env.E2E_ASSISTANTS_EMAIL || `e2e-assistants-${RUN_ID}@e2e.test`, role: 'admin', country: 'AR' };
 
 /** Mesma regra do app: sem a variavel, a base do serviço e' http://localhost:8080. */
 const SERVICE_ORIGIN = new URL(process.env.VITE_ASSISTANTS_SERVICE_URL || 'http://localhost:8080').origin;
