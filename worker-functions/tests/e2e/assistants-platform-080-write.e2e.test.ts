@@ -45,6 +45,8 @@ const NOCHAT_GROUP = `Qa080w SemChat ${RUN}`;
 
 describe('assistants platform — scoreboard, escalation and no assistant prompt — real HTTP, real DB (spec 080, T063)', () => {
   let admin: Pool;
+  // Cells live in the catalog BEFORE this suite's boot sync (see afterAll).
+  let liveCellIds: string[] = [];
   let app: AppComTodasFamilias;
   const previousEnv: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => {
@@ -95,6 +97,7 @@ describe('assistants platform — scoreboard, escalation and no assistant prompt
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: DATABASE_URL });
+    liveCellIds = (await admin.query(`SELECT id FROM iam.permissions WHERE deprecated_at IS NULL`)).rows.map((r) => r.id as string);
     await cleanAgentes();
     await cleanIam();
 
@@ -149,6 +152,9 @@ describe('assistants platform — scoreboard, escalation and no assistant prompt
     await DatabaseConnection.getInstance().close();
     await cleanAgentes();
     await cleanIam();
+    // The boot sync runs against a router with ONLY the assistants routes mounted, so it deprecates every other cell of the shared
+    // catalog (`deprecate_missing_permission_cells`). Restore them, otherwise later suites get 403 missing_cell (backend-e2e never runs the sync).
+    await admin.query(`UPDATE iam.permissions SET deprecated_at = NULL WHERE id = ANY($1::uuid[])`, [liveCellIds]);
     await admin.query(`DELETE FROM iam.rollout_state WHERE key = 'permission_groups_migrated'`);
     await admin.end();
     for (const [k, v] of Object.entries(previousEnv)) {

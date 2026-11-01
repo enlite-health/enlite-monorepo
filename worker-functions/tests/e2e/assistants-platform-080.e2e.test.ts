@@ -61,6 +61,8 @@ const serviceAuth = (o: Partial<{ email: string; email_verified: boolean; aud: s
 
 describe('assistants platform — two identities, reach and the 1st key — real HTTP, real DB, engine ON (spec 080, T061)', () => {
   let admin: Pool;
+  // Cells live in the catalog BEFORE this suite's boot sync (see afterAll).
+  let liveCellIds: string[] = [];
   let app: AppComTodasFamilias;
   let regularGroupId: string;
   const previousEnv: Record<string, string | undefined> = {};
@@ -116,6 +118,7 @@ describe('assistants platform — two identities, reach and the 1st key — real
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: DATABASE_URL });
+    liveCellIds = (await admin.query(`SELECT id FROM iam.permissions WHERE deprecated_at IS NULL`)).rows.map((r) => r.id as string);
     await cleanIam();
 
     setEnv('USE_MOCK_AUTH', 'true');
@@ -158,6 +161,9 @@ describe('assistants platform — two identities, reach and the 1st key — real
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await cleanIam();
+    // The boot sync runs against a router with ONLY the assistants routes mounted, so it deprecates every other cell of the shared
+    // catalog (`deprecate_missing_permission_cells`). Restore them, otherwise later suites get 403 missing_cell (backend-e2e never runs the sync).
+    await admin.query(`UPDATE iam.permissions SET deprecated_at = NULL WHERE id = ANY($1::uuid[])`, [liveCellIds]);
     await admin.query(`DELETE FROM iam.rollout_state WHERE key = 'permission_groups_migrated'`);
     await admin.end();
     for (const [k, v] of Object.entries(previousEnv)) {
