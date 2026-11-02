@@ -7125,6 +7125,75 @@
           "regra": "Regla: 6 meses seguidos aceptadas sin rechazar ni comentar"
         }
       }
+    },
+    "custos": {
+      "title": "Costos de la plataforma",
+      "subtitle": "Facturación de GCP por mes, servicio, recurso, sector y llamador de IA. Solo lectura.",
+      "authzLoading": "Cargando permisos…",
+      "authzError": "No se pudieron cargar tus permisos. Probá recargar la página.",
+      "sync": "Sincronizar",
+      "syncing": "Sincronizando…",
+      "retry": "Probar de nuevo",
+      "idle": "Sin datos todavía. Hacé clic en Sincronizar para consultar la facturación.",
+      "emptyMonth": "El export de facturación no tiene filas para este mes todavía.",
+      "dataUntil": "Datos de facturación hasta {{date}}",
+      "stale": "El export está atrasado: los últimos datos tienen más de 36 horas.",
+      "errors": {
+        "generic": "No pudimos consultar la facturación. Probá de nuevo.",
+        "bytesLimit": "La consulta superó el límite de bytes permitido (1 GiB) y se canceló sin costo extra. Avisá al equipo técnico.",
+        "rateLimited": "Sincronizaste hace poco. Esperá {{seconds}} s y probá de nuevo.",
+        "forbidden": "No tenés permiso para ver los costos de la plataforma."
+      },
+      "cards": {
+        "month": "Mes en curso",
+        "forecast": "Previsión del mes",
+        "forecastBasis": "estimación lineal",
+        "forecastUnavailable": "Sin días suficientes para estimar",
+        "prevToDate": "Mes anterior hasta el mismo día",
+        "prevClosed": "Mes anterior cerrado",
+        "noValue": "—",
+        "variation": "{{pct}} frente a este valor"
+      },
+      "months": {
+        "title": "Últimos 6 meses"
+      },
+      "columns": {
+        "service": "Servicio",
+        "name": "Servicio o recurso",
+        "resource": "Recurso",
+        "sector": "Sector",
+        "caller": "Llamador",
+        "function": "Función",
+        "cost": "Costo",
+        "kind": "Tipo",
+        "dayValue": "Valor del día",
+        "median7": "Mediana de los 7 días anteriores",
+        "factor": "Factor"
+      },
+      "tables": {
+        "service": "Por servicio de GCP",
+        "resource": "Por recurso",
+        "sector": "Por sector",
+        "aiCaller": "IA por llamador",
+        "empty": "Sin filas para este mes.",
+        "noSector": "sin sector",
+        "noResource": "sin recurso",
+        "noCaller": "sin llamador"
+      },
+      "badges": {
+        "estimated": "estimado",
+        "unattributed": "no atribuido",
+        "new": "nuevo"
+      },
+      "anomalies": {
+        "title": "Anomalías",
+        "insufficient": "Historial insuficiente: hace falta al menos 7 días de datos.",
+        "none": "Sin anomalías en la ventana.",
+        "kind": {
+          "service": "Servicio",
+          "resource": "Recurso"
+        }
+      }
     }
   },
   "publicVacancy": {

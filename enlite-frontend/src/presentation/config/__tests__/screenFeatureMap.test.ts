@@ -65,6 +65,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'enquadres',
   // Spec 078 (M3b-1): pedidos do Sol — gateada pela célula `pedidos_ia:read` (e `decidir` nos botões), não por país.
   'pedidos-ia',
+  // Spec 082: painel de custos — gateado pela célula só-Master `platform_costs:read`, não por país; sem item de menu (DF-2).
+  'custos',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */
