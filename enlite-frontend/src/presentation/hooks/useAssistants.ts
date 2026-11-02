@@ -4,6 +4,7 @@
  * The tab (active assistant) is remembered in `localStorage` (`assistants.tab`), always inside try/catch.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAdminAuthStore } from "@presentation/stores/adminAuthStore";
 import { AdminAssistantsApiService } from "@infrastructure/http/AdminAssistantsApiService";
 import {
   AssistantError,
@@ -85,15 +86,21 @@ export function useAssistants(): UseAssistants {
   const [historyError, setHistoryError] = useState(false);
   const seq = useRef(0);
 
+  // Group simulation (spec 026) changes who the actor is for the backend: re-read the list on start / switch / end.
+  const simulationGroupId = useAdminAuthStore((s) => s.authz?.simulation?.groupId ?? null);
+
   useEffect(() => {
     let alive = true;
+    // Fail-closed: the previous identity's assistants/conversations must not stay on screen while the new list loads.
+    setAssistants([]);
+    setBySlug({});
     AdminAssistantsApiService.list()
       .then((l) => alive && setAssistants(l))
       .catch(() => alive && setAssistants([]));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [simulationGroupId]);
 
   const active =
     assistants.find((a) => a.slug === tabSlug) ?? assistants[0] ?? null;
