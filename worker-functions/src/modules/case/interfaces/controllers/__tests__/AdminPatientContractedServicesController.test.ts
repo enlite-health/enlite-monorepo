@@ -513,6 +513,16 @@ describe('AdminPatientContractedServicesController', () => {
       expect(res.json).toHaveBeenCalledWith({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: 'vac-old' });
     });
 
+    it('409 quando o paciente já tem vaga vinculável — LINKABLE_VACANCY_EXISTS com os ids (o foguete usa o vínculo)', async () => {
+      const { LinkableVacancyExistsError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+      const useCase = { execute: jest.fn().mockRejectedValue(new LinkableVacancyExistsError(PATIENT_ID, SERVICE_ID, ['vac-legada'])) };
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({ success: false, code: 'LINKABLE_VACANCY_EXISTS', vacancyIds: ['vac-legada'] });
+    });
+
     it('422 quando o gate recusa — devolve PATIENT_NOT_READY com details.missing', async () => {
       const { RecruitmentNotReadyError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
       const useCase = { execute: jest.fn().mockRejectedValue(new RecruitmentNotReadyError(PATIENT_ID, SERVICE_ID, ['SERVICE_SCHEDULE'])) };

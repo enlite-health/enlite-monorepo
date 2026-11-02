@@ -44,6 +44,7 @@ import {
   ServiceNotFoundForRecruitmentError,
   ServiceAlreadyRecruitingError,
   RecruitmentNotReadyError,
+  LinkableVacancyExistsError,
 } from '../ActivateRecruitmentUseCase';
 import { PatientStatusNotReadyError } from '../PatientStatusWriter';
 import { esperaSqlSemDadoClinico } from '../../../matching/__tests__/guardaVazamentoClinico';
@@ -80,6 +81,8 @@ interface DispatchOpts {
     daily_obs?: string | null;
   } | null;
   existingVacancyId?: string | null;
+  /** Vagas VIVAS do paciente (resultado da lista do vínculo, spec 079). Default: nenhuma. */
+  patientVacancies?: Array<{ id: string; status?: string | null; contractedServiceId?: string | null }>;
   vacancyNumber?: number;
   insertedId?: string;
   /** T019 — força o INSERT do audit (dentro do SAVEPOINT) a rejeitar. */
@@ -135,6 +138,14 @@ function makeClient(opts: DispatchOpts) {
       return opts.existingVacancyId
         ? { rowCount: 1, rows: [{ id: opts.existingVacancyId }] }
         : { rowCount: 0, rows: [] };
+    }
+    if (sql.includes('FROM job_postings jp') && sql.includes('WHERE jp.patient_id = $1')) {
+      return {
+        rows: (opts.patientVacancies ?? []).map((v) => ({
+          id: v.id, caseNumber: 100, caseOrdinal: 1, vacancyNumber: 7, title: 'CASO', status: v.status ?? 'SEARCHING',
+          isDraft: false, contractedServiceId: v.contractedServiceId ?? null, createdAt: new Date('2026-01-01'),
+        })),
+      };
     }
     if (sql.includes('nextval')) {
       return { rows: [{ vn: String(opts.vacancyNumber ?? 100) }] };
@@ -377,7 +388,15 @@ describe('ActivateRecruitmentUseCase', () => {
     it('as queries do use case não puxam dado clínico do paciente (S.5)', async () => {
       const { promise, client } = run({ patientRow: ADMISSION_PATIENT, serviceRow: READY_SERVICE });
       await promise;
-      esperaSqlSemDadoClinico((client.query as jest.Mock).mock.calls);
+      const calls = (client.query as jest.Mock).mock.calls;
+      // A lista de vagas do paciente (079, reusada do vínculo) faz LEFT JOIN patients SÓ para `case_number` (número do caso,
+      // não clínico): a guarda genérica de JOIN não a admite, então ela tem a guarda própria abaixo (só `p.case_number`/`p.id`).
+      const isVacancyList = (c: unknown[]) => String(c[0]).includes('WHERE jp.patient_id = $1');
+      esperaSqlSemDadoClinico(calls.filter((c) => !isVacancyList(c)));
+      const listSql = String(calls.find(isVacancyList)?.[0] ?? '');
+      expect(listSql).not.toBe('');
+      expect(listSql).not.toMatch(/diagnosis|diagnostico|patholog|patolog/i);
+      expect(new Set(listSql.match(/\bp\.\w+/g))).toEqual(new Set(['p.case_number', 'p.id']));
     });
 
     it('o SELECT do serviço lê os 5 campos copiados e NÃO lê worker_attributes/daily_obs', async () => {
@@ -416,6 +435,45 @@ describe('ActivateRecruitmentUseCase', () => {
     await expect(promise).rejects.toMatchObject({
       constructor: ServiceAlreadyRecruitingError,
       vacancyId: 'vac-existente',
+    });
+  });
+
+  describe('o foguete usa o vínculo — paciente com vaga vinculável (spec 079)', () => {
+    const PATIENT = { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' };
+
+    it('409 — vaga legada (sem serviço) do paciente: lança LinkableVacancyExistsError com os ids e NÃO faz INSERT nem move o paciente', async () => {
+      const { promise, client } = run({
+        patientRow: PATIENT,
+        serviceRow: READY_SERVICE,
+        patientVacancies: [{ id: 'vac-legada-1' }, { id: 'vac-legada-2', status: 'CLOSED' }],
+      });
+      await expect(promise).rejects.toMatchObject({
+        constructor: LinkableVacancyExistsError,
+        patientId: PATIENT_ID,
+        serviceId: SERVICE_ID,
+        vacancyIds: ['vac-legada-1', 'vac-legada-2'],
+      });
+      const sqls = client.query.mock.calls.map((c) => String(c[0]));
+      expect(sqls.some((q) => q.startsWith('INSERT INTO job_postings'))).toBe(false);
+      expect(sqls.some((q) => q.includes('nextval'))).toBe(false);
+      expect(mockBuildInsertParams).not.toHaveBeenCalled();
+      expect(mockMovePatientStatus).not.toHaveBeenCalled();
+    });
+
+    it('vagas NÃO vinculáveis (já ligada a outro serviço, DE_BAJA) não travam: cria a vaga como antes', async () => {
+      const { promise, client } = run({
+        patientRow: PATIENT,
+        serviceRow: READY_SERVICE,
+        patientVacancies: [{ id: 'vac-de-outro-servico', contractedServiceId: 's-outro' }, { id: 'vac-baja', status: 'DE_BAJA' }],
+        insertedId: 'vac-nova',
+      });
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-nova' });
+      expect(client.query.mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO job_postings'))).toBe(true);
+    });
+
+    it('paciente sem nenhuma vaga: cria a vaga como antes', async () => {
+      const { promise } = run({ patientRow: PATIENT, serviceRow: READY_SERVICE, patientVacancies: [], insertedId: 'vac-nova' });
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-nova', statusChanged: true });
     });
   });
 
@@ -665,6 +723,7 @@ describe('ActivateRecruitmentUseCase', () => {
         if (sql.includes('FROM job_postings WHERE contracted_service_id')) {
           return { rowCount: undefined, rows: [] };
         }
+        if (sql.includes('FROM job_postings jp') && sql.includes('WHERE jp.patient_id = $1')) return { rows: [] }; // 079: paciente sem vaga vinculável
         if (sql.includes('nextval')) return { rows: [{ vn: '1' }] };
         if (sql === "SELECT set_config('app.change_source', $1, true)") return {};
         if (sql.includes('UPDATE patients SET status')) return {};
@@ -791,6 +850,7 @@ describe('ActivateRecruitmentUseCase', () => {
           if (sql.includes('FROM job_postings WHERE contracted_service_id')) {
             return { rowCount: 0, rows: [] };
           }
+          if (sql.includes('FROM job_postings jp') && sql.includes('WHERE jp.patient_id = $1')) return { rows: [] }; // 079: paciente sem vaga vinculável
           if (sql.includes('nextval')) return { rows: [{ vn: '700' }] };
           if (sql === "SELECT set_config('app.change_source', $1, true)") return {};
           if (sql.includes('UPDATE patients SET status')) return {};
@@ -836,6 +896,7 @@ describe('ActivateRecruitmentUseCase', () => {
             return { rowCount: 1, rows: [READY_SERVICE] };
           }
           if (sql.includes('FROM job_postings WHERE contracted_service_id')) return { rowCount: 0, rows: [] };
+          if (sql.includes('FROM job_postings jp') && sql.includes('WHERE jp.patient_id = $1')) return { rows: [] }; // 079: paciente sem vaga vinculável
           if (sql.includes('nextval')) return { rows: [{ vn: '701' }] };
           if (sql.startsWith('INSERT INTO job_postings')) {
             insertAttempts += 1;

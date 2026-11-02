@@ -31,3 +31,21 @@ export function vacancyLinkEligibility(
   if (vacancy.status === 'DE_BAJA') return { eligible: false, reason: 'DE_BAJA' };
   return { eligible: true };
 }
+
+/**
+ * Candidatas do vínculo entre as vagas VIVAS de um paciente: as que `vacancyLinkEligibility` aprova.
+ * Fonte única da lista do preview do vínculo (079) e da trava do foguete (`ActivateRecruitmentUseCase`) —
+ * as duas nunca divergem sobre o que é "vaga vinculável". Entrada já sem apagadas (`deleted_at IS NULL` na query).
+ */
+export function linkableVacancies<T extends { contractedServiceId: string | null; status: string | null }>(
+  vacancies: readonly T[],
+  patientId: string,
+): T[] {
+  return vacancies.filter(
+    (v) =>
+      vacancyLinkEligibility(
+        { patientId, contractedServiceId: v.contractedServiceId, deletedAt: null, status: v.status },
+        { patientId },
+      ).eligible,
+  );
+}

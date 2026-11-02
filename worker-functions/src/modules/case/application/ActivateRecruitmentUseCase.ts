@@ -19,6 +19,8 @@ import {
 import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
 import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWriter";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
+import { LinkExistingVacancyRepository } from "../infrastructure/LinkExistingVacancyRepository";
+import { linkableVacancies } from "../domain/VacancyLinkEligibility";
 import {
   lockRecruitmentContext,
   readinessInputFromContext,
@@ -47,6 +49,22 @@ export class RecruitmentNotReadyError extends Error {
   }
 }
 
+/**
+ * O paciente já tem vaga vinculável (sem serviço, viva, não DE_BAJA — a MESMA régua do vínculo, spec 079):
+ * criar outra duplicaria a vaga e deixaria o Kanban antigo órfão. Nada foi gravado. O controller mapeia para
+ * 409 `LINKABLE_VACANCY_EXISTS`; a tela abre o modal "Vincular vaga existente".
+ */
+export class LinkableVacancyExistsError extends Error {
+  constructor(
+    readonly patientId: string,
+    readonly serviceId: string,
+    readonly vacancyIds: string[],
+  ) {
+    super(`Patient already has a linkable vacancy (serviceId=${serviceId}): ${vacancyIds.join(", ")}`);
+    this.name = "LinkableVacancyExistsError";
+  }
+}
+
 export interface ActivateRecruitmentResult {
   vacancyId: string;
   patientStatus: string;
@@ -67,7 +85,7 @@ export interface ActivateRecruitmentResult {
  * independente dos demais.
  *
  * Efeitos em UMA transação: lock de linha do paciente e do serviço (`lockRecruitmentContext`) (trava a mesma corrida
- * que o antecessor travava); gate `RECRUITMENT_BLOCKING_CODES`; 409 se já há vaga viva do
+ * que o antecessor travava); 409 `LinkableVacancyExistsError` se o paciente já tem vaga vinculável (sem serviço); gate `RECRUITMENT_BLOCKING_CODES`; 409 se já há vaga viva do
  * serviço; 1 INSERT em `job_postings` via `buildInsertQuery/buildInsertParams` (mesmo caminho de
  * `POST /api/admin/vacancies` — nunca SQL duplicado). D469 (02/10/2026, revê a D434): se o
  * paciente está no funil de admissão (SOLICITANTE/ADMISSION/PENDING_ADMISSION), o foguete o move
@@ -82,6 +100,8 @@ export interface ActivateRecruitmentResult {
  * antecessor.
  */
 export class ActivateRecruitmentUseCase {
+  constructor(private readonly linkRepo: LinkExistingVacancyRepository = new LinkExistingVacancyRepository()) {}
+
   async execute(
     patientId: string,
     serviceId: string,
@@ -105,6 +125,7 @@ export class ActivateRecruitmentUseCase {
         err instanceof PatientNotFoundForRecruitmentError ||
         err instanceof ServiceNotFoundForRecruitmentError ||
         err instanceof ServiceAlreadyRecruitingError ||
+        err instanceof LinkableVacancyExistsError ||
         err instanceof RecruitmentNotReadyError;
       if (!expected) {
         functions.logger.error("activate_recruitment.failed", {
@@ -126,6 +147,13 @@ export class ActivateRecruitmentUseCase {
   ): Promise<ActivateRecruitmentResult> {
     const { patient, service } = await lockRecruitmentContext(client, patientId, serviceId);
     const { status, case_number } = patient;
+
+    // Um serviço = UMA vaga: se o paciente já tem vaga sem serviço (legada), ela se VINCULA (spec 079), não se duplica.
+    // Mesma transação e mesma régua do preview do vínculo (`linkableVacancies`); antes do portão e de qualquer escrita.
+    const linkable = linkableVacancies(await this.linkRepo.listPatientVacanciesForLink(client, patientId), patientId);
+    if (linkable.length > 0) {
+      throw new LinkableVacancyExistsError(patientId, serviceId, linkable.map((v) => v.id));
+    }
 
     const { missing, ready } = computeRecruitmentReadiness(readinessInputFromContext({ patient, service }));
     if (!ready) {
