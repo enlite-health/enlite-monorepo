@@ -16,6 +16,7 @@ import {
 import { ChevronDown, Lock, Minus, Send, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PersonAvatar } from "@presentation/components/atoms/PersonAvatar";
+import { MessageMarkdown } from "@presentation/components/shared/MessageMarkdown/MessageMarkdown";
 import type { UseAssistants } from "@presentation/hooks/useAssistants";
 
 interface Props {
@@ -31,6 +32,8 @@ interface Props {
 
 const COMPOSER_MIN_PX = 36;
 const COMPOSER_MAX_PX = 90; // 4 lines of 18px + padding + border
+// Assistant bubble: inherits the 12.5px / #262626 of the bubble, tight gap between blocks and items.
+const ASSISTANT_MARKDOWN_CLASS = "break-words [&>*+*]:mt-2 [&_li+li]:mt-1";
 
 export function AssistantsPanel({
   assistants: a,
@@ -335,13 +338,17 @@ export function AssistantsPanel({
           <div
             key={m.id}
             data-testid={`assistants-msg-${m.id}`}
-            className={`max-w-[86%] whitespace-pre-wrap break-words rounded-[14px] px-[11px] py-[9px] ${
+            className={`max-w-[86%] break-words rounded-[14px] px-[11px] py-[9px] ${
               m.author === "PERSON"
-                ? "justify-self-end rounded-br-[4px] bg-primary text-white"
+                ? "justify-self-end whitespace-pre-wrap rounded-br-[4px] bg-primary text-white"
                 : "justify-self-start rounded-bl-[4px] bg-gray-200 text-[#262626]"
             }`}
           >
-            {m.text}
+            {m.author === "PERSON" ? (
+              m.text
+            ) : (
+              <MessageMarkdown body={m.text} className={ASSISTANT_MARKDOWN_CLASS} />
+            )}
           </div>
         ))}
         {a.waiting && (

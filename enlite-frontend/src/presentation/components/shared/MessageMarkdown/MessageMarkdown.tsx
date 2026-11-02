@@ -21,10 +21,15 @@ const BLOCK_TEXT = 'whitespace-pre-wrap break-words';
 
 interface MessageMarkdownProps {
   body: string;
-  /** uids CONFIRMADOS pelo servidor; token fora deste conjunto fica como texto cru. */
-  mentions: readonly string[];
-  renderMention: (uid: string) => ReactNode;
+  /** uids CONFIRMADOS pelo servidor; token fora deste conjunto fica como texto cru. Sem menções: omitir. */
+  mentions?: readonly string[];
+  renderMention?: (uid: string) => ReactNode;
+  /** Classes do contêiner no lugar do padrão do chat do paciente (tamanho de fonte e espaço entre blocos). */
+  className?: string;
 }
+
+const DEFAULT_CLASS_NAME = 'text-sm break-words [&>*+*]:mt-5';
+const NO_MENTIONS: readonly string[] = [];
 
 /**
  * Troca cada `<@uid>` confirmado por `[@](#mention-<i>)` ANTES do parse (plan D2): o uid vem do
@@ -41,11 +46,11 @@ function replaceMentions(body: string, mentions: readonly string[]): { text: str
   return { text, uids };
 }
 
-function buildComponents(uids: string[], renderMention: (uid: string) => ReactNode): Components {
+function buildComponents(uids: string[], renderMention?: (uid: string) => ReactNode): Components {
   return {
     a: ({ href, children }) => {
       const mention = MENTION_HREF.exec(href ?? '');
-      if (mention && uids[Number(mention[1])] !== undefined) {
+      if (mention && renderMention && uids[Number(mention[1])] !== undefined) {
         return <>{renderMention(uids[Number(mention[1])])}</>;
       }
       const target = (href ?? '').trim();
@@ -99,14 +104,19 @@ function buildComponents(uids: string[], renderMention: (uid: string) => ReactNo
 }
 
 /**
- * Corpo da mensagem do chat do paciente em markdown seguro: whitelist de elementos, sem HTML cru,
+ * Corpo de mensagem de chat (paciente e assistentes) em markdown seguro: whitelist de elementos, sem HTML cru,
  * links só http/https/mailto e menção confirmada como chip. Puro: sem estado, sem efeito e sem
  * log (o corpo pode ser texto clínico).
  */
-export function MessageMarkdown({ body, mentions, renderMention }: MessageMarkdownProps): JSX.Element {
+export function MessageMarkdown({
+  body,
+  mentions = NO_MENTIONS,
+  renderMention,
+  className = DEFAULT_CLASS_NAME,
+}: MessageMarkdownProps): JSX.Element {
   const { text, uids } = replaceMentions(normalizeLooseTables(body), mentions);
   return (
-    <div className="text-sm break-words [&>*+*]:mt-5">
+    <div className={className}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         allowedElements={ALLOWED}
