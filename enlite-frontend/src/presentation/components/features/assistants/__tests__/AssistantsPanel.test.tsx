@@ -552,3 +552,52 @@ describe("AssistantsPanel — selector, scroll, composer (mockup)", () => {
     expect(typing.querySelectorAll("i")).toHaveLength(3);
   });
 });
+
+describe("AssistantsPanel — assistant replies in markdown", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    void i18n.changeLanguage("es");
+    svc.markRead.mockResolvedValue(undefined);
+  });
+
+  const withHistory = (assistantText: string, personText = "**mío**") => {
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    svc.messages.mockResolvedValue({
+      conversation_id: "c1",
+      messages: [
+        { id: "m1", author: "PERSON", text: personText, tools: [], validator: null, created_at: "2026-10-30T10:00:00Z" },
+        { id: "m2", author: "ASSISTANT", text: assistantText, tools: [], validator: null, created_at: "2026-10-30T10:00:01Z" },
+      ],
+    });
+  };
+
+  it("assistant bubble: **bold** becomes <strong>, '*' bullets become a list, no literal markdown left", async () => {
+    withHistory("**Ver** algo\n\n* item um\n* item dois");
+    render(<AssistantsWidget />);
+    await abrir();
+    const bubble = await screen.findByTestId("assistants-msg-m2");
+    expect(bubble.querySelector("strong")?.textContent).toBe("Ver");
+    expect(bubble.querySelectorAll("ul > li")).toHaveLength(2);
+    expect(bubble.textContent).not.toContain("**");
+    expect(bubble.textContent).not.toContain("* item");
+  });
+
+  it("assistant bubble: raw HTML never becomes HTML (no <img>, no handler)", async () => {
+    withHistory("hola <img src=x onerror=alert(1)> chau");
+    render(<AssistantsWidget />);
+    await abrir();
+    const bubble = await screen.findByTestId("assistants-msg-m2");
+    expect(bubble.querySelector("img")).toBeNull();
+    expect(bubble.querySelector("[onerror]")).toBeNull();
+  });
+
+  it("the person's own bubble stays plain text (markdown is not interpreted)", async () => {
+    withHistory("ok", "**mío**");
+    render(<AssistantsWidget />);
+    await abrir();
+    const mine = await screen.findByTestId("assistants-msg-m1");
+    expect(mine.querySelector("strong")).toBeNull();
+    expect(mine.textContent).toBe("**mío**");
+  });
+});

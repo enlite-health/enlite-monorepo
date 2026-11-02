@@ -9,7 +9,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { InlineLoadingState } from '@presentation/components/molecules/InlineLoadingState/InlineLoadingState';
 import { MessageAvatar } from './MessageAvatar';
 import { MessageAttachments } from './MessageAttachments';
-import { MessageMarkdown } from './MessageMarkdown';
+import { MessageMarkdown } from '@presentation/components/shared/MessageMarkdown/MessageMarkdown';
 import { formatMessageDateTime } from './messageDateFormat';
 
 /** Chip de UMA menção confirmada — nome de exibição, nesta ordem (item 5a, change

@@ -41,7 +41,9 @@ const assistant = (slug: string, name: string, over: Partial<StubAssistant> = {}
 });
 
 const HISTORY_TEXT = `HISTORIAL-FIJO-${RUN_ID}`;
-const REPLY_TEXT = `RESPUESTA-FIJA-${RUN_ID}`;
+const REPLY_BOLD = `RESPUESTA-FIJA-${RUN_ID}`;
+// A resposta do assistente chega em markdown (negrito + bullets com `*`) e deve aparecer renderizada.
+const REPLY_TEXT = `**${REPLY_BOLD}**\n\n* item uno\n* item dos`;
 const SENT_TEXT = `Hola ${RUN_ID}`;
 
 interface Served { method: string; path: string; body: unknown }
@@ -139,7 +141,11 @@ test.describe('Assistentes no app — o widget que a pessoa ve @integration', ()
     await expect(composer).toHaveValue(SENT_TEXT);
     await page.getByTestId('assistants-send').click();
 
-    await expect(panel.getByTestId('assistants-msg-m-reply')).toHaveText(REPLY_TEXT);
+    const reply = panel.getByTestId('assistants-msg-m-reply');
+    await expect(reply.locator('strong')).toHaveText(REPLY_BOLD);
+    await expect(reply.locator('li')).toHaveCount(2);
+    await expect(reply).not.toContainText('**');
+    await expect(reply).not.toContainText('* item');
     await expect(panel).toContainText(SENT_TEXT); // o que a pessoa digitou ficou na conversa
     await expect(composer).toHaveValue('');
     const post = served.filter((s) => s.method === 'POST' && s.path === '/assistants/recruiting/messages');
