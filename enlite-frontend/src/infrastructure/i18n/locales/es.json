@@ -5263,6 +5263,7 @@
             "tag": "Catálogo de etiquetas",
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
+            "platform_costs": "Costos de la plataforma",
             "recruitment_activity_per_person": "Actividad del embudo por reclutadora",
             "assistant_scoreboard": "Placar de los agentes",
             "assistant_escalation": "Reporte del asistente",
@@ -5668,6 +5669,9 @@
         "groupsLoadError": "No se pudieron cargar los grupos."
       },
       "screens": {
+        "custos": {
+          "label": "Costos de la plataforma"
+        },
         "dashboard": {
           "label": "Gestión a la Vista",
           "containers": {

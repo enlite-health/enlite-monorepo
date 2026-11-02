@@ -1,3 +1,4 @@
+import { utcCivilDayOf } from '../../../shared/locale/civilClock';
 import { addDays, addMonths, buildWindow, daysInMonth, isMonthKey, monthStartOf } from '../domain/dates';
 import { detectAnomalies } from '../domain/detectAnomalies';
 import { forecastMonth } from '../domain/forecastMonth';
@@ -31,7 +32,7 @@ export class GetCostOverviewUseCase {
   ) {}
 
   async execute(month?: string): Promise<CostOverview> {
-    const today = this.now().toISOString().slice(0, 10);
+    const today = utcCivilDayOf(this.now());
     const target: MonthKey = month ?? today.slice(0, 7);
     if (!isMonthKey(target)) throw new InvalidMonthError();
 

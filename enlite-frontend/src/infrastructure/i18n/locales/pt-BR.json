@@ -5184,6 +5184,7 @@
             "tag": "Catálogo de etiquetas",
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
+            "platform_costs": "Custos da plataforma",
             "recruitment_activity_per_person": "Atividade do funil por recrutadora",
             "assistant_scoreboard": "Placar dos agentes",
             "assistant_escalation": "Relatório do assistente",
@@ -5589,6 +5590,9 @@
         "groupsLoadError": "Não foi possível carregar os grupos."
       },
       "screens": {
+        "custos": {
+          "label": "Custos da plataforma"
+        },
         "dashboard": {
           "label": "Gestão à Vista",
           "containers": {

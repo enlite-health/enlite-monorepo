@@ -1,3 +1,4 @@
+import { utcCivilDayOf } from '../../../shared/locale/civilClock';
 import type { BillingWindow, DayKey, MonthKey } from './types';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -8,7 +9,7 @@ export function dayToMs(day: DayKey): number {
 }
 
 export function msToDay(ms: number): DayKey {
-  return new Date(ms).toISOString().slice(0, 10);
+  return utcCivilDayOf(new Date(ms));
 }
 
 export function addDays(day: DayKey, n: number): DayKey {
