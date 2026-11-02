@@ -35,7 +35,10 @@ export function createAdminCostsRoutes(
         return void res.status(429).json({ success: false, code: 'sync_rate_limited', retryAfterSeconds: err.retryAfterSeconds });
       }
       const code = err instanceof BillingReadError ? err.code : 'billing_query_failed';
-      logger.warn({ code }, 'costs overview failed');
+      // Causa para diagnóstico: code/reason/name apenas, nunca `message` nem SQL.
+      const reason = err instanceof BillingReadError ? err.reason : undefined;
+      const name = err instanceof BillingReadError ? err.causeName : err instanceof Error ? err.name : undefined;
+      logger.warn({ code, reason, name }, 'costs overview failed');
       res.status(502).json({ success: false, code });
     }
   });

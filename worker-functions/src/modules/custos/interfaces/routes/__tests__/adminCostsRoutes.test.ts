@@ -12,6 +12,7 @@ jest.mock('@shared/logging', () => ({
   loggingAls: { getStore: () => undefined },
 }));
 
+import { logger } from '@shared/logging';
 import { createAdminCostsRoutes } from '../adminCostsRoutes';
 import { InvalidMonthError } from '../../../application/GetCostOverviewUseCase';
 import { BillingReadError, SyncRateLimitedError, type CostOverview } from '../../../domain/types';
@@ -98,5 +99,17 @@ describe('GET /api/admin/costs/overview', () => {
     const res = await request(build()).get(URL).set(PERSON);
     expect(res.status).toBe(502);
     expect(JSON.stringify(res.body)).not.toContain('SECRET-DETAIL');
+  });
+
+  it('loga code/reason/name da causa e NUNCA o message', async () => {
+    (logger.warn as jest.Mock).mockClear();
+    execute.mockRejectedValue(new BillingReadError('billing_query_failed', 'accessDenied', 'ApiError'));
+    await request(build()).get(URL).set(PERSON);
+    expect(logger.warn).toHaveBeenCalledWith({ code: 'billing_query_failed', reason: 'accessDenied', name: 'ApiError' }, 'costs overview failed');
+    execute.mockRejectedValue(new Error('SECRET-DETAIL'));
+    await request(build()).get(URL).set(PERSON);
+    const logged = JSON.stringify((logger.warn as jest.Mock).mock.calls);
+    expect(logged).not.toContain('SECRET-DETAIL');
+    expect(logger.warn).toHaveBeenLastCalledWith({ code: 'billing_query_failed', reason: undefined, name: 'Error' }, 'costs overview failed');
   });
 });

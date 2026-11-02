@@ -1,12 +1,13 @@
 /** Formatação do painel de custos (spec 082): dinheiro na moeda da RESPOSTA, variação %, atraso do export. */
 
-const HORAS_ATRASO = 36;
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { localeForLanguage } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
 
-export const locale = (language: string | undefined): string => (language === 'pt-BR' ? 'pt-BR' : 'es-AR');
+const HORAS_ATRASO = 36;
 
 /** Valor na `currency` da resposta; sem moeda (estado vazio) cai para número puro. */
 export function formatMoney(value: number, currency: string | null, language: string | undefined): string {
-  const loc = locale(language);
+  const loc = localeForLanguage(language);
   if (!currency) return new Intl.NumberFormat(loc, { maximumFractionDigits: 2 }).format(value);
   return new Intl.NumberFormat(loc, { style: 'currency', currency }).format(value);
 }
@@ -15,7 +16,7 @@ export function formatMoney(value: number, currency: string | null, language: st
 export function formatVariation(current: number, base: number | null, language: string | undefined): string | null {
   if (base === null || base === 0) return null;
   const pct = ((current - base) / base) * 100;
-  const txt = new Intl.NumberFormat(locale(language), { maximumFractionDigits: 1, signDisplay: 'exceptZero' }).format(pct);
+  const txt = new Intl.NumberFormat(localeForLanguage(language), { maximumFractionDigits: 1, signDisplay: 'exceptZero' }).format(pct);
   return `${txt}%`;
 }
 
@@ -25,6 +26,9 @@ export function isExportStale(dataUntil: string | null, now: number = Date.now()
   return Number.isFinite(ts) && now - ts > HORAS_ATRASO * 3_600_000;
 }
 
+/** Instante no fuso do operador, 24h (via `formatInstant`); ISO inválido cai para o texto cru. */
 export function formatDateTime(iso: string, language: string | undefined): string {
-  return new Date(iso).toLocaleString(locale(language));
+  return (
+    formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }, localeForLanguage(language)) ?? iso
+  );
 }

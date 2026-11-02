@@ -81,7 +81,7 @@ function isNotFound(err: unknown): boolean {
   return typeof e?.message === 'string' && /(table|dataset) not found/i.test(e.message);
 }
 
-/** Sinal interno: a tabela de `ai_usage` ainda não existe. Nunca sai do leitor. */
+/** Sinal interno: a tabela consultada (billing ou `ai_usage`) ainda não existe. Nunca sai do leitor. */
 class TableMissing extends Error {}
 
 /**
@@ -111,18 +111,8 @@ export class BigQueryBillingReader implements BillingReader {
   async read(w: BillingWindow): Promise<BillingData> {
     const t = `\`${this.table}\``;
     const month = { from: w.monthStart, to: w.monthEndExclusive };
-    const [meta, daily, months, services, resources, sectors, dailyServices, dailyResources, ai, aiEstimated] = await Promise.all([
-      this.run(`SELECT MAX(export_time) AS data_until, ANY_VALUE(currency) AS currency FROM ${t} WHERE ${PARTITION}`, { from: w.prevMonthStart, to: w.monthEndExclusive }),
-      this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY day ORDER BY day`, { from: w.prevMonthStart, to: w.monthEndExclusive }),
-      this.run(`SELECT invoice.month AS month, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY month ORDER BY month`, { from: w.sixMonthsStart, to: w.monthEndExclusive }),
-      this.run(`SELECT service.description AS service, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY service ORDER BY total DESC`, month),
-      this.run(`SELECT service.description AS service, IFNULL(resource.name, '${NONE_KEY}') AS resource, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY service, resource ORDER BY total DESC LIMIT ${TOP_RESOURCES}`, month),
-      this.run(`SELECT IFNULL(${SECTOR}, '${NONE_KEY}') AS sector, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY sector ORDER BY total DESC`, month),
-      this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, service.description AS name, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY day, name`, { from: w.dailyFrom, to: w.dailyToExclusive }),
-      this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, resource.name AS name, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} AND resource.name IS NOT NULL GROUP BY day, name`, { from: w.dailyFrom, to: w.dailyToExclusive }),
-      this.run(`SELECT ${LABEL_SERVICE} AS caller, ${LABEL_FUNCAO} AS funcao, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} AND (service.description LIKE 'Vertex AI%' OR service.description LIKE '%Gemini%') GROUP BY caller, funcao ORDER BY total DESC`, month),
-      this.readAiEstimated(w),
-    ]);
+    const [billingRows, aiEstimated] = await Promise.all([this.readBillingRows(w, t, month), this.readAiEstimated(w)]);
+    const [meta, daily, months, services, resources, sectors, dailyServices, dailyResources, ai] = billingRows;
 
     const sixMonths: MonthTotal[] = months
       .map((r) => ({ month: String(r.month ?? '').replace(/^(\d{4})(\d{2})$/, '$1-$2'), total: num(r.total) }))
@@ -145,6 +135,29 @@ export class BigQueryBillingReader implements BillingReader {
       dailyByService: dailyServices.map((r): DailyCostPoint => ({ kind: 'service', name: str(r.name, NONE_KEY), day: String(r.day), value: num(r.total) })),
       dailyByResource: dailyResources.map((r): DailyCostPoint => ({ kind: 'resource', name: str(r.name, NONE_KEY), day: String(r.day), value: num(r.total) })),
     };
+  }
+
+  /**
+   * As 9 consultas do billing export. Tabela do export ainda inexistente (o Google a cria depois; RF-9) -> listas vazias,
+   * o mesmo shape de "export sem linhas" (estado vazio), em vez de 502.
+   */
+  private async readBillingRows(w: BillingWindow, t: string, month: { from: string; to: string }): Promise<Row[][]> {
+    try {
+      return await Promise.all([
+        this.run(`SELECT MAX(export_time) AS data_until, ANY_VALUE(currency) AS currency FROM ${t} WHERE ${PARTITION}`, { from: w.prevMonthStart, to: w.monthEndExclusive }, true),
+        this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY day ORDER BY day`, { from: w.prevMonthStart, to: w.monthEndExclusive }, true),
+        this.run(`SELECT invoice.month AS month, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY month ORDER BY month`, { from: w.sixMonthsStart, to: w.monthEndExclusive }, true),
+        this.run(`SELECT service.description AS service, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY service ORDER BY total DESC`, month, true),
+        this.run(`SELECT service.description AS service, IFNULL(resource.name, '${NONE_KEY}') AS resource, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY service, resource ORDER BY total DESC LIMIT ${TOP_RESOURCES}`, month, true),
+        this.run(`SELECT IFNULL(${SECTOR}, '${NONE_KEY}') AS sector, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY sector ORDER BY total DESC`, month, true),
+        this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, service.description AS name, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY day, name`, { from: w.dailyFrom, to: w.dailyToExclusive }, true),
+        this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, resource.name AS name, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} AND resource.name IS NOT NULL GROUP BY day, name`, { from: w.dailyFrom, to: w.dailyToExclusive }, true),
+        this.run(`SELECT ${LABEL_SERVICE} AS caller, ${LABEL_FUNCAO} AS funcao, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} AND (service.description LIKE 'Vertex AI%' OR service.description LIKE '%Gemini%') GROUP BY caller, funcao ORDER BY total DESC`, month, true),
+      ]);
+    } catch (err) {
+      if (err instanceof TableMissing) return Array.from({ length: 9 }, () => []);
+      throw err;
+    }
   }
 
   /**
@@ -184,8 +197,11 @@ export class BigQueryBillingReader implements BillingReader {
       return rows as Row[];
     } catch (err) {
       if (missingTableOk && isNotFound(err)) throw new TableMissing();
-      // Código fixo: o texto do erro do BigQuery nunca sai daqui.
-      throw new BillingReadError(isBytesLimit(err) ? 'bytes_limit' : 'billing_query_failed');
+      // Código fixo + reason/name para diagnóstico: o `message` do BigQuery nunca sai daqui.
+      const e = err as { errors?: Array<{ reason?: unknown }>; name?: unknown } | null;
+      const reason = typeof e?.errors?.[0]?.reason === 'string' ? e.errors[0].reason : undefined;
+      const name = typeof e?.name === 'string' ? e.name : undefined;
+      throw new BillingReadError(isBytesLimit(err) ? 'bytes_limit' : 'billing_query_failed', reason, name);
     }
   }
 }

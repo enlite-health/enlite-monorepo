@@ -82,6 +82,22 @@ describe('BigQueryBillingReader (CA-5, parte 1)', () => {
     expect(d).toMatchObject({ currency: null, dataUntil: null, dailyTotals: [], byService: [] });
   });
 
+  it('tabela do billing export inexistente (404 notFound / 400 "Table not found") -> overview vazio, sem erro (RF-9)', async () => {
+    const missing = [
+      Object.assign(new Error('Not found: Table'), { code: 404 }),
+      Object.assign(new Error('x'), { errors: [{ reason: 'notFound' }] }),
+      Object.assign(new Error('failed to analyze: INVALID_ARGUMENT: Table not found: `p.d.t` [at 1:15]'), { code: 400 }),
+    ];
+    for (const m of missing) {
+      const { client } = fakeClient((sql) => (isAi(sql) ? [] : m));
+      const d = await new BigQueryBillingReader(client).read(WINDOW);
+      expect(d).toEqual({
+        currency: null, dataUntil: null, dailyTotals: [], months: [], byService: [], byResource: [], bySector: [], byAiCaller: [],
+        dailyByService: [], dailyByResource: [],
+      });
+    }
+  });
+
   it('erro de limite de bytes -> bytes_limit, sem repassar o texto cru', async () => {
     const raw = Object.assign(new Error('Query exceeded limit for bytes billed: 1073741824. 5000000000 or higher required. SECRET-DETAIL'), {
       errors: [{ reason: 'bytesBilledLimitExceeded' }],
@@ -100,6 +116,14 @@ describe('BigQueryBillingReader (CA-5, parte 1)', () => {
     expect(err).toBeInstanceOf(BillingReadError);
     expect(err.code).toBe('billing_query_failed');
     expect(err.message).not.toContain('SECRET-DETAIL');
+  });
+
+  it('o erro carrega reason (errors[0].reason) e causeName, nunca o message', async () => {
+    const raw = Object.assign(new Error('SECRET-DETAIL'), { name: 'ApiError', errors: [{ reason: 'accessDenied' }] });
+    const { client } = fakeClient(() => raw);
+    const err = await new BigQueryBillingReader(client).read(WINDOW).catch((e) => e);
+    expect(err).toMatchObject({ code: 'billing_query_failed', reason: 'accessDenied', causeName: 'ApiError' });
+    expect(JSON.stringify(err)).not.toContain('SECRET-DETAIL');
   });
 
   it('nome de tabela fora do padrão é recusado (único texto interpolado na SQL)', () => {

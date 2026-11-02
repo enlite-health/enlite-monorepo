@@ -90,7 +90,12 @@ export type BillingErrorCode = 'billing_query_failed' | 'bytes_limit';
 
 /** Erro do leitor. A mensagem é FIXA: nunca carrega o texto cru do BigQuery. */
 export class BillingReadError extends Error {
-  constructor(public readonly code: BillingErrorCode) {
+  /** `reason` = `errors[0].reason` do BigQuery; `causeName` = `name` do erro original. Nunca o `message`. */
+  constructor(
+    public readonly code: BillingErrorCode,
+    public readonly reason?: string,
+    public readonly causeName?: string,
+  ) {
     super(code);
     this.name = 'BillingReadError';
   }
