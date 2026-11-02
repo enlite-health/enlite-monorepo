@@ -154,6 +154,7 @@
     "prescreening:write",
     "recruitment:read",
     "recruitment:write",
+    "recruitment_activity_per_person:read",
     "recruitment_blocked:read",
     "staff_directory:read",
     "tag:create",
