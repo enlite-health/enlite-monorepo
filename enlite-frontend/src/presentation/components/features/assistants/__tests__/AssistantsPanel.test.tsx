@@ -100,16 +100,13 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     expect(screen.getAllByTestId("assistants-composer")).toHaveLength(1);
   });
 
-  it("fixed privacy notice (es.json text) is visible and tied to the composer by aria-describedby", async () => {
+  it("footer shows only the fixed footer line (no privacy notice) and the composer has no aria-describedby", async () => {
     svc.list.mockResolvedValue([ag("maria", "Maria")]);
     render(<AssistantsWidget />);
     await abrir();
-    const notice = screen.getByTestId("assistants-privacy-notice");
-    expect(notice.textContent).toBe(es.admin.assistants.privacyNotice);
-    expect(notice.id).not.toBe("");
-    expect(
-      screen.getByTestId("assistants-composer").getAttribute("aria-describedby"),
-    ).toBe(notice.id);
+    expect(screen.queryByTestId("assistants-privacy-notice")).toBeNull();
+    expect(screen.getByTestId("assistants-footer").textContent).toBe(es.admin.assistants.footer);
+    expect(screen.getByTestId("assistants-composer")).not.toHaveAttribute("aria-describedby");
   });
 
   it("3 assistants, one available:false: 3 options in the list, the unavailable one marked 'en breve', the others 'disponible'", async () => {
@@ -553,14 +550,5 @@ describe("AssistantsPanel — selector, scroll, composer (mockup)", () => {
     const typing = await screen.findByTestId("assistants-typing");
     expect(typing).toHaveAttribute("aria-label", "escribiendo…");
     expect(typing.querySelectorAll("i")).toHaveLength(3);
-  });
-
-  it("privacy notice is in the footer, not in a bordered strip of its own", async () => {
-    svc.list.mockResolvedValue([ag("maria", "Maria")]);
-    render(<AssistantsWidget />);
-    await abrir();
-    const notice = screen.getByTestId("assistants-privacy-notice");
-    expect(notice.parentElement?.className).not.toContain("border");
-    expect(notice.parentElement?.textContent).toContain(es.admin.assistants.footer);
   });
 });

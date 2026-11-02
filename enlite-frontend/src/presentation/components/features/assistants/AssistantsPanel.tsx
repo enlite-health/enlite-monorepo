@@ -41,7 +41,6 @@ export function AssistantsPanel({
 }: Props) {
   const { t } = useTranslation();
   const [pickerOpen, setPickerOpen] = useState(false);
-  const privacyId = useId();
   const listboxId = useId();
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -390,7 +389,6 @@ export function AssistantsPanel({
           ref={composerRef}
           data-testid="assistants-composer"
           aria-label={t("admin.assistants.placeholder")}
-          aria-describedby={privacyId}
           placeholder={t("admin.assistants.placeholder")}
           rows={1}
           value={draft}
@@ -410,12 +408,9 @@ export function AssistantsPanel({
           <Send size={16} aria-hidden="true" />
         </button>
       </div>
-      <div className="px-3 pb-2 text-center text-[10px] leading-snug text-[#404040]">
-        <p id={privacyId} data-testid="assistants-privacy-notice">
-          {t("admin.assistants.privacyNotice")}
-        </p>
-        <p>{t("admin.assistants.footer")}</p>
-      </div>
+      <p className="px-3 pb-2 text-center text-[10px] leading-snug text-[#404040]" data-testid="assistants-footer">
+        {t("admin.assistants.footer")}
+      </p>
     </div>
   );
 }
