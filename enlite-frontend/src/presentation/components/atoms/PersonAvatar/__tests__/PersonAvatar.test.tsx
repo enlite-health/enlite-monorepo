@@ -8,6 +8,17 @@ describe('PersonAvatar (spec 022, Rodada 2/R2-F — núcleo extraído de Message
     expect(screen.getByTestId('person-avatar')).toHaveTextContent('QS');
   });
 
+  it('colorClassName substitui a cor sorteada; ausente, o sorteio continua igual', () => {
+    const { unmount } = render(<PersonAvatar uid="u-1" name="X" />);
+    const sorteada = screen.getByTestId('person-avatar').className;
+    unmount();
+    render(<PersonAvatar uid="u-1" name="X" colorClassName="bg-gray-800" />);
+    const fixa = screen.getByTestId('person-avatar').className;
+    expect(fixa).toContain('bg-gray-800');
+    expect(fixa).not.toMatch(/bg-(primary|new-car|clinic|blue-yonder)/);
+    expect(sorteada).toMatch(/bg-(primary|new-car|clinic|blue-yonder)/);
+  });
+
   it('mesmo uid SEMPRE produz a MESMA cor (determinístico)', () => {
     const { unmount } = render(<PersonAvatar uid="staff-um" name="A" />);
     const class1 = screen.getByTestId('person-avatar').className;
