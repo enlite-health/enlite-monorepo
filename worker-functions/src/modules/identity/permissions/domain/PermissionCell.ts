@@ -124,6 +124,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   ai_prompt: 'Operações',
   // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
   pedidos_ia: 'Operações',
+  // Spec 081 (D602a) — atividade do funil por recrutadora e semana; Acesso Master only. Rota em `recruitmentRoutes.ts`.
+  recruitment_activity_per_person: 'Operações',
   // Spec 080 (assistants in the app) — same home as `pedidos_ia`: routes in the `admin.integrations` family.
   assistant_maria: 'Operações',
   assistant_lucero: 'Operações',
@@ -559,6 +561,9 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // ── Spec 078 (M3b-1) — as 2 células que `adminPedidosIaRoutes` cobra. Grupo "Decisores de pedidos IA" é da operação (a migration 552 não concede).
   'pedidos_ia:read': 'Ver os pedidos do Sol e dos gestores.',
   'pedidos_ia:decidir': 'Aceitar, negar ou redirecionar um pedido.',
+  // ── Spec 081 (T064, D602a) — Acesso Master only: contagens de atividade do funil POR RECRUTADORA e semana.
+  'recruitment_activity_per_person:read':
+    'Ver a atividade do funil de recrutamento POR RECRUTADORA e por semana (movimentos de etapa, trocas de status e edições de perfil — só contagens, sem nome de prestador).',
   // ── Spec 080 — chat with the assistants in the app. Acesso Master only (phase A).
   'assistant_maria:chat': 'Conversar con Maria (gestora de reclutamiento)',
   'assistant_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
@@ -782,6 +787,7 @@ export const KNOWLEDGE_CELLS: readonly string[] = [
 export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
   'pedidos_ia:read',
   'pedidos_ia:decidir',
+  'recruitment_activity_per_person:read',
   ...ASSISTANT_CHAT_CELLS,
   'assistant_scoreboard:read',
   'assistant_escalation:register',

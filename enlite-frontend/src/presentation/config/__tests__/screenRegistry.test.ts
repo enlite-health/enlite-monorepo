@@ -106,6 +106,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'prescreening:write',
       'recruitment:read',
       'recruitment:write',
+      // Spec 081 (T064) — Master-only, sem tela (consumida só pela rota de atividade e pela Maria).
+      'recruitment_activity_per_person:read',
       'staff_directory:read',
       'talentum:write',
       'test_fixtures:execute',

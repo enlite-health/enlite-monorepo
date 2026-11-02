@@ -5184,6 +5184,7 @@
             "tag": "Catálogo de etiquetas",
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
+            "recruitment_activity_per_person": "Atividade do funil por recrutadora",
             "assistant_scoreboard": "Placar dos agentes",
             "assistant_escalation": "Relatório do assistente",
             "assistant_maria": "Assistente Maria",
@@ -7023,6 +7024,27 @@
         "alreadyDecided": "Este pedido já tem uma decisão registrada.",
         "required": "Falta o texto obrigatório.",
         "generic": "Não foi possível concluir a operação. Tente novamente."
+      },
+      "contadores": {
+        "title": "Aceitos sem contestar",
+        "loading": "Carregando contadores…",
+        "error": "Não foi possível carregar os contadores. O resto da página continua funcionando.",
+        "vazio": "Sem pedidos no período.",
+        "semanas": "{{atual}} de {{regua}} semanas seguidas",
+        "atingiu": "Atingiu a régua",
+        "naoAtingiu": "Ainda não atingiu a régua",
+        "ultimaContestacao": "Última contestação: semana de {{semana}}",
+        "semContestacao": "Sem contestações",
+        "pendentes": "Pendentes: {{count}}",
+        "pedidos": "Pedidos: {{count}}",
+        "c1": {
+          "title": "Propostas de outras pessoas artificiais",
+          "regra": "Régua: 1 mês seguido de aceitas sem contestar"
+        },
+        "c2": {
+          "title": "Propostas do próprio Sol",
+          "regra": "Régua: 6 meses seguidos de aceitas sem rejeitar nem comentar"
+        }
       }
     }
   },

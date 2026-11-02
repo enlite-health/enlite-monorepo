@@ -184,3 +184,25 @@ describe('spec 080 — assistants cells (Master-only)', () => {
     expect(resources).toHaveLength(5);
   });
 });
+
+describe('spec 081 (T064) — recruitment_activity_per_person:read (Master-only)', () => {
+  const CELL = 'recruitment_activity_per_person:read';
+
+  it('is a valid cell with description and category, and is Master-only', () => {
+    expect(isValidCellKey(CELL)).toBe(true);
+    expect(CELL_DESCRIPTION[CELL]).toBeTruthy();
+    expect(RESOURCE_CATEGORY['recruitment_activity_per_person']).toBe('Operações');
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has(CELL)).toBe(true);
+  });
+
+  it('granting it to a non-Master group is refused (master_only_cell); the Master passes', () => {
+    let err: unknown;
+    try {
+      assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [CELL]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as { code?: string }).code).toBe('master_only_cell');
+    expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [CELL])).not.toThrow();
+  });
+});

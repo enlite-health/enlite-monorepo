@@ -16,6 +16,7 @@ import {
 } from '@infrastructure/http/AdminPedidosIaApiService';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 import { PedidoPost } from './PedidoPost';
+import { ContadorAceitos } from './ContadorAceitos';
 import { DecisaoModal, type DecisaoModo } from './DecisaoModal';
 import { pedidosIaErrorKey } from './pedidosIaErrors';
 
@@ -124,6 +125,8 @@ export function PedidosIaPage(): JSX.Element {
           {t('admin.pedidosIa.readOnlyNotice')}
         </div>
       )}
+
+      <ContadorAceitos />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="flex flex-col gap-1 text-sm font-medium text-[#262626]">

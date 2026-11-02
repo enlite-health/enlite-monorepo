@@ -298,6 +298,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/workers/missing-documents → analytics:read',
         // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria.
         'GET /api/admin/recruitment/blocked-attempts → recruitment_blocked:read',
+        // Spec 081 (T064b, D602a): atividade por recrutadora e semana — célula só do Acesso Master.
+        'GET /api/admin/recruitment/activity-per-person → recruitment_activity_per_person:read',
         'POST /analytics/dedup/run → dedup:execute',
         // ── A4: admin.messaging (7) + admin.integrations (1) + admin.test_fixtures (1)
         'POST /api/admin/messaging/whatsapp/vacancy-match → messaging:send',
@@ -441,6 +443,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
         // spec 078 (M3b-1) — a página de pedidos do Sol: ver (read) × aceitar/negar/descrever (decidir).
         'GET /api/admin/pedidos-ia → pedidos_ia:read',
+        'GET /api/admin/pedidos-ia/contadores → pedidos_ia:read', // T094 (081)
         'GET /api/admin/pedidos-ia/:id → pedidos_ia:read',
         'POST /api/admin/pedidos-ia/:id/aceitar → pedidos_ia:decidir',
         'POST /api/admin/pedidos-ia/:id/descrever → pedidos_ia:decidir',

@@ -20,6 +20,8 @@ export function createAdminPedidosIaRoutes(
   const perm = permissions.family(ADMIN_INTEGRATIONS_FAMILY);
 
   router.get('/pedidos-ia', staffOnly, perm.require('pedidos_ia', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.list(req, res));
+  // Antes de '/pedidos-ia/:id' (senão 'contadores' casa como id). Mesma célula da página (spec 081 T094).
+  router.get('/pedidos-ia/contadores', staffOnly, perm.require('pedidos_ia', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.contadores(req, res));
   router.get('/pedidos-ia/:id', staffOnly, perm.require('pedidos_ia', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.get(req, res));
   router.post('/pedidos-ia/:id/aceitar', staffOnly, perm.require('pedidos_ia', 'decidir', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.aceitar(req, res));
   router.post('/pedidos-ia/:id/negar', staffOnly, perm.require('pedidos_ia', 'decidir', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.negar(req, res));

@@ -24,6 +24,8 @@ vi.mock('@infrastructure/http/AdminPedidosIaApiService', () => ({
     aceitar: (...a: unknown[]) => api.aceitar(...a),
     negar: (...a: unknown[]) => api.negar(...a),
     descrever: (...a: unknown[]) => api.descrever(...a),
+    // O bloco dos contadores (T098) busca no mount; aqui fica em 'carregando' — o comportamento dele é do ContadorAceitos.test.tsx.
+    getContadores: () => new Promise(() => {}),
   },
 }));
 

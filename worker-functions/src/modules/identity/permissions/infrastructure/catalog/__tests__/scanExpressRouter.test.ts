@@ -450,6 +450,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'ai_prompt:read', 'ai_prompt:update',
       // Spec 078 (pedidos do Sol): descrição em CELL_DESCRIPTION; a rota real é adminPedidosIaRoutes.
       'pedidos_ia:read', 'pedidos_ia:decidir',
+      // Spec 081 (T064): descrição em CELL_DESCRIPTION; a rota real é recruitmentRoutes.ts (T064b).
+      'recruitment_activity_per_person:read',
       // Spec 080 (assistentes no app): 12 células com descrição em CELL_DESCRIPTION; as rotas reais vivem no
       // assistants-service (não neste fixture de 2 rotas), então saem aqui como complemento.
       'assistant_maria:chat', 'assistant_lucero:chat', 'assistant_candela:chat',

@@ -16,6 +16,15 @@ import {
   ListarPedidosIaUseCase,
   ObterPedidoIaUseCase,
 } from '../../application/PedidosIaUseCases';
+import type { ContadoresPedidos } from '../../infrastructure/PedidoContadorQuery';
+
+/** Leitura dos dois contadores (spec 081 T094). Produção: `withActorContext(pool, (c) => consultarContadoresPedidos(c, janela), staffActor(uid))`. */
+export type LerContadoresPedidos = (actorUid: string, janela: { de: Date; ate: Date }) => Promise<ContadoresPedidos>;
+
+const SEMANAS_JANELA_PADRAO = 28; // > 26 (régua do contador 2) + semana parcial
+const MS_SEMANA = 7 * 24 * 3600 * 1000;
+const dataSchema = z.string().refine((v) => /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:\d{2}))?$/.test(v) && !Number.isNaN(Date.parse(v)));
+const janelaSchema = z.object({ de: dataSchema.optional(), ate: dataSchema.optional() });
 
 const idSchema = z.string().uuid();
 const querySchema = z.object({
@@ -35,7 +44,26 @@ export class PedidoIaController {
     private readonly listar: ListarPedidosIaUseCase,
     private readonly obter: ObterPedidoIaUseCase,
     private readonly decidir: DecidirPedidoIaUseCase,
+    private readonly lerContadores?: LerContadoresPedidos,
   ) {}
+
+  /** GET só-leitura dos dois contadores. `de`/`ate` (ISO) opcionais: padrão = 28 semanas até agora; `de` < `ate`, senão 400. */
+  async contadores(req: Request, res: Response): Promise<void> {
+    const q = janelaSchema.safeParse(req.query);
+    if (!q.success) return void res.status(400).json({ success: false, code: 'INVALID_QUERY' });
+    const ate = q.data.ate ? new Date(q.data.ate) : new Date();
+    const de = q.data.de ? new Date(q.data.de) : new Date(ate.getTime() - SEMANAS_JANELA_PADRAO * MS_SEMANA);
+    if (de.getTime() >= ate.getTime()) return void res.status(400).json({ success: false, code: 'INVALID_QUERY' });
+    const actorUid = AuthMiddleware.getAuthContext(req)?.principal.id;
+    if (!actorUid) return void res.status(401).json({ success: false, code: 'UNAUTHENTICATED' });
+    if (!this.lerContadores) return void res.status(501).json({ success: false, code: 'NOT_CONFIGURED' });
+    try {
+      const data = await this.lerContadores(actorUid, { de, ate });
+      res.status(200).json({ success: true, data: { ...data, janela: { de: de.toISOString(), ate: ate.toISOString() } } });
+    } catch (err) {
+      this.fail(err, res, 'contadores');
+    }
+  }
 
   async list(req: Request, res: Response): Promise<void> {
     const q = querySchema.safeParse(req.query);
