@@ -443,6 +443,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
         // spec 078 (M3b-1) — a página de pedidos do Sol: ver (read) × aceitar/negar/descrever (decidir).
         'GET /api/admin/pedidos-ia → pedidos_ia:read',
+        'GET /api/admin/pedidos-ia/contadores → pedidos_ia:read', // T094 (081)
         'GET /api/admin/pedidos-ia/:id → pedidos_ia:read',
         'POST /api/admin/pedidos-ia/:id/aceitar → pedidos_ia:decidir',
         'POST /api/admin/pedidos-ia/:id/descrever → pedidos_ia:decidir',
