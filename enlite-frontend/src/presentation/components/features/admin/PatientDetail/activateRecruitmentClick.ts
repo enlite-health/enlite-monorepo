@@ -1,5 +1,6 @@
 import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import { AdminLinkExistingVacancyApiService } from '@infrastructure/http/AdminLinkExistingVacancyApiService';
+import { openLinkCandidates } from '@domain/entities/LinkExistingVacancy';
 
 /**
  * UMA linha da tabela — as 5 colunas do Figma (decisão do Gabriel 05/09; "Sexo" ficou de fora a
@@ -23,6 +24,8 @@ interface ActivateRecruitmentClickDeps {
   onActivated: () => void;
   /** Paciente já tem vaga vinculável: abre o modal "Vincular vaga existente" deste serviço (o foguete NÃO cria outra). */
   openLinkModal: () => void;
+  /** "Criar vaga nova" do modal: pula a consulta e manda o sinal explícito (o backend pula a guarda e audita). */
+  createNewVacancy?: boolean;
   /** `tc` — já namespaced em `contractedServicesCard.` (ver uso abaixo). */
   tc: (k: string, o?: Record<string, unknown>) => string;
   /** `t` cru — os códigos de `completeness.items.*` vivem fora do namespace do `tc`. */
@@ -44,12 +47,19 @@ export async function runActivateRecruitmentClick(deps: ActivateRecruitmentClick
   try {
     // Um serviço = UMA vaga: antes de criar, pergunta ao vínculo (spec 079) se há vaga existente para ligar. Falha da
     // consulta não trava o foguete — o backend recusa com 409 LINKABLE_VACANCY_EXISTS se houver (tratado abaixo).
-    const linkable = await AdminLinkExistingVacancyApiService.preview(deps.patientId, deps.serviceId).catch(() => null);
-    if (linkable && linkable.candidates.length > 0) {
-      deps.openLinkModal();
-      return;
+    if (!deps.createNewVacancy) {
+      const linkable = await AdminLinkExistingVacancyApiService.preview(deps.patientId, deps.serviceId).catch(() => null);
+      // Só candidata ABERTA conta (encerrada não): paciente só com vaga encerrada segue direto para a criação.
+      if (linkable && openLinkCandidates(linkable.candidates).length > 0) {
+        deps.openLinkModal();
+        return;
+      }
     }
-    const result = await AdminContractedServicesApiService.activateRecruitment(deps.patientId, deps.serviceId);
+    const result = await AdminContractedServicesApiService.activateRecruitment(
+      deps.patientId,
+      deps.serviceId,
+      deps.createNewVacancy ? { createNewVacancy: true } : undefined,
+    );
     if (result?.patientNotMoved) {
       // D469: a vaga nasceu, mas o paciente segue em Admisión — AVISO (não sucesso) com o que falta.
       const items = result.patientNotMoved.missing

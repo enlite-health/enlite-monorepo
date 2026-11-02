@@ -10,10 +10,12 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox/Combobox';
 import { missingItemsLabel } from '@presentation/utils/patientStatusMessages';
 import { AdminLinkExistingVacancyApiService } from '@infrastructure/http/AdminLinkExistingVacancyApiService';
+import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 import type { PatientCompletenessCode } from '@domain/entities/PatientCompleteness';
-import type { LinkableVacancy, LinkPreview } from '@domain/entities/LinkExistingVacancy';
+import { openLinkCandidates, type LinkableVacancy, type LinkPreview } from '@domain/entities/LinkExistingVacancy';
 
 interface Props {
   open: boolean;
@@ -22,6 +24,11 @@ interface Props {
   serviceLabel: string;
   /** Texto curto no topo (ex.: o foguete achou vaga vinculável e mandou para cá). */
   notice?: string;
+  /**
+   * Modo FOGUETE: só candidatas ABERTAS, botão "Criar vaga nova" ao lado de "Vincular", e — se havia mais de uma
+   * aberta — depois do vínculo pergunta se exclui as outras (pelo DELETE de vaga que já existe). Ausente = vínculo manual (079).
+   */
+  rocket?: { onCreateNew: () => void };
   onClose: () => void;
   onLinked: () => void;
 }
@@ -46,7 +53,7 @@ function formatValue(v: unknown): string {
   return String(v);
 }
 
-export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLabel, notice, onClose, onLinked }: Props) {
+export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLabel, notice, rocket, onClose, onLinked }: Props) {
   const { t } = useTranslation();
   const k = (key: string, opts?: Record<string, unknown>): string =>
     String(t(`admin.patients.detail.contractedServicesCard.linkExistingVacancy.${key}`, opts ?? {}));
@@ -55,17 +62,22 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
   const [preview, setPreview] = useState<LinkPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ code?: string; blockers?: string[] } | null>(null);
+  // Passo 2 do foguete: candidatas abertas que sobraram depois do vínculo (null = ainda não chegou lá).
+  const [leftovers, setLeftovers] = useState<LinkableVacancy[] | null>(null);
+  const [deleteFailed, setDeleteFailed] = useState(0);
+  const canDelete = useActionGate('vacancy', 'delete').allowed;
 
   // Sincroniza com o servidor ao abrir (sistema externo): reinicia o estado e lê as candidatas.
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    setCandidates(null); setVacancyId(''); setPreview(null); setError(null);
+    setCandidates(null); setVacancyId(''); setPreview(null); setError(null); setLeftovers(null); setDeleteFailed(0);
     AdminLinkExistingVacancyApiService.preview(patientId, serviceId)
-      .then((r) => { if (alive) setCandidates(r.candidates); })
+      .then((r) => { if (alive) setCandidates(rocket ? openLinkCandidates(r.candidates) : r.candidates); })
       .catch((e) => { if (alive) { setCandidates([]); setError(toError(e)); } });
     return () => { alive = false; };
-  }, [open, patientId, serviceId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `rocket` é um objeto novo a cada render; só o modo (boolean) importa
+  }, [open, patientId, serviceId, !!rocket]);
 
   useEffect(() => {
     if (!open) return;
@@ -104,6 +116,11 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
     setBusy(true); setError(null);
     try {
       await AdminLinkExistingVacancyApiService.link(patientId, serviceId, vacancyId);
+      const others = rocket && canDelete ? (candidates ?? []).filter((c) => c.id !== vacancyId) : [];
+      if (others.length > 0) {
+        setLeftovers(others); // vínculo JÁ confirmado; a pergunta é só sobre as outras
+        return;
+      }
       onLinked();
       onClose();
     } catch (e) {
@@ -111,6 +128,19 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
     } finally {
       setBusy(false);
     }
+  }
+
+  const finish = (): void => { onLinked(); onClose(); };
+
+  async function deleteLeftovers() {
+    setBusy(true);
+    let failed = 0;
+    for (const v of leftovers ?? []) {
+      try { await AdminApiService.deleteVacancy(v.id); } catch { failed += 1; }
+    }
+    setBusy(false);
+    if (failed > 0) { setDeleteFailed(failed); return; }
+    finish();
   }
 
   const blockerText = (code: string): string =>
@@ -124,6 +154,33 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
   };
   const origin: Record<string, string> = { SERVICE: k('originService'), NONE: k('originNone') };
   const blockers = preview?.blockers.length ? preview.blockers : error?.code === 'LINK_BLOCKED' ? error.blockers ?? [] : [];
+
+  if (leftovers) {
+    return (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" data-testid="link-existing-vacancy-modal">
+        <div className="bg-white rounded-card shadow-xl w-full max-w-xl text-left p-6 flex flex-col gap-4"
+          role="dialog" aria-modal="true" aria-label={k('leftovers.title')} data-testid="link-leftovers-step">
+          <h2 className="text-lg font-semibold">{k('leftovers.title')}</h2>
+          <p className="text-sm">{k('leftovers.question', { count: leftovers.length })}</p>
+          <ul className="list-disc pl-5 text-sm" data-testid="link-leftovers-list">
+            {leftovers.map((v) => <li key={v.id}>{formatVacancyCase(v.caseNumber, v.caseOrdinal)} · {statusLabel(v.status)}</li>)}
+          </ul>
+          {deleteFailed > 0 && <p role="alert" className="text-sm text-red-700">{k('leftovers.deleteFailed', { count: deleteFailed })}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="px-4 py-2" data-testid="link-leftovers-no" disabled={busy} onClick={finish}>
+              {deleteFailed > 0 ? k('leftovers.close') : k('leftovers.no')}
+            </button>
+            {deleteFailed === 0 && (
+              <button type="button" className="px-4 py-2 bg-primary text-white rounded disabled:opacity-50"
+                data-testid="link-leftovers-yes" disabled={busy} onClick={() => void deleteLeftovers()}>
+                {k('leftovers.yes')}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4"
@@ -187,9 +244,15 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
 
         <div className="flex justify-end gap-2">
           <button type="button" className="px-4 py-2" onClick={onClose}>{k('cancel')}</button>
+          {rocket && (
+            <button type="button" className="px-4 py-2 border border-primary text-primary rounded disabled:opacity-50"
+              data-testid="link-existing-vacancy-create-new" disabled={busy} onClick={rocket.onCreateNew}>
+              {k('createNew')}
+            </button>
+          )}
           <button type="button" className="px-4 py-2 bg-primary text-white rounded disabled:opacity-50"
             data-testid="link-existing-vacancy-confirm" disabled={!preview?.canConfirm || busy} onClick={() => void confirm()}>
-            {k('confirm')}
+            {rocket ? k('confirmRocket') : k('confirm')}
           </button>
         </div>
       </div>

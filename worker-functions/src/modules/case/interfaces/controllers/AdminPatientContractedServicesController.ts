@@ -209,6 +209,7 @@ export class AdminPatientContractedServicesController {
         params.data.id,
         params.data.sid,
         vacancyActorFromRequest(req, 'activate_recruitment'),
+        { createNewVacancy: req.body?.createNewVacancy === true }, // sinal explícito da pessoa; ausente/outro valor = guarda ativa
       );
       res.status(201).json({
         success: true,

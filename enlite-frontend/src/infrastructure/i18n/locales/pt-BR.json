@@ -4028,7 +4028,19 @@
           "linkExistingVacancy": {
             "button": "Vincular vaga existente",
             "aria": "Vincular vaga existente a {{service}}",
-            "rocketNotice": "Este paciente já tem uma vaga sem serviço. Em vez de criar outra, vincule essa vaga a este serviço.",
+            "rocketNotice": "Este paciente já tem uma vaga sem serviço. Vincule-a a este serviço ou crie uma vaga nova.",
+            "createNew": "Criar vaga nova",
+            "confirmRocket": "Vincular à existente",
+            "leftovers": {
+              "title": "Outras vagas antigas",
+              "question_one": "Há mais {{count}} vaga antiga aberta deste paciente. Deseja excluí-la?",
+              "question_other": "Há mais {{count}} vagas antigas abertas deste paciente. Deseja excluí-las?",
+              "yes": "Sim, excluir",
+              "no": "Não",
+              "close": "Fechar",
+              "deleteFailed_one": "Não foi possível excluir {{count}} vaga.",
+              "deleteFailed_other": "Não foi possível excluir {{count}} vagas."
+            },
             "modalTitle": "Vincular vaga existente ao serviço",
             "selectLabel": "Vaga do paciente",
             "selectPlaceholder": "Escolha uma vaga",

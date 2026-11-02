@@ -11,7 +11,8 @@
  *           vaga fica IGUAL (mesmo id, mesmas contagens), a vaga aponta ao serviço, o serviço recebe os campos, os 2 botões somem.
  *  alt 1  — endereço da vaga != endereço do serviço: bloqueio de endereço, confirmar desabilitado, nada gravado.
  *  alt 2  — serviço sem faixa vigente: bloqueio listando o horário que falta, confirmar desabilitado, nada gravado.
- *  foguete — serviço PRONTO + paciente com vaga legada: o foguete abre o modal de vínculo (com o aviso) e NÃO cria vaga nova.
+ *  foguete — serviço PRONTO + vaga legada ABERTA: abre o modal com as duas saídas e não cria vaga; "Criar vaga nova" cria com o sinal e audita;
+ *            só vaga ENCERRADA: cria direto, sem modal; 2 candidatas + vincular: pergunta se exclui a outra (Sí exclui, No não).
  */
 import { test, expect, type Page } from '@playwright/test';
 import { seedActivatablePatient } from '../helpers/patient-detail-c-helper';
@@ -77,7 +78,7 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
     groupId = seedStaffInGroup({ uid, email: staff.email, groupName: `Vincular079 ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [r, a] of [
       ['patient', 'read'], ['patient_identity', 'read'], ['patient_address', 'read'],
-      ['patient_services', 'read'], ['patient_services', 'update'], ['vacancy', 'read'], ['vacancy', 'update'],
+      ['patient_services', 'read'], ['patient_services', 'update'], ['vacancy', 'read'], ['vacancy', 'update'], ['vacancy', 'delete'],
     ]) grantCell(groupId, r, a);
   });
 
@@ -209,34 +210,109 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
     expect(readVacancyKanbanFingerprint(vaga.vacancyId)).toEqual(kanbanAntes);
   });
 
-  test('foguete com vaga legada do paciente: abre o modal de vínculo com o aviso e NÃO cria vaga nova', async ({ page }) => {
-    const seed = seedActivatablePatient(764000);
+  /** Paciente + serviço PRONTO para o foguete (5 campos do portão no serviço) + N vagas legadas (sem serviço). Foguete só habilita sem pendência. */
+  function cenarioFoguete(seedBase: number, qtdVagas: number) {
+    const seed = seedActivatablePatient(seedBase);
     patients.push(seed.patientId);
     const { serviceId } = seedContractedService(seed.patientId, { addressId: seed.addressId, withSchedule: true });
-    // Serviço PRONTO para o foguete: os 5 campos do portão preenchidos no serviço (o foguete só habilita sem pendência).
     runSQL(`UPDATE patient_contracted_services SET (${RECRUITMENT_SQL_COLUMNS}) = (${RECRUITMENT_SQL_VALUES}) WHERE id = '${serviceId}'`);
-    const vaga = seedLegacyVacancy(seed.patientId, { addressId: seed.addressId });
-    workers.push(vaga.workerId);
+    const vagas: LegacyVacancySeed[] = [];
+    for (let i = 0; i < qtdVagas; i++) {
+      const v = seedLegacyVacancy(seed.patientId, { addressId: seed.addressId });
+      workers.push(v.workerId);
+      vagas.push(v);
+    }
     const vagasVivas = (): number => Number(runSQL(`SELECT count(*) FROM job_postings WHERE patient_id = '${seed.patientId}' AND deleted_at IS NULL`));
     const vagasDoServico = (): number => Number(runSQL(`SELECT count(*) FROM job_postings WHERE contracted_service_id = '${serviceId}'`));
-    expect(vagasVivas()).toBe(1);
-    expect(vagasDoServico()).toBe(0);
+    return { seed, serviceId, vagas, vagasVivas, vagasDoServico };
+  }
 
+  async function clicarFoguete(page: Page, patientId: string, serviceId: string): Promise<void> {
     await login(page);
-    await page.goto(`/admin/patients/${seed.patientId}`);
+    await page.goto(`/admin/patients/${patientId}`);
     await expect(page.getByTestId(`contracted-service-row-${serviceId}`)).toBeVisible({ timeout: 30_000 });
     const foguete = page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`);
     await expect(foguete).toBeEnabled();
     await foguete.click();
+  }
 
-    const modal = page.getByTestId('link-existing-vacancy-modal');
-    await expect(modal).toBeVisible();
+  test('foguete com vaga legada ABERTA: abre o modal de vínculo com as duas saídas e NÃO cria vaga nova', async ({ page }) => {
+    const { seed, serviceId, vagas, vagasVivas, vagasDoServico } = cenarioFoguete(764000, 1);
+    expect(vagasVivas()).toBe(1);
+    expect(vagasDoServico()).toBe(0);
+
+    await clicarFoguete(page, seed.patientId, serviceId);
+
+    await expect(page.getByTestId('link-existing-vacancy-modal')).toBeVisible();
     await expect(page.getByTestId('link-existing-vacancy-notice')).toContainText('ya tiene una vacante sin servicio');
     await expect(page.getByTestId('link-existing-vacancy-combo')).toBeVisible();
+    await expect(page.getByTestId('link-existing-vacancy-create-new')).toHaveText('Crear vacante nueva');
+    await expect(page.getByTestId('link-existing-vacancy-confirm')).toHaveText('Vincular a la existente');
 
     // Nenhuma vaga nova: a legada continua a única e continua sem serviço.
     expect(vagasVivas()).toBe(1);
     expect(vagasDoServico()).toBe(0);
-    expect(readVacancyServiceFields(vaga.vacancyId).contracted_service_id).toBeNull();
+    expect(readVacancyServiceFields(vagas[0].vacancyId).contracted_service_id).toBeNull();
+  });
+
+  test('foguete: "Criar vaga nova" cria a vaga do serviço (sinal explícito) e registra no audit a candidata recusada', async ({ page }) => {
+    const { seed, serviceId, vagas, vagasVivas, vagasDoServico } = cenarioFoguete(765000, 1);
+    await clicarFoguete(page, seed.patientId, serviceId);
+    await expect(page.getByTestId('link-existing-vacancy-modal')).toBeVisible();
+    await page.getByTestId('link-existing-vacancy-create-new').click();
+
+    await expect(page.getByTestId('link-existing-vacancy-modal')).toHaveCount(0);
+    await expect.poll(vagasDoServico, { timeout: 30_000 }).toBe(1);
+    expect(vagasVivas()).toBe(2); // a legada segue viva e sem serviço; a nova é do serviço
+    expect(readVacancyServiceFields(vagas[0].vacancyId).contracted_service_id).toBeNull();
+    const novaId = runSQL(`SELECT id FROM job_postings WHERE contracted_service_id = '${serviceId}'`);
+    const recusada = runSQL(`SELECT count(*) FROM job_posting_audit_log WHERE job_posting_id = '${novaId}' AND field_name = 'linkable_vacancies_declined'`);
+    expect(Number(recusada)).toBe(1);
+  });
+
+  test('foguete: paciente só com vaga ENCERRADA — sem modal, cria a vaga direto', async ({ page }) => {
+    const { seed, serviceId, vagas, vagasDoServico } = cenarioFoguete(766000, 1);
+    runSQL(`UPDATE job_postings SET status = 'CLOSED' WHERE id = '${vagas[0].vacancyId}'`);
+
+    await clicarFoguete(page, seed.patientId, serviceId);
+
+    await expect.poll(vagasDoServico, { timeout: 30_000 }).toBe(1);
+    await expect(page.getByTestId('link-existing-vacancy-modal')).toHaveCount(0);
+    expect(readVacancyServiceFields(vagas[0].vacancyId).contracted_service_id).toBeNull();
+  });
+
+  /** 2 candidatas abertas: o foguete abre o modal, a pessoa vincula a PRIMEIRA e cai na pergunta de excluir a outra. */
+  async function vincularComDuasCandidatas(page: Page, seedBase: number) {
+    const c = cenarioFoguete(seedBase, 2);
+    await clicarFoguete(page, c.seed.patientId, c.serviceId);
+    await expect(page.getByTestId('link-existing-vacancy-modal')).toBeVisible();
+    await escolherNoCombo(page, page.getByTestId('link-existing-vacancy-combo'), rotuloDaVaga(c.vagas[0]));
+    const confirmar = page.getByTestId('link-existing-vacancy-confirm');
+    await expect(confirmar).toBeEnabled();
+    await confirmar.click();
+    const lista = page.getByTestId('link-leftovers-list');
+    await expect(lista).toBeVisible();
+    // lista a OUTRA como <paciente>#<ordinal> + status, e só ela
+    await expect(lista).toContainText(formatVacancyCase(c.vagas[1].caseNumber, c.vagas[1].caseOrdinal));
+    await expect(lista.locator('li')).toHaveCount(1);
+    expect(readVacancyServiceFields(c.vagas[0].vacancyId).contracted_service_id).toBe(c.serviceId); // vínculo já feito
+    return c;
+  }
+  const deletada = (vacancyId: string): boolean => runSQL(`SELECT (deleted_at IS NOT NULL)::int FROM job_postings WHERE id = '${vacancyId}'`) === '1';
+
+  test('foguete: vincula com 2 candidatas → pergunta; "Sí, eliminar" exclui só a outra pelo DELETE de vaga existente', async ({ page }) => {
+    const c = await vincularComDuasCandidatas(page, 767000);
+    await page.getByTestId('link-leftovers-yes').click();
+    await expect(page.getByTestId('link-existing-vacancy-modal')).toHaveCount(0);
+    expect(deletada(c.vagas[1].vacancyId)).toBe(true);
+    expect(deletada(c.vagas[0].vacancyId)).toBe(false);
+  });
+
+  test('foguete: vincula com 2 candidatas → pergunta; "No" não exclui nada', async ({ page }) => {
+    const c = await vincularComDuasCandidatas(page, 768000);
+    await page.getByTestId('link-leftovers-no').click();
+    await expect(page.getByTestId('link-existing-vacancy-modal')).toHaveCount(0);
+    expect(deletada(c.vagas[1].vacancyId)).toBe(false);
+    expect(deletada(c.vagas[0].vacancyId)).toBe(false);
   });
 });

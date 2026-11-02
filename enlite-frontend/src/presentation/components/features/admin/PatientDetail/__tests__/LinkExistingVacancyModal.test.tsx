@@ -6,6 +6,7 @@ import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
 import { LinkExistingVacancyModal } from '../LinkExistingVacancyModal';
 import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import { AdminLinkExistingVacancyApiService } from '@infrastructure/http/AdminLinkExistingVacancyApiService';
+import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { LinkPreview, LinkableVacancy } from '@domain/entities/LinkExistingVacancy';
 
 const translations = ptBR as Record<string, any>;
@@ -20,6 +21,9 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 
 vi.mock('@infrastructure/http/AdminLinkExistingVacancyApiService', () => ({
   AdminLinkExistingVacancyApiService: { preview: vi.fn(), link: vi.fn() },
 }));
+
+vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { deleteVacancy: vi.fn() } }));
+const DEL = AdminApiService.deleteVacancy as unknown as ReturnType<typeof vi.fn>;
 
 const P = AdminLinkExistingVacancyApiService as unknown as { preview: ReturnType<typeof vi.fn>; link: ReturnType<typeof vi.fn> };
 const K = (translations.admin.patients.detail.contractedServicesCard.linkExistingVacancy) as Record<string, any>;
@@ -40,7 +44,7 @@ async function openAndChoose() {
 }
 
 describe('LinkExistingVacancyModal', () => {
-  beforeEach(() => { P.preview.mockReset(); P.link.mockReset(); });
+  beforeEach(() => { P.preview.mockReset(); P.link.mockReset(); DEL.mockReset(); DEL.mockResolvedValue(undefined); });
 
   it('abre, chama a prévia sem vacancyId e lista as candidatas', async () => {
     P.preview.mockResolvedValueOnce({ candidates: [CAND], preview: null });
@@ -157,5 +161,84 @@ describe('LinkExistingVacancyModal', () => {
     expect(box.textContent).toContain(vf.professionOptions.AT);
     expect(box.textContent).not.toMatch(/part-time|\bAT\b/);
     expect(screen.getByRole('dialog').className).toContain('text-left');
+  });
+});
+
+describe('LinkExistingVacancyModal — modo foguete (duas saídas + excluir as outras)', () => {
+  const OUTRA: LinkableVacancy = { ...CAND, id: 'v-2', caseOrdinal: 2, title: 'Outra vaga', status: 'ACTIVE' };
+  const FECHADA: LinkableVacancy = { ...CAND, id: 'v-9', caseOrdinal: 9, title: 'Vaga fechada', status: 'CLOSED' };
+  beforeEach(() => { P.preview.mockReset(); P.link.mockReset(); DEL.mockReset(); DEL.mockResolvedValue(undefined); });
+
+  async function rocketLink(candidates: LinkableVacancy[]) {
+    P.preview.mockResolvedValueOnce({ candidates, preview: null }).mockResolvedValueOnce({ candidates, preview: prev() });
+    P.link.mockResolvedValueOnce({ vacancyId: 'v-1', serviceId: 's1', fedFields: [] });
+    const onLinked = vi.fn(); const onClose = vi.fn(); const onCreateNew = vi.fn();
+    render(<LinkExistingVacancyModal open patientId="p1" serviceId="s1" serviceLabel="Serviço" rocket={{ onCreateNew }} onClose={onClose} onLinked={onLinked} />);
+    fireEvent.click(await screen.findByTestId('link-existing-vacancy-combo'));
+    fireEvent.click((await screen.findByRole('option', { name: /Vaga legada/ })).querySelector('button') as HTMLElement);
+    await screen.findByText(K.noChanges);
+    const btn = screen.getByTestId('link-existing-vacancy-confirm') as HTMLButtonElement;
+    await waitFor(() => expect(btn.disabled).toBe(false));
+    fireEvent.click(btn);
+    return { onLinked, onClose, onCreateNew };
+  }
+
+  it('mostra "Criar vaga nova" (chama onCreateNew) e rotula o confirmar como "Vincular à existente"; sem rocket não há o botão', async () => {
+    P.preview.mockResolvedValue({ candidates: [CAND], preview: null });
+    const onCreateNew = vi.fn();
+    const { unmount } = render(<LinkExistingVacancyModal open patientId="p1" serviceId="s1" serviceLabel="Serviço" rocket={{ onCreateNew }} onClose={vi.fn()} onLinked={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('link-existing-vacancy-create-new'));
+    expect(onCreateNew).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('link-existing-vacancy-confirm').textContent).toBe(K.confirmRocket);
+    unmount();
+    render(<LinkExistingVacancyModal open patientId="p1" serviceId="s1" serviceLabel="Serviço" onClose={vi.fn()} onLinked={vi.fn()} />);
+    await screen.findByTestId('link-existing-vacancy-combo');
+    expect(screen.queryByTestId('link-existing-vacancy-create-new')).toBeNull();
+    expect(screen.getByTestId('link-existing-vacancy-confirm').textContent).toBe(K.confirm);
+  });
+
+  it('lista só candidatas ABERTAS (encerrada fica de fora no foguete)', async () => {
+    P.preview.mockResolvedValue({ candidates: [CAND, FECHADA], preview: null });
+    render(<LinkExistingVacancyModal open patientId="p1" serviceId="s1" serviceLabel="Serviço" rocket={{ onCreateNew: vi.fn() }} onClose={vi.fn()} onLinked={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('link-existing-vacancy-combo'));
+    expect(await screen.findByRole('option', { name: /Vaga legada/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Vaga fechada/ })).toBeNull();
+  });
+
+  it('2 candidatas abertas, vincular → pergunta listando a OUTRA (paciente#ordinal + status); "Sim" chama o delete existente só nela e conclui', async () => {
+    const { onLinked, onClose } = await rocketLink([CAND, OUTRA]);
+    const lista = await screen.findByTestId('link-leftovers-list');
+    expect(lista.textContent).toContain('1234#02');
+    expect(lista.textContent).not.toContain('1234#01');
+    expect(onLinked).not.toHaveBeenCalled(); // o vínculo já foi feito, mas a conclusão espera a resposta
+    fireEvent.click(screen.getByTestId('link-leftovers-yes'));
+    await waitFor(() => expect(onLinked).toHaveBeenCalledTimes(1));
+    expect(DEL).toHaveBeenCalledTimes(1);
+    expect(DEL).toHaveBeenCalledWith('v-2');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('2 candidatas abertas, vincular → "Não": NÃO chama o delete e conclui', async () => {
+    const { onLinked } = await rocketLink([CAND, OUTRA]);
+    fireEvent.click(await screen.findByTestId('link-leftovers-no'));
+    expect(DEL).not.toHaveBeenCalled();
+    expect(onLinked).toHaveBeenCalledTimes(1);
+  });
+
+  it('falha ao excluir: avisa, não conclui sozinho, e "Fechar" conclui', async () => {
+    DEL.mockRejectedValue(new Error('403'));
+    const { onLinked } = await rocketLink([CAND, OUTRA]);
+    fireEvent.click(await screen.findByTestId('link-leftovers-yes'));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(onLinked).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('link-leftovers-no'));
+    expect(onLinked).toHaveBeenCalledTimes(1);
+  });
+
+  it('UMA candidata aberta (mesmo com encerrada junto): a pergunta NÃO aparece e conclui direto', async () => {
+    const { onLinked } = await rocketLink([CAND, FECHADA]);
+    await waitFor(() => expect(onLinked).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('link-leftovers-step')).toBeNull();
+    expect(DEL).not.toHaveBeenCalled();
   });
 });

@@ -4107,7 +4107,19 @@
           "linkExistingVacancy": {
             "button": "Vincular vacante existente",
             "aria": "Vincular vacante existente a {{service}}",
-            "rocketNotice": "Este paciente ya tiene una vacante sin servicio. En lugar de crear otra, vincule esa vacante a este servicio.",
+            "rocketNotice": "Este paciente ya tiene una vacante sin servicio. Vincúlela a este servicio o cree una vacante nueva.",
+            "createNew": "Crear vacante nueva",
+            "confirmRocket": "Vincular a la existente",
+            "leftovers": {
+              "title": "Otras vacantes antiguas",
+              "question_one": "Hay {{count}} vacante antigua abierta más de este paciente. ¿Desea eliminarla?",
+              "question_other": "Hay {{count}} vacantes antiguas abiertas más de este paciente. ¿Desea eliminarlas?",
+              "yes": "Sí, eliminar",
+              "no": "No",
+              "close": "Cerrar",
+              "deleteFailed_one": "No se pudo eliminar {{count}} vacante.",
+              "deleteFailed_other": "No se pudieron eliminar {{count}} vacantes."
+            },
             "modalTitle": "Vincular vacante existente al servicio",
             "selectLabel": "Vacante del paciente",
             "selectPlaceholder": "Elegí una vacante",

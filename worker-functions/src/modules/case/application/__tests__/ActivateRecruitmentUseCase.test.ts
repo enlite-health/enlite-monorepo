@@ -164,11 +164,11 @@ function makeClient(opts: DispatchOpts) {
   return { query };
 }
 
-function run(opts: DispatchOpts, actor?: HumanActor) {
+function run(opts: DispatchOpts, actor?: HumanActor, execOpts?: { createNewVacancy?: boolean }) {
   const client = makeClient(opts);
   mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
   const useCase = new ActivateRecruitmentUseCase();
-  return { promise: useCase.execute(PATIENT_ID, SERVICE_ID, actor), client };
+  return { promise: useCase.execute(PATIENT_ID, SERVICE_ID, actor, execOpts), client };
 }
 
 const READY_SERVICE = {
@@ -445,13 +445,13 @@ describe('ActivateRecruitmentUseCase', () => {
       const { promise, client } = run({
         patientRow: PATIENT,
         serviceRow: READY_SERVICE,
-        patientVacancies: [{ id: 'vac-legada-1' }, { id: 'vac-legada-2', status: 'CLOSED' }],
+        patientVacancies: [{ id: 'vac-legada-1' }, { id: 'vac-legada-2', status: 'ACTIVE' }, { id: 'vac-encerrada', status: 'CLOSED' }],
       });
       await expect(promise).rejects.toMatchObject({
         constructor: LinkableVacancyExistsError,
         patientId: PATIENT_ID,
         serviceId: SERVICE_ID,
-        vacancyIds: ['vac-legada-1', 'vac-legada-2'],
+        vacancyIds: ['vac-legada-1', 'vac-legada-2'], // a encerrada não conta como candidata
       });
       const sqls = client.query.mock.calls.map((c) => String(c[0]));
       expect(sqls.some((q) => q.startsWith('INSERT INTO job_postings'))).toBe(false);
@@ -469,6 +469,38 @@ describe('ActivateRecruitmentUseCase', () => {
       });
       await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-nova' });
       expect(client.query.mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO job_postings'))).toBe(true);
+    });
+
+    it('só vaga ENCERRADA (CLOSED/FILLED): não conta como candidata — cria a vaga direto, sem 409 e sem auditar recusa', async () => {
+      const { promise, client } = run({
+        patientRow: PATIENT,
+        serviceRow: READY_SERVICE,
+        patientVacancies: [{ id: 'vac-fechada', status: 'CLOSED' }, { id: 'vac-preenchida', status: 'FILLED' }],
+        insertedId: 'vac-nova',
+      });
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-nova' });
+      const params = client.query.mock.calls.flatMap((c) => JSON.stringify(c[1] ?? []));
+      expect(params.some((p) => p.includes('linkable_vacancies_declined'))).toBe(false);
+    });
+
+    it('com o sinal createNewVacancy: cria mesmo com candidata aberta e REGISTRA no audit da vaga criada os ids recusados', async () => {
+      const { promise, client } = run(
+        { patientRow: PATIENT, serviceRow: READY_SERVICE, patientVacancies: [{ id: 'vac-legada-1' }], insertedId: 'vac-nova' },
+        undefined,
+        { createNewVacancy: true },
+      );
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-nova' });
+      expect(client.query.mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO job_postings'))).toBe(true);
+      const audits = client.query.mock.calls.filter((c) => String(c[0]).includes('INSERT INTO job_posting_audit_log'));
+      expect(audits.some((c) => JSON.stringify(c[1]).includes('linkable_vacancies_declined') && JSON.stringify(c[1]).includes('vac-legada-1'))).toBe(true);
+    });
+
+    it('SEM o sinal (ou createNewVacancy:false) a guarda continua: LinkableVacancyExistsError e nenhum INSERT', async () => {
+      for (const execOpts of [undefined, { createNewVacancy: false }]) {
+        const { promise, client } = run({ patientRow: PATIENT, serviceRow: READY_SERVICE, patientVacancies: [{ id: 'vac-legada-1' }] }, undefined, execOpts);
+        await expect(promise).rejects.toBeInstanceOf(LinkableVacancyExistsError);
+        expect(client.query.mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO job_postings'))).toBe(false);
+      }
     });
 
     it('paciente sem nenhuma vaga: cria a vaga como antes', async () => {

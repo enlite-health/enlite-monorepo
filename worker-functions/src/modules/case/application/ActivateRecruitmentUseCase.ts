@@ -20,7 +20,8 @@ import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
 import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWriter";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
 import { LinkExistingVacancyRepository } from "../infrastructure/LinkExistingVacancyRepository";
-import { linkableVacancies } from "../domain/VacancyLinkEligibility";
+import { linkableOpenVacancies } from "../domain/VacancyLinkEligibility";
+import { JobPostingAuditRepository } from "../../matching/infrastructure/JobPostingAuditRepository";
 import {
   lockRecruitmentContext,
   readinessInputFromContext,
@@ -65,6 +66,14 @@ export class LinkableVacancyExistsError extends Error {
   }
 }
 
+export interface ActivateRecruitmentOptions {
+  /**
+   * Sinal EXPLÍCITO da pessoa ("Criar vaga nova" no modal do foguete): cria mesmo havendo candidata aberta ao vínculo.
+   * Sem ele, candidata aberta → `LinkableVacancyExistsError`. A recusa fica registrada no audit da vaga criada.
+   */
+  createNewVacancy?: boolean;
+}
+
 export interface ActivateRecruitmentResult {
   vacancyId: string;
   patientStatus: string;
@@ -100,17 +109,21 @@ export interface ActivateRecruitmentResult {
  * antecessor.
  */
 export class ActivateRecruitmentUseCase {
-  constructor(private readonly linkRepo: LinkExistingVacancyRepository = new LinkExistingVacancyRepository()) {}
+  constructor(
+    private readonly linkRepo: LinkExistingVacancyRepository = new LinkExistingVacancyRepository(),
+    private readonly auditRepo: Pick<JobPostingAuditRepository, "logFieldChangesSafe"> = new JobPostingAuditRepository(),
+  ) {}
 
   async execute(
     patientId: string,
     serviceId: string,
     actor?: HumanActor,
+    opts: ActivateRecruitmentOptions = {},
   ): Promise<ActivateRecruitmentResult> {
     const startMs = Date.now();
     try {
       const result = await inPatientTransaction((client) =>
-        this.runInTransaction(client, patientId, serviceId, actor),
+        this.runInTransaction(client, patientId, serviceId, actor, opts),
       );
       functions.logger.info("activate_recruitment.completed", {
         patientId,
@@ -144,14 +157,16 @@ export class ActivateRecruitmentUseCase {
     patientId: string,
     serviceId: string,
     actor?: HumanActor,
+    opts: ActivateRecruitmentOptions = {},
   ): Promise<ActivateRecruitmentResult> {
     const { patient, service } = await lockRecruitmentContext(client, patientId, serviceId);
     const { status, case_number } = patient;
 
-    // Um serviço = UMA vaga: se o paciente já tem vaga sem serviço (legada), ela se VINCULA (spec 079), não se duplica.
-    // Mesma transação e mesma régua do preview do vínculo (`linkableVacancies`); antes do portão e de qualquer escrita.
-    const linkable = linkableVacancies(await this.linkRepo.listPatientVacanciesForLink(client, patientId), patientId);
-    if (linkable.length > 0) {
+    // Um serviço = UMA vaga: se o paciente já tem vaga ABERTA sem serviço (legada), ela se VINCULA (spec 079), não se duplica.
+    // Mesma transação e mesma régua do vínculo (`linkableOpenVacancies` = `linkableVacancies` sem as encerradas, que não
+    // contam para o foguete); antes do portão e de qualquer escrita. `createNewVacancy` (escolha explícita) pula a trava.
+    const linkable = linkableOpenVacancies(await this.linkRepo.listPatientVacanciesForLink(client, patientId), patientId);
+    if (linkable.length > 0 && !opts.createNewVacancy) {
       throw new LinkableVacancyExistsError(patientId, serviceId, linkable.map((v) => v.id));
     }
 
@@ -251,11 +266,23 @@ export class ActivateRecruitmentUseCase {
     // best-effort do fluxo manual (VacancyCrudController.createVacancy): falha
     // de auditoria não pode derrubar a vaga que acabou de ser inserida nesta
     // MESMA transação.
-    await auditVacancyCreated(client, vacancyId, insRes.rows[0], actor ?? {
+    const auditActor: HumanActor = actor ?? {
       actorUserId: null,
       actorType: "SYSTEM",
       actorLabel: "activate_recruitment",
-    });
+    };
+    await auditVacancyCreated(client, vacancyId, insRes.rows[0], auditActor);
+    if (linkable.length > 0) {
+      // Criação COM candidata aberta recusada pela pessoa ("Criar vaga nova"): fica na trilha da vaga criada (só ids).
+      await this.auditRepo.logFieldChangesSafe(client, {
+        jobPostingId: vacancyId,
+        fields: [{ field: "linkable_vacancies_declined", before: null, after: linkable.map((v) => v.id) }],
+        actorUserId: auditActor.actorUserId,
+        actorType: auditActor.actorType,
+        actorLabel: auditActor.actorLabel,
+        traceId: auditActor.traceId ?? null,
+      });
+    }
 
     // D469 — o foguete volta a mover o paciente do funil para SEARCHING (revê DX-6.6/D434).
     if (!(ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(status)) {
