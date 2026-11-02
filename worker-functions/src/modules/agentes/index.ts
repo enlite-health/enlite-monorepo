@@ -9,6 +9,7 @@ import { AssistantsPlatformController } from './interfaces/controllers/Assistant
 import { AssistantReachUseCase, type ResolveActorCells } from './application/AssistantReachUseCase';
 import { withActorContext } from '@shared/database/actorContext';
 import { staffActor } from '@shared/audit/actorSource';
+import { consultarContadoresPedidos } from './infrastructure/PedidoContadorQuery';
 import { readScoreboardWith, registerEscalationWith } from '../mcp/infrastructure/AgentesRepository';
 
 export { createAdminPedidosIaRoutes } from './interfaces/routes/adminPedidosIaRoutes';
@@ -26,6 +27,7 @@ export function createPedidoIaController(): PedidoIaController {
     new ListarPedidosIaUseCase(repo),
     new ObterPedidoIaUseCase(repo),
     new DecidirPedidoIaUseCase(repo, new PedidoAplicarNotifier(pool), onErro),
+    (uid, janela) => withActorContext(pool, (c) => consultarContadoresPedidos(c, janela), staffActor(uid)),
   );
 }
 
