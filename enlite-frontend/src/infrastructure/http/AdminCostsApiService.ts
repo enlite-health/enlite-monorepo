@@ -15,7 +15,7 @@ export interface CostServiceRow { service: string; total: number }
 export interface CostResourceRow { service: string; resource: string; total: number }
 export interface CostSectorRow { sector: string; total: number }
 export type CostAiCallerSource = 'billing' | 'estimated' | 'unattributed';
-export interface CostAiCallerRow { caller: string; funcao: string; total: number; source: CostAiCallerSource }
+export interface CostAiCallerRow { caller: string; funcao: string; total: number | null; currency: string | null; source: CostAiCallerSource }
 export interface CostAnomalyItem {
   kind: 'service' | 'resource';
   name: string;

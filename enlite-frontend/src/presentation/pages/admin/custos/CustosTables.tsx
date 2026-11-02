@@ -70,7 +70,7 @@ export function CustosTables({ ov }: { ov: CostOverview }): JSX.Element {
               {r.source === 'unattributed' && <span data-testid="custos-selo-nao-atribuido" className={`${BADGE} bg-[#F4E4E4] text-[#5C0A0A]`}>{t('admin.custos.badges.unattributed')}</span>}
             </TableCell>
             <TableCell>{r.funcao === COSTS_NONE_KEY ? t('admin.custos.tables.noCaller') : r.funcao}</TableCell>
-            <TableCell align="right">{money(r.total)}</TableCell>
+            <TableCell align="right">{r.total === null ? '—' : formatMoney(r.total, r.currency ?? ov.currency, i18n?.language)}</TableCell>
           </TableRow>
         ))}
       </Bloco>

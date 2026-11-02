@@ -70,8 +70,8 @@ describe('BigQueryBillingReader (CA-5, parte 1)', () => {
     expect(d.dailyTotals).toEqual([{ day: '2026-10-19', value: 5 }]);
     expect(d.bySector).toEqual([{ sector: NONE_KEY, total: 7 }]);
     expect(d.byAiCaller).toEqual([
-      { caller: 'svc-x', funcao: 'fn-y', total: 3, source: 'billing' },
-      { caller: NONE_KEY, funcao: NONE_KEY, total: 1, source: 'unattributed' },
+      { caller: 'svc-x', funcao: 'fn-y', total: 3, currency: 'BRL', source: 'billing' },
+      { caller: NONE_KEY, funcao: NONE_KEY, total: 1, currency: 'BRL', source: 'unattributed' },
     ]);
     expect(d.dailyByResource[0]).toEqual({ kind: 'resource', name: 'res-1', day: '2026-10-19', value: 2 });
   });
@@ -122,9 +122,9 @@ describe('BigQueryBillingReader (CA-5, parte 1)', () => {
       const d = await new BigQueryBillingReader(client).read(WINDOW);
       const est = d.byAiCaller.filter((r) => r.source === 'estimated');
       expect(est).toEqual([
-        { caller: 'worker-functions', funcao: 'parser_vaga', total: 0.6 + 2.5, source: 'estimated' },
-        { caller: 'triage-service', funcao: 'luz_turno', total: 0.3, source: 'estimated' },
-        { caller: 'sol', funcao: 'propagador', total: null, source: 'estimated' },
+        { caller: 'worker-functions', funcao: 'parser_vaga', total: 0.6 + 2.5, currency: 'USD', source: 'estimated' },
+        { caller: 'triage-service', funcao: 'luz_turno', total: 0.3, currency: 'USD', source: 'estimated' },
+        { caller: 'sol', funcao: 'propagador', total: null, currency: 'USD', source: 'estimated' },
       ]);
       // a janela é o MÊS e a consulta soma por service/funcao/model; trilha do billing segue intacta
       const ai = calls.find((c) => isAi(c.query))!;

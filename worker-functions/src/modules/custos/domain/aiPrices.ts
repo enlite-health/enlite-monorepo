@@ -6,6 +6,9 @@
  *  - https://ai.google.dev/gemini-api/docs/pricing
  * Modelo sem preço aqui → custo `null` (desconhecido); NUNCA zero nem chute. A tela marca a linha como "estimado".
  */
+/** Moeda do custo estimado (a tabela de preços é em USD). */
+export const AI_COST_CURRENCY = 'USD';
+
 export const AI_PRICE_PER_MILLION: Readonly<Record<string, { input: number; output: number }>> = {
   'gemini-2.5-flash': { input: 0.3, output: 2.5 },
 };

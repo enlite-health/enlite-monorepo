@@ -13,7 +13,7 @@ import {
   type SectorCost,
   type ServiceCost,
 } from '../domain/types';
-import { estimateAiCostUsd } from '../domain/aiPrices';
+import { AI_COST_CURRENCY, estimateAiCostUsd } from '../domain/aiPrices';
 
 /** Tabela Detailed do billing export (spec §9.3). Sobrescrevível por `BILLING_EXPORT_TABLE`. */
 export const DEFAULT_BILLING_TABLE = 'enlite-prd.billing_export.gcp_billing_export_resource_v1_01994D_5E747D_F222E1';
@@ -129,8 +129,9 @@ export class BigQueryBillingReader implements BillingReader {
       .filter((m) => /^\d{4}-\d{2}$/.test(m.month) && m.month <= w.month)
       .slice(-6);
 
+    const currency = meta[0]?.currency ? String(meta[0].currency) : null;
     return {
-      currency: meta[0]?.currency ? String(meta[0].currency) : null,
+      currency,
       dataUntil: toIso(meta[0]?.data_until),
       dailyTotals: daily.map((r): DailyTotal => ({ day: String(r.day), value: num(r.total) })),
       months: sixMonths,
@@ -139,7 +140,7 @@ export class BigQueryBillingReader implements BillingReader {
       bySector: sectors.map((r): SectorCost => ({ sector: str(r.sector, NONE_KEY), total: num(r.total) })),
       byAiCaller: [...ai.map((r): AiCallerCost => {
         const caller = typeof r.caller === 'string' && r.caller ? r.caller : null;
-        return { caller: caller ?? NONE_KEY, funcao: str(r.funcao, NONE_KEY), total: num(r.total), source: caller ? 'billing' : 'unattributed' };
+        return { caller: caller ?? NONE_KEY, funcao: str(r.funcao, NONE_KEY), total: num(r.total), currency, source: caller ? 'billing' : 'unattributed' };
       }), ...aiEstimated],
       dailyByService: dailyServices.map((r): DailyCostPoint => ({ kind: 'service', name: str(r.name, NONE_KEY), day: String(r.day), value: num(r.total) })),
       dailyByResource: dailyResources.map((r): DailyCostPoint => ({ kind: 'resource', name: str(r.name, NONE_KEY), day: String(r.day), value: num(r.total) })),
@@ -171,7 +172,7 @@ export class BigQueryBillingReader implements BillingReader {
       const cost = estimateAiCostUsd(String(r.model ?? ''), num(r.tokens_in), num(r.tokens_out));
       const key = `${caller}|${funcao}`;
       const prev = groups.get(key);
-      if (!prev) groups.set(key, { caller, funcao, total: cost, source: 'estimated' });
+      if (!prev) groups.set(key, { caller, funcao, total: cost, currency: AI_COST_CURRENCY, source: 'estimated' });
       else prev.total = prev.total === null || cost === null ? null : prev.total + cost;
     }
     return [...groups.values()].sort((a, b) => (b.total ?? -1) - (a.total ?? -1));

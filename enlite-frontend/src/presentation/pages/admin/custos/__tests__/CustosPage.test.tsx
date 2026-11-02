@@ -30,9 +30,9 @@ const overview = (over: Partial<CostOverview> = {}): CostOverview => ({
   byResource: [{ service: 'Cloud Run', resource: 'svc-a', total: 70 }],
   bySector: [{ sector: 'recrutamento', total: 50 }, { sector: '__none__', total: 20 }],
   byAiCaller: [
-    { caller: 'triage', funcao: 'f1', total: 10, source: 'billing' },
-    { caller: 'maria', funcao: 'f2', total: 5, source: 'estimated' },
-    { caller: '__none__', funcao: '__none__', total: 1, source: 'unattributed' },
+    { caller: 'triage', funcao: 'f1', total: 10, currency: 'USD', source: 'billing' },
+    { caller: 'maria', funcao: 'f2', total: 5, currency: 'USD', source: 'estimated' },
+    { caller: '__none__', funcao: '__none__', total: 1, currency: 'USD', source: 'unattributed' },
   ],
   anomalies: { status: 'ok', items: [
     { kind: 'service', name: 'Cloud Run', dayValue: 40, median7: 10, factor: 4, isNew: false },
@@ -160,6 +160,26 @@ describe('CustosPage', () => {
     expect(within(setor).queryByText('__none__')).toBeNull();
     expect(screen.getAllByTestId('custos-selo-estimado')).toHaveLength(1);
     expect(screen.getAllByTestId('custos-selo-nao-atribuido')).toHaveLength(1);
+  });
+
+  it('chamador de IA: linha estimada usa a moeda da linha (USD) mesmo com o mês em BRL; total nulo mostra "—"', async () => {
+    getOverview.mockResolvedValue(overview({
+      currency: 'BRL',
+      byAiCaller: [
+        { caller: 'maria', funcao: 'f2', total: 5, currency: 'USD', source: 'estimated' },
+        { caller: 'sol', funcao: 'prop', total: null, currency: 'USD', source: 'estimated' },
+        { caller: 'triage', funcao: 'f1', total: 10, currency: 'BRL', source: 'billing' },
+      ],
+    }));
+    render_();
+    await clicar();
+    const tabela = await screen.findByTestId('custos-por-chamador');
+    const linha = (nome: string) => within(tabela).getByText(nome).closest('tr') as HTMLElement;
+    expect(linha('maria').textContent).toMatch(/USD|US\$/);
+    expect(linha('maria').textContent).not.toMatch(/BRL|R\$/);
+    expect(linha('triage').textContent).toMatch(/BRL|R\$/);
+    expect(linha('sol').textContent).toContain('—');
+    expect(linha('sol').textContent).not.toMatch(/USD|BRL|\$/);
   });
 
   it('anomalias: lista com selo "novo" e fator nulo; histórico insuficiente tem texto próprio', async () => {

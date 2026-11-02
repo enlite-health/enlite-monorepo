@@ -17,8 +17,8 @@ export interface ResourceCost { service: string; resource: string; total: number
 export interface SectorCost { sector: string; total: number }
 
 export type AiCallerSource = 'billing' | 'estimated' | 'unattributed';
-/** `total` é `null` quando o custo é desconhecido (estimativa de modelo sem preço na tabela de `aiPrices.ts`). */
-export interface AiCallerCost { caller: string; funcao: string; total: number | null; source: AiCallerSource }
+/** `total` é `null` quando o custo é desconhecido (estimativa de modelo sem preço na tabela de `aiPrices.ts`). `currency`: moeda da LINHA (billing/unattributed = a do export; estimated = USD). */
+export interface AiCallerCost { caller: string; funcao: string; total: number | null; currency: string | null; source: AiCallerSource }
 
 export type AnomalyKind = 'service' | 'resource';
 /** Um ponto da série diária por serviço/recurso (custo líquido do dia). */
