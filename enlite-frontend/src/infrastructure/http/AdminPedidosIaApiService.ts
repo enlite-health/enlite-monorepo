@@ -56,6 +56,24 @@ export interface DecisaoResultado {
   status: PedidoStatus;
 }
 
+/** Um contador de "aceita sem contestar" (D601). `ultimaContestacaoSemana` é uma data de semana ISO ou null. */
+export interface ContadorAceitosDados {
+  semanasValidasSeguidas: number;
+  reguaSemanas: number;
+  atingiuRegua: boolean;
+  ultimaContestacaoSemana: string | null;
+  pendentes: number;
+  pedidos: number;
+}
+
+export interface ContadoresAceitos {
+  /** Pedidos vindos de reporte de outras pessoas artificiais (régua 4 semanas). */
+  contador1: ContadorAceitosDados;
+  /** Pedidos só de veredicto, originados pelo próprio Sol (régua 26 semanas). */
+  contador2: ContadorAceitosDados;
+  janela: { de: string; ate: string };
+}
+
 class AdminPedidosIaApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -94,6 +112,14 @@ class AdminPedidosIaApiServiceClass {
 
   async get(id: string): Promise<Pedido> {
     return this.request<Pedido>('GET', `/api/admin/pedidos-ia/${encodeURIComponent(id)}`);
+  }
+
+  async getContadores(janela: { de?: string; ate?: string } = {}): Promise<ContadoresAceitos> {
+    const params = new URLSearchParams();
+    if (janela.de) params.set('de', janela.de);
+    if (janela.ate) params.set('ate', janela.ate);
+    const q = params.toString() ? `?${params}` : '';
+    return this.request<ContadoresAceitos>('GET', `/api/admin/pedidos-ia/contadores${q}`);
   }
 
   async aceitar(id: string): Promise<DecisaoResultado> {
