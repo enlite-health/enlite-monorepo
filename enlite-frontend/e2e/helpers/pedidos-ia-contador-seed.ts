@@ -66,7 +66,7 @@ const quando = (n: number): string =>
   `((date_trunc('week', now() AT TIME ZONE '${BA}') - interval '${n} weeks' + interval '2 days 12 hours') AT TIME ZONE '${BA}')`;
 
 /** 1 pedido (+ atitude v1, origens e 1º evento humano) por INSERT com CTEs; `tag` = marca da rodada (também é a área). */
-function seedUm(run: RunSql, tag: string, p: PedidoContador): void {
+function seedUm(run: RunSql, tag: string, p: PedidoContador): string {
   const ts = quando(p.semanasAtras);
   const ctes = [
     `p AS (INSERT INTO agentes.pedidos (assunto, descricao, autor, area, grave_gatilho, registro_versao, criado_em)
@@ -96,11 +96,49 @@ function seedUm(run: RunSql, tag: string, p: PedidoContador): void {
              SELECT p.id, a.id, '${p.ev.acao}', '${ATOR}', 'humano', ${motivo}, ${comentario}, ${ts} FROM p, a)`,
     );
   }
-  run(`WITH ${ctes.join(',\n')} SELECT 1`);
+  return run(`WITH ${ctes.join(',\n')} SELECT id FROM p`);
 }
 
 export function seedMassaContador(run: RunSql, tag: string): void {
   for (const p of MASSA) seedUm(run, tag, p);
+}
+
+/**
+ * MASSA DA DECISÃO (alt 2 do spec de tela): só contador 1 (origem reporte); o humano NEGA o pendente pela tela e o contador cai.
+ *
+ * pedido | semana | 1º evento                | classe      | efeito
+ * -------|--------|--------------------------|-------------|--------------------------------------------
+ * N1, N2 |   -7   | aceitar, sem comentário  | limpa       | semana -7 VÁLIDA (2 limpas)
+ * N3, N4 |   -6   | aceitar, sem comentário  | limpa       | semana -6 VÁLIDA
+ * N5, N6 |   -5   | aceitar, sem comentário  | limpa       | semana -5 VÁLIDA enquanto o NP estiver pendente
+ * NP     |   -5   | (nenhum)                 | pendente    | ao NEGAR vira contestação na semana -5 -> ZERA
+ *
+ * ANTES de negar: 3 de 4 semanas seguidas, "Sin contestaciones", Pedidos: 7, Pendientes: 1.  Contador 2: vazio (0 pedidos).
+ * DEPOIS de negar + recarregar: 0 de 4 semanas seguidas, "Última contestación: semana del <segunda da semana -5>", Pedidos: 7, Pendientes: 0.
+ */
+export const MASSA_NEGAR: PedidoContador[] = [
+  { id: 'N1', semanasAtras: 7, origem: 'reporte', ev: { acao: 'aceitar' } },
+  { id: 'N2', semanasAtras: 7, origem: 'reporte', ev: { acao: 'aceitar' } },
+  { id: 'N3', semanasAtras: 6, origem: 'reporte', ev: { acao: 'aceitar' } },
+  { id: 'N4', semanasAtras: 6, origem: 'reporte', ev: { acao: 'aceitar' } },
+  { id: 'N5', semanasAtras: 5, origem: 'reporte', ev: { acao: 'aceitar' } },
+  { id: 'N6', semanasAtras: 5, origem: 'reporte', ev: { acao: 'aceitar' } },
+  { id: 'NP', semanasAtras: 5, origem: 'reporte', ev: null },
+];
+
+export const ESPERADO_NEGAR = {
+  antes: { semanas: '3', regua: '3 de 4 semanas seguidas', pedidos: 'Pedidos: 7', pendentes: 'Pendientes: 1', ultima: 'Sin contestaciones' },
+  depois: { semanas: '0', regua: '0 de 4 semanas seguidas', pedidos: 'Pedidos: 7', pendentes: 'Pendientes: 0', ultimaSemanasAtras: 5 },
+} as const;
+
+/** Semeia a MASSA_NEGAR e devolve o id do pedido PENDENTE (NP), o que o teste vai negar pela tela. */
+export function seedMassaNegar(run: RunSql, tag: string): string {
+  let pendente = '';
+  for (const p of MASSA_NEGAR) {
+    const id = seedUm(run, tag, p);
+    if (p.id === 'NP') pendente = id;
+  }
+  return pendente;
 }
 
 /** Apaga SÓ a rodada (pedidos/atitudes/eventos/origens pela área, depois reportes e veredictos pela marca). */

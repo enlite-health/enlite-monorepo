@@ -14,9 +14,10 @@
  *
  *  feliz  — a massa vira os números acima; o bloco está ACIMA da lista de pedidos.
  *  alt 1  — janela sem pedidos com origem: "0" nos dois, estado vazio visível, sem régua/percentual e sem erro.
- *  alt 2  — o endpoint dos contadores falha (500): aviso `contador-aceitos-erro` e a lista segue funcional (Aceptar por click grava 1 evento).
- *           ÚNICO mock do spec, SÓ nessa rota (`page.route`): não há como fazer a API real falhar só nesse endpoint sem derrubar a
- *           lista (mesma célula `pedidos_ia:read`); o objetivo é provar que a falha do contador não derruba a página.
+ *  alt 2  — MUDANÇA REAL DE ESTADO pela tela: massa com 3 semanas válidas + 1 pedido PENDENTE da semana -5 (tabela em `MASSA_NEGAR`);
+ *           ANTES: contador 1 = "3 de 4", "Sin contestaciones", Pendientes: 1 · o humano acha o pedido na lista, clica Negar, digita o motivo
+ *           (click + `keyboard.type`) e confirma · recarrega · DEPOIS: "0 de 4", "Última contestación: semana del <segunda da semana -5>",
+ *           Pendientes: 0, Pedidos: 7 (o 1º evento `negar` vira contestação na semana e ZERA a sequência). Nada é interceptado nem mockado.
  *
  * ISOLAMENTO entre os testes (serial): `beforeEach` apaga a rodada (`limparMassaContador`, pela marca única TAG) -> cada teste semeia o
  * que precisa e o `afterAll` apaga de novo. O alt 1 ainda CONFERE por SQL que nenhuma outra rodada deixou pedido com origem na janela
@@ -28,19 +29,18 @@ import { test, expect, type Page } from '@playwright/test';
 import { escolherNoCombo } from '../helpers/combobox';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
-import { contarEventos, seedPedido, sqlViaDocker, ultimoEvento } from '../helpers/pedidos-ia-seed';
+import { contarEventos, sqlViaDocker, ultimoEvento } from '../helpers/pedidos-ia-seed';
 import {
-  contarPedidosNaJanela, ESPERADO, limparMassaContador, seedMassaContador, segundaBA,
+  contarPedidosNaJanela, ESPERADO, ESPERADO_NEGAR, limparMassaContador, seedMassaContador, seedMassaNegar, segundaBA,
 } from '../helpers/pedidos-ia-contador-seed';
 
 const RUN = `${Date.now()}${Math.random().toString(36).slice(2, 5)}`;
 const TAG = `ar-ctr-${RUN}`;
 const STAFF: MockUser = { uid: `e2e-ctr-${RUN}`, email: `ctr.${RUN}@e2e.test`, role: 'admin', country: 'AR' };
 
-/** Login + abre a tela. `antesDeAbrir` roda DEPOIS do login (o login registra a rota `/api/**`; a mais recente tem prioridade). */
-async function abrirTela(page: Page, antesDeAbrir?: () => Promise<void>): Promise<void> {
+/** Login (click + teclado) + abre a tela. */
+async function abrirTela(page: Page): Promise<void> {
   await loginComoStaffMock(page, STAFF, 'E2E Contador');
-  if (antesDeAbrir) await antesDeAbrir();
   await page.goto('/admin/pedidos-ia');
   await expect(page.getByTestId('pedidos-ia-page')).toBeVisible({ timeout: 30_000 });
 }
@@ -105,30 +105,45 @@ test.describe('pedidos-ia 081 — contadores de aceitos sem contestar @integrati
     expect(await page.getByTestId('contador-aceitos').innerText()).not.toContain('%'); // sem percentual
   });
 
-  test('alt 2: o endpoint dos contadores falha (500) -> aviso discreto e a lista de pedidos segue funcional', async ({ page }) => {
-    // ÚNICO mock do spec, SÓ nesta rota: a API real não falha seletivamente neste endpoint (mesma célula da página).
-    let chamadas = 0;
-    const id = seedPedido(sqlViaDocker, { assunto: `Contador alt2 ${RUN}`, area: TAG }); // sem origem: não entra nos contadores
-    await abrirTela(page, () =>
-      page.route('**/api/admin/pedidos-ia/contadores*', async (route) => {
-        chamadas += 1;
-        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false, code: 'INTERNAL_ERROR' }) });
-      }),
-    );
-    await expect(page.getByTestId('contador-aceitos-erro')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId('contador-aceitos-erro')).toHaveText('No se pudieron cargar los contadores. El resto de la página sigue funcionando.');
-    expect(chamadas).toBeGreaterThan(0); // o mock foi mesmo exercitado
-    await expect(page.getByTestId('contador-1')).toHaveCount(0);
-    await expect(page.getByTestId('contador-2')).toHaveCount(0);
-
-    // A página segue de pé: filtro por área (click + teclado) e uma decisão real, por click.
+  test('alt 2: negar pela tela o pedido pendente da sequência derruba o contador 1 a 0 e a última contestação passa a ser a semana dele', async ({ page }) => {
+    const pendente = seedMassaNegar(sqlViaDocker, TAG); // ver a TABELA em MASSA_NEGAR: 3 semanas válidas + 1 pedido pendente na semana -5
+    await abrirTela(page);
     await escolherNoCombo(page, page.getByTestId('pedidos-filtro-area'), TAG);
-    const post = page.getByTestId(`pedido-post-${id}`);
+
+    // ANTES (lido da tela): 3 de 4, sem contestação, 1 pendente.
+    await expect(page.getByTestId('contador-1-semanas')).toHaveText(ESPERADO_NEGAR.antes.semanas, { timeout: 30_000 });
+    await expect(page.getByTestId('contador-1-regua')).toHaveText(ESPERADO_NEGAR.antes.regua);
+    await expect(page.getByTestId('contador-1-ultima-contestacao')).toHaveText(ESPERADO_NEGAR.antes.ultima);
+    await expect(page.getByTestId('contador-1-pedidos')).toHaveText(ESPERADO_NEGAR.antes.pedidos);
+    await expect(page.getByTestId('contador-1-pendentes')).toHaveText(ESPERADO_NEGAR.antes.pendentes);
+    await expect(page.getByTestId('contador-2-vazio')).toBeVisible();
+
+    // Decisão HUMANA pela tela: achar o pedido na lista, Negar, motivo por teclado, confirmar.
+    const post = page.getByTestId(`pedido-post-${pendente}`);
     await expect(post).toBeVisible();
     await expect(post.getByTestId('pedido-status')).toHaveText('Nuevo');
-    await post.getByTestId('pedido-aceitar').click();
-    await expect(post.getByTestId('pedido-status')).toHaveText('Aceptado', { timeout: 20_000 });
-    expect(contarEventos(sqlViaDocker, id)).toBe(1);
-    expect(ultimoEvento(sqlViaDocker, id)).toBe(`aceitar|${STAFF.uid}|humano`);
+    await post.getByTestId('pedido-negar').click();
+    const campo = page.getByTestId('decisao-texto');
+    await campo.click();
+    await expect(campo).toBeFocused();
+    await page.keyboard.type('motivo sintetico do alt 2');
+    await expect(campo).toHaveValue('motivo sintetico do alt 2');
+    await page.getByTestId('decisao-confirmar').click();
+    await expect(post.getByTestId('pedido-status')).toHaveText('Negado', { timeout: 20_000 });
+    expect(contarEventos(sqlViaDocker, pendente)).toBe(1);
+    expect(ultimoEvento(sqlViaDocker, pendente)).toBe(`negar|${STAFF.uid}|humano`);
+
+    // DEPOIS de recarregar: o contador 1 zerou e a última contestação é a semana do pedido negado.
+    await page.reload();
+    await expect(page.getByTestId('pedidos-ia-page')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('contador-1-semanas')).toHaveText(ESPERADO_NEGAR.depois.semanas, { timeout: 30_000 });
+    await expect(page.getByTestId('contador-1-regua')).toHaveText(ESPERADO_NEGAR.depois.regua);
+    await expect(page.getByTestId('contador-1')).toHaveAttribute('data-atingiu', 'false');
+    await expect(page.getByTestId('contador-1-ultima-contestacao')).toHaveText(
+      `Última contestación: semana del ${segundaBA(ESPERADO_NEGAR.depois.ultimaSemanasAtras)}`,
+    );
+    await expect(page.getByTestId('contador-1-pedidos')).toHaveText(ESPERADO_NEGAR.depois.pedidos);
+    await expect(page.getByTestId('contador-1-pendentes')).toHaveText(ESPERADO_NEGAR.depois.pendentes);
+    await expect(page.getByTestId('contador-aceitos-erro')).toHaveCount(0);
   });
 });
