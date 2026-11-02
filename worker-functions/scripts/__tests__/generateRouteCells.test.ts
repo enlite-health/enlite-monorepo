@@ -14,6 +14,7 @@ const ESPERADO: Record<string, string> = {
   'GET /api/admin/vacancies/:id': 'vacancy:read',
   'GET /api/admin/vacancies/:id/interview-slots': 'interview:read',
   'GET /api/admin/workers': 'worker:read',
+  'GET /api/admin/recruitment/activity-per-person': 'recruitment_activity_per_person:read',
 };
 
 describe('route-cells.json (inventário das irmãs da Maria)', () => {
@@ -23,8 +24,8 @@ describe('route-cells.json (inventário das irmãs da Maria)', () => {
   const nome = (r: { method: string; path: string; bloco?: string }) =>
     `${r.method} ${r.path}${r.bloco ? `#${r.bloco}` : ''}`;
 
-  it('tem exatamente as 8 entradas do mapa, cada uma com a célula esperada', () => {
-    expect(commitado.routes).toHaveLength(8);
+  it('tem exatamente as 9 entradas do mapa, cada uma com a célula esperada', () => {
+    expect(commitado.routes).toHaveLength(9);
     expect(Object.fromEntries(commitado.routes.map((r) => [nome(r), r.cell]))).toEqual(ESPERADO);
   });
 

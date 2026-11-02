@@ -36,6 +36,8 @@ const MAPA: Array<{ method: string; path: string; irmas: string[] }> = [
   { method: 'GET', path: '/api/admin/vacancies/:id', irmas: ['vacancy_details_read'] },
   { method: 'GET', path: '/api/admin/vacancies/:id/interview-slots', irmas: ['interview_slots_read'] },
   { method: 'GET', path: '/api/admin/workers', irmas: ['worker_search'] },
+  // T064b (D602a): atividade do funil por recrutadora e semana, célula só do Acesso Master.
+  { method: 'GET', path: '/api/admin/recruitment/activity-per-person', irmas: ['recruitment_activity_per_person'] },
 ];
 
 const DOCUMENTS = {
@@ -70,6 +72,7 @@ export async function gerarRouteCells(): Promise<RouteCellEntry[]> {
   const { createWorkerContextRoutes } = await import('@modules/matching/interfaces/routes/workerContextRoutes');
   const { createAdminVacanciesRoutes } = await import('@modules/matching/interfaces/routes/adminVacanciesRoutes');
   const { createWorkerEncuadreRoutes } = await import('@modules/matching/interfaces/routes/workerEncuadreRoutes');
+  const { createRecruitmentRoutes } = await import('@modules/matching/interfaces/routes/recruitmentRoutes');
 
   const app = express();
   app.use(
@@ -126,6 +129,7 @@ export async function gerarRouteCells(): Promise<RouteCellEntry[]> {
       permissionsDouble(),
     ),
   );
+  app.use('/api', createRecruitmentRoutes(authDouble(), permissionsDouble(), dubleDe('act', ['list']) as never));
 
   const scanned = scanExpressRouter(app);
   const entries: RouteCellEntry[] = MAPA.map((m) => {

@@ -298,6 +298,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/workers/missing-documents → analytics:read',
         // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria.
         'GET /api/admin/recruitment/blocked-attempts → recruitment_blocked:read',
+        // Spec 081 (T064b, D602a): atividade por recrutadora e semana — célula só do Acesso Master.
+        'GET /api/admin/recruitment/activity-per-person → recruitment_activity_per_person:read',
         'POST /analytics/dedup/run → dedup:execute',
         // ── A4: admin.messaging (7) + admin.integrations (1) + admin.test_fixtures (1)
         'POST /api/admin/messaging/whatsapp/vacancy-match → messaging:send',

@@ -72,6 +72,15 @@
         "worker_search"
       ],
       "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/recruitment/activity-per-person",
+      "cell": "recruitment_activity_per_person:read",
+      "irmas": [
+        "recruitment_activity_per_person"
+      ],
+      "enforcedIn": "perm.require"
     }
   ]
 }

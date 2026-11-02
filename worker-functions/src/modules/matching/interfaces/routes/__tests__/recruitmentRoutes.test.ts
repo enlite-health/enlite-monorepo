@@ -32,6 +32,8 @@ jest.mock('@shared/logging', () => ({
 /** Mapa esperado. Spec 024 (D2/D401, 21/09): LOG administrativo, célula própria. */
 const ESPERADO: Record<string, string> = {
   'GET /admin/recruitment/blocked-attempts': 'recruitment_blocked:read',
+  // Spec 081 (T064b, D602a): atividade por recrutadora e semana, célula do Acesso Master.
+  'GET /admin/recruitment/activity-per-person': 'recruitment_activity_per_person:read',
 };
 
 const REMOVIDAS = [
@@ -59,12 +61,12 @@ function declaradas(): Record<string, string | null> {
   );
 }
 
-describe('família admin.recruitment — o router declara só blocked-attempts', () => {
+describe('família admin.recruitment — o router declara só blocked-attempts e activity-per-person', () => {
   it('a família é `admin.recruitment` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_RECRUITMENT_FAMILY).toBe('admin.recruitment');
   });
 
-  it('a única rota declara a célula do mapa', () => {
+  it('as duas rotas declaram a célula do mapa', () => {
     expect(declaradas()).toEqual(ESPERADO);
   });
 
@@ -72,8 +74,8 @@ describe('família admin.recruitment — o router declara só blocked-attempts',
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('este router tem exatamente 1 rota — recolocar uma rota do dashboard removido quebra aqui', () => {
-    expect(scanExpressRouter(build())).toHaveLength(1);
+  it('este router tem exatamente 2 rotas — recolocar uma rota do dashboard removido quebra aqui', () => {
+    expect(scanExpressRouter(build())).toHaveLength(2);
   });
 
   it('GET /admin/recruitment/blocked-attempts chama listBlockedAttempts do controller com a request e a response', async () => {
