@@ -1,0 +1,48 @@
+# Override do e2e de TELA do painel de custos (spec 082, T043 / CA-7: `enlite-frontend/e2e/integration/custos-abac.integration.e2e.ts`).
+#
+# O BigQuery é trocado por `goccy/bigquery-emulator` (tag FIXA 0.6.6; só amd64 — no Mac arm64 roda sob emulação): a API lê o billing
+# export de um dataset SINTÉTICO semeado por `test-fixtures/billing-export-seed.mjs` (mesmo padrão do fake-gcs: serviço de apoio +
+# env na api). NADA vai ao BigQuery real nem a `enlite-prd`/`enlite-stg`; nenhuma credencial é lida: o preload
+# `test-fixtures/bigquery-emulator-auth-preload.js` desliga só o token do SDK (ele não pula auth com `BIGQUERY_EMULATOR_HOST`).
+#
+# Usado SÓ pelo job `integration-e2e-group-simulation` (engine ABAC ligado + `admin.integrations` enforçada — a célula
+# `platform_costs:read` só vale assim). Vem DEPOIS de `docker-compose.group-simulation.yml` na lista de `-f`.
+# O `command` repete o do `docker-compose.test.yml` e só acrescenta um `--require` (compose substitui `command`, não o mescla).
+services:
+  bigquery-emulator:
+    image: ghcr.io/goccy/bigquery-emulator:0.6.6
+    platform: linux/amd64
+    command: ["--project=enlite-test", "--port=9050"]
+    ports:
+      - "${BQ_EMULATOR_PORT:-59050}:9050"
+    networks:
+      - enlite-network
+
+  # One-shot: espera o emulador, cria dataset/tabela e insere as linhas (datas relativas a HOJE: a janela do leitor é de agora).
+  bigquery-seed:
+    image: node:20-alpine
+    working_dir: /seed
+    volumes:
+      - ./test-fixtures/billing-export-seed.mjs:/seed/billing-export-seed.mjs:ro
+    environment:
+      BIGQUERY_EMULATOR_HOST: "http://bigquery-emulator:9050"
+    command: ["node", "billing-export-seed.mjs"]
+    depends_on:
+      - bigquery-emulator
+    restart: "no"
+    networks:
+      - enlite-network
+
+  api:
+    command: >
+      sh -c "node scripts/generate-fake-gcs-sa.js && node scripts/run-migrations-docker.js &&
+      NODE_OPTIONS='--require=/app/vertexInterceptPreload.js --require=/app/bigqueryEmulatorAuthPreload.js' npm start"
+    volumes:
+      - ./test-fixtures/bigquery-emulator-auth-preload.js:/app/bigqueryEmulatorAuthPreload.js:ro
+    environment:
+      BIGQUERY_EMULATOR_HOST: "http://bigquery-emulator:9050"
+      GOOGLE_CLOUD_PROJECT: "enlite-test"
+      BILLING_EXPORT_TABLE: "enlite-test.billing_export_test.gcp_billing_export_resource_v1_test"
+    depends_on:
+      bigquery-seed:
+        condition: service_completed_successfully
