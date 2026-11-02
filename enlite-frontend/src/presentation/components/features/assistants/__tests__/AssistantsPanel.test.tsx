@@ -381,6 +381,17 @@ describe("AssistantsPanel — selector, scroll, composer (mockup)", () => {
     expect(screen.getByTestId("assistants-tab-teresa")).toHaveAttribute("aria-selected", "false");
   });
 
+  it("list items use the PersonAvatar: 30px, fixed primary color, the initial", async () => {
+    svc.list.mockResolvedValue(THREE);
+    render(<AssistantsWidget />);
+    await abrir();
+    abrirLista();
+    const av = screen.getByTestId("assistants-avatar-teresa");
+    expect(av.style.width).toBe("30px");
+    expect(av.className).toContain("bg-primary");
+    expect(av).toHaveTextContent("T");
+  });
+
   it("choosing an option switches the assistant and closes the list", async () => {
     svc.list.mockResolvedValue(THREE);
     render(<AssistantsWidget />);

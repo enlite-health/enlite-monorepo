@@ -15,6 +15,7 @@ import {
 } from "react";
 import { ChevronDown, Lock, Minus, Send, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { PersonAvatar } from "@presentation/components/atoms/PersonAvatar";
 import type { UseAssistants } from "@presentation/hooks/useAssistants";
 
 interface Props {
@@ -273,12 +274,13 @@ export function AssistantsPanel({
                   selected ? "bg-[#EEE9F6]" : ""
                 }`}
               >
-                <span
-                  aria-hidden="true"
-                  className="grid h-[30px] w-[30px] place-items-center rounded-full bg-primary text-xs font-semibold text-white"
-                >
-                  {g.name.charAt(0).toUpperCase()}
-                </span>
+                <PersonAvatar
+                  uid={g.slug}
+                  name={g.name}
+                  size={30}
+                  colorClassName="bg-primary"
+                  data-testid={`assistants-avatar-${g.slug}`}
+                />
                 <span className="min-w-0">
                   <span className="block truncate text-[12.5px] font-semibold leading-[1.2]">
                     {g.name}

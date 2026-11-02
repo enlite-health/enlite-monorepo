@@ -46,13 +46,15 @@ export interface PersonAvatarProps {
   /** Bolinha de presença no canto (Rodada 2, popup de menção estilo ClickUp). Ausente = sem
    * bolinha nenhuma — comportamento idêntico ao `MessageAvatar` de antes desta extração. */
   presence?: Presence;
+  /** Classe de cor FIXA (ex.: 'bg-primary'). Quando presente, substitui a cor sorteada pelo `uid`; ausente = sorteio de sempre. */
+  colorClassName?: string;
   'data-testid'?: string;
 }
 
 export function PersonAvatar({
-  uid, name, size = 32, className = '', presence, 'data-testid': testId = 'person-avatar',
+  uid, name, size = 32, className = '', presence, colorClassName, 'data-testid': testId = 'person-avatar',
 }: PersonAvatarProps): JSX.Element {
-  const bgClass = AVATAR_BG_CLASSES[hashToIndex(uid, AVATAR_BG_CLASSES.length)];
+  const bgClass = colorClassName ?? AVATAR_BG_CLASSES[hashToIndex(uid, AVATAR_BG_CLASSES.length)];
   const circle = (
     <div
       data-testid={testId}
