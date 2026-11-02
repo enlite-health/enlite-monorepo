@@ -565,7 +565,7 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'recruitment_activity_per_person:read':
     'Ver a atividade do funil de recrutamento POR RECRUTADORA e por semana (movimentos de etapa, trocas de status e edições de perfil — só contagens, sem nome de prestador).',
   // ── Spec 080 — chat with the assistants in the app. Acesso Master only (phase A).
-  'assistant_maria:chat': 'Conversar con Maria (gestora de reclutamiento)',
+  'assistant_maria:chat': 'Conversar con la asistente de gestión de reclutamiento',
   'assistant_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
   'assistant_candela:chat': 'Conversar con Candela (gestora de coordinación)',
   'assistant_scoreboard:read': 'Ver el placar de los agentes (reportes por operador)',
