@@ -18,6 +18,7 @@
 
 import { GoogleAuth } from 'google-auth-library';
 import { fetchGeminiWithRetry, type GeminiFetchOptions } from './gemini-fetch';
+import { emitAiUsage, withAiLabels } from './ai-usage';
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 
@@ -92,7 +93,8 @@ export async function generateContentVertex(
     `https://${vertexHost(loc)}/v1/projects/${projectIdCache}` +
     `/locations/${loc}/publishers/google/models/${model}:generateContent`;
 
-  return fetchGeminiWithRetry(
+  // Spec 082 (DF-10): `labels` (service/setor/funcao) na requisição + uma linha `ai_usage` (sem texto) após a resposta.
+  const res = await fetchGeminiWithRetry(
     url,
     {
       method: 'POST',
@@ -100,9 +102,11 @@ export async function generateContentVertex(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(withAiLabels(body, logTag)),
     },
     logTag,
     opts,
   );
+  await emitAiUsage(res, model, logTag);
+  return res;
 }
