@@ -21,6 +21,7 @@ import { runActivateRecruitmentClick } from './activateRecruitmentClick';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ServiceVacancyCells } from './ServiceVacancyCells';
 import { LinkExistingVacancyAction } from './LinkExistingVacancyAction';
+import { LinkExistingVacancyModal } from './LinkExistingVacancyModal';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -65,6 +66,7 @@ function ActivateRecruitmentAction({
 }) {
   const showToast = useToast();
   const [busy, setBusy] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
   const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
 
@@ -86,11 +88,12 @@ function ActivateRecruitmentAction({
   const handleClick = async (e: MouseEvent): Promise<void> => {
     e.stopPropagation();
     await runActivateRecruitmentClick({
-      patientId, serviceId: service.id, missing, busy, setBusy, onActivated, tc, t, showToast,
+      patientId, serviceId: service.id, missing, busy, setBusy, onActivated, openLinkModal: () => setLinkOpen(true), tc, t, showToast,
     });
   };
 
   return (
+    <>
     <ActionButton
       resource="patient_services"
       action="update"
@@ -105,6 +108,23 @@ function ActivateRecruitmentAction({
     >
       <Rocket className="w-4 h-4" strokeWidth={2} />
     </ActionButton>
+    {/* O foguete achou vaga sem serviço do paciente: abre o MESMO modal do vínculo (spec 079). Dentro da <tr> clicável, o wrapper segura as bolhas. */}
+    <span onClick={(e) => e.stopPropagation()}>
+      <LinkExistingVacancyModal
+        open={linkOpen}
+        patientId={patientId}
+        serviceId={service.id}
+        serviceLabel={serviceLabel}
+        notice={tc('linkExistingVacancy.rocketNotice')}
+        onClose={() => setLinkOpen(false)}
+        onLinked={() => {
+          setLinkOpen(false);
+          showToast(tc('linkExistingVacancy.success'), 'success');
+          onActivated();
+        }}
+      />
+    </span>
+    </>
   );
 }
 

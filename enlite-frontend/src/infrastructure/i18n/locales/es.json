@@ -4107,6 +4107,7 @@
           "linkExistingVacancy": {
             "button": "Vincular vacante existente",
             "aria": "Vincular vacante existente a {{service}}",
+            "rocketNotice": "Este paciente ya tiene una vacante sin servicio. En lugar de crear otra, vincule esa vacante a este servicio.",
             "modalTitle": "Vincular vacante existente al servicio",
             "selectLabel": "Vacante del paciente",
             "selectPlaceholder": "Elegí una vacante",

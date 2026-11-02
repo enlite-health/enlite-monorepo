@@ -20,6 +20,8 @@ interface Props {
   patientId: string;
   serviceId: string;
   serviceLabel: string;
+  /** Texto curto no topo (ex.: o foguete achou vaga vinculável e mandou para cá). */
+  notice?: string;
   onClose: () => void;
   onLinked: () => void;
 }
@@ -44,7 +46,7 @@ function formatValue(v: unknown): string {
   return String(v);
 }
 
-export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLabel, onClose, onLinked }: Props) {
+export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLabel, notice, onClose, onLinked }: Props) {
   const { t } = useTranslation();
   const k = (key: string, opts?: Record<string, unknown>): string =>
     String(t(`admin.patients.detail.contractedServicesCard.linkExistingVacancy.${key}`, opts ?? {}));
@@ -130,6 +132,7 @@ export function LinkExistingVacancyModal({ open, patientId, serviceId, serviceLa
         role="dialog" aria-modal="true" aria-label={k('modalTitle')}>
         <h2 className="text-lg font-semibold">{k('modalTitle')}</h2>
         <Text size="sm" color="tertiary">{serviceLabel}</Text>
+        {notice && <p data-testid="link-existing-vacancy-notice" className="text-sm text-amber-700">{notice}</p>}
 
         {candidates === null ? (
           <p>{k('loading')}</p>

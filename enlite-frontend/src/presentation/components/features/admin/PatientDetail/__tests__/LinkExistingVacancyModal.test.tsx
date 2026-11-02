@@ -51,6 +51,16 @@ describe('LinkExistingVacancyModal', () => {
     expect(P.preview).toHaveBeenCalledWith('p1', 's1');
   });
 
+  it('com `notice` (foguete achou vaga vinculável) mostra o aviso; sem `notice` não mostra nada', async () => {
+    P.preview.mockResolvedValue({ candidates: [CAND], preview: null });
+    const { unmount } = render(<LinkExistingVacancyModal open patientId="p1" serviceId="s1" serviceLabel="Serviço" notice={K.rocketNotice} onClose={vi.fn()} onLinked={vi.fn()} />);
+    expect((await screen.findByTestId('link-existing-vacancy-notice')).textContent).toBe(K.rocketNotice);
+    unmount();
+    render(<LinkExistingVacancyModal open patientId="p1" serviceId="s1" serviceLabel="Serviço" onClose={vi.fn()} onLinked={vi.fn()} />);
+    await screen.findByTestId('link-existing-vacancy-combo');
+    expect(screen.queryByTestId('link-existing-vacancy-notice')).toBeNull();
+  });
+
   it('sem candidatas mostra noCandidates', async () => {
     P.preview.mockResolvedValueOnce({ candidates: [], preview: null });
     render(<LinkExistingVacancyModal open patientId="p1" serviceId="s1" serviceLabel="Serviço" onClose={vi.fn()} onLinked={vi.fn()} />);

@@ -1,4 +1,5 @@
 import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
+import { AdminLinkExistingVacancyApiService } from '@infrastructure/http/AdminLinkExistingVacancyApiService';
 
 /**
  * UMA linha da tabela — as 5 colunas do Figma (decisão do Gabriel 05/09; "Sexo" ficou de fora a
@@ -20,6 +21,8 @@ interface ActivateRecruitmentClickDeps {
   busy: boolean;
   setBusy: (busy: boolean) => void;
   onActivated: () => void;
+  /** Paciente já tem vaga vinculável: abre o modal "Vincular vaga existente" deste serviço (o foguete NÃO cria outra). */
+  openLinkModal: () => void;
   /** `tc` — já namespaced em `contractedServicesCard.` (ver uso abaixo). */
   tc: (k: string, o?: Record<string, unknown>) => string;
   /** `t` cru — os códigos de `completeness.items.*` vivem fora do namespace do `tc`. */
@@ -39,6 +42,13 @@ export async function runActivateRecruitmentClick(deps: ActivateRecruitmentClick
   if (deps.missing.length > 0 || deps.busy) return;
   deps.setBusy(true);
   try {
+    // Um serviço = UMA vaga: antes de criar, pergunta ao vínculo (spec 079) se há vaga existente para ligar. Falha da
+    // consulta não trava o foguete — o backend recusa com 409 LINKABLE_VACANCY_EXISTS se houver (tratado abaixo).
+    const linkable = await AdminLinkExistingVacancyApiService.preview(deps.patientId, deps.serviceId).catch(() => null);
+    if (linkable && linkable.candidates.length > 0) {
+      deps.openLinkModal();
+      return;
+    }
     const result = await AdminContractedServicesApiService.activateRecruitment(deps.patientId, deps.serviceId);
     if (result?.patientNotMoved) {
       // D469: a vaga nasceu, mas o paciente segue em Admisión — AVISO (não sucesso) com o que falta.
@@ -51,7 +61,9 @@ export async function runActivateRecruitmentClick(deps: ActivateRecruitmentClick
     }
     deps.onActivated();
   } catch (err) {
-    if (err instanceof ContractedServiceApiError && err.code === 'SERVICE_ALREADY_RECRUITING') {
+    if (err instanceof ContractedServiceApiError && err.code === 'LINKABLE_VACANCY_EXISTS') {
+      deps.openLinkModal(); // corrida: a vaga apareceu entre a consulta e o POST
+    } else if (err instanceof ContractedServiceApiError && err.code === 'SERVICE_ALREADY_RECRUITING') {
       deps.showToast(deps.tc('activateRecruitmentAlreadyRecruiting'), 'error');
       deps.onActivated(); // refetch: a ficha vai mostrar "Ver vacante" agora
     } else if (err instanceof ContractedServiceApiError && err.code === 'PATIENT_NOT_READY') {

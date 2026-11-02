@@ -11,6 +11,7 @@
  *           vaga fica IGUAL (mesmo id, mesmas contagens), a vaga aponta ao serviço, o serviço recebe os campos, os 2 botões somem.
  *  alt 1  — endereço da vaga != endereço do serviço: bloqueio de endereço, confirmar desabilitado, nada gravado.
  *  alt 2  — serviço sem faixa vigente: bloqueio listando o horário que falta, confirmar desabilitado, nada gravado.
+ *  foguete — serviço PRONTO + paciente com vaga legada: o foguete abre o modal de vínculo (com o aviso) e NÃO cria vaga nova.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { seedActivatablePatient } from '../helpers/patient-detail-c-helper';
@@ -18,9 +19,9 @@ import {
   safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, installAuthInterceptors, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
 import { escolherNoCombo } from '../helpers/combobox';
-import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { RECRUITMENT_FIELDS_E2E, RECRUITMENT_SQL_COLUMNS, RECRUITMENT_SQL_VALUES } from '../helpers/recruitment-fields-e2e';
 import {
-  seedContractedService, seedServiceWithoutSchedule, seedLegacyVacancy, createPatientAddress,
+  runSQL, seedContractedService, seedServiceWithoutSchedule, seedLegacyVacancy, createPatientAddress,
   readVacancyKanbanFingerprint, readVacancyServiceFields, readServiceRecruitmentFields, cleanupVincularVaga,
   type LegacyVacancySeed,
 } from '../helpers/vincular-vaga-e2e-helper';
@@ -206,5 +207,36 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
     expect(readVacancyServiceFields(vaga.vacancyId).contracted_service_id).toBeNull();
     expect(readServiceRecruitmentFields(serviceId)).toEqual(servicoAntes);
     expect(readVacancyKanbanFingerprint(vaga.vacancyId)).toEqual(kanbanAntes);
+  });
+
+  test('foguete com vaga legada do paciente: abre o modal de vínculo com o aviso e NÃO cria vaga nova', async ({ page }) => {
+    const seed = seedActivatablePatient(764000);
+    patients.push(seed.patientId);
+    const { serviceId } = seedContractedService(seed.patientId, { addressId: seed.addressId, withSchedule: true });
+    // Serviço PRONTO para o foguete: os 5 campos do portão preenchidos no serviço (o foguete só habilita sem pendência).
+    runSQL(`UPDATE patient_contracted_services SET (${RECRUITMENT_SQL_COLUMNS}) = (${RECRUITMENT_SQL_VALUES}) WHERE id = '${serviceId}'`);
+    const vaga = seedLegacyVacancy(seed.patientId, { addressId: seed.addressId });
+    workers.push(vaga.workerId);
+    const vagasVivas = (): number => Number(runSQL(`SELECT count(*) FROM job_postings WHERE patient_id = '${seed.patientId}' AND deleted_at IS NULL`));
+    const vagasDoServico = (): number => Number(runSQL(`SELECT count(*) FROM job_postings WHERE contracted_service_id = '${serviceId}'`));
+    expect(vagasVivas()).toBe(1);
+    expect(vagasDoServico()).toBe(0);
+
+    await login(page);
+    await page.goto(`/admin/patients/${seed.patientId}`);
+    await expect(page.getByTestId(`contracted-service-row-${serviceId}`)).toBeVisible({ timeout: 30_000 });
+    const foguete = page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`);
+    await expect(foguete).toBeEnabled();
+    await foguete.click();
+
+    const modal = page.getByTestId('link-existing-vacancy-modal');
+    await expect(modal).toBeVisible();
+    await expect(page.getByTestId('link-existing-vacancy-notice')).toContainText('ya tiene una vacante sin servicio');
+    await expect(page.getByTestId('link-existing-vacancy-combo')).toBeVisible();
+
+    // Nenhuma vaga nova: a legada continua a única e continua sem serviço.
+    expect(vagasVivas()).toBe(1);
+    expect(vagasDoServico()).toBe(0);
+    expect(readVacancyServiceFields(vaga.vacancyId).contracted_service_id).toBeNull();
   });
 });
