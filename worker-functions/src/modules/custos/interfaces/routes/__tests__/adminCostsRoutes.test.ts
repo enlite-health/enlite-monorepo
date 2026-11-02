@@ -54,7 +54,7 @@ describe('GET /api/admin/costs/overview', () => {
   it('com a célula platform_costs:read -> 200 com o contrato do overview', async () => {
     const res = await request(build()).get(`${URL}?month=2026-10`).set(PERSON);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(OVERVIEW);
+    expect(res.body).toEqual({ success: true, data: OVERVIEW });
     expect(execute).toHaveBeenCalledWith('2026-10');
   });
 
@@ -75,14 +75,14 @@ describe('GET /api/admin/costs/overview', () => {
     execute.mockRejectedValue(new InvalidMonthError());
     const res = await request(build()).get(`${URL}?month=2026-13`).set(PERSON);
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ code: 'invalid_month' });
+    expect(res.body).toEqual({ success: false, code: 'invalid_month' });
   });
 
   it('limite de sincronização -> 429 com retryAfterSeconds (corpo e cabeçalho)', async () => {
     execute.mockRejectedValue(new SyncRateLimitedError(7));
     const res = await request(build()).get(URL).set(PERSON);
     expect(res.status).toBe(429);
-    expect(res.body).toEqual({ retryAfterSeconds: 7 });
+    expect(res.body).toEqual({ success: false, code: 'sync_rate_limited', retryAfterSeconds: 7 });
     expect(res.headers['retry-after']).toBe('7');
   });
 
@@ -90,7 +90,7 @@ describe('GET /api/admin/costs/overview', () => {
     execute.mockRejectedValue(new BillingReadError(code));
     const res = await request(build()).get(URL).set(PERSON);
     expect(res.status).toBe(502);
-    expect(res.body).toEqual({ code });
+    expect(res.body).toEqual({ success: false, code });
   });
 
   it('erro inesperado -> 502 billing_query_failed, sem repassar o texto do erro', async () => {

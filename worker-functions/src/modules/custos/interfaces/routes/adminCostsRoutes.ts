@@ -13,7 +13,7 @@ export interface CostOverviewPort {
  * GET /api/admin/costs/overview?month=YYYY-MM — painel de custos (spec 082, contrato §9.2). Célula `platform_costs:read`
  * (Acesso Master only), família `admin.integrations` (a mesma de `pedidos_ia`: nenhuma família nova).
  * Ordem do array da rota: `staffOnly` -> `perm.require` -> handler; `perm.require` nunca em closure.
- * Erros: 400 mês inválido · 429 `{ retryAfterSeconds }` · 502 `{ code }` (`billing_query_failed` | `bytes_limit`), sem texto cru do BigQuery.
+ * Envelope do backend: 200 `{ success: true, data }`; erros `{ success: false, code }` (como PedidoIaController): 400 `invalid_month` · 429 `sync_rate_limited` + `retryAfterSeconds` · 502 `billing_query_failed` | `bytes_limit`, sem texto cru do BigQuery.
  */
 export function createAdminCostsRoutes(
   useCase: CostOverviewPort,
@@ -27,16 +27,16 @@ export function createAdminCostsRoutes(
   router.get('/costs/overview', staffOnly, perm.require('platform_costs', 'read', { untilEnforced: 'admin' }), async (req: Request, res: Response) => {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
     try {
-      res.status(200).json(await useCase.execute(month));
+      res.status(200).json({ success: true, data: await useCase.execute(month) });
     } catch (err) {
-      if (err instanceof InvalidMonthError) return void res.status(400).json({ code: 'invalid_month' });
+      if (err instanceof InvalidMonthError) return void res.status(400).json({ success: false, code: 'invalid_month' });
       if (err instanceof SyncRateLimitedError) {
         res.setHeader('Retry-After', String(err.retryAfterSeconds));
-        return void res.status(429).json({ retryAfterSeconds: err.retryAfterSeconds });
+        return void res.status(429).json({ success: false, code: 'sync_rate_limited', retryAfterSeconds: err.retryAfterSeconds });
       }
       const code = err instanceof BillingReadError ? err.code : 'billing_query_failed';
       logger.warn({ code }, 'costs overview failed');
-      res.status(502).json({ code });
+      res.status(502).json({ success: false, code });
     }
   });
 
