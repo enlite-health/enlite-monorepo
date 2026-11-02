@@ -85,7 +85,7 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("1 assistant: opens straight, no picker or tabs", async () => {
+  it("1 assistant: opens straight, no picker, no list, only close", async () => {
     svc.list.mockResolvedValue([MARIA]);
     render(<AssistantsWidget />);
     await abrir();
@@ -97,7 +97,7 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
     expect(screen.getByText("Maria")).toBeInTheDocument();
   });
 
-  it('>= 2 assistants: combobox with the N assistants, unavailable ones marked "en breve"', async () => {
+  it('>= 2 assistants: list with the N assistants, unavailable ones marked "en breve"', async () => {
     svc.list.mockResolvedValue(FOUR);
     render(<AssistantsWidget />);
     await abrir();
@@ -111,11 +111,13 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
     svc.list.mockResolvedValue(FOUR);
     const { unmount } = render(<AssistantsWidget />);
     await abrir();
+    fireEvent.click(screen.getByTestId("assistants-picker"));
     fireEvent.click(screen.getByTestId("assistants-tab-teresa"));
     expect(window.localStorage.getItem("assistants.tab")).toBe("teresa");
     unmount();
     render(<AssistantsWidget />);
     await abrir();
+    fireEvent.click(screen.getByTestId("assistants-picker"));
     expect(screen.getByTestId("assistants-tab-teresa")).toHaveAttribute(
       "aria-selected",
       "true",
@@ -134,7 +136,8 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
     });
     fireEvent.click(screen.getByTestId("assistants-send"));
     expect(await screen.findByText("hola")).toBeInTheDocument();
-    expect(screen.getByTestId("assistants-typing")).toHaveTextContent(
+    expect(screen.getByTestId("assistants-typing")).toHaveAttribute(
+      "aria-label",
       "escribiendo…",
     );
     expect(svc.sendMessage).toHaveBeenCalledWith("maria", "hola");
@@ -256,24 +259,30 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
     expect(screen.queryByTestId("assistants-badge")).toBeNull();
   });
 
-  it("unread sum 3 (1 + 2 across assistants): badge \"3\"", async () => {
+  it("unread sum 3 (1 + 2 across assistants): a red dot (no number) with the total in its aria-label", async () => {
     svc.list.mockResolvedValue([
       ag("maria", "Maria", true, 1),
       ag("teresa", "Teresa", true, 2),
     ]);
     render(<AssistantsWidget />);
     await screen.findByTestId("assistants-fab");
-    expect(screen.getByTestId("assistants-badge")).toHaveTextContent(/^3$/);
+    const dot = screen.getByTestId("assistants-badge");
+    expect(dot).toHaveTextContent("");
+    expect(dot).toHaveAttribute("role", "img");
+    expect(dot).toHaveAttribute("aria-label", "3 mensajes sin leer");
   });
 
-  it("unread sum above 99: badge \"99+\"", async () => {
+  it("unread sum above 99: the aria-label carries the real total (no \"99+\" cap)", async () => {
     svc.list.mockResolvedValue([
       ag("maria", "Maria", true, 60),
       ag("teresa", "Teresa", true, 60),
     ]);
     render(<AssistantsWidget />);
     await screen.findByTestId("assistants-fab");
-    expect(screen.getByTestId("assistants-badge")).toHaveTextContent("99+");
+    expect(screen.getByTestId("assistants-badge")).toHaveAttribute(
+      "aria-label",
+      "120 mensajes sin leer",
+    );
   });
 
   it("badge ignores unread_count of unavailable assistants", async () => {
@@ -283,7 +292,10 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
     ]);
     render(<AssistantsWidget />);
     await screen.findByTestId("assistants-fab");
-    expect(screen.getByTestId("assistants-badge")).toHaveTextContent(/^2$/);
+    expect(screen.getByTestId("assistants-badge")).toHaveAttribute(
+      "aria-label",
+      "2 mensajes sin leer",
+    );
   });
 
   it("badge accessible label comes from i18n with the count", async () => {
@@ -294,5 +306,31 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
       "aria-label",
       "3 mensajes sin leer",
     );
+  });
+
+  it("minimize keeps the draft for the next opening; close discards it", async () => {
+    svc.list.mockResolvedValue([MARIA, ag("teresa", "Teresa")]);
+    render(<AssistantsWidget />);
+    await abrir();
+    fireEvent.change(screen.getByTestId("assistants-composer"), {
+      target: { value: "borrador" },
+    });
+    fireEvent.click(screen.getByTestId("assistants-minimize"));
+    expect(screen.queryByTestId("assistants-panel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("assistants-fab"));
+    expect(screen.getByTestId("assistants-composer")).toHaveValue("borrador");
+    fireEvent.click(screen.getByTestId("assistants-close"));
+    expect(screen.queryByTestId("assistants-panel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("assistants-fab"));
+    expect(screen.getByTestId("assistants-composer")).toHaveValue("");
+  });
+
+  it("the unread dot sits on the button (small, no text) and the button is 48px high via h-12", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria", true, 1)]);
+    render(<AssistantsWidget />);
+    const fab = await screen.findByTestId("assistants-fab");
+    expect(fab.className).toContain("h-12");
+    expect(fab.className).toContain("bottom-4");
+    expect(screen.getByTestId("assistants-badge").className).toContain("h-3 w-3");
   });
 });

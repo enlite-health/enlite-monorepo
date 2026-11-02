@@ -126,7 +126,9 @@ test.describe('Assistentes no app — o widget que a pessoa ve @integration', ()
 
     const panel = page.getByTestId('assistants-panel');
     await expect(panel).toBeVisible();
-    await expect(page.getByTestId('assistants-tab-recruiting')).toHaveCount(0); // 1 assistant: sem tira de abas
+    await expect(page.getByTestId('assistants-tab-recruiting')).toHaveCount(0); // 1 assistant: sem seletor
+    await expect(page.getByTestId('assistants-picker')).toHaveCount(0);
+    await expect(page.getByTestId('assistants-minimize')).toHaveCount(0); // so' "fechar"
     await expect(panel).toContainText('Asistente Reclutamiento');
     await expect(panel.getByTestId('assistants-msg-m-hist')).toHaveText(HISTORY_TEXT);
 
@@ -145,7 +147,7 @@ test.describe('Assistentes no app — o widget que a pessoa ve @integration', ()
     expect(post[0].body).toEqual({ text: SENT_TEXT });
   });
 
-  test('3 assistants, um available:false: tira de abas com todos, "en breve" so na indisponivel, que nao conversa', async ({ page }) => {
+  test('3 assistants, um available:false: lista (seletor) com todos, "en breve" so na indisponivel, que nao conversa', async ({ page }) => {
     const served = await stubService(page, [
       assistant('recruiting', 'Asistente Reclutamiento'),
       assistant('admission', 'Asistente Admision', { area: 'Admision' }),
@@ -154,13 +156,15 @@ test.describe('Assistentes no app — o widget que a pessoa ve @integration', ()
     await enter(page, served);
     await page.getByTestId('assistants-fab').click();
 
-    await expect(page.getByRole('tab')).toHaveCount(3);
+    await expect(page.getByRole('tab')).toHaveCount(0); // a tira de abas saiu: o seletor a substitui
+    await page.getByTestId('assistants-picker').click();
+    await expect(page.getByRole('option')).toHaveCount(3);
     for (const slug of ['recruiting', 'admission', 'billing']) await expect(page.getByTestId(`assistants-tab-${slug}`)).toBeVisible();
     await expect(page.getByTestId('assistants-tab-soon-billing')).toHaveText(tr('comingSoon'));
     await expect(page.getByTestId('assistants-tab-soon-recruiting')).toHaveCount(0);
     await expect(page.getByTestId('assistants-tab-soon-admission')).toHaveCount(0);
 
-    await page.getByTestId('assistants-tab-billing').click();
+    await page.getByTestId('assistants-tab-billing').click(); // item da lista; escolher fecha a lista
     await expect(page.getByTestId('assistants-composer')).toBeDisabled();
     await expect(page.getByTestId('assistants-send')).toBeDisabled();
     // "em breve" nao pede historico nem marca lida
@@ -168,12 +172,12 @@ test.describe('Assistentes no app — o widget que a pessoa ve @integration', ()
     expect(reads(served, 'billing')).toBe(0);
   });
 
-  test('unread_count: 2: o botao mostra "2"; abrir marca lida exatamente 1 vez e o badge some', async ({ page }) => {
+  test('unread_count: 2: o botao mostra o ponto (aria-label de 2); abrir marca lida exatamente 1 vez e o badge some', async ({ page }) => {
     const served = await stubService(page, [assistant('recruiting', 'Asistente Reclutamiento', { unread_count: 2 })]);
     await enter(page, served);
 
-    const badge = page.getByTestId('assistants-badge');
-    await expect(badge).toHaveText('2');
+    const badge = page.getByTestId('assistants-badge'); // ponto vermelho: sem numero, o total vai no aria-label
+    await expect(badge).toHaveText('');
     await expect(badge).toHaveAttribute('aria-label', tr('unreadBadge', { count: 2 }));
     expect(reads(served, 'recruiting')).toBe(0); // so' o botao na tela: ainda nao esta lida
 
@@ -193,16 +197,18 @@ test.describe('Assistentes no app — o widget que a pessoa ve @integration', ()
       assistant('admission', 'Asistente Admision', { area: 'Admision', unread_count: 3 }),
     ]);
     await enter(page, served);
-    await expect(page.getByTestId('assistants-badge')).toHaveText('5');
+    await expect(page.getByTestId('assistants-badge')).toHaveAttribute('aria-label', tr('unreadBadge', { count: 5 }));
 
     await page.getByTestId('assistants-fab').click();
     await expect.poll(() => reads(served, 'recruiting'), { timeout: 10_000 }).toBe(1);
+    await page.getByTestId('assistants-picker').click(); // os contadores por assistente vivem na lista
     await expect(page.getByTestId('assistants-tab-badge-recruiting')).toHaveCount(0);
     await expect(page.getByTestId('assistants-tab-badge-admission')).toHaveText('3');
     expect(reads(served, 'admission')).toBe(0);
 
     await page.getByTestId('assistants-tab-admission').click();
     await expect.poll(() => reads(served, 'admission'), { timeout: 10_000 }).toBe(1);
+    await page.getByTestId('assistants-picker').click();
     await expect(page.getByTestId('assistants-tab-badge-admission')).toHaveCount(0);
     await page.waitForTimeout(1_000);
     expect(reads(served, 'recruiting')).toBe(1);

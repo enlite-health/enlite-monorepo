@@ -6992,7 +6992,10 @@
     "assistants": {
       "button": "Asistentes",
       "title": "Asistentes",
-      "yourGroup": "Tu grupo: {{group}} · {{count}} asistentes",
+      "yourGroup_one": "Tu grupo: {{group}} · {{count}} asistente",
+      "yourGroup_other": "Tu grupo: {{group}} · {{count}} asistentes",
+      "minimize": "Minimizar",
+      "openPicker": "Cambiar de asistente",
       "masterOnly": "Solo Acceso Master",
       "typing": "escribiendo…",
       "placeholder": "Escribí tu mensaje…",

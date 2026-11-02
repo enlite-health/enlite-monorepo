@@ -6913,7 +6913,10 @@
     "assistants": {
       "button": "Assistentes",
       "title": "Assistentes",
-      "yourGroup": "Seu grupo: {{group}} · {{count}} assistentes",
+      "yourGroup_one": "Seu grupo: {{group}} · {{count}} assistente",
+      "yourGroup_other": "Seu grupo: {{group}} · {{count}} assistentes",
+      "minimize": "Minimizar",
+      "openPicker": "Trocar de assistente",
       "masterOnly": "Somente Acesso Master",
       "typing": "digitando…",
       "placeholder": "Escreva sua mensagem…",

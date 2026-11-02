@@ -3,13 +3,15 @@
  */
 import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { AdminAssistantsApiService } from "@infrastructure/http/AdminAssistantsApiService";
 import { AssistantError, type Assistant } from "@domain/entities/Assistant";
 import i18n from "i18next";
 import es from "@infrastructure/i18n/locales/es.json";
 import ptBR from "@infrastructure/i18n/locales/pt-BR.json";
 import { AssistantsWidget } from "../AssistantsWidget";
+import { AssistantsPanel } from "../AssistantsPanel";
+import type { UseAssistants } from "@presentation/hooks/useAssistants";
 
 i18n.addResourceBundle("es", "translation", es, true, true);
 i18n.addResourceBundle("pt-BR", "translation", ptBR, true, true);
@@ -59,7 +61,14 @@ async function abrir() {
   return screen.findByTestId("assistants-panel");
 }
 
-const tabs = () => screen.getAllByRole("tab");
+/** Opens the assistants list (the picker in the header). */
+const abrirLista = () => {
+  fireEvent.click(screen.getByTestId("assistants-picker"));
+  return screen.getByRole("listbox");
+};
+const opcoes = () => screen.getAllByRole("option");
+const slugs = () =>
+  opcoes().map((o) => o.getAttribute("data-testid")?.replace("assistants-tab-", ""));
 
 describe("AssistantsPanel (spec 080, T162)", () => {
   beforeEach(() => {
@@ -78,12 +87,15 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     expect(screen.queryByTestId("assistants-panel")).toBeNull();
   });
 
-  it("1 assistant: a single conversation (no tab strip, no picker), named in the header", async () => {
+  it("1 assistant: a single conversation (no picker, no list, only close), named in the header", async () => {
     svc.list.mockResolvedValue([ag("maria", "Maria")]);
     render(<AssistantsWidget />);
     const panel = await abrir();
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
     expect(screen.queryByTestId("assistants-picker")).toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.queryByTestId("assistants-minimize")).toBeNull();
+    expect(screen.getByTestId("assistants-close")).toBeTruthy();
     expect(panel.textContent).toContain("Maria");
     expect(screen.getAllByTestId("assistants-composer")).toHaveLength(1);
   });
@@ -100,7 +112,7 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     ).toBe(notice.id);
   });
 
-  it("3 assistants, one available:false: 3 tabs, the unavailable one marked 'en breve'", async () => {
+  it("3 assistants, one available:false: 3 options in the list, the unavailable one marked 'en breve', the others 'disponible'", async () => {
     svc.list.mockResolvedValue([
       ag("maria", "Maria"),
       ag("lucero", "Lucero", false),
@@ -108,7 +120,13 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     ]);
     render(<AssistantsWidget />);
     await abrir();
-    expect(tabs()).toHaveLength(3);
+    expect(screen.queryByRole("tab")).toBeNull(); // the tab strip is gone: the picker replaces it
+    expect(screen.queryByRole("listbox")).toBeNull(); // closed until opened
+    abrirLista();
+    expect(opcoes()).toHaveLength(3);
+    expect(
+      within(screen.getByTestId("assistants-tab-maria")).getByText("disponible"),
+    ).toBeTruthy();
     expect(screen.getByTestId("assistants-tab-soon-lucero").textContent).toBe(
       "en breve",
     );
@@ -124,6 +142,7 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     ]);
     render(<AssistantsWidget />);
     await abrir();
+    abrirLista();
     expect(screen.getByTestId("assistants-tab-soon-lucero").textContent).toBe(
       "em breve",
     );
@@ -136,6 +155,7 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     ]);
     render(<AssistantsWidget />);
     await abrir();
+    abrirLista();
     fireEvent.click(screen.getByTestId("assistants-tab-lucero"));
     const composer = screen.getByTestId(
       "assistants-composer",
@@ -147,14 +167,15 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     expect(svc.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("tabs are exactly the reach's assistants (no extra tab is added)", async () => {
+  it("options are exactly the reach's assistants (no extra option is added)", async () => {
     svc.list.mockResolvedValue([ag("maria", "Maria"), ag("teresa", "Teresa")]);
     render(<AssistantsWidget />);
     await abrir();
-    expect(tabs().map((t) => t.textContent)).toEqual(["Maria", "Teresa"]);
+    abrirLista();
+    expect(slugs()).toEqual(["maria", "teresa"]);
   });
 
-  it("tab order = the order of the reach (not sorted by name)", async () => {
+  it("option order = the order of the reach (not sorted by name)", async () => {
     svc.list.mockResolvedValue([
       ag("teresa", "Teresa"),
       ag("candela", "Candela"),
@@ -162,11 +183,8 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     ]);
     render(<AssistantsWidget />);
     await abrir();
-    expect(tabs().map((t) => t.textContent)).toEqual([
-      "Teresa",
-      "Candela",
-      "Maria",
-    ]);
+    abrirLista();
+    expect(slugs()).toEqual(["teresa", "candela", "maria"]);
   });
 
   it("badge per tab with unread_count > 0 (and none without)", async () => {
@@ -177,6 +195,7 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     ]);
     render(<AssistantsWidget />);
     await abrir();
+    abrirLista();
     expect(screen.getByTestId("assistants-tab-badge-teresa").textContent).toBe(
       "4",
     );
@@ -193,11 +212,13 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     render(<AssistantsWidget />);
     await abrir();
     expect(svc.markRead).not.toHaveBeenCalled();
+    abrirLista();
     fireEvent.click(screen.getByTestId("assistants-tab-teresa"));
+    await waitFor(() => expect(svc.markRead).toHaveBeenCalledTimes(1));
+    abrirLista();
     await waitFor(() =>
       expect(screen.queryByTestId("assistants-tab-badge-teresa")).toBeNull(),
     );
-    expect(svc.markRead).toHaveBeenCalledTimes(1);
     expect(svc.markRead).toHaveBeenCalledWith("teresa");
     expect(screen.getByTestId("assistants-tab-badge-candela").textContent).toBe(
       "2",
@@ -215,6 +236,7 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     await abrir();
     await waitFor(() => expect(svc.markRead).toHaveBeenCalledTimes(1));
     expect(svc.markRead).toHaveBeenCalledWith("teresa");
+    abrirLista();
     expect(screen.getByTestId("assistants-tab-badge-maria").textContent).toBe(
       "1",
     );
@@ -256,7 +278,9 @@ describe("AssistantsPanel (spec 080, T162)", () => {
     ]);
     render(<AssistantsWidget />);
     await abrir();
+    abrirLista();
     fireEvent.click(screen.getByTestId("assistants-tab-lucero"));
+    abrirLista();
     await screen.findByTestId("assistants-tab-soon-lucero");
     expect(svc.markRead).not.toHaveBeenCalled();
   });
@@ -276,9 +300,11 @@ describe("AssistantsPanel (spec 080, T162)", () => {
       );
       render(<AssistantsWidget />);
       await abrir();
+      abrirLista();
       fireEvent.click(screen.getByTestId("assistants-tab-teresa"));
       await waitFor(() => expect(svc.markRead).toHaveBeenCalledTimes(1));
       expect(screen.getByTestId("assistants-panel")).toBeTruthy();
+      abrirLista();
       expect(
         screen.getByTestId("assistants-tab-badge-teresa").textContent,
       ).toBe("4");
@@ -328,4 +354,202 @@ describe("AssistantsPanel (spec 080, T162)", () => {
       await waitFor(() => expect(composer.value).toBe("texto a editar"));
     },
   );
+});
+
+describe("AssistantsPanel — selector, scroll, composer (mockup)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    void i18n.changeLanguage("es");
+    svc.messages.mockResolvedValue({ conversation_id: null, messages: [] });
+    svc.markRead.mockResolvedValue(undefined);
+  });
+
+  const THREE = [ag("maria", "Maria"), ag("lucero", "Lucero", false), ag("teresa", "Teresa")];
+
+  it("picker button: aria-haspopup=listbox, aria-expanded follows the list; options role=option with aria-selected", async () => {
+    svc.list.mockResolvedValue(THREE);
+    render(<AssistantsWidget />);
+    await abrir();
+    const btn = screen.getByTestId("assistants-picker");
+    expect(btn).toHaveAttribute("aria-haspopup", "listbox");
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(btn);
+    expect(btn).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    expect(screen.getByTestId("assistants-tab-maria")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("assistants-tab-teresa")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("choosing an option switches the assistant and closes the list", async () => {
+    svc.list.mockResolvedValue(THREE);
+    render(<AssistantsWidget />);
+    await abrir();
+    abrirLista();
+    fireEvent.click(screen.getByTestId("assistants-tab-teresa"));
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.getByTestId("assistants-picker").textContent).toBe("Teresa");
+    await waitFor(() => expect(svc.messages).toHaveBeenLastCalledWith("teresa"));
+  });
+
+  it("Esc closes the list WITHOUT closing the panel; a second Esc closes the panel", async () => {
+    svc.list.mockResolvedValue(THREE);
+    render(<AssistantsWidget />);
+    await abrir();
+    abrirLista();
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.getByTestId("assistants-panel")).toBeTruthy();
+    fireEvent.keyDown(screen.getByTestId("assistants-panel"), { key: "Escape" });
+    expect(screen.queryByTestId("assistants-panel")).toBeNull();
+  });
+
+  it("click outside the list closes it; click inside the list does not", async () => {
+    svc.list.mockResolvedValue(THREE);
+    render(<AssistantsWidget />);
+    await abrir();
+    const list = abrirLista();
+    fireEvent.mouseDown(list);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    fireEvent.mouseDown(screen.getByTestId("assistants-messages"));
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("unread counter in the list has the aria-label with the count", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria"), ag("teresa", "Teresa", true, 2)]);
+    render(<AssistantsWidget />);
+    await abrir();
+    abrirLista();
+    expect(screen.getByTestId("assistants-tab-badge-teresa")).toHaveAttribute(
+      "aria-label",
+      "2 mensajes sin leer",
+    );
+  });
+
+  it("lock line: plural for several, singular for one (pt-BR too)", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria"), ag("teresa", "Teresa")]);
+    const { unmount } = render(<AssistantsWidget />);
+    expect((await abrir()).textContent).toContain("Tu grupo: Operaciones · 2 asistentes");
+    unmount();
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    render(<AssistantsWidget />);
+    expect((await abrir()).textContent).toContain("Tu grupo: Operaciones · 1 asistente");
+    expect(ptBR.admin.assistants.minimize).toBeTruthy();
+    expect(ptBR.admin.assistants.openPicker).toBeTruthy();
+    expect((ptBR.admin.assistants as Record<string, string>).yourGroup_one).toBeTruthy();
+  });
+
+  describe("scroll to the last message", () => {
+    const msg = (id: string, author: "PERSON" | "ASSISTANT") => ({
+      id, author, text: id, tools: [], validator: null, created_at: "2026-10-30T10:00:00Z",
+    });
+    const fake = (over: Partial<UseAssistants> = {}): UseAssistants => ({
+      assistants: [ag("maria", "Maria")],
+      active: ag("maria", "Maria"),
+      setTab: vi.fn(),
+      messages: [msg("m1", "ASSISTANT")],
+      waiting: false,
+      notice: null,
+      historyError: false,
+      unreadTotal: 0,
+      send: vi.fn(),
+      markRead: vi.fn().mockResolvedValue(undefined),
+      loadConversation: vi.fn(),
+      ...over,
+    });
+    const ui = (a: UseAssistants) => (
+      <AssistantsPanel assistants={a} draft="" setDraft={vi.fn()} onClose={vi.fn()} onMinimize={vi.fn()} />
+    );
+
+    it("a new message and then 'escribiendo' scroll the list to scrollHeight", () => {
+      const base = fake();
+      const { rerender } = render(ui(base));
+      const el = screen.getByTestId("assistants-messages");
+      let top = 0;
+      Object.defineProperty(el, "scrollHeight", { configurable: true, value: 500 });
+      Object.defineProperty(el, "scrollTop", { configurable: true, get: () => top, set: (v) => { top = v; } });
+      expect(top).toBe(0);
+
+      rerender(ui(fake({ messages: [msg("m1", "ASSISTANT"), msg("m2", "PERSON")] })));
+      expect(top).toBe(500);
+
+      top = 0;
+      Object.defineProperty(el, "scrollHeight", { configurable: true, value: 560 });
+      rerender(ui(fake({ messages: [msg("m1", "ASSISTANT"), msg("m2", "PERSON")], waiting: true })));
+      expect(top).toBe(560);
+    });
+
+    it("while at the end, a size change of the list (composer grows, font loads) keeps it at the end", () => {
+      let notify: () => void = () => {};
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(cb: () => void) {
+            notify = cb;
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      try {
+        render(ui(fake()));
+        const el = screen.getByTestId("assistants-messages");
+        let top = 0;
+        Object.defineProperty(el, "scrollHeight", { configurable: true, value: 640 });
+        Object.defineProperty(el, "scrollTop", { configurable: true, get: () => top, set: (v) => { top = v; } });
+        notify();
+        expect(top).toBe(640);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("opening the panel and switching assistant scroll to the end", () => {
+      const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 777 });
+      try {
+        const two = [ag("maria", "Maria"), ag("teresa", "Teresa")];
+        const { rerender } = render(ui(fake({ assistants: two })));
+        const el = screen.getByTestId("assistants-messages");
+        expect(el.scrollTop).toBe(777); // on open
+        el.scrollTop = 0;
+        rerender(ui(fake({ assistants: two, active: two[1] })));
+        expect(el.scrollTop).toBe(777); // on switch
+      } finally {
+        if (original) Object.defineProperty(HTMLElement.prototype, "scrollHeight", original);
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollHeight;
+      }
+    });
+  });
+
+  it("composer is a single-line textarea (rows=1) and Shift+Enter does not submit", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    render(<AssistantsWidget />);
+    await abrir();
+    const c = screen.getByTestId("assistants-composer") as HTMLTextAreaElement;
+    expect(c.tagName).toBe("TEXTAREA");
+    expect(c.rows).toBe(1);
+    expect(screen.getByTestId("assistants-send")).toHaveAttribute("aria-label", "Enviar");
+  });
+
+  it("'escribiendo' is a balloon with 3 dots and the typing label", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    svc.sendMessage.mockReturnValue(new Promise(() => {}));
+    render(<AssistantsWidget />);
+    await abrir();
+    fireEvent.change(screen.getByTestId("assistants-composer"), { target: { value: "hola" } });
+    fireEvent.click(screen.getByTestId("assistants-send"));
+    const typing = await screen.findByTestId("assistants-typing");
+    expect(typing).toHaveAttribute("aria-label", "escribiendo…");
+    expect(typing.querySelectorAll("i")).toHaveLength(3);
+  });
+
+  it("privacy notice is in the footer, not in a bordered strip of its own", async () => {
+    svc.list.mockResolvedValue([ag("maria", "Maria")]);
+    render(<AssistantsWidget />);
+    await abrir();
+    const notice = screen.getByTestId("assistants-privacy-notice");
+    expect(notice.parentElement?.className).not.toContain("border");
+    expect(notice.parentElement?.textContent).toContain(es.admin.assistants.footer);
+  });
 });
