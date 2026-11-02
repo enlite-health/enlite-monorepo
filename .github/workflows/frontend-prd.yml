@@ -91,3 +91,6 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           flags: "--allow-unauthenticated"
+          labels: |-
+            service=enlite-frontend
+            setor=plataforma

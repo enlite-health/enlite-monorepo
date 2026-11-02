@@ -118,6 +118,7 @@ jobs:
             --concurrency=80
             --min-instances=0
             --max-instances=5
+            --update-labels=service=worker-functions-mcp,setor=plataforma
 
       - name: Verify deploy (health check via gcloud; ingress=all + auth app-level desde 039b44d4)
         run: |

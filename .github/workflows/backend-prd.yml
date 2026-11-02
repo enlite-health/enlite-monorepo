@@ -223,6 +223,7 @@ jobs:
             --concurrency=80
             --max-instances=10
             --min-instances=1
+            --update-labels=service=worker-functions,setor=plataforma
 
       - name: 'Verify deploy (health check)'
         run: |
