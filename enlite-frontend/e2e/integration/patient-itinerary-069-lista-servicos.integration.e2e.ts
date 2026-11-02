@@ -41,7 +41,7 @@ async function semearDoisServicos(request: APIRequestContext) {
     // O aviso "N turnos sin cubrir" só existe para itinerário MONTADO (P13: faixa sem prestador de itinerário não montado é falta estrutural).
     const montar = await assembleApi(request, derivacaoToken(), seed.patientId);
     expect(montar.status, `montar ${montar.status}`).toBeLessThan(300);
-    const segunda = proximaDataNoDia(1, diaDoBanco(1)); // dentro dos próximos 7 dias, sempre
+    const segunda = proximaDataNoDia(1, diaDoBanco(0)); // [hoje, hoje+6] = a janela do aviso; com diaDoBanco(1) a segunda de uma segunda cai em hoje+7, fora
     const turnos = await turnosDaPessoa(request, seed.patientId, s1.serviceId, titular, segunda, segunda);
     await criarPedidoViaApi(request, seed.patientId, s1.serviceId, {
       type: 'ONE_DAY', outgoingWorkerId: titular, from: segunda,
