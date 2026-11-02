@@ -33,7 +33,7 @@ import {
   allocateApi, assembleApi, endAllocationApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite, patientStatus,
 } from '../helpers/itinerario-escrita-e2e-helper';
 import {
-  registerAbsenceApi, setAbsenceSubstituteApi, cancelAbsenceApi, nextWeekdaySql, pastWeekdaySql,
+  registerAbsenceApi, setAbsenceSubstituteApi, cancelAbsenceApi, nextWeekdaySql, pastWeekdaySql, weekdayInHorizonSql,
   insertPastAbsenceSql, countOpenAbsences, cleanupSubstituicao,
 } from '../helpers/substituicao-e2e-helper';
 
@@ -567,7 +567,7 @@ test.describe('substituicao @integration', () => {
 
     const t = insertTestWorker({ occupation: 'AT' }); // titular
     const w = insertTestWorker({ occupation: 'AT' }); // ERR — substituto
-    const d = nextWeekdaySql(1);
+    const d = weekdayInHorizonSql(1); // dentro de [hoje, hoje+6] (janela do alerta); a estritamente futura cai em hoje+7 numa segunda
     try {
       insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
