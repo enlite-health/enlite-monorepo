@@ -29,6 +29,16 @@ const schema = {
   ]),
 };
 
+// T056: tabela VAZIA do log `ai_usage` (o sink do Cloud Logging a cria em prd). A consulta do estimado a lê; sem ela o painel perderia a trilha.
+const aiDataset = process.env.SEED_AI_DATASET || 'ai_usage_test';
+const aiTable = process.env.SEED_AI_TABLE || 'run_googleapis_com_stdout';
+const aiSchema = {
+  fields: rec([
+    ['timestamp', 'TIMESTAMP'],
+    ['jsonPayload', 'RECORD', 'NULLABLE', rec([['event', 'STRING'], ['service', 'STRING'], ['setor', 'STRING'], ['funcao', 'STRING'], ['model', 'STRING'], ['tokens_in', 'INTEGER'], ['tokens_out', 'INTEGER']])],
+  ]),
+};
+
 // 4 séries x 25 dias (hoje-24 .. hoje), atravessando 2 meses. Por dia: 2 + 6 + 3 + 1 = 12; ontem a série `yesterday` salta de 2 para 14 (anomalia).
 const series = [
   { service: 'Cloud Run', resource: 'projects/enlite-test/services/api-sintetica', cost: 2, yesterday: 14, labels: { setor: 'plataforma', service: 'api' } },
@@ -77,6 +87,8 @@ for (let i = 0; ; i++) {
 }
 await call('POST', '/datasets', { datasetReference: { projectId: project, datasetId: dataset } }, [200, 409]);
 await call('POST', `/datasets/${dataset}/tables`, { tableReference: { projectId: project, datasetId: dataset, tableId: table }, schema }, [200, 409]);
-const out = await call('POST', `/datasets/${dataset}/tables/${table}/insertAll`, { rows: rows.map((json, i) => ({ insertId: String(i), json })) });
+const out = await call('POST', '/datasets', { datasetReference: { projectId: project, datasetId: aiDataset } }, [200, 409]);
+await call('POST', `/datasets/${aiDataset}/tables`, { tableReference: { projectId: project, datasetId: aiDataset, tableId: aiTable }, schema: aiSchema }, [200, 409]);
+await call('POST', `/datasets/${dataset}/tables/${table}/insertAll`, { rows: rows.map((json, i) => ({ insertId: String(i), json })) });
 if (/insertErrors/.test(out)) throw new Error(`insertAll: ${out.slice(0, 400)}`);
-console.log(`seed ok: ${rows.length} linhas em ${project}.${dataset}.${table}`);
+console.log(`seed ok: ${rows.length} linhas em ${project}.${dataset}.${table}; tabela vazia ${project}.${aiDataset}.${aiTable}`);

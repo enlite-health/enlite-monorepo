@@ -43,6 +43,7 @@ services:
       BIGQUERY_EMULATOR_HOST: "http://bigquery-emulator:9050"
       GOOGLE_CLOUD_PROJECT: "enlite-test"
       BILLING_EXPORT_TABLE: "enlite-test.billing_export_test.gcp_billing_export_resource_v1_test"
+      AI_USAGE_TABLE: "enlite-test.ai_usage_test.run_googleapis_com_stdout"
     depends_on:
       bigquery-seed:
         condition: service_completed_successfully

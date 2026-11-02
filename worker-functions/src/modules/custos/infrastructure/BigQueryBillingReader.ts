@@ -13,11 +13,19 @@ import {
   type SectorCost,
   type ServiceCost,
 } from '../domain/types';
+import { estimateAiCostUsd } from '../domain/aiPrices';
 
 /** Tabela Detailed do billing export (spec §9.3). Sobrescrevível por `BILLING_EXPORT_TABLE`. */
 export const DEFAULT_BILLING_TABLE = 'enlite-prd.billing_export.gcp_billing_export_resource_v1_01994D_5E747D_F222E1';
 /** 1 GiB (DF-8): teto de bytes faturados de TODA consulta. */
 export const MAX_BYTES_BILLED = '1073741824';
+/**
+ * Tabela do log `ai_usage` que o sink `ai_usage_to_bq` (terraform/environments/prd/ai_usage.tf) cria no dataset `ai_usage_logs`.
+ * Nome derivado da regra do Cloud Logging (log name com `.` e `/` virando `_`, tabela particionada):
+ * https://cloud.google.com/logging/docs/export/bigquery#table-organization ; stdout do Cloud Run = `run_googleapis_com_stdout`.
+ * Sobrescrevível por `AI_USAGE_TABLE`. A tabela só existe depois da 1ª linha: ausente = sem dados (não é erro).
+ */
+export const DEFAULT_AI_USAGE_TABLE = 'enlite-prd.ai_usage_logs.run_googleapis_com_stdout';
 export const BILLING_LOCATION = 'US';
 const TOP_RESOURCES = 30;
 const TABLE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/;
@@ -65,6 +73,17 @@ function isBytesLimit(err: unknown): boolean {
   return typeof e?.message === 'string' && /bytes billed/i.test(e.message);
 }
 
+/** 404 do BigQuery (dataset/tabela inexistente). */
+function isNotFound(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: string; errors?: Array<{ reason?: string }> } | null;
+  if (e?.code === 404 || e?.code === '404' || e?.errors?.some((x) => x.reason === 'notFound')) return true;
+  // o emulador responde 400 com o texto "Table not found: ..." (o BigQuery real responde 404 notFound)
+  return typeof e?.message === 'string' && /(table|dataset) not found/i.test(e.message);
+}
+
+/** Sinal interno: a tabela de `ai_usage` ainda não existe. Nunca sai do leitor. */
+class TableMissing extends Error {}
+
 /**
  * Leitor do billing export no BigQuery (spec 082, DF-3/DF-8). ÚNICA classe do repositório que importa `@google-cloud/bigquery`.
  * Toda consulta: filtro de partição por `usage_start_time`, `maximumBytesBilled` = 1 GiB, location US, parâmetros nomeados
@@ -72,13 +91,17 @@ function isBytesLimit(err: unknown): boolean {
  */
 export class BigQueryBillingReader implements BillingReader {
   private readonly table: string;
+  private readonly aiTable: string;
 
   constructor(
     private readonly client: BigQueryQueryClient,
     table: string = process.env.BILLING_EXPORT_TABLE || DEFAULT_BILLING_TABLE,
+    aiTable: string = process.env.AI_USAGE_TABLE || DEFAULT_AI_USAGE_TABLE,
   ) {
     if (!TABLE_PATTERN.test(table)) throw new Error('invalid billing table name');
+    if (!TABLE_PATTERN.test(aiTable)) throw new Error('invalid ai usage table name');
     this.table = table;
+    this.aiTable = aiTable;
   }
 
   static create(table?: string): BigQueryBillingReader {
@@ -124,18 +147,42 @@ export class BigQueryBillingReader implements BillingReader {
   }
 
   /**
-   * Ponto de extensão da Fase 5 (T056): custo ESTIMADO por tokens a partir do dataset `ai_usage_logs` (DF-10).
-   * Nesta fase não consulta nada: `byAiCaller` vem só da trilha do billing.
+   * Custo ESTIMADO por tokens (DF-10): soma do mês das linhas `ai_usage` (dataset `ai_usage_logs`) por service/funcao/model;
+   * custo = tokens × `aiPrices.ts`. Um (service, funcao) com ALGUM modelo sem preço fica com `total: null` (desconhecido, não zero).
+   * Tabela ainda inexistente (sink sem 1ª linha) → []. Mesmo teto de bytes e location das outras consultas.
    */
-  protected async readAiEstimated(_w: BillingWindow): Promise<AiCallerCost[]> {
-    return [];
+  protected async readAiEstimated(w: BillingWindow): Promise<AiCallerCost[]> {
+    const sql =
+      'SELECT jsonPayload.service AS caller, jsonPayload.funcao AS funcao, jsonPayload.model AS model, ' +
+      'SUM(CAST(jsonPayload.tokens_in AS FLOAT64)) AS tokens_in, SUM(CAST(jsonPayload.tokens_out AS FLOAT64)) AS tokens_out ' +
+      `FROM \`${this.aiTable}\` WHERE timestamp >= TIMESTAMP(@from) AND timestamp < TIMESTAMP(@to) AND jsonPayload.event = 'ai_usage' ` +
+      'GROUP BY caller, funcao, model';
+    let rows: Row[];
+    try {
+      rows = await this.run(sql, { from: w.monthStart, to: w.monthEndExclusive }, true);
+    } catch (err) {
+      if (err instanceof TableMissing) return [];
+      throw err;
+    }
+    const groups = new Map<string, AiCallerCost>();
+    for (const r of rows) {
+      const caller = str(r.caller, NONE_KEY);
+      const funcao = str(r.funcao, NONE_KEY);
+      const cost = estimateAiCostUsd(String(r.model ?? ''), num(r.tokens_in), num(r.tokens_out));
+      const key = `${caller}|${funcao}`;
+      const prev = groups.get(key);
+      if (!prev) groups.set(key, { caller, funcao, total: cost, source: 'estimated' });
+      else prev.total = prev.total === null || cost === null ? null : prev.total + cost;
+    }
+    return [...groups.values()].sort((a, b) => (b.total ?? -1) - (a.total ?? -1));
   }
 
-  private async run(query: string, params: { from: string; to: string }): Promise<Row[]> {
+  private async run(query: string, params: { from: string; to: string }, missingTableOk = false): Promise<Row[]> {
     try {
       const [rows] = await this.client.query({ query, params, location: BILLING_LOCATION, maximumBytesBilled: MAX_BYTES_BILLED });
       return rows as Row[];
     } catch (err) {
+      if (missingTableOk && isNotFound(err)) throw new TableMissing();
       // Código fixo: o texto do erro do BigQuery nunca sai daqui.
       throw new BillingReadError(isBytesLimit(err) ? 'bytes_limit' : 'billing_query_failed');
     }
