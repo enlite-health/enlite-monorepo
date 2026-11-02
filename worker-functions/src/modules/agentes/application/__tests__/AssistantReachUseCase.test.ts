@@ -1,4 +1,4 @@
-import { AssistantReachUseCase } from '../AssistantReachUseCase';
+import { AssistantReachUseCase, compartmentOf } from '../AssistantReachUseCase';
 
 const uc = (cells: string[]) => new AssistantReachUseCase(async () => cells);
 
@@ -8,6 +8,12 @@ describe('AssistantReachUseCase', () => {
       assistants: ['maria'],
       knowledge: ['PUBLIC'],
     });
+  });
+
+  it('knowledge_product_meetings:read -> PRODUCT_MEETINGS (compartment enum value)', async () => {
+    expect(compartmentOf('knowledge_product_meetings:read')).toBe('PRODUCT_MEETINGS');
+    const r = await uc(['knowledge_product_meetings:read']).execute('u1');
+    expect(r.knowledge).toEqual(['PRODUCT_MEETINGS']);
   });
 
   it('no cells -> empty', async () => {

@@ -76,6 +76,7 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'knowledge_coordination:read',
       'knowledge_financial:read',
       'knowledge_management:read',
+      'knowledge_product_meetings:read',
       'knowledge_public:read',
       'knowledge_recruitment:read',
       'knowledge_technical:read',
