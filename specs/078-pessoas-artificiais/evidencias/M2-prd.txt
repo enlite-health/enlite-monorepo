@@ -1,2 +1,0 @@
-
-(6) CI #798: o job integration-e2e-group-simulation (run 41655015159) estourou o teto de 30 min por ~10 s com todos os testes verdes (175 Playwright + 182 jest). Decisao do orquestrador: subir timeout-minutes de 30 para 45 SO nesse job, em .github/workflows/_frontend-integration.yml (1 linha). Nenhum outro job nem teste foi alterado.
