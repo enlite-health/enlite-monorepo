@@ -40,7 +40,6 @@ const ORACULO_CLASSE_A: Record<string, string> = {
   'worker.profile.proposeUpdate': 'worker:update',
   'worker.profile.confirmUpdate': 'worker:update',
   'worker.applications.list': 'match:read',
-  'worker.account.deactivate': 'worker:disable',
   'worker.availability.get': 'worker:read',
   'worker.availability.set': 'worker:update',
   'worker.optOut.register': 'worker:update',
@@ -52,7 +51,7 @@ const ORACULO_CLASSE_A: Record<string, string> = {
 const ORACULO_CLASSE_B = ['worker.caseMemory.get', 'worker.caseMemory.put', 'agentes.veredicto.registrar'];
 const ORACULO_ESCRITAS = [
   'worker.profile.proposeUpdate', 'worker.profile.confirmUpdate', 'worker.caseMemory.put', 'handover.notify',
-  'agentes.veredicto.registrar', 'worker.optOut.register', 'worker.account.deactivate', 'worker.availability.set',
+  'agentes.veredicto.registrar', 'worker.optOut.register', 'worker.availability.set',
   'worker.application.register',
 ];
 
@@ -80,6 +79,14 @@ describe('AgentCellGuard (porta MCP do agente, contrato §4)', () => {
     expect(await g.check(UID, 'db.query.readonly')).toMatchObject({ ok: false, code: 'no_cell_declared' });
   });
 
+  it('decisão 03/11: a Luz NÃO desativa conta — worker.account.deactivate fora do mapa e da lista permitida; a porta de agente recusa com no_cell_declared mesmo com worker:disable no grupo', async () => {
+    expect(Object.prototype.hasOwnProperty.call(AGENT_CAPABILITY_CELLS, WorkerAccountDeactivateCapability.NAME)).toBe(false);
+    expect(AGENT_CAPABILITY_NAMES).not.toContain(WorkerAccountDeactivateCapability.NAME);
+    expect(AGENT_ALLOWED_CAPABILITIES).not.toContain(WorkerAccountDeactivateCapability.NAME);
+    expect(await guard({ permissions: ['worker:disable', 'worker:update'] }).check(UID, WorkerAccountDeactivateCapability.NAME))
+      .toMatchObject({ ok: false, code: 'no_cell_declared', resource: 'mcp_capability', action: 'worker.account.deactivate' });
+  });
+
   it('classe (b) é a exceção nomeada: não exige célula do grupo (sistema) e vem marcada exception', async () => {
     const r = await guard({ groups: [], permissions: [] }).check(UID, 'worker.caseMemory.put');
     expect(r).toEqual({ ok: true, resource: 'worker_case_memory', action: 'update', exception: true });
@@ -98,7 +105,7 @@ describe('AgentCellGuard (porta MCP do agente, contrato §4)', () => {
   });
 
   it('PARIDADE com o código: os NAME das capabilities reais estão no mapa; escrita tem ação <> read e leitura tem read', () => {
-    for (const C of [WorkerAccountDeactivateCapability, WorkerApplicationRegisterCapability, HandoverNotifyCapability]) {
+    for (const C of [WorkerApplicationRegisterCapability, HandoverNotifyCapability]) {
       expect(AGENT_ALLOWED_CAPABILITIES).toContain(C.NAME);
     }
     for (const nome of ORACULO_ESCRITAS) {
@@ -113,7 +120,7 @@ describe('AgentCellGuard (porta MCP do agente, contrato §4)', () => {
   it('cobertura: lista cada capability da classe (a) com a célula e se o grupo a concede (as chaves do mapa e da lista são as mesmas)', async () => {
     expect([...AGENT_CAPABILITY_NAMES].sort()).toEqual(Object.keys(AGENT_CAPABILITY_CELLS).sort());
     const cob = await guard({ permissions: ['vacancy:read', 'worker:read'] }).coverage(UID);
-    expect(cob).toHaveLength(15);
+    expect(cob).toHaveLength(14);
     expect(cob.filter((c) => c.granted).map((c) => c.capability).sort()).toEqual(
       ['worker.availability.get', 'worker.profile.get', 'worker.vacancies.list', 'worker.vacancies.nearby'],
     );

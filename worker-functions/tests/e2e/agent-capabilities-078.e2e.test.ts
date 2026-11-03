@@ -1,5 +1,5 @@
 /**
- * agent-capabilities-078.e2e.test.ts — spec 078, M2 (lote 4): CADA UMA das 15 capabilities da classe (a) da Luz, com `app_runtime` (RLS ligada), ABAC ligado
+ * agent-capabilities-078.e2e.test.ts — spec 078, M2 (lote 4): CADA UMA das 14 capabilities da classe (a) da Luz, com `app_runtime` (RLS ligada), ABAC ligado
  * e um grupo AGENT sintético AR com as células do mapa (`AGENT_CAPABILITY_CELLS`):
  *   - COM a célula: devolve DADO (≥ 1 registro / estado alterado; contagem 0 é falha, nunca sucesso);
  *   - SEM a célula: `missing_cell` com a célula certa (e a chamada foi tentada: a trilha DENY existe);
@@ -53,7 +53,7 @@ interface Caso {
 }
 interface Ids { [k: string]: string }
 
-describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sintético, motor ABAC ligado (spec 078, M2 lote 4)', () => {
+describe('as 14 capabilities da classe (a) com app_runtime, grupo AGENT AR sintético, motor ABAC ligado (spec 078, M2 lote 4)', () => {
   let admin: Pool;
   let celulasCriadas: string[] = [];
   let appPool: Pool;
@@ -120,8 +120,6 @@ describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sint�
       dado: (j) => { expect(j.ok).toBe(true); return 'disponibilidade gravada'; } },
     { tool: 'worker.optOut.register', write: true, w: 'wo', args: (i) => ({ workerId: i.wo, reason: 'user_request' }),
       dado: (j) => { expect(j.ok).toBe(true); return 'opt-out registrado'; } },
-    { tool: 'worker.account.deactivate', write: true, w: 'wd', args: (i) => ({ workerId: i.wd }),
-      dado: (j) => { expect(j.ok).toBe(true); return 'conta desativada'; } },
     { tool: 'worker.profile.proposeUpdate', write: true, w: 'wp', args: (i) => ({ workerId: i.wp, fields: { firstName: 'Agcnovo' } }),
       dado: (j) => { expect(typeof j.handle).toBe('string'); ids.handle = j.handle; return 'proposta com handle'; } },
     { tool: 'worker.profile.confirmUpdate', write: true, w: 'wp', args: (i) => ({ workerId: i.wp, handle: i.handle }),
@@ -154,9 +152,9 @@ describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sint�
     await admin.query(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason) VALUES ($1, 'AR', 'e2e', 'e2e')`, [gid]);
     await admin.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [UID, gid, TENANT]);
 
-    // workers (AR, REGISTERED): wa = leituras; ws/wo/wd/wp/wr = um por escrita com efeito de estado
-    for (const k of ['wa', 'ws', 'wo', 'wd', 'wp', 'wr']) {
-      const phone = k === 'wa' ? PHONE : `+54911555780${['ws', 'wo', 'wd', 'wp', 'wr'].indexOf(k) + 2}0`;
+    // workers (AR, REGISTERED): wa = leituras; ws/wo/wp/wr = um por escrita com efeito de estado
+    for (const k of ['wa', 'ws', 'wo', 'wp', 'wr']) {
+      const phone = k === 'wa' ? PHONE : `+54911555780${['ws', 'wo', 'wp', 'wr'].indexOf(k) + 2}0`;
       ids[k] = (await admin.query(`INSERT INTO workers (auth_uid, email, status, country, phone) VALUES ($1, $2, 'REGISTERED', 'AR', $3) RETURNING id`, [`${P}-${k}`, `${P}-${k}@e2e.local`, phone])).rows[0].id;
     }
     await admin.query(`INSERT INTO patients (id, clickup_task_id, first_name, last_name, country) VALUES ($1, '${P}-ar', 'Pac', 'Arg', 'AR'), ($2, '${P}-br', 'Pac', 'Bra', 'BR')`, [PAC_AR, PAC_BR]);
@@ -229,10 +227,10 @@ describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sint�
     await admin.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [UID]);
   });
 
-  it('as roles são as da stage (app_runtime sem bypass de RLS, declaradas); o mapa tem 15 capabilities e todas as células vivas', async () => {
+  it('as roles são as da stage (app_runtime sem bypass de RLS, declaradas); o mapa tem 14 capabilities e todas as células vivas', async () => {
     const r = await admin.query(`SELECT rolname, rolbypassrls, rolsuper FROM pg_roles WHERE rolname = $1`, [RT]);
     expect(r.rows).toEqual([{ rolname: RT, rolbypassrls: false, rolsuper: false }]);
-    expect(AGENT_CAPABILITY_NAMES).toHaveLength(15);
+    expect(AGENT_CAPABILITY_NAMES).toHaveLength(14);
     expect(CASOS.map((c) => c.tool).sort()).toEqual([...AGENT_CAPABILITY_NAMES].sort());
     const vivas = await admin.query(`SELECT count(*)::int AS n FROM iam.permissions WHERE deprecated_at IS NULL AND resource || ':' || action = ANY($1)`, [celulasDoMapa]);
     expect(vivas.rows[0].n).toBe(celulasDoMapa.length);
@@ -292,11 +290,11 @@ describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sint�
     });
   });
 
-  it('resumo: 15 capabilities — 14 com dado + 1 com defeito pré-existente nomeado; 15 bloqueadas sem célula', () => {
+  it('resumo: 14 capabilities — 13 com dado + 1 com defeito pré-existente nomeado; 14 bloqueadas sem célula', () => {
     const com = resumo.filter((l) => l.startsWith('CAPABILITY ')).length;
     const defeito = resumo.filter((l) => l.startsWith('DEFEITO ')).length;
     const sem = resumo.filter((l) => l.startsWith('BLOQUEADA_SEM_CELULA ')).length;
     resumo.push(`CAPABILIDADES(a): ${AGENT_CAPABILITY_NAMES.length} capabilities, ${com} com dado, ${defeito} com defeito pré-existente (célula passou), ${sem} bloqueadas sem célula`);
-    expect([com, defeito, sem]).toEqual([14, 1, 15]);
+    expect([com, defeito, sem]).toEqual([13, 1, 14]);
   });
 });
