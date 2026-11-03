@@ -66,6 +66,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'assistant_maria:chat',
       'assistant_scoreboard:read',
       'funnel:write',
+      // Spec 078 (M2) — célula do AGENTE (grupo `AGENT`), sem tela: consumida só pela porta MCP da Luz (AGENT_CAPABILITY_CELLS).
+      'handover:create',
       'interview:create',
       'interview:delete',
       'interview:read',
@@ -120,6 +122,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'worker:delete',
       'worker:disable',
       'worker:write',
+      // Spec 078 (M2) — célula do AGENTE (grupo `AGENT`), sem tela (ver `handover:create` acima).
+      'worker_application:create',
       'worker_document:write',
     ]);
   });

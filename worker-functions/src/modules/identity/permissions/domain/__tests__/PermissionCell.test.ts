@@ -237,6 +237,14 @@ describe('spec 082 — platform_costs:read (Master-only)', () => {
   });
 });
 
+describe('spec 078 (M2) — as 2 células novas da Luz têm categoria de tela (não caem em "Não categorizado")', () => {
+  it('worker_application → Trabalhadores e handover → Comunicação', () => {
+    expect(categoryFor('worker_application')).toBe('Trabalhadores');
+    expect(categoryFor('handover')).toBe('Comunicação');
+    expect(categoryFor('recurso_que_nao_existe')).toBe(UNCATEGORIZED); // controle: o desconhecido segue sem categoria
+  });
+});
+
 describe('spec 078 M7 — pedidos_ia: só LER é master-only; DECIDIR é do grupo decisor (Marcel)', () => {
   it('SOMENTE_ACESSO_MASTER_CELLS tem pedidos_ia:read e NÃO tem pedidos_ia:decidir', () => {
     expect([...SOMENTE_ACESSO_MASTER_CELLS].filter((c) => c.startsWith('pedidos_ia:'))).toEqual(['pedidos_ia:read']);

@@ -5214,6 +5214,7 @@
           "toRest": "Quitar de los miembros",
           "unsaved": "Cambios sin guardar",
           "locked": "Último gestor del equipo: no se puede quitar.",
+          "agentBadge": "Agente",
           "allInside": "Todo el equipo ya es miembro."
         },
         "cells": {
@@ -5271,6 +5272,8 @@
             "worker": "Prestador en operación",
             "worker_contact": "Contacto: nombre, teléfono",
             "worker_pii": "Dossier: DNI, nacimiento, datos sensibles",
+            "worker_application": "Postulación del prestador a una vacante (agente)",
+            "handover": "Traspaso de la conversación al equipo humano (agente)",
             "worker_address": "Dirección del prestador: línea, coordenada, radio",
             "worker_document": "Documentos",
             "tag": "Catálogo de etiquetas",

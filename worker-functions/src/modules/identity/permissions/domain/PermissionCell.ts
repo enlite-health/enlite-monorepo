@@ -124,6 +124,11 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   ai_prompt: 'Operações',
   // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
   pedidos_ia: 'Operações',
+  // Spec 078 (M2, decisões do lote 0) — categoria das 2 células NOVAS da Luz como agente no ABAC (`worker_application:create`,
+  // `handover:create`). A DESCRIÇÃO (CELL_DESCRIPTION) entra no Lote 2 junto com o consumidor (a porta MCP): `catalogo-sem-orfao.test`
+  // reprova chave de CELL_DESCRIPTION sem consumidor real. A candidatura em nome do prestador mora com o prestador; o aviso, com a comunicação.
+  worker_application: 'Trabalhadores',
+  handover: 'Comunicação',
   // Spec 082 (painel de custos) — Acesso Master only; rota em `adminCostsRoutes.ts`, família `admin.integrations`.
   platform_costs: 'Operações',
   // Spec 081 (D602a) — atividade do funil por recrutadora e semana; Acesso Master only. Rota em `recruitmentRoutes.ts`.
@@ -608,6 +613,16 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_status:move_to_discharged':
     'Trocar o paciente para BAJA (desligado) por FORA do fluxo normal de transições, a partir de '
     + 'qualquer estado clínico. Não vem em nenhum grupo por padrão.',
+
+  // ── Spec 078 (M2, decisões do lote 0) — a Luz como AGENTE no ABAC. As 2 células nascem com o consumidor (a porta MCP do agente,
+  //    `mcp/domain/AgentCapabilityCells.ts` + `AgentCellGuard`), sem rota REST. Nascem com 0 grupos: a operação as concede ao
+  //    espelho da Luz em /admin/access antes de ligar a identidade do agente.
+  'worker_application:create':
+    'Postular um prestador a uma vaga em nome dele, com a mesma elegibilidade do app; devolve o link do pré-screening '
+    + 'só quando aprovado. Não move etapa nem rejeita.',
+  'handover:create':
+    'Avisar a equipe no Periskope (grupo, ticket e nota interna) que um prestador precisa de atendimento humano. '
+    + 'Não envia mensagem ao prestador.',
 };
 
 /**

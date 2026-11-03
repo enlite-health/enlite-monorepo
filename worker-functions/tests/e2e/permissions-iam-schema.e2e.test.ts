@@ -467,13 +467,17 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (1 de sistema + 
     // renomeia nem arquiva). A regra é a de sempre; mudou QUAIS grupos a
     // carregam. Este teste é o guardião do seed: se alguém reverter a 432 ou a
     // 454 por acidente, ele morre.
-    const groups = await pool.query<{ id: string; name: string; is_system: boolean }>(`
-      SELECT id::text, name, is_system FROM permission_groups
+    const todos = await pool.query<{ id: string; name: string; is_system: boolean; actor_class: string }>(`
+      SELECT id::text, name, is_system, actor_class FROM iam.permission_groups
       WHERE tenant_id = $1
       ORDER BY name
     `, [TENANT_ENLITE]);
-
-    expect(groups.rows.length).toBe(5); // ainda 5 grupos no total — só a flag de 3 deles mudou
+    // Os grupos de PESSOA são 5 — só a flag de 3 deles mudou. Grupos AGENT (spec 078, mig 556: 'Luz — espelho Recrutador') são
+    // outra classe de ator e não entram na conta dos humanos; o AGENT é afirmado à parte, pelo nome.
+    const groups = { rows: todos.rows.filter((r) => r.actor_class !== 'AGENT') };
+    const agentes = todos.rows.filter((r) => r.actor_class === 'AGENT');
+    expect(groups.rows.length).toBe(5);
+    expect(agentes.map((r) => r.name)).toEqual(['Luz — espelho Recrutador']);
 
     const byId = new Map(groups.rows.map(r => [r.id, r]));
 
