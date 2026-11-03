@@ -6442,6 +6442,40 @@
         "missing": "A extensão do Tactiq não está ativa no seu Chrome. Instale-a para continuar recebendo agendas de admissão.",
         "disabled": "A extensão do Tactiq está desativada no seu Chrome. Ative-a de novo para continuar recebendo agendas de admissão."
       },
+      "importBlocked": {
+        "dateLanguage": "pt-BR",
+        "meeting": {
+          "admission": "reunião de admissão",
+          "enquadre": "entrevista de enquadre"
+        },
+        "reason": {
+          "host": {
+            "no_link": "a sua conta do Tactiq não está conectada",
+            "wrong_account": "a conta do Tactiq conectada não é a sua"
+          },
+          "supervisor": {
+            "no_link": "a conta do Tactiq de {{host}} não está conectada",
+            "wrong_account": "a conta do Tactiq conectada por {{host}} não é a da própria pessoa"
+          }
+        },
+        "hostFallback": "a pessoa responsável",
+        "blocked": {
+          "title": "Não conseguimos trazer a transcrição da sua reunião",
+          "body": "Não conseguimos trazer a transcrição da sua {{reuniao}} de {{data}}, porque {{motivo}}. Para resolver: abra Meu perfil, vá em Tactiq e toque em Vincular Tactiq. Você tem até {{prazo}}; depois disso não será mais possível trazer essa transcrição."
+        },
+        "reminder": {
+          "title": "Ainda falta vincular o Tactiq",
+          "body": "Lembrete: ainda não conseguimos trazer a transcrição da sua {{reuniao}} de {{data}}, porque {{motivo}}. Leva um minuto: Meu perfil, Tactiq, Vincular Tactiq. O prazo é {{prazo}}."
+        },
+        "expired": {
+          "title": "O prazo para trazer a transcrição acabou",
+          "body": "Passou o prazo e não foi possível trazer a transcrição da sua {{reuniao}} de {{data}}, porque {{motivo}}. Vincule sua conta em Meu perfil, Tactiq, Vincular Tactiq, para que as próximas reuniões não tenham o mesmo problema."
+        },
+        "willBeLost": {
+          "title": "A gravação da reunião de {{host}} vai ser perdida",
+          "body": "A gravação e a transcrição da {{reuniao}} de {{host}} de {{data}} ainda não chegaram, porque {{motivo}}. Se {{host}} não vincular o Tactiq até {{prazo}}, elas vão ser perdidas. {{host}} precisa abrir Meu perfil, ir em Tactiq e tocar em Vincular Tactiq."
+        }
+      },
       "itineraryUncoveredText": "{{shifts}} sem cobertura em {{services}}",
       "itineraryUncoveredShifts_one": "{{count}} turno",
       "itineraryUncoveredShifts_other": "{{count}} turnos",
