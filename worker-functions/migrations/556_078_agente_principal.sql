@@ -15,3 +15,102 @@
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_type_check;
 ALTER TABLE users ADD CONSTRAINT users_account_type_check
   CHECK (account_type IN ('staff', 'worker', 'agent'));
+
+-- ── 2. Classe de grupo `AGENT` (molde: 285_actor_class_external_third_party.sql) ───
+-- 2a. a classe entra no CHECK existente (nome lido em 285: permission_groups_actor_class_ck)
+ALTER TABLE iam.permission_groups DROP CONSTRAINT IF EXISTS permission_groups_actor_class_ck;
+ALTER TABLE iam.permission_groups ADD CONSTRAINT permission_groups_actor_class_ck
+  CHECK (actor_class IN ('INTERNAL', 'EXTERNAL_THIRD_PARTY', 'AGENT'));
+
+-- 2b. as células que um grupo AGENT NUNCA recebe (cópia de leitura em TS: ActorClass.ts CELULAS_VEDADAS_A_AGENTE, com teste de paridade)
+--     Células de lote/massa além de worker:export: LISTA (M2.0.4 não fechou lista aprovada pelo Gabriel).
+CREATE OR REPLACE FUNCTION iam.celulas_vedadas_a_agente()
+RETURNS TEXT[] LANGUAGE sql IMMUTABLE
+SET search_path = pg_catalog
+AS $$ SELECT ARRAY[
+  'permission_management:read',   -- gestão de permissão (spec 078 item 36)
+  'permission_management:write',  -- idem; protege também o anti-lockout (iam.is_last_manager, 410)
+  'worker:export'                 -- lote: tira o cadastro do perímetro num arquivo (285)
+] $$;
+REVOKE ALL ON FUNCTION iam.celulas_vedadas_a_agente() FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    GRANT EXECUTE ON FUNCTION iam.celulas_vedadas_a_agente() TO app_runtime, app_system;
+  END IF;
+END
+$$;
+
+-- T1. célula vedada entrando em grupo AGENT (molde trg_veda_celula_a_terceiro, 285)
+CREATE OR REPLACE FUNCTION iam.trg_veda_celula_a_agente()
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE v_classe TEXT; v_celula TEXT;
+BEGIN
+  SELECT g.actor_class INTO v_classe FROM iam.permission_groups g WHERE g.id = NEW.group_id;
+  IF v_classe IS DISTINCT FROM 'AGENT' THEN RETURN NEW; END IF;
+  SELECT p.resource || ':' || p.action INTO v_celula FROM iam.permissions p WHERE p.id = NEW.permission_id;
+  IF v_celula = ANY (iam.celulas_vedadas_a_agente()) THEN
+    RAISE EXCEPTION 'celula % nao pode ser concedida a grupo AGENT (078 item 36)', v_celula
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS veda_celula_a_agente ON iam.group_permissions;
+CREATE TRIGGER veda_celula_a_agente BEFORE INSERT OR UPDATE ON iam.group_permissions
+  FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_celula_a_agente();
+
+-- T2. a classe do grupo mudando (molde trg_veda_virar_externo, 285)
+--     (a) virar AGENT com célula vedada já dentro -> erro
+--     (b) entrar em AGENT ou sair de AGENT com membro vivo (qualquer tipo) -> erro (a classe de um grupo com gente não muda)
+--     Transições que não envolvem AGENT (INTERNAL <-> EXTERNAL_THIRD_PARTY) seguem como a 285 as deixou.
+CREATE OR REPLACE FUNCTION iam.trg_veda_trocar_classe_agente()
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE v_celula TEXT;
+BEGIN
+  IF NEW.actor_class IS NOT DISTINCT FROM OLD.actor_class THEN RETURN NEW; END IF;
+  IF NEW.actor_class <> 'AGENT' AND OLD.actor_class <> 'AGENT' THEN RETURN NEW; END IF;
+  IF NEW.actor_class = 'AGENT' THEN
+    SELECT p.resource || ':' || p.action INTO v_celula
+      FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
+     WHERE gp.group_id = NEW.id AND p.resource || ':' || p.action = ANY (iam.celulas_vedadas_a_agente())
+     LIMIT 1;
+    IF v_celula IS NOT NULL THEN
+      RAISE EXCEPTION 'grupo nao pode virar AGENT: ja tem a celula vedada % (078 item 36)', v_celula
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM iam.user_groups ug WHERE ug.group_id = NEW.id AND ug.removed_at IS NULL) THEN
+    RAISE EXCEPTION 'grupo com membro vivo nao pode entrar nem sair da classe AGENT (078 item 36)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS veda_trocar_classe_agente ON iam.permission_groups;
+CREATE TRIGGER veda_trocar_classe_agente BEFORE UPDATE ON iam.permission_groups
+  FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_trocar_classe_agente();
+
+-- T3. agente só é membro de grupo AGENT, e grupo AGENT só tem agente como membro (as duas direções)
+CREATE OR REPLACE FUNCTION iam.trg_veda_agente_fora_de_grupo_agent()
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE v_tipo TEXT; v_classe TEXT;
+BEGIN
+  IF NEW.removed_at IS NOT NULL THEN RETURN NEW; END IF;
+  SELECT u.account_type INTO v_tipo FROM users u WHERE u.firebase_uid = NEW.user_id;
+  SELECT g.actor_class INTO v_classe FROM iam.permission_groups g WHERE g.id = NEW.group_id;
+  IF v_tipo = 'agent' AND v_classe IS DISTINCT FROM 'AGENT' THEN
+    RAISE EXCEPTION 'agente so pode ser membro de grupo AGENT (078 item 36)' USING ERRCODE = 'check_violation';
+  END IF;
+  IF v_classe = 'AGENT' AND v_tipo IS DISTINCT FROM 'agent' THEN
+    RAISE EXCEPTION 'grupo AGENT so aceita agente como membro (078 item 36)' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS veda_agente_fora_de_grupo_agent ON iam.user_groups;
+CREATE TRIGGER veda_agente_fora_de_grupo_agent BEFORE INSERT OR UPDATE ON iam.user_groups
+  FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_agente_fora_de_grupo_agent();
