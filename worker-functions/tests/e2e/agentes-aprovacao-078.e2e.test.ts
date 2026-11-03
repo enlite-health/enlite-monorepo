@@ -63,11 +63,11 @@ describe('agentes.aprovacao.verificar contra o banco (spec 078, M1.3.1)', () => 
     return { pedidoId, atitudes };
   }
 
-  const evento = async (pedidoId: string, atitudeId: string, acao: 'aceitar' | 'negar' | 'descrever') => {
+  const evento = async (pedidoId: string, atitudeId: string, acao: 'aceitar' | 'negar' | 'descrever', comentarioAceite?: string) => {
     const r = await admin.query(
       `INSERT INTO agentes.pedido_eventos (pedido_id, atitude_id, acao, actor_uid, actor_kind, motivo, comentario)
        VALUES ($1,$2,$3,'staff-qa','humano', $4, $5) RETURNING id`,
-      [pedidoId, atitudeId, acao, acao === 'negar' ? 'sem motivo bom' : null, acao === 'descrever' ? 'comentário' : null],
+      [pedidoId, atitudeId, acao, acao === 'negar' ? 'sem motivo bom' : null, acao === 'descrever' ? 'comentário' : acao === 'aceitar' ? (comentarioAceite ?? null) : null],
     );
     return r.rows[0].id as string;
   };
@@ -78,7 +78,15 @@ describe('agentes.aprovacao.verificar contra o banco (spec 078, M1.3.1)', () => 
     const out = await cap.execute({ aprovacao_id: id }, 'sol-propagador');
     expect(out).toEqual({
       valida: true, acao: 'aceitar', pedido_id: pedidoId, atitude_id: atitudes[0], atitude_versao: 1,
-      atitude_atual: true, decidido_em: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
+      atitude_atual: true, decidido_em: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/), comentario: null,
+    });
+  });
+
+  it('aceitar COM comentário (spec 078 M7) → o Sol recebe o comentário do evento', async () => {
+    const { pedidoId, atitudes } = await pedidoComAtitudes(1);
+    const id = await evento(pedidoId, atitudes[0], 'aceitar', 'aplicar só no turno da tarde');
+    expect(await cap.execute({ aprovacao_id: id }, 'sol-propagador')).toMatchObject({
+      valida: true, acao: 'aceitar', comentario: 'aplicar só no turno da tarde',
     });
   });
 
@@ -111,7 +119,7 @@ describe('agentes.aprovacao.verificar contra o banco (spec 078, M1.3.1)', () => 
   it('uuid inexistente → valida=false, acao=null, sem ids', async () => {
     const out = await cap.execute({ aprovacao_id: '123e4567-e89b-12d3-a456-426614174999' }, 'sol-propagador');
     expect(out).toEqual({
-      valida: false, acao: null, pedido_id: null, atitude_id: null, atitude_versao: null, atitude_atual: false, decidido_em: null,
+      valida: false, acao: null, pedido_id: null, atitude_id: null, atitude_versao: null, atitude_atual: false, decidido_em: null, comentario: null,
     });
   });
 

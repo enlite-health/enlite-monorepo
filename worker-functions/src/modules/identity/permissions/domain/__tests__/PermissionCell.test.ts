@@ -236,3 +236,10 @@ describe('spec 082 — platform_costs:read (Master-only)', () => {
     expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [CELL])).not.toThrow();
   });
 });
+
+describe('spec 078 M7 — pedidos_ia: só LER é master-only; DECIDIR é do grupo decisor (Marcel)', () => {
+  it('SOMENTE_ACESSO_MASTER_CELLS tem pedidos_ia:read e NÃO tem pedidos_ia:decidir', () => {
+    expect([...SOMENTE_ACESSO_MASTER_CELLS].filter((c) => c.startsWith('pedidos_ia:'))).toEqual(['pedidos_ia:read']);
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has('pedidos_ia:decidir')).toBe(false);
+  });
+});

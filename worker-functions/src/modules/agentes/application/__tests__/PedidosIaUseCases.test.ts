@@ -35,6 +35,15 @@ describe('pedidos IA — use cases (spec 078, M3b-1)', () => {
     expect(repo.decididos).toEqual([{ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' }]);
   });
 
+  it('aceitar COM comentário grava o comentário aparado; comentário só com espaços vira aceite sem comentário', async () => {
+    const repo = fakeRepo();
+    const uc = new DecidirPedidoIaUseCase(repo);
+    await uc.execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1', comentario: '  aplicar depois do feriado ' });
+    await uc.execute({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1', comentario: '   ' });
+    expect(repo.decididos[0]).toEqual({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1', comentario: 'aplicar depois do feriado' });
+    expect(repo.decididos[1]).toEqual({ pedidoId: 'p1', acao: 'aceitar', actorUid: 'u1' });
+  });
+
   it('negar grava o motivo (aparado); negar sem motivo ou só com espaços -> MotivoObrigatorioError e NADA gravado', async () => {
     const repo = fakeRepo();
     const uc = new DecidirPedidoIaUseCase(repo);
@@ -137,4 +146,35 @@ describe('descrever depois de aceitar/negar -> 409 PEDIDO_JA_DECIDIDO (spec 078,
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({ success: false, code: 'PEDIDO_JA_DECIDIDO' });
   });
+});
+
+describe('PedidoIaController.aceitar — corpo opcional com comentário (spec 078, M7)', () => {
+  const montar = () => {
+    const repo = fakeRepo();
+    const ctrl = new PedidoIaController(new ListarPedidosIaUseCase(repo), new ObterPedidoIaUseCase(repo), new DecidirPedidoIaUseCase(repo));
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const req = (body: unknown) => ({
+      params: { id: '123e4567-e89b-42d3-a456-426614174000' }, body,
+      authContext: { principal: { id: 'u1' } },
+    });
+    return { repo, ctrl, res, req };
+  };
+  it('sem corpo -> 200 sem comentário; com comentário -> 200 e o comentário chega ao repositório', async () => {
+    const m = montar();
+    await m.ctrl.aceitar(m.req(undefined) as never, m.res as never);
+    await m.ctrl.aceitar(m.req({ comentario: ' ok, mas com cuidado ' }) as never, m.res as never);
+    expect(m.res.status).toHaveBeenNthCalledWith(1, 200);
+    expect(m.res.status).toHaveBeenNthCalledWith(2, 200);
+    expect(m.repo.decididos[0].comentario).toBeUndefined();
+    expect(m.repo.decididos[1].comentario).toBe('ok, mas com cuidado');
+  });
+
+  it.each([['vazio', { comentario: '   ' }], ['> 1000', { comentario: 'x'.repeat(1001) }], ['não-string', { comentario: 7 }]])(
+    'comentário %s -> 400 COMENTARIO_INVALIDO e nada gravado', async (_n, body) => {
+      const m = montar();
+      await m.ctrl.aceitar(m.req(body) as never, m.res as never);
+      expect(m.res.status).toHaveBeenCalledWith(400);
+      expect(m.res.json).toHaveBeenCalledWith({ success: false, code: 'COMENTARIO_INVALIDO' });
+      expect(m.repo.decididos).toHaveLength(0);
+    });
 });
