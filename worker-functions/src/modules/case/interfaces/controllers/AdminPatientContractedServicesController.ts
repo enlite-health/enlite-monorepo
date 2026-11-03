@@ -27,7 +27,7 @@ import {
 } from '../../application/LinkExistingVacancyUseCase';
 import { LinkExistingVacancyRepository } from '../../infrastructure/LinkExistingVacancyRepository';
 import { JobPostingAuditRepository } from '../../../matching/infrastructure/JobPostingAuditRepository';
-import type { AcceptsServiceValue } from '../../domain/LinkExistingVacancyPlan';
+import { ACCEPT_ANY_SERVICE_VALUE } from '../../domain/LinkExistingVacancyPlan';
 import {
   linkExistingVacancyPreviewBodySchema,
   linkExistingVacancyConfirmBodySchema,
@@ -37,7 +37,6 @@ import { clinicalCellsOf } from '../../application/patientClinicalAccess';
 import { exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
 import { insuranceErrorBody } from './insuranceErrorResponse';
 
-const ACCEPT_ANY_SERVICE_VALUE: AcceptsServiceValue = () => true; // spec 079 §4 literal; ⚑2 (validar pelo Zod do serviço) pendente de decisão do Gabriel — trocar por contractedServiceValueAccepts se aprovado
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });

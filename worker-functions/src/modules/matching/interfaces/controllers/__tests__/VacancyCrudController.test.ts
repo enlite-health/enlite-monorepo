@@ -74,6 +74,9 @@ jest.mock('../vacancyCrudAuditHelpers', () => ({
   auditVacancyCreated: (...args: any[]) => (mockAuditVacancyCreated as any)(...args),
   auditVacancyUpdated: (...args: any[]) => (mockAuditVacancyUpdated as any)(...args),
   auditVacancyDeleted: (...args: any[]) => (mockAuditVacancyDeleted as any)(...args),
+  // SQL do DELETE extraído para a fusão rascunho→oficial reusar: o REAL roda no mockClient (mesmas queries de antes).
+  lockLiveVacancySnapshot: jest.requireActual('../vacancyCrudAuditHelpers').lockLiveVacancySnapshot,
+  softDeleteVacancyRow: jest.requireActual('../vacancyCrudAuditHelpers').softDeleteVacancyRow,
   createWithPatientUpdate: (...args: any[]) => (mockCreateWithPatientUpdate as any)(...args),
   // spec 029 — `extractHumanActor` (SUT) passa a delegar para esta função nova.
   // Mock replica o shape real (`vacancyActorFromRequest`, vacancyCrudAuditHelpers.ts):

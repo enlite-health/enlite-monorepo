@@ -297,3 +297,37 @@ describe("accepts injetado", () => {
     expect(pv.preview?.blockers).toContain("SERVICE_REQUIRED_SEX" as never);
   });
 });
+
+describe("dispensa explícita do portão (só a fusão rascunho→oficial usa; a tela não passa nada)", () => {
+  const semPagamento = () => okCtx({ payment_day: null });
+
+  it("vínculo normal (sem opts) com campo vazio nos dois lados CONTINUA bloqueando", async () => {
+    mockLock.mockResolvedValue(semPagamento());
+    const t = build();
+    await expect(t.uc.confirm(P, S, V, actor)).rejects.toMatchObject({ name: "LinkBlockedError", blockers: ["SERVICE_PAYMENT_DAY"] });
+    noWrites(t);
+  });
+
+  it("dispensando o campo vazio → vincula", async () => {
+    mockLock.mockResolvedValue(semPagamento());
+    const t = build();
+    await expect(t.uc.confirm(P, S, V, actor, { waivedBlockers: ["SERVICE_PAYMENT_DAY"] })).resolves.toMatchObject({ vacancyId: V });
+    expect(t.repo.linkVacancyAndClear).toHaveBeenCalled();
+  });
+
+  it("dispensa de campo NÃO libera outro bloqueio (horário) → continua bloqueando só pelo que sobrou", async () => {
+    mockLock.mockResolvedValue(okCtx({ payment_day: null, has_schedule: false }));
+    const t = build();
+    await expect(t.uc.confirm(P, S, V, actor, { waivedBlockers: ["SERVICE_PAYMENT_DAY"] }))
+      .rejects.toMatchObject({ name: "LinkBlockedError", blockers: ["SERVICE_SCHEDULE"] });
+    noWrites(t);
+  });
+
+  it("código fora dos 5 campos (horário, cobertura) nunca é dispensável, mesmo se pedido", async () => {
+    mockLock.mockResolvedValue(okCtx({ has_schedule: false }));
+    const t = build();
+    await expect(t.uc.confirm(P, S, V, actor, { waivedBlockers: ["SERVICE_SCHEDULE", "COVERAGE"] }))
+      .rejects.toMatchObject({ name: "LinkBlockedError", blockers: ["SERVICE_SCHEDULE"] });
+    noWrites(t);
+  });
+});

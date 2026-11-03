@@ -49,6 +49,10 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
     rules: ['raw-export'],
     motivo: 'LEITOR 13 em client cru (connect() sem identidade): SELECT/RETURNING com lista explícita SEM join, só para auditar o que foi gravado; a resposta traz o efetivo via withEffectiveSchedule.',
   },
+  'src/modules/matching/interfaces/controllers/vacancyCrudAuditHelpers.ts': {
+    rules: ['raw-export'],
+    motivo: 'SNAPSHOT do DELETE de vaga (`lockLiveVacancySnapshot`, extraído do VacancyCrudController.deleteVacancy para a fusão rascunho→oficial reusar): SELECT com lista explícita SEM join, FOR UPDATE, só para o `before` da auditoria DELETED — nunca vai para resposta.',
+  },
   'src/modules/matching/interfaces/controllers/vacancyCrudHelpers.ts': {
     rules: [
       'schedule:bare', 'providers_needed:bare', 'age_range_min:bare', 'age_range_max:bare', 'raw-export',

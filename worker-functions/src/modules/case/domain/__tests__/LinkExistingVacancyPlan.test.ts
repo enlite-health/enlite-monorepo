@@ -1,4 +1,5 @@
 import {
+  ACCEPT_ANY_SERVICE_VALUE,
   linkExistingVacancyPlan,
   VACANCY_SERVICE_OWNED_COLUMNS,
   type ServiceLinkTarget,
@@ -346,5 +347,11 @@ describe('linkExistingVacancyPlan', () => {
     for (const [blank, key] of cases) {
       expect(Object.keys(linkExistingVacancyPlan(vac, { ...full, ...blank }, yes).serviceFeed)).toEqual([key]);
     }
+  });
+});
+
+describe('ACCEPT_ANY_SERVICE_VALUE (composição única do painel e da fusão rascunho→oficial)', () => {
+  it('aceita qualquer valor (spec 079 §4 literal, ⚑2 pendente)', () => {
+    expect(ACCEPT_ANY_SERVICE_VALUE('payment_day', 'qualquer')).toBe(true);
   });
 });
