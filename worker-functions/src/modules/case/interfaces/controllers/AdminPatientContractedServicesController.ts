@@ -17,6 +17,7 @@ import {
   PatientNotFoundForRecruitmentError,
   ServiceNotFoundForRecruitmentError,
   ServiceAlreadyRecruitingError,
+  LinkableVacancyExistsError,
   RecruitmentNotReadyError,
 } from '../../application/ActivateRecruitmentUseCase';
 import {
@@ -208,6 +209,7 @@ export class AdminPatientContractedServicesController {
         params.data.id,
         params.data.sid,
         vacancyActorFromRequest(req, 'activate_recruitment'),
+        { createNewVacancy: req.body?.createNewVacancy === true }, // sinal explícito da pessoa; ausente/outro valor = guarda ativa
       );
       res.status(201).json({
         success: true,
@@ -228,6 +230,10 @@ export class AdminPatientContractedServicesController {
       }
       if (err instanceof ServiceAlreadyRecruitingError) {
         res.status(409).json({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: err.vacancyId });
+        return;
+      }
+      if (err instanceof LinkableVacancyExistsError) {
+        res.status(409).json({ success: false, code: 'LINKABLE_VACANCY_EXISTS', vacancyIds: err.vacancyIds });
         return;
       }
       if (err instanceof RecruitmentNotReadyError) {

@@ -78,21 +78,23 @@ describe('PedidosIaPage — gate por célula', () => {
     expect(api.list).not.toHaveBeenCalled();
   });
 
-  it('🔴 com read SEM decidir: lista o pedido, avisa somente leitura e NÃO há botões Aceitar/Negar/Descrever', async () => {
+  it('🔴 com read SEM decidir: lista o pedido, avisa somente leitura e NÃO há botões Aprobar/Aprobar con comentario/Rechazar/Describir', async () => {
     postura(LEITOR);
     render_();
     expect(await screen.findByText('Assunto sintetico')).toBeInTheDocument();
     expect(screen.getByTestId('pedidos-somente-leitura')).toBeInTheDocument();
     expect(screen.queryByTestId('pedido-aceitar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pedido-aceitar-comentario')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pedido-negar')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pedido-descrever')).not.toBeInTheDocument();
   });
 
-  it('com decidir: os 3 botões existem', async () => {
+  it('com decidir: os 4 botões existem (Aprobar, Aprobar con comentario, Rechazar, Describir)', async () => {
     postura(DECISOR);
     render_();
     await screen.findByText('Assunto sintetico');
     expect(screen.getByTestId('pedido-aceitar')).toBeInTheDocument();
+    expect(screen.getByTestId('pedido-aceitar-comentario')).toBeInTheDocument();
     expect(screen.getByTestId('pedido-negar')).toBeInTheDocument();
     expect(screen.getByTestId('pedido-descrever')).toBeInTheDocument();
     expect(screen.queryByTestId('pedidos-somente-leitura')).not.toBeInTheDocument();
@@ -175,6 +177,25 @@ describe('PedidosIaPage — decisões', () => {
     expect(screen.queryByTestId('pedido-aceitar')).not.toBeInTheDocument();
   });
 
+  it('🔴 Aprobar con comentario: comentário obrigatório (vazio/espaços não envia); com texto chama aceitar(id, comentario) e o status vira aceito', async () => {
+    api.aceitar.mockResolvedValue({ evento_id: 'e4', status: 'aceito' });
+    api.get.mockResolvedValue(pedido({ status: 'aceito', eventos: [{ acao: 'aceitar', actor_uid: 'u', actor_kind: 'humano', ts: '2026-10-29T12:00:00Z', comentario: 'só depois do feriado' }] }));
+    render_();
+    await screen.findByText('Assunto sintetico');
+    await userEvent.click(screen.getByTestId('pedido-aceitar-comentario'));
+    const confirmar = screen.getByTestId('decisao-confirmar');
+    expect(confirmar).toBeDisabled();
+    await userEvent.type(screen.getByTestId('decisao-texto'), '   ');
+    expect(confirmar).toBeDisabled();
+    await userEvent.click(confirmar);
+    expect(api.aceitar).not.toHaveBeenCalled();
+    await userEvent.type(screen.getByTestId('decisao-texto'), 'só depois do feriado');
+    await userEvent.click(confirmar);
+    await waitFor(() => expect(api.aceitar).toHaveBeenCalledWith('p1', 'só depois do feriado'));
+    await waitFor(() => expect(screen.queryByTestId('decisao-modal')).not.toBeInTheDocument());
+    expect(screen.getByTestId('pedido-status')).toHaveTextContent('admin.pedidosIa.status.aceito');
+  });
+
   it('🔴 Negar sem motivo: botão do modal desabilitado e a API NÃO é chamada; com motivo (só espaços não vale) envia', async () => {
     api.negar.mockResolvedValue({ evento_id: 'e2', status: 'negado' });
     api.get.mockResolvedValue(pedido({ status: 'negado' }));
@@ -231,6 +252,7 @@ describe('pedidosIaErrorKey', () => {
     expect(pedidosIaErrorKey(e(409, 'DECISAO_JA_REGISTRADA'))).toBe('admin.pedidosIa.errors.alreadyDecided');
     expect(pedidosIaErrorKey(e(400, 'MOTIVO_OBRIGATORIO'))).toBe('admin.pedidosIa.errors.required');
     expect(pedidosIaErrorKey(e(400, 'COMENTARIO_OBRIGATORIO'))).toBe('admin.pedidosIa.errors.required');
+    expect(pedidosIaErrorKey(e(400, 'COMENTARIO_INVALIDO'))).toBe('admin.pedidosIa.errors.required');
     expect(pedidosIaErrorKey(e(500, 'INTERNAL_ERROR'))).toBe('admin.pedidosIa.errors.generic');
     expect(pedidosIaErrorKey(new Error('boom'))).toBe('admin.pedidosIa.errors.generic');
   });

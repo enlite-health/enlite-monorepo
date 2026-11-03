@@ -1,6 +1,7 @@
 /**
- * PedidosIaPage — `/admin/pedidos-ia` (spec 078, M3b-1.4): os pedidos do Sol como posts, com 3 botões
- * (Aceitar / Negar / Descrever o que fazer). Abre com `pedidos_ia:read`; os botões só existem com `pedidos_ia:decidir`
+ * PedidosIaPage — `/admin/pedidos-ia` (spec 078, M3b-1.4; M7): os pedidos do Sol como posts, com 4 botões
+ * (Aprobar / Aprobar con comentario / Rechazar / Describir). Abre com `pedidos_ia:read`; os botões só existem com `pedidos_ia:decidir`
+ * (célula do grupo decisor — só o Marcel; o Acesso Master só lê)
  * (mesma régua D268/D269 do `ActionButton`: com o engine OFF a célula não barra, e a API responde 403 → mensagem traduzida).
  * Contrato carregando = diz que carrega; em erro = diz que falhou (fail-closed). Lista, filtros por área e status,
  * ordenação por idade. Ver NÃO grava nada; cada decisão grava 1 evento no backend.
@@ -99,7 +100,12 @@ export function PedidosIaPage(): JSX.Element {
     setModalErro(null);
     const ok = await decidir(
       id,
-      () => (modo === 'negar' ? AdminPedidosIaApiService.negar(id, texto) : AdminPedidosIaApiService.descrever(id, texto)),
+      () =>
+        modo === 'negar'
+          ? AdminPedidosIaApiService.negar(id, texto)
+          : modo === 'aceitar'
+            ? AdminPedidosIaApiService.aceitar(id, texto)
+            : AdminPedidosIaApiService.descrever(id, texto),
       setModalErro,
     );
     if (ok) setModal(null);
@@ -191,6 +197,7 @@ export function PedidosIaPage(): JSX.Element {
               ocupado={ocupado === p.id}
               erroKey={erros[p.id] || null}
               onAceitar={() => void aceitar(p.id)}
+              onAceitarComentario={() => { setModalErro(null); setModal({ id: p.id, modo: 'aceitar' }); }}
               onNegar={() => { setModalErro(null); setModal({ id: p.id, modo: 'negar' }); }}
               onDescrever={() => { setModalErro(null); setModal({ id: p.id, modo: 'descrever' }); }}
             />

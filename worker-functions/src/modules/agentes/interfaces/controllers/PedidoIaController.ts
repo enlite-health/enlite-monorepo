@@ -33,6 +33,8 @@ const querySchema = z.object({
   grave: z.enum(['true', 'false']).optional(),
 });
 const negarSchema = z.object({ motivo: z.string().trim().min(1, 'MOTIVO_OBRIGATORIO').max(300) });
+/** Aprovar com comentário: o corpo é opcional; se vier `comentario`, 1..1000 (aparado). */
+const aceitarSchema = z.object({ comentario: z.string().trim().min(1, 'COMENTARIO_INVALIDO').max(1000).optional() });
 const descreverSchema = z.object({ comentario: z.string().trim().min(1, 'COMENTARIO_OBRIGATORIO').max(500) });
 
 /**
@@ -102,7 +104,11 @@ export class PedidoIaController {
 
     let motivo: string | undefined;
     let comentario: string | undefined;
-    if (acao === 'negar') {
+    if (acao === 'aceitar') {
+      const b = aceitarSchema.safeParse(req.body ?? {});
+      if (!b.success) return void res.status(400).json({ success: false, code: 'COMENTARIO_INVALIDO' });
+      comentario = b.data.comentario;
+    } else if (acao === 'negar') {
       const b = negarSchema.safeParse(req.body ?? {});
       if (!b.success) return void res.status(400).json({ success: false, code: 'MOTIVO_OBRIGATORIO' });
       motivo = b.data.motivo;

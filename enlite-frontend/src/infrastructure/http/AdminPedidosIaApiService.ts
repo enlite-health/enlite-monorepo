@@ -1,7 +1,7 @@
 /**
  * A API dos pedidos do Sol (spec 078, M3b-1) — `/api/admin/pedidos-ia`.
  *
- * Leitura sob `pedidos_ia:read`; cada decisão (aceitar / negar / descrever) sob `pedidos_ia:decidir` e grava
+ * Leitura sob `pedidos_ia:read`; cada decisão (aceitar [com comentário opcional] / negar / descrever) sob `pedidos_ia:decidir`, que só o grupo decisor (Marcel) tem e grava
  * 1 evento no backend. Este cliente só carrega o dado: mostrar o botão ou não é do `useActionGate`, nunca daqui.
  * Contrato: `worker-functions/src/modules/agentes/README.md` — envelope `{success:true,data}` ou `{success:false,code}`.
  */
@@ -122,8 +122,13 @@ class AdminPedidosIaApiServiceClass {
     return this.request<ContadoresAceitos>('GET', `/api/admin/pedidos-ia/contadores${q}`);
   }
 
-  async aceitar(id: string): Promise<DecisaoResultado> {
-    return this.request('POST', `/api/admin/pedidos-ia/${encodeURIComponent(id)}/aceitar`);
+  /** Aprovar. Com `comentario` = "aprovar com comentário" (1..1000, gravado no evento `aceitar`); sem ele, corpo vazio. */
+  async aceitar(id: string, comentario?: string): Promise<DecisaoResultado> {
+    return this.request(
+      'POST',
+      `/api/admin/pedidos-ia/${encodeURIComponent(id)}/aceitar`,
+      comentario !== undefined ? { comentario } : undefined,
+    );
   }
 
   async negar(id: string, motivo: string): Promise<DecisaoResultado> {

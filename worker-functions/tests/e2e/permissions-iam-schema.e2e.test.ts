@@ -522,6 +522,7 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (1 de sistema + 
 
     const ativas = await pool.query<{ id: string }>(`
       SELECT id FROM iam.permissions WHERE deprecated_at IS NULL
+         AND NOT (resource = 'pedidos_ia' AND action = 'decidir') -- 557: decidir é do grupo decisor (Marcel), o sync não a dá ao Master
     `);
     const grants = await pool.query<{ permission_id: string }>(`
       SELECT permission_id FROM group_permissions WHERE group_id = $1

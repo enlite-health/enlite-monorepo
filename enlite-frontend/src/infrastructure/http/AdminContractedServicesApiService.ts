@@ -177,10 +177,16 @@ class AdminContractedServicesApiServiceClass {
    * 404/409/422 viram `ContractedServiceApiError` (o `code` diz qual — `NOT_FOUND`,
    * `SERVICE_ALREADY_RECRUITING`, `PATIENT_NOT_READY`).
    */
-  async activateRecruitment(patientId: string, serviceId: string): Promise<ActivateRecruitmentResult> {
+  async activateRecruitment(
+    patientId: string,
+    serviceId: string,
+    opts?: { createNewVacancy?: boolean },
+  ): Promise<ActivateRecruitmentResult> {
     return this.request<ActivateRecruitmentResult>(
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
+      // Sinal EXPLÍCITO "Criar vaga nova" (409 LINKABLE_VACANCY_EXISTS sem ele); sem opts o corpo não muda.
+      opts?.createNewVacancy ? { createNewVacancy: true } : undefined,
     );
   }
 

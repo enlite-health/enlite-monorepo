@@ -12,11 +12,12 @@ const STATUS_COR: Record<PedidoStatus, string> = {
 
 interface Props {
   pedido: Pedido;
-  /** `pedidos_ia:decidir` — sem ela os 3 botões NÃO existem na árvore. */
+  /** `pedidos_ia:decidir` (só o grupo decisor) — sem ela os 4 botões NÃO existem na árvore. */
   podeDecidir: boolean;
   ocupado: boolean;
   erroKey: string | null;
   onAceitar: () => void;
+  onAceitarComentario: () => void;
   onNegar: () => void;
   onDescrever: () => void;
 }
@@ -27,8 +28,8 @@ function Idade({ horas }: { horas: number }): JSX.Element {
   return <>{h < 48 ? t('admin.pedidosIa.age.hours', { count: h }) : t('admin.pedidosIa.age.days', { count: Math.floor(h / 24) })}</>;
 }
 
-/** Um pedido como POST: assunto, quem/onde/há quanto, atitude proposta e os 3 botões. */
-export function PedidoPost({ pedido, podeDecidir, ocupado, erroKey, onAceitar, onNegar, onDescrever }: Props): JSX.Element {
+/** Um pedido como POST: assunto, quem/onde/há quanto, atitude proposta e os 4 botões (Aprobar, Aprobar con comentario, Rechazar, Describir). */
+export function PedidoPost({ pedido, podeDecidir, ocupado, erroKey, onAceitar, onAceitarComentario, onNegar, onDescrever }: Props): JSX.Element {
   const { t, i18n } = useTranslation();
   const [aberto, setAberto] = useState(false);
   const grave = pedido.grave_gatilho !== 'nenhum';
@@ -144,6 +145,16 @@ export function PedidoPost({ pedido, podeDecidir, ocupado, erroKey, onAceitar, o
           >
             <Check className="h-4 w-4" aria-hidden="true" />
             {t('admin.pedidosIa.actions.aceitar')}
+          </button>
+          <button
+            type="button"
+            data-testid="pedido-aceitar-comentario"
+            disabled={ocupado}
+            onClick={onAceitarComentario}
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border-2 border-[#14532D] bg-white px-4 text-sm font-semibold text-[#14532D] disabled:opacity-60"
+          >
+            <Check className="h-4 w-4" aria-hidden="true" />
+            {t('admin.pedidosIa.actions.aceitarComentario')}
           </button>
           <button
             type="button"

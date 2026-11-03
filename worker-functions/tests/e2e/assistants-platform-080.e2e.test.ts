@@ -4,7 +4,7 @@
  * sync ON. Contract: `rotas-plataforma-novas.md` §0, §1, §5.
  *
  * Proves: (1) the 12 new cells enter the catalog WITHOUT a migration and only the Acesso Master has them; (2) the Master sees the 3
- * assistants and the 7 compartments in the reach, whoever lacks `assistant_maria:chat` does not see `maria`; (3) service only, person only or
+ * assistants and the 8 compartments in the reach, whoever lacks `assistant_maria:chat` does not see `maria`; (3) service only, person only or
  * both -> 401/401/200; (4) without the cell -> 403 on the scoreboard and on the escalation (the 1st key belongs to the platform); (5) a Master-only
  * cell does not enter a regular group (422) and the account stays 403.
  * Service identity: test token `mock_<base64>` accepted ONLY under USE_MOCK_AUTH=true (ServiceIdentityVerifier).
@@ -43,7 +43,7 @@ const NEW_CELLS: Array<[string, string]> = [
   ),
 ];
 /** The reach answers the compartment as an enum value (SCREAMING_SNAKE_CASE); lowercase lives only inside the cell name. */
-const COMPARTMENTS = ['PUBLIC', 'RECRUITMENT', 'CLINICAL', 'FINANCIAL', 'MANAGEMENT', 'COORDINATION', 'TECHNICAL'];
+const COMPARTMENTS = ['PUBLIC', 'RECRUITMENT', 'CLINICAL', 'FINANCIAL', 'MANAGEMENT', 'COORDINATION', 'TECHNICAL', 'PRODUCT_MEETINGS'];
 
 const U = {
   master: 'qa-080-master-' + RUN,
@@ -199,7 +199,7 @@ describe('assistants platform — two identities, reach and the 1st key — real
     expect(readdirSync(dir).filter((f) => f.endsWith(".sql")).some((f) => /INSERT\s+INTO\s+iam\.permissions/i.test(readFileSync(join(dir, f), "utf8")))).toBe(true); // positive control: the filter sees a migration that inserts a cell
   });
 
-  it('Acesso Master account: the reach returns the 3 assistants and the 7 compartments, in the order of the constants', async () => {
+  it('Acesso Master account: the reach returns the 3 assistants and the 8 compartments, in the order of the constants', async () => {
     const r = await http('GET', '/api/admin/assistants/reach', { person: U.master, service: serviceAuth() });
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ uid: U.master, assistants: ['maria', 'lucero', 'candela'], knowledge: COMPARTMENTS });

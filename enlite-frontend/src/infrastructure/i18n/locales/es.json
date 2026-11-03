@@ -4107,6 +4107,19 @@
           "linkExistingVacancy": {
             "button": "Vincular vacante existente",
             "aria": "Vincular vacante existente a {{service}}",
+            "rocketNotice": "Este paciente ya tiene una vacante sin servicio. Vincúlela a este servicio o cree una vacante nueva.",
+            "createNew": "Crear vacante nueva",
+            "confirmRocket": "Vincular a la existente",
+            "leftovers": {
+              "title": "Otras vacantes antiguas",
+              "question_one": "Hay {{count}} vacante antigua abierta más de este paciente. ¿Desea eliminarla?",
+              "question_other": "Hay {{count}} vacantes antiguas abiertas más de este paciente. ¿Desea eliminarlas?",
+              "yes": "Sí, eliminar",
+              "no": "No",
+              "close": "Cerrar",
+              "deleteFailed_one": "No se pudo eliminar {{count}} vacante.",
+              "deleteFailed_other": "No se pudieron eliminar {{count}} vacantes."
+            },
             "modalTitle": "Vincular vacante existente al servicio",
             "selectLabel": "Vacante del paciente",
             "selectPlaceholder": "Elegí una vacante",
@@ -5223,11 +5236,10 @@
             "export": "Expor.",
             "validate": "Valid.",
             "execute": "Ejecutar",
-            "chat": "Conversar",
+            "chat": "Chat",
             "send": "Enviar",
             "disable": "Dar de baja",
             "write": "Crear y editar",
-            "chat": "Chat",
             "incomplete_alert": "Aviso día 12",
             "waive_contact": "No necesita",
             "decidir": "Decidir",
@@ -5280,6 +5292,7 @@
             "knowledge_public": "Conocimiento público",
             "knowledge_recruitment": "Conocimiento de reclutamiento",
             "knowledge_technical": "Conocimiento técnico",
+            "knowledge_product_meetings": "Conocimiento de reuniones de producto",
             "vacancy": "Vacantes",
             "funnel": "Embudo",
             "interview": "Entrevistas",
@@ -7085,17 +7098,24 @@
         "sistema": "sistema"
       },
       "actions": {
-        "aceitar": "Aceptar",
-        "negar": "Negar",
+        "aceitar": "Aprobar",
+        "aceitarComentario": "Aprobar con comentario",
+        "negar": "Rechazar",
         "descrever": "Describir qué hacer"
       },
       "modal": {
         "cancel": "Cancelar",
+        "aceitar": {
+          "title": "Aprobar con comentario",
+          "label": "Comentario (obligatorio)",
+          "required": "Escribí el comentario para poder aprobar.",
+          "confirm": "Aprobar con comentario"
+        },
         "negar": {
-          "title": "Negar el pedido",
+          "title": "Rechazar el pedido",
           "label": "Motivo (obligatorio)",
           "required": "Escribí el motivo para poder negar.",
-          "confirm": "Negar pedido"
+          "confirm": "Rechazar pedido"
         },
         "descrever": {
           "title": "Describir qué hacer",

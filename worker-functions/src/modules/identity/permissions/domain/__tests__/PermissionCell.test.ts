@@ -143,26 +143,34 @@ describe('expandWriteCells', () => {
 });
 
 describe('spec 080 — assistants cells (Master-only)', () => {
-  const TWELVE = [
+  const THIRTEEN = [
     ...ASSISTANT_CHAT_CELLS,
     'assistant_scoreboard:read',
     'assistant_escalation:register',
     ...KNOWLEDGE_CELLS,
   ];
 
-  it('(a) the 12 cells (3 + 2 + 7) are in SOMENTE_ACESSO_MASTER_CELLS', () => {
+  it('(a) the 13 cells (3 + 2 + 8) are in SOMENTE_ACESSO_MASTER_CELLS', () => {
     expect(ASSISTANT_CHAT_CELLS).toHaveLength(3);
-    expect(KNOWLEDGE_CELLS).toHaveLength(7);
-    expect(TWELVE).toHaveLength(12);
-    for (const c of TWELVE) {
+    expect(KNOWLEDGE_CELLS).toHaveLength(8);
+    expect(THIRTEEN).toHaveLength(13);
+    for (const c of THIRTEEN) {
       expect(isValidCellKey(c)).toBe(true);
       expect(SOMENTE_ACESSO_MASTER_CELLS.has(c)).toBe(true);
     }
     expect(KNOWLEDGE_CELLS.some((c) => c.includes('default'))).toBe(false);
   });
 
+  it('(a2) knowledge_product_meetings:read is in every place of its siblings (list, description, area, valid key)', () => {
+    const c = 'knowledge_product_meetings:read';
+    expect(KNOWLEDGE_CELLS).toContain(c);
+    expect(CELL_DESCRIPTION[c]).toBeTruthy();
+    expect(RESOURCE_CATEGORY['knowledge_product_meetings']).toBe(RESOURCE_CATEGORY['knowledge_financial']);
+    expect(isValidCellKey(c)).toBe(true);
+  });
+
   it('(b) granting any of them to a non-Master group is refused (master_only_cell, 422); the Master passes', () => {
-    for (const c of TWELVE) {
+    for (const c of THIRTEEN) {
       let err: unknown;
       try {
         assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [c]);
@@ -234,5 +242,12 @@ describe('spec 078 (M2) — as 2 células novas da Luz têm categoria de tela (n
     expect(categoryFor('worker_application')).toBe('Trabalhadores');
     expect(categoryFor('handover')).toBe('Comunicação');
     expect(categoryFor('recurso_que_nao_existe')).toBe(UNCATEGORIZED); // controle: o desconhecido segue sem categoria
+  });
+});
+
+describe('spec 078 M7 — pedidos_ia: só LER é master-only; DECIDIR é do grupo decisor (Marcel)', () => {
+  it('SOMENTE_ACESSO_MASTER_CELLS tem pedidos_ia:read e NÃO tem pedidos_ia:decidir', () => {
+    expect([...SOMENTE_ACESSO_MASTER_CELLS].filter((c) => c.startsWith('pedidos_ia:'))).toEqual(['pedidos_ia:read']);
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has('pedidos_ia:decidir')).toBe(false);
   });
 });

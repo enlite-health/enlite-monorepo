@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export type DecisaoModo = 'negar' | 'descrever';
+export type DecisaoModo = 'aceitar' | 'negar' | 'descrever';
 
 interface Props {
   modo: DecisaoModo;
@@ -13,7 +13,7 @@ interface Props {
 }
 
 /**
- * Modal da decisão que EXIGE texto: "Negar" pede o motivo, "Descrever o que fazer" pede o comentário.
+ * Modal da decisão que EXIGE texto: "Rechazar" pede o motivo, "Describir" e "Aprobar con comentario" pedem o comentário.
  * Texto vazio ou só espaços desabilita o botão (o backend também recusa com 400 — a tela não depende disso).
  * Cores explícitas (hex AAA sobre branco): a escala `gray-*` desta casa tem alpha e não serve para texto.
  */

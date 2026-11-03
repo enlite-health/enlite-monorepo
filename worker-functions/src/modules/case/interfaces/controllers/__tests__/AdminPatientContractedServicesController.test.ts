@@ -411,6 +411,7 @@ describe('AdminPatientContractedServicesController', () => {
         PATIENT_ID,
         SERVICE_ID,
         expect.objectContaining({ actorUserId: 'staff-uid-1', actorType: 'HUMAN', actorLabel: 'activate_recruitment' }),
+        { createNewVacancy: false }, // sem o sinal no body, a guarda do vínculo segue ativa
       );
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({
@@ -511,6 +512,25 @@ describe('AdminPatientContractedServicesController', () => {
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(409);
       expect(res.json).toHaveBeenCalledWith({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: 'vac-old' });
+    });
+
+    it('409 quando o paciente já tem vaga vinculável — LINKABLE_VACANCY_EXISTS com os ids (o foguete usa o vínculo)', async () => {
+      const { LinkableVacancyExistsError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+      const useCase = { execute: jest.fn().mockRejectedValue(new LinkableVacancyExistsError(PATIENT_ID, SERVICE_ID, ['vac-legada'])) };
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({ success: false, code: 'LINKABLE_VACANCY_EXISTS', vacancyIds: ['vac-legada'] });
+    });
+
+    it('repassa o sinal createNewVacancy do body ao use case só quando é exatamente true', async () => {
+      const execute = jest.fn().mockResolvedValue({ vacancyId: 'v', patientStatus: 'ACTIVE', statusChanged: false });
+      const controller = new AdminPatientContractedServicesController({} as never, { execute } as never);
+      for (const [body, esperado] of [[{ createNewVacancy: true }, true], [{ createNewVacancy: 'true' }, false], [{}, false], [undefined, false]] as const) {
+        await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body } as never), mockRes());
+        expect(execute).toHaveBeenLastCalledWith(PATIENT_ID, SERVICE_ID, expect.anything(), { createNewVacancy: esperado });
+      }
     });
 
     it('422 quando o gate recusa — devolve PATIENT_NOT_READY com details.missing', async () => {

@@ -93,6 +93,8 @@ export interface AprovacaoVerificada {
   atitude_versao: number | null;
   atitude_atual: boolean;
   decidido_em: string | null;
+  /** Comentário do humano que aprovou (aprovar com comentário); `null` se aprovou sem comentário ou o evento não existe. */
+  comentario: string | null;
 }
 
 const actorOf = (principal: string) => systemActor(`mcp:${principal}`);
@@ -403,9 +405,9 @@ export class AgentesRepository {
       async (c) => {
         const { rows } = await c.query<{
           acao: AprovacaoVerificada['acao']; pedido_id: string; atitude_id: string; atitude_versao: number;
-          atitude_atual: boolean; ts: Date;
+          atitude_atual: boolean; ts: Date; comentario: string | null;
         }>(
-          `SELECT e.acao, e.pedido_id, e.atitude_id, a.versao AS atitude_versao, e.ts,
+          `SELECT e.acao, e.pedido_id, e.atitude_id, a.versao AS atitude_versao, e.ts, e.comentario,
                   a.versao = (SELECT max(x.versao) FROM agentes.pedido_atitudes x WHERE x.pedido_id = e.pedido_id) AS atitude_atual
              FROM agentes.pedido_eventos e
              JOIN agentes.pedido_atitudes a ON a.id = e.atitude_id AND a.pedido_id = e.pedido_id
@@ -413,7 +415,7 @@ export class AgentesRepository {
           [aprovacaoId],
         );
         if (rows.length === 0) {
-          return { valida: false, acao: null, pedido_id: null, atitude_id: null, atitude_versao: null, atitude_atual: false, decidido_em: null };
+          return { valida: false, acao: null, pedido_id: null, atitude_id: null, atitude_versao: null, atitude_atual: false, decidido_em: null, comentario: null };
         }
         const r = rows[0];
         return {
@@ -424,6 +426,7 @@ export class AgentesRepository {
           atitude_versao: Number(r.atitude_versao),
           atitude_atual: r.atitude_atual,
           decidido_em: new Date(r.ts).toISOString(),
+          comentario: r.comentario ?? null,
         };
       },
       actorOf(principal),

@@ -4028,6 +4028,19 @@
           "linkExistingVacancy": {
             "button": "Vincular vaga existente",
             "aria": "Vincular vaga existente a {{service}}",
+            "rocketNotice": "Este paciente já tem uma vaga sem serviço. Vincule-a a este serviço ou crie uma vaga nova.",
+            "createNew": "Criar vaga nova",
+            "confirmRocket": "Vincular à existente",
+            "leftovers": {
+              "title": "Outras vagas antigas",
+              "question_one": "Há mais {{count}} vaga antiga aberta deste paciente. Deseja excluí-la?",
+              "question_other": "Há mais {{count}} vagas antigas abertas deste paciente. Deseja excluí-las?",
+              "yes": "Sim, excluir",
+              "no": "Não",
+              "close": "Fechar",
+              "deleteFailed_one": "Não foi possível excluir {{count}} vaga.",
+              "deleteFailed_other": "Não foi possível excluir {{count}} vagas."
+            },
             "modalTitle": "Vincular vaga existente ao serviço",
             "selectLabel": "Vaga do paciente",
             "selectPlaceholder": "Escolha uma vaga",
@@ -5144,11 +5157,10 @@
             "export": "Exportar",
             "validate": "Validar",
             "execute": "Executar",
-            "chat": "Conversar",
+            "chat": "Chat",
             "send": "Enviar",
             "disable": "Dar baixa",
             "write": "Criar e editar",
-            "chat": "Chat",
             "incomplete_alert": "Aviso dia 12",
             "waive_contact": "Não precisa",
             "decidir": "Decidir",
@@ -5201,6 +5213,7 @@
             "knowledge_public": "Conhecimento público",
             "knowledge_recruitment": "Conhecimento de recrutamento",
             "knowledge_technical": "Conhecimento técnico",
+            "knowledge_product_meetings": "Conhecimento de reuniões de produto",
             "vacancy": "Vagas",
             "funnel": "Funil",
             "interview": "Entrevistas",
@@ -7006,17 +7019,24 @@
         "sistema": "sistema"
       },
       "actions": {
-        "aceitar": "Aceitar",
-        "negar": "Negar",
+        "aceitar": "Aprovar",
+        "aceitarComentario": "Aprovar com comentário",
+        "negar": "Rejeitar",
         "descrever": "Descrever o que fazer"
       },
       "modal": {
         "cancel": "Cancelar",
+        "aceitar": {
+          "title": "Aprovar com comentário",
+          "label": "Comentário (obrigatório)",
+          "required": "Escreva o comentário para poder aprovar.",
+          "confirm": "Aprovar com comentário"
+        },
         "negar": {
-          "title": "Negar o pedido",
+          "title": "Rejeitar o pedido",
           "label": "Motivo (obrigatório)",
           "required": "Escreva o motivo para poder negar.",
-          "confirm": "Negar pedido"
+          "confirm": "Rejeitar pedido"
         },
         "descrever": {
           "title": "Descrever o que fazer",

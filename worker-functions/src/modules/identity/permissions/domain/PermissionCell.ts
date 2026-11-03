@@ -146,6 +146,7 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   knowledge_management: 'Operações',
   knowledge_coordination: 'Operações',
   knowledge_technical: 'Operações',
+  knowledge_product_meetings: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -586,6 +587,7 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'knowledge_management:read': 'Leer la gaveta de conocimiento de gestión',
   'knowledge_coordination:read': 'Leer la gaveta de conocimiento de coordinación',
   'knowledge_technical:read': 'Leer la gaveta de conocimiento técnico',
+  'knowledge_product_meetings:read': 'Leer la gaveta de conocimiento de reuniones de producto',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
@@ -795,17 +797,18 @@ export const KNOWLEDGE_CELLS: readonly string[] = [
   'knowledge_management:read',
   'knowledge_coordination:read',
   'knowledge_technical:read',
+  'knowledge_product_meetings:read',
 ];
 
 /**
- * Células que SÓ o Acesso Master pode ter (decisão do Gabriel, 30/10, spec 078): decidir pedidos
- * da IA é do Acesso Master e de mais ninguém. Não existe grupo "Decisores". O sync do boot continua
+ * Células que SÓ o Acesso Master pode ter (decisão do Gabriel, 30/10, spec 078). O sync do boot continua
  * concedendo ao Acesso Master; a concessão a qualquer outro grupo é recusada no
  * `SetGroupPermissionsUseCase` (422 `master_only_cell`) e o painel nem as lista.
+ * `pedidos_ia:decidir` SAIU daqui em 03/11 (migration 557): decidir é de um grupo decisor só com o Marcel, criado e
+ * concedido pela operação; o Acesso Master só LÊ os pedidos (`pedidos_ia:read`).
  */
 export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
   'pedidos_ia:read',
-  'pedidos_ia:decidir',
   'platform_costs:read',
   'recruitment_activity_per_person:read',
   ...ASSISTANT_CHAT_CELLS,

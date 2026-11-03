@@ -52,6 +52,16 @@ export interface LinkableVacancy {
   createdAt: string;
 }
 
+/**
+ * Vaga encerrada NÃO é candidata do FOGUETE (decisão do Gabriel; espelha `ROCKET_CLOSED_VACANCY_STATUSES` do backend).
+ * O vínculo manual da 079 continua listando CLOSED/FILLED.
+ */
+export const ROCKET_CLOSED_VACANCY_STATUSES: readonly string[] = ['CLOSED', 'FILLED'];
+
+export function openLinkCandidates(candidates: readonly LinkableVacancy[]): LinkableVacancy[] {
+  return candidates.filter((c) => c.status == null || !ROCKET_CLOSED_VACANCY_STATUSES.includes(c.status));
+}
+
 export interface LinkPreview {
   vacancyId: string;
   rows: LinkPreviewRow[];
@@ -76,4 +86,5 @@ export type LinkExistingVacancyErrorCode =
   | 'SERVICE_ALREADY_RECRUITING'
   | 'VACANCY_NOT_LINKABLE'
   | 'LINK_BLOCKED'
-  | 'ADDRESS_NOT_OF_PATIENT';
+  | 'ADDRESS_NOT_OF_PATIENT'
+  | 'LINKABLE_VACANCY_EXISTS';
