@@ -13,7 +13,9 @@
  *      (`decideCollisionStage`; conflito → o paciente inteiro fica de fora);
  *   4. soft-delete do rascunho pela semântica do DELETE de vaga (`lockLiveVacancySnapshot` + `softDeleteVacancyRow` + `auditVacancyDeleted`);
  *   5. endereço divergente → vale o do serviço; `LinkExistingVacancyUseCase.confirm` vincula a oficial ao serviço
- *      (o runner injetado roda NO client desta transação);
+ *      (o runner injetado roda NO client desta transação). Com `waiveGateWhenBothEmpty` (explícito, autorizado pelo
+ *      Gabriel em 03/11) o portão dispensa SÓ os campos de recrutamento vazios NOS DOIS LADOS (serviço e vaga) — nada
+ *      a perder; qualquer outro bloqueio continua pulando o paciente. A dispensa vai para a auditoria;
  *   6. move postulações/encuadres/triagens/log de mensagem (a trilha segue a postulação) e confere a contagem;
  *   7. auditoria "fusão com rascunho <id>" na oficial (`logFieldChangesSafe`).
  * Sem side-effect outbound: nada aqui chama Talentum/WhatsApp/Ana Care/Short.io, e nenhum evento de funil é emitido.
@@ -26,9 +28,11 @@ import {
   ServiceNotFoundForRecruitmentError,
 } from './recruitmentReadinessContext';
 import { LinkBlockedError, VacancyNotLinkableError, type LinkExistingVacancyUseCase } from './LinkExistingVacancyUseCase';
+import { serviceRecruitmentMissingCodes } from '../domain/PatientCompleteness';
+import type { LinkBlockerCode } from '../domain/LinkExistingVacancyContract';
 import { decideCollisionStage } from './draftFusionStage';
 import type { DraftFusionRepository, FusionCounts, FusionTable } from '../infrastructure/DraftFusionRepository';
-import type { LinkExistingVacancyRepository } from '../infrastructure/LinkExistingVacancyRepository';
+import type { LinkExistingVacancyRepository, VacancyForLinkRow } from '../infrastructure/LinkExistingVacancyRepository';
 import { countVigenteForVacancy } from '../infrastructure/VacancyAllocationProbe';
 import { bypassRegisteredGuard } from '../../matching/application/ReconcileMergedWorkerApplications';
 import type { JobPostingAuditRepository, FieldChange } from '../../matching/infrastructure/JobPostingAuditRepository';
@@ -73,6 +77,15 @@ export interface FusionResult {
   collisionStages: Record<string, number>;
   addressAligned: boolean;
   vigentesNoServico: number;
+  /** Códigos do portão dispensados por campo vazio nos dois lados (vazio = vínculo com o portão inteiro). */
+  gateWaived: LinkBlockerCode[];
+}
+
+export interface FusionOptions {
+  /** false = executa tudo e dá ROLLBACK (dry-run). */
+  apply: boolean;
+  /** Dispensa no portão do vínculo SÓ os campos de recrutamento vazios no serviço E na vaga. Sem default: explícito. */
+  waiveGateWhenBothEmpty: boolean;
 }
 
 export type FusionOutcome =
@@ -113,10 +126,10 @@ export class FuseDraftIntoOfficialVacancyUseCase {
   ) {}
 
   /** `apply=false` executa tudo e dá ROLLBACK (dry-run). Erro inesperado propaga (a transação já foi desfeita). */
-  async fuse(pair: FusionPair, opts: { apply: boolean }): Promise<FusionOutcome> {
+  async fuse(pair: FusionPair, opts: FusionOptions): Promise<FusionOutcome> {
     try {
       return await this.runInTransaction(async (client) => {
-        const outcome = await this.fuseInTx(client, pair);
+        const outcome = await this.fuseInTx(client, pair, opts.waiveGateWhenBothEmpty);
         if (outcome.status !== 'FUSED' || !opts.apply) throw new RollbackWith(outcome);
         return { ...outcome, committed: true };
       });
@@ -128,7 +141,7 @@ export class FuseDraftIntoOfficialVacancyUseCase {
     }
   }
 
-  private async fuseInTx(client: PoolClient, pair: FusionPair): Promise<FusionOutcome> {
+  private async fuseInTx(client: PoolClient, pair: FusionPair, waiveGateWhenBothEmpty: boolean): Promise<FusionOutcome> {
     const lock = await this.lockContext(client, pair);
     if (lock) return lock;
     await bypassRegisteredGuard(client);
@@ -170,8 +183,12 @@ export class FuseDraftIntoOfficialVacancyUseCase {
     await auditVacancyDeleted(client, pair.draftId, draft, this.actor);
 
     // 5. endereço: vale o do serviço; depois o vínculo pelo caminho existente.
-    const addressAudit = await this.alignAddress(client, pair);
-    await this.linkFor(client).confirm(pair.patientId, pair.serviceId, pair.officialId, this.actor);
+    const officialLink = await this.linkRepo.readVacancyForLink(client, pair.officialId, { forUpdate: true });
+    const addressAudit = await this.alignAddress(client, pair, officialLink);
+    const gateWaived = waiveGateWhenBothEmpty ? await this.emptyOnBothSides(client, pair, officialLink) : [];
+    await this.linkFor(client).confirm(pair.patientId, pair.serviceId, pair.officialId, this.actor, {
+      waivedBlockers: gateWaived,
+    });
 
     // 6. Kanban e filhos.
     const collisionStages: Record<string, number> = {};
@@ -198,6 +215,7 @@ export class FuseDraftIntoOfficialVacancyUseCase {
       { field: 'fusao_rascunho', before: pair.draftId, after: pair.officialId },
       { field: 'fusao_rascunho_contagens', before, after: { after, merged, collisionStages } },
       ...addressAudit,
+      ...(gateWaived.length > 0 ? [{ field: 'fusao_sem_portao_campos_vazios', before: null, after: gateWaived }] : []),
     ];
     await this.auditRepo.logFieldChangesSafe(client, {
       jobPostingId: pair.officialId,
@@ -211,7 +229,9 @@ export class FuseDraftIntoOfficialVacancyUseCase {
     return {
       status: 'FUSED',
       committed: false,
-      result: { before, after, merged, collisionStages, addressAligned: addressAudit.length > 0, vigentesNoServico },
+      result: {
+        before, after, merged, collisionStages, addressAligned: addressAudit.length > 0, vigentesNoServico, gateWaived,
+      },
     };
   }
 
@@ -230,8 +250,29 @@ export class FuseDraftIntoOfficialVacancyUseCase {
     }
   }
 
-  private async alignAddress(client: PoolClient, pair: FusionPair): Promise<FieldChange[]> {
-    const officialLink = await this.linkRepo.readVacancyForLink(client, pair.officialId, { forUpdate: true });
+  /** Campos de recrutamento vazios no serviço E na vaga oficial (mesma régua do portão: `serviceRecruitmentMissingCodes`). */
+  private async emptyOnBothSides(
+    client: PoolClient,
+    pair: FusionPair,
+    vacancy: VacancyForLinkRow | null,
+  ): Promise<LinkBlockerCode[]> {
+    const service = await this.repo.readServiceRecruitmentFields(client, pair.serviceId);
+    const serviceMissing = serviceRecruitmentMissingCodes(service);
+    const vacancyMissing = serviceRecruitmentMissingCodes(
+      vacancy
+        ? {
+            requiredProfessions: vacancy.required_professions,
+            requiredSex: vacancy.required_sex,
+            requiredExperience: vacancy.required_experience,
+            workSchedule: vacancy.work_schedule,
+            paymentDay: vacancy.payment_day,
+          }
+        : undefined,
+    );
+    return serviceMissing.filter((code) => vacancyMissing.includes(code));
+  }
+
+  private async alignAddress(client: PoolClient, pair: FusionPair, officialLink: VacancyForLinkRow | null): Promise<FieldChange[]> {
     const vacancyAddress = officialLink?.patient_address_id ?? null;
     const serviceAddress = await this.repo.readServiceLiveAddress(client, pair.serviceId);
     if (vacancyAddress === null || serviceAddress === null || vacancyAddress === serviceAddress) return [];

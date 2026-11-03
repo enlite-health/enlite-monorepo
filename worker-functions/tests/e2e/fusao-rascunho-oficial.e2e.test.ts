@@ -91,7 +91,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
     return r.id;
   }
 
-  async function cenario(opts: { enderecoDaOficial?: 'mesmo' | 'outro' } = {}): Promise<FusionPair & { addressId: string; officialAddressId: string }> {
+  async function cenario(opts: { enderecoDaOficial?: 'mesmo' | 'outro'; semDiaDePagamento?: boolean; semFaixa?: boolean } = {}): Promise<FusionPair & { addressId: string; officialAddressId: string }> {
     const { id: patientId } = await one<{ id: string }>(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, insurance_informed)
        VALUES ($1, 'Fusao', 'E2E', 'AR', 'PENDING_ADMISSION', 'Particular') RETURNING id`,
@@ -104,10 +104,12 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
       `INSERT INTO patient_contracted_services
          (patient_id, service_code, country, created_by, updated_by, address_id, providers_needed,
           required_professions, required_sex, required_experience, work_schedule, payment_day)
-       VALUES ($1, 'AT', 'AR', $2, $2, $3, 1, ARRAY['AT'], 'F', 'EXP-E2E', 'part-time', 'DIA-E2E') RETURNING id`,
-      [patientId, STAMP, addressId],
+       VALUES ($1, 'AT', 'AR', $2, $2, $3, 1, ARRAY['AT'], 'F', 'EXP-E2E', 'part-time', $4) RETURNING id`,
+      [patientId, STAMP, addressId, opts.semDiaDePagamento ? null : 'DIA-E2E'],
     );
-    await semearFaixas(pool, serviceId, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], STAMP);
+    if (!opts.semFaixa) {
+      await semearFaixas(pool, serviceId, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], STAMP);
+    }
     const officialId = await vaga(patientId, { draft: false, serviceId: null, addressId: officialAddressId });
     const draftId = await vaga(patientId, { draft: true, serviceId, addressId });
     return { patientId, draftId, officialId, serviceId, addressId, officialAddressId };
@@ -125,7 +127,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
     const w = await worker();
     await postular(w, pair.draftId, 'QUALIFIED', 'talentum');
 
-    const out = await useCase.fuse(fusionPair(pair), { apply: false });
+    const out = await useCase.fuse(fusionPair(pair), { apply: false, waiveGateWhenBothEmpty: true });
 
     expect(out).toMatchObject({ status: 'FUSED', committed: false });
     expect(await one(`SELECT deleted_at, contracted_service_id FROM job_postings WHERE id = $1`, [pair.draftId]))
@@ -153,7 +155,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
     );
     expect(await countOn('encuadres', pair.draftId)).toBe(2); // trigger da migration 189 nasce 1 por postulação
 
-    const out = await useCase.fuse(fusionPair(pair), { apply: true });
+    const out = await useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true });
 
     expect(out).toMatchObject({
       status: 'FUSED',
@@ -198,7 +200,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
 
     // rodar de novo: o par saiu do estado do mapa → pula, nada muda
     // (o serviço agora tem a OFICIAL como vaga viva)
-    await expect(useCase.fuse(fusionPair(pair), { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'SERVICE_HAS_OTHER_VACANCY' });
+    await expect(useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'SERVICE_HAS_OTHER_VACANCY' });
   });
 
   it('conflito (as duas etapas decididas e diferentes): o paciente inteiro fica como está', async () => {
@@ -207,7 +209,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
     await postular(w, pair.officialId, 'SELECTED', 'system');
     await postular(w, pair.draftId, 'REJECTED', 'talentum');
 
-    await expect(useCase.fuse(fusionPair(pair), { apply: true })).resolves.toEqual({
+    await expect(useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true })).resolves.toEqual({
       status: 'CONFLICT', conflicts: [{ workerId: w, officialStage: 'SELECTED', draftStage: 'REJECTED' }],
     });
     expect(await one(`SELECT deleted_at FROM job_postings WHERE id = $1`, [pair.draftId])).toEqual({ deleted_at: null });
@@ -216,7 +218,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
 
   it('endereço divergente: vale o do serviço — a oficial passa a apontar para o endereço do serviço', async () => {
     const pair = await cenario({ enderecoDaOficial: 'outro' });
-    const out = await useCase.fuse(fusionPair(pair), { apply: true });
+    const out = await useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true });
     expect(out).toMatchObject({ status: 'FUSED', result: { addressAligned: true } });
     expect(await one(`SELECT patient_address_id FROM job_postings WHERE id = $1`, [pair.officialId]))
       .toEqual({ patient_address_id: pair.addressId });
@@ -230,7 +232,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
   it('serviço sem endereço vivo: nada a alinhar; o vínculo copia o endereço da oficial para o serviço', async () => {
     const pair = await cenario({ enderecoDaOficial: 'outro' });
     await pool.query(`UPDATE patient_addresses SET archived_at = NOW() WHERE id = $1`, [pair.addressId]);
-    const out = await useCase.fuse(fusionPair(pair), { apply: true });
+    const out = await useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true });
     expect(out).toMatchObject({ status: 'FUSED', result: { addressAligned: false } });
     expect(await one(`SELECT address_id FROM patient_contracted_services WHERE id = $1`, [pair.serviceId]))
       .toEqual({ address_id: pair.officialAddressId });
@@ -243,9 +245,38 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
        VALUES ($1, NOW(), 'OUTRO', 'e2e', 'nota sintetica', $2)`,
       [pair.draftId, STAMP],
     );
-    await expect(useCase.fuse(fusionPair(pair), { apply: true })).resolves.toEqual({
+    await expect(useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true })).resolves.toEqual({
       status: 'SKIPPED', reason: 'UNHANDLED_REFS:job_posting_notes.job_posting_id',
     });
     expect(await one(`SELECT deleted_at FROM job_postings WHERE id = $1`, [pair.draftId])).toEqual({ deleted_at: null });
+  });
+
+  it('dia de pagamento vazio no serviço E na vaga: funde sem o portão desse campo e audita a dispensa', async () => {
+    const pair = await cenario({ semDiaDePagamento: true });
+    const out = await useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true });
+    expect(out).toMatchObject({ status: 'FUSED', committed: true, result: { gateWaived: ['SERVICE_PAYMENT_DAY'] } });
+    expect(await one(`SELECT contracted_service_id FROM job_postings WHERE id = $1`, [pair.officialId]))
+      .toEqual({ contracted_service_id: pair.serviceId });
+    expect(await one(
+      `SELECT changes->'after' AS depois FROM job_posting_audit_log
+        WHERE job_posting_id = $1 AND field_name = 'fusao_sem_portao_campos_vazios'`,
+      [pair.officialId],
+    )).toEqual({ depois: ['SERVICE_PAYMENT_DAY'] });
+  });
+
+  it('sem a dispensa explícita, o mesmo caso continua bloqueado pelo portão do vínculo', async () => {
+    const pair = await cenario({ semDiaDePagamento: true });
+    await expect(useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: false }))
+      .resolves.toEqual({ status: 'SKIPPED', reason: 'LINK_BLOCKED:SERVICE_PAYMENT_DAY' });
+    expect(await one(`SELECT deleted_at FROM job_postings WHERE id = $1`, [pair.draftId])).toEqual({ deleted_at: null });
+  });
+
+  it('campo vazio nos dois lados + outro bloqueio (sem horário) → continua pulando, nada muda', async () => {
+    const pair = await cenario({ semDiaDePagamento: true, semFaixa: true });
+    await expect(useCase.fuse(fusionPair(pair), { apply: true, waiveGateWhenBothEmpty: true }))
+      .resolves.toEqual({ status: 'SKIPPED', reason: 'LINK_BLOCKED:SERVICE_SCHEDULE' });
+    expect(await one(`SELECT deleted_at FROM job_postings WHERE id = $1`, [pair.draftId])).toEqual({ deleted_at: null });
+    expect(await one(`SELECT contracted_service_id FROM job_postings WHERE id = $1`, [pair.officialId]))
+      .toEqual({ contracted_service_id: null });
   });
 });

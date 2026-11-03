@@ -99,7 +99,7 @@ export function formatPatientLine(line: PatientLine): string {
     return `${t}=${b.draft}+${b.official}->${a.draft}+${a.official}`;
   }).join(' ');
   const stages = Object.entries(r.collisionStages).map(([s, n]) => `${s}:${n}`).join(',');
-  return `${head} FUNDIDO${o.committed ? '' : '(rollback)'} ${tables} colisoes=[${stages}] endereco_alinhado=${r.addressAligned} vigentes=${r.vigentesNoServico}`;
+  return `${head} FUNDIDO${o.committed ? '' : '(rollback)'} ${tables} colisoes=[${stages}] endereco_alinhado=${r.addressAligned} vigentes=${r.vigentesNoServico} sem_portao=[${r.gateWaived.join(',')}]`;
 }
 
 export interface FusionTotals {
@@ -110,6 +110,8 @@ export interface FusionTotals {
   /** antes = rascunho + oficial; depois = oficial; fundidas = linhas consolidadas por colisão. */
   tables: Record<FusionTable, { before: number; after: number; merged: number }>;
   collisionStages: Record<string, number>;
+  /** Pacientes fundidos com dispensa do portão (campo vazio nos dois lados). */
+  gateWaived: string[];
 }
 
 export function totalize(lines: readonly PatientLine[]): FusionTotals {
@@ -120,6 +122,7 @@ export function totalize(lines: readonly PatientLine[]): FusionTotals {
     errors: [],
     tables: Object.fromEntries(FUSION_COUNTED_TABLES.map((k) => [k, { before: 0, after: 0, merged: 0 }])) as FusionTotals['tables'],
     collisionStages: {},
+    gateWaived: [],
   };
   for (const line of lines) {
     if ('error' in line) {
@@ -134,6 +137,7 @@ export function totalize(lines: readonly PatientLine[]): FusionTotals {
       t.conflicts.push(line.pair.patientId);
     } else {
       t.fused++;
+      if (o.result.gateWaived.length > 0) t.gateWaived.push(line.pair.patientId);
       for (const k of FUSION_COUNTED_TABLES) {
         t.tables[k].before += o.result.before[k].draft + o.result.before[k].official;
         t.tables[k].after += o.result.after[k].draft + o.result.after[k].official;
@@ -154,5 +158,6 @@ export function formatTotals(t: FusionTotals, mode: FusionMode): string[] {
     'tabela | antes(rascunho+oficial) | depois(oficial) | fundidas',
     ...FUSION_COUNTED_TABLES.map((k) => `${k} | ${t.tables[k].before} | ${t.tables[k].after} | ${t.tables[k].merged}`),
     `colisoes_etapa_final ${JSON.stringify(t.collisionStages)}`,
+    `fundidos_sem_portao_campos_vazios ${t.gateWaived.length} ${t.gateWaived.join(',') || '-'}`,
   ];
 }

@@ -87,6 +87,9 @@ function build(opts: { now?: () => Date; actor?: typeof actor | (Omit<typeof act
     mergeCollidingEncuadres: jest.fn(async () => { tx.push('mergeEnc'); return 1; }),
     reparentToOfficial: jest.fn(async () => { tx.push('reparent'); }),
     readServiceLiveAddress: jest.fn(async (): Promise<string | null> => 'addr-s'),
+    readServiceRecruitmentFields: jest.fn(async (): Promise<unknown> => ({
+      requiredProfessions: ['AT'], requiredSex: 'F', requiredExperience: 'x', workSchedule: 'x', paymentDay: null,
+    })),
     alignVacancyAddress: jest.fn(async () => { tx.push('align'); }),
   };
   const linkRepo = { readVacancyForLink: jest.fn(async (): Promise<unknown> => ({ patient_address_id: 'addr-s' })) };
@@ -130,7 +133,7 @@ beforeEach(() => {
 describe('fuse — caminho feliz', () => {
   it('apply: lock → guard → delete do rascunho → vínculo → Kanban → contagem → auditoria; COMMIT', async () => {
     const t = build({ now: () => new Date('2026-11-03T12:00:00Z') });
-    const out = await t.uc.fuse(PAIR, { apply: true });
+    const out = await t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false });
 
     expect(out).toEqual({
       status: 'FUSED',
@@ -140,6 +143,7 @@ describe('fuse — caminho feliz', () => {
         collisionStages: { QUALIFIED: 1 },
         addressAligned: false,
         vigentesNoServico: 0,
+        gateWaived: [],
       }),
     });
     expect(mockLock).toHaveBeenCalledWith(client, 'p1', 's1');
@@ -148,7 +152,8 @@ describe('fuse — caminho feliz', () => {
     expect(mockSoftDelete).toHaveBeenCalledWith(client, 'd1');
     expect(mockAuditDeleted).toHaveBeenCalledWith(client, 'd1', draftRow(), actor);
     expect(t.linkFor).toHaveBeenCalledWith(client);
-    expect(t.confirm).toHaveBeenCalledWith('p1', 's1', 'o1', actor);
+    expect(t.confirm).toHaveBeenCalledWith('p1', 's1', 'o1', actor, { waivedBlockers: [] });
+    expect(t.repo.readServiceRecruitmentFields).not.toHaveBeenCalled();
     // regra do Kanban: oficial INVITED adota QUALIFIED do rascunho
     expect(t.repo.mergeCollidingApplication).toHaveBeenCalledWith(client, coll('w1', 'INVITED', 'QUALIFIED'), 'd1', 'o1', 'QUALIFIED');
     expect(t.tx).toEqual(['BEGIN', 'confirm', 'mergeApp', 'mergeEnc', 'reparent', 'audit', 'COMMIT']);
@@ -167,7 +172,7 @@ describe('fuse — caminho feliz', () => {
 
   it('dry-run: executa tudo e dá ROLLBACK, devolvendo o mesmo desfecho com committed=false', async () => {
     const t = build();
-    const out = await t.uc.fuse(PAIR, { apply: false });
+    const out = await t.uc.fuse(PAIR, { apply: false, waiveGateWhenBothEmpty: false });
     expect(out.status).toBe('FUSED');
     expect(out.status === 'FUSED' && out.committed).toBe(false);
     expect(t.tx[t.tx.length - 1]).toBe('ROLLBACK');
@@ -182,7 +187,7 @@ describe('fuse — caminho feliz', () => {
       .mockResolvedValueOnce(counts({ worker_job_applications: [1, 1] }))
       .mockResolvedValueOnce(counts({ worker_job_applications: [0, 1] }));
     t.repo.mergeCollidingEncuadres.mockResolvedValueOnce(0);
-    const out = await t.uc.fuse(PAIR, { apply: true });
+    const out = await t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false });
     expect(t.repo.mergeCollidingApplication).toHaveBeenCalledWith(client, coll('w1', null, null), 'd1', 'o1', null);
     expect(out.status === 'FUSED' && out.result.collisionStages).toEqual({ '(sem etapa)': 1 });
   });
@@ -194,13 +199,13 @@ describe('fuse — caminho feliz', () => {
       .mockResolvedValueOnce(counts({ worker_job_applications: [1, 1] }))
       .mockResolvedValueOnce(counts({ worker_job_applications: [0, 1] }));
     t.repo.mergeCollidingEncuadres.mockResolvedValueOnce(0);
-    const out = await t.uc.fuse(PAIR, { apply: true });
+    const out = await t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false });
     expect(out.status === 'FUSED' && out.result.collisionStages).toEqual({ SELECTED: 1 });
   });
 
   it('actor sem traceId → auditoria grava traceId null', async () => {
     const t = build({ actor: { actorUserId: null, actorType: 'CLI', actorLabel: 'x' } });
-    await t.uc.fuse(PAIR, { apply: true });
+    await t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false });
     expect(t.audit.logFieldChangesSafe).toHaveBeenCalledWith(client, expect.objectContaining({ traceId: null }));
   });
 });
@@ -209,7 +214,7 @@ describe('fuse — endereço: vale o do serviço', () => {
   it('vaga e serviço com endereços vivos diferentes → alinha a vaga ANTES do vínculo e audita', async () => {
     const t = build();
     t.linkRepo.readVacancyForLink.mockResolvedValueOnce({ patient_address_id: 'addr-v' });
-    const out = await t.uc.fuse(PAIR, { apply: true });
+    const out = await t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false });
     expect(t.linkRepo.readVacancyForLink).toHaveBeenCalledWith(client, 'o1', { forUpdate: true });
     expect(t.repo.alignVacancyAddress).toHaveBeenCalledWith(client, 'o1', 'addr-s');
     expect(t.tx.indexOf('align')).toBeLessThan(t.tx.indexOf('confirm'));
@@ -227,7 +232,7 @@ describe('fuse — endereço: vale o do serviço', () => {
     const t = build();
     t.linkRepo.readVacancyForLink.mockResolvedValueOnce(vac);
     t.repo.readServiceLiveAddress.mockResolvedValueOnce(svc);
-    await t.uc.fuse(PAIR, { apply: true });
+    await t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false });
     expect(t.repo.alignVacancyAddress).not.toHaveBeenCalled();
   });
 });
@@ -236,7 +241,7 @@ describe('fuse — revalidação (pula e reporta, nada gravado)', () => {
   it('lock sem vaga viva no serviço → DRAFT_NOT_LIVE_ON_SERVICE', async () => {
     mockLock.mockResolvedValueOnce({});
     const t = build();
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'DRAFT_NOT_LIVE_ON_SERVICE' });
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({ status: 'SKIPPED', reason: 'DRAFT_NOT_LIVE_ON_SERVICE' });
     expect(mockBypass).not.toHaveBeenCalled();
     expect(t.tx).toEqual(['BEGIN', 'ROLLBACK']);
   });
@@ -248,14 +253,14 @@ describe('fuse — revalidação (pula e reporta, nada gravado)', () => {
   ])('lock lança %p → %s', async (err, reason) => {
     mockLock.mockRejectedValueOnce(err);
     const t = build();
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason });
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({ status: 'SKIPPED', reason });
     noWrites(t);
   });
 
   it('erro inesperado no lock → propaga (ROLLBACK)', async () => {
     mockLock.mockRejectedValueOnce(new Error('boom'));
     const t = build();
-    await expect(t.uc.fuse(PAIR, { apply: true })).rejects.toThrow('boom');
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).rejects.toThrow('boom');
     expect(t.tx).toEqual(['BEGIN', 'ROLLBACK']);
   });
 
@@ -267,7 +272,7 @@ describe('fuse — revalidação (pula e reporta, nada gravado)', () => {
   ])('rascunho %s → DRAFT_CHANGED', async (_n, row) => {
     mockSnapshot.mockImplementation(async (_c: unknown, id: string) => (id === 'd1' ? row : officialRow()));
     const t = build();
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'DRAFT_CHANGED' });
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({ status: 'SKIPPED', reason: 'DRAFT_CHANGED' });
     noWrites(t);
   });
 
@@ -281,7 +286,7 @@ describe('fuse — revalidação (pula e reporta, nada gravado)', () => {
   ])('oficial %s → OFFICIAL_CHANGED', async (_n, row) => {
     mockSnapshot.mockImplementation(async (_c: unknown, id: string) => (id === 'd1' ? draftRow() : row));
     const t = build();
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'OFFICIAL_CHANGED' });
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({ status: 'SKIPPED', reason: 'OFFICIAL_CHANGED' });
     noWrites(t);
   });
 
@@ -291,14 +296,14 @@ describe('fuse — revalidação (pula e reporta, nada gravado)', () => {
   ])('paciente fora do PAR_UNICO %j → PATIENT_SHAPE_CHANGED', async (shape) => {
     const t = build();
     t.repo.patientVacancyShape.mockResolvedValueOnce(shape);
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'PATIENT_SHAPE_CHANGED' });
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({ status: 'SKIPPED', reason: 'PATIENT_SHAPE_CHANGED' });
     noWrites(t);
   });
 
   it('referência ao rascunho que a fusão não move → UNHANDLED_REFS (fail-closed)', async () => {
     const t = build();
     t.repo.unhandledReferences.mockResolvedValueOnce(['publications.job_posting_id', 'interview_slots.job_posting_id']);
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({
       status: 'SKIPPED', reason: 'UNHANDLED_REFS:publications.job_posting_id+interview_slots.job_posting_id',
     });
     noWrites(t);
@@ -307,7 +312,7 @@ describe('fuse — revalidação (pula e reporta, nada gravado)', () => {
   it('o UPDATE do soft-delete não achou a linha → DRAFT_CHANGED, sem auditoria nem vínculo', async () => {
     mockSoftDelete.mockResolvedValueOnce(false);
     const t = build();
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'DRAFT_CHANGED' });
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({ status: 'SKIPPED', reason: 'DRAFT_CHANGED' });
     expect(mockAuditDeleted).not.toHaveBeenCalled();
     expect(t.confirm).not.toHaveBeenCalled();
     expect(t.tx[t.tx.length - 1]).toBe('ROLLBACK');
@@ -318,7 +323,7 @@ describe('fuse — conflito do Kanban', () => {
   it('as duas etapas decididas e diferentes → CONFLICT do paciente inteiro, nada gravado', async () => {
     const t = build();
     t.repo.listApplicationCollisions.mockResolvedValueOnce([coll('w1', 'INVITED', 'QUALIFIED'), coll('w2', 'SELECTED', 'REJECTED')]);
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({
       status: 'CONFLICT', conflicts: [{ workerId: 'w2', officialStage: 'SELECTED', draftStage: 'REJECTED' }],
     });
     noWrites(t);
@@ -330,7 +335,7 @@ describe('fuse — vínculo recusado e contagem', () => {
   it('portão do vínculo recusa → SKIPPED LINK_BLOCKED (o rascunho apagado volta: ROLLBACK)', async () => {
     const t = build();
     t.confirm.mockRejectedValueOnce(new LinkBlockedError(['SERVICE_PAYMENT_DAY', 'SERVICE_REQUIRED_SEX'] as never));
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({
       status: 'SKIPPED', reason: 'LINK_BLOCKED:SERVICE_PAYMENT_DAY+SERVICE_REQUIRED_SEX',
     });
     expect(mockSoftDelete).toHaveBeenCalled();
@@ -340,7 +345,7 @@ describe('fuse — vínculo recusado e contagem', () => {
   it('vaga não vinculável → SKIPPED VACANCY_NOT_LINKABLE', async () => {
     const t = build();
     t.confirm.mockRejectedValueOnce(new VacancyNotLinkableError('DE_BAJA'));
-    await expect(t.uc.fuse(PAIR, { apply: true })).resolves.toEqual({ status: 'SKIPPED', reason: 'VACANCY_NOT_LINKABLE:DE_BAJA' });
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).resolves.toEqual({ status: 'SKIPPED', reason: 'VACANCY_NOT_LINKABLE:DE_BAJA' });
   });
 
   it('sobrou linha no rascunho depois de mover → FusionCountMismatchError (ROLLBACK)', async () => {
@@ -350,7 +355,7 @@ describe('fuse — vínculo recusado e contagem', () => {
       .mockResolvedValueOnce(counts({ talentum_prescreenings: [1, 0] }));
     t.repo.listApplicationCollisions.mockResolvedValueOnce([]);
     t.repo.mergeCollidingEncuadres.mockResolvedValueOnce(0);
-    await expect(t.uc.fuse(PAIR, { apply: true })).rejects.toThrow(new FusionCountMismatchError('talentum_prescreenings'));
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).rejects.toThrow(new FusionCountMismatchError('talentum_prescreenings'));
     expect(t.tx[t.tx.length - 1]).toBe('ROLLBACK');
   });
 
@@ -359,6 +364,50 @@ describe('fuse — vínculo recusado e contagem', () => {
     t.repo.countRows.mockReset()
       .mockResolvedValueOnce(counts({ worker_job_applications: [1, 1] }))
       .mockResolvedValueOnce(counts({ worker_job_applications: [0, 2] })); // a colisão devia ter fundido 1
-    await expect(t.uc.fuse(PAIR, { apply: true })).rejects.toThrow('fusion count mismatch on worker_job_applications');
+    await expect(t.uc.fuse(PAIR, { apply: true, waiveGateWhenBothEmpty: false })).rejects.toThrow('fusion count mismatch on worker_job_applications');
+  });
+});
+
+describe('fuse — portão dispensado SÓ por campo vazio nos dois lados (Gabriel, 03/11)', () => {
+  const vazia = { patient_address_id: 'addr-s', required_professions: null, required_sex: null, required_experience: null, work_schedule: null, payment_day: null };
+  const W = { apply: true, waiveGateWhenBothEmpty: true };
+
+  it('vazio no serviço E na vaga → dispensa esse código no vínculo e audita a entrada sem portão', async () => {
+    const t = build();
+    t.linkRepo.readVacancyForLink.mockResolvedValueOnce(vazia);
+    const out = await t.uc.fuse(PAIR, W);
+    expect(t.repo.readServiceRecruitmentFields).toHaveBeenCalledWith(client, 's1');
+    expect(t.confirm).toHaveBeenCalledWith('p1', 's1', 'o1', actor, { waivedBlockers: ['SERVICE_PAYMENT_DAY'] });
+    expect(out.status === 'FUSED' && out.result.gateWaived).toEqual(['SERVICE_PAYMENT_DAY']);
+    const fields = (t.audit.logFieldChangesSafe.mock.calls[0] as unknown as [unknown, { fields: unknown[] }])[1].fields;
+    expect(fields).toContainEqual({ field: 'fusao_sem_portao_campos_vazios', before: null, after: ['SERVICE_PAYMENT_DAY'] });
+  });
+
+  it('vazio só no serviço (a vaga tem o valor) → nada dispensado: o portão decide sozinho', async () => {
+    const t = build();
+    t.linkRepo.readVacancyForLink.mockResolvedValueOnce({ ...vazia, payment_day: 'DIA 5' });
+    const out = await t.uc.fuse(PAIR, W);
+    expect(t.confirm).toHaveBeenCalledWith('p1', 's1', 'o1', actor, { waivedBlockers: [] });
+    const fields = (t.audit.logFieldChangesSafe.mock.calls[0] as unknown as [unknown, { fields: Array<{ field: string }> }])[1].fields;
+    expect(fields.map((f) => f.field)).not.toContain('fusao_sem_portao_campos_vazios');
+    expect(out.status === 'FUSED' && out.result.gateWaived).toEqual([]);
+  });
+
+  it('serviço e vaga não lidos → os 5 campos contam como vazios dos dois lados', async () => {
+    const t = build();
+    t.linkRepo.readVacancyForLink.mockResolvedValueOnce(null);
+    t.repo.readServiceRecruitmentFields.mockResolvedValueOnce(undefined);
+    await t.uc.fuse(PAIR, W);
+    expect(t.confirm).toHaveBeenCalledWith('p1', 's1', 'o1', actor, {
+      waivedBlockers: ['SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY'],
+    });
+  });
+
+  it('o portão ainda bloqueia por outro motivo → continua pulando (LINK_BLOCKED), nada gravado', async () => {
+    const t = build();
+    t.linkRepo.readVacancyForLink.mockResolvedValueOnce(vazia);
+    t.confirm.mockRejectedValueOnce(new LinkBlockedError(['SERVICE_SCHEDULE'] as never));
+    await expect(t.uc.fuse(PAIR, W)).resolves.toEqual({ status: 'SKIPPED', reason: 'LINK_BLOCKED:SERVICE_SCHEDULE' });
+    expect(t.tx[t.tx.length - 1]).toBe('ROLLBACK');
   });
 });

@@ -8,6 +8,7 @@
  *
  * Só a classe PAR_UNICO do mapa entra. `--dry-run` executa cada paciente inteiro e dá ROLLBACK. Erro num paciente
  * desfaz só aquele e segue; a lista sai no fim. Saída: só IDs, etapas e contagens.
+ * O portão do vínculo dispensa SÓ campo de recrutamento vazio no serviço E na vaga (autorizado pelo Gabriel, 03/11).
  * Sem side-effect outbound: não chama Talentum/WhatsApp/Ana Care/Short.io nem emite evento de funil.
  */
 import * as fs from 'fs';
@@ -64,7 +65,8 @@ async function main(): Promise<void> {
     for (const pair of pairs) {
       let line: PatientLine;
       try {
-        line = { pair, outcome: await useCase.fuse(pair, { apply: mode === 'apply' }) };
+        // Dispensa do portão só por campo vazio nos dois lados: autorizada pelo Gabriel (03/11) para esta fusão.
+        line = { pair, outcome: await useCase.fuse(pair, { apply: mode === 'apply', waiveGateWhenBothEmpty: true }) };
       } catch (err) {
         line = { pair, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) };
       }

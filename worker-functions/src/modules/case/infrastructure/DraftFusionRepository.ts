@@ -13,6 +13,7 @@ import {
   ENCUADRE_KEY_COLUMNS,
   mergeEmptyColumns,
 } from '../../matching/application/ReconcileMergedWorkerApplications';
+import type { ServiceRecruitmentFields } from '../domain/PatientCompleteness';
 
 export const FUSION_COUNTED_TABLES = [
   'worker_job_applications',
@@ -218,6 +219,28 @@ export class DraftFusionRepository {
     for (const [table, column] of REPARENT_COLUMNS) {
       await client.query(`UPDATE ${table} SET ${column} = $2 WHERE ${column} = $1`, [draftId, officialId]);
     }
+  }
+
+  /** Os 5 campos de recrutamento do serviço, no formato do portão (`ServiceRecruitmentFields`). undefined = serviço não existe. */
+  async readServiceRecruitmentFields(client: PoolClient, serviceId: string): Promise<ServiceRecruitmentFields | undefined> {
+    const res = await client.query<{
+      required_professions: string[] | null;
+      required_sex: string | null;
+      required_experience: string | null;
+      work_schedule: string | null;
+      payment_day: string | null;
+    }>(
+      `SELECT required_professions, required_sex, required_experience, work_schedule, payment_day
+         FROM patient_contracted_services WHERE id = $1`,
+      [serviceId],
+    );
+    return res.rows.map((r) => ({
+      requiredProfessions: r.required_professions,
+      requiredSex: r.required_sex,
+      requiredExperience: r.required_experience,
+      workSchedule: r.work_schedule,
+      paymentDay: r.payment_day,
+    }))[0];
   }
 
   /** Endereço VIVO do serviço (arquivado = ausente — mesmo critério de `lockRecruitmentContext`). */

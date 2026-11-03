@@ -74,6 +74,7 @@ const LINES: PatientLine[] = [
         collisionStages: { QUALIFIED: 1 },
         addressAligned: true,
         vigentesNoServico: 2,
+        gateWaived: ['SERVICE_PAYMENT_DAY'],
       },
     },
   },
@@ -82,7 +83,7 @@ const LINES: PatientLine[] = [
     outcome: {
       status: 'FUSED',
       committed: false,
-      result: { before: counts(0, 1), after: counts(0, 1), merged: {}, collisionStages: {}, addressAligned: false, vigentesNoServico: 0 },
+      result: { before: counts(0, 1), after: counts(0, 1), merged: {}, collisionStages: {}, addressAligned: false, vigentesNoServico: 0, gateWaived: [] },
     },
   },
   { pair: pair(3), outcome: { status: 'SKIPPED', reason: 'LINK_BLOCKED:SERVICE_PAYMENT_DAY' } },
@@ -94,8 +95,8 @@ const LINES: PatientLine[] = [
 describe('formatPatientLine', () => {
   it('uma linha por desfecho, só ids/etapas/contagens', () => {
     expect(LINES.map(formatPatientLine)).toEqual([
-      `paciente=p1 rascunho=d1 oficial=o1 FUNDIDO ${FUSION_COUNTED_TABLES.map((t) => `${t}=2+3->0+4`).join(' ')} colisoes=[QUALIFIED:1] endereco_alinhado=true vigentes=2`,
-      `paciente=p2 rascunho=d2 oficial=o2 FUNDIDO(rollback) ${FUSION_COUNTED_TABLES.map((t) => `${t}=0+1->0+1`).join(' ')} colisoes=[] endereco_alinhado=false vigentes=0`,
+      `paciente=p1 rascunho=d1 oficial=o1 FUNDIDO ${FUSION_COUNTED_TABLES.map((t) => `${t}=2+3->0+4`).join(' ')} colisoes=[QUALIFIED:1] endereco_alinhado=true vigentes=2 sem_portao=[SERVICE_PAYMENT_DAY]`,
+      `paciente=p2 rascunho=d2 oficial=o2 FUNDIDO(rollback) ${FUSION_COUNTED_TABLES.map((t) => `${t}=0+1->0+1`).join(' ')} colisoes=[] endereco_alinhado=false vigentes=0 sem_portao=[]`,
       'paciente=p3 rascunho=d3 oficial=o3 PULADO LINK_BLOCKED:SERVICE_PAYMENT_DAY',
       'paciente=p4 rascunho=d4 oficial=o4 PULADO LINK_BLOCKED:SERVICE_REQUIRED_SEX',
       'paciente=p5 rascunho=d5 oficial=o5 CONFLITO w9:SELECTED<>REJECTED',
@@ -118,11 +119,13 @@ describe('totalize + formatTotals', () => {
     expect(out[0]).toBe('TOTAL modo=apply fundidos=2 pulados=2 conflitos=1 erros=1');
     expect(out).toContain('worker_job_applications | 6 | 5 | 1');
     expect(out).toContain('conflitos_pacientes p5');
-    expect(out[out.length - 1]).toBe('colisoes_etapa_final {"QUALIFIED":1}');
+    expect(out).toContain('colisoes_etapa_final {"QUALIFIED":1}');
+    expect(out[out.length - 1]).toBe('fundidos_sem_portao_campos_vazios 1 p1');
   });
   it('sem conflito nem erro → "-"', () => {
     const out = formatTotals(totalize([]), 'dry-run');
     expect(out).toContain('conflitos_pacientes -');
     expect(out).toContain('erros_pacientes -');
+    expect(out).toContain('fundidos_sem_portao_campos_vazios 0 -');
   });
 });

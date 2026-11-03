@@ -57,6 +57,24 @@ export class LinkBlockedError extends Error {
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
+/**
+ * Os ÚNICOS códigos do portão que um chamador pode dispensar: os 5 campos de recrutamento (D508 c). Endereço,
+ * horário, cobertura, diagnóstico e ADDRESS_MISMATCH nunca. Quem usa: só a fusão rascunho→oficial (Gabriel, 03/11),
+ * e só para campo VAZIO NOS DOIS LADOS. A tela/endpoint não passa nada — o portão dela segue inteiro.
+ */
+export const WAIVABLE_EMPTY_FIELD_BLOCKERS: readonly LinkBlockerCode[] = [
+  'SERVICE_REQUIRED_PROFESSIONS',
+  'SERVICE_REQUIRED_SEX',
+  'SERVICE_REQUIRED_EXPERIENCE',
+  'SERVICE_WORK_SCHEDULE',
+  'SERVICE_PAYMENT_DAY',
+];
+
+export interface LinkConfirmOptions {
+  /** Códigos do portão dispensados nesta confirmação; só os de {@link WAIVABLE_EMPTY_FIELD_BLOCKERS} valem. Default: nenhum. */
+  waivedBlockers?: readonly LinkBlockerCode[];
+}
+
 const FEED_KEY_TO_LINK_FIELD: Record<keyof ServiceFeed, LinkField> = {
   required_professions: "required_professions",
   required_experience: "required_experience",
@@ -99,11 +117,12 @@ export class LinkExistingVacancyUseCase {
     serviceId: string,
     vacancyId: string,
     actor: HumanActor,
+    opts: LinkConfirmOptions = {},
   ): Promise<LinkConfirmResponse> {
     const startMs = Date.now();
     try {
       const result = await this.runInTransaction((client) =>
-        this.confirmInTx(client, patientId, serviceId, vacancyId, actor),
+        this.confirmInTx(client, patientId, serviceId, vacancyId, actor, opts),
       );
       functions.logger.info("link_existing_vacancy.completed", {
         patientId,
@@ -216,6 +235,7 @@ export class LinkExistingVacancyUseCase {
     serviceId: string,
     vacancyId: string,
     actor: HumanActor,
+    opts: LinkConfirmOptions,
   ): Promise<LinkConfirmResponse> {
     // 1. locks (paciente → serviço) + vaga viva do serviço
     const ctx = await lockRecruitmentContext(client, patientId, serviceId);
@@ -226,7 +246,8 @@ export class LinkExistingVacancyUseCase {
     const { plan, serviceBefore } = await this.buildPlan(client, patientId, serviceId, ctx, vacancy);
     if (plan.addressBlocked) throw new LinkBlockedError(["ADDRESS_MISMATCH"]);
     // 4. portão com o serviço já alimentado em memória — até aqui NADA foi gravado
-    const blockers = this.blockersOf(ctx, plan);
+    const waived = (opts.waivedBlockers ?? []).filter((b) => WAIVABLE_EMPTY_FIELD_BLOCKERS.includes(b));
+    const blockers = this.blockersOf(ctx, plan).filter((b) => !waived.includes(b));
     if (blockers.length > 0) throw new LinkBlockedError(blockers);
 
     // 5-6. gravação
