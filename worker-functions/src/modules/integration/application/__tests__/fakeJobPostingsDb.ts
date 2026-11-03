@@ -141,8 +141,15 @@ export class FakeJobPostingsDb {
         v.talentum_slug = slug ?? v.talentum_slug;
         v.talentum_published_at = at ?? v.talentum_published_at;
         v.talentum_description = desc ?? v.talentum_description;
-        v.talentum_prescreening_id = psc ?? v.talentum_prescreening_id;
-        return { rows: [] };
+        // mesma semântica do guarda: `_id` já em OUTRA vaga viva → não grava (NULL no CASE → COALESCE mantém)
+        const colide = psc != null && this.vacancies.some((x) => x.id !== id && x.deleted_at == null && x.talentum_prescreening_id === psc);
+        v.talentum_prescreening_id = (colide ? null : psc) ?? v.talentum_prescreening_id;
+        return { rows: [{ talentum_prescreening_id: v.talentum_prescreening_id }] };
+      }
+      if (sql.includes('FROM job_postings WHERE talentum_prescreening_id')) {
+        const [psc, self] = params as string[];
+        const other = this.vacancies.find((x) => x.id !== self && x.deleted_at == null && x.talentum_prescreening_id === psc);
+        return { rows: other ? [{ id: other.id }] : [] };
       }
       return { rows: [] };
     },

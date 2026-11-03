@@ -26,6 +26,7 @@ import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescr
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
 import { loadTalentumProjectDetail } from './loadTalentumProjectDetail';
+import { guardedPrescreeningIdSql, logPrescreeningIdCollision } from './talentumPrescreeningIdGuard';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -314,7 +315,7 @@ export class SyncTalentumVacanciesUseCase {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
+      const saved = await client.query(
         `UPDATE job_postings
          SET talentum_project_id   = $1,
              talentum_public_id    = COALESCE($2, talentum_public_id),
@@ -322,15 +323,19 @@ export class SyncTalentumVacanciesUseCase {
              talentum_slug         = COALESCE($4, talentum_slug),
              talentum_published_at = COALESCE($5, talentum_published_at),
              talentum_description  = COALESCE($6, talentum_description),
-             talentum_prescreening_id = COALESCE($8, talentum_prescreening_id),
+             talentum_prescreening_id = COALESCE(${guardedPrescreeningIdSql(8, 7)}, talentum_prescreening_id),
              updated_at            = NOW()
-         WHERE id = $7`,
+         WHERE id = $7
+         RETURNING talentum_prescreening_id`,
         [
           ref.talentum_project_id, ref.talentum_public_id, ref.talentum_whatsapp_url,
           ref.talentum_slug, ref.talentum_published_at, ref.talentum_description, jobPostingId,
           ref.talentum_prescreening_id,
         ],
       );
+      if (saved.rows[0]) {
+        await logPrescreeningIdCollision(client, jobPostingId, ref.talentum_prescreening_id, saved.rows[0].talentum_prescreening_id);
+      }
       // Only audit on update path — CREATED path already audited in createFromSync.
       // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
       // leaving the surrounding transaction (and the UPDATE above) intact.

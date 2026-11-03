@@ -29,6 +29,7 @@ import {
 } from '../../matching/infrastructure/JobPostingAuditRepository';
 // DX-6.1: chamado DEPOIS do commit do envio (nunca antes). `onVacancyLaunched` nunca lança
 // (DX-6.2) — o catch abaixo é a 2ª trava, não o contrato do gancho.
+import { guardedPrescreeningIdSql, logPrescreeningIdCollision } from './talentumPrescreeningIdGuard';
 import { onVacancyLaunched } from '../../case/application/VacancyLaunchHook';
 
 // ─────────────────────────────────────────────────────────────────
@@ -189,19 +190,23 @@ export class PublishVacancyToTalentumUseCase {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
+      const saved = await client.query(
         `UPDATE job_postings
          SET talentum_project_id   = $1,
              talentum_public_id    = $2,
              talentum_whatsapp_url = $3,
              talentum_slug         = $4,
              talentum_published_at = NOW(),
-             talentum_prescreening_id = $6,
+             talentum_prescreening_id = ${guardedPrescreeningIdSql(6, 5)},
              is_draft              = false,
              updated_at            = NOW()
-         WHERE id = $5`,
+         WHERE id = $5
+         RETURNING talentum_prescreening_id`,
         [projectId, publicId, whatsappUrl, slug, jobPostingId, prescreeningId],
       );
+      if (saved.rows[0]) {
+        await logPrescreeningIdCollision(client, jobPostingId, prescreeningId, saved.rows[0].talentum_prescreening_id);
+      }
 
       // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
       // leaving the surrounding transaction (and the UPDATE above) intact.

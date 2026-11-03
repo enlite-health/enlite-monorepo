@@ -46,6 +46,7 @@ function setupQueries(title: string) {
 describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)', () => {
   let stub: TalentumV2Stub;
   let updateParams: unknown[] | undefined;
+  let updateSql = '';
 
   beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation();
@@ -99,6 +100,26 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
     expect(result.projectId).toBeTruthy();
     expect(updateParams![5]).toBeNull();
     expect(warn.mock.calls.flat().join(' ')).toContain(JP_ID);
+  });
+
+  it('_id do prescreening já em OUTRA vaga viva: o UPDATE leva o guarda (sem depender de 23505), grava NULL e loga talentum_prescreening_id_colide com os 2 ids', async () => {
+    setupQueries('EN 123#4');
+    mockClientQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (String(sql).includes('UPDATE job_postings')) {
+        updateParams = params;
+        updateSql = String(sql);
+        return { rows: [{ talentum_prescreening_id: null }] };
+      }
+      if (String(sql).includes('FROM job_postings WHERE talentum_prescreening_id')) return { rows: [{ id: 'jp-dona' }] };
+      return { rows: [] };
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({})).publish({ jobPostingId: JP_ID });
+
+    expect(result.projectId).toBeTruthy();
+    expect(updateSql).toMatch(/EXISTS \(SELECT 1 FROM job_postings o WHERE o\.talentum_prescreening_id = \$6::text/);
+    expect(warn.mock.calls.flat().join(' ')).toContain(`talentum_prescreening_id_colide vaga=${JP_ID} outra_vaga=jp-dona`);
   });
 
   it('a FAQ do banco não é lida nem enviada à Talentum', async () => {

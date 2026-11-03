@@ -150,6 +150,22 @@ describe('SyncTalentumVacanciesUseCase (API v2)', () => {
       expect(mockFake.vacancies[0].talentum_prescreening_id).toBe('psc-gravado');
     });
 
+    it('_id do prescreening já em OUTRA vaga viva: o sync NÃO cai, mantém o valor anterior e loga talentum_prescreening_id_colide com os 2 ids', async () => {
+      mockFake.add({ id: 'jp-dona', title: 'EN 9#1', talentum_project_id: 'proj-9', talentum_prescreening_id: 'psc-proj-1' });
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      givenProjects(listItem('proj-1', 'EN 1#1'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      const report = await useCase.execute({ force: true });
+
+      expect(report.errors).toEqual([]);
+      expect(mockFake.vacancies.find((v) => v.id === 'jp-1')!.talentum_prescreening_id).toBeNull();
+      expect(warn.mock.calls.flat().join(' ')).toContain('talentum_prescreening_id_colide vaga=jp-1 outra_vaga=jp-dona');
+      const update = mockFake.clientSql.find((q) => q.includes('UPDATE job_postings'))!;
+      expect(update).toMatch(/EXISTS \(SELECT 1 FROM job_postings o WHERE o\.talentum_prescreening_id/);
+      warn.mockRestore();
+    });
+
     it('chamada direta sem o 4º argumento (force) trata como false — já ligada é skip', async () => {
       mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
       const report = emptyReport();
