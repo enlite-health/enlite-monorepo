@@ -4990,7 +4990,7 @@
         "ALREADY_INVITED": "O worker já foi convidado para esta vaga nos últimos 7 dias.",
         "UNANSWERED_THROTTLE": "O worker recebeu vários convites sem nunca responder. Envio pausado até engajar.",
         "WORKER_STATUS_INVALID": "O status do worker não permite enviar o convite de match.",
-        "WORKER_NO_PHONE": "O trabalhador não tem telefone cadastrado"
+        "WORKER_NO_PHONE": "O worker não tem telefone cadastrado"
       }
     },
     "interviews": {
