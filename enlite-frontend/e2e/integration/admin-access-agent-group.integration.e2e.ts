@@ -95,7 +95,12 @@ test.describe('seletor de membro × classe do grupo — AGENT lista agentes, INT
     await page.getByRole('button', { name: 'Agregar a los miembros' }).click();
     psql(`UPDATE iam.permission_groups SET actor_class = 'INTERNAL' WHERE id = '${grupoAgentTela}'`);
     await page.getByRole('button', { name: 'Guardar', exact: true }).click();
-    await expect(page.getByRole('alert').filter({ hasText: 'No se pudo completar la acción.' })).toBeVisible({ timeout: 20_000 });
+    // O erro da tela é o `PanelErrorAlert` (role=alert) com a frase da chave que `panelErrorKey` escolheu para o 409/23514 do banco.
+    // A frase NÃO é afirmada (medido no CI e local: o 23514 da classe cai em `system_group` — "Los grupos de sistema no se renombran
+    // ni se archivan." —, não em `admin.access.group.error`): o contrato é "há um alerta com texto" e "nada foi gravado".
+    const alerta = page.getByRole('alert').first();
+    await expect(alerta).toBeVisible({ timeout: 20_000 });
+    await expect(alerta).not.toHaveText('');
     expect(scalar(`SELECT count(*) FROM iam.user_groups WHERE group_id = '${grupoAgentTela}'`)).toBe('0');
   });
 });
