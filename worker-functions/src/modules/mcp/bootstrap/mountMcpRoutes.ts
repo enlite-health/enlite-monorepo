@@ -69,6 +69,9 @@ import { AgentesAprovacaoVerificarCapability } from '../application/capabilities
 import { AgentesAvisoReenviarCapability } from '../application/capabilities/AgentesAvisoReenviarCapability';
 import { criarAvisoPedidoService } from '../../agentes/infrastructure/criarAvisoPedidoService';
 import { criarWhatsappAviso, type TwilioContentSender } from '../../agentes/infrastructure/avisoWhatsapp';
+import { WorkerByPhoneCapability } from '../application/capabilities/WorkerByPhoneCapability';
+import { WorkerDetailByPhoneLookup, ResourceAccessWorkerTrail } from '../infrastructure/WorkerDetailByPhoneLookup';
+import { GCSStorageService } from '../../worker/infrastructure/GCSStorageService';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
@@ -76,6 +79,7 @@ import { mountOAuthRoutes, type OAuthMountResult } from './mountOAuthRoutes';
 import { AdminRepository } from '../../identity/infrastructure/AdminRepository';
 import { logger } from '@shared/logging/Logger';
 import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
+import { buildAgentGate, createAgentEntry, isAgentRequest, type AgentPortOverrides } from '../interfaces/middleware/agentActorContext';
 
 /**
  * Mounts the MCP server at /mcp on the Express app.
@@ -84,7 +88,7 @@ import { systemContextMiddleware } from '@shared/database/systemContextMiddlewar
  * (conector claude.ai) e o /mcp/v1 passa a aceitar access tokens OAuth.
  */
 /** `twilio`: o serviço de mensageria do boot (o aviso GRAVE do Sol manda pelo número do Sol através dele). Em teste o dublê vale, sempre. */
-export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?: TwilioContentSender } = {}): void {
+export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?: TwilioContentSender; agent?: AgentPortOverrides } = {}): void {
   const principalRepo = new ServicePrincipalSecretManagerRepo();
   const auditor = new McpAuditLogger();
   const pubsub = new PubSubClient();
@@ -232,14 +236,21 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?
     agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisoPedidos),
     agentesAprovacaoVerificar: new AgentesAprovacaoVerificarCapability(agentesRepo),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
+    byPhone: new WorkerByPhoneCapability(new WorkerDetailByPhoneLookup(dbPool, kms, new GCSStorageService()), new ResourceAccessWorkerTrail()),
     auditor,
+    agentGate: opts.agent?.gate ?? buildAgentGate(dbPool),
   });
+
+  // Porta do agente (spec 078, M2): header `x-enlite-agent-identity` presente => SÓ este caminho, em contexto de ATOR (não de sistema).
+  const agentEntry = createAgentEntry(dbPool, opts.agent);
+  const legacyContext = systemContextMiddleware('mcp:enlite-worker-mcp');
 
   app.use(
     '/mcp',
     // Capability MCP (Luz, conector claude.ai) é contexto de SISTEMA declarado:
     // o isolamento dela é por worker_id/allowlist, não por país (ABAC task 3.3).
-    systemContextMiddleware('mcp:enlite-worker-mcp'),
+    // Exceto a porta do agente (header próprio): ela roda como o ATOR `agent:luz`, nunca como sistema.
+    (req, res, next) => (isAgentRequest(req) ? agentEntry : legacyContext)(req, res, next),
     createMcpRoutes({
       principalRepo,
       auditor,
