@@ -30,7 +30,9 @@ const U = {
   decisor: `pia078-decisor-${RUN}`, // pedidos_ia:read + decidir
   semGrupo: `pia078-sem-${RUN}`, // staff sem célula
   worker: `pia078-worker-${RUN}`, // conta não-staff
+  master: `pia078-master-${RUN}`, // membro vivo do Acesso Master (sem a célula decidir desde a 557)
 };
+const MASTER_ID = 'a0000000-0000-0000-0000-000000000001';
 const GRUPOS = { leitor: `Pia078 Leitor ${RUN}`, decisor: `Pia078 Decisor ${RUN}` };
 
 describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)', () => {
@@ -100,9 +102,10 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
 
     await admin.query(
       `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES
-         ($1,$5,'admin','ACTIVE',true,$9), ($2,$6,'admin','ACTIVE',true,$9), ($3,$7,'admin','ACTIVE',true,$9), ($4,$8,'worker','ACTIVE',true,$9)`,
-      [U.leitor, U.decisor, U.semGrupo, U.worker, ...Object.values(U).map((u) => `${u}@e2e.local`), TENANT_E2E],
+         ($1,$5,'admin','ACTIVE',true,$9), ($2,$6,'admin','ACTIVE',true,$9), ($3,$7,'admin','ACTIVE',true,$9), ($4,$8,'worker','ACTIVE',true,$9), ($10,$11,'admin','ACTIVE',true,$9)`,
+      [U.leitor, U.decisor, U.semGrupo, U.worker, ...[U.leitor, U.decisor, U.semGrupo, U.worker].map((u) => `${u}@e2e.local`), TENANT_E2E, U.master, `${U.master}@e2e.local`],
     );
+    await admin.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [U.master, MASTER_ID, TENANT_E2E]);
     await grupoComCelulas(admin, { nome: GRUPOS.leitor, uid: U.leitor, celulas: [['pedidos_ia', 'read']] });
     await grupoComCelulas(admin, { nome: GRUPOS.decisor, uid: U.decisor, celulas: [['pedidos_ia', 'read'], ['pedidos_ia', 'decidir']] });
 
@@ -199,6 +202,27 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
     expect(await eventos(pedidoId)).toHaveLength(0);
   });
 
+  it('Acesso Master SEM a célula decidir (migration 557 + sync do boot): lê (200) mas aceitar/negar/descrever -> 403, ZERO eventos', async () => {
+    const cells = (await admin.query(
+      `SELECT p.action FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
+        WHERE gp.group_id = $1 AND p.resource = 'pedidos_ia' ORDER BY 1`, [MASTER_ID])).rows.map((r) => r.action);
+    expect(cells).toEqual(['read']); // o sync do boot (já rodou ao montar o app) não devolve `decidir` ao Master
+    const { pedidoId } = await novoPedido();
+    expect((await http('GET', `/api/admin/pedidos-ia/${pedidoId}`, U.master)).status).toBe(200);
+    expect((await http('GET', `/api/admin/pedidos-ia`, U.master)).status).toBe(200);
+    expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.master)).status).toBe(403);
+    expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.master, { comentario: 'ok' })).status).toBe(403);
+    expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/negar`, U.master, { motivo: 'x' })).status).toBe(403);
+    expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/descrever`, U.master, { comentario: 'x' })).status).toBe(403);
+    expect(await eventos(pedidoId)).toHaveLength(0);
+  });
+
+  it('staff num grupo decisor (só com a célula decidir concedida pela operação): aceitar -> 200', async () => {
+    const { pedidoId } = await novoPedido();
+    expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.decisor)).status).toBe(200);
+    expect((await eventos(pedidoId))[0]).toMatchObject({ acao: 'aceitar', actor_uid: U.decisor });
+  });
+
   it('staff sem célula: GET e POST -> 403', async () => {
     const { pedidoId } = await novoPedido();
     expect((await http('GET', `/api/admin/pedidos-ia`, U.semGrupo)).status).toBe(403);
@@ -232,6 +256,28 @@ describe('pedidos IA — HTTP real, banco real, engine LIGADO (spec 078, M3b-1)'
     expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.decisor)).status).toBe(409);
     expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/negar`, U.decisor, { motivo: 'depois' })).status).toBe(409);
     expect(await eventos(pedidoId)).toHaveLength(1);
+  });
+
+  it('aprovar COM comentário: 200, comentário gravado no evento aceitar e devolvido no histórico do GET :id; vazio ou > 1000 -> 400 sem evento', async () => {
+    const { pedidoId } = await novoPedido();
+    expect((await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.decisor, { comentario: '   ' })).status).toBe(400);
+    const longo = await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.decisor, { comentario: 'c'.repeat(1001) });
+    expect(longo.status).toBe(400);
+    expect(longo.body.code).toBe('COMENTARIO_INVALIDO');
+    expect(await eventos(pedidoId)).toHaveLength(0);
+
+    const texto = 'aprovado, mas aplicar só depois do feriado';
+    const r = await http('POST', `/api/admin/pedidos-ia/${pedidoId}/aceitar`, U.decisor, { comentario: `  ${texto}  ` });
+    expect(r.status).toBe(200);
+    expect(r.body.data.status).toBe('aceito');
+    const ev = await eventos(pedidoId);
+    expect(ev).toHaveLength(1);
+    expect(ev[0]).toMatchObject({ id: r.body.data.evento_id, acao: 'aceitar', comentario: texto, motivo: null });
+    const de = await http('GET', `/api/admin/pedidos-ia/${pedidoId}`, U.leitor);
+    expect(de.body.data.eventos[0]).toMatchObject({ acao: 'aceitar', comentario: texto });
+
+    const maximo = await novoPedido();
+    expect((await http('POST', `/api/admin/pedidos-ia/${maximo.pedidoId}/aceitar`, U.decisor, { comentario: 'm'.repeat(1000) })).status).toBe(200);
   });
 
   const avisosAplicar = async (pedidoId: string, uid: string) =>

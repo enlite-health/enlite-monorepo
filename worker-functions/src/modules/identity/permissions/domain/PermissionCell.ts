@@ -786,14 +786,14 @@ export const KNOWLEDGE_CELLS: readonly string[] = [
 ];
 
 /**
- * Células que SÓ o Acesso Master pode ter (decisão do Gabriel, 30/10, spec 078): decidir pedidos
- * da IA é do Acesso Master e de mais ninguém. Não existe grupo "Decisores". O sync do boot continua
+ * Células que SÓ o Acesso Master pode ter (decisão do Gabriel, 30/10, spec 078). O sync do boot continua
  * concedendo ao Acesso Master; a concessão a qualquer outro grupo é recusada no
  * `SetGroupPermissionsUseCase` (422 `master_only_cell`) e o painel nem as lista.
+ * `pedidos_ia:decidir` SAIU daqui em 03/11 (migration 557): decidir é de um grupo decisor só com o Marcel, criado e
+ * concedido pela operação; o Acesso Master só LÊ os pedidos (`pedidos_ia:read`).
  */
 export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
   'pedidos_ia:read',
-  'pedidos_ia:decidir',
   'platform_costs:read',
   'recruitment_activity_per_person:read',
   ...ASSISTANT_CHAT_CELLS,

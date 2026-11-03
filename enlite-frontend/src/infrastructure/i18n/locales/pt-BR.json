@@ -5156,11 +5156,10 @@
             "export": "Exportar",
             "validate": "Validar",
             "execute": "Executar",
-            "chat": "Conversar",
+            "chat": "Chat",
             "send": "Enviar",
             "disable": "Dar baixa",
             "write": "Criar e editar",
-            "chat": "Chat",
             "incomplete_alert": "Aviso dia 12",
             "waive_contact": "Não precisa",
             "decidir": "Decidir",
@@ -7017,17 +7016,24 @@
         "sistema": "sistema"
       },
       "actions": {
-        "aceitar": "Aceitar",
-        "negar": "Negar",
+        "aceitar": "Aprovar",
+        "aceitarComentario": "Aprovar com comentário",
+        "negar": "Rejeitar",
         "descrever": "Descrever o que fazer"
       },
       "modal": {
         "cancel": "Cancelar",
+        "aceitar": {
+          "title": "Aprovar com comentário",
+          "label": "Comentário (obrigatório)",
+          "required": "Escreva o comentário para poder aprovar.",
+          "confirm": "Aprovar com comentário"
+        },
         "negar": {
-          "title": "Negar o pedido",
+          "title": "Rejeitar o pedido",
           "label": "Motivo (obrigatório)",
           "required": "Escreva o motivo para poder negar.",
-          "confirm": "Negar pedido"
+          "confirm": "Rejeitar pedido"
         },
         "descrever": {
           "title": "Descrever o que fazer",

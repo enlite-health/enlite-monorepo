@@ -45,6 +45,7 @@ export interface DecidirPedidoIaInput {
 /**
  * Aceitar / negar / descrever. Valida a obrigatoriedade ANTES do banco (o banco também recusa por CHECK):
  * negar exige `motivo`, descrever exige `comentario`. `descrever` NÃO cria atitude nova — é o Sol que redige a v2.
+ * `aceitar` aceita `comentario` opcional (aprovar com comentário), gravado no evento `aceitar`.
  * A restrição por área/nível de acesso é da M6 (aqui a célula `pedidos_ia:decidir` é a única trava).
  */
 export class DecidirPedidoIaUseCase {
@@ -64,7 +65,7 @@ export class DecidirPedidoIaUseCase {
       acao: i.acao,
       actorUid: i.actorUid,
       ...(i.acao === 'negar' ? { motivo } : {}),
-      ...(i.acao === 'descrever' ? { comentario } : {}),
+      ...(i.acao === 'descrever' || (i.acao === 'aceitar' && comentario) ? { comentario } : {}),
     });
     if (i.acao === 'aceitar') await this.avisarAplicar(i.pedidoId);
     return out;

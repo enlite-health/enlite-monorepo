@@ -1,7 +1,7 @@
 # agentes — contrato HTTP dos pedidos do Sol (spec 078, M3b-1)
 
 Base `/api/admin`, staff autenticado. Envelope: `{success:true,data}` ou `{success:false,code}`.
-Células: `pedidos_ia:read` (GET) e `pedidos_ia:decidir` (POST). Sem credencial 401; conta não-staff ou sem célula 403.
+Células: `pedidos_ia:read` (GET; só o Acesso Master) e `pedidos_ia:decidir` (POST; só o grupo decisor com o Marcel, concedido pela operação — o Acesso Master NÃO a tem, migration 557). Sem credencial 401; conta não-staff ou sem célula 403.
 
 ## Leitura (`pedidos_ia:read`)
 - `GET /pedidos-ia?area=&status=&grave=` -> 200 `data: Pedido[]` (mais novo primeiro).
@@ -15,7 +15,8 @@ Células: `pedidos_ia:read` (GET) e `pedidos_ia:decidir` (POST). Sem credencial 
 
 ## Decisão (`pedidos_ia:decidir`) — cada POST grava 1 linha em `pedido_eventos`
 Presa à atitude de MAIOR `versao`, `actor_uid` = uid do staff, `actor_kind='humano'`. Resposta 200 `data:{evento_id,status}`.
-- `POST /pedidos-ia/:id/aceitar` (sem body) -> status `aceito`. O `evento_id` é o id de aprovação (itens 20/48).
+- `POST /pedidos-ia/:id/aceitar` `{comentario?}` (1..1000, aparado; body opcional) -> status `aceito`. O `evento_id` é o id de aprovação (itens 20/48).
+  Com `comentario` = "aprovar com comentário": gravado no evento `aceitar` e devolvido no histórico do `GET :id`; `agentes.aprovacao.verificar` o devolve ao Sol. Comentário vazio/>1000 -> 400 `COMENTARIO_INVALIDO`.
 - `POST /pedidos-ia/:id/negar` `{motivo}` -> `negado`. Sem motivo (vazio/branco) 400 `MOTIVO_OBRIGATORIO`.
 - `POST /pedidos-ia/:id/descrever` `{comentario}` -> `redirecionado`. Sem comentário 400 `COMENTARIO_OBRIGATORIO`.
   NÃO cria atitude nova: o Sol redige a próxima versão (worker M3b) e lê o comentário. Pode repetir.

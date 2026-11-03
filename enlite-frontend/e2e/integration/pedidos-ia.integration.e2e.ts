@@ -9,6 +9,8 @@
  *  feliz  — a lista mostra o pedido (GRAVE + NOVO) -> "Ver detalle" mostra a atitude -> Aceptar -> status "Aceptado" e o evento
  *           aparece no histórico; o banco tem exatamente 1 evento (humano, uid do staff).
  *  alt 1  — Negar sem motivo: o botão do modal fica DESABILITADO (nem só espaços vale) e o banco segue com 0 eventos; com motivo -> "Negado".
+ *  alt 3  — Aprobar con comentario (M7): o modal EXIGE o comentário (nem só espaços vale); com texto -> "Aceptado", o comentário aparece no
+ *           histórico e é gravado no evento `aceitar` (coluna `comentario`).
  *  alt 2  — Descrever o que fazer: pede comentário; status "Redirigido", comentário no histórico; os botões continuam (o Sol redige a próxima versão).
  *  visual — 1280 e 390 px: sem rolagem horizontal e NENHUM texto abaixo de 7:1 (AAA).
  *
@@ -28,6 +30,7 @@ const STAFF: MockUser = { uid: `e2e-pia-${RUN}`, email: `pia.${RUN}@e2e.test`, r
 let feliz = '';
 let negar = '';
 let descrever = '';
+let comentar = '';
 
 async function abrirTela(page: Page): Promise<void> {
   await loginComoStaffMock(page, STAFF, 'E2E Pedidos');
@@ -37,7 +40,7 @@ async function abrirTela(page: Page): Promise<void> {
   await escolherNoCombo(page, page.getByTestId('pedidos-filtro-area'), AREA);
 }
 
-test.describe('pedidos-ia 078 — tela dos pedidos do Sol (aceitar, negar, descrever) @integration', () => {
+test.describe('pedidos-ia 078 — tela dos pedidos do Sol (aprobar, aprobar con comentario, rechazar, describir) @integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(180_000);
 
@@ -46,6 +49,7 @@ test.describe('pedidos-ia 078 — tela dos pedidos do Sol (aceitar, negar, descr
     feliz = seedPedido(sqlViaDocker, { assunto: `Feliz ${RUN}`, area: AREA, grave: 'dado' });
     negar = seedPedido(sqlViaDocker, { assunto: `Negar ${RUN}`, area: AREA });
     descrever = seedPedido(sqlViaDocker, { assunto: `Descrever ${RUN}`, area: AREA });
+    comentar = seedPedido(sqlViaDocker, { assunto: `Comentar ${RUN}`, area: AREA });
   });
 
   test.afterAll(() => limparPedidos(sqlViaDocker, AREA));
@@ -115,6 +119,34 @@ test.describe('pedidos-ia 078 — tela dos pedidos do Sol (aceitar, negar, descr
     await expect(post.getByTestId('pedido-aceitar')).toBeVisible();
     expect(contarEventos(sqlViaDocker, descrever)).toBe(1);
     expect(ultimoEvento(sqlViaDocker, descrever)).toBe(`descrever|${STAFF.uid}|humano`);
+  });
+
+  test('alt 3: Aprobar con comentario exige o comentário, aprova o pedido e o comentário aparece no histórico e no evento', async ({ page }, testInfo) => {
+    await abrirTela(page);
+    const post = page.getByTestId(`pedido-post-${comentar}`);
+    await expect(post.getByTestId('pedido-aceitar-comentario')).toBeVisible();
+    await post.getByTestId('pedido-aceitar-comentario').click();
+    const confirmar = page.getByTestId('decisao-confirmar');
+    await expect(page.getByTestId('decisao-modal')).toBeVisible();
+    await expect(confirmar).toBeDisabled();
+    const campo = page.getByTestId('decisao-texto');
+    await campo.click();
+    await expect(campo).toBeFocused();
+    await page.keyboard.type('   ');
+    await expect(confirmar).toBeDisabled();
+    expect(contarEventos(sqlViaDocker, comentar)).toBe(0);
+    await page.keyboard.type('aprobado, aplicar despues del feriado');
+    await expect(campo).toHaveValue('   aprobado, aplicar despues del feriado');
+    await expect(confirmar).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath('04-aprobar-con-comentario-modal.png') });
+    await confirmar.click();
+    await expect(post.getByTestId('pedido-status')).toHaveText('Aceptado', { timeout: 20_000 });
+    await expect(page.getByTestId('decisao-modal')).toHaveCount(0);
+    await post.getByTestId('pedido-toggle').click();
+    await expect(post.getByTestId('pedido-eventos')).toContainText('aprobado, aplicar despues del feriado');
+    expect(contarEventos(sqlViaDocker, comentar)).toBe(1);
+    expect(ultimoEvento(sqlViaDocker, comentar)).toBe(`aceitar|${STAFF.uid}|humano`);
+    expect(sqlViaDocker(`SELECT comentario FROM agentes.pedido_eventos WHERE pedido_id = '${comentar}'`)).toBe('aprobado, aplicar despues del feriado');
   });
 
   for (const largura of [1280, 390]) {
