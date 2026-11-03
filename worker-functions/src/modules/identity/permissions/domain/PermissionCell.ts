@@ -124,6 +124,11 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   ai_prompt: 'Operações',
   // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
   pedidos_ia: 'Operações',
+  // Spec 078 (M2, decisões do lote 0) — categoria das 2 células NOVAS da Luz como agente no ABAC (`worker_application:create`,
+  // `handover:create`). A DESCRIÇÃO (CELL_DESCRIPTION) entra no Lote 2 junto com o consumidor (a porta MCP): `catalogo-sem-orfao.test`
+  // reprova chave de CELL_DESCRIPTION sem consumidor real. A candidatura em nome do prestador mora com o prestador; o aviso, com a comunicação.
+  worker_application: 'Trabalhadores',
+  handover: 'Comunicação',
   // Spec 082 (painel de custos) — Acesso Master only; rota em `adminCostsRoutes.ts`, família `admin.integrations`.
   platform_costs: 'Operações',
   // Spec 081 (D602a) — atividade do funil por recrutadora e semana; Acesso Master only. Rota em `recruitmentRoutes.ts`.

@@ -228,3 +228,11 @@ describe('spec 082 — platform_costs:read (Master-only)', () => {
     expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [CELL])).not.toThrow();
   });
 });
+
+describe('spec 078 (M2) — as 2 células novas da Luz têm categoria de tela (não caem em "Não categorizado")', () => {
+  it('worker_application → Trabalhadores e handover → Comunicação', () => {
+    expect(categoryFor('worker_application')).toBe('Trabalhadores');
+    expect(categoryFor('handover')).toBe('Comunicação');
+    expect(categoryFor('recurso_que_nao_existe')).toBe(UNCATEGORIZED); // controle: o desconhecido segue sem categoria
+  });
+});
