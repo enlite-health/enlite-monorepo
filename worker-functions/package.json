@@ -65,6 +65,7 @@
   "license": "PRIVATE",
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@google-cloud/bigquery": "^9.5.0",
     "@google-cloud/functions-framework": "^3.3.0",
     "@google-cloud/kms": "^5.4.0",
     "@google-cloud/pubsub": "^5.3.0",

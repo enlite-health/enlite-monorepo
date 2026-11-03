@@ -163,6 +163,7 @@ import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissio
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
 import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes } from '@modules/agentes';
+import { createAdminCostsRoutes, createGetCostOverviewUseCase } from '@modules/custos';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
@@ -763,6 +764,9 @@ app.use('/api/admin', createAdminPedidosIaRoutes(createPedidoIaController(), aut
 
 // ========== Admin Assistants (spec 080 — platform for the assistants service; cells assistant_*, knowledge_*) ==========
 app.use('/api/admin', createAdminAssistantsRoutes(createAssistantsPlatformController(async (uid) => (await permissionsBoundary.permissions.authz.execute({ uid, tenantId: ENLITE_TENANT_ID })).permissions), authMiddleware, permissionMiddleware));
+
+// ========== Admin Costs (spec 082 — painel de custos; célula platform_costs:read, Acesso Master only) ==========
+app.use('/api/admin', createAdminCostsRoutes(createGetCostOverviewUseCase(), authMiddleware, permissionMiddleware));
 
 // ========== Worker Context (triage-service / MCP internal) ==========
 app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware, permissionMiddleware));

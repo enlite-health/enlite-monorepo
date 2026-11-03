@@ -515,6 +515,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // spec 080 (scoreboard and escalations of the assistants, `adminAssistantsRoutes.ts`): families assistant_scoreboard/assistant_escalation, contract rotas-plataforma-novas.md.
         'GET /api/admin/assistants/scoreboard → assistant_scoreboard:read',
         'POST /api/admin/assistants/escalations → assistant_escalation:register',
+        // spec 082 (painel de custos, `adminCostsRoutes.ts`): família admin.integrations, célula platform_costs:read (só Acesso Master).
+        'GET /api/admin/costs/overview → platform_costs:read',
       ].sort(),
     );
   });

@@ -5184,6 +5184,7 @@
             "tag": "Catálogo de etiquetas",
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
+            "platform_costs": "Custos da plataforma",
             "recruitment_activity_per_person": "Atividade do funil por recrutadora",
             "assistant_scoreboard": "Placar dos agentes",
             "assistant_escalation": "Relatório do assistente",
@@ -5589,6 +5590,9 @@
         "groupsLoadError": "Não foi possível carregar os grupos."
       },
       "screens": {
+        "custos": {
+          "label": "Custos da plataforma"
+        },
         "dashboard": {
           "label": "Gestão à Vista",
           "containers": {
@@ -7044,6 +7048,75 @@
         "c2": {
           "title": "Propostas do próprio Sol",
           "regra": "Régua: 6 meses seguidos de aceitas sem rejeitar nem comentar"
+        }
+      }
+    },
+    "custos": {
+      "title": "Custos da plataforma",
+      "subtitle": "Faturamento do GCP por mês, serviço, recurso, setor e chamador de IA. Somente leitura.",
+      "authzLoading": "Carregando permissões…",
+      "authzError": "Não foi possível carregar suas permissões. Tente recarregar a página.",
+      "sync": "Sincronizar",
+      "syncing": "Sincronizando…",
+      "retry": "Tentar novamente",
+      "idle": "Ainda sem dados. Clique em Sincronizar para consultar o faturamento.",
+      "emptyMonth": "O export de faturamento ainda não tem linhas para este mês.",
+      "dataUntil": "Dados do faturamento até {{date}}",
+      "stale": "O export está atrasado: os últimos dados têm mais de 36 horas.",
+      "errors": {
+        "generic": "Não conseguimos consultar o faturamento. Tente novamente.",
+        "bytesLimit": "A consulta passou do limite de bytes permitido (1 GiB) e foi cancelada sem custo extra. Avise o time técnico.",
+        "rateLimited": "Você sincronizou há pouco. Aguarde {{seconds}} s e tente novamente.",
+        "forbidden": "Você não tem permissão para ver os custos da plataforma."
+      },
+      "cards": {
+        "month": "Mês corrente",
+        "forecast": "Previsão do mês",
+        "forecastBasis": "estimativa linear",
+        "forecastUnavailable": "Sem dias suficientes para estimar",
+        "prevToDate": "Mês anterior até o mesmo dia",
+        "prevClosed": "Mês anterior fechado",
+        "noValue": "—",
+        "variation": "{{pct}} em relação a este valor"
+      },
+      "months": {
+        "title": "Últimos 6 meses"
+      },
+      "columns": {
+        "service": "Serviço",
+        "name": "Serviço ou recurso",
+        "resource": "Recurso",
+        "sector": "Setor",
+        "caller": "Chamador",
+        "function": "Função",
+        "cost": "Custo",
+        "kind": "Tipo",
+        "dayValue": "Valor do dia",
+        "median7": "Mediana dos 7 dias anteriores",
+        "factor": "Fator"
+      },
+      "tables": {
+        "service": "Por serviço do GCP",
+        "resource": "Por recurso",
+        "sector": "Por setor",
+        "aiCaller": "IA por chamador",
+        "empty": "Sem linhas neste mês.",
+        "noSector": "sem setor",
+        "noResource": "sem recurso",
+        "noCaller": "sem chamador"
+      },
+      "badges": {
+        "estimated": "estimado",
+        "unattributed": "não atribuído",
+        "new": "novo"
+      },
+      "anomalies": {
+        "title": "Anomalias",
+        "insufficient": "Histórico insuficiente: são necessários ao menos 7 dias de dados.",
+        "none": "Sem anomalias na janela.",
+        "kind": {
+          "service": "Serviço",
+          "resource": "Recurso"
         }
       }
     }

@@ -287,6 +287,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'enquadres', route: '/admin/enquadres', cells: ['enquadre_event:read', 'vacancy:read'], openWith: 'all' },
   // Spec 078 (M3b-1): pedidos do Sol. `read` abre a tela; `decidir` mostra Aceitar / Negar / Descrever o que fazer.
   { id: 'pedidosIa', route: '/admin/pedidos-ia', cells: ['pedidos_ia:read', 'pedidos_ia:decidir'] },
+  // Spec 082: painel de custos. Só-Master; NÃO entra em `adminNavigation.tsx` (DF-2) — acesso só pela URL digitada.
+  { id: 'custos', route: '/admin/custos', cells: ['platform_costs:read'] },
   { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
 ];
 

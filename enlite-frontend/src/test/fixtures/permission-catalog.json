@@ -148,6 +148,7 @@
     "pedidos_ia:read",
     "permission_management:read",
     "permission_management:write",
+    "platform_costs:read",
     "prescreening:create",
     "prescreening:read",
     "prescreening:update",
