@@ -1,4 +1,5 @@
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
+import { logger } from '@shared/logging';
 import { AGENT_TENANT_ID } from '../domain/AgentCapabilityCells';
 import type { AgentCallRecord } from '../application/AgentWriteLimiter';
 
@@ -28,4 +29,20 @@ export async function insertAgentAuditRow(
     call.gatilhoId ?? null,
     call.registroVersao,
   ]);
+}
+
+/**
+ * Linha DENY que NÃO passa pelo limitador (recusa por célula: `missing_cell`, `no_group`, `no_cell_declared`...). Uma instrução só.
+ * Falha de gravação vira log (só o nome do erro): a chamada JÁ está recusada, a trilha não a libera nem a derruba.
+ */
+export class PgAgentAuditRepository {
+  constructor(private readonly pool: Pick<Pool, 'query'>) {}
+
+  async recordDeny(call: AgentCallRecord): Promise<void> {
+    try {
+      await insertAgentAuditRow(this.pool, call, 'DENY');
+    } catch (err) {
+      logger.error({ error: err instanceof Error ? err.name : 'error' }, '[mcp-agente] falha ao gravar a linha DENY da trilha do agente');
+    }
+  }
 }
