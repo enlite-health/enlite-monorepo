@@ -71,6 +71,7 @@ test.describe('pedidos-ia ABAC 078 — read vê, decidir decide, sem célula nã
     await expect(post).toBeVisible();
     await expect(page.getByTestId('pedidos-somente-leitura')).toBeVisible();
     await expect(page.getByTestId('pedido-aceitar')).toHaveCount(0);
+    await expect(page.getByTestId('pedido-aceitar-comentario')).toHaveCount(0);
     await expect(page.getByTestId('pedido-negar')).toHaveCount(0);
     await expect(page.getByTestId('pedido-descrever')).toHaveCount(0);
 
@@ -79,12 +80,13 @@ test.describe('pedidos-ia ABAC 078 — read vê, decidir decide, sem célula nã
     expect(contarEventos(scalar, pedidoLeitor)).toBe(0);
   });
 
-  test('decisor (read + decidir): os 3 botões existem e Aceptar muda o status e grava 1 evento do próprio uid', async ({ page }) => {
+  test('decisor (read + decidir): os 4 botões existem e Aceptar muda o status e grava 1 evento do próprio uid', async ({ page }) => {
     await loginAs(page, DECISOR);
     await page.locator('a[href="/admin/pedidos-ia"]').first().click();
     await escolherNoCombo(page, page.getByTestId('pedidos-filtro-area'), AREA);
     const post = page.getByTestId(`pedido-post-${pedidoDecisor}`);
     await expect(post.getByTestId('pedido-aceitar')).toBeVisible();
+    await expect(post.getByTestId('pedido-aceitar-comentario')).toBeVisible();
     await expect(post.getByTestId('pedido-negar')).toBeVisible();
     await expect(post.getByTestId('pedido-descrever')).toBeVisible();
     await post.getByTestId('pedido-aceitar').click();
@@ -102,37 +104,40 @@ test.describe('pedidos-ia ABAC 078 — read vê, decidir decide, sem célula nã
     expect((await api(SEM, 'GET', '/api/admin/pedidos-ia')).status).toBe(403);
   });
 
-  // ── Decisão do Gabriel (30/10, spec 078): `pedidos_ia:*` só existe no grupo Acesso Master.
-  test('painel de acesso: grupo comum NÃO lista pedidos_ia; o Acesso Master lista, somente leitura', async ({ page }) => {
+  // ── Decisão do Gabriel (30/10; 03/11, spec 078): `pedidos_ia:read` só no Acesso Master; `pedidos_ia:decidir` é do grupo decisor (Marcel).
+  test('painel de acesso: grupo comum NÃO lista pedidos_ia:read mas lista pedidos_ia:decidir; o Acesso Master lista read, somente leitura', async ({ page }) => {
     await loginAs(page, GESTOR);
     await page.goto(`/admin/access/groups/${grupos.leitor}`);
     const secao = page.locator('section[aria-labelledby="sec-cells"]');
     await expect(secao.getByTestId('screen-tree')).toBeVisible({ timeout: 30_000 });
-    // controle positivo: a grade existe e lista células de outras famílias; só as pedidos_ia somem.
+    // controle positivo: a grade existe e lista células de outras famílias.
     await expect(secao.locator('[aria-label^="permission_management:"]').first()).toBeVisible();
-    await expect(secao.locator('[aria-label^="pedidos_ia:"]')).toHaveCount(0);
+    await expect(secao.locator('[aria-label^="pedidos_ia:read"]')).toHaveCount(0);
+    await expect(secao.locator('[aria-label^="pedidos_ia:decidir"]').first()).toBeVisible();
 
     await page.goto(`/admin/access/groups/${ID_ACESSO_MASTER}`);
     const secaoMaster = page.locator('section[aria-labelledby="sec-cells"]');
     await expect(secaoMaster.getByTestId('screen-tree')).toBeVisible({ timeout: 30_000 });
-    await expect(secaoMaster.locator('[aria-label^="pedidos_ia:decidir"]').first()).toBeVisible();
     await expect(secaoMaster.locator('[aria-label^="pedidos_ia:read"]').first()).toBeVisible();
-    // somente leitura: nenhuma caixa marcável para pedidos_ia, mesmo com o painel em edição.
-    await expect(secaoMaster.locator('input[type="checkbox"][aria-label^="pedidos_ia:"]')).toHaveCount(0);
+    // somente leitura: nenhuma caixa marcável para pedidos_ia:read, mesmo com o painel em edição.
+    await expect(secaoMaster.locator('input[type="checkbox"][aria-label^="pedidos_ia:read"]')).toHaveCount(0);
   });
 
-  test('API: conceder pedidos_ia:decidir a grupo comum -> 422 master_only_cell e 0 linhas novas em group_permissions', async () => {
+  test('API: conceder pedidos_ia:decidir a grupo comum -> 200 e 1 linha; pedidos_ia:read -> 422 master_only_cell e nada muda', async () => {
     const contar = () => Number(scalar(`SELECT count(*) FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
        WHERE gp.group_id = '${grupos.gestor}' AND p.resource = 'pedidos_ia'`));
-    const antes = contar();
-    const res = await fetch(`${ABAC_API_URL}/api/admin/permission-groups/${grupos.gestor}/permissions`, {
+    const put = (cellKeys: string[]) => fetch(`${ABAC_API_URL}/api/admin/permission-groups/${grupos.gestor}/permissions`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${tokenFor(GESTOR)}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cellKeys: ['permission_management:read', 'permission_management:write', 'pedidos_ia:decidir'] }),
+      body: JSON.stringify({ cellKeys }),
     });
-    expect(res.status).toBe(422);
-    expect(((await res.json()) as { code?: string }).code).toBe('master_only_cell');
-    expect(antes).toBe(0);
+    const base = ['permission_management:read', 'permission_management:write'];
     expect(contar()).toBe(0);
+    const recusada = await put([...base, 'pedidos_ia:read']);
+    expect(recusada.status).toBe(422);
+    expect(((await recusada.json()) as { code?: string }).code).toBe('master_only_cell');
+    expect(contar()).toBe(0);
+    expect((await put([...base, 'pedidos_ia:decidir'])).status).toBe(200);
+    expect(contar()).toBe(1);
   });
 });

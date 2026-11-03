@@ -9,7 +9,7 @@ export function pedidosIaErrorKey(err: unknown): string {
     if (err.status === 403) return 'admin.pedidosIa.errors.forbidden';
     if (err.status === 404) return 'admin.pedidosIa.errors.notFound';
     if (err.status === 409 || err.code === 'DECISAO_JA_REGISTRADA') return 'admin.pedidosIa.errors.alreadyDecided';
-    if (err.code === 'MOTIVO_OBRIGATORIO' || err.code === 'COMENTARIO_OBRIGATORIO') return 'admin.pedidosIa.errors.required';
+    if (err.code === 'MOTIVO_OBRIGATORIO' || err.code === 'COMENTARIO_OBRIGATORIO' || err.code === 'COMENTARIO_INVALIDO') return 'admin.pedidosIa.errors.required';
   }
   return 'admin.pedidosIa.errors.generic';
 }
