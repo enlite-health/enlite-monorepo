@@ -12,6 +12,10 @@
  */
 import {
   NotificationRepository,
+  IMPORT_STAGES,
+  IMPORT_KINDS,
+  IMPORT_REASONS,
+  IMPORT_AUDIENCES,
   type AdmissionTactiqLinkPayload,
   type AdmissionTactiqExtensionPayload,
   type AdmissionImportBlockedPayload,
@@ -140,16 +144,11 @@ function payloadOf(
   return null;
 }
 
-const IMPORT_STAGES = ['blocked', 'reminder', 'expired', 'will_be_lost'];
-const IMPORT_KINDS = ['admission', 'enquadre'];
-const IMPORT_REASONS = ['no_link', 'wrong_account'];
-const IMPORT_AUDIENCES = ['host', 'supervisor'];
-
 /** Spec 083 D-7: lê chave a chave (enums conferidos); linha malformada = sem payload; `hostName` só se for string não vazia. */
 function importBlockedPayloadOf(raw: Record<string, unknown> | null): AdmissionImportBlockedPayload | null {
   if (!raw) return null;
   const { stage, kind, reason, audience, meetingAt, deadlineAt, hostName } = raw;
-  const inSet = (v: unknown, set: string[]): boolean => typeof v === 'string' && set.includes(v);
+  const inSet = (v: unknown, set: readonly string[]): boolean => typeof v === 'string' && set.includes(v);
   if (!inSet(stage, IMPORT_STAGES) || !inSet(kind, IMPORT_KINDS) || !inSet(reason, IMPORT_REASONS) || !inSet(audience, IMPORT_AUDIENCES)) return null;
   if (typeof meetingAt !== 'string' || typeof deadlineAt !== 'string') return null;
   const base = { stage, kind, reason, audience, meetingAt, deadlineAt } as AdmissionImportBlockedPayload;

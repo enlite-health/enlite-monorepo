@@ -18,10 +18,10 @@ import {
   type ItineraryUncoveredShiftsPayload,
   type PedidoIaAplicarPayload,
   type AdmissionImportBlockedPayload,
-  type AdmissionImportBlockedStage,
-  type AdmissionImportBlockedKind,
-  type AdmissionImportBlockedReason,
-  type AdmissionImportBlockedAudience,
+  IMPORT_STAGES,
+  IMPORT_KINDS,
+  IMPORT_REASONS,
+  IMPORT_AUDIENCES,
 } from '../infrastructure/NotificationRepository';
 
 export const SYSTEM_NOTIFICATION_ACTOR_UID = 'system:pt-contact-reminders';
@@ -86,10 +86,6 @@ export function buildAdmissionTactiqExtensionPayload(state: string): AdmissionTa
   return { state: state as AdmissionTactiqExtensionState };
 }
 
-const IMPORT_STAGES: readonly AdmissionImportBlockedStage[] = ['blocked', 'reminder', 'expired', 'will_be_lost'];
-const IMPORT_KINDS: readonly AdmissionImportBlockedKind[] = ['admission', 'enquadre'];
-const IMPORT_REASONS: readonly AdmissionImportBlockedReason[] = ['no_link', 'wrong_account'];
-const IMPORT_AUDIENCES: readonly AdmissionImportBlockedAudience[] = ['host', 'supervisor'];
 const inSet = (set: readonly string[], v: unknown): boolean => typeof v === 'string' && set.includes(v);
 const isIso = (v: unknown): v is string => typeof v === 'string' && !Number.isNaN(Date.parse(v));
 

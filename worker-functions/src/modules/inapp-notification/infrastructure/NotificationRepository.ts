@@ -86,6 +86,11 @@ export type AdmissionImportBlockedStage = 'blocked' | 'reminder' | 'expired' | '
 export type AdmissionImportBlockedKind = 'admission' | 'enquadre';
 export type AdmissionImportBlockedReason = 'no_link' | 'wrong_account';
 export type AdmissionImportBlockedAudience = 'host' | 'supervisor';
+/** Conjuntos fechados do contrato (fonte única: o publicador valida na escrita e o leitor na leitura). */
+export const IMPORT_STAGES: readonly AdmissionImportBlockedStage[] = ['blocked', 'reminder', 'expired', 'will_be_lost'];
+export const IMPORT_KINDS: readonly AdmissionImportBlockedKind[] = ['admission', 'enquadre'];
+export const IMPORT_REASONS: readonly AdmissionImportBlockedReason[] = ['no_link', 'wrong_account'];
+export const IMPORT_AUDIENCES: readonly AdmissionImportBlockedAudience[] = ['host', 'supervisor'];
 export interface AdmissionImportBlockedPayload {
   stage: AdmissionImportBlockedStage;
   kind: AdmissionImportBlockedKind;

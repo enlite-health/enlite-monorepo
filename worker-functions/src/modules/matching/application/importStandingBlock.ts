@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
-import { IMPORT_REMINDER_EVENT, HUMAN_BLOCK_REASONS, decideStandingBlock } from '../domain/importBlockPolicy';
+import { IMPORT_REMINDER_EVENT, decideStandingBlock, type StandingBlockDecision } from '../domain/importBlockPolicy';
+import { isHumanReason } from './importNoticeSupport';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import type { ImportNaming, ImportSource, ImportSubject } from './ports/ImportPorts';
 import type { SubjectTrail } from './ports/PostCallPorts';
@@ -38,29 +39,55 @@ export async function standingHumanBlock<S extends ImportSubject>(
   endedAt: Date,
 ): Promise<'proceed' | 'blocked'> {
   const last = await d.repo.lastBlockedEvent(a.id);
-  if (!last || !last.reason || !(HUMAN_BLOCK_REASONS as readonly string[]).includes(last.reason)) return 'proceed';
+  const reason = last?.reason;
+  if (!last || !isHumanReason(reason)) return 'proceed';
   const [remindersSent, linkedSinceBlock] = await Promise.all([
     d.repo.countRemindersSince(a.id, last.at),
     d.tokens.hasLinkedSince(a.host_email, last.at),
   ]);
   const decision = decideStandingBlock({ now, endedAt, blockedAt: last.at, remindersSent, linkedSinceBlock });
-  if (decision === 'reopen') {
-    await d.inTx(async (cli) => {
-      await d.repo.setState(a.id, 'waiting', cli);
-      await d.events.append({ appointmentId: a.id, kind: IMPORT_REOPENED_EVENT, outcome: 'waiting', reason: 'link_changed' }, cli);
-    });
-    a.import_status = 'waiting';
-    d.log.info({ [d.naming.idKey]: a.id, reason: 'link_changed' }, `${d.naming.prefix}.import_reopened`);
-    return 'proceed';
+  return applyDecision(d, a, { at: last.at, reason }, { decision, remindersSent, endedAt });
+}
+
+type LastBlock = { at: Date; reason: string };
+
+async function applyDecision<S extends ImportSubject>(
+  d: StandingBlockDeps<S>,
+  a: S,
+  last: LastBlock,
+  ctx: { decision: StandingBlockDecision; remindersSent: number; endedAt: Date },
+): Promise<'proceed' | 'blocked'> {
+  switch (ctx.decision) {
+    case 'reopen':
+      await reopen(d, a);
+      return 'proceed';
+    case 'expire':
+      return 'proceed';
+    case 'remind':
+      await remind(d, a, last, ctx.remindersSent + 1, ctx.endedAt);
+      return 'blocked';
+    case 'wait':
+      return 'blocked';
+    default: {
+      const _exhaustive: never = ctx.decision;
+      return _exhaustive;
+    }
   }
-  if (decision === 'expire') return 'proceed';
-  if (decision === 'remind') {
-    const n = remindersSent + 1;
-    await d.inTx(async (cli) => {
-      await d.events.append({ appointmentId: a.id, kind: IMPORT_REMINDER_EVENT, outcome: 'reminder', reason: last.reason, ref: { n } }, cli);
-      await d.onReminder?.(cli, { n, reason: last.reason as string, blockedAt: last.at, endedAt, subject: a });
-    });
-    d.log.error({ [d.naming.idKey]: a.id, reason: last.reason, reminder: n }, `${d.naming.prefix}.import_blocked`);
-  }
-  return 'blocked';
+}
+
+async function reopen<S extends ImportSubject>(d: StandingBlockDeps<S>, a: S): Promise<void> {
+  await d.inTx(async (cli) => {
+    await d.repo.setState(a.id, 'waiting', cli);
+    await d.events.append({ appointmentId: a.id, kind: IMPORT_REOPENED_EVENT, outcome: 'waiting', reason: 'link_changed' }, cli);
+  });
+  a.import_status = 'waiting';
+  d.log.info({ [d.naming.idKey]: a.id, reason: 'link_changed' }, `${d.naming.prefix}.import_reopened`);
+}
+
+async function remind<S extends ImportSubject>(d: StandingBlockDeps<S>, a: S, last: LastBlock, n: number, endedAt: Date): Promise<void> {
+  await d.inTx(async (cli) => {
+    await d.events.append({ appointmentId: a.id, kind: IMPORT_REMINDER_EVENT, outcome: 'reminder', reason: last.reason, ref: { n } }, cli);
+    await d.onReminder?.(cli, { n, reason: last.reason, blockedAt: last.at, endedAt, subject: a });
+  });
+  d.log.error({ [d.naming.idKey]: a.id, reason: last.reason, reminder: n }, `${d.naming.prefix}.import_blocked`);
 }

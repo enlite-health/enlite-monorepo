@@ -9,6 +9,8 @@
  *  feliz pt-BR / es — host vê "não conseguimos trazer a transcrição…" no idioma da tela; o cartão INTEIRO é o link: o clique leva ao Perfil (seção Tactiq).
  *  alt 1            — supervisor (`will_be_lost`) vê a versão com o NOME de quem fez a reunião; sem nome, "a pessoa responsável".
  *  alt 2            — lembrete e expirou (host), e o enquadre / conta errada.
+ *  alt 3            — payload malformado (stage fora do conjunto): o servidor não repassa o payload e o cartão cai no texto neutro do front
+ *                     (`importBlockedPayload` do registry), sem o valor cru na tela e sem derrubar o resto da lista.
  * Em cada um: o texto da TELA não tem termo técnico (mesma lista do CA-11) nem nome/dado de paciente (o aviso não tem paciente).
  *
  * ⚠️ Mesma stack do `admissao-050-sino-extension-tactiq` (engine ABAC ligado, staff REAL em grupo): o nome entra no `--grep` do job
@@ -161,5 +163,26 @@ test.describe('admissao-083 — sino: aviso de transcrição que não chegou por
     await expectLinguagemDePessoa(itemExpirou);
     await page.screenshot({ path: testInfo.outputPath('4-alt2-lembrete-expirou.png'), fullPage: true });
     await expectCartaoLevaAoTactiq(page, itemExpirou);
+  });
+
+  test('alt 3: payload malformado (stage fora do conjunto) → cartão com o texto neutro, sem o valor cru, e a lista segue inteira', async ({ page }, testInfo) => {
+    const RUIM = 'etapa_inventada_xyz';
+    const malformado = semearAviso({ stage: RUIM, kind: 'tipo_inventado', reason: 'motivo_inventado', audience: 'publico_inventado' });
+    const valido = semearAviso({ stage: 'blocked', kind: 'admission', reason: 'no_link', audience: 'host' });
+
+    const item = await abrirSinoNoItem(page, malformado, 'pt-BR');
+    // Texto neutro do front para payload inválido: o aviso mais neutro (host, "bloqueou", sem vínculo, admissão) — registry `importBlockedPayload`.
+    await expect(item.getByTestId(`notification-excerpt-${malformado}`)).toContainText('Não conseguimos trazer a transcrição da sua reunião de admissão');
+    await expect(item.getByTestId(`notification-excerpt-${malformado}`)).toContainText('a sua conta do Tactiq não está conectada');
+    await expect(item).not.toContainText(RUIM);
+    await expect(item).not.toContainText(/tipo_inventado|motivo_inventado|publico_inventado/);
+    await expectLinguagemDePessoa(item);
+
+    // A lista não quebrou: o aviso válido semeado junto aparece com o texto completo.
+    const itemValido = page.getByTestId('notification-panel').getByTestId(`notification-item-${valido}`);
+    await expect(itemValido).toBeVisible();
+    await expect(itemValido.getByTestId(`notification-excerpt-${valido}`)).toContainText('Você tem até 6 de nov. às 14:00');
+    await page.screenshot({ path: testInfo.outputPath('5-alt3-payload-malformado.png'), fullPage: true });
+    await expectCartaoLevaAoTactiq(page, item);
   });
 });

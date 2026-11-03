@@ -35,12 +35,16 @@ export class ImportBlockNotifier implements ImportBlockNoticePort {
   async notify(cli: PoolClient, n: ImportBlockNotice): Promise<void> {
     const base = { kind: this.d.kind, reason: n.reason, meetingAt: n.meetingAt.toISOString(), deadlineAt: n.deadlineAt.toISOString() };
     const hostUid = await this.d.recipients.activeUidByEmail(n.hostEmail, cli);
-    if (hostUid) {
-      await this.d.publisher.publishAdmissionImportBlocked(cli, { recipientUid: hostUid, payload: { ...base, stage: n.stage, audience: 'host' } });
-    } else {
-      this.d.log.warn({ audience: 'host', stage: n.stage }, `${this.d.prefix}.import_notice.no_recipient`);
-    }
+    await this.notifyHost(cli, n, base, hostUid);
     if (n.warnManagement) await this.notifySupervisors(cli, n, base, hostUid);
+  }
+
+  private async notifyHost(cli: PoolClient, n: ImportBlockNotice, base: NoticeBase, hostUid: string | null): Promise<void> {
+    if (!hostUid) {
+      this.d.log.warn({ audience: 'host', stage: n.stage }, `${this.d.prefix}.import_notice.no_recipient`);
+      return;
+    }
+    await this.d.publisher.publishAdmissionImportBlocked(cli, { recipientUid: hostUid, payload: { ...base, stage: n.stage, audience: 'host' } });
   }
 
   private async notifySupervisors(cli: PoolClient, n: ImportBlockNotice, base: NoticeBase, hostUid: string | null): Promise<void> {
