@@ -79,6 +79,7 @@ test.describe('spec 079 — vincular vaga existente ao serviço contratado @inte
     for (const [r, a] of [
       ['patient', 'read'], ['patient_identity', 'read'], ['patient_address', 'read'],
       ['patient_services', 'read'], ['patient_services', 'update'], ['vacancy', 'read'], ['vacancy', 'update'], ['vacancy', 'delete'],
+      ['patient_coverage', 'read'], // sem ela `insuranceInformed` chega null e o foguete (portão COVERAGE na tela) fica desabilitado
     ]) grantCell(groupId, r, a);
   });
 
