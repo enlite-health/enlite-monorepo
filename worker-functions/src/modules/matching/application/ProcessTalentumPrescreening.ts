@@ -36,9 +36,9 @@ export interface IWorkerLookup {
 }
 
 export interface IJobPostingLookup {
-  /** Vaga oficial viva pelo `_id` do prescreening (`job_postings.talentum_prescreening_id`). */
+  /** Vaga viva pelo `_id` do prescreening (`job_postings.talentum_prescreening_id`, único entre vivas). */
   findByTalentumPrescreeningId(prescreeningId: string): Promise<{ id: string } | null>;
-  /** Fallback: só resolve com EXATAMENTE 1 candidata oficial viva (não-rascunho). */
+  /** Fallback por título: prefere a oficial; 2+ sem desempate oficial → null. */
   findByTitleILike(name: string): Promise<{ id: string } | null>;
 }
 

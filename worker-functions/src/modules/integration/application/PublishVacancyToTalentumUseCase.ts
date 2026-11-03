@@ -197,7 +197,7 @@ export class PublishVacancyToTalentumUseCase {
              talentum_whatsapp_url = $3,
              talentum_slug         = $4,
              talentum_published_at = NOW(),
-             talentum_prescreening_id = ${guardedPrescreeningIdSql(6, 5)},
+             talentum_prescreening_id = COALESCE(${guardedPrescreeningIdSql(6, 5)}, talentum_prescreening_id),
              is_draft              = false,
              updated_at            = NOW()
          WHERE id = $5

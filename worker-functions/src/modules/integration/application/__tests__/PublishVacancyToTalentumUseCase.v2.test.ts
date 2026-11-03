@@ -118,6 +118,8 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
     const result = await new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({})).publish({ jobPostingId: JP_ID });
 
     expect(result.projectId).toBeTruthy();
+    // colide → mantém o valor anterior da vaga (COALESCE), igual ao sync; nunca sobrescreve com NULL
+    expect(updateSql).toMatch(/talentum_prescreening_id = COALESCE\(CASE WHEN EXISTS/);
     expect(updateSql).toMatch(/EXISTS \(SELECT 1 FROM job_postings o WHERE o\.talentum_prescreening_id = \$6::text/);
     expect(warn.mock.calls.flat().join(' ')).toContain(`talentum_prescreening_id_colide vaga=${JP_ID} outra_vaga=jp-dona`);
   });
