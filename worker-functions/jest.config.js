@@ -58,6 +58,9 @@ module.exports = {
     // Achado do gate (crit. 3): este arquivo FOI TOCADO (redação C1 do parecer do lex) — entra
     // no piso, medido 100/100/100/100 antes de entrar.
     'scripts/import-patients-dry-run.ts',
+    // Fusão rascunho→oficial (manutenção 03/11): a parte PURA do CLI (flags, mapa, relatório) entra pela mesma régua;
+    // o orquestrador `fusao-rascunho-oficial.ts` (Pool) fica fora — provado pelo ensaio na réplica de prd.
+    'scripts/fusao-rascunho-oficial-lib.ts',
   ],
   coverageDirectory: 'coverage',
 
@@ -1069,6 +1072,21 @@ module.exports = {
     // nunca move o objeto no GCS — o caminho gravado segue com o prefixo do
     // absorvido). Arquivo NOVO, nasce 100/100/100/100 medido nesta rodada.
     'src/shared/database/findAbsorbedWorkerIds.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Fusão rascunho→oficial (manutenção 03/11): use case, regra da etapa e a parte pura do CLI nascem em 100%.
+    // `DraftFusionRepository.ts` é SQL: medido em 100/100/100/100 pelo e2e contra Postgres real
+    // (`tests/e2e/fusao-rascunho-oficial.e2e.test.ts`), não pelo unit — repositório não se testa com mock.
+    'src/modules/case/application/{FuseDraftIntoOfficialVacancyUseCase,draftFusionStage}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'scripts/fusao-rascunho-oficial-lib.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

@@ -16,6 +16,8 @@ import {
   auditVacancyCreated,
   auditVacancyUpdated,
   auditVacancyDeleted,
+  lockLiveVacancySnapshot,
+  softDeleteVacancyRow,
   createWithPatientUpdate,
   vacancyActorFromRequest,
   type HumanActor,
@@ -365,23 +367,14 @@ export class VacancyCrudController {
 
       await withActorContext(this.db, async (client) => {
         // Snapshot before soft-delete (FOR UPDATE: segura a vaga contra delete concorrente)
-        const beforeResult = await client.query<Record<string, unknown>>(
-          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
-          [id],
-        );
-        if (beforeResult.rows.length === 0) throw new VacancyNotFound();
-        const before = beforeResult.rows[0];
+        const before = await lockLiveVacancySnapshot(client, id);
+        if (!before) throw new VacancyNotFound();
 
         // 058 P6: vaga com alocação vigente no itinerário não se apaga. A probe roda NO client do ator (RLS) e toma o lock do serviço.
         const vigentes = await countVigenteForVacancy(client, id, new Date());
         if (vigentes > 0) throw new VacancyHasAllocations(vigentes);
 
-        const result = await client.query<{ id: string }>(
-          `UPDATE job_postings SET status = 'CLOSED', deleted_at = NOW(), updated_at = NOW()
-           WHERE id = $1 RETURNING id`,
-          [id],
-        );
-        if (result.rows.length === 0) throw new VacancyNotFound();
+        if (!(await softDeleteVacancyRow(client, id))) throw new VacancyNotFound();
 
         // auditVacancyDeleted uses logEventSafe (SAVEPOINT) — FK failure cannot
         // abort this transaction; the soft-delete always commits.

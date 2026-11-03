@@ -33,6 +33,9 @@ export type FeedableRecruitmentField =
 /** Injetado: o domínio de escrita do serviço (Zod) vive fora do domínio. */
 export type AcceptsServiceValue = (field: FeedableRecruitmentField, value: unknown) => boolean;
 
+/** Composição única do `accepts` do vínculo (painel e fusão rascunho→oficial): spec 079 §4 literal; ⚑2 (validar pelo Zod do serviço) pendente de decisão do Gabriel — trocar por contractedServiceValueAccepts se aprovado. */
+export const ACCEPT_ANY_SERVICE_VALUE: AcceptsServiceValue = () => true;
+
 export interface VacancyLinkSource {
   required_professions: string[] | null;
   required_experience: string | null;
