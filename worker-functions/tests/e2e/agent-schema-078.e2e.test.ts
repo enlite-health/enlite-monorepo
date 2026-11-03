@@ -373,3 +373,57 @@ describe('556 §3 — iam.permission_audit_log: actor_kind, gatilho_id, registro
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 556 §3b — iam.query_audit (a tela de auditoria de /admin/access) segue respondendo com as colunas novas.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe('556 §3b — iam.query_audit com as 3 colunas novas', () => {
+  const ENLITE = '00000000-0000-0000-0000-000000000001';
+  const AUDITOR = `${PREFIXO}auditor`;
+  const ALVO = `${PREFIXO}qa-alvo`;
+  let grupo: string;
+
+  const limpar = async () => {
+    await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id IN ($1, $2)`, [AUDITOR, ALVO]);
+    await pool.query(`DELETE FROM iam.user_groups WHERE user_id = $1`, [AUDITOR]);
+    await pool.query(`DELETE FROM iam.group_permissions WHERE group_id IN (SELECT id FROM iam.permission_groups WHERE name = 'E2E078 auditoria')`);
+    await pool.query(`DELETE FROM iam.permission_groups WHERE name = 'E2E078 auditoria'`);
+    await pool.query(`DELETE FROM users WHERE firebase_uid = $1`, [AUDITOR]);
+  };
+
+  beforeAll(async () => {
+    await limpar();
+    await pool.query(
+      `INSERT INTO iam.permissions (resource, action, description, category) VALUES ('permission_management', 'read', 'e2e078', 'Operações') ON CONFLICT (resource, action) DO NOTHING`,
+    );
+    await pool.query(`INSERT INTO users (firebase_uid, email, role, account_type, status, is_active, tenant_id) VALUES ($1, $2, 'admin', 'staff', 'ACTIVE', true, $3)`, [AUDITOR, `${AUDITOR}@e2e.local`, ENLITE]);
+    grupo = (await pool.query(`INSERT INTO iam.permission_groups (tenant_id, name) VALUES ($1, 'E2E078 auditoria') RETURNING id`, [ENLITE])).rows[0].id;
+    await pool.query(
+      `INSERT INTO iam.group_permissions (group_id, permission_id) SELECT $1, id FROM iam.permissions WHERE resource = 'permission_management' AND action = 'read'`,
+      [grupo],
+    );
+    await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [AUDITOR, grupo, ENLITE]);
+    await pool.query(
+      `INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, decision, actor_kind, registro_versao, gatilho_id) VALUES ($1, $2, 'worker', 'update', 'ALLOW', 'agente', 'a1b2c3d4e5f6', 'msg-9')`,
+      [ENLITE, ALVO],
+    );
+  });
+  afterAll(limpar);
+
+  it('o auditor (permission_management:read) lê a trilha como app_runtime, e a linha do agente vem com actor_kind', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE app_runtime');
+      await client.query(`SELECT set_config('app.user_uid', $1, true)`, [AUDITOR]);
+      const r = await client.query(`SELECT user_id, actor_kind, registro_versao, gatilho_id FROM iam.query_audit($1, NULL, NULL, NULL, 50)`, [ALVO]);
+      await client.query('COMMIT');
+      expect(r.rows).toEqual([{ user_id: ALVO, actor_kind: 'agente', registro_versao: 'a1b2c3d4e5f6', gatilho_id: 'msg-9' }]);
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  });
+});

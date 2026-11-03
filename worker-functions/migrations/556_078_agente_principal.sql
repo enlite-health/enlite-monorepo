@@ -136,3 +136,63 @@ ALTER TABLE iam.permission_audit_log ADD CONSTRAINT permission_audit_log_agente_
 -- parcial: só enxerga linha de agente (o limitador por agente); custo em escrita humana ~0.
 CREATE INDEX IF NOT EXISTS idx_pal_agente_user_created
   ON iam.permission_audit_log (user_id, created_at) WHERE actor_kind = 'agente';
+
+-- ── 3b. iam.query_audit continua funcionando com as 3 colunas novas ──────────────────
+-- `iam.query_audit` (458) é `RETURNS SETOF iam.permission_audit_log` e devolve uma lista EXPLÍCITA de 11 colunas: depois da §3 a
+-- tabela tem 14 e a função levantaria "structure of query does not match function result type" (medido em 03/11, M2.1.5; o contrato
+-- dizia que a função "não é recriada" — estava errado). Mesmo corpo da 458, MESMA assinatura e mesmo mascaramento de país; só
+-- acrescenta as 3 colunas ao fim do SELECT. ACL preservada pelo CREATE OR REPLACE (REVOKE PUBLIC + GRANT app_runtime/app_system da 458).
+CREATE OR REPLACE FUNCTION iam.query_audit(p_user_id VARCHAR, p_resource VARCHAR, p_since TIMESTAMPTZ, p_until TIMESTAMPTZ, p_limit INT)
+RETURNS SETOF iam.permission_audit_log
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE
+  v_actor     VARCHAR := iam._actor();
+  v_tenant    UUID    := iam.current_tenant_id();
+  v_countries TEXT[];
+  v_global    BOOLEAN;
+BEGIN
+  IF v_actor IS NULL OR NOT ('permission_management:read' = ANY (iam.effective_permissions(v_actor, v_tenant))) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = '[iam] permission_management:read ausente';
+  END IF;
+
+  v_countries := iam.effective_countries(v_actor, v_tenant);
+  -- Cobre todos os países suportados ⇒ não há "fora do escopo" a ocultar.
+  v_global := iam.supported_countries() <@ COALESCE(v_countries, ARRAY[]::TEXT[]);
+
+  -- O ato de auditar continua sendo auditado (280).
+  INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, resource_id, decision)
+  VALUES (v_tenant, v_actor, 'permission_audit', 'read', COALESCE(p_user_id, p_resource), 'ALLOW');
+
+  RETURN QUERY
+    SELECT a.id,
+           a.tenant_id,
+           a.user_id,
+           a.resource,
+           a.action,
+           CASE
+             WHEN v_global THEN a.resource_id
+             WHEN a.country IS NOT NULL AND a.country = ANY (COALESCE(v_countries, ARRAY[]::TEXT[]))
+               THEN a.resource_id
+             WHEN a.resource_id IS NULL THEN NULL
+             ELSE '<oculto>'
+           END,
+           a.decision,
+           a.ip_address,
+           a.created_at,
+           a.country,
+           a.simulation_id,
+           a.actor_kind,
+           a.gatilho_id,
+           a.registro_versao
+    FROM iam.permission_audit_log a
+    WHERE a.tenant_id = v_tenant
+      AND (p_user_id  IS NULL OR a.user_id  = p_user_id)
+      AND (p_resource IS NULL OR a.resource = p_resource)
+      AND (p_since    IS NULL OR a.created_at >= p_since)
+      AND (p_until    IS NULL OR a.created_at <  p_until)
+    ORDER BY a.created_at DESC
+    LIMIT LEAST(COALESCE(p_limit, 200), 1000);
+END;
+$$;
