@@ -17,10 +17,10 @@ export interface StandingBlockDeps<S extends ImportSubject> {
   /** Transação CURTA (estado + trilha juntos), a mesma do serviço. */
   inTx: <T>(fn: (cli: PoolClient) => Promise<T>) => Promise<T>;
   /**
-   * Ponto do aviso no app (Fase 3, ainda NÃO ligado): roda DENTRO da transação do lembrete, para o aviso e o evento nascerem ou
-   * morrerem juntos. Ausente = no-op.
+   * Aviso no app (spec 083, Fase 3): roda DENTRO da transação do lembrete, para o aviso e o evento nascerem ou morrerem juntos.
+   * Ausente = no-op.
    */
-  onReminder?: (cli: PoolClient, info: { n: number; reason: string; blockedAt: Date }) => Promise<void>;
+  onReminder?: (cli: PoolClient, info: { n: number; reason: string; blockedAt: Date; endedAt: Date; subject: S }) => Promise<void>;
 }
 
 /**
@@ -58,7 +58,7 @@ export async function standingHumanBlock<S extends ImportSubject>(
     const n = remindersSent + 1;
     await d.inTx(async (cli) => {
       await d.events.append({ appointmentId: a.id, kind: IMPORT_REMINDER_EVENT, outcome: 'reminder', reason: last.reason, ref: { n } }, cli);
-      await d.onReminder?.(cli, { n, reason: last.reason as string, blockedAt: last.at });
+      await d.onReminder?.(cli, { n, reason: last.reason as string, blockedAt: last.at, endedAt, subject: a });
     });
     d.log.error({ [d.naming.idKey]: a.id, reason: last.reason, reminder: n }, `${d.naming.prefix}.import_blocked`);
   }

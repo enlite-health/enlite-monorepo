@@ -4,14 +4,15 @@
  * PARIDADE: cada instante é comparado com a política pura (`decideStandingBlock`): listado ⇔ decisão ≠ 'wait'. Os dois lados juntos
  * pegam o instrumento morto (o SQL ou a política sozinhos poderiam errar de forma consistente com o teste).
  *
- * Fica em `tests/repo/` (e não em `infrastructure/__tests__/`) porque é onde o harness com banco real vive: `jest.config.repo.js`
- * (sem a stack API/Firebase do e2e). O config unitário não tem banco.
+ * Fica em `tests/e2e/` porque é o que o CI roda COM banco (`backend-e2e.yml:138`, `npm run test:e2e` = `jest.config.e2e.js`,
+ * roots `tests/e2e`, testMatch "qualquer .test.ts"); o `jest.config.repo.js` (`tests/repo/`) não é chamado por nenhum workflow.
  *
  *   docker run -d --name e083-pg --label compose.project=e083 -p 127.0.0.1:55083:5432 -e POSTGRES_USER=enlite_admin \
  *     -e POSTGRES_PASSWORD=enlite_password -e POSTGRES_DB=enlite_e2e postgis/postgis:16-3.4
  *   DATABASE_URL=postgresql://enlite_admin:enlite_password@127.0.0.1:55083/enlite_e2e node scripts/run-migrations-docker.js
- *   DATABASE_URL=postgresql://enlite_admin:enlite_password@127.0.0.1:55083/enlite_e2e npx jest --config jest.config.repo.js \
- *     tests/repo/importHumanBlockSql.repo.test.ts --maxWorkers=2
+ *   (stub de /health em API_URL, exigido por tests/e2e/setup.ts)
+ *   DATABASE_URL=... API_URL=http://127.0.0.1:58083 npx jest --config jest.config.e2e.js \
+ *     tests/e2e/admission-083-import-human-block-sql.e2e.test.ts --maxWorkers=2
  */
 import { Pool } from 'pg';
 import { AdmissionImportRepository } from '../../src/modules/matching/infrastructure/AdmissionImportRepository';
@@ -19,7 +20,10 @@ import { EnquadreImportRepository } from '../../src/modules/matching/infrastruct
 import { TactiqLinkRepository } from '../../src/modules/matching/infrastructure/TactiqLinkRepository';
 import { decideStandingBlock, IMPORT_REMINDER_EVENT } from '../../src/modules/matching/domain/importBlockPolicy';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@127.0.0.1:55083/enlite_e2e';
+const DATABASE_URL =
+  process.env.TEST_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const EMAIL_SUFFIX = '@083-sql.test';
 const MIN = 60_000;
 const H = 60 * MIN;

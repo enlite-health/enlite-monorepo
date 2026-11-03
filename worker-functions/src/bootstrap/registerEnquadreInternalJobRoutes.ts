@@ -25,6 +25,7 @@ import { EnquadrePostCallRepository } from '@modules/matching/infrastructure/Enq
 import { EnquadreEventTrailRepository } from '@modules/matching/infrastructure/EnquadreEventTrailRepository';
 import type { MeetConferencePort } from '@modules/matching/application/ports/MeetConferencePort';
 import type { PostCallNaming } from '@modules/matching/application/ports/PostCallPorts';
+import type { ImportBlockNoticePort } from '@modules/matching/application/ports/ImportPorts';
 import { EnquadrePresenceService } from '@modules/matching/application/EnquadrePresenceService';
 
 export const ENQUADRE_POST_CALL_NAMING: PostCallNaming = { prefix: 'enquadre', idKey: 'eventId' };
@@ -37,6 +38,8 @@ export interface EnquadreImportDeps {
   vault: TranscriptVaultPort;
   /** Gerador de resumo com o perfil do enquadre (prompt em arquivo, convocados, gate próprio). */
   summary: AdmissionSummaryPort;
+  /** Aviso no sino da importação bloqueada (spec 083). Ausente = sem aviso. */
+  notices?: ImportBlockNoticePort;
   /** Para teste: substitui o armazenamento do PDF e o decifrador dos nomes. */
   destination?: EnquadreImportDestinationDeps;
   log?: AdmissionLogger;
@@ -60,7 +63,7 @@ export function createEnquadreImportService(db: Pool, d: EnquadreImportDeps): Ad
     repo: new EnquadreImportRepository(db, d.batchSize),
     destination: new EnquadreImportDestination({ db, ...d.destination }),
     events: new EnquadreEventTrailRepository(db),
-    tokens: d.tokens, mcp: d.mcp, vault: d.vault, summary: d.summary, db, log: d.log, now: d.now,
+    tokens: d.tokens, mcp: d.mcp, vault: d.vault, summary: d.summary, notices: d.notices, db, log: d.log, now: d.now,
   });
 }
 

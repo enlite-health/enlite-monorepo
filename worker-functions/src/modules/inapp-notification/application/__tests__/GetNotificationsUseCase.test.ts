@@ -326,3 +326,26 @@ describe('GetNotificationsUseCase — PEDIDO_IA_APLICAR (spec 078 M4.4.2): paylo
       expect((await run(payload)).payload).toBeNull();
     });
 });
+
+describe('GetNotificationsUseCase — importação bloqueada (spec 083): payload fechado, sem paciente', () => {
+  const ib = (payload: Record<string, unknown> | null): NotificationEventRow =>
+    row({ id: 'ib1', typeCode: 'ADMISSION_IMPORT_BLOCKED', actorUid: 'system:admission', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, patientCaseNumber: null, payload });
+  const ok = { stage: 'blocked', kind: 'enquadre', reason: 'wrong_account', audience: 'host', meetingAt: '2026-11-02T15:00:00.000Z', deadlineAt: '2026-11-05T16:00:00.000Z' };
+
+  it('sai só com as chaves do contrato (chave extra descartada); hostName só se string', async () => {
+    const [a] = await new GetNotificationsUseCase(repoWith([ib({ ...ok, patientName: 'Ana Silva', token: 'seg' })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toEqual(ok);
+    expect(JSON.stringify(a)).not.toContain('Ana Silva');
+    const sup = { ...ok, stage: 'will_be_lost', audience: 'supervisor', hostName: 'Fulana' };
+    const [b] = await new GetNotificationsUseCase(repoWith([ib(sup)])).execute({ recipientUid: 'me', limit: 20 });
+    expect(b.payload).toEqual(sup);
+    expect(b.patientDisplayName).toBeNull();
+  });
+
+  it('enum fora do conjunto, data ausente ou payload nulo viram null', async () => {
+    for (const p of [{ ...ok, stage: 'x' }, { ...ok, reason: 'not_found' }, { ...ok, meetingAt: 5 }, null]) {
+      const [d] = await new GetNotificationsUseCase(repoWith([ib(p)])).execute({ recipientUid: 'me', limit: 20 });
+      expect(d.payload).toBeNull();
+    }
+  });
+});
