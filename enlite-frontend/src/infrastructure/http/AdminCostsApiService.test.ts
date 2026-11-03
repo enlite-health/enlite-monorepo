@@ -11,7 +11,8 @@ const OVERVIEW: CostOverview = {
   month: '2026-11', currency: 'USD', dataUntil: '2026-11-02T10:00:00Z', monthTotal: 120.5,
   prevMonthToDate: 100, prevMonthTotal: 900, forecast: { value: 1800, basis: 'linear', daysCounted: 2 },
   months: [{ month: '2026-11', total: 120.5 }], byService: [], byResource: [], bySector: [], byAiCaller: [],
-  anomalies: { status: 'insufficient_history', items: [] },
+  byProject: [{ project: 'enlite-prd', total: 120.5 }], availableMonths: ['2026-11', '2026-10'],
+  anomalies: { status: 'insufficient_history', day: null, rule: { factor: 2, minDelta: 5, windowDays: 7 }, items: [] },
 };
 
 let originalFetch: typeof globalThis.fetch;
