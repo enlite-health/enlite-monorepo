@@ -308,7 +308,7 @@ describe('PublishVacancyToTalentumUseCase', () => {
         .mockResolvedValueOnce({ rows: [] });
 
       mockCreatePrescreening.mockResolvedValue({ projectId: 'proj-X', publicId: 'pub-X' });
-      mockGetPrescreening.mockResolvedValue({ whatsappUrl: 'https://wa.me/X', slug: '#slugX' });
+      mockGetPrescreening.mockResolvedValue({ whatsappUrl: 'https://wa.me/X', slug: '#slugX', prescreeningId: 'psc-X' });
       mockClientQuery.mockResolvedValue({ rows: [] });
 
       const useCase = new PublishVacancyToTalentumUseCase();
@@ -319,7 +319,26 @@ describe('PublishVacancyToTalentumUseCase', () => {
         (c: any[]) => typeof c[0] === 'string' && c[0].includes('UPDATE job_postings')
       );
       expect(updateCall).toBeDefined();
-      expect(updateCall![1]).toEqual(['proj-X', 'pub-X', 'https://wa.me/X', '#slugX', 'job-123']);
+      expect(updateCall![1]).toEqual(['proj-X', 'pub-X', 'https://wa.me/X', '#slugX', 'job-123', 'psc-X']);
+    });
+
+    it('getPrescreening sem prescreeningId: UPDATE grava NULL no 6º parâmetro e o publish não cai', async () => {
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: [setupVacancyRow()] })
+        .mockResolvedValueOnce({ rows: setupQuestionsRows() })
+        .mockResolvedValueOnce({ rows: [] });
+      mockCreatePrescreening.mockResolvedValue({ projectId: 'proj-X', publicId: 'pub-X' });
+      mockGetPrescreening.mockResolvedValue({ whatsappUrl: 'u', slug: 's' });
+      mockClientQuery.mockResolvedValue({ rows: [] });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await new PublishVacancyToTalentumUseCase().publish({ jobPostingId: 'job-123' });
+
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: any[]) => typeof c[0] === 'string' && c[0].includes('UPDATE job_postings'),
+      );
+      expect(updateCall![1][5]).toBeNull();
+      warn.mockRestore();
     });
 
     it('flips is_draft to false when publishing (migration 168 contract)', async () => {
@@ -494,6 +513,8 @@ describe('PublishVacancyToTalentumUseCase', () => {
         (c: any[]) => typeof c[0] === 'string' && c[0].includes('SET talentum_project_id   = NULL')
       );
       expect(updateCall).toBeDefined();
+      // o id do prescreening (coluna 558) some junto: senão um webhook com o id velho resolveria para a vaga despublicada
+      expect(String(updateCall![0])).toContain('talentum_prescreening_id = NULL');
       expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
       expect(mockClientRelease).toHaveBeenCalled();
     });

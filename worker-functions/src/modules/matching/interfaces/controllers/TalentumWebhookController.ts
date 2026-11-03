@@ -8,33 +8,14 @@
 
 import { Request, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
-import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { TalentumPrescreeningRepository } from '../../infrastructure/TalentumPrescreeningRepository';
 import { WorkerRepository } from '@modules/worker';
 import { TalentumPrescreeningPayloadSchema } from '@modules/integration';
-import {
-  ProcessTalentumPrescreening,
-  IJobPostingLookup,
-} from '../../application/ProcessTalentumPrescreening';
+import { ProcessTalentumPrescreening } from '../../application/ProcessTalentumPrescreening';
+import { JobPostingLookup } from '../../infrastructure/JobPostingLookup';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { CreateJobPostingFromTalentumUseCase } from '@modules/integration';
-
-// ─────────────────────────────────────────────────────────────────
-// JobPostingLookup — implementação concreta da porta IJobPostingLookup
-// Busca job_posting por ILIKE em title (prescreening.name do Talentum)
-// ─────────────────────────────────────────────────────────────────
-class JobPostingLookup implements IJobPostingLookup {
-  constructor(private readonly pool: Pool) {}
-
-  async findByTitleILike(name: string): Promise<{ id: string } | null> {
-    const result = await this.pool.query(
-      `SELECT id FROM job_postings WHERE title ILIKE $1 AND deleted_at IS NULL LIMIT 1`,
-      [`%${name}%`],
-    );
-    return result.rows[0] ?? null;
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────
 // TalentumWebhookController

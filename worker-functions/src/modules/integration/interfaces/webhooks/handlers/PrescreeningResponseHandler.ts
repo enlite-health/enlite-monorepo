@@ -3,24 +3,11 @@ import { Pool } from 'pg';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import { TalentumWebhookHandler, TalentumWebhookContext } from './TalentumWebhookHandler';
 import { TalentumPrescreeningResponseParsed } from '../validators/talentumPrescreeningSchema';
-import { TalentumPrescreeningRepository, ProcessTalentumPrescreening } from '@modules/matching';
-import type { IJobPostingLookup } from '@modules/matching';
+import { TalentumPrescreeningRepository, ProcessTalentumPrescreening, JobPostingLookup } from '@modules/matching';
 import { WorkerRepository } from '@modules/worker';
 import { PubSubClient } from '@shared/events/PubSubClient';
 
 const TAG = '[TalentumWebhook:PrescreeningResponse]';
-
-class JobPostingLookup implements IJobPostingLookup {
-  constructor(private readonly pool: Pool) {}
-
-  async findByTitleILike(name: string): Promise<{ id: string } | null> {
-    const result = await this.pool.query(
-      `SELECT id FROM job_postings WHERE title ILIKE $1 AND deleted_at IS NULL LIMIT 1`,
-      [`%${name}%`],
-    );
-    return result.rows[0] ?? null;
-  }
-}
 
 export class PrescreeningResponseHandler implements TalentumWebhookHandler<TalentumPrescreeningResponseParsed> {
   constructor(private readonly pool: Pool) {}

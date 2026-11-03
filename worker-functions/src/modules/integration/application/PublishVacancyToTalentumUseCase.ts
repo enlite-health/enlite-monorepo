@@ -29,6 +29,7 @@ import {
 } from '../../matching/infrastructure/JobPostingAuditRepository';
 // DX-6.1: chamado DEPOIS do commit do envio (nunca antes). `onVacancyLaunched` nunca lança
 // (DX-6.2) — o catch abaixo é a 2ª trava, não o contrato do gancho.
+import { guardedPrescreeningIdSql, logPrescreeningIdCollision } from './talentumPrescreeningIdGuard';
 import { onVacancyLaunched } from '../../case/application/VacancyLaunchHook';
 
 // ─────────────────────────────────────────────────────────────────
@@ -172,10 +173,15 @@ export class PublishVacancyToTalentumUseCase {
     // 5. GET project to obtain whatsappUrl + slug
     let whatsappUrl: string;
     let slug: string;
+    let prescreeningId: string | null = null;
     try {
       const project = await talentumClient.getPrescreening(projectId);
       whatsappUrl = project.whatsappUrl;
       slug = project.slug;
+      prescreeningId = project.prescreeningId ?? null;
+      if (!prescreeningId) {
+        console.warn(`[PublishVacancy] vaga ${jobPostingId}: API não devolveu o _id do prescreening (talentum_prescreening_id fica NULL; o backfill preenche)`);
+      }
     } catch (err: unknown) {
       throw new PublishError(502, `Talentum API error (get): ${(err as Error).message}`);
     }
@@ -184,18 +190,23 @@ export class PublishVacancyToTalentumUseCase {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
+      const saved = await client.query(
         `UPDATE job_postings
          SET talentum_project_id   = $1,
              talentum_public_id    = $2,
              talentum_whatsapp_url = $3,
              talentum_slug         = $4,
              talentum_published_at = NOW(),
+             talentum_prescreening_id = COALESCE(${guardedPrescreeningIdSql(6, 5)}, talentum_prescreening_id),
              is_draft              = false,
              updated_at            = NOW()
-         WHERE id = $5`,
-        [projectId, publicId, whatsappUrl, slug, jobPostingId],
+         WHERE id = $5
+         RETURNING talentum_prescreening_id`,
+        [projectId, publicId, whatsappUrl, slug, jobPostingId, prescreeningId],
       );
+      if (saved.rows[0]) {
+        await logPrescreeningIdCollision(client, jobPostingId, prescreeningId, saved.rows[0].talentum_prescreening_id);
+      }
 
       // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
       // leaving the surrounding transaction (and the UPDATE above) intact.
@@ -283,6 +294,7 @@ export class PublishVacancyToTalentumUseCase {
              talentum_whatsapp_url = NULL,
              talentum_slug         = NULL,
              talentum_published_at = NULL,
+             talentum_prescreening_id = NULL,
              is_draft              = true,
              updated_at            = NOW()
          WHERE id = $1`,

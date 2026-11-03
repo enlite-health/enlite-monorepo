@@ -303,7 +303,7 @@ export class VacancyCrudController {
 
         // Snapshot before
         const beforeResult = await client.query<Record<string, unknown>>(
-          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1`,
+          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL`,
           [id],
         );
         if (beforeResult.rows.length === 0) {
@@ -316,7 +316,7 @@ export class VacancyCrudController {
         values.push(id);
         const result = await client.query<Record<string, unknown>>(
           `UPDATE job_postings SET ${setClause.join(', ')}, updated_at = NOW()
-           WHERE id = $${paramIndex} RETURNING ${vacancyRawColumnsSql()}`,
+           WHERE id = $${paramIndex} AND deleted_at IS NULL RETURNING ${vacancyRawColumnsSql()}`,
           values,
         );
         if (result.rows.length === 0) {

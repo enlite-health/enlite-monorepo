@@ -14,6 +14,7 @@ export * from './infrastructure/EncuadreMappers';
 export { TalentumPrescreeningRepository } from './infrastructure/TalentumPrescreeningRepository';
 export { WorkerApplicationRepository } from './infrastructure/WorkerApplicationRepository';
 export { JobPostingARRepository } from './infrastructure/JobPostingARRepository';
+export { JobPostingLookup } from './infrastructure/JobPostingLookup';
 export { MatchmakingService } from './infrastructure/MatchmakingService';
 export { GoogleCalendarService, googleCalendarService } from './infrastructure/GoogleCalendarService';
 export { BlockedApplicationRepository } from './infrastructure/BlockedApplicationRepository';

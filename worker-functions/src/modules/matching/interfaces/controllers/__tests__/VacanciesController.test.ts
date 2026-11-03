@@ -50,6 +50,19 @@ async function getData(row: Record<string, unknown>) {
   return (res.json as jest.Mock).mock.calls[0][0].data;
 }
 
+describe('GET /vacancies/:id — vaga apagada (soft-delete) não aparece', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('a query do detalhe filtra jp.deleted_at IS NULL e, sem linha, responde 404', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+    const [req, res] = reqRes();
+    await new VacanciesController().getVacancyById(req, res);
+    const sql = String(mockQuery.mock.calls[0][0]);
+    expect(sql).toContain('jp.deleted_at IS NULL');
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
 describe('GET /vacancies/:id — weekly_hours derivado e sem authorized_period (056 T4.3)', () => {
   beforeEach(() => jest.clearAllMocks());
 

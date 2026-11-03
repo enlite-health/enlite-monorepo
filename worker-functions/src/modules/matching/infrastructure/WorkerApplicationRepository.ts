@@ -257,6 +257,7 @@ export class WorkerApplicationRepository {
          LIMIT 1
        ) e ON true
        WHERE wja.worker_id = $1
+         AND (wja.job_posting_id IS NULL OR jp.deleted_at IS NULL)
          -- M6b (D474): o convite do sistema some quando o par tem tentativa bloqueada ativa;
          -- o card que a ficha mostra é o bloqueado (BlockedApplicationQueryRepository.listByWorker).
          AND NOT ${wjaSupersededByBlockedSql('wja', true)}
