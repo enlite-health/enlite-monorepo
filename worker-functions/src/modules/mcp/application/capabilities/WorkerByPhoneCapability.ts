@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { logger } from '../../../../shared/logging/Logger';
 
 const ArgsShape = { phone: z.string().min(5) };
 const ArgsSchema = z.object(ArgsShape);
@@ -33,7 +34,7 @@ export class WorkerByPhoneCapability {
     const { phone } = ArgsSchema.parse(args);
     const hit = await this.lookup.findByPhone(phone);
     if (!hit) return { found: false };
-    await this.trail.record({ operatorUid: principalName ?? 'agent', workerId: hit.workerId, action: 'read_by_phone' }).catch(() => undefined);
+    await this.trail.record({ operatorUid: principalName ?? 'agent', workerId: hit.workerId, action: 'read_by_phone' }).catch((err: unknown) => logger.warn({ action: 'read_by_phone', err: err instanceof Error ? err.message : 'unknown' }, 'worker.byPhone: trilha de acesso falhou (leitura segue)'));
     return { found: true, worker: hit.data };
   }
 }

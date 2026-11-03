@@ -88,8 +88,9 @@ import { buildAgentGate, createAgentEntry, isAgentRequest, type AgentPortOverrid
  * (conector claude.ai) e o /mcp/v1 passa a aceitar access tokens OAuth.
  */
 /** `twilio`: o serviço de mensageria do boot (o aviso GRAVE do Sol manda pelo número do Sol através dele). Em teste o dublê vale, sempre. */
-export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?: TwilioContentSender; agent?: AgentPortOverrides } = {}): void {
-  const principalRepo = new ServicePrincipalSecretManagerRepo();
+export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?: TwilioContentSender; agent?: AgentPortOverrides; principalRepo?: Pick<ServicePrincipalSecretManagerRepo, 'findByToken'> } = {}): void {
+  // `principalRepo`: costura de teste (e2e troca só o cofre de segredos por um dublê); em produção é sempre o do Secret Manager.
+  const principalRepo = (opts.principalRepo as ServicePrincipalSecretManagerRepo | undefined) ?? new ServicePrincipalSecretManagerRepo();
   const auditor = new McpAuditLogger();
   const pubsub = new PubSubClient();
 

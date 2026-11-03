@@ -13,20 +13,8 @@ import type { AddressInfo } from 'net';
 import { Pool } from 'pg';
 import { AGENT_AUDIENCE, AGENT_IDENTITY_HEADER } from '../../src/modules/mcp/domain/AgentCapabilityCells';
 import { OAuthTokenService } from '../../src/modules/mcp/application/oauth/OAuthTokenService';
+import { ServicePrincipal } from '../../src/modules/mcp/domain/ServicePrincipal';
 import { ensureLoginRole, dropLoginRoles, urlFor } from './helpers/loginRoles';
-
-jest.mock('../../src/modules/mcp/infrastructure/ServicePrincipalSecretManagerRepo', () => {
-  class ServicePrincipalSecretManagerRepo {
-    async findByToken(token: string) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { ServicePrincipal } = require('../../src/modules/mcp/domain/ServicePrincipal');
-      return token === 'legado-claude-code-e2e'
-        ? new ServicePrincipal({ name: 'claude-code', allowedCapabilities: ['worker.vacancies.list', 'worker.profile.get'], tokenHashes: ['x'] })
-        : null;
-    }
-  }
-  return { ServicePrincipalSecretManagerRepo };
-});
 
 const ADMIN_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TENANT = '00000000-0000-0000-0000-000000000001';
@@ -45,6 +33,15 @@ const JP_AR = 'ee078200-0000-4000-8000-0000000000a3';
 const JP_BR = 'ee078200-0000-4000-8000-0000000000b3';
 const ISSUER = 'https://mcp-e2e.enlite.test';
 const SIGNING_KEY = 'k'.repeat(64);
+
+/** Cofre de segredos trocado por um dublê (única costura trocada): só o Bearer estático do `claude-code` resolve. */
+const cofreFake = {
+  async findByToken(token: string): Promise<ServicePrincipal | null> {
+    return token === 'legado-claude-code-e2e'
+      ? new ServicePrincipal({ name: 'claude-code', allowedCapabilities: ['worker.vacancies.list', 'worker.profile.get'], tokenHashes: ['x'] })
+      : null;
+  },
+};
 
 const tokAgente = (): string => `Bearer mock_${Buffer.from(JSON.stringify({ email: EMAIL, email_verified: true, aud: AGENT_AUDIENCE })).toString('base64')}`;
 
@@ -119,7 +116,7 @@ describe('nao-regressao: principal legado (claude-code), principal OAuth (claude
     app.use(express.json());
     app.use(correlationMiddleware);
     app.use(dbSessionMiddleware);
-    mountMcpRoutes(app, DatabaseConnection.getInstance().getPool());
+    mountMcpRoutes(app, DatabaseConnection.getInstance().getPool(), { principalRepo: cofreFake });
     const srv = app.listen(0);
     await new Promise<void>((r) => srv.once('listening', () => r()));
     servers.push(srv);
