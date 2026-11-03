@@ -114,3 +114,25 @@ END $$;
 DROP TRIGGER IF EXISTS veda_agente_fora_de_grupo_agent ON iam.user_groups;
 CREATE TRIGGER veda_agente_fora_de_grupo_agent BEFORE INSERT OR UPDATE ON iam.user_groups
   FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_agente_fora_de_grupo_agent();
+
+-- ── 3. Trilha de auditoria distingue agente de pessoa (item 34) ──────────────────────
+-- `actor_kind` mantém o vocabulário PT da 551 (`humano|agente|sistema`). DEFAULT 'humano' preserva os INSERTs antigos
+-- (PgPermissionAuditRepository + as funções SQL 279/280/283/458) sem editar nenhum.
+-- `gatilho_id` e `registro_versao` são SÓ identificadores (id da mensagem do prestador; 12 hex do sha do registro): NUNCA texto de mensagem.
+ALTER TABLE iam.permission_audit_log
+  ADD COLUMN IF NOT EXISTS actor_kind      text NOT NULL DEFAULT 'humano',
+  ADD COLUMN IF NOT EXISTS gatilho_id      text,
+  ADD COLUMN IF NOT EXISTS registro_versao text;
+
+ALTER TABLE iam.permission_audit_log DROP CONSTRAINT IF EXISTS permission_audit_log_actor_kind_ck;
+ALTER TABLE iam.permission_audit_log ADD CONSTRAINT permission_audit_log_actor_kind_ck
+  CHECK (actor_kind IN ('humano', 'agente', 'sistema'));
+
+-- agente sempre carrega a versão do registro que o governava (o responsável é DERIVADO do registro, não copiado)
+ALTER TABLE iam.permission_audit_log DROP CONSTRAINT IF EXISTS permission_audit_log_agente_versao_ck;
+ALTER TABLE iam.permission_audit_log ADD CONSTRAINT permission_audit_log_agente_versao_ck
+  CHECK (actor_kind <> 'agente' OR registro_versao IS NOT NULL);
+
+-- parcial: só enxerga linha de agente (o limitador por agente); custo em escrita humana ~0.
+CREATE INDEX IF NOT EXISTS idx_pal_agente_user_created
+  ON iam.permission_audit_log (user_id, created_at) WHERE actor_kind = 'agente';

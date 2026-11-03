@@ -7,6 +7,7 @@
  */
 import { Pool, PoolClient } from 'pg';
 import { CELULAS_VEDADAS_A_AGENTE } from '../../src/modules/identity/permissions/domain/ActorClass';
+import { PgPermissionAuditRepository } from '../../src/modules/identity/permissions/infrastructure/PgPermissionAuditRepository';
 import { isStaffAccount } from '../../src/modules/identity/domain/AccountType';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -252,5 +253,123 @@ describe('556 §2 — grupo AGENT: células vedadas e os 3 triggers', () => {
       expect(r.rows[0]).toEqual({ agente: false, gestor: true });
       await pool.query(`UPDATE iam.user_groups SET removed_at = now() WHERE group_id = $1`, [g]);
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 556 §3 — a trilha distingue agente de pessoa (item 34). Escritas como `app_runtime` (o mesmo login do INSERT humano).
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe('556 §3 — iam.permission_audit_log: actor_kind, gatilho_id, registro_versao', () => {
+  const ENLITE = '00000000-0000-0000-0000-000000000001';
+  const UID = `${PREFIXO}trilha`;
+  const UID_HUMANO = `${PREFIXO}trilha-hum`;
+  const TABELA = 'iam.permission_audit_log';
+
+  const limparTrilha = () => pool.query(`DELETE FROM ${TABELA} WHERE user_id LIKE $1`, [`${PREFIXO}trilha%`]);
+  const comoRuntime = async <T>(fn: (c: PoolClient) => Promise<T>): Promise<T> => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE app_runtime');
+      const out = await fn(client);
+      await client.query('COMMIT');
+      return out;
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  };
+  const kindDe = async (uid: string) => (await pool.query(`SELECT actor_kind, gatilho_id, registro_versao FROM ${TABELA} WHERE user_id = $1`, [uid])).rows;
+
+  beforeAll(limparTrilha);
+  afterEach(limparTrilha);
+  afterAll(limparTrilha);
+
+  describe('(a) as formas de INSERT antigas continuam gravando, com actor_kind = humano', () => {
+    it('forma do repositório (PgPermissionAuditRepository, 8 colunas) — a CLASSE real, não uma cópia do SQL', async () => {
+      new PgPermissionAuditRepository(pool).record({ tenantId: ENLITE, userId: UID, resource: 'vacancy', action: 'read', decision: 'ALLOW' } as never);
+      for (let i = 0; i < 40 && (await kindDe(UID)).length === 0; i++) await new Promise((r) => setTimeout(r, 50)); // record() é fire-and-forget
+      expect(await kindDe(UID)).toEqual([{ actor_kind: 'humano', gatilho_id: null, registro_versao: null }]);
+    });
+
+    it('forma das funções SQL 279/280/283/458 (6 colunas: tenant, user, resource, action, resource_id, decision), como app_runtime', async () => {
+      await comoRuntime((c) =>
+        c.query(`INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, resource_id, decision) VALUES ($1, $2, 'permission_audit', 'read', 'x', 'ALLOW')`, [ENLITE, UID]),
+      );
+      expect(await kindDe(UID)).toEqual([{ actor_kind: 'humano', gatilho_id: null, registro_versao: null }]);
+    });
+
+    it('forma da cópia da 280 (9 colunas, com id, ip_address e created_at explícitos)', async () => {
+      await pool.query(
+        `INSERT INTO ${TABELA} (id, tenant_id, user_id, resource, action, resource_id, decision, ip_address, created_at) VALUES (gen_random_uuid(), $1, $2, 'vacancy', 'read', NULL, 'DENY', '10.0.0.1', now())`,
+        [ENLITE, UID],
+      );
+      expect(await kindDe(UID)).toEqual([{ actor_kind: 'humano', gatilho_id: null, registro_versao: null }]);
+    });
+
+    it('forma com country e simulation_id nulos (458) — o INSERT mais largo que o código usa hoje', async () => {
+      await pool.query(
+        `INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, resource_id, decision, country, simulation_id) VALUES ($1, $2, 'patient', 'read', 'p1', 'ALLOW', 'AR', NULL)`,
+        [ENLITE, UID],
+      );
+      expect((await kindDe(UID))[0].actor_kind).toBe('humano');
+    });
+  });
+
+  it('(b) actor_kind=agente SEM registro_versao → check_violation (agente_versao_ck); COM registro_versao → grava', async () => {
+    await expect(
+      comoRuntime((c) => c.query(`INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, decision, actor_kind) VALUES ($1, $2, 'worker', 'read', 'ALLOW', 'agente')`, [ENLITE, UID])),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'permission_audit_log_agente_versao_ck' });
+    await comoRuntime((c) =>
+      c.query(`INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, decision, actor_kind, registro_versao, gatilho_id) VALUES ($1, $2, 'worker', 'read', 'ALLOW', 'agente', 'a1b2c3d4e5f6', 'msg-123')`, [ENLITE, UID]),
+    );
+    expect(await kindDe(UID)).toEqual([{ actor_kind: 'agente', gatilho_id: 'msg-123', registro_versao: 'a1b2c3d4e5f6' }]);
+  });
+
+  it('(c) actor_kind fora de humano|agente|sistema → check_violation (actor_kind_ck); sistema grava', async () => {
+    await expect(
+      comoRuntime((c) => c.query(`INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, decision, actor_kind) VALUES ($1, $2, 'worker', 'read', 'ALLOW', 'xpto')`, [ENLITE, UID])),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'permission_audit_log_actor_kind_ck' });
+    await comoRuntime((c) => c.query(`INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, decision, actor_kind) VALUES ($1, $2, 'worker', 'read', 'ALLOW', 'sistema')`, [ENLITE, UID]));
+    expect((await kindDe(UID))[0].actor_kind).toBe('sistema');
+  });
+
+  it('(d) lista FECHADA de colunas textuais: nenhuma coluna de texto livre nova além de gatilho_id e registro_versao', async () => {
+    const r = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'iam' AND table_name = 'permission_audit_log' AND data_type IN ('text', 'character varying', 'character') ORDER BY 1`,
+    );
+    const colunas = r.rows.map((x) => x.column_name);
+    expect(colunas.length).toBeGreaterThan(0); // contagem zero é falha
+    expect(colunas).toEqual(
+      ['action', 'actor_kind', 'country', 'decision', 'gatilho_id', 'registro_versao', 'resource', 'resource_id', 'user_id'].sort(),
+    );
+  });
+
+  it('(e) a consulta do limitador usa o índice parcial do agente (EXPLAIN com ≥ 2000 linhas humanas e ≥ 5 do agente, ANALYZE antes)', async () => {
+    await pool.query(
+      `INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, decision, created_at)
+       SELECT $1, $2 || (g % 50), 'vacancy', 'read', 'ALLOW', now() - (g % 600) * interval '1 second' FROM generate_series(1, 2500) g`,
+      [ENLITE, UID_HUMANO],
+    );
+    await pool.query(
+      `INSERT INTO ${TABELA} (tenant_id, user_id, resource, action, decision, actor_kind, registro_versao, created_at)
+       SELECT $1, $2, 'worker', 'update', 'ALLOW', 'agente', 'a1b2c3d4e5f6', now() - g * interval '1 second' FROM generate_series(1, 6) g`,
+      [ENLITE, UID],
+    );
+    await pool.query(`ANALYZE ${TABELA}`);
+    const plano = await pool.query(
+      `EXPLAIN SELECT count(*) FROM ${TABELA} WHERE actor_kind = 'agente' AND user_id = $1 AND decision = 'ALLOW' AND action <> 'read' AND created_at > now() - interval '1 hour'`
+        .replace('$1', `'${UID}'`),
+    );
+    const texto = plano.rows.map((x) => x['QUERY PLAN']).join('\n');
+    const usados = [...texto.matchAll(/(?:Index (?:Only )?Scan using|Bitmap Index Scan on) (\S+)/g)].map((m) => m[1]);
+    expect([texto, usados.length > 0]).toEqual([texto, true]);
+    for (const idx of usados) {
+      const def = await pool.query(`SELECT indexdef FROM pg_indexes WHERE schemaname = 'iam' AND indexname = $1`, [idx]);
+      expect([idx, def.rows[0]?.indexdef]).toEqual([idx, expect.stringContaining(`WHERE (actor_kind = 'agente'::text)`)]);
+    }
   });
 });
