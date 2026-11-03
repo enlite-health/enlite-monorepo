@@ -69,9 +69,15 @@ module "sa_tf_admin" {
     "roles/editor",
     "roles/iam.roleAdmin",
     "roles/iam.securityAdmin",
+    "roles/logging.configWriter", # spec 082: criar o sink ai_usage_to_bq (Editor não tem logging.sinks.create)
     "roles/resourcemanager.projectIamAdmin",
     "roles/secretmanager.admin",
   ]
+}
+
+import {
+  to = module.sa_tf_admin.google_project_iam_member.roles["roles/logging.configWriter"]
+  id = "enlite-prd roles/logging.configWriter serviceAccount:tf-admin@enlite-prd.iam.gserviceaccount.com"
 }
 
 # Bindings cross-project: a SA tf-admin vive em enlite-prd mas precisa atuar

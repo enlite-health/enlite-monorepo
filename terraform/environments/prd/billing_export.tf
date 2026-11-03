@@ -28,3 +28,18 @@ resource "google_project_iam_member" "backend_bigquery_job_user" {
   role    = "roles/bigquery.jobUser"
   member  = module.sa_enlite_functions.member
 }
+
+# Permissão mínima do tf-admin neste dataset (spec 082): o Editor do projeto não tem bigquery.datasets.update/setIamPolicy,
+# então não consegue gerir o IAM do dataset. dataOwner SÓ aqui, não no projeto. Concedido à mão em 03/11/2026 (bq update --source,
+# entrada OWNER na ACL) e registrado aqui no mesmo bloco.
+resource "google_bigquery_dataset_iam_member" "billing_export_tf_admin_owner" {
+  project    = var.project_id
+  dataset_id = google_bigquery_dataset.billing_export.dataset_id
+  role       = "roles/bigquery.dataOwner"
+  member     = module.sa_tf_admin.member
+}
+
+import {
+  to = google_bigquery_dataset_iam_member.billing_export_tf_admin_owner
+  id = "projects/enlite-prd/datasets/billing_export roles/bigquery.dataOwner serviceAccount:tf-admin@enlite-prd.iam.gserviceaccount.com"
+}
