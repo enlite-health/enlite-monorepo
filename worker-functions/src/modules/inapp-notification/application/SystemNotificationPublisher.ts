@@ -17,6 +17,11 @@ import {
   type PtContactsPendingPayload,
   type ItineraryUncoveredShiftsPayload,
   type PedidoIaAplicarPayload,
+  type AdmissionImportBlockedPayload,
+  IMPORT_STAGES,
+  IMPORT_KINDS,
+  IMPORT_REASONS,
+  IMPORT_AUDIENCES,
 } from '../infrastructure/NotificationRepository';
 
 export const SYSTEM_NOTIFICATION_ACTOR_UID = 'system:pt-contact-reminders';
@@ -81,6 +86,32 @@ export function buildAdmissionTactiqExtensionPayload(state: string): AdmissionTa
   return { state: state as AdmissionTactiqExtensionState };
 }
 
+const inSet = (set: readonly string[], v: unknown): boolean => typeof v === 'string' && set.includes(v);
+const isIso = (v: unknown): v is string => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+
+/**
+ * Payload fechado do aviso de importação bloqueada (spec 083, D-7). Reconstrói chave a chave: qualquer chave extra (nome de paciente,
+ * código, id) NÃO entra. Lança em valor fora do contrato e em combinação inválida (`will_be_lost` só com `supervisor`; os outros só
+ * com `host`; `hostName` só na cópia do supervisor).
+ */
+export function buildAdmissionImportBlockedPayload(input: {
+  stage: string; kind: string; reason: string; audience: string; meetingAt: string; deadlineAt: string; hostName?: string | null;
+}): AdmissionImportBlockedPayload {
+  if (!inSet(IMPORT_STAGES, input.stage) || !inSet(IMPORT_KINDS, input.kind) || !inSet(IMPORT_REASONS, input.reason)
+    || !inSet(IMPORT_AUDIENCES, input.audience) || !isIso(input.meetingAt) || !isIso(input.deadlineAt)) {
+    throw new Error('admission_import_blocked_payload: valor fora do contrato');
+  }
+  if ((input.stage === 'will_be_lost') !== (input.audience === 'supervisor')) {
+    throw new Error('admission_import_blocked_payload: combinação stage/audience inválida');
+  }
+  const base = {
+    stage: input.stage, kind: input.kind, reason: input.reason, audience: input.audience, meetingAt: input.meetingAt, deadlineAt: input.deadlineAt,
+  } as AdmissionImportBlockedPayload;
+  if (input.hostName === undefined || input.hostName === null || input.hostName === '') return base;
+  if (input.audience !== 'supervisor') throw new Error('admission_import_blocked_payload: hostName só na cópia do supervisor');
+  return { ...base, hostName: String(input.hostName) };
+}
+
 /** Os campos de contato que o aviso pode listar — espelha `ContactStatusKind` sem importar do módulo `case`. */
 const PT_CONTACT_FIELDS = ['RESPONSIBLE', 'EXTERNAL', 'COVERAGE', 'CARE_TEAM'] as const;
 
@@ -136,6 +167,24 @@ export class SystemNotificationPublisher {
         messageId: null,
         payload,
       },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Spec 083: UM aviso (evento + 1 notificação) da importação bloqueada, na transação do chamador (o estado e o sino andam juntos: se
+   * o INSERT falha, a transação inteira desfaz). `patientId` sempre `null`. Sem destinatário não grava e devolve `null`.
+   */
+  async publishAdmissionImportBlocked(
+    client: PoolClient,
+    input: { recipientUid: string | null; payload: Parameters<typeof buildAdmissionImportBlockedPayload>[0] },
+  ): Promise<string | null> {
+    const payload = buildAdmissionImportBlockedPayload(input.payload);
+    if (!input.recipientUid) return null;
+    const eventId = await this.repository.insertEvent(
+      { typeCode: 'ADMISSION_IMPORT_BLOCKED', actorUid: SYSTEM_ADMISSION_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload },
       client,
     );
     await this.repository.insertNotifications(eventId, [input.recipientUid], client);

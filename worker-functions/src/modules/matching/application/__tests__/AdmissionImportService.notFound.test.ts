@@ -30,10 +30,12 @@ function build(hasImported: boolean) {
     listDueIds: jest.fn(), find: jest.fn().mockResolvedValue(subject), setState: jest.fn().mockResolvedValue(undefined),
     hasEvent: jest.fn(), hasSkippedTest: jest.fn().mockResolvedValue(false), hasBlockedReason: jest.fn(),
     countModelSummaryFailures: jest.fn().mockResolvedValue(0),
+    lastBlockedEvent: jest.fn().mockResolvedValue(null), countRemindersSince: jest.fn().mockResolvedValue(0),
   };
   const tokens = {
     withHostAccess: jest.fn(), markBroken: jest.fn(), markWrongAccount: jest.fn().mockResolvedValue(true),
     hasImportedSinceLinked: jest.fn().mockResolvedValue(hasImported),
+    hasLinkedSince: jest.fn().mockResolvedValue(false),
   };
   const events = { append: jest.fn().mockResolvedValue(undefined) };
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };

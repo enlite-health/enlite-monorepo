@@ -1004,10 +1004,13 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     expect(mcp.transcriptCalls).toHaveLength(0);
     expect(logLines('admission.import_blocked').filter((l) => l.appointmentId === quebrado.id && l.reason === 'no_link')).toHaveLength(1);
 
-    // a 2ª passada continua bloqueada, sem evento novo (1 evento por transição) mas com o alarme no log
+    // a 2ª passada continua bloqueada, sem evento novo e SEM log novo (spec 083: o alarme sai na transição, não a cada rodada), 0 MCP, e a fila não o relista
     expect(await service.importOne(quebrado.id, clock)).toBe('blocked');
     expect((await events(quebrado.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(1);
-    expect(logLines('admission.import_blocked').filter((l) => l.appointmentId === quebrado.id)).toHaveLength(2);
+    expect(logLines('admission.import_blocked').filter((l) => l.appointmentId === quebrado.id)).toHaveLength(1);
+    expect(mcp.searchCalls).toHaveLength(0);
+    const repo = (service as unknown as { deps: { repo: { listDueIds(now: Date): Promise<string[]> } } }).deps.repo;
+    expect(await repo.listDueIds(clock)).not.toContain(quebrado.id);
 
     const vivo = await appt();
     mcp.searchError = new TactiqUnauthorizedError();

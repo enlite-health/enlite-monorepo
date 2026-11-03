@@ -17,6 +17,7 @@ export type NotificationTypeCode =
   | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
   | 'ADMISSION_TACTIQ_LINK_REQUIRED'
   | 'ADMISSION_TACTIQ_EXTENSION_CHANGED'
+  | 'ADMISSION_IMPORT_BLOCKED'
   | 'ITINERARY_UNCOVERED_SHIFTS'
   | 'PEDIDO_IA_NOVO'
   | 'PEDIDO_IA_GRAVE'
@@ -32,6 +33,24 @@ export interface AdmissionTactiqLinkPayload {
 export type AdmissionTactiqExtensionState = 'installed' | 'missing' | 'disabled';
 export interface AdmissionTactiqExtensionPayload {
   state: AdmissionTactiqExtensionState;
+}
+
+/**
+ * spec 083: aviso de transcrição que não chegou por falta de vínculo do Tactiq. SÓ enums, 2 datas ISO e (na cópia do supervisor) o
+ * nome de FUNCIONÁRIO de quem fez a reunião — nunca paciente, código ADM nem id. O TEXTO vive no cliente (es/pt-BR).
+ */
+export type ImportBlockedStage = 'blocked' | 'reminder' | 'expired' | 'will_be_lost';
+export type ImportBlockedKind = 'admission' | 'enquadre';
+export type ImportBlockedReason = 'no_link' | 'wrong_account';
+export type ImportBlockedAudience = 'host' | 'supervisor';
+export interface ImportBlockedPayload {
+  stage: ImportBlockedStage;
+  kind: ImportBlockedKind;
+  reason: ImportBlockedReason;
+  audience: ImportBlockedAudience;
+  meetingAt: string;
+  deadlineAt: string;
+  hostName?: string;
 }
 
 /** spec 048: SÓ ids e nome de campo (nunca nome do paciente, nº de caso ou data) — o texto é montado no cliente. */
@@ -83,7 +102,7 @@ export interface AdminNotification {
    * fora da resposta HTTP autenticada (regra dura). */
   messageExcerpt: string | null;
   /** spec 048/049: o payload do tipo (`THERAPEUTIC_PROJECT_CONTACTS_PENDING` ou `ADMISSION_TACTIQ_LINK_REQUIRED`); `null` nos de conversa. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | null;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ImportBlockedPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | null;
   /** spec 048: número do Caso do paciente (o sino do PT NUNCA mostra o nome); `null` = paciente sem número. */
   patientCaseNumber?: number | null;
   createdAt: string;

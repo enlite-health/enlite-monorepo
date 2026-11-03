@@ -3,11 +3,15 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { IMPORT_MIN_DELAY_MS } from '../domain/admissionImport';
 import type { SkippedTestStage } from '../domain/admissionRealm';
 import { SUMMARY_RETRY_AUTHORIZED_EVENT, type SummaryRetryListFacts } from '../domain/admissionSummaryRetry';
+import { standingHumanBlockSql, lastBlockedEventSql, countRemindersSinceSql } from './importHumanBlockSql';
 import { lastRetryAuthorizationSql } from './admissionSummaryRetrySql';
 import { rehearsalUntilSql, standingSkippedTestSql } from './admissionRehearsalSql';
 import { MODEL_SIDE_SUMMARY_FAILURES, SUMMARY_ATTEMPTS_EXHAUSTED } from '../application/ports/AdmissionImportPorts';
+import type { LastBlockedEvent } from '../application/ports/ImportPorts';
 
 type Ex = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+
+const HUMAN_BLOCK = { alias: 'a', trail: 'admission_events', fk: 'appointment_id' } as const;
 
 export interface ImportCandidate {
   id: string;
@@ -40,6 +44,8 @@ export class AdmissionImportRepository {
    * vínculo pode ter sido refeito); o `conference_ended_at IS NOT NULL` o separa do `blocked` da F5 (escopo do Meet).
    * Reunião de paciente `is_test` com o `skipped_test` desta etapa já gravado (spec 050, R-18) sai da fila — até uma liberação
    * mais nova (ensaio pago, F3) devolvê-la; a expiração a tira de novo com outro `skipped_test`.
+   * Bloqueio que só uma pessoa resolve (`no_link`/`wrong_account`, spec 083) sai da fila até: vínculo `linked` mais novo, lembrete
+   * vencido (24 h/48 h) ou `fim + 72 h` — ver `standingHumanBlockSql`. O relógio é o `$1` (nunca `now()` do banco).
    */
   async listDueIds(now: Date, limit = 50, ex: Ex = this.db): Promise<string[]> {
     const { rows } = await ex.query<{ id: string }>(
@@ -53,6 +59,7 @@ export class AdmissionImportRepository {
                            WHERE e.appointment_id = a.id AND e.kind = 'import_blocked' AND e.reason = $4
                              AND e.at > ${lastRetryAuthorizationSql('a.id')})
           AND NOT ${standingSkippedTestSql('a', 'import')}
+          AND NOT ${standingHumanBlockSql(HUMAN_BLOCK, '$1::timestamptz')}
         ORDER BY a.conference_ended_at
         LIMIT $2`,
       [now, limit, IMPORT_MIN_DELAY_MS / 1000, SUMMARY_ATTEMPTS_EXHAUSTED],
@@ -118,6 +125,16 @@ export class AdmissionImportRepository {
           AND at > ${lastRetryAuthorizationSql('$1::uuid')}`,
       [appointmentId, MODEL_SIDE_SUMMARY_FAILURES],
     );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  async lastBlockedEvent(appointmentId: string, ex: Ex = this.db): Promise<LastBlockedEvent | null> {
+    const { rows } = await ex.query<LastBlockedEvent>(lastBlockedEventSql(HUMAN_BLOCK), [appointmentId]);
+    return rows[0] ?? null;
+  }
+
+  async countRemindersSince(appointmentId: string, since: Date, ex: Ex = this.db): Promise<number> {
+    const { rows } = await ex.query<{ n: string }>(countRemindersSinceSql(HUMAN_BLOCK), [appointmentId, since]);
     return Number(rows[0]?.n ?? 0);
   }
 

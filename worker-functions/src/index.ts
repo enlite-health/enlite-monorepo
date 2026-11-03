@@ -147,6 +147,11 @@ import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqChec
 import { AdmissionImportService } from '@modules/matching/application/AdmissionImportService';
 import { AdmissionSummaryRetryService } from '@modules/matching/application/AdmissionSummaryRetryService';
 import { AdmissionImportRepository } from '@modules/matching/infrastructure/AdmissionImportRepository';
+import { logger } from '@shared/logging';
+import { ImportNoticeRepository } from '@modules/matching/infrastructure/ImportNoticeRepository';
+import { ImportBlockNotifier } from '@modules/matching/application/ImportBlockNotifier';
+import type { AdmissionLogger } from '@modules/matching/application/AdmissionMessagingService';
+import { SystemNotificationPublisher } from '@modules/inapp-notification/application/SystemNotificationPublisher';
 import { AdmissionImportInternalController } from '@modules/matching/interfaces/controllers/AdmissionImportInternalController';
 import { createAdmissionImportInternalRoutes } from '@modules/matching/interfaces/routes/admissionImportRoutes';
 import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
@@ -632,8 +637,13 @@ app.use('/api/admin', createPatientDocumentsRoutes(authMiddleware, permissionMid
 
 // Spec 049 F6: a importação do Tactiq. Criada aqui porque o botão "Reintentar resumen" (spec 050 F11) também a chama; o job de 15 min a monta abaixo.
 const admissionImportRepository = new AdmissionImportRepository(admissionDb);
+// Spec 083: aviso no sino da importação bloqueada (host: bloqueou/lembrete/expirou; gestão: will_be_lost), um notificador por fonte.
+const importNoticeRecipients = new ImportNoticeRepository(admissionDb);
+const admissionImportNotices = new ImportBlockNotifier({ kind: 'admission', prefix: 'admission', publisher: new SystemNotificationPublisher(), recipients: importNoticeRecipients, log: logger as unknown as AdmissionLogger });
+const enquadreImportNotices = new ImportBlockNotifier({ kind: 'enquadre', prefix: 'enquadre', publisher: new SystemNotificationPublisher(), recipients: importNoticeRecipients, log: logger as unknown as AdmissionLogger });
 const admissionImportService = new AdmissionImportService({
   repo: admissionImportRepository,
+  notices: admissionImportNotices,
   events: admissionEvents,
   tokens: tactiqLinkService,
   mcp: admissionExternals.tactiq.mcp,
@@ -881,7 +891,7 @@ registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionE
 registerEnquadreInternalJobRoutes(app, {
   db: admissionDb,
   meet: admissionExternals.meet,
-  import: { tokens: tactiqLinkService, mcp: admissionExternals.tactiq.mcp, vault: admissionExternals.enquadreVault, summary: admissionExternals.enquadreSummary },
+  import: { tokens: tactiqLinkService, mcp: admissionExternals.tactiq.mcp, vault: admissionExternals.enquadreVault, summary: admissionExternals.enquadreSummary, notices: enquadreImportNotices },
 });
 
 // spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava

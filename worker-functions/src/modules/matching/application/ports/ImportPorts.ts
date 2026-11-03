@@ -29,6 +29,12 @@ export interface ImportSubject {
 
 export type ImportState = 'waiting' | 'done' | 'rejected' | 'ambiguous' | 'expired' | 'blocked';
 
+/** O último `import_blocked` do sujeito: o motivo e o instante (o lembrete e a reabertura contam a partir dele, spec 083). */
+export interface LastBlockedEvent {
+  reason: string | null;
+  at: Date;
+}
+
 export interface ImportSource<S extends ImportSubject = ImportSubject> {
   listDueIds(now: Date, limit?: number, ex?: Ex): Promise<string[]>;
   find(id: string, ex?: Ex): Promise<S | null>;
@@ -41,6 +47,10 @@ export interface ImportSource<S extends ImportSubject = ImportSubject> {
   hasSkippedTest(subjectId: string, stage: SkippedTestStage, ex?: Ex): Promise<boolean>;
   hasBlockedReason(subjectId: string, reason: string, ex?: Ex): Promise<boolean>;
   countModelSummaryFailures(subjectId: string, ex?: Ex): Promise<number>;
+  /** O `import_blocked` mais recente (`null` = nunca bloqueou). */
+  lastBlockedEvent(subjectId: string, ex?: Ex): Promise<LastBlockedEvent | null>;
+  /** `import_reminder` gravados DEPOIS de `since` (o último bloqueio): zera sozinho quando há novo bloqueio. */
+  countRemindersSince(subjectId: string, since: Date, ex?: Ex): Promise<number>;
 }
 
 export type SummaryStoreResult = { outcome: 'stored'; documentId: string; sizeBytes: number; sha256: string } | { outcome: 'duplicate' };
@@ -71,4 +81,25 @@ export interface ImportDestination<S extends ImportSubject = ImportSubject> {
   prepareSummary(subject: S, pdf: Buffer, label: string, promptVersion: string): Promise<PreparedSummary>;
   /** Entrada EXTRA do resumo (o enquadre manda a lista de convocados). Ausente = nada além de transcrição, código e data. */
   summaryInput?(subject: S): Promise<Pick<AdmissionSummaryInput, 'convocados'>>;
+}
+
+/** O aviso no sino da importação que só uma pessoa resolve (spec 083, D-5). `reason` é sempre humano (`no_link`/`wrong_account`). */
+export interface ImportBlockNotice {
+  stage: 'blocked' | 'reminder' | 'expired';
+  /** Leva também a cópia `will_be_lost` à gestão (último lembrete, ou aviso inicial quando nenhum lembrete cabe). */
+  warnManagement: boolean;
+  reason: 'no_link' | 'wrong_account';
+  hostEmail: string;
+  /** Início da reunião (`slot_start`). */
+  meetingAt: Date;
+  /** Fim real da call + 72 h: até quando dá para recuperar a gravação. */
+  deadlineAt: Date;
+}
+
+/**
+ * Porto do aviso. Roda DENTRO da transação de quem muda o estado (`cli`): se o INSERT do sino falha, a mudança desfaz (CA-8). Falta de
+ * destinatário NÃO é erro (só log); falha de gravação é.
+ */
+export interface ImportBlockNoticePort {
+  notify(cli: PoolClient, notice: ImportBlockNotice): Promise<void>;
 }

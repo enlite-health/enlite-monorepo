@@ -7,7 +7,7 @@ import { StoreAdmissionSummaryDocument } from '@modules/patient-documents/applic
 import type { ImportCandidate } from '../infrastructure/AdmissionImportRepository';
 import { AdmissionImportDestination } from './AdmissionImportDestination';
 import { isoDateLabel } from './admissionDateLabels';
-import type { ImportDestination, ImportSource, ImportSubject, ImportNaming, PreparedSummary } from './ports/ImportPorts';
+import type { ImportBlockNoticePort, ImportDestination, ImportSource, ImportSubject, ImportNaming, PreparedSummary } from './ports/ImportPorts';
 import type { SubjectTrail } from './ports/PostCallPorts';
 import {
   REHEARSAL_BUCKET_MISSING,
@@ -26,6 +26,9 @@ import {
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import { assertSummaryShape } from './admissionSummaryGate';
 import { SUMMARY_KEY, emptySummary, type ImportOutcome, type ImportSummary } from './admissionImportTypes';
+import { standingHumanBlock, type StandingBlockDeps } from './importStandingBlock';
+import { isLastReminder, noReminderFits } from '../domain/importBlockPolicy';
+import { isHumanReason, noticeSubject } from './importNoticeSupport';
 import { AdmissionTranscriptReader, sha256Hex, type FastGate } from './AdmissionTranscriptReader';
 import {
   AdmissionSummaryError,
@@ -60,6 +63,8 @@ export interface AdmissionImportServiceDeps<S extends ImportSubject = ImportCand
   summary: AdmissionSummaryPort;
   /** Só do destino PADRÃO (admissão): o resumo nos documentos do paciente. Ignorado quando `destination` é passado. */
   documents?: StoreAdmissionSummaryDocument;
+  /** Aviso no sino (spec 083, Fase 3): bloqueou / lembrete / expirou ao host e `will_be_lost` à gestão. Ausente = no-op. */
+  notices?: ImportBlockNoticePort;
   db?: Pool;
   log?: AdmissionLogger;
   now?: () => Date;
@@ -131,6 +136,17 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
     return withActorContext(this.db, fn);
   }
 
+  private standingDeps(): StandingBlockDeps<S> {
+    const notices = this.deps.notices;
+    return {
+      repo: this.deps.repo, events: this.deps.events, tokens: this.deps.tokens, naming: this.naming, log: this.log, inTx: (fn) => this.inTx(fn),
+      onReminder: notices && (async (cli, i) => {
+        if (!isHumanReason(i.reason)) return;
+        await noticeSubject(notices, cli, i.subject, { stage: 'reminder', reason: i.reason, warnManagement: isLastReminder(i.n, i.blockedAt, i.endedAt) });
+      }),
+    };
+  }
+
   private async importHeld(id: string, now: Date, fast?: FastGate): Promise<ImportOutcome> {
     const a = await this.deps.repo.find(id);
     if (!a) return 'not_eligible';
@@ -154,7 +170,7 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
     // R-29, FALHA FECHADA: `ensaio` sem bucket de ensaio não chama NADA pago (token, Tactiq, cofre, Vertex) nem cai no cofre de 5
     // anos. `blocked` com o motivo na trilha (UM evento na transição); volta à fila e segue quando a env existir.
     if (transcriptDestination(realm) === 'rehearsal' && !this.deps.rehearsalVault?.isConfigured()) {
-      await this.setBlocked(a, REHEARSAL_BUCKET_MISSING);
+      await this.setBlocked(a, REHEARSAL_BUCKET_MISSING, now);
       this.log.error({ [this.naming.idKey]: a.id, reason: REHEARSAL_BUCKET_MISSING, realm }, `${this.naming.prefix}.import_blocked`);
       return 'blocked';
     }
@@ -174,6 +190,9 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
     if (!fast && now.getTime() < endedAt.getTime() + IMPORT_MIN_DELAY_MS) return 'too_early'; // modo rápido (R-51): pula só a espera
     const expired = now.getTime() - endedAt.getTime() >= IMPORT_EXPIRE_AFTER_MS;
 
+    // Spec 083 (D-3): bloqueio que só uma pessoa resolve decide AQUI, antes de token/MCP/cofre/Vertex (modo rápido: vai ao leitor).
+    if (a.import_status === 'blocked' && !fast && (await standingHumanBlock(this.standingDeps(), a, now, endedAt)) === 'blocked') return 'blocked';
+
     // 1 a 4. a leitura do Tactiq (token, busca, provas, páginas, integridade), uma por vez por responsável (R-53).
     const read = await this.reader.read(a);
     if (fast?.hold(read)) return 'not_ready'; // modo rápido: ainda não está pronta — nenhuma linha de estado
@@ -182,9 +201,9 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
         return this.transient(a, 'busy'); // outra leitura do mesmo responsável: sem estado, sem tentativa, na rodada seguinte
       case 'no_access':
         if (read.reason === 'transient') return this.transient(a, 'token');
-        return expired ? this.expire(a, 'no_link') : this.block(a, 'no_link');
+        return expired ? this.expire(a, 'no_link') : this.block(a, 'no_link', now);
       case 'mcp_failed':
-        return this.mcpFailure(a, read.err, read.where);
+        return this.mcpFailure(a, read.err, read.where, now);
       case 'verdict':
         switch (read.decision.kind) {
           case 'none':
@@ -300,8 +319,9 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
       // Conta que já importou com sucesso desde o vínculo é CERTA: uma reunião não gravada (extensão off, celular) só expira — o vínculo fica.
       if (await this.deps.tokens.hasImportedSinceLinked(a.host_email)) return this.expire(a, 'not_found');
       const changed = await this.deps.tokens.markWrongAccount(a.host_email);
-      await this.setBlocked(a, 'wrong_account');
-      this.log.error({ [this.naming.idKey]: a.id, reason: 'wrong_account', linkChanged: changed }, `${this.naming.prefix}.import_blocked`);
+      if (await this.setBlocked(a, 'wrong_account', now)) {
+        this.log.error({ [this.naming.idKey]: a.id, reason: 'wrong_account', linkChanged: changed }, `${this.naming.prefix}.import_blocked`);
+      }
       return 'wrong_account';
     }
     await this.inTx(async (cli) => {
@@ -324,27 +344,35 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   }
 
   private async expire(a: S, reason: string): Promise<ImportOutcome> {
+    // Spec 083 (DF-6): só a expiração por conta NÃO conectada (`no_link`) avisa o host; `not_found`/`code_mismatch` seguem só com log.
+    // O motivo exibido é o do último bloqueio humano (`wrong_account` quando foi esse), senão `no_link`.
+    const notice = reason === 'no_link' && this.deps.notices ? (await this.deps.repo.lastBlockedEvent(a.id))?.reason : undefined;
     await this.inTx(async (cli) => {
       await this.deps.repo.setState(a.id, 'expired', cli);
       await this.deps.events.append({ appointmentId: a.id, kind: 'import_expired', outcome: 'expired', reason }, cli);
+      if (reason === 'no_link') await noticeSubject(this.deps.notices, cli, a, { stage: 'expired', reason: isHumanReason(notice) ? notice : 'no_link', warnManagement: false });
     });
     this.log.error({ [this.naming.idKey]: a.id, reason, hostEmailKnown: Boolean(a.host_email) }, `${this.naming.prefix}.import_expired`);
     return 'expired';
   }
 
-  private async block(a: S, reason: 'no_link'): Promise<ImportOutcome> {
-    await this.setBlocked(a, reason);
-    this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.import_blocked`);
+  private async block(a: S, reason: 'no_link', now: Date): Promise<ImportOutcome> {
+    if (await this.setBlocked(a, reason, now)) this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.import_blocked`);
     return 'blocked';
   }
 
-  /** `blocked` com motivo. O evento entra só na TRANSIÇÃO; o log de alarme sai a cada execução enquanto durar. */
-  private async setBlocked(a: S, reason: string): Promise<void> {
-    if (a.import_status === 'blocked') return;
+  /** `blocked` com motivo. O evento entra só na TRANSIÇÃO e devolve `true` nela: quem chama loga o alarme só quando `true` (spec 083). */
+  private async setBlocked(a: S, reason: string, now: Date): Promise<boolean> {
+    if (a.import_status === 'blocked') return false;
     await this.inTx(async (cli) => {
       await this.deps.repo.setState(a.id, 'blocked', cli, { reason });
       await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason }, cli);
+      // Spec 083 (D-4): o sino nasce na MESMA transação; se o INSERT falha, o `blocked` desfaz. Só motivo humano avisa.
+      if (isHumanReason(reason)) {
+        await noticeSubject(this.deps.notices, cli, a, { stage: 'blocked', reason, warnManagement: noReminderFits(now, a.conference_ended_at as Date) });
+      }
     });
+    return true;
   }
 
   private transient(a: S, where: string): ImportOutcome {
@@ -353,11 +381,12 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   }
 
   /** 401/403 do MCP derruba o vínculo (e bloqueia); rede/5xx só adia. Nunca o corpo nem a mensagem do erro. */
-  private async mcpFailure(a: S, err: unknown, where: string): Promise<ImportOutcome> {
+  private async mcpFailure(a: S, err: unknown, where: string, now: Date): Promise<ImportOutcome> {
     if (err instanceof TactiqUnauthorizedError) {
       await this.deps.tokens.markBroken(a.host_email);
-      await this.setBlocked(a, 'no_link');
-      this.log.error({ [this.naming.idKey]: a.id, reason: 'unauthorized', where }, `${this.naming.prefix}.import_blocked`);
+      if (await this.setBlocked(a, 'no_link', now)) {
+        this.log.error({ [this.naming.idKey]: a.id, reason: 'unauthorized', where }, `${this.naming.prefix}.import_blocked`);
+      }
       return 'blocked';
     }
     return this.transient(a, `${where}:${(err as { reason?: string })?.reason ?? 'unexpected'}`);

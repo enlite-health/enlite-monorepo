@@ -284,3 +284,68 @@ describe('PEDIDO_IA_APLICAR (spec 078, M4.4.2)', () => {
     expect(flat(esJson.admin.notifications).sort()).toEqual(flat(ptBRJson.admin.notifications).sort());
   });
 });
+
+// Spec 083 (F4): o aviso "a transcrição não chegou por falta de vínculo do Tactiq" — o servidor manda só enums + 2 datas ISO (+ nome do host na cópia do supervisor).
+describe('ADMISSION_IMPORT_BLOCKED (spec 083, F4)', () => {
+  const aviso = (payload: unknown) =>
+    notif({ typeCode: 'ADMISSION_IMPORT_BLOCKED', actorUid: 'system:admission', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  // 17:00Z = 14:00 em Buenos Aires (-03); 6/11 idem. Em UTC/Tokyo/LA o relógio local NÃO dá 14:00 — é o que a sabotagem de fuso mede.
+  const HOST = { stage: 'blocked', kind: 'admission', reason: 'no_link', audience: 'host', meetingAt: '2026-11-04T17:00:00.000Z', deadlineAt: '2026-11-06T17:00:00.000Z' };
+  const SUP = { ...HOST, stage: 'will_be_lost', audience: 'supervisor' };
+  const handler = () => getNotificationTypeHandler('ADMISSION_IMPORT_BLOCKED');
+  const realT = async (lng: 'es' | 'pt-BR') => {
+    const json = lng === 'es' ? esJson : ptBRJson;
+    const i18n = i18next.createInstance();
+    await i18n.init({
+      lng,
+      resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications, patients: { detail: { conversation: { thread: json.admin.patients.detail.conversation.thread } } } } } } },
+      interpolation: { escapeValue: false },
+    });
+    return i18n.t.bind(i18n) as never;
+  };
+
+  it('o deep link abre /admin/mi-cuenta (seção Tactiq), sem paciente e sem pedido de foco', () => {
+    expect(handler().getDeepLink(aviso(HOST))).toEqual({ path: '/admin/mi-cuenta' });
+  });
+
+  it('linhas do cartão: autor "Enlite", ação "Vincular Tactiq" (a MESMA chave dos vizinhos Tactiq) e o corpo na linha 3', () => {
+    const n = aviso(HOST);
+    expect(handler().actorLabel?.(n, t)).toBe('admin.notifications.ptContactsPendingActor:{}');
+    expect(handler().contextLine?.(n, t)).toBe('admin.notifications.tactiq.action:{}');
+    expect(handler().detailLine?.(n, t)).toContain('admin.notifications.importBlocked.blocked.body');
+  });
+
+  it.each([
+    ['pt-BR', 'Não conseguimos trazer a transcrição da sua reunião de admissão de 4 de nov. às 14:00, porque a sua conta do Tactiq não está conectada.', 'Você tem até 6 de nov. às 14:00;'],
+    ['es', 'No pudimos traer la transcripción de tu reunión de admisión del 4 de nov. a las 14:00, porque tu cuenta de Tactiq no está conectada.', 'Tenés tiempo hasta el 6 de nov. a las 14:00;'],
+  ] as const)('data da reunião e prazo no FUSO DO OPERADOR com ISO fixo (%s)', async (lng, inicio, prazo) => {
+    const body = handler().detailLine?.(aviso(HOST), await realT(lng)) ?? '';
+    expect(body.startsWith(inicio)).toBe(true);
+    expect(body).toContain(prazo);
+  });
+
+  it('enquadre usa "entrevista de enquadre"; wrong_account tem o motivo PRÓPRIO', async () => {
+    const body = handler().detailLine?.(aviso({ ...HOST, kind: 'enquadre', reason: 'wrong_account' }), await realT('pt-BR')) ?? '';
+    expect(body).toContain('sua entrevista de enquadre de 4 de nov. às 14:00, porque a conta do Tactiq conectada não é a sua.');
+  });
+
+  it.each([['pt-BR', 'a pessoa responsável'], ['es', 'la persona responsable']] as const)('supervisor: mostra o nome de quem fez a reunião; sem nome usa o fallback (%s)', async (lng, fallback) => {
+    const t2 = await realT(lng);
+    const com = handler().detailLine?.(aviso({ ...SUP, hostName: 'Marina Gómez' }), t2) ?? '';
+    const sem = handler().detailLine?.(aviso(SUP), t2) ?? '';
+    expect(com).toContain('Marina Gómez');
+    expect(com).not.toContain(fallback);
+    expect(sem).toContain(fallback);
+    expect(sem).not.toContain('Marina');
+    expect(handler().buildText(aviso({ ...SUP, hostName: 'Marina Gómez' }), t2)).toContain('Marina Gómez'); // título + corpo no aria-label
+  });
+
+  it('payload ausente/estranho: nunca crash, cai no aviso do host sem datas inventadas', async () => {
+    for (const p of [null, {}, { stage: 'x', kind: 1, meetingAt: 5 }]) {
+      expect(() => handler().buildText(aviso(p), t)).not.toThrow();
+      expect(handler().getDeepLink(aviso(p))).toEqual({ path: '/admin/mi-cuenta' });
+    }
+    const body = handler().detailLine?.(aviso(null), await realT('pt-BR')) ?? '';
+    expect(body).not.toMatch(/\d{4}-\d{2}/);
+  });
+});

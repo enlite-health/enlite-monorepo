@@ -74,6 +74,15 @@ export class TactiqLinkRepository {
     return rows[0]?.imported === true;
   }
 
+  /** `status_changed_at` só anda quando o status não era `linked` (`upsertLinked`): refazer o vínculo depois de `broken`/`wrong_account` o move. */
+  async hasLinkedSince(email: string, since: Date, ex: Db = this.db): Promise<boolean> {
+    const { rows } = await ex.query(
+      `SELECT 1 FROM tactiq_links WHERE lower(host_email) = lower($1) AND status = 'linked' AND status_changed_at > $2::timestamptz LIMIT 1`,
+      [email, since],
+    );
+    return rows.length > 0;
+  }
+
   async listActiveRoster(ex: Db = this.db): Promise<RosterHost[]> {
     const { rows } = await ex.query<RosterHost>(`SELECT id, email, country FROM interview_hosts WHERE active = true ORDER BY email`);
     return rows;
