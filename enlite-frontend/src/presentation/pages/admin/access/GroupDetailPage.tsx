@@ -113,10 +113,10 @@ function GroupDetail(): JSX.Element {
   // buscar seria uma leitura sem propósito.
   useEffect(() => {
     if (!canWrite) return;
-    AdminApiService.listAdmins(200, 0)
+    AdminApiService.listAdmins(200, 0, id)
       .then((r) => setCandidates(r.admins))
       .catch(() => setCandidates([]));
-  }, [canWrite]);
+  }, [canWrite, id]);
 
   /**
    * O universo da transferência. O membro entra pelo que a API de membros sabe
@@ -130,7 +130,7 @@ function GroupDetail(): JSX.Element {
       porUid.set(m.userId, { userId: m.userId, name: null, email: m.email ?? m.userId });
     }
     for (const u of candidates) {
-      porUid.set(u.firebaseUid, { userId: u.firebaseUid, name: u.displayName, email: u.email });
+      porUid.set(u.firebaseUid, { userId: u.firebaseUid, name: u.displayName, email: u.email, isAgent: u.accountType === 'agent' });
     }
     return [...porUid.values()];
   }, [members, candidates]);

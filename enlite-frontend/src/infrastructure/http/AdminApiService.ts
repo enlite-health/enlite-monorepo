@@ -177,9 +177,14 @@ class AdminApiServiceClass {
     return this.request<AdminUser & { resetLink?: string }>('POST', '/api/admin/users', data);
   }
 
-  async listAdmins(limit = 50, offset = 0): Promise<{ admins: AdminUser[]; total: number }> {
+  /**
+   * `forGroupId` (spec 078, M2): o grupo aberto no seletor de membro. Para grupo de classe `AGENT` o servidor devolve as contas de
+   * agente; para os demais (e sem o parâmetro) devolve o staff, como sempre. O front não decide a classe — manda o grupo.
+   */
+  async listAdmins(limit = 50, offset = 0, forGroupId?: string): Promise<{ admins: AdminUser[]; total: number }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${this.baseURL}/api/admin/users?limit=${limit}&offset=${offset}`, { headers });
+    const grupo = forGroupId ? `&forGroupId=${encodeURIComponent(forGroupId)}` : '';
+    const response = await fetch(`${this.baseURL}/api/admin/users?limit=${limit}&offset=${offset}${grupo}`, { headers });
     const json = await response.json();
     if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
     return { admins: json.data as AdminUser[], total: json.pagination?.total ?? json.data.length };

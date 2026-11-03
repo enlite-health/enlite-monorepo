@@ -105,6 +105,27 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.queryByRole('button', { name: 'admin.access.group.save' })).not.toBeInTheDocument();
   });
 
+  it('write (spec 078, M2): o seletor de membro manda o GRUPO ao diretório — quem decide a classe é o servidor', async () => {
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    await waitFor(() => expect(listAdmins).toHaveBeenCalledWith(200, 0, GRUPO.id));
+  });
+
+  it('write (spec 078, M2): conta de agente ganha a marca de agente; humano não', async () => {
+    postura('write');
+    listAdmins.mockResolvedValue({ admins: [
+      { firebaseUid: 'agent:luz', email: 'luz-sa@enlite.iam.gserviceaccount.com', displayName: 'Luz', accountType: 'agent' },
+      { firebaseUid: 'uid-joao', email: 'joao@enlite.health', displayName: 'Joao' },
+    ], total: 2 });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const marcas = await screen.findAllByTestId('person-agent-badge');
+    expect(marcas).toHaveLength(1);
+    expect(marcas[0].closest('div.flex')?.textContent).toContain('Luz');
+    expect(screen.getByText('Joao').closest('div.flex')?.querySelector('[data-testid="person-agent-badge"]')).toBeNull();
+  });
+
   it('write: salvar células manda o conjunto INTEIRO, ordenado, com o motivo', async () => {
     postura('write');
     api.setGroupPermissions.mockResolvedValue({ cells: 3 });

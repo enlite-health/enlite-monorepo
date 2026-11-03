@@ -5121,6 +5121,7 @@
           "toRest": "Tirar dos membros",
           "unsaved": "Alterações não salvas",
           "locked": "Último gestor do time: não dá para tirar.",
+          "agentBadge": "Agente",
           "allInside": "O time inteiro já é membro."
         },
         "cells": {
@@ -5179,6 +5180,8 @@
             "worker": "Prestador em operação",
             "worker_contact": "Contato: nome e telefone",
             "worker_pii": "Dossiê: DNI, nascimento, dados sensíveis",
+            "worker_application": "Candidatura do prestador a uma vaga (agente)",
+            "handover": "Repasse da conversa para a equipe humana (agente)",
             "worker_address": "Endereço do prestador: linha, coordenada, raio",
             "worker_document": "Documentos do prestador",
             "tag": "Catálogo de etiquetas",
