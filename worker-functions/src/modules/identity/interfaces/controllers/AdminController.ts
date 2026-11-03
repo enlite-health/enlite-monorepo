@@ -139,7 +139,11 @@ export class AdminController {
       const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
       const offset = parseInt(String(req.query.offset ?? '0'));
 
-      const result = await this.listAdminsUseCase.execute(limit, offset);
+      // Spec 078 (M2): `forGroupId` = grupo aberto no seletor de membro; só um UUID válido vale (o resto = sem contexto = staff, como sempre).
+      const rawGroup = typeof req.query.forGroupId === 'string' ? req.query.forGroupId : '';
+      const forGroupId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawGroup) ? rawGroup : null;
+
+      const result = await this.listAdminsUseCase.execute(limit, offset, forGroupId);
       if (result.isFailure) {
         res.status(400).json({ success: false, error: result.error });
         return;
