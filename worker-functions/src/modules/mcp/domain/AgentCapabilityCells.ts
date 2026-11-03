@@ -21,7 +21,8 @@ export const AGENT_WRITE_LIMIT_PER_MIN = 10;
 /**
  * CLASSE (a) — ação de negócio: a capability exige a célula do grupo espelho do agente e roda como ATOR `agent:luz`
  * (RLS por `iam.effective_countries`, `app.system_context` vazio). Célula = a que o código exige hoje na operação equivalente
- * (evidencias/M2-capabilities-celulas.txt + "Decisões do lote 0" item 1). Capability fora deste mapa e da classe (b) => `no_cell_declared`.
+ * (evidencias/M2-capabilities-celulas.txt + "Decisões do lote 0" item 1).
+ * `worker.account.deactivate` NÃO está aqui: decisão do Gabriel (03/11/2026), a Luz não desativa conta de prestadora — a capability segue viva só para a porta legada; para o agente cai em `no_cell_declared`. Capability fora deste mapa e da classe (b) => `no_cell_declared`.
  */
 export const AGENT_CAPABILITY_CELLS: Readonly<Record<string, string>> = {
   'worker.vacancies.list': 'vacancy:read',
@@ -36,7 +37,6 @@ export const AGENT_CAPABILITY_CELLS: Readonly<Record<string, string>> = {
   'worker.availability.get': 'worker:read',
   'worker.availability.set': 'worker:update',
   'worker.optOut.register': 'worker:update',
-  'worker.account.deactivate': 'worker:disable',
   'worker.application.register': 'worker_application:create',
   'handover.notify': 'handover:create',
   'worker.byPhone': 'worker_pii:read',
@@ -55,7 +55,6 @@ export const AGENT_CAPABILITY_NAMES: readonly string[] = [
   'worker.availability.get',
   'worker.availability.set',
   'worker.optOut.register',
-  'worker.account.deactivate',
   'worker.application.register',
   'handover.notify',
   'worker.byPhone',
