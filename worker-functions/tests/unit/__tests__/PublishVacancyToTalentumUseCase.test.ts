@@ -513,6 +513,8 @@ describe('PublishVacancyToTalentumUseCase', () => {
         (c: any[]) => typeof c[0] === 'string' && c[0].includes('SET talentum_project_id   = NULL')
       );
       expect(updateCall).toBeDefined();
+      // o id do prescreening (coluna 558) some junto: senão um webhook com o id velho resolveria para a vaga despublicada
+      expect(String(updateCall![0])).toContain('talentum_prescreening_id = NULL');
       expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
       expect(mockClientRelease).toHaveBeenCalled();
     });

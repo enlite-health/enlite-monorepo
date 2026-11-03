@@ -294,6 +294,7 @@ export class PublishVacancyToTalentumUseCase {
              talentum_whatsapp_url = NULL,
              talentum_slug         = NULL,
              talentum_published_at = NULL,
+             talentum_prescreening_id = NULL,
              is_draft              = true,
              updated_at            = NOW()
          WHERE id = $1`,

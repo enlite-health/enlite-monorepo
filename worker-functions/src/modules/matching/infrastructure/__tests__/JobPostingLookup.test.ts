@@ -6,7 +6,7 @@
  * `is_draft = false AND deleted_at IS NULL` e só com EXATAMENTE 1 candidata.
  */
 import type { Pool } from 'pg';
-import { JobPostingLookup } from '../JobPostingLookup';
+import { JobPostingLookup, titleRegex } from '../JobPostingLookup';
 
 function makeLookup(rows: Array<{ id: string; is_draft?: boolean }>) {
   const query = jest.fn().mockResolvedValue({ rows });
@@ -37,8 +37,9 @@ describe('JobPostingLookup.findByTitleILike', () => {
     const [sql, params] = query.mock.calls[0];
     expect(String(sql)).toContain('deleted_at IS NULL');
     expect(String(sql)).toMatch(/ORDER BY is_draft ASC/);
+    expect(String(sql)).toContain('title ~* $1');
     expect(String(sql)).toMatch(/LIMIT 2/);
-    expect(params).toEqual(['%CASO 616%']);
+    expect(params).toEqual(['CASO 616(?![0-9])']);
   });
 
   it('0 candidatas → null', async () => {
@@ -67,5 +68,19 @@ describe('JobPostingLookup.findByTitleILike', () => {
   it('2 rascunhos e nenhuma oficial → null (ambíguo)', async () => {
     const { lookup } = makeLookup([{ id: 'jp-a', is_draft: true }, { id: 'jp-b', is_draft: true }]);
     await expect(lookup.findByTitleILike('CASO 616')).resolves.toBeNull();
+  });
+});
+
+describe('titleRegex — delimitador do número do caso', () => {
+  it("número no fim do termo: exige que o número acabe ('CASO 816' não casa 'CASO 8160')", () => {
+    const re = new RegExp(titleRegex('CASO 816'), 'i');
+    expect(re.test('CASO 816-2, AT')).toBe(true);
+    expect(re.test('caso 816')).toBe(true);
+    expect(re.test('CASO 8160-1')).toBe(false);
+  });
+
+  it('termo que não termina em dígito: sem lookahead; metacaracteres escapados', () => {
+    expect(titleRegex('CASO EN')).toBe('CASO EN');
+    expect(titleRegex('Vaga (X)+.')).toBe('Vaga \\(X\\)\\+\\.');
   });
 });

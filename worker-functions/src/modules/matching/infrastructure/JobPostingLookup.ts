@@ -4,6 +4,15 @@ import type { IJobPostingLookup } from '../application/ProcessTalentumPrescreeni
 const TAG = '[JobPostingLookup]';
 
 /**
+ * Regex (case-insensitive, `~*`) que casa `name` como trecho do título e, quando `name` termina em dígito, exige que o
+ * número acabe ali: 'CASO 816' casa 'CASO 816-2' mas NÃO 'CASO 8160-1'. Metacaracteres de `name` são escapados.
+ */
+export function titleRegex(name: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return /[0-9]$/.test(name) ? `${escaped}(?![0-9])` : escaped;
+}
+
+/**
  * Implementação única da porta `IJobPostingLookup` (webhook Talentum PRESCREENING_RESPONSE).
  * Só enxerga vaga VIVA (`deleted_at IS NULL`); o fallback por título prefere a oficial e nunca escolhe às cegas.
  */
@@ -31,10 +40,10 @@ export class JobPostingLookup implements IJobPostingLookup {
   async findByTitleILike(name: string): Promise<{ id: string } | null> {
     const result = await this.pool.query<{ id: string; is_draft: boolean }>(
       `SELECT id, is_draft FROM job_postings
-        WHERE title ILIKE $1 AND deleted_at IS NULL
+        WHERE title ~* $1 AND deleted_at IS NULL
         ORDER BY is_draft ASC
         LIMIT 2`,
-      [`%${name}%`],
+      [titleRegex(name)],
     );
     const [first, second] = result.rows;
     // 2 candidatas: só desempata quando a 1ª é oficial e a 2ª é rascunho (ORDER BY is_draft ASC põe oficial antes).
