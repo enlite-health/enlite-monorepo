@@ -13,7 +13,7 @@ import type { LinkExistingVacancyRepository, VacancyForLinkRow } from "../infras
 import type { JobPostingAuditRepository, FieldChange } from "../../matching/infrastructure/JobPostingAuditRepository";
 import type { HumanActor } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
 import { computeRecruitmentReadiness } from "../domain/PatientCompleteness";
-import { vacancyLinkEligibility } from "../domain/VacancyLinkEligibility";
+import { vacancyLinkEligibility, linkableVacancies } from "../domain/VacancyLinkEligibility";
 import {
   linkExistingVacancyPlan,
   type AcceptsServiceValue,
@@ -187,14 +187,7 @@ export class LinkExistingVacancyUseCase {
   ): Promise<LinkPreviewResponse> {
     const ctx = await lockRecruitmentContext(client, patientId, serviceId, { forUpdate: false });
     const all = await this.repo.listPatientVacanciesForLink(client, patientId);
-    const candidates = all
-      .filter(
-        (v) =>
-          vacancyLinkEligibility(
-            { patientId, contractedServiceId: v.contractedServiceId, deletedAt: null, status: v.status },
-            { patientId },
-          ).eligible,
-      )
+    const candidates = linkableVacancies(all, patientId)
       .map((v) => ({
         id: v.id,
         caseNumber: v.caseNumber,
