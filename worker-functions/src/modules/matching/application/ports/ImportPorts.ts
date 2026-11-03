@@ -29,6 +29,12 @@ export interface ImportSubject {
 
 export type ImportState = 'waiting' | 'done' | 'rejected' | 'ambiguous' | 'expired' | 'blocked';
 
+/** O último `import_blocked` do sujeito: o motivo e o instante (o lembrete e a reabertura contam a partir dele, spec 083). */
+export interface LastBlockedEvent {
+  reason: string | null;
+  at: Date;
+}
+
 export interface ImportSource<S extends ImportSubject = ImportSubject> {
   listDueIds(now: Date, limit?: number, ex?: Ex): Promise<string[]>;
   find(id: string, ex?: Ex): Promise<S | null>;
@@ -41,6 +47,10 @@ export interface ImportSource<S extends ImportSubject = ImportSubject> {
   hasSkippedTest(subjectId: string, stage: SkippedTestStage, ex?: Ex): Promise<boolean>;
   hasBlockedReason(subjectId: string, reason: string, ex?: Ex): Promise<boolean>;
   countModelSummaryFailures(subjectId: string, ex?: Ex): Promise<number>;
+  /** O `import_blocked` mais recente (`null` = nunca bloqueou). */
+  lastBlockedEvent(subjectId: string, ex?: Ex): Promise<LastBlockedEvent | null>;
+  /** `import_reminder` gravados DEPOIS de `since` (o último bloqueio): zera sozinho quando há novo bloqueio. */
+  countRemindersSince(subjectId: string, since: Date, ex?: Ex): Promise<number>;
 }
 
 export type SummaryStoreResult = { outcome: 'stored'; documentId: string; sizeBytes: number; sha256: string } | { outcome: 'duplicate' };

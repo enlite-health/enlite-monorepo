@@ -124,4 +124,6 @@ export interface TactiqTokenProvider {
   markWrongAccount(email: string): Promise<boolean>;
   /** O responsável tem ao menos uma reunião importada com sucesso (`done`), de QUALQUER fonte (admissão ou enquadre), desde que o vínculo foi criado? */
   hasImportedSinceLinked(email: string): Promise<boolean>;
+  /** O responsável tem vínculo `linked` cuja última mudança de estado é MAIS NOVA que `since` (o bloqueio)? É a "causa mudou" da spec 083 (DF-1). */
+  hasLinkedSince(email: string, since: Date): Promise<boolean>;
 }
