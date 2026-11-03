@@ -35,16 +35,24 @@ export function daysInMonth(month: MonthKey): number {
 }
 
 export const ANOMALY_SERIES_DAYS = 15;
+/** DF-20: o seletor de mês lista até 13 meses (o de hoje + 12 anteriores). */
+export const AVAILABLE_MONTHS_MAX = 13;
 
 /** Janelas de partição de uma consulta (spec §9.3). `today` = dia UTC de hoje. */
 export function buildWindow(month: MonthKey, today: DayKey): BillingWindow {
+  const monthEndExclusive = monthStartOf(addMonths(month, 1));
+  // Janela diária relativa ao mês pedido: no mês corrente termina hoje; num mês fechado, no último dia dele (nunca conta a partir de hoje).
+  const todayExclusive = addDays(today, 1);
+  const dailyToExclusive = todayExclusive < monthEndExclusive ? todayExclusive : monthEndExclusive;
   return {
     month,
     monthStart: monthStartOf(month),
-    monthEndExclusive: monthStartOf(addMonths(month, 1)),
+    monthEndExclusive,
     prevMonthStart: monthStartOf(addMonths(month, -1)),
     sixMonthsStart: monthStartOf(addMonths(month, -5)),
-    dailyFrom: addDays(today, -(ANOMALY_SERIES_DAYS - 1)),
-    dailyToExclusive: addDays(today, 1),
+    dailyFrom: addDays(dailyToExclusive, -ANOMALY_SERIES_DAYS),
+    dailyToExclusive,
+    availableFrom: monthStartOf(addMonths(today.slice(0, 7), -(AVAILABLE_MONTHS_MAX - 1))),
+    availableToExclusive: addDays(today, 1),
   };
 }

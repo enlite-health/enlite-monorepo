@@ -21,7 +21,8 @@ const OVERVIEW: CostOverview = {
   month: '2026-10', currency: 'BRL', dataUntil: '2026-10-11T06:00:00.000Z', monthTotal: 110, prevMonthToDate: 33, prevMonthTotal: 90,
   forecast: { value: 310, basis: 'linear', daysCounted: 10 }, months: [{ month: '2026-10', total: 110 }],
   byService: [{ service: 'Cloud Run', total: 12 }], byResource: [], bySector: [{ sector: '__none__', total: 12 }], byAiCaller: [],
-  anomalies: { status: 'insufficient_history', items: [] },
+  byProject: [{ project: 'enlite-prd', total: 12 }], availableMonths: ['2026-10'],
+  anomalies: { status: 'insufficient_history', day: null, rule: { factor: 2, minDelta: 5, windowDays: 7 }, items: [] },
 };
 
 let cells: string[];

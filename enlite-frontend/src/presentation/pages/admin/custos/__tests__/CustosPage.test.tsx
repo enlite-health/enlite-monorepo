@@ -8,10 +8,9 @@ import { formatVariation, isExportStale } from '../custosFormat';
 import { CostsApiError, type CostOverview } from '@infrastructure/http/AdminCostsApiService';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
+import { chooseCombo, comboLabels, selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
+import { overview, usarIdioma } from './custosTestUtils';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o?.seconds !== undefined ? `${k}:${o.seconds}` : o?.pct !== undefined ? `${k}:${o.pct}` : k), i18n: { language: 'es' } }),
-}));
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken: vi.fn().mockResolvedValue('t') })),
 }));
@@ -21,25 +20,7 @@ vi.mock('@infrastructure/http/AdminCostsApiService', async (orig) => ({
   AdminCostsApiService: { getOverview: (...a: unknown[]) => getOverview(...a) },
 }));
 
-const AGORA = new Date('2026-11-02T12:00:00Z');
-const overview = (over: Partial<CostOverview> = {}): CostOverview => ({
-  month: '2026-11', currency: 'USD', dataUntil: '2026-11-02T10:00:00Z', monthTotal: 120, prevMonthToDate: 100, prevMonthTotal: 900,
-  forecast: { value: 1800, basis: 'linear', daysCounted: 2 },
-  months: [{ month: '2026-10', total: 900 }, { month: '2026-11', total: 120 }],
-  byService: [{ service: 'Cloud Run', total: 70 }],
-  byResource: [{ service: 'Cloud Run', resource: 'svc-a', total: 70 }],
-  bySector: [{ sector: 'recrutamento', total: 50 }, { sector: '__none__', total: 20 }],
-  byAiCaller: [
-    { caller: 'triage', funcao: 'f1', total: 10, currency: 'USD', source: 'billing' },
-    { caller: 'maria', funcao: 'f2', total: 5, currency: 'USD', source: 'estimated' },
-    { caller: '__none__', funcao: '__none__', total: 1, currency: 'USD', source: 'unattributed' },
-  ],
-  anomalies: { status: 'ok', items: [
-    { kind: 'service', name: 'Cloud Run', dayValue: 40, median7: 10, factor: 4, isNew: false },
-    { kind: 'resource', name: 'svc-novo', dayValue: 5, median7: 0, factor: null, isNew: true },
-  ] },
-  ...over,
-});
+const AGORA = new Date('2026-10-18T12:00:00Z');
 
 function postura(cells: string[] | 'loading' | 'error', enforcement: 'on' | 'off' = 'on'): void {
   if (cells === 'loading') { useAdminAuthStore.setState({ authz: null, authzStatus: 'loading' }); return; }
@@ -58,12 +39,20 @@ const render_ = () => render(
   </MemoryRouter>,
 );
 const clicar = () => userEvent.click(screen.getByTestId('custos-sincronizar'));
+const sincronizado = async (ov: CostOverview = overview(), espera = 'custos-resultado') => {
+  getOverview.mockResolvedValue(ov);
+  render_();
+  await clicar();
+  await screen.findByTestId(espera);
+};
+const seletor = () => within(screen.getByTestId('custos-mes-select')).getByRole('combobox');
 
 describe('CustosPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     getOverview.mockReset();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(AGORA);
+    await usarIdioma('pt-BR');
     postura(['platform_costs:read']);
   });
   afterEach(() => { vi.useRealTimers(); localStorage.clear(); });
@@ -78,31 +67,33 @@ describe('CustosPage', () => {
   it('contrato carregando / em erro: avisa e não chama a API', () => {
     postura('loading');
     const { unmount } = render_();
-    expect(screen.getByText('admin.custos.authzLoading')).toBeInTheDocument();
+    expect(screen.getByText('Carregando permissões…')).toBeInTheDocument();
     unmount();
     postura('error');
     render_();
-    expect(screen.getByRole('alert')).toHaveTextContent('admin.custos.authzError');
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar suas permissões');
     expect(getOverview).not.toHaveBeenCalled();
   });
 
-  it('ao abrir NÃO consulta (RF-2): mostra "sem dados" e o botão Sincronizar', () => {
+  it('ao abrir NÃO consulta (RF-2): estado "antes de sincronizar" e o botão Sincronizar', () => {
     render_();
-    expect(screen.getByTestId('custos-idle')).toBeInTheDocument();
+    expect(screen.getByTestId('custos-idle')).toHaveTextContent('Ainda não há dados nesta tela');
     expect(screen.getByTestId('custos-sincronizar')).toBeEnabled();
     expect(getOverview).not.toHaveBeenCalled();
   });
 
-  it('sincronizando: UMA chamada, botão desabilitado + indicador; depois mostra o resultado e não grava em localStorage', async () => {
+  it('sincronizando: UMA chamada, botão desabilitado + "Sincronizando…"; depois mostra o resultado e não grava em localStorage', async () => {
     let resolver!: (v: CostOverview) => void;
     getOverview.mockReturnValue(new Promise<CostOverview>((r) => { resolver = r; }));
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
     render_();
     await clicar();
     expect(screen.getByTestId('custos-sincronizar')).toBeDisabled();
-    expect(screen.getByTestId('custos-sincronizando')).toBeInTheDocument();
+    expect(screen.getByTestId('custos-sincronizar')).toHaveTextContent('Sincronizando…');
+    expect(screen.getByTestId('custos-sincronizando')).toHaveTextContent('Buscando os dados');
     await clicar(); // duplo clique não dispara 2ª chamada
     expect(getOverview).toHaveBeenCalledTimes(1);
+    expect(getOverview).toHaveBeenCalledWith(undefined);
     resolver(overview());
     expect(await screen.findByTestId('custos-resultado')).toBeInTheDocument();
     expect(screen.getByTestId('custos-sincronizar')).toBeEnabled();
@@ -110,98 +101,111 @@ describe('CustosPage', () => {
     setItem.mockRestore();
   });
 
-  it('cabeçalho "dados até" e SEM aviso quando o export tem menos de 36 h; COM aviso acima disso', async () => {
-    getOverview.mockResolvedValue(overview());
-    const { unmount } = render_();
-    await clicar();
-    expect(await screen.findByTestId('custos-dados-ate')).toHaveTextContent('admin.custos.dataUntil');
+  it('ordem dos blocos (RF-A1): veredito → 3 números → Quem gasta → 6 meses', async () => {
+    await sincronizado();
+    const ordem = ['custos-anomalias', 'custos-kpis', 'custos-quem-gasta', 'custos-meses'].map((id) => screen.getByTestId(id));
+    ordem.slice(1).forEach((el, i) => {
+      expect(ordem[i].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
+
+  it('cabeçalho "dados até" e SEM aviso com o export recente; COM aviso quando passa de 36 h', async () => {
+    await sincronizado();
+    expect(screen.getByTestId('custos-dados-ate')).toHaveTextContent('Dados do faturamento até');
     expect(screen.queryByTestId('custos-atrasado')).toBeNull();
-    unmount();
-    getOverview.mockResolvedValue(overview({ dataUntil: '2026-10-30T10:00:00Z' }));
-    render_();
-    await clicar();
-    expect(await screen.findByTestId('custos-atrasado')).toBeInTheDocument();
   });
 
-  it('cartões: valor do mês e da previsão, com mês anterior (até o dia e fechado) e variação %', async () => {
+  it('export atrasado (> 36 h): aviso com texto próprio', async () => {
+    await sincronizado(overview({ dataUntil: '2026-10-15T10:00:00Z' }));
+    expect(screen.getByTestId('custos-atrasado')).toHaveTextContent('O export está atrasado');
+  });
+
+  it('"Ver detalhe" abre o A2 com ZERO chamadas novas; "Voltar ao painel" volta ao A1 e devolve o foco ao botão de origem', async () => {
+    await sincronizado();
+    expect(getOverview).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByTestId('custos-ver-detalhe'));
+    expect(screen.getByTestId('custos-detalhe')).toBeInTheDocument();
+    expect(screen.queryByTestId('custos-kpis')).toBeNull();
+    expect(getOverview).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('custos-sincronizar')).toBeInTheDocument(); // cabeçalho permanece nos dois
+    await userEvent.click(screen.getByTestId('custos-voltar'));
+    expect(screen.getByTestId('custos-kpis')).toBeInTheDocument();
+    expect(screen.getByTestId('custos-ver-detalhe')).toHaveFocus();
+    expect(getOverview).toHaveBeenCalledTimes(1);
+  });
+
+  it('nova sincronização que não traz mais o item: A2 volta ao A1', async () => {
+    await sincronizado();
+    await userEvent.click(screen.getByTestId('custos-ver-detalhe'));
+    getOverview.mockResolvedValue(overview({ anomalies: { ...overview().anomalies, items: [] } }));
+    await clicar();
+    expect(await screen.findByTestId('custos-anomalias-vazio')).toBeInTheDocument();
+    expect(screen.queryByTestId('custos-detalhe')).toBeNull();
+  });
+
+  it('seletor de mês: abre no mês corrente; opções = availableMonths + corrente; trocar = EXATAMENTE 1 chamada com `month`', async () => {
+    await sincronizado();
+    expect(seletor()).toHaveTextContent('outubro de 2026');
+    expect(comboLabels(seletor())).toEqual(['outubro de 2026', 'setembro de 2026', 'agosto de 2026']);
+    getOverview.mockClear();
+    getOverview.mockResolvedValue(overview({ month: '2026-09' }));
+    chooseCombo(seletor(), 'setembro de 2026'); // o gatilho já está aberto pelo comboLabels
+    await waitFor(() => expect(getOverview).toHaveBeenCalledTimes(1));
+    expect(getOverview).toHaveBeenCalledWith('2026-09');
+    expect(seletor()).toHaveTextContent('setembro de 2026');
+  });
+
+  it('antes de sincronizar o seletor só tem o mês corrente (availableMonths ainda não veio)', async () => {
+    render_();
+    expect(comboLabels(seletor())).toEqual(['outubro de 2026']);
+  });
+
+  it('mês sem linhas: "<Mês> ainda não tem dados no faturamento" + atalho "Ver <último mês com dados>" (1 chamada com availableMonths[0])', async () => {
+    vi.setSystemTime(new Date('2026-11-03T12:00:00Z'));
+    await sincronizado(overview({ month: '2026-11', dataUntil: null, currency: null, monthTotal: 0, months: [], byService: [], byResource: [], bySector: [], byAiCaller: [], byProject: [], availableMonths: ['2026-10', '2026-09'] }), 'custos-vazio');
+    expect(screen.getByTestId('custos-vazio')).toHaveTextContent('Novembro de 2026 ainda não tem dados no faturamento');
+    expect(screen.queryByTestId('custos-kpis')).toBeNull();
+    const atalho = screen.getByTestId('custos-ver-ultimo');
+    expect(atalho).toHaveTextContent('Ver outubro de 2026');
+    getOverview.mockClear();
     getOverview.mockResolvedValue(overview());
-    render_();
-    await clicar();
-    const mes = await screen.findByTestId('custos-card-mes');
-    expect(within(mes).getByTestId('custos-card-mes-valor')).toHaveTextContent('120');
-    expect(within(mes).getByTestId('custos-card-mes-ref-ate-dia-variacao')).toHaveTextContent('20%');
-    expect(within(mes).getByTestId('custos-card-mes-ref-fechado-variacao')).toHaveTextContent('86,7%');
-    const prev = screen.getByTestId('custos-card-previsao');
-    expect(within(prev).getByTestId('custos-card-previsao-valor')).toHaveTextContent('1.800,00');
-    expect(within(prev).getByTestId('custos-card-previsao-ref-fechado-variacao')).toHaveTextContent('100%');
+    await userEvent.click(atalho);
+    await waitFor(() => expect(getOverview).toHaveBeenCalledTimes(1));
+    expect(getOverview).toHaveBeenCalledWith('2026-10');
+    expect(await screen.findByTestId('custos-kpis')).toBeInTheDocument();
   });
 
-  it('prevMonthToDate/previsão nulos: mostra "—" e não inventa variação', async () => {
-    getOverview.mockResolvedValue(overview({ prevMonthToDate: null, prevMonthTotal: null, forecast: { value: null, basis: 'linear', daysCounted: 0 } }));
-    render_();
-    await clicar();
-    const mes = await screen.findByTestId('custos-card-mes');
-    expect(within(mes).queryByTestId('custos-card-mes-ref-ate-dia-variacao')).toBeNull();
-    expect(within(screen.getByTestId('custos-card-previsao')).getByTestId('custos-card-previsao-valor')).toHaveTextContent('admin.custos.cards.noValue');
+  it('mês sem linhas em es: a frase também abre com o mês em maiúscula', async () => {
+    await usarIdioma('es');
+    vi.setSystemTime(new Date('2026-11-03T12:00:00Z'));
+    await sincronizado(overview({ month: '2026-11', dataUntil: null, currency: null, monthTotal: 0, months: [], byService: [], byResource: [], bySector: [], byAiCaller: [], byProject: [], availableMonths: [] }), 'custos-vazio');
+    expect(screen.getByTestId('custos-vazio')).toHaveTextContent('Noviembre de 2026 todavía no tiene datos en la facturación');
   });
 
-  it('6 meses em barras, tabelas, "sem setor" e selos estimado / não atribuído', async () => {
-    getOverview.mockResolvedValue(overview());
-    render_();
-    await clicar();
-    await screen.findByTestId('custos-resultado');
-    expect(screen.getByTestId('custos-mes-barra-2026-10')).toBeInTheDocument();
-    expect(screen.getByTestId('custos-mes-barra-2026-11')).toBeInTheDocument();
-    expect(within(screen.getByTestId('custos-por-servico')).getByText('Cloud Run')).toBeInTheDocument();
-    expect(within(screen.getByTestId('custos-por-recurso')).getByText('svc-a')).toBeInTheDocument();
-    const setor = screen.getByTestId('custos-por-setor');
-    expect(within(setor).getByText('recrutamento')).toBeInTheDocument();
-    expect(within(setor).getByText('admin.custos.tables.noSector')).toBeInTheDocument();
-    expect(within(setor).queryByText('__none__')).toBeNull();
-    expect(screen.getAllByTestId('custos-selo-estimado')).toHaveLength(1);
-    expect(screen.getAllByTestId('custos-selo-nao-atribuido')).toHaveLength(1);
+  it('mês sem linhas e availableMonths vazio: só o texto, SEM atalho', async () => {
+    await sincronizado(overview({ dataUntil: null, currency: null, monthTotal: 0, months: [], byService: [], byProject: [], availableMonths: [] }), 'custos-vazio');
+    expect(screen.getByTestId('custos-vazio')).toBeInTheDocument();
+    expect(screen.queryByTestId('custos-ver-ultimo')).toBeNull();
   });
 
-  it('chamador de IA: linha estimada usa a moeda da linha (USD) mesmo com o mês em BRL; total nulo mostra "—"', async () => {
-    getOverview.mockResolvedValue(overview({
-      currency: 'BRL',
-      byAiCaller: [
-        { caller: 'maria', funcao: 'f2', total: 5, currency: 'USD', source: 'estimated' },
-        { caller: 'sol', funcao: 'prop', total: null, currency: 'USD', source: 'estimated' },
-        { caller: 'triage', funcao: 'f1', total: 10, currency: 'BRL', source: 'billing' },
-      ],
-    }));
-    render_();
-    await clicar();
-    const tabela = await screen.findByTestId('custos-por-chamador');
-    const linha = (nome: string) => within(tabela).getByText(nome).closest('tr') as HTMLElement;
-    expect(linha('maria').textContent).toMatch(/USD|US\$/);
-    expect(linha('maria').textContent).not.toMatch(/BRL|R\$/);
-    expect(linha('triage').textContent).toMatch(/BRL|R\$/);
-    expect(linha('sol').textContent).toContain('—');
-    expect(linha('sol').textContent).not.toMatch(/USD|BRL|\$/);
+  it('UI-7: nenhum glifo de seta, símbolo, dingbat ou emoji no texto da página (ícones são lucide)', async () => {
+    await sincronizado();
+    await userEvent.click(screen.getByTestId('custos-aba-ai'));
+    const proibido = /[←-⇿⌀-⏿■-◿☀-➿⬀-⯿\u{1F000}-\u{1FAFF}]/u;
+    expect(screen.getByTestId('custos-page').textContent).not.toMatch(proibido);
+    await userEvent.click(screen.getByTestId('custos-ver-detalhe'));
+    expect(screen.getByTestId('custos-page').textContent).not.toMatch(proibido);
+    // controle positivo: a regex acusa um glifo de seta e um emoji
+    expect('Ver detalhe →').toMatch(proibido);
+    expect('ok ✅').toMatch(proibido);
   });
 
-  it('anomalias: lista com selo "novo" e fator nulo; histórico insuficiente tem texto próprio', async () => {
-    getOverview.mockResolvedValue(overview());
-    const { unmount } = render_();
-    await clicar();
-    await screen.findByTestId('custos-anomalias');
-    expect(screen.getAllByTestId('custos-anomalia')).toHaveLength(2);
-    expect(screen.getAllByTestId('custos-selo-novo')).toHaveLength(1);
-    unmount();
-    getOverview.mockResolvedValue(overview({ anomalies: { status: 'insufficient_history', items: [] } }));
-    render_();
-    await clicar();
-    expect(await screen.findByTestId('custos-anomalias-insuficiente')).toBeInTheDocument();
-  });
-
-  it('estado vazio (export sem linhas): mensagem própria, sem cartões', async () => {
-    getOverview.mockResolvedValue(overview({ dataUntil: null, currency: null, monthTotal: 0, months: [] }));
-    render_();
-    await clicar();
-    expect(await screen.findByTestId('custos-vazio')).toBeInTheDocument();
-    expect(screen.queryByTestId('custos-resultado')).toBeNull();
+  it('i18n: a mesma tela renderiza em espanhol e em pt-BR', async () => {
+    await usarIdioma('es');
+    await sincronizado();
+    expect(screen.getByTestId('custos-veredito-titulo')).toHaveTextContent('2 cosas fuera de lo normal');
+    expect(screen.getByRole('tab', { name: 'Servicio' })).toBeInTheDocument();
+    expect(screen.getByTestId('custos-sincronizar')).toHaveTextContent('Sincronizar');
   });
 
   it('erros: bytes_limit e 429 (com segundos) têm texto próprio; o botão vira "tentar de novo"', async () => {
@@ -209,12 +213,54 @@ describe('CustosPage', () => {
     const { unmount } = render_();
     await clicar();
     expect(await screen.findByTestId('custos-erro')).toHaveAttribute('data-code', 'admin.custos.errors.bytesLimit');
-    expect(screen.getByTestId('custos-sincronizar')).toHaveTextContent('admin.custos.retry');
+    expect(screen.getByTestId('custos-sincronizar')).toHaveTextContent('Tentar novamente');
     unmount();
     getOverview.mockRejectedValueOnce(new CostsApiError('sync_rate_limited', 429, 7));
     render_();
     await clicar();
-    expect(await screen.findByTestId('custos-erro')).toHaveTextContent('admin.custos.errors.rateLimited:7');
+    expect(await screen.findByTestId('custos-erro')).toHaveTextContent('Aguarde 7 s');
+  });
+
+  it('D3: troca de mês que falha (429) mantém os dados e o seletor no mês anterior, e mostra o erro com os segundos', async () => {
+    await sincronizado();
+    getOverview.mockRejectedValueOnce(new CostsApiError('sync_rate_limited', 429, 7));
+    await selectCombo(seletor(), 'setembro de 2026');
+    expect(await screen.findByTestId('custos-erro')).toHaveTextContent('Aguarde 7 s');
+    expect(screen.getByTestId('custos-resultado')).toBeInTheDocument();
+    expect(seletor()).toHaveTextContent('outubro de 2026');
+    expect(screen.getByTestId('custos-card-mes-valor')).toHaveTextContent(/US\$\s?1\.148,40/);
+  });
+
+  it('D3: troca de mês que falha (502) também mantém dados e seletor', async () => {
+    await sincronizado();
+    getOverview.mockRejectedValueOnce(new CostsApiError('billing_query_failed', 502));
+    await selectCombo(seletor(), 'agosto de 2026');
+    expect(await screen.findByTestId('custos-erro')).toHaveAttribute('data-code', 'admin.custos.errors.generic');
+    expect(screen.getByTestId('custos-resultado')).toBeInTheDocument();
+    expect(seletor()).toHaveTextContent('outubro de 2026');
+  });
+
+  it('429 no MESMO mês: a leitura fica na tela', async () => {
+    await sincronizado();
+    getOverview.mockRejectedValueOnce(new CostsApiError('sync_rate_limited', 429, 7));
+    await clicar();
+    expect(await screen.findByTestId('custos-erro')).toBeInTheDocument();
+    expect(screen.getByTestId('custos-resultado')).toBeInTheDocument();
+  });
+
+  it('D2: mês fechado — sem aviso de export atrasado (mesmo com dataUntil velho) e com a linha "Mês fechado"', async () => {
+    await sincronizado();
+    getOverview.mockClear();
+    getOverview.mockResolvedValue(overview({
+      month: '2026-09', dataUntil: '2026-10-01T10:00:00Z', forecast: { value: null, basis: 'linear', daysCounted: 0 },
+      anomalies: { status: 'not_applicable' as const, day: null, rule: { factor: 2, minDelta: 5, windowDays: 7 }, items: [] },
+    }));
+    await selectCombo(seletor(), 'setembro de 2026');
+    await screen.findByTestId('custos-anomalias-mes-fechado');
+    expect(screen.queryByTestId('custos-atrasado')).toBeNull();
+    expect(screen.queryByTestId('custos-card-previsao')).toBeNull();
+    expect(getOverview).toHaveBeenCalledTimes(1);
+    expect(getOverview).toHaveBeenCalledWith('2026-09');
   });
 
   it('403 da API: mensagem de acesso negado e sem botão de sincronizar', async () => {

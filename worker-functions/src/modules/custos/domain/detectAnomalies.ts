@@ -1,5 +1,5 @@
 import { addDays } from './dates';
-import type { AnomalyItem, AnomalyResult, DailyCostPoint, DayKey } from './types';
+import type { AnomalyCore, DailyCostPoint, DayKey, DetectedAnomalies } from './types';
 
 /** DF-5: o dia mais recente completo precisa ser >= ANOMALY_FACTOR x a mediana dos ANOMALY_WINDOW_DAYS dias anteriores... */
 export const ANOMALY_FACTOR = 2;
@@ -7,7 +7,7 @@ export const ANOMALY_FACTOR = 2;
 export const ANOMALY_MIN_DELTA = 5;
 export const ANOMALY_WINDOW_DAYS = 7;
 
-function median(values: number[]): number {
+export function median(values: number[]): number {
   const s = [...values].sort((a, b) => a - b);
   const mid = s.length >> 1;
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
@@ -23,7 +23,7 @@ function median(values: number[]): number {
  *   chega à diferença mínima (senão seria ruído).
  * Ordenado pela diferença (dia - mediana), maior primeiro.
  */
-export function detectAnomalies(points: DailyCostPoint[], latestCompleteDay: DayKey | null): AnomalyResult {
+export function detectAnomalies(points: DailyCostPoint[], latestCompleteDay: DayKey | null): DetectedAnomalies {
   if (!latestCompleteDay) return { status: 'insufficient_history', items: [] };
 
   const windowDays: DayKey[] = [];
@@ -40,11 +40,11 @@ export function detectAnomalies(points: DailyCostPoint[], latestCompleteDay: Day
     byEntity.set(key, days);
   }
 
-  const items: AnomalyItem[] = [];
+  const items: AnomalyCore[] = [];
   for (const [key, days] of byEntity) {
     const dayValue = days.get(latestCompleteDay);
     if (dayValue === undefined) continue;
-    const [kind, name] = key.split('\u0000') as [AnomalyItem['kind'], string];
+    const [kind, name] = key.split('\u0000') as [AnomalyCore['kind'], string];
     const window = windowDays.map((d) => days.get(d) ?? 0);
     const median7 = median(window);
     const delta = dayValue - median7;

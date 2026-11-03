@@ -16,6 +16,16 @@ export interface CostResourceRow { service: string; resource: string; total: num
 export interface CostSectorRow { sector: string; total: number }
 export type CostAiCallerSource = 'billing' | 'estimated' | 'unattributed';
 export interface CostAiCallerRow { caller: string; funcao: string; total: number | null; currency: string | null; source: CostAiCallerSource }
+/** Ponto de uma série diária (dia 'YYYY-MM-DD' UTC; dia sem linha = 0). */
+export interface CostDayValue { day: string; value: number }
+/** Um recurso dentro do detalhe de um serviço anômalo; `resource === COSTS_NONE_KEY` = custo sem recurso. */
+export interface CostAnomalyResourceDetail { resource: string; dayValue: number; median7: number; monthTotal: number }
+export interface CostAnomalyDetail {
+  /** Do dia 1 do mês do dia da anomalia até ele. */
+  monthSeries: CostDayValue[];
+  /** ≤ 10, por (dayValue − median7) desc. */
+  resources: CostAnomalyResourceDetail[];
+}
 export interface CostAnomalyItem {
   kind: 'service' | 'resource';
   name: string;
@@ -24,8 +34,22 @@ export interface CostAnomalyItem {
   /** `null` quando a mediana é 0. */
   factor: number | null;
   isNew: boolean;
+  /** ≤ 14 dias terminando em `anomalies.day`; TODO item traz. */
+  series: CostDayValue[];
+  /** Só `kind='service'` e !isNew, nos 5 de maior impacto. */
+  detail?: CostAnomalyDetail;
 }
-export interface CostAnomalies { status: 'ok' | 'insufficient_history'; items: CostAnomalyItem[] }
+/** As constantes da regra (DF-5), para a tela não duplicá-las. */
+export interface CostAnomalyRule { factor: number; minDelta: number; windowDays: number }
+export interface CostAnomalies {
+  /** `not_applicable` = mês FECHADO (DF-22): a API não calcula anomalia, só olha o mês corrente. */
+  status: 'ok' | 'insufficient_history' | 'not_applicable';
+  /** Último dia completo usado; `null` fora de `ok`. */
+  day: string | null;
+  rule: CostAnomalyRule;
+  items: CostAnomalyItem[];
+}
+export interface CostProjectRow { project: string; total: number }
 export interface CostForecast { value: number | null; basis: 'linear'; daysCounted: number }
 
 export interface CostOverview {
@@ -43,6 +67,10 @@ export interface CostOverview {
   byResource: CostResourceRow[];
   bySector: CostSectorRow[];
   byAiCaller: CostAiCallerRow[];
+  /** DF-21: a conta inteira, uma linha por projeto (`COSTS_NONE_KEY` = sem projeto). */
+  byProject: CostProjectRow[];
+  /** DF-20: meses com linhas (YYYY-MM), até 13, decrescente. */
+  availableMonths: string[];
   anomalies: CostAnomalies;
 }
 

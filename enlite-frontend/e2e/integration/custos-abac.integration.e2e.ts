@@ -11,6 +11,7 @@
  * (token `custos-abac` no `--grep`). O limite de 10 s é do PROCESSO da API: o feliz é o 1º a sincronizar neste arquivo.
  */
 import { test, expect } from '@playwright/test';
+import { esperadoAnomaly, semearCenario, valor } from '../helpers/custos-painel-helper';
 import {
   ABAC_API_URL, cleanupStaffAndGroup, grantCell, loginAs, pollAuthz, safeSql, seedStaffInGroup, tokenFor, type MockUser,
 } from '../helpers/abac-stack-helper';
@@ -21,19 +22,15 @@ const COM = mk('com');
 const SEM = mk('sem');
 const grupos: Record<string, string> = {};
 
-const hoje = new Date();
-const diaDoMes = hoje.getUTCDate();
-const ontemNoMes = diaDoMes > 1;
-// Seed: 12 por dia (2+6+3+1); ontem +12. Mês corrente = dias 1..hoje; Cloud SQL = 6/dia.
-const totalMes = 12 * diaDoMes + (ontemNoMes ? 12 : 0);
-const sqlMes = 6 * diaDoMes;
-const valor = (n: number) => new RegExp(`\\b${n},00\\b`);
+// Seed `anomaly` (`worker-functions/test-fixtures/billing-export-seed.mjs`): números do mês no helper (`esperadoAnomaly`), a mesma conta da seed.
+const esp = esperadoAnomaly();
 
 test.describe('painel de custos 082 — feliz, sem célula, 429 @integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(240_000);
 
   test.beforeAll(async ({ request }) => {
+    semearCenario('anomaly'); // outro arquivo (custos-painel) troca o cenário: este exige o `anomaly`
     for (const [chave, u] of [['com', COM], ['sem', SEM]] as Array<[string, MockUser]>) {
       grupos[chave] = seedStaffInGroup({ uid: u.uid, email: u.email, groupName: `Cus082 ${chave} ${RUN}`, country: 'AR' }).groupId;
     }
@@ -64,17 +61,19 @@ test.describe('painel de custos 082 — feliz, sem célula, 429 @integration', (
     await expect(page.getByTestId('custos-resultado')).toBeVisible({ timeout: 60_000 });
     expect(chamadas).toHaveLength(1);
     await expect(page.getByTestId('custos-dados-ate')).toBeVisible();
-    await expect(page.getByTestId('custos-card-mes-valor')).toHaveText(valor(totalMes));
+    await expect(page.getByTestId('custos-card-mes-valor')).toHaveText(valor(esp.total));
     await expect(page.getByTestId('custos-card-previsao')).toBeVisible();
     await expect(page.getByTestId('custos-meses')).toBeVisible();
 
     const servico = page.getByTestId('custos-por-servico');
-    for (const s of ['Cloud Run', 'Cloud SQL', 'Vertex AI']) await expect(servico).toContainText(s);
-    await expect(servico.getByRole('row', { name: /Cloud SQL/ })).toHaveText(valor(sqlMes));
+    for (const s of ['Cloud Run', 'Cloud SQL', 'Vertex AI', 'Cloud Storage']) await expect(servico).toContainText(s);
+    await expect(servico.getByRole('row', { name: /Cloud SQL/ }).getByRole('cell').nth(1)).toHaveText(valor(esp.cloudSql));
+    await page.getByTestId('custos-aba-sector').click();
     const setor = page.getByTestId('custos-por-setor');
     await expect(setor).toContainText('plataforma');
     await expect(setor).toContainText('recrutamento');
     await expect(setor).toContainText('sin sector');
+    await page.getByTestId('custos-aba-ai').click();
     await expect(page.getByTestId('custos-por-chamador')).toContainText('parser-sintetico');
     await expect(page.getByTestId('custos-anomalias')).toBeVisible();
     await expect(page.getByTestId('custos-anomalia').first()).toContainText('Cloud Run');

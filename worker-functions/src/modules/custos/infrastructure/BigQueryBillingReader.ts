@@ -4,16 +4,21 @@ import {
   BillingReadError,
   NONE_KEY,
   type AiCallerCost,
+  type AnomalyDetailRow,
   type BillingData,
   type BillingWindow,
   type DailyCostPoint,
   type DailyTotal,
+  type DetailRange,
   type MonthTotal,
+  type ProjectCost,
   type ResourceCost,
   type SectorCost,
   type ServiceCost,
 } from '../domain/types';
 import { AI_COST_CURRENCY, estimateAiCostUsd } from '../domain/aiPrices';
+import { DETAIL_QUERY_ROW_CAP } from '../domain/buildAnomalyDetail';
+import { AVAILABLE_MONTHS_MAX } from '../domain/dates';
 
 /** Tabela Detailed do billing export (spec §9.3). Sobrescrevível por `BILLING_EXPORT_TABLE`. */
 export const DEFAULT_BILLING_TABLE = 'enlite-prd.billing_export.gcp_billing_export_resource_v1_01994D_5E747D_F222E1';
@@ -34,7 +39,7 @@ const TABLE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/;
 export interface BigQueryQueryClient {
   query(options: {
     query: string;
-    params: Record<string, string>;
+    params: Record<string, string | string[]>;
     location: string;
     maximumBytesBilled: string;
   }): Promise<[unknown[], ...unknown[]]>;
@@ -47,6 +52,8 @@ const LABEL_SERVICE = "(SELECT value FROM UNNEST(labels) WHERE key = 'service')"
 const LABEL_FUNCAO = "(SELECT value FROM UNNEST(labels) WHERE key = 'funcao')";
 /** Todo filtro de partição usa `usage_start_time` e os parâmetros nomeados @from/@to (datas UTC, fim exclusivo). */
 const PARTITION = 'usage_start_time >= TIMESTAMP(@from) AND usage_start_time < TIMESTAMP(@to)';
+/** Dia UTC da linha (mesma expressão das consultas diárias). */
+const DAY = "FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time))";
 
 type Row = Record<string, unknown>;
 
@@ -57,6 +64,15 @@ function num(v: unknown): number {
 
 function str(v: unknown, fallback: string): string {
   return typeof v === 'string' && v.length > 0 ? v : fallback;
+}
+
+/**
+ * Teto de recursos: a linha `__none__` (no máx. 1) + TOP_RESOURCES NOMEADOS. O `LIMIT TOP_RESOURCES + 1` da consulta reserva a vaga
+ * da `__none__`, mas quando ela não existe sobra uma 31ª nomeada: aqui ela é cortada.
+ */
+export function capResources(rows: ResourceCost[]): ResourceCost[] {
+  const isNone = (r: ResourceCost) => r.resource === NONE_KEY;
+  return [...rows.filter(isNone), ...rows.filter((r) => !isNone(r)).slice(0, TOP_RESOURCES)];
 }
 
 /** TIMESTAMP do BigQuery chega como `BigQueryTimestamp` ({ value }) ou string. */
@@ -112,7 +128,7 @@ export class BigQueryBillingReader implements BillingReader {
     const t = `\`${this.table}\``;
     const month = { from: w.monthStart, to: w.monthEndExclusive };
     const [billingRows, aiEstimated] = await Promise.all([this.readBillingRows(w, t, month), this.readAiEstimated(w)]);
-    const [meta, daily, months, services, resources, sectors, dailyServices, dailyResources, ai] = billingRows;
+    const [meta, daily, months, services, resources, sectors, dailyServices, dailyResources, ai, projects, availableMonths, latest] = billingRows;
 
     const sixMonths: MonthTotal[] = months
       .map((r) => ({ month: String(r.month ?? '').replace(/^(\d{4})(\d{2})$/, '$1-$2'), total: num(r.total) }))
@@ -122,23 +138,26 @@ export class BigQueryBillingReader implements BillingReader {
     const currency = meta[0]?.currency ? String(meta[0].currency) : null;
     return {
       currency,
-      dataUntil: toIso(meta[0]?.data_until),
+      // DF-22: `dataUntil` = o último dado que existe na tabela (janela de 13 meses), não o da janela do mês; janela sem linhas = vazio.
+      dataUntil: meta[0]?.data_until ? toIso(latest[0]?.data_until ?? meta[0].data_until) : null,
       dailyTotals: daily.map((r): DailyTotal => ({ day: String(r.day), value: num(r.total) })),
       months: sixMonths,
       byService: services.map((r): ServiceCost => ({ service: str(r.service, NONE_KEY), total: num(r.total) })),
-      byResource: resources.map((r): ResourceCost => ({ service: str(r.service, NONE_KEY), resource: str(r.resource, NONE_KEY), total: num(r.total) })),
+      byResource: capResources(resources.map((r): ResourceCost => ({ service: str(r.service, NONE_KEY), resource: str(r.resource, NONE_KEY), total: num(r.total) }))),
       bySector: sectors.map((r): SectorCost => ({ sector: str(r.sector, NONE_KEY), total: num(r.total) })),
       byAiCaller: [...ai.map((r): AiCallerCost => {
         const caller = typeof r.caller === 'string' && r.caller ? r.caller : null;
         return { caller: caller ?? NONE_KEY, funcao: str(r.funcao, NONE_KEY), total: num(r.total), currency, source: caller ? 'billing' : 'unattributed' };
       }), ...aiEstimated],
+      byProject: projects.map((r): ProjectCost => ({ project: str(r.project, NONE_KEY), total: num(r.total) })),
+      availableMonths: availableMonths.map((r) => String(r.month ?? '')).filter((m) => /^\d{4}-\d{2}$/.test(m)).slice(0, AVAILABLE_MONTHS_MAX),
       dailyByService: dailyServices.map((r): DailyCostPoint => ({ kind: 'service', name: str(r.name, NONE_KEY), day: String(r.day), value: num(r.total) })),
       dailyByResource: dailyResources.map((r): DailyCostPoint => ({ kind: 'resource', name: str(r.name, NONE_KEY), day: String(r.day), value: num(r.total) })),
     };
   }
 
   /**
-   * As 9 consultas do billing export. Tabela do export ainda inexistente (o Google a cria depois; RF-9) -> listas vazias,
+   * As 12 consultas do billing export. Tabela do export ainda inexistente (o Google a cria depois; RF-9) -> listas vazias,
    * o mesmo shape de "export sem linhas" (estado vazio), em vez de 502.
    */
   private async readBillingRows(w: BillingWindow, t: string, month: { from: string; to: string }): Promise<Row[][]> {
@@ -148,16 +167,44 @@ export class BigQueryBillingReader implements BillingReader {
         this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY day ORDER BY day`, { from: w.prevMonthStart, to: w.monthEndExclusive }, true),
         this.run(`SELECT invoice.month AS month, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY month ORDER BY month`, { from: w.sixMonthsStart, to: w.monthEndExclusive }, true),
         this.run(`SELECT service.description AS service, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY service ORDER BY total DESC`, month, true),
-        this.run(`SELECT service.description AS service, IFNULL(resource.name, '${NONE_KEY}') AS resource, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY service, resource ORDER BY total DESC LIMIT ${TOP_RESOURCES}`, month, true),
+        // CA-17: TODO custo sem `resource.name` vira UMA linha `__none__` (service e resource), sempre primeira e fora do corte de TOP_RESOURCES.
+        this.run(`SELECT service, resource, total FROM (SELECT IF(resource.name IS NULL, '${NONE_KEY}', service.description) AS service, IFNULL(resource.name, '${NONE_KEY}') AS resource, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY 1, 2) ORDER BY (resource = '${NONE_KEY}') DESC, total DESC LIMIT ${TOP_RESOURCES + 1}`, month, true),
         this.run(`SELECT IFNULL(${SECTOR}, '${NONE_KEY}') AS sector, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY sector ORDER BY total DESC`, month, true),
         this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, service.description AS name, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY day, name`, { from: w.dailyFrom, to: w.dailyToExclusive }, true),
         this.run(`SELECT FORMAT_DATE('%Y-%m-%d', DATE(usage_start_time)) AS day, resource.name AS name, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} AND resource.name IS NOT NULL GROUP BY day, name`, { from: w.dailyFrom, to: w.dailyToExclusive }, true),
         this.run(`SELECT ${LABEL_SERVICE} AS caller, ${LABEL_FUNCAO} AS funcao, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} AND (service.description LIKE 'Vertex AI%' OR service.description LIKE '%Gemini%') GROUP BY caller, funcao ORDER BY total DESC`, month, true),
+        // DF-21: a conta inteira por projeto (`project.id`); sem projeto = `__none__`.
+        this.run(`SELECT IFNULL(project.id, '${NONE_KEY}') AS project, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY project ORDER BY total DESC`, month, true),
+        // DF-20: meses de USO com linhas; só a coluna de partição, janela de 13 meses. Não depende das outras consultas.
+        this.run(`SELECT FORMAT_DATE('%Y-%m', DATE(usage_start_time)) AS month FROM ${t} WHERE ${PARTITION} GROUP BY month ORDER BY month DESC LIMIT ${AVAILABLE_MONTHS_MAX}`, { from: w.availableFrom, to: w.availableToExclusive }, true),
+        // DF-22: MAX(export_time) global (13 meses), para o aviso "export atrasado" não depender do mês escolhido.
+        this.run(`SELECT MAX(export_time) AS data_until FROM ${t} WHERE ${PARTITION}`, { from: w.availableFrom, to: w.availableToExclusive }, true),
       ]);
     } catch (err) {
-      if (err instanceof TableMissing) return Array.from({ length: 9 }, () => []);
+      if (err instanceof TableMissing) return Array.from({ length: 12 }, () => []);
       throw err;
     }
+  }
+
+  /**
+   * Detalhe das anomalias de serviço (spec §15): custo líquido por dia x serviço x recurso dos `services`. Parâmetros nomeados
+   * (`@services` é array), partição por `usage_start_time`, `maximumBytesBilled` = 1 GiB. Pede `DETAIL_QUERY_ROW_CAP + 1` linhas:
+   * se vier a mais, falha com `billing_query_failed` em vez de truncar em silêncio. Mediana, ranking e corte ficam no domínio.
+   */
+  async readAnomalyDetail(range: DetailRange, services: string[]): Promise<AnomalyDetailRow[]> {
+    const sql =
+      `SELECT ${DAY} AS day, service.description AS service, IFNULL(resource.name, '${NONE_KEY}') AS resource, SUM(${NET}) AS total ` +
+      `FROM \`${this.table}\` WHERE ${PARTITION} AND service.description IN UNNEST(@services) GROUP BY 1, 2, 3 LIMIT ${DETAIL_QUERY_ROW_CAP + 1}`;
+    let rows: Row[];
+    try {
+      rows = await this.run(sql, { from: range.from, to: range.toExclusive, services }, true);
+    } catch (err) {
+      // Billing sem tabela = sem detalhe (o `read()` já devolveu vazio, então não há serviço anômalo; defensivo).
+      if (err instanceof TableMissing) return [];
+      throw err;
+    }
+    if (rows.length > DETAIL_QUERY_ROW_CAP) throw new BillingReadError('billing_query_failed', 'detail_row_cap');
+    return rows.map((r): AnomalyDetailRow => ({ day: String(r.day), service: str(r.service, NONE_KEY), resource: str(r.resource, NONE_KEY), value: num(r.total) }));
   }
 
   /**
@@ -191,7 +238,7 @@ export class BigQueryBillingReader implements BillingReader {
     return [...groups.values()].sort((a, b) => (b.total ?? -1) - (a.total ?? -1));
   }
 
-  private async run(query: string, params: { from: string; to: string }, missingTableOk = false): Promise<Row[]> {
+  private async run(query: string, params: Record<string, string | string[]>, missingTableOk = false): Promise<Row[]> {
     try {
       const [rows] = await this.client.query({ query, params, location: BILLING_LOCATION, maximumBytesBilled: MAX_BYTES_BILLED });
       return rows as Row[];
