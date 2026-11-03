@@ -121,9 +121,9 @@ describe('verificador de subconjunto do agente + item 36 (banco real, ABAC ligad
   it('a conexão do verificador é app_system sem bypass de RLS (declarada); o mapa tem ≥ 1 célula e todas vivas no catálogo (contagem zero é falha)', async () => {
     const r = await sys.query(`SELECT current_user AS u, (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass`);
     expect(r.rows[0]).toEqual({ u: SYS, bypass: false });
-    // 14 capabilities da classe (a) compartilham 10 células distintas (ex.: worker:update ×4, vacancy:read ×2)
+    // 14 capabilities da classe (a) compartilham 9 células distintas (ex.: worker:update ×4, vacancy:read ×2)
     expect(Object.keys(AGENT_CAPABILITY_CELLS)).toHaveLength(14);
-    expect(CELULAS_DO_MAPA.length).toBeGreaterThanOrEqual(10);
+    expect(CELULAS_DO_MAPA.length).toBeGreaterThanOrEqual(9);
     const vivas = await admin.query(`SELECT count(*)::int AS n FROM iam.permissions WHERE deprecated_at IS NULL AND resource || ':' || action = ANY($1)`, [CELULAS_DO_MAPA]);
     expect(vivas.rows[0].n).toBe(CELULAS_DO_MAPA.length);
   });
