@@ -185,7 +185,7 @@ export async function authorizeVacancyUpdate(
     patient_id: string | null;
     contracted_service_id: string | null;
   }>(
-    'SELECT status, is_draft, patient_id, contracted_service_id FROM job_postings WHERE id = $1',
+    'SELECT status, is_draft, patient_id, contracted_service_id FROM job_postings WHERE id = $1 AND deleted_at IS NULL',
     [vacancyId],
   );
   if (currentRow.rows.length === 0) {

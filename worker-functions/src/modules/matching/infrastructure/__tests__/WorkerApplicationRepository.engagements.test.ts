@@ -111,6 +111,15 @@ describe('WorkerApplicationRepository.listEngagementsByWorker', () => {
     expect(sql).toContain('wba_dup.dismissed_at IS NULL');
   });
 
+  it('vaga apagada (soft-delete) some da aba do worker: a SQL exclui jp.deleted_at', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await new WorkerApplicationRepository().listEngagementsByWorker(WORKER_ID);
+
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toContain('jp.deleted_at IS NULL');
+  });
+
   it('a SQL enviada seleciona wja.messaged_at', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 

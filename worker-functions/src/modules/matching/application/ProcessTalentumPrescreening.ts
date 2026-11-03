@@ -36,6 +36,9 @@ export interface IWorkerLookup {
 }
 
 export interface IJobPostingLookup {
+  /** Vaga viva pelo id do projeto Talentum (`job_postings.talentum_project_id`). */
+  findByTalentumProjectId(projectId: string): Promise<{ id: string } | null>;
+  /** Fallback: só resolve com EXATAMENTE 1 candidata oficial viva (não-rascunho). */
   findByTitleILike(name: string): Promise<{ id: string } | null>;
 }
 
@@ -60,7 +63,7 @@ export class ProcessTalentumPrescreening {
     const dryRun = options?.dryRun ?? false;
 
     const workerId = await this.resolveOrCreateWorker(payload, dryRun);
-    const jobPostingId = await this.resolveJobPosting(payload.data.prescreening.name);
+    const jobPostingId = await this.resolveJobPosting(payload.data.prescreening.id, payload.data.prescreening.name);
 
     if (dryRun) {
       return this.buildResult(payload.data.prescreening.id, payload.data.prescreening.id, workerId, jobPostingId);
@@ -191,7 +194,7 @@ export class ProcessTalentumPrescreening {
 
   // ── Job posting resolution ───────────────────────────────────────
 
-  private async resolveJobPosting(caseName: string): Promise<string | null> {
+  private async resolveJobPosting(projectId: string, caseName: string): Promise<string | null> {
     // PII (achado do gate, C3 do parecer do lex, 11/09): `caseName`/`searchTerm`
     // são texto livre do título do projeto no Talentum, não um id — MEDIDO em prd
     // (7d, textPayload local, nunca colado): 400/590 nomes NÃO batem o formato
@@ -213,6 +216,13 @@ export class ProcessTalentumPrescreening {
     const caseRef = searchTerm ?? '<outro>';
     console.log(`${TAG} resolveJobPosting | caseRef=${caseRef}`);
     try {
+      // Resolução primária pelo id do projeto Talentum (payload `prescreening.id`): o título
+      // `CASO N` é do PACIENTE e também casa rascunho/outra vaga do mesmo paciente.
+      const byProject = await this.jobPostingLookup.findByTalentumProjectId(projectId);
+      if (byProject) {
+        console.log(`${TAG} resolveJobPosting → ${byProject.id} (por talentum_project_id)`);
+        return byProject.id;
+      }
       let posting = await this.jobPostingLookup.findByTitleILike(searchTerm ?? caseName);
       // Achado CI #515 (24/09/2026): o título formatado (prefixo `EN` decidido pela FAIXA
       // numérica, não pelo texto real) não bate quando o título gravado ainda não segue

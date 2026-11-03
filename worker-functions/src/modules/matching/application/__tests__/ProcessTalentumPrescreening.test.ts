@@ -97,6 +97,7 @@ describe('ProcessTalentumPrescreening', () => {
 
     // Mock job posting lookup
     mockJobPostingLookup = {
+      findByTalentumProjectId: jest.fn().mockResolvedValue(null),
       findByTitleILike: jest.fn().mockResolvedValue({ id: 'jp-1' }),
     };
 
@@ -692,6 +693,34 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockJobPostingLookup.findByTitleILike).toHaveBeenNthCalledWith(1, 'CASO EN99950');
     expect(mockJobPostingLookup.findByTitleILike).toHaveBeenNthCalledWith(2, 'CASO 99950 WFF E2E');
     expect(result.jobPostingId).toBe('jp-fallback');
+  });
+
+  // ─── 12.7. resolução pelo id do projeto Talentum (rascunho × oficial com o mesmo número de paciente) ──
+
+  it('resolve pela vaga do talentum_project_id (prescreening.id) e NÃO cai no título', async () => {
+    mockJobPostingLookup.findByTalentumProjectId.mockResolvedValue({ id: 'jp-oficial' });
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 616-1, AT, rascunho e oficial compartilham o paciente';
+
+    const result = await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTalentumProjectId).toHaveBeenCalledWith(payload.data.prescreening.id);
+    expect(mockJobPostingLookup.findByTitleILike).not.toHaveBeenCalled();
+    expect(result.jobPostingId).toBe('jp-oficial');
+  });
+
+  it('projeto sem vaga viva (null) → cai no fallback por título', async () => {
+    mockJobPostingLookup.findByTalentumProjectId.mockResolvedValue(null);
+    mockJobPostingLookup.findByTitleILike.mockResolvedValue({ id: 'jp-titulo' });
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 616-1';
+
+    const result = await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 616');
+    expect(result.jobPostingId).toBe('jp-titulo');
   });
 
   // ─── 13. upsertQuestions com responseType vazio ─────────────────────

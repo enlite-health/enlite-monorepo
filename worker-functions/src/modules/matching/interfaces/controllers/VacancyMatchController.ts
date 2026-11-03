@@ -35,7 +35,7 @@ export class VacancyMatchController {
       const excludeWithActiveCases = req.query.exclude_active === 'true';
 
       const jobRes = await this.db.query<{ id: string }>(
-        `SELECT id FROM job_postings WHERE id = $1 LIMIT 1`,
+        `SELECT id FROM job_postings WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
         [id],
       );
       if (jobRes.rows.length === 0) {

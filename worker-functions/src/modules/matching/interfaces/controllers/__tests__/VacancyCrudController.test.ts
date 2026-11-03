@@ -490,6 +490,21 @@ describe('VacancyCrudController', () => {
       expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
     });
 
+    it('vaga apagada (soft-delete): SELECT before e UPDATE carregam deleted_at IS NULL', async () => {
+      mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'SEARCHING' });
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValue({});
+
+      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE' } });
+      await controller.updateVacancy(req, makeRes());
+
+      expect(String(mockClientQuery.mock.calls[1][0])).toContain('deleted_at IS NULL');
+      expect(String(mockClientQuery.mock.calls[2][0])).toContain('deleted_at IS NULL');
+    });
+
     it('vacante não encontrada NO UPDATE (rows vazio após SELECT ok) → 404, ROLLBACK', async () => {
       mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'SEARCHING' });
       mockClientQuery
