@@ -156,8 +156,8 @@ export class ActivateRecruitmentUseCase {
     client: PoolClient,
     patientId: string,
     serviceId: string,
-    actor?: HumanActor,
-    opts: ActivateRecruitmentOptions = {},
+    actor: HumanActor | undefined,
+    opts: ActivateRecruitmentOptions, // sempre vem de `execute` (que tem o default `{}`): sem default aqui, que seria ramo morto
   ): Promise<ActivateRecruitmentResult> {
     const { patient, service } = await lockRecruitmentContext(client, patientId, serviceId);
     const { status, case_number } = patient;
