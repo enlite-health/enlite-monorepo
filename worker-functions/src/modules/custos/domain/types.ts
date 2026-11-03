@@ -15,6 +15,8 @@ export interface MonthTotal { month: MonthKey; total: number }
 export interface ServiceCost { service: string; total: number }
 export interface ResourceCost { service: string; resource: string; total: number }
 export interface SectorCost { sector: string; total: number }
+/** DF-21: `project` = `project.id` do export; `NONE_KEY` quando a linha não tem projeto. */
+export interface ProjectCost { project: string; total: number }
 
 export type AiCallerSource = 'billing' | 'estimated' | 'unattributed';
 /** `total` é `null` quando o custo é desconhecido (estimativa de modelo sem preço na tabela de `aiPrices.ts`). `currency`: moeda da LINHA (billing/unattributed = a do export; estimated = USD). */
@@ -25,7 +27,11 @@ export type AnomalyKind = 'service' | 'resource';
 export interface DailyCostPoint { kind: AnomalyKind; name: string; day: DayKey; value: number }
 export interface DailyTotal { day: DayKey; value: number }
 
-export interface AnomalyItem {
+/** Ponto de uma série diária de um item (dia sem linha = 0). */
+export interface DayValue { day: DayKey; value: number }
+
+/** O que a regra DF-5 decide sobre um serviço/recurso (sem a série e o detalhe, que o use case acrescenta). */
+export interface AnomalyCore {
   kind: AnomalyKind;
   name: string;
   dayValue: number;
@@ -36,7 +42,36 @@ export interface AnomalyItem {
   isNew: boolean;
 }
 export type AnomalyStatus = 'ok' | 'insufficient_history';
-export interface AnomalyResult { status: AnomalyStatus; items: AnomalyItem[] }
+/** Saída da regra pura `detectAnomalies`. */
+export interface DetectedAnomalies { status: AnomalyStatus; items: AnomalyCore[] }
+
+/** Um recurso dentro do detalhe de um serviço anômalo (spec §15). `resource === NONE_KEY` = custo sem `resource.name`. */
+export interface AnomalyResourceDetail { resource: string; dayValue: number; median7: number; monthTotal: number }
+export interface AnomalyDetail {
+  /** Do dia 1 do mês do dia da anomalia até ele; dia sem linha = 0. */
+  monthSeries: DayValue[];
+  /** No máx. DETAIL_RESOURCES_MAX, por (dayValue − median7) desc. */
+  resources: AnomalyResourceDetail[];
+}
+export interface AnomalyItem extends AnomalyCore {
+  /** ≤ ANOMALY_SERIES_OUT_DAYS dias terminando em `anomalies.day`; dia sem linha = 0. */
+  series: DayValue[];
+  /** Só `kind='service'`, `!isNew`, nos ANOMALY_DETAIL_MAX de maior impacto. */
+  detail?: AnomalyDetail;
+}
+export interface AnomalyRule { factor: number; minDelta: number; windowDays: number }
+export interface AnomalyResult {
+  status: AnomalyStatus;
+  /** Último dia completo usado no cálculo; `null` quando `status='insufficient_history'` (nada foi calculado). */
+  day: DayKey | null;
+  rule: AnomalyRule;
+  items: AnomalyItem[];
+}
+
+/** Linha bruta da consulta de detalhe: custo líquido de um recurso de um serviço num dia. */
+export interface AnomalyDetailRow { day: DayKey; service: string; resource: string; value: number }
+/** Janela da consulta de detalhe (datas UTC, fim exclusivo). */
+export interface DetailRange { from: DayKey; toExclusive: DayKey }
 
 export interface Forecast { value: number | null; basis: 'linear'; daysCounted: number }
 
@@ -55,6 +90,10 @@ export interface CostOverview {
   byResource: ResourceCost[];
   bySector: SectorCost[];
   byAiCaller: AiCallerCost[];
+  /** DF-21: a conta inteira, uma linha por `project.id`. */
+  byProject: ProjectCost[];
+  /** DF-20: meses com linhas (YYYY-MM), até 13, decrescente. */
+  availableMonths: MonthKey[];
   anomalies: AnomalyResult;
 }
 
@@ -69,6 +108,9 @@ export interface BillingWindow {
   /** Janela da série diária de anomalias (últimos 15 dias, até hoje inclusive). */
   dailyFrom: DayKey;
   dailyToExclusive: DayKey;
+  /** Janela de `availableMonths` (DF-20): do 1º dia de (mês de hoje − 12) até hoje inclusive. */
+  availableFrom: DayKey;
+  availableToExclusive: DayKey;
 }
 
 /** Dados brutos do faturamento para uma janela. O leitor não calcula previsão nem anomalia. */
@@ -82,6 +124,8 @@ export interface BillingData {
   byResource: ResourceCost[];
   bySector: SectorCost[];
   byAiCaller: AiCallerCost[];
+  byProject: ProjectCost[];
+  availableMonths: MonthKey[];
   dailyByService: DailyCostPoint[];
   dailyByResource: DailyCostPoint[];
 }

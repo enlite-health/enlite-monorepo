@@ -1,8 +1,9 @@
 import { utcCivilDayOf } from '../../../shared/locale/civilClock';
+import { ANOMALY_DETAIL_MAX, buildAnomalyDetail, buildSeries } from '../domain/buildAnomalyDetail';
 import { addDays, addMonths, buildWindow, daysInMonth, isMonthKey, monthStartOf } from '../domain/dates';
-import { detectAnomalies } from '../domain/detectAnomalies';
+import { ANOMALY_FACTOR, ANOMALY_MIN_DELTA, ANOMALY_WINDOW_DAYS, detectAnomalies } from '../domain/detectAnomalies';
 import { forecastMonth } from '../domain/forecastMonth';
-import { SyncRateLimitedError, type CostOverview, type DayKey, type MonthKey } from '../domain/types';
+import { SyncRateLimitedError, type AiCallerCost, type AnomalyItem, type AnomalyResult, type BillingData, type CostOverview, type DayKey, type MonthKey } from '../domain/types';
 import type { BillingReader } from './ports';
 
 /** DF-8: no máximo 1 sincronização a cada 10 s, no servidor. */
@@ -16,6 +17,12 @@ export class InvalidMonthError extends Error {
 }
 
 const sum = (xs: number[]): number => xs.reduce((s, x) => s + x, 0);
+
+/** DF-15: linha `estimated` só para chamador SEM linha `billing` (hoje só `sol`/Gemini API); `unattributed` fica intacta. */
+function withoutEstimatedWhenBilled(rows: AiCallerCost[]): AiCallerCost[] {
+  const billed = new Set(rows.filter((r) => r.source === 'billing').map((r) => r.caller));
+  return rows.filter((r) => r.source !== 'estimated' || !billed.has(r.caller));
+}
 
 /**
  * Orquestra a porta `BillingReader` (spec 082, RF-3): consulta uma vez, calcula previsão (DF-6), anomalias (DF-5) e o
@@ -42,7 +49,8 @@ export class GetCostOverviewUseCase {
     }
     this.lastStartedAt = nowMs;
 
-    const data = await this.reader.read(buildWindow(target, today));
+    const window = buildWindow(target, today);
+    const data = await this.reader.read(window);
 
     const monthStart = monthStartOf(target);
     const monthEnd = addDays(monthStartOf(addMonths(target, 1)), -1);
@@ -60,7 +68,7 @@ export class GetCostOverviewUseCase {
       prevMonthToDate = sum(prevDays.filter((d) => Number(d.day.slice(8, 10)) <= cutoff).map((d) => d.value));
     }
 
-    const anomalies = detectAnomalies([...data.dailyByService, ...data.dailyByResource], lastCompleteDay);
+    const anomalies = await this.buildAnomalies(data, lastCompleteDay, window.dailyToExclusive);
 
     return {
       month: target,
@@ -74,8 +82,34 @@ export class GetCostOverviewUseCase {
       byService: data.byService,
       byResource: data.byResource,
       bySector: data.bySector,
-      byAiCaller: data.byAiCaller,
+      byAiCaller: withoutEstimatedWhenBilled(data.byAiCaller),
+      byProject: data.byProject,
+      availableMonths: data.availableMonths,
       anomalies,
     };
+  }
+
+  /**
+   * Anomalias com série e detalhe (spec §15). O detalhe (`readAnomalyDetail`) roda DEPOIS do `read()` e só se houver >= 1
+   * serviço anômalo (não-novo): em dia calmo não há consulta extra. Falha da consulta de detalhe propaga (502), sem "detalhe indisponível".
+   */
+  private async buildAnomalies(data: BillingData, lastCompleteDay: DayKey | null, toExclusive: DayKey): Promise<AnomalyResult> {
+    const points = [...data.dailyByService, ...data.dailyByResource];
+    const detected = detectAnomalies(points, lastCompleteDay);
+    const rule = { factor: ANOMALY_FACTOR, minDelta: ANOMALY_MIN_DELTA, windowDays: ANOMALY_WINDOW_DAYS };
+    if (detected.status !== 'ok' || !lastCompleteDay) return { status: detected.status, day: null, rule, items: [] };
+
+    const day = lastCompleteDay;
+    const items: AnomalyItem[] = detected.items.map((i) => ({ ...i, series: buildSeries(points, i.kind, i.name, day) }));
+    // `detected.items` já vem por impacto desc: os primeiros ANOMALY_DETAIL_MAX serviços não-novos recebem detalhe.
+    const detailed = items.filter((i) => i.kind === 'service' && !i.isNew).slice(0, ANOMALY_DETAIL_MAX);
+    if (detailed.length > 0) {
+      const names = detailed.map((i) => i.name);
+      const from = [monthStartOf(day.slice(0, 7)), addDays(day, -ANOMALY_WINDOW_DAYS)].sort()[0];
+      const rows = await this.reader.readAnomalyDetail({ from, toExclusive }, names);
+      const details = buildAnomalyDetail(rows, day, names);
+      for (const i of detailed) i.detail = details.get(i.name);
+    }
+    return { status: 'ok', day, rule, items };
   }
 }
