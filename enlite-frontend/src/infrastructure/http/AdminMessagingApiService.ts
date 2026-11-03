@@ -28,6 +28,7 @@ export const INVITE_BLOCKED_CODES = [
   'UNANSWERED_THROTTLE',
   'RESEND_COOLDOWN',
   'WORKER_STATUS_INVALID',
+  'WORKER_NO_PHONE',
 ] as const;
 export type InviteBlockedCode = (typeof INVITE_BLOCKED_CODES)[number];
 

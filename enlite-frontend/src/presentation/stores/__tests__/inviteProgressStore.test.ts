@@ -153,6 +153,12 @@ describe('blockedReasonMessage', () => {
     );
   });
 
+  it('WORKER_NO_PHONE → chave localizada, não o fallback genérico "error"', () => {
+    expect(blockedReasonMessage('WORKER_NO_PHONE', 'Worker não possui número de telefone cadastrado', t)).toBe(
+      't:admin.messaging.blocked.WORKER_NO_PHONE',
+    );
+  });
+
   it('CODE desconhecido com detail → usa o detail do backend', () => {
     expect(blockedReasonMessage('SOME_NEW_CODE', 'motivo del backend', t)).toBe('motivo del backend');
   });

@@ -217,7 +217,8 @@ describe('MessagingController.sendVacancyMatch', () => {
 
     expect(res.status).toHaveBeenCalledWith(422);
     expect((res.json as jest.Mock).mock.calls[0][0]).toEqual({
-      error: 'Worker não possui número de telefone cadastrado',
+      error: 'WORKER_NO_PHONE',
+      detail: 'Worker não possui número de telefone cadastrado',
     });
     expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
   });
