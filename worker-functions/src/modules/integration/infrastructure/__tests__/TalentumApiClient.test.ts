@@ -409,6 +409,7 @@ describe('TalentumApiClient (API v2)', () => {
       expect(mockFetch).toHaveBeenCalledTimes(3);
       expect(p).toMatchObject({
         projectId: 'proj-1',
+        prescreeningId: 'ps-1',
         publicId: 'pub-uuid-1',
         title: 'EN 1#1',
         description: 'descripción del puesto',
@@ -444,6 +445,7 @@ describe('TalentumApiClient (API v2)', () => {
       const p = await client.getPrescreening('proj-2');
 
       expect(p.description).toBe('');
+      expect(p.prescreeningId).toBeUndefined();
       expect(p.questions).toEqual([]);
       expect(p.active).toBe(false);
     });

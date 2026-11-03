@@ -2,7 +2,7 @@
  * JobPostingLookup — resolução da vaga no webhook Talentum PRESCREENING_RESPONSE.
  * Unit com pool dublê (nunca toca Talentum/WhatsApp). Ids fictícios, sem PII.
  *
- * Regra: só vaga OFICIAL e VIVA. Projeto → `deleted_at IS NULL`; título (fallback) →
+ * Regra: só vaga OFICIAL e VIVA. `_id` do prescreening → `is_draft = false AND deleted_at IS NULL`; título (fallback) →
  * `is_draft = false AND deleted_at IS NULL` e só com EXATAMENTE 1 candidata.
  */
 import type { Pool } from 'pg';
@@ -13,19 +13,21 @@ function makeLookup(rows: Array<{ id: string }>) {
   return { lookup: new JobPostingLookup({ query } as unknown as Pool), query };
 }
 
-describe('JobPostingLookup.findByTalentumProjectId', () => {
-  it('acha a vaga do projeto e a SQL filtra por talentum_project_id + deleted_at IS NULL', async () => {
+describe('JobPostingLookup.findByTalentumPrescreeningId', () => {
+  it('acha a vaga e a SQL filtra por talentum_prescreening_id + is_draft = false + deleted_at IS NULL', async () => {
     const { lookup, query } = makeLookup([{ id: 'jp-oficial' }]);
-    await expect(lookup.findByTalentumProjectId('proj-1')).resolves.toEqual({ id: 'jp-oficial' });
+    await expect(lookup.findByTalentumPrescreeningId('psc-1')).resolves.toEqual({ id: 'jp-oficial' });
     const [sql, params] = query.mock.calls[0];
-    expect(String(sql)).toContain('talentum_project_id = $1');
+    expect(String(sql)).toContain('talentum_prescreening_id = $1');
+    expect(String(sql)).toContain('is_draft = false');
+    expect(String(sql)).not.toContain('talentum_project_id');
     expect(String(sql)).toContain('deleted_at IS NULL');
-    expect(params).toEqual(['proj-1']);
+    expect(params).toEqual(['psc-1']);
   });
 
-  it('vaga apagada / sem vaga → null', async () => {
+  it('vaga apagada / sem vaga oficial viva → null', async () => {
     const { lookup } = makeLookup([]);
-    await expect(lookup.findByTalentumProjectId('proj-2')).resolves.toBeNull();
+    await expect(lookup.findByTalentumPrescreeningId('psc-2')).resolves.toBeNull();
   });
 });
 

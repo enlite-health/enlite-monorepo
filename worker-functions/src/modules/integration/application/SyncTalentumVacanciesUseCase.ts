@@ -215,6 +215,7 @@ export class SyncTalentumVacanciesUseCase {
       talentum_project_id: source.projectId,
       // '' (item da lista / sem link web) → NULL: o COALESCE do UPDATE mantém o que já está gravado.
       talentum_public_id: source.publicId || null,
+      talentum_prescreening_id: source.prescreeningId || null,
       talentum_whatsapp_url: source.whatsappUrl || null,
       talentum_slug: source.slug || null,
       talentum_published_at: source.timestamp || null,
@@ -303,6 +304,7 @@ export class SyncTalentumVacanciesUseCase {
     ref: {
       talentum_project_id: string;
       talentum_public_id: string | null;
+      talentum_prescreening_id: string | null;
       talentum_whatsapp_url: string | null;
       talentum_slug: string | null;
       talentum_published_at: string | null;
@@ -320,11 +322,13 @@ export class SyncTalentumVacanciesUseCase {
              talentum_slug         = COALESCE($4, talentum_slug),
              talentum_published_at = COALESCE($5, talentum_published_at),
              talentum_description  = COALESCE($6, talentum_description),
+             talentum_prescreening_id = COALESCE($8, talentum_prescreening_id),
              updated_at            = NOW()
          WHERE id = $7`,
         [
           ref.talentum_project_id, ref.talentum_public_id, ref.talentum_whatsapp_url,
           ref.talentum_slug, ref.talentum_published_at, ref.talentum_description, jobPostingId,
+          ref.talentum_prescreening_id,
         ],
       );
       // Only audit on update path — CREATED path already audited in createFromSync.

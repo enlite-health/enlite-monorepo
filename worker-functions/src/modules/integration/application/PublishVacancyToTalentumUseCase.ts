@@ -172,10 +172,15 @@ export class PublishVacancyToTalentumUseCase {
     // 5. GET project to obtain whatsappUrl + slug
     let whatsappUrl: string;
     let slug: string;
+    let prescreeningId: string | null = null;
     try {
       const project = await talentumClient.getPrescreening(projectId);
       whatsappUrl = project.whatsappUrl;
       slug = project.slug;
+      prescreeningId = project.prescreeningId ?? null;
+      if (!prescreeningId) {
+        console.warn(`[PublishVacancy] vaga ${jobPostingId}: API não devolveu o _id do prescreening (talentum_prescreening_id fica NULL; o backfill preenche)`);
+      }
     } catch (err: unknown) {
       throw new PublishError(502, `Talentum API error (get): ${(err as Error).message}`);
     }
@@ -191,10 +196,11 @@ export class PublishVacancyToTalentumUseCase {
              talentum_whatsapp_url = $3,
              talentum_slug         = $4,
              talentum_published_at = NOW(),
+             talentum_prescreening_id = $6,
              is_draft              = false,
              updated_at            = NOW()
          WHERE id = $5`,
-        [projectId, publicId, whatsappUrl, slug, jobPostingId],
+        [projectId, publicId, whatsappUrl, slug, jobPostingId, prescreeningId],
       );
 
       // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,

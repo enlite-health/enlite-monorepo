@@ -81,10 +81,24 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
     const expected = `https://www.v2.talentum.chat/public/pre-screening/${proj.publicId}/chat`;
     expect(result).toEqual({ projectId: proj._id, publicId: proj.publicId, whatsappUrl: expected });
     // UPDATE job_postings SET project_id=$1, public_id=$2, whatsapp_url=$3, slug=$4 ... WHERE id=$5
-    expect(updateParams).toEqual([proj._id, proj.publicId, expected, proj.slug, JP_ID]);
+    expect(updateParams).toEqual([proj._id, proj.publicId, expected, proj.slug, JP_ID, proj.prescreeningId]);
+    expect(proj.prescreeningId).not.toBe(proj._id);
     expect(String(updateParams![2])).not.toContain('wa.me');
     expect(proj.status).toBe('IN_PROGRESS');
     expect(proj.description).toBe('descripción');
+  });
+
+  it('API sem _id do prescreening: o publish NÃO cai, grava talentum_prescreening_id NULL e loga o id da vaga', async () => {
+    setupQueries('EN 123#4');
+    stub.omitPrescreeningId = true;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const useCase = new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({}));
+
+    const result = await useCase.publish({ jobPostingId: JP_ID });
+
+    expect(result.projectId).toBeTruthy();
+    expect(updateParams![5]).toBeNull();
+    expect(warn.mock.calls.flat().join(' ')).toContain(JP_ID);
   });
 
   it('a FAQ do banco não é lida nem enviada à Talentum', async () => {

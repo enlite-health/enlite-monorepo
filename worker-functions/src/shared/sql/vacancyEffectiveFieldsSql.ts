@@ -48,7 +48,7 @@ export const JOB_POSTING_COLUMNS = [
   'search_start_date', 'patient_id', 'weekly_hours', 'providers_needed', 'active_providers',
   'authorized_period', 'marketing_channel', 'assignee', 'daily_obs', 'inferred_zone', 'coordinator_id',
   'assignee_uid', 'deleted_at', 'talentum_project_id', 'talentum_public_id', 'talentum_whatsapp_url',
-  'talentum_slug', 'talentum_published_at', 'talentum_description', 'required_professions', 'required_sex',
+  'talentum_slug', 'talentum_published_at', 'talentum_description', 'talentum_prescreening_id', 'required_professions', 'required_sex',
   'age_range_min', 'age_range_max', 'required_experience', 'worker_attributes', 'salary_text',
   'payment_day', 'schedule', 'vacancy_number', 'social_short_links', 'enriched_at', 'patient_address_id',
   'service_lat', 'service_lng', 'service_location', 'is_draft', 'timezone', 'is_test',

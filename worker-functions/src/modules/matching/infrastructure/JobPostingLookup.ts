@@ -11,10 +11,12 @@ const TAG = '[JobPostingLookup]';
 export class JobPostingLookup implements IJobPostingLookup {
   constructor(private readonly pool: Pool) {}
 
-  async findByTalentumProjectId(projectId: string): Promise<{ id: string } | null> {
+  /** `prescreeningId` = `data.prescreening.id` do webhook (NÃO é o `talentum_project_id`; medido: divergem em 98%). */
+  async findByTalentumPrescreeningId(prescreeningId: string): Promise<{ id: string } | null> {
     const result = await this.pool.query<{ id: string }>(
-      `SELECT id FROM job_postings WHERE talentum_project_id = $1 AND deleted_at IS NULL`,
-      [projectId],
+      `SELECT id FROM job_postings
+        WHERE talentum_prescreening_id = $1 AND is_draft = false AND deleted_at IS NULL`,
+      [prescreeningId],
     );
     return result.rows[0] ?? null;
   }

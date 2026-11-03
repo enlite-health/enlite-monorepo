@@ -58,6 +58,11 @@ export type TalentumQuestionWithId = TalentumQuestion & { questionId: string };
 export interface TalentumProject {
   projectId: string;
   publicId: string;
+  /**
+   * `_id` do prescreening (`GET /projects/:id/prescreening`) = `data.prescreening.id` do webhook
+   * PRESCREENING_RESPONSE. NÃO é o `projectId`. Ausente no item da lista (`GET /projects`).
+   */
+  prescreeningId?: string;
   title: string;
   description: string;
   whatsappUrl: string;

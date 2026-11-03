@@ -97,7 +97,7 @@ describe('ProcessTalentumPrescreening', () => {
 
     // Mock job posting lookup
     mockJobPostingLookup = {
-      findByTalentumProjectId: jest.fn().mockResolvedValue(null),
+      findByTalentumPrescreeningId: jest.fn().mockResolvedValue(null),
       findByTitleILike: jest.fn().mockResolvedValue({ id: 'jp-1' }),
     };
 
@@ -697,21 +697,21 @@ describe('ProcessTalentumPrescreening', () => {
 
   // ─── 12.7. resolução pelo id do projeto Talentum (rascunho × oficial com o mesmo número de paciente) ──
 
-  it('resolve pela vaga do talentum_project_id (prescreening.id) e NÃO cai no título', async () => {
-    mockJobPostingLookup.findByTalentumProjectId.mockResolvedValue({ id: 'jp-oficial' });
+  it('resolve pela vaga do prescreening.id (talentum_prescreening_id) e NÃO cai no título', async () => {
+    mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue({ id: 'jp-oficial' });
     const payload = buildPayload({ status: 'IN_PROGRESS' });
     (payload.data.response as any).statusLabel = undefined;
     payload.data.prescreening.name = 'CASO 616-1, AT, rascunho e oficial compartilham o paciente';
 
     const result = await useCase.execute(payload);
 
-    expect(mockJobPostingLookup.findByTalentumProjectId).toHaveBeenCalledWith(payload.data.prescreening.id);
+    expect(mockJobPostingLookup.findByTalentumPrescreeningId).toHaveBeenCalledWith(payload.data.prescreening.id);
     expect(mockJobPostingLookup.findByTitleILike).not.toHaveBeenCalled();
     expect(result.jobPostingId).toBe('jp-oficial');
   });
 
-  it('projeto sem vaga viva (null) → cai no fallback por título', async () => {
-    mockJobPostingLookup.findByTalentumProjectId.mockResolvedValue(null);
+  it('prescreening sem vaga oficial viva (null) → cai no fallback por título', async () => {
+    mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);
     mockJobPostingLookup.findByTitleILike.mockResolvedValue({ id: 'jp-titulo' });
     const payload = buildPayload({ status: 'IN_PROGRESS' });
     (payload.data.response as any).statusLabel = undefined;
@@ -721,6 +721,26 @@ describe('ProcessTalentumPrescreening', () => {
 
     expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 616');
     expect(result.jobPostingId).toBe('jp-titulo');
+  });
+
+  it('o log diz o caminho que resolveu (por_prescreening_id | por_titulo_unico | nao_resolvido), sem texto livre', async () => {
+    const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const run = async () => {
+      log.mockClear();
+      const payload = buildPayload({ status: 'IN_PROGRESS' });
+      (payload.data.response as any).statusLabel = undefined;
+      payload.data.prescreening.name = 'CASO 616-1';
+      await useCase.execute(payload);
+      return log.mock.calls.flat().join(' | ');
+    };
+    mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue({ id: 'jp-o' });
+    expect(await run()).toContain('caminho=por_prescreening_id');
+    mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);
+    mockJobPostingLookup.findByTitleILike.mockResolvedValue({ id: 'jp-t' });
+    expect(await run()).toContain('caminho=por_titulo_unico');
+    mockJobPostingLookup.findByTitleILike.mockResolvedValue(null);
+    expect(await run()).toContain('caminho=nao_resolvido');
+    log.mockRestore();
   });
 
   // ─── 13. upsertQuestions com responseType vazio ─────────────────────

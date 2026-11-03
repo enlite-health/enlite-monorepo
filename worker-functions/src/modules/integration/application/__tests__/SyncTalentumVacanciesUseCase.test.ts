@@ -71,6 +71,7 @@ function detail(item: TalentumProject, over: Partial<TalentumProject> = {}): Tal
   return {
     ...item,
     publicId: `pub-${item.projectId}`,
+    prescreeningId: `psc-${item.projectId}`,
     description: 'Descripción del puesto',
     whatsappUrl: WEB(`pub-${item.projectId}`),
     slug: `slug-${item.projectId}`,
@@ -131,11 +132,22 @@ describe('SyncTalentumVacanciesUseCase (API v2)', () => {
       expect(mockFake.vacancies[0]).toMatchObject({
         talentum_project_id: 'proj-1',
         talentum_public_id: 'pub-proj-1',
+        talentum_prescreening_id: 'psc-proj-1',
         talentum_whatsapp_url: WEB('pub-proj-1'),
         talentum_slug: 'slug-proj-1',
         talentum_description: 'Descripción del puesto',
       });
       expect(mockFake.questionsByVacancy.get('jp-1')).toBe(1);
+    });
+
+    it('detalhe sem _id (PHONE_CALL/400) não apaga o talentum_prescreening_id já gravado (COALESCE)', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1', talentum_prescreening_id: 'psc-gravado' });
+      givenProjects(listItem('proj-1', 'EN 1#1'));
+      mockGetPrescreening.mockResolvedValue(detail(listItem('proj-1', 'EN 1#1'), { prescreeningId: undefined }));
+
+      await useCase.execute({ force: true });
+
+      expect(mockFake.vacancies[0].talentum_prescreening_id).toBe('psc-gravado');
     });
 
     it('chamada direta sem o 4º argumento (force) trata como false — já ligada é skip', async () => {
@@ -337,7 +349,7 @@ describe('SyncTalentumVacanciesUseCase (API v2)', () => {
       givenProjects(listItem('proj-1', 'EN 1#1'));
       await useCase.execute();
       const update = mockFake.clientSql.find((q) => q.includes('UPDATE job_postings'))!;
-      for (const col of ['talentum_public_id', 'talentum_whatsapp_url', 'talentum_slug', 'talentum_published_at', 'talentum_description']) {
+      for (const col of ['talentum_public_id', 'talentum_whatsapp_url', 'talentum_slug', 'talentum_published_at', 'talentum_description', 'talentum_prescreening_id']) {
         expect(update).toMatch(new RegExp(`${col}\\s*= COALESCE\\(`));
       }
     });

@@ -36,8 +36,8 @@ export interface IWorkerLookup {
 }
 
 export interface IJobPostingLookup {
-  /** Vaga viva pelo id do projeto Talentum (`job_postings.talentum_project_id`). */
-  findByTalentumProjectId(projectId: string): Promise<{ id: string } | null>;
+  /** Vaga oficial viva pelo `_id` do prescreening (`job_postings.talentum_prescreening_id`). */
+  findByTalentumPrescreeningId(prescreeningId: string): Promise<{ id: string } | null>;
   /** Fallback: só resolve com EXATAMENTE 1 candidata oficial viva (não-rascunho). */
   findByTitleILike(name: string): Promise<{ id: string } | null>;
 }
@@ -194,7 +194,7 @@ export class ProcessTalentumPrescreening {
 
   // ── Job posting resolution ───────────────────────────────────────
 
-  private async resolveJobPosting(projectId: string, caseName: string): Promise<string | null> {
+  private async resolveJobPosting(prescreeningId: string, caseName: string): Promise<string | null> {
     // PII (achado do gate, C3 do parecer do lex, 11/09): `caseName`/`searchTerm`
     // são texto livre do título do projeto no Talentum, não um id — MEDIDO em prd
     // (7d, textPayload local, nunca colado): 400/590 nomes NÃO batem o formato
@@ -216,12 +216,12 @@ export class ProcessTalentumPrescreening {
     const caseRef = searchTerm ?? '<outro>';
     console.log(`${TAG} resolveJobPosting | caseRef=${caseRef}`);
     try {
-      // Resolução primária pelo id do projeto Talentum (payload `prescreening.id`): o título
+      // Resolução primária pelo `_id` do prescreening (payload `prescreening.id`): o título
       // `CASO N` é do PACIENTE e também casa rascunho/outra vaga do mesmo paciente.
-      const byProject = await this.jobPostingLookup.findByTalentumProjectId(projectId);
-      if (byProject) {
-        console.log(`${TAG} resolveJobPosting → ${byProject.id} (por talentum_project_id)`);
-        return byProject.id;
+      const byPrescreening = await this.jobPostingLookup.findByTalentumPrescreeningId(prescreeningId);
+      if (byPrescreening) {
+        console.log(`${TAG} resolveJobPosting → ${byPrescreening.id} (caminho=por_prescreening_id)`);
+        return byPrescreening.id;
       }
       let posting = await this.jobPostingLookup.findByTitleILike(searchTerm ?? caseName);
       // Achado CI #515 (24/09/2026): o título formatado (prefixo `EN` decidido pela FAIXA
@@ -232,7 +232,7 @@ export class ProcessTalentumPrescreening {
         posting = await this.jobPostingLookup.findByTitleILike(caseName);
       }
       const id = posting?.id ?? null;
-      console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caseRef=${caseRef})`);
+      console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caminho=${id ? 'por_titulo_unico' : 'nao_resolvido'}, caseRef=${caseRef})`);
       return id;
     } catch {
       console.log(`${TAG} resolveJobPosting → ERROR (returning null)`);
