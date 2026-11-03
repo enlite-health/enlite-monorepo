@@ -73,7 +73,7 @@ export function CustosDetalhe({ ov, item, onVoltar }: { ov: CostOverview; item: 
           <Heading level={3} weight="semibold">{t('admin.custos.detail.explainsTitle', { day: diaNum })}</Heading>
           <Text color="tertiary" size="sm">{t('admin.custos.detail.explainsNote')}</Text>
         </div>
-        <Table className="min-w-[860px] table-fixed">
+        <Table className="min-w-[1100px] table-fixed">
           <TableHeader>
             <TableHead className={TH} unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.detail.cols.resource')}</Linha></TableHead>
             <TableHead className={`${TH} w-28`} align="right" unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.detail.cols.day', { day: diaNum })}</Linha></TableHead>

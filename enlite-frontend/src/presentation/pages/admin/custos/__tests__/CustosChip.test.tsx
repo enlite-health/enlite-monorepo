@@ -5,7 +5,7 @@ import { CustosChip } from '../CustosChip';
 import { CHIP_TONES, type ChipTone } from '../custosChipTones';
 
 /** Paleta efetiva do projeto: a padrão do Tailwind + as chaves de `tailwind.config.js` que o chip usa (valores lidos de lá, não de cabeça). */
-const PROJETO: Record<string, string> = { 'gray-300': '#EEEEEE', primary: '#180149' };
+const PROJETO: Record<string, string> = { 'gray-300': '#EEEEEE', 'gray-800': '#737373', primary: '#180149' };
 
 function hexDe(token: string): string {
   const nome = token.replace(/^(bg|text)-/, '');

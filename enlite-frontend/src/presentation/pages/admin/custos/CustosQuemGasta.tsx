@@ -114,12 +114,12 @@ export function CustosQuemGasta({ ov }: { ov: CostOverview }): JSX.Element {
         {rows.length === 0 ? (
           <Text color="tertiary" size="sm" data-testid={`${PANEL_TESTID[tab]}-vazio`}>{t('admin.custos.who.empty')}</Text>
         ) : (
-          <Table className="min-w-[640px] table-fixed">
+          <Table className="min-w-[760px] table-fixed">
             <TableHeader>
               <TableHead className={TH} unwrapped><Linha tipo="cabecalho" weight="medium">{t(`admin.custos.who.first.${tab}`)}</Linha></TableHead>
-              <TableHead className={`${TH} w-36`} align="right" unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.who.cols.month')}</Linha></TableHead>
-              <TableHead className={`${TH} w-72`} unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.who.cols.share')}</Linha></TableHead>
-              <TableHead className={`${TH} w-48`} unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.who.cols.signal')}</Linha></TableHead>
+              <TableHead className={`${TH} w-32`} align="right" unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.who.cols.month')}</Linha></TableHead>
+              <TableHead className={`${TH} w-56`} unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.who.cols.share')}</Linha></TableHead>
+              <TableHead className={`${TH} w-44`} unwrapped><Linha tipo="cabecalho" weight="medium">{t('admin.custos.who.cols.signal')}</Linha></TableHead>
             </TableHeader>
             <TableBody><Linhas rows={rows} tab={tab} lang={lang} currency={ov.currency} /></TableBody>
           </Table>
