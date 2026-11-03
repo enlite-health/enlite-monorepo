@@ -163,7 +163,7 @@ describe('CustosPage', () => {
   it('mês sem linhas: "<Mês> ainda não tem dados no faturamento" + atalho "Ver <último mês com dados>" (1 chamada com availableMonths[0])', async () => {
     vi.setSystemTime(new Date('2026-11-03T12:00:00Z'));
     await sincronizado(overview({ month: '2026-11', dataUntil: null, currency: null, monthTotal: 0, months: [], byService: [], byResource: [], bySector: [], byAiCaller: [], byProject: [], availableMonths: ['2026-10', '2026-09'] }), 'custos-vazio');
-    expect(screen.getByTestId('custos-vazio')).toHaveTextContent('novembro de 2026 ainda não tem dados no faturamento');
+    expect(screen.getByTestId('custos-vazio')).toHaveTextContent('Novembro de 2026 ainda não tem dados no faturamento');
     expect(screen.queryByTestId('custos-kpis')).toBeNull();
     const atalho = screen.getByTestId('custos-ver-ultimo');
     expect(atalho).toHaveTextContent('Ver outubro de 2026');
@@ -173,6 +173,13 @@ describe('CustosPage', () => {
     await waitFor(() => expect(getOverview).toHaveBeenCalledTimes(1));
     expect(getOverview).toHaveBeenCalledWith('2026-10');
     expect(await screen.findByTestId('custos-kpis')).toBeInTheDocument();
+  });
+
+  it('mês sem linhas em es: a frase também abre com o mês em maiúscula', async () => {
+    await usarIdioma('es');
+    vi.setSystemTime(new Date('2026-11-03T12:00:00Z'));
+    await sincronizado(overview({ month: '2026-11', dataUntil: null, currency: null, monthTotal: 0, months: [], byService: [], byResource: [], bySector: [], byAiCaller: [], byProject: [], availableMonths: [] }), 'custos-vazio');
+    expect(screen.getByTestId('custos-vazio')).toHaveTextContent('Noviembre de 2026 todavía no tiene datos en la facturación');
   });
 
   it('mês sem linhas e availableMonths vazio: só o texto, SEM atalho', async () => {

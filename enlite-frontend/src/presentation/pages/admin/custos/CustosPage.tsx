@@ -23,7 +23,7 @@ import { CustosMeses } from './CustosMeses';
 import { CustosQuemGasta } from './CustosQuemGasta';
 import { CustosVeredito } from './CustosVeredito';
 import { custosErrorKey, type CustosErro } from './custosErrors';
-import { currentMonthKey, formatDateTime, isExportStale, monthLabel } from './custosFormat';
+import { capitalize, currentMonthKey, formatDateTime, isExportStale, monthLabel } from './custosFormat';
 import { CARD, Linha } from './custosUi';
 
 type Estado = 'idle' | 'syncing' | 'ready' | 'error';
@@ -162,7 +162,7 @@ export function CustosPage(): JSX.Element {
 
         {!sincronizando && vazio && dados && (
           <section data-testid="custos-vazio" className={`${CARD} flex min-h-[240px] flex-col items-center justify-center gap-4 text-center`}>
-            <Heading level={2} weight="semibold">{t('admin.custos.empty.title', { month: monthLabel(dados.month, lang) })}</Heading>
+            <Heading level={2} weight="semibold">{t('admin.custos.empty.title', { month: capitalize(monthLabel(dados.month, lang)) })}</Heading>
             <Text color="tertiary" size="sm">{t('admin.custos.empty.text')}</Text>
             {ultimoComDados && (
               <Button variant="outline" size="lg" data-testid="custos-ver-ultimo" onClick={() => escolher(ultimoComDados)}>
