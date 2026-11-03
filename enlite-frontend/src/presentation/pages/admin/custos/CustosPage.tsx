@@ -1,53 +1,86 @@
 /**
- * CustosPage — `/admin/custos` (spec 082): faturamento do GCP por mês, serviço, recurso, setor e chamador de IA.
+ * CustosPage — `/admin/custos` (spec 082, direção A "Sinal primeiro"): veredito → 3 números do mês → "Quem gasta" → 6 meses.
  * Abre com a célula `platform_costs:read` (só Master). SEM item no menu e SEM link em lugar nenhum (DF-2): acesso só pela URL;
  * quem barra é a célula (e a API, com 403) — URL escondida sozinha não protege nada.
- * Ao abrir NÃO consulta (RF-2): cada clique em "Sincronizar" é UMA chamada; o resultado vive só no estado deste componente
- * (nada em localStorage). Estados: sem dados / sincronizando / erro (texto próprio p/ bytes_limit e 429) / sem permissão.
+ * Ao abrir NÃO consulta (RF-2): cada "Sincronizar" (e cada troca de mês, DF-20) é UMA chamada; o resultado vive só no estado deste
+ * componente (nada em localStorage). "Ver detalhe" (A2, DF-18) troca um estado local: ZERO chamadas.
+ * Estados: antes de sincronizar / sincronizando / mês sem dados (com atalho) / erro (texto próprio p/ bytes_limit e 429) / sem permissão.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useCellAccess, useContainerAccess } from '@presentation/hooks/useCellAccess';
-import { AdminCostsApiService, type CostOverview } from '@infrastructure/http/AdminCostsApiService';
-import { CustosCards, CustosMeses } from './CustosCards';
-import { CustosAnomalias, CustosTables } from './CustosTables';
+import { Button } from '@presentation/components/atoms/Button';
+import { Combobox } from '@presentation/components/atoms/Combobox';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { PageContainer } from '@presentation/components/atoms/PageContainer';
+import { Text } from '@presentation/components/atoms/Text';
+import { AdminCostsApiService, type CostAnomalyItem, type CostOverview } from '@infrastructure/http/AdminCostsApiService';
+import { CustosDetalhe } from './CustosDetalhe';
+import { CustosKpis } from './CustosKpis';
+import { CustosMeses } from './CustosMeses';
+import { CustosQuemGasta } from './CustosQuemGasta';
+import { CustosVeredito } from './CustosVeredito';
 import { custosErrorKey, type CustosErro } from './custosErrors';
-import { formatDateTime, isExportStale } from './custosFormat';
+import { currentMonthKey, formatDateTime, isExportStale, monthLabel } from './custosFormat';
+import { CARD, Linha } from './custosUi';
 
 type Estado = 'idle' | 'syncing' | 'ready' | 'error';
+interface Detalhe { kind: CostAnomalyItem['kind']; name: string }
 
 export function CustosPage(): JSX.Element {
   const { t, i18n } = useTranslation();
+  const lang = i18n?.language;
   const access = useCellAccess('platform_costs');
   const { visible } = useContainerAccess('platform_costs');
   const [estado, setEstado] = useState<Estado>('idle');
   const [dados, setDados] = useState<CostOverview | null>(null);
   const [erro, setErro] = useState<CustosErro | null>(null);
+  /** Mês escolhido no seletor; `null` = o corrente (o backend assume o mês corrente sem `month`). */
+  const [mes, setMes] = useState<string | null>(null);
+  const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
   const voando = useRef(false);
+  const voltarPara = useRef<string | null>(null);
 
-  const sincronizar = useCallback(async () => {
+  const sincronizar = useCallback(async (month?: string) => {
     if (voando.current) return;
     voando.current = true;
     setEstado('syncing');
     setErro(null);
     try {
-      setDados(await AdminCostsApiService.getOverview());
+      setDados(await AdminCostsApiService.getOverview(month));
       setEstado('ready');
     } catch (e) {
       setErro(custosErrorKey(e));
       setEstado('error');
+      // Mantém o que já está na tela só se for do MESMO mês pedido (um 429 não apaga a leitura); outro mês não pode ficar sob o seletor novo.
+      setDados((d) => (d && d.month === (month ?? currentMonthKey()) ? d : null));
     } finally {
       voando.current = false;
     }
   }, []);
 
+  // Volta ao A1 devolvendo o foco ao "Ver detalhe" de origem (RF-A13).
+  useEffect(() => {
+    if (detalhe !== null || voltarPara.current === null) return;
+    const nome = voltarPara.current;
+    voltarPara.current = null;
+    Array.from(document.querySelectorAll<HTMLElement>('[data-ver-detalhe]')).find((el) => el.dataset.verDetalhe === nome)?.focus();
+  }, [detalhe]);
+
+  const corrente = currentMonthKey();
+  const escolhido = mes ?? corrente;
+  const opcoes = useMemo(() => {
+    const meses = new Set<string>([corrente, escolhido, ...(dados?.availableMonths ?? [])]);
+    return Array.from(meses).sort().reverse().map((m) => ({ value: m, label: monthLabel(m, lang) }));
+  }, [corrente, escolhido, dados, lang]);
+
   if (access.status === 'idle' || access.status === 'loading') {
-    return <p className="text-sm text-[#404040]">{t('admin.custos.authzLoading')}</p>;
+    return <PageContainer><Text color="primary" size="sm">{t('admin.custos.authzLoading')}</Text></PageContainer>;
   }
   if (access.status === 'error') {
-    return <div role="alert" className="text-sm font-medium text-[#7A0C0C]">{t('admin.custos.authzError')}</div>;
+    return <PageContainer><div role="alert"><Text color="primary" size="sm" weight="medium">{t('admin.custos.authzError')}</Text></div></PageContainer>;
   }
   if (!visible) return <Navigate to="/admin" replace />;
 
@@ -55,63 +88,105 @@ export function CustosPage(): JSX.Element {
   const vazio = dados !== null && dados.dataUntil === null;
   const atrasado = dados !== null && isExportStale(dados.dataUntil);
   const forbidden = erro?.key === 'admin.custos.errors.forbidden';
+  const item = dados && detalhe ? dados.anomalies.items.find((i) => i.kind === detalhe.kind && i.name === detalhe.name && i.detail) ?? null : null;
+  const ultimoComDados = dados?.availableMonths.find((m) => m !== dados.month) ?? null;
+  const escolher = (m: string) => { setMes(m); setDetalhe(null); void sincronizar(m); };
 
   return (
-    <div data-testid="custos-page" className="mx-auto w-full max-w-4xl space-y-4 overflow-x-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-[#1A1A1A]">{t('admin.custos.title')}</h1>
-          <p className="text-sm text-[#404040]">{t('admin.custos.subtitle')}</p>
-        </div>
-        {!forbidden && (
-          <button
-            type="button"
-            data-testid="custos-sincronizar"
-            disabled={sincronizando}
-            onClick={() => void sincronizar()}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[#0B2E6B] px-4 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {sincronizando
-              ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
-            {sincronizando ? t('admin.custos.syncing') : estado === 'error' ? t('admin.custos.retry') : t('admin.custos.sync')}
-          </button>
-        )}
-      </div>
-
-      {sincronizando && <p role="status" data-testid="custos-sincronizando" className="text-sm text-[#404040]">{t('admin.custos.syncing')}</p>}
-
-      {erro && (
-        <div role="alert" data-testid="custos-erro" data-code={erro.key} className="text-sm font-medium text-[#7A0C0C]">
-          {t(erro.key, { seconds: erro.seconds ?? 0 })}
-        </div>
-      )}
-
-      {dados === null && estado === 'idle' && <p data-testid="custos-idle" className="text-sm text-[#404040]">{t('admin.custos.idle')}</p>}
-
-      {dados !== null && dados.dataUntil && (
-        <div className="space-y-2">
-          <p data-testid="custos-dados-ate" className="text-sm font-medium text-[#262626]">
-            {t('admin.custos.dataUntil', { date: formatDateTime(dados.dataUntil, i18n?.language) })}
-          </p>
-          {atrasado && (
-            <div role="alert" data-testid="custos-atrasado" className="rounded-lg border border-[#8A6100] bg-[#FFF4D6] px-4 py-2 text-xs text-[#4A3300]">
-              {t('admin.custos.stale')}
+    <PageContainer>
+      <div data-testid="custos-page" className="flex min-w-0 flex-col gap-6">
+        <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <Heading level={1} weight="semibold" className="whitespace-nowrap">{t('admin.custos.title')}</Heading>
+          {!forbidden && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+              {dados?.dataUntil && (
+                <Linha tipo="data" data-testid="custos-dados-ate" color="tertiary">{t('admin.custos.dataUntil', { date: formatDateTime(dados.dataUntil, lang) })}</Linha>
+              )}
+              <div className="w-[210px]" data-testid="custos-mes-select">
+                <Combobox
+                  inputSize="compact"
+                  options={opcoes}
+                  value={escolhido}
+                  onChange={(m) => { if (m && m !== escolhido) escolher(m); }}
+                  disabled={sincronizando}
+                  aria-label={t('admin.custos.monthSelector')}
+                  valueClassName="text-primary"
+                />
+              </div>
+              <Button
+                variant="primary"
+                size="lg"
+                data-testid="custos-sincronizar"
+                disabled={sincronizando}
+                aria-busy={sincronizando}
+                onClick={() => void sincronizar(mes ?? undefined)}
+              >
+                {sincronizando ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                <span className="whitespace-nowrap" data-single-line="selo">
+                  {sincronizando ? t('admin.custos.syncing') : estado === 'error' ? t('admin.custos.retry') : t('admin.custos.sync')}
+                </span>
+              </Button>
             </div>
           )}
-        </div>
-      )}
+        </header>
 
-      {vazio && <p data-testid="custos-vazio" className="text-sm text-[#404040]">{t('admin.custos.emptyMonth')}</p>}
+        {erro && (
+          <div role="alert" data-testid="custos-erro" data-code={erro.key} className="rounded-xl border border-red-900 bg-red-50 p-4">
+            <Text color="inherit" size="sm" weight="medium" className="text-red-950">{t(erro.key, { seconds: erro.seconds ?? 0 })}</Text>
+          </div>
+        )}
 
-      {dados !== null && !vazio && (
-        <div className="space-y-4" data-testid="custos-resultado">
-          <CustosCards ov={dados} />
-          <CustosMeses ov={dados} />
-          <CustosTables ov={dados} />
-          <CustosAnomalias ov={dados} />
-        </div>
-      )}
-    </div>
+        {sincronizando && (
+          <section role="status" aria-live="polite" data-testid="custos-sincronizando" className={`${CARD} flex min-h-[320px] flex-col items-center justify-center gap-2 text-center`}>
+            <Heading level={2} weight="semibold">{t('admin.custos.loading.title')}</Heading>
+            <Text color="tertiary" size="sm">{t('admin.custos.loading.text')}</Text>
+          </section>
+        )}
+
+        {!sincronizando && dados === null && estado === 'idle' && (
+          <section role="status" aria-live="polite" data-testid="custos-idle" className={`${CARD} flex min-h-[320px] flex-col items-center justify-center gap-2 text-center`}>
+            <Heading level={2} weight="semibold">{t('admin.custos.idle.title')}</Heading>
+            <Text color="tertiary" size="sm">{t('admin.custos.idle.text')}</Text>
+          </section>
+        )}
+
+        {!sincronizando && atrasado && dados && (
+          <div role="alert" data-testid="custos-atrasado" className="flex min-w-0 items-start gap-3 rounded-xl border border-amber-800 bg-amber-50 p-4">
+            <TriangleAlert className="mt-0.5 h-5 w-5 flex-none text-amber-950" aria-hidden="true" />
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <Text color="inherit" size="base" weight="semibold" className="text-amber-950">{t('admin.custos.stale')}</Text>
+              <Text color="inherit" size="sm" className="text-amber-950">{t('admin.custos.staleDetail', { date: formatDateTime(dados.dataUntil ?? '', lang) })}</Text>
+            </div>
+          </div>
+        )}
+
+        {!sincronizando && vazio && dados && (
+          <section data-testid="custos-vazio" className={`${CARD} flex min-h-[240px] flex-col items-center justify-center gap-4 text-center`}>
+            <Heading level={2} weight="semibold">{t('admin.custos.empty.title', { month: monthLabel(dados.month, lang) })}</Heading>
+            <Text color="tertiary" size="sm">{t('admin.custos.empty.text')}</Text>
+            {ultimoComDados && (
+              <Button variant="outline" size="lg" data-testid="custos-ver-ultimo" onClick={() => escolher(ultimoComDados)}>
+                <span className="whitespace-nowrap" data-single-line="selo">{t('admin.custos.empty.seeLast', { month: monthLabel(ultimoComDados, lang) })}</span>
+              </Button>
+            )}
+          </section>
+        )}
+
+        {!sincronizando && dados !== null && !vazio && (
+          <div className="flex min-w-0 flex-col gap-6" data-testid="custos-resultado">
+            {item ? (
+              <CustosDetalhe ov={dados} item={item} onVoltar={() => { voltarPara.current = item.name; setDetalhe(null); }} />
+            ) : (
+              <>
+                <CustosVeredito ov={dados} onDetalhe={(i) => setDetalhe({ kind: i.kind, name: i.name })} />
+                <CustosKpis ov={dados} />
+                <CustosQuemGasta ov={dados} />
+                <CustosMeses ov={dados} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </PageContainer>
   );
 }

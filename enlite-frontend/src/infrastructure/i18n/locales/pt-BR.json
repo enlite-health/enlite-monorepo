@@ -7054,70 +7054,145 @@
     },
     "custos": {
       "title": "Custos da plataforma",
-      "subtitle": "Faturamento do GCP por mês, serviço, recurso, setor e chamador de IA. Somente leitura.",
       "authzLoading": "Carregando permissões…",
       "authzError": "Não foi possível carregar suas permissões. Tente recarregar a página.",
       "sync": "Sincronizar",
       "syncing": "Sincronizando…",
       "retry": "Tentar novamente",
-      "idle": "Ainda sem dados. Clique em Sincronizar para consultar o faturamento.",
-      "emptyMonth": "O export de faturamento ainda não tem linhas para este mês.",
+      "monthSelector": "Mês",
       "dataUntil": "Dados do faturamento até {{date}}",
       "stale": "O export está atrasado: os últimos dados têm mais de 36 horas.",
+      "staleDetail": "Último dado: {{date}}.",
+      "idle": {
+        "title": "Ainda não há dados nesta tela",
+        "text": "Os dados do faturamento aparecem aqui depois que você clicar em Sincronizar."
+      },
+      "loading": {
+        "title": "Buscando os dados",
+        "text": "Sincronizando o faturamento. Isso leva alguns instantes e os números aparecem aqui assim que terminar."
+      },
+      "empty": {
+        "title": "{{month}} ainda não tem dados no faturamento",
+        "text": "Escolha outro mês ou sincronize de novo mais tarde.",
+        "seeLast": "Ver {{month}}"
+      },
       "errors": {
         "generic": "Não conseguimos consultar o faturamento. Tente novamente.",
         "bytesLimit": "A consulta passou do limite de bytes permitido (1 GiB) e foi cancelada sem custo extra. Avise o time técnico.",
         "rateLimited": "Você sincronizou há pouco. Aguarde {{seconds}} s e tente novamente.",
         "forbidden": "Você não tem permissão para ver os custos da plataforma."
       },
-      "cards": {
-        "month": "Mês corrente",
+      "verdict": {
+        "region": "Sinais",
+        "one": "1 coisa fora do normal",
+        "many": "{{n}} coisas fora do normal",
+        "calm": "Nada fora do normal em {{day}}",
+        "insufficient": "Histórico insuficiente: a detecção começa com {{days}} dias de dados",
+        "insufficientText": "Até lá a tela mostra os valores sem marcar o que está fora do normal.",
+        "lastDay": "Dia completo mais recente: {{day}}.",
+        "rule": "Regra: custo do dia de pelo menos {{factor}} a mediana dos {{days}} dias anteriores e diferença de pelo menos {{amount}}."
+      },
+      "anomaly": {
+        "kind": {
+          "service": "serviço",
+          "resource": "recurso"
+        },
+        "new": "novo",
+        "seeDetail": "Ver detalhe",
+        "onDay": "no dia {{day}}",
+        "median": "Mediana, {{days}} dias anteriores",
+        "factor": "Fator",
+        "impact": "Impacto",
+        "impactValue": "+{{value}}/dia",
+        "topContributor": "Maior contribuinte do aumento ({{pct}})",
+        "noHistory": "Sem histórico para calcular a mediana dos {{days}} dias anteriores."
+      },
+      "spark": {
+        "label": "{{name}}, custo diário de {{from}} a {{to}}: mediana {{median}}, {{prevValue}} em {{prevDay}} e {{lastValue}} em {{lastDay}}",
+        "median": "mediana dos {{days}} dias anteriores: {{value}}"
+      },
+      "kpi": {
+        "region": "Números do mês",
+        "month": "Mês até agora",
         "forecast": "Previsão do mês",
-        "forecastBasis": "estimativa linear",
-        "forecastUnavailable": "Sem dias suficientes para estimar",
-        "prevToDate": "Mês anterior até o mesmo dia",
-        "prevClosed": "Mês anterior fechado",
+        "vsPrev": "Contra o mês anterior, mesmo dia",
         "noValue": "—",
-        "variation": "{{pct}} em relação a este valor"
+        "range": "1 a {{day}} de {{month}}",
+        "rangeOne": "1 de {{month}}",
+        "rangeTwo": "1 e 2 de {{month}}",
+        "forecastBasis": "Estimativa linear: gasto de {{n}} dias × {{d}} ÷ {{n}}.",
+        "forecastVsPrev": "{{pct}} sobre o mês anterior fechado ({{value}}).",
+        "forecastUnavailable": "Sem dias suficientes para estimar",
+        "estimateWith": "estimativa com {{n}} dias",
+        "prevRange": "{{month}}, 1 a {{day}}: {{value}}",
+        "noPrev": "Sem dado do mês anterior ainda."
       },
       "months": {
-        "title": "Últimos 6 meses"
+        "title": "Últimos 6 meses",
+        "real": "Realizado",
+        "forecast": "Previsão",
+        "forecastLabel": "prev. {{value}}",
+        "partial": "(parcial)"
       },
-      "columns": {
-        "service": "Serviço",
-        "name": "Serviço ou recurso",
-        "resource": "Recurso",
-        "sector": "Setor",
-        "caller": "Chamador",
-        "function": "Função",
-        "cost": "Custo",
-        "kind": "Tipo",
-        "dayValue": "Valor do dia",
-        "median7": "Mediana dos 7 dias anteriores",
-        "factor": "Fator"
-      },
-      "tables": {
-        "service": "Por serviço do GCP",
-        "resource": "Por recurso",
-        "sector": "Por setor",
-        "aiCaller": "IA por chamador",
-        "empty": "Sem linhas neste mês.",
-        "noSector": "sem setor",
-        "noResource": "sem recurso",
-        "noCaller": "sem chamador"
-      },
-      "badges": {
-        "estimated": "estimado",
-        "unattributed": "não atribuído",
-        "new": "novo"
-      },
-      "anomalies": {
-        "title": "Anomalias",
-        "insufficient": "Histórico insuficiente: são necessários ao menos 7 dias de dados.",
-        "none": "Sem anomalias na janela.",
-        "kind": {
+      "who": {
+        "title": "Quem gasta",
+        "subtitle": "Participação sobre o gasto do mês ({{total}}).",
+        "tabsLabel": "Quem gasta, por",
+        "tabs": {
           "service": "Serviço",
-          "resource": "Recurso"
+          "resource": "Recurso",
+          "sector": "Setor",
+          "ai": "IA",
+          "project": "Projeto"
+        },
+        "first": {
+          "service": "Serviço",
+          "resource": "Recurso",
+          "sector": "Setor",
+          "ai": "Chamador de IA",
+          "project": "Projeto"
+        },
+        "cols": {
+          "month": "No mês",
+          "share": "Participação",
+          "signal": "Sinal"
+        },
+        "none": {
+          "resource": "sem recurso",
+          "sector": "sem setor",
+          "ai": "não atribuído",
+          "project": "sem projeto"
+        },
+        "rest": {
+          "resource": "demais recursos",
+          "other": "demais"
+        },
+        "signal": {
+          "factor": "{{factor}} a mediana",
+          "share": "{{pct}} do aumento",
+          "estimated": "estimado"
+        },
+        "empty": "Sem linhas neste mês.",
+        "aiNote": "Linha estimada: tokens × tabela de preço, usada só onde o faturamento não traz custo real. Os demais chamadores mostram custo real."
+      },
+      "detail": {
+        "back": "Voltar ao painel",
+        "dailyTitle": "Custo diário, {{month}} ({{currency}})",
+        "chartLabel": "{{name}}, custo diário de {{from}} a {{to}}: mediana {{median}} e {{value}} no último dia",
+        "medianLabel": "mediana dos {{days}} dias anteriores: {{value}}",
+        "dayCard": "Dia {{day}}",
+        "inMonth": "No mês",
+        "explainsTitle": "Quem explica o aumento do dia {{day}}",
+        "explainsNote": "Maior contribuinte é uma pista de onde olhar, não a causa confirmada.",
+        "topContributor": "maior contribuinte",
+        "cols": {
+          "resource": "Recurso",
+          "day": "Dia {{day}}",
+          "median": "Mediana",
+          "increase": "Aumento",
+          "share": "Parte do aumento",
+          "signal": "Sinal",
+          "month": "No mês"
         }
       }
     }
