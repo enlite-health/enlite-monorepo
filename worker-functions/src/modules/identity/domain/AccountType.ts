@@ -20,7 +20,7 @@
  */
 import { isStaffRole } from './EnliteRole';
 
-export const ACCOUNT_TYPES = ['staff', 'worker'] as const;
+export const ACCOUNT_TYPES = ['staff', 'worker', 'agent'] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 export const STAFF_ACCOUNT: AccountType = 'staff';
