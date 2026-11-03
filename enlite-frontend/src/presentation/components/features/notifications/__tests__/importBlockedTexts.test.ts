@@ -128,6 +128,8 @@ describe('importBlocked — linguagem de pessoa (CA-11)', () => {
       expect(h.detailLine?.(notif({ ...p, hostName: HOST_NAME }), t)).toContain(HOST_NAME);
       expect(h.detailLine?.(notif({ ...p, hostName: HOST_NAME }), t)).not.toContain(fallback);
       expect(h.detailLine?.(notif(p), t)).toContain(fallback);
+      // frase que COMEÇA com o host sai com maiúscula ("A pessoa responsável precisa..."), nunca "a pessoa..."
+      expect(h.detailLine?.(notif(p), t)).toContain(`. ${fallback[0].toUpperCase()}${fallback.slice(1)} `);
     }
   });
 });

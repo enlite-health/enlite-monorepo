@@ -6538,6 +6538,7 @@
           }
         },
         "hostFallback": "la persona responsable",
+        "hostFallbackStart": "La persona responsable",
         "blocked": {
           "title": "No pudimos traer la transcripción de tu reunión",
           "body": "No pudimos traer la transcripción de tu {{reuniao}} del {{data}}, porque {{motivo}}. Para resolverlo: entrá a Mi perfil, andá a Tactiq y tocá Vincular Tactiq. Tenés tiempo hasta el {{prazo}}; después ya no vamos a poder traer esa transcripción."
@@ -6552,7 +6553,7 @@
         },
         "willBeLost": {
           "title": "La grabación de la reunión de {{host}} se va a perder",
-          "body": "La grabación y la transcripción de la {{reuniao}} de {{host}} del {{data}} todavía no llegaron, porque {{motivo}}. Si {{host}} no vincula Tactiq hasta el {{prazo}}, se van a perder. {{host}} tiene que entrar a Mi perfil, ir a Tactiq y tocar Vincular Tactiq."
+          "body": "La grabación y la transcripción de la {{reuniao}} de {{host}} del {{data}} todavía no llegaron, porque {{motivo}}. Si {{host}} no vincula Tactiq hasta el {{prazo}}, se van a perder. {{hostStart}} tiene que entrar a Mi perfil, ir a Tactiq y tocar Vincular Tactiq."
         }
       },
       "itineraryUncoveredText": "{{shifts}} sin cubrir en {{services}}",

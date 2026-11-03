@@ -177,10 +177,13 @@ function importBlockedText(n: AdminNotification, t: Translate, part: 'title' | '
   const p = importBlockedPayload(n);
   const base = 'admin.notifications.importBlocked';
   const host = p.hostName ?? t(`${base}.hostFallback`);
+  // `hostStart`: o mesmo nome, mas com maiúscula quando abre frase (sem nome: "A pessoa responsável").
+  const hostStart = p.hostName ?? t(`${base}.hostFallbackStart`);
   const motivo = t(`${base}.reason.${p.audience}.${p.reason}`, { host });
   const key = p.stage === 'will_be_lost' ? 'willBeLost' : p.stage;
   return t(`${base}.${key}.${part}`, {
     host,
+    hostStart,
     motivo,
     reuniao: t(`${base}.meeting.${p.kind}`),
     data: importBlockedMoment(p.meetingAt, t),
