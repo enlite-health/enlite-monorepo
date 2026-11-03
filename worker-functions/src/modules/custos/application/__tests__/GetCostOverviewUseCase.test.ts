@@ -171,6 +171,43 @@ describe('GetCostOverviewUseCase — mês e projeto (CA-20, DF-20/DF-21)', () =>
   });
 });
 
+describe('GetCostOverviewUseCase — mês fechado (DF-22)', () => {
+  // hoje = 11/10; escolhido = setembro (fechado). Agosto 31 dias a 2, setembro 30 dias a 3; dataUntil global = 11/10.
+  const fechado = () => data({ dataUntil: '2026-10-11T06:00:00.000Z', dailyTotals: [...days('2026-08', 1, 31, 2), ...days('2026-09', 1, 30, 3)] });
+
+  it('anomalies.status = not_applicable e readAnomalyDetail NÃO roda', async () => {
+    const hist = days('2026-09', 1, 30, 10).map((d) => ({ kind: 'service' as const, name: 'svc-a', ...d }));
+    const { uc, reader } = setup(data({ ...fechado(), dailyByService: [...hist, { kind: 'service', name: 'svc-a', day: '2026-09-30', value: 99 }] }));
+    const o = await uc.execute('2026-09');
+    expect(o.anomalies).toMatchObject({ status: 'not_applicable', day: null, items: [] });
+    expect(reader.readAnomalyDetail).not.toHaveBeenCalled();
+  });
+
+  it('prevMonthToDate = mês anterior INTEIRO (31 dias, não 30) e forecast.value = null', async () => {
+    const o = await setup(fechado()).uc.execute('2026-09');
+    expect(o.monthTotal).toBe(90);
+    expect(o.prevMonthTotal).toBe(62);
+    expect(o.prevMonthToDate).toBe(62);
+    expect(o.forecast.value).toBeNull();
+  });
+
+  it('dataUntil é o do leitor (global), sem recorte pela janela do mês', async () => {
+    const o = await setup(fechado()).uc.execute('2026-09');
+    expect(o.dataUntil).toBe('2026-10-11T06:00:00.000Z');
+  });
+
+  it('a janela diária pedida ao leitor termina no último dia do mês fechado', async () => {
+    const { uc, reader } = setup(fechado());
+    await uc.execute('2026-09');
+    expect(reader.read.mock.calls[0][0]).toMatchObject({ dailyFrom: '2026-09-16', dailyToExclusive: '2026-10-01' });
+  });
+
+  it('mês corrente continua calculando anomalia (status != not_applicable)', async () => {
+    const o = await setup(data()).uc.execute('2026-10');
+    expect(o.anomalies.status).not.toBe('not_applicable');
+  });
+});
+
 describe('GetCostOverviewUseCase — limite de 1 sync a cada 10 s (CA-5, parte 2)', () => {
   it('segunda chamada em < 10 s -> SyncRateLimitedError com retryAfterSeconds; depois de 10 s passa', async () => {
     const { uc, reader, advance } = setup(data());

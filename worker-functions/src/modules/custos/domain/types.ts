@@ -42,6 +42,8 @@ export interface AnomalyCore {
   isNew: boolean;
 }
 export type AnomalyStatus = 'ok' | 'insufficient_history';
+/** Status da resposta: `not_applicable` = mês FECHADO (DF-22); a detecção só olha o mês corrente e nada é calculado nem consultado. */
+export type AnomalyResultStatus = AnomalyStatus | 'not_applicable';
 /** Saída da regra pura `detectAnomalies`. */
 export interface DetectedAnomalies { status: AnomalyStatus; items: AnomalyCore[] }
 
@@ -61,8 +63,8 @@ export interface AnomalyItem extends AnomalyCore {
 }
 export interface AnomalyRule { factor: number; minDelta: number; windowDays: number }
 export interface AnomalyResult {
-  status: AnomalyStatus;
-  /** Último dia completo usado no cálculo; `null` quando `status='insufficient_history'` (nada foi calculado). */
+  status: AnomalyResultStatus;
+  /** Último dia completo usado no cálculo; `null` quando `status` != 'ok' (nada foi calculado). */
   day: DayKey | null;
   rule: AnomalyRule;
   items: AnomalyItem[];
@@ -105,7 +107,7 @@ export interface BillingWindow {
   prevMonthStart: DayKey;
   /** Início da janela dos 6 meses (o primeiro dia de month-5). */
   sixMonthsStart: DayKey;
-  /** Janela da série diária de anomalias (últimos 15 dias, até hoje inclusive). */
+  /** Janela da série diária de anomalias: 15 dias terminando em min(hoje, último dia do mês pedido) — relativa ao MÊS pedido. */
   dailyFrom: DayKey;
   dailyToExclusive: DayKey;
   /** Janela de `availableMonths` (DF-20): do 1º dia de (mês de hoje − 12) até hoje inclusive. */

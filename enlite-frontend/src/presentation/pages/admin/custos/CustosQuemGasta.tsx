@@ -53,7 +53,7 @@ function Linhas({ rows, tab, lang, currency }: { rows: WhoRow[]; tab: TabId; lan
       {rows.map((r) => (
         <TableRow key={r.key} data-testid="custos-linha" data-kind={r.kind} className={`h-11 ${r.highlight ? 'bg-amber-50' : ''}`}>
           <TableCell unwrapped className="min-w-0"><NomeCelula row={r} tab={tab} /></TableCell>
-          <TableCell unwrapped align="right"><Linha tipo="valor" className="tabular-nums">{r.total === null ? t('admin.custos.kpi.noValue') : formatMoney(r.total, currency, lang)}</Linha></TableCell>
+          <TableCell unwrapped align="right"><Linha tipo="valor" className="tabular-nums">{r.total === null ? t('admin.custos.kpi.noValue') : formatMoney(r.total, r.currency ?? currency, lang)}</Linha></TableCell>
           <TableCell unwrapped>
             <div className="flex min-w-0 items-center gap-3">
               <span className="block h-2 min-w-0 flex-1 rounded bg-gray-300" aria-hidden="true">

@@ -19,6 +19,16 @@ describe('CustosVeredito', () => {
     expect(regra).toMatch(/US\$\s?5,00/);
   });
 
+  it('D2: mês fechado = UMA linha neutra, sem "nada fora do normal" nem "histórico insuficiente"', () => {
+    montar(overview({ anomalies: { status: 'not_applicable' as const, day: null, rule: { factor: 2, minDelta: 5, windowDays: 7 }, items: [] } }));
+    const linha = screen.getByTestId('custos-anomalias-mes-fechado');
+    expect(linha).toHaveTextContent('Mês fechado: a detecção de anomalias olha só o mês corrente.');
+    expect(screen.getByTestId('custos-anomalias')).toHaveAttribute('data-status', 'not_applicable');
+    expect(screen.queryByTestId('custos-anomalias-vazio')).toBeNull();
+    expect(screen.queryByTestId('custos-anomalias-insuficiente')).toBeNull();
+    expect(linha.querySelector('[data-single-line]')).not.toBeNull();
+  });
+
   it('singular quando há 1 item', () => {
     montar(overview({ anomalies: { ...overview().anomalies, items: [GEOCODING] } }));
     expect(screen.getByTestId('custos-veredito-titulo')).toHaveTextContent('1 coisa fora do normal');

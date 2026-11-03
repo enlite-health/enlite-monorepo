@@ -69,7 +69,8 @@ for (let i = 1; i <= MANY; i++) {
   series.push({ service: 'Cloud Storage', resource: `projects/enlite-stg/buckets/bucket-sintetico-${String(i).padStart(2, '0')}`, cost: 0.1, lastDays: 9, project: 'enlite-stg', labels: { setor: 'plataforma', service: 'storage' } });
 }
 
-const DAYS = scenario === 'short' ? 5 : 25;
+// `SEED_DAYS` (opcional) alonga a janela: o e2e do mês fechado precisa de linhas no mês anterior em qualquer dia do mês.
+const DAYS = Number(process.env.SEED_DAYS) || (scenario === 'short' ? 5 : 25);
 const rows = [];
 for (let back = DAYS - 1; back >= 0; back--) {
   const dayMs = todayMs - back * DAY;

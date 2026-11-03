@@ -42,8 +42,9 @@ export interface CostAnomalyItem {
 /** As constantes da regra (DF-5), para a tela não duplicá-las. */
 export interface CostAnomalyRule { factor: number; minDelta: number; windowDays: number }
 export interface CostAnomalies {
-  status: 'ok' | 'insufficient_history';
-  /** Último dia completo usado; `null` em `insufficient_history`. */
+  /** `not_applicable` = mês FECHADO (DF-22): a API não calcula anomalia, só olha o mês corrente. */
+  status: 'ok' | 'insufficient_history' | 'not_applicable';
+  /** Último dia completo usado; `null` fora de `ok`. */
   day: string | null;
   rule: CostAnomalyRule;
   items: CostAnomalyItem[];

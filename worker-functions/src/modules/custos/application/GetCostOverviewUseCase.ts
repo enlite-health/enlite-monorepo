@@ -62,13 +62,19 @@ export class GetCostOverviewUseCase {
     // O dia de `dataUntil` pode estar parcial: só os dias ANTES dele contam como completos.
     const lastCompleteDay = dataUntilDay ? addDays(dataUntilDay, -1) : null;
 
+    // DF-22: mês FECHADO = qualquer mês pedido diferente do corrente. Nada de anomalia, previsão nem "mês anterior até o dia".
+    const closed = target !== today.slice(0, 7);
+    const prevMonthTotal = prevDays.length > 0 ? sum(prevDays.map((d) => d.value)) : null;
+
     let prevMonthToDate: number | null = null;
-    if (dataUntilDay && dataUntilDay >= monthStart && prevDays.length > 0) {
+    if (closed) {
+      prevMonthToDate = prevMonthTotal;
+    } else if (dataUntilDay && dataUntilDay >= monthStart && prevDays.length > 0) {
       const cutoff = dataUntilDay > monthEnd ? daysInMonth(target) : Number(dataUntilDay.slice(8, 10));
       prevMonthToDate = sum(prevDays.filter((d) => Number(d.day.slice(8, 10)) <= cutoff).map((d) => d.value));
     }
 
-    const anomalies = await this.buildAnomalies(data, lastCompleteDay, window.dailyToExclusive);
+    const anomalies = closed ? this.notApplicable() : await this.buildAnomalies(data, lastCompleteDay, window.dailyToExclusive);
 
     return {
       month: target,
@@ -76,8 +82,8 @@ export class GetCostOverviewUseCase {
       dataUntil: data.dataUntil,
       monthTotal: sum(inMonth.map((d) => d.value)),
       prevMonthToDate,
-      prevMonthTotal: prevDays.length > 0 ? sum(prevDays.map((d) => d.value)) : null,
-      forecast: forecastMonth(target, inMonth, lastCompleteDay),
+      prevMonthTotal,
+      forecast: closed ? { value: null, basis: 'linear', daysCounted: 0 } : forecastMonth(target, inMonth, lastCompleteDay),
       months: data.months,
       byService: data.byService,
       byResource: data.byResource,
@@ -87,6 +93,11 @@ export class GetCostOverviewUseCase {
       availableMonths: data.availableMonths,
       anomalies,
     };
+  }
+
+  /** Mês fechado (DF-22): a API não calcula anomalia e não roda `readAnomalyDetail`. */
+  private notApplicable(): AnomalyResult {
+    return { status: 'not_applicable', day: null, rule: { factor: ANOMALY_FACTOR, minDelta: ANOMALY_MIN_DELTA, windowDays: ANOMALY_WINDOW_DAYS }, items: [] };
   }
 
   /**

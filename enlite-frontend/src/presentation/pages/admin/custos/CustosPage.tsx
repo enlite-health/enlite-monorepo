@@ -43,19 +43,20 @@ export function CustosPage(): JSX.Element {
   const voando = useRef(false);
   const voltarPara = useRef<string | null>(null);
 
-  const sincronizar = useCallback(async (month?: string) => {
-    if (voando.current) return;
+  /** Devolve `true` se a leitura entrou; falha MANTÉM `dados` (o que está na tela continua valendo) e só mostra o erro (D3). */
+  const sincronizar = useCallback(async (month?: string): Promise<boolean> => {
+    if (voando.current) return false;
     voando.current = true;
     setEstado('syncing');
     setErro(null);
     try {
       setDados(await AdminCostsApiService.getOverview(month));
       setEstado('ready');
+      return true;
     } catch (e) {
       setErro(custosErrorKey(e));
       setEstado('error');
-      // Mantém o que já está na tela só se for do MESMO mês pedido (um 429 não apaga a leitura); outro mês não pode ficar sob o seletor novo.
-      setDados((d) => (d && d.month === (month ?? currentMonthKey()) ? d : null));
+      return false;
     } finally {
       voando.current = false;
     }
@@ -86,11 +87,17 @@ export function CustosPage(): JSX.Element {
 
   const sincronizando = estado === 'syncing';
   const vazio = dados !== null && dados.dataUntil === null;
-  const atrasado = dados !== null && isExportStale(dados.dataUntil);
+  // DF-22: o aviso de export atrasado só vale no mês corrente (num mês fechado `dataUntil` é o último dado da tabela, não do mês).
+  const atrasado = dados !== null && dados.anomalies.status !== 'not_applicable' && isExportStale(dados.dataUntil);
   const forbidden = erro?.key === 'admin.custos.errors.forbidden';
   const item = dados && detalhe ? dados.anomalies.items.find((i) => i.kind === detalhe.kind && i.name === detalhe.name && i.detail) ?? null : null;
   const ultimoComDados = dados?.availableMonths.find((m) => m !== dados.month) ?? null;
-  const escolher = (m: string) => { setMes(m); setDetalhe(null); void sincronizar(m); };
+  // Troca de mês: o seletor mostra o novo já; se a leitura falhar (429/502) ele volta ao mês que estava e os dados anteriores seguem na tela.
+  const escolher = (m: string) => {
+    const anterior = mes;
+    setMes(m);
+    void sincronizar(m).then((ok) => { if (ok) setDetalhe(null); else setMes(anterior); });
+  };
 
   return (
     <PageContainer>

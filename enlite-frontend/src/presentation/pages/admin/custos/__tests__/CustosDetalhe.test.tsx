@@ -15,6 +15,12 @@ describe('CustosDetalhe (A2)', () => {
     expect(screen.getByTestId('custos-detalhe-no-mes')).toHaveTextContent(/US\$\s?123,45/);
   });
 
+  it('D2: o título do gráfico usa o mês do DIA da anomalia (outubro), não o mês escolhido no seletor (setembro)', () => {
+    render(<CustosDetalhe ov={overview({ month: '2026-09' })} item={GEOCODING} onVoltar={() => {}} />);
+    expect(screen.getByText(/Custo diário, outubro/)).toBeInTheDocument();
+    expect(screen.queryByText(/Custo diário, setembro/)).toBeNull();
+  });
+
   it('tabela: aumento, parte do aumento 92,0% (35,05 ÷ 38,10), "maior contribuinte" só na 1ª linha, "sem recurso" traduzido', () => {
     render(<CustosDetalhe ov={overview()} item={GEOCODING} onVoltar={() => {}} />);
     const linhas = screen.getAllByTestId('custos-detalhe-linha');

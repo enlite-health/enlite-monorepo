@@ -7090,7 +7090,8 @@
         "insufficient": "Histórico insuficiente: a detecção começa com {{days}} dias de dados",
         "insufficientText": "Até lá a tela mostra os valores sem marcar o que está fora do normal.",
         "lastDay": "Dia completo mais recente: {{day}}.",
-        "rule": "Regra: custo do dia de pelo menos {{factor}} a mediana dos {{days}} dias anteriores e diferença de pelo menos {{amount}}."
+        "rule": "Regra: custo do dia de pelo menos {{factor}} a mediana dos {{days}} dias anteriores e diferença de pelo menos {{amount}}.",
+        "closedMonth": "Mês fechado: a detecção de anomalias olha só o mês corrente."
       },
       "anomaly": {
         "kind": {
@@ -7125,7 +7126,10 @@
         "forecastUnavailable": "Sem dias suficientes para estimar",
         "estimateWith": "estimativa com {{n}} dias",
         "prevRange": "{{month}}, 1 a {{day}}: {{value}}",
-        "noPrev": "Sem dado do mês anterior ainda."
+        "noPrev": "Sem dado do mês anterior ainda.",
+        "monthClosed": "Total do mês",
+        "vsPrevClosed": "Contra o mês anterior",
+        "prevWhole": "{{month}}, inteiro: {{value}}"
       },
       "months": {
         "title": "Últimos 6 meses",

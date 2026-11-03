@@ -16,10 +16,10 @@ export type CenarioCustos = 'anomaly' | 'calm' | 'short';
 export const NOME_LONGO = 'assistants-service-maria-whatsapp-handler-prd';
 export const RECURSO_LONGO = `projects/enlite-test/services/${NOME_LONGO}`;
 
-export function semearCenario(cenario: CenarioCustos): string {
+export function semearCenario(cenario: CenarioCustos, dias?: number): string {
   const seed = path.resolve(process.cwd(), '..', 'worker-functions', 'test-fixtures', 'billing-export-seed.mjs');
   const saida = execFileSync('node', [seed], {
-    env: { ...process.env, SEED_SCENARIO: cenario, BIGQUERY_EMULATOR_HOST: `http://localhost:${process.env.BQ_EMULATOR_PORT ?? '59050'}` },
+    env: { ...process.env, SEED_SCENARIO: cenario, ...(dias ? { SEED_DAYS: String(dias) } : {}), BIGQUERY_EMULATOR_HOST: `http://localhost:${process.env.BQ_EMULATOR_PORT ?? '59050'}` },
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: 120_000,
   }).toString();

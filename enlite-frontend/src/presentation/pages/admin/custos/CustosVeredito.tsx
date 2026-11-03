@@ -137,6 +137,18 @@ export function CustosVeredito({ ov, onDetalhe }: Props): JSX.Element {
   const { t, lang } = useFmt(ov);
   const { status, items } = ov.anomalies;
 
+  // DF-22: mês FECHADO — nada foi calculado; uma linha neutra, nunca "nada fora do normal" nem "histórico insuficiente".
+  if (status === 'not_applicable') {
+    return (
+      <section aria-label={t('admin.custos.verdict.region')} data-testid="custos-anomalias" data-status="not_applicable">
+        <div data-testid="custos-anomalias-mes-fechado" role="status" className="flex min-w-0 items-center gap-2 rounded-xl border border-gray-600 bg-white px-4 py-3">
+          <Info className="h-5 w-5 flex-none text-primary" aria-hidden="true" />
+          <Linha tipo="nome" truncar weight="medium" title={t('admin.custos.verdict.closedMonth')}>{t('admin.custos.verdict.closedMonth')}</Linha>
+        </div>
+      </section>
+    );
+  }
+
   if (status === 'insufficient_history') {
     return (
       <section aria-label={t('admin.custos.verdict.region')} data-testid="custos-anomalias" data-status="insufficient_history">

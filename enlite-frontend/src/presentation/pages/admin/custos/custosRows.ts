@@ -28,13 +28,15 @@ export interface WhoRow {
   service?: string;
   /** `null` = custo desconhecido (IA estimada sem preço): "—", nunca 0. */
   total: number | null;
-  /** Participação em pontos (0-100); `null` quando o total é desconhecido. */
+  /** Participação em pontos (0-100); `null` quando o total é desconhecido ou a linha está em outra moeda que a da conta. */
   pct: number | null;
+  /** Moeda da LINHA (aba IA: `r.currency ?? ov.currency`; estimada = USD); `null` = a da conta. */
+  currency: string | null;
   signals: Signal[];
   highlight: boolean;
 }
 
-interface Base { key: string; none: boolean; name: string; service?: string; total: number | null; signals: Signal[]; highlight: boolean }
+interface Base { key: string; none: boolean; name: string; service?: string; total: number | null; currency?: string | null; signals: Signal[]; highlight: boolean }
 
 function itemSignal(item: CostAnomalyItem | undefined): Signal[] {
   if (!item) return [];
@@ -73,6 +75,7 @@ function baseRows(tab: TabId, ov: CostOverview): Base[] {
         none: r.source === 'unattributed' || r.caller === COSTS_NONE_KEY,
         name: r.funcao === COSTS_NONE_KEY ? r.caller : `${r.caller} / ${r.funcao}`,
         total: r.total,
+        currency: r.currency ?? ov.currency,
         signals: r.source === 'estimated' ? [{ kind: 'estimated' }] : [],
         highlight: false,
       }));
@@ -99,13 +102,15 @@ export function buildRows(tab: TabId, ov: CostOverview): WhoRow[] {
     name: r.none ? '' : r.name,
     service: r.service,
     total: r.total,
-    pct: r.total === null ? null : sharePct(r.total, ov.monthTotal),
+    currency: r.currency ?? ov.currency,
+    // O total do mês é na moeda da conta: linha em outra moeda não entra na participação.
+    pct: r.total === null || (r.currency ?? ov.currency) !== ov.currency ? null : sharePct(r.total, ov.monthTotal),
     signals: r.signals,
     highlight: r.highlight,
   }));
   if (partitions) {
     const rest = restOfTotal(ov.monthTotal, visible.reduce((s, r) => s + (r.total ?? 0), 0));
-    if (rest > 0) rows.push({ key: '__rest__', kind: 'rest', name: '', total: rest, pct: sharePct(rest, ov.monthTotal), signals: [], highlight: false });
+    if (rest > 0) rows.push({ key: '__rest__', kind: 'rest', name: '', total: rest, currency: ov.currency, pct: sharePct(rest, ov.monthTotal), signals: [], highlight: false });
   }
   return rows;
 }

@@ -43,7 +43,7 @@ describe('BigQueryBillingReader (CA-5, parte 1)', () => {
     const { client, calls } = fakeClient(rowsFor);
     await new BigQueryBillingReader(client).read(WINDOW);
     expect(MAX_BYTES_BILLED).toBe('1073741824');
-    expect(billingOnly(calls)).toHaveLength(11);
+    expect(billingOnly(calls)).toHaveLength(12);
     expect(calls.filter((c) => isAi(c.query))).toHaveLength(1);
     for (const c of calls) {
       expect(c.maximumBytesBilled).toBe('1073741824');
@@ -80,6 +80,18 @@ describe('BigQueryBillingReader (CA-5, parte 1)', () => {
     expect(d.dailyByResource[0]).toEqual({ kind: 'resource', name: 'res-1', day: '2026-10-19', value: 2 });
     expect(d.byProject).toEqual([{ project: 'enlite-prd', total: 75 }, { project: NONE_KEY, total: 1 }]);
     expect(d.availableMonths).toEqual(['2026-10', '2026-09']);
+  });
+
+  it('D2: dataUntil = MAX(export_time) GLOBAL (janela de 13 meses), não o da janela do mês pedido', async () => {
+    const fechado = buildWindow('2026-08', '2026-10-20');
+    const { client, calls } = fakeClient((sql) => {
+      if (sql.includes('MAX(export_time)')) return sql.includes('ANY_VALUE') ? [{ data_until: { value: '2026-08-31T23:00:00.000Z' }, currency: 'BRL' }] : [{ data_until: { value: '2026-10-20T08:00:00.000Z' } }];
+      return rowsFor(sql);
+    });
+    const d = await new BigQueryBillingReader(client).read(fechado);
+    expect(d.dataUntil).toBe('2026-10-20T08:00:00.000Z');
+    const global = calls.find((c) => c.query.includes('MAX(export_time)') && !c.query.includes('ANY_VALUE'))!;
+    expect(global.params).toEqual({ from: fechado.availableFrom, to: fechado.availableToExclusive });
   });
 
   it('export sem linhas -> currency e dataUntil nulos (estado vazio)', async () => {
@@ -149,6 +161,19 @@ describe('BigQueryBillingReader (CA-5, parte 1)', () => {
       expect(q).toContain('GROUP BY 1, 2');
       // a linha __none__ vem 1ª: o LIMIT corta só as nomeadas (30) e ela fica de fora do corte
       expect(q).toContain("ORDER BY (resource = '__none__') DESC, total DESC LIMIT 31");
+    });
+
+    it('D4: o teto é 30 NOMEADAS + 1 linha __none__: sem __none__ a 31ª nomeada é cortada; com __none__ ficam 1 + 30', async () => {
+      const nomeadas = Array.from({ length: 31 }, (_, i) => ({ service: 'Cloud Run', resource: `res-${String(i).padStart(2, '0')}`, total: 100 - i }));
+      const semNone = fakeClient((sql) => (isAi(sql) ? [] : sql.includes('AS resource') ? nomeadas : rowsFor(sql)));
+      const a = await new BigQueryBillingReader(semNone.client).read(WINDOW);
+      expect(a.byResource).toHaveLength(30);
+      expect(a.byResource.some((r) => r.resource === 'res-30')).toBe(false);
+      const comNone = fakeClient((sql) => (isAi(sql) ? [] : sql.includes('AS resource') ? [{ service: NONE_KEY, resource: NONE_KEY, total: 4.5 }, ...nomeadas] : rowsFor(sql)));
+      const b = await new BigQueryBillingReader(comNone.client).read(WINDOW);
+      expect(b.byResource).toHaveLength(31);
+      expect(b.byResource[0].resource).toBe(NONE_KEY);
+      expect(b.byResource.filter((r) => r.resource !== NONE_KEY)).toHaveLength(30);
     });
 
     it('mapeia a linha __none__ do leitor sem perdê-la', async () => {

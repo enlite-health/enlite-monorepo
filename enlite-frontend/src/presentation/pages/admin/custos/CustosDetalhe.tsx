@@ -29,7 +29,8 @@ export function CustosDetalhe({ ov, item, onVoltar }: { ov: CostOverview; item: 
   const diaNum = diaCurto.slice(0, 2);
   const impacto = impact(item);
   const noMes = ov.byService.find((s) => s.service === item.name)?.total ?? null;
-  const mes = monthName(ov.month, lang);
+  // O título é o mês do DIA da anomalia (a série do mês dele), não o mês escolhido no seletor.
+  const mes = monthName(dia ? dia.slice(0, 7) : ov.month, lang);
   return (
     <div className="flex min-w-0 flex-col gap-6" data-testid="custos-detalhe">
       <div>

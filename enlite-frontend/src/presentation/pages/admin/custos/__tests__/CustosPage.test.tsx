@@ -221,16 +221,46 @@ describe('CustosPage', () => {
     expect(await screen.findByTestId('custos-erro')).toHaveTextContent('Aguarde 7 s');
   });
 
-  it('429 depois de um sync bom do MESMO mês: a leitura fica na tela; erro ao trocar de mês não deixa o mês antigo sob o seletor novo', async () => {
+  it('D3: troca de mês que falha (429) mantém os dados e o seletor no mês anterior, e mostra o erro com os segundos', async () => {
+    await sincronizado();
+    getOverview.mockRejectedValueOnce(new CostsApiError('sync_rate_limited', 429, 7));
+    await selectCombo(seletor(), 'setembro de 2026');
+    expect(await screen.findByTestId('custos-erro')).toHaveTextContent('Aguarde 7 s');
+    expect(screen.getByTestId('custos-resultado')).toBeInTheDocument();
+    expect(seletor()).toHaveTextContent('outubro de 2026');
+    expect(screen.getByTestId('custos-card-mes-valor')).toHaveTextContent(/US\$\s?1\.148,40/);
+  });
+
+  it('D3: troca de mês que falha (502) também mantém dados e seletor', async () => {
+    await sincronizado();
+    getOverview.mockRejectedValueOnce(new CostsApiError('billing_query_failed', 502));
+    await selectCombo(seletor(), 'agosto de 2026');
+    expect(await screen.findByTestId('custos-erro')).toHaveAttribute('data-code', 'admin.custos.errors.generic');
+    expect(screen.getByTestId('custos-resultado')).toBeInTheDocument();
+    expect(seletor()).toHaveTextContent('outubro de 2026');
+  });
+
+  it('429 no MESMO mês: a leitura fica na tela', async () => {
     await sincronizado();
     getOverview.mockRejectedValueOnce(new CostsApiError('sync_rate_limited', 429, 7));
     await clicar();
     expect(await screen.findByTestId('custos-erro')).toBeInTheDocument();
     expect(screen.getByTestId('custos-resultado')).toBeInTheDocument();
-    getOverview.mockRejectedValueOnce(new CostsApiError('sync_rate_limited', 429, 7));
+  });
+
+  it('D2: mês fechado — sem aviso de export atrasado (mesmo com dataUntil velho) e com a linha "Mês fechado"', async () => {
+    await sincronizado();
+    getOverview.mockClear();
+    getOverview.mockResolvedValue(overview({
+      month: '2026-09', dataUntil: '2026-10-01T10:00:00Z', forecast: { value: null, basis: 'linear', daysCounted: 0 },
+      anomalies: { status: 'not_applicable' as const, day: null, rule: { factor: 2, minDelta: 5, windowDays: 7 }, items: [] },
+    }));
     await selectCombo(seletor(), 'setembro de 2026');
-    await waitFor(() => expect(screen.queryByTestId('custos-resultado')).toBeNull());
-    expect(screen.getByTestId('custos-erro')).toBeInTheDocument();
+    await screen.findByTestId('custos-anomalias-mes-fechado');
+    expect(screen.queryByTestId('custos-atrasado')).toBeNull();
+    expect(screen.queryByTestId('custos-card-previsao')).toBeNull();
+    expect(getOverview).toHaveBeenCalledTimes(1);
+    expect(getOverview).toHaveBeenCalledWith('2026-09');
   });
 
   it('403 da API: mensagem de acesso negado e sem botão de sincronizar', async () => {

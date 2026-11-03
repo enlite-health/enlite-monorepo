@@ -107,6 +107,25 @@ describe('CustosQuemGasta (RF-A9)', () => {
     expect(screen.getByText(/Linha estimada: tokens × tabela de preço/)).toBeInTheDocument();
   });
 
+  it('D1: aba IA formata cada linha na moeda DA LINHA e a participação só soma linhas na moeda da conta', async () => {
+    const ov = overview({ currency: 'BRL', monthTotal: 1000 });
+    ov.byAiCaller = [
+      { caller: 'triage', funcao: 'classificar', total: 100, currency: 'BRL', source: 'billing' },
+      { caller: 'sol', funcao: 'gemini', total: 50, currency: 'USD', source: 'estimated' },
+    ];
+    const rows = buildRows('ai', ov);
+    expect(rows.find((r) => r.name === 'triage / classificar')).toMatchObject({ currency: 'BRL', pct: 10 });
+    expect(rows.find((r) => r.name === 'sol / gemini')).toMatchObject({ currency: 'USD', pct: null });
+    render(<CustosQuemGasta ov={ov} />);
+    await user.click(screen.getByRole('tab', { name: 'IA' }));
+    const linhas = screen.getAllByTestId('custos-linha');
+    const sol = linhas.find((l) => l.textContent?.includes('sol / gemini'))!;
+    expect(sol.textContent).toMatch(/US\$|USD/);
+    expect(sol.textContent).not.toMatch(/R\$/);
+    expect(sol.textContent).toContain('—');
+    expect(linhas.find((l) => l.textContent?.includes('triage'))!.textContent).toMatch(/R\$/);
+  });
+
   it('cabeçalhos de coluna com text-primary (UI-4) e marcados data-single-line; nome longo com title', async () => {
     render(<CustosQuemGasta ov={overview()} />);
     await user.click(screen.getByRole('tab', { name: 'Recurso' }));

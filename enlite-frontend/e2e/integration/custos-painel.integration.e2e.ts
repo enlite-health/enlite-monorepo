@@ -14,6 +14,7 @@
  * Os números mudam com o dia do mês: os prints mascaram valores, datas e gráficos (medem LAYOUT).
  */
 import { test, expect, type Page } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 import {
   ABAC_API_URL, cleanupStaffAndGroup, grantCell, loginAs, pollAuthz, safeSql, seedStaffInGroup, tokenFor, type MockUser,
 } from '../helpers/abac-stack-helper';
@@ -161,6 +162,35 @@ test.describe('custos-abac · painel 082 direção A — anomalia, dia calmo, hi
     await expect(page.getByTestId('custos-anomalias-vazio')).toHaveCount(0);
     await expect(page.getByTestId('custos-anomalia')).toHaveCount(0);
     await expect(page.getByTestId('custos-quem-gasta')).toBeVisible(); // o resto da tela segue
+  });
+
+  test('custos-abac (e) mês fechado: sem aviso de atraso, linha "Mês fechado…", sem previsão e +1 chamada com `month`', async ({ page }) => {
+    semearCenario('anomaly', 45); // 45 dias: o mês anterior tem linhas em qualquer dia do mês
+    const chamadas = contarChamadas(page);
+    const urls: string[] = [];
+    page.on('request', (r) => { if (r.url().includes('/costs/overview')) urls.push(r.url()); });
+    await loginAs(page, COM);
+    await abrir(page, 'pt-BR');
+    await sincronizar(page);
+    expect(chamadas.total()).toBe(1);
+    await expect(page.getByTestId('custos-card-previsao')).toBeVisible(); // mês corrente: 3 cartões
+    await expect(page.getByTestId('custos-anomalias-mes-fechado')).toHaveCount(0);
+
+    const hoje = new Date();
+    const anterior = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1));
+    const rotulo = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(anterior);
+    await esperarJanela();
+    await escolherNoCombo(page, '[data-testid="custos-mes-select"]', rotulo);
+    await expect(page.getByTestId('custos-anomalias-mes-fechado')).toContainText('Mês fechado: a detecção de anomalias olha só o mês corrente.', { timeout: 60_000 });
+    expect(chamadas.total()).toBe(2); // 1 chamada a mais, e só uma
+    const mes = `${anterior.getUTCFullYear()}-${String(anterior.getUTCMonth() + 1).padStart(2, '0')}`;
+    expect(urls[1]).toContain(`month=${mes}`);
+    await expect(page.getByTestId('custos-atrasado')).toHaveCount(0);
+    await expect(page.getByTestId('custos-card-previsao')).toHaveCount(0);
+    await expect(page.getByTestId('custos-card-mes')).toContainText('Total do mês');
+    await expect(page.getByTestId('custos-anomalia')).toHaveCount(0);
+    await expect(page.getByTestId('custos-anomalias-insuficiente')).toHaveCount(0);
+    await expect(page.getByTestId('custos-anomalias-vazio')).toHaveCount(0);
   });
 
   test('custos-abac (d) sem célula: a URL redireciona, a tela não abre e a API recusa (403)', async ({ page }) => {

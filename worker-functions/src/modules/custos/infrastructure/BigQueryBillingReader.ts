@@ -66,6 +66,15 @@ function str(v: unknown, fallback: string): string {
   return typeof v === 'string' && v.length > 0 ? v : fallback;
 }
 
+/**
+ * Teto de recursos: a linha `__none__` (no máx. 1) + TOP_RESOURCES NOMEADOS. O `LIMIT TOP_RESOURCES + 1` da consulta reserva a vaga
+ * da `__none__`, mas quando ela não existe sobra uma 31ª nomeada: aqui ela é cortada.
+ */
+export function capResources(rows: ResourceCost[]): ResourceCost[] {
+  const isNone = (r: ResourceCost) => r.resource === NONE_KEY;
+  return [...rows.filter(isNone), ...rows.filter((r) => !isNone(r)).slice(0, TOP_RESOURCES)];
+}
+
 /** TIMESTAMP do BigQuery chega como `BigQueryTimestamp` ({ value }) ou string. */
 function toIso(v: unknown): string | null {
   const raw = v && typeof v === 'object' && 'value' in v ? (v as { value: unknown }).value : v;
@@ -119,7 +128,7 @@ export class BigQueryBillingReader implements BillingReader {
     const t = `\`${this.table}\``;
     const month = { from: w.monthStart, to: w.monthEndExclusive };
     const [billingRows, aiEstimated] = await Promise.all([this.readBillingRows(w, t, month), this.readAiEstimated(w)]);
-    const [meta, daily, months, services, resources, sectors, dailyServices, dailyResources, ai, projects, availableMonths] = billingRows;
+    const [meta, daily, months, services, resources, sectors, dailyServices, dailyResources, ai, projects, availableMonths, latest] = billingRows;
 
     const sixMonths: MonthTotal[] = months
       .map((r) => ({ month: String(r.month ?? '').replace(/^(\d{4})(\d{2})$/, '$1-$2'), total: num(r.total) }))
@@ -129,11 +138,12 @@ export class BigQueryBillingReader implements BillingReader {
     const currency = meta[0]?.currency ? String(meta[0].currency) : null;
     return {
       currency,
-      dataUntil: toIso(meta[0]?.data_until),
+      // DF-22: `dataUntil` = o último dado que existe na tabela (janela de 13 meses), não o da janela do mês; janela sem linhas = vazio.
+      dataUntil: meta[0]?.data_until ? toIso(latest[0]?.data_until ?? meta[0].data_until) : null,
       dailyTotals: daily.map((r): DailyTotal => ({ day: String(r.day), value: num(r.total) })),
       months: sixMonths,
       byService: services.map((r): ServiceCost => ({ service: str(r.service, NONE_KEY), total: num(r.total) })),
-      byResource: resources.map((r): ResourceCost => ({ service: str(r.service, NONE_KEY), resource: str(r.resource, NONE_KEY), total: num(r.total) })),
+      byResource: capResources(resources.map((r): ResourceCost => ({ service: str(r.service, NONE_KEY), resource: str(r.resource, NONE_KEY), total: num(r.total) }))),
       bySector: sectors.map((r): SectorCost => ({ sector: str(r.sector, NONE_KEY), total: num(r.total) })),
       byAiCaller: [...ai.map((r): AiCallerCost => {
         const caller = typeof r.caller === 'string' && r.caller ? r.caller : null;
@@ -147,7 +157,7 @@ export class BigQueryBillingReader implements BillingReader {
   }
 
   /**
-   * As 11 consultas do billing export. Tabela do export ainda inexistente (o Google a cria depois; RF-9) -> listas vazias,
+   * As 12 consultas do billing export. Tabela do export ainda inexistente (o Google a cria depois; RF-9) -> listas vazias,
    * o mesmo shape de "export sem linhas" (estado vazio), em vez de 502.
    */
   private async readBillingRows(w: BillingWindow, t: string, month: { from: string; to: string }): Promise<Row[][]> {
@@ -167,9 +177,11 @@ export class BigQueryBillingReader implements BillingReader {
         this.run(`SELECT IFNULL(project.id, '${NONE_KEY}') AS project, SUM(${NET}) AS total FROM ${t} WHERE ${PARTITION} GROUP BY project ORDER BY total DESC`, month, true),
         // DF-20: meses de USO com linhas; só a coluna de partição, janela de 13 meses. Não depende das outras consultas.
         this.run(`SELECT FORMAT_DATE('%Y-%m', DATE(usage_start_time)) AS month FROM ${t} WHERE ${PARTITION} GROUP BY month ORDER BY month DESC LIMIT ${AVAILABLE_MONTHS_MAX}`, { from: w.availableFrom, to: w.availableToExclusive }, true),
+        // DF-22: MAX(export_time) global (13 meses), para o aviso "export atrasado" não depender do mês escolhido.
+        this.run(`SELECT MAX(export_time) AS data_until FROM ${t} WHERE ${PARTITION}`, { from: w.availableFrom, to: w.availableToExclusive }, true),
       ]);
     } catch (err) {
-      if (err instanceof TableMissing) return Array.from({ length: 11 }, () => []);
+      if (err instanceof TableMissing) return Array.from({ length: 12 }, () => []);
       throw err;
     }
   }
