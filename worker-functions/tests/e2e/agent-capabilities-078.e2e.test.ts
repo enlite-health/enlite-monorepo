@@ -14,6 +14,7 @@ import type { AddressInfo } from 'net';
 import { Pool } from 'pg';
 import { AGENT_AUDIENCE, AGENT_CAPABILITY_CELLS, AGENT_CAPABILITY_NAMES, AGENT_IDENTITY_HEADER } from '../../src/modules/mcp/domain/AgentCapabilityCells';
 import { ensureLoginRole, dropLoginRoles, urlFor } from './helpers/loginRoles';
+import { garantirCelulas, removerCelulasCriadas } from './helpers/permissionFamilyHarness';
 
 const ADMIN_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const EVID = process.env.AGC078_EVID; // opcional: arquivo para as linhas-resumo
@@ -54,6 +55,7 @@ interface Ids { [k: string]: string }
 
 describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sintético, motor ABAC ligado (spec 078, M2 lote 4)', () => {
   let admin: Pool;
+  let celulasCriadas: string[] = [];
   let appPool: Pool;
   let url: string;
   let gid: string;
@@ -140,12 +142,14 @@ describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sint�
     for (const k of ['MCP_OAUTH_ENABLED', 'MCP_DB_RO_USER', 'HANDOVER_NOTIFY_ENABLED', 'PERISKOPE_GROUP_RECRUITMENT_ID', 'PERISKOPE_GROUP_COMMUNITY_ID']) setEnv(k, undefined);
 
     await limpar();
+    // o job backend-e2e não sincroniza o catálogo (setar a env aqui não sincroniza nada): garante as células do mapa e lembra quais criou
+    celulasCriadas = await garantirCelulas(admin, celulasDoMapa);
     await admin.query(`INSERT INTO users (firebase_uid, email, display_name, role, account_type, status, is_active, tenant_id) VALUES ($1, $2, 'AGC078', 'support', 'agent', 'ACTIVE', true, $3)`, [UID, EMAIL, TENANT]);
     gid = (await admin.query(`INSERT INTO iam.permission_groups (tenant_id, name, description, actor_class) VALUES ($1, $2, 'e2e', 'AGENT') RETURNING id`, [TENANT, GRUPO])).rows[0].id;
     for (const cell of celulasDoMapa) {
       const [resource, action] = cell.split(':');
       const r = await admin.query(`INSERT INTO iam.group_permissions (group_id, permission_id) SELECT $1, id FROM iam.permissions WHERE resource = $2 AND action = $3 AND deprecated_at IS NULL RETURNING 1`, [gid, resource, action]);
-      if (r.rowCount !== 1) throw new Error(`célula ${cell} ausente do catálogo (sync do boot)`);
+      if (r.rowCount !== 1) throw new Error(`célula ${cell} ausente do catálogo (garantirCelulas)`);
     }
     await admin.query(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason) VALUES ($1, 'AR', 'e2e', 'e2e')`, [gid]);
     await admin.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [UID, gid, TENANT]);
@@ -211,6 +215,7 @@ describe('as 15 capabilities da classe (a) com app_runtime, grupo AGENT AR sint�
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar().catch((e) => console.error('limpeza', e));
+    await removerCelulasCriadas(admin, celulasCriadas).catch((e) => console.error('limpeza células', e));
     await dropLoginRoles(admin, [RT, SYS]).catch(() => undefined);
     await admin.end();
     if (EVID && resumo.length) fs.appendFileSync(EVID, `${resumo.join('\n')}\n`);

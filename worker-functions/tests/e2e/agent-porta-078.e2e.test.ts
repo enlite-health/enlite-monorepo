@@ -13,6 +13,7 @@ import type { AddressInfo } from 'net';
 import { Pool } from 'pg';
 import { AGENT_AUDIENCE, AGENT_IDENTITY_HEADER, AGENT_WRITE_LIMIT_PER_MIN } from '../../src/modules/mcp/domain/AgentCapabilityCells';
 import { ensureLoginRole, dropLoginRoles, urlFor } from './helpers/loginRoles';
+import { garantirCelulas, removerCelulasCriadas } from './helpers/permissionFamilyHarness';
 
 const ADMIN_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TENANT = '00000000-0000-0000-0000-000000000001';
@@ -33,6 +34,7 @@ const tok = (p: object = {}): string =>
 
 describe('porta MCP do agente — HTTP real, banco real, ABAC ligado (spec 078, M2 lote 2)', () => {
   let admin: Pool;
+  let celulasCriadas: string[] = [];
   let workerId: string;
   const servers: Server[] = [];
   const envAnterior: Record<string, string | undefined> = {};
@@ -98,6 +100,8 @@ describe('porta MCP do agente — HTTP real, banco real, ABAC ligado (spec 078, 
       [TENANT, GRUPO],
     );
     const gid = g.rows[0].id as string;
+    // o job backend-e2e não sincroniza o catálogo: garante (idempotente) as células de que o teste depende e lembra quais criou
+    celulasCriadas = await garantirCelulas(admin, [...CELULAS.map(([r, a]) => `${r}:${a}`), 'worker_application:create', 'handover:create']);
     for (const [resource, action] of CELULAS) {
       const r = await admin.query(
         `INSERT INTO iam.group_permissions (group_id, permission_id) SELECT $1, id FROM iam.permissions WHERE resource = $2 AND action = $3 RETURNING 1`,
@@ -164,6 +168,7 @@ describe('porta MCP do agente — HTTP real, banco real, ABAC ligado (spec 078, 
     await admin.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PAC_AR, PAC_BR]]);
     await admin.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [workerId]);
     await admin.query(`DELETE FROM workers WHERE auth_uid = $1`, [W_AUTH]);
+    await removerCelulasCriadas(admin, celulasCriadas).catch((e) => console.error('limpeza células', e));
     await dropLoginRoles(admin, [RT, SYS]).catch(() => undefined);
     await admin.end();
     for (const [k, v] of Object.entries(envAnterior)) {
@@ -190,7 +195,7 @@ describe('porta MCP do agente — HTTP real, banco real, ABAC ligado (spec 078, 
     expect(q.rows[0]).toEqual({ u: RT, m: true });
   });
 
-  it('as 2 células novas estão no catálogo do banco (sync do boot) e não pertencem a nenhum grupo humano', async () => {
+  it('as 2 células novas estão no catálogo do banco (garantidas por garantirCelulas; no CI não há sync) e não pertencem a nenhum grupo humano', async () => {
     const r = await admin.query(
       `SELECT p.resource || ':' || p.action AS c, p.deprecated_at IS NULL AS vivo FROM iam.permissions p WHERE p.resource IN ('worker_application','handover') ORDER BY 1`,
     );
