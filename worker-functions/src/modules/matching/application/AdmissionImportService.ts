@@ -26,6 +26,7 @@ import {
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import { assertSummaryShape } from './admissionSummaryGate';
 import { SUMMARY_KEY, emptySummary, type ImportOutcome, type ImportSummary } from './admissionImportTypes';
+import { standingHumanBlock, type StandingBlockDeps } from './importStandingBlock';
 import { AdmissionTranscriptReader, sha256Hex, type FastGate } from './AdmissionTranscriptReader';
 import {
   AdmissionSummaryError,
@@ -131,6 +132,10 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
     return withActorContext(this.db, fn);
   }
 
+  private standingDeps(): StandingBlockDeps<S> {
+    return { repo: this.deps.repo, events: this.deps.events, tokens: this.deps.tokens, naming: this.naming, log: this.log, inTx: (fn) => this.inTx(fn) };
+  }
+
   private async importHeld(id: string, now: Date, fast?: FastGate): Promise<ImportOutcome> {
     const a = await this.deps.repo.find(id);
     if (!a) return 'not_eligible';
@@ -173,6 +178,9 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
     const endedAt = a.conference_ended_at;
     if (!fast && now.getTime() < endedAt.getTime() + IMPORT_MIN_DELAY_MS) return 'too_early'; // modo rápido (R-51): pula só a espera
     const expired = now.getTime() - endedAt.getTime() >= IMPORT_EXPIRE_AFTER_MS;
+
+    // Spec 083 (D-3): bloqueio que só uma pessoa resolve decide AQUI, antes de token/MCP/cofre/Vertex (modo rápido: vai ao leitor).
+    if (a.import_status === 'blocked' && !fast && (await standingHumanBlock(this.standingDeps(), a, now, endedAt)) === 'blocked') return 'blocked';
 
     // 1 a 4. a leitura do Tactiq (token, busca, provas, páginas, integridade), uma por vez por responsável (R-53).
     const read = await this.reader.read(a);
@@ -300,8 +308,9 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
       // Conta que já importou com sucesso desde o vínculo é CERTA: uma reunião não gravada (extensão off, celular) só expira — o vínculo fica.
       if (await this.deps.tokens.hasImportedSinceLinked(a.host_email)) return this.expire(a, 'not_found');
       const changed = await this.deps.tokens.markWrongAccount(a.host_email);
-      await this.setBlocked(a, 'wrong_account');
-      this.log.error({ [this.naming.idKey]: a.id, reason: 'wrong_account', linkChanged: changed }, `${this.naming.prefix}.import_blocked`);
+      if (await this.setBlocked(a, 'wrong_account')) {
+        this.log.error({ [this.naming.idKey]: a.id, reason: 'wrong_account', linkChanged: changed }, `${this.naming.prefix}.import_blocked`);
+      }
       return 'wrong_account';
     }
     await this.inTx(async (cli) => {
@@ -333,18 +342,18 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   }
 
   private async block(a: S, reason: 'no_link'): Promise<ImportOutcome> {
-    await this.setBlocked(a, reason);
-    this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.import_blocked`);
+    if (await this.setBlocked(a, reason)) this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.import_blocked`);
     return 'blocked';
   }
 
-  /** `blocked` com motivo. O evento entra só na TRANSIÇÃO; o log de alarme sai a cada execução enquanto durar. */
-  private async setBlocked(a: S, reason: string): Promise<void> {
-    if (a.import_status === 'blocked') return;
+  /** `blocked` com motivo. O evento entra só na TRANSIÇÃO e devolve `true` nela: quem chama loga o alarme só quando `true` (spec 083). */
+  private async setBlocked(a: S, reason: string): Promise<boolean> {
+    if (a.import_status === 'blocked') return false;
     await this.inTx(async (cli) => {
       await this.deps.repo.setState(a.id, 'blocked', cli, { reason });
       await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason }, cli);
     });
+    return true;
   }
 
   private transient(a: S, where: string): ImportOutcome {
@@ -356,8 +365,9 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   private async mcpFailure(a: S, err: unknown, where: string): Promise<ImportOutcome> {
     if (err instanceof TactiqUnauthorizedError) {
       await this.deps.tokens.markBroken(a.host_email);
-      await this.setBlocked(a, 'no_link');
-      this.log.error({ [this.naming.idKey]: a.id, reason: 'unauthorized', where }, `${this.naming.prefix}.import_blocked`);
+      if (await this.setBlocked(a, 'no_link')) {
+        this.log.error({ [this.naming.idKey]: a.id, reason: 'unauthorized', where }, `${this.naming.prefix}.import_blocked`);
+      }
       return 'blocked';
     }
     return this.transient(a, `${where}:${(err as { reason?: string })?.reason ?? 'unexpected'}`);
