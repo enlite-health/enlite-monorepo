@@ -611,6 +611,16 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_status:move_to_discharged':
     'Trocar o paciente para BAJA (desligado) por FORA do fluxo normal de transições, a partir de '
     + 'qualquer estado clínico. Não vem em nenhum grupo por padrão.',
+
+  // ── Spec 078 (M2, decisões do lote 0) — a Luz como AGENTE no ABAC. As 2 células nascem com o consumidor (a porta MCP do agente,
+  //    `mcp/domain/AgentCapabilityCells.ts` + `AgentCellGuard`), sem rota REST. Nascem com 0 grupos: a operação as concede ao
+  //    espelho da Luz em /admin/access antes de ligar a identidade do agente.
+  'worker_application:create':
+    'Postular um prestador a uma vaga em nome dele, com a mesma elegibilidade do app; devolve o link do pré-screening '
+    + 'só quando aprovado. Não move etapa nem rejeita.',
+  'handover:create':
+    'Avisar a equipe no Periskope (grupo, ticket e nota interna) que um prestador precisa de atendimento humano. '
+    + 'Não envia mensagem ao prestador.',
 };
 
 /**

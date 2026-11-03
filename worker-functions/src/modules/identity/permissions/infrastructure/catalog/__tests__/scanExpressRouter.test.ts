@@ -470,6 +470,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_status:move_to_suspended',
       'patient_status:move_to_alta',
       'patient_status:move_to_discharged',
+      // Spec 078 (M2): as 2 células da Luz como agente — consumidor é a porta MCP (`AgentCapabilityCells` + `AgentCellGuard`), sem rota REST.
+      'worker_application:create',
+      'handover:create',
     ]);
   });
 
