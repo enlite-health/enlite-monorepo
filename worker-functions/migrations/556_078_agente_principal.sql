@@ -196,3 +196,40 @@ BEGIN
     LIMIT LEAST(COALESCE(p_limit, 200), 1000);
 END;
 $$;
+
+-- ── 4. A linha do agente e o grupo AGENT "Luz — espelho Recrutador" (seed idempotente) ───────────
+-- Linha sem grupo é inerte (fail-closed: sem grupo → 0 célula e 0 país; a porta responde 403). A migration NÃO põe a Luz no grupo
+-- nem concede célula a ele: o grupo nasce VAZIO e pôr a Luz nele é ato da operação (🛑 da M2.F). Nenhum INSERT em iam.group_permissions/user_groups.
+-- `firebase_uid` = `agent:<slug>` (congelado). `role='support'` está no CHECK de users.role e não classifica na ponte (414): o `account_type`
+-- vai DECLARADO. Pânico = `status <> 'ACTIVE'` (o botão grava SUSPENDED; religar = ACTIVE). E-mail = conta de serviço do triage (chave de identidade do agente).
+INSERT INTO users (firebase_uid, email, display_name, role, account_type, status, is_active, tenant_id)
+VALUES ('agent:luz',
+        'triage-service-sa@enlite-prd.iam.gserviceaccount.com',
+        'Luz (agente)',
+        'support',
+        'agent',
+        'ACTIVE',
+        true,
+        '00000000-0000-0000-0000-000000000001')
+ON CONFLICT DO NOTHING;
+
+-- Grupo espelho: classe AGENT, país AR, SEM célula e SEM membro. `ON CONFLICT (tenant_id, name)`: a 2ª execução não duplica.
+INSERT INTO iam.permission_groups (tenant_id, name, description, is_system, actor_class)
+VALUES ('00000000-0000-0000-0000-000000000001',
+        'Luz — espelho Recrutador',
+        'Grupo da Luz (agente). Nasce vazio: a operação concede as células do espelho do Recrutador e põe a Luz aqui. Nunca recebe gestão de permissão nem operação em lote.',
+        false,
+        'AGENT')
+ON CONFLICT (tenant_id, name) DO NOTHING;
+
+INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason)
+SELECT g.id, 'AR', 'migration:556', 'Grupo da Luz: operação da Argentina (spec 078, M2)'
+  FROM iam.permission_groups g
+ WHERE g.tenant_id = '00000000-0000-0000-0000-000000000001'
+   AND g.name = 'Luz — espelho Recrutador'
+   AND NOT EXISTS (SELECT 1 FROM iam.group_country_scopes s WHERE s.group_id = g.id AND s.country = 'AR' AND s.revoked_at IS NULL);
+
+-- ── 5. Privilégios ───────────────────────────────────────────────────────────────────
+-- Nada a conceder a grupo de acesso. `iam.permission_audit_log`: o INSERT do agente usa o mesmo login do humano (app_runtime);
+-- as colunas novas herdam o GRANT de tabela. `iam.celulas_vedadas_a_agente()`: REVOKE PUBLIC + GRANT app_runtime/app_system (§2b).
+-- A prova é `has_*_privilege` no e2e (agent-schema-078).

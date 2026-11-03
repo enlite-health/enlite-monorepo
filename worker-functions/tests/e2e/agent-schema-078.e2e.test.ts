@@ -5,6 +5,8 @@
  * semear e medir catálogo). Nada passa pela API. As seções seguintes (2: triggers; 3: auditoria; 4: seed) entram nas
  * tasks M2.1.3, M2.1.5 e M2.1.7, neste MESMO arquivo.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { Pool, PoolClient } from 'pg';
 import { CELULAS_VEDADAS_A_AGENTE } from '../../src/modules/identity/permissions/domain/ActorClass';
 import { PgPermissionAuditRepository } from '../../src/modules/identity/permissions/infrastructure/PgPermissionAuditRepository';
@@ -425,5 +427,116 @@ describe('556 §3b — iam.query_audit com as 3 colunas novas', () => {
     } finally {
       client.release();
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 556 §4-§6 — a linha `agent:luz`, o grupo espelho vazio, os privilégios e o ROLLBACK.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe('556 §4-§6 — seed do agente, privilégios e rollback', () => {
+  const ENLITE = '00000000-0000-0000-0000-000000000001';
+  const MIGRACOES = path.resolve(__dirname, '..', '..', 'migrations');
+  const SQL_556 = fs.readFileSync(path.join(MIGRACOES, '556_078_agente_principal.sql'), 'utf8');
+  const SECAO_4 = SQL_556.slice(SQL_556.indexOf('-- ── 4. A linha do agente'), SQL_556.indexOf('-- ── 5. Privilégios'));
+  const ROLLBACK = fs.readFileSync(path.join(MIGRACOES, 'pending', 'ROLLBACK_556_078_agente_principal.sql'), 'utf8');
+  const GRUPO = 'Luz — espelho Recrutador';
+
+  it('(a) a linha agent:luz existe com o tipo, status, e-mail e tenant do contrato', async () => {
+    expect(SECAO_4.length).toBeGreaterThan(200); // a fatia achou a seção (contagem zero é falha)
+    const r = await pool.query(`SELECT account_type, status, is_active, email, tenant_id, role FROM users WHERE firebase_uid = 'agent:luz'`);
+    expect(r.rows).toEqual([
+      { account_type: 'agent', status: 'ACTIVE', is_active: true, email: 'triage-service-sa@enlite-prd.iam.gserviceaccount.com', tenant_id: ENLITE, role: 'support' },
+    ]);
+  });
+
+  it('(b) reaplicar a seção 4 (idempotência) não duplica nem falha: 1 linha, 1 grupo, 1 país AR vivo', async () => {
+    await pool.query(SECAO_4);
+    await pool.query(SECAO_4);
+    const u = await pool.query(`SELECT count(*)::int AS n FROM users WHERE firebase_uid = 'agent:luz' OR email = 'triage-service-sa@enlite-prd.iam.gserviceaccount.com'`);
+    const g = await pool.query(`SELECT id, actor_class, is_system FROM iam.permission_groups WHERE tenant_id = $1 AND name = $2`, [ENLITE, GRUPO]);
+    const c = await pool.query(`SELECT country FROM iam.group_country_scopes WHERE group_id = $1 AND revoked_at IS NULL`, [g.rows[0]?.id]);
+    expect(u.rows[0].n).toBe(1);
+    expect(g.rows).toEqual([expect.objectContaining({ actor_class: 'AGENT', is_system: false })]);
+    expect(c.rows.map((x) => x.country.trim())).toEqual(['AR']);
+  });
+
+  it('(c) o agente recém-nascido é inerte: 0 células e 0 países (sem grupo, sem acesso), e o grupo espelho nasce SEM membro e SEM célula de negócio', async () => {
+    const e = await pool.query(`SELECT iam.effective_permissions('agent:luz', $1) AS cel, iam.effective_countries('agent:luz', $1) AS pais`, [ENLITE]);
+    expect(e.rows[0].cel ?? []).toEqual([]);
+    expect(e.rows[0].pais ?? []).toEqual([]);
+    const m = await pool.query(
+      `SELECT (SELECT count(*)::int FROM iam.user_groups ug JOIN iam.permission_groups g ON g.id = ug.group_id WHERE g.name = $1 AND ug.removed_at IS NULL) AS membros,
+              (SELECT count(*)::int FROM iam.group_permissions gp JOIN iam.permission_groups g ON g.id = gp.group_id JOIN iam.permissions p ON p.id = gp.permission_id
+                WHERE g.name = $1 AND p.resource NOT LIKE 'own\_%' ESCAPE '\\') AS celulas_de_negocio`,
+      [GRUPO],
+    );
+    expect(m.rows[0]).toEqual({ membros: 0, celulas_de_negocio: 0 });
+  });
+
+  it('(d) a migration não concede célula a NENHUM grupo: sem INSERT em group_permissions/user_groups no arquivo e a contagem não muda ao reaplicar a seção 4', async () => {
+    const insere = /INSERT\s+INTO\s+iam\.(group_permissions|user_groups)/i;
+    // controle positivo: a mesma regex ACHA o INSERT numa migration que concede (471)
+    expect(insere.test(fs.readFileSync(path.join(MIGRACOES, '471_grant_own_cells_to_active_groups_on_sync.sql'), 'utf8'))).toBe(true);
+    expect(insere.test(SQL_556.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n'))).toBe(false);
+    const antes = await pool.query(`SELECT count(*)::int AS n FROM iam.group_permissions`);
+    await pool.query(SECAO_4);
+    const depois = await pool.query(`SELECT count(*)::int AS n FROM iam.group_permissions`);
+    expect(depois.rows[0].n).toBe(antes.rows[0].n);
+  });
+
+  it('(e) privilégios: app_runtime INSERT t / UPDATE f / DELETE f na trilha, INSERT t na coluna actor_kind; EXECUTE da função t para app_runtime e f para PUBLIC', async () => {
+    const r = await pool.query(
+      `SELECT has_table_privilege('app_runtime', 'iam.permission_audit_log', 'INSERT') AS ins,
+              has_table_privilege('app_runtime', 'iam.permission_audit_log', 'UPDATE') AS upd,
+              has_table_privilege('app_runtime', 'iam.permission_audit_log', 'DELETE') AS del,
+              has_column_privilege('app_runtime', 'iam.permission_audit_log', 'actor_kind', 'INSERT') AS col,
+              has_function_privilege('app_runtime', 'iam.celulas_vedadas_a_agente()', 'EXECUTE') AS fn_rt,
+              has_function_privilege('app_system', 'iam.celulas_vedadas_a_agente()', 'EXECUTE') AS fn_sys,
+              has_function_privilege('public', 'iam.celulas_vedadas_a_agente()', 'EXECUTE') AS fn_pub`,
+    );
+    expect(r.rows[0]).toEqual({ ins: true, upd: false, del: false, col: true, fn_rt: true, fn_sys: true, fn_pub: false });
+    // o literal do contrato: t|f|f|t
+    expect([r.rows[0].ins, r.rows[0].upd, r.rows[0].del, r.rows[0].col].map((b) => (b ? 't' : 'f')).join('|')).toBe('t|f|f|t');
+  });
+
+  it('(f) ROLLBACK (numa transação, desfeita no fim): o banco volta ao estado da 555 — CHECKs, colunas, triggers, funções, linha, grupo, query_audit', async () => {
+    // o ROLLBACK falha DE PROPÓSITO se sobrar outra conta `agent` (o CHECK antigo não a aceita): tira as dos testes anteriores deste arquivo
+    await pool.query(`DELETE FROM users WHERE firebase_uid LIKE $1`, [`${PREFIXO}%`]);
+    const client = await pool.connect();
+    const estado = async () =>
+      (
+        await client.query(
+          `SELECT
+             (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'users_account_type_check') AS ck_users,
+             (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'permission_groups_actor_class_ck') AS ck_classe,
+             (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'iam' AND table_name = 'permission_audit_log'
+                AND column_name IN ('actor_kind', 'gatilho_id', 'registro_versao')) AS colunas,
+             (SELECT count(*)::int FROM pg_trigger WHERE NOT tgisinternal AND tgname IN ('veda_celula_a_agente', 'veda_trocar_classe_agente', 'veda_agente_fora_de_grupo_agent')) AS triggers,
+             (SELECT count(*)::int FROM pg_proc WHERE pronamespace = 'iam'::regnamespace AND proname IN ('celulas_vedadas_a_agente', 'trg_veda_celula_a_agente', 'trg_veda_trocar_classe_agente', 'trg_veda_agente_fora_de_grupo_agent')) AS funcoes,
+             (SELECT count(*)::int FROM users WHERE firebase_uid = 'agent:luz') AS linha,
+             (SELECT count(*)::int FROM iam.permission_groups WHERE name = $1) AS grupo,
+             (SELECT count(*)::int FROM pg_indexes WHERE schemaname = 'iam' AND indexname = 'idx_pal_agente_user_created') AS indice,
+             (SELECT pg_get_functiondef('iam.query_audit(varchar,varchar,timestamptz,timestamptz,int)'::regprocedure) LIKE '%actor_kind%') AS query_audit_nova`,
+          [GRUPO],
+        )
+      ).rows[0];
+    try {
+      const antes = await estado();
+      expect(antes).toMatchObject({ colunas: 3, triggers: 3, funcoes: 4, linha: 1, grupo: 1, indice: 1, query_audit_nova: true });
+      await client.query('BEGIN');
+      await client.query(ROLLBACK);
+      const depois = await estado();
+      expect(depois.ck_users).toContain(`'staff'`);
+      expect(depois.ck_users).not.toContain('agent');
+      expect(depois.ck_classe).not.toContain('AGENT');
+      expect(depois.ck_classe).toContain('EXTERNAL_THIRD_PARTY');
+      expect(depois).toMatchObject({ colunas: 0, triggers: 0, funcoes: 0, linha: 0, grupo: 0, indice: 0, query_audit_nova: false });
+    } finally {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+    }
+    // o ROLLBACK da transação deixou a 556 de pé
+    const r = await pool.query(`SELECT count(*)::int AS n FROM users WHERE firebase_uid = 'agent:luz'`);
+    expect(r.rows[0].n).toBe(1);
   });
 });
