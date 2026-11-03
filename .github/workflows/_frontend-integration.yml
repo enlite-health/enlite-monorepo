@@ -561,7 +561,7 @@ jobs:
   # há cenário de ERRO que exija recriar a API no meio do job.
   integration-e2e-group-simulation:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       E2E_BACKEND_URL: http://localhost:8080
 
