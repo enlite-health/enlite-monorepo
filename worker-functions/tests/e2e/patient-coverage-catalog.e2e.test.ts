@@ -5,9 +5,9 @@
  *   1. GET /catalogs/insurance-providers devolve os 33 do contrato (staff);
  *   2. POST /catalogs/insurance-providers é admin-only (recruiter → 403), cria a opção (201), duplicado → 409,
  *      e a opção nova aparece no GET no mesmo instante (sem deploy);
- *   3. PATCH /patients/:id/coverage grava DUAS verificadas por código (source='admin_manual',
- *      provider_code = code) + cobertura informada + nº de afiliado; a ficha devolve insuranceVerifiedCodes;
- *      código fora do catálogo → 422; a trilha de affiliate_id não leva o valor (só o log — provado no unitário);
+ *   3. PATCH /patients/:id/coverage grava a cobertura informada + o nº de afiliado; `insuranceVerifiedCodes` SAIU do PATCH (spec 087):
+ *      400 pelo `.strict()` e nada é gravado em patient_insurance_verified; a trilha de affiliate_id não leva o valor (só o log —
+ *      provado no unitário). As linhas `admin_manual` legadas (gravadas antes da 087) seguem legíveis na ficha;
  *   4. o sync do ClickUp (repositório real) traduz o rótulo por alias e NÃO apaga o que o painel gravou.
  */
 import { Pool } from 'pg';
@@ -70,24 +70,32 @@ describe('Cobertura por catálogo (spec 012 US-B3) @integration', () => {
     expect((list.data.data.providers as Array<{ code: string }>).map((p) => p.code)).toContain(NEW_CODE);
   });
 
-  it('3. PATCH /coverage grava 2 verificadas por código + informada + afiliado; ficha devolve; código estranho → 422', async () => {
+  it('3. PATCH /coverage grava informada + afiliado; insuranceVerifiedCodes → 400 e nada gravado (spec 087); linhas legadas seguem legíveis', async () => {
     const r = await api.patch(`/api/admin/patients/${patientId}/coverage`,
-      { healthInsuranceName: 'OSDE 310 e2e', affiliateId: 'AF-e2e-1', insuranceVerifiedCodes: ['SWISS_MEDICAL', 'OSDE'] }, asAdmin);
+      { healthInsuranceName: 'OSDE 310 e2e', affiliateId: 'AF-e2e-1' }, asAdmin);
     expect(r.status).toBe(200);
+    const { rows: [p] } = await pool.query(`SELECT insurance_informed, affiliate_id FROM patients WHERE id = $1`, [patientId]);
+    expect(p).toEqual({ insurance_informed: 'OSDE 310 e2e', affiliate_id: 'AF-e2e-1' });
+    // Spec 087 (decisão 5): a escrita das verificadas saiu do PATCH — o `.strict()` recusa a chave, bem formada ou não, e NADA é gravado.
+    for (const body of [{ insuranceVerifiedCodes: ['SWISS_MEDICAL', 'OSDE'] }, { insuranceVerifiedCodes: ['NAO_EXISTE_XYZ'] }, { insuranceVerifiedCodes: [] }, { affiliateId: 'AF-e2e-2', insuranceVerifiedCodes: ['OSDE'] }]) {
+      const bad = await api.patch(`/api/admin/patients/${patientId}/coverage`, body, asAdmin);
+      expect(bad.status).toBe(400);
+    }
+    const { rows: gravadas } = await pool.query(`SELECT 1 FROM patient_insurance_verified WHERE patient_id = $1`, [patientId]);
+    expect(gravadas).toHaveLength(0);
+    const { rows: [afiliado] } = await pool.query(`SELECT affiliate_id FROM patients WHERE id = $1`, [patientId]);
+    expect(afiliado).toEqual({ affiliate_id: 'AF-e2e-1' }); // o PATCH recusado inteiro não aplicou o afiliado novo
+    // Linhas `admin_manual` legadas (gravadas antes da 087) seguem na ficha: semeadas pelo repositório, que continua existindo.
+    await new PatientInsuranceVerifiedRepository().replaceCodesForPatient(patientId, ['SWISS_MEDICAL', 'OSDE']);
     const { rows } = await pool.query(
       `SELECT ordinal, raw_label, provider_code, source FROM patient_insurance_verified WHERE patient_id = $1 ORDER BY ordinal`, [patientId]);
     expect(rows).toEqual([
       { ordinal: 1000, raw_label: 'SWISS_MEDICAL', provider_code: 'SWISS_MEDICAL', source: 'admin_manual' },
       { ordinal: 1001, raw_label: 'OSDE', provider_code: 'OSDE', source: 'admin_manual' },
     ]);
-    const { rows: [p] } = await pool.query(`SELECT insurance_informed, affiliate_id FROM patients WHERE id = $1`, [patientId]);
-    expect(p).toEqual({ insurance_informed: 'OSDE 310 e2e', affiliate_id: 'AF-e2e-1' });
     const g = await api.get(`/api/admin/patients/${patientId}`, asAdmin);
     expect(g.data.data.insuranceVerifiedCodes).toEqual(['OSDE', 'SWISS_MEDICAL']); // ordem do catálogo (15 < 28)
     expect(g.data.data.affiliateId).toBe('AF-e2e-1');
-    const bad = await api.patch(`/api/admin/patients/${patientId}/coverage`, { insuranceVerifiedCodes: ['NAO_EXISTE_XYZ'] }, asAdmin);
-    expect(bad.status).toBe(422);
-    expect(bad.data.code).toBe('INSURANCE_PROVIDER_UNKNOWN');
     // IVA / contratación NÃO entram (lex C3.3 → bloco C)
     expect((await api.patch(`/api/admin/patients/${patientId}/coverage`, { taxCondition: 'IVA_21' }, asAdmin)).status).toBe(400);
     // Spec 058: o nº de afiliado legado saiu do fio — 422 com o motivo (o dono é `affiliateId`), em qualquer seção.

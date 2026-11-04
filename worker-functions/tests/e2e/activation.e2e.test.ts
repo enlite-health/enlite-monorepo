@@ -4,8 +4,8 @@
  * Ativação de recrutamento é POR SERVIÇO (não mais um botão único no cabeçalho do paciente):
  *   - `POST /patients/:id/contracted-services` (JÁ EXISTE, spec 013 bloco C — só chamado aqui);
  *   - `POST /patients/:id/contracted-services/:sid/activate-recruitment` (novo, este PR): gate
- *     `RECRUITMENT_BLOCKING_CODES` (SERVICE_ADDRESS/SERVICE_SCHEDULE do serviço + COVERAGE do
- *     paciente), 1 vaga em rascunho (`is_draft`/status `PENDING_ACTIVATION`), paciente do funil
+ *     `RECRUITMENT_BLOCKING_CODES` (SERVICE_ADDRESS/SERVICE_SCHEDULE do serviço + COVERAGE = vínculo
+ *     vigente do serviço, spec 087), 1 vaga em rascunho (`is_draft`/status `PENDING_ACTIVATION`), paciente do funil
  *     vai a SEARCHING NA MESMA transação (D469, 02/10/2026: o foguete volta a mover o paciente);
  *   - `POST /patients/:id/activate` (a rota antiga, de paciente inteiro) virou 410 `ACTIVATION_SPLIT`.
  *
@@ -19,6 +19,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const TAG = 'activation-e2e-%';
@@ -36,12 +37,6 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
   const api = createApiClient();
   let pool: Pool;
   let asAdmin: StaffAuth;
-  // Hotfix gate-cobertura-verificada-vacante (28/09): provider PRÓPRIO deste arquivo, criado
-  // INATIVO por SQL direto (o POST /catalogs/insurance-providers só cria active=true — mesma
-  // convenção de patient-coverage-catalog.e2e.test.ts, mas aqui não há endpoint de baixa).
-  // 'OSDE' (catálogo seed, migration 311) cobre o caso ATIVO — nenhum teste do repo o desativa.
-  const COVERAGE_INACTIVE_CODE = `E2E_INA_${Date.now().toString(36).toUpperCase()}`;
-
   async function criarPacienteDeFunil(opts: {
     tag: string;
     coverage?: string | null;
@@ -79,14 +74,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       [TAG],
     );
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [TAG]);
-    // 305: patient_insurance_verified tem FK ON DELETE CASCADE de patients — some junto.
-    // O provider é INDEPENDENTE do paciente (catálogo global), por isso limpo à parte.
-    await pool.query(`DELETE FROM insurance_providers WHERE code = $1`, [COVERAGE_INACTIVE_CODE]);
-    await pool.query(
-      `INSERT INTO insurance_providers (code, name, active, retired_at, sort_order)
-       SELECT $1, 'Obra social inativa E2E activation', false, NOW(), COALESCE(MAX(sort_order), 0) + 1 FROM insurance_providers`,
-      [COVERAGE_INACTIVE_CODE],
-    );
+    // 305: patient_insurance_verified tem FK ON DELETE CASCADE de patients — some junto (o vínculo do serviço, 537, também).
   });
 
   afterAll(async () => {
@@ -95,7 +83,6 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       [TAG],
     );
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [TAG]);
-    await pool.query(`DELETE FROM insurance_providers WHERE code = $1`, [COVERAGE_INACTIVE_CODE]);
     await pool.end();
   });
 
@@ -120,9 +107,8 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(svc.status).toBe(201);
     const serviceId = svc.data.data.id as string;
 
-    // COVERAGE: "Particular" é resposta EXPLÍCITA válida (FR-121/122) — grava depois da criação
-    // do paciente para não acoplar este teste ao shape do INSERT de patients acima.
-    await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [patientId]);
+    // COVERAGE (spec 087): o serviço tem vínculo vigente (contrato ou Particular) — a informada e a verificada não contam mais.
+    await vincularServicoAoPagador(pool, serviceId);
 
     const before = await pool.query<{ n: string }>(
       'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],
@@ -220,7 +206,6 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     const patientId = await criarPacienteDeFunil({
       tag: 'activation-e2e-alt2',
       caseNumber: 991003,
-      coverage: 'Particular',
     });
 
     const addr = await api.post(
@@ -238,6 +223,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     );
     expect(svc.status).toBe(201);
     const serviceId = svc.data.data.id as string;
+    await vincularServicoAoPagador(pool, serviceId);
 
     const r = await api.post(
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
@@ -262,23 +248,11 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(patient.status).toBe('PENDING_ADMISSION');
   });
 
-  // Hotfix gate-cobertura-verificada-vacante (28/09): os 3 casos abaixo provam
-  // `has_verified_active_coverage` (ActivateRecruitmentUseCase.ts:145 e
-  // PatientDetailQueryHelper.ts:120) — SQL que, sem estes casos, nenhum teste executa contra
-  // Postgres real (os unitários recebem o booleano já pronto via mock).
-
-  it('ALTERNATIVO 3: só cobertura VERIFICADA (legado vazio, patient_insurance_verified com provider ativo) → activate-recruitment ACEITA', async () => {
-    const patientId = await criarPacienteDeFunil({
-      tag: 'activation-e2e-coverage-verified',
-      caseNumber: 991004,
-      coverage: null, // legado (health_insurance_name) fica AUSENTE de propósito: só a cobertura verificada sustenta o gate
-    });
-
-    const addr = await api.post(
-      `/api/admin/patients/${patientId}/addresses`,
-      { address_formatted: 'Av. Cobertura Verificada 100', address_type: 'primary' },
-      asAdmin,
-    );
+  // Spec 087 (decisão 3): `COVERAGE` = o serviço sendo ativado tem vínculo (contrato ou Particular) VIGENTE em `asOf`. Os casos abaixo
+  // provam `servicePayerLinkedSql` (o fragmento único do portão) contra Postgres real e que a informada/verificada NÃO destravam.
+  const prepararServico = async (tag: string, caseNumber: number, opts: { coverage?: string | null } = {}): Promise<{ patientId: string; serviceId: string }> => {
+    const patientId = await criarPacienteDeFunil({ tag, caseNumber, coverage: opts.coverage ?? null });
+    const addr = await api.post(`/api/admin/patients/${patientId}/addresses`, { address_formatted: `Av. ${tag} 100`, address_type: 'primary' }, asAdmin);
     const addressId = addr.data.data.id as string;
     const svc = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
@@ -286,114 +260,66 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       asAdmin,
     );
     expect(svc.status).toBe(201);
-    const serviceId = svc.data.data.id as string;
+    return { patientId, serviceId: svc.data.data.id as string };
+  };
+  const ativar = (patientId: string, serviceId: string) =>
+    api.post(`/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`, {}, asAdmin);
+  const vagasDe = async (patientId: string): Promise<number> =>
+    Number((await pool.query<{ n: string }>('SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId])).rows[0].n);
 
-    // 'OSDE' é do catálogo seed (migration 311), active=true — nenhum teste do repo o desativa.
+  it('ALTERNATIVO 3: vínculo VIGENTE (e nada da informada/verificada) → activate-recruitment ACEITA, e cria a vaga do serviço', async () => {
+    const { patientId, serviceId } = await prepararServico('activation-e2e-coverage-linked', 991004, { coverage: null });
+    await vincularServicoAoPagador(pool, serviceId);
+
+    const r = await ativar(patientId, serviceId);
+    expect(r.status).toBe(201);
+    expect(r.data.success).toBe(true);
+    const { rows: [vacancy] } = await pool.query<{ contracted_service_id: string }>(
+      `SELECT contracted_service_id FROM job_postings WHERE id = $1`, [r.data.data.vacancyId],
+    );
+    expect(vacancy.contracted_service_id).toBe(serviceId);
+  });
+
+  it('ALTERNATIVO 4: serviço SEM vínculo, com insurance_informed preenchido E cobertura verificada ativa → 422 com COVERAGE e não cria vaga (o teste que MORRE se o portão voltar a aceitá-las)', async () => {
+    const { patientId, serviceId } = await prepararServico('activation-e2e-coverage-missing', 991005, { coverage: 'OSDE' });
+    // 'OSDE' é do catálogo seed (migration 311), active=true: ANTES da 087 isto sozinho destravava o portão.
     await pool.query(
       `INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, provider_code, source)
        VALUES ($1, 1, 'OSDE', 'OSDE', 'admin_manual')`,
       [patientId],
     );
 
-    const r = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
-      {},
-      asAdmin,
-    );
-    expect(r.status).toBe(201);
-    expect(r.data.success).toBe(true);
-    expect(typeof r.data.data.vacancyId).toBe('string');
-
-    const { rows: [vacancy] } = await pool.query<{ contracted_service_id: string }>(
-      `SELECT contracted_service_id FROM job_postings WHERE id = $1`,
-      [r.data.data.vacancyId],
-    );
-    expect(vacancy.contracted_service_id).toBe(serviceId);
-  });
-
-  it('ALTERNATIVO 4: sem cobertura nenhuma (legado vazio, nenhuma linha em patient_insurance_verified) → 422 com COVERAGE e não cria vaga', async () => {
-    const patientId = await criarPacienteDeFunil({
-      tag: 'activation-e2e-coverage-missing',
-      caseNumber: 991005,
-      coverage: null,
-    });
-
-    const addr = await api.post(
-      `/api/admin/patients/${patientId}/addresses`,
-      { address_formatted: 'Av. Sin Cobertura 200', address_type: 'primary' },
-      asAdmin,
-    );
-    const addressId = addr.data.data.id as string;
-    const svc = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO), ...RECRUITMENT_FIELDS },
-      asAdmin,
-    );
-    expect(svc.status).toBe(201);
-    const serviceId = svc.data.data.id as string;
-
-    // De propósito: nenhuma linha em patient_insurance_verified para este paciente.
-    const r = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
-      {},
-      asAdmin,
-    );
+    const r = await ativar(patientId, serviceId);
     expect(r.status).toBe(422);
     expect(r.data.code).toBe('PATIENT_NOT_READY');
     expect(r.data.details.missing).toContain('COVERAGE');
     expect(r.data.details.missing).not.toContain('SERVICE_ADDRESS');
     expect(r.data.details.missing).not.toContain('SERVICE_SCHEDULE');
-
-    const { rows: [n] } = await pool.query<{ n: string }>(
-      'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],
-    );
-    expect(Number(n.n)).toBe(0);
+    expect(await vagasDe(patientId)).toBe(0);
   });
 
-  it('ALTERNATIVO 5: cobertura verificada com provider INATIVO (AND ip.active) → 422 com COVERAGE — mata a cláusula sem ela', async () => {
-    const patientId = await criarPacienteDeFunil({
-      tag: 'activation-e2e-coverage-inactive-provider',
-      caseNumber: 991006,
-      coverage: null,
-    });
+  it('ALTERNATIVO 5: vínculo ENCERRADO (validTo < asOf) → 422 com COVERAGE — mata a vigência (`valid @> asOf`) do fragmento', async () => {
+    const { patientId, serviceId } = await prepararServico('activation-e2e-coverage-ended', 991006, { coverage: 'OSDE' });
+    await vincularServicoAoPagador(pool, serviceId, 'AR', '[2020-01-01,2020-02-01)');
 
-    const addr = await api.post(
-      `/api/admin/patients/${patientId}/addresses`,
-      { address_formatted: 'Av. Provider Inactivo 300', address_type: 'primary' },
-      asAdmin,
-    );
-    const addressId = addr.data.data.id as string;
-    const svc = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO), ...RECRUITMENT_FIELDS },
-      asAdmin,
-    );
-    expect(svc.status).toBe(201);
-    const serviceId = svc.data.data.id as string;
-
-    await pool.query(
-      `INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, provider_code, source)
-       VALUES ($1, 1, $2, $2, 'admin_manual')`,
-      [patientId, COVERAGE_INACTIVE_CODE],
-    );
-
-    const r = await api.post(
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
-      {},
-      asAdmin,
-    );
+    const r = await ativar(patientId, serviceId);
     expect(r.status).toBe(422);
     expect(r.data.code).toBe('PATIENT_NOT_READY');
     expect(r.data.details.missing).toContain('COVERAGE');
+    expect(await vagasDe(patientId)).toBe(0);
+  });
 
-    const { rows: [n] } = await pool.query<{ n: string }>(
-      'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],
-    );
-    expect(Number(n.n)).toBe(0);
+  it('ALTERNATIVO 6: vínculo FUTURO (começa depois de hoje) → 422 com COVERAGE', async () => {
+    const { patientId, serviceId } = await prepararServico('activation-e2e-coverage-future', 991007, { coverage: null });
+    await vincularServicoAoPagador(pool, serviceId, 'AR', '[2999-01-01,)');
+    const r = await ativar(patientId, serviceId);
+    expect(r.status).toBe(422);
+    expect(r.data.details.missing).toContain('COVERAGE');
+    expect(await vagasDe(patientId)).toBe(0);
   });
 
   it('ALTERNATIVO (spec 027 Fase 3): serviço sem os 5 campos → 422 com os 5 códigos SERVICE_* por campo, sem criar vaga; required_sex BOTH conta como preenchido', async () => {
-    const patientId = await criarPacienteDeFunil({ tag: 'activation-e2e-recfields', caseNumber: 991010, coverage: 'Particular' });
+    const patientId = await criarPacienteDeFunil({ tag: 'activation-e2e-recfields', caseNumber: 991010 });
     const addr = await api.post(`/api/admin/patients/${patientId}/addresses`, { address_formatted: 'Calle Campos 1', address_type: 'primary' }, asAdmin);
     const addressId = addr.data.data.id as string;
     const svc = await api.post(
@@ -403,6 +329,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     );
     expect(svc.status).toBe(201);
     const serviceId = svc.data.data.id as string;
+    await vincularServicoAoPagador(pool, serviceId); // COVERAGE (spec 087) fora da conta: este teste mede os 5 campos
     const url = `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`;
 
     const refused = await api.post(url, {}, asAdmin);

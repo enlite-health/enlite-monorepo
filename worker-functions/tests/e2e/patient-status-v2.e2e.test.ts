@@ -29,6 +29,7 @@ import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'ps-v2-admin-uid';
@@ -190,13 +191,13 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'PENDING_ADMISSION', admission_status: 'PENDING_ADMISSION' });
 
-    // 6f. Caminho real: COVERAGE informada (endereço/horário do serviço já vêm do beforeAll) →
+    // 6f. Caminho real: COVERAGE = vínculo vigente do serviço (spec 087; endereço/horário do serviço já vêm do beforeAll) →
     // activate-recruitment cria a vaga em rascunho E move o paciente do funil para SEARCHING
     // (D469, 02/10/2026; changeSource 'recruitment_activation'). Daí SEARCHING → ACTIVE segue
     // pelo catálogo 315 (a 428 nunca tocou essa linha). Funil → SEARCHING pelo Kanban também é
     // permitido (D469) e `admin_panel` recusado — coberto pelo unit `PatientService.moveStatus.v2`
     // e pelo e2e de tela `funil-vacante-lancamento-rascunho`.
-    await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [lead]);
+    await vincularServicoAoPagador(pool, leadServiceId);
     // Pedido do Javier: o foguete com o paciente pré-atendimento (PENDING_ADMISSION) exige ≥1 diagnóstico ATIVO. Andar no funil (6b/6d) segue livre sem ele.
     await seedPatientDiagnosis(pool, lead);
     const activated = await api.post(`/api/admin/patients/${lead}/contracted-services/${leadServiceId}/activate-recruitment`, {}, asAdmin);

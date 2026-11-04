@@ -18,6 +18,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, montarAppDeFamilia, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
@@ -92,8 +93,8 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
 
   async function criarPaciente(nome: string): Promise<string> {
     const id = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, insurance_informed)
-       VALUES ($1, 'Link079', 'E2E', 'AR', 'PENDING_ADMISSION', 'Particular') RETURNING id`,
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+       VALUES ($1, 'Link079', 'E2E', 'AR', 'PENDING_ADMISSION') RETURNING id`,
       [`link079-e2e-${nome}-${++seq}`],
     )).rows[0].id;
     await seedPatientDiagnosis(pool, id);
@@ -113,6 +114,7 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
       { serviceCode: opts.code ?? 'AT', addressId }, as(U.completo));
     expect(r.status).toBe(201);
     const serviceId = r.data.data.id as string;
+    await vincularServicoAoPagador(pool, serviceId); // COVERAGE (spec 087): o portão do vínculo lê o vínculo vigente do serviço
     if (opts.comFaixa) {
       await semearFaixas(pool, serviceId, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'link079-e2e');
     }

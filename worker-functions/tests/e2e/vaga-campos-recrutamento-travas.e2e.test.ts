@@ -15,6 +15,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'v057-travas-e2e';
@@ -60,8 +61,8 @@ describe('Vaga com serviço: travas dos 5 campos de recrutamento (spec 057, F5) 
   async function seedServico(): Promise<{ patientId: string; serviceId: string; caseNumber: number }> {
     const caseNumber = caseSeq++;
     const patientId = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, insurance_informed)
-       VALUES ($1, 'Travas057', 'E2E', 'AR', 'PENDING_ADMISSION', $2, 'Particular') RETURNING id`,
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number)
+       VALUES ($1, 'Travas057', 'E2E', 'AR', 'PENDING_ADMISSION', $2) RETURNING id`,
       [`${TAG}-${caseNumber}`, caseNumber],
     )).rows[0].id;
     // Pedido do Javier: ativar recrutamento com o paciente pré-atendimento exige ≥1 diagnóstico ATIVO.
@@ -77,6 +78,7 @@ describe('Vaga com serviço: travas dos 5 campos de recrutamento (spec 057, F5) 
       asAdmin,
     );
     expect(svc.status).toBe(201);
+    await vincularServicoAoPagador(pool, svc.data.data.id as string); // COVERAGE (spec 087): vínculo vigente do serviço
     return { patientId, serviceId: svc.data.data.id as string, caseNumber };
   }
 

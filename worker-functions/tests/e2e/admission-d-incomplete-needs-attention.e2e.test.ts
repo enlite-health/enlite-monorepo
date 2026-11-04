@@ -23,6 +23,7 @@ import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -39,6 +40,7 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
   let idCompleto = '';
   let idForaDaAdmissao = '';
   let idLegadoTrue = '';
+  let idSemVinculo = '';
 
   async function seedPatient(opts: {
     suffix: string;
@@ -46,16 +48,17 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
     caseNumber: number;
     needsAttentionLegacy?: boolean;
     hasConsent?: boolean;
-    insuranceInformed?: string | null;
     withAddress?: boolean;
     withService?: boolean;
+    /** Spec 087: o serviço tem vínculo vigente (default true). `false` = só COVERAGE falta. */
+    withLink?: boolean;
   }): Promise<string> {
     const id = (
       await pool.query<{ id: string }>(
         `INSERT INTO patients
            (clickup_task_id, first_name, last_name, country, status, case_number,
-            has_consent, insurance_informed, needs_attention)
-         VALUES ($1, 'QACaca', $2, 'AR', $3, $4, $5, $6, $7)
+            has_consent, needs_attention)
+         VALUES ($1, 'QACaca', $2, 'AR', $3, $4, $5, $6)
          RETURNING id`,
         [
           `${TAG}-${opts.suffix}`,
@@ -63,7 +66,6 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
           opts.status,
           opts.caseNumber,
           opts.hasConsent ?? true,
-          opts.insuranceInformed ?? 'OSDE',
           opts.needsAttentionLegacy ?? false,
         ],
       )
@@ -88,6 +90,8 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
         [id, addressId],
       )).rows[0].id;
       await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'qacaca-item1-e2e');
+      // Spec 087: "completo" exige também o vínculo vigente (contrato ou Particular) do serviço — o checklist não lê mais a informada.
+      if (opts.withLink !== false) await vincularServicoAoPagador(pool, sid);
       // Pedido do Javier: "completo" num estágio pré-atendimento também exige ≥1 diagnóstico CID-11 ATIVO.
       await seedPatientDiagnosis(pool, id);
     }
@@ -136,6 +140,16 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
       needsAttentionLegacy: true,
       withAddress: true,
       withService: true,
+    });
+
+    // 5. ADMISSION, TUDO completo menos o vínculo do serviço (spec 087): o único motivo é COVERAGE.
+    idSemVinculo = await seedPatient({
+      suffix: 'sem-vinculo',
+      status: 'ADMISSION',
+      caseNumber: 88005,
+      withAddress: true,
+      withService: true,
+      withLink: false,
     });
   });
 
@@ -193,6 +207,18 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
     const row = linhas.find((p) => p.id === idForaDaAdmissao)!;
     expect(row.needsAttention).toBe(false);
     expect(row.attentionReasons).not.toContain('INCOMPLETE_ADMISSION');
+  });
+
+  it('spec 087: serviço ativo SEM vínculo vigente → COVERAGE no checklist da ficha E needsAttention/INCOMPLETE_ADMISSION na lista (mesmo fragmento SQL)', async () => {
+    const detail = await getDetail(idSemVinculo);
+    expect(detail.completeness.missing).toEqual(['COVERAGE']);
+    expect(detail.completeness.canActivate).toBe(true); // recomendação, não bloqueia
+    const row = (await listRows()).find((p) => p.id === idSemVinculo)!;
+    expect(row.needsAttention).toBe(true);
+    expect(row.attentionReasons).toContain('INCOMPLETE_ADMISSION');
+    // o filtro por motivo (SQL puro) concorda com o payload
+    const filtrado = await api.get('/api/admin/patients?limit=200&offset=0&attentionReason=INCOMPLETE_ADMISSION', asAdmin);
+    expect((filtrado.data.data as Array<{ id: string }>).map((p) => p.id)).toContain(idSemVinculo);
   });
 
   it('legado needsAttention=true SEMPRE aparece (OR), mesmo com checklist completo', async () => {
