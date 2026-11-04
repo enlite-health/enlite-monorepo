@@ -24,10 +24,10 @@ const NOW = new Date('2026-09-03T12:00:00Z');
 const baseInput = {
   birthDate: '1980-01-01', // adulto — RESPONSIBLE nunca exigido
   hasConsent: true,
-  insuranceInformed: 'OSDE',
   activeAddressCount: 1,
   activeResponsibleCount: 0,
   activeContractedServiceCount: 1,
+  activeContractedServicesLinkedCount: 1,
   activeContractedServicesWithoutAddressCount: 0,
   activeContractedServicesWithoutScheduleCount: 0,
   // Neutro para o DIAGNOSIS (só avaliado em estágio pré-atendimento): os testes antigos não dependem dele.
@@ -69,8 +69,8 @@ describe('PATIENT_COMPLETENESS_CODES (lex D1.2)', () => {
     // qualquer código nomeado 'GENDER'/'LANGUAGES' no resultado prova que a lacuna nunca vira
     // pendência de admissão, mesmo com todo o resto do paciente incompleto.
     const result = computePatientCompleteness({
-      birthDate: null, hasConsent: null, insuranceInformed: null, activeAddressCount: 0,
-      activeResponsibleCount: 0, activeContractedServiceCount: 0,
+      birthDate: null, hasConsent: null, activeAddressCount: 0,
+      activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesLinkedCount: 0,
       activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0,
       status: 'ADMISSION', activeDiagnosisCount: 0, now: NOW,
     });
@@ -196,28 +196,28 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
   });
 
   it('blocking = missing ∩ ACTIVATION_BLOCKING_CODES — falta COVERAGE (não-bloqueante) não entra em blocking, canActivate continua true', () => {
-    const r = computePatientCompleteness({ ...baseInput, insuranceInformed: null });
+    const r = computePatientCompleteness({ ...baseInput, activeContractedServicesLinkedCount: 0 });
     expect(r.missing).toContain('COVERAGE');
     expect(r.blocking).toEqual([]);
     expect(r.ready).toBe(false);
     expect(r.canActivate).toBe(true);
   });
 
-  it('TODOS os 4 códigos não-ADDRESS faltando ao mesmo tempo → nenhum entra em blocking, canActivate true (D255)', () => {
+  it('TODOS os códigos não-ADDRESS possíveis juntos (COVERAGE e CONTRACTED_SERVICE são exclusivos desde a 087) → nenhum entra em blocking, canActivate true (D255)', () => {
     const r = computePatientCompleteness({
       birthDate: '2015-01-01',
       hasConsent: false,
-      insuranceInformed: null,
       activeAddressCount: 1,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesLinkedCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
       status: 'ACTIVE',
       activeDiagnosisCount: 0,
       now: NOW,
     });
-    expect(r.missing).toEqual(['RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT']);
+    expect(r.missing).toEqual(['RESPONSIBLE', 'CONTRACTED_SERVICE', 'CONSENT']);
     expect(r.blocking).toEqual([]);
     expect(r.canActivate).toBe(true);
     expect(r.ready).toBe(false);
@@ -246,13 +246,24 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
     expect(r.missing).not.toContain('RESPONSIBLE');
   });
 
-  it('sem cobertura informada (null) → COVERAGE em missing', () => {
-    const r = computePatientCompleteness({ ...baseInput, insuranceInformed: null });
+  // Spec 087: COVERAGE = há serviço ativo e NENHUM tem vínculo vigente (o checklist não lê mais `insurance_informed`).
+  it('serviço ativo SEM vínculo vigente → COVERAGE em missing', () => {
+    const r = computePatientCompleteness({ ...baseInput, activeContractedServiceCount: 1, activeContractedServicesLinkedCount: 0 });
     expect(r.missing).toContain('COVERAGE');
   });
 
-  it('cobertura string vazia/whitespace → COVERAGE em missing (não conta como preenchido)', () => {
-    const r = computePatientCompleteness({ ...baseInput, insuranceInformed: '   ' });
+  it('2 serviços ativos, 1 com vínculo → COVERAGE não falta (basta um vínculo vigente)', () => {
+    const r = computePatientCompleteness({ ...baseInput, activeContractedServiceCount: 2, activeContractedServicesLinkedCount: 1 });
+    expect(r.missing).not.toContain('COVERAGE');
+  });
+
+  it('SEM serviço ativo → só CONTRACTED_SERVICE, nunca COVERAGE junto (um motivo, não dois)', () => {
+    const r = computePatientCompleteness({ ...baseInput, activeContractedServiceCount: 0, activeContractedServicesLinkedCount: 0 });
+    expect(r.missing).toEqual(['CONTRACTED_SERVICE']);
+  });
+
+  it('o checklist ignora `insuranceInformed`: texto informado + serviço sem vínculo → COVERAGE presente', () => {
+    const r = computePatientCompleteness({ ...baseInput, activeContractedServicesLinkedCount: 0, insuranceInformed: 'OSDE' } as never);
     expect(r.missing).toContain('COVERAGE');
   });
 
@@ -347,10 +358,10 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
     const r = computePatientCompleteness({
       birthDate: '2016-06-01',
       hasConsent: false,
-      insuranceInformed: null,
       activeAddressCount: 0,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesLinkedCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
       status: 'ACTIVE',
@@ -360,7 +371,6 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
     const expected: PatientCompletenessCode[] = [
       'ADDRESS',
       'RESPONSIBLE',
-      'COVERAGE',
       'CONTRACTED_SERVICE',
       'CONSENT',
     ];
@@ -372,10 +382,10 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
     const r = computePatientCompleteness({
       birthDate: '2016-06-01',
       hasConsent: false,
-      insuranceInformed: null,
       activeAddressCount: 0,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesLinkedCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
       status: 'ACTIVE',
@@ -477,8 +487,8 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
     const clausulaDe: Record<PatientCompletenessCode, RegExp> = {
       ADDRESS: /NOT EXISTS \(SELECT 1 FROM patient_addresses/,
       RESPONSIBLE: /NOT EXISTS \(SELECT 1 FROM patient_responsibles/,
-      // FR-122 (spec 018, PR-6): placeholder — < 2 caracteres alfanuméricos, ou só zeros.
-      COVERAGE: /LENGTH\(REGEXP_REPLACE\(COALESCE\(p\.insurance_informed, ''\)/,
+      // Spec 087: serviço ativo existe E nenhum tem vínculo vigente (fragmento único `servicePayerLinkedSql`, dia de operação do país).
+      COVERAGE: /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\)\s+AND NOT EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\s+AND EXISTS \(SELECT 1 FROM contracted_service_contract csc_pl\s+WHERE csc_pl\.contracted_service_id = pcs\.id AND csc_pl\.superseded_at IS NULL AND csc_pl\.valid @> \(\(NOW\(\) AT TIME ZONE CASE p\.country WHEN 'AR' THEN 'America\/Argentina\/Buenos_Aires' WHEN 'BR' THEN 'America\/Sao_Paulo' END\)::date\)\)\)/,
       CONTRACTED_SERVICE: /NOT EXISTS \(SELECT 1 FROM patient_contracted_services/,
       SERVICE_ADDRESS: /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+LEFT JOIN patient_addresses pa ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/,
       SERVICE_SCHEDULE:
@@ -488,6 +498,9 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       DIAGNOSIS: /COALESCE\(p\.status, ''\) IN \('SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'\)\s+AND NOT EXISTS \(SELECT 1 FROM patient_diagnoses pdx WHERE pdx\.patient_id = p\.id AND pdx\.active\)/,
     };
     for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);
+    // Spec 087: nenhum leitor da cobertura informada no checklist em SQL, e nunca `CURRENT_DATE` na vigência do vínculo (D-43).
+    expect(sql).not.toContain('insurance_informed');
+    expect(sql).not.toMatch(/csc_pl[^)]*CURRENT_DATE/);
     expect(Object.keys(clausulaDe).sort()).toEqual([...PATIENT_COMPLETENESS_CODES].sort());
   });
 
@@ -567,7 +580,7 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
     workSchedule: 'part-time',
     paymentDay: 'dia 5',
   };
-  const READY = { serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', serviceRecruitmentFields: FIELDS, patientStatus: 'ADMISSION' as string | null, activeDiagnosisCount: 1 };
+  const READY = { serviceHasAddress: true, serviceHasSchedule: true, servicePayerLinked: true, serviceRecruitmentFields: FIELDS, patientStatus: 'ADMISSION' as string | null, activeDiagnosisCount: 1 };
 
   it('RECRUITMENT_BLOCKING_CODES é exatamente [SERVICE_ADDRESS, SERVICE_SCHEDULE, os 5 SERVICE_* por campo, COVERAGE, DIAGNOSIS]', () => {
     expect([...RECRUITMENT_BLOCKING_CODES]).toEqual([
@@ -646,15 +659,8 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
     });
   });
 
-  it('cobertura placeholder → COVERAGE', () => {
-    expect(computeRecruitmentReadiness({ ...READY, insuranceInformed: '0' })).toEqual({
-      missing: ['COVERAGE'],
-      ready: false,
-    });
-  });
-
-  it('cobertura null → COVERAGE (mesma régua de ausência)', () => {
-    expect(computeRecruitmentReadiness({ ...READY, insuranceInformed: null })).toEqual({
+  it('serviço SEM vínculo vigente → COVERAGE', () => {
+    expect(computeRecruitmentReadiness({ ...READY, servicePayerLinked: false })).toEqual({
       missing: ['COVERAGE'],
       ready: false,
     });
@@ -662,40 +668,27 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
 
   it('os três juntos, NA ORDEM address → schedule → coverage', () => {
     expect(
-      computeRecruitmentReadiness({ ...READY, serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null }),
+      computeRecruitmentReadiness({ ...READY, serviceHasAddress: false, serviceHasSchedule: false, servicePayerLinked: false }),
     ).toEqual({ missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'], ready: false });
   });
 
-  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
-  // (patient_insurance_verified, provider ativo) mas sem o legado insuranceInformed — o foguete
-  // ficava desabilitado e o clique morria em 422 PATIENT_NOT_READY em produção.
-  it('só legado (insuranceInformed) preenchido → COVERAGE não falta (regressão do comportamento atual)', () => {
+  // Spec 087 (decisão 3): o portão lê SÓ o vínculo vigente do serviço — `insurance_informed` e a verificada não alteram o resultado
+  // em nenhum sentido. Estes testes MORREM se o portão voltar a aceitar a informada ou a verificada (sabotagem por cp na T1).
+  it('serviço sem vínculo + insuranceInformed "OSDE" + verificada ativa → COVERAGE PRESENTE (a informada e a verificada não destravam)', () => {
     expect(
-      computeRecruitmentReadiness({ ...READY, hasVerifiedActiveCoverage: false }),
-    ).toEqual({ missing: [], ready: true });
-  });
-
-  it('só cobertura verificada válida (sem legado) → COVERAGE não falta — é o caso do bug', () => {
-    expect(
-      computeRecruitmentReadiness({ ...READY, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
-    ).toEqual({ missing: [], ready: true });
-  });
-
-  it('nenhuma das duas (legado ausente e sem cobertura verificada) → COVERAGE continua faltando', () => {
-    expect(
-      computeRecruitmentReadiness({ ...READY, insuranceInformed: null, hasVerifiedActiveCoverage: false }),
+      computeRecruitmentReadiness({ ...READY, servicePayerLinked: false, insuranceInformed: 'OSDE', hasVerifiedActiveCoverage: true } as never),
     ).toEqual({ missing: ['COVERAGE'], ready: false });
   });
 
-  it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com COVERAGE satisfeito pela verificada', () => {
+  it('vínculo vigente + insuranceInformed null + sem verificada → COVERAGE AUSENTE (o vínculo basta, contrato ou Particular)', () => {
     expect(
-      computeRecruitmentReadiness({
-        ...READY,
-        serviceHasAddress: false,
-        serviceHasSchedule: false,
-        insuranceInformed: null,
-        hasVerifiedActiveCoverage: true,
-      }),
+      computeRecruitmentReadiness({ ...READY, servicePayerLinked: true, insuranceInformed: null, hasVerifiedActiveCoverage: false } as never),
+    ).toEqual({ missing: [], ready: true });
+  });
+
+  it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com o vínculo vigente', () => {
+    expect(
+      computeRecruitmentReadiness({ ...READY, serviceHasAddress: false, serviceHasSchedule: false, servicePayerLinked: true }),
     ).toEqual({ missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE'], ready: false });
   });
 });

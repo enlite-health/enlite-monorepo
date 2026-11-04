@@ -125,12 +125,13 @@ function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResu
     status?: string | null;
     activeDiagnosisCount?: number;
     hasConsent: boolean | null;
-    insuranceInformed: string | null;
     addresses?: Array<{ id: string }>;
     responsibles?: unknown[];
     contractedServices?: Array<{
       active: boolean;
       addressId: string | null;
+      /** Pagador vigente da ficha (`payerAtMany`, antes da redação por ator): `LINKED` = há vínculo (contrato ou Particular). */
+      payer?: { state: 'LINKED' | 'NO_CONTRACT' };
       /** `unknown` de propósito: o que chega aqui é o JSONB cru do banco — pode ser array, `null`
        *  ou (fora da borda zod) qualquer outra coisa. Quem decide é o `Array.isArray` abaixo. */
       schedule?: unknown;
@@ -146,10 +147,11 @@ function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResu
   return computePatientCompleteness({
     birthDate: detail.birthDate,
     hasConsent: detail.hasConsent,
-    insuranceInformed: detail.insuranceInformed,
     activeAddressCount: addresses.length,
     activeResponsibleCount: Array.isArray(detail.responsibles) ? detail.responsibles.length : 0,
     activeContractedServiceCount: activeServices.length,
+    // Spec 087: mesma regra do SQL (`servicePayerLinkedSql`), lida do `payer` que a ficha já derivou do vínculo vigente.
+    activeContractedServicesLinkedCount: activeServices.filter((s) => s.payer?.state === 'LINKED').length,
     activeContractedServicesWithoutAddressCount: activeServices.filter(
       (s) => s.addressId == null || !liveAddressIds.has(s.addressId),
     ).length,

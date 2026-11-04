@@ -18,6 +18,7 @@
  */
 
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+import { operationDateSql, servicePayerLinkedSql } from '@shared/sql/servicePayerSql';
 import { hasActiveDiagnosisSql } from '@shared/sql/patientDiagnosisSql';
 import { ADMISSION_FUNNEL_STATUSES, CLINICAL_PATIENT_STATUSES } from './enums/PatientStatus';
 
@@ -192,8 +193,8 @@ export const ACTIVATABLE_STATUSES = ['ADMISSION', 'PENDING_ADMISSION'] as const;
  * Gate de `POST /patients/:id/contracted-services/:sid/activate-recruitment` (spec 018, PR-6,
  * `contracts/activation.md`). Ativar recrutamento é uma decisão POR SERVIÇO — os dois primeiros
  * códigos são avaliados SÓ contra `:sid` (não contra "existe algum serviço sem endereço no
- * paciente inteiro", que é o que `ACTIVATION_BLOCKING_CODES` faz); `COVERAGE` continua do
- * paciente, porque cobertura é um dado do paciente, não do serviço.
+ * paciente inteiro", que é o que `ACTIVATION_BLOCKING_CODES` faz); `COVERAGE` (spec 087) também é
+ * POR SERVIÇO: o serviço ativado tem vínculo vigente com contrato (ou Particular). A cobertura vive no serviço contratado.
  */
 export const RECRUITMENT_BLOCKING_CODES = [
   'SERVICE_ADDRESS',
@@ -238,11 +239,9 @@ export function serviceRecruitmentMissingCodes(
 }
 
 /**
- * FR-121/122 (spec 018, PR-6): "sin cobertura / particular" é uma resposta EXPLÍCITA válida —
- * satisfaz `COVERAGE` como qualquer outro texto real. O que não satisfaz é um PLACEHOLDER: só
- * zeros, só pontuação, ou menos de 2 caracteres alfanuméricos (ex.: '0', '-', '.', 'x', ''). Um
- * valor assim conta como AUSENTE tanto no JS (`isPlaceholderCoverageValue`) quanto no SQL
- * (`MISSING_SQL.COVERAGE`) — as duas leituras têm de concordar, ou o checklist e o gate divergem.
+ * FR-121/122 (spec 018, PR-6): `healthInsuranceName` (a cobertura informada) recusa PLACEHOLDER — só zeros, só pontuação, ou
+ * menos de 2 caracteres alfanuméricos (ex.: '0', '-', '.', 'x', ''). Desde a spec 087 o portão e o checklist de `COVERAGE` NÃO
+ * leem mais a informada (leem o vínculo vigente do serviço); a função fica só como validação de ESCRITA do texto.
  */
 export function isPlaceholderCoverageValue(value: string | null | undefined): boolean {
   const trimmed = (value ?? '').trim();
@@ -264,16 +263,11 @@ export interface RecruitmentReadinessInput {
   serviceHasAddress: boolean;
   /** O serviço `:sid` tem `schedule` não-vazio (array com ≥1 item). */
   serviceHasSchedule: boolean;
-  /** `insurance_informed` do PACIENTE — mesma fonte do checklist geral. */
-  insuranceInformed: string | null;
   /**
-   * Hotfix gate-cobertura-verificada-vacante (28/09): o paciente tem ≥1 linha em
-   * `patient_insurance_verified` cujo `insurance_providers.active = true` (medido em produção:
-   * caminho NOVO da cobertura, catálogo de 33 opções — migration 305/311/312). Opcional (default
-   * `false`) para não quebrar os chamadores existentes que só conheciam o legado. `COVERAGE`
-   * agora é satisfeito pelo legado OU por esta cobertura verificada — nunca os dois exigidos.
+   * Spec 087: o serviço `:sid` tem vínculo (contrato ou Particular) vigente em `asOf` — lido por `servicePayerLinkedSql`, o mesmo
+   * fragmento do checklist. `insurance_informed` e a cobertura verificada NÃO entram (nem num sentido, nem no outro).
    */
-  hasVerifiedActiveCoverage?: boolean;
+  servicePayerLinked: boolean;
   /**
    * Spec 027 Fase 3: os 5 campos copiados do serviço `:sid`. Ausente = nenhum preenchido (conta como faltando).
    */
@@ -297,9 +291,7 @@ export function computeRecruitmentReadiness(
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
   missing.push(...serviceRecruitmentMissingCodes(input.serviceRecruitmentFields));
-  if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
-    missing.push('COVERAGE');
-  }
+  if (!input.servicePayerLinked) missing.push('COVERAGE');
   if (isDiagnosisMissing(input.patientStatus, input.activeDiagnosisCount)) missing.push('DIAGNOSIS');
   return { missing, ready: missing.length === 0 };
 }
@@ -308,11 +300,14 @@ export interface PatientCompletenessInput {
   /** Data de nascimento do paciente (ISO ou Date) — usada só para decidir se RESPONSIBLE é exigido. */
   birthDate: string | Date | null;
   hasConsent: boolean | null;
-  /** `insuranceInformed` — string vazia conta como ausente. */
-  insuranceInformed: string | null;
   activeAddressCount: number;
   activeResponsibleCount: number;
   activeContractedServiceCount: number;
+  /**
+   * Spec 087: serviços ATIVOS com vínculo vigente (contrato ou Particular) em `asOf` — `servicePayerLinkedSql`. `COVERAGE` ⇔ há serviço
+   * ativo e NENHUM tem vínculo. Sem serviço ativo acusa só `CONTRACTED_SERVICE` (um motivo, não dois).
+   */
+  activeContractedServicesLinkedCount: number;
   /**
    * Serviços ATIVOS cujo `address_id` é NULL ou aponta para endereço arquivado (migration 330).
    * Zero quando não há serviço — SERVICE_ADDRESS nunca acusa paciente sem serviço.
@@ -382,7 +377,7 @@ export function computePatientCompleteness(
   if (isMinor(input.birthDate, input.now) && input.activeResponsibleCount < 1) {
     missing.push('RESPONSIBLE');
   }
-  if (isPlaceholderCoverageValue(input.insuranceInformed)) {
+  if (input.activeContractedServiceCount >= 1 && input.activeContractedServicesLinkedCount < 1) {
     missing.push('COVERAGE');
   }
   if (input.activeContractedServiceCount < 1) {
@@ -437,12 +432,13 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
   RESPONSIBLE: (p) => `(${p}.birth_date IS NOT NULL
         AND ${p}.birth_date > (((NOW() AT TIME ZONE 'UTC')::date - INTERVAL '${MINOR_AGE_YEARS} years')::date)
         AND NOT EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = ${p}.id AND pr.active))`,
-  // FR-122: mesmo critério de `isPlaceholderCoverageValue` — < 2 caracteres alfanuméricos, ou só
-  // zeros, depois de tirar pontuação/espaço. Mesmo COALESCE que a listagem projeta.
-  COVERAGE: (p) => `(
-        LENGTH(REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g')) < 2
-        OR REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g') ~ '^0+$'
-      )`,
+  // Spec 087: há serviço ativo e NENHUM tem vínculo vigente (`servicePayerLinkedSql`, o mesmo fragmento do portão). Sem serviço
+  // ativo é só CONTRACTED_SERVICE. O dia é o de operação do país do paciente (`operationDateSql`), igual a `operationDateOf`.
+  COVERAGE: (p) => `(EXISTS (SELECT 1 FROM patient_contracted_services pcs
+        WHERE pcs.patient_id = ${p}.id AND pcs.active)
+        AND NOT EXISTS (SELECT 1 FROM patient_contracted_services pcs
+        WHERE pcs.patient_id = ${p}.id AND pcs.active
+          AND ${servicePayerLinkedSql('pcs', operationDateSql(`${p}.country`))}))`,
   // activeContractedServiceCount < 1
   CONTRACTED_SERVICE: (p) => `NOT EXISTS (SELECT 1 FROM patient_contracted_services pcs WHERE pcs.patient_id = ${p}.id AND pcs.active)`,
   // activeContractedServicesWithoutAddressCount > 0 — serviço ativo cujo address_id é NULL ou

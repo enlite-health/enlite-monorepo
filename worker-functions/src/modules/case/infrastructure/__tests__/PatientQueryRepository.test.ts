@@ -72,10 +72,11 @@ function baseListRow(overrides: Record<string, unknown> = {}) {
     // (que não conheciam esta derivação). Cada teste novo sobrescreve o que quer testar.
     birthDate: null,
     hasConsent: true,
-    insuranceInformed: 'OSDE',
     // ADDRESS não tem coluna própria: reusa addressesCount (default '2' acima = presente).
     hasActiveResponsible: true,
     hasActiveContractedService: true,
+    // Spec 087: há serviço ativo com vínculo vigente — default true (= COVERAGE satisfeito).
+    hasActiveServiceWithPayerLinked: true,
     // Migration 330: serviço ativo sem endereço vivo — default false (= vinculado).
     hasActiveServiceWithoutAddress: false,
     // Decisão do Gabriel 07/09: serviço ativo sem horário — default false (= com horário).

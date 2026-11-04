@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { CountryCode } from '@shared/domain/countryCodes';
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+import { operationDateSql, servicePayerLinkedSql } from '@shared/sql/servicePayerSql';
 import { hasActiveDiagnosisSql } from '@shared/sql/patientDiagnosisSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { fetchPatientDetail } from './PatientDetailQueryHelper';
@@ -154,11 +155,10 @@ export class PatientQueryRepository {
         -- para DERIVAR needsAttention/attentionReasons aqui mesmo — nunca missing[] sai desta
         -- query (só os booleanos). EXISTS/booleano (correlated subquery, UMA query só — sem
         -- N+1 em código); ADDRESS reusa "addressesCount" acima em vez de duplicar o EXISTS.
-        -- Nenhuma coluna cifrada (KMS) entra aqui: has_consent/birth_date/insurance_informed
+        -- Nenhuma coluna cifrada (KMS) entra aqui: has_consent/birth_date
         -- não são PII encriptada.
         p.birth_date            AS "birthDate",
         p.has_consent           AS "hasConsent",
-        p.insurance_informed        AS "insuranceInformed",
         -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como
         -- presente — mesma régua de MISSING_SQL.RESPONSIBLE (PatientCompleteness.ts).
         EXISTS (SELECT 1 FROM patient_responsibles pr
@@ -167,6 +167,12 @@ export class PatientQueryRepository {
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  WHERE pcs.patient_id = p.id AND pcs.active)
                                AS "hasActiveContractedService",
+        -- Spec 087: há serviço ativo com vínculo vigente (contrato ou Particular) no dia de operação do país → COVERAGE no derivado.
+        -- Mesmo fragmento do portão e de MISSING_SQL.COVERAGE (servicePayerLinkedSql).
+        EXISTS (SELECT 1 FROM patient_contracted_services pcs
+                 WHERE pcs.patient_id = p.id AND pcs.active
+                   AND ${servicePayerLinkedSql('pcs', operationDateSql('p.country'))})
+                               AS "hasActiveServiceWithPayerLinked",
         -- Migration 330: serviço ativo sem endereço vivo (NULL ou arquivado) → SERVICE_ADDRESS.
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  LEFT JOIN patient_addresses pa
@@ -278,10 +284,10 @@ export class PatientQueryRepository {
       const { missing } = computePatientCompleteness({
         birthDate: (row.birthDate as string | Date | null) ?? null,
         hasConsent: (row.hasConsent as boolean | null) ?? null,
-        insuranceInformed: (row.insuranceInformed as string | null) ?? null,
         activeAddressCount: addressesCountNum,
         activeResponsibleCount: row.hasActiveResponsible === true ? 1 : 0,
         activeContractedServiceCount: row.hasActiveContractedService === true ? 1 : 0,
+        activeContractedServicesLinkedCount: row.hasActiveServiceWithPayerLinked === true ? 1 : 0,
         activeContractedServicesWithoutAddressCount: row.hasActiveServiceWithoutAddress === true ? 1 : 0,
         activeContractedServicesWithoutScheduleCount:
           row.hasActiveServiceWithoutSchedule === true ? 1 : 0,

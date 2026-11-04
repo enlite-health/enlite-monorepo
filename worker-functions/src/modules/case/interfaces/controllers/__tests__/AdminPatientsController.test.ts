@@ -144,6 +144,9 @@ const SEM_VINCULO = {
   coverageMatch: { state: 'NO_PAYER' },
 };
 
+/** Spec 087: serviço COM vínculo vigente (contrato ou Particular) — o que o `COVERAGE` do checklist exige. */
+const COM_VINCULO = { ...SEM_VINCULO, payer: { state: 'LINKED', isPrivate: false, validFrom: '2026-01-01', validTo: null, names: null } };
+
 describe('AdminPatientsController.getPatientById', () => {
   let controller: AdminPatientsController;
 
@@ -362,7 +365,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('serviço ativo sem endereço vinculado → SERVICE_ADDRESS em missing e blocking, canActivate false', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: null, schedule: HORARIO_OK }],
+        contractedServices: [{ ...COM_VINCULO, active: true, addressId: null, schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -434,10 +437,28 @@ describe('AdminPatientsController.getPatientById', () => {
       expect((res as any).json.mock.calls[0][0].data.completeness.missing).not.toContain('SERVICE_SCHEDULE');
     });
 
+    // Spec 087: COVERAGE = há serviço ativo e NENHUM tem vínculo vigente; sem serviço ativo é só CONTRACTED_SERVICE.
+    it('serviço ativo SEM vínculo vigente → COVERAGE em missing (não bloqueia o activate); a cobertura informada não destrava', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        insuranceInformed: 'OSDE',
+        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      const completeness = (res as any).json.mock.calls[0][0].data.completeness;
+      expect(completeness.missing).toEqual(['COVERAGE']);
+      expect(completeness.blocking).toEqual([]);
+      expect(completeness.canActivate).toBe(true);
+    });
+
     it('todos os critérios satisfeitos → ready:true, missing:[]', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
+        contractedServices: [{ ...COM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -483,7 +504,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('sem consentimento (hasConsent false) → CONSENT em missing', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ ...SEM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
+        contractedServices: [{ ...COM_VINCULO, active: true, addressId: 'a1', schedule: HORARIO_OK }],
         hasConsent: false,
       } as never);
       mockFindDetailById.mockResolvedValue(patient);

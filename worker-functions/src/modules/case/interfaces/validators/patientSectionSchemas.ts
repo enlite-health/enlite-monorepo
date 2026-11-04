@@ -106,6 +106,10 @@ export const clinicalSectionSchema = z
  * /patients/:id/coverage-emergency-contacts[/:cid]`, `patientContactRowSchemas.ts`) — mandar o
  * campo aqui agora é 400 pelo `.strict()` abaixo (contracts/support-network.md).
  *
+ * Spec 087 (decisão 5): `insuranceVerifiedCodes` também SAIU — a cobertura vive no serviço contratado (vínculo com contrato), não há mais
+ * escrita `admin_manual` de "verificadas" por aqui; mandar o campo é 400 pelo `.strict()`, como `healthInsuranceName` na 071. As linhas
+ * já gravadas em `patient_insurance_verified` ficam (legado sem leitor).
+ *
  * FR-122 (spec 018, PR-6): `healthInsuranceName` recusa PLACEHOLDER (só zeros, só pontuação, ou
  * < 2 caracteres alfanuméricos) com 400 — o `.refine` usa a MESMA função
  * (`isPlaceholderCoverageValue`) que o gate de `COVERAGE` em `PatientCompleteness.ts`, senão a
@@ -124,7 +128,6 @@ export const coverageSectionSchema = z
         message: 'healthInsuranceName: valor placeholder não é uma cobertura válida (use "Particular" ou "Sin cobertura" quando não houver obra social)',
       }),
     affiliateId: z.string().trim().min(1).nullable().optional(),
-    insuranceVerifiedCodes: z.array(catalogCode).optional(),
   })
   .strict();
 

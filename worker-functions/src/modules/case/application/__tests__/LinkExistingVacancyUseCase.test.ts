@@ -34,11 +34,10 @@ const actor = { actorUserId: "uid-1", actorType: "HUMAN" as const, actorLabel: "
 
 const okCtx = (over: Record<string, unknown> = {}) => ({
   patient: {
-    id: P, status: "ACTIVE", case_number: 1, insurance_informed: "OSDE",
-    has_verified_active_coverage: true, active_dx_count: "1",
+    id: P, status: "ACTIVE", case_number: 1, country: "AR", active_dx_count: "1",
   },
   service: {
-    id: S, providers_needed: 1, has_schedule: true, live_address_id: "addr-1",
+    id: S, providers_needed: 1, has_schedule: true, payer_linked: true, live_address_id: "addr-1",
     required_professions: ["AT"], required_sex: "BOTH", required_experience: "1",
     work_schedule: "full-time", payment_day: "5", ...over,
   },

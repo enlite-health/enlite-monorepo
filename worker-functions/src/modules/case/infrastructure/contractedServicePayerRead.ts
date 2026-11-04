@@ -11,6 +11,7 @@
  * não recebem o ator. Vigência no fio via `dateRangeWire` (`validTo` inclusivo). A data é parâmetro: nenhum "hoje" no SQL (D-43).
  */
 import { toWire } from '../domain/dateRangeWire';
+import { linkVigenteSql } from '@shared/sql/servicePayerSql';
 import type { Queryable } from './insuranceContractTermRead';
 
 export type PayerKind = 'OBRA_SOCIAL' | 'PREPAGA' | 'PRIVATE';
@@ -72,7 +73,7 @@ export async function payerAtMany(q: Queryable, serviceIds: readonly string[], a
   const { rows } = await q.query<LinkDbRow>(
     `SELECT ${LINK_COLUMNS_SQL}
        ${LINK_FROM_SQL}
-      WHERE csc.contracted_service_id = ANY($1::uuid[]) AND csc.superseded_at IS NULL AND csc.valid @> $2::date`,
+      WHERE csc.contracted_service_id = ANY($1::uuid[]) AND ${linkVigenteSql('csc', '$2::date')}`,
     [serviceIds, asOf],
   );
   for (const r of rows) {

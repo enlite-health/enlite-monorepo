@@ -110,12 +110,6 @@ const PATIENT_DETAIL_SQL = `
     -- ficha monta coverage e a divergência dos serviços a partir DESTA coluna -- uma leitura só (dono: coverageEntriesSql).
     ${coverageEntriesSql('p.id')}
                              AS "coverageEntries",
-    -- Hotfix gate-cobertura-verificada-vacante (28/09): mesmo critério "provider ativo" que
-    -- ActivateRecruitmentUseCase usa no gate real — o checklist da tela não pode divergir do 422.
-    EXISTS (SELECT 1 FROM patient_insurance_verified piv
-              JOIN insurance_providers ip ON ip.code = piv.provider_code AND ip.active
-             WHERE piv.patient_id = p.id)
-                             AS "hasVerifiedActiveCoverage",
     -- Diagnóstico CID-11 (pedido do Javier): só a CONTAGEM de linhas ativas (qualquer source) — nunca o valor.
     ${activeDiagnosisCountSql('p.id')}::int
                              AS "activeDiagnosisCount",
@@ -436,7 +430,6 @@ export async function fetchPatientDetail(
     serviceStartDate: p.serviceStartDate ?? null,
     insuranceVerifiedCodes: p.insuranceVerifiedCodes ?? [],
     coverage: buildCoverage({ informed: p.insuranceInformed, entries: coverageEntries }),
-    hasVerifiedActiveCoverage: p.hasVerifiedActiveCoverage ?? false,
     activeDiagnosisCount: p.activeDiagnosisCount ?? 0,
     deviceTypes: p.deviceTypes ?? [],
     needsAttention: p.needsAttention,

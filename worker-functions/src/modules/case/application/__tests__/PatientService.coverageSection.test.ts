@@ -32,24 +32,24 @@ describe('PatientService.updatePatientSection — bloco B', () => {
   let service: PatientService;
   beforeEach(() => { jest.clearAllMocks(); service = new PatientService(); });
 
-  it('coverage: escalares no UPDATE parcial + códigos no repositório, na MESMA transação', async () => {
-    await service.updatePatientSection(PID, 'coverage', { healthInsuranceName: 'OSDE 210', affiliateId: null, insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL'] });
+  it('coverage: escalares no UPDATE parcial, na MESMA transação, sem tocar o repositório de verificadas (spec 087)', async () => {
+    await service.updatePatientSection(PID, 'coverage', { healthInsuranceName: 'OSDE 210', affiliateId: null });
     const upd = mockClient.query.mock.calls.find(([s]) => /^UPDATE patients SET/.test(String(s)));
     // a ordem é a da whitelist do update geral (affiliate_id vem antes de insurance_informed, o dono da cobertura informada — spec 058)
     expect(upd?.[0]).toMatch(/affiliate_id = \$2, insurance_informed = \$3/);
     expect(upd?.[1]).toEqual([PID, null, 'OSDE 210']);
-    expect(mockReplaceCodes).toHaveBeenCalledWith(PID, ['OSDE', 'SWISS_MEDICAL'], mockClient);
+    expect(mockReplaceCodes).not.toHaveBeenCalled();
     expect(sqls()[0]).toBe('BEGIN'); expect(sqls().at(-1)).toBe('COMMIT');
   });
 
-  it('coverage: sem códigos não toca o repositório; sem escalares não emite UPDATE', async () => {
+  it('coverage: o repositório de verificadas NUNCA é tocado (spec 087); sem escalares não emite UPDATE', async () => {
     await service.updatePatientSection(PID, 'coverage', { affiliateId: 'AF-1' });
     expect(mockReplaceCodes).not.toHaveBeenCalled();
     expect(sqls().some((s) => /^UPDATE patients SET affiliate_id/.test(s))).toBe(true);
     jest.clearAllMocks();
-    await service.updatePatientSection(PID, 'coverage', { insuranceVerifiedCodes: [] });
+    await service.updatePatientSection(PID, 'coverage', {});
     expect(sqls().some((s) => /^UPDATE patients/.test(s))).toBe(false);
-    expect(mockReplaceCodes).toHaveBeenCalledWith(PID, [], mockClient);
+    expect(mockReplaceCodes).not.toHaveBeenCalled();
   });
 
   it('coverage: emergencyContacts SAIU da seção (spec 018, PR-1, ADR-1, SUP-37) — a chave não é mais reconhecida pelo tipo/whitelist; a escrita agora é por linha (AdminPatientContactRowsController)', async () => {
@@ -77,11 +77,5 @@ describe('PatientService.updatePatientSection — bloco B', () => {
     const upd = mockClient.query.mock.calls.find(([s]) => /^UPDATE patients SET/.test(String(s)));
     expect(upd?.[0]).toMatch(/service_start_date = \$2/);
     expect(upd?.[1]).toEqual([PID, d]);
-  });
-
-  it('erro no repositório de códigos → ROLLBACK e propaga', async () => {
-    mockReplaceCodes.mockRejectedValueOnce(new Error('unknown code'));
-    await expect(service.updatePatientSection(PID, 'coverage', { insuranceVerifiedCodes: ['X'] })).rejects.toThrow('unknown code');
-    expect(sqls().at(-1)).toBe('ROLLBACK');
   });
 });
