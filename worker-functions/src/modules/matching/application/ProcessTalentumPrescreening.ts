@@ -9,6 +9,7 @@ import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/reso
 import { reportError, logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
+import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, insertTalentumWorker } from './talentumFunnel';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
@@ -194,34 +195,22 @@ export class ProcessTalentumPrescreening {
   }
 
   private async autoCreateWorker(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
-    const phone = normalizePhoneAR(payload.data.profile.phoneNumber) || null;
-    const authUid = `talentum_${payload.data.profile.id}`;
-
-    try {
-      const result = await this.pool.query(
-        `INSERT INTO workers (auth_uid, email, phone, status, country)
-         VALUES ($1, $2, $3, 'INCOMPLETE_REGISTER', 'AR')
-         RETURNING id`,
-        [authUid, payload.data.profile.email, phone],
+    const created = await insertTalentumWorker(this.pool, payload.data.profile);
+    if (created.kind === 'CREATED') return created.id;
+    if (created.kind === 'COLLISION') {
+      // Colisão: o cadastro já existe. Pode ser um registro já fundido em
+      // outro — resolver o canônico antes de devolver, mesma razão do
+      // `toCanonical` (ver `shared/database/canonicalWorker.ts`).
+      const existing = await this.pool.query(
+        `SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
+        [`talentum_${payload.data.profile.id}`, payload.data.profile.email],
       );
-      return result.rows[0].id;
-    } catch (err: unknown) {
-      const pgErr = err as { code?: string; message?: string };
-      if (pgErr.code === '23505') {
-        // Colisão: o cadastro já existe. Pode ser um registro já fundido em
-        // outro — resolver o canônico antes de devolver, mesma razão do
-        // `toCanonical` (ver `shared/database/canonicalWorker.ts`).
-        const existing = await this.pool.query(
-          `SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
-          [authUid, payload.data.profile.email],
-        );
-        // Colisão no índice único de telefone: o dono está na forma com o 9 (o INSERT usa o normalizado).
-        const existingId = existing.rows[0]?.id ?? (await this.findByPhoneAnyForm(payload.data.profile.phoneNumber));
-        return existingId ? await this.toCanonical(existingId) : null;
-      }
-      console.error(`${TAG} autoCreateWorker failed:`, pgErr.message);
-      return null;
+      // Colisão no índice único de telefone: o dono está na forma com o 9 (o INSERT usa o normalizado).
+      const existingId = existing.rows[0]?.id ?? (await this.findByPhoneAnyForm(payload.data.profile.phoneNumber));
+      return existingId ? await this.toCanonical(existingId) : null;
     }
+    console.error(`${TAG} autoCreateWorker failed:`, created.message);
+    return null;
   }
 
   // ── Job posting resolution ───────────────────────────────────────
@@ -430,14 +419,7 @@ export class ProcessTalentumPrescreening {
    * A conversão é INTERNA aqui, antes de qualquer persistência em worker_job_applications.
    */
   deriveFunnelStage(payload: TalentumPrescreeningResponseParsed): string {
-    if (payload.subtype === 'ANALYZED' && payload.data.response.statusLabel) {
-      // 'ANALYZED' é sentinel local — usa-se pra pular upsert em WJA quando statusLabel === 'PENDING';
-      // nunca persiste em application_funnel_stage (não consta em ApplicationFunnelStage)
-      if (payload.data.response.statusLabel === 'PENDING') return 'ANALYZED';
-      return payload.data.response.statusLabel;
-    }
-    if (payload.subtype === 'INITIATED') return 'PRE_SCREENING';
-    return payload.subtype;
+    return deriveFunnelStage(payload.subtype, payload.data.response.statusLabel);
   }
 
   private async upsertApplicationAndEmitEvent(
@@ -448,7 +430,7 @@ export class ProcessTalentumPrescreening {
     prescreeningId?: string,
   ): Promise<void> {
     // F3 (mig 191): NOT_QUALIFIED não existe mais no enum — converter pra REJECTED antes do upsert.
-    const effectiveFunnelStage = funnelStage === 'NOT_QUALIFIED' ? 'REJECTED' : funnelStage;
+    const effectiveFunnelStage = toPersistedFunnelStage(funnelStage);
 
     let qualifiedEventId: string | null = null;
     const client = await this.pool.connect();
@@ -497,39 +479,10 @@ export class ProcessTalentumPrescreening {
     client: PoolClient, workerId: string, jobPostingId: string, funnelStage: string, previousStage: string | null,
     prescreeningId?: string,
   ): Promise<void> {
-    // Guard: skip if not NOT_QUALIFIED transition, or already auto-rejected
-    if (funnelStage !== 'NOT_QUALIFIED' || previousStage === 'REJECTED') return;
-
-    console.log(`${TAG} NOT_QUALIFIED transition → marking encuadre RECHAZADO + auto-rejecting WJA`);
-    await client.query(
-      `UPDATE encuadres
-       SET resultado = 'RECHAZADO', rejection_reason_category = 'TALENTUM_NOT_QUALIFIED', updated_at = NOW()
-       WHERE worker_id = $1 AND job_posting_id = $2 AND resultado IS NULL`,
-      [workerId, jobPostingId],
-    );
-    // Evento AUDIT-ONLY: o efeito (encuadre RECHAZADO + WJA REJECTED) é síncrono
-    // aqui; este domain_event é só rastreabilidade da classificação e NÃO tem
-    // consumidor (diferente de funnel_stage.qualified, que agenda entrevista).
-    // Nasce `processed` para não virar órfão pending (que empilhava e falseava o
-    // health check + exigia exclusão de métrica no terraform).
-    await client.query(
-      `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.not_qualified', $1::jsonb, 'processed', NOW())`,
-      [JSON.stringify({ workerId, jobPostingId })],
-    );
-
-    // Auto-reject: immediately promote WJA to REJECTED so NOT_QUALIFIED is never persisted
-    await client.query(
-      `UPDATE worker_job_applications
-       SET application_funnel_stage = 'REJECTED', updated_at = NOW()
-       WHERE worker_id = $1 AND job_posting_id = $2`,
-      [workerId, jobPostingId],
-    );
-    // Idem: audit-only, sem consumidor → nasce `processed`.
-    await client.query(
-      `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.rejected', $1::jsonb, 'processed', NOW())`,
-      [JSON.stringify({ workerId, jobPostingId, prescreeningId: prescreeningId ?? null, source: 'auto_not_qualified' })],
-    );
-    console.log(`${TAG} NOT_QUALIFIED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);
+    // Implementação única em talentumFunnel.ts (também usada pelo script de reconciliação).
+    if (await applyNotQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId)) {
+      console.log(`${TAG} NOT_QUALIFIED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);
+    }
   }
 
   private async publishQualifiedEvent(eventId: string | null): Promise<void> {

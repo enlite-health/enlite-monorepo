@@ -6,12 +6,20 @@
  * "Iniciados" no app. Este script re-resolve o worker dessas linhas e avança o funil SEM enviar mensagem:
  * não insere `domain_events` (`funnel_stage.qualified` dispara mensagem/agenda entrevista) nem publica no Pub/Sub.
  *
+ * Reuso do webhook (`matching/application/talentumFunnel.ts`, uma só implementação): mapeamento de etapa (ANALYZED usa o
+ * statusLabel), transição NOT_QUALIFIED (WJA REJECTED + encuadre RECHAZADO, eventos audit-only, sem mensagem) e auto-create
+ * do worker (colisão/falha → lista, sem insistir). Ambíguo (>1 worker) continua só na lista.
+ *
  * Saída: só IDs, etapas e contagens — nunca nome, telefone ou e-mail.
  */
 import * as crypto from 'crypto';
 import type { PoolClient } from 'pg';
 import { generatePhoneCandidates, normalizePhoneAR } from '../src/shared/utils/phoneNormalization';
 import type { TalentumCandidate } from '../src/modules/integration/domain/ITalentumApiClient';
+// Implementação ÚNICA do webhook (não duplicada aqui): mapeamento de etapa, transição NOT_QUALIFIED e auto-create.
+import {
+  applyNotQualifiedTransition, deriveFunnelStage, insertTalentumWorker, toPersistedFunnelStage,
+} from '../src/modules/matching/application/talentumFunnel';
 
 export type ReconcileMode = 'dry-run' | 'apply';
 
@@ -42,7 +50,7 @@ export interface TalentumReader {
 export type Outcome =
   | { kind: 'RESOLVED'; rowId: string; workerId: string; stage: string | null; committed: boolean }
   | { kind: 'AMBIGUOUS'; rowId: string; workerIds: string[] }
-  | { kind: 'NO_WORKER'; rowId: string }
+  | { kind: 'NO_WORKER'; rowId: string; reason?: string }
   | { kind: 'NOT_IN_TALENTUM'; rowId: string }
   | { kind: 'DEFERRED'; rowId: string; reason: string }
   | { kind: 'ERROR'; rowId: string; error: string };
@@ -56,15 +64,37 @@ export class RollbackWith extends Error {
 
 export type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
-/** Mesma conversão do webhook (`deriveFunnelStage` sobre o status gravado). `null` = não toca a candidatura (PENDING). */
-export function stageFromStatus(status: string): string | null {
-  if (status === 'PENDING') return null;
-  if (status === 'INITIATED') return 'PRE_SCREENING';
-  return status;
+const ANALYZED_LABELS: readonly string[] = ['QUALIFIED', 'NOT_QUALIFIED', 'IN_DOUBT', 'PENDING'];
+
+/**
+ * Etapa do funil como o webhook (`deriveFunnelStage`, a MESMA função). `talentum_prescreenings.status` guarda o
+ * `statusLabel` quando o ANALYZED o traz; um 'ANALYZED' cru (sem label) NUNCA vai para o WJA (viola o CHECK de
+ * `application_funnel_stage`): usa-se o `statusLabel` vindo do Talentum (`label`). Sem label → `null` (não toca a
+ * candidatura, como o webhook faz no ANALYZED sem statusLabel). `null` também para PENDING (sentinela do webhook).
+ * Devolve a etapa ORIGINAL (NOT_QUALIFIED é convertida em REJECTED só na gravação).
+ */
+export function stageFromStatus(status: string, label?: string | null): string | null {
+  const derived = status === 'ANALYZED'
+    ? deriveFunnelStage('ANALYZED', label && ANALYZED_LABELS.includes(label) ? label : null)
+    : ANALYZED_LABELS.includes(status)
+      ? deriveFunnelStage('ANALYZED', status)
+      : deriveFunnelStage(status);
+  return derived === 'ANALYZED' ? null : derived;
 }
 
-/** NOT_QUALIFIED exige o auto-reject do webhook (encuadre RECHAZADO + eventos): fora deste script, vai para a lista. */
-export const DEFERRED_STATUSES: readonly string[] = ['NOT_QUALIFIED'];
+/** `statusLabel` do Talentum para o ANALYZED: o campo da candidata, ou QUALIFIED se está na lista de qualificados. */
+export function analyzedLabel(candidate: TalentumCandidate, qualified: boolean): string | null {
+  const own = candidate['statusLabel'];
+  if (typeof own === 'string' && ANALYZED_LABELS.includes(own)) return own;
+  return qualified ? 'QUALIFIED' : null;
+}
+
+/** Causa SEM PII: código pg + 1ª linha da mensagem (nunca o `detail`, que ecoa a linha). */
+export function describeError(err: unknown): string {
+  const e = err as { code?: string; message?: string; constraint?: string };
+  const msg = (e?.message ?? String(err)).split('\n')[0];
+  return [e?.code ? `code=${e.code}` : null, e?.constraint ? `constraint=${e.constraint}` : null, msg].filter(Boolean).join(' ');
+}
 
 export const PENDING_SQL = `
   SELECT tp.id, tp.talentum_prescreening_id, tp.talentum_profile_id, tp.status, tp.job_posting_id, jp.talentum_project_id
@@ -112,6 +142,12 @@ async function applyRow(
     [workerId, row.jobPostingId, workerName, normalizePhoneAR(candidate.phoneNumber) || null, dedupHash],
   );
   if (stage === null) return;
+  // Etapa anterior (para a transição NOT_QUALIFIED, como o `previousStage` do webhook).
+  const prev = await client.query<{ application_funnel_stage: string }>(
+    `SELECT application_funnel_stage FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
+    [workerId, row.jobPostingId],
+  );
+  const previousStage = prev.rows[0]?.application_funnel_stage ?? null;
   // Mesma regra de precedência do `upsertWorkerJobApplicationFromTalentum`, mas SEM zerar um match_score já gravado.
   await client.query(
     `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, match_score, source)
@@ -124,8 +160,10 @@ async function applyRow(
          ELSE worker_job_applications.application_funnel_stage
        END,
        updated_at = NOW()`,
-    [workerId, row.jobPostingId, stage],
+    [workerId, row.jobPostingId, toPersistedFunnelStage(stage)],
   );
+  // NOT_QUALIFIED: a MESMA transição do webhook (encuadre RECHAZADO + WJA REJECTED + eventos audit-only, sem mensagem).
+  await applyNotQualifiedTransition(client, workerId, row.jobPostingId, stage, previousStage, row.id);
 }
 
 export interface ReconcileDeps {
@@ -147,19 +185,30 @@ export async function reconcile(deps: ReconcileDeps, mode: ReconcileMode): Promi
   for (const [projectId, projectRows] of byProject) {
     let candidates: Map<string, TalentumCandidate>;
     let emails: Map<string, string>;
+    const qualifiedIds = new Set<string>();
     try {
       candidates = new Map((await deps.talentum.candidates(projectId)).map((c) => [c.profileId, c]));
       emails = new Map();
-      if (projectRows.some((r) => r.status === 'QUALIFIED')) {
-        for (const q of await deps.talentum.readyForInterview(projectId)) if (q.email) emails.set(q.profileId, q.email);
+      if (projectRows.some((r) => r.status === 'QUALIFIED' || r.status === 'ANALYZED')) {
+        for (const q of await deps.talentum.readyForInterview(projectId)) {
+          qualifiedIds.add(q.profileId);
+          if (q.email) emails.set(q.profileId, q.email);
+        }
       }
     } catch (err) {
       // O erro do client carrega só método/path/HTTP — sem dado de candidato.
-      for (const r of projectRows) outcomes.push({ kind: 'ERROR', rowId: r.id, error: `talentum GET: ${(err as Error).message}` });
+      for (const r of projectRows) {
+        const o: Outcome = { kind: 'ERROR', rowId: r.id, error: `talentum GET: ${describeError(err)}` };
+        outcomes.push(o);
+        log(formatOutcome(o));
+      }
       continue;
     }
     for (const row of projectRows) {
-      const outcome = await reconcileRow(deps, row, candidates.get(row.talentumProfileId), emails.get(row.talentumProfileId) ?? null, mode);
+      const outcome = await reconcileRow(
+        deps, row, candidates.get(row.talentumProfileId), emails.get(row.talentumProfileId) ?? null,
+        qualifiedIds.has(row.talentumProfileId), mode,
+      );
       outcomes.push(outcome);
       log(formatOutcome(outcome));
     }
@@ -168,30 +217,55 @@ export async function reconcile(deps: ReconcileDeps, mode: ReconcileMode): Promi
 }
 
 async function reconcileRow(
-  deps: ReconcileDeps, row: PendingRow, candidate: TalentumCandidate | undefined, email: string | null, mode: ReconcileMode,
+  deps: ReconcileDeps, row: PendingRow, candidate: TalentumCandidate | undefined, email: string | null,
+  qualified: boolean, mode: ReconcileMode,
 ): Promise<Outcome> {
-  if (DEFERRED_STATUSES.includes(row.status)) return { kind: 'DEFERRED', rowId: row.id, reason: `status ${row.status}: auto-reject do webhook` };
   if (!candidate) return { kind: 'NOT_IN_TALENTUM', rowId: row.id };
-  const stage = stageFromStatus(row.status);
+  const stage = stageFromStatus(row.status, analyzedLabel(candidate, qualified));
   try {
     return await deps.runInTransaction(async (client) => {
       const ids = await findLiveWorkerIds(client, candidate, email ?? candidate.email ?? null, row.talentumProfileId);
-      if (ids.length === 0) return { kind: 'NO_WORKER', rowId: row.id } as Outcome;
       if (ids.length > 1) return { kind: 'AMBIGUOUS', rowId: row.id, workerIds: ids } as Outcome;
-      await applyRow(client, row, ids[0], candidate, stage);
-      const resolved: Outcome = { kind: 'RESOLVED', rowId: row.id, workerId: ids[0], stage, committed: mode === 'apply' };
+      let workerId = ids[0];
+      if (!workerId) {
+        const created = await createWorker(client, candidate, email, row.talentumProfileId);
+        if (created.kind !== 'CREATED') return { kind: 'NO_WORKER', rowId: row.id, reason: created.reason } as Outcome;
+        workerId = created.id;
+      }
+      await applyRow(client, row, workerId, candidate, stage);
+      const resolved: Outcome = { kind: 'RESOLVED', rowId: row.id, workerId, stage: stage === null ? null : toPersistedFunnelStage(stage), committed: mode === 'apply' };
       if (mode !== 'apply') throw new RollbackWith(resolved);
       return resolved;
     });
   } catch (err) {
     if (err instanceof RollbackWith) return err.outcome;
-    return { kind: 'ERROR', rowId: row.id, error: err instanceof Error ? err.message : String(err) };
+    return { kind: 'ERROR', rowId: row.id, error: describeError(err) };
   }
+}
+
+/**
+ * Sem worker vivo: cria pelo MESMO caminho do webhook (`insertTalentumWorker`). Colisão ou falha → lista, sem insistir.
+ * SAVEPOINT: o erro do INSERT não pode abortar a transação da linha.
+ */
+async function createWorker(
+  client: PoolClient, candidate: TalentumCandidate, email: string | null, profileId: string,
+): Promise<{ kind: 'CREATED'; id: string } | { kind: 'FAILED'; reason: string }> {
+  const mail = email ?? candidate.email ?? null;
+  if (!mail || !candidate.phoneNumber) return { kind: 'FAILED', reason: 'sem e-mail/telefone do Talentum para criar' };
+  await client.query('SAVEPOINT reconcile_create_worker');
+  const res = await insertTalentumWorker(client, { id: profileId, email: mail, phoneNumber: candidate.phoneNumber });
+  if (res.kind === 'CREATED') {
+    await client.query('RELEASE SAVEPOINT reconcile_create_worker');
+    return res;
+  }
+  await client.query('ROLLBACK TO SAVEPOINT reconcile_create_worker');
+  return { kind: 'FAILED', reason: res.kind === 'COLLISION' ? 'colisão ao criar (cadastro existente fora do match)' : `falha ao criar: ${res.message.split('\n')[0]}` };
 }
 
 export function formatOutcome(o: Outcome): string {
   switch (o.kind) {
     case 'RESOLVED': return `RESOLVED row=${o.rowId} worker=${o.workerId} stage=${o.stage ?? 'inalterado'} committed=${o.committed}`;
+    case 'NO_WORKER': return `NO_WORKER row=${o.rowId}${o.reason ? ` (${o.reason}; LISTA)` : ''}`;
     case 'AMBIGUOUS': return `AMBIGUOUS row=${o.rowId} workers=${o.workerIds.join(',')} (LISTA, nada aplicado)`;
     case 'DEFERRED': return `DEFERRED row=${o.rowId} (${o.reason})`;
     case 'ERROR': return `ERROR row=${o.rowId} ${o.error}`;
