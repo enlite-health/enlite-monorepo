@@ -51,6 +51,17 @@ describe('AssistantCountService', () => {
     expect(r.response.scope).toContain(COUNT_MENU.patients.scope_es);
   });
 
+  it('stage restrito ao recorte de admissão: zero só para etapas medidas (sem ACTIVE/ALTA/SOLICITANTE)', async () => {
+    const { svc } = build({ total: 7, groups: [{ key: 'ADMISSION', value: 7 }], restricted_to_admission: true });
+    const r = await svc.count('patients', { filters: [{ field: 'incomplete_registration', values: ['true'] }], group_by: 'stage' }, ACTOR, ['AR']);
+    if (!r.ok) throw new Error('esperava ok');
+    const keys = r.response.groups.map((g) => g.key).sort();
+    expect(keys).toEqual(['ADMISSION', 'PENDING_ADMISSION']);
+    expect(keys).not.toContain('ACTIVE');
+    expect(keys).not.toContain('ALTA');
+    expect(keys).not.toContain('SOLICITANTE');
+  });
+
   it('grupo de 3 sai {lt:5} e o total sai {gte}', async () => {
     const { svc } = build({ total: 37, groups: [{ key: 'REGISTERED', value: 34 }, { key: 'DISABLED', value: 3 }] });
     const r = await svc.count('workers', { group_by: 'registration' }, ACTOR, ['AR']);

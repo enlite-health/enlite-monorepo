@@ -6,6 +6,7 @@
  */
 import type { ActorContext } from '@shared/audit/actorSource';
 import type { CountryCode } from '@shared/domain/countryCodes';
+import { ACTIVATABLE_STATUSES } from '@modules/case/domain/PatientCompleteness';
 import { COUNT_MENU, CountEntity } from '../domain/assistantCountMenu';
 import { CanonicalCountRequest, CountRequestError, validateCountRequest } from '../domain/countRequestValidation';
 import { buildCountResponse, CountResponse } from '../domain/countResponseShape';
@@ -41,7 +42,7 @@ export class AssistantCountService {
     const req = v.request;
 
     const raw = await this.run(actor, (readers) => readers[req.entity].count(req, countries));
-    const groups = req.group_by ? materializeZeros(req, raw.groups ?? []) : [];
+    const groups = req.group_by ? materializeZeros(req, raw.groups ?? [], raw.restricted_to_admission === true) : [];
     const sup = suppressResult(raw.total, groups);
 
     return {
@@ -60,13 +61,15 @@ export class AssistantCountService {
 }
 
 /** DD10: todo valor do enum do `group_by` DENTRO do recorte aparece (0 onde não houve linha); filtro no MESMO campo restringe a lista. */
-function materializeZeros(req: CanonicalCountRequest, found: ReadonlyArray<{ key: string; value: number }>): RawCountGroup[] {
+function materializeZeros(req: CanonicalCountRequest, found: ReadonlyArray<{ key: string; value: number }>, restrictedToAdmission: boolean): RawCountGroup[] {
   const field = req.group_by!;
   const sameField = req.filters.find((f) => f.field === field);
   const def = COUNT_MENU[req.entity].fields[field];
   const named = new Set(sameField?.literalValues ?? []);
   // DD10: valor que o recorte padrão EXCLUI e ninguém nomeou = "não medido", nunca um 0 materializado
-  const universe = (sameField ? sameField.values : def.values).filter((v) => !(def.default_excluded ?? []).includes(v) || named.has(v));
+  let universe = (sameField ? sameField.values : def.values).filter((v) => !(def.default_excluded ?? []).includes(v) || named.has(v));
+  // recorte de admissão: o leitor só mediu ACTIVATABLE_STATUSES; o resto é "não medido", nunca 0 (mesma constante do leitor)
+  if (restrictedToAdmission && field === 'stage') universe = universe.filter((v) => (ACTIVATABLE_STATUSES as readonly string[]).includes(v));
   const byKey = new Map(found.map((g) => [g.key, g.value]));
   const out: RawCountGroup[] = universe.map((key) => ({ key, count: byKey.get(key) ?? 0 }));
   // chave que o leitor trouxe e o enum não tem: nunca descartar dado em silêncio
