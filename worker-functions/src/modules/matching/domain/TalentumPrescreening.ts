@@ -65,6 +65,7 @@ export interface UpsertTalentumPrescreeningDTO {
 
 export type TalentumDivergenceKind =
   | 'WORKER_NULL'
+  | 'WORKER_EMAIL_AMBIGUOUS'
   | 'JOB_POSTING_NULL'
   | 'JOB_POSTING_BY_TITLE_ONLY'
   | 'JOB_POSTING_TITLE_DIFFERS_STORED'

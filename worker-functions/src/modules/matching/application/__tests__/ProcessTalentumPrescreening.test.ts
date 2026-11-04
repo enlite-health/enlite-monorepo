@@ -91,7 +91,7 @@ describe('ProcessTalentumPrescreening', () => {
 
     // Mock worker lookup — always finds worker
     mockWorkerLookup = {
-      findByEmail: jest.fn().mockResolvedValue({ getValue: () => ({ id: 'w-1' }) }),
+      findByEmailNormalized: jest.fn().mockResolvedValue({ getValue: () => ({ id: 'w-1' }) }),
       findByPhoneCandidates: jest.fn().mockResolvedValue({ getValue: () => null }),
       findByCuit: jest.fn().mockResolvedValue({ getValue: () => null }),
     };
@@ -522,7 +522,7 @@ describe('ProcessTalentumPrescreening', () => {
   // ─── 10. resolveWorkerId — fallback phone → cuil ───────────────────
 
   it('resolve worker por phone quando email não encontra', async () => {
-    mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+    mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
     mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => ({ id: 'w-phone' }) });
 
     const payload = buildPayload({ status: 'IN_PROGRESS' });
@@ -533,7 +533,7 @@ describe('ProcessTalentumPrescreening', () => {
   });
 
   it('resolve worker por cuil quando email e phone não encontram', async () => {
-    mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+    mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
     mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => null });
     mockWorkerLookup.findByCuit.mockResolvedValue({ getValue: () => ({ id: 'w-cuil' }) });
 
@@ -546,7 +546,7 @@ describe('ProcessTalentumPrescreening', () => {
   });
 
   it('auto-cria worker se nenhum lookup encontra (e retorna workerId do auto-criado)', async () => {
-    mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+    mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
     mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => null });
 
     const payload = buildPayload({ status: 'IN_PROGRESS' });
@@ -568,7 +568,7 @@ describe('ProcessTalentumPrescreening', () => {
   // ─── 11. extractId com isSuccess=false ──────────────────────────────
 
   it('extractId retorna null quando isSuccess=false — e auto-cria worker', async () => {
-    mockWorkerLookup.findByEmail.mockResolvedValue({
+    mockWorkerLookup.findByEmailNormalized.mockResolvedValue({
       isSuccess: false,
       getValue: () => ({ id: 'should-not-use' }),
     });
@@ -786,7 +786,7 @@ describe('ProcessTalentumPrescreening', () => {
   describe('auto-criação de worker (Step 1.5)', () => {
     beforeEach(() => {
       // Nenhum lookup encontra o worker
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
       mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => null });
     });
 
@@ -909,7 +909,7 @@ describe('ProcessTalentumPrescreening', () => {
     });
 
     it('não cria encuadre se workerId é null', async () => {
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
       mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => null });
 
       // Faz auto-criação do worker falhar
@@ -1289,7 +1289,7 @@ describe('ProcessTalentumPrescreening', () => {
   describe('fluxo completo para worker novo', () => {
     it('auto-cria worker, cria encuadre e atualiza funnel stage', async () => {
       // Worker não existe em nenhum lookup
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
       mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => null });
 
       const payload = buildPayload({ status: 'IN_PROGRESS' });
@@ -1412,7 +1412,7 @@ describe('ProcessTalentumPrescreening', () => {
     }
 
     it('lookup devolveu registro fundido → escreve a postulação no SOBREVIVENTE', async () => {
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => ({ id: 'w-dead' }) } as never);
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => ({ id: 'w-dead' }) } as never);
       mockMergeChain('w-dead', 'w-alive');
 
       await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
@@ -1423,7 +1423,7 @@ describe('ProcessTalentumPrescreening', () => {
     });
 
     it('worker vivo segue intocado (sem regressão no caminho normal)', async () => {
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => ({ id: 'w-alive' }) } as never);
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => ({ id: 'w-alive' }) } as never);
       mockMergeChain('w-alive', 'w-alive');
 
       await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
@@ -1435,7 +1435,7 @@ describe('ProcessTalentumPrescreening', () => {
     it('cadeia quebrada (ciclo) → mantém o ID cru, NUNCA auto-cria outro cadastro', async () => {
       // Devolver null aqui faria o fluxo auto-criar um worker novo — mais uma
       // duplicata da mesma pessoa, pior que o bug original.
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => ({ id: 'w-dead' }) } as never);
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => ({ id: 'w-dead' }) } as never);
       mockMergeChain('w-dead', null);
 
       await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
@@ -1467,7 +1467,7 @@ describe('ProcessTalentumPrescreening', () => {
     const COM_O_9 = '5491155261243'; // como o worker está gravado
 
     beforeEach(() => {
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null } as never);
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null } as never);
     });
 
     it('(a) telefone sem o 9 resolve o worker gravado com o 9, sem auto-criar', async () => {
@@ -1513,19 +1513,21 @@ describe('ProcessTalentumPrescreening', () => {
       expect(mockWorkerLookup.findByPhoneCandidates.mock.calls[1][0]).toContain(COM_O_9);
     });
 
-    it('worker nem resolvido nem criado → logger.error com marcador de alerta, telefone mascarado, resposta inalterada', async () => {
-      const errSpy = jest.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    it('worker nem resolvido nem criado → UM alarme (reportError com o marcador), telefone mascarado, resposta inalterada', async () => {
       fakePhoneLookup([]);
       mockPool.query.mockImplementation((sql: string) => {
         if (sql.includes('INSERT INTO workers')) return Promise.reject(new Error('boom'));
         return Promise.resolve({ rows: [] });
       });
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
       const result = await useCase.execute(buildPayload({ phoneNumber: SEM_O_9, status: 'INITIATED' }));
 
       expect(result.workerId).toBeNull(); // sem throw: o 200 ao Talentum não muda
-      const logged = JSON.stringify(errSpy.mock.calls);
-      expect(logged).toContain('TALENTUM_WORKER_UNRESOLVED');
+      const workerNull = (reportError as jest.Mock).mock.calls.filter((c) => (c[1] as any)?.kind === 'WORKER_NULL');
+      expect(workerNull).toHaveLength(1); // alarme duplicado removido: um só
+      expect((workerNull[0][1] as any).alert).toBe('TALENTUM_WORKER_UNRESOLVED');
+      const logged = JSON.stringify([workerNull, errSpy.mock.calls]);
       expect(logged).not.toContain(SEM_O_9);
       expect(logged).not.toContain('juan@test.com');
       errSpy.mockRestore();
@@ -1563,7 +1565,7 @@ describe('ProcessTalentumPrescreening', () => {
       expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'JOB_POSTING_REPOINTED_TO_OWNER' }));
     });
 
-    it('vaga resolvida só por título: NÃO é a dona (resolvedById=false) e alarma BY_TITLE_ONLY', async () => {
+    it('vaga resolvida só por título: NÃO é a dona (resolvedById=false); grava BY_TITLE_ONLY só na tabela', async () => {
       mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);
 
       await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
@@ -1573,7 +1575,8 @@ describe('ProcessTalentumPrescreening', () => {
         expect.anything(),
       );
       expect(divergenceKinds()).toEqual(['JOB_POSTING_BY_TITLE_ONLY']);
-      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'JOB_POSTING_BY_TITLE_ONLY' }));
+      // ruído esperado (vaga antiga sem id): só a linha na tabela, SEM reporter
+      expect(reportError).not.toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'JOB_POSTING_BY_TITLE_ONLY' }));
     });
 
     it('vaga null: grava JOB_POSTING_NULL e chama o reporter; o card continua gravado', async () => {
@@ -1588,7 +1591,7 @@ describe('ProcessTalentumPrescreening', () => {
     });
 
     it('worker null: grava WORKER_NULL na MESMA transação do card, chama o reporter e não vaza PII', async () => {
-      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
       mockPool.query.mockImplementation((sql: string) => {
         if (sql.includes('INSERT INTO workers')) return Promise.reject(new Error('falha qualquer'));
         return Promise.resolve({ rows: [] });
@@ -1603,6 +1606,33 @@ describe('ProcessTalentumPrescreening', () => {
       expect(order.indexOf('SAVEPOINT talentum_divergence')).toBeLessThan(order.indexOf('COMMIT'));
       const [, ctx] = (reportError as jest.Mock).mock.calls.find((c) => (c[1] as any)?.kind === 'WORKER_NULL')!;
       expect(JSON.stringify(ctx)).not.toMatch(/segredo|5491100001111/);
+    });
+
+    it('cada tipo que alarma tem Error com nome e stack PRÓPRIOS (grupos distintos no Error Reporting)', async () => {
+      mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);
+      mockJobPostingLookup.findByTitleILike.mockResolvedValue(null);
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
+      mockPool.query.mockImplementation((sql: string) =>
+        sql.includes('INSERT INTO workers') ? Promise.reject(new Error('boom')) : Promise.resolve({ rows: [] }));
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await useCase.execute(buildPayload());
+
+      const errs = (reportError as jest.Mock).mock.calls.map((c) => c[0] as Error);
+      expect(errs.map((e) => e.name).sort()).toEqual(['TalentumDivergence_JOB_POSTING_NULL', 'TalentumDivergence_WORKER_NULL']);
+      expect(new Set(errs.map((e) => e.stack)).size).toBe(2);
+      expect(new Set(errs.map((e) => e.message)).size).toBe(2);
+    });
+
+    it('e-mail ambíguo (>1 worker vivo): NÃO escolhe um; cai no telefone e registra WORKER_EMAIL_AMBIGUOUS', async () => {
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null, ambiguousCount: 2 });
+      mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => ({ id: 'w-fone' }) });
+
+      const result = await useCase.execute(buildPayload());
+
+      expect(result.workerId).toBe('w-fone');
+      expect(divergenceKinds()).toContain('WORKER_EMAIL_AMBIGUOUS');
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'WORKER_EMAIL_AMBIGUOUS' }));
     });
   });
 });

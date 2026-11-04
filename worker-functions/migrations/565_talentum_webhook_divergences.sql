@@ -1,5 +1,5 @@
 -- 565 — `talentum_webhook_divergences`: uma linha por evento do webhook Talentum que NÃO conseguiu gravar o card
--- direito (worker não resolvido, vaga não resolvida, vaga só por título, vaga gravada ≠ dona do prescreening_id —
+-- direito (worker não resolvido ou e-mail ambíguo (>1 worker vivo), vaga não resolvida, vaga só por título, vaga gravada ≠ dona do prescreening_id —
 -- esta última em dois sabores: REPOINTED_TO_OWNER = a dona por id venceu e a gravada foi trocada; TITLE_DIFFERS_STORED =
 -- só o título resolveu, diferente da gravada, e a gravada foi mantida).
 --
@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS talentum_webhook_divergences (
   id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   kind                     TEXT NOT NULL CHECK (kind IN (
                              'WORKER_NULL',
+                             'WORKER_EMAIL_AMBIGUOUS',
                              'JOB_POSTING_NULL',
                              'JOB_POSTING_BY_TITLE_ONLY',
                              'JOB_POSTING_TITLE_DIFFERS_STORED',

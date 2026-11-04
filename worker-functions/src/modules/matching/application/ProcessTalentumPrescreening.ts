@@ -16,6 +16,17 @@ import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
 
 const TAG = '[ProcessTalentumPrescreening]';
 
+/**
+ * Um Error DISTINTO por tipo de divergência: mensagem e stack sintético próprios, para o Cloud Error Reporting agrupar
+ * cada tipo no seu grupo (a stack real seria a mesma para os cinco e eles cairiam num grupo só).
+ */
+function divergenceError(kind: TalentumDivergenceKind): Error {
+  const err = new Error(`${TAG} divergência webhook × card: ${kind}`);
+  err.name = `TalentumDivergence_${kind}`;
+  err.stack = `${err.name}: ${err.message}\n    at ProcessTalentumPrescreening.divergence.${kind} (talentum-webhook)`;
+  return err;
+}
+
 export type WebhookEnvironment = 'production' | 'test';
 
 export interface ProcessTalentumPrescreeningOptions {
@@ -38,7 +49,11 @@ interface ResolvedJobPosting {
 }
 
 export interface IWorkerLookup {
-  findByEmail(email: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
+  /**
+   * E-mail NORMALIZADO (LOWER/BTRIM), só worker vivo, determinístico. `ambiguousCount > 1` = mais de uma candidata
+   * casa: `getValue()` é null e o webhook registra a divergência — nunca escolhe uma. (O `findByEmail` exato é do login.)
+   */
+  findByEmailNormalized(email: string): Promise<{ getValue(): { id: string } | null; isSuccess?: boolean; ambiguousCount?: number }>;
   /** Telefone por CANDIDATOS (`generatePhoneCandidates`): casa com/sem o 9 do móvel; ignora worker merged/deletado. */
   findByPhoneCandidates(candidates: string[]): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
   findByCuit(cuit: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
@@ -71,7 +86,7 @@ export class ProcessTalentumPrescreening {
     const environment = options?.environment ?? 'production';
     const dryRun = options?.dryRun ?? false;
 
-    const workerId = await this.resolveOrCreateWorker(payload, dryRun);
+    const { workerId, emailAmbiguous } = await this.resolveOrCreateWorker(payload, dryRun);
     const job = await this.resolveJobPosting(payload.data.prescreening.id, payload.data.prescreening.name);
     const jobPostingId = job.id;
 
@@ -79,7 +94,7 @@ export class ProcessTalentumPrescreening {
       return this.buildResult(payload.data.prescreening.id, payload.data.prescreening.id, workerId, jobPostingId);
     }
 
-    const prescreening = await this.persistPrescreening(payload, workerId, job, environment);
+    const prescreening = await this.persistPrescreening(payload, workerId, job, environment, emailAmbiguous);
 
     await this.syncFunnelAndEncuadre(prescreening, payload);
     await this.questionsWriter.persist(prescreening.id, payload);
@@ -92,38 +107,29 @@ export class ProcessTalentumPrescreening {
   private async resolveOrCreateWorker(
     payload: TalentumPrescreeningResponseParsed,
     dryRun: boolean,
-  ): Promise<string | null> {
+  ): Promise<{ workerId: string | null; emailAmbiguous: boolean }> {
     const { email, phoneNumber } = payload.data.profile;
     // PII: e-mail/telefone mascarados (maskEmailForLog/maskPhoneForLog); CUIL é documento —
     // nunca no log, nem mascarado (achado do gate, 11/09).
     console.log(`${TAG} resolveWorker | email=${maskEmailForLog(email)} | phone=${maskPhoneForLog(phoneNumber)}`);
 
-    const workerId = await this.resolveWorkerId(payload);
+    const { id: workerId, emailAmbiguous } = await this.resolveWorkerId(payload);
     if (workerId) {
       console.log(`${TAG} resolveWorker → found ${workerId}`);
-      return workerId;
+      return { workerId, emailAmbiguous };
     }
 
     if (dryRun) {
       console.log(`${TAG} resolveWorker → NOT FOUND (dryRun, skip auto-create)`);
-      return null;
+      return { workerId: null, emailAmbiguous };
     }
 
     console.log(`${TAG} resolveWorker → NOT FOUND, auto-creating...`);
     const created = await this.autoCreateWorker(payload);
     console.log(`${TAG} resolveWorker → auto-created: ${created ?? 'FAILED'}`);
-    if (!created) {
-      // Marcador estruturado para alerta (log-based metric). Sem PII: telefone mascarado, e-mail/nome/CUIL fora.
-      // O status HTTP da resposta ao Talentum NÃO muda (já existe policy de 5xx; ver PR).
-      logger.error({
-        msg: `${TAG} worker NÃO resolvido nem criado — candidata fica sem vínculo`,
-        alert: 'TALENTUM_WORKER_UNRESOLVED',
-        talentumPrescreeningId: payload.data.prescreening.id,
-        talentumProfileId: payload.data.profile.id,
-        phone: maskPhoneForLog(phoneNumber),
-      });
-    }
-    return created;
+    // O alarme de worker não resolvido é UM só: a divergência WORKER_NULL (linha + reportError) em persistPrescreening.
+    // O status HTTP da resposta ao Talentum NÃO muda.
+    return { workerId: created, emailAmbiguous };
   }
 
   /**
@@ -166,21 +172,25 @@ export class ProcessTalentumPrescreening {
     return canonical;
   }
 
-  private async resolveWorkerId(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
+  private async resolveWorkerId(
+    payload: TalentumPrescreeningResponseParsed,
+  ): Promise<{ id: string | null; emailAmbiguous: boolean }> {
     const { email, phoneNumber, cuil } = payload.data.profile;
 
-    const byEmail = this.extractId(await this.workerLookup.findByEmail(email));
-    if (byEmail) return this.toCanonical(byEmail);
+    const emailLookup = await this.workerLookup.findByEmailNormalized(email);
+    const emailAmbiguous = (emailLookup.ambiguousCount ?? 0) > 1;
+    const byEmail = this.extractId(emailLookup);
+    if (byEmail) return { id: await this.toCanonical(byEmail), emailAmbiguous };
 
     const byPhone = await this.findByPhoneAnyForm(phoneNumber);
-    if (byPhone) return this.toCanonical(byPhone);
+    if (byPhone) return { id: await this.toCanonical(byPhone), emailAmbiguous };
 
     if (cuil) {
       const byCuil = this.extractId(await this.workerLookup.findByCuit(cuil));
-      if (byCuil) return this.toCanonical(byCuil);
+      if (byCuil) return { id: await this.toCanonical(byCuil), emailAmbiguous };
     }
 
-    return null;
+    return { id: null, emailAmbiguous };
   }
 
   /**
@@ -268,6 +278,7 @@ export class ProcessTalentumPrescreening {
     workerId: string | null,
     job: ResolvedJobPosting,
     environment: WebhookEnvironment,
+    emailAmbiguous = false,
   ) {
     // For ANALYZED, store the statusLabel (QUALIFIED/NOT_QUALIFIED/IN_DOUBT/PENDING)
     // instead of the generic 'ANALYZED' subtype — more granular for Kanban tags.
@@ -295,7 +306,7 @@ export class ProcessTalentumPrescreening {
       }, client);
       prescreening = upserted.prescreening;
 
-      divergences.push(...this.collectDivergences(workerId, job, upserted.previousJobPostingId ?? null));
+      divergences.push(...this.collectDivergences(workerId, job, upserted.previousJobPostingId ?? null, emailAmbiguous));
       for (const d of divergences) {
         await this.recordDivergence(client, payload, prescreening.id, workerId, d, environment);
       }
@@ -308,10 +319,14 @@ export class ProcessTalentumPrescreening {
     }
 
     for (const d of divergences) {
+      // BY_TITLE_ONLY é ruído esperado (vaga antiga sem id): só a linha na tabela, sem reporter.
+      if (d.kind === 'JOB_POSTING_BY_TITLE_ONLY') continue;
       // Reporter oficial do projeto (Cloud Error Reporting). Só ids: sem telefone/e-mail/nome.
-      reportError(new Error(`${TAG} divergência webhook × card: ${d.kind}`), {
+      reportError(divergenceError(d.kind), {
         source: 'ProcessTalentumPrescreening:divergence',
         kind: d.kind,
+        // WORKER_NULL mantém o marcador histórico do log-based metric (jsonPayload.alert).
+        ...(d.kind === 'WORKER_NULL' ? { alert: 'TALENTUM_WORKER_UNRESOLVED' } : {}),
         talentumPrescreeningId: payload.data.prescreening.id,
         talentumProfileId: payload.data.profile.id,
         workerId,
@@ -330,8 +345,9 @@ export class ProcessTalentumPrescreening {
    * - só título e ≠ gravada: a gravada foi MANTIDA (título não sobrescreve id), o título aponta outra vaga;
    * - só título (sem conflito): resolução frágil, não é a dona por id.
    */
-  private collectDivergences(workerId: string | null, job: ResolvedJobPosting, previous: string | null) {
+  private collectDivergences(workerId: string | null, job: ResolvedJobPosting, previous: string | null, emailAmbiguous = false) {
     const out: Array<{ kind: TalentumDivergenceKind; jobPostingId: string | null; expectedJobPostingId: string | null }> = [];
+    if (emailAmbiguous) out.push({ kind: 'WORKER_EMAIL_AMBIGUOUS', jobPostingId: job.id, expectedJobPostingId: null });
     if (!workerId) out.push({ kind: 'WORKER_NULL', jobPostingId: job.id, expectedJobPostingId: null });
     if (!job.id) {
       out.push({ kind: 'JOB_POSTING_NULL', jobPostingId: previous, expectedJobPostingId: null });
