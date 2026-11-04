@@ -62,6 +62,8 @@ export class AnaCareHoursServiceError extends Error {
     | 'NOTA_MUITO_LONGA'
     | 'FONTE_NAO_CONFIGURADA'
     | 'TURNO_NAO_ENCONTRADO'
+    // Sync: o Ana Care devolveu a lista de contas incompleta; o backend (502) recusou gravar.
+    | 'DIRETORIO_ANACARE_INCOMPLETO'
     // Spec 032 (exportação): fonte sem leitura por intervalo; pedido recusado (400); sem a célula (403).
     | 'FONTE_SEM_INTERVALO'
     | 'PEDIDO_INVALIDO'

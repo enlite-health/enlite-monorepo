@@ -60,6 +60,7 @@ const KNOWN_ERROR_CODES: ReadonlySet<AnaCareHoursServiceError['code']> = new Set
   'NOTA_MUITO_LONGA',
   'FONTE_NAO_CONFIGURADA',
   'TURNO_NAO_ENCONTRADO',
+  'DIRETORIO_ANACARE_INCOMPLETO',
 ]);
 
 /** Código desconhecido/ausente vira erro GENÉRICO — nunca "retrato desatualizado" por omissão (isso desabilitava ações por um motivo que a resposta nem mandou). */
