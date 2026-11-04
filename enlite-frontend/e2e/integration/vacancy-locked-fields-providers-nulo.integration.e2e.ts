@@ -14,6 +14,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import { insertTestPatient, cleanupTestPatient, insertBaseVacancy, cleanupVacancies } from '../helpers/db-test-helper';
 import { sqlComVars } from '../helpers/sql-com-vars';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
@@ -53,6 +54,7 @@ test.describe('vacancy-locked-fields — quantidade de prestadores sem padrão 1
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);
     const serviceId = (await svc.json()).data.id as string;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     const act = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`, { headers: AUTH_HEADERS });
     expect(act.ok(), `activate-recruitment falhou: ${act.status()} ${await act.text()}`).toBe(true);
     const vacancyId = (await act.json()).data.vacancyId as string;

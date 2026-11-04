@@ -22,6 +22,7 @@ import { runSQL, cleanupPatientDeep } from './patient-detail-a-helper';
 import { tokenFor, loginAs, type MockUser } from './abac-stack-helper';
 import { seedMockStaff, cleanupMockStaff } from './lancamento-leituras-helper';
 import { RECRUITMENT_FIELDS_E2E } from './recruitment-fields-e2e';
+import { vincularServicoAoParticular } from './vinculo-servico-helper';
 
 /**
  * URL do backend (E2E-F6/CI sempre setam `E2E_BACKEND_URL`) — nunca host/porta literal (G2).
@@ -298,6 +299,8 @@ export async function postContractedServiceViaApi(
   token: string,
   patientId: string,
   body: ContractedServiceBody,
+  /** Spec 087: por padrão o serviço nasce COM vínculo vigente (o portão `COVERAGE` o exige para ativar recrutamento); `semVinculo` o deixa sem. */
+  opts: { semVinculo?: boolean } = {},
 ): Promise<string> {
   const res = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -309,7 +312,9 @@ export async function postContractedServiceViaApi(
       `postContractedServiceViaApi: POST contracted-services falhou ${res.status()}: ${await res.text()}`,
     );
   }
-  return ((await res.json()) as { data: { id: string } }).data.id;
+  const serviceId = ((await res.json()) as { data: { id: string } }).data.id;
+  if (!opts.semVinculo) vincularServicoAoParticular(serviceId);
+  return serviceId;
 }
 
 // ── Semente do paciente lançável ─────────────────────────────────────────────────

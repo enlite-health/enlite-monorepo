@@ -18,6 +18,7 @@
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import { insertTestPatient, cleanupTestPatient, backdateVacancyUpdatedAt } from '../helpers/db-test-helper';
 
 const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:8080';
@@ -215,6 +216,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     });
     expect(svcRes.ok(), `POST contracted-services falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);
     serviceId = (await svcRes.json()).data.id as string;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
 
     const activateRes = await request.post(
       `${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,

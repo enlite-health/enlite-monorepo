@@ -20,6 +20,7 @@ import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoHumano } from '../helpers/login-humano';
 import { escolherNoCombo, escolherNoComboPorValor } from '../helpers/combobox';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 
 const STAFF_EMAIL = `e2e.horario.${Date.now()}@enlite.health`;
 
@@ -67,6 +68,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     await page.getByTestId('contracted-service-new-save').click();
     const svcBody = (await (await createService).json()) as { data: { id: string } };
     const serviceId = svcBody.data.id;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     // 06/09: salvar NÃO fecha — o drawer troca para a EDIÇÃO do recém-criado. O aviso âmbar
     // continua ali, porque o serviço segue sem horário.
     await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible({ timeout: 15_000 });

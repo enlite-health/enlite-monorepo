@@ -59,6 +59,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import {
   ABAC_API_URL,
   grantCell,
@@ -149,6 +150,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     });
     expect(svcRes.ok(), `POST contracted-services (draft) falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);
     draftServiceId = (await svcRes.json()).data.id as string;
+    vincularServicoAoParticular(draftServiceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     const activateRes = await request.post(`${ABAC_API_URL}/api/admin/patients/${patientId}/contracted-services/${draftServiceId}/activate-recruitment`, { headers: AUTH_HEADERS(SETUP) });
     expect(activateRes.ok(), `activate-recruitment (draft) falhou: ${activateRes.status()} ${await activateRes.text()}`).toBe(true);
     draftVacancyId = (await activateRes.json()).data.vacancyId as string;
@@ -162,6 +164,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     });
     expect(svcRes2.ok(), `POST contracted-services (published) falhou: ${svcRes2.status()} ${await svcRes2.text()}`).toBe(true);
     const publishedServiceId = (await svcRes2.json()).data.id as string;
+    vincularServicoAoParticular(publishedServiceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     const activateRes2 = await request.post(`${ABAC_API_URL}/api/admin/patients/${patientId}/contracted-services/${publishedServiceId}/activate-recruitment`, { headers: AUTH_HEADERS(SETUP) });
     expect(activateRes2.ok(), `activate-recruitment (published) falhou: ${activateRes2.status()} ${await activateRes2.text()}`).toBe(true);
     publishedVacancyId = (await activateRes2.json()).data.vacancyId as string;

@@ -18,6 +18,7 @@ import {
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-a6-helper';
 import { escolherNoCombo } from '../helpers/combobox';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -121,6 +122,7 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svcBody = (await (await createService).json()) as { data: { id: string; providerAgeBand: string } };
     const serviceId = svcBody.data.id;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     expect(svcBody.data.providerAgeBand).toBe('AGE_30_45');
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
 

@@ -213,6 +213,6 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     expect(data.contactEmail).toBe(email);
     await expect(page.getByTestId('patient-contact-email')).toHaveText(email, { timeout: 30_000 });
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
-    await expect(page.getByTestId('coverage-informed')).toContainText('—');
+    await expect(page.getByTestId('coverage-informed')).toHaveCount(0); // spec 087: a linha "informada" saiu do cartão
   });
 });

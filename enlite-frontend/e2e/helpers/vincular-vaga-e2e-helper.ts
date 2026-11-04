@@ -9,6 +9,7 @@
  */
 import { insertSecondAddress } from './patient-addresses-test-helper';
 import { RECRUITMENT_FIELDS_E2E } from './recruitment-fields-e2e';
+import { vincularServicoAoParticular } from './vinculo-servico-helper';
 import {
   runSQL, cleanupPatientDeep, cleanupWorker, seedActivatablePatient, seedWorker,
 } from './patient-detail-c-helper';
@@ -117,6 +118,7 @@ export function seedContractedService(
     `VALUES ('${patientId}', 'AT', true, 'AR', 'e2e079', 'e2e079', ${opts.addressId ? `'${opts.addressId}'` : 'NULL'}) RETURNING id) SELECT id FROM ins`,
   );
   if (!serviceId) throw new Error('seedContractedService: INSERT sem id');
+  vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
   // Campo JÁ preenchido no serviço com valor diferente do da vaga: é o único que a prévia lista (a vaga entrega o resto igual).
   if (opts.requiredExperience !== undefined) {
     runSQL(`UPDATE patient_contracted_services SET required_experience = ${sqlTexto(opts.requiredExperience)} WHERE id = '${serviceId}'`);

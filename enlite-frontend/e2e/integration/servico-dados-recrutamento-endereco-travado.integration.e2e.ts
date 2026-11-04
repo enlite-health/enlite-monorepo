@@ -16,6 +16,7 @@ import { sqlComVars } from '../helpers/sql-com-vars';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import { seedDerivablePatient, selectedWorker, allocateWorker } from '../helpers/derivacao-e2e-helper';
 import { insertSecondAddress } from '../helpers/itinerario-escrita-e2e-helper';
 import { escolherNoComboPorValor } from '../helpers/combobox';
@@ -46,7 +47,9 @@ test.describe('servico-dados-recrutamento-endereco-travado — REGRA-05 pela tel
       },
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);
-    return { patientId: seeded.patientId, addressId: seeded.addressId as string, serviceId: (await svc.json()).data.id as string };
+    const serviceId = (await svc.json()).data.id as string;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
+    return { patientId: seeded.patientId, addressId: seeded.addressId as string, serviceId };
   }
 
   async function abrirCardDoServico(page: Page, patientId: string, serviceId: string): Promise<void> {
