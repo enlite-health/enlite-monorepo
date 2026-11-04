@@ -338,15 +338,15 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(repo.createVersion).not.toHaveBeenCalled();
     });
 
-    it('403 sem `patient_clinical:write`: a célula que falta é NOMEADA e o repo nem é chamado (lex C7)', async () => {
+    it('403 sem `patient_clinical:create`: a célula que falta é NOMEADA e o repo nem é chamado (lex C7)', async () => {
       const repo = { createVersion: jest.fn() };
       const res = mockRes();
       await ctrl(repo).create(
-        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:write'] }),
+        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:create'] }),
         res,
       );
       expect(res.status).toHaveBeenCalledWith(403);
-      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:write' } });
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:create' } });
       expect(repo.createVersion).not.toHaveBeenCalled();
     });
 
@@ -589,6 +589,38 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(corpoDaResposta(res).data.version).toBe('V.1.0');
     });
 
+    it('201 no `new` com as células DIVIDIDAS (create), sem `write` — o que o painel de grupos de fato grava', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:create', 'patient_clinical:create'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(repo.createVersion).toHaveBeenCalledTimes(1);
+    });
+
+    it('`edit` exige `patient_clinical:update`: só `:create` → 403 nomeando `:update`; com `:update` → 201', async () => {
+      const corpoEdit = { mode: 'edit', fromVersionId: SOURCE_ID, version: VERSAO_DO_EDIT };
+      const repoNega = { createVersion: jest.fn() };
+      const resNega = mockRes();
+      await ctrl(repoNega).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpoEdit, permissionCells: ['patient_clinical:create'] }),
+        resNega,
+      );
+      expect(resNega.status).toHaveBeenCalledWith(403);
+      expect(corpoDaResposta(resNega)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:update' } });
+      expect(repoNega.createVersion).not.toHaveBeenCalled();
+
+      const repoOk = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const resOk = mockRes();
+      await ctrl(repoOk).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpoEdit, permissionCells: ['patient_clinical:update'] }),
+        resOk,
+      );
+      expect(resOk.status).toHaveBeenCalledWith(201);
+    });
+
     describe('030 — segmento (lex C3, C7)', () => {
       it('030 — o `segmentId` do corpo chega ao repositório no `new` (o `{id,label}` é do repositório, nunca do corpo)', async () => {
         const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
@@ -612,15 +644,15 @@ describe('AdminTherapeuticProjectsController', () => {
         expect(reportError).not.toHaveBeenCalled();
       });
 
-      it('030 — 403 sem `patient_clinical:write` mesmo com `segmentId` válido: nomeia a célula e o repo nem é chamado', async () => {
+      it('030 — 403 sem `patient_clinical:create` mesmo com `segmentId` válido: nomeia a célula e o repo nem é chamado', async () => {
         const repo = { createVersion: jest.fn() };
         const res = mockRes();
         await ctrl(repo).create(
-          mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:write'] }),
+          mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:create'] }),
           res,
         );
         expect(res.status).toHaveBeenCalledWith(403);
-        expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:write' } });
+        expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:create' } });
         expect(JSON.stringify(corpoDaResposta(res))).not.toContain(SEGMENT_ID);
         expect(repo.createVersion).not.toHaveBeenCalled();
       });

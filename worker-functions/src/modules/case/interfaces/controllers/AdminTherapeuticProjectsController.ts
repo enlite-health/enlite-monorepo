@@ -25,11 +25,10 @@ import {
 } from '../../infrastructure/TherapeuticCatalogRepository';
 import { PatientCoverageEmergencyContactRepository } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
 import {
-  canWriteTherapeuticClinical,
+  missingTherapeuticClinicalWriteCell,
   projectTherapeuticVersionForActor,
   missingContactOriginCell,
   missingCoverageDirectProfessionalCell,
-  PATIENT_CLINICAL_WRITE_CELL,
   PT_WAIVE_CONTACT_CELL,
 } from '../../application/therapeuticProjectAccess';
 import type { ContactRef, ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
@@ -203,8 +202,9 @@ export class AdminTherapeuticProjectsController {
     }
     // lex C7: o corpo É texto clínico — a célula do container clínico é cumulativa à do projeto.
     const cells = cellsOfRequest(req);
-    if (!canWriteTherapeuticClinical(cells)) {
-      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: PATIENT_CLINICAL_WRITE_CELL } });
+    const missingClinicalCell = missingTherapeuticClinicalWriteCell(cells, body.data.mode === 'new' ? 'create' : 'update');
+    if (missingClinicalCell) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: missingClinicalCell } });
       return;
     }
     // lex-pr7 §alterado: célula de escrita do projeto + célula de LEITURA da origem de cada

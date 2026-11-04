@@ -13,8 +13,10 @@
  *                                            `segment` (segmento Ana Care congelado na versão, spec 030).
  *                                            Sem ela, esses cinco saem `null` e o marcador
  *                                            `redacted.clinical = true` sai SEMPRE (constante).
- * Escrita: `patient_therapeutic_project:write` E `patient_clinical:write` (o corpo carrega texto
- * clínico) — o middleware exige a primeira; a segunda é conferida aqui, com 403 nomeando a célula.
+ * Escrita: `patient_therapeutic_project:create|update` E a célula clínica da MESMA ação (o corpo
+ * carrega texto clínico) — o middleware exige a primeira; a segunda é conferida aqui, com 403
+ * nomeando a célula que faltou. `patient_clinical` é recurso SPLIT: o painel de grupos grava
+ * `create`+`update`, nunca `write` (`expandWriteCells`); o `write` legado (Acesso Master) segue valendo.
  *
  * `cells = null` é "o engine não decidiu" (D113): tudo passa, como a rota devolvia antes.
  */
@@ -24,6 +26,8 @@ import { patientContainerCell, canReadPatientContainer } from './patientContaine
 export const THERAPEUTIC_PROJECT_RESOURCE = 'patient_therapeutic_project';
 export const PATIENT_CLINICAL_READ_CELL = patientContainerCell('clinical', 'read');
 export const PATIENT_CLINICAL_WRITE_CELL = patientContainerCell('clinical', 'write');
+export const PATIENT_CLINICAL_CREATE_CELL = patientContainerCell('clinical', 'create');
+export const PATIENT_CLINICAL_UPDATE_CELL = patientContainerCell('clinical', 'update');
 /** lex 08/09 (A1): o TIPO do serviço congelado na versão é dado do container `services` (D286: célula é por dado). */
 export const PATIENT_SERVICES_READ_CELL = patientContainerCell('services', 'read');
 /** lex-pr7 §alterado: célula de LEITURA da origem — quem não vê o container não pode SELECIONAR o contato. */
@@ -60,9 +64,30 @@ export function canReadTherapeuticClinical(cells: readonly string[] | null | und
   return canReadPatientContainer(cells, 'clinical');
 }
 
-export function canWriteTherapeuticClinical(cells: readonly string[] | null | undefined): boolean {
-  if (cells === null || cells === undefined) return true;
-  return cells.includes(PATIENT_CLINICAL_WRITE_CELL);
+/** Ação do projeto: `new` cria um projeto (célula `create`); `edit` é edição de versão (célula `update`). */
+export type TherapeuticClinicalWriteAction = 'create' | 'update';
+
+/** A célula clínica que a ação exige (a dividida — o `write` legado é aceito à parte). */
+export function therapeuticClinicalWriteCell(action: TherapeuticClinicalWriteAction): string {
+  return action === 'create' ? PATIENT_CLINICAL_CREATE_CELL : PATIENT_CLINICAL_UPDATE_CELL;
+}
+
+/** `null` = pode escrever; senão, a célula clínica que faltou (vai em `details.cell` do 403). */
+export function missingTherapeuticClinicalWriteCell(
+  cells: readonly string[] | null | undefined,
+  action: TherapeuticClinicalWriteAction,
+): string | null {
+  if (cells === null || cells === undefined) return null;
+  if (cells.includes(PATIENT_CLINICAL_WRITE_CELL)) return null;
+  const needed = therapeuticClinicalWriteCell(action);
+  return cells.includes(needed) ? null : needed;
+}
+
+export function canWriteTherapeuticClinical(
+  cells: readonly string[] | null | undefined,
+  action: TherapeuticClinicalWriteAction,
+): boolean {
+  return missingTherapeuticClinicalWriteCell(cells, action) === null;
 }
 
 export function canReadTherapeuticServices(cells: readonly string[] | null | undefined): boolean {
