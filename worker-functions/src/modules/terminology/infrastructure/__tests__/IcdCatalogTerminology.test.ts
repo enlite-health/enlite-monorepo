@@ -382,6 +382,16 @@ describe('IcdCatalogTerminology', () => {
       expect(sql).toMatch(/s\.release\s*=\s*\$1/);
     });
 
+    it('consulta só de stopwords usa a frase inteira como única palavra (comportamento antigo)', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
+      await new IcdCatalogTerminology().search('De la');
+
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
+      const params = mainCall[1] as unknown[];
+      // params: [release, frase escapada, palavra crua, palavra escapada, limite]
+      expect(params.slice(0, 4)).toEqual(['2026-01', 'de la', 'de la', 'de la']);
+    });
+
     it('palavra com menos de 5 caracteres não gera predicado fuzzy (`%>`), só ILIKE', async () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
       await new IcdCatalogTerminology().search('TEA');
