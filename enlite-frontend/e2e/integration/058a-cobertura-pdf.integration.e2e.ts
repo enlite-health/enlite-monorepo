@@ -141,7 +141,7 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
     expect(semVinculo).toContain('Sin obra social vinculada');
 
     // Sem serviço ativo: o único serviço sai de cena.
-    runSQL(`UPDATE patient_contracted_services SET active = false WHERE id = '${servicos[rotulos.patientId]}'`);
+    runSQL(`UPDATE patient_contracted_services SET active = false, ended_at = now() WHERE id = '${servicos[rotulos.patientId]}'`);
     await abrirCartao(page, rotulos);
     await expect(page.getByTestId('coverage-current-value')).toHaveText('Sin servicio activo', { timeout: 20_000 });
   });

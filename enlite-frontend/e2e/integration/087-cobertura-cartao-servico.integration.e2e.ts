@@ -69,7 +69,7 @@ test.describe('087-cobertura-cartao-servico — o cartão lê do serviço e o po
   test.beforeAll(async ({ playwright }) => {
     const request = await playwright.request.newContext();
     const celulasDoFoguete: Cell[] = [['vacancy', 'read'], ['vacancy', 'update']];
-    ator = seedActor('087', [...CELLS_FICHA, ...CELLS_INSURANCE_ALL, ...celulasDoFoguete]);
+    ator = seedActor('087', [...CELLS_FICHA, ...CELLS_INSURANCE_ALL, ...celulasDoFoguete, ['patient_services', 'create']]);
     // Só cobertura: lê e edita o cartão, mas NÃO lê serviços (a linha "Cobertura actual" não tem de onde sair).
     soCobertura = seedActor('087-so-cobertura', [['patient', 'read'], ['patient_identity', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'update']]);
     pa = await makeProvider(request, ator, 'Cobertura087');

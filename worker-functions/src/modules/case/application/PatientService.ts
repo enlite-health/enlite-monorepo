@@ -21,7 +21,6 @@ import {
 } from './PatientStatusWriter';
 import { listPatientStatusOptions, type PatientStatusOptions } from './PatientStatusOptions';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
-import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
 
 
 // ── Contrato de escrita ───────────────────────────────────────────────────────
@@ -76,16 +75,10 @@ export class PatientService {
   // Preguiçosos (spec 012): só a seção clínica/de cobertura do painel os usa, e construir o de
   // cobertura abre pool — as suítes que dublam o banco não precisam saber deles.
   private deviceTypeRepoMemo?: PatientDeviceTypeRepository;
-  private insuranceRepoMemo?: PatientInsuranceVerifiedRepository;
 
   private get deviceTypeRepo(): PatientDeviceTypeRepository {
     this.deviceTypeRepoMemo ??= new PatientDeviceTypeRepository();
     return this.deviceTypeRepoMemo;
-  }
-
-  private get insuranceRepo(): PatientInsuranceVerifiedRepository {
-    this.insuranceRepoMemo ??= new PatientInsuranceVerifiedRepository();
-    return this.insuranceRepoMemo;
   }
 
   /** As dependências que a escrita das coleções auxiliares precisa (`PatientRelatedWriter`). */
@@ -278,7 +271,6 @@ export class PatientService {
         responsibleRepo:   this.responsibleRepo,
         encryptionService: this.encryptionService,
         deviceTypeRepo:    () => this.deviceTypeRepo,
-        insuranceRepo:     () => this.insuranceRepo,
       },
       patientId, section, data, actor,
     );

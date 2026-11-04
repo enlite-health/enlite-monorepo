@@ -3,7 +3,6 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepository';
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
-import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
 import type { PatientRelatedInput, PatientServiceUpsertInput } from './PatientWriteInputs';
 
 /**
@@ -29,7 +28,6 @@ export interface PatientSectionWriterDeps {
   responsibleRepo: PatientResponsibleRepository;
   encryptionService: KMSEncryptionService;
   deviceTypeRepo: () => PatientDeviceTypeRepository;
-  insuranceRepo: () => PatientInsuranceVerifiedRepository;
 }
 
 /** Section-scoped partial update of a native (or any) patient. */
