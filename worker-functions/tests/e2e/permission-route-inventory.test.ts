@@ -271,6 +271,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // F3 (vaga-le-do-servico): "marcar como atendido" o aviso de vaga publicada — a MESMA célula do PUT da vaga.
         'POST /api/admin/vacancies/:id/source-change-notices/:field/ack → vacancy:update',
         'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:create',
+        // Spec 084 F1: dar baixa (uma ou em lote), só vaga SEM serviço — a MESMA célula do PUT da vaga. NÃO existe rota inversa (R17).
+        'POST /api/admin/vacancies/baja → vacancy:update',
         // "Promover" (D300, merge main→stage 19/09/2026): entrou junto com
         // reject/restore, mesma célula (escrita no funil).
         'POST /api/admin/vacancies/blocked-applications/:blockedId/promote → funnel:update',
