@@ -514,6 +514,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/interview-hosts/:id → interview_host:update',
         // spec 080 (scoreboard and escalations of the assistants, `adminAssistantsRoutes.ts`): families assistant_scoreboard/assistant_escalation, contract rotas-plataforma-novas.md.
         'GET /api/admin/assistants/scoreboard → assistant_scoreboard:read',
+        // spec 085 (cardápio de campos da Maria, `adminAssistantsRoutes.ts`): contagens reusam as células de patient/vacancy/worker.
+        'GET /api/admin/assistants/count/patients → patient:read',
+        'GET /api/admin/assistants/count/vacancies → vacancy:read',
+        'GET /api/admin/assistants/count/workers → worker:read',
         'POST /api/admin/assistants/escalations → assistant_escalation:register',
         // spec 082 (painel de custos, `adminCostsRoutes.ts`): família admin.integrations, célula platform_costs:read (só Acesso Master).
         'GET /api/admin/costs/overview → platform_costs:read',

@@ -10,10 +10,15 @@ import { AssistantReachUseCase, type ResolveActorCells } from './application/Ass
 import { withActorContext } from '@shared/database/actorContext';
 import { staffActor } from '@shared/audit/actorSource';
 import { consultarContadoresPedidos } from './infrastructure/PedidoContadorQuery';
+import { AssistantCountService } from './application/AssistantCountService';
+import { WorkerCountReader } from './infrastructure/WorkerCountReader';
+import { PatientCountReader } from './infrastructure/PatientCountReader';
+import { VacancyCountReader } from './infrastructure/VacancyCountReader';
 import { readScoreboardWith, registerEscalationWith } from '../mcp/infrastructure/AgentesRepository';
 
 export { createAdminPedidosIaRoutes } from './interfaces/routes/adminPedidosIaRoutes';
 export { PedidoIaController } from './interfaces/controllers/PedidoIaController';
+export { AssistantCountService } from './application/AssistantCountService';
 export { createAdminAssistantsRoutes } from './interfaces/routes/adminAssistantsRoutes';
 export { AssistantsPlatformController } from './interfaces/controllers/AssistantsPlatformController';
 
@@ -43,4 +48,16 @@ export function createAssistantsPlatformController(resolveCells: ResolveActorCel
     readScoreboard: (uid, p) => withActorContext(pool, (c) => readScoreboardWith(c, p), staffActor(uid)),
     registerEscalation: (uid, e) => withActorContext(pool, (c) => registerEscalationWith(c, e), staffActor(uid)),
   });
+}
+
+/** Composition root da contagem da Maria (change 085): as três entidades rodam em `withActorContext` com o ator da request (F-db-2). */
+export function createAssistantCountService(): AssistantCountService {
+  const pool = DatabaseConnection.getInstance().getPool();
+  return new AssistantCountService((actor, fn) =>
+    withActorContext(
+      pool,
+      (client) => fn({ workers: new WorkerCountReader(client), patients: new PatientCountReader(client), vacancies: new VacancyCountReader(client) }),
+      actor,
+    ),
+  );
 }

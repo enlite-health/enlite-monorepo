@@ -81,6 +81,33 @@
         "recruitment_activity_per_person"
       ],
       "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/assistants/count/workers",
+      "cell": "worker:read",
+      "irmas": [
+        "assistant_count_workers"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/assistants/count/patients",
+      "cell": "patient:read",
+      "irmas": [
+        "assistant_count_patients"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/assistants/count/vacancies",
+      "cell": "vacancy:read",
+      "irmas": [
+        "assistant_count_vacancies"
+      ],
+      "enforcedIn": "perm.require"
     }
   ]
 }
