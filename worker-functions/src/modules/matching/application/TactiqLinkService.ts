@@ -252,6 +252,10 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     return this.repo.hasImportedSinceLinked(email);
   }
 
+  linkCreatedAfter(email: string, at: Date): Promise<boolean> {
+    return this.repo.linkCreatedAfter(email, at);
+  }
+
   /** Porta da importação (spec 083): o vínculo foi refeito depois do bloqueio? */
   hasLinkedSince(email: string, since: Date): Promise<boolean> {
     return this.repo.hasLinkedSince(email, since);

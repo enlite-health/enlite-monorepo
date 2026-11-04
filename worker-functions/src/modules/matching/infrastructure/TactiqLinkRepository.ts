@@ -74,6 +74,15 @@ export class TactiqLinkRepository {
     return rows[0]?.imported === true;
   }
 
+  /** `created_at` é do 1º vínculo: `upsertLinked` reaproveita a linha no revínculo e não o toca. */
+  async linkCreatedAfter(email: string, at: Date, ex: Db = this.db): Promise<boolean> {
+    const { rows } = await ex.query(
+      `SELECT 1 FROM tactiq_links WHERE lower(host_email) = lower($1) AND created_at > $2::timestamptz LIMIT 1`,
+      [email, at],
+    );
+    return rows.length > 0;
+  }
+
   /** `status_changed_at` só anda quando o status não era `linked` (`upsertLinked`): refazer o vínculo depois de `broken`/`wrong_account` o move. */
   async hasLinkedSince(email: string, since: Date, ex: Db = this.db): Promise<boolean> {
     const { rows } = await ex.query(

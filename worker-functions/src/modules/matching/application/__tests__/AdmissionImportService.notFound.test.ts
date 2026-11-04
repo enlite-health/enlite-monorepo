@@ -25,7 +25,7 @@ const subject: ImportSubject = {
   conference_ended_at: ended, import_status: 'waiting', import_attempts: 1, patient_is_test: false, rehearsal_until: null,
 };
 
-function build(hasImported: boolean) {
+function build(hasImported: boolean, linkAfterEnd = false) {
   const repo = {
     listDueIds: jest.fn(), find: jest.fn().mockResolvedValue(subject), setState: jest.fn().mockResolvedValue(undefined),
     hasEvent: jest.fn(), hasSkippedTest: jest.fn().mockResolvedValue(false), hasBlockedReason: jest.fn(),
@@ -36,6 +36,7 @@ function build(hasImported: boolean) {
     withHostAccess: jest.fn(), markBroken: jest.fn(), markWrongAccount: jest.fn().mockResolvedValue(true),
     hasImportedSinceLinked: jest.fn().mockResolvedValue(hasImported),
     hasLinkedSince: jest.fn().mockResolvedValue(false),
+    linkCreatedAfter: jest.fn().mockResolvedValue(linkAfterEnd),
   };
   const events = { append: jest.fn().mockResolvedValue(undefined) };
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -72,5 +73,22 @@ describe('AdmissionImportService — not_found e o vínculo', () => {
     expect(tokens.hasImportedSinceLinked).not.toHaveBeenCalled();
     expect(tokens.markWrongAccount).not.toHaveBeenCalled();
     expect(repo.setState).toHaveBeenCalledWith('appt-1', 'waiting', expect.anything(), { countAttempt: true });
+  });
+
+  it('(d) reunião terminou ANTES do 1º vínculo + not_found ≥ 3 h + nunca importou → expira com not_found; NÃO rebaixa para wrong_account', async () => {
+    const { svc, repo, tokens, events } = build(false, true);
+    expect(await svc.importOne('appt-1', new Date(ended.getTime() + 4 * HOUR))).toBe('expired');
+    expect(tokens.linkCreatedAfter).toHaveBeenCalledWith('op@enlite.test', ended);
+    expect(tokens.markWrongAccount).not.toHaveBeenCalled();
+    expect(repo.setState).not.toHaveBeenCalledWith('appt-1', 'blocked', expect.anything(), expect.anything());
+    expect(repo.setState).toHaveBeenCalledWith('appt-1', 'expired', expect.anything());
+    expect(events.append).toHaveBeenCalledWith(expect.objectContaining({ kind: 'import_expired', reason: 'not_found' }), expect.anything());
+  });
+
+  it('(e) controle: reunião terminou DEPOIS do 1º vínculo + sem importação → rebaixa como antes (wrong_account)', async () => {
+    const { svc, tokens } = build(false, false);
+    expect(await svc.importOne('appt-1', new Date(ended.getTime() + 4 * HOUR))).toBe('wrong_account');
+    expect(tokens.linkCreatedAfter).toHaveBeenCalledWith('op@enlite.test', ended);
+    expect(tokens.markWrongAccount).toHaveBeenCalledWith('op@enlite.test');
   });
 });
