@@ -1,7 +1,8 @@
 /**
  * AssistantsWidget — floating button + chat panel with the assistants (spec 080, phase A).
- * Only exists if `list()` (already filtered by reach in the service) returns >= 1 assistant: an empty list or
- * any failure (e.g. PLATFORM_UNAVAILABLE) = nothing in the DOM, not even the button (fail-closed).
+ * Only exists if `list()` (already filtered by reach in the service) returns >= 1 assistant, or the person has the
+ * `luz_prueba:chat` cell (spec 086): an empty list or any failure (e.g. PLATFORM_UNAVAILABLE) = nothing in the DOM,
+ * not even the button (fail-closed).
  * The red dot on the button means "there are unread messages" (the total is in its aria-label): the sum of the
  * service's `unread_count` over the available assistants in the reach.
  * The composer draft lives here: "minimize" keeps it for the next opening, "close" discards it.
@@ -10,6 +11,7 @@ import { useState } from "react";
 import { MessageCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAssistants } from "@presentation/hooks/useAssistants";
+import { useHasCell } from "@presentation/hooks/useCellAccess";
 import { AssistantsPanel } from "./AssistantsPanel";
 
 export function AssistantsWidget() {
@@ -17,8 +19,10 @@ export function AssistantsWidget() {
   const a = useAssistants();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  // Spec 086: the "Luz (prueba)" tab exists only for who has the cell (Acesso Master); without it, no tab, no request.
+  const luzPrueba = useHasCell('luz_prueba', 'chat');
 
-  if (a.assistants.length === 0) return null;
+  if (a.assistants.length === 0 && !luzPrueba) return null;
 
   if (open) {
     return (
@@ -31,6 +35,7 @@ export function AssistantsWidget() {
           setOpen(false);
         }}
         onMinimize={() => setOpen(false)}
+        pruebaEnabled={luzPrueba}
       />
     );
   }

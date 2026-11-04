@@ -45,6 +45,7 @@ export {
   isValidCellKey,
   parseCellKey,
   ASSISTANT_CHAT_CELLS,
+  LUZ_PRUEBA_CHAT_CELLS,
   KNOWLEDGE_CELLS,
 } from './domain/PermissionCell';
 export type { PermissionCategory, PermissionCell } from './domain/PermissionCell';

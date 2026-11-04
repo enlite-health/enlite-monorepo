@@ -2,6 +2,7 @@ import {
   ACESSO_MASTER_GROUP_ID,
   ASSISTANT_CHAT_CELLS,
   KNOWLEDGE_CELLS,
+  LUZ_PRUEBA_CHAT_CELLS,
   SOMENTE_ACESSO_MASTER_CELLS,
   assertCellsAllowedForGroup,
   CELL_DESCRIPTION,
@@ -223,6 +224,33 @@ describe('spec 082 — platform_costs:read (Master-only)', () => {
     expect(CELL_DESCRIPTION[CELL]).toBeTruthy();
     expect(RESOURCE_CATEGORY['platform_costs']).toBe('Operações');
     expect(SOMENTE_ACESSO_MASTER_CELLS.has(CELL)).toBe(true);
+  });
+
+  it('granting it to a non-Master group is refused (master_only_cell); the Master passes', () => {
+    let err: unknown;
+    try {
+      assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [CELL]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as { code?: string }).code).toBe('master_only_cell');
+    expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [CELL])).not.toThrow();
+  });
+});
+
+describe('spec 086 — luz_prueba:chat (Master-only, fora de ASSISTANT_CHAT_CELLS)', () => {
+  const CELL = 'luz_prueba:chat';
+
+  it('CA-4: is a valid cell with description (es) and category, and is in SOMENTE_ACESSO_MASTER_CELLS', () => {
+    expect(isValidCellKey(CELL)).toBe(true);
+    expect(LUZ_PRUEBA_CHAT_CELLS).toEqual([CELL]);
+    expect(CELL_DESCRIPTION[CELL]).toBeTruthy();
+    expect(RESOURCE_CATEGORY['luz_prueba']).toBe('Operações');
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has(CELL)).toBe(true);
+  });
+
+  it('is NOT an assistant chat cell (AssistantReachUseCase only iterates ASSISTANT_CHAT_CELLS)', () => {
+    expect(ASSISTANT_CHAT_CELLS).not.toContain(CELL);
   });
 
   it('granting it to a non-Master group is refused (master_only_cell); the Master passes', () => {

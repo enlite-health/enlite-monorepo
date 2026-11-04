@@ -139,6 +139,9 @@ jobs:
             PERMISSION_ENFORCED_ROUTES=admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers
             DB_POOL_MAX=20
             DB_SYSTEM_POOL_MAX=5
+            # spec 086 (Luz em prueba): URL do triage-service = audience do ID token da SA. Secret do repo (a URL não está versionada em lugar nenhum;
+            # confirmar com `gcloud run services describe triage-service --format='value(status.url)'` na F4). Vazio = a rota responde 502 (fail-closed).
+            TRIAGE_PRUEBA_URL=${{ secrets.TRIAGE_PRUEBA_URL }}
             TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
             TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
             TWILIO_STATUS_CALLBACK_URL=https://api.enlite.health/api/webhooks/twilio/status

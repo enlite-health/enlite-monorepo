@@ -5249,6 +5249,7 @@
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
             "platform_costs": "Custos da plataforma",
+            "luz_prueba": "Luz (prova)",
             "recruitment_activity_per_person": "Atividade do funil por recrutadora",
             "assistant_scoreboard": "Placar dos agentes",
             "assistant_escalation": "Relatório do assistente",
@@ -7041,6 +7042,25 @@
       "genericError": "Algo deu errado. Tente novamente.",
       "historyError": "Não conseguimos carregar a conversa. Tente de novo.",
       "unreadBadge": "{{count}} mensagens não lidas"
+    },
+    "luzPrueba": {
+      "tab": "Luz (prueba)",
+      "area": "Modo prova",
+      "header": "Modo prova — você é a prestadora sintética {{nome}}; nada chega ao WhatsApp",
+      "headerGeneric": "Modo prova — você é uma prestadora sintética; nada chega ao WhatsApp",
+      "reset": "Reiniciar conversa",
+      "handover": "[handover simulado — {{motivo}}]",
+      "noReason": "sem motivo",
+      "skip": "(sem resposta)",
+      "toolWriteOk": "(prueba) {{nome}} — ok simulado",
+      "toolWriteFail": "(prueba) {{nome}} — falhou",
+      "toolReadOk": "{{nome}} — ok",
+      "toolReadFail": "{{nome}} — falhou",
+      "validators": "Validadores: {{lista}}",
+      "cap": "Teto diário de {{limite}} turnos atingido. Amanhã você pode continuar.",
+      "unavailable": "Luz indisponível, tente de novo.",
+      "noAccess": "Você não tem acesso à Luz (prueba).",
+      "genericError": "Algo deu errado. Tente de novo."
     },
     "pedidosIa": {
       "title": "Pedidos da IA",

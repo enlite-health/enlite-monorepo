@@ -1,0 +1,27 @@
+# Override do e2e de TELA da Luz (prueba) (spec 086: `enlite-frontend/e2e/integration/luz-prueba.integration.e2e.ts`).
+#
+# O triage não existe no CI: um stub HTTP mínimo (`test-fixtures/triage-prueba-stub.mjs`) ocupa o lugar dele na fronteira de SAÍDA do
+# worker-functions. A API aponta `TRIAGE_PRUEBA_URL` para ele; `TRIAGE_PRUEBA_AUTH=none` dispensa o ID token (só vale com NODE_ENV ≠ production:
+# `triagePruebaOptsFromEnv`; aqui NODE_ENV=test). Nada vai ao triage real nem a canal nenhum.
+#
+# Usado SÓ pelo job `integration-e2e-group-simulation` (engine ABAC ligado + `admin.integrations` enforçada: `luz_prueba:chat` só vale assim).
+# Vem DEPOIS de `docker-compose.group-simulation.yml` na lista de `-f`. O stub publica a porta ${TRIAGE_STUB_PORT:-59060} para o teste ler `GET /_requests`.
+services:
+  triage-stub:
+    image: node:20-alpine
+    working_dir: /stub
+    volumes:
+      - ./test-fixtures/triage-prueba-stub.mjs:/stub/triage-prueba-stub.mjs:ro
+    command: ["node", "triage-prueba-stub.mjs"]
+    ports:
+      - "${TRIAGE_STUB_PORT:-59060}:9060"
+    networks:
+      - enlite-network
+
+  api:
+    environment:
+      TRIAGE_PRUEBA_URL: "http://triage-stub:9060"
+      TRIAGE_PRUEBA_AUTH: "none"
+    depends_on:
+      triage-stub:
+        condition: service_started

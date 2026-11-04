@@ -1,4 +1,4 @@
-import { AgentesVeredictoRegistrarCapability } from '../AgentesVeredictoRegistrarCapability';
+import { AgentesVeredictoRegistrarCapability, ConversaRefPruebaError } from '../AgentesVeredictoRegistrarCapability';
 import { AgentesReporteRegistrarCapability } from '../AgentesReporteRegistrarCapability';
 import { AgentesAprovacaoVerificarCapability } from '../AgentesAprovacaoVerificarCapability';
 import { AgentesReporteLerCapability } from '../AgentesReporteLerCapability';
@@ -115,6 +115,18 @@ describe('agentes.veredicto.registrar — formato', () => {
     repo.registrarVeredicto.mockClear();
     await expect(cap.execute(veredicto({ sensor: 'validador' }), 'sol-supervisor')).rejects.toThrow(); // nota/versão são só do juiz
     expect(repo.registrarVeredicto).not.toHaveBeenCalled();
+  });
+
+  it('spec 086 (CA-6): conversa_ref `prueba:` é recusado (400 CONVERSA_REF_PRUEBA) ANTES do banco; `prueba` sem os dois pontos e `x:prueba:` passam', async () => {
+    const repo = makeRepo();
+    const cap = new AgentesVeredictoRegistrarCapability(asRepo(repo));
+    const recusa = cap.execute(veredicto({ conversa_ref: 'prueba:uid-1:sessao-1' }), 'sol-supervisor');
+    await expect(recusa).rejects.toBeInstanceOf(ConversaRefPruebaError);
+    await expect(recusa).rejects.toMatchObject({ status: 400, codigo: 'CONVERSA_REF_PRUEBA' });
+    expect(repo.registrarVeredicto).not.toHaveBeenCalled();
+    await expect(cap.execute(veredicto({ conversa_ref: 'prueba' }), 'sol-supervisor')).resolves.toEqual({ id: UUID_A });
+    await expect(cap.execute(veredicto({ conversa_ref: 'chatwoot:prueba:1' }), 'sol-supervisor')).resolves.toEqual({ id: UUID_A });
+    expect(repo.registrarVeredicto).toHaveBeenCalledTimes(2);
   });
 
   it('sem principal: recusa (fail-closed)', async () => {

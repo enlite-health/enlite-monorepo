@@ -134,6 +134,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   // Spec 081 (D602a) — atividade do funil por recrutadora e semana; Acesso Master only. Rota em `recruitmentRoutes.ts`.
   recruitment_activity_per_person: 'Operações',
   // Spec 080 (assistants in the app) — same home as `pedidos_ia`: routes in the `admin.integrations` family.
+  // Spec 086 (Luz em prueba) — Acesso Master only; rota em `adminLuzPruebaRoutes.ts`, família `admin.integrations`.
+  luz_prueba: 'Operações',
   assistant_maria: 'Operações',
   assistant_lucero: 'Operações',
   assistant_candela: 'Operações',
@@ -575,6 +577,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'recruitment_activity_per_person:read':
     'Ver a atividade do funil de recrutamento POR RECRUTADORA e por semana (movimentos de etapa, trocas de status e edições de perfil — só contagens, sem nome de prestador).',
   // ── Spec 080 — chat with the assistants in the app. Acesso Master only (phase A).
+  // ── Spec 086 — Acesso Master only: conversar com a Luz real no papel da prestadora sintética (modo prueba, nada sai a WhatsApp).
+  'luz_prueba:chat': 'Luz (prueba): conversar como la prestadora sintética',
   'assistant_maria:chat': 'Conversar con la asistente de gestión de reclutamiento',
   'assistant_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
   'assistant_candela:chat': 'Conversar con Candela (gestora de coordinación)',
@@ -788,6 +792,12 @@ export const ASSISTANT_CHAT_CELLS: readonly string[] = [
   'assistant_candela:chat',
 ];
 
+/**
+ * Spec 086 — Luz (prueba): a pessoa logada conversa com a Luz REAL no papel da prestadora sintética. Célula própria e FORA de
+ * `ASSISTANT_CHAT_CELLS` de propósito: a aba não é "assistente" do assistants-service (`AssistantReachUseCase` só itera aquele conjunto).
+ */
+export const LUZ_PRUEBA_CHAT_CELLS: readonly string[] = ['luz_prueba:chat'];
+
 /** Spec 080 — one cell per Sol compartment (never `default`). Order from contract §5. */
 export const KNOWLEDGE_CELLS: readonly string[] = [
   'knowledge_public:read',
@@ -812,6 +822,7 @@ export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
   'platform_costs:read',
   'recruitment_activity_per_person:read',
   ...ASSISTANT_CHAT_CELLS,
+  ...LUZ_PRUEBA_CHAT_CELLS,
   'assistant_scoreboard:read',
   'assistant_escalation:register',
   ...KNOWLEDGE_CELLS,
