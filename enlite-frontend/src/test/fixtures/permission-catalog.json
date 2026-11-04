@@ -73,6 +73,7 @@
     "knowledge_public:read",
     "knowledge_recruitment:read",
     "knowledge_technical:read",
+    "luz_prueba:chat",
     "match:execute",
     "match:read",
     "messaging:create",

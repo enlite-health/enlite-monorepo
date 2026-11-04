@@ -7121,6 +7121,25 @@
       "historyError": "No pudimos cargar la conversación. Probá de nuevo.",
       "unreadBadge": "{{count}} mensajes sin leer"
     },
+    "luzPrueba": {
+      "tab": "Luz (prueba)",
+      "area": "Modo prueba",
+      "header": "Modo prueba — vos sos la prestadora sintética {{nome}}; nada llega a WhatsApp",
+      "headerGeneric": "Modo prueba — vos sos una prestadora sintética; nada llega a WhatsApp",
+      "reset": "Reiniciar conversación",
+      "handover": "[handover simulado — {{motivo}}]",
+      "noReason": "sin motivo",
+      "skip": "(sin respuesta)",
+      "toolWriteOk": "(prueba) {{nome}} — ok simulado",
+      "toolWriteFail": "(prueba) {{nome}} — falló",
+      "toolReadOk": "{{nome}} — ok",
+      "toolReadFail": "{{nome}} — falló",
+      "validators": "Validadores: {{lista}}",
+      "cap": "Llegaste al tope diario de {{limite}} turnos. Mañana podés seguir.",
+      "unavailable": "Luz no está disponible. Probá de nuevo.",
+      "noAccess": "No tenés acceso a Luz (prueba).",
+      "genericError": "Algo salió mal. Probá de nuevo."
+    },
     "pedidosIa": {
       "title": "Pedidos de la IA",
       "subtitle": "Pedidos del Sol como publicaciones: aceptá, negá o describí qué hacer.",

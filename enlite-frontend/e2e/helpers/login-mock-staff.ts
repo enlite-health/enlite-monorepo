@@ -9,8 +9,21 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { installAuthInterceptors, type MockUser } from './abac-stack-helper';
 
-export async function loginComoStaffMock(page: Page, u: MockUser, displayName: string): Promise<void> {
+export async function loginComoStaffMock(
+  page: Page,
+  u: MockUser,
+  displayName: string,
+  /** Opcional: troca a RESPOSTA de `/v1/me/authz` por estas células (engine fora do jogo). Sem isto, vai a API real. */
+  opts: { permissions?: string[] } = {},
+): Promise<void> {
   await installAuthInterceptors(page, u);
+  if (opts.permissions) {
+    const contrato = { uid: u.uid, tenantId: 't', status: 'ACTIVE', permissions: opts.permissions, countries: ['AR'], groups: [], features: {} };
+    // Registrado DEPOIS do swap de `/v1/me/authz` do helper: Playwright prioriza a rota mais recente.
+    await page.route('**/v1/me/authz', (route: Route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(contrato) }),
+    );
+  }
   // Registrado DEPOIS do swap de `/api/**`: Playwright prioriza a rota mais recente.
   await page.route('**/api/admin/auth/profile', async (route: Route) => {
     await route.fulfill({

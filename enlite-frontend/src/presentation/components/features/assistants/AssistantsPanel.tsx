@@ -13,11 +13,15 @@ import {
   type KeyboardEvent,
   type SetStateAction,
 } from "react";
-import { ChevronDown, Lock, Minus, Send, Sparkles, X } from "lucide-react";
+import { ChevronDown, Lock, Minus, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PersonAvatar } from "@presentation/components/atoms/PersonAvatar";
 import { MessageMarkdown } from "@presentation/components/shared/MessageMarkdown/MessageMarkdown";
+import { AssistantsComposer } from "./AssistantsComposer";
+import { LuzPruebaTab } from "./LuzPruebaTab";
+import { ASSISTANT_MARKDOWN_CLASS, bubbleClass } from "./assistantsStyles";
 import type { UseAssistants } from "@presentation/hooks/useAssistants";
+import { useLuzPrueba } from "@presentation/hooks/useLuzPrueba";
 
 interface Props {
   assistants: UseAssistants;
@@ -28,12 +32,10 @@ interface Props {
   onClose: () => void;
   /** Closes keeping the draft (only offered with more than one assistant). */
   onMinimize: () => void;
+  /** The person has the `luz_prueba:chat` cell (computed by the widget): adds the "Luz (prueba)" tab (spec 086, RF-1). */
+  pruebaEnabled?: boolean;
 }
 
-const COMPOSER_MIN_PX = 36;
-const COMPOSER_MAX_PX = 90; // 4 lines of 18px + padding + border
-// Assistant bubble: inherits the 12.5px / #262626 of the bubble, tight gap between blocks and items.
-const ASSISTANT_MARKDOWN_CLASS = "break-words [&>*+*]:mt-2 [&_li+li]:mt-1";
 
 export function AssistantsPanel({
   assistants: a,
@@ -41,20 +43,18 @@ export function AssistantsPanel({
   setDraft,
   onClose,
   onMinimize,
+  pruebaEnabled = false,
 }: Props) {
   const { t } = useTranslation();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pruebaTab, setPruebaTab] = useState(false);
+  const luz = useLuzPrueba();
   const listboxId = useId();
-  const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
   const pickerListRef = useRef<HTMLDivElement>(null);
   const { active, assistants, loadConversation } = a;
   const activeSlug = active?.slug;
-
-  useEffect(() => {
-    composerRef.current?.focus();
-  }, [activeSlug]);
 
   // Always show the last message: new message (person or assistant), "escribiendo", history loaded, panel opened,
   // assistant switched. `scrollTop = scrollHeight` on the list itself — scrollIntoView would scroll the whole page on phones.
@@ -77,15 +77,6 @@ export function AssistantsPanel({
     ro.observe(el);
     return () => ro.disconnect();
   }, [activeSlug]);
-
-  // One line (36px) growing up to ~4 lines.
-  useLayoutEffect(() => {
-    const el = composerRef.current;
-    if (!el) return;
-    el.style.height = `${COMPOSER_MIN_PX}px`;
-    const wanted = el.scrollHeight + 2;
-    el.style.height = `${Math.min(Math.max(wanted, COMPOSER_MIN_PX), COMPOSER_MAX_PX)}px`;
-  }, [draft, activeSlug]);
 
   // Opening an assistant (including the panel opening on an already-active one) marks THAT assistant read — only if it is
   // available and has unread messages. Never for the others, never on a timer.
@@ -133,9 +124,27 @@ export function AssistantsPanel({
       ?.focus();
   }, [pickerOpen]);
 
-  if (!active) return null;
-  const unavailable = !active.available;
-  const multiple = assistants.length > 1;
+  if (!active && !pruebaEnabled) return null;
+  const showPrueba = pruebaEnabled && (pruebaTab || !active);
+  const unavailable = !!active && !active.available;
+  const entries = [
+    ...assistants.map((g) => ({ ...g, prueba: false })),
+    ...(pruebaEnabled
+      ? [
+          {
+            slug: "luz-prueba",
+            name: t("admin.luzPrueba.tab"),
+            area: t("admin.luzPrueba.area") as string | null,
+            available: true,
+            unread_count: 0,
+            prueba: true,
+          },
+        ]
+      : []),
+  ];
+  const multiple = entries.length > 1;
+  const title = showPrueba ? t("admin.luzPrueba.tab") : active?.name;
+  const subtitle = showPrueba ? t("admin.luzPrueba.area") : active?.area;
 
   const submit = async () => {
     if (unavailable || a.waiting || !draft.trim()) return;
@@ -144,13 +153,6 @@ export function AssistantsPanel({
     const r = await a.send(v);
     // Refused input (clinical/personal data): the text goes back to the field to be edited, unless the person already typed.
     if (r?.refused) setDraft((cur) => cur || v);
-  };
-
-  const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void submit();
-    }
   };
 
   const onPanelKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -203,7 +205,7 @@ export function AssistantsPanel({
               onClick={() => setPickerOpen((o) => !o)}
               className="inline-flex w-max max-w-full items-center gap-1 text-[#262626]"
             >
-              <b className="truncate text-sm font-semibold">{active.name}</b>
+              <b className="truncate text-sm font-semibold">{title}</b>
               <ChevronDown
                 size={14}
                 aria-hidden="true"
@@ -211,20 +213,22 @@ export function AssistantsPanel({
               />
             </button>
           ) : (
-            <b className="truncate text-sm font-semibold">{active.name}</b>
+            <b className="truncate text-sm font-semibold">{title}</b>
           )}
-          {active.area && (
+          {subtitle && (
             <span className="truncate text-[11px] text-[#404040]">
-              {active.area}
+              {subtitle}
             </span>
           )}
           <span className="mt-0.5 flex items-center gap-1 text-[10px] text-[#404040]">
             <Lock size={11} aria-hidden="true" className="shrink-0" />
             <span className="truncate">
-              {t("admin.assistants.yourGroup", {
-                group: active.area,
-                count: assistants.length,
-              })}
+              {showPrueba
+                ? t("admin.assistants.masterOnly")
+                : t("admin.assistants.yourGroup", {
+                    group: active?.area,
+                    count: assistants.length,
+                  })}
             </span>
           </span>
         </div>
@@ -258,8 +262,8 @@ export function AssistantsPanel({
           aria-label={t("admin.assistants.title")}
           className="absolute left-3 right-3 top-16 z-10 grid gap-0.5 rounded-[14px] border border-gray-600 bg-white p-1.5 shadow-large"
         >
-          {assistants.map((g) => {
-            const selected = g.slug === active.slug;
+          {entries.map((g) => {
+            const selected = g.prueba ? showPrueba : !showPrueba && g.slug === active?.slug;
             return (
               <button
                 key={g.slug}
@@ -269,7 +273,8 @@ export function AssistantsPanel({
                 data-testid={`assistants-tab-${g.slug}`}
                 onKeyDown={onOptionKeyDown}
                 onClick={() => {
-                  a.setTab(g.slug);
+                  setPruebaTab(g.prueba);
+                  if (!g.prueba) a.setTab(g.slug);
                   setPickerOpen(false);
                 }}
                 className={`grid grid-cols-[30px_1fr_auto] items-center gap-[10px] rounded-input p-2 text-left text-[#262626] hover:bg-[#EEE9F6] ${
@@ -324,6 +329,10 @@ export function AssistantsPanel({
         </div>
       )}
 
+      {showPrueba ? (
+        <LuzPruebaTab state={luz} />
+      ) : (
+        <>
       <div
         ref={messagesRef}
         data-testid="assistants-messages"
@@ -338,11 +347,7 @@ export function AssistantsPanel({
           <div
             key={m.id}
             data-testid={`assistants-msg-${m.id}`}
-            className={`max-w-[86%] break-words rounded-[14px] px-[11px] py-[9px] ${
-              m.author === "PERSON"
-                ? "justify-self-end whitespace-pre-wrap rounded-br-[4px] bg-primary text-white"
-                : "justify-self-start rounded-bl-[4px] bg-gray-200 text-[#262626]"
-            }`}
+            className={bubbleClass(m.author === "PERSON")}
           >
             {m.author === "PERSON" ? (
               m.text
@@ -383,7 +388,7 @@ export function AssistantsPanel({
             data-testid="assistants-notice"
             className="text-[#262626]"
           >
-            {t(`admin.assistants.${a.notice}`, { assistant: active.name })}
+            {t(`admin.assistants.${a.notice}`, { assistant: active?.name })}
           </p>
         )}
         {unavailable && (
@@ -391,33 +396,19 @@ export function AssistantsPanel({
         )}
       </div>
 
-      <div className="flex items-end gap-2 border-t border-gray-300 px-3 py-2.5">
-        <textarea
-          ref={composerRef}
-          data-testid="assistants-composer"
-          aria-label={t("admin.assistants.placeholder")}
-          placeholder={t("admin.assistants.placeholder")}
-          rows={1}
-          value={draft}
-          disabled={unavailable}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onComposerKeyDown}
-          className="box-border min-h-9 max-h-[90px] flex-1 resize-none rounded-input border border-gray-600 bg-gray-100 px-3 py-2 font-poppins text-[12.5px] leading-[18px] text-[#262626] placeholder:text-[#404040] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
-        />
-        <button
-          type="button"
-          data-testid="assistants-send"
-          aria-label={t("admin.assistants.send")}
-          disabled={unavailable || a.waiting || !draft.trim()}
-          onClick={() => void submit()}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-white disabled:opacity-50"
-        >
-          <Send size={16} aria-hidden="true" />
-        </button>
-      </div>
+      <AssistantsComposer
+        value={draft}
+        onChange={setDraft}
+        onSubmit={() => void submit()}
+        focusKey={activeSlug}
+        disabled={unavailable}
+        sendDisabled={unavailable || a.waiting || !draft.trim()}
+      />
       <p className="px-3 pb-2 text-center text-[10px] leading-snug text-[#404040]" data-testid="assistants-footer">
         {t("admin.assistants.footer")}
       </p>
+        </>
+      )}
     </div>
   );
 }
