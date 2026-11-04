@@ -73,6 +73,8 @@ describe('importação do enquadre bloqueada por motivo humano — transita uma 
     await link.startLink({ uid: e.uid, email: e.host });
     const { state } = oauth.authorizeCalls[oauth.authorizeCalls.length - 1];
     await link.completeLink({ state, code: e.refresh });
+    // o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account)
+    await admin.query(`UPDATE tactiq_links SET created_at = $2 WHERE lower(host_email) = lower($1)`, [e.host, new Date(e.start.getTime() - 24 * HOUR)]);
   }
 
   const meeting = (e: Ev): TactiqMeetingItem => ({ id: `tq-${e.code}`, title: `${e.code} Encuadre`, createdAt: e.start.toISOString(), durationSeconds: 1800 });

@@ -120,9 +120,9 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     const mode = opts.link ?? 'linked';
     if (mode !== 'none') {
       const ins = await admin.query(
-        `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [host, uid, mode, clock, mode === 'linked' ? 'linked' : null],
+        `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [host, uid, mode, clock, mode === 'linked' ? 'linked' : null, new Date(clock.getTime() - 24 * HOUR)], /* o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account) */
       );
       // `broken` também guarda o token (o teste diário não o apaga): só o ESTADO do vínculo pode impedir o uso dele.
       await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [ins.rows[0].id, b64(token)]);
