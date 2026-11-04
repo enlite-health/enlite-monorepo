@@ -9,6 +9,7 @@ import { WJAContactNotesController } from '../controllers/WJAContactNotesControl
 import { VacancyNotesController } from '../controllers/VacancyNotesController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
 import { VacancyCrudController } from '../controllers/VacancyCrudController';
+import { VacancyBajaController } from '../controllers/VacancyBajaController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
 import { InterviewSlotsController } from '../controllers/InterviewSlotsController';
 import { VacancyAddressReviewController } from '../controllers/VacancyAddressReviewController';
@@ -112,6 +113,11 @@ export function createAdminVacanciesRoutes(
   // ── CRUD (VacancyCrudController) ─────────────────────────────────────────────
   router.post('/vacancies', authMiddleware.requireStaff(), perm.require('vacancy', 'create'), (req: Request, res: Response) =>
     vacancyCrudController.createVacancy(req, res),
+  );
+  // Spec 084 F1: dar baixa (DE_BAJA), uma ou em lote, só vaga SEM serviço. NÃO existe rota inversa (R17).
+  const bajaController = new VacancyBajaController();
+  router.post('/vacancies/baja', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
+    bajaController.baja(req, res),
   );
   router.put('/vacancies/:id', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
     vacancyCrudController.updateVacancy(req, res),

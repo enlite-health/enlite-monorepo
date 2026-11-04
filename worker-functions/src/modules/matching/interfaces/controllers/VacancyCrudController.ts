@@ -260,11 +260,19 @@ export class VacancyCrudController {
       if (auth.kind === 'error') {
         // F3/fase-1: 422 de campo travado pela origem carrega `locked_fields` —
         // as chaves recusadas, na MESMA forma que `GET /vacancies/:id` anuncia.
-        const body: { success: false; error: string; locked_fields?: readonly string[] } = {
+        const body: {
+          success: false;
+          error: string;
+          locked_fields?: readonly string[];
+          code?: string;
+          messages?: { es: string; 'pt-BR': string };
+        } = {
           success: false,
           error: auth.error,
         };
         if (auth.lockedFields) body.locked_fields = auth.lockedFields;
+        if (auth.code) body.code = auth.code;
+        if (auth.messages) body.messages = auth.messages;
         res.status(auth.status).json(body);
         return;
       }
@@ -292,6 +300,18 @@ export class VacancyCrudController {
       if (setClause.length === 0) {
         res.status(400).json({ success: false, error: 'No valid fields to update' });
         return;
+      }
+
+      // Spec 084 F5: "Retomar" devolve ao status de antes do "En espera". Guarda ao entrar, limpa ao sair.
+      const nextStatus = updates.status;
+      if (typeof nextStatus === 'string' && allowedFields.includes('status')) {
+        if (nextStatus === 'ON_HOLD' && auth.currentStatus !== 'ON_HOLD') {
+          setClause.push(`status_before_hold = $${paramIndex}`);
+          values.push(auth.currentStatus);
+          paramIndex++;
+        } else if (nextStatus !== 'ON_HOLD' && auth.currentStatus === 'ON_HOLD') {
+          setClause.push('status_before_hold = NULL');
+        }
       }
 
       const actor = extractHumanActor(req);

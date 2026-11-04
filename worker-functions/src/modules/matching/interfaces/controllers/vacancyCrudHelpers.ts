@@ -10,6 +10,11 @@ import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 import {
+  BAJA_REFUSAL_MESSAGES,
+  DE_BAJA_STATUS,
+  refusesCloseOfActiveServiceVacancy,
+} from '../../domain/VacancyBajaPolicy';
+import {
   vacancyEffectiveAgeRangeSql,
   vacancyEffectiveJoinSql,
   vacancyEffectivePaymentDaySql,
@@ -76,6 +81,9 @@ export const CANONICAL_STATUSES = new Set([
   'RAPID_RESPONSE',
   'PENDING_ACTIVATION',
   'ACTIVE',
+  // Spec 084 F5 (R18): "En espera" — a pausa da vaga de serviço ativo. DE_BAJA fica FORA de propósito (R17): ninguém
+  // põe vaga em baixa nem a tira dela por este endpoint.
+  'ON_HOLD',
   'SUSPENDED',
   'CLOSED',
 ]);
@@ -150,7 +158,15 @@ export function pickSourceLockedFields(
 }
 
 export type UpdateAuthorizationResult =
-  | { kind: 'error'; status: number; error: string; lockedFields?: readonly string[] }
+  | {
+      kind: 'error';
+      status: number;
+      error: string;
+      lockedFields?: readonly string[];
+      /** Spec 084: código estável + mensagem es/pt-BR (a tela traduz pelo código). */
+      code?: string;
+      messages?: { es: string; 'pt-BR': string };
+    }
   | { kind: 'ok'; isDraft: boolean; currentStatus: string | null };
 
 /**
@@ -184,14 +200,46 @@ export async function authorizeVacancyUpdate(
     is_draft: boolean | null;
     patient_id: string | null;
     contracted_service_id: string | null;
+    service_active: boolean | null;
   }>(
-    'SELECT status, is_draft, patient_id, contracted_service_id FROM job_postings WHERE id = $1 AND deleted_at IS NULL',
+    `SELECT jp.status, jp.is_draft, jp.patient_id, jp.contracted_service_id, pcs.active AS service_active
+       FROM job_postings jp
+       LEFT JOIN patient_contracted_services pcs ON pcs.id = jp.contracted_service_id
+      WHERE jp.id = $1 AND jp.deleted_at IS NULL`,
     [vacancyId],
   );
   if (currentRow.rows.length === 0) {
     return { kind: 'error', status: 404, error: 'Vacancy not found' };
   }
   const currentStatus = currentRow.rows[0].status;
+
+  // Spec 084 R17 (REGRA DURA): vaga baixada é só consulta. NENHUM campo — e muito menos o status — muda por aqui; a
+  // única volta é a reativação do serviço que a baixou. Roda antes de qualquer outra regra.
+  if (currentStatus === DE_BAJA_STATUS) {
+    return {
+      kind: 'error',
+      status: 409,
+      code: 'VACANCY_DE_BAJA_NO_REACTIVATION',
+      error: BAJA_REFUSAL_MESSAGES.VACANCY_DE_BAJA_NO_REACTIVATION['pt-BR'],
+      messages: BAJA_REFUSAL_MESSAGES.VACANCY_DE_BAJA_NO_REACTIVATION,
+    };
+  }
+
+  // Spec 084 F5 (R4/P1): vaga de serviço ATIVO nunca é encerrada, só pausada (ON_HOLD) — recusado pelo servidor.
+  if (
+    refusesCloseOfActiveServiceVacancy(updates.status, {
+      contractedServiceId: currentRow.rows[0].contracted_service_id,
+      serviceActive: currentRow.rows[0].service_active,
+    })
+  ) {
+    return {
+      kind: 'error',
+      status: 409,
+      code: 'CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED',
+      error: BAJA_REFUSAL_MESSAGES.CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED['pt-BR'],
+      messages: BAJA_REFUSAL_MESSAGES.CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED,
+    };
+  }
   const isDraft = currentRow.rows[0].is_draft === true;
   const contractedServiceId = currentRow.rows[0].contracted_service_id;
   const effectivePatientId =
@@ -270,6 +318,19 @@ export async function authorizeVacancyUpdate(
   return { kind: 'ok', isDraft, currentStatus };
 }
 
+/**
+ * Spec 084 (R12/R16): `case_ordinal` = a ORDEM DO SERVIÇO contratado dentro do paciente (1..N, por created_at, id) —
+ * não MAX+1. Vaga SEM serviço fica SEM número (NULL); vaga nova de um serviço repete o número do serviço. Referencia
+ * $23 (contracted_service_id). Puro e determinístico: sem corrida entre INSERTs (o índice único da migration 460 caiu).
+ */
+export const CASE_ORDINAL_FROM_SERVICE_SQL = `CASE WHEN $23::uuid IS NULL THEN NULL ELSE (
+        SELECT s.ordinal FROM (
+          SELECT id, row_number() OVER (PARTITION BY patient_id ORDER BY created_at, id)::int AS ordinal
+            FROM patient_contracted_services
+           WHERE patient_id = (SELECT patient_id FROM patient_contracted_services WHERE id = $23::uuid)
+        ) s WHERE s.id = $23::uuid
+      ) END`;
+
 export function buildInsertQuery(): string {
   // `published_at` defaults to NOW() when the caller passes NULL — matches the
   // product rule that publication date auto-fills with today if left blank.
@@ -318,11 +379,7 @@ export function buildInsertQuery(): string {
       $22,
       $23,
       $24,
-      CASE WHEN $4::uuid IS NULL THEN NULL ELSE (
-        SELECT COALESCE(MAX(jp2.case_ordinal), 0) + 1
-          FROM job_postings jp2
-         WHERE jp2.patient_id = $4::uuid
-      ) END
+      ${CASE_ORDINAL_FROM_SERVICE_SQL}
     )
     RETURNING ${vacancyRawColumnsSql()}
   `;
