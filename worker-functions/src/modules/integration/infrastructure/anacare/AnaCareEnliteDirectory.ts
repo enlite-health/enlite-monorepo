@@ -18,6 +18,7 @@
 
 import type { AnaCareSessionClient } from './AnaCareSessionClient';
 import { logger } from '@shared/logging';
+import { AnaCareHttpError } from './AnaCareHttpError';
 
 const ACTIVE_PATH = '/admin/accounts/';
 const TERMINATED_PATH = '/admin/accounts/terminated_services';
@@ -113,11 +114,13 @@ export class AnaCareEnliteDirectory {
       const terminatedHtml = await this.client.requestText(TERMINATED_PATH);
       terminatedIds = extractAccountIds(terminatedHtml, 'terminados');
     } catch (err) {
-      // Nunca silencioso: a causa técnica (mensagem + status HTTP, sem corpo/PII) vai para o log.
+      // Nunca silencioso, mas SEM `err.message`: `AnaCareHttpError.message` embute o corpo da resposta
+      // (HTML do painel admin, pode ter nome/PII). Só campos seguros: classe do erro, path e status.
       logger.warn({
         msg: '[AnaCareEnliteDirectory] página de terminados falhou — diretório marcado partial',
-        error: err instanceof Error ? err.message : String(err),
-        status: (err as { status?: number } | null)?.status,
+        errorName: err instanceof Error ? err.name : typeof err,
+        path: TERMINATED_PATH,
+        status: err instanceof AnaCareHttpError ? err.status : undefined,
       });
       partial = true;
       terminatedIds = [];

@@ -4,6 +4,7 @@
  */
 import { AnaCareEnliteDirectory, AnaCareEnliteDirectoryError } from '../AnaCareEnliteDirectory';
 import type { AnaCareSessionClient } from '../AnaCareSessionClient';
+import { AnaCareHttpError } from '../AnaCareHttpError';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -151,8 +152,9 @@ describe('AnaCareEnliteDirectory', () => {
     });
   });
 
-  it('falha da página de TERMINADOS é LOGADA (mensagem + status, sem corpo) e marca partial', async () => {
-    const err = Object.assign(new Error('[AnaCareSessionClient] GET /x — HTTP 500'), { status: 500, body: 'corpo-sensivel' });
+  it('falha da página de TERMINADOS é LOGADA só com campos seguros (status/path/classe), NUNCA o corpo da resposta, e marca partial', async () => {
+    const err = new AnaCareHttpError('GET', '/admin/accounts/terminated_services', 500, '<html>NOME_SENSIVEL</html>');
+    expect(err.message).toContain('NOME_SENSIVEL'); // premissa: a mensagem do erro real embute o corpo
     const requestText = jest.fn(async (path: string) => {
       if (path === '/admin/accounts/') return htmlWithAccounts(['1']);
       throw err;
@@ -162,8 +164,8 @@ describe('AnaCareEnliteDirectory', () => {
 
     expect(result.partial).toBe(true);
     expect(logger.warn).toHaveBeenCalledTimes(1);
-    const logged = logger.warn.mock.calls[0][0];
-    expect(logged).toMatchObject({ status: 500, error: expect.stringContaining('HTTP 500') });
-    expect(JSON.stringify(logged)).not.toContain('corpo-sensivel');
+    const args = JSON.stringify(logger.warn.mock.calls);
+    expect(args).not.toContain('NOME_SENSIVEL');
+    expect(logger.warn.mock.calls[0][0]).toMatchObject({ status: 500, errorName: 'AnaCareHttpError' });
   });
 });
