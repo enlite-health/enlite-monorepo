@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import { Pool, PoolClient } from 'pg';
 import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescreeningRepository';
+import type { TalentumDivergenceKind } from '../domain/TalentumPrescreening';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
@@ -27,6 +28,12 @@ export interface ProcessTalentumPrescreeningResult {
   workerId: string | null;
   jobPostingId: string | null;
   resolved: { worker: boolean; jobPosting: boolean };
+}
+
+/** Vaga resolvida + o CAMINHO: `viaId` = pelo `talentum_prescreening_id` (a dona); false = só pelo título. */
+interface ResolvedJobPosting {
+  id: string | null;
+  viaId: boolean;
 }
 
 export interface IWorkerLookup {
@@ -64,13 +71,14 @@ export class ProcessTalentumPrescreening {
     const dryRun = options?.dryRun ?? false;
 
     const workerId = await this.resolveOrCreateWorker(payload, dryRun);
-    const jobPostingId = await this.resolveJobPosting(payload.data.prescreening.id, payload.data.prescreening.name);
+    const job = await this.resolveJobPosting(payload.data.prescreening.id, payload.data.prescreening.name);
+    const jobPostingId = job.id;
 
     if (dryRun) {
       return this.buildResult(payload.data.prescreening.id, payload.data.prescreening.id, workerId, jobPostingId);
     }
 
-    const prescreening = await this.persistPrescreening(payload, workerId, jobPostingId, environment);
+    const prescreening = await this.persistPrescreening(payload, workerId, job, environment);
 
     await this.syncFunnelAndEncuadre(prescreening, payload);
     await this.questionsWriter.persist(prescreening.id, payload);
@@ -218,7 +226,7 @@ export class ProcessTalentumPrescreening {
 
   // ── Job posting resolution ───────────────────────────────────────
 
-  private async resolveJobPosting(prescreeningId: string, caseName: string): Promise<string | null> {
+  private async resolveJobPosting(prescreeningId: string, caseName: string): Promise<ResolvedJobPosting> {
     // PII (achado do gate, C3 do parecer do lex, 11/09): `caseName`/`searchTerm`
     // são texto livre do título do projeto no Talentum, não um id — MEDIDO em prd
     // (7d, textPayload local, nunca colado): 400/590 nomes NÃO batem o formato
@@ -245,7 +253,7 @@ export class ProcessTalentumPrescreening {
       const byPrescreening = await this.jobPostingLookup.findByTalentumPrescreeningId(prescreeningId);
       if (byPrescreening) {
         console.log(`${TAG} resolveJobPosting → ${byPrescreening.id} (caminho=por_prescreening_id)`);
-        return byPrescreening.id;
+        return { id: byPrescreening.id, viaId: true };
       }
       let posting = await this.jobPostingLookup.findByTitleILike(searchTerm ?? caseName);
       // Achado CI #515 (24/09/2026): o título formatado (prefixo `EN` decidido pela FAIXA
@@ -257,10 +265,10 @@ export class ProcessTalentumPrescreening {
       }
       const id = posting?.id ?? null;
       console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caminho=${id ? 'por_titulo_unico' : 'nao_resolvido'}, caseRef=${caseRef})`);
-      return id;
+      return { id, viaId: false };
     } catch {
       console.log(`${TAG} resolveJobPosting → ERROR (returning null)`);
-      return null;
+      return { id: null, viaId: false };
     }
   }
 
@@ -269,7 +277,7 @@ export class ProcessTalentumPrescreening {
   private async persistPrescreening(
     payload: TalentumPrescreeningResponseParsed,
     workerId: string | null,
-    jobPostingId: string | null,
+    job: ResolvedJobPosting,
     environment: WebhookEnvironment,
   ) {
     // For ANALYZED, store the statusLabel (QUALIFIED/NOT_QUALIFIED/IN_DOUBT/PENDING)
@@ -279,17 +287,106 @@ export class ProcessTalentumPrescreening {
       : payload.subtype;
 
     console.log(`${TAG} persistPrescreening | extId=${payload.data.prescreening.id} | status=${effectiveStatus}`);
-    const { prescreening } = await this.prescreeningRepo.upsertPrescreening({
-      talentumPrescreeningId: payload.data.prescreening.id,
-      talentumProfileId:      payload.data.profile.id,
-      workerId,
-      jobPostingId,
-      jobCaseName: payload.data.prescreening.name,
-      status:      effectiveStatus,
-      environment,
-    });
+
+    // Card + divergência na MESMA transação: o espelho nunca fica gravado sem o registro do que não bateu.
+    const client = await this.pool.connect();
+    let prescreening;
+    const divergences: Array<{ kind: TalentumDivergenceKind; jobPostingId: string | null; expectedJobPostingId: string | null }> = [];
+    try {
+      await client.query('BEGIN');
+      const upserted = await this.prescreeningRepo.upsertPrescreening({
+        talentumPrescreeningId: payload.data.prescreening.id,
+        talentumProfileId:      payload.data.profile.id,
+        workerId,
+        jobPostingId:           job.id,
+        jobPostingResolvedById: job.viaId,
+        jobCaseName: payload.data.prescreening.name,
+        status:      effectiveStatus,
+        environment,
+      }, client);
+      prescreening = upserted.prescreening;
+
+      divergences.push(...this.collectDivergences(workerId, job, upserted.previousJobPostingId ?? null));
+      for (const d of divergences) {
+        await this.recordDivergence(client, payload, prescreening.id, workerId, d, environment);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    for (const d of divergences) {
+      // Reporter oficial do projeto (Cloud Error Reporting). Só ids: sem telefone/e-mail/nome.
+      reportError(new Error(`${TAG} divergência webhook × card: ${d.kind}`), {
+        source: 'ProcessTalentumPrescreening:divergence',
+        kind: d.kind,
+        talentumPrescreeningId: payload.data.prescreening.id,
+        talentumProfileId: payload.data.profile.id,
+        workerId,
+        jobPostingId: d.jobPostingId,
+        expectedJobPostingId: d.expectedJobPostingId,
+      });
+    }
     console.log(`${TAG} persistPrescreening → id=${prescreening.id}`);
     return prescreening;
+  }
+
+  /**
+   * O que NÃO bateu neste evento. `previous` = vaga gravada antes dele.
+   * - worker/vaga null: o card fica sem vínculo (ou sem avanço de etapa);
+   * - dona por id ≠ gravada: a dona venceu (M2) e a gravada foi trocada — o card antigo ainda pode estar na vaga errada;
+   * - só título e ≠ gravada: a gravada foi MANTIDA (título não sobrescreve id), o título aponta outra vaga;
+   * - só título (sem conflito): resolução frágil, não é a dona por id.
+   */
+  private collectDivergences(workerId: string | null, job: ResolvedJobPosting, previous: string | null) {
+    const out: Array<{ kind: TalentumDivergenceKind; jobPostingId: string | null; expectedJobPostingId: string | null }> = [];
+    if (!workerId) out.push({ kind: 'WORKER_NULL', jobPostingId: job.id, expectedJobPostingId: null });
+    if (!job.id) {
+      out.push({ kind: 'JOB_POSTING_NULL', jobPostingId: previous, expectedJobPostingId: null });
+    } else if (job.viaId) {
+      if (previous && previous !== job.id) {
+        out.push({ kind: 'JOB_POSTING_REPOINTED_TO_OWNER', jobPostingId: previous, expectedJobPostingId: job.id });
+      }
+    } else if (previous && previous !== job.id) {
+      out.push({ kind: 'JOB_POSTING_TITLE_DIFFERS_STORED', jobPostingId: previous, expectedJobPostingId: job.id });
+    } else {
+      out.push({ kind: 'JOB_POSTING_BY_TITLE_ONLY', jobPostingId: job.id, expectedJobPostingId: null });
+    }
+    return out;
+  }
+
+  /** SAVEPOINT: falha ao gravar a divergência não derruba o card (best-effort, mas nunca mudo: reportError). */
+  private async recordDivergence(
+    client: PoolClient,
+    payload: TalentumPrescreeningResponseParsed,
+    prescreeningRowId: string,
+    workerId: string | null,
+    d: { kind: TalentumDivergenceKind; jobPostingId: string | null; expectedJobPostingId: string | null },
+    environment: WebhookEnvironment,
+  ): Promise<void> {
+    await client.query('SAVEPOINT talentum_divergence');
+    try {
+      await this.prescreeningRepo.insertDivergence({
+        kind: d.kind,
+        talentumPrescreeningId: payload.data.prescreening.id,
+        talentumProfileId: payload.data.profile.id,
+        prescreeningId: prescreeningRowId,
+        workerId,
+        jobPostingId: d.jobPostingId,
+        expectedJobPostingId: d.expectedJobPostingId,
+        environment,
+      }, client);
+      await client.query('RELEASE SAVEPOINT talentum_divergence');
+    } catch (err) {
+      await client.query('ROLLBACK TO SAVEPOINT talentum_divergence');
+      reportError(err instanceof Error ? err : new Error(String(err)), {
+        source: 'ProcessTalentumPrescreening:recordDivergence',
+        kind: d.kind,
+      });
+    }
   }
 
   // ── Funnel stage sync + encuadre ─────────────────────────────────
@@ -299,10 +396,10 @@ export class ProcessTalentumPrescreening {
     payload: TalentumPrescreeningResponseParsed,
   ): Promise<void> {
     if (!prescreening.workerId || !prescreening.jobPostingId) {
-      console.error(
-        `${TAG} ALERT: syncFunnel SKIPPED — missing mandatory field! workerId=${prescreening.workerId}, ` +
-        `jobPostingId=${prescreening.jobPostingId}, prescreeningId=${prescreening.id}, ` +
-        `talentumId=${prescreening.talentumPrescreeningId}. This should NEVER happen.`,
+      // O alarme (linha em talentum_webhook_divergences + reportError) já saiu em persistPrescreening.
+      console.log(
+        `${TAG} syncFunnel SKIPPED — sem worker/vaga: workerId=${prescreening.workerId}, ` +
+        `jobPostingId=${prescreening.jobPostingId}, prescreeningId=${prescreening.id}`,
       );
       return;
     }

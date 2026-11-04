@@ -75,6 +75,7 @@ describe('ProcessTalentumPrescreening', () => {
         },
         created: true,
       })),
+      insertDivergence: jest.fn().mockResolvedValue(undefined),
       upsertWorkerJobApplicationFromTalentum: jest.fn().mockResolvedValue({
         previousStage: null, // default: new application (no previous stage)
       }),
@@ -343,6 +344,7 @@ describe('ProcessTalentumPrescreening', () => {
 
     expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'PENDING' }),
+      expect.anything(), // client da transação (card + divergência)
     );
   });
 
@@ -1219,6 +1221,7 @@ describe('ProcessTalentumPrescreening', () => {
 
       expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'QUALIFIED' }),
+        expect.anything(),
       );
     });
 
@@ -1300,6 +1303,7 @@ describe('ProcessTalentumPrescreening', () => {
       // 2. Prescreening upsertado com workerId do auto-criado
       expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledWith(
         expect.objectContaining({ workerId: 'w-auto' }),
+        expect.anything(),
       );
 
       // 3. worker_job_applications atualizado com IN_PROGRESS
@@ -1525,6 +1529,80 @@ describe('ProcessTalentumPrescreening', () => {
       expect(logged).not.toContain(SEM_O_9);
       expect(logged).not.toContain('juan@test.com');
       errSpy.mockRestore();
+    });
+  });
+  // ─── Espelho do Talentum (M2) + alarme por evento ──────────────────
+
+  describe('espelho do Talentum: vaga dona por id e alarme de divergência', () => {
+    const divergenceKinds = () =>
+      mockPrescreeningRepo.insertDivergence.mock.calls.map((c: any[]) => c[0].kind);
+
+    it('M2: o 2º evento do mesmo prescreening vai para a vaga DONA por id e o funil usa a dona, não a do título', async () => {
+      mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue({ id: 'jp-owner' });
+      mockJobPostingLookup.findByTitleILike.mockResolvedValue({ id: 'jp-title' });
+      mockPrescreeningRepo.upsertPrescreening.mockImplementation((dto: any) => Promise.resolve({
+        prescreening: { id: 'ps-1', talentumPrescreeningId: dto.talentumPrescreeningId, workerId: dto.workerId, jobPostingId: dto.jobPostingId },
+        created: false,
+        previousJobPostingId: 'jp-title', // o 1º evento gravou a vaga do título
+      }));
+
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+      expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledWith(
+        expect.objectContaining({ jobPostingId: 'jp-owner', jobPostingResolvedById: true }),
+        expect.anything(),
+      );
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalledWith(
+        expect.objectContaining({ jobPostingId: 'jp-owner' }),
+        expect.anything(),
+      );
+      expect(mockPrescreeningRepo.insertDivergence).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'JOB_POSTING_REPOINTED_TO_OWNER', jobPostingId: 'jp-title', expectedJobPostingId: 'jp-owner' }),
+        expect.anything(),
+      );
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'JOB_POSTING_REPOINTED_TO_OWNER' }));
+    });
+
+    it('vaga resolvida só por título: NÃO é a dona (resolvedById=false) e alarma BY_TITLE_ONLY', async () => {
+      mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);
+
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+      expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledWith(
+        expect.objectContaining({ jobPostingId: 'jp-1', jobPostingResolvedById: false }),
+        expect.anything(),
+      );
+      expect(divergenceKinds()).toEqual(['JOB_POSTING_BY_TITLE_ONLY']);
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'JOB_POSTING_BY_TITLE_ONLY' }));
+    });
+
+    it('vaga null: grava JOB_POSTING_NULL e chama o reporter; o card continua gravado', async () => {
+      mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);
+      mockJobPostingLookup.findByTitleILike.mockResolvedValue(null);
+
+      await useCase.execute(buildPayload());
+
+      expect(divergenceKinds()).toEqual(['JOB_POSTING_NULL']);
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'JOB_POSTING_NULL' }));
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).not.toHaveBeenCalled();
+    });
+
+    it('worker null: grava WORKER_NULL na MESMA transação do card, chama o reporter e não vaza PII', async () => {
+      mockWorkerLookup.findByEmail.mockResolvedValue({ getValue: () => null });
+      mockPool.query.mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO workers')) return Promise.reject(new Error('falha qualquer'));
+        return Promise.resolve({ rows: [] });
+      });
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await useCase.execute(buildPayload({ email: 'segredo@pessoa.com', phoneNumber: '+5491100001111' }));
+
+      expect(divergenceKinds()).toContain('WORKER_NULL');
+      const order = mockPoolClient.query.mock.calls.map((c: any[]) => c[0]);
+      expect(order.indexOf('BEGIN')).toBeLessThan(order.indexOf('SAVEPOINT talentum_divergence'));
+      expect(order.indexOf('SAVEPOINT talentum_divergence')).toBeLessThan(order.indexOf('COMMIT'));
+      const [, ctx] = (reportError as jest.Mock).mock.calls.find((c) => (c[1] as any)?.kind === 'WORKER_NULL')!;
+      expect(JSON.stringify(ctx)).not.toMatch(/segredo|5491100001111/);
     });
   });
 });
