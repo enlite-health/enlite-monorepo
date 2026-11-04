@@ -192,7 +192,7 @@ describe('Spec 084 F3 — linha de corte das vagas antigas @integration', () => 
     expect((await linha(ids.revisaoSuspensa)).status).toBe('SUSPENDED');
     expect((await linha(ids.revisaoActivo)).status).toBe('ACTIVE');
     // grupo e: En espera, com o status anterior guardado
-    expect(await linha(ids.e)).toMatchObject({ status: 'ON_HOLD', status_before_hold: 'CLOSED' });
+    expect(await linha(ids.e)).toMatchObject({ status: 'ON_HOLD', status_before_hold: 'SEARCHING' });
     // os rascunhos do serviço do 817 não foram baixados
     for (const id of [ids.d1, ids.d3]) expect((await linha(id)).status).toBe('PENDING_ACTIVATION');
   });

@@ -28,8 +28,7 @@ import {
 import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours';
 import { JobPostingAuditRepository } from '../../matching/infrastructure/JobPostingAuditRepository';
 import { VacancyTalentumPauseService, type VacancyBajaSideEffects } from '../../matching/application/VacancyTalentumPauseService';
-import { withSystemDbContext } from '@shared/database/requestDbSession';
-import { reportError } from '@shared/logging';
+import { dispatchTalentumPause } from '../../matching/application/dispatchTalentumPause';
 import { replaceServiceSlots } from './ServiceSlotWriter';
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
 import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
@@ -446,7 +445,8 @@ export class PatientContractedServiceRepository {
     const out = { baixadas: [] as string[], devolvidas: [] as string[] };
     if (active === false) {
       const res = await cli.query<{ id: string; status_before_baja: string | null }>(
-        `UPDATE job_postings SET status_before_baja = status, status = 'DE_BAJA', baja_reason = 'SERVICE'
+        `UPDATE job_postings SET status_before_baja = status, status = 'DE_BAJA', baja_reason = 'SERVICE',
+                talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_PAUSE' ELSE talentum_pause_state END
           WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status != 'DE_BAJA'
           RETURNING id, status_before_baja`,
         [serviceId],
@@ -459,7 +459,8 @@ export class PatientContractedServiceRepository {
       // R17/P2: a ÚNICA volta de uma vaga baixada. Só as baixadas POR ESTE serviço (baja_reason = 'SERVICE'): a baixada
       // à mão ou pela linha de corte NUNCA volta — vaga sem serviço contratado não reaparece (toda vaga ativa precisa de serviço).
       const res = await cli.query<{ id: string; status: string }>(
-        `UPDATE job_postings SET status = COALESCE(status_before_baja, 'SEARCHING'), status_before_baja = NULL
+        `UPDATE job_postings SET status = COALESCE(status_before_baja, 'SEARCHING'), status_before_baja = NULL,
+                talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_RESUME' ELSE talentum_pause_state END
           WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status = 'DE_BAJA' AND baja_reason = 'SERVICE'
           RETURNING id, status`,
         [serviceId],
@@ -488,22 +489,6 @@ export class PatientContractedServiceRepository {
       actorUserId: actorUid,
       actorType: 'HUMAN',
       actorLabel: 'contracted_service_active',
-    });
-  }
-
-  /** F4: pós-commit, fire-and-forget; o que o Talentum recusar vira lista manual (nunca silêncio). */
-  private dispatchTalentum(affected: { baixadas: string[]; devolvidas: string[] }): void {
-    if (affected.baixadas.length === 0 && affected.devolvidas.length === 0) return;
-    const side = this.talentum ?? new VacancyTalentumPauseService(this.pool);
-    setImmediate(() => {
-      void withSystemDbContext('job:service-baja-talentum', async () => {
-        try {
-          if (affected.baixadas.length > 0) await side.pause(affected.baixadas);
-          if (affected.devolvidas.length > 0) await side.resume(affected.devolvidas);
-        } catch (err) {
-          reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PatientContractedServiceRepository:talentum' });
-        }
-      });
     });
   }
 
@@ -621,7 +606,7 @@ export class PatientContractedServiceRepository {
         return updated;
       });
       if (row === null) return null;
-      this.dispatchTalentum(affectedVacancies);
+      dispatchTalentumPause(this.talentum ?? new VacancyTalentumPauseService(this.pool), { pause: affectedVacancies.baixadas, resume: affectedVacancies.devolvidas }, 'PatientContractedServiceRepository');
       return this.decorate(row, this.pool, requestNow);
     } catch (err) {
       if (err === SERVICE_ROW_MISSING) return null;

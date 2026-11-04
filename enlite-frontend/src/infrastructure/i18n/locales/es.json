@@ -2160,7 +2160,8 @@
           "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: usá \"Pausar\" (En espera).",
           "VACANCY_ALREADY_DE_BAJA": "La vacante ya está dada de baja.",
           "VACANCY_NOT_FOUND": "Vacante no encontrada."
-        }
+        },
+        "talentumPendingBadge": "Talentum: pausa/retomada pendiente"
       }
     },
     "draftVacancy": {
@@ -2874,7 +2875,9 @@
         "readOnlyBanner": "Vacante dada de baja: solo consulta.",
         "readOnlyDetail": "No se mueven candidatos ni se corre el match. Los candidatos y el historial quedan guardados.",
         "error": "No se pudo dar de baja la vacante",
-        "talentumManual": "Pausar a mano en Talentum: el Talentum no aceptó pausar este proyecto por API."
+        "talentumManual": "Pausar a mano en Talentum: el Talentum no aceptó pausar este proyecto por API.",
+        "talentumManualResume": "Retomar a mano en Talentum: el Talentum no aceptó retomar este proyecto por API.",
+        "talentumPending": "Talentum: la pausa o la retomada de este proyecto está pendiente (aún no se confirmó). Si persiste, hacelo a mano en Talentum."
       }
     },
     "vacancyModal": {

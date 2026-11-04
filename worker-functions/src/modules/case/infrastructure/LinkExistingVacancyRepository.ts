@@ -4,6 +4,7 @@
  * nomes de coluna só de whitelist fixa; só o `client` recebido, nunca o pool.
  */
 import type { PoolClient } from 'pg';
+import { caseOrdinalFromServiceSql } from '@shared/sql/caseOrdinalSql';
 import type { VacancyForLink } from '../domain/VacancyLinkEligibility';
 import {
   VACANCY_SERVICE_OWNED_COLUMNS,
@@ -130,7 +131,9 @@ export class LinkExistingVacancyRepository {
     const clears = VACANCY_SERVICE_OWNED_COLUMNS.map((c) => `${c} = NULL`).join(', ');
     const res = await client.query(
       `UPDATE job_postings
-          SET contracted_service_id = $2, ${clears}, updated_at = NOW()
+          SET contracted_service_id = $2, ${clears},
+              -- R16: o número vira o do SERVIÇO no MESMO UPDATE (a vaga antiga tinha MAX+1 / número de outra época)
+              case_ordinal = ${caseOrdinalFromServiceSql('$2')}, updated_at = NOW()
         WHERE id = $1 AND contracted_service_id IS NULL AND deleted_at IS NULL`,
       [vacancyId, serviceId],
     );

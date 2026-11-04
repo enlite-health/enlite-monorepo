@@ -49,6 +49,15 @@ describe('BajaVacanciesUseCase (spec 084 F1)', () => {
     );
   });
 
+  it('R13 (teste-chave): a pausa do Talentum fica PENDING_PAUSE na MESMA transação/UPDATE da baixa — nunca NULL calado se o trabalho pós-resposta for descartado', async () => {
+    const { uc } = setup([{ id: A, status: 'SEARCHING', contracted_service_id: null }]);
+    await uc.execute([A], 'MANUAL', ACTOR);
+    const update = mockClient.query.mock.calls.map((c) => String(c[0])).find((q) => /UPDATE job_postings/.test(q))!;
+    expect(update).toMatch(/talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_PAUSE'/);
+    // vaga SEM projeto no Talentum não ganha estado: nada a pausar
+    expect(update).toMatch(/ELSE talentum_pause_state END/);
+  });
+
   it('TUDO OU NADA: uma vaga com serviço no lote recusa o lote inteiro e NADA é gravado (P1)', async () => {
     const { uc, audit } = setup([
       { id: A, status: 'SEARCHING', contracted_service_id: null },

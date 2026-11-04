@@ -142,7 +142,12 @@ export default function VacancyDetailPage() {
   const isDeBaja = vacancy.status === 'DE_BAJA';
   const hasService = !!vacancy.contracted_service_id;
   const showBajaButton = canBaja && !isDeBaja && !hasService;
-  const talentumManual = vacancy.talentum_pause_state === 'MANUAL_PAUSE' || vacancy.talentum_pause_state === 'MANUAL_RESUME';
+  // R13: o texto acompanha o estado (pausar à mão × retomar à mão × pendente) — nunca o mesmo aviso para os três.
+  const talentumNoteKey: string | null =
+    vacancy.talentum_pause_state === 'MANUAL_PAUSE' ? 'talentumManual'
+      : vacancy.talentum_pause_state === 'MANUAL_RESUME' ? 'talentumManualResume'
+        : vacancy.talentum_pause_state === 'PENDING_PAUSE' || vacancy.talentum_pause_state === 'PENDING_RESUME' ? 'talentumPending'
+          : null;
 
   const publications: Array<{
     channel: string | null;
@@ -185,13 +190,13 @@ export default function VacancyDetailPage() {
           <Text size="sm" color="secondary" className="mt-1">{t('admin.vacancyDetail.baja.readOnlyDetail')}</Text>
         </div>
       )}
-      {talentumManual && (
+      {talentumNoteKey && (
         <div
           className="mb-6 bg-amber-50 border border-amber-300 rounded-xl px-5 py-3"
           role="status"
           data-testid="vacancy-talentum-manual-note"
         >
-          <Text size="sm" color="inherit" className="text-amber-900">{t('admin.vacancyDetail.baja.talentumManual')}</Text>
+          <Text size="sm" color="inherit" className="text-amber-900">{t(`admin.vacancyDetail.baja.${talentumNoteKey}`)}</Text>
         </div>
       )}
 

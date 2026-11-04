@@ -61,6 +61,8 @@ describe('PatientContractedServiceRepository — a ÚNICA volta de vaga baixada 
     expect(volta).toBeDefined();
     // Vaga baixada à mão (MANUAL) ou pelo corte (CUTOFF) NUNCA volta: o motivo SERVICE é o filtro, não enfeite.
     expect(volta?.sql).toContain(`baja_reason = 'SERVICE'`);
+    // R13: a retomada fica PENDING_RESUME na MESMA transação (só se a vaga tem projeto no Talentum)
+    expect(volta?.sql).toMatch(/talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_RESUME'/);
     expect(volta?.sql).toContain(`status = 'DE_BAJA'`);
     expect(volta?.sql).toContain('contracted_service_id = $1');
     expect(volta?.params).toEqual(['svc-1']);
@@ -91,6 +93,7 @@ describe('PatientContractedServiceRepository — a ÚNICA volta de vaga baixada 
 
     const baixa = chamadas.find((c) => /status_before_baja = status/.test(c.sql));
     expect(baixa?.sql).toContain(`baja_reason = 'SERVICE'`);
+    expect(baixa?.sql).toMatch(/talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_PAUSE'/);
     expect(audit.logEventSafe).toHaveBeenCalledWith(
       cli,
       expect.objectContaining({

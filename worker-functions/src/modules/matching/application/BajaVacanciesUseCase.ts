@@ -72,7 +72,9 @@ export class BajaVacanciesUseCase {
       const before = byId.get(id)!.status ?? 'SEARCHING';
       await client.query(
         `UPDATE job_postings
-            SET status_before_baja = status, status = '${DE_BAJA_STATUS}', baja_reason = $2, updated_at = NOW()
+            SET status_before_baja = status, status = '${DE_BAJA_STATUS}', baja_reason = $2, updated_at = NOW(),
+                -- R13: a pausa no Talentum fica PENDENTE na MESMA transação da baixa (nunca NULL calado)
+                talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_PAUSE' ELSE talentum_pause_state END
           WHERE id = $1 AND deleted_at IS NULL AND contracted_service_id IS NULL AND status != '${DE_BAJA_STATUS}'`,
         [id, reason],
       );

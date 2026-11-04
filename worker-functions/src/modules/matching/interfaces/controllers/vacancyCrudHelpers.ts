@@ -6,6 +6,7 @@
  */
 
 import type { Pool } from 'pg';
+import { caseOrdinalFromServiceSql } from '@shared/sql/caseOrdinalSql';
 import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
@@ -318,33 +319,15 @@ export async function authorizeVacancyUpdate(
   return { kind: 'ok', isDraft, currentStatus };
 }
 
-/**
- * Spec 084 (R12/R16): `case_ordinal` = a ORDEM DO SERVIÇO contratado dentro do paciente (1..N, por created_at, id) —
- * não MAX+1. Vaga SEM serviço fica SEM número (NULL); vaga nova de um serviço repete o número do serviço. Referencia
- * $23 (contracted_service_id). Puro e determinístico: sem corrida entre INSERTs (o índice único da migration 460 caiu).
- */
-export const CASE_ORDINAL_FROM_SERVICE_SQL = `CASE WHEN $23::uuid IS NULL THEN NULL ELSE (
-        SELECT s.ordinal FROM (
-          SELECT id, row_number() OVER (PARTITION BY patient_id ORDER BY created_at, id)::int AS ordinal
-            FROM patient_contracted_services
-           WHERE patient_id = (SELECT patient_id FROM patient_contracted_services WHERE id = $23::uuid)
-        ) s WHERE s.id = $23::uuid
-      ) END`;
+/** Mesma expressão do vínculo (`caseOrdinalFromServiceSql`); aqui o serviço é o $23 do INSERT. */
+export const CASE_ORDINAL_FROM_SERVICE_SQL = caseOrdinalFromServiceSql('$23');
 
 export function buildInsertQuery(): string {
   // `published_at` defaults to NOW() when the caller passes NULL — matches the
   // product rule that publication date auto-fills with today if left blank.
   // `closes_at` stays NULL when not provided (optional).
   //
-  // `case_ordinal` (spec 027 Fase 5, migration 460) — a enésima vaga do caso
-  // (patient_id). NÃO ganha placeholder novo: é computada por subquery DENTRO
-  // do próprio INSERT, reusando $4 (patient_id) — sempre a MESMA transação/
-  // statement de quem chama, nunca uma 2ª ida ao banco. Concorrência real (dois
-  // cliques simultâneos no mesmo caso) é resolvida pelo índice único
-  // idx_job_postings_case_ordinal: o 2º INSERT bloqueia no lock de valor do
-  // índice, e ao destravar já vê o valor commitado do 1º — reconta e bate 23505
-  // se ainda colidir. Callers tratam 23505 com retry (ver isCaseOrdinalConflict/
-  // retryOnCaseOrdinalConflict abaixo).
+  // `case_ordinal` (spec 084, migration 563): derivado do SERVIÇO ($23) dentro do próprio INSERT — ver `CASE_ORDINAL_FROM_SERVICE_SQL`.
   // RETURNING com lista explícita e SEM join: este INSERT roda também em client cru (sem identidade). O horário
   // efetivo da resposta é lido depois, por `withEffectiveFields`.
   return `
@@ -419,43 +402,6 @@ export async function withEffectiveFields<T extends Record<string, unknown>>(db:
     age_range_min: eff.age_range_min,
     age_range_max: eff.age_range_max,
   };
-}
-
-// ─── case_ordinal conflict retry (spec 027 Fase 5) ───────────────────────────
-
-/** O 23505 que é CONFLITO DE case_ordinal — e só ele (mesma régua de isCaseNumberConflict). */
-export function isCaseOrdinalConflict(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false;
-  const e = err as { code?: string; constraint?: string };
-  return e.code === '23505' && e.constraint === 'idx_job_postings_case_ordinal';
-}
-
-export const CASE_ORDINAL_MAX_ATTEMPTS = 5;
-
-/**
- * Reexecuta `attempt` até MAX_ATTEMPTS quando o erro é um conflito de
- * case_ordinal (corrida entre dois INSERTs no mesmo caso). `onConflict`,
- * quando informado, roda ANTES de cada nova tentativa — usado pelos callers
- * que estão dentro de uma transação explícita para `ROLLBACK TO SAVEPOINT`
- * (o 23505 aborta a transação até lá). Erro que não é conflito de
- * case_ordinal sobe na hora, sem retry.
- */
-export async function retryOnCaseOrdinalConflict<T>(
-  attempt: () => Promise<T>,
-  onConflict?: () => Promise<void>,
-  maxAttempts: number = CASE_ORDINAL_MAX_ATTEMPTS,
-): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      return await attempt();
-    } catch (err) {
-      if (!isCaseOrdinalConflict(err)) throw err;
-      lastErr = err;
-      if (onConflict) await onConflict();
-    }
-  }
-  throw lastErr;
 }
 
 // ─── Diff helper (Onda A — pure, no DB) ──────────────────────────────────────

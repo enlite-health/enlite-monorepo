@@ -2,9 +2,9 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { withSystemDbContext } from '@shared/database/requestDbSession';
 import { reportError } from '@shared/logging';
 import { BajaVacanciesUseCase, BAJA_BATCH_MAX } from '../../application/BajaVacanciesUseCase';
+import { dispatchTalentumPause } from '../../application/dispatchTalentumPause';
 import { VacancyTalentumPauseService, type VacancyBajaSideEffects } from '../../application/VacancyTalentumPauseService';
 import { BAJA_REFUSAL_MESSAGES } from '../../domain/VacancyBajaPolicy';
 import { vacancyActorFromRequest } from './vacancyCrudAuditHelpers';
@@ -53,15 +53,7 @@ export class VacancyBajaController {
         return;
       }
       const ids = outcome.baixadas.map((b) => b.vacancyId);
-      setImmediate(() => {
-        void withSystemDbContext('job:vacancy-baja-talentum', async () => {
-          try {
-            await this.sideEffects.pause(ids);
-          } catch (err) {
-            reportError(err instanceof Error ? err : new Error(String(err)), { source: 'VacancyBajaController:talentumPause' });
-          }
-        });
-      });
+      dispatchTalentumPause(this.sideEffects, { pause: ids }, 'VacancyBajaController');
       res.status(200).json({ success: true, data: { baixadas: outcome.baixadas } });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);

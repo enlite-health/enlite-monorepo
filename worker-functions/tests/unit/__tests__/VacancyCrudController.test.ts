@@ -505,7 +505,7 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req as never, res as never);
 
       const sql = mockQuery.mock.calls[2][0] as string;
-      expect(sql).not.toContain('state');
+      expect(sql).not.toMatch(/\bstate\b/); // palavra inteira: talentum_pause_state (spec 084) não é a coluna state
       expect(sql).not.toContain('city');
       expect(sql).not.toContain('pathology_types');
       expect(sql).not.toContain('dependency_level');
@@ -682,8 +682,8 @@ describe('VacancyCrudController', () => {
 
     // ── case_ordinal (spec 027 Fase 5, T052/T053) ───────────────────
     //
-    // buildInsertQuery/buildInsertParams/retryOnCaseOrdinalConflict/
-    // isCaseOrdinalConflict NÃO são mockados neste arquivo — são os módulos
+    // buildInsertQuery/buildInsertParams
+    // NÃO são mockados neste arquivo — são os módulos
     // reais (vacancyCrudHelpers.ts). Diferente da prova em Postgres real
     // (script ad-hoc, spec 027 T053 — dois INSERTs sequenciais deram
     // case_ordinal 1 e 2, e uma colisão concorrente real bateu 23505 em
@@ -702,9 +702,11 @@ describe('VacancyCrudController', () => {
         const insertSql = mockQuery.mock.calls[2][0] as string;
         const insertParams = mockQuery.mock.calls[2][1] as unknown[];
         expect(insertSql).toContain('case_ordinal');
-        expect(insertSql).toMatch(/MAX\(jp2\.case_ordinal\)/);
-        expect(insertSql).toMatch(/WHERE jp2\.patient_id = \$4/);
-        expect(insertParams).toHaveLength(24); // sem novo placeholder — reusa $4
+        // spec 084 (R12/R16): o número é a ORDEM DO SERVIÇO ($23), nunca MAX+1 sobre o paciente
+        expect(insertSql).not.toMatch(/MAX\(jp2\.case_ordinal\)/);
+        expect(insertSql).toMatch(/CASE WHEN \$23::uuid IS NULL THEN NULL/);
+        expect(insertSql).toMatch(/FROM patient_contracted_services/);
+        expect(insertParams).toHaveLength(24); // sem novo placeholder
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
           success: true,
           data: expect.objectContaining({ case_ordinal: 1 }),
@@ -736,30 +738,18 @@ describe('VacancyCrudController', () => {
         }));
       });
 
-      it('colisão real (23505 em idx_job_postings_case_ordinal): a 1ª tentativa de INSERT falha, retryOnCaseOrdinalConflict refaz a MESMA query e a 2ª tentativa cria a vaga (201)', async () => {
-        const conflictErr = Object.assign(
-          new Error('duplicate key value violates unique constraint "idx_job_postings_case_ordinal"'),
-          { code: '23505', constraint: 'idx_job_postings_case_ordinal' },
-        );
+      it('spec 084: o INSERT roda UMA vez — sem retry de case_ordinal (o índice único caiu); erro do banco vira 500', async () => {
         mockQuery
-          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] }) // patient check
-          .mockResolvedValueOnce({ rows: [{ vn: '300' }] })       // nextval
-          .mockRejectedValueOnce(conflictErr)                     // 1ª tentativa de INSERT: colide
-          .mockResolvedValueOnce({ rows: [{ ...VACANCY_ROW, id: 'vac-recovered', case_ordinal: 2 }] }); // 2ª tentativa: sucesso
-
-        const req = mockReq(FULL_BODY);
+          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
+          .mockResolvedValueOnce({ rows: [{ vn: '300' }] })
+          .mockRejectedValueOnce(new Error('falha qualquer do INSERT'));
         const res = mockRes();
-        await controller.createVacancy(req as never, res as never);
-
-        expect(res.status).toHaveBeenCalledWith(201);
-        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-          success: true,
-          data: expect.objectContaining({ id: 'vac-recovered', case_ordinal: 2 }),
-        }));
+        await controller.createVacancy(mockReq(FULL_BODY) as never, res as never);
+        expect(res.status).toHaveBeenCalledWith(500);
         const insertAttempts = mockQuery.mock.calls.filter(
           ([sql]) => typeof sql === 'string' && sql.trim().startsWith('INSERT INTO job_postings'),
         );
-        expect(insertAttempts).toHaveLength(2);
+        expect(insertAttempts).toHaveLength(1);
       });
 
       it('23505 de OUTRA constraint (não case_ordinal) NÃO é retentado — sobe cru e vira 500', async () => {
@@ -972,7 +962,7 @@ describe('VacancyCrudController', () => {
         );
         expect(updateCall).toBeDefined();
         const sql = updateCall![0] as string;
-        expect(sql).not.toContain('state');
+        expect(sql).not.toMatch(/\bstate\b/); // palavra inteira: talentum_pause_state (spec 084) não é a coluna state
         expect(sql).not.toContain('city');
         expect(sql).not.toContain('pathology_types');
         expect(sql).not.toContain('dependency_level');

@@ -108,6 +108,12 @@ export class WorkerApplicationsController {
         workerPhone: worker.phone,
       });
 
+      if (!applyResult.ok && applyResult.code === 'VACANCY_DE_BAJA') {
+        // Spec 084 (P4/R6): vaga dada de baja só se consulta — não é problema de cadastro do prestador.
+        res.status(409).json({ success: false, error: 'vacancy_de_baja', code: applyResult.code, reason: applyResult.reason });
+        return;
+      }
+
       if (!applyResult.ok) {
         res.status(applyResult.httpStatus).json({
           success: false,

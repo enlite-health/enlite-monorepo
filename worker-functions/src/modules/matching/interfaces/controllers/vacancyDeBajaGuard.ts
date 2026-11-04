@@ -4,7 +4,7 @@
  */
 import type { Response } from 'express';
 import type { Pool } from 'pg';
-import { BAJA_REFUSAL_MESSAGES, DE_BAJA_STATUS } from '../../domain/VacancyBajaPolicy';
+import { BAJA_REFUSAL_MESSAGES, DE_BAJA_STATUS, type VacancyGuardCode } from '../../domain/VacancyBajaPolicy';
 
 type Queryable = Pick<Pool, 'query'>;
 
@@ -32,6 +32,12 @@ export function sendVacancyDeBajaReadOnly(res: Response): void {
       'pt-BR': 'Vaga dada de baixa: só consulta.',
     },
   });
+}
+
+/** 409 com código estável + mensagem es/pt-BR para as recusas da baixa que não são "só consulta" (Talentum, apagar). */
+export function sendVacancyDeBajaRefusal(res: Response, code: Extract<VacancyGuardCode, 'VACANCY_DE_BAJA_TALENTUM_REFUSED' | 'VACANCY_DE_BAJA_NO_DELETE'>): void {
+  const messages = BAJA_REFUSAL_MESSAGES[code];
+  res.status(409).json({ success: false, code, error: messages['pt-BR'], messages });
 }
 
 export { BAJA_REFUSAL_MESSAGES };

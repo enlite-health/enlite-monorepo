@@ -31,7 +31,14 @@ export function decideManualBaja(v: VacancyBajaFacts): BajaDecision {
 }
 
 /** Mensagens es + pt-BR dos recusos (a API devolve as duas; a tela escolhe pelo idioma). */
-export const BAJA_REFUSAL_MESSAGES: Record<BajaRefusalCode | 'VACANCY_DE_BAJA_NO_REACTIVATION' | 'CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED', { es: string; 'pt-BR': string }> = {
+export type VacancyGuardCode =
+  | BajaRefusalCode
+  | 'VACANCY_DE_BAJA_NO_REACTIVATION'
+  | 'CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED'
+  | 'VACANCY_DE_BAJA_TALENTUM_REFUSED'
+  | 'VACANCY_DE_BAJA_NO_DELETE';
+
+export const BAJA_REFUSAL_MESSAGES: Record<VacancyGuardCode, { es: string; 'pt-BR': string }> = {
   VACANCY_HAS_SERVICE: {
     es: 'Una vacante de un servicio contratado no se da de baja a mano: usá "Pausar" (En espera).',
     'pt-BR': 'Vaga de serviço contratado não recebe baixa manual: use "Pausar" (Em espera).',
@@ -43,6 +50,14 @@ export const BAJA_REFUSAL_MESSAGES: Record<BajaRefusalCode | 'VACANCY_DE_BAJA_NO
   VACANCY_DE_BAJA_NO_REACTIVATION: {
     es: 'Una vacante dada de baja no se reactiva: solo vuelve cuando se reactiva el servicio que la dio de baja. La vacante nueva nace del botón de reclutamiento del servicio.',
     'pt-BR': 'Vaga dada de baixa não é reativada: só volta quando o serviço que a baixou é reativado. A vaga nova nasce do botão de recrutamento do serviço.',
+  },
+  VACANCY_DE_BAJA_TALENTUM_REFUSED: {
+    es: 'Una vacante dada de baja no se publica ni se despublica en Talentum: el proyecto se conserva (solo se pausa).',
+    'pt-BR': 'Vaga dada de baixa não é publicada nem despublicada no Talentum: o projeto é preservado (só é pausado).',
+  },
+  VACANCY_DE_BAJA_NO_DELETE: {
+    es: 'Una vacante dada de baja nunca se borra: queda guardada para consulta.',
+    'pt-BR': 'Vaga dada de baixa nunca é apagada: fica guardada para consulta.',
   },
   CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED: {
     es: 'Una vacante de un servicio activo no se cierra: usá "Pausar" (En espera).',

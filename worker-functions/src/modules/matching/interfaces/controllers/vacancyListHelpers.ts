@@ -221,13 +221,14 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
     baseQuery += ` AND jp.status = $${paramIndex}`;
     params.push(filters.status);
     paramIndex++;
-  } else if (!isTrue(filters.includeBaja)) {
-    // Spec 084 F2: por padrão a lista esconde as dadas de baja (nunca apagadas: R2).
+  } else if (!isTrue(filters.includeBaja) && !isTrue(filters.talentumManual)) {
+    // Spec 084 F2: por padrão a lista esconde as dadas de baja (nunca apagadas: R2). A lista manual do Talentum (R13) NÃO as
+    // esconde: quase toda vaga que espera pausa à mão é uma baixada.
     baseQuery += ` AND jp.status != 'DE_BAJA'`;
   }
 
   if (isTrue(filters.talentumManual)) {
-    baseQuery += ` AND jp.talentum_pause_state IN ('MANUAL_PAUSE', 'MANUAL_RESUME')`;
+    baseQuery += ` AND jp.talentum_pause_state IN ('MANUAL_PAUSE', 'MANUAL_RESUME', 'PENDING_PAUSE', 'PENDING_RESUME')`;
   }
 
   if (typeof filters.workerType === 'string' && VALID_WORKER_TYPES.has(filters.workerType)) {

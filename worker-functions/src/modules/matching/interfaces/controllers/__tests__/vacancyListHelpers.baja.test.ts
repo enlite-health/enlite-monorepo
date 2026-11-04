@@ -24,8 +24,13 @@ describe('lista de vacantes — dadas de baja (spec 084 F2)', () => {
   });
 
   it('lista manual do Talentum (R13): filtro talentum_manual', () => {
-    expect(buildListVacanciesQuery({ ...base, talentumManual: 'true' }).baseQuery).toContain("talentum_pause_state IN ('MANUAL_PAUSE', 'MANUAL_RESUME')");
+    expect(buildListVacanciesQuery({ ...base, talentumManual: 'true' }).baseQuery).toContain("talentum_pause_state IN ('MANUAL_PAUSE', 'MANUAL_RESUME', 'PENDING_PAUSE', 'PENDING_RESUME')"); // PENDING nunca fica fora da lista
     expect(buildListVacanciesQuery(base).baseQuery).not.toContain('talentum_pause_state IN');
+  });
+
+  it('a lista manual do Talentum NÃO esconde as baixadas (é onde elas estão); sem ela, continuam escondidas', () => {
+    expect(buildListVacanciesQuery({ ...base, talentumManual: 'true' }).baseQuery).not.toContain("jp.status != 'DE_BAJA'");
+    expect(buildListVacanciesQuery({ ...base, talentumManual: 'false' }).baseQuery).toContain("jp.status != 'DE_BAJA'");
   });
 
   it('a linha traz o motivo, se tem serviço e o estado do Talentum; DE_BAJA tem rótulo (não "Desconocido")', () => {

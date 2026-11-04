@@ -34,6 +34,6 @@ describe('pontos que deixavam vaga DE_BAJA aparecer', () => {
   it('o webhook marca e segura a resposta de vaga DE_BAJA (held_for_baja), sem WJA', () => {
     const t = read('modules/matching/application/ProcessTalentumPrescreening.ts');
     expect(t).toContain('held_for_baja = true');
-    expect(t).toMatch(/isVacancyDeBaja/);
+    expect(t).toMatch(/vacancyIsDeBaja\(this\.pool/);
   });
 });

@@ -56,6 +56,17 @@ describe('VacanciesTable — dar baixa e selo (spec 084 F1/F2/F4)', () => {
     expect(screen.getByTestId('vacancy-talentum-manual-badge-manual')).toBeInTheDocument();
   });
 
+  it('R13: PENDING_PAUSE/PENDING_RESUME têm selo próprio (a pausa gravada e ainda não confirmada nunca fica invisível); MANUAL_RESUME diz retomar', () => {
+    render(<VacanciesTable vacancies={[
+      base({ id: 'pend', talentumPauseState: 'PENDING_PAUSE' }),
+      base({ id: 'pend2', talentumPauseState: 'PENDING_RESUME' }),
+      base({ id: 'ret', talentumPauseState: 'MANUAL_RESUME' }),
+    ]} />);
+    expect(screen.getByTestId('vacancy-talentum-manual-badge-pend')).toHaveTextContent('talentumPendingBadge');
+    expect(screen.getByTestId('vacancy-talentum-manual-badge-pend2')).toHaveTextContent('talentumPendingBadge');
+    expect(screen.getByTestId('vacancy-talentum-manual-badge-ret')).toHaveTextContent('talentumManualResumeBadge');
+  });
+
   it('R17: nenhuma ação de reativar na tabela', () => {
     render(<VacanciesTable vacancies={ROWS} selectedIds={new Set()} onToggleSelect={vi.fn()} onToggleAll={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /reactiv|reativ/i })).not.toBeInTheDocument();

@@ -81,12 +81,15 @@ export class LegacyVacancyCutoffRepository {
       .map((r) => ({ vacancyId: r.id, caseNumber: r.case_number, serviceId: r.service_id }));
   }
 
-  /** CLOSED → ON_HOLD guardando o status de antes (F5/R18). Idempotente: só toca o que ainda está CLOSED com serviço ativo. */
+  /**
+   * CLOSED → ON_HOLD (F5/R18). Idempotente: só toca o que ainda está CLOSED com serviço ativo. `status_before_hold` = SEARCHING, NÃO CLOSED:
+   * vaga de serviço ativo nunca é encerrada (R4), então "Reanudar" para CLOSED seria recusado (409) pelo servidor.
+   */
   async putOnHold(client: PoolClient, vacancyIds: readonly string[]): Promise<string[]> {
     if (vacancyIds.length === 0) return [];
     const res = await client.query<{ id: string }>(
       `UPDATE job_postings jp
-          SET status_before_hold = jp.status, status = 'ON_HOLD', updated_at = NOW()
+          SET status_before_hold = 'SEARCHING', status = 'ON_HOLD', updated_at = NOW()
          FROM patient_contracted_services s
         WHERE jp.id = ANY($1::uuid[]) AND s.id = jp.contracted_service_id AND s.active
           AND jp.status = 'CLOSED' AND jp.deleted_at IS NULL

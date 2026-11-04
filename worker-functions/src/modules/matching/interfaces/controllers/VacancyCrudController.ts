@@ -9,7 +9,6 @@ import {
   buildInsertParams,
   FULL_ALLOWED_UPDATE_FIELDS,
   OPERATIONAL_EDITABLE_FIELDS,
-  retryOnCaseOrdinalConflict,
   withEffectiveFields,
 } from './vacancyCrudHelpers';
 import {
@@ -22,6 +21,7 @@ import {
   vacancyActorFromRequest,
   type HumanActor,
 } from './vacancyCrudAuditHelpers';
+import { sendVacancyDeBajaRefusal } from './vacancyDeBajaGuard';
 import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
 import { PurgeVacancyShortLinksUseCase } from '../../application/PurgeVacancyShortLinksUseCase';
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
@@ -91,6 +91,7 @@ function extractHumanActor(req: Request): HumanActor {
 }
 
 class VacancyNotFound extends Error {}
+class VacancyIsDeBaja extends Error {}
 class VacancyHasAllocations extends Error {
   constructor(readonly count: number) {
     super('vacancy has active allocations');
@@ -201,12 +202,8 @@ export class VacancyCrudController {
         newVacancy = await createWithPatientUpdate(this.db, case_number, updatePatient, insertArgs, actor);
       } else {
         // Non-transactional path: insert, then best-effort audit in separate transaction.
-        // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT; em conflito
-        // (23505 de idx_job_postings_case_ordinal) o retry refaz a MESMA query — cada
-        // this.db.query já é sua própria transação implícita, sem SAVEPOINT a limpar.
-        const result = await retryOnCaseOrdinalConflict(() =>
-          this.db.query(buildInsertQuery(), buildInsertParams(insertArgs)),
-        );
+        // case_ordinal é derivado do serviço dentro do próprio INSERT (spec 084): sem conflito a retentar.
+        const result = await this.db.query(buildInsertQuery(), buildInsertParams(insertArgs));
         newVacancy = result.rows[0] as Record<string, unknown>;
         // Best-effort audit: acquire a throwaway client, do the insert, release.
         // Audit failure MUST NOT affect the 201 response already committed above.
@@ -389,6 +386,8 @@ export class VacancyCrudController {
         // Snapshot before soft-delete (FOR UPDATE: segura a vaga contra delete concorrente)
         const before = await lockLiveVacancySnapshot(client, id);
         if (!before) throw new VacancyNotFound();
+        // Spec 084 (R2): vaga dada de baja nunca é apagada — fica guardada para consulta.
+        if (before.status === 'DE_BAJA') throw new VacancyIsDeBaja();
 
         // 058 P6: vaga com alocação vigente no itinerário não se apaga. A probe roda NO client do ator (RLS) e toma o lock do serviço.
         const vigentes = await countVigenteForVacancy(client, id, new Date());
@@ -410,6 +409,10 @@ export class VacancyCrudController {
     } catch (error: unknown) {
       if (error instanceof VacancyNotFound) {
         res.status(404).json({ success: false, error: 'Vacancy not found' });
+        return;
+      }
+      if (error instanceof VacancyIsDeBaja) {
+        sendVacancyDeBajaRefusal(res, 'VACANCY_DE_BAJA_NO_DELETE');
         return;
       }
       if (error instanceof VacancyHasAllocations) {

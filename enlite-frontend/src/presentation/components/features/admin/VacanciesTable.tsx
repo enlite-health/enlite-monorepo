@@ -187,7 +187,8 @@ export function VacanciesTable({
                         </Text>
                       </span>
                     )}
-                    {(row.talentumPauseState === 'MANUAL_PAUSE' || row.talentumPauseState === 'MANUAL_RESUME') && (
+                    {(row.talentumPauseState === 'MANUAL_PAUSE' || row.talentumPauseState === 'MANUAL_RESUME'
+                      || row.talentumPauseState === 'PENDING_PAUSE' || row.talentumPauseState === 'PENDING_RESUME') && (
                       <span
                         className="inline-flex items-center bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full"
                         data-testid={`vacancy-talentum-manual-badge-${row.id}`}
@@ -195,7 +196,9 @@ export function VacanciesTable({
                         <Text as="span" size="xs" weight="medium" color="inherit">
                           {row.talentumPauseState === 'MANUAL_PAUSE'
                             ? t('admin.vacancies.baja.talentumManualBadge')
-                            : t('admin.vacancies.baja.talentumManualResumeBadge')}
+                            : row.talentumPauseState === 'MANUAL_RESUME'
+                              ? t('admin.vacancies.baja.talentumManualResumeBadge')
+                              : t('admin.vacancies.baja.talentumPendingBadge')}
                         </Text>
                       </span>
                     )}
