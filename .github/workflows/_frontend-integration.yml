@@ -572,7 +572,8 @@ jobs:
         working-directory: worker-functions
         run: |
           # Spec 082 (T043): `docker-compose.bigquery-emulator.yml` troca o BigQuery por um emulador com billing export SINTÉTICO (e2e `custos-abac`).
-          BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.group-simulation.yml -f docker-compose.bigquery-emulator.yml"
+          # Spec 086: `docker-compose.triage-prueba-stub.yml` põe um stub do triage na saída do worker-functions (e2e `luz-prueba`).
+          BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.group-simulation.yml -f docker-compose.bigquery-emulator.yml -f docker-compose.triage-prueba-stub.yml"
           docker compose $BASE up -d postgres fake-gcs
 
           espera() {
@@ -782,7 +783,8 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|vagas-antigas-084|pt-todavia-no-hay-048|admissao-049|admissao-050|admissao-083|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-|064-cobertura-entrada|pt-atividades-az-e-busca-060|pt-catalogo-titulo-descricao-061|catalogo-vinculo-segmento-humano|patient-conversation-markdown|pedidos-ia-abac|vincular-vaga-existente|custos-abac|admin-access-agent-group"
+          TRIAGE_STUB_URL: http://localhost:59060
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|vagas-antigas-084|pt-todavia-no-hay-048|admissao-049|admissao-050|admissao-083|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-|064-cobertura-entrada|pt-atividades-az-e-busca-060|pt-catalogo-titulo-descricao-061|catalogo-vinculo-segmento-humano|patient-conversation-markdown|pedidos-ia-abac|vincular-vaga-existente|custos-abac|luz-prueba|admin-access-agent-group"
 
       # T141B (spec 058): vídeo + print das 6 telas da obra social. Passo 0 medido: o único upload de `test-results/` deste job é o "Relatório (só quando
       # falha)" — com o job verde nenhum vídeo/print era publicado, então este passo roda SEMPRE (`if: always()`).

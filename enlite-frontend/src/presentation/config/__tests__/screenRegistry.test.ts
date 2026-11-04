@@ -82,6 +82,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'knowledge_public:read',
       'knowledge_recruitment:read',
       'knowledge_technical:read',
+      // Spec 086 — Master-only, sem tela: aba "Luz (prueba)" do widget de assistentes (não é rota/tela do registry).
+      'luz_prueba:chat',
       // Spec 022, Bloco 4 (D-22, citação literal): `own_notifications:*` não tem tela própria
       // no registry (o sino não é uma rota de `App.tsx`, e o teste do registry exige `route`
       // existente) — fica SEM entrada dedicada por desenho do próprio mecanismo, mesmo
