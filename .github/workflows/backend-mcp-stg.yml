@@ -93,7 +93,7 @@ jobs:
             ABAC_MAIN_POOL_ROLE=app_system
             DB_POOL_MAX=2
             MCP_DB_RO_POOL_MAX=1
-            MCP_PRINCIPAL_NAMES=triage-service\,claude-code
+            MCP_PRINCIPAL_NAMES=claude-code
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-vtf37eainq-tl.a.run.app
