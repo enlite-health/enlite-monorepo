@@ -17,4 +17,6 @@ export const getStatusOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'ON_HOLD',               label: t('admin.vacancies.statusOptions.onHold') },
   { value: 'SUSPENDED',             label: t('admin.vacancies.statusOptions.suspended') },
   { value: 'CLOSED',                label: t('admin.vacancies.statusOptions.closed') },
+  // Spec 084 F2: filtrar por "Dada de baja" mostra SÓ as baixadas (só consulta).
+  { value: 'DE_BAJA',               label: t('admin.vacancies.statusOptions.deBaja') },
 ];

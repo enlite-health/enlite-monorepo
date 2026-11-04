@@ -2091,7 +2091,8 @@
         "active": "Activo",
         "onHold": "En Espera",
         "suspended": "Suspendido",
-        "closed": "Cerrado"
+        "closed": "Cerrado",
+        "deBaja": "Dada de baja"
       },
       "priorityOptions": {
         "all": "Todas",
@@ -2134,6 +2135,32 @@
         "title": "¿Qué querés hacer con este borrador?",
         "viewOnly": "Solo visualizar",
         "cancel": "Cancelar"
+      },
+      "baja": {
+        "showToggle": "Mostrar dadas de baja",
+        "talentumManualToggle": "Pausar a mano en Talentum",
+        "badge": "Dada de baja",
+        "readOnlyHint": "Solo consulta",
+        "talentumManualBadge": "Pausar a mano en Talentum",
+        "talentumManualResumeBadge": "Retomar a mano en Talentum",
+        "selectAll": "Seleccionar todas las vacantes sin servicio",
+        "selectRow": "Seleccionar vacante",
+        "selectedCount": "{{count}} vacantes seleccionadas",
+        "bulkButton": "Dar de baja ({{count}})",
+        "clearSelection": "Limpiar selección",
+        "confirmTitle": "Dar de baja {{count}} vacantes",
+        "confirmBody": "Vas a dar de baja {{count}} vacantes sin servicio contratado. Quedan ocultas para el reclutamiento y no se borra nada. Solo vuelven si se reactiva el servicio que las dio de baja; una vacante sin servicio no vuelve: la nueva nace del botón de reclutamiento del servicio.",
+        "confirmCases": "Casos: {{cases}}",
+        "confirm": "Dar de baja",
+        "cancel": "Cancelar",
+        "working": "Dando de baja…",
+        "done": "{{count}} vacantes dadas de baja",
+        "error": "No se pudo dar de baja",
+        "errors": {
+          "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: usá \"Pausar\" (En espera).",
+          "VACANCY_ALREADY_DE_BAJA": "La vacante ya está dada de baja.",
+          "VACANCY_NOT_FOUND": "Vacante no encontrada."
+        }
       }
     },
     "draftVacancy": {
@@ -2662,7 +2689,13 @@
         }
       },
       "statusEditor": {
-        "editLabel": "Editar estado de la vacante"
+        "editLabel": "Editar estado de la vacante",
+        "resume": "Reanudar",
+        "pauseHint": "En espera mantiene el tablero, el historial y el link corto.",
+        "errors": {
+          "VACANCY_DE_BAJA_NO_REACTIVATION": "Una vacante dada de baja no se reactiva: solo vuelve cuando se reactiva el servicio que la dio de baja.",
+          "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Una vacante de un servicio activo no se cierra: usá \"Pausar\" (En espera)."
+        }
       },
       "scheduleEditor": {
         "title": "Editar horarios",
@@ -2830,6 +2863,18 @@
         },
         "unassignedCount_one": "{{count}} completado sin evento",
         "unassignedCount_other": "{{count}} completados sin evento"
+      },
+      "baja": {
+        "button": "Dar de baja",
+        "confirmTitle": "Dar de baja esta vacante",
+        "confirmBody": "La vacante queda oculta para el reclutamiento y no se borra nada. No se puede reactivar: solo vuelve si se reactiva el servicio que la dio de baja. Una vacante sin servicio no vuelve; la nueva nace del botón de reclutamiento del servicio.",
+        "confirm": "Dar de baja",
+        "cancel": "Cancelar",
+        "working": "Dando de baja…",
+        "readOnlyBanner": "Vacante dada de baja: solo consulta.",
+        "readOnlyDetail": "No se mueven candidatos ni se corre el match. Los candidatos y el historial quedan guardados.",
+        "error": "No se pudo dar de baja la vacante",
+        "talentumManual": "Pausar a mano en Talentum: el Talentum no aceptó pausar este proyecto por API."
       }
     },
     "vacancyModal": {

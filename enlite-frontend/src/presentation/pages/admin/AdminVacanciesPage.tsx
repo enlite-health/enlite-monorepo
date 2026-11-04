@@ -10,7 +10,11 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
 import { VacancyFilters, type VacancyAdvancedFilters } from '@presentation/components/features/admin/VacancyFilters';
-import { VacanciesTable } from '@presentation/components/features/admin/VacanciesTable';
+import { VacanciesTable, type VacancyRow } from '@presentation/components/features/admin/VacanciesTable';
+import { isBajaSelectable } from '@presentation/components/features/admin/bajaSelectable';
+import { VacancyBajaToolbar } from '@presentation/components/features/admin/VacancyBajaToolbar';
+import { VacancyBajaConfirmDialog } from '@presentation/components/features/admin/VacancyBajaConfirmDialog';
+import { bajaErrorMessage } from '@presentation/components/features/admin/vacancyBajaMessages';
 import { DraftVacancyChoiceDialog } from '@presentation/components/features/admin/DraftVacancyChoiceDialog';
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
 import { useTableSort } from '@hooks/useTableSort';
@@ -35,6 +39,9 @@ export function AdminVacanciesPage(): JSX.Element {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  // Spec 084 F2/F4: "Mostrar dadas de baja" (só consulta) e a lista manual do Talentum.
+  const [showBaja, setShowBaja] = useState(false);
+  const [talentumManual, setTalentumManual] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [advancedFilters, setAdvancedFilters] = useState<VacancyAdvancedFilters>(INITIAL_ADVANCED);
@@ -70,6 +77,8 @@ export function AdminVacanciesPage(): JSX.Element {
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
+    if (showBaja) base.include_baja = 'true';
+    if (talentumManual) base.talentum_manual = 'true';
     if (advancedFilters.workerType) base.worker_type = advancedFilters.workerType;
     if (advancedFilters.state) base.state = advancedFilters.state;
     if (advancedFilters.city) base.city = advancedFilters.city;
@@ -84,7 +93,7 @@ export function AdminVacanciesPage(): JSX.Element {
       base.order = sort.direction;
     }
     return base;
-  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters, sort]);
+  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters, sort, showBaja, talentumManual]);
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
   // Esqueleto só na 1ª carga. Nas buscas seguintes (ordenar/filtrar/paginar) a tabela fica montada
@@ -186,7 +195,7 @@ export function AdminVacanciesPage(): JSX.Element {
     }
   }, []);
 
-  const vacancies = useMemo(
+  const vacancies = useMemo<VacancyRow[]>(
     () => (rawVacancies || []).map((v: unknown) => {
       const vac = v as Record<string, unknown>;
       return {
@@ -200,10 +209,55 @@ export function AdminVacanciesPage(): JSX.Element {
         faltantes: vac.faltantes != null ? String(vac.faltantes) : '—',
         isDraft: vac.is_draft === true,
         lastActionAt: (vac.lastActionAt as string | null | undefined) ?? null,
+        statusRaw: (vac.statusRaw as string | null | undefined) ?? null,
+        hasService: vac.hasService === true,
+        talentumPauseState: (vac.talentumPauseState as string | null | undefined) ?? null,
       };
     }),
     [rawVacancies],
   );
+
+  // Spec 084 F1 — seleção para a baixa em lote. Só vaga SEM serviço e ainda não baixada é selecionável (P1).
+  const podeDarBaja = useActionGate('vacancy', 'update').allowed;
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [bajaDialogOpen, setBajaDialogOpen] = useState(false);
+  const [bajaWorking, setBajaWorking] = useState(false);
+  const [bajaError, setBajaError] = useState<string | null>(null);
+  const [bajaDone, setBajaDone] = useState<number | null>(null);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const toggleAll = useCallback((selectAll: boolean) => {
+    setSelectedIds(selectAll ? new Set(vacancies.filter(isBajaSelectable).map((v) => v.id)) : new Set());
+  }, [vacancies]);
+  // A seleção só vale para o que a lista mostra: mudou filtro/página → limpa.
+  useEffect(() => { setSelectedIds(new Set()); }, [filters]);
+
+  const selectedRows = vacancies.filter((v) => selectedIds.has(v.id));
+  const selectedCases = [...new Set(selectedRows.map((v) => v.caseNumber).filter((n): n is number => n !== null))].sort((a, b) => a - b);
+
+  const confirmBaja = useCallback(async () => {
+    setBajaWorking(true);
+    setBajaError(null);
+    try {
+      const res = await AdminApiService.bajaVacancies([...selectedIds]);
+      setBajaDialogOpen(false);
+      setSelectedIds(new Set());
+      setBajaDone(res.baixadas.length);
+      refetch();
+      setTimeout(() => setBajaDone(null), 6000);
+    } catch (err: unknown) {
+      setBajaError(bajaErrorMessage(err, t, 'admin.vacancies.baja'));
+    } finally {
+      setBajaWorking(false);
+    }
+  }, [selectedIds, refetch, t]);
 
   return (
     <PageContainer>
@@ -292,6 +346,23 @@ export function AdminVacanciesPage(): JSX.Element {
           cityOptions={cityOptions}
         />
 
+        <VacancyBajaToolbar
+          showBaja={showBaja}
+          onShowBajaChange={(v) => { setShowBaja(v); setCurrentPage(1); }}
+          talentumManual={talentumManual}
+          onTalentumManualChange={(v) => { setTalentumManual(v); setCurrentPage(1); }}
+          selectedCount={selectedIds.size}
+          onBulkBaja={() => { setBajaError(null); setBajaDialogOpen(true); }}
+          onClearSelection={() => setSelectedIds(new Set())}
+        />
+        {bajaDone !== null && (
+          <div role="status" data-testid="vacancy-baja-done" className="mt-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+            <Typography variant="body" className="text-green-700 text-sm">
+              {t('admin.vacancies.baja.done', { count: bajaDone })}
+            </Typography>
+          </div>
+        )}
+
         {error ? (
           <div className="mt-6 py-8 text-center">
             <Typography variant="h3" className="text-red-600 mb-2">
@@ -312,6 +383,9 @@ export function AdminVacanciesPage(): JSX.Element {
               onRowClick={handleRowClick}
               sort={sort}
               onSort={handleSort}
+              selectedIds={podeDarBaja ? selectedIds : undefined}
+              onToggleSelect={podeDarBaja ? toggleSelect : undefined}
+              onToggleAll={podeDarBaja ? toggleAll : undefined}
             />
           </div>
         )}
@@ -359,6 +433,18 @@ export function AdminVacanciesPage(): JSX.Element {
           </div>
         </div>
       </div>
+
+      {bajaDialogOpen && (
+        <VacancyBajaConfirmDialog
+          variant="list"
+          count={selectedIds.size}
+          cases={selectedCases}
+          isWorking={bajaWorking}
+          error={bajaError}
+          onConfirm={confirmBaja}
+          onCancel={() => setBajaDialogOpen(false)}
+        />
+      )}
 
       <DraftVacancyChoiceDialog
         isOpen={choiceDialogVacancyId !== null}

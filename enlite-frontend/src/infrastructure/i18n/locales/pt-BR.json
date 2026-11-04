@@ -2091,7 +2091,8 @@
         "active": "Ativo",
         "onHold": "Em Espera",
         "suspended": "Suspenso",
-        "closed": "Encerrado"
+        "closed": "Encerrado",
+        "deBaja": "Baixada"
       },
       "priorityOptions": {
         "all": "Todas",
@@ -2134,6 +2135,32 @@
         "title": "O que você quer fazer com este rascunho?",
         "viewOnly": "Somente visualizar",
         "cancel": "Cancelar"
+      },
+      "baja": {
+        "showToggle": "Mostrar baixadas",
+        "talentumManualToggle": "Pausar à mão no Talentum",
+        "badge": "Baixada",
+        "readOnlyHint": "Só consulta",
+        "talentumManualBadge": "Pausar à mão no Talentum",
+        "talentumManualResumeBadge": "Retomar à mão no Talentum",
+        "selectAll": "Selecionar todas as vagas sem serviço",
+        "selectRow": "Selecionar vaga",
+        "selectedCount": "{{count}} vagas selecionadas",
+        "bulkButton": "Dar baixa ({{count}})",
+        "clearSelection": "Limpar seleção",
+        "confirmTitle": "Dar baixa em {{count}} vagas",
+        "confirmBody": "Você vai dar baixa em {{count}} vagas sem serviço contratado. Elas ficam ocultas para o recrutamento e nada é apagado. Só voltam se o serviço que as baixou for reativado; vaga sem serviço não volta: a nova nasce do botão de recrutamento do serviço.",
+        "confirmCases": "Casos: {{cases}}",
+        "confirm": "Dar baixa",
+        "cancel": "Cancelar",
+        "working": "Dando baixa…",
+        "done": "{{count}} vagas baixadas",
+        "error": "Não foi possível dar baixa",
+        "errors": {
+          "VACANCY_HAS_SERVICE": "Vaga de serviço contratado não recebe baixa manual: use \"Pausar\" (Em espera).",
+          "VACANCY_ALREADY_DE_BAJA": "A vaga já está baixada.",
+          "VACANCY_NOT_FOUND": "Vaga não encontrada."
+        }
       }
     },
     "draftVacancy": {
@@ -2583,7 +2610,13 @@
         }
       },
       "statusEditor": {
-        "editLabel": "Editar estado da vaga"
+        "editLabel": "Editar estado da vaga",
+        "resume": "Retomar",
+        "pauseHint": "Em espera mantém o quadro, o histórico e o link curto.",
+        "errors": {
+          "VACANCY_DE_BAJA_NO_REACTIVATION": "Vaga baixada não é reativada: só volta quando o serviço que a baixou é reativado.",
+          "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Vaga de serviço ativo não é encerrada: use \"Pausar\" (Em espera)."
+        }
       },
       "scheduleEditor": {
         "title": "Editar horários",
@@ -2751,6 +2784,18 @@
         },
         "unassignedCount_one": "{{count}} completado sem evento",
         "unassignedCount_other": "{{count}} completados sem evento"
+      },
+      "baja": {
+        "button": "Dar baixa",
+        "confirmTitle": "Dar baixa nesta vaga",
+        "confirmBody": "A vaga fica oculta para o recrutamento e nada é apagado. Não dá para reativar: ela só volta se o serviço que a baixou for reativado. Vaga sem serviço não volta; a nova nasce do botão de recrutamento do serviço.",
+        "confirm": "Dar baixa",
+        "cancel": "Cancelar",
+        "working": "Dando baixa…",
+        "readOnlyBanner": "Vaga baixada: só consulta.",
+        "readOnlyDetail": "Não se movem candidatos nem se roda o match. Os candidatos e o histórico ficam guardados.",
+        "error": "Não foi possível dar baixa na vaga",
+        "talentumManual": "Pausar à mão no Talentum: o Talentum não aceitou pausar este projeto por API."
       }
     },
     "vacancyModal": {
