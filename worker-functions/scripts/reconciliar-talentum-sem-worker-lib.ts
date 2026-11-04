@@ -20,6 +20,7 @@ import type { TalentumCandidate } from '../src/modules/integration/domain/ITalen
 import {
   applyNotQualifiedTransition, funnelStageFromStoredStatus, insertTalentumWorker, toPersistedFunnelStage,
 } from '../src/modules/matching/application/talentumFunnel';
+import { vacancyIsDeBaja } from '../src/modules/matching/interfaces/controllers/vacancyDeBajaGuard';
 
 export type ReconcileMode = 'dry-run' | 'apply';
 
@@ -206,6 +207,8 @@ async function reconcileRow(
   const stage = funnelStageFromStoredStatus(row.status, analyzedLabel(candidate, qualified));
   try {
     return await deps.runInTransaction(async (client) => {
+      // Vaga DE_BAJA (guard do #811): não vincula nem avança o funil — vai para a lista.
+      if (await vacancyIsDeBaja(client, row.jobPostingId)) return { kind: 'DEFERRED', rowId: row.id, reason: 'VAGA_DE_BAJA' } as Outcome;
       const ids = await findLiveWorkerIds(client, candidate, email ?? candidate.email ?? null, row.talentumProfileId);
       if (ids.length > 1) return { kind: 'AMBIGUOUS', rowId: row.id, workerIds: ids } as Outcome;
       let workerId = ids[0];

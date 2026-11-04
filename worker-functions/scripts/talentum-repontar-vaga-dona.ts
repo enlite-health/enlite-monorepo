@@ -14,6 +14,7 @@
  * não é rebaixado (mantém o "Mover a…" da staff). match_score fica 0
  * (o score não é gravado em `talentum_prescreenings`; o próximo evento do Talentum o atualiza). O encuadre NÃO é criado aqui
  * (precisa do nome/telefone do payload, que não está no banco): o próximo evento do webhook o cria.
+ * Vaga dona em DE_BAJA (`vacancyIsDeBaja`, o guard do #811): a linha NÃO é tocada e vai para a lista (`VAGA_DE_BAJA`).
  * O WJA/encuadre antigo na vaga errada NÃO é removido (decisão humana) — só contado no relatório.
  *
  * (M5 — backfill do `talentum_prescreening_id` das vagas sem id — já existe: `scripts/backfill-talentum-prescreening-id.ts`
@@ -28,6 +29,7 @@ import { Pool } from 'pg';
 import {
   applyNotQualifiedTransition, funnelStageFromStoredStatus, toPersistedFunnelStage,
 } from '../src/modules/matching/application/talentumFunnel';
+import { vacancyIsDeBaja } from '../src/modules/matching/interfaces/controllers/vacancyDeBajaGuard';
 
 export type Mode = 'dry-run' | 'apply';
 
@@ -47,15 +49,22 @@ const MISMATCH_SQL = `
 
 interface Row { id: string; worker_id: string | null; stored: string | null; owner: string; status: string }
 
-export async function run(pool: Pool, mode: Mode, log: (l: string) => void): Promise<{ repointed: number; wjaInserted: number; oldWjaLeft: number; errors: string[] }> {
+export async function run(pool: Pool, mode: Mode, log: (l: string) => void): Promise<{ repointed: number; wjaInserted: number; oldWjaLeft: number; errors: string[]; skipped: Array<{ id: string; reason: string }> }> {
   const rows = (await pool.query<Row>(MISMATCH_SQL)).rows;
   log(`${mode.toUpperCase()} — prescreenings fora da vaga dona=${rows.length}`);
   let repointed = 0, wjaInserted = 0, oldWjaLeft = 0;
   const errors: string[] = [];
+  const skipped: Array<{ id: string; reason: string }> = [];
   for (const r of rows) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // Vaga dona DE_BAJA (guard do #811): não repontar nem criar WJA — vai para a lista.
+      if (await vacancyIsDeBaja(client, r.owner)) {
+        skipped.push({ id: r.id, reason: 'VAGA_DE_BAJA' });
+        await client.query('ROLLBACK');
+        continue;
+      }
       await client.query('UPDATE talentum_prescreenings SET job_posting_id = $1, updated_at = NOW() WHERE id = $2', [r.owner, r.id]);
       repointed += 1;
       const stage = r.worker_id ? funnelStageFromStoredStatus(r.status) : null;
@@ -81,9 +90,10 @@ export async function run(pool: Pool, mode: Mode, log: (l: string) => void): Pro
       client.release();
     }
   }
-  log(`reapontadas=${repointed} | WJA inseridos na dona=${wjaInserted} | WJA antigo mantido na vaga errada (decisão humana)=${oldWjaLeft} | erros=${errors.length}`);
+  for (const k of skipped) log(`LISTA ${k.reason} row=${k.id} (nada aplicado)`);
+  log(`reapontadas=${repointed} | puladas=${skipped.length} | WJA inseridos na dona=${wjaInserted} | WJA antigo mantido na vaga errada (decisão humana)=${oldWjaLeft} | erros=${errors.length}`);
   for (const e of errors) log(`ERRO ${e}`);
-  return { repointed, wjaInserted, oldWjaLeft, errors };
+  return { repointed, wjaInserted, oldWjaLeft, errors, skipped };
 }
 
 if (require.main === module) {

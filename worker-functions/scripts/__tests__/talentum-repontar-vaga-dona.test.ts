@@ -10,12 +10,14 @@ describe('talentum-repontar-vaga-dona', () => {
   });
 
   /** Pool fake: devolve as linhas pendentes e registra o que a transação da linha executou. */
-  function fakePool(status: string) {
+  function fakePool(status: string, opts: { ownerStatus?: string; wjaJaExiste?: boolean } = {}) {
     const executed: Array<{ sql: string; params?: unknown[] }> = [];
     const client = {
       query: async (sql: string, params?: unknown[]) => {
         executed.push({ sql: sql.trim().split(/\s+/).slice(0, 3).join(' '), params });
-        return { rows: [], rowCount: sql.includes('INSERT INTO worker_job_applications') ? 1 : 0 };
+        if (sql.includes('SELECT status FROM job_postings')) return { rows: opts.ownerStatus ? [{ status: opts.ownerStatus }] : [], rowCount: 1 };
+        // ON CONFLICT DO NOTHING: WJA já existente → rowCount 0
+        return { rows: [], rowCount: sql.includes('INSERT INTO worker_job_applications') ? (opts.wjaJaExiste ? 0 : 1) : 0 };
       },
       release: () => undefined,
     };
@@ -68,5 +70,30 @@ describe('talentum-repontar-vaga-dona', () => {
     await run(pool, 'dry-run', () => undefined);
     expect(executed.map((e) => e.sql)).toContain('ROLLBACK');
     expect(executed.map((e) => e.sql)).not.toContain('COMMIT');
+  });
+
+  it('WJA JÁ EXISTENTE na dona (rowCount 0) NÃO é rebaixado: a transição NOT_QUALIFIED não roda (preserva o "Mover a…" da staff)', async () => {
+    const { pool, executed } = fakePool('NOT_QUALIFIED', { wjaJaExiste: true });
+    const r = await run(pool, 'apply', () => undefined);
+
+    expect(r.repointed).toBe(1);
+    expect(r.wjaInserted).toBe(0);
+    const heads = executed.map((e) => e.sql);
+    expect(heads).not.toContain('UPDATE encuadres SET');
+    expect(heads).not.toContain('UPDATE worker_job_applications SET');
+    expect(heads.some((h) => h.startsWith('INSERT INTO domain_events'))).toBe(false);
+  });
+
+  it('vaga dona DE_BAJA: a linha NÃO é tocada (nem reponta, nem WJA) e vai para a lista com motivo VAGA_DE_BAJA', async () => {
+    const { pool, executed } = fakePool('QUALIFIED', { ownerStatus: 'DE_BAJA' });
+    const lines: string[] = [];
+    const r = await run(pool, 'apply', (l) => lines.push(l));
+
+    expect(r.repointed).toBe(0);
+    expect(r.skipped).toEqual([{ id: 'tp-1', reason: 'VAGA_DE_BAJA' }]);
+    const heads = executed.map((e) => e.sql);
+    expect(heads).not.toContain('UPDATE talentum_prescreenings SET');
+    expect(heads).not.toContain('COMMIT');
+    expect(lines.join('\n')).toContain('LISTA VAGA_DE_BAJA row=tp-1');
   });
 });

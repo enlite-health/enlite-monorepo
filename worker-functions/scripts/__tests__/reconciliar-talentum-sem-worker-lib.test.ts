@@ -13,7 +13,7 @@ const row = (n: number, status = 'QUALIFIED'): PendingRow => ({
 /** Banco em memória com transação: o que a transação escreve só vira "committed" se ela não lançar (COMMIT × ROLLBACK). */
 function fakeDb(
   workersBySelect: Record<string, string[]>,
-  opts: { workerInsert?: 'ok' | 'collision' | 'boom'; previousStage?: string | null } = {},
+  opts: { workerInsert?: 'ok' | 'collision' | 'boom'; previousStage?: string | null; vagaStatus?: string } = {},
 ) {
   const committed: string[] = [];
   const selectCalls: unknown[][] = [];
@@ -27,6 +27,7 @@ function fakeDb(
           return { rows: (workersBySelect[String(p[0])] ?? []).map((id) => ({ id })) };
         }
         const head = sql.trim().split(/\s+/).slice(0, 3).join(' ');
+        if (sql.includes('SELECT status FROM job_postings')) return { rows: opts.vagaStatus ? [{ status: opts.vagaStatus }] : [] };
         if (head.startsWith('SELECT application_funnel_stage')) {
           return { rows: opts.previousStage ? [{ application_funnel_stage: opts.previousStage }] : [] };
         }
@@ -191,6 +192,15 @@ describe('reconcile', () => {
       expect((out[0] as { reason?: string }).reason).toBeTruthy();
       expect(db.committed).toEqual([]);
     }
+  });
+
+  it('vaga DE_BAJA (guard do #811): a linha vai para a lista como VAGA_DE_BAJA e NADA é gravado nem criado', async () => {
+    const db = fakeDb({ 'talentum_prof-1': ['w-1'] }, { vagaStatus: 'DE_BAJA' });
+    const out = await reconcile({ talentum: talentum(), runInTransaction: db.runInTransaction, listPending: async () => [row(1)] }, 'apply');
+
+    expect(out[0]).toEqual({ kind: 'DEFERRED', rowId: 'row-1', reason: 'VAGA_DE_BAJA' });
+    expect(db.committed).toEqual([]);
+    expect(formatOutcome(out[0])).toContain('VAGA_DE_BAJA');
   });
 
   it('erro numa linha desfaz só ela; erro no GET do Talentum marca as linhas do projeto e segue', async () => {
