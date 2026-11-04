@@ -2,7 +2,8 @@
  * patient-count-reader-085.e2e.test.ts — change 085 (T109), banco REAL, sem mock.
  *
  * Prova que o `PatientCountReader` conta IGUAL aos donos:
- *  (a) incomplete_registration=true == o "needsAttention" que `PatientQueryRepository.stats` devolve (mesmo recorte);
+ *  (a) incomplete_registration=true == COUNT(*) FILTER (patientIncompleteAdmissionSql) no mesmo recorte (SQL direto no dono; `stats()` só
+ *      expõe `needsAttention`, OUTRO conceito que soma o flag legado — ver `admCompletoLegado`);
  *  (b) has_provider=true == pacientes com `countVigenteForService` > 0 em algum serviço; `valid_to` ontem NÃO conta, hoje conta;
  *  (c) ALTA/DISCHARGED nomeado literalmente abre a baja; o atalho (literalValues vazio) não;
  *  (d) incomplete_registration restringe a ADMISSION/PENDING_ADMISSION (+ `restricted_to_admission`), paciente ACTIVE não conta;
@@ -15,6 +16,9 @@ import { releaseDbSession, type DbSession } from '@shared/database/requestDbSess
 import { withActorContext } from '@shared/database/actorContext';
 import { PatientCountReader, type PatientCountRequest } from '../../src/modules/agentes/infrastructure/PatientCountReader';
 import { PatientQueryRepository } from '../../src/modules/case/infrastructure/PatientQueryRepository';
+import { patientIncompleteAdmissionSql, patientNeedsAttentionSql } from '../../src/modules/case/domain/PatientCompleteness';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 import { countVigenteForService } from '../../src/modules/case/infrastructure/VacancyAllocationProbe';
 
 const DATABASE_URL =
@@ -44,12 +48,24 @@ describe('PatientCountReader × donos (banco real)', () => {
   const f = (field: string, values: string[], literalValues: string[] = values) => ({ field, values, literalValues });
 
   const measure = async (): Promise<Record<string, number>> => ({
+    incompleteDono: await incompleteDono(),
     incomplete: await total(req([f('incomplete_registration', ['true'])])),
     provider: await total(req([f('has_provider', ['true'])])),
     discharged: await total(req([f('stage', ['DISCHARGED'])])),
     alta: await total(req([f('stage', ['ALTA'])])),
     all: await total(req()),
   });
+  /** Oráculo de (a): a regra do dono (spec §4.2) em SQL direto, no recorte do reader restrito à admissão. */
+  const incompleteDono = async (): Promise<number> =>
+    (
+      await pool.query<{ n: number }>(
+        `SELECT COUNT(*) FILTER (WHERE ${patientIncompleteAdmissionSql('p')})::int AS n
+           FROM patients p
+          WHERE p.deleted_at IS NULL AND p.country = ANY($1::bpchar[])
+            AND p.status IS DISTINCT FROM 'DISCHARGED' AND COALESCE(p.status,'') IN ('ADMISSION','PENDING_ADMISSION')`,
+        [COUNTRIES],
+      )
+    ).rows[0].n;
   const stats = async () => {
     const repo = Object.create(PatientQueryRepository.prototype) as { pool: Pool; stats: PatientQueryRepository['stats'] };
     repo.pool = pool;
@@ -95,7 +111,30 @@ describe('PatientCountReader × donos (banco real)', () => {
     );
   }
 
+  /** Admissão com cadastro COMPLETO (molde do c1b) e o flag legado `needs_attention` ligado: acende needsAttention, NÃO o incompleto. */
+  async function seedCompletoComFlagLegado(key: string): Promise<void> {
+    const pid = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, has_consent, insurance_informed, birth_date, needs_attention)
+         VALUES ($1, 'Sintetico', $2, 'AR', 'ADMISSION', true, 'OSDE', '1970-01-01', true) RETURNING id`,
+        [`${PFX}${key}`, `Pcr${key}`],
+      )
+    ).rows[0].id;
+    ids[key] = pid;
+    const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Fake 1',1) RETURNING id`, [pid])).rows[0].id;
+    await pool.query(`INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order) VALUES ($1,'Sint','Resp',true,1)`, [pid]);
+    const sid = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id) VALUES ($1,'CAREGIVER',true,'AR',$2,$2,$3) RETURNING id`,
+        [pid, PFX, addr],
+      )
+    ).rows[0].id;
+    await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], PFX);
+    await seedPatientDiagnosis(pool, pid);
+  }
+
   async function cleanup(): Promise<void> {
+    await pool.query(`DELETE FROM patient_diagnoses WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [`${PFX}%`]);
     await pool.query(`DELETE FROM patient_itinerary_assignment WHERE created_by = $1`, [PFX]);
     if (jobIds.length) await pool.query(`DELETE FROM job_postings WHERE id = ANY($1::uuid[])`, [jobIds]);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [`${PFX}%`]);
@@ -134,6 +173,8 @@ describe('PatientCountReader × donos (banco real)', () => {
 
     await seedPatient('admIncompleto', { status: 'ADMISSION' }); // sem dados: incompleto
     await seedPatient('pendIncompleto', { status: 'PENDING_ADMISSION' }); // o funil tem DOIS estágios: `status = 'ADMISSION'` isolado erraria
+    await seedPatient('pendIncompleto2', { status: 'PENDING_ADMISSION' }); // 3 incompletos + 1 completo-legado: nenhuma troca de conceito empata por acaso
+    await seedCompletoComFlagLegado('admCompletoLegado');
     await seedPatient('ativo', { status: 'ACTIVE' }); // não é admissão: nunca "incompleto"
     await seedPatient('baja', { status: 'DISCHARGED' });
     await seedPatient('alta', { status: 'ALTA' });
@@ -153,11 +194,20 @@ describe('PatientCountReader × donos (banco real)', () => {
     delete process.env.COUNTRY_RLS_ENABLED;
   });
 
-  it('(a) incomplete_registration=true == o needsAttention de PatientQueryRepository.stats no mesmo recorte', async () => {
+  it('(a) incomplete_registration=true == o incompleto da admissão do dono (SQL direto); o flag legado NÃO entra', async () => {
     const lido = await total(req([f('incomplete_registration', ['true'])]));
+    expect(lido - base.incomplete).toBe(3); // admIncompleto + 2 pendIncompleto
+    expect((await incompleteDono()) - base.incompleteDono).toBe(3);
+    expect(lido).toBe(await incompleteDono()); // mesmo recorte: igualdade absoluta
+    // caso que DISTINGUE os conceitos: admissão COMPLETA + needs_attention legado acende needsAttention e não o incompleto
     const st = await stats();
-    expect(lido - base.incomplete).toBe(2); // admIncompleto + pendIncompleto
-    expect(st.needsAttention - base.statsNeeds).toBe(lido - base.incomplete);
+    expect(st.needsAttention - base.statsNeeds).toBe(4); // 3 incompletos + o flag legado
+    const dono = await pool.query<{ inc: boolean; na: boolean }>(
+      `SELECT ${patientIncompleteAdmissionSql('p')} AS inc, ${patientNeedsAttentionSql('p')} AS na FROM patients p WHERE p.id = $1`,
+      [ids.admCompletoLegado],
+    );
+    expect(dono.rows[0]).toEqual({ inc: false, na: true }); // sanidade da massa: completo para o dono, mas needsAttention
+    expect(await total(req([f('incomplete_registration', ['false'])]))).toBeGreaterThanOrEqual(1);
   });
 
   it('(b) has_provider=true == pacientes com countVigenteForService > 0; valid_to ontem não conta, hoje conta', async () => {
@@ -196,7 +246,7 @@ describe('PatientCountReader × donos (banco real)', () => {
     expect((await total(req([f('stage', ['DISCHARGED'])]))) - base.discharged).toBe(1);
     expect((await total(req([f('stage', ['ALTA'])]))) - base.alta).toBe(1);
     // padrão: baja fora do total
-    expect((await total(req())) - base.all).toBe(9); // 10 semeados - 1 baja
+    expect((await total(req())) - base.all).toBe(11); // 12 semeados - 1 baja
     // atalho "en atención" expande para todos os clínicos (inclui DISCHARGED) mas literalValues=[] -> baja segue fora
     const clinicos = ['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED'];
     const viaAtalho = await total(req([f('stage', clinicos, [])]));
