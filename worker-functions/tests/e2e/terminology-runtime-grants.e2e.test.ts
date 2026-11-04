@@ -98,6 +98,7 @@ describe('419 — grants de leitura do schema terminology para app_runtime/app_s
       '324_terminology_revoke_default_privileges.sql',
       '328_terminology_concept_key.sql',
       '419_terminology_grants_app_roles.sql',
+      '560_terminology_icd_synonyms_cie10_saude_mental.sql',
     ]);
   });
 
