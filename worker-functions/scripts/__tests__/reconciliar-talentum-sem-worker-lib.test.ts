@@ -1,7 +1,8 @@
 /** Reconciliação das candidatas do Talentum sem worker: dry-run não grava, apply grava só o resolvível, ambíguo vai à lista. */
 import type { PoolClient } from 'pg';
+import { funnelStageFromStoredStatus as stageFromStatus } from '../../src/modules/matching/application/talentumFunnel';
 import {
-  analyzedLabel, formatOutcome, formatTotals, parseReconcileArgs, reconcile, stageFromStatus,
+  analyzedLabel, formatOutcome, formatTotals, parseReconcileArgs, reconcile,
   type Outcome, type PendingRow, type ReconcileDeps, type TalentumReader,
 } from '../reconciliar-talentum-sem-worker-lib';
 

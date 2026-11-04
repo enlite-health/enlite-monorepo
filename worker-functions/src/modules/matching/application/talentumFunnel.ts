@@ -22,6 +22,24 @@ export function deriveFunnelStage(subtype: string, statusLabel?: string | null):
   return subtype;
 }
 
+const ANALYZED_LABELS: readonly string[] = ['QUALIFIED', 'NOT_QUALIFIED', 'IN_DOUBT', 'PENDING'];
+
+/**
+ * Etapa do funil a partir do `talentum_prescreenings.status` JÁ GRAVADO (scripts de correção de dado). O webhook grava o
+ * `statusLabel` no lugar de 'ANALYZED'; um 'ANALYZED' cru (sem label) NUNCA vai para o WJA (violaria o CHECK de
+ * `application_funnel_stage`): usa-se o `label` informado pelo chamador (do Talentum); sem label → `null`.
+ * `null` também para a sentinela do webhook (PENDING). Devolve a etapa ORIGINAL (NOT_QUALIFIED não é convertida aqui:
+ * use `toPersistedFunnelStage` ao gravar).
+ */
+export function funnelStageFromStoredStatus(status: string, label?: string | null): string | null {
+  const derived = status === 'ANALYZED'
+    ? deriveFunnelStage('ANALYZED', label && ANALYZED_LABELS.includes(label) ? label : null)
+    : ANALYZED_LABELS.includes(status)
+      ? deriveFunnelStage('ANALYZED', status)
+      : deriveFunnelStage(status);
+  return derived === 'ANALYZED' ? null : derived;
+}
+
 /** F3 (mig 191): NOT_QUALIFIED não existe no enum de `application_funnel_stage` — vira REJECTED antes do upsert. */
 export function toPersistedFunnelStage(funnelStage: string): string {
   return funnelStage === 'NOT_QUALIFIED' ? 'REJECTED' : funnelStage;
@@ -69,7 +87,7 @@ export type InsertTalentumWorkerResult =
 /**
  * Auto-create do worker do webhook (INSERT INCOMPLETE_REGISTER, auth_uid sintético `talentum_<profileId>`).
  * 23505 → COLLISION (o chamador decide: o webhook resolve o dono existente; o script lista e não insiste).
- * Qualquer outra falha → ERROR com a mensagem (sem `detail`, que ecoa a linha).
+ * Qualquer outra falha → ERROR com a causa SEM PII (code/constraint do pg, ou a mensagem de erro nosso).
  */
 export async function insertTalentumWorker(
   db: Queryable, profile: { id: string; email: string; phoneNumber: string },
@@ -85,8 +103,12 @@ export async function insertTalentumWorker(
     );
     return { kind: 'CREATED', id: result.rows[0].id };
   } catch (err: unknown) {
-    const pgErr = err as { code?: string; message?: string };
+    const pgErr = err as { code?: string; message?: string; constraint?: string };
     if (pgErr.code === '23505') return { kind: 'COLLISION' };
-    return { kind: 'ERROR', message: pgErr.message ?? String(err) };
+    // Erro do pg: só code/constraint (a mensagem pode ecoar valor). Erro nosso: a mensagem.
+    const cause = pgErr.code
+      ? [`code=${pgErr.code}`, pgErr.constraint ? `constraint=${pgErr.constraint}` : null].filter(Boolean).join(' ')
+      : (pgErr.message ?? String(err)).split('\n')[0];
+    return { kind: 'ERROR', message: cause };
   }
 }

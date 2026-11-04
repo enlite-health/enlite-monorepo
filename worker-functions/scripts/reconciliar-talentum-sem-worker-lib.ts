@@ -18,7 +18,7 @@ import { generatePhoneCandidates, normalizePhoneAR } from '../src/shared/utils/p
 import type { TalentumCandidate } from '../src/modules/integration/domain/ITalentumApiClient';
 // Implementação ÚNICA do webhook (não duplicada aqui): mapeamento de etapa, transição NOT_QUALIFIED e auto-create.
 import {
-  applyNotQualifiedTransition, deriveFunnelStage, insertTalentumWorker, toPersistedFunnelStage,
+  applyNotQualifiedTransition, funnelStageFromStoredStatus, insertTalentumWorker, toPersistedFunnelStage,
 } from '../src/modules/matching/application/talentumFunnel';
 
 export type ReconcileMode = 'dry-run' | 'apply';
@@ -64,36 +64,18 @@ export class RollbackWith extends Error {
 
 export type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
-const ANALYZED_LABELS: readonly string[] = ['QUALIFIED', 'NOT_QUALIFIED', 'IN_DOUBT', 'PENDING'];
-
-/**
- * Etapa do funil como o webhook (`deriveFunnelStage`, a MESMA função). `talentum_prescreenings.status` guarda o
- * `statusLabel` quando o ANALYZED o traz; um 'ANALYZED' cru (sem label) NUNCA vai para o WJA (viola o CHECK de
- * `application_funnel_stage`): usa-se o `statusLabel` vindo do Talentum (`label`). Sem label → `null` (não toca a
- * candidatura, como o webhook faz no ANALYZED sem statusLabel). `null` também para PENDING (sentinela do webhook).
- * Devolve a etapa ORIGINAL (NOT_QUALIFIED é convertida em REJECTED só na gravação).
- */
-export function stageFromStatus(status: string, label?: string | null): string | null {
-  const derived = status === 'ANALYZED'
-    ? deriveFunnelStage('ANALYZED', label && ANALYZED_LABELS.includes(label) ? label : null)
-    : ANALYZED_LABELS.includes(status)
-      ? deriveFunnelStage('ANALYZED', status)
-      : deriveFunnelStage(status);
-  return derived === 'ANALYZED' ? null : derived;
-}
-
 /** `statusLabel` do Talentum para o ANALYZED: o campo da candidata, ou QUALIFIED se está na lista de qualificados. */
 export function analyzedLabel(candidate: TalentumCandidate, qualified: boolean): string | null {
   const own = candidate['statusLabel'];
-  if (typeof own === 'string' && ANALYZED_LABELS.includes(own)) return own;
+  if (typeof own === 'string' && ['QUALIFIED', 'NOT_QUALIFIED', 'IN_DOUBT', 'PENDING'].includes(own)) return own;
   return qualified ? 'QUALIFIED' : null;
 }
 
-/** Causa SEM PII: código pg + 1ª linha da mensagem (nunca o `detail`, que ecoa a linha). */
+/** Causa SEM PII: erro do pg (tem `code`) → só code/constraint (a mensagem pode ecoar valor); erro nosso → 1ª linha. */
 export function describeError(err: unknown): string {
   const e = err as { code?: string; message?: string; constraint?: string };
-  const msg = (e?.message ?? String(err)).split('\n')[0];
-  return [e?.code ? `code=${e.code}` : null, e?.constraint ? `constraint=${e.constraint}` : null, msg].filter(Boolean).join(' ');
+  if (e?.code) return [`code=${e.code}`, e.constraint ? `constraint=${e.constraint}` : null].filter(Boolean).join(' ');
+  return (e?.message ?? String(err)).split('\n')[0];
 }
 
 export const PENDING_SQL = `
@@ -221,7 +203,7 @@ async function reconcileRow(
   qualified: boolean, mode: ReconcileMode,
 ): Promise<Outcome> {
   if (!candidate) return { kind: 'NOT_IN_TALENTUM', rowId: row.id };
-  const stage = stageFromStatus(row.status, analyzedLabel(candidate, qualified));
+  const stage = funnelStageFromStoredStatus(row.status, analyzedLabel(candidate, qualified));
   try {
     return await deps.runInTransaction(async (client) => {
       const ids = await findLiveWorkerIds(client, candidate, email ?? candidate.email ?? null, row.talentumProfileId);
@@ -259,7 +241,7 @@ async function createWorker(
     return res;
   }
   await client.query('ROLLBACK TO SAVEPOINT reconcile_create_worker');
-  return { kind: 'FAILED', reason: res.kind === 'COLLISION' ? 'colisão ao criar (cadastro existente fora do match)' : `falha ao criar: ${res.message.split('\n')[0]}` };
+  return { kind: 'FAILED', reason: res.kind === 'COLLISION' ? 'colisão ao criar (cadastro existente fora do match)' : `falha ao criar: ${res.message}` };
 }
 
 export function formatOutcome(o: Outcome): string {
