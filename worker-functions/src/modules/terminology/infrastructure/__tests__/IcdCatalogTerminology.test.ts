@@ -107,9 +107,10 @@ describe('IcdCatalogTerminology', () => {
       expect(sql).not.toMatch(/word_similarity\([^)]*\)\s*>=/);
       expect(sql).toMatch(/terminology\.icd_entities/);
       expect(sql).toMatch(/kind\s*(<>|!=)\s*'extension'/);
-      expect(sql).toMatch(/release\s*=\s*\$2/);
-      expect(params[0]).toBe('esquisofrenia');
-      expect(params[1]).toBe('2026-01');
+      expect(sql).toMatch(/release\s*=\s*\$1/);
+      // params: [release, frase escapada (p/ "contém"), palavra crua, palavra escapada (p/ ILIKE), ...]
+      expect(params[0]).toBe('2026-01');
+      expect(params[2]).toBe('esquisofrenia');
     });
 
     it('D6 — roda a query principal numa transação dedicada (BEGIN / SET LOCAL threshold / COMMIT) e libera a conexão', async () => {
@@ -154,9 +155,11 @@ describe('IcdCatalogTerminology', () => {
 
       const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const params = mainCall[1] as unknown[];
-      // params: [trimmed (p/ %>), release, escapado (p/ ILIKE), ...]
-      expect(params[0]).toBe('50%_off'); // trigram usa o valor cru
-      expect(params[2]).toBe('50\\%\\_off'); // ILIKE usa o valor escapado
+      // '50%_off' vira a palavra '50' (só letra/dígito entra como palavra: '%' e '_' separam).
+      // 'off' tem 3 letras; as duas palavras valem. Já a FRASE inteira (rank "contém") é escapada.
+      expect(params[1]).toBe('50\\%\\_off'); // frase p/ LIKE: curinga escapado
+      expect(params.slice(2, 4)).toEqual(['50', 'off']); // palavras cruas p/ %>
+      expect(params.slice(4, 6)).toEqual(['50', 'off']); // as mesmas, escapadas, p/ ILIKE
     });
 
     it('filtra por capítulos quando `chapters` é passado', async () => {
@@ -375,8 +378,8 @@ describe('IcdCatalogTerminology', () => {
       const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const sql = mainCall[0] as string;
       expect(sql).toMatch(/terminology\.icd_synonyms/);
-      expect(sql).toMatch(/s\.term\s*%>\s*\$1/);
-      expect(sql).toMatch(/s\.release\s*=\s*\$2/);
+      expect(sql).toMatch(/terminology\.f_norm\(s\.term\)\s*%>/);
+      expect(sql).toMatch(/s\.release\s*=\s*\$1/);
     });
 
     it('os dois ramos entram por CTE + UNION ALL — nunca por EXISTS correlacionado num OR (D6)', async () => {

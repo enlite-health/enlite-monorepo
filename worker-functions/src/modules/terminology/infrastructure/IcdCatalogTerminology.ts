@@ -76,6 +76,7 @@ import { TerminologyUnavailableError } from '../domain/UnavailableTerminology';
 // D4 — o escape de curinga do ILIKE agora é da casa (`@shared/utils/ilikeEscape`):
 // o mapa de pacientes precisou do mesmo, e duas cópias divergiriam.
 import { escapeIlikeWildcards } from '@shared/utils/ilikeEscape';
+import { foldText, tokenizeQuery } from './searchTokens';
 
 const DEFAULT_SEARCH_LIMIT = 50;
 /** D8 — medido: `search('a', { limit: 100000 })` sem teto devolveu 18.185 linhas. */
@@ -173,10 +174,20 @@ export class IcdCatalogTerminology implements TerminologyPort {
     const includeExtensions = opts.includeExtensions ?? false;
     const limit = Math.min(opts.limit ?? DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
     const chapters = opts.chapters && opts.chapters.length > 0 ? [...opts.chapters] : null;
-    const escaped = escapeIlikeWildcards(trimmed);
+
+    // Busca por PALAVRA (PR "busca por palavra"): cada palavra da consulta tem de casar, todas no
+    // MESMO texto (título es, título en ou um sinônimo) — AND entre palavras, nunca pedaços soltos
+    // de entidades diferentes. Sem palavra útil (só stopwords), a frase inteira vira a única palavra.
+    const phrase = foldText(trimmed);
+    const tokens = tokenizeQuery(trimmed);
+    const terms = tokens.length > 0 ? tokens : [phrase];
 
     const conditions: string[] = [`e.kind <> 'chapter'`];
-    const params: unknown[] = [trimmed, currentRelease, escaped];
+    // $1 release · $2 frase inteira (escapada, para o "contém") · depois as palavras cruas (para
+    // `%>`/word_similarity) e as MESMAS palavras com curinga escapado (para o ILIKE, D4).
+    const params: unknown[] = [currentRelease, escapeIlikeWildcards(phrase), ...terms, ...terms.map(escapeIlikeWildcards)];
+    const termParam = (i: number) => `terminology.f_norm($${3 + i})`;
+    const likeParam = (i: number) => `terminology.f_norm($${3 + terms.length + i})`;
 
     if (!includeExtensions) {
       conditions.push(`e.kind <> 'extension'`);
@@ -187,47 +198,40 @@ export class IcdCatalogTerminology implements TerminologyPort {
     }
     params.push(limit);
 
-    // D6: `%>` é o comutador de `<%` (word_similarity(a,b) >= limiar) e É indexável pelo GIN de
-    // pg_trgm — ao contrário de `word_similarity(...) >= 0.3`, que força Seq Scan. O ILIKE
-    // continua como reforço (casa substring exata mesmo abaixo do limiar de trigrama), com o
-    // valor ESCAPADO (D4).
-    //
-    // T9: os dois candidatos entram por CTEs SEPARADAS e se juntam por `UNION ALL` — de
-    // propósito. A forma óbvia (`... OR EXISTS (SELECT 1 FROM icd_synonyms s WHERE
-    // s.icd_uri = e.icd_uri AND ...)`) é uma subconsulta CORRELACIONADA dentro de um `OR`: ela
-    // obriga o Postgres a avaliar linha a linha e joga fora o Bitmap Index Scan que o D6 mediu
-    // e conquistou. Assim, cada ramo usa o SEU índice trigrama (o dos títulos em
-    // `icd_entities`, o de `term` em `icd_synonyms`) e só depois o resultado — pequeno — é
-    // juntado ao catálogo pela `icd_uri`.
+    // Um ramo por texto pesquisável. `txt` é SEMPRE `terminology.f_norm(coluna)` — a MESMA
+    // expressão dos índices GIN da migration 561 (se mudar aqui, o índice deixa de ser usado).
+    // D6: `%>` é o comutador de `<%` (word_similarity >= limiar) e é indexável; o ILIKE reforça
+    // (casa substring exata mesmo abaixo do limiar). Cada ramo usa o SEU índice e só depois o
+    // resultado — pequeno — é juntado ao catálogo por `icd_uri` (mesma razão do T9: nada de
+    // subconsulta correlacionada dentro de um OR).
+    const branch = (txt: string, table: string, alias: string): string => {
+      const casa = terms
+        .map((_, i) => `(${txt} ILIKE '%' || ${likeParam(i)} || '%' ESCAPE '\\' OR ${txt} %> ${termParam(i)})`)
+        .join(' AND ');
+      const media = terms.map((_, i) => `word_similarity(${termParam(i)}, ${txt})`).join(' + ');
+      return `SELECT ${alias}.icd_uri AS icd_uri,
+               ${txt} LIKE '%' || terminology.f_norm($2) || '%' ESCAPE '\\' AS contem,
+               (${media}) / ${terms.length}.0 AS sim
+          FROM ${table} ${alias}
+         WHERE ${alias}.release = $1 AND ${casa}`;
+    };
+
     const sql = `
-      WITH por_titulo AS (
-        SELECT t.icd_uri,
-               GREATEST(word_similarity($1, t.title_es), word_similarity($1, t.title_en)) AS sim
-          FROM terminology.icd_entities t
-         WHERE t.release = $2
-           AND (t.title_es %> $1 OR t.title_en %> $1
-                OR t.title_es ILIKE '%' || $3 || '%' ESCAPE '\\'
-                OR t.title_en ILIKE '%' || $3 || '%' ESCAPE '\\')
-      ),
-      por_sinonimo AS (
-        SELECT s.icd_uri, max(word_similarity($1, s.term)) AS sim
-          FROM terminology.icd_synonyms s
-         WHERE s.release = $2
-           AND (s.term %> $1 OR s.term ILIKE '%' || $3 || '%' ESCAPE '\\')
-         GROUP BY s.icd_uri
-      ),
-      candidatos AS (
-        SELECT icd_uri, sim FROM por_titulo
+      WITH candidatos AS (
+        ${branch('terminology.f_norm(t.title_es)', 'terminology.icd_entities', 't')}
         UNION ALL
-        SELECT icd_uri, sim FROM por_sinonimo
+        ${branch('terminology.f_norm(t.title_en)', 'terminology.icd_entities', 't')}
+        UNION ALL
+        ${branch('terminology.f_norm(s.term)', 'terminology.icd_synonyms', 's')}
       )
-      SELECT e.icd_uri, e.code, e.title_es, e.title_en, e.chapter, max(c.sim) AS sim
+      SELECT e.icd_uri, e.code, e.title_es, e.title_en, e.chapter,
+             bool_or(c.contem) AS contem, max(c.sim) AS sim
         FROM candidatos c
         JOIN terminology.icd_entities e
-          ON e.icd_uri = c.icd_uri AND e.release = $2
+          ON e.icd_uri = c.icd_uri AND e.release = $1
        WHERE ${conditions.join(' AND ')}
        GROUP BY e.icd_uri, e.code, e.title_es, e.title_en, e.chapter
-       ORDER BY sim DESC, e.code ASC
+       ORDER BY contem DESC, sim DESC, e.code ASC
        LIMIT $${params.length}
     `;
 
