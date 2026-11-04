@@ -59,11 +59,14 @@ export class AssistantCountService {
   }
 }
 
-/** DD10: todo valor do enum do `group_by` aparece (0 onde não houve linha); filtro no MESMO campo restringe a lista. */
+/** DD10: todo valor do enum do `group_by` DENTRO do recorte aparece (0 onde não houve linha); filtro no MESMO campo restringe a lista. */
 function materializeZeros(req: CanonicalCountRequest, found: ReadonlyArray<{ key: string; value: number }>): RawCountGroup[] {
   const field = req.group_by!;
   const sameField = req.filters.find((f) => f.field === field);
-  const universe = sameField ? sameField.values : COUNT_MENU[req.entity].fields[field].values;
+  const def = COUNT_MENU[req.entity].fields[field];
+  const named = new Set(sameField?.literalValues ?? []);
+  // DD10: valor que o recorte padrão EXCLUI e ninguém nomeou = "não medido", nunca um 0 materializado
+  const universe = (sameField ? sameField.values : def.values).filter((v) => !(def.default_excluded ?? []).includes(v) || named.has(v));
   const byKey = new Map(found.map((g) => [g.key, g.value]));
   const out: RawCountGroup[] = universe.map((key) => ({ key, count: byKey.get(key) ?? 0 }));
   // chave que o leitor trouxe e o enum não tem: nunca descartar dado em silêncio
@@ -77,6 +80,6 @@ function scopeEs(req: CanonicalCountRequest, restrictedToAdmission: boolean): st
   if (req.entity === 'workers' && req.group_by === 'zone') parts.push(ZONE_OVERLAP_ES);
   const literal = (field: string): readonly string[] => req.filters.find((f) => f.field === field)?.literalValues ?? [];
   if (req.entity === 'workers' && literal('registration').includes('DISABLED')) parts.push('incluye bajas');
-  if (req.entity === 'patients' && literal('stage').some((x) => x === 'ALTA' || x === 'DISCHARGED')) parts.push('incluye altas');
+  if (req.entity === 'patients' && literal('stage').includes('DISCHARGED')) parts.push('incluye bajas');
   return parts.join('; ');
 }

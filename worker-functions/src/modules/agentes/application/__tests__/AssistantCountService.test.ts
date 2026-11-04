@@ -16,10 +16,24 @@ describe('AssistantCountService', () => {
     const r = await svc.count('workers', { group_by: 'registration' }, ACTOR, ['AR']);
     if (!r.ok) throw new Error('esperava ok');
     const byKey = Object.fromEntries(r.response.groups.map((g) => [g.key, g]));
-    expect(Object.keys(byKey).sort()).toEqual([...COUNT_MENU.workers.fields.registration.values].sort());
-    expect(byKey.DISABLED).toEqual({ key: 'DISABLED', value: 0 });
+    // DISABLED é excluído pelo recorte padrão e não foi nomeado: ausente (0 ali significaria "não medido")
+    expect(Object.keys(byKey).sort()).toEqual(['INCOMPLETE_REGISTER', 'REGISTERED']);
+    expect(byKey.DISABLED).toBeUndefined();
     expect(byKey.REGISTERED).toEqual({ key: 'REGISTERED', value: 12 });
     expect(r.response.total).toEqual({ value: 12 });
+  });
+
+  it('valor excluído pelo recorte e NOMEADO literalmente aparece (com 0 se não houver); DISCHARGED idem em stage', async () => {
+    const w = await build({ total: 0, groups: [] }).svc.count('workers', { filters: [{ field: 'registration', values: ['DISABLED'] }], group_by: 'registration' }, ACTOR, ['AR']);
+    if (!w.ok) throw new Error('esperava ok');
+    expect(w.response.groups).toEqual([{ key: 'DISABLED', value: 0 }]);
+    const sem = await build({ total: 4, groups: [{ key: 'ACTIVE', value: 4 }] }).svc.count('patients', { group_by: 'stage' }, ACTOR, ['AR']);
+    if (!sem.ok) throw new Error('esperava ok');
+    expect(sem.response.groups.map((g) => g.key)).not.toContain('DISCHARGED');
+    expect(sem.response.groups.map((g) => g.key)).toContain('ALTA');
+    const com = await build({ total: 0, groups: [] }).svc.count('patients', { filters: [{ field: 'stage', values: ['DISCHARGED'] }], group_by: 'stage' }, ACTOR, ['AR']);
+    if (!com.ok) throw new Error('esperava ok');
+    expect(com.response.groups).toEqual([{ key: 'DISCHARGED', value: 0 }]);
   });
 
   it('filtro no MESMO campo do group_by restringe os valores materializados', async () => {
@@ -56,13 +70,13 @@ describe('AssistantCountService', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('zona em prestadores declara a sobreposição; ALTA literal declara "incluye altas"', async () => {
+  it('zona em prestadores declara a sobreposição; DISCHARGED literal declara "incluye bajas"', async () => {
     const w = await build({ total: 10, groups: [] }).svc.count('workers', { group_by: 'zone' }, ACTOR, ['AR']);
     if (!w.ok) throw new Error('esperava ok');
     expect(w.response.scope).toContain('cuenta en cada una');
-    const p = await build({ total: 10 }).svc.count('patients', { filters: [{ field: 'stage', values: ['ALTA'] }] }, ACTOR, ['AR']);
+    const p = await build({ total: 10 }).svc.count('patients', { filters: [{ field: 'stage', values: ['DISCHARGED'] }] }, ACTOR, ['AR']);
     if (!p.ok) throw new Error('esperava ok');
-    expect(p.response.scope).toContain('incluye altas');
+    expect(p.response.scope).toContain('incluye bajas');
   });
 
   it('a resposta não tem chave fora do shape (sem id/nome/linha) e passa ator e países ao leitor', async () => {

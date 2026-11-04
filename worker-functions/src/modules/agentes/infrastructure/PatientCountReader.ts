@@ -6,13 +6,13 @@
  *   stage -> `patients.status` ('' = `(sin etapa)`) · incomplete_registration -> `patientIncompleteAdmissionSql`
  *   has_provider -> alocação ACTIVE vigente no itinerário (mesma definição de `VacancyAllocationProbe`, "hoje"
  *   por `fn_operation_date(p.country)`). Recorte padrão: não eliminado + país + sem baja (DISCHARGED), salvo se o
- *   filtro `stage` NOMEIA ALTA/DISCHARGED literalmente (atalho não abre). Sem filtro de `is_test` (DD1).
+ *   filtro `stage` NOMEIA DISCHARGED literalmente (atalho não abre; ALTA já conta no padrão). Sem filtro de `is_test` (DD1).
  */
 import type { Pool } from 'pg';
 import type { CountryCode } from '@shared/domain/countryCodes';
 import { countryPredicateSql } from '@shared/database/countryScopeSql';
 import { patientIncompleteAdmissionSql, ACTIVATABLE_STATUSES } from '@modules/case/domain/PatientCompleteness';
-import { excludeDischargedSql } from '@modules/case/infrastructure/patientListScopeSql';
+import { DISCHARGED_STATUS, excludeDischargedSql } from '@modules/case/infrastructure/patientListScopeSql';
 
 export type PatientCountDb = Pick<Pool, 'query'>;
 
@@ -66,8 +66,8 @@ export class PatientCountReader {
     const incompleteFilter = find('incomplete_registration');
     const restricted = incompleteFilter !== undefined || groupBy === 'incomplete_registration';
 
-    // Atalho NÃO abre a baja (F-db-16): só nomeação literal de ALTA/DISCHARGED.
-    const opensDischarged = (stage?.literalValues ?? []).some((v) => v === 'ALTA' || v === 'DISCHARGED');
+    // Atalho NÃO abre a baja (F-db-16): só nomeação literal de DISCHARGED (ALTA já está dentro do recorte, dono: excludeDischargedSql).
+    const opensDischarged = (stage?.literalValues ?? []).includes(DISCHARGED_STATUS);
     const params: unknown[] = [countries, !opensDischarged];
     const where: string[] = ['p.deleted_at IS NULL', countryPredicateSql('p', 1), excludeDischargedSql(2)];
 

@@ -30,6 +30,9 @@
         ]
       },
       "stage": {
+        "default_excluded": [
+          "DISCHARGED"
+        ],
         "field": "stage",
         "label_es": "etapa",
         "shortcuts": {
@@ -69,7 +72,7 @@
         ]
       }
     },
-    "scope_es": "pacientes no eliminados, del país del usuario y sin alta; si el filtro nombra ALTA o DISCHARGED, se incluyen"
+    "scope_es": "pacientes no eliminados y del país del usuario, sin los dados de baja (DISCHARGED); los pacientes en ALTA sí cuentan; si el filtro nombra DISCHARGED, se incluyen"
   },
   "vacancies": {
     "cell": "vacancy:read",
@@ -183,6 +186,9 @@
         ]
       },
       "registration": {
+        "default_excluded": [
+          "DISABLED"
+        ],
         "field": "registration",
         "label_es": "cadastro",
         "synonyms": [

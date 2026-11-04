@@ -28,6 +28,8 @@ export interface CountFieldDef {
   synonyms: readonly string[];
   /** Atalho -> valores do enum que ele expande. */
   shortcuts?: Readonly<Record<string, readonly string[]>>;
+  /** Valores que o recorte padrão da entidade EXCLUI: só aparecem em `group_by` se o filtro os nomeia literalmente. */
+  default_excluded?: readonly string[];
 }
 
 export interface CountEntityDef {
@@ -75,6 +77,7 @@ export const COUNT_MENU: Readonly<Record<CountEntity, CountEntityDef>> = {
         field: 'registration',
         label_es: 'cadastro',
         values: WORKER_REGISTRATION_VALUES,
+        default_excluded: ['DISABLED'],
         synonyms: ['registro', 'cadastro', 'estado del registro'],
       },
       zone: {
@@ -100,12 +103,13 @@ export const COUNT_MENU: Readonly<Record<CountEntity, CountEntityDef>> = {
   patients: {
     cell: 'patient:read',
     scope_es:
-      'pacientes no eliminados, del país del usuario y sin alta; si el filtro nombra ALTA o DISCHARGED, se incluyen',
+      'pacientes no eliminados y del país del usuario, sin los dados de baja (DISCHARGED); los pacientes en ALTA sí cuentan; si el filtro nombra DISCHARGED, se incluyen',
     fields: {
       stage: {
         field: 'stage',
         label_es: 'etapa',
         values: PATIENT_STAGE_VALUES,
+        default_excluded: ['DISCHARGED'],
         synonyms: ['estado', 'status', 'etapa'],
         shortcuts: {
           // grupos do dono (PatientStatus.ts): funil = ADMISSION_FUNNEL_STATUSES; atendimento = o resto do vocabulário

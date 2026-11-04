@@ -242,15 +242,17 @@ describe('PatientCountReader × donos (banco real)', () => {
     }
   });
 
-  it('(c) ALTA/DISCHARGED literal abre a baja; o atalho (sem literal) não', async () => {
+  it('(c) ALTA já conta no padrão; DISCHARGED (baja) só conta se nomeado literalmente; o atalho não abre', async () => {
     expect((await total(req([f('stage', ['DISCHARGED'])]))) - base.discharged).toBe(1);
     expect((await total(req([f('stage', ['ALTA'])]))) - base.alta).toBe(1);
+    // ALTA está dentro do recorte padrão (só DISCHARGED é excluído pelo dono): sem nomear nada, o paciente em ALTA conta
+    expect((await total(req([f('stage', ['ALTA'], [])]))) - base.alta).toBe(1);
     // padrão: baja fora do total
     expect((await total(req())) - base.all).toBe(11); // 12 semeados - 1 baja
     // atalho "en atención" expande para todos os clínicos (inclui DISCHARGED) mas literalValues=[] -> baja segue fora
     const clinicos = ['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED'];
     const viaAtalho = await total(req([f('stage', clinicos, [])]));
-    const viaLiteral = await total(req([f('stage', clinicos, ['ALTA'])]));
+    const viaLiteral = await total(req([f('stage', clinicos, ['DISCHARGED'])]));
     expect(viaLiteral - viaAtalho).toBe(1);
     // (sin etapa) -> status nulo
     const g = await reader.count(req([], 'stage'), COUNTRIES);

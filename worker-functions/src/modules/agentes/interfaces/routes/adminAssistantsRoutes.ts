@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
-import { principalUid, resolveCountryScope, CountryScopeError } from '@modules/identity';
+import { principalUid, CountryScopeError } from '@modules/identity';
 import { requireCountryScope } from '@modules/identity/interfaces/middleware/countryScopeGuard';
 import {
   ADMIN_INTEGRATIONS_FAMILY,
