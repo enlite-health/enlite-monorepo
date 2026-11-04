@@ -1,6 +1,6 @@
 # Spec 086 (Luz em prueba, F2) — o worker-functions chama o triage-service (`POST /internal/luz/prueba/turn`) com ID token OIDC da PRÓPRIA SA
-# (`enlite-functions-sa`, audience = URL do triage). O triage é Cloud Run `--no-allow-unauthenticated` (triage-service/deploy.sh): sem este
-# `roles/run.invoker` a chamada volta 403 antes de chegar ao guard do triage (`InternalTurnGuard`, que continua sendo a trava de aplicação).
+# (`enlite-functions-sa`, audience = URL do triage). O triage é público (webhook do Chatwoot; hoje `allUsers` é invoker): a trava da rota é o
+# guard OIDC do triage (`InternalTurnGuard`). Este binding deixa a SA explícita caso o `allUsers` seja removido um dia.
 #
 # ⚠️ SÓ HCL — nenhum `plan`/`apply` aqui (F4c; ordem prd: desarmar → importar → alinhar). O `triage-service` NÃO está no state deste ambiente
 # (os serviços Cloud Run de prd são deployados por workflow/`deploy.sh`; este diretório não tem nenhum `google_cloud_run_*` de serviço), então o

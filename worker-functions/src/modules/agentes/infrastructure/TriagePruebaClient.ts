@@ -12,7 +12,7 @@ const TIPOS = new Set(['reply', 'handover_simulado', 'skip']);
 /** Quem entrega o header `Authorization` para o audience (o triage Cloud Run). Injetável no teste. */
 export type IdTokenHeaders = (audience: string) => Promise<Record<string, string>>;
 
-/** ID token OIDC da SA do worker-functions (ADC), audience = URL do triage. O cliente é reaproveitado (o token é renovado por ele). */
+/** ID token OIDC da SA do worker-functions (ADC), audience = URL do triage. O `GoogleAuth` é um só, mas `getIdTokenClient(audience)` é chamado a CADA turno (o cache de token, se houver, é o da biblioteca). */
 export function googleIdTokenHeaders(): IdTokenHeaders {
   const auth = new GoogleAuth();
   return async (audience) => {

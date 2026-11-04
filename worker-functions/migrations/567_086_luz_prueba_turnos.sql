@@ -1,4 +1,4 @@
--- 565 — spec 086 (DF-11): contador de turnos da Luz (prueba) por pessoa e por dia (teto 60/dia, 080 §6.9)
+-- 567 — spec 086 (DF-11): contador de turnos da Luz (prueba) por pessoa e por dia (teto 60/dia, 080 §6.9)
 --
 -- `agentes.luz_prueba_turnos (uid, dia, turnos)`: UMA linha por pessoa/dia, incrementada por UPSERT atômico no worker-functions
 -- (`INSERT … ON CONFLICT DO UPDATE … WHERE turnos < teto`). Só id de pessoa, data e contagem: NENHUM texto de conversa (D514).
@@ -7,7 +7,7 @@
 -- Diferente das tabelas INSERT-only da 551, esta precisa de UPDATE (o contador sobe e, quando o triage cai, desce 1): grants
 -- SELECT/INSERT/UPDATE às roles do app, sem DELETE. RLS no molde da 551 (sistema passa; staff com `app.user_uid` passa).
 -- Idempotente (2x). Sem BEGIN/COMMIT próprio (o runner envolve).
--- Rollback: `migrations/pending/ROLLBACK_565_086_luz_prueba_turnos.sql`.
+-- Rollback: `migrations/pending/ROLLBACK_567_086_luz_prueba_turnos.sql`.
 
 CREATE SCHEMA IF NOT EXISTS agentes;
 

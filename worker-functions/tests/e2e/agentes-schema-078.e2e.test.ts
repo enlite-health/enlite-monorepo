@@ -62,6 +62,7 @@ const COLUNAS_ESPERADAS: Record<string, Record<string, string>> = {
 const TABELAS = [
   'veredictos', 'veredicto_achados', 'reportes', 'reporte_veredictos', 'pedidos',
   'pedido_atitudes', 'pedido_origens', 'pedido_eventos', 'medicoes', 'avisos_enviados',
+  'luz_prueba_turnos', // spec 086 (migration 567): contador de turnos da Luz (prueba); só uid/dia/contagem
 ];
 
 describe('schema agentes (spec 078, migration 551)', () => {
@@ -74,7 +75,7 @@ describe('schema agentes (spec 078, migration 551)', () => {
     await pool.end();
   });
 
-  it('0. sanidade: as 10 tabelas (551 + 553) e as views existem (o zero das provas abaixo não é banco sem migration)', async () => {
+  it('0. sanidade: as 11 tabelas (551 + 553 + 567) e as views existem (o zero das provas abaixo não é banco sem migration)', async () => {
     const { rows } = await pool.query(
       `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'agentes' AND c.relkind IN ('r','v') ORDER BY c.relname`,

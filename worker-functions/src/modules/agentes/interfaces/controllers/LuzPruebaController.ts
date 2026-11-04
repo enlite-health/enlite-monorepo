@@ -34,6 +34,9 @@ const bodySchema = z
   })
   .strict();
 
+/** Nome do erro como código curto (`[A-Za-z0-9_]`, ≤40); qualquer outra coisa vira `erro`. */
+const nomeSeguro = (err: unknown): string => (err instanceof Error && /^[A-Za-z0-9_]{1,40}$/.test(err.name) ? err.name : 'erro');
+
 const uidHash = (uid: string): string => createHash('sha256').update(uid).digest('hex').slice(0, 12);
 
 /**
@@ -58,8 +61,9 @@ export class LuzPruebaController {
     let consumo: { permitido: boolean; turnos: number };
     try {
       consumo = await this.turnos.consumir(uid, this.limite);
-    } catch {
-      logger.error({ ...base, codigo: 'CONTADOR_FALHOU' }, '[luz-prueba] contador falhou');
+    } catch (err) {
+      // Só o NOME do erro (nunca `message`: o driver pode ecoar valores da linha).
+      logger.error({ ...base, codigo: `CONTADOR_FALHOU:${nomeSeguro(err)}` }, '[luz-prueba] contador falhou');
       return void res.status(500).json({ codigo: 'CONTADOR_FALHOU' });
     }
     if (!consumo.permitido) return void res.status(429).json({ codigo: 'TETO_DIARIO', limite: this.limite });
@@ -68,7 +72,9 @@ export class LuzPruebaController {
       const saida = await this.triage.turno({ uid, sessao, mensagem, historico, turno: consumo.turnos });
       res.status(200).json(saida);
     } catch (err) {
-      await this.turnos.devolver(uid).catch(() => undefined);
+      await this.turnos.devolver(uid).catch(() => {
+        logger.error({ ...base, codigo: 'DEVOLUCAO_COTA_FALHOU' }, '[luz-prueba] devolucao de cota falhou');
+      });
       const causa = err instanceof TriageIndisponivel ? err.causa : 'erro';
       // `codigo` leva a causa curta (timeout, rede, http_403...): nunca corpo, mensagem nem histórico (RF-8).
       logger.error({ ...base, codigo: `TRIAGE_INDISPONIVEL:${causa}` }, '[luz-prueba] triage indisponivel');

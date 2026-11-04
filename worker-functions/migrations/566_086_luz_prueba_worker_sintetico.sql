@@ -1,4 +1,4 @@
--- 564 — spec 086 (DF-7): a prestadora SINTÉTICA da Luz (prueba) — 1 linha fixa em `workers`
+-- 566 — spec 086 (DF-7): a prestadora SINTÉTICA da Luz (prueba) — 1 linha fixa em `workers`
 --
 -- Quem testa a Luz no app fala COMO esta prestadora; as ferramentas de leitura da Luz (porta `agent:luz`, `worker.byPhone`) a acham pelo
 -- telefone. `+5490000000000` não é roteável (nenhuma mensagem real chega a ele). `is_test = true` (migration 224) a marca como teste.
@@ -15,7 +15,7 @@
 --
 -- Idempotente: `ON CONFLICT DO NOTHING` (auth_uid, email ou phone já existentes) — a 2ª execução insere 0 linhas.
 -- Roda como enlite_app (dono de `workers`); sem BEGIN/COMMIT próprio (o runner envolve).
--- Rollback: `migrations/pending/ROLLBACK_564_086_luz_prueba_worker_sintetico.sql`.
+-- Rollback: `migrations/pending/ROLLBACK_566_086_luz_prueba_worker_sintetico.sql`.
 
 INSERT INTO workers (auth_uid, phone, country, is_test)
 VALUES ('prueba-luz-086-sin-firebase', '+5490000000000', 'AR', true)
