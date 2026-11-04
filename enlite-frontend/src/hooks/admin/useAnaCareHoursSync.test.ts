@@ -98,6 +98,18 @@ describe('useAnaCareHoursSync', () => {
     expect(sessionStorage.getItem('anacare-hours-sync:2026-08')).toBe(JSON.stringify({ cursor: 50 }));
   });
 
+  it('NEGATIVO — DIRETORIO_ANACARE_INCOMPLETO traduz pela chave i18n própria (não DESCONHECIDO)', async () => {
+    const trigger = vi.fn().mockRejectedValueOnce(new AnaCareHoursServiceError('DIRETORIO_ANACARE_INCOMPLETO', 'Ana Care directory incomplete'));
+    const service = baseService(trigger);
+
+    const { result: hook } = renderHook(() => useAnaCareHoursSync(service, MONTH));
+    act(() => hook.current.start());
+
+    await waitFor(() => expect(hook.current.status).toBe('error'));
+
+    expect(hook.current.error).toBe('admin.anacareHours.error.byCode.DIRETORIO_ANACARE_INCOMPLETO');
+  });
+
   it('NEGATIVO (Requisito 3) — erro de REDE (fetch rejeitando, sem AnaCareHoursServiceError) nunca vaza texto técnico do fetch — traduz por código NETWORK_ERROR', async () => {
     const trigger = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const service = baseService(trigger);

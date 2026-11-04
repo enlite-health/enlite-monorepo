@@ -30,7 +30,7 @@ import { createAnaCareSyncDependencies, type AnaCareSyncDependencies } from '../
 import { AnaCarePatientMonthCollisionError } from '../../infrastructure/AnaCarePatientMonthRepository';
 import { toStableErrorCode } from '../../infrastructure/AnaCareSyncErrorCode';
 import { emitAnaCareHoursSyncMetric } from '../../infrastructure/AnaCareHoursSyncMetrics';
-import { AnaCareHoursSyncRunner } from '../../application/AnaCareHoursSyncRunner';
+import { AnaCareHoursSyncRunner, AnaCareDirectoryDroppedError } from '../../application/AnaCareHoursSyncRunner';
 import type { SyncRunProgress, SyncRunRepository } from '../../domain/AnaCareHoursSyncPorts';
 import { syncTriggerBodySchema } from '../validators/anacareHoursSchemas';
 
@@ -208,6 +208,13 @@ export class AnaCareHoursSyncController {
         // Código de erro DEDICADO (não mais o "Internal error" genérico) — detector que dispara e
         // ninguém vê não é detector: 409 (conflito, nunca sobrescrito calado) + código nomeado.
         res.status(409).json({ success: false, error: e.message, code: 'ANACARE_PATIENT_MONTH_COLLISION' });
+        return;
+      }
+      if (e instanceof AnaCareDirectoryDroppedError) {
+        // Guard de queda do diretório (piso): o Ana Care devolveu a lista de contas incompleta e o
+        // runner recusou gravar. Dependência externa → 502 + código nomeado para a tela explicar,
+        // em vez do "Internal error" genérico.
+        res.status(502).json({ success: false, error: 'Ana Care directory incomplete', code: 'DIRETORIO_ANACARE_INCOMPLETO' });
         return;
       }
       res.status(500).json({ success: false, error: 'Internal error' });

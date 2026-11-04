@@ -818,6 +818,7 @@
           "NOTA_MUITO_LONGA": "A nota ultrapassa o limite de caracteres permitido.",
           "FONTE_NAO_CONFIGURADA": "A fonte de dados do Ana Care não está configurada. Contate o time técnico.",
           "TURNO_NAO_ENCONTRADO": "O turno não foi encontrado.",
+          "DIRETORIO_ANACARE_INCOMPLETO": "O Ana Care devolveu a lista de contas incompleta. A sincronização foi pausada sem gravar nada, para não perder dados. Tente novamente mais tarde ou avise o time técnico.",
           "DESCONHECIDO": "Ocorreu um erro inesperado.",
           "NETWORK_ERROR": "Não foi possível conectar ao servidor. Tente sincronizar novamente em alguns segundos."
         }

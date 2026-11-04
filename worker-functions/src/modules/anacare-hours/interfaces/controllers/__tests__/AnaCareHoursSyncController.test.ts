@@ -4,7 +4,7 @@
  * `triggerCron`.
  */
 import { AnaCareHoursSyncController } from '../AnaCareHoursSyncController';
-import { AnaCareHoursSyncRunner } from '../../../application/AnaCareHoursSyncRunner';
+import { AnaCareHoursSyncRunner, AnaCareDirectoryDroppedError } from '../../../application/AnaCareHoursSyncRunner';
 import { AnaCareHoursSyncGuard } from '../../../application/AnaCareHoursSyncGuard';
 import { AnaCarePatientMonthCollisionError } from '../../../infrastructure/AnaCarePatientMonthRepository';
 import {
@@ -149,6 +149,20 @@ describe('AnaCareHoursSyncController', () => {
 
     expect(response.status).toHaveBeenCalledWith(409);
     expect(response.body).toMatchObject({ success: false, code: 'ANACARE_PATIENT_MONTH_COLLISION' });
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AnaCareHoursSyncController.trigger.manual' });
+  });
+
+  it('502 DIRETORIO_ANACARE_INCOMPLETO (dependência externa, não "Internal error" 500) quando o runner lança AnaCareDirectoryDroppedError', async () => {
+    const runner = {
+      run: jest.fn().mockRejectedValue(new AnaCareDirectoryDroppedError(98, 303, 250)),
+    } as unknown as AnaCareHoursSyncRunner;
+    const controller = new AnaCareHoursSyncController(() => runner);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    expect(response.status).toHaveBeenCalledWith(502);
+    expect(response.body).toMatchObject({ success: false, code: 'DIRETORIO_ANACARE_INCOMPLETO' });
     expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AnaCareHoursSyncController.trigger.manual' });
   });
 
