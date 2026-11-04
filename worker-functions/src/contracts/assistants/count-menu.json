@@ -1,0 +1,238 @@
+{
+  "patients": {
+    "cell": "patient:read",
+    "fields": {
+      "has_provider": {
+        "field": "has_provider",
+        "label_es": "tiene prestador designado (al menos uno vigente)",
+        "synonyms": [
+          "prestador asignado",
+          "con AT",
+          "con acompañante",
+          "prestador designado"
+        ],
+        "values": [
+          "true",
+          "false"
+        ]
+      },
+      "incomplete_registration": {
+        "field": "incomplete_registration",
+        "label_es": "cadastro incompleto (solo existe en admisión: restringe a ADMISSION y PENDING_ADMISSION)",
+        "synonyms": [
+          "registro incompleto",
+          "cadastro incompleto",
+          "ficha incompleta"
+        ],
+        "values": [
+          "true",
+          "false"
+        ]
+      },
+      "stage": {
+        "field": "stage",
+        "label_es": "etapa",
+        "shortcuts": {
+          "admisión": [
+            "SOLICITANTE",
+            "ADMISSION",
+            "PENDING_ADMISSION"
+          ],
+          "en atención": [
+            "ACTIVE",
+            "ON_HOLD",
+            "SEARCHING",
+            "REPLACEMENT",
+            "SUSPENDED",
+            "ALTA",
+            "DISCHARGED"
+          ]
+        },
+        "synonyms": [
+          "estado",
+          "status",
+          "etapa"
+        ],
+        "values": [
+          "SOLICITANTE",
+          "ADMISSION",
+          "PENDING_ADMISSION",
+          "ACTIVE",
+          "ON_HOLD",
+          "SEARCHING",
+          "REPLACEMENT",
+          "SUSPENDED",
+          "ALTA",
+          "DISCHARGED",
+          "DISCONTINUED",
+          "(sin etapa)"
+        ]
+      }
+    },
+    "scope_es": "pacientes no eliminados, del país del usuario y sin alta; si el filtro nombra ALTA o DISCHARGED, se incluyen"
+  },
+  "vacancies": {
+    "cell": "vacancy:read",
+    "fields": {
+      "has_applicant": {
+        "field": "has_applicant",
+        "label_es": "tiene postulados",
+        "synonyms": [
+          "postulados",
+          "postulantes",
+          "candidatos"
+        ],
+        "values": [
+          "true",
+          "false"
+        ]
+      },
+      "status": {
+        "field": "status",
+        "label_es": "estado",
+        "shortcuts": {
+          "viva": [
+            "SEARCHING",
+            "SEARCHING_REPLACEMENT",
+            "RAPID_RESPONSE",
+            "PENDING_ACTIVATION"
+          ]
+        },
+        "synonyms": [
+          "estado de la vacante",
+          "status"
+        ],
+        "values": [
+          "SEARCHING",
+          "SEARCHING_REPLACEMENT",
+          "RAPID_RESPONSE",
+          "PENDING_ACTIVATION",
+          "ACTIVE",
+          "ON_HOLD",
+          "SUSPENDED",
+          "CLOSED",
+          "DE_BAJA"
+        ]
+      },
+      "zone": {
+        "field": "zone",
+        "label_es": "zona",
+        "synonyms": [
+          "provincia",
+          "província",
+          "región"
+        ],
+        "values": [
+          "CABA",
+          "Provincia de Buenos Aires",
+          "Catamarca",
+          "Chaco",
+          "Chubut",
+          "Córdoba",
+          "Corrientes",
+          "Entre Ríos",
+          "Formosa",
+          "Jujuy",
+          "La Pampa",
+          "La Rioja",
+          "Mendoza",
+          "Misiones",
+          "Neuquén",
+          "Río Negro",
+          "Salta",
+          "San Juan",
+          "San Luis",
+          "Santa Cruz",
+          "Santa Fe",
+          "Santiago del Estero",
+          "Tierra del Fuego",
+          "Tucumán",
+          "Não informado"
+        ]
+      }
+    },
+    "scope_es": "vacantes no eliminadas ni borradores, sin cuentas de prueba y del país del usuario"
+  },
+  "workers": {
+    "cell": "worker:read",
+    "fields": {
+      "apto": {
+        "field": "apto",
+        "label_es": "apto (cadastro completo + documentos obligatorios validados)",
+        "synonyms": [
+          "apta",
+          "habilitado",
+          "habilitada"
+        ],
+        "values": [
+          "true",
+          "false"
+        ]
+      },
+      "has_phone": {
+        "field": "has_phone",
+        "label_es": "tiene teléfono",
+        "synonyms": [
+          "teléfono",
+          "celular",
+          "telefone"
+        ],
+        "values": [
+          "true",
+          "false"
+        ]
+      },
+      "registration": {
+        "field": "registration",
+        "label_es": "cadastro",
+        "synonyms": [
+          "registro",
+          "cadastro",
+          "estado del registro"
+        ],
+        "values": [
+          "REGISTERED",
+          "INCOMPLETE_REGISTER",
+          "DISABLED"
+        ]
+      },
+      "zone": {
+        "field": "zone",
+        "label_es": "zona",
+        "synonyms": [
+          "provincia",
+          "província",
+          "región"
+        ],
+        "values": [
+          "CABA",
+          "Provincia de Buenos Aires",
+          "Catamarca",
+          "Chaco",
+          "Chubut",
+          "Córdoba",
+          "Corrientes",
+          "Entre Ríos",
+          "Formosa",
+          "Jujuy",
+          "La Pampa",
+          "La Rioja",
+          "Mendoza",
+          "Misiones",
+          "Neuquén",
+          "Río Negro",
+          "Salta",
+          "San Juan",
+          "San Luis",
+          "Santa Cruz",
+          "Santa Fe",
+          "Santiago del Estero",
+          "Tierra del Fuego",
+          "Tucumán",
+          "Não informado"
+        ]
+      }
+    },
+    "scope_es": "prestadores sin fusionar, sin cuentas de prueba, del país del usuario y sin dar de baja (DISABLED); si el filtro nombra DISABLED, se incluyen"
+  }
+}
