@@ -107,9 +107,10 @@ describe('IcdCatalogTerminology', () => {
       expect(sql).not.toMatch(/word_similarity\([^)]*\)\s*>=/);
       expect(sql).toMatch(/terminology\.icd_entities/);
       expect(sql).toMatch(/kind\s*(<>|!=)\s*'extension'/);
-      expect(sql).toMatch(/release\s*=\s*\$2/);
-      expect(params[0]).toBe('esquisofrenia');
-      expect(params[1]).toBe('2026-01');
+      expect(sql).toMatch(/release\s*=\s*\$1/);
+      // params: [release, frase escapada (p/ "contém"), palavra crua, palavra escapada (p/ ILIKE), ...]
+      expect(params[0]).toBe('2026-01');
+      expect(params[2]).toBe('esquisofrenia');
     });
 
     it('D6 — roda a query principal numa transação dedicada (BEGIN / SET LOCAL threshold / COMMIT) e libera a conexão', async () => {
@@ -154,9 +155,11 @@ describe('IcdCatalogTerminology', () => {
 
       const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const params = mainCall[1] as unknown[];
-      // params: [trimmed (p/ %>), release, escapado (p/ ILIKE), ...]
-      expect(params[0]).toBe('50%_off'); // trigram usa o valor cru
-      expect(params[2]).toBe('50\\%\\_off'); // ILIKE usa o valor escapado
+      // '50%_off' vira a palavra '50' (só letra/dígito entra como palavra: '%' e '_' separam).
+      // 'off' tem 3 letras; as duas palavras valem. Já a FRASE inteira (rank "contém") é escapada.
+      expect(params[1]).toBe('50\\%\\_off'); // frase p/ LIKE: curinga escapado
+      expect(params.slice(2, 4)).toEqual(['50', 'off']); // palavras cruas p/ %>
+      expect(params.slice(4, 6)).toEqual(['50', 'off']); // as mesmas, escapadas, p/ ILIKE
     });
 
     it('filtra por capítulos quando `chapters` é passado', async () => {
@@ -370,13 +373,33 @@ describe('IcdCatalogTerminology', () => {
   describe('T9 — a busca LÊ terminology.icd_synonyms', () => {
     it('o SQL da busca consulta a tabela de sinônimos, escopada pelo MESMO release', async () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
-      await new IcdCatalogTerminology().search('TEA');
+      await new IcdCatalogTerminology().search('autismo'); // 5+ letras: entra o ramo fuzzy `%>`
 
       const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const sql = mainCall[0] as string;
       expect(sql).toMatch(/terminology\.icd_synonyms/);
-      expect(sql).toMatch(/s\.term\s*%>\s*\$1/);
-      expect(sql).toMatch(/s\.release\s*=\s*\$2/);
+      expect(sql).toMatch(/terminology\.f_norm\(s\.term\)\s*%>/);
+      expect(sql).toMatch(/s\.release\s*=\s*\$1/);
+    });
+
+    it('consulta só de stopwords usa a frase inteira como única palavra (comportamento antigo)', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
+      await new IcdCatalogTerminology().search('De la');
+
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
+      const params = mainCall[1] as unknown[];
+      // params: [release, frase escapada, palavra crua, palavra escapada, limite]
+      expect(params.slice(0, 4)).toEqual(['2026-01', 'de la', 'de la', 'de la']);
+    });
+
+    it('palavra com menos de 5 caracteres não gera predicado fuzzy (`%>`), só ILIKE', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
+      await new IcdCatalogTerminology().search('TEA');
+
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
+      const sql = mainCall[0] as string;
+      expect(sql).toMatch(/ILIKE/);
+      expect(sql).not.toMatch(/%>/);
     });
 
     it('os dois ramos entram por CTE + UNION ALL — nunca por EXISTS correlacionado num OR (D6)', async () => {
