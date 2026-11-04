@@ -152,7 +152,7 @@ test.describe('087-cobertura-cartao-servico — o cartão lê do serviço e o po
     await expect(page.getByTestId(`svc-contract-panel-${sid}`).getByTestId('svc-payer')).toHaveAttribute('data-state', 'LINKED');
 
     // Fecha o formulário do serviço: a ficha RELÊ (o onSaved do painel) — o cartão e o foguete concordam com o vínculo novo.
-    await page.getByLabel('Cerrar').click();
+    await page.getByTestId('patient-contracted-services-edit-drawer').getByRole('button', { name: 'Cerrar', exact: true }).click();
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByTestId('coverage-current-value')).toHaveText(pa.name, { timeout: 20_000 });
     await expect(foguete(page, sid)).toBeEnabled({ timeout: 20_000 });
