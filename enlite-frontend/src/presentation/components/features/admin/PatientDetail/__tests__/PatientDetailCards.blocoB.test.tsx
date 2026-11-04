@@ -63,18 +63,25 @@ beforeEach(() => {
 });
 
 describe('CoberturaMedicaCard — drawer', () => {
-  it('fechar pelo backdrop → drawer some (onClose); salvar com mudança → onSaved; verificadas SEM mapeamento são ditas como tal', async () => {
+  it('fechar pelo backdrop → drawer some (onClose); salvar com mudança → onSaved; o drawer NÃO tem mais a seção de verificadas e NÃO chama o catálogo (spec 087)', async () => {
     const onSaved = vi.fn();
     const coverage = { display: null, displaySource: 'UNMAPPED_ONLY' as const, entries: [{ code: null, name: null, mapped: false, source: 'clickup' }] };
     render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverage, insuranceVerifiedCodes: undefined as never }} onSaved={onSaved} />);
-    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('Sem mapeamento ao catálogo (1)');
     fireEvent.click(screen.getByTestId('edit-coverage-btn'));
+    // FR-02: nada de verificadas no drawer — nem o multi-select, nem os chips travados, nem o "sin mapeo"; e o catálogo não é lido.
+    expect(document.getElementById('pcv-codes')).toBeNull();
+    expect(screen.queryByTestId('pcv-codes-selected')).toBeNull();
+    expect(screen.queryByTestId('pcv-codes-locked')).toBeNull();
+    expect(screen.queryByTestId('pcv-unmapped')).toBeNull();
+    expect(api.listInsuranceProviders).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('patient-coverage-edit-backdrop'));
     await waitFor(() => expect(screen.queryByTestId('patient-coverage-edit-drawer')).toBeNull(), { timeout: 1500 });
     fireEvent.click(screen.getByTestId('edit-coverage-btn'));
     fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'AF-9' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    // o PATCH leva SÓ o afiliado — `insuranceVerifiedCodes` nunca vai (o backend o recusa com 400)
+    expect(api.updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'coverage', { affiliateId: 'AF-9' });
   });
 });
 

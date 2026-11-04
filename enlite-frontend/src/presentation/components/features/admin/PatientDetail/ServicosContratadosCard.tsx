@@ -53,8 +53,6 @@ function ServiceRow({
   patientId,
   service,
   addresses,
-  insuranceInformed,
-  hasVerifiedActiveCoverage,
   diagnosisGap,
   onOpen,
   onEdit,
@@ -66,9 +64,6 @@ function ServiceRow({
   patientId: string;
   service: PatientContractedServiceDetail;
   addresses: PatientAddressDetail[];
-  insuranceInformed: string | null;
-  /** Hotfix gate-cobertura-verificada-vacante (28/09) — ver `PatientDetail.hasVerifiedActiveCoverage`. */
-  hasVerifiedActiveCoverage?: boolean;
   /** Pedido do Javier: pendência de diagnóstico da ficha (só existe com o paciente em ADMISSION). */
   diagnosisGap?: 'DIAGNOSIS' | 'CLINICAL_DATA' | null;
   onOpen: (service: PatientContractedServiceDetail) => void;
@@ -164,7 +159,7 @@ function ServiceRow({
         <div className="flex items-center justify-end gap-1">
           {/* Spec 018, PR-6: ativar recrutamento é POR SERVIÇO ATIVO — a baixa (não `service.active`)
               não mostra o ícone, é ativação de nada. As 2 células que alimentam o gate (endereço
-              vivo + horário) já estão nesta MESMA linha, mais a cobertura do paciente. */}
+              vivo + horário) já estão nesta MESMA linha, mais o vínculo de contrato do serviço (spec 087). */}
           {showRecruitmentActions && (
             <>
             <ActivateRecruitmentAction
@@ -173,8 +168,8 @@ function ServiceRow({
               missing={recruitmentMissingCodes({
                 serviceHasAddress: addresses.some((a) => a.id === service.addressId),
                 serviceHasSchedule: Array.isArray(service.schedule) && service.schedule.length > 0,
-                insuranceInformed,
-                hasVerifiedActiveCoverage,
+                // Spec 087: COVERAGE = o serviço tem vínculo vigente (contrato ou Particular), lido do `payer` da ficha.
+                servicePayerLinked: service.payer.state === 'LINKED',
                 serviceRecruitmentFields: service,
                 diagnosisGap,
               })}
@@ -217,6 +212,12 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
   const verVagas = podeLerVagas && !services.some((s) => s.liveVacancyRedacted);
   // Checklist "falta serviço" → formulário de um serviço NOVO.
   useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing({ kind: 'new' }));
+  // Spec 087: "falta cobertura" → abre o PRIMEIRO serviço ativo sem vínculo vigente, no formulário que tem o painel de contrato
+  // (`ContractedServiceContractPanel`) — a cobertura vive no serviço contratado, não mais no drawer de cobertura.
+  useAutoOpenDrawer(focusRequest, 'COVERAGE', () => {
+    const semVinculo = services.find((s) => s.active && s.payer.state !== 'LINKED');
+    setEditing(semVinculo ? { kind: 'edit', serviceId: semVinculo.id } : { kind: 'new' });
+  });
   // Migration 330: "falta endereço no serviço" → abre o PRIMEIRO serviço ativo sem endereço vivo
   // (é dele que o checklist reclama); sem candidato, abre um novo.
   useAutoOpenDrawer(focusRequest, 'SERVICE_ADDRESS', () => {
@@ -301,8 +302,6 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
                 patientId={patient.id}
                 service={svc}
                 addresses={patient.addresses ?? []}
-                insuranceInformed={patient.insuranceInformed}
-                hasVerifiedActiveCoverage={patient.hasVerifiedActiveCoverage}
                 diagnosisGap={diagnosisGapOf(patient.completeness)}
                 onOpen={setSelected}
                 onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}

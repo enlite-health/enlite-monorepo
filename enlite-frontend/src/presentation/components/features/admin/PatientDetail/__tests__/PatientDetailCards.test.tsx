@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
+import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
@@ -1071,6 +1072,11 @@ describe('FamiliaresCard — coluna Emergencia é informação, não ação (D26
 // ── CoberturaMedicaCard ──────────────────────────────────────────────────────
 
 describe('CoberturaMedicaCard', () => {
+  // Spec 087: a cobertura ATUAL é lida do serviço (`currentCoverage`, decidido por `currentCoverageDisplay`); a informada e a verificada
+  // do paciente NÃO aparecem mais no cartão — nem no mesmo DOM, nem como texto.
+  const cc = (over: Partial<NonNullable<PatientDetail['currentCoverage']>> = {}): PatientDetail['currentCoverage'] => ({
+    providers: [], privateServices: 0, hiddenServices: 0, unlinkedServices: 0, activeServices: 1, ...over,
+  });
   const withInsurance = {
     ...patientDetailFixture,
     insuranceInformed: 'UNIMED',
@@ -1079,48 +1085,71 @@ describe('CoberturaMedicaCard', () => {
       displaySource: 'INFORMED' as const,
       entries: [{ code: 'UNIMED', name: 'Unimed Empresarial', mapped: true, source: 'admin_manual' }],
     },
+    currentCoverage: cc({ providers: [{ code: 'OSDE', name: 'OSDE' }] }),
     affiliateId: '0000000000000000',
   };
+  const linha = () => screen.getByTestId('coverage-current-value');
 
   it('renders card title', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
     expect(screen.getByText('Cobertura Médica')).toBeInTheDocument();
   });
 
-  it('renders provider name from insuranceInformed', () => {
+  it('FR-01: NÃO renderiza as linhas informada/verificada — e o texto delas (UNIMED) não vaza para o cartão', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
-    expect(screen.getByText('UNIMED')).toBeInTheDocument();
+    expect(screen.queryByTestId('coverage-informed')).toBeNull();
+    expect(screen.queryByTestId('coverage-verified')).toBeNull();
+    expect(screen.queryByTestId('coverage-verified-value')).toBeNull();
+    expect(screen.getByTestId('coverage-current')).toBeInTheDocument();
+    expect(screen.getByTestId('cobertura-medica-card').textContent).not.toContain('UNIMED');
+    expect(screen.getByTestId('cobertura-medica-card').textContent).not.toContain('Unimed Empresarial');
   });
 
-  // Spec 058 §4.5: a linha das VERIFICADAS lê `coverage.entries[].name` (nome do banco), não um escalar nem a tradução por código.
-  it('renders the verified coverage by the catalog NAME from coverage.entries', () => {
+  it('1 serviço com obra social: UMA pílula com o nome; sem aviso de "gerencie no serviço"', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
-    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Unimed Empresarial');
+    expect(linha()).toHaveTextContent('OSDE');
+    expect(screen.queryByTestId('coverage-manage-in-service')).toBeNull();
   });
 
-  it('lines: informada e verificadas são DUAS linhas distintas', () => {
-    render(<CoberturaMedicaCard patient={withInsurance} />);
-    expect(screen.getByTestId('coverage-informed')).toHaveTextContent('UNIMED');
-    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('Unimed Empresarial');
+  it('N serviços: uma pílula por pagador DISTINTO (ordem do servidor) + "Particular"; mesmo pagador em 2 serviços não repete', () => {
+    const patient = { ...withInsurance, currentCoverage: cc({ providers: [{ code: 'GALENO', name: 'Galeno' }, { code: 'OSDE', name: 'OSDE' }], privateServices: 1, activeServices: 4 }) };
+    render(<CoberturaMedicaCard patient={patient} />);
+    const pilulas = Array.from(linha().querySelectorAll('span[title]')).map((e) => e.textContent);
+    expect(pilulas).toEqual(['Galeno', 'OSDE', 'Particular']);
   });
 
-  it('entradas sem mapeamento aparecem como "sin mapeo" junto das mapeadas — nunca escondidas', () => {
-    const coverage = {
-      display: 'UNIMED', displaySource: 'INFORMED' as const,
-      entries: [
-        { code: 'UNIMED', name: 'Unimed Empresarial', mapped: true, source: 'admin_manual' },
-        { code: null, name: null, mapped: false, source: 'clickup' },
-        { code: null, name: null, mapped: false, source: 'clickup' },
-      ],
-    };
-    render(<CoberturaMedicaCard patient={{ ...withInsurance, coverage }} />);
-    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Unimed Empresarial, Sem mapeamento ao catálogo (2)');
+  it('Particular sozinho: a pílula "Particular"', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, currentCoverage: cc({ privateServices: 1 }) }} />);
+    expect(linha()).toHaveTextContent('Particular');
   });
 
-  it('coverage:null (ator sem a célula): "sem permissão" nas duas linhas — não "—", que diria "não tem"', () => {
-    render(<CoberturaMedicaCard patient={{ ...withInsurance, insuranceInformed: null, coverage: null }} />);
-    expect(screen.getByTestId('coverage-informed')).toHaveTextContent('Sem permissão para ver a cobertura');
-    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Sem permissão para ver a cobertura');
+  it('0 serviços ativos: "Sem serviço ativo"', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, currentCoverage: cc({ activeServices: 0 }) }} />);
+    expect(linha()).toHaveTextContent('Sem serviço ativo');
+  });
+
+  it('serviço ativo SEM vínculo vigente: texto "Sem obra social vinculada" + o aviso de que a cobertura se gerencia no serviço (e a informada do paciente NÃO a esconde)', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, currentCoverage: cc({ unlinkedServices: 1 }) }} />);
+    expect(linha()).toHaveTextContent('Sem obra social vinculada');
+    expect(screen.getByTestId('coverage-manage-in-service')).toHaveTextContent('A cobertura é gerenciada no serviço contratado');
+    expect(linha()).not.toHaveTextContent('UNIMED');
+  });
+
+  it('ator sem `patient_coverage:read` (nomes ocultos): "Obra social (sem acesso ao nome)"; `isPrivate` continua visível', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, currentCoverage: cc({ hiddenServices: 1 }) }} />);
+    expect(linha()).toHaveTextContent('Obra social (sem acesso ao nome)');
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, currentCoverage: cc({ hiddenServices: 1, privateServices: 1 }) }} />);
+    expect(screen.getAllByTestId('coverage-current-value')[1]).toHaveTextContent('Particular');
+  });
+
+  it('ator sem `patient_services:read` (currentCoverage null): "Sem permissão" — nunca "vazio" (D167)', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, currentCoverage: null }} />);
+    expect(linha()).toHaveTextContent('Sem permissão');
+  });
+
+  it('backend anterior (currentCoverage ausente): "Indisponível" — nunca "não tem"', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, currentCoverage: undefined }} />);
+    expect(linha()).toHaveTextContent('Indisponível');
   });
 
   it('renders affiliateId as credential', () => {
@@ -1135,11 +1164,9 @@ describe('CoberturaMedicaCard', () => {
     expect(screen.queryByText('Números de Emergência')).not.toBeInTheDocument();
   });
 
-  it('renders "—" when insurance fields are null', () => {
+  it('renders "—" para Credencial e Emergência quando vazios', () => {
     render(<CoberturaMedicaCard patient={patientDetailMinimal} />);
-    const dashes = screen.getAllByText('—');
-    // 3 campos reais (provedor, verificada, credencial) — "Números de Emergência" foi removido.
-    expect(dashes.length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1); // a Credencial; a emergência sem o campo vira o aviso "indisponível", não "—"
   });
 
   it('spec 012 US-B3: Editar abre o drawer de cobertura; onSaved é repassado', async () => {
@@ -1153,21 +1180,6 @@ describe('CoberturaMedicaCard', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
     fireEvent.click(screen.getAllByTestId('edit-coverage-btn')[1]);
     expect(screen.getAllByTestId('patient-coverage-edit-drawer')).toHaveLength(2);
-  });
-
-  it('spec 058: as verificadas aparecem pelo NOME do catálogo (coverage.entries), nunca pelo código; nome repetido (2 origens) sai uma vez', () => {
-    const coverage = {
-      display: 'UNIMED', displaySource: 'INFORMED' as const,
-      entries: [
-        { code: 'OSDE', name: 'OSDE', mapped: true, source: 'clickup' },
-        { code: 'OSDE', name: 'OSDE', mapped: true, source: 'admin_manual' },
-        { code: 'SWISS_MEDICAL', name: 'Swiss Medical', mapped: true, source: 'admin_manual' },
-        { code: 'CODIGO_NOVO', name: 'Nome Novo do Banco', mapped: true, source: 'admin_manual' },
-      ],
-    };
-    render(<CoberturaMedicaCard patient={{ ...withInsurance, coverage }} />);
-    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('OSDE, Swiss Medical, Nome Novo do Banco');
-    expect(screen.getByTestId('coverage-verified-value').textContent).not.toContain('CODIGO_NOVO');
   });
 });
 
@@ -1543,7 +1555,7 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
     unmount();
     render(<EquipeTratanteCard professionals={[{ id: 'p0', name: null, phone: null, email: null, specialty: null, displayOrder: 1, isTeam: false }]} />);
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1); // a Credencial; a emergência sem o campo vira o aviso "indisponível", não "—"
   });
 
   it('LocalizacoesCard: lista ausente vira vazia', () => {

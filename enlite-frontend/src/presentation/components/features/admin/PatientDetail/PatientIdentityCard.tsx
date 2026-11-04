@@ -14,7 +14,8 @@ import { PatientPhotoSlot } from './PatientPhotoSlot';
 import { ENV } from '@infrastructure/config/env';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 import { formatDateFromISO } from '@presentation/hooks/useMask';
-import { currentCoverageDisplay, type CurrentCoverageDisplay } from './currentCoverageText';
+import { currentCoverageDisplay } from './currentCoverageText';
+import { CoverageValue } from './CoverageValue';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -57,19 +58,6 @@ function Pill({ className, title, testId, children }: { className: string; title
       <Text as="span" size="xs" weight="medium" color="inherit" className="min-w-0 truncate">
         {children}
       </Text>
-    </span>
-  );
-}
-
-function CoverageValue({ display }: { display: CurrentCoverageDisplay }) {
-  if (display.kind === 'text') return <>{display.text}</>;
-  return (
-    <span className="flex flex-wrap gap-1.5 max-w-full">
-      {display.names.map((name) => (
-        <Pill key={name} className={STATUS_COLORS.SOLICITANTE} title={name}>
-          {name}
-        </Pill>
-      ))}
     </span>
   );
 }

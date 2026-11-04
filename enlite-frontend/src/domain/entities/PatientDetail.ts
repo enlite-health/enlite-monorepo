@@ -264,13 +264,6 @@ export interface PatientDetail {
    * `null` = o ator não lê `coverage` (junto com `redacted.coverage`); "sem cobertura" é objeto com `NONE`.
    */
   coverage: PatientCoverageView | null;
-  /**
-   * Hotfix gate-cobertura-verificada-vacante (28/09): ≥1 cobertura verificada
-   * (`insuranceVerifiedCodes`) com provider ATIVO no catálogo — alimenta `recruitmentMissingCodes`
-   * (gate do foguete "Activar reclutamiento") junto do legado `insuranceInformed`. Opcional: API
-   * anterior a este hotfix não manda o campo; ausência trata como `false` (mesma régua do legado).
-   */
-  hasVerifiedActiveCoverage?: boolean;
   /** Dispositivos — códigos de `device_types` (mig 307), ordem do catálogo. */
   deviceTypes: string[];
   needsAttention: boolean;

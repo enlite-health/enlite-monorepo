@@ -5,36 +5,35 @@ import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientCoverageEditDrawer } from './edit/PatientCoverageEditDrawer';
-import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
+import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { DetailRow, DetailRows } from './DetailRows';
+import { currentCoverageDisplay } from './currentCoverageText';
+import { CoverageValue } from './CoverageValue';
 
 interface CoberturaMedicaCardProps {
   patient: PatientDetail;
   /** Called after a successful edit so the page can refetch the detail. */
   onSaved?: () => void;
-  /** Spec 014 US-D1: pedido de foco do checklist ("falta cobertura") — abre este drawer. */
+  /**
+   * Mantido na assinatura (a página passa o mesmo pedido a todos os cartões), mas este cartão não o consome mais: desde a spec 087 o foco
+   * "falta cobertura" abre o painel de contrato do SERVIÇO (`ServicosContratadosCard`), não o drawer de cobertura.
+   */
   focusRequest?: DrawerFocusRequest | null;
 }
 
-export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: CoberturaMedicaCardProps) {
+/**
+ * Cartão "Cobertura médica" (spec 087): a cobertura ATUAL é LIDA do serviço contratado — nunca mais da informada/verificada do paciente.
+ * Uma linha só ("Cobertura actual"), decidida por `currentCoverageDisplay` (o mesmo decisor do cartão de identidade); Credencial e os
+ * contatos de emergência continuam aqui porque só existem no paciente. A escrita do contrato é do serviço (`ServicosContratadosCard`).
+ */
+export function CoberturaMedicaCard({ patient, onSaved }: CoberturaMedicaCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
-  useAutoOpenDrawer(focusRequest, 'COVERAGE', () => setEditing(true));
-  // Spec 058 §4.5: DUAS linhas — a INFORMADA (`insuranceInformed`, dono único) e as VERIFICADAS (`coverage.entries`, nome do banco; o que não
-  // tem mapeamento ao catálogo é dito como tal, nunca escondido). `coverage: null` = o ator não lê o container: "sem permissão", não "vazio".
-  const coverage = patient.coverage ?? null;
-  const mappedNames = [...new Set((coverage?.entries ?? []).filter((e) => e.mapped && e.name !== null).map((e) => e.name as string))];
-  const unmapped = (coverage?.entries ?? []).filter((e) => !e.mapped).length;
   // 417 (D301.3b): `null` = sem célula (redação, D113) → "—"; AUSENTE (backend anterior à 417, deploy-skew) =
   // "não li", nunca "não tem" (D167) → indisponível, como o PDF já faz.
   const emergencyContacts = patient.coverageEmergencyContacts ?? [];
-  const verifiedParts = [
-    ...mappedNames,
-    ...(unmapped > 0 ? [t('admin.patients.detail.coverageCard.unmapped', { count: unmapped })] : []),
-  ];
-  const verifiedLabel = coverage === null
-    ? t('admin.patients.detail.coverageCard.redacted')
-    : verifiedParts.length > 0 ? verifiedParts.join(', ') : '—';
+  // Serviço ativo sem vínculo vigente: o cartão aponta onde se resolve (o contrato vive no serviço).
+  const hasUnlinked = (patient.currentCoverage?.unlinkedServices ?? 0) > 0;
 
   return (
     <div
@@ -45,7 +44,7 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.coverageCard.title')}
         </Heading>
-        {/* D286 — abre o drawer que faz PATCH /patients/:id/coverage → patient_coverage:update (PR-8b). */}
+        {/* D286 — abre o drawer que faz PATCH /patients/:id/coverage → patient_coverage:update (PR-8b). Só Credencial + contatos (087). */}
         <ActionButton resource="patient_coverage" action="update" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-coverage-btn">
           {t('admin.patients.detail.edit')}
         </ActionButton>
@@ -59,17 +58,18 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
         />
       )}
 
-      {/* 06/09: cartão de LARGURA CHEIA com três campos — mesma peça do Diagnóstico (linha com
-          filete, valor ancorado à direita), não a grade de pares dos cartões estreitos do topo.
-          Antes eram duas colunas num container de ~1376px: metade da largura sem uso e a terceira
-          célula sozinha na linha. */}
+      {/* 06/09: cartão de LARGURA CHEIA — linha com filete, valor ancorado à direita (a peça do Diagnóstico). */}
       <DetailRows>
-        <DetailRow label={t('admin.patients.detail.coverageCard.informed')} testId="coverage-informed">
-          <Text as="span" size="sm" color="muted">{coverage === null ? t('admin.patients.detail.coverageCard.redacted') : (patient.insuranceInformed ?? '—')}</Text>
+        <DetailRow label={t('admin.patients.detail.identityCard.currentCoverage')} testId="coverage-current">
+          <Text as="span" size="sm" color="muted" data-testid="coverage-current-value">
+            <CoverageValue display={currentCoverageDisplay(t, patient.currentCoverage)} />
+          </Text>
         </DetailRow>
-        <DetailRow label={t('admin.patients.detail.coverageCard.verified')} testId="coverage-verified">
-          <Text as="span" size="sm" color="muted" data-testid="coverage-verified-value">{verifiedLabel}</Text>
-        </DetailRow>
+        {hasUnlinked && (
+          <p className="text-sm text-amber-700" data-testid="coverage-manage-in-service">
+            {t('admin.patients.detail.coverageCard.manageInService')}
+          </p>
+        )}
         <DetailRow label={t('admin.patients.detail.coverageCard.credential')}>
           <Text as="span" size="sm" color="muted">{patient.affiliateId ?? '—'}</Text>
         </DetailRow>

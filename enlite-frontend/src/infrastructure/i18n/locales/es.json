@@ -3346,7 +3346,6 @@
         "unmarkEmergencyContact": "Contacto de emergencia (quitar)",
         "markEmergencyContactError": "No se pudo actualizar el contacto de emergencia. Probá de nuevo.",
         "coverageTitle": "Editar cobertura médica",
-        "coverageFromClickup": "(del ClickUp)",
         "contractedServicesTitle": "Editar servicios contratados",
         "addContractedService": "+ Nuevo servicio",
         "noContractedServices": "Este paciente todavía no tiene servicios contratados.",
@@ -3923,7 +3922,6 @@
           "plan": "Plan del Paciente",
           "emergencyNumbers": "Números de Emergencia",
           "credential": "Credencial",
-          "verified": "Cobertura verificada",
           "emergencyContacts": "Emergencia de la cobertura médica",
           "emergencyContactKinds": {
             "DIRECT_PROFESSIONAL": "Profesional directo",
@@ -3933,9 +3931,7 @@
           },
           "emergencyContactsUnavailable": "No disponible ahora — recargá la ficha o avisá a soporte.",
           "directProfessionalRedacted": "Profesional directo: no visible con tu permiso (hace falta la celda del equipo tratante).",
-          "informed": "Cobertura informada",
-          "redacted": "Sin permiso para ver la cobertura",
-          "unmapped": "Sin mapeo al catálogo ({{count}})"
+          "manageInService": "La cobertura se gestiona en el servicio contratado: vinculá el contrato en el servicio de abajo."
         },
         "locationsCard": {
           "title": "Localizaciones",
@@ -4051,16 +4047,6 @@
             "hidden": "Obra social no visible con tu permiso"
           },
           "contractSection": "Obra social y contrato",
-          "coverageMatchLabel": "Cobertura verificada vs. contrato",
-          "coverageMatch": {
-            "NO_PAYER": "Sin contrato vinculado: no hay con qué comparar la cobertura.",
-            "PRIVATE_PAYER": "Pagador particular: no se compara con la cobertura.",
-            "NO_COVERAGE": "El paciente no tiene cobertura verificada.",
-            "UNMAPPED_ONLY": "Solo hay coberturas sin mapeo al catálogo: no se puede comparar.",
-            "MATCH": "La cobertura verificada coincide con la obra social del contrato.",
-            "MISMATCH": "La cobertura verificada NO coincide con la obra social del contrato.",
-            "REDACTED": "No visible con tu permiso (cobertura)."
-          },
           "cascade": {
             "provider": "Obra social",
             "contract": "Contrato",
@@ -4615,7 +4601,7 @@
           "items": {
             "ADDRESS": "Domicilio",
             "RESPONSIBLE": "Responsable",
-            "COVERAGE": "Cobertura",
+            "COVERAGE": "Contrato vinculado al servicio",
             "CONTRACTED_SERVICE": "Servicio contratado",
             "SERVICE_ADDRESS": "Domicilio del servicio",
             "SERVICE_SCHEDULE": "Horario del servicio",

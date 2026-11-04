@@ -1,11 +1,10 @@
 /**
- * PatientCoverageEditDrawer — spec 012, US-B3: cobertura informada (texto), verificadas
- * (multi-select do CATÁLOGO — o NOME vem do banco, spec 058 C3) e nº de afiliado, via
- * PATCH /:id/coverage. Só o que mudou vai no payload; opção nova do catálogo aparece no select.
- * Spec 058 §C: a origem de cada chip vem de `coverage.entries[].source`.
+ * PatientCoverageEditDrawer — spec 012, US-B3; spec 087: nº de afiliado (Credencial) e contatos de emergência da cobertura, via
+ * PATCH /:id/coverage (+ linhas). Só o que mudou vai no payload. As coberturas VERIFICADAS e o catálogo de obras sociais saíram do drawer:
+ * a cobertura vive no serviço contratado (o PATCH recusa `insuranceVerifiedCodes` com 400).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
@@ -63,43 +62,26 @@ describe('PatientCoverageEditDrawer', () => {
     deactivateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'c1', active: false });
   });
 
-  it('carrega os valores atuais e o catálogo (opção nova vinda do endpoint aparece pelo NOME do banco, não pelo código)', async () => {
-    const { container } = render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
-    expect(screen.queryByTestId('pcv-name')).toBeNull();
-    expect(screen.getByTestId('pcv-affiliate')).toHaveValue('AF-1');
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
-    expect(await screen.findByText('Swiss Medical')).toBeInTheDocument();
-    expect(screen.getByText('Nueva OS (nombre del banco)')).toBeInTheDocument();
-    expect(screen.queryByText('NUEVA_OS_E2E')).not.toBeInTheDocument();
-    // o atual já vem marcado
-    expect(screen.getByTestId('pcv-codes-selected')).toHaveTextContent('OSDE');
-  });
-
-  it('salvar 2 verificadas por código + afiliado manda SÓ o que mudou para a seção coverage', async () => {
+  it('carrega o afiliado atual; NÃO tem a seção de verificadas, não lê o catálogo e o PATCH leva só o afiliado (spec 087, FR-02)', async () => {
     const onSaved = vi.fn();
     const { container } = render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={onSaved} />);
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
-    fireEvent.click(await screen.findByText('Swiss Medical'));
+    expect(screen.getByTestId('pcv-affiliate')).toHaveValue('AF-1');
+    expect(container.querySelector('#pcv-codes')).toBeNull();
+    expect(screen.queryByTestId('pcv-codes-selected')).toBeNull();
+    expect(screen.queryByTestId('pcv-codes-locked')).toBeNull();
+    expect(screen.queryByTestId('pcv-unmapped')).toBeNull();
+    expect(listInsuranceProviders).not.toHaveBeenCalled();
     fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'AF-2' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', {
-      affiliateId: 'AF-2', insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL'],
-    }));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { affiliateId: 'AF-2' }));
+    expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('insuranceVerifiedCodes');
     expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('healthInsuranceName');
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
-  it('sem mudança → fecha sem PATCH; limpar afiliado → null; erro do PATCH → mensagem; catálogo falhando → só o que a ficha já trouxe (sem seed no front)', async () => {
+  it('sem mudança → fecha sem PATCH; limpar afiliado → null; erro do PATCH → mensagem', async () => {
     const onClose = vi.fn();
-    listInsuranceProviders.mockRejectedValueOnce(new Error('offline'));
-    const { container } = render(<PatientCoverageEditDrawer patient={patient} onClose={onClose} onSaved={vi.fn()} />);
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
-    // Sem catálogo não há lista inventada no front (o seed dos 33 saiu): só a verificada que a ficha trouxe, pelo nome que ela trouxe.
-    expect(screen.queryByText('Galeno')).not.toBeInTheDocument();
-    expect(screen.getAllByText('OSDE').length).toBeGreaterThan(0);
+    render(<PatientCoverageEditDrawer patient={patient} onClose={onClose} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(updatePatientSection).not.toHaveBeenCalled();
@@ -108,7 +90,6 @@ describe('PatientCoverageEditDrawer', () => {
     fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { affiliateId: null }));
-    expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('healthInsuranceName');
     expect(await screen.findByTestId('pcv-error')).toHaveTextContent('422 código');
     updatePatientSection.mockRejectedValueOnce('x');
     fireEvent.click(screen.getByTestId('pcv-save'));
@@ -286,92 +267,6 @@ describe('PatientCoverageEditDrawer', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByTestId('patient-coverage-edit-backdrop'));
     expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
-  });
-
-  it('paciente sem cobertura nenhuma (nulls / codes ausentes): campos vazios; escolher um código manda só os códigos', async () => {
-    const { container } = render(<PatientCoverageEditDrawer patient={{ ...patient, insuranceInformed: null, affiliateId: null, insuranceVerifiedCodes: undefined as never, coverage: { display: null, displaySource: 'NONE', entries: [] } }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    expect(screen.queryByTestId('pcv-name')).toBeNull();
-    expect(screen.getByTestId('pcv-affiliate')).toHaveValue('');
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
-    fireEvent.click(await screen.findByText('Swiss Medical'));
-    fireEvent.click(screen.getByTestId('pcv-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { insuranceVerifiedCodes: ['SWISS_MEDICAL'] }));
-  });
-
-  // ── QA 🟡3 (SUP-B5): a origem ClickUp trava — RED antes do conserto, porque o multi-select
-  // marcava TUDO (união) e "desmarcar" GALENO não removia nada de verdade (o PATCH só apagava
-  // admin_manual); o operador via sucesso e a cobertura voltava no próximo GET. ──────────────
-
-  const patientWithMixedOrigins = {
-    ...patient,
-    insuranceVerifiedCodes: ['GALENO', 'OSDE'],
-    coverage: coverageOf(entry('GALENO', 'Galeno', 'clickup'), entry('OSDE', 'OSDE', 'admin_manual')),
-  };
-
-  it('cobertura de origem ClickUp aparece como chip travado, FORA do multi-select e do payload', async () => {
-    listInsuranceProviders.mockResolvedValue([
-      { code: 'GALENO', name: 'Galeno', sortOrder: 10 }, { code: 'OSDE', name: 'OSDE', sortOrder: 15 }, { code: 'SWISS_MEDICAL', name: 'Swiss Medical', sortOrder: 28 },
-    ]);
-    const { container } = render(<PatientCoverageEditDrawer patient={patientWithMixedOrigins} onClose={vi.fn()} onSaved={vi.fn()} />);
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-
-    // GALENO (ClickUp) vira chip travado, com o rótulo "(do ClickUp)" (pt-BR) — NÃO entra no que
-    // está "selecionado" pelo multi-select (pcv-codes-selected), que é só OSDE (admin_manual).
-    expect(screen.getByTestId('pcv-codes-locked')).toHaveTextContent('Galeno');
-    expect(screen.getByTestId('pcv-codes-locked')).toHaveTextContent('(do ClickUp)');
-    // O chip é travado pela `source` de `coverage.entries[]` (spec 058 §C), não por uma lista paralela.
-    expect(screen.getByTestId('pcv-locked-GALENO').getAttribute('data-source')).toBe('clickup');
-    expect(screen.queryByTestId('pcv-locked-OSDE')).toBeNull();
-    expect(screen.getByTestId('pcv-codes-selected')).toHaveTextContent('OSDE');
-    expect(screen.getByTestId('pcv-codes-selected')).not.toHaveTextContent('Galeno');
-
-    // Abrindo o multi-select, GALENO não vem marcado — não é o multi-select quem o controla.
-    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
-    const listbox = await screen.findByRole('listbox');
-    const galenoOption = within(listbox).getByRole('option', { name: 'Galeno' });
-    expect(galenoOption.getAttribute('aria-selected')).toBe('false');
-
-    // Salvar SEM tocar em nada não manda payload (GALENO nunca esteve no editável, então não há
-    // "remoção" a comparar) — prova que ele é inerte para o formulário.
-    fireEvent.click(screen.getByTestId('pcv-save'));
-    await waitFor(() => expect(updatePatientSection).not.toHaveBeenCalled());
-  });
-
-  it('desmarcar um código admin_manual remove SÓ ele do payload — GALENO (ClickUp) nunca entra', async () => {
-    listInsuranceProviders.mockResolvedValue([
-      { code: 'GALENO', name: 'Galeno', sortOrder: 10 }, { code: 'OSDE', name: 'OSDE', sortOrder: 15 },
-    ]);
-    const onSaved = vi.fn();
-    const { container } = render(<PatientCoverageEditDrawer patient={patientWithMixedOrigins} onClose={vi.fn()} onSaved={onSaved} />);
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    fireEvent.click(container.querySelector('#pcv-codes') as HTMLElement);
-    const listbox = await screen.findByRole('listbox');
-    const osdeOption = within(listbox).getByRole('option', { name: 'OSDE' });
-    fireEvent.click(osdeOption.querySelector('button') as HTMLElement); // desmarca o único editável
-    fireEvent.click(screen.getByTestId('pcv-save'));
-    // O payload NUNCA carrega 'GALENO': não é opção do multi-select removê-lo, porque ele nunca
-    // esteve no conjunto que o multi-select edita.
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { insuranceVerifiedCodes: [] }));
-    expect(onSaved).toHaveBeenCalled();
-  });
-
-  it('sem `coverage` (ator sem a célula de leitura) → cai em insuranceVerifiedCodes e trata tudo como editável', async () => {
-    const semLeitura = { ...patient, insuranceVerifiedCodes: ['OSDE'], coverage: null };
-    render(<PatientCoverageEditDrawer patient={semLeitura} onClose={vi.fn()} onSaved={vi.fn()} />);
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    expect(screen.queryByTestId('pcv-codes-locked')).not.toBeInTheDocument();
-    expect(screen.getByTestId('pcv-codes-selected')).toHaveTextContent('OSDE');
-  });
-
-  it('entrada SEM mapeamento (mapped:false) aparece travada como "sem mapeamento", sem código e FORA do payload', async () => {
-    const comSemMapa = { ...patient, coverage: { display: 'OSDE 210', displaySource: 'INFORMED' as const, entries: [entry('OSDE', 'OSDE', 'admin_manual'), { code: null, name: null, mapped: false, source: 'clickup' }] } };
-    render(<PatientCoverageEditDrawer patient={comSemMapa} onClose={vi.fn()} onSaved={vi.fn()} />);
-    await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
-    expect(screen.getByTestId('pcv-unmapped')).toHaveTextContent('Sem mapeamento ao catálogo');
-    expect(screen.getByTestId('pcv-codes-selected')).toHaveTextContent('OSDE');
-    fireEvent.click(screen.getByTestId('pcv-save'));
-    await waitFor(() => expect(updatePatientSection).not.toHaveBeenCalled());
   });
 
   // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────

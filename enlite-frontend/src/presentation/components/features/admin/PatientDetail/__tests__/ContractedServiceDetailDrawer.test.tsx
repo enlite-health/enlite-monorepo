@@ -49,7 +49,7 @@ describe('ContractedServiceDetailDrawer', () => {
     expect(screen.getByTestId('svc-detail-value').textContent).toContain('Sin contrato vinculado');
     expect(screen.getByTestId('svc-detail-contract').textContent).toContain('Sin contrato vinculado');
     expect(screen.getByTestId('svc-detail-iva').textContent).toContain('Sin contrato vinculado');
-    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('NO_PAYER');
+    expect(screen.queryByTestId('svc-detail-coverage-match')).toBeNull(); // spec 087: o aviso coverageMatch saiu da tela
     expect(screen.getByTestId('svc-detail-start').textContent).toContain('—');
     expect(screen.getByTestId('svc-detail-providers').textContent).toContain('(0)');
     expect(screen.queryByText('Baja')).toBeNull();
@@ -97,11 +97,10 @@ describe('ContractedServiceDetailDrawer', () => {
     expect(screen.getByTestId('svc-detail-contract').textContent).toContain('OSDE — Plan 210');
     expect(screen.getByTestId('svc-detail-value').textContent).toMatch(/1\.?500/);
     expect(screen.getByTestId('svc-detail-iva').textContent).toContain('Exento (0 %)');
-    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('MATCH');
     expectNoRawEnumLeaks(container);
   });
 
-  it('sem a célula de preço: cadeado, nunca o número; o imposto continua; sem `coverage` os nomes somem e a divergência é REDACTED', () => {
+  it('sem a célula de preço: cadeado, nunca o número; o imposto continua; sem `coverage` os nomes somem', () => {
     const svc = {
       ...BASE, ...LINKED_058,
       payer: { state: 'LINKED', isPrivate: false, validFrom: '2026-09-01', validTo: null, names: null },
@@ -112,7 +111,6 @@ describe('ContractedServiceDetailDrawer', () => {
     expect(screen.getByTestId('svc-detail-value').textContent).not.toMatch(/1\.?500/);
     expect(screen.getByTestId('svc-detail-iva').textContent).toContain('21');
     expect(screen.getByTestId('svc-detail-contract').textContent).toContain('no visible con tu permiso');
-    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('REDACTED');
   });
 
   it('pagador particular sem permissão de nomes: "Particular"; termo ausente: a frase de "sem término vigente"', () => {

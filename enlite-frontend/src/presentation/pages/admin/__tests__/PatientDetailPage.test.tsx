@@ -3,7 +3,7 @@
  * `refetch`/`patientId` aos cards que agora editam (spec 012). Carregando / erro / não encontrado.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from '@presentation/components/features/admin/PatientDetail/__tests__/patientDetailFixture';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -45,7 +45,7 @@ vi.mock('@presentation/components/features/admin/PatientDetail/ProjetoTerapeutic
 // `ActivatePatientButton` SAIU do cabeçalho (spec 018, PR-6, ADR-5) — ativar agora é por
 // serviço, dentro do `ServicosContratadosCard`. O stub aqui cobre o mesmo contrato que o botão
 // cobria: `onSaved` refetcha ficha E vagas (a vaga nasce da ativação).
-vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratadosCard', () => ({ ServicosContratadosCard: (p: { onSaved?: () => void }) => <button data-testid="services-saved-stub" onClick={() => p.onSaved?.()}>services</button> }));
+vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratadosCard', () => ({ ServicosContratadosCard: (p: { onSaved?: () => void; focusRequest?: { code: string } | null }) => <button data-testid="services-saved-stub" data-focus={p.focusRequest ? p.focusRequest.code : 'none'} onClick={() => p.onSaved?.()}>services</button> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
 // Fase 12 (D442): a aba "Itinerário" — o hook é o ÚNICO I/O da aba; aqui ele devolve 0 serviços (estado vazio com testid próprio).
 vi.mock('@hooks/admin/usePatientItinerary', () => ({
@@ -157,9 +157,12 @@ describe('PatientDetailPage', () => {
     detail.patient = { ...(detail.patient as object), status: 'PENDING_ADMISSION' };
     render(<PatientDetailPage />);
     // A fixture tem COVERAGE/CONTRACTED_SERVICE faltando — o checklist aparece por default.
-    fireEvent.click(screen.getByText('Cobertura'));
-    // Foco foi para a aba "contractedService" — o card de cobertura fica visível.
+    fireEvent.click(screen.getByText('Contrato vinculado ao serviço'));
+    // Foco foi para a aba "contractedService" — o card de cobertura fica visível...
     expect(screen.getByTestId('edit-coverage-btn')).toBeInTheDocument();
+    // ...e o PEDIDO de foco COVERAGE chega ao card de SERVIÇOS (spec 087: "falta cobertura" abre o painel de contrato do serviço, não o drawer de cobertura).
+    expect(screen.getByTestId('services-saved-stub').getAttribute('data-focus')).toBe('COVERAGE');
+    expect(screen.queryByTestId('patient-coverage-edit-drawer')).not.toBeInTheDocument();
   });
 
   // QA-caça rodada 1, item conserto 3 (🟡3): o checklist aparecia INCONDICIONALMENTE, mesmo em
@@ -170,7 +173,7 @@ describe('PatientDetailPage', () => {
     render(<PatientDetailPage />);
     expect(screen.queryByTestId('completeness-checklist')).not.toBeInTheDocument();
     expect(screen.queryByTestId('completeness-checklist-ready')).not.toBeInTheDocument();
-    expect(screen.queryByText('Cobertura')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contrato vinculado ao serviço')).not.toBeInTheDocument();
   });
 
   /**
@@ -180,33 +183,26 @@ describe('PatientDetailPage', () => {
    * checklist, o drawer abria, ela fechava, ia para outra aba e voltava — e o drawer abria
    * SOZINHO, por cima do que ela estava fazendo. Vale igual para CONSENT → DiagnosticoCard.
    */
-  it('F3: voltar para a aba depois de fechar o drawer NÃO o reabre sozinho (o pedido de foco é consumido)', () => {
-    vi.useFakeTimers();
-    try {
+  it('F3: voltar para a aba NÃO reenvia o pedido de foco (consumido) — o painel de contrato não reabre sozinho', () => {
     detail.patient = { ...(detail.patient as object), status: 'PENDING_ADMISSION' };
     render(<PatientDetailPage />);
-    // 1. Clica em "Cobertura" no checklist: troca de aba e o drawer de cobertura abre.
-    fireEvent.click(screen.getByText('Cobertura'));
-    expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
-    // 2. Fecha o drawer (o fechamento tem animação: `setShow(false)` + `setTimeout(onClose)`).
-    fireEvent.click(screen.getByTestId('patient-coverage-edit-backdrop'));
-    act(() => { vi.advanceTimersByTime(500); });
-    expect(screen.queryByTestId('patient-coverage-edit-drawer')).not.toBeInTheDocument();
-    // 3. Vai para outra aba e volta — o card remonta.
+    // 1. Clica no item do checklist: troca de aba e o pedido COVERAGE chega ao card de serviços.
+    fireEvent.click(screen.getByText('Contrato vinculado ao serviço'));
+    expect(screen.getByTestId('services-saved-stub').getAttribute('data-focus')).toBe('COVERAGE');
+    // 2. Vai para outra aba e volta — o card remonta.
     fireEvent.click(screen.getByText('Rede de Apoio'));
     fireEvent.click(screen.getByText('Serviço Contratado'));
-    // 4. O drawer NÃO pode ter reaberto sozinho: ela não pediu nada.
+    // 3. O pedido já foi consumido: ela não pediu nada de novo.
+    expect(screen.getByTestId('services-saved-stub').getAttribute('data-focus')).toBe('none');
     expect(screen.queryByTestId('patient-coverage-edit-drawer')).not.toBeInTheDocument();
-    expect(screen.getByTestId('edit-coverage-btn')).toBeInTheDocument();
-    } finally { vi.useRealTimers(); }
   });
 
-  it('F3: clicar no checklist DEPOIS de trocar de aba continua abrindo o drawer (o conserto não mata a US-D1)', () => {
+  it('F3: clicar no checklist DEPOIS de trocar de aba continua pedindo o foco (o conserto não mata a US-D1)', () => {
     detail.patient = { ...(detail.patient as object), status: 'PENDING_ADMISSION' };
     render(<PatientDetailPage />);
     fireEvent.click(screen.getByText('Rede de Apoio'));
-    fireEvent.click(screen.getByText('Cobertura'));
-    expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Contrato vinculado ao serviço'));
+    expect(screen.getByTestId('services-saved-stub').getAttribute('data-focus')).toBe('COVERAGE');
   });
 
   it('status:ADMISSION (ACTIVATABLE) → checklist de completude PRESENTE', () => {

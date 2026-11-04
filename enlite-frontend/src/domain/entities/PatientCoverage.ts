@@ -5,14 +5,13 @@
  */
 
 /**
- * section = 'coverage' — mirrors coverageSectionSchema (backend).
+ * section = 'coverage' — mirrors coverageSectionSchema (backend). Spec 087: `insuranceVerifiedCodes` SAIU (o backend o recusa com 400) —
+ * a cobertura vive no serviço contratado.
  * IVA e tipo de contratação NÃO entram (lex C3.3 → bloco C).
  */
 export interface PatientCoverageSectionPayload {
   healthInsuranceName?: string | null;
   affiliateId?: string | null;
-  /** Códigos do catálogo `insurance_providers`. */
-  insuranceVerifiedCodes?: string[];
   // `emergencyContacts` SAIU (spec 018, PR-1, ADR-1, SUP-37): a lista de contatos de emergência
   // da cobertura passou a ser escrita por LINHA — `AdminPatientContactRowsApiService`. Mandar o
   // campo aqui agora é 400 no backend (`.strict()`).

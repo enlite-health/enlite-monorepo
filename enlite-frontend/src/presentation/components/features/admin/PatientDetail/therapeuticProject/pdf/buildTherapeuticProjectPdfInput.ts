@@ -9,7 +9,8 @@ import type { ResolvedTherapeuticContact, TherapeuticProjectVersion } from '@dom
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from '../../contractedServiceScheduleText';
 import { ageFromBirthDate, formatIsoDateEsAr, type PdfContact, type PdfContactStatusLines, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
-import { PDF_LABELS } from './pdfFixedTexts';
+import type { TFunction } from 'i18next';
+import { currentCoverageDisplay } from '../../currentCoverageText';
 import { getInstantParts } from '@presentation/utils/dateTimeFormat';
 
 export interface PdfContainerReads {
@@ -114,14 +115,13 @@ export function buildTherapeuticProjectPdfInput(args: {
       }
     : null;
 
-  // Spec 058 §4.5: a cobertura do PDF é a INFORMADA e, na falta, os NOMES do catálogo (`coverage.display`). Sem texto: com só rótulos
-  // sem mapeamento (`UNMAPPED_ONLY`) o PDF diz "sin mapeo"; sem nada (`NONE`) diz "no informada" — o back só manda dado, a frase é do front.
-  const coverageView = patient.coverage ?? null;
+  // Spec 087: a cobertura do PDF é a ATUAL do serviço contratado (`currentCoverage`: os nomes das obras sociais distintas + "Particular", ou o texto
+  // do estado — sem serviço, sem vínculo, sem nome para este ator). O decisor é o MESMO do cartão ("Cobertura actual"), só que em espanhol fixo.
+  // `undefined` (backend anterior) = "não li": `null`, nunca uma frase inventada. Sem `reads.coverage` o bloco inteiro some (redação preservada).
+  const display = patient.currentCoverage === undefined ? null : currentCoverageDisplay(tEs as TFunction, patient.currentCoverage);
   const coverage = reads.coverage
     ? {
-        insurance: coverageView === null
-          ? null
-          : coverageView.display ?? (coverageView.displaySource === 'UNMAPPED_ONLY' ? PDF_LABELS.coverageUnmapped : PDF_LABELS.coverageNone),
+        insurance: display === null ? null : display.kind === 'tags' ? display.names.join(', ') : display.text,
         affiliateId: patient.affiliateId,
       }
     : null;

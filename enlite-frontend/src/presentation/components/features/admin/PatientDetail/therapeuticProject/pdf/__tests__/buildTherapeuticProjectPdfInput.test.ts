@@ -179,39 +179,41 @@ describe('identificação', () => {
 // ── Cobertura ────────────────────────────────────────────────────────────────
 
 describe('cobertura', () => {
-  // Spec 058 §4.5: o PDF lê `coverage.display` (a INFORMADA, ou os NOMES do catálogo); o texto das ausências é do front.
-  const cobertura = (c: NonNullable<PatientDetail['coverage']>) => ({ coverage: c });
+  // Spec 087: o PDF lê a cobertura ATUAL do serviço (`currentCoverage`, o mesmo decisor do cartão) — nomes das obras sociais distintas +
+  // "Particular", ou o texto do estado, tudo em espanhol fixo. A informada/verificada do paciente não entram.
+  const tEsReal = (key: string, fallback?: string): string => {
+    let cur: unknown = esJson;
+    for (const part of key.split('.')) cur = (cur as Record<string, unknown> | undefined)?.[part];
+    return typeof cur === 'string' ? cur : (fallback ?? key);
+  };
+  const atual = (over: Partial<NonNullable<PatientDetail['currentCoverage']>> = {}) => ({
+    currentCoverage: { providers: [], privateServices: 0, hiddenServices: 0, unlinkedServices: 0, activeServices: 1, ...over },
+  });
 
-  it('INFORMED: o PDF mostra a cobertura informada', () => {
-    const p = paciente({ insuranceInformed: 'OSDE', ...cobertura({ display: 'OSDE', displaySource: 'INFORMED', entries: [] }), affiliateId: 'AF-1', contractedServices: [SERVICO] });
+  it('1 serviço com obra social: o PDF mostra o NOME dela (e o afiliado); a informada do paciente é ignorada', () => {
+    const p = paciente({ insuranceInformed: 'OUTRA', affiliateId: 'AF-1', ...atual({ providers: [{ code: 'OSDE', name: 'OSDE' }] }), contractedServices: [SERVICO] });
 
     expect(montar({ patient: p }).coverage).toEqual({ insurance: 'OSDE', affiliateId: 'AF-1' });
   });
 
-  it('VERIFIED: sem a informada, o PDF usa os NOMES do catálogo (não o código, não o rótulo cru)', () => {
-    const p = paciente({
-      insuranceInformed: null,
-      ...cobertura({ display: 'Swiss Medical', displaySource: 'VERIFIED', entries: [{ code: 'SWISS_MEDICAL', name: 'Swiss Medical', mapped: true, source: 'admin_manual' }] }),
-      contractedServices: [SERVICO],
-    });
+  it('N serviços: nomes distintos + "Particular", separados por vírgula', () => {
+    const p = paciente({ ...atual({ providers: [{ code: 'GALENO', name: 'Galeno' }, { code: 'OSDE', name: 'OSDE' }], privateServices: 1, activeServices: 3 }), contractedServices: [SERVICO] });
 
-    expect(montar({ patient: p }).coverage!.insurance).toBe('Swiss Medical');
+    expect(montar({ patient: p, tEs: tEsReal }).coverage!.insurance).toBe('Galeno, OSDE, Particular');
   });
 
-  it('UNMAPPED_ONLY: display null → o PDF diz "sin mapeo" (o front traduz, o back só manda dado)', () => {
-    const p = paciente({ insuranceInformed: null, ...cobertura({ display: null, displaySource: 'UNMAPPED_ONLY', entries: [{ code: null, name: null, mapped: false, source: 'clickup' }] }), contractedServices: [SERVICO] });
-
-    expect(montar({ patient: p }).coverage!.insurance).toBe('Cobertura sin mapeo al catálogo');
+  it('sem serviço ativo / sem vínculo: o texto do estado, em espanhol (nunca um nome inventado)', () => {
+    expect(montar({ patient: paciente({ ...atual({ activeServices: 0 }), contractedServices: [SERVICO] }), tEs: tEsReal }).coverage!.insurance).toBe('Sin servicio activo');
+    expect(montar({ patient: paciente({ ...atual({ unlinkedServices: 1 }), contractedServices: [SERVICO] }), tEs: tEsReal }).coverage!.insurance).toBe('Sin obra social vinculada');
   });
 
-  it('NONE: display null → o PDF diz "no informada"', () => {
-    const p = paciente({ insuranceInformed: null, ...cobertura({ display: null, displaySource: 'NONE', entries: [] }), contractedServices: [SERVICO] });
-
-    expect(montar({ patient: p }).coverage).toEqual({ insurance: 'Cobertura no informada', affiliateId: null });
+  it('ator sem `patient_coverage:read` no PDF: o bloco inteiro some (redação preservada); sem `patient_services:read` (currentCoverage null) diz "Sin permiso"', () => {
+    expect(montar({ patient: paciente({ ...atual({ providers: [{ code: 'OSDE', name: 'OSDE' }] }) }), reads: { ...TODOS, coverage: false } }).coverage).toBeNull();
+    expect(montar({ patient: paciente({ currentCoverage: null }), tEs: tEsReal }).coverage!.insurance).toBe('Sin permiso');
   });
 
-  it('sem o objeto `coverage` (backend anterior) → `null` DENTRO do bloco: o dado é que falta, não há frase inventada', () => {
-    const { coverage } = montar({ patient: paciente({ coverage: undefined as never }) });
+  it('sem `currentCoverage` (backend anterior) → `null` DENTRO do bloco: o dado é que falta, não há frase inventada', () => {
+    const { coverage } = montar({ patient: paciente({ currentCoverage: undefined as never }) });
 
     expect(coverage).toEqual({ insurance: null, affiliateId: null });
   });
