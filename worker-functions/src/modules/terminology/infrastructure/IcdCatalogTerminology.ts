@@ -82,6 +82,8 @@ const DEFAULT_SEARCH_LIMIT = 50;
 /** D8 — medido: `search('a', { limit: 100000 })` sem teto devolveu 18.185 linhas. */
 const MAX_SEARCH_LIMIT = 200;
 const WORD_SIMILARITY_THRESHOLD = 0.3;
+/** Palavra com menos caracteres que isto casa só por ILIKE, nunca por similaridade. */
+const MIN_FUZZY_TOKEN_LENGTH = 5;
 
 interface IcdEntityRow {
   icd_uri: string;
@@ -204,34 +206,44 @@ export class IcdCatalogTerminology implements TerminologyPort {
     // (casa substring exata mesmo abaixo do limiar). Cada ramo usa o SEU índice e só depois o
     // resultado — pequeno — é juntado ao catálogo por `icd_uri` (mesma razão do T9: nada de
     // subconsulta correlacionada dentro de um OR).
-    const branch = (txt: string, table: string, alias: string): string => {
+    // Fuzzy (`%>`) só para palavra com 5+ caracteres: palavra curta ("leve", "mental") casa por
+    // similaridade com milhares de textos sem relação e custa o índice; ela casa só por ILIKE.
+    const branch = (txt: string, table: string, alias: string, ehTitulo: boolean): string => {
       const casa = terms
-        .map((_, i) => `(${txt} ILIKE '%' || ${likeParam(i)} || '%' ESCAPE '\\' OR ${txt} %> ${termParam(i)})`)
+        .map((t, i) => {
+          const exato = `${txt} ILIKE '%' || ${likeParam(i)} || '%' ESCAPE '\\'`;
+          return t.length >= MIN_FUZZY_TOKEN_LENGTH ? `(${exato} OR ${txt} %> ${termParam(i)})` : `(${exato})`;
+        })
         .join(' AND ');
       const media = terms.map((_, i) => `word_similarity(${termParam(i)}, ${txt})`).join(' + ');
       return `SELECT ${alias}.icd_uri AS icd_uri,
                ${txt} LIKE '%' || terminology.f_norm($2) || '%' ESCAPE '\\' AS contem,
-               (${media}) / ${terms.length}.0 AS sim
+               (${media}) / ${terms.length}.0 AS sim,
+               ${ehTitulo} AS eh_titulo
           FROM ${table} ${alias}
          WHERE ${alias}.release = $1 AND ${casa}`;
     };
 
     const sql = `
       WITH candidatos AS (
-        ${branch('terminology.f_norm(t.title_es)', 'terminology.icd_entities', 't')}
+        ${branch('terminology.f_norm(t.title_es)', 'terminology.icd_entities', 't', true)}
         UNION ALL
-        ${branch('terminology.f_norm(t.title_en)', 'terminology.icd_entities', 't')}
+        ${branch('terminology.f_norm(t.title_en)', 'terminology.icd_entities', 't', true)}
         UNION ALL
-        ${branch('terminology.f_norm(s.term)', 'terminology.icd_synonyms', 's')}
+        ${branch('terminology.f_norm(s.term)', 'terminology.icd_synonyms', 's', false)}
+      ),
+      -- o MELHOR texto de cada entidade: frase contida, depois similaridade, e (empate) título antes de sinônimo
+      melhor AS (
+        SELECT DISTINCT ON (icd_uri) icd_uri, contem, sim, eh_titulo
+          FROM candidatos
+         ORDER BY icd_uri, contem DESC, sim DESC, eh_titulo DESC
       )
-      SELECT e.icd_uri, e.code, e.title_es, e.title_en, e.chapter,
-             bool_or(c.contem) AS contem, max(c.sim) AS sim
-        FROM candidatos c
+      SELECT e.icd_uri, e.code, e.title_es, e.title_en, e.chapter, m.contem, m.sim, m.eh_titulo
+        FROM melhor m
         JOIN terminology.icd_entities e
-          ON e.icd_uri = c.icd_uri AND e.release = $1
+          ON e.icd_uri = m.icd_uri AND e.release = $1
        WHERE ${conditions.join(' AND ')}
-       GROUP BY e.icd_uri, e.code, e.title_es, e.title_en, e.chapter
-       ORDER BY contem DESC, sim DESC, e.code ASC
+       ORDER BY m.contem DESC, m.sim DESC, m.eh_titulo DESC, e.code ASC
        LIMIT $${params.length}
     `;
 

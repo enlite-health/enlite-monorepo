@@ -373,13 +373,23 @@ describe('IcdCatalogTerminology', () => {
   describe('T9 — a busca LÊ terminology.icd_synonyms', () => {
     it('o SQL da busca consulta a tabela de sinônimos, escopada pelo MESMO release', async () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
-      await new IcdCatalogTerminology().search('TEA');
+      await new IcdCatalogTerminology().search('autismo'); // 5+ letras: entra o ramo fuzzy `%>`
 
       const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const sql = mainCall[0] as string;
       expect(sql).toMatch(/terminology\.icd_synonyms/);
       expect(sql).toMatch(/terminology\.f_norm\(s\.term\)\s*%>/);
       expect(sql).toMatch(/s\.release\s*=\s*\$1/);
+    });
+
+    it('palavra com menos de 5 caracteres não gera predicado fuzzy (`%>`), só ILIKE', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
+      await new IcdCatalogTerminology().search('TEA');
+
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
+      const sql = mainCall[0] as string;
+      expect(sql).toMatch(/ILIKE/);
+      expect(sql).not.toMatch(/%>/);
     });
 
     it('os dois ramos entram por CTE + UNION ALL — nunca por EXISTS correlacionado num OR (D6)', async () => {

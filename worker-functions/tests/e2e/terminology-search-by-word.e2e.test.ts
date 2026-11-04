@@ -7,7 +7,9 @@
  *  a. sem acento: "depresion" acha "depresión";
  *  b. por palavra: "trastorno desarrollo intelectual" (sem "del", outra ordem) acha 6A00;
  *  c. AND: palavras de entidades diferentes não casam por pedaço solto (antes casavam);
- *  d. consulta só de stopwords cai na frase inteira (o comportamento de antes).
+ *  d. consulta só de stopwords cai na frase inteira (o comportamento de antes);
+ *  e. palavra com menos de 5 caracteres não casa por similaridade (só por ILIKE);
+ *  f. empate de score: título da OMS vem antes de sinônimo.
  */
 import { Pool } from 'pg';
 import { IcdCatalogTerminology } from '../../src/modules/terminology/infrastructure/IcdCatalogTerminology';
@@ -66,6 +68,8 @@ describe('busca por palavra, sem acento (Postgres real) @integration', () => {
     await inserir(2, 'ZQ02', 'Trastorno del desarrollo zqwintelectual, leve');
     expect(await buscar('zqwintelectual desarrollo trastorno')).toEqual(['ZQ02']);
     expect(await buscar('trastorno desarrollo zqwintelectual')).toEqual(['ZQ02']);
+    // stopword na consulta ("para" não está no título) é descartada, não exigida
+    expect(await buscar('trastorno para desarrollo zqwintelectual')).toEqual(['ZQ02']);
 
     const real = await terminology.search('trastorno desarrollo intelectual', { chapters: ['06'] });
     expect(real.map((c) => c.code.value)).toContain('6A00.0');
@@ -101,6 +105,39 @@ describe('busca por palavra, sem acento (Postgres real) @integration', () => {
 
     // Frase inteira como bloco: ZQ05 a CONTÉM e vem em 1º; ZQ06 só casa por similaridade (como antes) e vem depois.
     expect(await buscar('sin con')).toEqual(['ZQ05', 'ZQ06']);
+  });
+
+  it('e. palavra com menos de 5 caracteres não casa por similaridade; com 5+ continua tolerante a erro', async () => {
+    await inserir(11, 'ZQ30', 'zqwcuadro leva');
+    await inserir(12, 'ZQ31', 'zqwesquizofrenia');
+
+    // CONTROLE: pela regra antiga, "leve" (4 letras) casava "leva" por similaridade.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL pg_trgm.word_similarity_threshold = 0.3');
+      const r = await client.query(`SELECT 'leve' <% 'zqwcuadro leva' AS casa`);
+      expect(r.rows[0].casa).toBe(true);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    expect(await buscar('zqwcuadro leve')).toEqual([]); // "leve" curta: só ILIKE, e "leva" não a contém
+    expect(await buscar('zqwcuadro leva')).toEqual(['ZQ30']);
+    expect(await buscar('zqwesquisofrenia')).toEqual(['ZQ31']); // 16 letras, erro de digitação: fuzzy vale
+  });
+
+  it('f. com score igual, o TÍTULO da OMS vem antes do SINÔNIMO (mesmo com code maior)', async () => {
+    await inserir(13, 'ZQ21', 'zqwtieword alfa');
+    await inserir(14, 'ZQ11', 'otro cuadro zqwnada');
+    await pool.query(
+      `INSERT INTO terminology.icd_synonyms (icd_uri, release, term, lang, created_by) VALUES ($1, $2, 'zqwtieword alfa', 'es', 'test-palavra')`,
+      [URI(14), release],
+    );
+
+    // mesmo texto normalizado, mesma similaridade, ambos contêm a frase: só o desempate decide
+    expect(await buscar('zqwtieword alfa')).toEqual(['ZQ21', 'ZQ11']);
   });
 
   it('ranking: frase inteira contida vem antes; depois similaridade; depois code', async () => {
