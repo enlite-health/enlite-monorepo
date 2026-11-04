@@ -60,8 +60,6 @@ export {
   buildInsertQuery,
   buildInsertParams,
   CANONICAL_STATUSES,
-  isCaseOrdinalConflict,
-  retryOnCaseOrdinalConflict,
   SOURCE_LOCKED_FIELDS,
   pickSourceLockedFields,
 } from './interfaces/controllers/vacancyCrudHelpers';

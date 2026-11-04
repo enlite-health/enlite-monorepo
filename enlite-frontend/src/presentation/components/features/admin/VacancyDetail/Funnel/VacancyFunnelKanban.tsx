@@ -13,10 +13,13 @@ import { AdminPresentationInviteApiService } from '@infrastructure/http/AdminPre
 
 interface VacancyFunnelKanbanProps {
   vacancyId: string;
+  /** Spec 084 (P4/R6): vaga dada de baja — nada se move, promove, rechaza nem reenvia; só se consulta. */
+  readOnly?: boolean;
 }
 
 export function VacancyFunnelKanban({
   vacancyId,
+  readOnly = false,
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
   const { data, isLoading, error, refetch, moveEncuadre, promoteBlocked, rejectBlocked } =
@@ -184,10 +187,11 @@ export function VacancyFunnelKanban({
           stages={data.stages}
           vacancyId={vacancyId}
           onMove={handleMove}
-          onPromoteBlocked={handlePromoteBlocked}
-          onRejectBlocked={handleRejectBlocked}
-          onResendInvite={handleResendInvite}
-          onPresentationInvite={handlePresentationInvite}
+          onPromoteBlocked={readOnly ? undefined : handlePromoteBlocked}
+          onRejectBlocked={readOnly ? undefined : handleRejectBlocked}
+          onResendInvite={readOnly ? undefined : handleResendInvite}
+          onPresentationInvite={readOnly ? undefined : handlePresentationInvite}
+          readOnly={readOnly}
         />
       )}
     </div>

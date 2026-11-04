@@ -15,6 +15,8 @@ export interface UseVacanciesDataFilters {
   time_to?: string;
   sort?: string;
   order?: string;
+  include_baja?: string;
+  talentum_manual?: string;
 }
 
 export function useVacanciesData(filters?: UseVacanciesDataFilters) {
@@ -65,6 +67,8 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
     filters?.time_to,
     filters?.sort,
     filters?.order,
+    filters?.include_baja,
+    filters?.talentum_manual,
     fetchKey,
   ]);
 

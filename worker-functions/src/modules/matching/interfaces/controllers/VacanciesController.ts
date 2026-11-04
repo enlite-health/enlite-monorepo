@@ -82,7 +82,7 @@ export class VacanciesController {
   async listVacancies(req: Request, res: Response): Promise<void> {
     try {
       const {
-        search, status,
+        search, status, include_baja, talentum_manual,
         worker_type, state, city, required_sex,
         days, time_from, time_to,
         limit = '20', offset = '0',
@@ -93,6 +93,8 @@ export class VacanciesController {
       const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
         search, status,
+        includeBaja: include_baja,
+        talentumManual: talentum_manual,
         workerType: worker_type,
         state,
         city,

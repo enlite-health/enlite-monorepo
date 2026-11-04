@@ -444,6 +444,16 @@ export class TalentumApiClient implements ITalentumApiClient {
     return this.request<void>('DELETE', `/projects/${projectId}`);
   }
 
+  /** Spec 084 (F4): pausa o projeto — o ciclo de vida da v2 (`PUT /projects/:id/pause`); o projeto e os candidatos ficam. */
+  async pauseProject(projectId: string): Promise<void> {
+    await this.request<unknown>('PUT', `/projects/${projectId}/pause`);
+  }
+
+  /** Spec 084 (F4): retoma o projeto (`PUT /projects/:id/resume`); 400 se não estava pausado. */
+  async resumeProject(projectId: string): Promise<void> {
+    await this.request<unknown>('PUT', `/projects/${projectId}/resume`);
+  }
+
   /**
    * Uma página de `GET /projects` (12 por página). O item da lista NÃO traz `publicId`,
    * descrição nem perguntas: vêm vazios (use `getPrescreening` para o detalhe).

@@ -286,7 +286,7 @@ function skip(reason: FusionSkipReason): FusionOutcome {
 }
 
 /** Invariante de contagem por tabela: rascunho zerado; oficial = antes(rascunho + oficial) − fundidas + criadas. */
-function assertCounts(
+export function assertCounts(
   before: FusionCounts,
   after: FusionCounts,
   merged: Partial<Record<FusionTable, number>>,

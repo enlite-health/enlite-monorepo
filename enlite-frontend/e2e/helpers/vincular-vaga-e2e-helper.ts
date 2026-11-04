@@ -35,7 +35,10 @@ export interface LegacyVacancyFields {
 export interface LegacyVacancySeed {
   vacancyId: string;
   caseNumber: number;
-  caseOrdinal: number;
+  /** Spec 084 (R16): vaga SEM serviço fica SEM número — null. */
+  caseOrdinal: number | null;
+  /** Título ÚNICO por vaga: sem número (R16) duas legadas do mesmo paciente teriam o mesmo rótulo na lista (opção ambígua). */
+  title: string;
   applicationId: string;
   encuadreId: string;
   workerId: string;
@@ -64,6 +67,7 @@ export function seedLegacyVacancy(
   };
   const caseNumber = Number(runSQL(`SELECT case_number FROM patients WHERE id = '${patientId}'`));
   if (!Number.isFinite(caseNumber) || caseNumber <= 0) throw new Error('seedLegacyVacancy: paciente sem case_number');
+  const titulo = `CASO ${caseNumber} vaga legada QA ${stampUnico().slice(-6)}`;
   const professions = f.required_professions === null
     ? 'NULL'
     : `ARRAY[${f.required_professions.map((p) => sqlTexto(p)).join(',')}]::text[]`;
@@ -72,13 +76,14 @@ export function seedLegacyVacancy(
     `WITH ins AS (INSERT INTO job_postings (vacancy_number, case_number, case_ordinal, title, description, patient_id, patient_address_id, ` +
     `required_professions, required_sex, required_experience, work_schedule, payment_day, providers_needed, age_range_min, age_range_max, ` +
     `status, is_draft, country, created_at, updated_at) VALUES (nextval('job_postings_vacancy_number_seq'), ${caseNumber}, ` +
-    `(SELECT COALESCE(MAX(case_ordinal), 0) + 1 FROM job_postings WHERE patient_id = '${patientId}'), ` +
-    `'CASO ${caseNumber} vaga legada QA', 'vaga legada sintetica e2e', '${patientId}', ${opts.addressId ? `'${opts.addressId}'` : 'NULL'}, ` +
+    `NULL, ` + // spec 084 (R16): vaga legada (sem serviço) NÃO tem número; com número ela colidiria com a vaga do serviço (índice único)
+    
+    `'${titulo}', 'vaga legada sintetica e2e', '${patientId}', ${opts.addressId ? `'${opts.addressId}'` : 'NULL'}, ` +
     `${professions}, ${sqlTexto(f.required_sex)}, ${sqlTexto(f.required_experience)}, ${sqlTexto(f.work_schedule)}, ${sqlTexto(f.payment_day)}, ` +
     `${sqlTexto(f.providers_needed)}, ${sqlNum(f.age_range_min)}, ${sqlNum(f.age_range_max)}, 'SEARCHING', false, 'AR', NOW(), NOW()) ` +
-    `RETURNING id, case_ordinal) SELECT id || '|' || case_ordinal FROM ins`,
+    `RETURNING id) SELECT id FROM ins`,
   );
-  const [vacancyId, ordinal] = row.split('|');
+  const vacancyId = row;
   if (!vacancyId) throw new Error(`seedLegacyVacancy: INSERT sem id (saída: ${row})`);
 
   const { workerId } = seedWorker(stampUnico());
@@ -99,7 +104,7 @@ export function seedLegacyVacancy(
     encuadreId = lerEncuadre();
   }
   if (!encuadreId) throw new Error('seedLegacyVacancy: vaga sem encuadre');
-  return { vacancyId, caseNumber, caseOrdinal: Number(ordinal), applicationId, encuadreId, workerId };
+  return { vacancyId, caseNumber, caseOrdinal: null, title: titulo, applicationId, encuadreId, workerId };
 }
 
 /**

@@ -61,11 +61,14 @@ function persistView(vacancyId: string, view: FunnelView): void {
 interface VacancyFunnelViewProps {
   vacancyId: string;
   vacancy?: VacancyForMatch;
+  /** Spec 084 (P4/R6): vaga dada de baja — o funil abre só para consulta (sem Match, sem envio, sem arrasto). */
+  readOnly?: boolean;
 }
 
 export function VacancyFunnelView({
   vacancyId,
   vacancy,
+  readOnly = false,
 }: VacancyFunnelViewProps): JSX.Element {
   const { t } = useTranslation();
   const [view, setView] = useState<FunnelView>(() =>
@@ -129,6 +132,7 @@ export function VacancyFunnelView({
       {/* Linha 1: toggle (esquerda) + ações (direita, nas duas visões — 054 item 6) */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <VacancyFunnelToggle view={view} onChange={handleViewChange} />
+        {!readOnly && (
         <div className="flex items-center gap-3 flex-shrink-0">
           {/* POST /vacancies/:id/match → match:execute · POST /messaging/whatsapp/vacancy-match →
               messaging:send (D286 fase 2 — a rota já decidia; sem a célula o botão SOME). */}
@@ -155,6 +159,7 @@ export function VacancyFunnelView({
             })}
           </ActionButton>
         </div>
+        )}
       </div>
 
       {/* List view content */}
@@ -204,7 +209,7 @@ export function VacancyFunnelView({
       )}
 
       {/* Kanban view content */}
-      {!isListView && <VacancyFunnelKanban vacancyId={vacancyId} />}
+      {!isListView && <VacancyFunnelKanban vacancyId={vacancyId} readOnly={readOnly} />}
 
       {showMatchModal && (
         <MatchVacancyModal

@@ -1385,6 +1385,37 @@ describe('ProcessTalentumPrescreening', () => {
   // postulação da MESMA pessoa na mesma vaga — a UNIQUE (worker_id,
   // job_posting_id) não pega, porque os IDs são diferentes.
 
+  describe('spec 084 F4/F17 — projeto de vaga DADA DE BAJA ainda recebendo candidato', () => {
+    const poolComVaga = (status: string) => {
+      const base = mockPool.query.getMockImplementation();
+      mockPool.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('SELECT status FROM job_postings')) return Promise.resolve({ rows: [{ status }] });
+        return base!(sql, params);
+      });
+    };
+
+    it('DE_BAJA: a resposta é GUARDADA e MARCADA, mas não entra no Kanban (sem WJA, sem encuadre, sem evento QUALIFIED)', async () => {
+      poolComVaga('DE_BAJA');
+      const payload = buildPayload({ statusLabel: 'QUALIFIED' });
+      const result = await useCase.execute(payload);
+
+      expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledTimes(1);   // nada se perde
+      const marcou = mockPool.query.mock.calls.find((c: unknown[]) => String(c[0]).includes('held_for_baja = true'));
+      expect(marcou).toBeDefined();                                                  // fica marcado
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).not.toHaveBeenCalled(); // fora do Kanban
+      expect(mockPoolClient.query).not.toHaveBeenCalledWith('BEGIN');
+      expect(mockPubsub.publish).not.toHaveBeenCalled();                              // nenhuma mensagem ao prestador
+      expect(result.jobPostingId).toBe('jp-1');
+    });
+
+    it('controle: vaga SEARCHING segue o fluxo de sempre (WJA no Kanban)', async () => {
+      poolComVaga('SEARCHING');
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalled();
+      expect(mockPool.query.mock.calls.some((c: unknown[]) => String(c[0]).includes('held_for_baja'))).toBe(false);
+    });
+  });
+
   describe('resolução ciente de merge', () => {
     /**
      * Faz a cadeia `from` → `to` (1 salto) na query recursiva, no shape que

@@ -198,6 +198,8 @@ export class WorkerApplicationRepository {
        WHERE wja.worker_id = $1
          AND wja.application_funnel_stage NOT IN ('REJECTED', 'NOT_QUALIFIED')
          AND jp.deleted_at IS NULL
+         -- spec 084 (P4/F9): vaga dada de baja some das vagas que o prestador vê (inclusive pela Luz)
+         AND jp.status != 'DE_BAJA'
        ORDER BY jp.created_at DESC`,
       [workerId],
     );
