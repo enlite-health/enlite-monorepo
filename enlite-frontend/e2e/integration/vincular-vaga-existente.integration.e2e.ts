@@ -37,7 +37,7 @@ const staff = { uid, email: `${uid}@e2e.test`, role: 'admin', country: 'AR' };
 
 /** Rótulo que a pessoa lê na lista: "<caso>#<ordinal> · <título> · <status>" (LinkExistingVacancyModal). */
 const rotuloDaVaga = (v: LegacyVacancySeed): string =>
-  `${formatVacancyCase(v.caseNumber, v.caseOrdinal)} · CASO ${v.caseNumber} vaga legada QA · En búsqueda`;
+  `${formatVacancyCase(v.caseNumber, v.caseOrdinal)} · ${v.title} · En búsqueda`;
 
 /** Login como uma pessoa faz (clique + teclado), sem `waitForTimeout`: a asserção é o destino real. */
 async function login(page: Page): Promise<void> {

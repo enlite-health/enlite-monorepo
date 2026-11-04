@@ -161,7 +161,7 @@ export class VacanciesAuxController {
         FROM job_postings jp
         WHERE jp.patient_address_id = $1
           AND jp.deleted_at IS NULL
-          AND jp.status <> 'CLOSED'
+          AND jp.status NOT IN ('CLOSED', 'DE_BAJA')
         ORDER BY jp.created_at DESC`,
         [patient_address_id],
       );

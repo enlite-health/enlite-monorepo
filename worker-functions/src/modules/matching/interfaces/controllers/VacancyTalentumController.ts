@@ -16,6 +16,7 @@ import {
   JobPostingAuditRepository,
 } from '../../infrastructure/JobPostingAuditRepository';
 import type { AuditActor } from '@modules/integration';
+import { vacancyIsDeBaja, sendVacancyDeBajaRefusal } from './vacancyDeBajaGuard';
 import { getVacancyTalentumStatus } from './vacancyTalentumStatusHelper';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import { loadVacancyForAiContent } from './vacancyAiContentQuery';
@@ -74,6 +75,11 @@ export class VacancyTalentumController {
   async publishToTalentum(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      // Spec 084 (R2/P7): vaga dada de baja não publica (nem republica) no Talentum — o projeto só é pausado.
+      if (await vacancyIsDeBaja(this.db, id)) {
+        sendVacancyDeBajaRefusal(res, 'VACANCY_DE_BAJA_TALENTUM_REFUSED');
+        return;
+      }
       const actor = this.extractActor(req);
       const useCase = new PublishVacancyToTalentumUseCase();
       const result = await useCase.publish({ jobPostingId: id }, actor);
@@ -92,6 +98,11 @@ export class VacancyTalentumController {
   async unpublishFromTalentum(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      // Spec 084 (R2/P7): despublicar APAGA o projeto no Talentum — nunca numa vaga dada de baja (a baixa só pausa).
+      if (await vacancyIsDeBaja(this.db, id)) {
+        sendVacancyDeBajaRefusal(res, 'VACANCY_DE_BAJA_TALENTUM_REFUSED');
+        return;
+      }
       const actor = this.extractActor(req);
       const useCase = new PublishVacancyToTalentumUseCase();
       await useCase.unpublish({ jobPostingId: id }, actor);

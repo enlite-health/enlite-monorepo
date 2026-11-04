@@ -26,7 +26,6 @@ import {
   FULL_ALLOWED_UPDATE_FIELDS,
   buildInsertQuery,
   buildInsertParams,
-  retryOnCaseOrdinalConflict,
   type VacancyInsertParams,
 } from './vacancyCrudHelpers';
 import { vacancyRawColumnsSql } from '@shared/sql/vacancyEffectiveFieldsSql';
@@ -254,20 +253,8 @@ export async function createWithPatientUpdate(
       }
     }
 
-    // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT; em conflito
-    // (23505 de idx_job_postings_case_ordinal) SAVEPOINT + retry recalcula e tenta de novo,
-    // sem abortar a transação (paciente + audit) que o envolve.
-    const result = await retryOnCaseOrdinalConflict(
-      async () => {
-        await client.query('SAVEPOINT case_ordinal_retry');
-        const r = await client.query(buildInsertQuery(), buildInsertParams(insertArgs));
-        await client.query('RELEASE SAVEPOINT case_ordinal_retry');
-        return r;
-      },
-      async () => {
-        await client.query('ROLLBACK TO SAVEPOINT case_ordinal_retry');
-      },
-    );
+    // case_ordinal é derivado do serviço dentro do próprio INSERT (spec 084): sem conflito a retentar.
+    const result = await client.query(buildInsertQuery(), buildInsertParams(insertArgs));
     const newVacancy = result.rows[0] as Record<string, unknown>;
 
     // Audit inside the same transaction — atomic with the insert

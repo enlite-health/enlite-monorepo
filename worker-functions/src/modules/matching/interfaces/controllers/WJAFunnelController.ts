@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { vacancyStatusOf, sendVacancyDeBajaReadOnly } from './vacancyDeBajaGuard';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -417,11 +418,15 @@ export class WJAFunnelController {
         });
       }
 
+      // Spec 084 (P4): vaga dada de baja abre em LEITURA — o front esconde arrasto/ações e mostra o aviso.
+      const vacancyStatus = await vacancyStatusOf(this.db, id);
       res.json({
         success: true,
         data: {
           stages,
           totalEncuadres: classifiedCount, // cards do funil, SEM os de Compatíveis (subtítulo do quadro)
+          vacancyStatus,
+          readOnly: vacancyStatus === 'DE_BAJA',
         },
       });
     } catch (error) {
@@ -512,7 +517,9 @@ export class WJAFunnelController {
 
       // 1. Busca encuadre para obter worker_id + job_posting_id
       const encuadre = await this.db.query(
-        `SELECT worker_id, job_posting_id FROM encuadres WHERE id = $1`,
+        `SELECT e.worker_id, e.job_posting_id, jp.status AS job_posting_status
+           FROM encuadres e LEFT JOIN job_postings jp ON jp.id = e.job_posting_id AND jp.deleted_at IS NULL
+          WHERE e.id = $1`,
         [id],
       );
       if (encuadre.rowCount === 0) {
@@ -520,9 +527,15 @@ export class WJAFunnelController {
         return;
       }
 
-      const { worker_id: workerId, job_posting_id: jobPostingId } = encuadre.rows[0];
+      const { worker_id: workerId, job_posting_id: jobPostingId, job_posting_status: jobPostingStatus } = encuadre.rows[0];
       if (!workerId || !jobPostingId) {
         res.status(400).json({ success: false, error: 'Encuadre has no linked worker or job posting' });
+        return;
+      }
+
+      // Spec 084 (P4/R6): vaga dada de baja não recebe movimento no Kanban (só consulta).
+      if (jobPostingStatus === 'DE_BAJA') {
+        sendVacancyDeBajaReadOnly(res);
         return;
       }
 
@@ -633,6 +646,11 @@ export class WJAFunnelController {
         return;
       }
 
+      if (await this.blockedVacancyIsDeBaja(blockedId)) {
+        sendVacancyDeBajaReadOnly(res);
+        return;
+      }
+
       const ok = await this.blockedWriteRepo.dismiss(blockedId, rejectionReasonCategory);
       if (!ok) {
         res.status(404).json({ success: false, error: 'Blocked application not found' });
@@ -663,6 +681,11 @@ export class WJAFunnelController {
         return;
       }
 
+      if (await this.blockedVacancyIsDeBaja(blockedId)) {
+        sendVacancyDeBajaReadOnly(res);
+        return;
+      }
+
       const ok = await this.blockedWriteRepo.undismiss(blockedId);
       if (!ok) {
         res.status(404).json({ success: false, error: 'Blocked application not found' });
@@ -677,5 +700,15 @@ export class WJAFunnelController {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, error: message });
     }
+  }
+
+  /** Spec 084 (P4): o card bloqueado pertence a uma vaga dada de baja? (só consulta). */
+  private async blockedVacancyIsDeBaja(blockedId: string): Promise<boolean> {
+    const res = await this.db.query<{ status: string | null }>(
+      `SELECT jp.status FROM worker_blocked_applications b JOIN job_postings jp ON jp.id = b.job_posting_id
+        WHERE b.id = $1 AND jp.deleted_at IS NULL`,
+      [blockedId],
+    );
+    return res?.rows?.[0]?.status === 'DE_BAJA';
   }
 }

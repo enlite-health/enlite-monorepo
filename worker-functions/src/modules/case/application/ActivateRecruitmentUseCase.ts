@@ -4,7 +4,6 @@ import { inPatientTransaction } from "./patientTransaction";
 import {
   buildInsertQuery,
   buildInsertParams,
-  retryOnCaseOrdinalConflict,
   type VacancyInsertParams,
   type SourceLockedField,
 } from "@modules/matching";
@@ -236,24 +235,9 @@ export class ActivateRecruitmentUseCase {
       ...fromRecruitment,
       ...fromOrigin,
     });
-    // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT
-    // (buildInsertQuery); a corrida entre dois cliques simultâneos no mesmo
-    // caso bate no índice único idx_job_postings_case_ordinal — SAVEPOINT +
-    // retry recalcula o ordinal e tenta de novo.
-    const insRes = await retryOnCaseOrdinalConflict(
-      async () => {
-        await client.query("SAVEPOINT case_ordinal_retry");
-        const res = await client.query<Record<string, unknown> & { id: string }>(
-          buildInsertQuery(),
-          params,
-        );
-        await client.query("RELEASE SAVEPOINT case_ordinal_retry");
-        return res;
-      },
-      async () => {
-        await client.query("ROLLBACK TO SAVEPOINT case_ordinal_retry");
-      },
-    );
+    // case_ordinal (spec 084 R12/R16) é derivado do SERVIÇO dentro do próprio INSERT (buildInsertQuery): sem MAX+1, sem corrida,
+    // sem índice único — não há mais conflito de case_ordinal para retentar.
+    const insRes = await client.query<Record<string, unknown> & { id: string }>(buildInsertQuery(), params);
     const vacancyId = insRes.rows[0].id;
 
     // T018 (spec 027, US2) — trilha de auditoria da vaga criada. O ator vem do

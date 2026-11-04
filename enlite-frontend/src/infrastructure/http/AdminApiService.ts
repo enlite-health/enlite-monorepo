@@ -219,6 +219,10 @@ class AdminApiServiceClass {
   getVacancyFilterOptions(): Promise<VacancyFilterOptions> {
     return AdminVacancyListApiService.getVacancyFilterOptions();
   }
+  /** Spec 084 F1: dar baixa (uma ou em lote) em vagas sem serviço. Sem rota inversa (R17). */
+  bajaVacancies(vacancyIds: string[]) {
+    return AdminVacancyListApiService.bajaVacancies(vacancyIds);
+  }
 
   // ========== Vacancies Methods ==========
 

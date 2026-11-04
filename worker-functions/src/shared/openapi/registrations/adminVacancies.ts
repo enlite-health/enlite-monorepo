@@ -3,7 +3,15 @@ import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
 
 const VacancyListQuery = z.object({
   search: z.string().optional().openapi({ description: 'Busca textual por título ou caso.', example: 'Caso 766' }),
-  status: z.string().optional().openapi({ description: 'Filtro por status da vaga.', example: 'SEARCHING' }),
+  status: z.string().optional().openapi({ description: 'Filtro por status da vaga (inclui `DE_BAJA`).', example: 'SEARCHING' }),
+  include_baja: z.enum(['true', 'false']).optional().openapi({
+    description: 'Spec 084 F2: `true` mostra as vagas dadas de baja (só consulta, com selo). Ausente = escondidas.',
+    example: 'true',
+  }),
+  talentum_manual: z.enum(['true', 'false']).optional().openapi({
+    description: 'Spec 084 F4: `true` = só as vagas na lista "pausar/retomar à mão no Talentum" (o Talentum recusou, 403).',
+    example: 'true',
+  }),
   limit: z.coerce.number().optional().openapi({ description: 'Máximo de itens (default 20).', example: 20 }),
   offset: z.coerce.number().optional().openapi({ description: 'Itens a pular (default 0).', example: 0 }),
   sort: z.enum(['compatible', 'invited', 'iniciado', 'preScreening', 'completed', 'selected', 'quickResponseTeam', 'rejected', 'postulados', 'faltantes', 'lastActionAt']).optional().openapi({
@@ -32,14 +40,10 @@ const CreateVacancyBody = z.object({
 });
 
 const UpdateVacancyBody = z.object({
-  // Nota (change baja-vacante-por-servico): `DE_BAJA` entrou no CHECK de `job_postings.status`
-  // (migration 483) e por isso entra aqui — mas é estado GERADO pelo gatilho de
-  // `PatientContractedServiceRepository.update` (baja/reativação do serviço contratado ligado),
-  // nunca escrito por este endpoint em produção. Documentado por completude do enum, não como
-  // convite ao admin setar manualmente. ⚠️ Este `z.enum` só documenta (OpenAPI) — a rota real
-  // (`VacancyCrudController.update`) trata `status` como string livre, sem validar contra ele
-  // (achado pré-existente, fora do escopo desta change: `ON_HOLD` já estava faltando aqui antes).
-  status: z.enum(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CLOSED', 'DE_BAJA']).optional().openapi({
+  // Spec 084: `DE_BAJA` NÃO é aceito aqui — nem para entrar (a baixa é `POST /vacancies/baja`) nem para sair (R17: vaga
+  // baixada só volta pela reativação do serviço; PUT em vaga DE_BAJA responde 409 `VACANCY_DE_BAJA_NO_REACTIVATION`).
+  // `ON_HOLD` ("En espera", R18) é a pausa da vaga de serviço ativo; encerrar (`CLOSED`) vaga de serviço ativo → 409.
+  status: z.enum(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'ON_HOLD', 'SUSPENDED', 'CLOSED']).optional().openapi({
     description: 'Novo status da vaga.',
     example: 'SEARCHING',
   }),
@@ -208,6 +212,30 @@ registry.registerPath({
   },
 });
 
+const BajaVacanciesBody = z.object({
+  vacancyIds: z.array(z.string().uuid()).min(1).max(200).openapi({ description: 'Vagas SEM serviço a dar baixa (1 = individual).' }),
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/vacancies/baja',
+  tags: ['Admin · Vacancies'],
+  summary: 'Dá baixa (DE_BAJA) em vagas sem serviço, uma ou em lote',
+  description:
+    'Spec 084 F1. TUDO OU NADA: se alguma vaga do lote tem serviço (P1), já está baixada ou não existe, nada é baixado e a ' +
+    'resposta 409 lista cada recusa com código e mensagem es/pt-BR. Nunca apaga (R2). **Não existe rota inversa** (R17): ' +
+    'vaga baixada só volta pela reativação do serviço que a baixou. Pós-commit tenta pausar o projeto no Talentum (R13).',
+  security: [{ firebaseAuth: [] }],
+  request: { body: { content: { 'application/json': { schema: BajaVacanciesBody } } } },
+  responses: {
+    200: { description: 'Vagas baixadas.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Corpo inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'Lote recusado (`BAJA_REFUSED`).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
 registry.registerPath({
   method: 'put',
   path: '/api/admin/vacancies/{id}',
@@ -226,6 +254,7 @@ registry.registerPath({
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Vaga não encontrada.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'Vaga DE_BAJA (R17) ou encerrar vaga de serviço ativo (R4): `code` + `messages` es/pt-BR.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });

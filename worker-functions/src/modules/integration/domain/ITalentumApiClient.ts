@@ -117,6 +117,12 @@ export interface ITalentumApiClient {
   /** Permanently delete a prescreening project. */
   deletePrescreening(projectId: string): Promise<void>;
 
+  /** Spec 084 (F4/R13): pausa o projeto (`PUT /projects/:id/pause`) — NUNCA apaga. 403 = conta sem posse do projeto. */
+  pauseProject(projectId: string): Promise<void>;
+
+  /** Spec 084 (F4/R13): retoma o projeto (`PUT /projects/:id/resume`). 400 = projeto não estava pausado. */
+  resumeProject(projectId: string): Promise<void>;
+
   /** List prescreening projects for a single page. */
   listPrescreenings(opts?: ListPrescreeningsOpts): Promise<{ projects: TalentumProject[]; count: number }>;
 

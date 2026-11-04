@@ -25,12 +25,17 @@ function VacancyStatusBadgeInline({ status }: { status: string | null }) {
     ON_HOLD: 'bg-amber-100 text-amber-700',
     SUSPENDED: 'bg-gray-100 text-gray-600',
     CLOSED: 'bg-gray-100 text-gray-600',
+    DE_BAJA: 'bg-gray-100 text-gray-600',
     ADMISSION: 'bg-cyan-100 text-cyan-700',
   };
   const colorClass = COLOR_MAP[status.toUpperCase()] ?? 'bg-gray-100 text-gray-600';
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full ${colorClass}`}>
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full ${colorClass}`}
+      data-testid={status === 'DE_BAJA' ? 'patient-vacancy-baja-badge' : undefined}
+      title={status === 'DE_BAJA' ? t('admin.vacancies.baja.readOnlyHint') : undefined}
+    >
       <Text as="span" size="xs" weight="medium" color="inherit">{label}</Text>
     </span>
   );

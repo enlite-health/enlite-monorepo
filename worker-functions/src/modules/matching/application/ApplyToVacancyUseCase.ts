@@ -9,6 +9,7 @@ import {
 } from '../domain/WorkerApplicationEligibility';
 import { RecordBlockedAttemptUseCase } from './RecordBlockedAttemptUseCase';
 import { CreateManualWjaWithEncuadreUseCase } from './CreateManualWjaWithEncuadreUseCase';
+import { vacancyIsDeBaja } from '../interfaces/controllers/vacancyDeBajaGuard';
 
 export interface ApplyToVacancyParams {
   workerId: string;
@@ -44,6 +45,15 @@ export type ApplyToVacancyResult =
       httpStatus: number;
       reason: WorkerEligibilityReason;
       workerStatus: string | null;
+      missingFields: string[];
+    }
+  | {
+      /** Spec 084 (P4/R6): vaga dada de baja não recebe candidatura (app e Luz/MCP) — só consulta. */
+      ok: false;
+      code: 'VACANCY_DE_BAJA';
+      httpStatus: 409;
+      reason: 'vacancy_de_baja';
+      workerStatus: null;
       missingFields: string[];
     };
 
@@ -93,6 +103,12 @@ export class ApplyToVacancyUseCase {
         };
       }
       throw err;
+    }
+
+    // Spec 084 (P4/R6/F10): o recrutamento não trabalha vaga sem serviço contratado — candidatura em vaga baixada é recusada
+    // (mesma regra para o app e para a Luz, que usam este use case).
+    if (await vacancyIsDeBaja(db, jobPostingId)) {
+      return { ok: false, code: 'VACANCY_DE_BAJA', httpStatus: 409, reason: 'vacancy_de_baja', workerStatus: null, missingFields: [] };
     }
 
     // Transação com carimbo de ator: o trigger de histórico grava quem postulou

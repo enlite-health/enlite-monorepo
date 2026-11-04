@@ -452,6 +452,23 @@ describe('SyncTalentumWorkersUseCase (v2)', () => {
       expect(fake.wja.size).toBe(0);
     });
 
+    it('spec 084 (R6/F10): vaga DE_BAJA NÃO ganha candidatura nem encuadre pelo sync; vaga viva do outro projeto segue ligando', async () => {
+      const w = fake.addWorker({ phone: PHONE_CANON, email: 'a@b.test', authUid: 'fb', status: 'REGISTERED', firstNameEnc: 'x', lastNameEnc: 'y' });
+      fake.vacancies.find((v) => v.id === 'jp-A')!.status = 'DE_BAJA';
+      mockClient.listAllPrescreenings.mockResolvedValue([project('proj-A'), project('proj-B')]);
+      serve({ 'proj-A': { candidates: [cand('pf-1')] }, 'proj-B': { candidates: [cand('pf-1')] } });
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ linked: 1 });
+      expect([...fake.wja]).toEqual([`${w.id}|jp-B`]);
+      expect(fake.encuadres.map((e) => e.jobPostingId)).toEqual(['jp-B']);
+      // o guard mora no próprio INSERT (sem corrida entre ler o status e escrever)
+      const inserts = fake.sqlLog.filter((q) => /INSERT INTO (worker_job_applications|encuadres)/.test(q));
+      expect(inserts.length).toBeGreaterThan(0);
+      for (const q of inserts) expect(q).toContain("status = 'DE_BAJA'");
+    });
+
     it('worker sem linha de status: tratado como incompleto', async () => {
       fake.addWorker({ phone: PHONE_CANON, email: 'a@b.test', authUid: 'fb', firstNameEnc: 'x', lastNameEnc: 'y' });
       fake.vanishOnStatus = true;
