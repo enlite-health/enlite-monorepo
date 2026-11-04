@@ -11,6 +11,7 @@ import {
   isAdmissionFunnelStatus,
 } from '@modules/case/domain/enums/PatientStatus';
 import { OPEN_JOB_STATUSES } from '@modules/matching/domain/openJobStatuses';
+import { CANONICAL_PROVINCES } from '@shared/utils/argentinaLocationNormalizer';
 import { UNRESOLVED_ZONE_LABEL } from '@shared/utils/zoneKey';
 
 export type CountEntity = 'workers' | 'patients' | 'vacancies';
@@ -38,38 +39,6 @@ export interface CountEntityDef {
 }
 
 const BOOL = ['true', 'false'] as const;
-
-/**
- * Províncias canônicas (24 jurisdições). NÃO há constante exportada pelo dono
- * (`PROVINCE_CANONICAL` em shared/utils/argentinaLocationNormalizer.ts:87 é privada): cópia
- * conferida por teste contra `normalizeProvince` (cada valor é ponto fixo). Ver LISTA da T103.
- */
-export const CANONICAL_PROVINCES: readonly string[] = [
-  'CABA',
-  'Provincia de Buenos Aires',
-  'Catamarca',
-  'Chaco',
-  'Chubut',
-  'Córdoba',
-  'Corrientes',
-  'Entre Ríos',
-  'Formosa',
-  'Jujuy',
-  'La Pampa',
-  'La Rioja',
-  'Mendoza',
-  'Misiones',
-  'Neuquén',
-  'Río Negro',
-  'Salta',
-  'San Juan',
-  'San Luis',
-  'Santa Cruz',
-  'Santa Fe',
-  'Santiago del Estero',
-  'Tierra del Fuego',
-  'Tucumán',
-];
 
 /** Rótulo do bucket sem zona: o do dono (`resolveZoneKey`), para o agrupamento casar. */
 const ZONE_VALUES: readonly string[] = [...CANONICAL_PROVINCES, UNRESOLVED_ZONE_LABEL];

@@ -4,8 +4,8 @@
  */
 import fs from 'fs';
 import { gerarCountMenu, COUNT_MENU_PATH } from '../generateCountMenu';
-import { CANONICAL_PROVINCES } from '../../src/modules/agentes/domain/assistantCountMenu';
-import { normalizeProvince } from '../../src/shared/utils/argentinaLocationNormalizer';
+import { CANONICAL_PROVINCES, normalizeProvince } from '../../src/shared/utils/argentinaLocationNormalizer';
+import { UNRESOLVED_ZONE_LABEL } from '../../src/shared/utils/zoneKey';
 
 describe('count-menu.json (cardápio de contagem da Maria)', () => {
   it('é idêntico ao que o módulo dono gera agora', () => {
@@ -21,5 +21,16 @@ describe('count-menu.json (cardápio de contagem da Maria)', () => {
 
   it('cada província do cardápio é ponto fixo do normalizador dono', () => {
     for (const p of CANONICAL_PROVINCES) expect(normalizeProvince(p)).toBe(p);
+  });
+
+  it('zone.values = exatamente as províncias do dono + o rótulo sem zona (workers e vacancies)', () => {
+    const menu = JSON.parse(fs.readFileSync(COUNT_MENU_PATH, 'utf8')) as Record<
+      string,
+      { fields: { zone: { values: string[] } } }
+    >;
+    const esperado = [...CANONICAL_PROVINCES, UNRESOLVED_ZONE_LABEL];
+    expect(CANONICAL_PROVINCES).toHaveLength(24);
+    expect(menu.workers.fields.zone.values).toEqual(esperado);
+    expect(menu.vacancies.fields.zone.values).toEqual(esperado);
   });
 });
