@@ -45,6 +45,13 @@ export interface WorkerWithPii {
   anaCareId: string | null;
 }
 
+export interface NormalizedEmailLookup {
+  isSuccess: boolean;
+  /** 0 = nenhum, 1 = achou, >1 = ambíguo (`getValue()` é null: nunca se escolhe um). */
+  ambiguousCount: number;
+  getValue(): Worker | null;
+}
+
 export class WorkerRepository implements IWorkerRepository {
   private pool: Pool;
   private encryptionService: KMSEncryptionService;
@@ -137,6 +144,8 @@ export class WorkerRepository implements IWorkerRepository {
     return _findByAuthUid(this.pool, this.encryptionService, authUid);
   }
 
+  // Comportamento EXATO de sempre: compartilhado com o login (InitWorkerUseCase religa o auth_uid) e com o
+  // LookupWorkerByEmailUseCase. NÃO normalizar aqui — ver `findByEmailNormalized` (webhook Talentum).
   async findByEmail(email: string): Promise<Result<Worker | null>> {
     try {
       const query = `
@@ -162,6 +171,38 @@ export class WorkerRepository implements IWorkerRepository {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       return Result.fail<Worker | null>(`Failed to find worker: ${msg}`);
+    }
+  }
+
+  /**
+   * Lookup por e-mail NORMALIZADO (LOWER(BTRIM) dos dois lados; índice 564) — só para o webhook/scripts do Talentum,
+   * que recebe o e-mail como a candidata digitou. Só worker VIVO (não merged, não deletado), ORDER BY determinístico.
+   * Mais de 1 candidato = AMBÍGUO: devolve `worker: null` + `ambiguousCount` (nunca escolhe `rows[0]`).
+   */
+  async findByEmailNormalized(email: string): Promise<NormalizedEmailLookup> {
+    try {
+      const result = await this.pool.query(
+        `SELECT id, auth_uid as "authUid", email, phone,
+                whatsapp_phone_encrypted as "whatsappPhoneEnc",
+                lgpd_consent_at as "lgpdConsentAt",
+                country, timezone,
+                created_at as "createdAt", updated_at as "updatedAt"
+         FROM workers
+         WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
+           AND merged_into_id IS NULL AND deleted_at IS NULL
+         ORDER BY created_at, id
+         LIMIT 2`,
+        [email],
+      );
+      if (result.rows.length === 0) return { isSuccess: true, ambiguousCount: 0, getValue: () => null };
+      if (result.rows.length > 1) return { isSuccess: true, ambiguousCount: result.rows.length, getValue: () => null };
+
+      const row = result.rows[0];
+      row.whatsappPhone = (await this.encryptionService.decrypt(row.whatsappPhoneEnc)) || undefined;
+      delete row.whatsappPhoneEnc;
+      return { isSuccess: true, ambiguousCount: 1, getValue: () => row as Worker };
+    } catch {
+      return { isSuccess: false, ambiguousCount: 0, getValue: () => null };
     }
   }
 

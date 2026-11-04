@@ -1,0 +1,12 @@
+-- 564 — índice funcional para o lookup de worker por e-mail normalizado (webhook Talentum, M8).
+--
+-- Por quê: `WorkerRepository.findByEmail` comparava `email = $1` (sensível a maiúsculas/espaços). O Talentum
+-- manda o e-mail como a candidata digitou ("Maria@Gmail.com ", com espaço/maiúscula) e o cadastro do worker
+-- está em outra forma — o lookup falhava e o fluxo criava um worker NOVO. A consulta agora compara
+-- `LOWER(BTRIM(email))` dos dois lados; a expressão do índice é IDÊNTICA à da consulta para o planner usá-lo
+-- (o `idx_workers_email`, btree sobre o texto cru, não serve a essa expressão).
+--
+-- NÃO é UNIQUE: duplicata por caixa pode existir hoje e o índice não pode derrubar a migration.
+-- DDL de dono (roda como enlite_app, igual às outras). Sem CONCURRENTLY: o runner roda cada migration numa
+-- transação (precedente: 272). Rollback: DROP INDEX idx_workers_email_norm;
+CREATE INDEX IF NOT EXISTS idx_workers_email_norm ON workers (LOWER(BTRIM(email)));

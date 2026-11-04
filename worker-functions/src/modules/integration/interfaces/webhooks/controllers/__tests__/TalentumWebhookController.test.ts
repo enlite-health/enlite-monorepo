@@ -31,6 +31,11 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
     getInstance: jest.fn().mockReturnValue({
       getPool: jest.fn().mockReturnValue({
         query: jest.fn().mockResolvedValue({ rows: [] }),
+        // persistPrescreening abre transação (card + divergência atômicos)
+        connect: jest.fn().mockResolvedValue({
+          query: jest.fn().mockResolvedValue({ rows: [] }),
+          release: jest.fn(),
+        }),
       }),
     }),
   },
@@ -76,7 +81,7 @@ jest.mock('@modules/matching', () => {
 jest.mock('@modules/worker', () => ({
   ...jest.requireActual('@modules/worker'),
   WorkerRepository: jest.fn().mockImplementation(() => ({
-    findByEmail: jest.fn().mockResolvedValue({ getValue: () => null }),
+    findByEmailNormalized: jest.fn().mockResolvedValue({ getValue: () => null }),
     findByPhoneCandidates: jest.fn().mockResolvedValue({ getValue: () => null }),
     findByCuit: jest.fn().mockResolvedValue({ getValue: () => null }),
   })),
@@ -449,6 +454,7 @@ describe('TalentumWebhookController', () => {
       const repoInstance = (TalentumPrescreeningRepository as jest.Mock).mock.results[0].value;
       expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
         expect.objectContaining({ environment: 'production' }),
+        expect.anything(), // client da transação
       );
     });
 
@@ -464,6 +470,7 @@ describe('TalentumWebhookController', () => {
       if (repoInstance) {
         expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
           expect.objectContaining({ environment: 'test' }),
+        expect.anything(), // client da transação
         );
       }
     });
@@ -478,6 +485,7 @@ describe('TalentumWebhookController', () => {
       const repoInstance = (TalentumPrescreeningRepository as jest.Mock).mock.results[0].value;
       expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
         expect.objectContaining({ environment: 'production' }),
+        expect.anything(), // client da transação
       );
     });
 
@@ -491,6 +499,7 @@ describe('TalentumWebhookController', () => {
       const repoInstance = (TalentumPrescreeningRepository as jest.Mock).mock.results[0].value;
       expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
         expect.objectContaining({ environment: 'production' }),
+        expect.anything(), // client da transação
       );
     });
   });

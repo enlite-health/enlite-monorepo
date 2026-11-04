@@ -74,7 +74,7 @@ export type { SyncReport } from './application/SyncTalentumVacanciesUseCase';
 export { UpdateTalentumDescriptionUseCase, UpdateDescriptionError } from './application/UpdateTalentumDescriptionUseCase';
 export { SyncTalentumWorkersUseCase, parseSyncOptions } from './application/SyncTalentumWorkersUseCase';
 export type { WorkerSyncReport, WorkerSyncOptions } from './application/SyncTalentumWorkersUseCase';
-export { CreateJobPostingFromTalentumUseCase } from './application/CreateJobPostingFromTalentumUseCase';
+export { CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from './application/CreateJobPostingFromTalentumUseCase';
 export type { CreateJobPostingFromTalentumInput, CreateJobPostingFromTalentumResult } from './application/CreateJobPostingFromTalentumUseCase';
 export { BackfillWorkerMirrorUseCase } from './application/BackfillWorkerMirrorUseCase';
 export type { BackfillOptions, BackfillSummary } from './application/BackfillWorkerMirrorUseCase';

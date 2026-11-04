@@ -15,7 +15,8 @@ import { TalentumPrescreeningPayloadSchema } from '@modules/integration';
 import { ProcessTalentumPrescreening } from '../../application/ProcessTalentumPrescreening';
 import { JobPostingLookup } from '../../infrastructure/JobPostingLookup';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { CreateJobPostingFromTalentumUseCase } from '@modules/integration';
+import { reportError, toSafeError } from '@shared/logging';
+import { CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from '@modules/integration';
 
 // ─────────────────────────────────────────────────────────────────
 // TalentumWebhookController
@@ -53,7 +54,7 @@ export class TalentumWebhookController {
     if (parsed.data.action === 'PRESCREENING') {
       try {
         const pool = DatabaseConnection.getInstance().getPool();
-        const createUseCase = new CreateJobPostingFromTalentumUseCase(pool);
+        const createUseCase = new CreateJobPostingFromTalentumUseCase(pool, talentumPrescreeningIdResolver);
         const result = await createUseCase.execute(parsed.data.data, 'production');
         res.status(200).json({ received: true, event: 'PRESCREENING.CREATED', ...result });
       } catch (err) {
@@ -84,6 +85,11 @@ export class TalentumWebhookController {
     } catch (err) {
       // Log apenas ID interno — nunca expor PII ou stack trace na resposta
       console.error('[TalentumWebhook] DB error | prescreeningId (ext):', req.body?.data?.prescreening?.id ?? 'unknown');
+      // Alarme no caminho de exceção (o 500 ao Talentum não muda). Erro sem PII (sem o `detail` do pg).
+      reportError(toSafeError(err), {
+        source: 'TalentumWebhookController:process',
+        talentumPrescreeningId: req.body?.data?.prescreening?.id ?? null,
+      });
       res.status(500).json({ error: 'Internal server error' });
     }
   }
