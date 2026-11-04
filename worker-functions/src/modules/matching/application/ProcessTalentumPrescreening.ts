@@ -100,7 +100,9 @@ export class ProcessTalentumPrescreening {
     // Spec 084 (F4/R6/F17): projeto de vaga DADA DE BAJA que ainda recebe candidato — a resposta fica GUARDADA (nada se
     // perde) e MARCADA, mas NÃO entra no Kanban de trabalho: sem WJA, sem encuadre, sem evento de funil (logo, sem
     // mensagem ao prestador). A baixa nunca apaga o histórico; só impede que a vaga volte a ser trabalhada.
-    if (jobPostingId && (await vacancyIsDeBaja(this.pool, jobPostingId))) {
+    // O guard olha a vaga FINAL em que o card foi gravado (`prescreening.jobPostingId`: a dona depois do M2, ou a já
+    // gravada que o título não sobrescreve) — NÃO a resolvida neste evento, que pode ser outra.
+    if (prescreening.jobPostingId && (await vacancyIsDeBaja(this.pool, prescreening.jobPostingId))) {
       await this.pool.query(`UPDATE talentum_prescreenings SET held_for_baja = true WHERE id = $1`, [prescreening.id]);
       console.log(`${TAG} vaga em DE_BAJA → resposta guardada e marcada, fora do Kanban | prescreening=${prescreening.id}`);
       await this.questionsWriter.persist(prescreening.id, payload);

@@ -1403,7 +1403,11 @@ describe('ProcessTalentumPrescreening', () => {
       const marcou = mockPool.query.mock.calls.find((c: unknown[]) => String(c[0]).includes('held_for_baja = true'));
       expect(marcou).toBeDefined();                                                  // fica marcado
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).not.toHaveBeenCalled(); // fora do Kanban
-      expect(mockPoolClient.query).not.toHaveBeenCalledWith('BEGIN');
+      // Só a transação do CARD (BEGIN do persistPrescreening, que também grava a divergência). A transação do funil
+      // (WJA + domain_events) NÃO abre: nenhum evento de funil e nenhuma instrução nela.
+      const begins = mockPoolClient.query.mock.calls.filter((c: unknown[]) => c[0] === 'BEGIN');
+      expect(begins).toHaveLength(1);
+      expect(mockPoolClient.query.mock.calls.some((c: unknown[]) => String(c[0]).includes('domain_events'))).toBe(false);
       expect(mockPubsub.publish).not.toHaveBeenCalled();                              // nenhuma mensagem ao prestador
       expect(result.jobPostingId).toBe('jp-1');
     });
@@ -1413,6 +1417,49 @@ describe('ProcessTalentumPrescreening', () => {
       await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
       expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalled();
       expect(mockPool.query.mock.calls.some((c: unknown[]) => String(c[0]).includes('held_for_baja'))).toBe(false);
+      // funil + card: 2 transações
+      expect(mockPoolClient.query.mock.calls.filter((c: unknown[]) => c[0] === 'BEGIN')).toHaveLength(2);
+    });
+
+    // O guard testa a vaga FINAL em que o card foi gravado, não a resolvida neste evento. O repo é um mock que devolve o
+    // job_posting_id gravado (`stored`), como o COALESCE faria quando o título não sobrescreve a dona já gravada.
+    const statusPorVaga = (porVaga: Record<string, string>) => {
+      const base = mockPool.query.getMockImplementation();
+      mockPool.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('SELECT status FROM job_postings')) return Promise.resolve({ rows: [{ status: porVaga[String(params?.[0])] }] });
+        return base!(sql, params);
+      });
+    };
+    const gravadaEm = (stored: string) =>
+      mockPrescreeningRepo.upsertPrescreening.mockImplementation((dto: any) => Promise.resolve({
+        prescreening: { id: 'ps-1', talentumPrescreeningId: dto.talentumPrescreeningId, workerId: dto.workerId, jobPostingId: stored },
+        created: false,
+        previousJobPostingId: stored,
+      }));
+
+    it('guard olha a vaga FINAL: título resolve vaga ativa, mas o card está gravado na DONA em DE_BAJA → guardado, fora do Kanban', async () => {
+      mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);          // este evento só resolve por título
+      mockJobPostingLookup.findByTitleILike.mockResolvedValue({ id: 'jp-title' });
+      gravadaEm('jp-owner');                                                              // título não sobrescreve a dona gravada
+      statusPorVaga({ 'jp-title': 'SEARCHING', 'jp-owner': 'DE_BAJA' });
+
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+      expect(mockPool.query.mock.calls.some((c: unknown[]) => String(c[0]).includes('held_for_baja = true'))).toBe(true);
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).not.toHaveBeenCalled();
+    });
+
+    it('guard olha a vaga FINAL: resolvida por título em DE_BAJA, mas o card foi gravado na DONA ativa → segue o fluxo (WJA na dona)', async () => {
+      mockJobPostingLookup.findByTalentumPrescreeningId.mockResolvedValue(null);          // só título neste evento
+      mockJobPostingLookup.findByTitleILike.mockResolvedValue({ id: 'jp-title' });
+      gravadaEm('jp-owner');
+      statusPorVaga({ 'jp-title': 'DE_BAJA', 'jp-owner': 'SEARCHING' });
+
+      await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+      expect(mockPool.query.mock.calls.some((c: unknown[]) => String(c[0]).includes('held_for_baja'))).toBe(false);
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).toHaveBeenCalledWith(
+        expect.objectContaining({ jobPostingId: 'jp-owner' }), expect.anything());
     });
   });
 
