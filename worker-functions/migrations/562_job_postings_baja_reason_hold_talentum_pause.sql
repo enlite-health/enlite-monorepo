@@ -8,8 +8,10 @@
 --                   só pode ter entrado pelo gatilho do serviço (nenhuma rota escrevia DE_BAJA) -> 'SERVICE'.
 --  * status_before_hold — status anterior ao ON_HOLD ("En espera", R18); "Retomar" devolve a ele (F5).
 --  * talentum_pause_state — o que o Talentum respondeu (R13): 'PAUSED' (pausado por API), 'MANUAL_PAUSE'
---                   (recusou: pausar à mão), 'MANUAL_RESUME' (recusou a retomada: retomar à mão). NULL = nada a fazer.
---                   É a lista "pausar à mão no Talentum": nunca falha em silêncio.
+--                   (recusou: pausar à mão), 'MANUAL_RESUME' (recusou a retomada: retomar à mão). 'PENDING_PAUSE' /
+--                   'PENDING_RESUME' são gravados na MESMA transação da baixa/volta, ANTES de qualquer chamada ao
+--                   Talentum: se o trabalho pós-resposta for descartado (Cloud Run sem CPU), a vaga fica visível na lista
+--                   manual em vez de NULL calado. NULL = nada a fazer (vaga sem projeto no Talentum).
 --
 --  * talentum_prescreenings.held_for_baja — candidato que ainda chegou por um projeto de vaga DADA DE BAJA (F4): a resposta é
 --                   GUARDADA (nada se perde), mas não entra no Kanban de trabalho e fica marcada aqui.
@@ -35,7 +37,7 @@ ALTER TABLE job_postings ADD CONSTRAINT job_postings_baja_reason_check
 
 ALTER TABLE job_postings DROP CONSTRAINT IF EXISTS job_postings_talentum_pause_state_check;
 ALTER TABLE job_postings ADD CONSTRAINT job_postings_talentum_pause_state_check
-  CHECK (talentum_pause_state IS NULL OR talentum_pause_state IN ('PAUSED', 'MANUAL_PAUSE', 'MANUAL_RESUME'));
+  CHECK (talentum_pause_state IS NULL OR talentum_pause_state IN ('PAUSED', 'MANUAL_PAUSE', 'MANUAL_RESUME', 'PENDING_PAUSE', 'PENDING_RESUME'));
 
 -- Gatilho de coerência: o motivo acompanha o status, inclusive para a revisão ANTERIOR do código (que ainda roda
 -- durante o deploy e baixa a vaga pelo serviço SEM conhecer a coluna): DE_BAJA sem motivo = 'SERVICE' (o único
@@ -63,7 +65,7 @@ ALTER TABLE job_postings ADD CONSTRAINT job_postings_baja_reason_iff_de_baja
 
 -- A lista manual do Talentum é pequena e filtrada na tela de vacantes.
 CREATE INDEX IF NOT EXISTS idx_job_postings_talentum_manual
-  ON job_postings (id) WHERE talentum_pause_state IN ('MANUAL_PAUSE', 'MANUAL_RESUME') AND deleted_at IS NULL;
+  ON job_postings (id) WHERE talentum_pause_state IN ('MANUAL_PAUSE', 'MANUAL_RESUME', 'PENDING_PAUSE', 'PENDING_RESUME') AND deleted_at IS NULL;
 
 COMMENT ON COLUMN job_postings.baja_reason IS
   'Spec 084 (P2): motivo do DE_BAJA — MANUAL | CUTOFF | SERVICE. NOT NULL sse status = DE_BAJA. Só SERVICE volta, e só pela reativação do serviço (R17).';

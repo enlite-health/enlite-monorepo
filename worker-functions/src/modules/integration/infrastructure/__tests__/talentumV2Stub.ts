@@ -162,6 +162,17 @@ export class TalentumV2Stub {
     // Escritas: conta VIEWER nunca escreve.
     if (proj.myRole === 'VIEWER') return { status: 403, text: '{"message":"You are not allowed to access this project"}' };
 
+    // Spec 084 (F4): ciclo de vida — pausar/retomar (só dono; VIEWER já levou 403 acima). Retomar projeto não pausado → 400 (medido).
+    if (method === 'PUT' && sub === '/pause') {
+      proj.status = 'PAUSED';
+      return { status: 200 };
+    }
+    if (method === 'PUT' && sub === '/resume') {
+      if (proj.status !== 'PAUSED') return { status: 400, text: '{"message":"Project is not paused"}' };
+      proj.status = 'IN_PROGRESS';
+      return { status: 200 };
+    }
+
     if (method === 'DELETE' && sub === '') {
       this.projects.delete(proj._id);
       return { status: 204 };

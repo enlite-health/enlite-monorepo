@@ -12,15 +12,27 @@
 -- busca por (paciente, número) usada em EnquadreEventListRepository.
 --
 -- ── Vagas vivas existentes ───────────────────────────────────────────────────────────────────────────────────
--- Medido em prd (03/11): das 344 vagas vivas com paciente, as 172 sem serviço PERDEM o número (viram NULL) e as 188
--- com serviço ganham a posição do seu serviço (47 mudam de rótulo, 36 tinham número maior que a quantidade de
--- serviços). Ordem importa: o índice único é derrubado ANTES do UPDATE (a renumeração passa por estados
+-- Medido em prd (03/11): das 344 vagas vivas com paciente, as 156 COM paciente e SEM serviço PERDEM o número (viram
+-- NULL; as outras 16 sem serviço não têm paciente e já eram NULL) e as 188 com serviço ganham a posição do seu serviço
+-- (47 mudam de rótulo, 36 tinham número maior que a quantidade de serviços). A contagem final é re-medida em prd antes
+-- do merge.
+--
+-- ── Rollback ─────────────────────────────────────────────────────────────────────────────────────────────────
+-- Antes do UPDATE, `(id, case_ordinal)` de TODA vaga viva com número vai para `job_postings_case_ordinal_before_563`
+-- (criada só na 1ª execução: reexecutar NÃO sobrescreve o retrato). Para desfazer:
+--   UPDATE job_postings jp SET case_ordinal = b.case_ordinal FROM job_postings_case_ordinal_before_563 b WHERE b.id = jp.id;
+--   (e recriar o índice único antigo, só depois de conferir que não há duplicata de (patient_id, case_ordinal)). Ordem importa: o índice único é derrubado ANTES do UPDATE (a renumeração passa por estados
 -- intermediários que o violariam). Vagas apagadas não são tocadas (história; fora do índice).
 --
 -- Roda como enlite_app (dono): DROP INDEX / CREATE INDEX / UPDATE na própria tabela. Idempotente (reexecutar
 -- recalcula o mesmo valor).
 
 DROP INDEX IF EXISTS idx_job_postings_case_ordinal;
+
+CREATE TABLE IF NOT EXISTS job_postings_case_ordinal_before_563 AS
+  SELECT id, case_ordinal FROM job_postings WHERE deleted_at IS NULL AND case_ordinal IS NOT NULL;
+COMMENT ON TABLE job_postings_case_ordinal_before_563 IS
+  'Spec 084 (migration 563): retrato de (id, case_ordinal) das vagas vivas ANTES da renumeração — só para rollback. Pode ser apagada depois da estabilização.';
 
 UPDATE job_postings jp
    SET case_ordinal = NULL
