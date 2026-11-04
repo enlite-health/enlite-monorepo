@@ -73,7 +73,7 @@ export const PATIENT_CONTAINER_RESOURCE: Readonly<Record<PatientContainer, strin
   therapeuticProject: 'patient_therapeutic_project',
 };
 
-export const patientContainerCell = (container: PatientContainer, action: 'read' | 'write'): string =>
+export const patientContainerCell = (container: PatientContainer, action: 'read' | 'write' | 'create' | 'update'): string =>
   `${PATIENT_CONTAINER_RESOURCE[container]}:${action}`;
 
 /** O que cada container carrega na FICHA (`PatientDetailRow` + o que o controller anexa). */

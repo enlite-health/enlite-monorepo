@@ -6,7 +6,7 @@
  *   1. numeração: new→1.0, new→2.0, edit(1.0)→1.1, edit(1.0) de novo→1.2 (nunca colide);
  *   2. projeção C7: ator SÓ com `patient_therapeutic_project:read` recebe versões/datas/autor/
  *      catálogos, e NÃO recebe texto clínico nem CID (`redacted.clinical` constante);
- *   3. escrita cumulativa: sem `patient_clinical:write` → 403 nomeando a célula; sem a célula do
+ *   3. escrita cumulativa: sem `patient_clinical:create` (mode new; `:update` no edit) → 403 nomeando a célula; sem a célula do
  *      projeto → 403 `missing_cell` do middleware; sem nada → 403;
  *   4. anular passa uma vez; anulada não é origem de edição; UPDATE de conteúdo nunca existe;
  *   5. catálogo: criar/renomear/desativar; rótulo duplicado 409; rótulo com dado pessoal 400;
@@ -41,6 +41,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     semClinica: 'pt017-sem-clinica',
     operacional: 'pt017-operacional',
     catalogo: 'pt017-catalogo',
+    dividida: 'pt017-dividida',
   };
   const GRUPOS = {
     completa: 'PT017 Completa',
@@ -48,14 +49,14 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     semClinica: 'PT017 Sem clínica',
     operacional: 'PT017 Operacional',
     catalogo: 'PT017 Catálogo',
+    dividida: 'PT017 Clínica dividida',
   };
   // PR-8b (rodada A3, ADR-2/SUP-30): as rotas de `patient_therapeutic_project` e
   // `catalog_therapeutic_objectives` não declaram mais `write` — viraram `create`/`update`
-  // (fixture `tests/fixtures/pr8b-rotas-create-update.ts`). `patient_clinical:write` FICA — é
-  // checagem literal no controller (`PATIENT_CLINICAL_WRITE_CELL`,
-  // `src/modules/case/application/therapeuticProjectAccess.ts:25`), não `perm.require()` de rota,
-  // e não faz parte da lista de 23 recursos splitados nesta conversão (achado de produção, fora
-  // do escopo desta rodada — ver "Defeitos de produção revelados").
+  // (fixture `tests/fixtures/pr8b-rotas-create-update.ts`). A checagem clínica é literal no controller
+  // (`missingTherapeuticClinicalWriteCell`, `src/modules/case/application/therapeuticProjectAccess.ts`):
+  // `new` exige `patient_clinical:create`, `edit` exige `patient_clinical:update`, e o `write` legado
+  // (Acesso Master) segue aceito. `patient_clinical` é SPLIT — o painel de grupos grava create+update, nunca `write`.
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
     ['patient_therapeutic_project', 'read'],
     ['patient_therapeutic_project', 'create'],
@@ -64,6 +65,8 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     ['patient_therapeutic_project', 'export'],
     ['patient_clinical', 'read'],
     ['patient_clinical', 'write'],
+    ['patient_clinical', 'create'],
+    ['patient_clinical', 'update'],
     ['patient_services', 'read'],
     ['catalog_therapeutic_objectives', 'read'],
     ['catalog_therapeutic_objectives', 'create'],
@@ -159,8 +162,9 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
          ($2, 'pt017-so-projeto@e2e.local', 'Leitora Sintética', 'admin', 'ACTIVE', true, $6),
          ($3, 'pt017-sem-clinica@e2e.local', 'Sem Clínica', 'admin', 'ACTIVE', true, $6),
          ($4, 'pt017-operacional@e2e.local', 'Operacional', 'admin', 'ACTIVE', true, $6),
-         ($5, 'pt017-catalogo@e2e.local', 'Catálogo', 'admin', 'ACTIVE', true, $6)`,
-      [U.completa, U.soProjeto, U.semClinica, U.operacional, U.catalogo, TENANT_E2E],
+         ($5, 'pt017-catalogo@e2e.local', 'Catálogo', 'admin', 'ACTIVE', true, $6),
+         ($7, 'pt017-dividida@e2e.local', 'Clínica dividida', 'admin', 'ACTIVE', true, $6)`,
+      [U.completa, U.soProjeto, U.semClinica, U.operacional, U.catalogo, TENANT_E2E, U.dividida],
     );
     // Garante que as células existem no catálogo (a maioria já nasce da migration 435 ou de boot
     // anterior; `garantirCelula` é idempotente — helper compartilhado, nunca duplica o INSERT).
@@ -174,6 +178,11 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     });
     await grupoComCelulas(pool, { nome: GRUPOS.soProjeto, uid: U.soProjeto, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semClinica, uid: U.semClinica, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'update']] });
+    // O que o painel de grupos de fato grava (`expandWriteCells`): clínico create+update, NUNCA write.
+    await grupoComCelulas(pool, {
+      nome: GRUPOS.dividida, uid: U.dividida,
+      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'update'], ['patient_clinical', 'create'], ['patient_clinical', 'update']],
+    });
     await grupoComCelulas(pool, { nome: GRUPOS.operacional, uid: U.operacional, celulas: [['patient', 'read']] });
     await grupoComCelulas(pool, { nome: GRUPOS.catalogo, uid: U.catalogo, celulas: [['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_objectives', 'create'], ['catalog_therapeutic_objectives', 'update']] });
 
@@ -303,10 +312,10 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     expect(ultima).toBe('read_project:therapeuticProject+clinical+services');
   });
 
-  it('5. 🔒 escrita: sem patient_clinical:write → 403 nomeando a célula; sem a célula do projeto → missing_cell; operacional → 403', async () => {
+  it('5. 🔒 escrita: sem patient_clinical:create → 403 nomeando a célula; sem a célula do projeto → missing_cell; operacional → 403', async () => {
     const semClinica = await chamar('POST', BASE(), U.semClinica, { mode: 'new', version: newVersionBody() });
     expect(semClinica.status).toBe(403);
-    expect(semClinica.body).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:write' } });
+    expect(semClinica.body).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:create' } });
     const soLeitura = await chamar('POST', BASE(), U.soProjeto, { mode: 'new', version: newVersionBody() });
     expect(soLeitura.status).toBe(403);
     expect(soLeitura.body).toMatchObject({ code: 'missing_cell' });
@@ -467,11 +476,11 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
       expect(depois).toBe(antes);
     });
 
-    it('030 — d: com `segmentId` mas sem `patient_clinical:write` → 403 nomeando a célula, nada gravado', async () => {
+    it('030 — d: com `segmentId` mas sem `patient_clinical:create` → 403 nomeando a célula, nada gravado', async () => {
       const antes = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
       const r = await chamar('POST', BASE(), U.semClinica, { mode: 'new', version: newVersionBody() });
       expect(r.status).toBe(403);
-      expect(r.body.details).toEqual({ cell: 'patient_clinical:write' });
+      expect(r.body.details).toEqual({ cell: 'patient_clinical:create' });
       expect(JSON.stringify(r.body)).not.toContain(ptiSegmentId);
       const depois = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
       expect(depois).toBe(antes);
@@ -497,5 +506,11 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
       const comSegmento = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: ed.body.data.id, version: { ...versionBody(), segmentId: ptiSegmentId } });
       expect(comSegmento.status).toBe(400);
     });
+  });
+
+  it('grupo com clinical create+update (SEM write — o que o painel grava) cria o projeto: new → 201', async () => {
+    const r = await chamar('POST', BASE(), U.dividida, { mode: 'new', version: newVersionBody() });
+    expect(r.status).toBe(201);
+    expect(r.body.success).toBe(true);
   });
 });

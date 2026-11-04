@@ -474,9 +474,9 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_services:update':
     'Editar serviço contratado já existente, ativar recrutamento e associar/editar prestadores do serviço.',
   'patient_therapeutic_project:create':
-    'Criar uma nova versão MAJOR do projeto terapêutico ("Novo"). Exige também `patient_clinical:write`.',
+    'Criar uma nova versão MAJOR do projeto terapêutico ("Novo"). Exige também `patient_clinical:create`.',
   'patient_therapeutic_project:update':
-    'Criar uma nova versão MINOR ("Editar") ou anular uma versão do projeto terapêutico. Exige também `patient_clinical:write`.',
+    'Anular uma versão do projeto terapêutico. "Editar" (versão MINOR) NÃO usa esta célula: entra pela rota de criação e exige `patient_therapeutic_project:create` + `patient_clinical:update`.',
   'catalog_therapeutic_objectives:create': 'Adicionar objetivo específico novo ao catálogo (backoffice).',
   'catalog_therapeutic_objectives:update': 'Renomear e desativar objetivo específico do catálogo (backoffice).',
   'catalog_therapeutic_activities:create': 'Adicionar atividade nova ao catálogo (backoffice).',
