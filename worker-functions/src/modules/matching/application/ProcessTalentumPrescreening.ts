@@ -3,9 +3,9 @@ import { Pool, PoolClient } from 'pg';
 import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescreeningRepository';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
-import { reportError } from '@shared/logging';
+import { reportError, logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
@@ -31,7 +31,8 @@ export interface ProcessTalentumPrescreeningResult {
 
 export interface IWorkerLookup {
   findByEmail(email: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
-  findByPhone(phone: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
+  /** Telefone por CANDIDATOS (`generatePhoneCandidates`): casa com/sem o 9 do móvel; ignora worker merged/deletado. */
+  findByPhoneCandidates(candidates: string[]): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
   findByCuit(cuit: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
 }
 
@@ -102,6 +103,17 @@ export class ProcessTalentumPrescreening {
     console.log(`${TAG} resolveWorker → NOT FOUND, auto-creating...`);
     const created = await this.autoCreateWorker(payload);
     console.log(`${TAG} resolveWorker → auto-created: ${created ?? 'FAILED'}`);
+    if (!created) {
+      // Marcador estruturado para alerta (log-based metric). Sem PII: telefone mascarado, e-mail/nome/CUIL fora.
+      // O status HTTP da resposta ao Talentum NÃO muda (já existe policy de 5xx; ver PR).
+      logger.error({
+        msg: `${TAG} worker NÃO resolvido nem criado — candidata fica sem vínculo`,
+        alert: 'TALENTUM_WORKER_UNRESOLVED',
+        talentumPrescreeningId: payload.data.prescreening.id,
+        talentumProfileId: payload.data.profile.id,
+        phone: maskPhoneForLog(phoneNumber),
+      });
+    }
     return created;
   }
 
@@ -151,7 +163,7 @@ export class ProcessTalentumPrescreening {
     const byEmail = this.extractId(await this.workerLookup.findByEmail(email));
     if (byEmail) return this.toCanonical(byEmail);
 
-    const byPhone = this.extractId(await this.workerLookup.findByPhone(phoneNumber));
+    const byPhone = await this.findByPhoneAnyForm(phoneNumber);
     if (byPhone) return this.toCanonical(byPhone);
 
     if (cuil) {
@@ -160,6 +172,17 @@ export class ProcessTalentumPrescreening {
     }
 
     return null;
+  }
+
+  /**
+   * O Talentum manda o celular argentino SEM o "9" (54 11…), o worker está gravado COM ele (549 11…).
+   * Igualdade exata no telefone cru não casava (prd 04/11: 29 candidatas sem worker). Os candidatos
+   * cobrem as formas históricas; `findByPhoneCandidates` já exclui worker merged/deletado.
+   */
+  private async findByPhoneAnyForm(phoneNumber: string): Promise<string | null> {
+    const candidates = generatePhoneCandidates(phoneNumber);
+    if (candidates.length === 0) return null;
+    return this.extractId(await this.workerLookup.findByPhoneCandidates(candidates));
   }
 
   private async autoCreateWorker(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
@@ -184,7 +207,8 @@ export class ProcessTalentumPrescreening {
           `SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
           [authUid, payload.data.profile.email],
         );
-        const existingId = existing.rows[0]?.id ?? null;
+        // Colisão no índice único de telefone: o dono está na forma com o 9 (o INSERT usa o normalizado).
+        const existingId = existing.rows[0]?.id ?? (await this.findByPhoneAnyForm(payload.data.profile.phoneNumber));
         return existingId ? await this.toCanonical(existingId) : null;
       }
       console.error(`${TAG} autoCreateWorker failed:`, pgErr.message);

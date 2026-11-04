@@ -77,7 +77,7 @@ jest.mock('@modules/worker', () => ({
   ...jest.requireActual('@modules/worker'),
   WorkerRepository: jest.fn().mockImplementation(() => ({
     findByEmail: jest.fn().mockResolvedValue({ getValue: () => null }),
-    findByPhone: jest.fn().mockResolvedValue({ getValue: () => null }),
+    findByPhoneCandidates: jest.fn().mockResolvedValue({ getValue: () => null }),
     findByCuit: jest.fn().mockResolvedValue({ getValue: () => null }),
   })),
 }));
