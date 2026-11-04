@@ -13,10 +13,11 @@
  *                                            `segment` (segmento Ana Care congelado na versão, spec 030).
  *                                            Sem ela, esses cinco saem `null` e o marcador
  *                                            `redacted.clinical = true` sai SEMPRE (constante).
- * Escrita: `patient_therapeutic_project:create|update` E a célula clínica da MESMA ação (o corpo
- * carrega texto clínico) — o middleware exige a primeira; a segunda é conferida aqui, com 403
- * nomeando a célula que faltou. `patient_clinical` é recurso SPLIT: o painel de grupos grava
- * `create`+`update`, nunca `write` (`expandWriteCells`); o `write` legado (Acesso Master) segue valendo.
+ * Escrita (o corpo carrega texto clínico): `new` = `patient_therapeutic_project:create` + `patient_clinical:create`;
+ * `edit` = `patient_therapeutic_project:create` (entra pela mesma rota) + `patient_clinical:update`. O
+ * middleware exige a célula do projeto; a clínica é conferida aqui, com 403 nomeando a que faltou.
+ * `patient_clinical` é recurso SPLIT: o painel de grupos grava `create`+`update`, nunca `write`
+ * (`expandWriteCells`); o `write` legado (Acesso Master) segue valendo. `annul` não confere a clínica.
  *
  * `cells = null` é "o engine não decidiu" (D113): tudo passa, como a rota devolvia antes.
  */

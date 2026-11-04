@@ -55,9 +55,9 @@ const versionParamsSchema = z.object({ id: z.string().uuid(), vid: z.string().uu
  * seus 2 catálogos (o "tipo de patologia" deriva dos CID-11 — não é catálogo).
  *
  *   GET  /api/admin/patients/:id/therapeutic-projects              (patient_therapeutic_project:read)
- *   POST /api/admin/patients/:id/therapeutic-projects              (…:write + patient_clinical:write)
+ *   POST /api/admin/patients/:id/therapeutic-projects              (…:create + patient_clinical:create no `new`; …:create + patient_clinical:update no `edit`)
  *   GET  /api/admin/patients/:id/therapeutic-projects/:vid         (…:read; `?purpose=export` → trilha export_pdf)
- *   POST /api/admin/patients/:id/therapeutic-projects/:vid/annul   (…:write)
+ *   POST /api/admin/patients/:id/therapeutic-projects/:vid/annul   (…:update)
  *   GET/POST  /api/admin/therapeutic-catalogs/:kind                (catalog_<kind>:read|write)
  *   PATCH     /api/admin/therapeutic-catalogs/:kind/:itemId        (catalog_<kind>:write)
  *
