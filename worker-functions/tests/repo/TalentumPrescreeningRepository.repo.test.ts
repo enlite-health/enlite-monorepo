@@ -1,6 +1,6 @@
 /**
  * TalentumPrescreeningRepository — teste de REPOSITÓRIO, banco Postgres REAL (nunca mock), com as migrations aplicadas
- * (563 = `talentum_webhook_divergences`). Prova o que o espelho Talentum → card exige (M2):
+ * (565 = `talentum_webhook_divergences`). Prova o que o espelho Talentum → card exige (M2):
  *
  *  - a vaga DONA do `talentum_prescreening_id` (resolvida por id, `jobPostingResolvedById: true`) SOBRESCREVE a vaga
  *    gravada antes por título — o `COALESCE` antigo travava a vaga errada para sempre;
@@ -104,7 +104,7 @@ describe('TalentumPrescreeningRepository (banco real) — espelho do Talentum', 
       pool.query(`INSERT INTO talentum_webhook_divergences (kind, talentum_prescreening_id, talentum_profile_id) VALUES ('QUALQUER', 'x', 'y')`),
     ).rejects.toThrow(/check/i);
   });
-  it('M8: e-mail com maiúscula ou espaço acha o worker (SQL real, índice 562)', async () => {
+  it('M8: e-mail com maiúscula ou espaço acha o worker (SQL real, índice 564)', async () => {
     const workers = Object.create(WorkerRepository.prototype) as WorkerRepository;
     Object.assign(workers, { pool, encryptionService: { decrypt: async () => '' } });
 

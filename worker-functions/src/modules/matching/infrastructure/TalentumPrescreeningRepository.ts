@@ -77,7 +77,7 @@ export class TalentumPrescreeningRepository {
     };
   }
 
-  // Linha de divergência webhook × card (tabela `talentum_webhook_divergences`, migration 563).
+  // Linha de divergência webhook × card (tabela `talentum_webhook_divergences`, migration 565).
   // Só ids, tipo e ambiente — nunca telefone/e-mail/nome. Roda no `client` da transação do chamador.
   async insertDivergence(dto: InsertTalentumDivergenceDTO, client?: { query: Pool['query'] }): Promise<void> {
     const db = client || this.pool;

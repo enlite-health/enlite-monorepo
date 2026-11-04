@@ -1,6 +1,6 @@
 /**
  * WorkerRepository.findByEmail — o Talentum manda o e-mail como a candidata digitou ("Maria@Gmail.com ", com
- * maiúscula/espaço). O lookup compara LOWER(BTRIM(email)) dos DOIS lados (migration 562 tem o índice da mesma
+ * maiúscula/espaço). O lookup compara LOWER(BTRIM(email)) dos DOIS lados (migration 564 tem o índice da mesma
  * expressão); `email = $1` cru deixava a candidata sem worker e o fluxo criava uma duplicata.
  */
 import { WorkerRepository } from '../WorkerRepository';

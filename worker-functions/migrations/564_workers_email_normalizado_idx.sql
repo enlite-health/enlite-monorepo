@@ -1,4 +1,4 @@
--- 562 — índice funcional para o lookup de worker por e-mail normalizado (webhook Talentum, M8).
+-- 564 — índice funcional para o lookup de worker por e-mail normalizado (webhook Talentum, M8).
 --
 -- Por quê: `WorkerRepository.findByEmail` comparava `email = $1` (sensível a maiúsculas/espaços). O Talentum
 -- manda o e-mail como a candidata digitou ("Maria@Gmail.com ", com espaço/maiúscula) e o cadastro do worker

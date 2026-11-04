@@ -1,4 +1,4 @@
--- 563 — `talentum_webhook_divergences`: uma linha por evento do webhook Talentum que NÃO conseguiu gravar o card
+-- 565 — `talentum_webhook_divergences`: uma linha por evento do webhook Talentum que NÃO conseguiu gravar o card
 -- direito (worker não resolvido, vaga não resolvida, vaga só por título, vaga gravada ≠ dona do prescreening_id —
 -- esta última em dois sabores: REPOINTED_TO_OWNER = a dona por id venceu e a gravada foi trocada; TITLE_DIFFERS_STORED =
 -- só o título resolveu, diferente da gravada, e a gravada foi mantida).
