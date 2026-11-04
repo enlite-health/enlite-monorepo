@@ -1702,6 +1702,36 @@ describe('ProcessTalentumPrescreening', () => {
       expect(new Set(errs.map((e) => e.message)).size).toBe(2);
     });
 
+    it('e-mail ambíguo e NEM telefone NEM CUIL acham ninguém: NUNCA chama o auto-create (não duplica nem escolhe)', async () => {
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null, ambiguousCount: 2 });
+      mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => null });
+      mockWorkerLookup.findByCuit.mockResolvedValue({ getValue: () => null });
+
+      const result = await useCase.execute(buildPayload());
+
+      expect(result.workerId).toBeNull();
+      const inseriu = mockPool.query.mock.calls.some((c: unknown[]) => String(c[0]).includes('INSERT INTO workers'));
+      expect(inseriu).toBe(false);
+      expect(divergenceKinds()).toEqual(expect.arrayContaining(['WORKER_EMAIL_AMBIGUOUS', 'WORKER_NULL']));
+    });
+
+    it('auto-create que colide com >1 worker vivo: ambíguo, não escolhe (e o SELECT filtra vivo e ordena)', async () => {
+      mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => null });
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null });
+      let selectSql = '';
+      mockPool.query.mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO workers')) return Promise.reject(Object.assign(new Error('dup'), { code: '23505' }));
+        if (/FROM workers\s+WHERE \(auth_uid/.test(sql)) { selectSql = sql; return Promise.resolve({ rows: [{ id: 'w-a' }, { id: 'w-b' }] }); }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await useCase.execute(buildPayload());
+
+      expect(result.workerId).toBeNull();
+      expect(selectSql).toMatch(/merged_into_id IS NULL AND deleted_at IS NULL/);
+      expect(selectSql).toMatch(/ORDER BY created_at, id/);
+    });
+
     it('e-mail ambíguo (>1 worker vivo): NÃO escolhe um; cai no telefone e registra WORKER_EMAIL_AMBIGUOUS', async () => {
       mockWorkerLookup.findByEmailNormalized.mockResolvedValue({ getValue: () => null, ambiguousCount: 2 });
       mockWorkerLookup.findByPhoneCandidates.mockResolvedValue({ getValue: () => ({ id: 'w-fone' }) });

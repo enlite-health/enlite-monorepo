@@ -6,7 +6,7 @@ import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
-import { reportError, logger } from '@shared/logging';
+import { reportError } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, insertTalentumWorker } from './talentumFunnel';
@@ -137,6 +137,13 @@ export class ProcessTalentumPrescreening {
       return { workerId: null, emailAmbiguous };
     }
 
+    // E-mail ambíguo (>1 worker vivo) e nem telefone nem CUIL acharam ninguém: NÃO cria nem escolhe — o auto-create ou
+    // duplicaria a pessoa ou, na colisão, pegaria um dos candidatos. Fica sem worker; a divergência registra o caso.
+    if (emailAmbiguous) {
+      console.log(`${TAG} resolveWorker → e-mail ambíguo e sem acerto por telefone/CUIL: sem auto-create`);
+      return { workerId: null, emailAmbiguous };
+    }
+
     console.log(`${TAG} resolveWorker → NOT FOUND, auto-creating...`);
     const created = await this.autoCreateWorker(payload);
     console.log(`${TAG} resolveWorker → auto-created: ${created ?? 'FAILED'}`);
@@ -224,10 +231,17 @@ export class ProcessTalentumPrescreening {
       // Colisão: o cadastro já existe. Pode ser um registro já fundido em
       // outro — resolver o canônico antes de devolver, mesma razão do
       // `toCanonical` (ver `shared/database/canonicalWorker.ts`).
+      // Só worker VIVO, ORDER determinístico; mais de 1 candidato = ambíguo (não escolhe: fica sem worker).
       const existing = await this.pool.query(
-        `SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
+        `SELECT id FROM workers
+          WHERE (auth_uid = $1 OR LOWER(email) = LOWER($2)) AND merged_into_id IS NULL AND deleted_at IS NULL
+          ORDER BY created_at, id LIMIT 2`,
         [`talentum_${payload.data.profile.id}`, payload.data.profile.email],
       );
+      if (existing.rows.length > 1) {
+        console.log(`${TAG} autoCreateWorker → colisão com >1 worker vivo: ambíguo, sem worker`);
+        return null;
+      }
       // Colisão no índice único de telefone: o dono está na forma com o 9 (o INSERT usa o normalizado).
       const existingId = existing.rows[0]?.id ?? (await this.findByPhoneAnyForm(payload.data.profile.phoneNumber));
       return existingId ? await this.toCanonical(existingId) : null;
