@@ -249,6 +249,25 @@ describe('SetGroupPermissionsUseCase', () => {
       expect(repo.setPermissions).toHaveBeenCalledWith(MASTER, ['id-6', 'id-7'], null);
     });
 
+    it('spec 086 (CA-4): grupo comum: conceder luz_prueba:chat é recusado com 422 master_only_cell; o Master aceita', async () => {
+      const comLuz = { ...known, 'luz_prueba:chat': 'id-8' };
+      const repo = makeRepo();
+      await expect(
+        new SetGroupPermissionsUseCase(repo, makeCatalog(comLuz), makeEvents()).execute({
+          tenantId: TENANT, groupId: 'g1', cellKeys: ['luz_prueba:chat'],
+        }),
+      ).rejects.toMatchObject({ code: 'master_only_cell' });
+      expect(repo.setPermissions).not.toHaveBeenCalled();
+      const repoMaster = makeRepo(group({ id: MASTER, isSystem: true }));
+      await expect(
+        new SetGroupPermissionsUseCase(repoMaster, makeCatalog(comLuz), makeEvents()).execute({
+          tenantId: TENANT, groupId: MASTER, cellKeys: ['luz_prueba:chat'],
+        }),
+      ).resolves.toEqual({ cells: 1 });
+      const { STATUS_POR_CODIGO } = jest.requireActual('../../../interfaces/http/permissionErrorHttp');
+      expect(STATUS_POR_CODIGO.master_only_cell).toBe(422);
+    });
+
     it('o catálogo marca somenteAcessoMaster em pedidos_ia:read e NÃO em decidir (e a recusa vira 422 no HTTP)', () => {
       const { isSomenteAcessoMaster } = jest.requireActual('../../domain/PermissionCell');
       const { STATUS_POR_CODIGO } = jest.requireActual('../../../interfaces/http/permissionErrorHttp');

@@ -14,6 +14,9 @@ import { AssistantCountService } from './application/AssistantCountService';
 import { WorkerCountReader } from './infrastructure/WorkerCountReader';
 import { PatientCountReader } from './infrastructure/PatientCountReader';
 import { VacancyCountReader } from './infrastructure/VacancyCountReader';
+import { LuzPruebaController } from './interfaces/controllers/LuzPruebaController';
+import { TriagePruebaClient, triagePruebaOptsFromEnv } from './infrastructure/TriagePruebaClient';
+import { PostgresTurnosPrueba } from './infrastructure/PostgresTurnosPrueba';
 import { readScoreboardWith, registerEscalationWith } from '../mcp/infrastructure/AgentesRepository';
 
 export { createAdminPedidosIaRoutes } from './interfaces/routes/adminPedidosIaRoutes';
@@ -21,6 +24,8 @@ export { PedidoIaController } from './interfaces/controllers/PedidoIaController'
 export { AssistantCountService } from './application/AssistantCountService';
 export { createAdminAssistantsRoutes } from './interfaces/routes/adminAssistantsRoutes';
 export { AssistantsPlatformController } from './interfaces/controllers/AssistantsPlatformController';
+export { createAdminLuzPruebaRoutes } from './interfaces/routes/adminLuzPruebaRoutes';
+export { LuzPruebaController } from './interfaces/controllers/LuzPruebaController';
 
 /** Composition root do módulo (usa `getPool()`: a RLS exige o contexto de país/uid da request). */
 export function createPedidoIaController(): PedidoIaController {
@@ -59,5 +64,13 @@ export function createAssistantCountService(): AssistantCountService {
       (client) => fn({ workers: new WorkerCountReader(client), patients: new PatientCountReader(client), vacancies: new VacancyCountReader(client) }),
       actor,
     ),
+  );
+}
+
+/** Composition root da Luz (prueba) (spec 086): cliente do triage por ID token da SA + contador por pessoa/dia no `agentes.*`. */
+export function createLuzPruebaController(): LuzPruebaController {
+  return new LuzPruebaController(
+    new TriagePruebaClient(triagePruebaOptsFromEnv()),
+    new PostgresTurnosPrueba(DatabaseConnection.getInstance().getPool()),
   );
 }

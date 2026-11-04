@@ -521,6 +521,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/assistants/count/vacancies → vacancy:read',
         'GET /api/admin/assistants/count/workers → worker:read',
         'POST /api/admin/assistants/escalations → assistant_escalation:register',
+        // spec 086 (Luz prueba, `adminLuzPruebaRoutes.ts`): família admin.integrations, célula luz_prueba:chat (só Acesso Master).
+        'POST /api/admin/luz-prueba/turn → luz_prueba:chat',
         // spec 082 (painel de custos, `adminCostsRoutes.ts`): família admin.integrations, célula platform_costs:read (só Acesso Master).
         'GET /api/admin/costs/overview → platform_costs:read',
       ].sort(),

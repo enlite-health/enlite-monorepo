@@ -25,6 +25,19 @@ const ArgsSchema = z
     message: 'juiz_versao só existe (e é obrigatória) quando o sensor é juiz',
   });
 
+/** Prefixo do `conversa_ref` das conversas de Luz (prueba) (spec 086): teste, nunca conversa real — não entra no placar. */
+export const CONVERSA_REF_PRUEBA_PREFIX = 'prueba:';
+
+/** Recusa (400) de veredicto de conversa de prueba; defesa em profundidade da DF-9 (o triage já não registra). */
+export class ConversaRefPruebaError extends Error {
+  readonly status = 400;
+  readonly codigo = 'CONVERSA_REF_PRUEBA';
+  constructor() {
+    super('CONVERSA_REF_PRUEBA');
+    this.name = 'ConversaRefPruebaError';
+  }
+}
+
 /**
  * AgentesVeredictoRegistrarCapability (agentes.veredicto.registrar) — WRITE.
  *
@@ -43,6 +56,7 @@ export class AgentesVeredictoRegistrarCapability {
   async execute(args: unknown, principalName?: string): Promise<{ id: string; duplicado?: true }> {
     if (!principalName) throw new Error('agentes.veredicto.registrar: principal ausente');
     const input = ArgsSchema.parse(args);
+    if (input.conversa_ref.startsWith(CONVERSA_REF_PRUEBA_PREFIX)) throw new ConversaRefPruebaError();
     return this.repo.registrarVeredicto(principalName, input);
   }
 }

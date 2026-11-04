@@ -167,7 +167,7 @@ import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMainten
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
-import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService } from '@modules/agentes';
+import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService, createAdminLuzPruebaRoutes, createLuzPruebaController } from '@modules/agentes';
 import { createAdminCostsRoutes, createGetCostOverviewUseCase } from '@modules/custos';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
@@ -777,6 +777,9 @@ app.use('/api/admin', createAdminAssistantsRoutes(createAssistantsPlatformContro
   service: createAssistantCountService(),
   resolveCountries: async (uid, requested) => (await resolveCountryScope(DatabaseConnection.getInstance().getPool(), uid, requested)).countries,
 }));
+
+// ========== Admin Luz (prueba) (spec 086 — a Luz real no papel da prestadora sintética; célula luz_prueba:chat, Acesso Master only) ==========
+app.use('/api/admin', createAdminLuzPruebaRoutes(createLuzPruebaController(), authMiddleware, permissionMiddleware));
 
 // ========== Admin Costs (spec 082 — painel de custos; célula platform_costs:read, Acesso Master only) ==========
 app.use('/api/admin', createAdminCostsRoutes(createGetCostOverviewUseCase(), authMiddleware, permissionMiddleware));
