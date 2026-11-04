@@ -738,7 +738,7 @@ describe('VacancyCrudController', () => {
         }));
       });
 
-      it('spec 084: o INSERT roda UMA vez — sem retry de case_ordinal (o índice único caiu); erro do banco vira 500', async () => {
+      it('spec 084: o INSERT roda UMA vez — sem retry de case_ordinal (derivado do serviço; a migration 530 já barra 2 vagas vivas por serviço); erro do banco vira 500', async () => {
         mockQuery
           .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
           .mockResolvedValueOnce({ rows: [{ vn: '300' }] })

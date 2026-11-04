@@ -6,10 +6,10 @@
 -- Nenhum título, link ou projeto do Talentum muda: eles usam case_number/vacancy_number, não case_ordinal.
 --
 -- ── O índice único idx_job_postings_case_ordinal (patient_id, case_ordinal) ──────────────────────────────────
--- Cai. R12 exige que duas vagas VIVAS do mesmo serviço (a baixada/encerrada e a nova) repitam o mesmo número, o que
--- esse índice proibiria. A garantia de que dois serviços não dividem número agora é derivação pura (a posição do
--- serviço), não corrida entre INSERTs — então o índice único perde o motivo de existir. Fica um índice comum para a
--- busca por (paciente, número) usada em EnquadreEventListRepository.
+-- Cai durante a renumeração (o UPDATE passa por estados intermediários que o violariam) e é RECRIADO ao fim, com o
+-- mesmo nome e predicado da 460. Continua valendo: o número agora é a posição do SERVIÇO e a migration 530 admite UMA
+-- vaga viva por serviço, então duas vagas vivas do mesmo paciente com o mesmo número são impossíveis. R12 (a vaga nova
+-- de um serviço repete o número) acontece quando a anterior foi APAGADA (fora do índice). Vaga sem serviço = NULL.
 --
 -- ── Vagas vivas existentes ───────────────────────────────────────────────────────────────────────────────────
 -- Medido em prd (03/11): das 344 vagas vivas com paciente, as 156 COM paciente e SEM serviço PERDEM o número (viram
@@ -21,8 +21,9 @@
 -- Antes do UPDATE, `(id, case_ordinal)` de TODA vaga viva com número vai para `job_postings_case_ordinal_before_563`
 -- (criada só na 1ª execução: reexecutar NÃO sobrescreve o retrato). Para desfazer:
 --   UPDATE job_postings jp SET case_ordinal = b.case_ordinal FROM job_postings_case_ordinal_before_563 b WHERE b.id = jp.id;
---   (e recriar o índice único antigo, só depois de conferir que não há duplicata de (patient_id, case_ordinal)). Ordem importa: o índice único é derrubado ANTES do UPDATE (a renumeração passa por estados
--- intermediários que o violariam). Vagas apagadas não são tocadas (história; fora do índice).
+--   (e DROP INDEX idx_job_postings_case_ordinal + recriar com o mesmo nome, se a renumeração tiver deixado duplicata).
+--
+-- Ordem importa: o índice único é derrubado ANTES do UPDATE (a renumeração passa por estados intermediários que o violariam). Vagas apagadas não são tocadas (história; fora do índice).
 --
 -- Roda como enlite_app (dono): DROP INDEX / CREATE INDEX / UPDATE na própria tabela. Idempotente (reexecutar
 -- recalcula o mesmo valor).
@@ -50,11 +51,11 @@ UPDATE job_postings jp
    AND jp.deleted_at IS NULL
    AND jp.case_ordinal IS DISTINCT FROM s.ordinal;
 
-CREATE INDEX IF NOT EXISTS idx_job_postings_patient_case_ordinal
+CREATE UNIQUE INDEX IF NOT EXISTS idx_job_postings_case_ordinal
   ON job_postings (patient_id, case_ordinal)
   WHERE patient_id IS NOT NULL AND case_ordinal IS NOT NULL AND deleted_at IS NULL;
 
 COMMENT ON COLUMN job_postings.case_ordinal IS
-  'Spec 084 (R12/R16): ordem do SERVIÇO contratado dentro do paciente (1..N). NULL para vaga sem serviço. Vaga nova de um serviço repete o número do serviço. Derivado na criação (buildInsertQuery), nunca MAX+1.';
+  'Spec 084 (R12/R16): ordem do SERVIÇO contratado dentro do paciente (1..N). NULL para vaga sem serviço. Vaga nova de um serviço repete o número do serviço. Derivado na criação (buildInsertQuery) e no vínculo, nunca MAX+1. Índice único (paciente, número) entre vagas vivas.';
 
-DO $$ BEGIN RAISE NOTICE 'Migration 563: case_ordinal passa a ser a ordem do serviço; índice único trocado por comum'; END $$;
+DO $$ BEGIN RAISE NOTICE 'Migration 563: case_ordinal passa a ser a ordem do serviço; índice único recriado depois da renumeração'; END $$;

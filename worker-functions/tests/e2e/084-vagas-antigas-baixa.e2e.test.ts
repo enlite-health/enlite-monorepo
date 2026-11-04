@@ -26,7 +26,7 @@ const HORARIO = '[{"dayOfWeek":2,"startTime":"09:00","durationMinutes":240}]';
 describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integration', () => {
   const api = createApiClient();
   let pool: Pool;
-  let asAdmin: { headers: { Authorization: string } };
+  let asAdmin: { headers: { Authorization: string }; uid?: string };
   let seq = 0;
 
   const limpar = async (): Promise<void> => {
@@ -68,6 +68,12 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
     await waitForBackend(api);
     asAdmin = await staffAuth('084-vagas-admin', 'admin');
     pool = new Pool({ connectionString: DATABASE_URL });
+    // A FK de `job_posting_audit_log.actor_user_id` aceita só uid que existe em `users`; sem a linha a auditoria (best-effort, SAVEPOINT)
+    // é engolida em silêncio. Semeia o uid EFETIVO do token (com emulador é o localId, não o literal pedido) — molde `activation.e2e`.
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, display_name, role) VALUES ($1, $2, '084 Vagas E2E Admin', 'admin') ON CONFLICT (firebase_uid) DO NOTHING`,
+      [(asAdmin as { uid?: string }).uid ?? '084-vagas-admin', '084-vagas-admin@e2e.local'],
+    );
     await limpar();
   });
   afterAll(async () => {
@@ -171,14 +177,16 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
       expect(row.baja_reason).toBe('MANUAL');
     });
 
-    it('baixa do serviço marca SERVICE; reativar o serviço devolve SÓ a vaga baixada por ele (a MANUAL fica)', async () => {
+    it('baixa do serviço marca SERVICE; reativar o serviço devolve SÓ a vaga baixada por ele (a baixada à mão, de outro serviço, fica)', async () => {
       const patientId = await criarPaciente('volta', 884005);
-      const serviceId = await criarServico(patientId);
-      const porServico = await criarVaga({ patientId, caseNumber: 884005, status: 'SEARCHING', serviceId });
-      const porMao = await criarVaga({ patientId, caseNumber: 884005, status: 'SEARCHING_REPLACEMENT', serviceId });
+      const s1 = await criarServico(patientId);
+      const s2 = await criarServico(patientId);
+      // UMA vaga viva por serviço (índice uq_job_postings_vaga_viva_por_servico, migration 530)
+      const porServico = await criarVaga({ patientId, caseNumber: 884005, status: 'SEARCHING', serviceId: s1 });
+      const porMao = await criarVaga({ patientId, caseNumber: 884005, status: 'SEARCHING_REPLACEMENT', serviceId: s2 });
       await pool.query(`UPDATE job_postings SET status_before_baja = 'SEARCHING_REPLACEMENT', status = 'DE_BAJA', baja_reason = 'MANUAL' WHERE id = $1`, [porMao]);
 
-      const patch = await api.patch(`/api/admin/patients/${patientId}/contracted-services/${serviceId}`, { active: false }, asAdmin);
+      const patch = await api.patch(`/api/admin/patients/${patientId}/contracted-services/${s1}`, { active: false }, asAdmin);
       expect(patch.status).toBe(200);
       const baixada = await linha(porServico);
       expect(baixada.status).toBe('DE_BAJA');
@@ -187,14 +195,16 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
 
       // O HTTP só aceita `active:false` (reabrir não existe); a volta é o repositório (mesmo caminho do gatilho).
       const { PatientContractedServiceRepository } = await import('../../src/modules/case/infrastructure/PatientContractedServiceRepository');
-      await new PatientContractedServiceRepository().update(serviceId, { active: true, actorUid: '084-vagas-admin' }, new Date());
+      const repo = new PatientContractedServiceRepository();
+      await repo.update(s1, { active: true, actorUid: '084-vagas-admin' }, new Date());
+      await repo.update(s2, { active: true, actorUid: '084-vagas-admin' }, new Date());
 
       const volta = await linha(porServico);
       expect(volta.status).toBe('SEARCHING');
       expect(volta.baja_reason).toBeNull();
       expect(volta.status_before_baja).toBeNull();
       const fica = await linha(porMao);
-      expect(fica.status).toBe('DE_BAJA'); // baixada à mão: NUNCA volta
+      expect(fica.status).toBe('DE_BAJA'); // baixada à mão: NUNCA volta, mesmo com o serviço reativado
       expect(fica.baja_reason).toBe('MANUAL');
       const audits = (await pool.query(`SELECT 1 FROM job_posting_audit_log WHERE job_posting_id = $1 AND event_type = 'STATUS_CHANGED'`, [porServico])).rows;
       expect(audits).toHaveLength(2); // a baixa e a volta (P6)
@@ -264,8 +274,8 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
       expect((await linha(antiga)).case_ordinal).toBeNull(); // sem serviço, sem número (R16)
       expect([(await linha(v1)).case_ordinal, (await linha(v2)).case_ordinal, (await linha(v3)).case_ordinal]).toEqual([1, 2, 3]);
 
-      // a vaga #2 é encerrada/baixada e o serviço ganha uma NOVA: repete o número do serviço (R12)
-      await pool.query(`UPDATE job_postings SET status = 'CLOSED' WHERE id = $1`, [v2]);
+      // a vaga #2 sai (apagada: o índice da migration 530 só admite UMA vaga viva por serviço) e o serviço ganha uma NOVA: repete o número (R12)
+      await pool.query(`UPDATE job_postings SET status = 'CLOSED', deleted_at = NOW() WHERE id = $1`, [v2]);
       const v2b = await inserir(s2);
       expect((await linha(v2b)).case_ordinal).toBe(2);
     });
