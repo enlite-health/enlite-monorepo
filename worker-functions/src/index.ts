@@ -58,7 +58,7 @@ import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfa
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { UserController } from '@modules/identity';
+import { UserController, resolveCountryScope } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
 import { createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
@@ -167,7 +167,7 @@ import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMainten
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
-import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes } from '@modules/agentes';
+import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService } from '@modules/agentes';
 import { createAdminCostsRoutes, createGetCostOverviewUseCase } from '@modules/custos';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
@@ -773,7 +773,10 @@ app.use('/api/admin', createAdminAiPromptRoutes(new AiPromptController(), authMi
 app.use('/api/admin', createAdminPedidosIaRoutes(createPedidoIaController(), authMiddleware, permissionMiddleware));
 
 // ========== Admin Assistants (spec 080 — platform for the assistants service; cells assistant_*, knowledge_*) ==========
-app.use('/api/admin', createAdminAssistantsRoutes(createAssistantsPlatformController(async (uid) => (await permissionsBoundary.permissions.authz.execute({ uid, tenantId: ENLITE_TENANT_ID })).permissions), authMiddleware, permissionMiddleware));
+app.use('/api/admin', createAdminAssistantsRoutes(createAssistantsPlatformController(async (uid) => (await permissionsBoundary.permissions.authz.execute({ uid, tenantId: ENLITE_TENANT_ID })).permissions), authMiddleware, permissionMiddleware, {
+  service: createAssistantCountService(),
+  resolveCountries: async (uid, requested) => (await resolveCountryScope(DatabaseConnection.getInstance().getPool(), uid, requested)).countries,
+}));
 
 // ========== Admin Costs (spec 082 — painel de custos; célula platform_costs:read, Acesso Master only) ==========
 app.use('/api/admin', createAdminCostsRoutes(createGetCostOverviewUseCase(), authMiddleware, permissionMiddleware));
