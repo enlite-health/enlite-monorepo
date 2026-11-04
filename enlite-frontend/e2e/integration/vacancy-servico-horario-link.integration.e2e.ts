@@ -16,6 +16,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
@@ -59,6 +60,7 @@ test.describe('vacancy-servico-horario-link — F4 (vaga-le-do-servico-contratad
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);
     serviceId = (await svc.json()).data.id as string;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
 
     const act = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`, {
       headers: AUTH_HEADERS,

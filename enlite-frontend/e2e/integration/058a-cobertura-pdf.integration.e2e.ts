@@ -1,12 +1,12 @@
 /**
- * 058a-cobertura-pdf.integration.e2e.ts @integration — spec 058 Parte A, T135: cartão "Cobertura Médica" (informada × verificada) e o PDF do projeto terapêutico.
+ * 058a-cobertura-pdf.integration.e2e.ts @integration — spec 058 Parte A, T135 (reescrito na 087): cartão "Cobertura médica" (UMA linha, "Cobertura actual", lida do serviço contratado) e o PDF do projeto terapêutico.
  *
  * E2E DE TELA, SEM MOCK de resposta: frontend + API + Postgres reais, engine ABAC LIGADO, staff REAL em grupo, clique e teclado de humano; o PDF é o
  * baixado de verdade e lido (`pdf-parse`). As obras sociais saem da API real; o paciente, o serviço e a versão do projeto, por SQL (molde do spec 417).
  *
- *  FELIZ         — as DUAS linhas do cartão (informada e verificada): apaga a informada e marca 2 obras sociais do catálogo no drawer -> o cartão mostra os
- *                  NOMES do catálogo -> o PDF imprime "Cobertura médica" com esses nomes (a informada, quando existe, é a que vale).
- *  ALTERNATIVO 1 — só rótulo SEM mapeamento ao catálogo = o cartão e o PDF dizem "sem mapeo" (o rótulo cru não sai); sem nada = "no informada".
+ *  FELIZ         — serviço vinculado ao contrato Particular -> o cartão mostra "Particular" (`coverage-current-value`); o drawer só edita a Credencial (sem `#pcv-codes`) ->
+ *                  o PDF imprime "Cobertura médica" com "Particular" e a credencial.
+ *  ALTERNATIVO 1 — serviço ativo SEM vínculo = "Sin obra social vinculada" (cartão e PDF); sem serviço ativo = "Sin servicio activo" (cartão).
  *  ALTERNATIVO 2 — (ABAC) sem `patient_coverage:read` o cartão nem aparece e o PDF diz "sem permissão" no lugar da cobertura; o servidor manda `coverage: null`.
  *                  Só mede com o engine ligado.
  */
@@ -14,6 +14,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { loginAs } from '../helpers/abac-stack-helper';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import {
   CELLS_FICHA, CELLS_INSURANCE_ALL, seedActor, dropActors, purgeProviders, apiOk, makeProvider,
@@ -21,6 +22,7 @@ import {
 } from '../helpers/insurance-058a-helper';
 
 type Seed = { patientId: string; addressId: string; stamp: string };
+
 
 test.use({ viewport: { width: 1600, height: 1200 }, video: 'on', acceptDownloads: true });
 
@@ -34,12 +36,14 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
   let p2: ProviderMade;
   const pacientes: Seed[] = [];
   const versoes: Record<string, string> = {};
+  const servicos: Record<string, string> = {}; // paciente -> id do serviço contratado semeado
 
   const novoPaciente = (base: number): Seed => { const p = seedActivatablePatient(base); pacientes.push(p); return p; };
 
   /** Serviço + 1 versão do projeto terapêutico (por SQL: o fluxo humano de criar o projeto tem spec próprio); devolve o id da versão. */
   function versaoDoProjeto(p: Seed): string {
-    const sid = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${p.patientId}', 'CAREGIVER', 20, '${p.addressId}', 'e2e-058a', 'e2e-058a') RETURNING id`).split('\n')[0].trim();
+    const sid = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, active, country, created_by, updated_by) VALUES ('${p.patientId}', 'CAREGIVER', 20, '${p.addressId}', true, 'AR', 'e2e-058a', 'e2e-058a') RETURNING id`).split('\n')[0].trim();
+    servicos[p.patientId] = sid;
     const obj = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order LIMIT 1`).trim();
     const act = runSQL(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order LIMIT 1`).trim();
     return runSQL(`INSERT INTO patient_therapeutic_projects (patient_id, major, minor, contracted_service_id, modality, diagnoses, clinical_context, general_objective, specific_objectives, activities, pathology_types, start_date, end_date, created_by)
@@ -82,11 +86,8 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
     const feliz = novoPaciente(651000); versoes[feliz.patientId] = versaoDoProjeto(feliz);
     const rotulos = novoPaciente(652000); versoes[rotulos.patientId] = versaoDoProjeto(rotulos);
     const oculto = novoPaciente(653000); versoes[oculto.patientId] = versaoDoProjeto(oculto);
-    // Paciente "rótulos": nada informado e UM rótulo cru que o catálogo não conhece.
-    // Spec 071: o drawer não edita mais a cobertura informada; o paciente "feliz" nasce sem ela.
-    runSQL(`UPDATE patients SET insurance_informed = NULL WHERE id IN ('${rotulos.patientId}', '${feliz.patientId}')`);
-    runSQL(`INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, source) VALUES ('${rotulos.patientId}', 1, 'QA058A rotulo sin catalogo', 'clickup')`);
-    // Paciente "oculto": informada e verificada existem — quem não lê a cobertura não pode vê-las em lugar nenhum.
+    // Spec 087: "feliz" e "rótulos" não dependem mais da informada/verificada — o cartão lê o vínculo do SERVIÇO (semeado em cada teste).
+    // Paciente "oculto": informada e verificada existem — quem não lê a cobertura não pode vê-las em lugar nenhum (o fio `coverage` segue na API).
     runSQL(`INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, source, provider_code) VALUES ('${oculto.patientId}', 1, '${p1.name}', 'admin_manual', '${p1.code}')`);
     await request.dispose();
   });
@@ -100,66 +101,49 @@ test.describe('058a-cobertura-pdf — cartão Cobertura Médica e o PDF do proje
     dropActors();
   });
 
-  test('FELIZ: marca 2 obras sociais do catálogo -> o cartão mostra os nomes do catálogo -> o PDF imprime "Cobertura médica" com eles', async ({ page }) => {
+  test('FELIZ: serviço vinculado ao Particular -> o cartão mostra "Particular"; o drawer só edita a Credencial -> o PDF imprime "Cobertura médica" com "Particular" e a credencial', async ({ page }) => {
     const feliz = pacientes[0];
+    vincularServicoAoParticular(servicos[feliz.patientId]);
     await loginAs(page, ator.user);
     await abrirCartao(page, feliz);
-    // As DUAS linhas vazias: a informada (sem semente) e a verificada.
-    await expect(page.getByTestId('coverage-informed')).toContainText('—');
-    await expect(page.getByTestId('coverage-verified-value')).toHaveText('—');
+    await expect(page.getByTestId('coverage-current-value')).toHaveText('Particular', { timeout: 20_000 });
 
     await page.getByTestId('edit-coverage-btn').click();
     const drawer = page.getByTestId('patient-coverage-edit-drawer');
     await expect(drawer).toBeVisible();
-    const titulo = drawer.getByRole('heading', { level: 3 });
-    for (const nome of [p1.name, p2.name]) {
-      const gatilho = page.locator('#pcv-codes'); // o `id` do Combobox é do GATILHO
-      const raiz = gatilho.locator('..'); // o painel mora no pai do gatilho
-      await gatilho.click();
-      const opcao = raiz.locator('li[role="option"]', { hasText: nome });
-      await expect(opcao).toBeVisible({ timeout: 10_000 });
-      await opcao.locator('button').click();
-      await titulo.click(); // clique FORA da lista (o título fica acima dela): o Combobox fecha no mousedown externo; nunca Esc (abre o "descartar")
-      await expect(raiz.locator('li[role="option"]').first()).toHaveCount(0);
-    }
-    await expect(page.getByTestId('pcv-codes-selected')).toContainText(p1.name);
-    await expect(page.getByTestId('pcv-codes-selected')).toContainText(p2.name);
+    await expect(page.locator('#pcv-codes')).toHaveCount(0); // a "verificada" por código acabou: o drawer só tem Credencial + contatos
+    await page.getByTestId('pcv-affiliate').fill('AF-058A-0001');
 
     const salvo = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/patients\/[^/]+\/coverage$/.test(r.url()));
     await page.getByTestId('pcv-save').click();
     expect((await salvo).status()).toBe(200);
     await expect(drawer).toHaveCount(0);
 
-    await expect(page.getByTestId('coverage-informed')).toContainText('—');
-    await expect(page.getByTestId('coverage-informed')).not.toContainText('OSDE');
-    await expect(page.getByTestId('coverage-verified-value')).toHaveText(`${p1.name}, ${p2.name}`);
+    await expect(page.getByTestId('coverage-current-value')).toHaveText('Particular');
+    await expect(page.getByTestId('cobertura-medica-card')).toContainText('AF-058A-0001');
     await page.screenshot({ path: 'test-results/058a-cobertura-pdf.png', fullPage: true });
 
-    // O PDF baixado de verdade: a cobertura impressa são os NOMES do catálogo (a informada, vazia, não encobre).
+    // O PDF baixado de verdade: a cobertura impressa é a ATUAL do serviço ("Particular") + a credencial.
     const texto = await exportarPdf(page, feliz);
     expect(texto).toContain('Cobertura médica');
-    expect(texto).toContain(`${p1.name}, ${p2.name}`);
+    expect(texto).toContain('Particular');
+    expect(texto).toContain('AF-058A-0001');
     expect(texto).not.toContain('OSDE');
   });
 
-  test('ALTERNATIVO 1: só rótulo sem mapeamento = "sem mapeo" (cartão e PDF; o rótulo cru não sai); sem nada = "no informada"', async ({ page }) => {
+  test('ALTERNATIVO 1: serviço ativo sem vínculo = "Sin obra social vinculada" (cartão e PDF); sem serviço ativo = "Sin servicio activo"', async ({ page }) => {
     const rotulos = pacientes[1];
     await loginAs(page, ator.user);
-    // UNMAPPED_ONLY
+    // Serviço ativo, SEM vínculo com contrato
     await abrirCartao(page, rotulos);
-    await expect(page.getByTestId('coverage-verified-value')).toHaveText('Sin mapeo al catálogo (1)');
-    await expect(page.getByTestId('coverage-informed')).toContainText('—');
-    const semMapeo = await exportarPdf(page, rotulos);
-    expect(semMapeo).toContain('Cobertura sin mapeo al catálogo');
-    expect(semMapeo).not.toContain('QA058A rotulo sin catalogo');
+    await expect(page.getByTestId('coverage-current-value')).toHaveText('Sin obra social vinculada', { timeout: 20_000 });
+    const semVinculo = await exportarPdf(page, rotulos);
+    expect(semVinculo).toContain('Sin obra social vinculada');
 
-    // NONE: tira o rótulo; nada informado, nada verificado.
-    runSQL(`DELETE FROM patient_insurance_verified WHERE patient_id = '${rotulos.patientId}'`);
+    // Sem serviço ativo: o único serviço sai de cena.
+    runSQL(`UPDATE patient_contracted_services SET active = false, ended_at = now() WHERE id = '${servicos[rotulos.patientId]}'`);
     await abrirCartao(page, rotulos);
-    await expect(page.getByTestId('coverage-verified-value')).toHaveText('—');
-    const nenhuma = await exportarPdf(page, rotulos);
-    expect(nenhuma).toContain('Cobertura no informada');
-    expect(nenhuma).not.toContain('Cobertura sin mapeo');
+    await expect(page.getByTestId('coverage-current-value')).toHaveText('Sin servicio activo', { timeout: 20_000 });
   });
 
   test('ALTERNATIVO 2 (ABAC): sem `patient_coverage:read` o cartão não aparece e o PDF diz "sem permissão" no lugar da cobertura; o servidor manda coverage null', async ({ page, request }) => {

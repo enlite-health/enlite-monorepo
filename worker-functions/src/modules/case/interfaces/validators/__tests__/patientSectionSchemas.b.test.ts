@@ -30,9 +30,11 @@ describe('patientSectionSchemas — bloco B', () => {
     expect(clinicalSectionSchema.safeParse({ deviceTypes: 'HOME' }).success).toBe(false);
   });
 
-  it('coverage: healthInsuranceName, affiliateId, insuranceVerifiedCodes (códigos); chave estranha → recusa', () => {
-    expect(coverageSectionSchema.safeParse({ healthInsuranceName: 'OSDE 210', affiliateId: '123', insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL'] }).success).toBe(true);
-    expect(coverageSectionSchema.safeParse({ insuranceVerifiedCodes: ['swiss medical'] }).success).toBe(false);
+  it('coverage: healthInsuranceName e affiliateId; insuranceVerifiedCodes SAIU (spec 087) → recusa pelo .strict(); chave estranha → recusa', () => {
+    expect(coverageSectionSchema.safeParse({ healthInsuranceName: 'OSDE 210', affiliateId: '123' }).success).toBe(true);
+    expect(coverageSectionSchema.safeParse({ insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL'] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ insuranceVerifiedCodes: [] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ affiliateId: '1', insuranceVerifiedCodes: ['OSDE'] }).success).toBe(false);
     expect(coverageSectionSchema.safeParse({ affiliateId: null }).success).toBe(true);
     expect(coverageSectionSchema.safeParse({ taxCondition: 'IVA_21' }).success).toBe(false); // bloco C, não entra aqui
     expect(SECTION_SCHEMAS.coverage).toBe(coverageSectionSchema);

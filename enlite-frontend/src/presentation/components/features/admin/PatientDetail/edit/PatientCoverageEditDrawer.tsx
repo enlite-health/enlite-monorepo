@@ -3,11 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AdminPatientContactRowsApiService } from '@infrastructure/http/AdminPatientContactRowsApiService';
-import type { PatientDetail, PatientCoverageSectionPayload, InsuranceProvider } from '@domain/entities/PatientDetail';
+import type { PatientDetail, PatientCoverageSectionPayload } from '@domain/entities/PatientDetail';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
@@ -23,23 +22,11 @@ interface Props {
 
 const CLOSE_MS = 300;
 
-/** Origem que o painel NÃO edita neste drawer — chip travado (QA 🟡3/SUP-B5). */
-const LOCKED_SOURCE = 'clickup';
-
 /**
- * Drawer "Cobertura Médica" (spec 012, US-B3): cobertura informada (texto), verificadas por
- * CÓDIGO do catálogo (multi-select — o catálogo, COM o nome, é lido do endpoint e é editável sem deploy; spec 058 C3: o nome
- * vem do banco, não há mais seed no front nem tradução por código) e nº de afiliado. Salva por PATCH /:id/coverage, só o que
- * mudou. IVA e tipo de contratação NÃO estão aqui (lex C3.3 → bloco C).
- *
- * QA 🟡3 (SUP-B5): o multi-select edita SÓ as coberturas gravadas pelo PAINEL
- * (`source !== 'clickup'`) — o PATCH (`replaceCodesForPatient`) sempre apagou/regravou apenas
- * `source='admin_manual'`, então desmarcar um código de origem ClickUp aqui nunca o removia de
- * verdade: o operador via "sucesso" e a cobertura voltava no próximo GET (união das origens).
- * As de origem ClickUp aparecem como chips travados (sem controle de remoção), rotulados
- * `te('coverageFromClickup')`. A origem de cada chip vem de `coverage.entries[].source` (spec 058 §C); a entrada SEM mapeamento
- * ao catálogo (`mapped: false`) não tem código: aparece travada, como "sem mapeamento", e não entra no payload. Sem `coverage`
- * (ator sem leitura), cai em `insuranceVerifiedCodes` como editável.
+ * Drawer "Cobertura Médica" (spec 012, US-B3; spec 087): nº de afiliado (Credencial) e contatos de emergência da cobertura. Salva por
+ * PATCH /:id/coverage só o que mudou. A cobertura ATUAL (obra social/Particular) e a "verificada" NÃO são editadas aqui: a cobertura vive
+ * no serviço contratado (vínculo com contrato), e o PATCH recusa `insuranceVerifiedCodes` com 400. IVA e tipo de contratação NÃO estão
+ * aqui (lex C3.3 → bloco C).
  */
 export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
@@ -49,18 +36,8 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [catalog, setCatalog] = useState<InsuranceProvider[]>([]);
   const [affiliate, setAffiliate] = useState(patient.affiliateId ?? '');
 
-  const coverageEntries = patient.coverage?.entries
-    ?? (patient.insuranceVerifiedCodes ?? []).map((code) => ({ code, name: null, mapped: true, source: 'admin_manual' }));
-  // Só as MAPEADAS têm código editável; as sem mapeamento são rótulo cru (travado, sem controle).
-  const mappedEntries = coverageEntries.filter((e): e is typeof e & { code: string } => e.mapped && e.code !== null);
-  const unmappedCount = coverageEntries.filter((e) => !e.mapped).length;
-  const lockedEntries = mappedEntries.filter((e) => e.source === LOCKED_SOURCE);
-  const editableInitialCodes = mappedEntries.filter((e) => e.source !== LOCKED_SOURCE).map((e) => e.code);
-
-  const [selected, setSelected] = useState<string[]>(editableInitialCodes);
   // 417/PR-1 (spec 018, ADR-1): contatos de emergência da cobertura — escrita POR LINHA. `id`
   // presente = linha existente (o submit decide update/deactivate por diff); `null` (sem célula) e
   // backend anterior à 417 (ausente) começam vazios.
@@ -75,23 +52,11 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
     return () => cancelAnimationFrame(id);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    AdminApiService.listInsuranceProviders()
-      .then((rows) => { if (!cancelled) setCatalog(rows); })
-      .catch(() => { /* sem catálogo: os rótulos caem no nome que a ficha já trouxe (coverage.entries) ou no código */ });
-    return () => { cancelled = true; };
-  }, []);
-
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
-  // Spec 014 (US-D4, lex D4 AUTORIZADO): dirty = algum campo mudou vs. o valor com que o
-  // drawer abriu. `editableInitialCodes` já é a baseline correta (não a união com o ClickUp —
-  // ver o comentário da função acima), então comparar `selected` contra ele é a mesma régua
-  // que `onSubmit` já usa pra decidir o PATCH.
+  // Spec 014 (US-D4, lex D4 AUTORIZADO): dirty = algum campo mudou vs. o valor com que o drawer abriu.
   const isDirty =
     affiliate !== (patient.affiliateId ?? '') ||
-    [...selected].sort().join(',') !== [...editableInitialCodes].sort().join(',') ||
     contactsDirty;
 
   const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
@@ -105,25 +70,11 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  // O nome é do banco: catálogo vivo > nome que a ficha trouxe na entrada > o próprio código (nunca quebra o chip).
-  const labelOf = (code: string): string =>
-    catalog.find((p) => p.code === code)?.name ?? mappedEntries.find((e) => e.code === code)?.name ?? code;
-  // Opções = catálogo vivo (fonte do dropdown) + o que já está marcado e ainda não veio na lista (leitura lenta/falha).
-  const options: ComboboxOption[] = [
-    ...catalog.map((p) => ({ value: p.code, label: p.name })),
-    ...selected.filter((c) => !catalog.some((p) => p.code === c)).map((c) => ({ value: c, label: labelOf(c) })),
-  ];
-
   const onSubmit = async (): Promise<void> => {
     setSubmitError(null);
     const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
     const payload: PatientCoverageSectionPayload = {};
     if (nz(affiliate) !== (patient.affiliateId ?? null)) payload.affiliateId = nz(affiliate);
-    // A baseline é o que o PAINEL já tinha gravado (editableInitialCodes) — não a união com o
-    // ClickUp. Comparar contra a união faria um "sem mudança nenhuma" no editável disparar um
-    // PATCH à toa sempre que houvesse cobertura de origem ClickUp.
-    const before = [...editableInitialCodes].sort().join(',');
-    if ([...selected].sort().join(',') !== before) payload.insuranceVerifiedCodes = selected;
     if (Object.keys(payload).length === 0 && !contactsDirty) { handleClose(); return; }
 
     setBusy(true);
@@ -201,34 +152,6 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
-          <FormField label={tc('verified')} htmlFor="pcv-codes" optional>
-            {(lockedEntries.length > 0 || unmappedCount > 0) && (
-              // QA 🟡3: origem ClickUp — chip SEM controle de remoção (não faz parte do
-              // multi-select nem do payload). Ver o comentário da função para o porquê.
-              <div className="flex flex-wrap gap-1 mb-2" data-testid="pcv-codes-locked">
-                {lockedEntries.map(({ code }) => (
-                  <span key={code} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" data-testid={`pcv-locked-${code}`} data-source={LOCKED_SOURCE}>
-                    <Text as="span" size="xs" weight="medium" color="inherit">{labelOf(code)}</Text>
-                    <Text as="span" size="xs" color="muted">{te('coverageFromClickup')}</Text>
-                  </span>
-                ))}
-                {unmappedCount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" data-testid="pcv-unmapped">
-                    <Text as="span" size="xs" weight="medium" color="inherit">{tc('unmapped', { count: unmappedCount })}</Text>
-                  </span>
-                )}
-              </div>
-            )}
-            <Combobox multiple id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('selectPlaceholder')} inputSize="compact" />
-            {/* O que está marcado, por extenso: o botão do MultiSelect só diz "N seleccionados". */}
-            <div className="flex flex-wrap gap-1 mt-1" data-testid="pcv-codes-selected">
-              {selected.map((code) => (
-                <span key={code} className="inline-flex px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
-                  <Text as="span" size="xs" weight="medium" color="inherit">{labelOf(code)}</Text>
-                </span>
-              ))}
-            </div>
-          </FormField>
           <FormField label={tc('credential')} htmlFor="pcv-affiliate" hint={te('affiliateHint')} optional>
             <InputWithIcon id="pcv-affiliate" inputSize="compact" value={affiliate} onChange={(e) => setAffiliate(e.target.value)} data-testid="pcv-affiliate" />
           </FormField>

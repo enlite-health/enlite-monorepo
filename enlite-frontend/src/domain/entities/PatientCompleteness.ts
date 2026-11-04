@@ -69,8 +69,8 @@ export const ACTIVATABLE_STATUSES = ['ADMISSION', 'PENDING_ADMISSION'] as const;
 /**
  * Gate de "Activar reclutamiento" (spec 018, PR-6, `contracts/activation.md`) — espelha
  * `RECRUITMENT_BLOCKING_CODES` do backend (`PatientCompleteness.ts`). Avaliado POR SERVIÇO
- * (`SERVICE_ADDRESS`/`SERVICE_SCHEDULE` do serviço em questão, nunca "algum serviço do
- * paciente") + `COVERAGE` do paciente. Só decide o ESTADO do botão na tela — quem decide de
+ * (`SERVICE_ADDRESS`/`SERVICE_SCHEDULE`/`COVERAGE` do serviço em questão, nunca "algum serviço do
+ * paciente"; spec 087: `COVERAGE` = o serviço tem vínculo vigente com contrato ou Particular). Só decide o ESTADO do botão na tela — quem decide de
  * verdade é sempre o backend (422 `PATIENT_NOT_READY`).
  */
 export const RECRUITMENT_BLOCKING_CODES = [
@@ -126,30 +126,14 @@ export function serviceRecruitmentMissingCodes(
   return missing;
 }
 
-/**
- * FR-121/122 — mesma régua de `isPlaceholderCoverageValue` do backend: "sin cobertura /
- * particular" É uma resposta válida; placeholder (< 2 alfanuméricos, ou só zeros) não é.
- */
-export function isPlaceholderCoverageValue(value: string | null | undefined): boolean {
-  const trimmed = (value ?? '').trim();
-  if (trimmed.length === 0) return true;
-  const alphanumeric = trimmed.replace(/[^a-zA-Z0-9À-ÿ]/g, '');
-  if (alphanumeric.length < 2) return true;
-  return /^0+$/.test(alphanumeric);
-}
-
 export interface RecruitmentReadinessInput {
   serviceHasAddress: boolean;
   serviceHasSchedule: boolean;
-  insuranceInformed: string | null;
   /**
-   * Hotfix gate-cobertura-verificada-vacante (28/09): mesmo campo do backend
-   * (`worker-functions/.../PatientCompleteness.ts`) — o paciente tem cobertura verificada com
-   * provider ATIVO no catálogo (`patient.hasVerifiedActiveCoverage`). Opcional (default
-   * `false`) para não quebrar chamadores existentes que só conheciam o legado. `COVERAGE` é
-   * satisfeito pelo legado OU por esta cobertura verificada — nunca os dois exigidos.
+   * Spec 087: o serviço tem vínculo vigente (contrato ou Particular) — `service.payer.state === 'LINKED'`, lido do payload da ficha (o
+   * front nunca recalcula a vigência). Mesma regra do backend (`servicePayerLinkedSql`); a informada e a verificada não entram.
    */
-  hasVerifiedActiveCoverage?: boolean;
+  servicePayerLinked: boolean;
   /** Spec 027 Fase 3: os 5 campos copiados do serviço. Ausente = nenhum preenchido (faltando). */
   serviceRecruitmentFields?: ServiceRecruitmentFields;
   /** Pendência de diagnóstico da ficha (`diagnosisGapOf(patient.completeness)`); ausente = nada falta. */
@@ -164,9 +148,7 @@ export function recruitmentMissingCodes(
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
   missing.push(...serviceRecruitmentMissingCodes(input.serviceRecruitmentFields));
-  if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
-    missing.push('COVERAGE');
-  }
+  if (!input.servicePayerLinked) missing.push('COVERAGE');
   if (input.diagnosisGap) missing.push(input.diagnosisGap);
   return missing;
 }

@@ -58,9 +58,6 @@ interface DispatchOpts {
     id: string;
     status: string;
     case_number: number | null;
-    insurance_informed?: string | null;
-    /** Hotfix gate-cobertura-verificada-vacante (28/09) — default false (mesma régua do legado). */
-    has_verified_active_coverage?: boolean;
     /** Diagnósticos CID-11 ATIVOS (pedido do Javier). Default '1' (tem): estes testes medem as outras travas; os de diagnóstico declaram '0'. */
     active_dx_count?: string;
   } | null;
@@ -70,6 +67,8 @@ interface DispatchOpts {
     provider_age_band?: string | null;
     /** Spec 056: `EXISTS (faixa vigente hoje) AS has_schedule` — o use case não lê mais `pcs.schedule`. */
     has_schedule?: boolean;
+    /** Spec 087: o serviço tem vínculo (contrato ou Particular) vigente — `servicePayerLinkedSql`. Default true (estes testes medem as outras travas). */
+    payer_linked?: boolean;
     live_address_id?: string | null;
     // Spec 027 Fase 3 (D508): os 5 campos que a vaga copia + os 2 de ficha (que o use case NÃO lê).
     required_professions?: string[] | null;
@@ -104,15 +103,14 @@ function makeClient(opts: DispatchOpts) {
     }
     if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
       if (!opts.patientRow) return { rowCount: 0, rows: [] };
-      const { id, status, case_number, insurance_informed, has_verified_active_coverage, active_dx_count } = opts.patientRow;
+      const { id, status, case_number, active_dx_count } = opts.patientRow;
       return {
         rowCount: 1,
         rows: [{
           id,
           status,
           case_number,
-          insurance_informed: insurance_informed ?? null,
-          has_verified_active_coverage: has_verified_active_coverage ?? false,
+          country: 'AR',
           active_dx_count: active_dx_count ?? '1',
         }],
       };
@@ -120,14 +118,14 @@ function makeClient(opts: DispatchOpts) {
     if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
       if (!opts.serviceRow) return { rowCount: 0, rows: [] };
       const {
-        id, providers_needed = null, provider_age_band = null, has_schedule = false, live_address_id = null,
+        id, providers_needed = null, provider_age_band = null, has_schedule = false, payer_linked = true, live_address_id = null,
         required_professions = null, required_sex = null, required_experience = null, work_schedule = null, payment_day = null,
         worker_attributes = null, daily_obs = null,
       } = opts.serviceRow;
       return {
         rowCount: 1,
         rows: [{
-          id, providers_needed, provider_age_band, has_schedule, live_address_id,
+          id, providers_needed, provider_age_band, has_schedule, payer_linked, live_address_id,
           required_professions, required_sex, required_experience, work_schedule, payment_day,
           // O use case não seleciona estes dois; se um dia selecionar e copiar, os `it`s da T029 morrem.
           worker_attributes, daily_obs,
@@ -176,6 +174,7 @@ const READY_SERVICE = {
   providers_needed: 2,
   provider_age_band: 'AGE_20_30',
   has_schedule: true,
+  payer_linked: true,
   live_address_id: 'addr-1',
   // Spec 027 Fase 3: os 5 campos do portão preenchidos (valores sintéticos, sem texto clínico).
   required_professions: ['AT'],
@@ -190,7 +189,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('201 feliz — paciente no funil (ADMISSION): cria a vaga e MOVE para SEARCHING (D469)', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: READY_SERVICE,
       vacancyNumber: 500,
       insertedId: 'vac-42',
@@ -223,7 +222,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('case_number nativo (≥1000, migration 459) → computedTitle usa formatCaseTitle: "CASO EN{n}-{m}"', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 1000, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 1000 },
       serviceRow: READY_SERVICE,
       vacancyNumber: 501,
       insertedId: 'vac-43',
@@ -236,7 +235,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('201 feliz — paciente já ACTIVE (2º serviço): cria a vaga SEM mudar o status (statusChanged:false)', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ACTIVE', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ACTIVE', case_number: 100 },
       serviceRow: READY_SERVICE,
     });
     const result = await promise;
@@ -245,7 +244,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('SOLICITANTE e PENDING_ADMISSION também são funil: cria a vaga e MOVE para SEARCHING (D469)', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'SOLICITANTE', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'SOLICITANTE', case_number: 100 },
       serviceRow: READY_SERVICE,
     });
     const result = await promise;
@@ -255,7 +254,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
     mockMovePatientStatus.mockClear();
     const second = run({
-      patientRow: { id: PATIENT_ID, status: 'PENDING_ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'PENDING_ADMISSION', case_number: 100 },
       serviceRow: READY_SERVICE,
     });
     await expect(second.promise).resolves.toMatchObject({ patientStatus: 'SEARCHING', statusChanged: true });
@@ -264,7 +263,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('D469 — ator humano do controller vai como actorUid na trilha do paciente', async () => {
     const { promise } = run(
-      { patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE },
+      { patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 }, serviceRow: READY_SERVICE },
       { actorUserId: 'uid-9', actorType: 'HUMAN', actorLabel: 'admin_panel' },
     );
     await promise;
@@ -276,7 +275,7 @@ describe('ActivateRecruitmentUseCase', () => {
   it('D469 — completude do SEARCHING falha (outro serviço sem horário): a vaga é criada, o paciente NÃO move, sem erro', async () => {
     mockMovePatientStatus.mockRejectedValueOnce(new PatientStatusNotReadyError('SEARCHING', ['SERVICE_SCHEDULE']));
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: READY_SERVICE,
       insertedId: 'vac-77',
     });
@@ -289,7 +288,7 @@ describe('ActivateRecruitmentUseCase', () => {
   it('D469 — erro inesperado do movimento sobe (derruba a transação inteira, vaga incluída)', async () => {
     mockMovePatientStatus.mockRejectedValueOnce(new Error('boom'));
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: READY_SERVICE,
     });
     await expect(promise).rejects.toThrow('boom');
@@ -297,9 +296,9 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('D469 — paciente FORA do funil (ACTIVE, ON_HOLD, SEARCHING…) não é movido: movePatientStatus nunca chamado', async () => {
     const scenarios: DispatchOpts[] = [
-      { patientRow: { id: PATIENT_ID, status: 'ON_HOLD', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 900, insertedId: 'vac-900' },
-      { patientRow: { id: PATIENT_ID, status: 'SEARCHING', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 901, insertedId: 'vac-901' },
-      { patientRow: { id: PATIENT_ID, status: 'ACTIVE', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 902, insertedId: 'vac-902' },
+      { patientRow: { id: PATIENT_ID, status: 'ON_HOLD', case_number: 100 }, serviceRow: READY_SERVICE, vacancyNumber: 900, insertedId: 'vac-900' },
+      { patientRow: { id: PATIENT_ID, status: 'SEARCHING', case_number: 100 }, serviceRow: READY_SERVICE, vacancyNumber: 901, insertedId: 'vac-901' },
+      { patientRow: { id: PATIENT_ID, status: 'ACTIVE', case_number: 100 }, serviceRow: READY_SERVICE, vacancyNumber: 902, insertedId: 'vac-902' },
     ];
     for (const scenario of scenarios) {
       const { promise, client } = run(scenario);
@@ -316,7 +315,7 @@ describe('ActivateRecruitmentUseCase', () => {
   });
 
   describe('spec 027 Fase 3 — os 5 campos do serviço (D508)', () => {
-    const ADMISSION_PATIENT = { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' };
+    const ADMISSION_PATIENT = { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 };
 
     it('5 campos vazios: ativar devolve os 5 códigos por campo no 422 (T026)', async () => {
       const { promise } = run({
@@ -428,7 +427,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('409 — serviço já tem vaga viva; devolve o vacancyId da vaga existente', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: READY_SERVICE,
       existingVacancyId: 'vac-existente',
     });
@@ -439,7 +438,7 @@ describe('ActivateRecruitmentUseCase', () => {
   });
 
   describe('o foguete usa o vínculo — paciente com vaga vinculável (spec 079)', () => {
-    const PATIENT = { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' };
+    const PATIENT = { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 };
 
     it('409 — vaga legada (sem serviço) do paciente: lança LinkableVacancyExistsError com os ids e NÃO faz INSERT nem move o paciente', async () => {
       const { promise, client } = run({
@@ -511,7 +510,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('422 — SERVICE_ADDRESS: serviço sem endereço vivo (live_address_id null)', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: { ...READY_SERVICE, live_address_id: null },
     });
     await expect(promise).rejects.toMatchObject({ missing: ['SERVICE_ADDRESS'] });
@@ -519,7 +518,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('422 — SERVICE_SCHEDULE: schedule null conta como ausente', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: { ...READY_SERVICE, has_schedule: false },
     });
     await expect(promise).rejects.toMatchObject({ missing: ['SERVICE_SCHEDULE'] });
@@ -527,7 +526,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it('serviço sem faixa vigente → RecruitmentNotReadyError(SERVICE_SCHEDULE); a consulta pergunta pela faixa vigente e não lê pcs.schedule', async () => {
     const { promise, client } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: { ...READY_SERVICE, has_schedule: false },
     });
     await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
@@ -542,7 +541,7 @@ describe('ActivateRecruitmentUseCase', () => {
   describe('DIAGNOSIS — gate de ativação de recrutamento', () => {
     it('ADMISSION sem diagnóstico ativo → 422 (RecruitmentNotReadyError) com DIAGNOSIS; nenhuma vaga criada', async () => {
       const { promise } = run({
-        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, active_dx_count: '0' },
         serviceRow: READY_SERVICE,
       });
       await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
@@ -553,7 +552,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
     it('ADMISSION com ≥1 diagnóstico ativo → cria a vaga', async () => {
       const { promise } = run({
-        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' },
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, active_dx_count: '1' },
         serviceRow: READY_SERVICE,
       });
       await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
@@ -563,7 +562,7 @@ describe('ActivateRecruitmentUseCase', () => {
       'foguete com o paciente em %s (pré-atendimento) sem diagnóstico ativo → 422 com DIAGNOSIS e nenhuma vaga',
       async (status) => {
         const { promise } = run({
-          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },
+          patientRow: { id: PATIENT_ID, status, case_number: 100, active_dx_count: '0' },
           serviceRow: READY_SERVICE,
         });
         await expect(promise).rejects.toMatchObject({ missing: ['DIAGNOSIS'] });
@@ -575,7 +574,7 @@ describe('ActivateRecruitmentUseCase', () => {
       'foguete com o paciente em %s COM diagnóstico ativo → cria a vaga',
       async (status) => {
         const { promise } = run({
-          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' },
+          patientRow: { id: PATIENT_ID, status, case_number: 100, active_dx_count: '1' },
           serviceRow: READY_SERVICE,
         });
         await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
@@ -586,7 +585,7 @@ describe('ActivateRecruitmentUseCase', () => {
       'paciente já em atendimento (%s) sem diagnóstico ativo → NÃO é afetado: a vaga é criada',
       async (status) => {
         const { promise } = run({
-          patientRow: { id: PATIENT_ID, status, case_number: 100, insurance_informed: 'Particular', active_dx_count: '0' },
+          patientRow: { id: PATIENT_ID, status, case_number: 100, active_dx_count: '0' },
           serviceRow: READY_SERVICE,
         });
         await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
@@ -595,7 +594,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
     it('o SELECT do paciente conta SÓ patient_diagnoses.active e nunca seleciona o valor clínico', async () => {
       const { client } = run({
-        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
         serviceRow: READY_SERVICE,
       });
       await client.query.mock.results[0]?.value;
@@ -605,52 +604,46 @@ describe('ActivateRecruitmentUseCase', () => {
     });
   });
 
-  it('422 — COVERAGE: placeholder (FR-122) conta como ausente; "Particular" (FR-121) passa', async () => {
+  // Spec 087 (decisão 3): `COVERAGE` = o serviço sendo ativado tem vínculo (contrato ou Particular) vigente. O gate lê o `payer_linked` do serviço
+  // (fragmento único `servicePayerLinkedSql`); `insurance_informed` e a cobertura verificada do paciente não são mais lidos.
+  it('422 — COVERAGE: serviço SEM vínculo vigente', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: '0' },
-      serviceRow: READY_SERVICE,
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
+      serviceRow: { ...READY_SERVICE, payer_linked: false },
     });
     await expect(promise).rejects.toMatchObject({ missing: ['COVERAGE'] });
   });
 
-  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
-  // (patient_insurance_verified, provider ativo) e SEM o legado — o gate real (POST
-  // .../activate-recruitment) tinha de parar de recusar com 422 PATIENT_NOT_READY.
-  it('201 — sem legado (insuranceInformed null) mas com cobertura verificada ativa: cria a vaga — é o caso do bug', async () => {
+  it('201 — serviço COM vínculo vigente: cria a vaga (contrato ou Particular são o mesmo vínculo)', async () => {
     const { promise } = run({
-      patientRow: {
-        id: PATIENT_ID,
-        status: 'ADMISSION',
-        case_number: 100,
-        insurance_informed: null,
-        has_verified_active_coverage: true,
-      },
-      serviceRow: READY_SERVICE,
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
+      serviceRow: { ...READY_SERVICE, payer_linked: true },
       vacancyNumber: 900,
-      insertedId: 'vac-cobertura-verificada',
+      insertedId: 'vac-com-vinculo',
     });
     const result = await promise;
-    expect(result.vacancyId).toBe('vac-cobertura-verificada');
+    expect(result.vacancyId).toBe('vac-com-vinculo');
   });
 
-  it('422 — sem legado E sem cobertura verificada ativa: COVERAGE continua faltando (regressão)', async () => {
-    const { promise } = run({
-      patientRow: {
-        id: PATIENT_ID,
-        status: 'ADMISSION',
-        case_number: 100,
-        insurance_informed: null,
-        has_verified_active_coverage: false,
-      },
+  it('o gate lê o vínculo pelo fragmento único, com o `asOf` do país como parâmetro (nunca CURRENT_DATE), e não lê mais a informada/verificada', async () => {
+    const { promise, client } = run({
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: READY_SERVICE,
     });
-    await expect(promise).rejects.toMatchObject({ missing: ['COVERAGE'] });
+    await promise;
+    const calls = client.query.mock.calls as Array<[string, unknown[]?]>;
+    const svc = calls.find(([sql]) => sql.includes('FOR UPDATE OF pcs'));
+    expect(svc?.[0]).toMatch(/csc_pl\.superseded_at IS NULL AND csc_pl\.valid @> \$3::date\) AS payer_linked/);
+    expect(svc?.[0]).not.toMatch(/csc_pl\.valid @> CURRENT_DATE/);
+    expect(svc?.[1]).toEqual([SERVICE_ID, PATIENT_ID, expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/)]);
+    const pat = calls.find(([sql]) => sql.includes('FROM patients') && sql.includes('FOR UPDATE'));
+    expect(pat?.[0]).not.toMatch(/insurance_informed|patient_insurance_verified/);
   });
 
   it('422 — os TRÊS códigos juntos, na ordem SERVICE_ADDRESS, SERVICE_SCHEDULE, COVERAGE', async () => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: null },
-      serviceRow: { ...READY_SERVICE, live_address_id: null, has_schedule: false },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
+      serviceRow: { ...READY_SERVICE, live_address_id: null, has_schedule: false, payer_linked: false },
     });
     await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
     await expect(promise).rejects.toMatchObject({
@@ -660,19 +653,11 @@ describe('ActivateRecruitmentUseCase', () => {
     });
   });
 
-  // Hotfix gate-cobertura-verificada-vacante (28/09): a cobertura verificada satisfaz SÓ
-  // COVERAGE — endereço e horário do serviço continuam com sua própria régua, no gate REAL
-  // (POST .../activate-recruitment), não só no domínio isolado.
-  it('422 — cobertura verificada ativa NÃO dispensa SERVICE_ADDRESS/SERVICE_SCHEDULE', async () => {
+  // O vínculo satisfaz SÓ COVERAGE — endereço e horário do serviço continuam com sua própria régua, no gate REAL.
+  it('422 — vínculo vigente NÃO dispensa SERVICE_ADDRESS/SERVICE_SCHEDULE', async () => {
     const { promise } = run({
-      patientRow: {
-        id: PATIENT_ID,
-        status: 'ADMISSION',
-        case_number: 100,
-        insurance_informed: null,
-        has_verified_active_coverage: true,
-      },
-      serviceRow: { ...READY_SERVICE, live_address_id: null, has_schedule: false },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
+      serviceRow: { ...READY_SERVICE, live_address_id: null, has_schedule: false, payer_linked: true },
     });
     await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
     await expect(promise).rejects.toMatchObject({
@@ -684,7 +669,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
   it.each([['AGE_45_PLUS'], ['ANY'], [null]])('F6: banda do serviço %s → a faixa NUNCA é copiada para a vaga (age_range null/null), não estoura', async (band) => {
     const { promise } = run({
-      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
       serviceRow: { ...READY_SERVICE, provider_age_band: band },
     });
     await promise;
@@ -725,7 +710,7 @@ describe('ActivateRecruitmentUseCase', () => {
     const client = {
       query: jest.fn(async (sql: string) => {
         if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular', active_dx_count: '1' }] };
+          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, country: 'AR', active_dx_count: '1' }] };
         }
         if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
           return { rowCount: undefined, rows: [] };
@@ -747,7 +732,7 @@ describe('ActivateRecruitmentUseCase', () => {
           return {};
         }
         if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular', active_dx_count: '1' }] };
+          return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, country: 'AR', active_dx_count: '1' }] };
         }
         if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
           return { rowCount: 1, rows: [READY_SERVICE] };
@@ -777,7 +762,7 @@ describe('ActivateRecruitmentUseCase', () => {
     // este ramo hoje, mas o piso de 100% branches exige a prova).
     it('SEM ator (3º parâmetro ausente) — fallback: actor_user_id=null, actor_type=SYSTEM, actor_label=activate_recruitment', async () => {
       const { promise, client } = run({
-        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
         serviceRow: READY_SERVICE,
         vacancyNumber: 500,
         insertedId: 'vac-42',
@@ -811,7 +796,7 @@ describe('ActivateRecruitmentUseCase', () => {
       };
       const { promise, client } = run(
         {
-          patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+          patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
           serviceRow: READY_SERVICE,
           vacancyNumber: 502,
           insertedId: 'vac-44',
@@ -837,7 +822,7 @@ describe('ActivateRecruitmentUseCase', () => {
 
     it('audit throws. auditoria lança dentro do SAVEPOINT → a vaga é criada MESMO ASSIM (best-effort, nunca derruba)', async () => {
       const { promise } = run({
-        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100 },
         serviceRow: READY_SERVICE,
         vacancyNumber: 501,
         insertedId: 'vac-43',
@@ -874,7 +859,7 @@ describe('ActivateRecruitmentUseCase', () => {
           }
           if (sql.includes('INSERT INTO job_posting_audit_log')) return { rows: [] };
           if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' }] };
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, country: 'AR', active_dx_count: '1' }] };
           }
           if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
             return { rowCount: 1, rows: [READY_SERVICE] };
@@ -922,7 +907,7 @@ describe('ActivateRecruitmentUseCase', () => {
         query: jest.fn(async (sql: string) => {
           if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) return {};
           if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular', active_dx_count: '1' }] };
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, country: 'AR', active_dx_count: '1' }] };
           }
           if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
             return { rowCount: 1, rows: [READY_SERVICE] };

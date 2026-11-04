@@ -8,7 +8,6 @@ import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { formatCalendarDate } from '@presentation/utils/dateTimeFormat';
 import { contractedServicePriceText, contractedServiceTaxText } from './contractedServicePriceText';
-import { CoverageMatchNotice } from './CoverageMatchNotice';
 
 interface Props {
   service: PatientContractedServiceDetail;
@@ -146,10 +145,6 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose, onE
             <Field label={tc('tableStart')} testId="svc-detail-start" value={formatCalendarDate(service.startDate, {}) ?? EMPTY} />
             <Field label={tc('tableContract')} testId="svc-detail-contract" value={payerText} />
             <Field label={tc('tableIVA')} testId="svc-detail-iva" value={taxText} />
-            <div className="flex flex-col gap-0.5 sm:col-span-2">
-              <Text size="xs" color="secondary">{tc('coverageMatchLabel')}</Text>
-              <CoverageMatchNotice state={service.coverageMatch.state} testId="svc-detail-coverage-match" />
-            </div>
             <Field label={tc('tableProviderAgeBand')} testId="svc-detail-age-band" value={opt('providerAgeBandOptions', service.providerAgeBand)} />
             <Field label={tc('detailSupervision')} testId="svc-detail-supervision" value={opt('supervisionFrequencyOptions', service.supervisionFrequency)} />
             <Field label={tc('detailGuardShift')} testId="svc-detail-guard-shift" value={opt('guardShiftOptions', service.guardShift)} />

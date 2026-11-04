@@ -58,7 +58,7 @@ describe('CompletenessChecklist (spec 014 US-D1, lex D1.1/D1.2, D255)', () => {
     expect(screen.getByText('Pendiente para la admisión completa:')).toBeInTheDocument();
     const pending = screen.getAllByTestId('completeness-pending-item');
     expect(pending).toHaveLength(1);
-    expect(screen.getByText('Cobertura')).toBeInTheDocument();
+    expect(screen.getByText('Contrato vinculado al servicio')).toBeInTheDocument();
     // Nenhuma pílula de BLOQUEIO — a única pílula é a de pendência.
     expect(screen.queryByTestId('completeness-item')).not.toBeInTheDocument();
     expectNoRawEnumLeaks(container);
@@ -119,7 +119,7 @@ describe('CompletenessChecklist (spec 014 US-D1, lex D1.1/D1.2, D255)', () => {
         onFocusItem={onFocusItem}
       />,
     );
-    await user.click(screen.getByText('Cobertura'));
+    await user.click(screen.getByText('Contrato vinculado al servicio'));
     expect(onFocusItem).toHaveBeenCalledWith('COVERAGE');
   });
 

@@ -121,7 +121,6 @@ describe('ContractedServiceContractPanel', () => {
     expect(screen.getByTestId('svc-payer-kind').textContent).toContain('Prepaga');
     expect(screen.getByTestId('svc-price').textContent).toMatch(/1\.?500/);
     expect(screen.getByTestId('svc-tax').textContent).toBe('21 %');
-    expect(screen.getByTestId('svc-coverage-match').getAttribute('data-state')).toBe('MATCH');
     // nada editável de valor/imposto: só botões de ação do vínculo
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByTestId('svc-contract-link-open')).toBeNull();
@@ -223,14 +222,13 @@ describe('ContractedServiceContractPanel', () => {
     await waitFor(() => expect(screen.getByTestId('svc-contract-error').textContent).toContain('al mismo tiempo'));
   });
 
-  it('sem a célula de preço (REDACTED) e sem `coverage`: cadeado, obra social oculta, divergência REDACTED, sem tipo de pagador; sem a resposta "trocar de contrato" (não há nome para travar), corrigir segue', () => {
+  it('sem a célula de preço (REDACTED) e sem `coverage`: cadeado, obra social oculta, sem tipo de pagador; sem a resposta "trocar de contrato" (não há nome para travar), corrigir segue', () => {
     renderPanel(NO_COVERAGE_PERM);
     expect(screen.getByTestId('svc-price').textContent).toContain('🔒');
     expect(screen.getByTestId('svc-price').textContent).not.toMatch(/\d/);
     expect(screen.getByTestId('svc-tax').textContent).toBe('21 %'); // o imposto nunca é redigido
     expect(screen.getByTestId('svc-payer').textContent).toContain('Obra social no visible con tu permiso');
     expect(screen.queryByTestId('svc-payer-kind')).toBeNull();
-    expect(screen.getByTestId('svc-coverage-match').getAttribute('data-state')).toBe('REDACTED');
     fireEvent.click(screen.getByTestId('svc-contract-change-open'));
     expect(screen.queryByTestId('svc-contract-switch-open')).toBeNull();
     expect(screen.getByTestId('svc-contract-correct-open')).toBeTruthy();
@@ -298,16 +296,6 @@ describe('ContractedServiceContractPanel', () => {
     renderPanel(UNLINKED, { initialError: erro(422, 'COUNTRY_MISMATCH') });
     expect(screen.getByTestId('svc-contract-error').textContent).toContain('país del contrato');
   });
-
-  it('as 7 divergências do serviço chegam traduzidas', () => {
-    for (const state of ['NO_PAYER', 'PRIVATE_PAYER', 'NO_COVERAGE', 'UNMAPPED_ONLY', 'MATCH', 'MISMATCH', 'REDACTED'] as const) {
-      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={{ ...LINKED, coverageMatch: { state } } as PatientContractedServiceDetail} onChanged={vi.fn()} />);
-      expect(screen.getByTestId('svc-coverage-match').getAttribute('data-state')).toBe(state);
-      expect(screen.getByTestId('svc-coverage-match').textContent).not.toContain('admin.patients');
-      unmount();
-    }
-  });
-
 
   describe('"¿Qué pasó con la cobertura?" (opção A)', () => {
     it('fechada por padrão: só o cartão + o botão "Cambiar, corregir o terminar…"; abrir mostra as 4 respostas como radios', () => {

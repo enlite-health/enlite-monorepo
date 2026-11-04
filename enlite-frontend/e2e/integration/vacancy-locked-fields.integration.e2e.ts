@@ -14,6 +14,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 
@@ -79,6 +80,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     );
     expect(svcRes.ok(), `POST contracted-services falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);
     serviceId = (await svcRes.json()).data.id as string;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
 
     // Dispara o foguete — o MESMO endpoint que `contracted-service-activate-recruitment-*` chama
     // no drawer (ActivateRecruitmentUseCase via AdminPatientContractedServicesController).

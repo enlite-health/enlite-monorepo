@@ -17,6 +17,7 @@ import {
 } from '../helpers/patient-detail-c-helper';
 import { seedLegacyAllocationSql } from '../helpers/alocacao-antiga-e2e-helper';
 import { escolherNoCombo } from '../helpers/combobox';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -154,6 +155,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc1Body = (await (await createService1).json()) as { data: { id: string } };
     const service1Id = svc1Body.data.id;
+    vincularServicoAoParticular(service1Id); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     // Depois do refetch, o recém-criado vira o alvo de edição do drawer (é aí que a seção de
     // prestadores existe) — o form "novo" some e entra o form do serviço 1.
     await expect(page.getByTestId(`contracted-service-form-${service1Id}`)).toBeVisible({ timeout: 15_000 });
@@ -186,6 +188,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc2Body = (await (await createService2).json()) as { data: { id: string } };
     const service2Id = svc2Body.data.id;
+    vincularServicoAoParticular(service2Id); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     await expect(page.getByTestId(`contracted-service-form-${service2Id}`)).toBeVisible({ timeout: 15_000 });
 
     // ── Fecha o drawer e confere o card com dado REAL (não "—") ──

@@ -242,7 +242,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     expect(screen.getByTestId('svc-detail-value').textContent).toMatch(/1\.?500/);
     expect(screen.getByTestId('svc-detail-iva').textContent).toContain('21');
     expect(screen.getByTestId('svc-detail-contract').textContent).toContain('OSDE — Plan 210');
-    expect(screen.getByTestId('svc-detail-coverage-match').getAttribute('data-state')).toBe('MATCH');
+    expect(screen.queryByTestId('svc-detail-coverage-match')).toBeNull(); // spec 087: o aviso coverageMatch saiu da tela (decisão 6)
     expect(screen.getByTestId('svc-detail-age-band').textContent).toContain('30 a 45 Años');
     expect(screen.getByTestId('svc-detail-address').textContent).toContain('Rua Augusta, 975 - Centro');
     expect(screen.getByTestId('svc-detail-schedule').textContent).toContain('Lunes, Miércoles 08:00-12:00');
@@ -390,6 +390,28 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-vazio');
   });
 
+  // Spec 087 (FR-06): "falta cobertura" leva ao PAINEL DE CONTRATO do serviço (o formulário do serviço), não ao drawer de cobertura.
+  it('foco do checklist COVERAGE abre o PRIMEIRO serviço ativo SEM vínculo vigente; ignora o já vinculado e o inativo; sem candidato, abre um novo', () => {
+    const vinculado = { ...SERVICE, ...LINKED_058, id: 'svc-vinculado' };
+    const inativoSemVinculo = { ...SERVICE, ...CONTRACT_058_DEFAULTS, id: 'svc-inativo', active: false };
+    const semVinculo = { ...SERVICE, ...CONTRACT_058_DEFAULTS, id: 'svc-sem-vinculo' };
+    const { unmount } = render(
+      <ServicosContratadosCard
+        patient={{ ...patientDetailFixture, contractedServices: [vinculado, inativoSemVinculo, semVinculo] }}
+        focusRequest={{ code: 'COVERAGE', token: 20 }}
+      />,
+    );
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-sem-vinculo');
+    unmount();
+    render(
+      <ServicosContratadosCard
+        patient={{ ...patientDetailFixture, contractedServices: [vinculado] }}
+        focusRequest={{ code: 'COVERAGE', token: 21 }}
+      />,
+    );
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('new:');
+  });
+
   it('foco do checklist CONTRACTED_SERVICE abre um serviço NOVO', () => {
     render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [] }} focusRequest={{ code: 'CONTRACTED_SERVICE', token: 3 }} />);
     expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('new:');
@@ -427,6 +449,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
 describe('ServicosContratadosCard — ícone de ativação de recrutamento por serviço (018-pr6, ADR-5)', () => {
   const READY_SERVICE: PatientContractedServiceDetail = {
     ...SERVICE,
+    ...LINKED_058, // spec 087: COVERAGE = o serviço tem vínculo vigente (contrato ou Particular)
     addressId: 'addr-home',
     schedule: SCHEDULE,
     liveVacancy: null, liveVacancyRedacted: false,
@@ -435,7 +458,6 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     ...patientDetailFixture,
     addresses: [ADDRESS_HOME],
     contractedServices: [READY_SERVICE],
-    insuranceInformed: 'Particular',
   };
 
   beforeEach(() => {
@@ -732,37 +754,47 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     expect(mockActivateRecruitment).not.toHaveBeenCalled();
   });
 
-  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
-  // (patient_insurance_verified, provider ativo) e SEM o legado insuranceInformed — o foguete
-  // ficava desabilitado com tooltip "Falta: COVERAGE" mesmo com cobertura válida em produção.
-  it('sem legado (insuranceInformed null) mas com cobertura verificada ativa: foguete HABILITADO — é o caso do bug', () => {
-    const patient = { ...READY_PATIENT, insuranceInformed: null, hasVerifiedActiveCoverage: true };
-    render(<ServicosContratadosCard patient={patient} />);
-
+  // Spec 087 (decisão 3): o foguete lê SÓ `service.payer.state === 'LINKED'` do serviço da linha; a informada e a verificada do paciente
+  // NÃO destravam. Estes casos MORREM se o gate voltar a aceitá-las (par do teste de domínio e do e2e de API).
+  it('serviço COM vínculo vigente (contrato ou Particular): foguete HABILITADO, sem tooltip', () => {
+    render(<ServicosContratadosCard patient={READY_PATIENT} />);
     const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
     expect(btn).not.toBeDisabled();
     expect(btn.getAttribute('title')).toBeFalsy();
   });
 
-  it('sem legado E sem cobertura verificada ativa: foguete continua desabilitado com COVERAGE no tooltip (regressão)', () => {
-    const patient = { ...READY_PATIENT, insuranceInformed: null, hasVerifiedActiveCoverage: false };
+  it('serviço SEM vínculo, mesmo com insuranceInformed "OSDE" e cobertura verificada ativa no paciente: foguete DESABILITADO com o tooltip novo (contrato vinculado)', () => {
+    const patient = {
+      ...READY_PATIENT,
+      insuranceInformed: 'OSDE',
+      insuranceVerifiedCodes: ['OSDE'],
+      contractedServices: [{ ...READY_SERVICE, ...CONTRACT_058_DEFAULTS }],
+    } as typeof READY_PATIENT;
     render(<ServicosContratadosCard patient={patient} />);
 
     const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
     expect(btn).toBeDisabled();
-    expect(btn.getAttribute('title')).toBeTruthy();
+    expect(btn.getAttribute('title')).toBe('Falta: Contrato vinculado al servicio');
     fireEvent.click(btn);
     expect(mockActivateRecruitment).not.toHaveBeenCalled();
   });
 
-  it('cobertura verificada ativa NÃO dispensa SERVICE_ADDRESS: continua desabilitado (os outros códigos ficam intactos)', () => {
+  it('o vínculo NÃO dispensa SERVICE_ADDRESS: continua desabilitado (os outros códigos ficam intactos)', () => {
     const semEndereco = { ...READY_SERVICE, addressId: null };
-    const patient = { ...READY_PATIENT, insuranceInformed: null, hasVerifiedActiveCoverage: true, contractedServices: [semEndereco] };
+    const patient = { ...READY_PATIENT, contractedServices: [semEndereco] };
     render(<ServicosContratadosCard patient={patient} />);
 
     const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
     expect(btn).toBeDisabled();
-    expect(btn.getAttribute('title')).toBeTruthy();
+    expect(btn.getAttribute('title')).toBe('Falta: Domicilio del servicio');
+  });
+
+  it('o vínculo é POR SERVIÇO: com 2 serviços, só o que tem vínculo habilita o foguete', () => {
+    const comVinculo = { ...READY_SERVICE, id: 'svc-1' };
+    const semVinculo = { ...READY_SERVICE, ...CONTRACT_058_DEFAULTS, id: 'svc-2' };
+    render(<ServicosContratadosCard patient={{ ...READY_PATIENT, contractedServices: [comVinculo, semVinculo] }} />);
+    expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).not.toBeDisabled();
+    expect(screen.getByTestId('contracted-service-activate-recruitment-svc-2')).toBeDisabled();
   });
 });
 
@@ -824,9 +856,9 @@ describe('clique na linha (pós-mudança do quadro C): só abre o drawer, sem se
 
 describe('ServicosContratadosCard — botão "Vincular vaga existente" ao lado do foguete (spec 079, T033)', () => {
   const LINK_ID = 'contracted-service-link-existing-vacancy-svc-1';
-  const READY: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE, liveVacancy: null, liveVacancyRedacted: false };
+  const READY: PatientContractedServiceDetail = { ...SERVICE, ...LINKED_058, addressId: 'addr-home', schedule: SCHEDULE, liveVacancy: null, liveVacancyRedacted: false };
   const patientWith = (svc: PatientContractedServiceDetail, extra: Record<string, unknown> = {}) => ({
-    ...patientDetailFixture, addresses: [ADDRESS_HOME], contractedServices: [svc], insuranceInformed: 'Particular', ...extra,
+    ...patientDetailFixture, addresses: [ADDRESS_HOME], contractedServices: [svc], ...extra,
   });
 
   beforeEach(() => {
@@ -863,7 +895,7 @@ describe('ServicosContratadosCard — botão "Vincular vaga existente" ao lado d
   });
 
   it('com missing > 0 o foguete fica DESABILITADO e o botão novo fica HABILITADO', () => {
-    render(<ServicosContratadosCard patient={patientWith(READY, { insuranceInformed: null, hasVerifiedActiveCoverage: false })} />);
+    render(<ServicosContratadosCard patient={patientWith({ ...READY, ...CONTRACT_058_DEFAULTS })} />); // sem vínculo → missing = [COVERAGE]
     expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).toBeDisabled();
     expect(screen.getByTestId(LINK_ID)).toBeEnabled();
   });

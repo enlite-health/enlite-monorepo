@@ -12,10 +12,9 @@ import { patientDetailCompleteness } from '../AdminPatientView';
 const base = {
   birthDate: '1980-01-01',
   hasConsent: true,
-  insuranceInformed: 'OSDE',
   addresses: [{ id: 'a1' }],
   responsibles: [],
-  contractedServices: [{ active: true, addressId: 'a1', schedule: [{ d: 1 }] }],
+  contractedServices: [{ active: true, addressId: 'a1', schedule: [{ d: 1 }], payer: { state: 'LINKED' as const } }],
 };
 
 const LE = ['patient:read', 'patient_clinical:read', 'patient_address:read', 'patient_services:read', 'patient_family:read', 'patient_coverage:read', 'patient_identity:read'];

@@ -19,6 +19,7 @@ import { PatientQueryRepository } from '../../src/modules/case/infrastructure/Pa
 import { patientIncompleteAdmissionSql, patientNeedsAttentionSql } from '../../src/modules/case/domain/PatientCompleteness';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 import { countVigenteForService } from '../../src/modules/case/infrastructure/VacancyAllocationProbe';
 
 const DATABASE_URL =
@@ -115,8 +116,8 @@ describe('PatientCountReader × donos (banco real)', () => {
   async function seedCompletoComFlagLegado(key: string): Promise<void> {
     const pid = (
       await pool.query<{ id: string }>(
-        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, has_consent, insurance_informed, birth_date, needs_attention)
-         VALUES ($1, 'Sintetico', $2, 'AR', 'ADMISSION', true, 'OSDE', '1970-01-01', true) RETURNING id`,
+        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, has_consent, birth_date, needs_attention)
+         VALUES ($1, 'Sintetico', $2, 'AR', 'ADMISSION', true, '1970-01-01', true) RETURNING id`,
         [`${PFX}${key}`, `Pcr${key}`],
       )
     ).rows[0].id;
@@ -130,6 +131,7 @@ describe('PatientCountReader × donos (banco real)', () => {
       )
     ).rows[0].id;
     await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], PFX);
+    await vincularServicoAoPagador(pool, sid); // spec 087: "completo" exige o vínculo vigente do serviço (COVERAGE)
     await seedPatientDiagnosis(pool, pid);
   }
 

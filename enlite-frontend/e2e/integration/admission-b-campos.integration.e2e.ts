@@ -16,7 +16,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import {
-  seedActivePatient, seedAdmissionPatient, readPatientStatus, readHistoryTop, readAddresses, readInsuranceCodes,
+  seedActivePatient, seedAdmissionPatient, readPatientStatus, readHistoryTop, readAddresses,
   readDeviceTypes, readRelationship, readBirthAndServiceStart, findPatientIdByFirstName, countVacancies,
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-b-helper';
@@ -31,6 +31,7 @@ import {
 // DIGITAR, o que faria "digitar sem escolher não grava" passar por acidente.
 import { instalarFakeDeGestos, contarChamadasAoGoogle, CABA_CORRIENTES } from '../helpers/google-places-fake-gestos';
 import { escolherNoCombo } from '../helpers/combobox';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -217,6 +218,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await page.getByTestId('contracted-service-new-save').click();
     const svcBody = (await (await createService).json()) as { data: { id: string } };
     const serviceId = svcBody.data.id;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
     await page.getByLabel('Cerrar').click();
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible();
@@ -308,26 +310,20 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     }
   });
 
-  test('B3 — duas coberturas verificadas por código do catálogo', async ({ page }, testInfo) => {
+  test('B3 — a Credencial (afiliado) edita pelo drawer; a "verificada" por código não existe mais (spec 087)', async ({ page }) => {
     await loginAsRealStaff(page);
     await openDetail(page, active.patientId);
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
     await page.getByTestId('edit-coverage-btn').click();
     const drawer = page.getByTestId('patient-coverage-edit-drawer');
     await expect(drawer).toBeVisible();
-    await page.locator('#pcv-codes').click();
-    await page.locator('#pcv-codes').locator('..').getByRole('option', { name: 'OSDE', exact: true }).click();
-    await page.locator('#pcv-codes').locator('..').getByRole('option', { name: 'Swiss Medical', exact: true }).click();
+    await expect(page.locator('#pcv-codes')).toHaveCount(0);
     await page.getByTestId('pcv-affiliate').fill('AF-B3-0001');
-    await expect(page.getByTestId('pcv-codes-selected')).toContainText('Swiss Medical');
     await page.getByTestId('pcv-save').click();
     await expect(drawer).toHaveCount(0, { timeout: 15_000 });
     const card = page.getByTestId('cobertura-medica-card');
-    await expect(page.getByTestId('coverage-verified')).toContainText('OSDE, Swiss Medical', { timeout: 20_000 });
-    await expect(card).toContainText('AF-B3-0001');
-    const codes = readInsuranceCodes(active.patientId);
-    testInfo.annotations.push({ type: 'evidência', description: `B3 — patient_insurance_verified: ${JSON.stringify(codes)}` });
-    expect(codes).toEqual(['OSDE:admin_manual', 'SWISS_MEDICAL:admin_manual']);
+    await expect(card).toContainText('AF-B3-0001', { timeout: 20_000 });
+    await expect(page.getByTestId('coverage-current')).toBeVisible();
     await expect(card).toHaveScreenshot('bloco-b-cobertura.png', { maxDiffPixelRatio: 0.05 });
   });
 

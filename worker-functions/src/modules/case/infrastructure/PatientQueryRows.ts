@@ -173,15 +173,6 @@ export interface PatientDetailRow {
    */
   coverage: Coverage | null;
   /**
-   * Hotfix gate-cobertura-verificada-vacante (28/09): o paciente tem ≥1 linha em
-   * `patient_insurance_verified` cujo provider (`insurance_providers`) está ATIVO. Alimenta o
-   * gate de `RECRUITMENT_BLOCKING_CODES` no front (`recruitmentMissingCodes`) — a MESMA leitura
-   * que o backend usa em `ActivateRecruitmentUseCase`, para o checklist nunca divergir do 422
-   * real. Medido em produção: `insuranceVerifiedCodes` já listava a cobertura, mas nada no gate
-   * a lia — o foguete ficava desabilitado com cobertura verificada válida.
-   */
-  hasVerifiedActiveCoverage: boolean;
-  /**
    * Nº de diagnósticos CID-11 ATIVOS (`patient_diagnoses.active`, qualquer source) — só a CONTAGEM, insumo do
    * `DIAGNOSIS` do checklist. É dado do container `clinical`: `DETAIL_FIELDS.clinical` o redige (null) para quem
    * não lê, mas a completude é calculada ANTES da redação, sobre o objeto cru (ver `patientDetailCompleteness`).

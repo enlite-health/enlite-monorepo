@@ -84,6 +84,7 @@ import {
   type MockUser,
 } from '../helpers/abac-stack-helper';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -161,6 +162,7 @@ test.describe('draft-vacancy-choice — fase 3 (completar-vacante-em-rascunho, F
     });
     expect(svcRes.ok(), `POST contracted-services falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);
     const draftServiceId = (await svcRes.json()).data.id as string;
+    vincularServicoAoParticular(draftServiceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
     const activateRes = await request.post(`${ABAC_API_URL}/api/admin/patients/${patientId}/contracted-services/${draftServiceId}/activate-recruitment`, { headers: AUTH_HEADERS(SETUP) });
     expect(activateRes.ok(), `activate-recruitment falhou: ${activateRes.status()} ${await activateRes.text()}`).toBe(true);
     draftVacancyId = (await activateRes.json()).data.vacancyId as string;

@@ -3,7 +3,6 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepository';
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
-import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
 import type { PatientRelatedInput, PatientServiceUpsertInput } from './PatientWriteInputs';
 
 /**
@@ -29,7 +28,6 @@ export interface PatientSectionWriterDeps {
   responsibleRepo: PatientResponsibleRepository;
   encryptionService: KMSEncryptionService;
   deviceTypeRepo: () => PatientDeviceTypeRepository;
-  insuranceRepo: () => PatientInsuranceVerifiedRepository;
 }
 
 /** Section-scoped partial update of a native (or any) patient. */
@@ -38,11 +36,10 @@ export type PatientSection = 'general' | 'clinical' | 'coverage' | 'support-netw
 /** section = 'clinical' (spec 012, US-B4): o bloco clínico + os CÓDIGOS de dispositivo do catálogo. */
 export type PatientClinicalSectionData = PatientRelatedInput & { deviceTypes?: string[] };
 
-/** section = 'coverage' (spec 012, US-B3): cobertura informada, nº de afiliado, verificadas por código. */
+/** section = 'coverage' (spec 012, US-B3): cobertura informada e nº de afiliado. As verificadas por código saíram (spec 087). */
 export interface PatientCoverageSectionData {
   healthInsuranceName?: string | null;
   affiliateId?: string | null;
-  insuranceVerifiedCodes?: string[];
 }
 
 /** Identity fields updatable via the 'general' section. */
@@ -121,16 +118,13 @@ export async function writePatientSection(
         break;
       }
       case 'coverage': {
-        // US-B3: os dois escalares vão pelo MESMO update parcial do geral (mesma whitelist);
-        // as verificadas por código vão para patient_insurance_verified (source='admin_manual').
+        // US-B3: os dois escalares vão pelo MESMO update parcial do geral (mesma whitelist). Spec 087: a escrita das
+        // verificadas por código (patient_insurance_verified, source='admin_manual') foi removida — o schema recusa o campo com 400.
         const cov = data as PatientCoverageSectionData;
         const scalars: PatientGeneralSectionData = {};
         if (Object.prototype.hasOwnProperty.call(cov, 'healthInsuranceName')) scalars.healthInsuranceName = cov.healthInsuranceName;
         if (Object.prototype.hasOwnProperty.call(cov, 'affiliateId')) scalars.affiliateId = cov.affiliateId;
         await updateGeneralSection(deps, patientId, scalars, client);
-        if (cov.insuranceVerifiedCodes !== undefined) {
-          await deps.insuranceRepo().replaceCodesForPatient(patientId, cov.insuranceVerifiedCodes, client);
-        }
         // Os contatos de emergência da cobertura SAÍRAM desta seção (spec 018, PR-1, ADR-1,
         // SUP-37): a escrita é por LINHA, em rotas próprias
         // (`AdminPatientContactRowsController`), não mais aqui. `emergencyContacts` nem chega —

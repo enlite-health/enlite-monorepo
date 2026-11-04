@@ -259,7 +259,7 @@ describe('AdminPatientsController — bloco B', () => {
       await ctrl.updatePatientSection(r1, s1);
       expect(s1.status).toHaveBeenCalledWith(422);
       expect(bodyOf(s1)).toMatchObject({ code: 'DEVICE_TYPE_UNKNOWN', details: { codes: ['CASA'] } });
-      const [r2, s2] = reqRes({ id: ID, section: 'coverage' }, { insuranceVerifiedCodes: ['XPTO'] });
+      const [r2, s2] = reqRes({ id: ID, section: 'coverage' }, { affiliateId: 'XPTO' });
       await ctrl.updatePatientSection(r2, s2);
       expect(s2.status).toHaveBeenCalledWith(422);
       expect(bodyOf(s2)).toMatchObject({ code: 'INSURANCE_PROVIDER_UNKNOWN', details: { codes: ['XPTO'] } });

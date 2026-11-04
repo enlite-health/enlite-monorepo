@@ -5,7 +5,6 @@ import type { ContractedServicePayerHistoryItem } from '@domain/entities/Patient
 import { Text } from '@presentation/components/atoms/Text';
 import { formatCalendarDate } from '@presentation/utils/dateTimeFormat';
 import { contractedServicePriceText, contractedServiceTaxText } from '../contractedServicePriceText';
-import { CoverageMatchNotice } from '../CoverageMatchNotice';
 
 const CARD = 'admin.patients.detail.contractedServicesCard';
 const EYEBROW = 'font-lexend text-[11px] font-medium uppercase tracking-[0.08em] text-primary';
@@ -93,7 +92,6 @@ export function ContractedServiceCoverageSummary({ service, linked, scheduled, a
         <Text size="sm" color="tertiary" data-testid="svc-payer-scheduled">{t(`${CARD}.payer.scheduled`, { date: date(scheduled.validFrom) })}</Text>
       )}
       <div className="flex flex-wrap gap-2">
-        <CoverageMatchNotice state={service.coverageMatch.state} badge />
         {future?.names && (
           <span className="font-lexend inline-flex items-center rounded-[14px] border border-[#ccd2fb] bg-[#eef0ff] px-2.5 py-0.5 text-[12.5px] font-medium leading-snug text-[#1e2a78]" data-testid="svc-payer-future">
             {t(`${CARD}.summary.futureChange`, { date: date(future.validFrom), provider: future.names.providerName, contract: future.names.contractName })}

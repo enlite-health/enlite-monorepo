@@ -30,6 +30,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -281,8 +282,8 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
       schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       withRecruitmentFields: true,
     });
-    // Gate de completude (COVERAGE lê `insurance_informed` do PACIENTE, não do serviço — molde P6).
-    await pool.query(`UPDATE patients SET insurance_informed = 'OSDE' WHERE id = $1`, [ar.patientId]);
+    // Gate de completude (spec 087): COVERAGE lê o vínculo vigente do SERVIÇO (contrato ou Particular), não a informada do paciente.
+    await vincularServicoAoPagador(pool, serviceAr);
 
     const activate = await api.post(
       `/api/admin/patients/${ar.patientId}/contracted-services/${serviceAr}/activate-recruitment`,

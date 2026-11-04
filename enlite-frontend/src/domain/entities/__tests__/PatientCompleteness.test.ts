@@ -12,7 +12,6 @@ import {
   ACTIVATION_BLOCKING_CODES,
   ACTIVATABLE_STATUSES,
   RECRUITMENT_BLOCKING_CODES,
-  isPlaceholderCoverageValue,
   recruitmentMissingCodes,
   diagnosisGapOf,
   type PatientCompletenessCode,
@@ -63,42 +62,9 @@ describe('ACTIVATABLE_STATUSES (espelha o backend — unifica ActivatePatientBut
   });
 });
 
-/**
- * `isPlaceholderCoverageValue` (018-pr6, FR-121/122) — mesma régua do backend: "sin cobertura /
- * particular" É resposta válida; placeholder (vazio, < 2 alfanuméricos, ou só zeros) não é.
- * Cobre os DOIS ramos de CADA `if` (vazio/não-vazio, < 2/>= 2 alfanuméricos, todo-zero/não).
- */
-describe('isPlaceholderCoverageValue (FR-121/122, espelha o backend)', () => {
-  it('null/undefined/string vazia (ou só espaço) → placeholder', () => {
-    expect(isPlaceholderCoverageValue(null)).toBe(true);
-    expect(isPlaceholderCoverageValue(undefined)).toBe(true);
-    expect(isPlaceholderCoverageValue('')).toBe(true);
-    expect(isPlaceholderCoverageValue('   ')).toBe(true);
-  });
-
-  it('menos de 2 caracteres alfanuméricos (mesmo com pontuação em volta) → placeholder', () => {
-    expect(isPlaceholderCoverageValue('A')).toBe(true);
-    expect(isPlaceholderCoverageValue('!!')).toBe(true); // 0 alfanuméricos
-    expect(isPlaceholderCoverageValue('-')).toBe(true);
-  });
-
-  it('só zeros (2+ dígitos) → placeholder', () => {
-    expect(isPlaceholderCoverageValue('00')).toBe(true);
-    expect(isPlaceholderCoverageValue('000')).toBe(true);
-    expect(isPlaceholderCoverageValue('0-0')).toBe(true); // pontuação some, sobra "00"
-  });
-
-  it('"Particular"/"Sin cobertura"/nome de obra social real → resposta válida, NÃO placeholder', () => {
-    expect(isPlaceholderCoverageValue('Particular')).toBe(false);
-    expect(isPlaceholderCoverageValue('Sin cobertura')).toBe(false);
-    expect(isPlaceholderCoverageValue('OSDE')).toBe(false);
-    expect(isPlaceholderCoverageValue('0A')).toBe(false); // 2+ alfanuméricos, mas NÃO só zeros
-  });
-});
-
 describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECRUITMENT_BLOCKING_CODES)', () => {
   const FIELDS = { requiredProfessions: ['AT'], requiredSex: 'F', requiredExperience: 'exp', workSchedule: 'part-time', paymentDay: 'dia 5' };
-  const BASE = { serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular' };
+  const BASE = { serviceHasAddress: true, serviceHasSchedule: true, servicePayerLinked: true };
   // helper: sem `serviceRecruitmentFields` explícito, os 5 campos vêm preenchidos (os casos antigos medem OUTROS códigos).
   const rm = (i: Parameters<typeof recruitmentMissingCodes>[0]) => recruitmentMissingCodes({ serviceRecruitmentFields: FIELDS, ...i });
 
@@ -128,26 +94,26 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
   });
 
   it('tudo presente → vazio (pronto para ativar)', () => {
-    expect(rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular' })).toEqual([]);
+    expect(rm({ serviceHasAddress: true, serviceHasSchedule: true, servicePayerLinked: true })).toEqual([]);
   });
 
   it('falta endereço do serviço → SERVICE_ADDRESS', () => {
-    expect(rm({ serviceHasAddress: false, serviceHasSchedule: true, insuranceInformed: 'Particular' }))
+    expect(rm({ serviceHasAddress: false, serviceHasSchedule: true, servicePayerLinked: true }))
       .toEqual(['SERVICE_ADDRESS']);
   });
 
   it('falta horário do serviço → SERVICE_SCHEDULE', () => {
-    expect(rm({ serviceHasAddress: true, serviceHasSchedule: false, insuranceInformed: 'Particular' }))
+    expect(rm({ serviceHasAddress: true, serviceHasSchedule: false, servicePayerLinked: true }))
       .toEqual(['SERVICE_SCHEDULE']);
   });
 
-  it('cobertura placeholder (null) → COVERAGE', () => {
-    expect(rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null }))
+  it('serviço SEM vínculo vigente → COVERAGE', () => {
+    expect(rm({ serviceHasAddress: true, serviceHasSchedule: true, servicePayerLinked: false }))
       .toEqual(['COVERAGE']);
   });
 
   it('faltando tudo → todos os códigos, nesta ordem (a mesma de RECRUITMENT_BLOCKING_CODES)', () => {
-    expect(recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null, diagnosisGap: 'DIAGNOSIS' }))
+    expect(recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, servicePayerLinked: false, diagnosisGap: 'DIAGNOSIS' }))
       .toEqual([...RECRUITMENT_BLOCKING_CODES]);
   });
 
@@ -168,30 +134,23 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
     expect(ADMISSION_FUNNEL_STATUSES).toEqual(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION']); // o pré-atendimento é o funil
   });
 
-  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
-  // (patient_insurance_verified, provider ativo) mas sem o legado — o foguete ficava desabilitado
-  // com tooltip "Falta: COVERAGE" mesmo tendo cobertura válida pelo caminho novo.
-  it('só legado preenchido → COVERAGE não falta (regressão do comportamento atual)', () => {
+  // Spec 087 (decisão 3): o front lê SÓ `service.payer.state === 'LINKED'` (via `servicePayerLinked`); a informada e a verificada NÃO alteram o
+  // resultado em nenhum sentido. Estes casos MORREM se o gate voltar a aceitar a informada/verificada (par do teste do backend).
+  it('sem vínculo + insuranceInformed "OSDE" + verificada ativa → COVERAGE PRESENTE (nada disso destrava o portão)', () => {
     expect(
-      rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', hasVerifiedActiveCoverage: false }),
-    ).toEqual([]);
-  });
-
-  it('só cobertura verificada válida (sem legado) → COVERAGE não falta — é o caso do bug', () => {
-    expect(
-      rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
-    ).toEqual([]);
-  });
-
-  it('nenhuma das duas → COVERAGE continua faltando', () => {
-    expect(
-      rm({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: false }),
+      rm({ serviceHasAddress: true, serviceHasSchedule: true, servicePayerLinked: false, insuranceInformed: 'OSDE', hasVerifiedActiveCoverage: true } as never),
     ).toEqual(['COVERAGE']);
   });
 
-  it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com COVERAGE ok pela cobertura verificada', () => {
+  it('vínculo vigente + insuranceInformed null + sem verificada → COVERAGE AUSENTE (o vínculo basta, contrato ou Particular)', () => {
     expect(
-      rm({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
+      rm({ serviceHasAddress: true, serviceHasSchedule: true, servicePayerLinked: true, insuranceInformed: null, hasVerifiedActiveCoverage: false } as never),
+    ).toEqual([]);
+  });
+
+  it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com o vínculo vigente', () => {
+    expect(
+      rm({ serviceHasAddress: false, serviceHasSchedule: false, servicePayerLinked: true }),
     ).toEqual(['SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
   });
 });

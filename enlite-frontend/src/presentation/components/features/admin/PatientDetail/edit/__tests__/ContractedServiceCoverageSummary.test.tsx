@@ -18,14 +18,13 @@ const UNLINKED = { ...BASE, ...CONTRACT_058_DEFAULTS } as unknown as PatientCont
 const linkedOf = (s: PatientContractedServiceDetail) => (s.payer.state === 'LINKED' ? s.payer : null);
 
 describe('ContractedServiceCoverageSummary', () => {
-  it('vinculado: eyebrow com o asOf, obra social e contrato, vigência, selo MATCH e os pares Valor/Impuesto/Tipo', () => {
+  it('vinculado: eyebrow com o asOf, obra social e contrato, vigência, e os pares Valor/Impuesto/Tipo', () => {
     render(<ContractedServiceCoverageSummary service={LINKED} linked={linkedOf(LINKED)} scheduled={null} actions={<button>acao</button>} />);
     expect(screen.getByText('Vigente hoy · 19/10/2026')).toBeTruthy();
     expect(screen.getByTestId('svc-payer-provider').textContent).toBe('OSDE');
     expect(screen.getByTestId('svc-payer-contract').textContent).toBe('Plan 210');
     expect(screen.getByTestId('svc-payer-validity').textContent).toBe('Desde 1/9/2026 · sin fecha de fin');
-    expect(screen.getByTestId('svc-coverage-match').getAttribute('data-state')).toBe('MATCH');
-    expect(screen.getByTestId('svc-coverage-match').className).toContain('text-[#14532d]');
+    expect(screen.queryByTestId('svc-coverage-match')).toBeNull(); // spec 087: o selo coverageMatch saiu da tela (decisão 6)
     expect(screen.getByTestId('svc-tax').textContent).toBe('21 %');
     expect(screen.getByTestId('svc-payer-kind').textContent).toContain('Prepaga');
     expect(screen.getByText('acao')).toBeTruthy();
@@ -41,13 +40,6 @@ describe('ContractedServiceCoverageSummary', () => {
     const s = { ...LINKED, payer: { ...LINKED.payer, validTo: '2026-12-31' } } as PatientContractedServiceDetail;
     render(<ContractedServiceCoverageSummary service={s} linked={linkedOf(s)} scheduled={null} actions={null} />);
     expect(screen.getByTestId('svc-payer-validity').textContent).toBe('Desde 1/9/2026 · hasta 31/12/2026');
-  });
-
-  it('MISMATCH usa o tom âmbar; os demais estados, o neutro', () => {
-    const { rerender } = render(<ContractedServiceCoverageSummary service={{ ...LINKED, coverageMatch: { state: 'MISMATCH' } } as PatientContractedServiceDetail} linked={linkedOf(LINKED)} scheduled={null} actions={null} />);
-    expect(screen.getByTestId('svc-coverage-match').className).toContain('text-[#78350f]');
-    rerender(<ContractedServiceCoverageSummary service={{ ...LINKED, coverageMatch: { state: 'NO_COVERAGE' } } as PatientContractedServiceDetail} linked={linkedOf(LINKED)} scheduled={null} actions={null} />);
-    expect(screen.getByTestId('svc-coverage-match').className).toContain('text-[#2c2840]');
   });
 
   it('sem nenhum vínculo: estado vazio, sem preço/imposto, com as ações recebidas', () => {

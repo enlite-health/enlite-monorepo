@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 import { activeDiagnosisCountSql } from '@shared/sql/patientDiagnosisSql';
+import { operationDateSql, servicePayerLinkedSql } from '@shared/sql/servicePayerSql';
 import {
   computePatientCompleteness,
   type PatientCompletenessResult,
@@ -26,10 +27,10 @@ export async function loadPatientCompleteness(
   const res = await client.query<{
     birth_date: string | Date | null;
     has_consent: boolean | null;
-    insurance_informed: string | null;
     active_address_count: string;
     active_responsible_count: string;
     active_service_count: string;
+    services_linked_count: string;
     services_without_address_count: string;
     services_without_schedule_count: string;
     status: string | null;
@@ -38,7 +39,6 @@ export async function loadPatientCompleteness(
     `SELECT
        p.birth_date,
        p.has_consent,
-       p.insurance_informed AS insurance_informed,
        (SELECT COUNT(*) FROM patient_addresses pa
          WHERE pa.patient_id = p.id AND pa.archived_at IS NULL)      AS active_address_count,
        -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como
@@ -47,6 +47,11 @@ export async function loadPatientCompleteness(
          WHERE pr.patient_id = p.id AND pr.active)                   AS active_responsible_count,
        (SELECT COUNT(*) FROM patient_contracted_services pcs
          WHERE pcs.patient_id = p.id AND pcs.active)                 AS active_service_count,
+       -- Spec 087: serviço ativo com vínculo vigente (contrato ou Particular) no dia de operação do país — fragmento único do portão.
+       (SELECT COUNT(*) FROM patient_contracted_services pcs
+         WHERE pcs.patient_id = p.id AND pcs.active
+           AND ${servicePayerLinkedSql('pcs', operationDateSql('p.country'))})
+                                                                     AS services_linked_count,
        -- serviço ativo sem endereço VIVO (NULL ou arquivado) — migration 330
        (SELECT COUNT(*) FROM patient_contracted_services pcs
           LEFT JOIN patient_addresses pa
@@ -76,10 +81,10 @@ export async function loadPatientCompleteness(
   return computePatientCompleteness({
     birthDate: row.birth_date,
     hasConsent: row.has_consent,
-    insuranceInformed: row.insurance_informed,
     activeAddressCount: Number(row.active_address_count),
     activeResponsibleCount: Number(row.active_responsible_count),
     activeContractedServiceCount: Number(row.active_service_count),
+    activeContractedServicesLinkedCount: Number(row.services_linked_count),
     activeContractedServicesWithoutAddressCount: Number(row.services_without_address_count),
     activeContractedServicesWithoutScheduleCount: Number(row.services_without_schedule_count),
     status: row.status,

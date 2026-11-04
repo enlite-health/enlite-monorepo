@@ -19,6 +19,7 @@ import { LinkExistingVacancyRepository } from '@modules/case/infrastructure/Link
 import { ACCEPT_ANY_SERVICE_VALUE } from '@modules/case/domain/LinkExistingVacancyPlan';
 import { JobPostingAuditRepository } from '@modules/matching/infrastructure/JobPostingAuditRepository';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
@@ -93,8 +94,8 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
 
   async function cenario(opts: { enderecoDaOficial?: 'mesmo' | 'outro'; semDiaDePagamento?: boolean; semFaixa?: boolean } = {}): Promise<FusionPair & { addressId: string; officialAddressId: string }> {
     const { id: patientId } = await one<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, insurance_informed)
-       VALUES ($1, 'Fusao', 'E2E', 'AR', 'PENDING_ADMISSION', 'Particular') RETURNING id`,
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+       VALUES ($1, 'Fusao', 'E2E', 'AR', 'PENDING_ADMISSION') RETURNING id`,
       [`${STAMP}-p-${++seq}`],
     );
     await seedPatientDiagnosis(pool, patientId);
@@ -107,6 +108,7 @@ describe('Fusão rascunho → vaga oficial @integration', () => {
        VALUES ($1, 'AT', 'AR', $2, $2, $3, 1, ARRAY['AT'], 'F', 'EXP-E2E', 'part-time', $4) RETURNING id`,
       [patientId, STAMP, addressId, opts.semDiaDePagamento ? null : 'DIA-E2E'],
     );
+    await vincularServicoAoPagador(pool, serviceId); // COVERAGE (spec 087): o portão da fusão lê o vínculo vigente do serviço
     if (!opts.semFaixa) {
       await semearFaixas(pool, serviceId, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], STAMP);
     }

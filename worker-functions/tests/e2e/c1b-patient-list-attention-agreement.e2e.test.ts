@@ -18,6 +18,8 @@ import type { AdminPatientsListParams } from '@modules/case/interfaces/validator
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+import { operationDateSql, servicePayerLinkedSql } from '@shared/sql/servicePayerSql';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'C1B-attention-%';
@@ -47,6 +49,8 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     { tag: 'C1B-attention-sem-diagnostico',       status: 'ADMISSION',         completo: true, diagnostico: 'nenhum' },
     // ...e a variante em que a linha EXISTE mas está INATIVA: não conta (o SQL tem `AND pdx.active`, o JS recebe a contagem de ativos).
     { tag: 'C1B-attention-diagnostico-inativo',   status: 'ADMISSION',         completo: true, diagnostico: 'inativo' },
+    // Spec 087: TUDO completo, menos o vínculo vigente do serviço — só COVERAGE acusa (o checklist não lê mais `insurance_informed`).
+    { tag: 'C1B-attention-servico-sem-vinculo',   status: 'ADMISSION',         completo: true, semVinculo: true },
   ];
 
   const limpar = async (): Promise<void> => {
@@ -63,9 +67,9 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
       // idade) — 10 anos atrás, bem dentro do corte de `MINOR_AGE_YEARS`.
       const birthDate = 'respInativo' in c && c.respInativo ? "(NOW() - INTERVAL '10 years')::date" : "'1970-01-01'";
       const id = (await pool.query<{ id: string }>(
-        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, has_consent, insurance_informed, birth_date)
-         VALUES ($1, 'C1B', 'Atencion QA', 'BR', $2, $3, $4, ${birthDate}) RETURNING id`,
-        [c.tag, c.status, c.completo, c.completo ? 'OSDE' : null],
+        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, has_consent, birth_date)
+         VALUES ($1, 'C1B', 'Atencion QA', 'BR', $2, $3, ${birthDate}) RETURNING id`,
+        [c.tag, c.status, c.completo],
       )).rows[0].id;
       if (c.completo) {
         const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle C1B 1',1) RETURNING id`, [id])).rows[0].id;
@@ -88,6 +92,8 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
           [id, 'servicoSemEndereco' in c && c.servicoSemEndereco ? null : addr],
         )).rows[0].id;
         await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'c1b-e2e');
+        // Spec 087: "completo" exige o vínculo vigente (contrato ou Particular) do serviço; `semVinculo` o deixa de fora de propósito.
+        if (!('semVinculo' in c && c.semVinculo)) await vincularServicoAoPagador(pool, sid, 'BR');
         // Diagnóstico CID-11 (pedido do Javier): "completo" em ADMISSION também exige ≥1 ATIVO.
         const dx = 'diagnostico' in c ? c.diagnostico : 'ativo';
         if (dx === 'ativo') await seedPatientDiagnosis(pool, id);
@@ -121,10 +127,11 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     const rows = await minhas();
     expect(rows).toHaveLength(cenarios.length);
     const incompletos = rows.filter((r) => r.attentionReasons.includes('INCOMPLETE_ADMISSION'));
-    // 6 em ADMISSION/PENDING_ADMISSION e incompletos (2 sem nada + 1 só com serviço sem endereço,
+    // 7 em ADMISSION/PENDING_ADMISSION e incompletos (2 sem nada + 1 só com serviço sem endereço,
     // migration 330 + 1 menor com o único responsável desativado, task 1.7 + 2 só sem diagnóstico
-    // ATIVO: nenhum e só-inativo); o ACTIVE incompleto NÃO conta (já foi aprovado); o completo não aparece.
-    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true, true, true, true, true]);
+    // ATIVO: nenhum e só-inativo + 1 só sem vínculo vigente no serviço, spec 087); o ACTIVE incompleto NÃO conta (já foi aprovado); o completo não aparece.
+    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true, true, true, true, true, true]);
+    expect(rows.find((r) => r.clickupTaskId === 'C1B-attention-servico-sem-vinculo')?.attentionReasons).toContain('INCOMPLETE_ADMISSION');
     for (const tag of ['C1B-attention-sem-diagnostico', 'C1B-attention-diagnostico-inativo']) {
       expect(rows.find((r) => r.clickupTaskId === tag)?.attentionReasons).toContain('INCOMPLETE_ADMISSION');
     }
@@ -136,7 +143,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     const completo = rows.find((r) => r.clickupTaskId === 'C1B-attention-completo-admission');
     expect(completo?.needsAttention).toBe(false);
     expect((ACTIVATABLE_STATUSES as readonly string[]).includes('ADMISSION')).toBe(true);
-    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, insuranceInformed: null, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0, status: 'ADMISSION', activeDiagnosisCount: 0 }).missing.length).toBeGreaterThan(0);
+    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesLinkedCount: 0, activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0, status: 'ADMISSION', activeDiagnosisCount: 0 }).missing.length).toBeGreaterThan(0);
   });
 
   it('b. filtrar por `needs_attention=true` devolve EXATAMENTE quem tem o badge — e nunca quem não tem', async () => {
@@ -187,10 +194,12 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     // é isto que impede as duas implementações da regra de divergirem sem ninguém ver.
     const { rows } = await pool.query<Record<string, never>>(`
       SELECT p.id, p.status, p.needs_attention, p.birth_date, p.has_consent,
-             p.insurance_informed AS ins,
              (SELECT COUNT(*)::int FROM patient_addresses pa WHERE pa.patient_id = p.id AND pa.archived_at IS NULL) AS addrs,
              (EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = p.id AND pr.active))::int AS resp,
              (EXISTS (SELECT 1 FROM patient_contracted_services s WHERE s.patient_id = p.id AND s.active))::int AS svc,
+             -- Spec 087: serviços ativos COM vínculo vigente (o fragmento único do portão, no dia de operação do país).
+             (SELECT COUNT(*)::int FROM patient_contracted_services s
+               WHERE s.patient_id = p.id AND s.active AND ${servicePayerLinkedSql('s', operationDateSql('p.country'))}) AS svc_linked,
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                         LEFT JOIN patient_addresses sa ON sa.id = s.address_id AND sa.archived_at IS NULL
                        WHERE s.patient_id = p.id AND s.active AND sa.id IS NULL))::int AS svc_noaddr,
@@ -210,10 +219,10 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
       const { missing } = computePatientCompleteness({
         birthDate: (r.birth_date as string | Date | null) ?? null,
         hasConsent: (r.has_consent as boolean | null) ?? null,
-        insuranceInformed: (r.ins as string | null) ?? null,
         activeAddressCount: r.addrs as number,
         activeResponsibleCount: r.resp as number,
         activeContractedServiceCount: r.svc as number,
+        activeContractedServicesLinkedCount: r.svc_linked as number,
         activeContractedServicesWithoutAddressCount: r.svc_noaddr as number,
         activeContractedServicesWithoutScheduleCount: r.svc_nosched as number,
         status: (r.status as string | null) ?? null,

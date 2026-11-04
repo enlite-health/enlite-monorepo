@@ -13,7 +13,6 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 import { PAYER_KINDS } from '@domain/entities/InsuranceContract';
-import { COVERAGE_MATCH_STATES } from '@domain/entities/PatientContractedService';
 import {
   PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES,
   PATIENT_PROFESSIONAL_SPECIALTY_CODES,
@@ -170,7 +169,6 @@ const CONTRACTED_SERVICE_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   // Spec 058: o tipo do pagador (`payer_kind`) substituiu o `contract_type`; a condição de IVA saiu (o imposto vem do termo).
   ['admin.patients.detail.contractedServicesCard.payerKindOptions', PAYER_KINDS],
   // Spec 058: os 6 estados da divergência pagador × cobertura + `REDACTED` (sem a célula `coverage`), e o preço sem valor.
-  ['admin.patients.detail.contractedServicesCard.coverageMatch', COVERAGE_MATCH_STATES],
   ['admin.patients.detail.contractedServicesCard.priceState', ['NO_CONTRACT', 'NO_TERM', 'REDACTED']],
   ['admin.patients.detail.contractedServicesCard.supervisionFrequencyOptions', SUPERVISION_FREQUENCIES],
   ['admin.patients.detail.contractedServicesCard.guardShiftOptions', GUARD_SHIFTS],

@@ -19,6 +19,7 @@ import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { vincularServicoAoPagador } from './helpers/vinculoPagador';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'diag-gate-admin-uid';
@@ -33,8 +34,8 @@ describe('Diagnóstico obrigatório na saída da ADMISSION @integration', () => 
   async function paciente(status: string, comServico = false): Promise<{ id: string; sid: string | null }> {
     seq += 1;
     const id = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, insurance_informed)
-       VALUES ($1, 'Diag', 'Gate', 'AR', $2, 'Particular') RETURNING id`,
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+       VALUES ($1, 'Diag', 'Gate', 'AR', $2) RETURNING id`,
       [`${TAG}${seq}`, status],
     )).rows[0].id;
     if (!comServico) return { id, sid: null };
@@ -50,6 +51,7 @@ describe('Diagnóstico obrigatório na saída da ADMISSION @integration', () => 
       [id, addr],
     )).rows[0].id;
     await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'diag-gate');
+    await vincularServicoAoPagador(pool, sid); // COVERAGE (spec 087) = vínculo vigente do serviço; este teste mede o DIAGNOSIS
     return { id, sid };
   }
   const put = (id: string, body: Record<string, unknown>) => api.put(`/api/admin/patients/${id}/status`, body, asAdmin);

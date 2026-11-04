@@ -20,6 +20,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
+import { vincularServicoAoParticular } from '../helpers/vinculo-servico-helper';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
@@ -58,7 +59,9 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
       },
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);
-    return { patientId: seeded.patientId, serviceId: (await svc.json()).data.id as string };
+    const serviceId = (await svc.json()).data.id as string;
+    vincularServicoAoParticular(serviceId); // spec 087: o portão COVERAGE lê o vínculo do serviço com contrato
+    return { patientId: seeded.patientId, serviceId };
   }
 
   async function abrirCardDoServico(page: Page, patientId: string, serviceId: string): Promise<void> {

@@ -291,7 +291,6 @@ export const patientDetailContractSchema = z
     entryDate: isoDate.nullable().optional(),
     insuranceVerifiedCodes: z.array(z.string()),
     coverage: coverageSchema.nullable(),
-    hasVerifiedActiveCoverage: z.boolean().optional(),
     deviceTypes: z.array(z.string()),
     needsAttention: z.boolean(),
     attentionReasons: z.array(z.string()),

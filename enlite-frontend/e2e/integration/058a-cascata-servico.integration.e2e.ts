@@ -170,7 +170,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await expect(painel.getByTestId('svc-payer-kind')).toHaveText(/Obra Social/);
     await expect(painel.getByTestId('svc-price')).toContainText(V1500);
     await expect(painel.getByTestId('svc-tax')).toHaveText('Exento (0 %)');
-    await expect(painel.getByTestId('svc-coverage-match')).toHaveAttribute('data-state', 'MATCH');
+    await expect(painel.getByTestId('svc-coverage-match')).toHaveCount(0); // spec 087: o aviso de correspondência saiu (o fio `coverageMatch` segue na API)
     const aposVincular = await fichaIgualRota(request, ator, p1, s1);
     expect(aposVincular.payer.names).toMatchObject({ providerName: pa.name, contractName: ca1.name });
 
@@ -284,7 +284,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await expect(page.getByTestId('contracted-service-detail-drawer')).toBeVisible();
     await expect(page.getByTestId('svc-detail-contract')).toContainText('Sin contrato vinculado');
     await expect(page.getByTestId('svc-detail-value')).toContainText('Sin contrato vinculado');
-    await expect(page.getByTestId('svc-detail-coverage-match')).toHaveAttribute('data-state', 'NO_PAYER');
+    await expect(page.getByTestId('svc-detail-coverage-match')).toHaveCount(0); // spec 087: o aviso de correspondência saiu
   });
 
   test('ALTERNATIVO 4 (ABAC): sem `patient_coverage:read` o pagador vem REDACTED sem nome (R7), a cobertura REDACTED, sem a resposta "Cambió el contrato"; sem valor o cadeado', async ({ page, request }) => {
@@ -303,8 +303,7 @@ test.describe('058a-cascata-servico — cascata Obra social -> Contrato no servi
     await abrirPainel(page, p5, s5);
     await expect(page.getByTestId('svc-payer')).toHaveAttribute('data-state', 'LINKED');
     await expect(page.getByTestId('svc-payer')).toContainText('Obra social no visible con tu permiso');
-    await expect(page.getByTestId('svc-coverage-match')).toHaveAttribute('data-state', 'REDACTED');
-    await expect(page.getByTestId('svc-coverage-match')).toHaveText('No visible con tu permiso (cobertura).');
+    await expect(page.getByTestId('svc-coverage-match')).toHaveCount(0); // spec 087: o aviso de correspondência saiu (a redação segue provada no fio, acima)
     await expect(page.getByTestId('svc-price')).toContainText('🔒 Sin permiso para ver el valor');
     await page.getByTestId('svc-contract-change-open').click();
     await expect(page.getByTestId('svc-contract-switch-open')).toHaveCount(0); // sem o nome da obra social não há contrato a trocar
