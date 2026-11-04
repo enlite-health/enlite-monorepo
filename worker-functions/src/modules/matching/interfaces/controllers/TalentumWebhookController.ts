@@ -15,6 +15,7 @@ import { TalentumPrescreeningPayloadSchema } from '@modules/integration';
 import { ProcessTalentumPrescreening } from '../../application/ProcessTalentumPrescreening';
 import { JobPostingLookup } from '../../infrastructure/JobPostingLookup';
 import { PubSubClient } from '@shared/events/PubSubClient';
+import { reportError, toSafeError } from '@shared/logging';
 import { CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from '@modules/integration';
 
 // ─────────────────────────────────────────────────────────────────
@@ -84,6 +85,11 @@ export class TalentumWebhookController {
     } catch (err) {
       // Log apenas ID interno — nunca expor PII ou stack trace na resposta
       console.error('[TalentumWebhook] DB error | prescreeningId (ext):', req.body?.data?.prescreening?.id ?? 'unknown');
+      // Alarme no caminho de exceção (o 500 ao Talentum não muda). Erro sem PII (sem o `detail` do pg).
+      reportError(toSafeError(err), {
+        source: 'TalentumWebhookController:process',
+        talentumPrescreeningId: req.body?.data?.prescreening?.id ?? null,
+      });
       res.status(500).json({ error: 'Internal server error' });
     }
   }

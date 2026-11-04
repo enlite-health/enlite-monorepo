@@ -6,6 +6,7 @@ import { TalentumPrescreeningResponseParsed } from '../validators/talentumPrescr
 import { TalentumPrescreeningRepository, ProcessTalentumPrescreening, JobPostingLookup } from '@modules/matching';
 import { WorkerRepository } from '@modules/worker';
 import { PubSubClient } from '@shared/events/PubSubClient';
+import { reportError, toSafeError } from '@shared/logging';
 
 const TAG = '[TalentumWebhook:PrescreeningResponse]';
 
@@ -44,6 +45,8 @@ export class PrescreeningResponseHandler implements TalentumWebhookHandler<Talen
       res.status(200).json(result);
     } catch (err) {
       console.error(`${TAG} ERROR | extId=${extId} |`, (err as Error)?.message ?? err);
+      // Alarme no caminho de exceção (o 500 ao Talentum não muda). Erro sem PII (sem o `detail` do pg).
+      reportError(toSafeError(err), { source: 'PrescreeningResponseHandler:process', talentumPrescreeningId: extId });
       res.status(500).json({ error: 'Internal server error' });
     }
   }
