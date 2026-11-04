@@ -9,7 +9,7 @@
  * NÃO existe o caminho inverso (R17): reativar vaga só acontece pela reativação do serviço, no repositório do serviço.
  * Side-effect outbound (pausar no Talentum, F4) é do CHAMADOR, DEPOIS do commit — esta classe só toca o banco.
  */
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
 import { JobPostingAuditRepository } from '../infrastructure/JobPostingAuditRepository';
 import type { HumanActor } from '../interfaces/controllers/vacancyCrudAuditHelpers';
@@ -35,48 +35,59 @@ export class BajaVacanciesUseCase {
   ) {}
 
   async execute(vacancyIds: readonly string[], reason: Exclude<BajaReason, 'SERVICE'>, actor: HumanActor): Promise<BajaOutcome> {
-    const ids = [...new Set(vacancyIds)].sort();
-    return withActorContext(this.db, async (client) => {
-      const locked = await client.query<LockedRow>(
-        `SELECT id, status, contracted_service_id FROM job_postings
-          WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id FOR UPDATE`,
-        [ids],
-      );
-      const byId = new Map(locked.rows.map((r) => [r.id, r]));
-      const refused: BajaRefusal[] = [];
-      for (const id of ids) {
-        const row = byId.get(id);
-        if (!row) {
-          refused.push({ vacancyId: id, code: 'VACANCY_NOT_FOUND' });
-          continue;
-        }
-        const decision = decideManualBaja({ status: row.status, contractedServiceId: row.contracted_service_id });
-        if (!decision.ok) refused.push({ vacancyId: id, code: decision.code });
-      }
-      if (refused.length > 0) return { ok: false, refused } as BajaOutcome;
+    return withActorContext(this.db, (client) => this.executeInTx(client, vacancyIds, reason, actor));
+  }
 
-      const baixadas: { vacancyId: string; statusBefore: string }[] = [];
-      for (const id of ids) {
-        const before = byId.get(id)!.status ?? 'SEARCHING';
-        await client.query(
-          `UPDATE job_postings
-              SET status_before_baja = status, status = '${DE_BAJA_STATUS}', baja_reason = $2, updated_at = NOW()
-            WHERE id = $1 AND deleted_at IS NULL AND contracted_service_id IS NULL AND status != '${DE_BAJA_STATUS}'`,
-          [id, reason],
-        );
-        await this.audit.logEventSafe(client, {
-          jobPostingId: id,
-          eventType: 'STATUS_CHANGED',
-          fieldName: 'status',
-          changes: { before: { status: before, baja_reason: null }, after: { status: DE_BAJA_STATUS, baja_reason: reason } },
-          actorUserId: actor.actorUserId,
-          actorType: actor.actorType,
-          actorLabel: actor.actorLabel,
-          traceId: actor.traceId ?? null,
-        });
-        baixadas.push({ vacancyId: id, statusBefore: before });
+  /**
+   * O MESMO caminho dentro de uma transação que o chamador já abriu — é o que o ensaio da linha de corte (F3)
+   * usa: uma transação só, ROLLBACK no dry-run, COMMIT no apply.
+   */
+  async executeInTx(
+    client: PoolClient,
+    vacancyIds: readonly string[],
+    reason: Exclude<BajaReason, 'SERVICE'>,
+    actor: HumanActor,
+  ): Promise<BajaOutcome> {
+    const ids = [...new Set(vacancyIds)].sort();
+    const locked = await client.query<LockedRow>(
+      `SELECT id, status, contracted_service_id FROM job_postings
+        WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id FOR UPDATE`,
+      [ids],
+    );
+    const byId = new Map(locked.rows.map((r) => [r.id, r]));
+    const refused: BajaRefusal[] = [];
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) {
+        refused.push({ vacancyId: id, code: 'VACANCY_NOT_FOUND' });
+        continue;
       }
-      return { ok: true, baixadas } as BajaOutcome;
-    });
+      const decision = decideManualBaja({ status: row.status, contractedServiceId: row.contracted_service_id });
+      if (!decision.ok) refused.push({ vacancyId: id, code: decision.code });
+    }
+    if (refused.length > 0) return { ok: false, refused } as BajaOutcome;
+
+    const baixadas: { vacancyId: string; statusBefore: string }[] = [];
+    for (const id of ids) {
+      const before = byId.get(id)!.status ?? 'SEARCHING';
+      await client.query(
+        `UPDATE job_postings
+            SET status_before_baja = status, status = '${DE_BAJA_STATUS}', baja_reason = $2, updated_at = NOW()
+          WHERE id = $1 AND deleted_at IS NULL AND contracted_service_id IS NULL AND status != '${DE_BAJA_STATUS}'`,
+        [id, reason],
+      );
+      await this.audit.logEventSafe(client, {
+        jobPostingId: id,
+        eventType: 'STATUS_CHANGED',
+        fieldName: 'status',
+        changes: { before: { status: before, baja_reason: null }, after: { status: DE_BAJA_STATUS, baja_reason: reason } },
+        actorUserId: actor.actorUserId,
+        actorType: actor.actorType,
+        actorLabel: actor.actorLabel,
+        traceId: actor.traceId ?? null,
+      });
+      baixadas.push({ vacancyId: id, statusBefore: before });
+    }
+    return { ok: true, baixadas } as BajaOutcome;
   }
 }
