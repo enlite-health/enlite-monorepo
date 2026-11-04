@@ -56,6 +56,7 @@ function makeResponsePayload(
   email: string,
   subtype: 'INITIATED' | 'IN_PROGRESS' | 'COMPLETED' | 'ANALYZED',
   extras: object = {},
+  phoneNumber = '+5491155550000',
 ) {
   return {
     action: 'PRESCREENING_RESPONSE',
@@ -70,7 +71,7 @@ function makeResponsePayload(
         firstName: 'Worker',
         lastName: 'V2Test',
         email,
-        phoneNumber: '+5491155550000',
+        phoneNumber,
         cuil: '20-99999001-0',
         registerQuestions: [],
       },
@@ -343,6 +344,10 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
         PROFILE_ID_ANALYZED,
         EMAIL_ANALYZED,
         'INITIATED',
+        {},
+        // Mesmo telefone do ANALYZED abaixo: o webhook agora acha worker pelo telefone (com/sem o 9), e um
+        // telefone compartilhado com o cenário 4 amarrava a prescreening ao worker de outra pessoa.
+        '+5491155550001',
       );
       const initRes = await api.post(ENDPOINT, initiatedPayload);
       expect(initRes.status).toBe(200);
