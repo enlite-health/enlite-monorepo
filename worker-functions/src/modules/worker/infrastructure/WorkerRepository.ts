@@ -145,7 +145,7 @@ export class WorkerRepository implements IWorkerRepository {
                lgpd_consent_at as "lgpdConsentAt",
                country, timezone,
                created_at as "createdAt", updated_at as "updatedAt"
-        FROM workers WHERE email = $1
+        FROM workers WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
       `;
 
       const result = await this.pool.query(query, [email]);
