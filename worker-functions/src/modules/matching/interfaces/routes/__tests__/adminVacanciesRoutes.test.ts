@@ -41,6 +41,13 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
+// Spec 084 F1: o router constrói o `VacancyBajaController` INTERNAMENTE (como os de `aux`); aqui ele é um dublê que responde com o nome.
+jest.mock('../../controllers/VacancyBajaController', () => ({
+  VacancyBajaController: jest.fn().mockImplementation(() => ({
+    baja: (_req: unknown, res: { json: (b: unknown) => void }) => res.json({ m: 'baja.baja' }),
+  })),
+}));
+
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
 const ESPERADO: Record<string, string> = {
   'DELETE /interview-slots/:slotId': 'interview:delete',
@@ -252,6 +259,14 @@ describe('família admin.vacancies — 47 rotas declaram célula', () => {
       const res = await request(app).get('/api/admin/vacancies/abc-123').expect(200);
 
       expect(res.body).toMatchObject({ m: 'vac.getVacancyById', id: 'abc-123' });
+    });
+
+    it('spec 084: POST /vacancies/baja chega no controller da baixa (e NÃO no create, nem em /:id)', async () => {
+      const app = appDeRota('adminVacancies', '/api/admin', build);
+
+      const res = await request(app).post('/api/admin/vacancies/baja').send({ vacancyIds: [] }).expect(200);
+
+      expect(res.body.m).toBe('baja.baja');
     });
 
     it('blocked-applications não é engolido por /vacancies/:id', async () => {

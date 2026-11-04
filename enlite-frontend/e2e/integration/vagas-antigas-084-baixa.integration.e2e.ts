@@ -98,8 +98,8 @@ async function abrirLista(page: Page, termo = `${RUN}`): Promise<void> {
   await page.keyboard.type(termo);
 }
 
-async function abrirFicha(page: Page, id: string): Promise<void> {
-  await loginAs(page, USER);
+async function abrirFicha(page: Page, id: string, login = true): Promise<void> {
+  if (login) await loginAs(page, USER); // 2º login na mesma página/teste não acha o formulário (já está logado)
   await page.goto(`/admin/vacancies/${id}`);
   await expect(page.getByTestId('vacancy-case-card')).toBeVisible({ timeout: 20_000 });
 }
@@ -149,7 +149,7 @@ test.describe('Spec 084 — vagas antigas: baixa, só consulta, En espera e #NN 
     await abrirLista(page, `servico ${RUN}`);
     await expect(page.getByTestId(`vacancy-row-${S.vServico}`)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId(`vacancy-select-${S.vServico}`)).toHaveCount(0);
-    await abrirFicha(page, S.vServico);
+    await abrirFicha(page, S.vServico, false);
     await expect(page.getByTestId('vacancy-baja-button')).toHaveCount(0);
   });
 

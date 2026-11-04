@@ -451,7 +451,7 @@ export class PatientContractedServiceRepository {
           RETURNING id, status_before_baja`,
         [serviceId],
       );
-      for (const r of res.rows ?? []) {
+      for (const r of res.rows) {
         out.baixadas.push(r.id);
         await this.auditBajaChange(cli, r.id, actorUid, { status: r.status_before_baja, baja_reason: null }, { status: 'DE_BAJA', baja_reason: 'SERVICE' });
       }
@@ -465,7 +465,7 @@ export class PatientContractedServiceRepository {
           RETURNING id, status`,
         [serviceId],
       );
-      for (const r of res.rows ?? []) {
+      for (const r of res.rows) {
         out.devolvidas.push(r.id);
         await this.auditBajaChange(cli, r.id, actorUid, { status: 'DE_BAJA', baja_reason: 'SERVICE' }, { status: r.status, baja_reason: null });
       }
