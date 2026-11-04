@@ -56,13 +56,10 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
    * Task 3.2/3.3 — `Cobertura Verificada`, que o mapper nunca leu (F7): 345 de 349 pacientes
    * têm cobertura no ClickUp e o nosso banco tem ZERO.
    *
-   * `insuranceVerified` (escalar) continua sendo o 1º rótulo, para quem já lê a coluna antiga.
-   * `insuranceVerifiedLabels` é a lista inteira, destinada à tabela `patient_insurance_verified`.
-   * `insuranceVerifiedReadable` é a MESMA distinção da D167 aplicada aqui: `null` com
-   * `readable:true` é "a origem não marcou nada" e É gravado; `readable:false` é "não consegui
-   * ler" e não escreve nada.
+   * `insuranceVerifiedLabels` é a lista inteira, destinada à tabela `patient_insurance_verified`
+   * (spec 058: o escalar `insuranceVerified` e a bandeira `insuranceVerifiedReadable` saíram — a
+   * distinção da D167 vive em `PatientSourceLabelsRead`: `readable:false` não escreve nada).
    */
-  insuranceVerifiedReadable?: boolean;
   insuranceVerifiedLabels?: PatientSourceLabelsRead;
   /**
    * Task 4.2 — a lista de `Tipo de Dispositivo`, destinada a `patient_device_types`.
@@ -90,16 +87,6 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
   hasJudicialProtection?: boolean | null;
   hasCud?: boolean | null;
   hasConsent?: boolean | null;
-  /**
-   * Cobertura médica informada (ClickUp: "Cobertura Informada").
-   * Fill-only: persisted via COALESCE(existing, $new). Migration 147.
-   */
-  healthInsuranceName?: string | null;
-  /**
-   * Número de ID de afiliado (ClickUp: "Número ID Afiliado Paciente").
-   * Fill-only: persisted via COALESCE(existing, $new). Migration 147.
-   */
-  healthInsuranceMemberId?: string | null;
   // Responsibles (replaces legacy responsible_* columns)
   responsibles?: PatientResponsibleInput[];
   // Related records (unchanged from existing PatientRepository contract)

@@ -5,7 +5,7 @@
  * Ao contrário de `ActivateRecruitmentUseCase.test.ts` (que mocka `@modules/matching`
  * inteiro para isolar a orquestração), este arquivo usa `buildInsertParams`/
  * `pickSourceLockedFields`/`SOURCE_LOCKED_FIELDS` REAIS — é a prova de que o
- * INSERT do foguete deriva as 8 colunas que vêm do paciente/serviço (F3) SÓ da
+ * INSERT do foguete deriva as 13 colunas que vêm do paciente/serviço (F3) SÓ da
  * constante nomeada, sem duplicar a lista em outro lugar.
  *
  * Roda dentro de `src/modules/case` de propósito (`npx jest src/modules/case
@@ -30,7 +30,7 @@ import {
 /**
  * Espelha o que `ActivateRecruitmentUseCase.runInTransaction` monta de
  * verdade (`ActivateRecruitmentUseCase.ts`, chamada a `buildInsertParams`):
- * os 8 campos do serviço/paciente (F3) com valor; os demais — deixados para
+ * os 13 campos do serviço/paciente (F3 + 057) — os 5 de recrutamento vão null; os demais — deixados para
  * o recrutamento — null/undefined, como o foguete sempre manda.
  */
 function fogueteArgs(overrides: Partial<VacancyInsertParams> = {}): VacancyInsertParams {
@@ -62,8 +62,10 @@ function fogueteArgs(overrides: Partial<VacancyInsertParams> = {}): VacancyInser
   };
 }
 
+const RECRUITMENT_FIELDS = ['required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day'] as const;
+
 describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', () => {
-  it('paridade: SOURCE_LOCKED_FIELDS são exatamente os 8 campos que o foguete preenche do paciente/serviço (F3)', () => {
+  it('paridade: SOURCE_LOCKED_FIELDS são exatamente os 13 campos que o foguete preenche do paciente/serviço (F3)', () => {
     expect([...SOURCE_LOCKED_FIELDS].sort()).toEqual(
       [
         'age_range_max',
@@ -74,6 +76,11 @@ describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', 
         'patient_id',
         'providers_needed',
         'schedule',
+        'required_sex',
+        'required_professions',
+        'required_experience',
+        'work_schedule',
+        'payment_day',
       ].sort(),
     );
   });
@@ -96,13 +103,18 @@ describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', 
       age_range_max: 100,
       schedule: [{ dayOfWeek: 5, startTime: '10:00', endTime: '14:00' }],
       providers_needed: 7,
+      required_sex: 'M',
+      required_professions: ['AT'],
+      required_experience: 'EXP',
+      work_schedule: 'full-time',
+      payment_day: 'dia 10',
     };
 
     for (const field of SOURCE_LOCKED_FIELDS) {
       // F2: com serviço o horário NÃO é gravado (a vaga lê do serviço) — a paridade de `schedule` é provada
       // numa vaga SEM serviço; `contracted_service_id` varia sobre o base (com serviço) como os demais.
       // F5/F6: idem para `providers_needed` e para a faixa etária (testes próprios abaixo).
-      if (field === 'schedule' || field === 'providers_needed' || field === 'age_range_min' || field === 'age_range_max') continue;
+      if (field === 'schedule' || field === 'providers_needed' || field === 'age_range_min' || field === 'age_range_max' || RECRUITMENT_FIELDS.includes(field as never)) continue;
       const variant = buildInsertParams({ ...base, [field]: overridesPerField[field] });
       const diffIndexes = baseParams
         .map((_, i) => i)
@@ -163,8 +175,23 @@ describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', 
     expect(params).toHaveLength(Math.max(...placeholders));
   });
 
-  it('campo NÃO travado (ex.: required_professions, deixado para o recrutamento por F3) não sai de pickSourceLockedFields', () => {
-    const locked = pickSourceLockedFields(fogueteArgs({ required_professions: ['AT'] }));
-    expect(locked).not.toHaveProperty('required_professions');
-  });
+  it.each([
+    ['required_sex', 'M'],
+    ['required_professions', ['AT']],
+    ['required_experience', 'EXP'],
+    ['work_schedule', 'full-time'],
+    ['payment_day', 'dia 10'],
+  ] as const)(
+    'paridade de `%s` (057/D523; vaga SEM serviço): variar só ele muda só a posição dele; COM serviço o valor nunca vira param',
+    (field, value) => {
+      const semServico = fogueteArgs({ contracted_service_id: null });
+      const variant = buildInsertParams({ ...semServico, [field]: value });
+      const baseParams = buildInsertParams(semServico);
+      const diff = baseParams.map((_, i) => i).filter((i) => JSON.stringify(baseParams[i]) !== JSON.stringify(variant[i]));
+      expect(diff).toHaveLength(1);
+      expect(variant[diff[0]]).toEqual(value);
+      // COM serviço: o valor não chega ao INSERT; `required_professions` é NULL (não `[]`).
+      expect(buildInsertParams(fogueteArgs({ [field]: value }))[diff[0]]).toBeNull();
+    },
+  );
 });

@@ -26,6 +26,7 @@ import { capturingLogger } from '../../src/modules/matching/infrastructure/doubl
 import { TactiqTransientError, TactiqUnauthorizedError } from '../../src/modules/matching/application/ports/TactiqPorts';
 import type { TactiqLinkService } from '../../src/modules/matching/application/TactiqLinkService';
 import { pkceChallenge } from '../../src/modules/matching/infrastructure/tactiq/pkce';
+import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -82,18 +83,9 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     seq += 1;
     const email = `op${seq}.${RUN}@example.test`;
     const uid = `tq049-op${seq}-${RUN}`;
-    const { rows } = await admin.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Operadora Sintetica','AR',true) RETURNING id`,
-      [email],
-    );
+    const host = await insertInterviewHost(admin, { email, displayName: 'Operadora Sintetica', withUser: opts.user !== false, uid });
     hostEmails.push(email);
-    if (opts.user !== false) {
-      await admin.query(
-        `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,$2,'admin','ACTIVE',true,$3)`,
-        [uid, email, TENANT_E2E],
-      );
-      hostUids.push(uid);
-    }
+    if (opts.user !== false) hostUids.push(uid);
     if (opts.link) {
       const token = opts.link.token ?? `rt-seed-${seq}-${RUN}`;
       const ins = await admin.query(
@@ -108,7 +100,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
         await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [ins.rows[0].id, b64(token)]);
       }
     }
-    return { id: rows[0].id as string, email, uid };
+    return { id: host.id, email, uid };
   }
 
   const linkRow = async (email: string) => (await admin.query(
@@ -191,7 +183,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     await admin.query(`DELETE FROM admission_chrome_reports WHERE lower(host_email) = ANY($1)`, [all]);
     await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [all]);
     await admin.query(`DELETE FROM tactiq_oauth_states WHERE host_email = ANY($1)`, [all]);
-    await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [hostEmails]);
+    await deleteInterviewHosts(admin, hostEmails);
     await admin.query('DELETE FROM users WHERE firebase_uid = ANY($1)', [hostUids]);
     await limparIam();
     await admin.end();

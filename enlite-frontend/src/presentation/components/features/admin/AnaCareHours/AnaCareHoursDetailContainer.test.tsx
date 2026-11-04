@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { AnaCareHoursDetailContainer } from './AnaCareHoursDetailContainer';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareHoursService } from './AnaCareHoursService';
@@ -261,7 +262,7 @@ describe('AnaCareHoursDetailContainer', () => {
     render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
-    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('anacare-hours-contest-reason'), 'admin.anacareHours.contestModal.reasons.otro');
     fireEvent.change(screen.getByTestId('anacare-hours-contest-note'), { target: { value: '  nota  ' } });
     fireEvent.click(screen.getByTestId('anacare-hours-contest-confirm'));
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ shiftId: 's1', reason: 'otro', note: 'nota' }));
@@ -336,7 +337,7 @@ describe('AnaCareHoursDetailContainer', () => {
     render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
-    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('anacare-hours-contest-reason'), 'admin.anacareHours.contestModal.reasons.otro');
     fireEvent.click(screen.getByTestId('anacare-hours-contest-confirm'));
     await waitFor(() =>
       expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('admin.anacareHours.error.contestShift'),
@@ -388,7 +389,7 @@ describe('AnaCareHoursDetailContainer', () => {
     render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
-    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('anacare-hours-contest-reason'), 'admin.anacareHours.contestModal.reasons.otro');
     expect(screen.getByTestId('anacare-hours-contest-confirm')).toBeInTheDocument();
 
     act(() => comEnforcement(['anacare_hours:read'], 'on'));

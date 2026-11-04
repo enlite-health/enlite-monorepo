@@ -83,7 +83,24 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // ── admin.users (6) — a 1ª família virada
         'DELETE /api/admin/users/:id → user_management:delete',
         'DELETE /api/admin/users/by-email → user_management:delete',
+        'GET /api/admin/insurance-providers → catalog_insurance_providers:read',
+        'GET /api/admin/insurance-providers/:code → catalog_insurance_providers:read',
+        'GET /api/admin/insurance-providers/:code/contacts → insurance_provider_contacts:read',
+        'GET /api/admin/insurance-providers/:code/contracts → insurance_contracts:read',
+        'GET /api/admin/insurance-providers/:code/patients → insurance_provider_patients:read',
+        'GET /api/admin/insurance-providers/for-service → insurance_contracts:read',
         'GET /api/admin/users → user_management:read',
+        'PATCH /api/admin/insurance-contracts/:id → insurance_contracts:update',
+        'PATCH /api/admin/insurance-providers/:code → catalog_insurance_providers:update',
+        'PATCH /api/admin/insurance-providers/:code/contacts/:contactId → insurance_provider_contacts:update',
+        'POST /api/admin/insurance-contracts/:id/terms → patient_contract_value:create',
+        'POST /api/admin/insurance-contracts/:id/terms/:termId/supersede → patient_contract_value:create',
+        'POST /api/admin/insurance-providers/:code/contacts → insurance_provider_contacts:create',
+        'POST /api/admin/insurance-providers/:code/contacts/:contactId/retire → insurance_provider_contacts:update',
+        'POST /api/admin/insurance-providers/:code/contracts → insurance_contracts:create+patient_contract_value:create',
+        'POST /api/admin/patients/:id/contracted-services/:sid/contract-link → patient_services:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/contract-link/end → patient_services:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/contract-link/supersede → patient_services:update',
         'POST /api/admin/users → user_management:create',
         'POST /api/admin/users/:id/reset-password → user_management:update',
         // ── admin.permissions (8) — a leitura do painel (F3) + o POST de
@@ -160,6 +177,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // SUP-19: a vaga nasce daqui). Era só `patient_services:update` até o
         // achado pós-#391 — `vacancy:write` ficava invisível a este teste.
         'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:update+vacancy:update',
+        // Spec 079: vincular vaga existente — mesma cadeia do foguete (ordem SUP-19).
+        'POST /api/admin/patients/:id/contracted-services/:sid/link-existing-vacancy → patient_services:update+vacancy:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/link-existing-vacancy/preview → patient_services:update+vacancy:update',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:create',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:update',
         'POST /api/admin/patients/:id/external-contacts → patient_family:create',
@@ -210,7 +230,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/workers/:id/tags/:tagId → worker:update',
         'POST /api/admin/workers/sync-talentum → talentum:create+talentum:update',
         'PUT /api/admin/workers/:id/service-area → worker:update',
-        // ── admin.vacancies (47) — a 4ª e maior, um arquivo só
+        // ── admin.vacancies (45) — a 4ª e maior, um arquivo só
         'DELETE /api/admin/interview-slots/:slotId → interview:delete',
         'DELETE /api/admin/vacancies/:id → vacancy:delete',
         'DELETE /api/admin/vacancies/:id/publish-talentum → talentum:update',
@@ -251,17 +271,17 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // F3 (vaga-le-do-servico): "marcar como atendido" o aviso de vaga publicada — a MESMA célula do PUT da vaga.
         'POST /api/admin/vacancies/:id/source-change-notices/:field/ack → vacancy:update',
         'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:create',
+        // Spec 084 F1: dar baixa (uma ou em lote), só vaga SEM serviço — a MESMA célula do PUT da vaga. NÃO existe rota inversa (R17).
+        'POST /api/admin/vacancies/baja → vacancy:update',
         // "Promover" (D300, merge main→stage 19/09/2026): entrou junto com
         // reject/restore, mesma célula (escrita no funil).
         'POST /api/admin/vacancies/blocked-applications/:blockedId/promote → funnel:update',
         'POST /api/admin/vacancies/blocked-applications/:blockedId/reject → funnel:update',
         'POST /api/admin/vacancies/blocked-applications/:blockedId/restore → funnel:update',
-        'POST /api/admin/vacancies/meet-links/lookup → vacancy:read',
         'POST /api/admin/vacancies/sync-talentum → talentum:create+talentum:update',
         'PUT /api/admin/encuadres/:id/move → funnel:update',
         'PUT /api/admin/encuadres/:id/result → funnel:update',
         'PUT /api/admin/vacancies/:id → vacancy:update',
-        'PUT /api/admin/vacancies/:id/meet-links → vacancy:update',
         'PUT /api/admin/vacancies/:id/talentum-description → talentum:update',
         // ── admin.analytics (15) + admin.recruitment (hoje só blocked-attempts; as outras 10 saíram com o dashboard) — a 5ª e a 6ª
         'GET /analytics/dashboard/cases/:caseNumber → dashboard:read',
@@ -280,6 +300,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/workers/missing-documents → analytics:read',
         // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria.
         'GET /api/admin/recruitment/blocked-attempts → recruitment_blocked:read',
+        // Spec 081 (T064b, D602a): atividade por recrutadora e semana — célula só do Acesso Master.
+        'GET /api/admin/recruitment/activity-per-person → recruitment_activity_per_person:read',
         'POST /analytics/dedup/run → dedup:execute',
         // ── A4: admin.messaging (7) + admin.integrations (1) + admin.test_fixtures (1)
         'POST /api/admin/messaging/whatsapp/vacancy-match → messaging:send',
@@ -333,13 +355,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/template-drafts → messaging:read',
         'GET /api/admin/terminology/search → patient_clinical:read',
         'PATCH /api/admin/patients/:id/contracted-services/:sid → patient_services:update',
-        'PATCH /api/admin/patients/:id/contracted-services/:sid/providers/:pid → patient_services:update',
+        'GET /api/admin/patients/:id/contracted-services/:sid/authorizations → patient_services:read', // spec 056 — horas autorizadas com vigência
+        'POST /api/admin/patients/:id/contracted-services/:sid/authorizations → patient_services:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/authorizations/:aid/supersede → patient_services:update',
         'PATCH /api/admin/patients/:id/diagnoses/:did → patient_clinical:update',
         'PATCH /api/admin/patients/:patientId/addresses/:addressId → patient_address:update',
-        'POST /api/admin/catalogs/insurance-providers → patient:create',
+        'POST /api/admin/catalogs/insurance-providers → catalog_insurance_providers:create',
         'POST /api/admin/map/corridor → patient_address:read',
         'POST /api/admin/patients/:id/contracted-services → patient_services:create',
-        'POST /api/admin/patients/:id/contracted-services/:sid/providers → patient_services:update',
         'POST /api/admin/patients/:id/diagnoses → patient_clinical:create',
         'POST /api/admin/patients/map → patient_address:read',
         'POST /api/admin/template-drafts → messaging:create',
@@ -366,6 +389,16 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:read',
         'POST /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:create',
         'PATCH /api/admin/therapeutic-catalogs/segments/:itemId → catalog_therapeutic_segments:update',
+        // Motivos de saída (migration 492) — kind fora do laço terapêutico, célula literal própria.
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:read',
+        'POST /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:create',
+        'PATCH /api/admin/therapeutic-catalogs/service-exit-reasons/:itemId → catalog_service_exit_reasons:update',
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons/options → patient_services:read',
+        // Guardias predefinidas (migration 550, spec 074) — mesmo molde dos motivos de saída.
+        'GET /api/admin/therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:read',
+        'POST /api/admin/therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:create',
+        'PATCH /api/admin/therapeutic-catalogs/service-shift-templates/:itemId → catalog_service_shift_templates:update',
+        'GET /api/admin/therapeutic-catalogs/service-shift-templates/options → patient_services:read',
         // anacare-conferencia-de-horas, fase 1 (migration 437) — `anacare_hours:read` para ver
         // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
         'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',
@@ -376,6 +409,47 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/anacare-hours/shifts/:shiftId/validate → anacare_hours:validate',
         'POST /api/admin/anacare-hours/shifts/:shiftId/contest → anacare_hours:validate',
         'POST /api/admin/anacare-hours/sync → anacare_hours:validate',
+        'GET /api/admin/patients/:id/itinerary → patient_services:read', // cadeia Fase 7 — leitura do itinerário (D433/D434)
+        'GET /api/admin/patients/:id/itinerary/events → patient_services:read', // D445.3 — "Próximos eventos/Substituição", leitura calculada
+        'GET /api/admin/patients/:id/contracted-services/:sid/itinerary/changes → patient_services:read', // itinerario-trocas Fase 2 (C9) — registro de trocas, leitura
+        'GET /api/admin/patients/kanban/services → patient_services:read', // cadeia Fase 8 — agregado do subcard (Plano B)
+        'GET /api/admin/patients/:id/contracted-services/:sid/team → patient_services:read', // cadeia Fase 10 — quadro C (calculado)
+        'POST /api/admin/patients/:id/contracted-services/:sid/team/reject → patient_service_team:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/team/revert → patient_service_team:update',
+        'GET /api/admin/patients/:id/contracted-services/:sid/team/:workerId/contact → patient_services:read', // painel do prestador (D447) — contact log, leitura
+        'POST /api/admin/patients/:id/contracted-services/:sid/team/:workerId/contact → patient_service_team:update', // painel do prestador (D447) — registra contato
+        'GET /api/admin/patients/:id/contracted-services/:sid/allocation-options → patient_services:read', // cadeia Fase 11 — escritores do itinerário
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots → patient_itinerary:update',
+        'PATCH /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId/end → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId/allocations → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/end → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/replace → patient_itinerary:update', // D445.5 — reemplazo permanente
+        'POST /api/admin/patients/:id/itinerary/assemble → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/absences → patient_itinerary:update', // cadeia Fase 13 — substituição pontual
+        'PATCH /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/substitute → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/cancel → patient_itinerary:update',
+        // spec 069 — pedido de substituição (parte dias): leituras em patient_services:read, pré-visão e criação em patient_itinerary:update.
+        'GET /api/admin/patients/:id/contracted-services/:sid/substitution-requests → patient_services:read',
+        'GET /api/admin/patients/:id/contracted-services/:sid/substitution-requests/outgoing-options → patient_services:read',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/preview → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/:rid/undo → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/substitution-requests/:rid/cover → patient_itinerary:update',
+        // spec 029 (prompts de IA editáveis) — as 6 rotas de `ai-prompts`.
+        'GET /api/admin/ai-prompts → ai_prompt:read',
+        'GET /api/admin/ai-prompts/:slug → ai_prompt:read',
+        'POST /api/admin/ai-prompts/:slug/preview → ai_prompt:update',
+        'POST /api/admin/ai-prompts/:slug/undo → ai_prompt:update',
+        'POST /api/admin/ai-prompts/simulate-vacancy → ai_prompt:update', // T071
+        'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
+        // spec 078 (M3b-1) — a página de pedidos do Sol: ver (read) × aceitar/negar/descrever (decidir).
+        'GET /api/admin/pedidos-ia → pedidos_ia:read',
+        'GET /api/admin/pedidos-ia/contadores → pedidos_ia:read', // T094 (081)
+        'GET /api/admin/pedidos-ia/:id → pedidos_ia:read',
+        'POST /api/admin/pedidos-ia/:id/aceitar → pedidos_ia:decidir',
+        'POST /api/admin/pedidos-ia/:id/descrever → pedidos_ia:decidir',
+        'POST /api/admin/pedidos-ia/:id/negar → pedidos_ia:decidir',
         // ── spec 022 (chat interno por paciente + anexos + sino de notificações) ──
         // Conversa (Bloco 1/3, `adminConversationRoutes.ts`) — família `admin.patients`,
         // célula NOVA `patient_conversation:*` (D-07, migration 463).
@@ -420,6 +494,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
         'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
         'POST /api/admin/me/tactiq-link → own_tactiq_link:create',
+        // spec 076: lista GLOBAL de enquadres (cross-vacante) — duas células encadeadas, `+` no inventário.
+        'GET /api/admin/enquadre-events → enquadre_event:read+vacancy:read',
         // spec 052 (eventos de enquadre, `adminEnquadreEventRoutes.ts`): família admin.vacancies, células enquadre_event/enquadre_summary/enquadre_result.
         'GET /api/admin/vacancies/:vacancyId/enquadre-events → enquadre_event:read',
         'GET /api/admin/vacancies/:vacancyId/enquadre-events/:eventId → enquadre_event:read',
@@ -433,11 +509,25 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants → enquadre_event:update',
         'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/remove → enquadre_event:update',
         'PUT /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/move → enquadre_result:update',
+        // spec 055 (tela Entrevistadores, `adminInterviewHostRoutes.ts`): família admin.users, células interview_host:read|update (só Acesso Master).
+        'GET /api/admin/interview-hosts → interview_host:read',
+        'GET /api/admin/interview-hosts/candidates → interview_host:update',
+        'POST /api/admin/interview-hosts → interview_host:update',
+        'PATCH /api/admin/interview-hosts/:id → interview_host:update',
+        // spec 080 (scoreboard and escalations of the assistants, `adminAssistantsRoutes.ts`): families assistant_scoreboard/assistant_escalation, contract rotas-plataforma-novas.md.
+        'GET /api/admin/assistants/scoreboard → assistant_scoreboard:read',
+        // spec 085 (cardápio de campos da Maria, `adminAssistantsRoutes.ts`): contagens reusam as células de patient/vacancy/worker.
+        'GET /api/admin/assistants/count/patients → patient:read',
+        'GET /api/admin/assistants/count/vacancies → vacancy:read',
+        'GET /api/admin/assistants/count/workers → worker:read',
+        'POST /api/admin/assistants/escalations → assistant_escalation:register',
+        // spec 082 (painel de custos, `adminCostsRoutes.ts`): família admin.integrations, célula platform_costs:read (só Acesso Master).
+        'GET /api/admin/costs/overview → platform_costs:read',
       ].sort(),
     );
   });
 
-  it('as isentas são as DEZ decididas, e nenhuma a mais', () => {
+  it('as isentas são as ONZE decididas, e nenhuma a mais', () => {
     // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
@@ -460,9 +550,12 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // `GET /api/admin/me/tactiq-link/callback` entrou na spec 049 (F4): o Tactiq redireciona o NAVEGADOR para o callback,
     // que não carrega Bearer. A isenção é a MARCA da montagem (`exemptHandler` em `tactiqLinkRoutes.ts`); a prova de
     // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:create`), 10 min, ligado ao uid.
+    // `GET /api/admin/assistants/reach` entered with spec 080 (contract rotas-plataforma-novas.md §1): a "self" route: it describes the actor itself to the
+    // assistants service and resolves the cells in the handler (`req.permissionCells` only exists inside `perm.require`); the exemption is the mount MARK (`exemptHandler`).
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'DELETE /v1/me/simulation',
+      'GET /api/admin/assistants/reach',
       'GET /api/admin/auth/profile',
       'GET /api/admin/me/tactiq-link/callback',
       'GET /v1/me/authz',

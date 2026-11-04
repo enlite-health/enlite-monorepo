@@ -31,9 +31,25 @@ import {
   AdminPatientContractedServicesController,
   AdminTherapeuticProjectsController,
   createAdminTherapeuticProjectsRoutes,
+  AdminServiceTeamController,
+  createAdminServiceTeamRoutes,
+  AdminServiceTeamContactController,
+  createAdminServiceTeamContactRoutes,
+  AdminItineraryWriteController,
+  createAdminItineraryWriteRoutes,
+  AdminItineraryChangesController,
+  createAdminItineraryChangesRoutes,
+  AdminSubstitutionRequestController,
+  createAdminSubstitutionRequestRoutes,
   TherapeuticContactRemindersInternalController,
   createTherapeuticContactRemindersInternalRoutes,
+  ItineraryDailyInternalController,
+  createItineraryDailyInternalRoutes,
   createAdminPatientsRoutes,
+  createAdminInsuranceRoutes,
+  AdminInsuranceProviderContactsController,
+  AdminInsuranceContractsController,
+  AdminContractedServiceContractLinkController,
   PublicLeadsController,
   createAdminPatientPhotoRoutes,
 } from '@modules/case';
@@ -42,10 +58,10 @@ import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfa
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { UserController } from '@modules/identity';
+import { UserController, resolveCountryScope } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
-import { createMeAuthzRouter, createMeSimulationRouter } from '@modules/identity/permissions';
+import { createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -84,11 +100,11 @@ import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplication
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
-import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
+import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
@@ -116,6 +132,12 @@ import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEv
 import { EnquadreSummaryDownload } from '@modules/matching/application/EnquadreSummaryDownload';
 import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
 import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
+import { createAdminEnquadreEventListRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventListRoutes';
+import { EnquadreEventListController } from '@modules/matching/interfaces/controllers/EnquadreEventListController';
+import { EnquadreEventGlobalList } from '@modules/matching/application/EnquadreEventGlobalList';
+import { createAdminInterviewHostRoutes } from '@modules/matching/interfaces/routes/adminInterviewHostRoutes';
+import { InterviewHostController } from '@modules/matching/interfaces/controllers/InterviewHostController';
+import { InterviewHostService } from '@modules/matching/application/InterviewHostService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
 import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
@@ -125,6 +147,11 @@ import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqChec
 import { AdmissionImportService } from '@modules/matching/application/AdmissionImportService';
 import { AdmissionSummaryRetryService } from '@modules/matching/application/AdmissionSummaryRetryService';
 import { AdmissionImportRepository } from '@modules/matching/infrastructure/AdmissionImportRepository';
+import { logger } from '@shared/logging';
+import { ImportNoticeRepository } from '@modules/matching/infrastructure/ImportNoticeRepository';
+import { ImportBlockNotifier } from '@modules/matching/application/ImportBlockNotifier';
+import type { AdmissionLogger } from '@modules/matching/application/AdmissionMessagingService';
+import { SystemNotificationPublisher } from '@modules/inapp-notification/application/SystemNotificationPublisher';
 import { AdmissionImportInternalController } from '@modules/matching/interfaces/controllers/AdmissionImportInternalController';
 import { createAdmissionImportInternalRoutes } from '@modules/matching/interfaces/routes/admissionImportRoutes';
 import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
@@ -139,7 +166,9 @@ import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
-import { createAdminIntegrationsRoutes } from '@modules/integration';
+import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
+import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService } from '@modules/agentes';
+import { createAdminCostsRoutes, createGetCostOverviewUseCase } from '@modules/custos';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
@@ -262,7 +291,6 @@ const workerTimelineController = new WorkerTimelineController(DatabaseConnection
 const adminPatientsController = new AdminPatientsController();
 const publicVacancyController = new PublicVacancyController();
 const interviewSlotsController = new InterviewSlotsController();
-const vacancyMeetLinksController = new VacancyMeetLinksController();
 const vacancySocialLinksController = new VacancySocialLinksController();
 const vacancyAddressReviewController = new VacancyAddressReviewController();
 const publicJobsController = new PublicJobsController();
@@ -585,6 +613,19 @@ app.use(
   ),
 );
 
+// ========== Admin Obras Sociais, contratos e vínculo do serviço (spec 058, Parte A) ==========
+app.use(
+  '/api/admin',
+  createAdminInsuranceRoutes(
+    authMiddleware,
+    permissionMiddleware,
+    new AdminInsuranceProvidersController(),
+    new AdminInsuranceProviderContactsController(),
+    new AdminInsuranceContractsController(),
+    new AdminContractedServiceContractLinkController(),
+  ),
+);
+
 // ========== Admin Patient Photo/Documents/Image Consent (spec 018, PR-4) ==========
 app.use('/api/admin', createAdminPatientPhotoRoutes(authMiddleware, permissionMiddleware));
 
@@ -596,8 +637,13 @@ app.use('/api/admin', createPatientDocumentsRoutes(authMiddleware, permissionMid
 
 // Spec 049 F6: a importação do Tactiq. Criada aqui porque o botão "Reintentar resumen" (spec 050 F11) também a chama; o job de 15 min a monta abaixo.
 const admissionImportRepository = new AdmissionImportRepository(admissionDb);
+// Spec 083: aviso no sino da importação bloqueada (host: bloqueou/lembrete/expirou; gestão: will_be_lost), um notificador por fonte.
+const importNoticeRecipients = new ImportNoticeRepository(admissionDb);
+const admissionImportNotices = new ImportBlockNotifier({ kind: 'admission', prefix: 'admission', publisher: new SystemNotificationPublisher(), recipients: importNoticeRecipients, log: logger as unknown as AdmissionLogger });
+const enquadreImportNotices = new ImportBlockNotifier({ kind: 'enquadre', prefix: 'enquadre', publisher: new SystemNotificationPublisher(), recipients: importNoticeRecipients, log: logger as unknown as AdmissionLogger });
 const admissionImportService = new AdmissionImportService({
   repo: admissionImportRepository,
+  notices: admissionImportNotices,
   events: admissionEvents,
   tokens: tactiqLinkService,
   mcp: admissionExternals.tactiq.mcp,
@@ -649,6 +695,19 @@ const enquadreEventController = new EnquadreEventController(
   new EnquadreSummaryDownload({ db: admissionDb }),
 );
 app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
+// Spec 076: lista GLOBAL de enquadres (cross-vacante). Duas células: enquadre_event:read + vacancy:read.
+app.use('/api/admin', createAdminEnquadreEventListRoutes(
+  authMiddleware,
+  permissionMiddleware,
+  new EnquadreEventListController(admissionDb, new EnquadreEventGlobalList({ db: admissionDb })),
+));
+
+// Spec 055: tela Entrevistadores (quem atende enquadre e admissão, amarrado a usuário staff ativo). Células interview_host:read|update.
+app.use('/api/admin', createAdminInterviewHostRoutes(
+  authMiddleware,
+  permissionMiddleware,
+  new InterviewHostController(new InterviewHostService({ db: admissionDb, repo: interviewHostRepository, tactiq: tactiqLinkService })),
+));
 
 // Spec 049 F4: o operador vincula a PRÓPRIA conta do Tactiq (own_tactiq_link:read|write). O callback do OAuth é navegação
 // do browser (sem Bearer): isento na montagem, em contexto público, e a prova de identidade é o `state` single-use.
@@ -676,6 +735,16 @@ app.use(
   createAdminTherapeuticProjectsRoutes(new AdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
 );
 
+// ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
+app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
+app.use('/api/admin', createAdminServiceTeamContactRoutes(new AdminServiceTeamContactController(), authMiddleware, permissionMiddleware));
+
+// ========== Itinerário — escritores (cadeia Fase 11) ==========
+app.use('/api/admin', createAdminItineraryWriteRoutes(new AdminItineraryWriteController(), authMiddleware, permissionMiddleware));
+app.use('/api/admin', createAdminItineraryChangesRoutes(new AdminItineraryChangesController(), authMiddleware, permissionMiddleware));
+// Spec 069 — pedido de substituição (lista, pré-visão, criação)
+app.use('/api/admin', createAdminSubstitutionRequestRoutes(new AdminSubstitutionRequestController(), authMiddleware, permissionMiddleware));
+
 // ========== Conferência de horas do Ana Care (spec anacare-conferencia-de-horas, fase 1) ==========
 app.use(
   '/api/admin',
@@ -697,6 +766,21 @@ registerAdminMaintenanceRoutes(app, authMiddleware, permissionMiddleware);
 // ========== Admin Integrations (AnaCare mirror etc.) ==========
 app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware, permissionMiddleware));
 
+// ========== Admin AI Prompts (spec 029, T013 — list/get/update; undo/restore/preview são de fases posteriores) ==========
+app.use('/api/admin', createAdminAiPromptRoutes(new AiPromptController(), authMiddleware, permissionMiddleware));
+
+// ========== Admin Pedidos IA (spec 078, M3b-1 — página de pedidos do Sol; células pedidos_ia:read/decidir) ==========
+app.use('/api/admin', createAdminPedidosIaRoutes(createPedidoIaController(), authMiddleware, permissionMiddleware));
+
+// ========== Admin Assistants (spec 080 — platform for the assistants service; cells assistant_*, knowledge_*) ==========
+app.use('/api/admin', createAdminAssistantsRoutes(createAssistantsPlatformController(async (uid) => (await permissionsBoundary.permissions.authz.execute({ uid, tenantId: ENLITE_TENANT_ID })).permissions), authMiddleware, permissionMiddleware, {
+  service: createAssistantCountService(),
+  resolveCountries: async (uid, requested) => (await resolveCountryScope(DatabaseConnection.getInstance().getPool(), uid, requested)).countries,
+}));
+
+// ========== Admin Costs (spec 082 — painel de custos; célula platform_costs:read, Acesso Master only) ==========
+app.use('/api/admin', createAdminCostsRoutes(createGetCostOverviewUseCase(), authMiddleware, permissionMiddleware));
+
 // ========== Worker Context (triage-service / MCP internal) ==========
 app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware, permissionMiddleware));
 
@@ -706,7 +790,6 @@ app.use('/api/admin', createAdminVacanciesRoutes(
   vacancyCrudController,
   vacancyTalentumController,
   vacancyMatchController,
-  vacancyMeetLinksController,
   vacancySocialLinksController,
   funnelController,
   dashboardController,
@@ -773,7 +856,7 @@ const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, 
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool));
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -787,6 +870,14 @@ app.use(
   systemContextMiddleware('job:pt-contact-reminders'),
   internalAuthMiddleware,
   createTherapeuticContactRemindersInternalRoutes(new TherapeuticContactRemindersInternalController()),
+);
+
+// spec 069 F4: rotina diária do itinerário (derivação do estado → alerta "Sin cubrir"; Cloud Scheduler, 06:00 America/Argentina/Buenos_Aires).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:itinerary-daily'),
+  internalAuthMiddleware,
+  createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
 );
 
 // spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).
@@ -803,7 +894,7 @@ registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionE
 registerEnquadreInternalJobRoutes(app, {
   db: admissionDb,
   meet: admissionExternals.meet,
-  import: { tokens: tactiqLinkService, mcp: admissionExternals.tactiq.mcp, vault: admissionExternals.enquadreVault, summary: admissionExternals.enquadreSummary },
+  import: { tokens: tactiqLinkService, mcp: admissionExternals.tactiq.mcp, vault: admissionExternals.enquadreVault, summary: admissionExternals.enquadreSummary, notices: enquadreImportNotices },
 });
 
 // spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
@@ -843,7 +934,7 @@ wirePermissionsModule({
 // ========== MCP Server (feature-gated via MCP_ENABLED=true) ==========
 if (process.env.MCP_ENABLED === 'true') {
   const { mountMcpRoutes } = require('@modules/mcp/bootstrap/mountMcpRoutes') as typeof import('@modules/mcp/bootstrap/mountMcpRoutes');
-  mountMcpRoutes(app, dbPool);
+  mountMcpRoutes(app, dbPool, { twilio: twilioMessagingService });
 }
 
 // ========== Webhooks + Server start (async: ClickUp controller init) ==========

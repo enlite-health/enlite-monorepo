@@ -1,14 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { computeWeeklyHours, findNextAvailableSlot } from '../vacancyScheduleUtils';
+import { weeklyHoursOf } from '@domain/scheduleHours';
+import { scheduleValueToShifts, findNextAvailableSlot } from '../vacancyScheduleUtils';
 
-describe('computeWeeklyHours', () => {
+const horasDoValor = (v: Parameters<typeof scheduleValueToShifts>[0]) => weeklyHoursOf(scheduleValueToShifts(v));
+
+describe('weeklyHoursOf sobre scheduleValueToShifts', () => {
   it('returns 0 for empty schedule', () => {
-    expect(computeWeeklyHours([])).toBe(0);
+    expect(horasDoValor([])).toBe(0);
   });
 
   it('returns 0 when entries are incomplete', () => {
     expect(
-      computeWeeklyHours([
+      horasDoValor([
         { days: [], timeFrom: '09:00', timeTo: '17:00' },
         { days: ['lun'], timeFrom: '', timeTo: '' },
       ]),
@@ -18,7 +21,7 @@ describe('computeWeeklyHours', () => {
   it('multiplies hours per slot by number of days', () => {
     // 5 days × 8h = 40h
     expect(
-      computeWeeklyHours([
+      horasDoValor([
         { days: ['lun', 'mar', 'mie', 'jue', 'vie'], timeFrom: '09:00', timeTo: '17:00' },
       ]),
     ).toBe(40);
@@ -26,7 +29,7 @@ describe('computeWeeklyHours', () => {
 
   it('sums multiple entries', () => {
     expect(
-      computeWeeklyHours([
+      horasDoValor([
         { days: ['lun', 'mar'], timeFrom: '09:00', timeTo: '12:00' }, // 2 × 3 = 6
         { days: ['jue'], timeFrom: '14:00', timeTo: '18:00' }, //          1 × 4 = 4
       ]),
@@ -35,7 +38,7 @@ describe('computeWeeklyHours', () => {
 
   it('handles midnight-crossing slot (20:00 → 08:00 = 12h)', () => {
     expect(
-      computeWeeklyHours([
+      horasDoValor([
         { days: ['vie', 'sab'], timeFrom: '20:00', timeTo: '08:00' },
       ]),
     ).toBe(24);
@@ -43,7 +46,7 @@ describe('computeWeeklyHours', () => {
 
   it('handles half-hour granularity', () => {
     expect(
-      computeWeeklyHours([
+      horasDoValor([
         { days: ['lun'], timeFrom: '09:00', timeTo: '12:30' }, // 3.5h
       ]),
     ).toBe(3.5);
@@ -51,7 +54,7 @@ describe('computeWeeklyHours', () => {
 
   it('skips entries with malformed time', () => {
     expect(
-      computeWeeklyHours([
+      horasDoValor([
         { days: ['lun'], timeFrom: '9am', timeTo: '17:00' },
         { days: ['mar'], timeFrom: '09:00', timeTo: '17:00' }, // 8h
       ]),
@@ -60,7 +63,7 @@ describe('computeWeeklyHours', () => {
 
   it('does not collapse to integer when total is fractional', () => {
     expect(
-      computeWeeklyHours([
+      horasDoValor([
         { days: ['lun', 'mar', 'mie'], timeFrom: '09:00', timeTo: '11:30' }, // 3 × 2.5 = 7.5
       ]),
     ).toBe(7.5);

@@ -18,6 +18,7 @@
 
 import { fileURLToPath } from 'url';
 import { type Page, expect } from '@playwright/test';
+import { escolherNoCombo, escolherPrimeiroNoCombo } from './combobox';
 
 export type Profession = 'AT' | 'CAREGIVER';
 
@@ -37,17 +38,13 @@ async function gotoProfileTab(page: Page, tab: 'general' | 'address' | 'availabi
   await page.waitForTimeout(1_500);
 }
 
-/** Opens a MultiSelect by testId, picks the first option, closes the dropdown. */
+/** Opens a Combobox `multiple` by its data-testid (on the trigger), picks the first option, closes the panel. */
 async function selectFirstMultiSelectOption(page: Page, testId: string): Promise<void> {
-  const trigger = page.locator(`[data-testid="${testId}-trigger"]`);
-  if (!(await trigger.isVisible({ timeout: 5_000 }).catch(() => false))) return;
-  await trigger.click();
-  const dropdown = page.locator(`[data-testid="${testId}-dropdown"]`);
-  if (!(await dropdown.isVisible({ timeout: 3_000 }).catch(() => false))) return;
-  await dropdown.locator('div').first().click().catch(() => undefined);
-  await page.mouse.click(10, 10); // close (component closes on outside mousedown)
-  await page.waitForTimeout(200);
+  await escolherPrimeiroNoCombo(page, `[data-testid="${testId}"]`);
 }
+
+// profession (valor do enum) → rótulo que a tela mostra (es)
+const PROFESSION_LABEL: Record<Profession, string> = { AT: 'Acompañante Terapéutico', CAREGIVER: 'Cuidador(a)' };
 
 /**
  * Fills EVERY personal/professional field the gate requires and saves.
@@ -71,12 +68,12 @@ export async function fillGeneralInfo(page: Page, profession: Profession): Promi
   }
   await page.locator('input#birthDate').fill('01/01/1990');
   await page.locator('input#cpf').fill(uniqueCuil);
-  await page.locator('select#sex').selectOption('male');
-  await page.locator('select#gender').selectOption('male');
-  await page.locator('select#profession').selectOption(profession);
-  await page.locator('select#knowledgeLevel').selectOption('TERTIARY');
+  await escolherNoCombo(page, page.locator('#sex'), 'Masculino'); // male
+  await escolherNoCombo(page, page.locator('#gender'), 'Masculino'); // male
+  await escolherNoCombo(page, page.locator('#profession'), PROFESSION_LABEL[profession]);
+  await escolherNoCombo(page, page.locator('#knowledgeLevel'), 'Terciario'); // TERTIARY
   await page.locator('input#professionalLicense').fill('Cert-Journey-E2E');
-  await page.locator('select#yearsExperience').selectOption('0_2');
+  await escolherNoCombo(page, page.locator('#yearsExperience'), '0-2 años'); // 0_2
 
   await selectFirstMultiSelectOption(page, 'languages');
   await selectFirstMultiSelectOption(page, 'experience-types');

@@ -28,7 +28,9 @@ function row(id: string, stage: string, over: Record<string, unknown> = {}) {
     worker_phone: null, occupation_raw: 'AT', interview_date: null, interview_time: null, meet_link: null,
     resultado: null, attended: null, rejection_reason_category: null, rejection_reason: null, redireccionamiento: null,
     match_score: null, acquisition_channel: null, funnel_stage: stage, source: 'manual', messaged_at: '2026-10-01T10:00:00Z',
-    talentum_status: null, work_zone: null, ...over,
+    talentum_status: null, work_zone: null,
+    worker_apto: true, // spec 067: Completado sem apto cairia em BLOQUEADO
+    ...over,
   };
 }
 

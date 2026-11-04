@@ -46,7 +46,6 @@ export const generalSectionSchema = z
     sex: z.enum(SEXES as unknown as [string, ...string[]]).nullable().optional(),
     phoneWhatsapp: z.string().trim().min(1).nullable().optional(),
     healthInsuranceName: z.string().trim().min(1).nullable().optional(),
-    healthInsuranceMemberId: z.string().trim().min(1).nullable().optional(),
     contactEmail: z.string().trim().email().nullable().optional(),
     /** US-B9 (migration 317): data de início do serviço — nativa do painel, não deriva da vaga. */
     serviceStartDate: z.coerce.date().nullable().optional(),

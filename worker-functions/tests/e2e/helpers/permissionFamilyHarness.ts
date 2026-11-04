@@ -239,6 +239,32 @@ export async function garantirCelula(
 }
 
 /**
+ * `garantirCelulas` — versão em lote de `garantirCelula` para quem recebe a lista como `'recurso:acao'` (ex.: o mapa de
+ * capabilities do agente, spec 078). No job `backend-e2e` o catálogo NÃO é sincronizado de propósito (sem
+ * `PERMISSION_CATALOG_SYNC_ENABLED` na stack — ver `_frontend-integration.yml`), então célula nascida só no código
+ * (`worker:disable`, `handover:create`, `worker_application:create`...) não está em `iam.permissions`; setar a env dentro
+ * do teste NÃO sincroniza nada. Devolve só as que ESTE chamador criou — `removerCelulasCriadas` apaga exatamente essas.
+ */
+export async function garantirCelulas(pool: Pool, celulas: readonly string[], category = 'Agente (e2e)'): Promise<string[]> {
+  const criadas: string[] = [];
+  for (const celula of celulas) {
+    const [resource, action] = celula.split(':');
+    const { criada } = await garantirCelula(pool, { resource, action, category });
+    if (criada) criadas.push(celula);
+  }
+  return criadas;
+}
+
+/** Apaga (grants primeiro) só as células que `garantirCelulas` criou — as pré-existentes (seed/migration/sync) ficam. */
+export async function removerCelulasCriadas(pool: Pool, criadas: readonly string[]): Promise<void> {
+  for (const celula of criadas) {
+    const [resource, action] = celula.split(':');
+    await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
+    await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
+  }
+}
+
+/**
  * limparTrilhaDrenada / aguardarTrilhaQuieta / contarTrilhaEstavel — a CLASSE
  * do conserto para a corrida da trilha de auditoria de permissão
  * (`PgPermissionAuditRepository.record()` é fire-and-forget e FAIL-SAFE de

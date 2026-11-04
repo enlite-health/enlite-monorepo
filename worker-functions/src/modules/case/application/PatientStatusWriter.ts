@@ -9,6 +9,7 @@ import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason'
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
 import { decidirTrocaForaDoFluxo } from '../domain/trocaForaDoFluxo';
 import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
+import { countVivasForPatient } from '../infrastructure/VacancyAllocationProbe';
 
 /**
  * PatientStatusWriter — a TRANSIÇÃO DE ESTADO do paciente, e só ela.
@@ -81,6 +82,19 @@ export class PatientStatusPermissionError extends Error {
   constructor(readonly from: PatientStatus | null, readonly to: PatientStatus, readonly cell: string) {
     super(`Patient status move ${from ?? 'null'} → ${to} requires permission ${cell}`);
     this.name = 'PatientStatusPermissionError';
+  }
+}
+
+/**
+ * Troca MANUAL de estado com prestador alocado no itinerário (D489/D530) — o controller devolve 422.
+ * Onde a derivação manda, o operador não escolhe. Carrega só a CONTAGEM de alocações vivas: nome de
+ * prestador é PII e o aviso não precisa dele.
+ */
+export class PatientStatusLockedByAllocationError extends Error {
+  readonly code = 'PATIENT_STATUS_LOCKED_BY_ALLOCATION';
+  constructor(readonly allocations: number) {
+    super(`Patient status is locked: ${allocations} live itinerary allocation(s)`);
+    this.name = 'PatientStatusLockedByAllocationError';
   }
 }
 
@@ -221,6 +235,14 @@ export async function movePatientStatus(
     }
     const from = current.rows[0].status;
 
+    // D489/D530: troca MANUAL (admin_panel/kanban) é recusada com alocação VIVA no itinerário. Mesma
+    // transação e mesmo lock `FOR UPDATE` acima (sem corrida com a derivação). Origem interna
+    // (`system` da derivação, funil, ativação) não passa por aqui. Reenviar o estado atual não é troca.
+    if (from !== status && isManualChangeSource(opts.changeSource)) {
+      const vivas = await countVivasForPatient(client, patientId);
+      if (vivas > 0) throw new PatientStatusLockedByAllocationError(vivas);
+    }
+
     let foraDoFluxo = false;
     // A tabela decide sempre que UMA DAS PONTAS é clínica — não só o alvo. Validar só o alvo
     // deixava a DEMOÇÃO passar sem 422 (arrastar o card de ACTIVE para a coluna de admissão),
@@ -273,7 +295,7 @@ export async function movePatientStatus(
     // "Activo" no Kanban ativava sem checklist NENHUM, furando inclusive o ADDRESS que barra o
     // botão "Activar" desde a D255. SEARCHING/REPLACEMENT cobram só o horário.
     if (from !== status) {
-      const required = blockingCodesForStatusChange(status, foraDoFluxo);
+      const required = blockingCodesForStatusChange(status, foraDoFluxo, from);
       if (required.length > 0) {
         const { missing } = await loadPatientCompleteness(client, patientId);
         const faltando = required.filter((code) => missing.includes(code));

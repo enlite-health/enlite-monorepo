@@ -126,6 +126,7 @@ const ALL_COLUMN_IDS = [
   'INVITED',
   'INICIADO',
   'PRE_SCREENING',
+  'BLOQUEADO',
   'COMPLETED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM',
@@ -302,7 +303,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
   // ── P18 · salto: com motivo (tela), controle de cancelar ───────────────────
   test('funil-err-salto-com-motivo', async ({ page, request }) => {
-    const seed = seedVacancyWithCards([{ stage: 'INVITED' }, { stage: 'INVITED' }]);
+    const seed = seedVacancyWithCards([{ stage: 'INVITED', apto: true }, { stage: 'INVITED', apto: true }]);
     const [cardA, cardControl] = seed.cards;
     const t0 = new Date();
 
@@ -385,7 +386,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
   // ── P18 · salto: sem motivo pela API → 422 ──────────────────────────────────
   test('funil-err-salto-sem-motivo-422', async ({ request }) => {
-    const seed = seedVacancyWithCards([{ stage: 'INVITED' }]);
+    const seed = seedVacancyWithCards([{ stage: 'INVITED', apto: true }]);
     const [card] = seed.cards;
 
     try {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Label } from '@presentation/components/atoms/Label';
 import { Input } from '@presentation/components/atoms/Input';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { Button } from '@presentation/components/atoms/Button';
 import {
@@ -59,12 +59,12 @@ export function VacancyNoteForm({ onSubmit, onCancel, isSaving }: VacancyNoteFor
       </div>
       <div>
         <Label htmlFor="vacancy-note-category">{t('admin.vacancyDetail.notes.category')}</Label>
-        <Select
+        <Combobox
           id="vacancy-note-category"
           data-testid="vacancy-note-category"
           options={categoryOptions}
           value={category}
-          onValueChange={(value) => setCategory(value as VacancyNoteCategory)}
+          onChange={(value) => setCategory(value as VacancyNoteCategory)}
         />
       </div>
       <div>

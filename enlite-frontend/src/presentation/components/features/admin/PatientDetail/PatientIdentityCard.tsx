@@ -13,6 +13,8 @@ import { maskDocumentNumber } from '@presentation/utils/maskDocumentNumber';
 import { PatientPhotoSlot } from './PatientPhotoSlot';
 import { ENV } from '@infrastructure/config/env';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { formatDateFromISO } from '@presentation/hooks/useMask';
+import { currentCoverageDisplay, type CurrentCoverageDisplay } from './currentCoverageText';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -47,6 +49,30 @@ const STATUS_COLORS: Record<string, string> = {
   ALTA: 'bg-teal-100 text-teal-700',
   DISCHARGED: 'bg-gray-100 text-gray-600',
 };
+
+/** Pílula neutra/colorida do cartão (status, obra social). `title` + `truncate`: nome grande corta em 1 linha. */
+function Pill({ className, title, testId, children }: { className: string; title?: string; testId?: string; children: string }) {
+  return (
+    <span className={`inline-flex max-w-full px-2.5 py-0.5 rounded-full ${className}`} title={title} data-testid={testId}>
+      <Text as="span" size="xs" weight="medium" color="inherit" className="min-w-0 truncate">
+        {children}
+      </Text>
+    </span>
+  );
+}
+
+function CoverageValue({ display }: { display: CurrentCoverageDisplay }) {
+  if (display.kind === 'text') return <>{display.text}</>;
+  return (
+    <span className="flex flex-wrap gap-1.5 max-w-full">
+      {display.names.map((name) => (
+        <Pill key={name} className={STATUS_COLORS.SOLICITANTE} title={name}>
+          {name}
+        </Pill>
+      ))}
+    </span>
+  );
+}
 
 function formatDate(iso: string | null, locale = 'es-AR'): string | null {
   if (!iso) return null;
@@ -180,11 +206,9 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
         <div className="min-w-0">
           {/* 06/09: o NOME saiu daqui (subiu pro `h1` da página) — repetir dava strict-mode em e2e. */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`} data-testid="patient-status-badge">
-              <Text as="span" size="xs" weight="medium" color="inherit">
-                {statusLabel}
-              </Text>
-            </span>
+            <Pill className={statusColor} testId="patient-status-badge">
+              {statusLabel}
+            </Pill>
             {onHoldReasonLabel && (
               <span className="inline-flex px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700" data-testid="patient-on-hold-reason">
                 <Text as="span" size="xs" weight="medium" color="inherit">
@@ -224,6 +248,26 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
             <FieldPair label={t('admin.patients.detail.identityCard.patientEmail')} value={patient.contactEmail} testId="patient-contact-email" />
           </div>
           <FieldPair label={t('admin.patients.detail.identityCard.admission')} value={formatDate(patient.createdAt)} />
+          {/* Spec 064: derivados no servidor. `undefined` = backend anterior ("não li"); `null` em
+              currentCoverage = sem permissão (redacted.services). Data via formatDateFromISO (sem fuso). */}
+          <FieldPair
+            label={t('admin.patients.detail.identityCard.currentCoverage')}
+            value={<CoverageValue display={currentCoverageDisplay(t, patient.currentCoverage)} />}
+            testId="patient-current-coverage"
+          />
+          <FieldPair
+            label={t('admin.patients.detail.identityCard.entryDate')}
+            value={
+              patient.entryDate === undefined
+                ? t('admin.patients.detail.identityCard.unavailable')
+                : patient.currentCoverage === null && patient.entryDate === null
+                  ? t('admin.patients.detail.identityCard.noPermission')
+                  : patient.entryDate === null
+                    ? t('admin.patients.detail.identityCard.entryDateEmpty')
+                    : formatDateFromISO(patient.entryDate)
+            }
+            testId="patient-entry-date"
+          />
           <FieldPair label={t('admin.patients.detail.identityCard.lastUpdate')} value={formatDate(patient.updatedAt)} />
           {/*
            * Spec 014 US-D2 removeu "Desligamiento" porque não havia coluna (era `value={null}`

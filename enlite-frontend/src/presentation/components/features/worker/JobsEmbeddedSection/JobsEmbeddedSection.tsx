@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useMemo } from 'react';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { SearchInput } from '@presentation/components/molecules/SearchBar';
 import { PublicApiService } from '@infrastructure/http/PublicApiService';
 import { IncompleteRegistrationModal } from '@presentation/pages/public/components/IncompleteRegistrationModal';
@@ -62,7 +62,7 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
     daysAndHours: dto.schedule_days_hours ?? '',
     ageRange: formatAgeRange(dto.age_range_min, dto.age_range_max),
     profile: dto.worker_profile_sought ?? '',
-    whatsappLink: dto.whatsapp_url ?? '',
+    canApply: dto.can_apply === true,
     detailLink: dto.detail_link,
   };
 }
@@ -234,33 +234,37 @@ export const JobsEmbeddedSection = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <Select
+          <Combobox
             inputSize="compact"
             value={filterType}
-            onValueChange={setFilterType}
+            onChange={setFilterType}
             options={workerTypeOptions}
             placeholder={t('jobs.filters.workerType')}
+            aria-label={t('jobs.filters.workerType')}
           />
-          <Select
+          <Combobox
             inputSize="compact"
             value={filterProvince}
-            onValueChange={setFilterProvince}
+            onChange={setFilterProvince}
             options={provinceOptions}
             placeholder={t('jobs.filters.province')}
+            aria-label={t('jobs.filters.province')}
           />
-          <Select
+          <Combobox
             inputSize="compact"
             value={filterLocality}
-            onValueChange={setFilterLocality}
+            onChange={setFilterLocality}
             options={localityOptions}
             placeholder={t('jobs.filters.locality')}
+            aria-label={t('jobs.filters.locality')}
           />
-          <Select
+          <Combobox
             inputSize="compact"
             value={filterSex}
-            onValueChange={setFilterSex}
+            onChange={setFilterSex}
             options={sexOptions}
             placeholder={t('jobs.filters.sex')}
+            aria-label={t('jobs.filters.sex')}
           />
         </div>
 

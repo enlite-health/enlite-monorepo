@@ -40,7 +40,7 @@ const MOCK_JOBS_LEGACY = {
       daysAndHours: 'Lunes a viernes de 09:00 a 15:00 hs.',
       ageRange: '25 a 40 años',
       profile: 'AT con experiencia en salud mental.',
-      whatsappLink: 'https://wa.me/5491100000000?text=CASO+736',
+      canApply: true,
       detailLink: 'https://jobs.enlite.health/es/vagas/736/',
     },
     {
@@ -56,7 +56,7 @@ const MOCK_JOBS_LEGACY = {
       daysAndHours: 'Lunes y jueves de 11:00 a 14:00.',
       ageRange: '20 a 45 años',
       profile: 'Profesional mujer con formación en AT.',
-      whatsappLink: 'https://wa.me/5491100000000?text=CASO+732',
+      canApply: true,
       detailLink: 'https://jobs.enlite.health/es/vagas/732/',
     },
   ],
@@ -169,7 +169,7 @@ test.describe('JobsEmbeddedSection — legacy mode', () => {
     await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 20000 });
     await expect(page.getByText('lanús este', { exact: false }).first()).toBeVisible({ timeout: 10000 });
 
-    // WhatsApp / Postularse button must be present (legacy mode with whatsappLink)
+    // WhatsApp / Postularse button must be present (legacy mode with canApply (spec 067: o link não vem mais na listagem))
     const applyBtn = page.getByRole('button', { name: /postularse/i }).first();
     await expect(applyBtn).toBeVisible({ timeout: 5000 });
   });

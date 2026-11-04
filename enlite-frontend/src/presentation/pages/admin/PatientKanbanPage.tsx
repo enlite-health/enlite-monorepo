@@ -6,13 +6,13 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
-import { Select } from '@presentation/components/atoms/Select';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { useToast } from '@presentation/hooks/useToast';
 import { usePatientKanban } from '@hooks/admin/usePatientKanban';
 import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 import { friendlyStatusMessage } from '@presentation/utils/patientStatusMessages';
 import { PatientKanbanBoard } from '@presentation/components/features/admin/PatientDetail/kanban/PatientKanbanBoard';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 /** Patient lifecycle kanban page. Route: /admin/patients/kanban. */
 export function PatientKanbanPage(): JSX.Element {
@@ -20,7 +20,7 @@ export function PatientKanbanPage(): JSX.Element {
   const navigate = useNavigate();
   const showToast = useToast();
   const [country, setCountry] = useState('');
-  const { groups, isLoading, error, moveStatus } = usePatientKanban(country);
+  const { groups, isLoading, error, moveStatus, servicesStatus } = usePatientKanban(country);
   const countryOptions = getCountryOptions(t);
 
   return (
@@ -36,11 +36,11 @@ export function PatientKanbanPage(): JSX.Element {
         <div className="flex items-center gap-2" data-testid="patients-view-toggle">
           {/* 210px: cabe "Todos los países" sem cortar (ver PatientFilters) */}
           <div className="w-[210px]" data-testid="patient-country-filter">
-            <Select
+            <Combobox
               inputSize="compact"
               options={countryOptions}
               value={country}
-              onValueChange={setCountry}
+              onChange={setCountry}
               placeholder={t('admin.patients.countryOptions.all')}
             />
           </div>
@@ -76,23 +76,30 @@ export function PatientKanbanPage(): JSX.Element {
       ) : isLoading ? (
         <TableSkeleton />
       ) : (
-        <PatientKanbanBoard
-          groups={groups}
-          onMove={async (patientId, target, opts) => {
-            const err = await moveStatus(patientId, target, opts);
-            if (err) {
-              // Spec 014 (US-D5, lex D5.1): `err.code` é um CÓDIGO de enum quando o backend manda
-              // um (PatientApiError.code) — traduz com i18n; nunca eco de campo do paciente, nunca
-              // console.* com o corpo da resposta. Spec 051 (§6.4): as recusas da troca de estado
-              // saem na MESMA frase amigável da ficha (sem código técnico); o resto cai no mapa por
-              // código de antes e, por fim, no genérico.
-              const codeMessage = t(`admin.patients.kanban.moveErrorCodes.${err.code}`, { defaultValue: '' });
-              const mensagem = friendlyStatusMessage(t, err) || codeMessage || t('admin.patients.kanban.moveError');
-              showToast(mensagem, 'error');
-            }
-            return err;
-          }}
-        />
+        <>
+          {servicesStatus === 'error' && (
+            <Text size="sm" color="muted" className="mb-2" data-testid="patient-kanban-services-error">
+              {t('admin.patients.kanban.subcard.loadError')}
+            </Text>
+          )}
+          <PatientKanbanBoard
+            groups={groups}
+            onMove={async (patientId, target, opts) => {
+              const err = await moveStatus(patientId, target, opts);
+              if (err) {
+                // Spec 014 (US-D5, lex D5.1): `err.code` é um CÓDIGO de enum quando o backend manda
+                // um (PatientApiError.code) — traduz com i18n; nunca eco de campo do paciente, nunca
+                // console.* com o corpo da resposta. Spec 051 (§6.4): as recusas da troca de estado
+                // saem na MESMA frase amigável da ficha (sem código técnico); o resto cai no mapa por
+                // código de antes e, por fim, no genérico.
+                const codeMessage = t(`admin.patients.kanban.moveErrorCodes.${err.code}`, { defaultValue: '' });
+                const mensagem = friendlyStatusMessage(t, err) || codeMessage || t('admin.patients.kanban.moveError');
+                showToast(mensagem, 'error');
+              }
+              return err;
+            }}
+          />
+        </>
       )}
     </PageContainer>
   );

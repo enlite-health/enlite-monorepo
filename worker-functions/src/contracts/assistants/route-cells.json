@@ -1,0 +1,113 @@
+{
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/admin/workers/:id",
+      "cell": "worker:read",
+      "irmas": [
+        "worker_profile_read"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/workers/:id",
+      "bloco": "documents",
+      "cell": "worker_document:read",
+      "irmas": [
+        "worker_documents_read"
+      ],
+      "enforcedIn": "builder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workers/:id/encuadres",
+      "cell": "match:read",
+      "irmas": [
+        "worker_applications_read"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/workers/:id/current-interview",
+      "cell": "interview:read",
+      "irmas": [
+        "worker_interview_read"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/workers/:id/available-vacancies",
+      "cell": "vacancy:read",
+      "irmas": [
+        "worker_vacancies_read"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/vacancies/:id",
+      "cell": "vacancy:read",
+      "irmas": [
+        "vacancy_details_read"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/vacancies/:id/interview-slots",
+      "cell": "interview:read",
+      "irmas": [
+        "interview_slots_read"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/workers",
+      "cell": "worker:read",
+      "irmas": [
+        "worker_search"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/recruitment/activity-per-person",
+      "cell": "recruitment_activity_per_person:read",
+      "irmas": [
+        "recruitment_activity_per_person"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/assistants/count/workers",
+      "cell": "worker:read",
+      "irmas": [
+        "assistant_count_workers"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/assistants/count/patients",
+      "cell": "patient:read",
+      "irmas": [
+        "assistant_count_patients"
+      ],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/assistants/count/vacancies",
+      "cell": "vacancy:read",
+      "irmas": [
+        "assistant_count_vacancies"
+      ],
+      "enforcedIn": "perm.require"
+    }
+  ]
+}

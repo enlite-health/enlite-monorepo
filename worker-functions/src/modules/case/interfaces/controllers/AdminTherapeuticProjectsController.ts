@@ -25,11 +25,10 @@ import {
 } from '../../infrastructure/TherapeuticCatalogRepository';
 import { PatientCoverageEmergencyContactRepository } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
 import {
-  canWriteTherapeuticClinical,
+  missingTherapeuticClinicalWriteCell,
   projectTherapeuticVersionForActor,
   missingContactOriginCell,
   missingCoverageDirectProfessionalCell,
-  PATIENT_CLINICAL_WRITE_CELL,
   PT_WAIVE_CONTACT_CELL,
 } from '../../application/therapeuticProjectAccess';
 import type { ContactRef, ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
@@ -39,28 +38,26 @@ import {
   createCatalogItemSchemaFor,
   updateCatalogItemSchemaFor,
 } from '../validators/therapeuticProjectSchemas';
-import type { TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
+import type { AdminCatalogKind } from '../../domain/serviceExitReason';
+import { catalogItemParamsSchema, invalidBody, actorUidOf } from './catalogControllerHelpers';
+import { ServiceExitReasonReader } from '../../infrastructure/ServiceExitReasonReader';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { THERAPEUTIC_FIELD_CLASS } from '../../domain/TherapeuticProject';
 import { DiagnosisUnknownError } from '../../application/pathologySegments';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const versionParamsSchema = z.object({ id: z.string().uuid(), vid: z.string().uuid() });
-const catalogItemParamsSchema = z.object({ itemId: z.string().uuid() });
 
-const invalidBody = (res: Response, error: z.ZodError): void => {
-  // Só NOMES de campo, nunca o valor: o corpo carrega texto clínico (lex C6).
-  res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(error.flatten().fieldErrors) } });
-};
 
 /**
  * AdminTherapeuticProjectsController — o Projeto Terapêutico versionado (spec 017, D299) e os
  * seus 2 catálogos (o "tipo de patologia" deriva dos CID-11 — não é catálogo).
  *
  *   GET  /api/admin/patients/:id/therapeutic-projects              (patient_therapeutic_project:read)
- *   POST /api/admin/patients/:id/therapeutic-projects              (…:write + patient_clinical:write)
+ *   POST /api/admin/patients/:id/therapeutic-projects              (…:create + patient_clinical:create no `new`; …:create + patient_clinical:update no `edit`)
  *   GET  /api/admin/patients/:id/therapeutic-projects/:vid         (…:read; `?purpose=export` → trilha export_pdf)
- *   POST /api/admin/patients/:id/therapeutic-projects/:vid/annul   (…:write)
+ *   POST /api/admin/patients/:id/therapeutic-projects/:vid/annul   (…:update)
  *   GET/POST  /api/admin/therapeutic-catalogs/:kind                (catalog_<kind>:read|write)
  *   PATCH     /api/admin/therapeutic-catalogs/:kind/:itemId        (catalog_<kind>:write)
  *
@@ -84,6 +81,7 @@ export class AdminTherapeuticProjectsController {
     private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
     private readonly statusesInjected?: TherapeuticProjectContactStatusRepository,
     private readonly remindersInjected?: TherapeuticContactReminderRepository,
+    private readonly serviceExitReasons: ServiceExitReasonReader = new ServiceExitReasonReader(),
   ) {}
 
   private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
@@ -104,7 +102,7 @@ export class AdminTherapeuticProjectsController {
   }
 
   private actorUid(req: Request): string {
-    return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
+    return actorUidOf(req);
   }
 
   /**
@@ -204,8 +202,9 @@ export class AdminTherapeuticProjectsController {
     }
     // lex C7: o corpo É texto clínico — a célula do container clínico é cumulativa à do projeto.
     const cells = cellsOfRequest(req);
-    if (!canWriteTherapeuticClinical(cells)) {
-      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: PATIENT_CLINICAL_WRITE_CELL } });
+    const missingClinicalCell = missingTherapeuticClinicalWriteCell(cells, body.data.mode === 'new' ? 'create' : 'update');
+    if (missingClinicalCell) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: missingClinicalCell } });
       return;
     }
     // lex-pr7 §alterado: célula de escrita do projeto + célula de LEITURA da origem de cada
@@ -327,7 +326,7 @@ export class AdminTherapeuticProjectsController {
   // ── Catálogos ───────────────────────────────────────────────────────────────────────────
 
   /** GET /therapeutic-catalogs/<kind>?includeInactive=true — o `kind` vem da ROTA (célula literal), não de param. */
-  async listCatalog(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
+  async listCatalog(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     try {
       const items = await this.catalogs.list(kind, { includeInactive: req.query.includeInactive === 'true' });
       res.status(200).json({ success: true, data: { kind, items } });
@@ -338,8 +337,20 @@ export class AdminTherapeuticProjectsController {
     }
   }
 
+  /** GET /therapeutic-catalogs/service-exit-reasons/options — só ativos, para quem registra a troca (patient_services:read). */
+  async listServiceExitReasonOptions(_req: Request, res: Response): Promise<void> {
+    try {
+      const items = await this.serviceExitReasons.listActiveOptions(DatabaseConnection.getInstance().getPool());
+      res.status(200).json({ success: true, data: { items } });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminTherapeuticProjectsController:listServiceExitReasonOptions' });
+      res.status(500).json({ success: false, error: 'Failed to list service exit reason options' });
+    }
+  }
+
   /** POST /therapeutic-catalogs/<kind> — `segmentId` (430) só entra no corpo de objetivos/atividades (schema por `kind`). */
-  async createCatalogItem(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
+  async createCatalogItem(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     const body = createCatalogItemSchemaFor(kind).safeParse(req.body);
     if (!body.success) {
       invalidBody(res, body.error);
@@ -365,7 +376,7 @@ export class AdminTherapeuticProjectsController {
   }
 
   /** PATCH /therapeutic-catalogs/<kind>/:itemId */
-  async updateCatalogItem(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
+  async updateCatalogItem(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     const params = catalogItemParamsSchema.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ success: false, error: 'Invalid params' });

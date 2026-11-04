@@ -33,6 +33,7 @@ vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
 }));
 
 import { PatientExternalContactsEditDrawer } from '../PatientExternalContactsEditDrawer';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 const PATIENT_ID = 'a0000000-0000-0000-0000-000000000001';
 
@@ -53,7 +54,7 @@ describe('PatientExternalContactsEditDrawer', () => {
 
   it('carrega relação/nome/telefone do contato existente', () => {
     renderDrawer();
-    expect(screen.getByTestId('pxc-relation-0')).toHaveValue('TEACHER');
+    expect(screen.getByTestId('pxc-relation-0')).toHaveTextContent('Professor/a'); // TEACHER
     expect(screen.getByTestId('pxc-name-0')).toHaveValue('Prof. Gómez');
     expect(screen.getByTestId('pxc-phone-0')).toHaveValue('11-5555-0001');
   });
@@ -81,7 +82,7 @@ describe('PatientExternalContactsEditDrawer', () => {
   it('contato NOVO chama createExternalContact (sem id)', async () => {
     renderDrawer([]);
     fireEvent.click(screen.getByTestId('pxc-add'));
-    fireEvent.change(screen.getByTestId('pxc-relation-0'), { target: { value: 'NEIGHBOR' } });
+    chooseCombo(screen.getByTestId('pxc-relation-0'), 'Vizinho/a'); // NEIGHBOR = Vizinho/a
     fireEvent.change(screen.getByTestId('pxc-name-0'), { target: { value: 'Vecina' } });
     fireEvent.click(screen.getByTestId('pxc-save'));
     await waitFor(() => expect(createExternalContact).toHaveBeenCalledTimes(1));

@@ -7,7 +7,7 @@ import {
   canReadHourlyValue,
   hourlyValueActorOf,
   projectContractedServiceForActor,
-  bodyWritesHourlyValue,
+  redactTermForActor,
   PATIENT_CONTRACT_VALUE_READ_CELL,
   type HourlyValueActor,
 } from '../contractedServiceHourlyValueAccess';
@@ -55,62 +55,109 @@ describe('hourlyValueActorOf', () => {
   });
 });
 
-describe('projectContractedServiceForActor', () => {
-  const VAGA = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' };
-  const service = { id: 's1', hourlyValue: 1500, liveVacancy: VAGA };
-  const le: HourlyValueActor = { cells: [CELL, 'vacancy:read'], roles: null };
+const COVERAGE_CELL = 'patient_coverage:read';
+const NAMES = { providerCode: 'OSDE', providerName: 'OSDE', contractId: 'c1', contractName: 'OSDE 210', payerKind: 'OBRA_SOCIAL' as const };
+const LINKED = { state: 'LINKED' as const, isPrivate: false, validFrom: '2026-01-01', validTo: null, names: NAMES };
+const PRECO = { state: 'OK' as const, hourlyRate: 1500, currency: 'ARS' as const };
+
+function servico(over: Record<string, unknown> = {}) {
+  return {
+    id: 's1',
+    liveVacancy: { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' } as unknown,
+    payer: LINKED,
+    payerHistory: [{ linkId: 'l1', isPrivate: false, validFrom: '2026-01-01', validTo: null, names: NAMES }],
+    price: PRECO as { state: string },
+    tax: { state: 'OK', taxRatePercent: 21 },
+    coverageMatch: { state: 'MATCH' as const },
+    ...over,
+  } as never as Parameters<typeof projectContractedServiceForActor>[0] & { tax: unknown; id: string };
+}
+
+describe('redactTermForActor — §0: o preço sai só pela célula de valor', () => {
+  const le: HourlyValueActor = { cells: [CELL], roles: null };
   const naoLe: HourlyValueActor = { cells: [], roles: ['admin'] };
 
-  it('quem lê tudo: valor e vaga crus, os dois flags false', () => {
-    expect(projectContractedServiceForActor(service, le)).toEqual({
-      id: 's1', hourlyValue: 1500, hourlyValueRedacted: false, liveVacancy: VAGA, liveVacancyRedacted: false,
-    });
+  it('lista E3: currentTerm.price OK sem a célula vira REDACTED; com a célula passa cru', () => {
+    expect(redactTermForActor(PRECO, naoLe)).toEqual({ state: 'REDACTED' });
+    expect(redactTermForActor(PRECO, le)).toEqual(PRECO);
   });
 
-  it('quem não lê nada: hourlyValue e liveVacancy viram null, os dois flags true', () => {
-    expect(projectContractedServiceForActor(service, naoLe)).toEqual({
-      id: 's1', hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true,
-    });
+  it('serviço: price.state OK sem a célula vira REDACTED na projeção; com a célula passa cru', () => {
+    expect(projectContractedServiceForActor(servico(), naoLe).price).toEqual({ state: 'REDACTED' });
+    expect(projectContractedServiceForActor(servico(), le).price).toEqual(PRECO);
   });
 
-  it('hourlyValue já null (não informado) + não lê: continua null, mas com o flag', () => {
-    const out = projectContractedServiceForActor({ id: 's2', hourlyValue: null, liveVacancy: null }, naoLe);
-    expect(out).toEqual({ id: 's2', hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true });
+  it('NO_CONTRACT/NO_TERM não são redigidos (é o portão do vínculo, não o do valor) e o imposto nunca é', () => {
+    expect(redactTermForActor({ state: 'NO_CONTRACT' }, naoLe)).toEqual({ state: 'NO_CONTRACT' });
+    expect(redactTermForActor({ state: 'NO_TERM' }, naoLe)).toEqual({ state: 'NO_TERM' });
+    expect((projectContractedServiceForActor(servico(), naoLe) as unknown as { tax: unknown }).tax).toEqual({ state: 'OK', taxRatePercent: 21 });
+  });
+});
+
+describe('projectContractedServiceForActor', () => {
+  const VAGA = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' };
+  const le: HourlyValueActor = { cells: [CELL, COVERAGE_CELL, 'vacancy:read'], roles: null };
+  const naoLe: HourlyValueActor = { cells: [], roles: ['admin'] };
+
+  it('quem lê tudo: preço, nomes, divergência e vaga crus; vaga não redigida', () => {
+    const out = projectContractedServiceForActor(servico(), le);
+    expect(out).toMatchObject({ price: PRECO, payer: LINKED, coverageMatch: { state: 'MATCH' }, liveVacancy: VAGA, liveVacancyRedacted: false });
+    expect(out.payerHistory[0].names).toEqual(NAMES);
+    expect(out).not.toHaveProperty('hourlyValue');
+    expect(out).not.toHaveProperty('hourlyValueRedacted');
   });
 
-  it('as duas redações são INDEPENDENTES: sem o preço mas com vacancy:read → vaga visível, valor redigido', () => {
-    const out = projectContractedServiceForActor(service, { cells: ['vacancy:read'], roles: null });
-    expect(out.hourlyValue).toBeNull();
-    expect(out.hourlyValueRedacted).toBe(true);
+  it('sem a célula coverage: names/payerKind somem (atual e histórico) e coverageMatch vira REDACTED; isPrivate e a vigência ficam', () => {
+    const out = projectContractedServiceForActor(servico(), { cells: [CELL], roles: null });
+    expect(out.payer).toEqual({ state: 'LINKED', isPrivate: false, validFrom: '2026-01-01', validTo: null, names: null });
+    expect(out.payerHistory.map((h) => h.names)).toEqual([null]);
+    expect(out.coverageMatch).toEqual({ state: 'REDACTED' });
+    expect(JSON.stringify(out)).not.toContain('OBRA_SOCIAL');
+    expect(JSON.stringify(out)).not.toContain('OSDE');
+  });
+
+  it('sem vínculo (NO_CONTRACT) o payer passa intacto, mesmo sem a célula', () => {
+    const out = projectContractedServiceForActor(servico({ payer: { state: 'NO_CONTRACT' }, payerHistory: [] }), { cells: [], roles: null });
+    expect(out.payer).toEqual({ state: 'NO_CONTRACT' });
+  });
+
+  it('particular sem coverage: isPrivate continua visível (o decisor 1 não depende de coverage)', () => {
+    const priv = { ...LINKED, isPrivate: true, names: { ...NAMES, providerCode: 'PRIVATE', payerKind: 'PRIVATE' as const } };
+    const out = projectContractedServiceForActor(servico({ payer: priv }), { cells: [], roles: null });
+    expect(out.payer).toMatchObject({ state: 'LINKED', isPrivate: true });
+  });
+
+  it('quem não lê nada: preço REDACTED, nomes null, vaga null + flag', () => {
+    const out = projectContractedServiceForActor(servico(), naoLe);
+    expect(out.price).toEqual({ state: 'REDACTED' });
+    expect(out.liveVacancy).toBeNull();
+    expect(out.liveVacancyRedacted).toBe(true);
+  });
+
+  it('as redações são INDEPENDENTES: sem o preço mas com vacancy:read e coverage → vaga e nomes visíveis, preço redigido', () => {
+    const out = projectContractedServiceForActor(servico(), { cells: ['vacancy:read', COVERAGE_CELL], roles: null });
+    expect(out.price).toEqual({ state: 'REDACTED' });
     expect(out.liveVacancy).toEqual(VAGA);
     expect(out.liveVacancyRedacted).toBe(false);
+    expect((out.payer as { names: unknown }).names).toEqual(NAMES);
   });
 
   it('A3: a vaga projetada tem EXATAMENTE as 4 chaves (nenhum campo de dinheiro entra)', () => {
-    const out = projectContractedServiceForActor(service, { cells: ['vacancy:read'], roles: null });
+    const out = projectContractedServiceForActor(servico(), { cells: ['vacancy:read'], roles: null });
     expect(Object.keys(out.liveVacancy as object).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'status']);
   });
 
   it('A2, os DOIS lados: com vacancy:read e sem vaga → null + false; sem vacancy:read → null + true', () => {
-    const semVaga = { id: 's3', hourlyValue: null, liveVacancy: null };
+    const semVaga = servico({ liveVacancy: null });
     expect(projectContractedServiceForActor(semVaga, le)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
     expect(projectContractedServiceForActor(semVaga, naoLe)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: true });
   });
 
-  it('cells === null: o papel admin lê a vaga; recrutador não (mesmo padrão do valor-hora)', () => {
-    expect(projectContractedServiceForActor(service, { cells: null, roles: ['admin'] }).liveVacancyRedacted).toBe(false);
-    expect(projectContractedServiceForActor(service, { cells: null, roles: ['recruiter'] }).liveVacancyRedacted).toBe(true);
-    expect(projectContractedServiceForActor(service, { cells: null, roles: null }).liveVacancyRedacted).toBe(false);
-  });
-});
-
-describe('bodyWritesHourlyValue — pela CHAVE, não pelo valor', () => {
-  it('hourlyValue: null é escrita', () => {
-    expect(bodyWritesHourlyValue({ hourlyValue: null })).toBe(true);
-  });
-  it('sem a chave não é', () => {
-    expect(bodyWritesHourlyValue({ service: 'x' })).toBe(false);
-    expect(bodyWritesHourlyValue(null)).toBe(false);
-    expect(bodyWritesHourlyValue('str')).toBe(false);
+  it('cells === null: admin lê vaga e preço; recrutador não; roles null lê (mesmo padrão do valor-hora). coverage lê com cells null', () => {
+    expect(projectContractedServiceForActor(servico(), { cells: null, roles: ['admin'] }).liveVacancyRedacted).toBe(false);
+    expect(projectContractedServiceForActor(servico(), { cells: null, roles: ['recruiter'] }).liveVacancyRedacted).toBe(true);
+    expect(projectContractedServiceForActor(servico(), { cells: null, roles: null }).liveVacancyRedacted).toBe(false);
+    expect(projectContractedServiceForActor(servico(), { cells: null, roles: ['recruiter'] }).price).toEqual({ state: 'REDACTED' });
+    expect((projectContractedServiceForActor(servico(), { cells: null, roles: ['recruiter'] }).payer as { names: unknown }).names).toEqual(NAMES);
   });
 });

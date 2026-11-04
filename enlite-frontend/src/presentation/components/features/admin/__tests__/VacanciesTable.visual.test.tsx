@@ -137,9 +137,9 @@ describe('VacanciesTable — empty state colspan', () => {
     expect(emptyCell).toBeTruthy();
 
     const colspan = parseInt(emptyCell!.getAttribute('colspan') || '0');
-    // eye + case/status + última ação + 8 colunas do funil + applicants/missing = 14
+    // eye + case/status + última ação + 9 colunas do funil + applicants/missing = 15
     // e igual ao número real de <th> (a soma deixa de ser literal).
-    expect(colspan).toBe(14);
+    expect(colspan).toBe(15);
     expect(colspan).toBe(container.querySelectorAll('thead th').length);
   });
 });

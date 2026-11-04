@@ -358,6 +358,7 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
     expect(vault.objects.size).toBe(0);
     expect(vertex.received).toHaveLength(0);
 
+    clock = new Date(Date.now() + 5_000); // o vínculo é refeito DEPOIS do bloqueio (spec 083: só vínculo `linked` mais novo que o `import_blocked` reabre)
     await vincular(e.host, e.uid, e.token.replace(/^at-/, ''));
     expect(await service.importOne(e.id, clock)).toBe('done');
     expect(await row(e.id)).toMatchObject({ import_status: 'done', blocked_reason: null }); // sai do blocked → o motivo some (CHECK da 521)

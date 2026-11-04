@@ -20,15 +20,21 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   useAutoOpenDrawer(focusRequest, 'COVERAGE', () => setEditing(true));
-  // Spec 012, US-B3: as verificadas por CÓDIGO do catálogo (traduzidas); o escalar antigo
-  // (`insuranceVerified`, rótulo cru do ClickUp) só aparece quando não há código nenhum.
-  const codes = patient.insuranceVerifiedCodes ?? [];
+  // Spec 058 §4.5: DUAS linhas — a INFORMADA (`insuranceInformed`, dono único) e as VERIFICADAS (`coverage.entries`, nome do banco; o que não
+  // tem mapeamento ao catálogo é dito como tal, nunca escondido). `coverage: null` = o ator não lê o container: "sem permissão", não "vazio".
+  const coverage = patient.coverage ?? null;
+  const mappedNames = [...new Set((coverage?.entries ?? []).filter((e) => e.mapped && e.name !== null).map((e) => e.name as string))];
+  const unmapped = (coverage?.entries ?? []).filter((e) => !e.mapped).length;
   // 417 (D301.3b): `null` = sem célula (redação, D113) → "—"; AUSENTE (backend anterior à 417, deploy-skew) =
   // "não li", nunca "não tem" (D167) → indisponível, como o PDF já faz.
   const emergencyContacts = patient.coverageEmergencyContacts ?? [];
-  const verifiedLabel = codes.length > 0
-    ? codes.map((c) => t(`admin.patients.insuranceProviderOptions.${c}`, c)).join(', ')
-    : patient.insuranceVerified;
+  const verifiedParts = [
+    ...mappedNames,
+    ...(unmapped > 0 ? [t('admin.patients.detail.coverageCard.unmapped', { count: unmapped })] : []),
+  ];
+  const verifiedLabel = coverage === null
+    ? t('admin.patients.detail.coverageCard.redacted')
+    : verifiedParts.length > 0 ? verifiedParts.join(', ') : '—';
 
   return (
     <div
@@ -58,11 +64,11 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
           Antes eram duas colunas num container de ~1376px: metade da largura sem uso e a terceira
           célula sozinha na linha. */}
       <DetailRows>
-        <DetailRow label={t('admin.patients.detail.coverageCard.providerName')}>
-          <Text as="span" size="sm" color="muted">{patient.insuranceInformed ?? '—'}</Text>
+        <DetailRow label={t('admin.patients.detail.coverageCard.informed')} testId="coverage-informed">
+          <Text as="span" size="sm" color="muted">{coverage === null ? t('admin.patients.detail.coverageCard.redacted') : (patient.insuranceInformed ?? '—')}</Text>
         </DetailRow>
         <DetailRow label={t('admin.patients.detail.coverageCard.verified')} testId="coverage-verified">
-          <Text as="span" size="sm" color="muted">{verifiedLabel ?? '—'}</Text>
+          <Text as="span" size="sm" color="muted" data-testid="coverage-verified-value">{verifiedLabel}</Text>
         </DetailRow>
         <DetailRow label={t('admin.patients.detail.coverageCard.credential')}>
           <Text as="span" size="sm" color="muted">{patient.affiliateId ?? '—'}</Text>

@@ -19,6 +19,7 @@ import { InMemoryAdmissionReminderTasks } from '../../../src/modules/matching/in
 import { RecordingAdmissionWhatsApp } from '../../../src/modules/matching/infrastructure/doubles/RecordingAdmissionWhatsApp';
 import { capturingLogger } from '../../../src/modules/matching/infrastructure/doubles/admissionTestKit';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../../src/modules/matching/infrastructure/doubles/FakeTactiq';
+import { insertInterviewHost, deleteInterviewHosts } from './interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -108,7 +109,7 @@ export function definirCenariosPais(conexao: ConexaoPais, sufixo: string): void 
         await admin.query(`DELETE FROM admission_appointments WHERE patient_id = ANY($1)`, [patients]);
         await admin.query(`DELETE FROM patients WHERE id = ANY($1)`, [patients]);
       }
-      await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [[HOST_AR, HOST_BR]]);
+      await deleteInterviewHosts(admin, [HOST_AR, HOST_BR]);
       await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)', [[HOST_AR, HOST_BR]]);
       await admin.query('DELETE FROM users WHERE firebase_uid = $1', [STAFF.uid]);
     }
@@ -139,10 +140,8 @@ export function definirCenariosPais(conexao: ConexaoPais, sufixo: string): void 
         `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,$2,'admin','ACTIVE',true,$3)`,
         [STAFF.uid, STAFF.email, TENANT],
       );
-      await admin.query(
-        `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true), ($2,'Bia','BR',true)`,
-        [HOST_AR, HOST_BR],
-      );
+      await insertInterviewHost(admin, { email: HOST_AR, displayName: 'Ana', country: 'AR' });
+      await insertInterviewHost(admin, { email: HOST_BR, displayName: 'Bia', country: 'BR' });
       await admin.query(
         `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,$3,'linked'), ($2,$4,'linked')`,
         [HOST_AR, HOST_BR, `tq-ar-${sufixo}`, `tq-br-${sufixo}`],

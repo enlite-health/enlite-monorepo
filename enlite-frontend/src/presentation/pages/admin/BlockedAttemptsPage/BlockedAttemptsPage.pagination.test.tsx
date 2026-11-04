@@ -15,6 +15,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { BlockedAttemptsPage } from './BlockedAttemptsPage';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
@@ -208,8 +209,7 @@ describe('BlockedAttemptsPage — filters reset page to 1', () => {
     });
 
     // Change filter — should reset page to 1
-    const select = screen.getByRole('combobox');
-    await user.selectOptions(select, 'worker_disabled');
+    await selectCombo(screen.getByRole('combobox'), 'admin.blockedAttempts.reason.worker_disabled'); // worker_disabled
 
     await waitFor(() => {
       const calls = mockUseBlockedAttempts.mock.calls;

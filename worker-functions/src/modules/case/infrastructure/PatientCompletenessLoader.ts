@@ -1,4 +1,6 @@
 import type { PoolClient } from 'pg';
+import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+import { activeDiagnosisCountSql } from '@shared/sql/patientDiagnosisSql';
 import {
   computePatientCompleteness,
   type PatientCompletenessResult,
@@ -30,11 +32,13 @@ export async function loadPatientCompleteness(
     active_service_count: string;
     services_without_address_count: string;
     services_without_schedule_count: string;
+    status: string | null;
+    active_diagnosis_count: string;
   }>(
     `SELECT
        p.birth_date,
        p.has_consent,
-       COALESCE(p.insurance_informed, p.health_insurance_name) AS insurance_informed,
+       p.insurance_informed AS insurance_informed,
        (SELECT COUNT(*) FROM patient_addresses pa
          WHERE pa.patient_id = p.id AND pa.archived_at IS NULL)      AS active_address_count,
        -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como
@@ -49,12 +53,16 @@ export async function loadPatientCompleteness(
                  ON pa.id = pcs.address_id AND pa.archived_at IS NULL
          WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
                                                                      AS services_without_address_count,
-       -- serviço ativo sem horário: NULL ou array vazio (decisão do Gabriel 07/09). O
-       -- jsonb_array_length não é redundante — o CHECK pcs_schedule_is_array aceita '[]'.
+       -- serviço ativo sem horário: nenhuma faixa vigente hoje (decisão do Gabriel 07/09; spec 056: fragmento único).
        (SELECT COUNT(*) FROM patient_contracted_services pcs
          WHERE pcs.patient_id = p.id AND pcs.active
-           AND (pcs.schedule IS NULL OR jsonb_array_length(pcs.schedule) = 0))
-                                                                     AS services_without_schedule_count
+           AND ${serviceWithoutScheduleSql('pcs')})
+                                                                     AS services_without_schedule_count,
+       p.status,
+       -- Diagnóstico CID-11 (pedido do Javier): SÓ a contagem de linhas ATIVAS, de qualquer source
+       -- (PANEL/CLICKUP/BACKFILL). O valor (texto clínico) nunca é selecionado. RLS de patient_diagnoses
+       -- (migration 413) = "paciente-pai visível": não depende de célula clínica do ator.
+       ${activeDiagnosisCountSql('p.id')}                             AS active_diagnosis_count
      FROM patients p
     WHERE p.id = $1 AND p.deleted_at IS NULL`,
     [patientId],
@@ -74,5 +82,7 @@ export async function loadPatientCompleteness(
     activeContractedServiceCount: Number(row.active_service_count),
     activeContractedServicesWithoutAddressCount: Number(row.services_without_address_count),
     activeContractedServicesWithoutScheduleCount: Number(row.services_without_schedule_count),
+    status: row.status,
+    activeDiagnosisCount: Number(row.active_diagnosis_count),
   });
 }

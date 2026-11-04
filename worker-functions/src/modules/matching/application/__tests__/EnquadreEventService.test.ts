@@ -112,11 +112,12 @@ function build(script: Script, opts: { tactiq?: TactiqLinkState; env?: Record<st
   const db = fakeDb(script);
   const calendar = new FakeAdmissionCalendar();
   const hostEmail = opts.hostEmail ?? HOST_EMAIL;
+  const listHostsMock = jest.fn(async (_country: string, _flow: string) => [{ id: HOST_ID, email: hostEmail, displayName: 'Entrevistadora Ficticia A' }]);
   const tactiqState = opts.tactiq ?? 'linked';
   const deps: EnquadreEventServiceDeps = {
     db: db.pool as never,
     calendar,
-    hosts: { listActiveWithIdByCountry: async () => [{ id: HOST_ID, email: hostEmail, displayName: 'Entrevistadora Ficticia A' }] },
+    hosts: { listActiveWithIdByCountry: listHostsMock },
     tactiq: { statesFor: async (emails: string[]) => new Map(emails.map((e) => [e.toLowerCase(), tactiqState])) },
     decryptor: { decrypt: async (c) => c ?? '' },
     env: opts.env ?? { ENQUADRE_CALENDAR_ID_AR: 'cal-ar@group.example.test', ENQUADRE_GUEST_POLICY: 'all' },
@@ -124,7 +125,7 @@ function build(script: Script, opts: { tactiq?: TactiqLinkState; env?: Record<st
     now: () => opts.now ?? new Date('2026-10-14T12:00:00.000Z'),
     calendarRetryDelaysMs: [],
   };
-  return { service: new EnquadreEventService(deps), calendar, db };
+  return { service: new EnquadreEventService(deps), calendar, db, listHostsMock };
 }
 
 const INPUT = { hostId: HOST_ID, startsAt: '2026-10-16T14:00', durationMinutes: 60, workerIds: [W1, W2] };
@@ -153,7 +154,7 @@ describe('createEvent — o que sai para o Google', () => {
     expect(sent.endISO).toBe('2026-10-16T15:00:00.000-03:00');
   });
 
-  it('(2) o título casa titleHasExactCode com o código gravado e leva nº do caso e sobrenome', async () => {
+  it('(2) o título casa titleHasExactCode com o código gravado, leva nº do caso e NÃO leva o sobrenome do paciente', async () => {
     const { service, calendar, db } = build({ available: TWO_WORKERS });
     await service.createEvent(VACANCY_ID, INPUT, ACTOR);
 
@@ -163,7 +164,9 @@ describe('createEvent — o que sai para o Google', () => {
     const title = calendar.created[0].summary;
     expect(titleHasExactCode(title, code)).toBe(true);
     expect(title).toContain('Caso 321');
-    expect(title).toContain('Sobrenome Ficticio');
+    // O mock da vaga devolve `patient_last_name` de propósito: mesmo que a consulta volte a trazer o sobrenome, o título não o leva.
+    expect(title).not.toContain('Sobrenome Ficticio');
+    expect(title).toBe(`Encuadre terapéutico — Caso 321 · ${code}`);
   });
 
   it('o evento sai com id fixo derivado do id do evento e a transação TERMINA em COMMIT, depois de gravar id e link', async () => {
@@ -408,7 +411,10 @@ describe('leitura', () => {
   });
 
   it('listHosts: linked só quando apto; senão unlinked; id estável; sem e-mail na resposta', async () => {
-    const linked = await build({ available: [] }).service.listHosts(VACANCY_ID);
+    const built = build({ available: [] });
+    const linked = await built.service.listHosts(VACANCY_ID);
+    // spec 055: o enquadre lê o roster do FLUXO enquadre (nunca o da admissão).
+    expect(built.listHostsMock).toHaveBeenCalledWith(expect.any(String), 'enquadre');
     expect(linked).toEqual([{ id: HOST_ID, name: 'Entrevistadora Ficticia A', linkState: 'linked' }]);
     const broken = await build({ available: [] }, { tactiq: 'broken' }).service.listHosts(VACANCY_ID);
     expect(broken[0].linkState).toBe('unlinked');
@@ -423,6 +429,10 @@ describe('leitura', () => {
 
     const busy = build({ available: [] }, { hostEmail: `${FAKE_BUSY_EMAIL_PREFIX}anfitriona@example.test` });
     expect(await busy.service.listHostFreeSlots(VACANCY_ID, HOST_ID, '2026-10-15', 60)).toEqual([]);
+
+    // duração de 30 min: a grade anda de meia em meia hora
+    const half = await build({ available: [] }).service.listHostFreeSlots(VACANCY_ID, HOST_ID, '2026-10-15', 30);
+    expect(half).toContain('09:30');
 
     // sábado: sem expediente, e a grade NÃO "empurra" para a segunda-feira
     expect(await build({ available: [] }).service.listHostFreeSlots(VACANCY_ID, HOST_ID, '2026-10-17', 60)).toEqual([]);

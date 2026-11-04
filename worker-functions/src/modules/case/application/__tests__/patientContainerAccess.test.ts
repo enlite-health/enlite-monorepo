@@ -13,6 +13,8 @@ import {
   patientContainerCell,
   patientContainerReadsOf,
   projectCompletenessByContainers,
+  exposeBlockingCodes,
+  exposeBlockingMessage,
   projectPatientDetailByContainers,
   projectPatientListItemByContainers,
   servedPatientContainers,
@@ -82,6 +84,18 @@ describe('projectPatientDetailByContainers', () => {
     const com = projectPatientDetailByContainers(comLista, ['patient:read', 'patient_coverage:read']);
     expect((com as Record<string, unknown>).coverageEmergencyContacts).toEqual([{ id: 'c1', kind: 'AMBULANCE', name: 'A', phone: '1', sortOrder: 0 }]);
     expect(com.redacted).not.toHaveProperty('coverage');
+  });
+
+  it('services sem a célula => currentCoverage e entryDate null + redacted.services', () => {
+    const comDerivados = { ...ficha, currentCoverage: { providers: [{ code: 'OSDE', name: 'OSDE' }], privateServices: 0, hiddenServices: 0, unlinkedServices: 0, activeServices: 1 }, entryDate: '2025-01-01' };
+    const sem = projectPatientDetailByContainers(comDerivados, ['patient:read', 'patient_identity:read']);
+    expect(sem.currentCoverage).toBeNull();
+    expect(sem.entryDate).toBeNull();
+    expect(sem.redacted).toHaveProperty('services', true);
+    const com = projectPatientDetailByContainers(comDerivados, ['patient:read', 'patient_services:read']);
+    expect(com.currentCoverage).toEqual(comDerivados.currentCoverage);
+    expect(com.entryDate).toBe('2025-01-01');
+    expect(com.redacted).not.toHaveProperty('services');
   });
 
   it('spec 017 — therapeuticProject: sem célula o marcador sai; com ela, nada muda na ficha (não há campo)', () => {
@@ -223,6 +237,48 @@ describe('projectCompletenessByContainers — C4', () => {
   it('código desconhecido não é filtrado (fail-open para a lista de códigos crescer)', () => {
     const out = projectCompletenessByContainers({ ...completeness, missing: ['NOVO'], blocking: [] }, ['patient:read']);
     expect(out.missing).toEqual(['NOVO']);
+  });
+});
+
+describe('DIAGNOSIS na completude e nos 422 — "sem diagnóstico" é dado clínico (pedido do Javier)', () => {
+  const comDiag = { missing: ['ADDRESS', 'DIAGNOSIS'], blocking: ['ADDRESS'], ready: false, canActivate: false };
+  const LE = ['patient:read', 'patient_address:read', 'patient_clinical:read'];
+  const NAO_LE = ['patient:read', 'patient_address:read'];
+
+  it('quem lê patient_clinical recebe DIAGNOSIS (o mesmo objeto, sem cópia)', () => {
+    expect(projectCompletenessByContainers(comDiag, LE)).toBe(comDiag);
+    expect(projectCompletenessByContainers(comDiag, null)).toBe(comDiag);
+  });
+
+  it('quem NÃO lê recebe CLINICAL_DATA no lugar (mesma posição) — a pendência aparece, o nome clínico não; ready segue false', () => {
+    const out = projectCompletenessByContainers(comDiag, NAO_LE);
+    expect(out.missing).toEqual(['ADDRESS', 'CLINICAL_DATA']);
+    expect(out.ready).toBe(false);
+    expect(JSON.stringify(out)).not.toContain('DIAGNOSIS');
+  });
+
+  it('o CONSENT (clínico) segue sumindo para quem não lê, e o genérico não o duplica', () => {
+    const out = projectCompletenessByContainers({ ...comDiag, missing: ['CONSENT', 'DIAGNOSIS'] }, NAO_LE);
+    expect(out.missing).toEqual(['CLINICAL_DATA']);
+  });
+
+  it('exposeBlockingCodes: DIAGNOSIS → CLINICAL_DATA só para quem não lê o container clínico; os demais códigos passam intactos', () => {
+    expect(exposeBlockingCodes(['ADDRESS', 'DIAGNOSIS'], NAO_LE)).toEqual(['ADDRESS', 'CLINICAL_DATA']);
+    expect(exposeBlockingCodes(['ADDRESS', 'DIAGNOSIS'], LE)).toEqual(['ADDRESS', 'DIAGNOSIS']);
+    expect(exposeBlockingCodes(['DIAGNOSIS'], null)).toEqual(['DIAGNOSIS']);
+    expect(exposeBlockingCodes(['DIAGNOSIS'], [])).toEqual(['CLINICAL_DATA']);
+  });
+
+  it('exposeBlockingMessage: a mensagem do erro também não cita DIAGNOSIS para quem não lê', () => {
+    const msg = 'Patient not ready for status SEARCHING: falta ADDRESS, DIAGNOSIS';
+    expect(exposeBlockingMessage(msg, NAO_LE)).toBe('Patient not ready for status SEARCHING: falta ADDRESS, CLINICAL_DATA');
+    expect(exposeBlockingMessage(msg, LE)).toBe(msg);
+  });
+
+  it('a contagem de diagnósticos ativos é do container clínico: sai null para quem não lê (um 0 diria "sem diagnóstico")', () => {
+    const out = projectPatientDetailByContainers({ ...ficha, activeDiagnosisCount: 0 }, NAO_LE);
+    expect(out.activeDiagnosisCount).toBeNull();
+    expect(projectPatientDetailByContainers({ ...ficha, activeDiagnosisCount: 0 }, LE).activeDiagnosisCount).toBe(0);
   });
 });
 

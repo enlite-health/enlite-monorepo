@@ -26,6 +26,9 @@ import { VacancyScheduleEditModal } from '@presentation/components/features/admi
 import { VacancyDescriptionEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyDescriptionEditModal';
 import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { VacancyBajaConfirmDialog } from '@presentation/components/features/admin/VacancyBajaConfirmDialog';
+import { bajaErrorMessage, vacancyUpdateErrorMessage } from '@presentation/components/features/admin/vacancyBajaMessages';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
 import { EnquadreTab } from '@presentation/components/features/admin/VacancyDetail/Enquadre/EnquadreTab';
@@ -38,6 +41,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { screenById } from '@presentation/config/screenRegistry';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { useVacancyTabParam } from './VacancyDetail/useVacancyTabParam';
 
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -49,7 +53,12 @@ export default function VacancyDetailPage() {
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
+  // Spec 084 F1: dar baixa na ficha (só vaga SEM serviço; sem "reativar" — R17).
+  const canBaja = useActionGate('vacancy', 'update').allowed;
+  const [bajaOpen, setBajaOpen] = useState(false);
+  const [bajaWorking, setBajaWorking] = useState(false);
+  const [bajaError, setBajaError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useVacancyTabParam();
   const [showPublishedRedirectBanner, setShowPublishedRedirectBanner] = useState(false);
   // D286: uma aba existe se algum container dela for legível (Encuadres = funil/match/convites,
   // Talentum = prescreening/talentum, Links = a vaga). O card Paciente é célula do PACIENTE.
@@ -76,10 +85,24 @@ export default function VacancyDetailPage() {
       await AdminApiService.updateVacancy(id, { status: next });
       await refetch();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setStatusError(msg);
+      setStatusError(vacancyUpdateErrorMessage(err, t));
     } finally {
       setStatusSaving(false);
+    }
+  };
+
+  const handleConfirmBaja = async (): Promise<void> => {
+    if (!id) return;
+    setBajaWorking(true);
+    setBajaError(null);
+    try {
+      await AdminApiService.bajaVacancies([id]);
+      setBajaOpen(false);
+      await refetch();
+    } catch (err) {
+      setBajaError(bajaErrorMessage(err, t, 'admin.vacancyDetail.baja'));
+    } finally {
+      setBajaWorking(false);
     }
   };
 
@@ -115,6 +138,17 @@ export default function VacancyDetailPage() {
         ? `${t('admin.vacancyDetail.case')} ${formatCaseNumber(vacancy.case_number)}${patientName ? ` — ${patientName}` : ''}`
         : vacancy.title ?? t('admin.vacancyDetail.vacancy');
 
+  // Spec 084 (P4/R17): vaga dada de baja é SÓ CONSULTA — sem seletor de status, sem "dar baixa", Kanban e Match em leitura.
+  const isDeBaja = vacancy.status === 'DE_BAJA';
+  const hasService = !!vacancy.contracted_service_id;
+  const showBajaButton = canBaja && !isDeBaja && !hasService;
+  // R13: o texto acompanha o estado (pausar à mão × retomar à mão × pendente) — nunca o mesmo aviso para os três.
+  const talentumNoteKey: string | null =
+    vacancy.talentum_pause_state === 'MANUAL_PAUSE' ? 'talentumManual'
+      : vacancy.talentum_pause_state === 'MANUAL_RESUME' ? 'talentumManualResume'
+        : vacancy.talentum_pause_state === 'PENDING_PAUSE' || vacancy.talentum_pause_state === 'PENDING_RESUME' ? 'talentumPending'
+          : null;
+
   const publications: Array<{
     channel: string | null;
     published_at: string | null;
@@ -146,6 +180,26 @@ export default function VacancyDetailPage() {
         </div>
       )}
 
+      {isDeBaja && (
+        <div
+          className="mb-6 bg-gray-100 border border-gray-400 rounded-xl px-5 py-4"
+          role="status"
+          data-testid="vacancy-de-baja-banner"
+        >
+          <Text size="sm" weight="semibold" color="primary">{t('admin.vacancyDetail.baja.readOnlyBanner')}</Text>
+          <Text size="sm" color="secondary" className="mt-1">{t('admin.vacancyDetail.baja.readOnlyDetail')}</Text>
+        </div>
+      )}
+      {talentumNoteKey && (
+        <div
+          className="mb-6 bg-amber-50 border border-amber-300 rounded-xl px-5 py-3"
+          role="status"
+          data-testid="vacancy-talentum-manual-note"
+        >
+          <Text size="sm" color="inherit" className="text-amber-900">{t(`admin.vacancyDetail.baja.${talentumNoteKey}`)}</Text>
+        </div>
+      )}
+
       {/* O serviço contratado mudou com a vaga publicada: só avisa; "marcar como atendido" fecha o campo. */}
       <VacancySourceChangeNoticeBanner
         vacancyId={vacancy.id ?? id!}
@@ -170,6 +224,18 @@ export default function VacancyDetailPage() {
             {pageTitle}
           </Heading>
         </div>
+        {/* Spec 041 R4 (DEC-04, Q1): atalho para a aba Itinerario do paciente da vaga. Só navega — a
+            aba é do container `patient_services` e a ficha aplica o gate dela. */}
+        {vacancy.patient_id && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="vacancy-view-patient-itinerary"
+            onClick={() => navigate(`/admin/patients/${vacancy.patient_id}?tab=itinerary${vacancy.contracted_service_id ? `&serviceId=${vacancy.contracted_service_id}` : ''}`)}
+          >
+            {t('admin.vacancyDetail.viewPatientItinerary')}
+          </Button>
+        )}
       </div>
 
       {/* Linha 1: assimétrica — coluna esquerda fixa 404px, direita flex-1 */}
@@ -194,9 +260,23 @@ export default function VacancyDetailPage() {
             providersNeeded={vacancy.providers_needed ?? null}
             publishedAt={vacancy.created_at ?? null}
             closedAt={vacancy.closed_at ?? null}
-            onStatusChange={handleStatusChange}
+            onStatusChange={isDeBaja ? undefined : handleStatusChange}
             isStatusSaving={statusSaving}
+            hasService={hasService}
+            statusBeforeHold={vacancy.status_before_hold ?? null}
           />
+          {showBajaButton && (
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="vacancy-baja-button"
+                onClick={() => { setBajaError(null); setBajaOpen(true); }}
+              >
+                {t('admin.vacancyDetail.baja.button')}
+              </Button>
+            </div>
+          )}
           {statusError && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
               <Text size="sm" color="inherit" className="text-red-600">
@@ -209,7 +289,6 @@ export default function VacancyDetailPage() {
               firstName={vacancy.patient_first_name ?? null}
               lastName={vacancy.patient_last_name ?? null}
               zone={vacancy.patient_zone ?? null}
-              insuranceVerified={vacancy.insurance_verified ?? null}
             />
           </ContainerGate>
         </div>
@@ -238,6 +317,10 @@ export default function VacancyDetailPage() {
           scheduleServicePatientId={
             vacancy.locked_fields?.includes('schedule') ? (vacancy.patient_id ?? null) : null
           }
+          // 057 (D523): profissão/sexo/experiência/pagamento vêm do serviço → link para a ficha.
+          recruitmentServicePatientId={
+            vacancy.locked_fields?.includes('required_sex') ? (vacancy.patient_id ?? null) : null
+          }
           onEditDescription={() => setShowDescriptionModal(true)}
         />
       </div>
@@ -254,7 +337,7 @@ export default function VacancyDetailPage() {
       {/* Tab content */}
       {shownTab === 'encuadres' && (
         <div className="mb-6">
-          <VacancyFunnelView vacancyId={id!} vacancy={vacancy} />
+          <VacancyFunnelView vacancyId={id!} vacancy={vacancy} readOnly={isDeBaja} />
         </div>
       )}
 
@@ -333,6 +416,17 @@ export default function VacancyDetailPage() {
         <div className="mb-6">
           <VacancyNotesPanel vacancyId={id!} />
         </div>
+      )}
+
+      {bajaOpen && (
+        <VacancyBajaConfirmDialog
+          variant="detail"
+          count={1}
+          isWorking={bajaWorking}
+          error={bajaError}
+          onConfirm={handleConfirmBaja}
+          onCancel={() => setBajaOpen(false)}
+        />
       )}
 
       {vacancy && id && (

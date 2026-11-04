@@ -14,10 +14,9 @@ import { GroupSimulationSelect } from '../GroupSimulationSelect';
  * CORREÇÃO DE TERRENO (L15, 23/09, decisão do Gabriel): este projeto é
  * Tailwind + lucide-react + átomos da casa — NÃO MUI, e nenhuma dependência
  * nova entra. Ajuste MÍNIMO neste arquivo (era RED com MUI presumido):
- *  - `Select` é o átomo `@presentation/components/atoms/Select` — um
- *    `<select>` NATIVO (role `combobox`, todas as `<option>` já no DOM, sem
- *    popup/portal). Escolher opção é `userEvent.selectOptions`, não
- *    click+click.
+ *  - O seletor é o `Combobox` (spec 070, `atoms/Combobox`): o gatilho é um
+ *    `button` com role `combobox` e as opções só existem no DOM com o painel
+ *    ABERTO. Escolher opção é clicar o gatilho e clicar a opção pelo rótulo.
  *  - Sem átomo de Tooltip na casa (`ls atoms molecules | grep -i tooltip` →
  *    vazio): o estado desabilitado usa o atributo `title` nativo do HTML no
  *    wrapper, testável direto (sem hover), em vez de `role="tooltip"`.
@@ -44,6 +43,13 @@ vi.mock('react-i18next', () => ({
     t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k),
   }),
 }));
+
+/** Abre o painel do gatilho (achado pelo nome acessível) e clica a opção pelo rótulo, como a pessoa faz. */
+async function escolher(label: string): Promise<void> {
+  await userEvent.click(screen.getByRole('combobox', { name: 'access.simulation.select' }));
+  const opcao = await screen.findByRole('option', { name: label }); // espera o fetch de listSimulatableGroups popular as opções
+  await userEvent.click(opcao.querySelector('button')!);
+}
 
 const GRUPOS = [
   { id: 'g-recl', name: 'Reclutamiento - AG' },
@@ -123,7 +129,8 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     expect(select).toBeEnabled();
     await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
 
-    // `<select>` nativo: as opções já estão no DOM, sem precisar "abrir" nada.
+    // as opções só existem com o painel aberto
+    await userEvent.click(select);
     expect(await screen.findByRole('option', { name: 'Reclutamiento - AG' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Finanzas - AG' })).toBeInTheDocument();
   });
@@ -157,9 +164,9 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
   });
 
   it('com simulação ativa: o IconButton de sair aparece, e clicar chama endSimulation()', async () => {
-    const { endSimulation } = montarStore({ authz: contrato({ simulation: SIMULACAO }) });
+    const { endSimulation, listSimulatableGroups } = montarStore({ authz: contrato({ simulation: SIMULACAO }) });
     render(<GroupSimulationSelect />);
-    await screen.findByRole('option', { name: 'Reclutamiento - AG' });
+    await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
 
     const sair = screen.getByRole('button', { name: 'access.simulation.exit' });
     await userEvent.click(sair);
@@ -171,9 +178,7 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     const { startSimulation } = montarStore();
     render(<GroupSimulationSelect />);
 
-    const select = screen.getByRole('combobox', { name: 'access.simulation.select' });
-    await screen.findByRole('option', { name: 'Finanzas - AG' }); // espera o fetch de listSimulatableGroups popular as opções
-    await userEvent.selectOptions(select, 'g-fin');
+    await escolher('Finanzas - AG');
 
     await waitFor(() => expect(startSimulation).toHaveBeenCalledWith('g-fin', 'Finanzas - AG'));
   });
@@ -189,25 +194,26 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
   });
 
-  it('cobertura T3.7: selecionar o placeholder (value vazio) não chama startSimulation', async () => {
+  it('cobertura T3.7: abrir o painel e fechar sem escolher (valor vazio) não chama startSimulation', async () => {
     const { startSimulation } = montarStore();
     render(<GroupSimulationSelect />);
 
-    const select = screen.getByRole('combobox', { name: 'access.simulation.select' });
+    await userEvent.click(screen.getByRole('combobox', { name: 'access.simulation.select' }));
     await screen.findByRole('option', { name: 'Finanzas - AG' });
-    await userEvent.selectOptions(select, '');
+    await userEvent.keyboard('{Escape}');
 
     expect(startSimulation).not.toHaveBeenCalled();
   });
 
-  it('cobertura T3.7: listSimulatableGroups() rejeitando não quebra — grupos ficam vazios (sem opções além do placeholder)', async () => {
+  it('cobertura T3.7: listSimulatableGroups() rejeitando não quebra — grupos ficam vazios (sem opções)', async () => {
     const listSimulatableGroups = vi.fn().mockRejectedValue(new Error('rede caiu'));
     montarStore({ listSimulatableGroups });
     render(<GroupSimulationSelect />);
 
     await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
-    // só o placeholder — nenhuma opção de grupo populada.
-    expect(screen.queryAllByRole('option')).toHaveLength(1);
+    // nenhuma opção de grupo populada: o painel abre sem linhas
+    await userEvent.click(screen.getByRole('combobox', { name: 'access.simulation.select' }));
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
   });
 
   it('cobertura T3.7: startSimulation rejeitando com AuthzActionError("group_not_simulable") mostra o texto inline pela chave certa', async () => {
@@ -215,9 +221,7 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     montarStore({ startSimulation });
     render(<GroupSimulationSelect />);
 
-    const select = screen.getByRole('combobox', { name: 'access.simulation.select' });
-    await screen.findByRole('option', { name: 'Finanzas - AG' });
-    await userEvent.selectOptions(select, 'g-fin');
+    await escolher('Finanzas - AG');
 
     expect(await screen.findByText('access.simulation.groupNotSimulable')).toBeInTheDocument();
   });
@@ -244,9 +248,8 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     const { listSimulatableGroups } = montarStore({ authz: contrato({ simulation: SIMULACAO }) });
     render(<GroupSimulationSelect />);
 
-    await screen.findByRole('option', { name: 'Reclutamiento - AG' });
-    expect(screen.getByRole('button', { name: 'access.simulation.exit' })).toBeEnabled();
     await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'access.simulation.exit' })).toBeEnabled();
   });
 
   it('cobertura T3.7: startSimulation rejeitando com erro genérico (sem code) não mostra o texto de groupNotSimulable', async () => {
@@ -254,9 +257,7 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     montarStore({ startSimulation });
     render(<GroupSimulationSelect />);
 
-    const select = screen.getByRole('combobox', { name: 'access.simulation.select' });
-    await screen.findByRole('option', { name: 'Finanzas - AG' });
-    await userEvent.selectOptions(select, 'g-fin');
+    await escolher('Finanzas - AG');
 
     await waitFor(() => expect(startSimulation).toHaveBeenCalledWith('g-fin', 'Finanzas - AG'));
     expect(screen.queryByText('access.simulation.groupNotSimulable')).not.toBeInTheDocument();

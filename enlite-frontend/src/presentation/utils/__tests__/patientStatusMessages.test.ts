@@ -34,6 +34,12 @@ describe('friendlyStatusMessage', () => {
     expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_NOT_READY', to: 'ACTIVE', missing: 'ADDRESS' as never })).toBe(generic);
   });
 
+  it('alocação viva no itinerário (D489/D530): frase fixa, sem código técnico', () => {
+    const m = friendlyStatusMessage(t, { code: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION', to: 'ON_HOLD' })!;
+    expect(m).toBe('No se puede cambiar el estado: el paciente tiene prestador asignado en el itinerario. Quitá al prestador del itinerario primero.');
+    expect(m).not.toMatch(/PATIENT_STATUS|ACTIVE_ALLOCATION/);
+  });
+
   it('motivos obrigatórios, destino indisponível e lista ilegível', () => {
     expect(friendlyStatusMessage(t, { code: 'ON_HOLD_REASON_REQUIRED' })).toBe('Para dejar al paciente «En espera» indica el motivo (escuela, obra social u otro).');
     expect(friendlyStatusMessage(t, { code: 'SUSPENSION_EXIT_REASON_REQUIRED' })).toBe('Para sacar al paciente de «Suspendido» elige el motivo.');

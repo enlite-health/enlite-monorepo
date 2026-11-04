@@ -18,6 +18,7 @@ import i18n from 'i18next';
 import es from '@infrastructure/i18n/locales/es.json';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import AdmisionPage from '../AdmisionPage';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 const mockGetSlots = vi.fn();
 const mockCreateLead = vi.fn();
@@ -36,7 +37,7 @@ vi.mock('@infrastructure/http/LeadsApiService', () => ({
  * garante que o estado vazio aparece onde ele de fato aparece.
  */
 async function chegarNaTelaDeHorarios(): Promise<void> {
-  fireEvent.change(screen.getByTestId('lead-serviceType'), { target: { value: 'cuidadores' } });
+  chooseCombo(screen.getByTestId('lead-serviceType'), /cuidadores/i); // cuidadores = Cuidadores
   fireEvent.click(screen.getByTestId('lead-requesterType-patient'));
   // D249: nome e sobrenome são obrigatórios — sem isto o submit nem sai.
   fireEvent.change(screen.getByTestId('lead-name'), { target: { value: 'Paciente Ejemplo' } });

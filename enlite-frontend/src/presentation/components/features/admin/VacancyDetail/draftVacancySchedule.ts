@@ -49,28 +49,15 @@ export function formatScheduleTime(value: string): string {
   return minutes === '00' ? hour : `${hour}:${minutes}`;
 }
 
-function parseHHMMToMinutes(value: string): number | null {
-  const m = value.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (Number.isNaN(h) || Number.isNaN(min)) return null;
-  return h * 60 + min;
-}
-
-/** Total de horas/semana somando todos os blocos de todos os dias — trata virada de meia-noite. */
-export function weeklyHoursFromSchedule(schedule: NormalizedSchedule | null | undefined): number {
-  if (!schedule) return 0;
-  let totalMinutes = 0;
-  for (const blocks of Object.values(schedule)) {
-    for (const { start, end } of blocks) {
-      const from = parseHHMMToMinutes(start);
-      const to = parseHHMMToMinutes(end);
-      if (from === null || to === null) continue;
-      totalMinutes += to > from ? to - from : 24 * 60 - from + to;
-    }
-  }
-  return Math.round((totalMinutes / 60) * 100) / 100;
+/**
+ * Achata a forma por dia em `{ startTime, endTime }[]` — a entrada de `weeklyHoursOf`
+ * (`@domain/scheduleHours`, a ÚNICA soma de horas do front; spec 056 §4.8). Fim ≤ início = dia seguinte.
+ */
+export function normalizedScheduleToShifts(
+  schedule: NormalizedSchedule | null | undefined,
+): Array<{ startTime: string; endTime: string }> {
+  if (!schedule) return [];
+  return Object.values(schedule).flatMap((blocks) => blocks.map(({ start, end }) => ({ startTime: start, endTime: end })));
 }
 
 /** Quantos dias distintos têm ao menos 1 bloco — o "en 6 días" do protótipo v3. */

@@ -14,6 +14,7 @@
  */
 
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // ── Mock identities ──────────────────────────────────────────────────────────
 
@@ -393,20 +394,18 @@ test.describe('Worker Tags @integration', () => {
 
     await expect(page.getByText('lucia.fernandez@example.com').first()).toBeVisible({ timeout: 20_000 });
 
-    // The Select atom renders a native <select>. Locate it inside the profile filter row.
+    // O Combobox é um gatilho (button role=combobox). Locate it inside the profile filter row.
     const profileRow = page.getByTestId('worker-profile-filters');
     await expect(profileRow).toBeVisible({ timeout: 10_000 });
 
-    // First native <select> in the profile row is the Profesión filter.
-    const professionSelect = profileRow.locator('select').first();
+    // First combobox in the profile row is the Profesión filter.
+    const professionSelect = profileRow.getByRole('combobox').first();
     await expect(professionSelect).toBeVisible({ timeout: 10_000 });
 
-    // Verify the options exist by their values (native <select> options accessible via selectOption).
-    await professionSelect.selectOption('AT');
-    await expect(professionSelect).toHaveValue('AT');
+    // Verify the options exist by their labels (escolherNoCombo confere o rótulo no gatilho).
+    await escolherNoCombo(page, professionSelect, 'AT'); // AT = AT
 
-    await professionSelect.selectOption('CAREGIVER');
-    await expect(professionSelect).toHaveValue('CAREGIVER');
+    await escolherNoCombo(page, professionSelect, 'Cuidador'); // CAREGIVER = Cuidador
 
     await expect(page).toHaveScreenshot('worker-list-profile-filters-open.png', {
       fullPage: true,

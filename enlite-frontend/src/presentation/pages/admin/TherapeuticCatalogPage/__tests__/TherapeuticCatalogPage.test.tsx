@@ -10,12 +10,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { expectNoRawEnumLeaks } from '../../../../../test/rawEnumLeakGuard';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { TherapeuticCatalogItem, TherapeuticCatalogKind } from '@domain/entities/TherapeuticProject';
 
-type ManagedCatalogKind = TherapeuticCatalogKind;
+// Mesmo conjunto da tela: os 3 catálogos do projeto terapêutico (inclui `segments`, spec 030) + motivos de saída.
+type ManagedCatalogKind = TherapeuticCatalogKind | 'service-exit-reasons' | 'service-shift-templates';
 
 const translations = ptBR as Record<string, any>;
 
@@ -35,11 +37,18 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 const listCatalog = vi.fn();
 const createCatalogItem = vi.fn();
 const updateCatalogItem = vi.fn();
+// Guardia predefinida (spec 074): 3 turnos, o último atravessa a meia-noite.
+const TEMPLATE = {
+  id: 'ativa', code: 'G6_6_12', label: 'Guardia 6 + 6 + 12', active: true,
+  items: [{ startTime: '08:00', durationMinutes: 360 }, { startTime: '14:00', durationMinutes: 360 }, { startTime: '20:00', durationMinutes: 720 }],
+};
+const listShiftTemplates = vi.fn().mockResolvedValue([TEMPLATE]);
 vi.mock('@infrastructure/http/AdminTherapeuticProjectsApiService', () => ({
   AdminTherapeuticProjectsApiService: {
     listCatalog: (...a: unknown[]) => listCatalog(...a),
     createCatalogItem: (...a: unknown[]) => createCatalogItem(...a),
     updateCatalogItem: (...a: unknown[]) => updateCatalogItem(...a),
+    listShiftTemplates: (...a: unknown[]) => listShiftTemplates(...a),
   },
 }));
 
@@ -96,6 +105,8 @@ describe('TherapeuticCatalogPage — os 3 catálogos, uma tela cada (D299, decis
   it.each([
     ['specific-objectives', COPY.kinds.specificObjectives],
     ['activities', COPY.kinds.activities],
+    ['service-exit-reasons', COPY.kinds.serviceExitReasons],
+    ['service-shift-templates', COPY.kinds.serviceShiftTemplates],
   ] as const)('kind %s: título e subtítulo próprios', async (kind, copy) => {
     await renderPage(kind);
     // ⚠️ `getByRole` e não o `data-testid` do código: o atom `Heading` NÃO repassa `data-*`
@@ -104,16 +115,25 @@ describe('TherapeuticCatalogPage — os 3 catálogos, uma tela cada (D299, decis
     expect(screen.getByText(copy.subtitle)).toBeInTheDocument();
   });
 
+  it('motivos de saída: mostra a orientação "sem dado de saúde" (catalog-guidance); os outros kinds não', async () => {
+    const { unmount } = await renderPage('service-exit-reasons');
+    expect(screen.getByTestId('catalog-guidance')).toHaveTextContent('Categorias genéricas, sem dado de saúde.');
+    expect(listCatalog).toHaveBeenCalledWith('service-exit-reasons', { includeInactive: true });
+    unmount();
+    await renderPage('activities');
+    expect(screen.queryByTestId('catalog-guidance')).toBeNull();
+  });
+
   it('pede o catálogo COM inativos — quem administra precisa ver o desligado para reativar', async () => {
     await renderPage('activities');
     expect(listCatalog).toHaveBeenCalledWith('activities', { includeInactive: true });
   });
 
-  it('a tabela mostra ordem, texto e estado de cada opção — e nada de enum cru', async () => {
+  it('a tabela mostra texto e estado (sem ordem, spec 061) de cada opção — e nada de enum cru', async () => {
     const { container } = await renderPage();
 
-    const linha = screen.getByTestId('therapeutic-catalog-row-ativa');
-    expect(linha).toHaveTextContent('1');
+    expect(screen.getByTestId('therapeutic-catalog-row-ativa')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: COPY.table.order })).toBeNull();
     expect(screen.getByTestId('therapeutic-catalog-label-ativa')).toHaveTextContent('Mejorar autonomía');
     expect(screen.getByTestId('therapeutic-catalog-status-ativa')).toHaveTextContent(COPY.active);
     expect(screen.getByTestId('therapeutic-catalog-status-inativa')).toHaveTextContent(COPY.inactive);
@@ -178,6 +198,42 @@ describe('TherapeuticCatalogPage — carregando, erro e vazio', () => {
   });
 });
 
+describe('TherapeuticCatalogPage — título, descrição e ordem alfabética (spec 061)', () => {
+  const ZETA = item({ id: 'zeta', label: 'Zeta TITULO-SINTETICO', sortOrder: 1, description: 'DESCRIPCION-SINTETICA-Z' });
+  const ALFA = item({ id: 'alfa', label: 'Alfa TITULO-SINTETICO', sortOrder: 99 });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listCatalog.mockResolvedValue([ZETA, ALFA]);
+  });
+
+  it.each(['activities', 'specific-objectives'] as const)('%s: sem coluna "Ordem", linhas A–Z apesar do sortOrder, e a descrição aparece', async (kind) => {
+    await renderPage(kind);
+    expect(screen.queryByRole('columnheader', { name: COPY.table.order })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: COPY.table.title })).toBeInTheDocument();
+    const linhas = screen.getAllByTestId(/^therapeutic-catalog-row-/).map((r) => r.getAttribute('data-testid'));
+    expect(linhas).toEqual(['therapeutic-catalog-row-alfa', 'therapeutic-catalog-row-zeta']);
+    expect(screen.getByTestId('therapeutic-catalog-description-zeta')).toHaveTextContent('DESCRIPCION-SINTETICA-Z');
+    expect(screen.queryByTestId('therapeutic-catalog-description-alfa')).toBeNull();
+  });
+
+  it('a descrição usa o token de texto com contraste AAA (#374151 = 10,3:1 sobre branco), não o muted translúcido', async () => {
+    await renderPage('activities');
+    const d = screen.getByTestId('therapeutic-catalog-description-zeta');
+    expect(d).toHaveClass('text-[#374151]');
+    expect(d).not.toHaveClass('text-gray-700');
+  });
+
+  it('segments: a coluna Ordem continua e a ordem é a do servidor', async () => {
+    await renderPage('segments');
+    expect(screen.getByRole('columnheader', { name: COPY.table.order })).toBeInTheDocument();
+    const linhas = screen.getAllByTestId(/^therapeutic-catalog-row-/).map((r) => r.getAttribute('data-testid'));
+    expect(linhas).toEqual(['therapeutic-catalog-row-zeta', 'therapeutic-catalog-row-alfa']);
+    expect(screen.queryByTestId('therapeutic-catalog-description-zeta')).toBeNull();
+  });
+});
+
 describe('TherapeuticCatalogPage — criar e renomear', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -196,10 +252,11 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     expect(screen.getByTestId('therapeutic-catalog-label-input')).toHaveValue('');
 
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Nueva opción' } });
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-order-input'), { target: { value: '4' } });
+    // Spec 061: atividade não tem input de ordem.
+    expect(screen.queryByTestId('therapeutic-catalog-order-input')).toBeNull();
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
 
-    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Nueva opción', sortOrder: 4 }));
+    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Nueva opción' }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
     expect(itemListCalls()).toHaveLength(2);
     expect(updateCatalogItem).not.toHaveBeenCalled();
@@ -213,8 +270,8 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Autonomía en el hogar' } });
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
 
-    // A ordem já preenchida na modal viaja junto — renomear não perde a posição da opção.
-    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { label: 'Autonomía en el hogar', sortOrder: 1 }));
+    // Merge Patch (spec 061): só o título mudou, só ele viaja — a ordem não é mais da tela.
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { label: 'Autonomía en el hogar' }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
     expect(itemListCalls()).toHaveLength(2);
     expect(createCatalogItem).not.toHaveBeenCalled();
@@ -317,6 +374,8 @@ describe('TherapeuticCatalogPage — trava de rota pela célula de leitura (D286
   it.each([
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
+    ['service-exit-reasons', 'catalog_service_exit_reasons'],
+    ['service-shift-templates', 'catalog_service_shift_templates'],
   ] as const)('engine ON com %s:read não redireciona', async (kind, resource) => {
     comEnforcement([`${resource}:read`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -354,6 +413,8 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
   it.each([
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
+    ['service-exit-reasons', 'catalog_service_exit_reasons'],
+    ['service-shift-templates', 'catalog_service_shift_templates'],
   ] as const)('engine ON com %s:create + :update (PR-8b) — as ações existem', async (kind, resource) => {
     comEnforcement([`${resource}:read`, `${resource}:create`, `${resource}:update`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -371,6 +432,14 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
 
     expect(screen.queryByTestId('therapeutic-catalog-edit-ativa')).not.toBeInTheDocument();
     expect(screen.queryByTestId('therapeutic-catalog-new-btn')).not.toBeInTheDocument();
+  });
+
+  it('🔴 motivos de saída: só :read (ou a escrita de OUTRO catálogo) esconde as ações — o gate é catalog_service_exit_reasons:update', async () => {
+    comEnforcement(['catalog_service_exit_reasons:read', 'catalog_therapeutic_activities:update'], 'on');
+    render(<TherapeuticCatalogPage kind="service-exit-reasons" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    expect(screen.queryByTestId('therapeutic-catalog-edit-ativa')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-toggle-ativa')).not.toBeInTheDocument();
   });
 
   it('engine OFF (ou contrato ausente): tudo existe mesmo sem célula', async () => {
@@ -486,14 +555,14 @@ describe('TherapeuticCatalogPage — vínculo de segmento (spec 030, F4)', () =>
     await renderPage('specific-objectives');
 
     fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-obj2'));
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-segment-select'), { target: { value: '' } });
+    await selectCombo(screen.getByTestId('therapeutic-catalog-segment-select'), COPY.form.segmentNone);
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'obj2', { label: 'Otro objetivo', sortOrder: 2, segmentId: null }));
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'obj2', { segmentId: null }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
 
     fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Nuevo objetivo' } });
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-segment-select'), { target: { value: 'seg-on' } });
+    await selectCombo(screen.getByTestId('therapeutic-catalog-segment-select'), SEG_ON.label); // seg-on
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
     await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('specific-objectives', { label: 'Nuevo objetivo', segmentId: 'seg-on' }));
   });
@@ -509,5 +578,32 @@ describe('TherapeuticCatalogPage — vínculo de segmento (spec 030, F4)', () =>
       expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
       unmount();
     }
+  });
+});
+
+describe('TherapeuticCatalogPage — guardias predefinidas (spec 074)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listShiftTemplates.mockResolvedValue([TEMPLATE]);
+  });
+
+  it('P1 guardias: lista mostra os turnos de cada guardia', async () => {
+    await renderPage('service-shift-templates');
+    expect(listShiftTemplates).toHaveBeenCalledWith({ includeInactive: true });
+    expect(listCatalog).not.toHaveBeenCalled();
+    expect(screen.queryByRole('columnheader', { name: COPY.table.order })).toBeNull();
+    expect(screen.getByTestId('therapeutic-catalog-label-ativa')).toHaveTextContent('Guardia 6 + 6 + 12');
+    expect(screen.getByTestId('therapeutic-catalog-shifts-ativa')).toHaveTextContent('08:00 – 14:00 · 14:00 – 20:00 · 20:00 – 08:00');
+  });
+
+  it('P2 guardias sem update: sem botões de criar e editar', async () => {
+    comEnforcement(['catalog_service_shift_templates:read', 'catalog_service_exit_reasons:update'], 'on');
+    render(<TherapeuticCatalogPage kind="service-shift-templates" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    expect(screen.queryByTestId('therapeutic-catalog-new-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-edit-ativa')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-toggle-ativa')).not.toBeInTheDocument();
+    expect(screen.getByTestId('therapeutic-catalog-shifts-ativa')).toBeInTheDocument();
   });
 });

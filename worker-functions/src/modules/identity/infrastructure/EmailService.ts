@@ -32,6 +32,10 @@ export class EmailChannelUnavailableError extends Error {
     this.name = 'EmailChannelUnavailableError';
   }
 }
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 export class EmailService {
   private readonly fromEmail: string;
   private readonly fromName = 'Enlite';
@@ -89,6 +93,56 @@ export class EmailService {
            style="display:inline-block;background:#180149;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:16px;font-weight:bold;font-family:'Lexend',Arial,sans-serif;">No fui yo — revertir</a>
       </div>
       <p style="color:#888;font-size:12px;">Si el botón no funciona, copiá este enlace: ${params.undoUrl}</p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+  }
+
+  /**
+   * Spec 069 F4 — resumo diário "Turnos sin cubrir" ao staff que monta o itinerário. Um e-mail por destinatário e dia, em es (UI da
+   * operação): paciente (nome de exibição pela projeção do Kanban), serviço, nº de turnos, 1º dia e link para a aba do serviço.
+   * NADA clínico. Passa por `assertCanSend` (via `send`): `NODE_ENV=test`/sem chave NUNCA envia (`EmailChannelUnavailableError`).
+   */
+  async sendItineraryUncoveredShiftsDigest(
+    to: string,
+    items: ReadonlyArray<{ patientId: string; patientName: string; serviceId: string; serviceCode: string; shifts: number; firstDate: string }>,
+    operationDate: string,
+    horizonDays: number,
+  ): Promise<void> {
+    const base = 'https://app.enlite.health';
+    const total = items.reduce((sum, i) => sum + i.shifts, 0);
+    const rows = items
+      .map((i) => {
+        const link = `${base}/admin/patients/${encodeURIComponent(i.patientId)}?tab=itinerary&serviceId=${encodeURIComponent(i.serviceId)}`;
+        return `<tr>
+          <td style="padding:8px 6px;border-bottom:1px solid #eee;font-size:14px;color:#333;">${escapeHtml(i.patientName)}</td>
+          <td style="padding:8px 6px;border-bottom:1px solid #eee;font-size:14px;color:#333;">${escapeHtml(i.serviceCode)}</td>
+          <td style="padding:8px 6px;border-bottom:1px solid #eee;font-size:14px;color:#333;text-align:center;">${i.shifts}</td>
+          <td style="padding:8px 6px;border-bottom:1px solid #eee;font-size:14px;color:#333;">${escapeHtml(i.firstDate)}</td>
+          <td style="padding:8px 6px;border-bottom:1px solid #eee;font-size:14px;"><a href="${link}" style="color:#180149;">Abrir</a></td>
+        </tr>`;
+      })
+      .join('');
+    await this.send({
+      to,
+      subject: `Turnos sin cubrir: ${total} en los próximos ${horizonDays} días`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:'Poppins',Arial,sans-serif;background:#FFF9FC;">
+  <div style="max-width:640px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(24,1,73,0.08);">
+    <div style="background:#180149;padding:24px;text-align:center;">
+      <h1 style="color:#fff;margin:0;font-size:20px;font-family:'Lexend',Arial,sans-serif;">Turnos sin cubrir</h1>
+    </div>
+    <div style="padding:24px;">
+      <p style="color:#333;font-size:14px;">Al ${escapeHtml(operationDate)} hay <strong>${total}</strong> turno(s) sin cubrir en los próximos ${horizonDays} días, en ${items.length} servicio(s):</p>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><th align="left" style="font-size:12px;color:#666;">Paciente</th><th align="left" style="font-size:12px;color:#666;">Servicio</th><th style="font-size:12px;color:#666;">Turnos</th><th align="left" style="font-size:12px;color:#666;">Desde</th><th></th></tr>
+        ${rows}
+      </table>
     </div>
   </div>
 </body>

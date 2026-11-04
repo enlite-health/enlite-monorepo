@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { SUSPENSION_EXIT_REASONS } from '@domain/entities/patientEnums';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   value: string;
@@ -19,18 +19,18 @@ interface Props {
  */
 export function SuspensionExitReasonSelect({ value, onChange, id = 'suspension-exit-reason', ...rest }: Props): JSX.Element {
   const { t } = useTranslation();
-  const options: SelectOption[] = SUSPENSION_EXIT_REASONS.map((r) => ({
+  const options: ComboboxOption[] = SUSPENSION_EXIT_REASONS.map((r) => ({
     value: r,
     label: t(`admin.patients.suspensionExitReasonOptions.${r}`, r),
   }));
 
   return (
     <FormField label={t('admin.patients.status.suspensionExitReason')} htmlFor={id} required>
-      <SelectField
+      <Combobox
         id={id}
         inputSize="compact"
         options={options}
-        placeholder={t('admin.patients.editDrawer.unset')}
+        placeholder={t('admin.patients.editDrawer.unset')} clearLabel={t('admin.patients.editDrawer.unset')}
         value={value}
         onChange={onChange}
         data-testid={rest['data-testid'] ?? 'patient-status-exit-reason'}

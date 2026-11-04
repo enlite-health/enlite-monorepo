@@ -3,6 +3,7 @@
  * Prova: pré-carrega; a máscara do Clarity cobre os 4 textos livres (lex T.3); NÃO existe campo de motivo do
  * sexo (lex S.4, D507 item 4); salvar envia os valores; limpar envia `null`.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import i18n from 'i18next';
@@ -10,6 +11,7 @@ import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import { ContractedServiceFormRow } from '../ContractedServiceFormRow';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
@@ -35,9 +37,8 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
-  providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
-  hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
-  contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
+  providersNeeded: 2, authorization: null, scheduleHours: 20, careLocation: 'HOME',
+  ...CONTRACT_058_DEFAULTS, startDate: '2026-09-01T00:00:00.000Z', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45', requiredProfessions: ['AT'], requiredSex: 'F', requiredExperience: 'exp-sintetica', workerAttributes: 'atrib-sintetico', workSchedule: 'part-time', paymentDay: 'dia 5', dailyObs: 'obs-sintetica',
   addressId: null,
   liveVacancy: null, liveVacancyRedacted: false,
@@ -53,10 +54,22 @@ const renderRow = (service: PatientContractedServiceDetail | null = SERVICE) =>
 describe('ContractedServiceFormRow — campos de recrutamento (spec 027 Fase 3)', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
+  it('os 5 campos que bloqueiam a ativação NÃO dizem "opcional"; workerAttributes e dailyObs continuam opcionais', () => {
+    renderRow();
+    const labelOf = (testId: string) => document.querySelector(`label[for="${testId}"]`) as HTMLElement;
+    for (const id of ['svc-requiredProfessions-1', 'svc-requiredSex-1', 'svc-requiredExperience-1', 'svc-workSchedule-1', 'svc-paymentDay-1']) {
+      expect(labelOf(id).textContent).toContain('*');
+      expect(labelOf(id).textContent).not.toMatch(/opcional/i);
+    }
+    for (const id of ['svc-workerAttributes-1', 'svc-dailyObs-1']) {
+      expect(labelOf(id).textContent).toMatch(/opcional/i);
+    }
+  });
+
   it('pré-carrega os 7 campos do serviço', () => {
     renderRow();
-    expect((screen.getByTestId('svc-requiredSex-1') as HTMLSelectElement).value).toBe('F');
-    expect((screen.getByTestId('svc-workSchedule-1') as HTMLSelectElement).value).toBe('part-time');
+    expect(screen.getByTestId('svc-requiredSex-1')).toHaveTextContent('Femenino'); // F
+    expect(screen.getByTestId('svc-workSchedule-1')).toHaveTextContent('Part-time'); // part-time
     expect((screen.getByTestId('svc-requiredExperience-1') as HTMLTextAreaElement).value).toBe('exp-sintetica');
     expect((screen.getByTestId('svc-paymentDay-1') as HTMLInputElement).value).toBe('dia 5');
     expect((screen.getByTestId('svc-workerAttributes-1') as HTMLTextAreaElement).value).toBe('atrib-sintetico');
@@ -91,7 +104,7 @@ describe('ContractedServiceFormRow — campos de recrutamento (spec 027 Fase 3)'
   it('salvar envia os 7 campos (PATCH); BOTH é aceito', async () => {
     mockUpdate.mockResolvedValue(SERVICE);
     renderRow();
-    fireEvent.change(screen.getByTestId('svc-requiredSex-1'), { target: { value: 'BOTH' } });
+    chooseCombo(screen.getByTestId('svc-requiredSex-1'), 'Indistinto'); // BOTH
     fireEvent.click(screen.getByTestId('svc-profession-CAREGIVER-1'));
     fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
@@ -104,7 +117,7 @@ describe('ContractedServiceFormRow — campos de recrutamento (spec 027 Fase 3)'
   it('limpar os campos envia null (nunca string vazia nem lista vazia)', async () => {
     mockUpdate.mockResolvedValue(SERVICE);
     renderRow();
-    fireEvent.change(screen.getByTestId('svc-requiredSex-1'), { target: { value: '' } });
+    chooseCombo(screen.getByTestId('svc-requiredSex-1'), 'Seleccioná…'); // '' = limpar
     fireEvent.change(screen.getByTestId('svc-paymentDay-1'), { target: { value: '   ' } });
     fireEvent.change(screen.getByTestId('svc-dailyObs-1'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('svc-profession-AT-1'));
@@ -116,7 +129,7 @@ describe('ContractedServiceFormRow — campos de recrutamento (spec 027 Fase 3)'
   it('modo NOVO: sem preencher nada, envia os 7 como null', async () => {
     mockCreate.mockResolvedValue(SERVICE);
     renderRow(null);
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await waitFor(() => expect(mockCreate).toHaveBeenCalled());
     expect(mockCreate.mock.calls[0][1]).toMatchObject({

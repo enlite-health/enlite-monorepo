@@ -158,7 +158,13 @@ BEGIN
       ('patient_contracted_services', ARRAY['professional_profile','hourly_value','required_experience','worker_attributes','payment_day','daily_obs']),
       ('contracted_service_providers', ARRAY[]::text[]),
       ('contracted_service_devices',   ARRAY[]::text[]),
-      ('service_types',                ARRAY[]::text[])
+      ('service_types',                ARRAY[]::text[]),
+      -- 535/537 (spec 058 Parte A): o vínculo serviço->contrato->obra social diz QUAL obra social cobre o serviço — a MESMA informação que
+      -- `patients.health_insurance_name` (liberado nesta role e na view `patients_ro`, item 1), por isso segue legível; `affiliate_id` e
+      -- `insurance_verified` (identificação/afiliação, negados) NÃO existem nessas tabelas. Por coluna (e não ALL TABLES) para coluna nova
+      -- nascer invisível. `scope_description` (texto livre do operador sobre a abrangência) sai pela razão de `address_type_other`.
+      ('insurance_contracts',          ARRAY['scope_description']),
+      ('contracted_service_contract',  ARRAY[]::text[])
     ) AS t(tabela, excluir)
   LOOP
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables
@@ -207,6 +213,10 @@ BEGIN
   -- 502 (spec 048): patient_therapeutic_project_contact_status revela "família/cobertura/equipe não informada" do
   -- paciente; patient_tp_contact_reminder_cycles/_reminders são a outbox desse estado (quem, quando, qual notificação).
   -- Sem coluna segura — revogadas inteiras no MESMO commit da migration 502.
+  -- 534 (spec 058 Parte A): insurance_provider_contacts guarda telefone/e-mail/número de documento CIFRADOS (KMS) de pessoa de contato da
+  -- obra social — sem coluna segura, revogada inteira no MESMO commit da migration 534.
+  -- 536 (spec 058 Parte A; lex C-c, a MESMA razão de `hourly_value`): insurance_contract_terms guarda o PREÇO (valor-hora) e o imposto
+  -- negociado com a obra social — o `GRANT SELECT ON ALL TABLES` do topo a cobria por omissão. Sem coluna segura, revogada inteira.
   -- 426 (spec 018, PR-4; lex-pr4-foto.md #11, lex-pr4-documentos.md #11 TRAVA): foto e documento
   -- (prova de consentimento) do paciente. patient_documents guarda PDF/JPEG de prova (sem coluna
   -- segura), patient_image_consents e patient_photos referenciam o consentimento/objeto — as 3
@@ -232,7 +242,9 @@ BEGIN
     'patient_documents',
     'patient_therapeutic_project_contact_status',
     'patient_tp_contact_reminder_cycles',
-    'patient_tp_contact_reminders'
+    'patient_tp_contact_reminders',
+    'insurance_provider_contacts',
+    'insurance_contract_terms'
   ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
@@ -254,7 +266,8 @@ BEGIN
                                   'patient_therapeutic_project_contacts','therapeutic_segments',
                                   'patient_photos','patient_photo_orphans','patient_documents',
                                   'patient_therapeutic_project_contact_status','patient_tp_contact_reminder_cycles',
-                                  'patient_tp_contact_reminders']) AS tabela LOOP
+                                  'patient_tp_contact_reminders','insurance_provider_contacts','insurance_contract_terms',
+                                  'insurance_contracts','contracted_service_contract']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;

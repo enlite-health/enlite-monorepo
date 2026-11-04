@@ -178,7 +178,7 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
       // 2º serviço ATIVO sem horário: o foguete do serviço 1 passa no gate (que olha só o serviço
       // dele), mas o SEARCHING exige horário de TODO serviço ativo — o paciente não pode mover.
       await postContractedServiceViaApi(request, token, patient.patientId, {
-        serviceCode: 'AT', providersNeeded: 1, weeklyHours: 10, careLocation: 'HOME', addressId: patient.addressId,
+        serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', addressId: patient.addressId,
       });
 
       await loginAs(page, MOCK_ADMIN_USER);

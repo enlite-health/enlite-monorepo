@@ -27,6 +27,8 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'ps-v2-admin-uid';
@@ -76,14 +78,14 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
       )).rows[0].id;
       const svc = (await pool.query<{ id: string }>(
         `INSERT INTO patient_contracted_services
-           (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule,
+           (patient_id, service_code, active, country, created_by, updated_by, address_id,
             required_professions, required_sex, required_experience, work_schedule, payment_day)
          -- spec 027 Fase 3: os 5 campos do portão "ativar recrutamento" (D508 c)
          VALUES ($1,'AT',true,'AR','ps-v2-e2e','ps-v2-e2e',$2,
-                 '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb,
                  ARRAY['AT'],'BOTH','EXP-E2E','part-time','DIA-E2E') RETURNING id`,
         [id, addr],
       )).rows[0].id;
+      await semearFaixas(pool, svc, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'ps-v2-e2e'); // spec 056: o horário é faixa em patient_itinerary_slot
       if (id === lead) leadServiceId = svc;
     }
   });
@@ -194,7 +196,9 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     // pelo catálogo 315 (a 428 nunca tocou essa linha). Funil → SEARCHING pelo Kanban também é
     // permitido (D469) e `admin_panel` recusado — coberto pelo unit `PatientService.moveStatus.v2`
     // e pelo e2e de tela `funil-vacante-lancamento-rascunho`.
-    await pool.query(`UPDATE patients SET health_insurance_name = 'Particular' WHERE id = $1`, [lead]);
+    await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [lead]);
+    // Pedido do Javier: o foguete com o paciente pré-atendimento (PENDING_ADMISSION) exige ≥1 diagnóstico ATIVO. Andar no funil (6b/6d) segue livre sem ele.
+    await seedPatientDiagnosis(pool, lead);
     const activated = await api.post(`/api/admin/patients/${lead}/contracted-services/${leadServiceId}/activate-recruitment`, {}, asAdmin);
     expect(activated.status).toBe(201);
     expect(activated.data.data.patientStatus).toBe('SEARCHING');
@@ -255,7 +259,7 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     // 9d. SUSPENDED → REPLACEMENT com motivo. `active` está em SEARCHING (9c) e o catálogo (315)
     // não tem `SEARCHING → SUSPENDED` direto (só ACTIVE/REPLACEMENT entram em SUSPENDED) —
     // detour por ACTIVE (catálogo 315 + checklist já satisfeito desde o beforeAll) para voltar
-    // a SUSPENDED sem inventar uma transição que a 315 nunca abriu.
+    // a SUSPENDED sem inventar uma transição que a 315/473/485 nunca abriram.
     expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
     expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
     r = await api.put(`/api/admin/patients/${active}/status`, { status: 'REPLACEMENT', suspensionExitReason: 'NEEDS_NEW_WORKER' }, asAdmin);

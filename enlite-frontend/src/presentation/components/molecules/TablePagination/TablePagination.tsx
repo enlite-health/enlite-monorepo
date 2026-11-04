@@ -44,7 +44,7 @@ export const TablePagination = ({
       </div>
 
       <p className="font-lexend font-medium text-[#737373] text-base whitespace-nowrap">
-        {startIndex + 1} - {endIndex} de {totalItems}
+        {t('common.pageRange', { start: startIndex + 1, end: endIndex, total: totalItems })}
       </p>
 
       <div className="flex items-center gap-2">

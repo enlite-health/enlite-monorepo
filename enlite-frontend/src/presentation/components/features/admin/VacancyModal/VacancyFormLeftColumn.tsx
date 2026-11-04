@@ -6,8 +6,7 @@
  *
  * Design-system components used:
  *   - FormField  → label + children + error
- *   - SelectField → simple selects via Controller
- *   - SearchableSelect → case-number picker (typeable filter for many cases)
+ *   - Combobox → simple selects via Controller and the case-number picker (search when there are many options)
  *   - InputWithIcon → date inputs
  */
 
@@ -22,14 +21,12 @@ import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
-import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
-import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import type { VacancyFormData } from '../vacancy-form-schema';
 import { PROFESSION_OPTIONS, SEX_OPTIONS, AGE_RANGE_OPTIONS } from '../vacancy-form-schema';
 import { TEXTAREA_CLS, READONLY_CLS } from './vacancyFormShared';
-import { MeetLinksField } from './MeetLinksField';
 import { LockedFieldBadgeLink } from './LockedFieldBadgeLink';
 
 // ---------------------------------------------------------------------------
@@ -91,6 +88,9 @@ export function VacancyFormLeftColumn({
   const tf = (k: string) => t(`admin.vacancyDetail.vacancyForm.${k}`);
 
   const isAgeRangeLocked = lockedFields?.has('age_range_min') ?? false;
+  // 057 (D523): com serviço contratado, profissão e sexo vêm do serviço.
+  const isProfessionsLocked = lockedFields?.has('required_professions') ?? false;
+  const isSexLocked = lockedFields?.has('required_sex') ?? false;
 
   const [cases, setCases] = useState<CaseOption[]>([]);
   const [isLoadingCases, setIsLoadingCases] = useState(mode === 'create');
@@ -109,8 +109,8 @@ export function VacancyFormLeftColumn({
 
   const handleCaseChange = (val: string): void => {
     if (!val) return;
-    // Comparação por STRING, não `Number(val)`: `val` já é `String(c.caseNumber)` (a
-    // `SearchableSelect` recebe `value` cru — só o `label` leva o prefixo `EN`, formatado).
+    // Comparação por STRING, não `Number(val)`: `val` já é `String(c.caseNumber)` (o
+    // `Combobox` recebe `value` cru — só o `label` leva o prefixo `EN`, formatado).
     // `Number()` sobre texto formatado (`"EN1234"`) dá `NaN`, e `NaN !== NaN` é sempre true —
     // clique sem efeito, sem erro.
     const found = cases.find((c) => String(c.caseNumber) === val);
@@ -128,7 +128,7 @@ export function VacancyFormLeftColumn({
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
-  // molecule wrappers (InputWithIcon/SelectField) and read-only divs.
+  // molecule wrappers (InputWithIcon/Combobox) and read-only divs.
   const patientDis = !patientSelected
     ? 'pointer-events-none select-none [&_.bg-white]:!bg-[#f3f4f6]'
     : '';
@@ -152,7 +152,9 @@ export function VacancyFormLeftColumn({
               <p className="text-red-500 text-sm">{casesError}</p>
             ) : (
               <div data-testid="case-select">
-                <SearchableSelect
+                <Combobox
+                  inputSize="compact"
+                  data-testid="case-select-combobox"
                   value={selectedCaseNumber != null ? String(selectedCaseNumber) : ''}
                   onChange={handleCaseChange}
                   options={cases.map((c) => ({
@@ -164,6 +166,7 @@ export function VacancyFormLeftColumn({
                     }),
                   }))}
                   placeholder={t('admin.vacancyModal.caseSelectStep.casePlaceholder')}
+                  clearLabel={t('admin.vacancyModal.caseSelectStep.casePlaceholder')}
                   searchPlaceholder={t('common.search', 'Buscar...')}
                 />
               </div>
@@ -190,6 +193,7 @@ export function VacancyFormLeftColumn({
         <FormField
           label={tp('professionalType')}
           required
+          labelExtra={isProfessionsLocked ? <LockedFieldBadgeLink patientId={selectedPatientId} testId="locked-field-link-professions" /> : null}
           error={
             errors.required_professions
               ? tf('validation.requiredProfessionsMin')
@@ -214,6 +218,7 @@ export function VacancyFormLeftColumn({
                       id={`profession-${p}`}
                       label={tf(`professionOptions.${p}`)}
                       checked={checked}
+                      disabled={isProfessionsLocked}
                       onChange={() => {
                         const current = field.value ?? [];
                         field.onChange(
@@ -254,19 +259,25 @@ export function VacancyFormLeftColumn({
 
       {/* 6. Available for (sex) */}
       <div className={patientDis}>
-        <FormField label={tp('availableFor')}>
+        <FormField
+          label={tp('availableFor')}
+          labelExtra={isSexLocked ? <LockedFieldBadgeLink patientId={selectedPatientId} testId="locked-field-link-sex" /> : null}
+        >
           <Controller
             name="required_sex"
             control={control}
             render={({ field }) => (
-              <SelectField
+              <Combobox
                 value={field.value ?? ''}
+                disabled={isSexLocked}
                 onChange={(v) => field.onChange(v)}
+                data-testid="required-sex-select"
                 options={SEX_OPTIONS.map((o) => ({
                   value: o,
                   label: tf(`sexOptions.${o}`),
                 }))}
                 placeholder={tp('sexPlaceholder')}
+                clearLabel={tp('sexPlaceholder')}
               />
             )}
           />
@@ -320,7 +331,7 @@ export function VacancyFormLeftColumn({
         label={tp('ageRange')}
         labelExtra={isAgeRangeLocked ? <LockedFieldBadgeLink patientId={selectedPatientId} testId="locked-field-link-age-range" /> : null}
       >
-        <SelectField
+        <Combobox
           value={selectedAgeKey}
           disabled={isAgeRangeLocked}
           onChange={(key) => {
@@ -330,6 +341,7 @@ export function VacancyFormLeftColumn({
           }}
           options={AGE_RANGE_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
           placeholder="—"
+          clearLabel="—"
           data-testid="age-range-select"
         />
       </FormField>
@@ -338,11 +350,6 @@ export function VacancyFormLeftColumn({
       <Heading level={4} weight="semibold" color="secondary" className="pt-2 border-t border-slate-100">
         {tp('sectionScheduleAndDates')}
       </Heading>
-
-      {/* 9. Meet links — extracted to MeetLinksField for size/SRP. */}
-      <div className={patientDis}>
-        <MeetLinksField control={control} errors={errors} />
-      </div>
 
       {/* 10. Publish date — defaults to today, optional, editable. */}
       <FormField label={tp('publishDate')}>

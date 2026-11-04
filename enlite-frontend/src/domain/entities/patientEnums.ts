@@ -72,15 +72,6 @@ export const EXTERNAL_CONTACT_RELATION_CODES = [
 ] as const;
 export type ExternalContactRelationCode = (typeof EXTERNAL_CONTACT_RELATION_CODES)[number];
 
-/** Seed de `insurance_providers` (migration 311) — os 33 do contrato 001 §Enums canônicos. */
-export const INSURANCE_PROVIDER_CODES = [
-  'API', 'ACCORD_SALUD', 'ASISOC', 'AVALIAN', 'BANCARIOS', 'CASA', 'DAS', 'GALENO', 'MHM', 'MEDICUS',
-  'HTAL_BRITANICO', 'OSPJN', 'OSPECOM', 'OSMECON', 'OSDE', 'OMINT', 'OSPOCE', 'OGORMAN', 'OSPATCA', 'OBSBA',
-  'OSPELSYM', 'OSTEE_LUZ_MEDICA', 'OSDEPYM', 'OTHER', 'PFA_SUPERINTENDENCIA', 'PRIVATE', 'SANIDAD',
-  'SWISS_MEDICAL', 'UP', 'OSPICHA', 'USUOMRA', 'PREVENCION_SALUD', 'IOSCOR',
-] as const;
-export type InsuranceProviderCode = (typeof INSURANCE_PROVIDER_CODES)[number];
-
 /** Spec 018 PR-3 (Emenda 13/09, migration 425). Enum fechado, DISTINTO de `sex` (Sex.ts do backend). */
 export const PATIENT_GENDERS = ['FEMALE', 'MALE', 'NON_BINARY', 'OTHER', 'PREFER_NOT_TO_SAY'] as const;
 export type PatientGenderCode = (typeof PATIENT_GENDERS)[number];

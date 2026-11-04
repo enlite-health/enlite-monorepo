@@ -7,7 +7,13 @@ import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastru
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { loadPublicVacancyDiagnosisLabel } from '../../application/publicVacancyDiagnosisLabel';
-import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveAgeRangeSql,
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+  vacancyEffectiveScheduleSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 /**
@@ -161,15 +167,16 @@ export class PublicVacancyController {
           -- service_type FICA: e profissao buscada (AT / CAREGIVER / PSYCHOLOGIST), nao saude.
           -- (sem crases aqui: este SQL vive dentro de um template literal, e crase o encerra.)
           p.service_type AS service_type,
-          jp.required_professions,
-          jp.required_sex,
+          ${vacancyEffectiveRequiredProfessionsSql('jp')} AS required_professions,
+          ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex,
           ${vacancyEffectiveAgeRangeSql('jp')},
           jp.worker_attributes,
           ${vacancyEffectiveScheduleSql('jp')} AS schedule,
           jp.schedule_days_hours,
           jp.salary_text,
           jp.talentum_description,
-          jp.talentum_whatsapp_url,
+          -- Spec 067 FR-14: so o booleano; o link da Talentum NAO sai nesta rota publica.
+          (NULLIF(jp.talentum_whatsapp_url, '') IS NOT NULL) AS can_apply,
           jp.country,
           jp.created_at,
           COALESCE(
@@ -233,7 +240,7 @@ export class PublicVacancyController {
         schedule_days_hours:    row.schedule_days_hours,
         salary_text:            row.salary_text,
         talentum_description:   row.talentum_description,
-        talentum_whatsapp_url:  row.talentum_whatsapp_url,
+        can_apply:              row.can_apply === true,
         patient_zone:           row.patient_zone,
         country:                row.country,
         created_at:             row.created_at,

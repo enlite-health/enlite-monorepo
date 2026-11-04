@@ -5,6 +5,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { usePatientServiceTabAccess } from '@presentation/hooks/usePatientServiceTabAccess';
+import { LockedFieldBadgeLink } from '@presentation/components/features/admin/VacancyModal/LockedFieldBadgeLink';
 import { patientTabPath } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
@@ -141,6 +142,12 @@ interface VacancyProfessionCardProps {
    * manual, o lápis segue abrindo `onEditSchedule`.
    */
   scheduleServicePatientId?: string | null;
+  /**
+   * 057 (D523): preenchido quando profissão/sexo vêm do SERVIÇO contratado (`locked_fields` traz
+   * `required_sex`): mostra o link "Editar en la ficha del paciente" ao lado de cada um, como o horário.
+   * Sem permissão de abrir a ficha, o link some.
+   */
+  recruitmentServicePatientId?: string | null;
   onEditDescription?: () => void;
 }
 
@@ -158,6 +165,7 @@ export function VacancyProfessionCard({
   schedule,
   onEditSchedule,
   scheduleServicePatientId,
+  recruitmentServicePatientId,
   onEditDescription,
 }: VacancyProfessionCardProps) {
   const { t } = useTranslation();
@@ -169,6 +177,8 @@ export function VacancyProfessionCard({
   const { allowed: podeEditarDescricao } = useActionGate('talentum', 'update');
   const { allowed: podeEditarHorario } = useActionGate('vacancy', 'update');
   const podeAbrirServico = usePatientServiceTabAccess();
+
+  const recruitmentLinkPatientId = podeAbrirServico ? recruitmentServicePatientId : null;
 
   const isCaregiver =
     profession?.toUpperCase() === 'CAREGIVER' ||
@@ -206,6 +216,7 @@ export function VacancyProfessionCard({
         <Heading level={1} color="primary" weight="semibold">
           {cardTitle}
         </Heading>
+        <LockedFieldBadgeLink patientId={recruitmentLinkPatientId} testId="vacancy-profession-service-link" />
       </div>
 
       <div className="flex items-baseline gap-2 flex-wrap">
@@ -220,6 +231,7 @@ export function VacancyProfessionCard({
               )
             : '—'}
         </Text>
+        <LockedFieldBadgeLink patientId={recruitmentLinkPatientId} testId="vacancy-sex-service-link" />
       </div>
 
       <div className="flex items-baseline gap-2 flex-wrap">

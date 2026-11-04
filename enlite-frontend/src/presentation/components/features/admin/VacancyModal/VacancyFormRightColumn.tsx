@@ -16,7 +16,7 @@
  *
  * Design-system components used:
  *   - FormField  → replaces FieldGroup
- *   - SelectField → replaces raw <select> (via Controller)
+ *   - Combobox → replaces raw <select> (via Controller)
  *   - InputWithIcon → replaces raw <input> + INPUT_CLS
  */
 
@@ -26,14 +26,15 @@ import { MapPin } from 'lucide-react';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
-import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { VacancyDaySchedulePicker } from './VacancyDaySchedulePicker';
 import { LockedFieldBadgeLink } from './LockedFieldBadgeLink';
 import type { VacancyFormData } from '../vacancy-form-schema';
 import { STATUS_OPTIONS } from '../vacancy-form-schema';
-import { computeWeeklyHours } from '../vacancyScheduleUtils';
+import { weeklyHoursOf } from '@domain/scheduleHours';
+import { scheduleValueToShifts } from '../vacancyScheduleUtils';
 import { READONLY_CLS } from './vacancyFormShared';
 
 // ---------------------------------------------------------------------------
@@ -84,17 +85,18 @@ export function VacancyFormRightColumn({
   const isAddressLocked = lockedFields?.has('patientAddressId') ?? false;
   const isProvidersLocked = lockedFields?.has('providers_needed') ?? false;
   const isScheduleLocked = lockedFields?.has('schedule') ?? false;
+  const isPaymentDayLocked = lockedFields?.has('payment_day') ?? false; // 057 (D523)
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
-  // molecule wrappers (InputWithIcon/SelectField) and read-only divs.
+  // molecule wrappers (InputWithIcon/Combobox) and read-only divs.
   const patientDis = !patientSelected
     ? 'pointer-events-none select-none [&_.bg-white]:!bg-[#f3f4f6]'
     : '';
 
   // Auto-computed from the current schedule field — re-renders on schedule change.
   const schedule = useWatch({ control, name: 'schedule' }) ?? [];
-  const weeklyHours = computeWeeklyHours(schedule);
+  const weeklyHours = weeklyHoursOf(scheduleValueToShifts(schedule));
 
   return (
     <div className="space-y-6">
@@ -109,7 +111,7 @@ export function VacancyFormRightColumn({
             name="status"
             control={control}
             render={({ field }) => (
-              <SelectField
+              <Combobox
                 value={field.value ?? ''}
                 onChange={(v) => field.onChange(v)}
                 options={STATUS_OPTIONS.map((o) => ({
@@ -117,6 +119,7 @@ export function VacancyFormRightColumn({
                   label: tf(`statusOptions.${o}`),
                 }))}
                 placeholder={tp('statusPlaceholder')}
+                clearLabel={tp('statusPlaceholder')}
                 data-testid="status-select"
               />
             )}
@@ -239,8 +242,11 @@ export function VacancyFormRightColumn({
       </Heading>
 
       {/* 7. Payment day */}
-      <FormField label={tp('paymentDeadline')}>
-        <InputWithIcon type="text" {...register('payment_day')} />
+      <FormField
+        label={tp('paymentDeadline')}
+        labelExtra={isPaymentDayLocked ? <LockedFieldBadgeLink patientId={patientId} testId="locked-field-link-payment-day" /> : null}
+      >
+        <InputWithIcon type="text" disabled={isPaymentDayLocked} data-testid="payment-day-input" {...register('payment_day')} />
       </FormField>
 
       {/* 8. Providers needed */}
@@ -258,7 +264,7 @@ export function VacancyFormRightColumn({
           type="number"
           min={1}
           disabled={isProvidersLocked}
-          {...register('providers_needed', { valueAsNumber: true })}
+          {...register('providers_needed', { setValueAs: (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v)) })}
           data-testid="providers-needed-input"
           error={
             errors.providers_needed

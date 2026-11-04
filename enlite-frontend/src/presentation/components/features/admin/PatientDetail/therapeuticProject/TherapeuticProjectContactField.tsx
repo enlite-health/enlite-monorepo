@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import type { ContactStatusValue } from '@domain/entities/TherapeuticProject';
 import { useHasCell } from '@presentation/hooks/useCellAccess';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Text } from '@presentation/components/atoms/Text';
 import { dayMonth } from './contactStatusDates';
@@ -42,11 +42,13 @@ export function TherapeuticProjectContactField({
   return (
     <FormField label={label} htmlFor={`tp-${fieldKey}`} labelSize="compact">
       <div className="flex flex-col gap-2" data-testid={`tp-field-${fieldKey}`}>
-        <MultiSelect
+        <Combobox
+          multiple
           id={`tp-${fieldKey}`}
           options={options}
           value={value}
           disabled={locked}
+          inputSize="compact"
           onChange={(ids) => {
             // Escolher um contato desmarca o estado: o campo passa a ter contatos.
             if (ids.length > 0 && status !== null) onStatusChange(null);

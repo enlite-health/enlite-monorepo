@@ -11,6 +11,7 @@
  *   alt 2 — A16: na página 3, ordenar volta para a página 1.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 import { insertTestPatient, insertBaseVacancy, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { seedVacancyWithCards } from '../helpers/funnel-move-e2e-helper';
@@ -131,9 +132,9 @@ test.describe('046 F4 — ordenação pelo cabeçalho @integration', () => {
     await abreEBusca(page, MARCA_PAGINA);
     // A tela abre com 20 por página (useState('20')): com 23 vagas só haveria 2 páginas.
     // Escolhe o menor "itens por página" (10) pelo seletor da tela, como o usuário.
-    const itensPorPagina = page.locator('select', { has: page.locator('option[value="50"]') });
-    await itensPorPagina.selectOption('10');
-    await expect(itensPorPagina).toHaveValue('10');
+    const itensPorPagina = page.getByRole('combobox').last(); // o da paginação é o último da tela
+    await escolherNoCombo(page, itensPorPagina, '10');
+    await expect(itensPorPagina).toHaveText('10');
     await expect(page.getByText(/^1–10 de 23$/)).toBeVisible({ timeout: 15_000 });
 
     const proxima = page.getByRole('button', { name: 'Página siguiente' });

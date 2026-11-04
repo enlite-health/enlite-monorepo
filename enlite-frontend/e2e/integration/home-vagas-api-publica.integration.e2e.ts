@@ -36,6 +36,7 @@ import {
   getBlockedApplicationChannel,
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
+import { cardDaVagaNaHome } from '../helpers/bloqueados-067-helper';
 import { getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
 import { loginAsWorker } from '../helpers/worker-auth-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
@@ -121,7 +122,8 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
 
     await loginAndGoHome(page, w);
 
-    const postularseBtn = page.getByRole('button', { name: 'Postularse' }).first();
+    // o card DESTA vaga: a home lista toda vaga pública do banco, inclusive a do teste anterior (ainda não limpa)
+    const postularseBtn = cardDaVagaNaHome(page, vacancyId).getByRole('button', { name: 'Postularse' });
     await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
     await postularseBtn.click();
 
@@ -161,7 +163,7 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
 
     await loginAndGoHome(page, w);
 
-    const postularseBtn = page.getByRole('button', { name: 'Postularse' }).first();
+    const postularseBtn = cardDaVagaNaHome(page, vacancyId).getByRole('button', { name: 'Postularse' });
     await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
 
     await expect(page.locator('[data-testid="jobs-list"]')).toHaveScreenshot(

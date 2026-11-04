@@ -29,6 +29,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
+import { escolherNoCombo } from '../helpers/combobox';
 import { insertTestPatient, cleanupTestPatient, insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 
 /**
@@ -178,7 +179,7 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
 
     // ── Escolher a âncora abre a tela. O seletor só busca depois de tocado ────
     const picker = page.getByTestId('map-center-patient');
-    await picker.getByRole('button').click();
+    await picker.getByRole('combobox').click();
     const pickerOption = picker.getByRole('option').filter({ hasText: patientName });
     await expect(pickerOption).toHaveCount(1, { timeout: 15_000 });
     // até aqui só o SELETOR foi ao servidor — a lista de prestadores, nunca
@@ -189,12 +190,12 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     const list = page.getByTestId('map-list');
     await expect(page.getByTestId('map-total')).toBeVisible({ timeout: 30_000 });
     // o raio NASCE em 5 km (Marcel na tela, 02/09): A e B ficam, C (~16 km) não
-    await expect(page.getByTestId('map-radius')).toHaveValue('5');
+    await expect(page.getByTestId('map-radius')).toContainText('5 km');
     await expect(page.getByTestId('map-counts')).toContainText('en 5 km');
     await expect(list.locator(`[data-point-id="${workerC}"]`)).toHaveCount(0, { timeout: 15_000 });
 
     // Abrindo para 25 km, Quilmes entra — o raio é filtro de verdade
-    await page.getByTestId('map-radius').selectOption('25');
+    await escolherNoCombo(page, page.getByTestId('map-radius'), '25 km');
     await expect(page.getByTestId('map-counts')).toContainText('en 25 km');
     await expect(list.locator(`[data-point-id="${workerC}"]`)).toBeVisible({ timeout: 15_000 });
     await expect(list.locator(`[data-point-id="${workerA}"]`)).toContainText(nameA);
@@ -223,17 +224,17 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await expect(page).toHaveScreenshot('req04-mapa-prestadores.png', { mask: [map], maxDiffPixelRatio: 0.05 });
 
     // Filtro "Registro incompleto": B e D ficam; A e C somem
-    await page.getByTestId('map-docs').selectOption('incomplete');
+    await escolherNoCombo(page, page.getByTestId('map-docs'), 'Registro incompleto'); // incomplete
     await expect(list.locator(`[data-point-id="${workerA}"]`)).toHaveCount(0, { timeout: 15_000 });
     await expect(list.locator(`[data-point-id="${workerC}"]`)).toHaveCount(0);
     await expect(list.locator(`[data-point-id="${workerB}"]`)).toBeVisible();
     await expect(rowD).toBeVisible();
-    await page.getByTestId('map-docs').selectOption('all');
+    await escolherNoCombo(page, page.getByTestId('map-docs'), 'Todos'); // all
     await expect(list.locator(`[data-point-id="${workerA}"]`)).toBeVisible({ timeout: 15_000 });
 
     // De volta aos 5 km em volta do paciente: A e B ficam (< 5 km), C some (~16 km),
     // D (sem coordenada) continua — quem não tem ponto não é recortado pelo raio.
-    await page.getByTestId('map-radius').selectOption('5');
+    await escolherNoCombo(page, page.getByTestId('map-radius'), '5 km');
     await expect(page.getByTestId('map-counts')).toContainText('en 5 km');
     await expect(list.locator(`[data-point-id="${workerC}"]`)).toHaveCount(0, { timeout: 15_000 });
     await expect(list.locator(`[data-point-id="${workerA}"]`)).toBeVisible();
@@ -277,7 +278,7 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await expect(page.getByTestId('map-list')).toHaveCount(0);
     const ancorarEm = async (nome: string): Promise<void> => {
       const sel = page.getByTestId('map-center-worker');
-      await sel.getByRole('button').click();
+      await sel.getByRole('combobox').click();
       const opt = sel.getByRole('option').filter({ hasText: nome });
       await expect(opt).toHaveCount(1, { timeout: 15_000 });
       await opt.click();
@@ -308,7 +309,7 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     // Trocar de país SOLTA a âncora (ela era do país anterior) e o portão fecha:
     // a régua do C4 é justamente que nada de AR sobrevive à troca para BR.
     const brRow = list.locator(`[data-point-id="${patientBrAddressId}"]`);
-    await page.getByTestId('map-country').selectOption('BR');
+    await escolherNoCombo(page, page.getByTestId('map-country'), 'Brasil'); // BR
     await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('map-list')).toHaveCount(0);
     // ancorando no prestador BR, o paciente de São Paulo aparece e o AR some
@@ -320,23 +321,23 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     // Na aba de prestadores com país BR, o seletor da âncora encontra o paciente de SP e NÃO o de CABA
     await page.getByTestId('map-tab-workers').click();
     const picker = page.getByTestId('map-center-patient');
-    await picker.getByRole('button').click();
+    await picker.getByRole('combobox').click();
     await expect(picker.getByRole('option').filter({ hasText: patientBrName })).toHaveCount(1, { timeout: 15_000 });
     await expect(picker.getByRole('option').filter({ hasText: patientName })).toHaveCount(0);
     await picker.getByRole('option').filter({ hasText: patientBrName }).click();
     await expect(page.getByTestId('map-counts')).toBeVisible();
 
     // De volta a AR: portão fechado de novo nas DUAS abas, e a âncora AR é re-escolhida
-    await page.getByTestId('map-country').selectOption('AR');
+    await escolherNoCombo(page, page.getByTestId('map-country'), 'Argentina'); // AR
     await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 15_000 });
     await page.getByTestId('map-tab-patients').click();
     await ancorarEm(nameA);
     await expect(row).toBeVisible({ timeout: 15_000 });
 
     // Filtro de status: SUSPENDED esconde o ativo
-    await page.getByTestId('map-patient-status').selectOption('SUSPENDED');
+    await escolherNoCombo(page, page.getByTestId('map-patient-status'), 'Suspendido'); // SUSPENDED
     await expect(row).toHaveCount(0, { timeout: 15_000 });
-    await page.getByTestId('map-patient-status').selectOption('');
+    await escolherNoCombo(page, page.getByTestId('map-patient-status'), 'Todos los estados'); // '' = todos
     await expect(row).toBeVisible({ timeout: 15_000 });
 
     const map = page.getByTestId('points-map');
@@ -412,7 +413,7 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await page.goto('/admin/mapa');
 
     const picker = page.getByTestId('map-center-patient');
-    await picker.getByRole('button').click();
+    await picker.getByRole('combobox').click();
 
     // ── O defeito, reproduzido: sem digitar, o seletor só traz os 50 km ──────
     await expect.poll(() => mapPosts.length, { timeout: 15_000 }).toBeGreaterThan(0);
@@ -422,7 +423,8 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await expect(picker.getByRole('option').filter({ hasText: patientMdpName })).toHaveCount(0);
 
     // ── O conserto: digitar o nome troca o ESCOPO da busca ──────────────────
-    await picker.getByRole('textbox').fill(patientMdpName);
+    await expect(picker.getByRole('textbox')).toBeFocused(); // o painel aberto já foca a busca
+    await page.keyboard.type(patientMdpName);
     await expect.poll(() => mapPosts.some((b) => b.search === patientMdpName), { timeout: 15_000 }).toBe(true);
 
     const buscaPost = mapPosts.find((b) => b.search === patientMdpName)!;
@@ -434,7 +436,7 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     // e agora ele está na lista
     const achado = picker.getByRole('option').filter({ hasText: patientMdpName });
     await expect(achado).toHaveCount(1, { timeout: 15_000 });
-    await expect(page.getByTestId('searchable-select-empty')).toHaveCount(0);
+    await expect(page.getByTestId('map-center-patient-no-results')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('10-busca-por-nome-achou.png'), fullPage: false });
 
     // escolher leva o mapa até lá: o centro passa a ser Mar del Plata

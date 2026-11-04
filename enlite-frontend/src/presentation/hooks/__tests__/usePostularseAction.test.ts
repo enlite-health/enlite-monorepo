@@ -32,7 +32,8 @@ const mockTrackAcquisitionChannel = vi.mocked(WorkerApiService.trackAcquisitionC
 // Helpers
 // ---------------------------------------------------------------------------
 
-const WHATSAPP_URL = 'https://wa.me/5511999999999';
+// Spec 067 FR-16: o link NÃO vem mais por prop — chega só na resposta aprovada de track-channel.
+const PRESCREENING_URL = 'https://talentum.invalid/public/pre-screening/00000000-0000-4000-8000-000000000067/chat';
 const JOB_POSTING_ID = 'vacancy-123';
 
 /**
@@ -77,7 +78,7 @@ describe('usePostularseAction', () => {
       logout: vi.fn(),
     });
 
-    mockTrackAcquisitionChannel.mockResolvedValue(undefined);
+    mockTrackAcquisitionChannel.mockResolvedValue({ prescreeningUrl: PRESCREENING_URL });
   });
 
   afterEach(() => {
@@ -85,11 +86,11 @@ describe('usePostularseAction', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 1. whatsappUrl null
+  // 1. canApply false (vaga sem pré-screening)
   // -------------------------------------------------------------------------
 
-  it('sets state to not_available when whatsappUrl is null', async () => {
-    const { result } = renderHook(() => usePostularseAction(null), { wrapper });
+  it('sets state to not_available when canApply is false', async () => {
+    const { result } = renderHook(() => usePostularseAction(false), { wrapper });
 
     await act(async () => {
       await result.current.postularse();
@@ -105,7 +106,7 @@ describe('usePostularseAction', () => {
   // -------------------------------------------------------------------------
 
   it('sets state to not_available when jobPostingId is null', async () => {
-    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL, null), { wrapper });
+    const { result } = renderHook(() => usePostularseAction(true, null), { wrapper });
 
     await act(async () => {
       await result.current.postularse();
@@ -117,7 +118,7 @@ describe('usePostularseAction', () => {
   });
 
   it('sets state to not_available when jobPostingId is omitted (default)', async () => {
-    const { result } = renderHook(() => usePostularseAction(WHATSAPP_URL), { wrapper });
+    const { result } = renderHook(() => usePostularseAction(true), { wrapper });
 
     await act(async () => {
       await result.current.postularse();
@@ -147,7 +148,7 @@ describe('usePostularseAction', () => {
 
     it('sets state to unauthenticated', async () => {
       const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        () => usePostularseAction(true, JOB_POSTING_ID),
         { wrapper },
       );
 
@@ -163,7 +164,7 @@ describe('usePostularseAction', () => {
     it('confirmRegister navigates to /register with returnUrl state', async () => {
       sessionStorage.setItem('enlite_vacancy_return_url', '/vacantes/caso1-2');
       const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        () => usePostularseAction(true, JOB_POSTING_ID),
         { wrapper },
       );
 
@@ -182,7 +183,7 @@ describe('usePostularseAction', () => {
 
     it('confirmRegister passes null returnUrl when sessionStorage is empty', async () => {
       const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        () => usePostularseAction(true, JOB_POSTING_ID),
         { wrapper },
       );
 
@@ -201,7 +202,7 @@ describe('usePostularseAction', () => {
 
     it('dismissModal resets state to idle', async () => {
       const { result } = renderHook(
-        () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+        () => usePostularseAction(true, JOB_POSTING_ID),
         { wrapper },
       );
 
@@ -228,7 +229,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(makeIneligibleError(fields));
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -246,7 +247,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(makeIneligibleError([]));
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -268,7 +269,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -286,7 +287,7 @@ describe('usePostularseAction', () => {
 
   it('opens WhatsApp when trackAcquisitionChannel succeeds', async () => {
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -294,7 +295,7 @@ describe('usePostularseAction', () => {
       await result.current.postularse();
     });
 
-    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+    expect(window.open).toHaveBeenCalledWith(PRESCREENING_URL, '_blank');
     expect(result.current.state).toBe('idle');
     expect(result.current.missingFields).toBeNull();
   });
@@ -309,7 +310,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -328,7 +329,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -345,7 +346,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(err);
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -363,7 +364,7 @@ describe('usePostularseAction', () => {
 
   it('calls trackAcquisitionChannel with null channel when no UTM in sessionStorage', async () => {
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -372,14 +373,14 @@ describe('usePostularseAction', () => {
     });
 
     expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, null);
-    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+    expect(window.open).toHaveBeenCalledWith(PRESCREENING_URL, '_blank');
   });
 
   it('calls trackAcquisitionChannel with UTM channel when present in sessionStorage', async () => {
     sessionStorage.setItem('enlite_utm_source', 'instagram');
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -388,14 +389,14 @@ describe('usePostularseAction', () => {
     });
 
     expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'instagram');
-    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+    expect(window.open).toHaveBeenCalledWith(PRESCREENING_URL, '_blank');
   });
 
   it('clears enlite_utm_source from sessionStorage after successful track', async () => {
     sessionStorage.setItem('enlite_utm_source', 'facebook');
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -417,7 +418,7 @@ describe('usePostularseAction', () => {
     );
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -434,7 +435,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -459,7 +460,7 @@ describe('usePostularseAction', () => {
 
   it('calls trackAcquisitionChannel with fixedChannel when provided, ignoring sessionStorage', async () => {
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID, 'site'),
+      () => usePostularseAction(true, JOB_POSTING_ID, 'site'),
       { wrapper },
     );
 
@@ -468,14 +469,14 @@ describe('usePostularseAction', () => {
     });
 
     expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'site');
-    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+    expect(window.open).toHaveBeenCalledWith(PRESCREENING_URL, '_blank');
   });
 
   it('fixedChannel takes precedence over an existing sessionStorage UTM value', async () => {
     sessionStorage.setItem('enlite_utm_source', 'instagram');
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID, 'site'),
+      () => usePostularseAction(true, JOB_POSTING_ID, 'site'),
       { wrapper },
     );
 
@@ -492,7 +493,7 @@ describe('usePostularseAction', () => {
     });
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -510,7 +511,7 @@ describe('usePostularseAction', () => {
     sessionStorage.setItem('enlite_utm_source', 'facebook');
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -531,7 +532,7 @@ describe('usePostularseAction', () => {
     );
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -565,7 +566,7 @@ describe('usePostularseAction', () => {
     mockTrackAcquisitionChannel.mockRejectedValueOnce(makeIneligibleError(allTokens));
 
     const { result } = renderHook(
-      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      () => usePostularseAction(true, JOB_POSTING_ID),
       { wrapper },
     );
 
@@ -576,5 +577,61 @@ describe('usePostularseAction', () => {
     expect(result.current.state).toBe('incomplete');
     expect(result.current.missingFields).toEqual(allTokens);
     expect(result.current.missingFields).toHaveLength(21);
+  });
+  // -------------------------------------------------------------------------
+  // Spec 067 FR-16: o link vem SÓ da resposta aprovada
+  // -------------------------------------------------------------------------
+
+  describe('spec 067 — o link da Talentum vem só da resposta aprovada de track-channel', () => {
+    it('abre o link da RESPOSTA e nenhum outro', async () => {
+      const outro = 'https://talentum.invalid/public/pre-screening/ffffffff-ffff-4fff-8fff-ffffffffffff/chat';
+      mockTrackAcquisitionChannel.mockResolvedValueOnce({ prescreeningUrl: outro });
+      const { result } = renderHook(() => usePostularseAction(true, JOB_POSTING_ID), { wrapper });
+
+      await act(async () => {
+        await result.current.postularse();
+      });
+
+      expect(window.open).toHaveBeenCalledTimes(1);
+      expect(window.open).toHaveBeenCalledWith(outro, '_blank');
+      expect(window.open).not.toHaveBeenCalledWith(PRESCREENING_URL, '_blank');
+      expect(result.current.state).toBe('idle');
+    });
+
+    it('200 aprovado SEM link (vaga sem pré-screening) → not_available e NADA é aberto', async () => {
+      mockTrackAcquisitionChannel.mockResolvedValueOnce({ prescreeningUrl: null });
+      const { result } = renderHook(() => usePostularseAction(true, JOB_POSTING_ID), { wrapper });
+
+      await act(async () => {
+        await result.current.postularse();
+      });
+
+      expect(result.current.state).toBe('not_available');
+      expect(window.open).not.toHaveBeenCalled();
+    });
+
+    it('resposta sem corpo (fail-closed) → not_available e NADA é aberto', async () => {
+      mockTrackAcquisitionChannel.mockResolvedValueOnce(undefined as never);
+      const { result } = renderHook(() => usePostularseAction(true, JOB_POSTING_ID), { wrapper });
+
+      await act(async () => {
+        await result.current.postularse();
+      });
+
+      expect(result.current.state).toBe('not_available');
+      expect(window.open).not.toHaveBeenCalled();
+    });
+
+    it('403 WORKER_NOT_ELIGIBLE → incomplete e NADA é aberto (o link nunca existiu para este prestador)', async () => {
+      mockTrackAcquisitionChannel.mockRejectedValueOnce(makeIneligibleError(['phone']));
+      const { result } = renderHook(() => usePostularseAction(true, JOB_POSTING_ID), { wrapper });
+
+      await act(async () => {
+        await result.current.postularse();
+      });
+
+      expect(result.current.state).toBe('incomplete');
+      expect(window.open).not.toHaveBeenCalled();
+    });
   });
 });

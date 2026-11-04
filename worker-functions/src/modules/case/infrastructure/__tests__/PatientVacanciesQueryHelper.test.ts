@@ -8,17 +8,18 @@ import { fetchPatientVacancies } from '../PatientVacanciesQueryHelper';
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
 
 const pool = (rows: unknown[]) => ({ query: jest.fn().mockResolvedValue({ rows }) } as unknown as Pool & { query: jest.Mock });
-const ROW = { id: 'v1', caseNumber: '1234', caseOrdinal: '2', vacancyNumber: '77', title: 'T', status: 'SEARCHING', isDraft: true, createdAt: new Date('2026-09-01') };
+const ROW = { id: 'v1', caseNumber: '1234', caseOrdinal: '2', vacancyNumber: '77', title: 'T', status: 'SEARCHING', isDraft: true, contractedServiceId: 'svc-1', createdAt: new Date('2026-09-01') };
 
 describe('fetchPatientVacancies', () => {
   it('devolve caseOrdinal (número) e caseNumber (número); o SQL lê o caso do PACIENTE pelo fragmento com dono e o ordinal da vaga', async () => {
     const p = pool([ROW]);
     const [v] = await fetchPatientVacancies(p, 'pat-1');
-    expect(v).toEqual({ id: 'v1', caseNumber: 1234, caseOrdinal: 2, vacancyNumber: 77, title: 'T', status: 'SEARCHING', isDraft: true, createdAt: ROW.createdAt });
+    expect(v).toEqual({ id: 'v1', caseNumber: 1234, caseOrdinal: 2, vacancyNumber: 77, title: 'T', status: 'SEARCHING', isDraft: true, contractedServiceId: 'svc-1', createdAt: ROW.createdAt });
     const [sql, params] = p.query.mock.calls[0];
     expect(params).toEqual(['pat-1']);
     expect(sql).toContain(`${VACANCY_CASE_NUMBER_SQL} AS "caseNumber"`);
     expect(sql).toContain('jp.case_ordinal  AS "caseOrdinal"');
+    expect(sql).toContain('jp.contracted_service_id AS "contractedServiceId"');
     expect(sql).toContain('LEFT JOIN patients p ON p.id = jp.patient_id');
     expect(sql).not.toContain('jp.case_number');
     expect(sql).toContain('jp.deleted_at IS NULL');

@@ -1,0 +1,456 @@
+/**
+ * ContractedServiceContractPanel — o contrato do serviço existente (spec 058 §1.5, §4.4): NO_CONTRACT, vincular, obra social TRAVADA
+ * depois do 1º vínculo, trocar (SWITCHED) / corrigir (CORRECTION) / terminar, preço e imposto SÓ exibidos, REDACTED, e as saídas
+ * REQUIRES_NEW_SERVICE / USE_CORRECTION (frase + botão). i18n REAL (es).
+ */
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import esJson from '@infrastructure/i18n/locales/es.json';
+import { CONTRACT_058_DEFAULTS, LINKED_058 } from '@domain/entities/__tests__/fixtures/contractedService058';
+import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { ContractedServiceContractPanel } from '../ContractedServiceContractPanel';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
+
+const mockCreateGate = vi.fn(() => ({ allowed: true }));
+vi.mock('@presentation/hooks/useCellAccess', () => ({
+  useActionGate: (resource: string, action: string) => (resource === 'patient_services' && action === 'create' ? mockCreateGate() : { allowed: true }),
+}));
+const mockForService = vi.fn();
+const mockListContracts = vi.fn();
+const mockCreateLink = vi.fn();
+const mockEndLink = vi.fn();
+const mockSupersede = vi.fn();
+vi.mock('@infrastructure/http/AdminInsuranceApiService', () => ({
+  AdminInsuranceApiService: {
+    listProvidersForService: (...a: unknown[]) => mockForService(...a),
+    listContracts: (...a: unknown[]) => mockListContracts(...a),
+    createContractLink: (...a: unknown[]) => mockCreateLink(...a),
+    endContractLink: (...a: unknown[]) => mockEndLink(...a),
+    supersedeContractLink: (...a: unknown[]) => mockSupersede(...a),
+  },
+}));
+
+beforeAll(async () => {
+  await i18n.use(initReactI18next).init({ lng: 'es', fallbackLng: 'es', resources: { es: { translation: esJson } }, interpolation: { escapeValue: false }, initImmediate: false });
+});
+
+const BASE = {
+  id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: null, providersNeeded: 1, authorization: null, scheduleHours: 0, careLocation: null,
+  startDate: null, supervisionFrequency: null, guardShift: null, providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null,
+  workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, liveVacancy: null, liveVacancyRedacted: false,
+  active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+};
+const UNLINKED = { ...BASE, ...CONTRACT_058_DEFAULTS } as PatientContractedServiceDetail;
+const LINKED = { ...BASE, ...LINKED_058 } as PatientContractedServiceDetail;
+const ENDED = {
+  ...UNLINKED,
+  payerHistory: [{ linkId: 'l1', isPrivate: false, validFrom: '2026-01-01', validTo: '2026-06-30', names: LINKED_058.payer.names }],
+} as PatientContractedServiceDetail;
+const NO_COVERAGE_PERM = {
+  ...LINKED,
+  payer: { state: 'LINKED', isPrivate: false, validFrom: '2026-09-01', validTo: null, names: null },
+  price: { state: 'REDACTED' },
+  coverageMatch: { state: 'REDACTED' },
+} as PatientContractedServiceDetail;
+
+const CONTRATO = { id: 'ct-2', name: 'Plan 310', country: 'AR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'NO_TERM' }, futureTerms: [] };
+const erro = (status: number, code: string) => Object.assign(new Error('x'), { status, code });
+
+function renderPanel(service: PatientContractedServiceDetail, extra: Partial<React.ComponentProps<typeof ContractedServiceContractPanel>> = {}) {
+  const onChanged = vi.fn();
+  const onRequestNewService = vi.fn();
+  render(<ContractedServiceContractPanel patientId="pat1" service={service} onChanged={onChanged} onRequestNewService={onRequestNewService} {...extra} />);
+  return { onChanged, onRequestNewService };
+}
+
+/** Abre a pergunta "¿Qué pasó con la cobertura?" e escolhe a resposta (o fluxo humano: botão -> cartão). */
+const choose = (answerTestId: string): void => {
+  fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+  fireEvent.click(screen.getByTestId(answerTestId));
+};
+
+const optionsOf = (testId: string): string[] => comboLabels(screen.getByTestId(testId));
+
+describe('ContractedServiceContractPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateGate.mockReturnValue({ allowed: true });
+    mockForService.mockResolvedValue({ providers: [{ code: 'OSDE', name: 'OSDE' }, { code: 'GALENO', name: 'Galeno' }], asOf: '2026-10-19' });
+    mockListContracts.mockResolvedValue([CONTRATO]);
+  });
+
+  it('sem vínculo: estado vazio com a frase própria (sem valor nem imposto inventados) e só o botão "Vincular obra social y contrato"', () => {
+    renderPanel(UNLINKED);
+    expect(screen.getByTestId('svc-payer').getAttribute('data-state')).toBe('NO_CONTRACT');
+    expect(screen.getByTestId('svc-payer').textContent).toContain('Este servicio todavía no tiene obra social ni contrato');
+    expect(screen.getByTestId('svc-payer').textContent).toContain('Hasta vincularlo no hay valor ni impuesto');
+    expect(screen.queryByTestId('svc-price')).toBeNull();
+    expect(screen.queryByTestId('svc-tax')).toBeNull();
+    expect(screen.queryByTestId('svc-contract-change-open')).toBeNull();
+    expect(screen.getByTestId('svc-contract-link-open').textContent).toBe('Vincular obra social y contrato');
+    expect(screen.queryByTestId('svc-contract-switch-open')).toBeNull();
+    expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+  });
+
+  it('vincular: cascata Obra social -> Contrato; salvar manda contractId + validFrom (o asOf da resposta) + validTo null e devolve o serviço ao pai', async () => {
+    const vinculado = { ...LINKED, id: 's1' };
+    mockCreateLink.mockResolvedValue(vinculado);
+    const { onChanged } = renderPanel(UNLINKED);
+    fireEvent.click(screen.getByTestId('svc-contract-link-open'));
+    await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('OSDE'));
+    expect((screen.getByTestId('svc-contract-save') as HTMLButtonElement).disabled).toBe(true); // sem contrato escolhido não grava
+    chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE'); // OSDE = OSDE
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' });
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
+    await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledWith(vinculado));
+    expect(mockCreateLink).toHaveBeenCalledWith('pat1', 's1', { contractId: 'ct-2', validFrom: '2026-10-19', validTo: null });
+  });
+
+  it('vinculado: mostra obra social — contrato (nomes do banco), vigência, tipo do pagador, preço e imposto SÓ exibidos (sem campo editável)', () => {
+    renderPanel(LINKED);
+    expect(screen.getByTestId('svc-payer-provider').textContent).toBe('OSDE');
+    expect(screen.getByTestId('svc-payer-contract').textContent).toBe('Plan 210');
+    expect(screen.getByTestId('svc-payer').textContent).toContain('Vigente hoy · 19/10/2026'); // eyebrow com o asOf (o CSS põe em caixa-alta)
+    expect(screen.getByTestId('svc-payer-validity').textContent).toBe('Desde 1/9/2026 · sin fecha de fin');
+    expect(screen.getByTestId('svc-payer-kind').textContent).toContain('Prepaga');
+    expect(screen.getByTestId('svc-price').textContent).toMatch(/1\.?500/);
+    expect(screen.getByTestId('svc-tax').textContent).toBe('21 %');
+    expect(screen.getByTestId('svc-coverage-match').getAttribute('data-state')).toBe('MATCH');
+    // nada editável de valor/imposto: só botões de ação do vínculo
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByTestId('svc-contract-link-open')).toBeNull();
+  });
+
+  it('trocar de contrato (SWITCHED): a obra social fica TRAVADA na do vínculo; salvar chama supersede com reason SWITCHED', async () => {
+    mockSupersede.mockResolvedValue({ ...LINKED });
+    const { onChanged } = renderPanel(LINKED);
+    choose('svc-contract-switch-open');
+    const provider = screen.getByTestId('svc-contract-provider') as HTMLButtonElement;
+    await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' }));
+    expect(provider).toHaveTextContent('OSDE');
+    expect(provider.disabled).toBe(true);
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
+    await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(mockSupersede).toHaveBeenCalledWith('pat1', 's1', { reason: 'SWITCHED', contractId: 'ct-2', validFrom: '2026-10-19', validTo: null }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('corrigir (CORRECTION): só aqui a obra social destrava; salvar manda reason CORRECTION', async () => {
+    mockSupersede.mockResolvedValue({ ...LINKED });
+    renderPanel(LINKED);
+    choose('svc-contract-correct-open');
+    await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('Galeno'));
+    expect((screen.getByTestId('svc-contract-provider') as HTMLButtonElement).disabled).toBe(false);
+    chooseCombo(screen.getByTestId('svc-contract-provider'), 'Galeno'); // GALENO = Galeno
+    await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('GALENO', { offered: true, country: 'AR' }));
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
+    await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(mockSupersede).toHaveBeenCalledWith('pat1', 's1', expect.objectContaining({ reason: 'CORRECTION', contractId: 'ct-2' })));
+  });
+
+  it('terminar vínculo: o último dia vigente nasce no asOf do serviço (não em new Date) e vai em end', async () => {
+    mockEndLink.mockResolvedValue({ ...UNLINKED });
+    const { onChanged } = renderPanel(LINKED);
+    choose('svc-contract-end-open');
+    expect((screen.getByTestId('svc-contract-end-to') as HTMLInputElement).value).toBe('2026-10-19');
+    fireEvent.change(screen.getByTestId('svc-contract-end-to'), { target: { value: '2026-12-31' } });
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(mockEndLink).toHaveBeenCalledWith('pat1', 's1', { validTo: '2026-12-31' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('cancelar fecha o formulário sem chamar a API', () => {
+    renderPanel(LINKED);
+    choose('svc-contract-end-open');
+    fireEvent.click(screen.getByTestId('svc-contract-cancel'));
+    expect(screen.queryByTestId('svc-contract-form-end')).toBeNull();
+    expect(mockEndLink).not.toHaveBeenCalled();
+  });
+
+  it('REQUIRES_NEW_SERVICE: frase + botão "Crear un servicio nuevo" que chama o pai', async () => {
+    mockCreateLink.mockRejectedValue(erro(422, 'REQUIRES_NEW_SERVICE'));
+    const { onRequestNewService } = renderPanel(UNLINKED);
+    fireEvent.click(screen.getByTestId('svc-contract-link-open'));
+    await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('OSDE'));
+    chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE'); // OSDE = OSDE
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
+    await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(screen.getByTestId('svc-contract-error').textContent).toContain('otra admisión'));
+    fireEvent.click(screen.getByTestId('svc-contract-error-new-service'));
+    expect(onRequestNewService).toHaveBeenCalledTimes(1);
+  });
+
+  it('USE_CORRECTION: frase + botão "Corregir vínculo" que abre o modo correção', () => {
+    renderPanel(LINKED, { initialError: erro(422, 'USE_CORRECTION') });
+    expect(screen.getByTestId('svc-contract-error').textContent).toContain('ningún período anterior');
+    fireEvent.click(screen.getByTestId('svc-contract-error-correct'));
+    expect(screen.getByTestId('svc-contract-form-correct')).toBeTruthy();
+    expect(screen.queryByTestId('svc-contract-error')).toBeNull(); // abrir o formulário limpa o erro anterior
+  });
+
+  it('serviço já ENCERRADO (histórico, sem vínculo vivo): oferece "Crear un servicio nuevo" além de vincular', () => {
+    const { onRequestNewService } = renderPanel(ENDED);
+    fireEvent.click(screen.getByTestId('svc-contract-new-service'));
+    expect(onRequestNewService).toHaveBeenCalledTimes(1);
+  });
+
+  it('erro por constraint/código vira a frase do idioma — nunca o texto cru do back', async () => {
+    mockEndLink.mockRejectedValue(Object.assign(new Error('Range overlap'), { status: 409, code: 'RANGE_OVERLAP', details: { constraint: 'contracted_service_contract_sem_sobreposicao' } }));
+    renderPanel(LINKED);
+    choose('svc-contract-end-open');
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(screen.getByTestId('svc-contract-error').textContent).toContain('otro vínculo del mismo servicio'));
+    expect(screen.getByTestId('svc-contract-error').textContent).not.toContain('Range overlap');
+  });
+
+  it('erro 409 genérico e 422 sem code usam a frase do status', async () => {
+    mockEndLink.mockRejectedValueOnce(erro(409, 'CONCURRENCY_CONFLICT'));
+    renderPanel(LINKED);
+    choose('svc-contract-end-open');
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(screen.getByTestId('svc-contract-error').textContent).toContain('al mismo tiempo'));
+  });
+
+  it('sem a célula de preço (REDACTED) e sem `coverage`: cadeado, obra social oculta, divergência REDACTED, sem tipo de pagador; sem a resposta "trocar de contrato" (não há nome para travar), corrigir segue', () => {
+    renderPanel(NO_COVERAGE_PERM);
+    expect(screen.getByTestId('svc-price').textContent).toContain('🔒');
+    expect(screen.getByTestId('svc-price').textContent).not.toMatch(/\d/);
+    expect(screen.getByTestId('svc-tax').textContent).toBe('21 %'); // o imposto nunca é redigido
+    expect(screen.getByTestId('svc-payer').textContent).toContain('Obra social no visible con tu permiso');
+    expect(screen.queryByTestId('svc-payer-kind')).toBeNull();
+    expect(screen.getByTestId('svc-coverage-match').getAttribute('data-state')).toBe('REDACTED');
+    fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+    expect(screen.queryByTestId('svc-contract-switch-open')).toBeNull();
+    expect(screen.getByTestId('svc-contract-correct-open')).toBeTruthy();
+  });
+
+  it('pagador PARTICULAR (isPrivate) sem permissão de nomes: mostra "Particular", não "oculto"', () => {
+    const particular = { ...NO_COVERAGE_PERM, payer: { state: 'LINKED', isPrivate: true, validFrom: '2026-09-01', validTo: null, names: null }, coverageMatch: { state: 'REDACTED' } } as PatientContractedServiceDetail;
+    renderPanel(particular);
+    expect(screen.getByTestId('svc-payer').textContent).toContain('Particular');
+  });
+
+  it('serviço em BAIXA: nem "Vincular" nem "Crear un servicio nuevo" aparecem, e o vínculo encerrado segue como histórico', () => {
+    renderPanel({ ...ENDED, active: false, endedAt: '2026-10-10T00:00:00Z' });
+    expect(screen.queryByTestId('svc-contract-link-open')).toBeNull();
+    expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+    expect(screen.queryByTestId('svc-contract-end-open')).toBeNull();
+    expect(screen.getByTestId('svc-payer').getAttribute('data-state')).toBe('NO_CONTRACT');
+  });
+
+  it('serviço em BAIXA que ainda traga vínculo vivo: o botão que abre a pergunta fica desligado', () => {
+    renderPanel({ ...LINKED, active: false });
+    expect((screen.getByTestId('svc-contract-change-open') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  describe('vínculo vivo que só começa no futuro (asOf 19/10, início 01/11)', () => {
+    const FUTURE = {
+      ...UNLINKED,
+      payerHistory: [{ linkId: 'l1', isPrivate: false, validFrom: '2026-11-01', validTo: null, names: LINKED_058.payer.names }],
+    } as PatientContractedServiceDetail;
+
+    it('mostra o contrato e "programado desde" a data; esconde "Vincular"; oferece Corrigir e Terminar habilitados', () => {
+      renderPanel(FUTURE);
+      expect(screen.getByTestId('svc-payer-provider').textContent).toBe('OSDE');
+      expect(screen.getByTestId('svc-payer-contract').textContent).toBe('Plan 210');
+      expect(screen.getByTestId('svc-payer-scheduled').textContent).toMatch(/1\/11\/2026/);
+      expect(screen.queryByTestId('svc-contract-link-open')).toBeNull();
+      expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      expect((screen.getByTestId('svc-contract-correct-open') as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByTestId('svc-contract-end-open') as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.queryByTestId('svc-contract-switch-open')).toBeNull(); // só com vínculo VIVO hoje
+      expect(screen.getByTestId('svc-contract-new-service')).toBeTruthy(); // a resposta "otra obra social" vale também para o programado
+    });
+
+    it('Corrigir manda CORRECTION; Terminar nasce no início do vínculo (não antes dele) e vai em end', async () => {
+      mockSupersede.mockResolvedValue(FUTURE);
+      mockEndLink.mockResolvedValue(FUTURE);
+      renderPanel(FUTURE);
+      choose('svc-contract-end-open');
+      expect((screen.getByTestId('svc-contract-end-to') as HTMLInputElement).value).toBe('2026-11-01');
+      fireEvent.click(screen.getByTestId('svc-contract-save'));
+      await waitFor(() => expect(mockEndLink).toHaveBeenCalledWith('pat1', 's1', { validTo: '2026-11-01' }));
+      choose('svc-contract-correct-open');
+      expect(screen.getByTestId('svc-contract-form-correct')).toBeTruthy();
+    });
+
+    it('USE_CORRECTION sem vínculo vigente (futuro) ainda traz o botão que abre a correção', () => {
+      renderPanel(FUTURE, { initialError: erro(422, 'USE_CORRECTION') });
+      fireEvent.click(screen.getByTestId('svc-contract-error-correct'));
+      expect(screen.getByTestId('svc-contract-form-correct')).toBeTruthy();
+    });
+  });
+
+  it('erro herdado (vínculo que falhou logo após criar o serviço) aparece já na abertura', () => {
+    renderPanel(UNLINKED, { initialError: erro(422, 'COUNTRY_MISMATCH') });
+    expect(screen.getByTestId('svc-contract-error').textContent).toContain('país del contrato');
+  });
+
+  it('as 7 divergências do serviço chegam traduzidas', () => {
+    for (const state of ['NO_PAYER', 'PRIVATE_PAYER', 'NO_COVERAGE', 'UNMAPPED_ONLY', 'MATCH', 'MISMATCH', 'REDACTED'] as const) {
+      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={{ ...LINKED, coverageMatch: { state } } as PatientContractedServiceDetail} onChanged={vi.fn()} />);
+      expect(screen.getByTestId('svc-coverage-match').getAttribute('data-state')).toBe(state);
+      expect(screen.getByTestId('svc-coverage-match').textContent).not.toContain('admin.patients');
+      unmount();
+    }
+  });
+
+
+  describe('"¿Qué pasó con la cobertura?" (opção A)', () => {
+    it('fechada por padrão: só o cartão + o botão "Cambiar, corregir o terminar…"; abrir mostra as 4 respostas como radios', () => {
+      renderPanel(LINKED);
+      expect(screen.queryByTestId('svc-contract-chooser')).toBeNull();
+      expect(screen.getByTestId('svc-contract-change-open').textContent).toBe('Cambiar, corregir o terminar…');
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      const radios = screen.getAllByRole('radio');
+      expect(radios.map((r) => r.getAttribute('data-testid'))).toEqual(['svc-contract-switch-open', 'svc-contract-correct-open', 'svc-contract-end-open', 'svc-contract-new-service']);
+      expect(radios.every((r) => r.getAttribute('aria-checked') === 'false')).toBe(true);
+      expect(screen.getByTestId('svc-contract-switch-open').textContent).toContain('Cambió el contrato, sigue OSDE');
+      expect(screen.queryByTestId('svc-contract-form-switch')).toBeNull(); // nenhum formulário até escolher
+    });
+
+    it('escolher a resposta marca o radio e mostra SÓ o formulário daquele modo, com o botão primário do modo', () => {
+      renderPanel(LINKED);
+      choose('svc-contract-switch-open');
+      expect(screen.getByTestId('svc-contract-switch-open').getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByTestId('svc-contract-form-switch')).toBeTruthy();
+      expect(screen.getByTestId('svc-contract-save').textContent).toBe('Cambiar de contrato');
+      fireEvent.click(screen.getByTestId('svc-contract-correct-open'));
+      expect(screen.queryByTestId('svc-contract-form-switch')).toBeNull();
+      expect(screen.getByTestId('svc-contract-save').textContent).toBe('Corregir vínculo');
+      fireEvent.click(screen.getByTestId('svc-contract-end-open'));
+      expect(screen.getByTestId('svc-contract-save').textContent).toBe('Terminar vínculo');
+    });
+
+    it('a resposta "Cambió el contrato" só existe com vínculo VIVO e nomes visíveis (sem `linked`, não há o que trocar)', () => {
+      const FUTURE = { ...UNLINKED, payerHistory: [{ linkId: 'l1', isPrivate: false, validFrom: '2026-11-01', validTo: null, names: LINKED_058.payer.names }] } as PatientContractedServiceDetail;
+      renderPanel(FUTURE);
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      expect(screen.queryByTestId('svc-contract-switch-open')).toBeNull();
+      expect(screen.getByTestId('svc-contract-correct-open')).toBeTruthy();
+    });
+
+    it('"Ahora lo cubre otra obra social" chama o pai (serviço novo) e NÃO abre formulário', () => {
+      const { onRequestNewService } = renderPanel(LINKED);
+      choose('svc-contract-new-service');
+      expect(onRequestNewService).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('svc-contract-save')).toBeNull();
+    });
+
+    it('sem `patient_services:create` a resposta "otra obra social" some (as outras 3 ficam); com a célula, aparece', () => {
+      mockCreateGate.mockReturnValue({ allowed: false });
+      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={LINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+      expect(screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'))).toEqual(['svc-contract-switch-open', 'svc-contract-correct-open', 'svc-contract-end-open']);
+      unmount();
+      mockCreateGate.mockReturnValue({ allowed: true });
+      render(<ContractedServiceContractPanel patientId="pat1" service={LINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      expect(screen.getByTestId('svc-contract-new-service')).toBeTruthy();
+    });
+
+    it('sem `onRequestNewService` a resposta "otra obra social" não aparece', () => {
+      render(<ContractedServiceContractPanel patientId="pat1" service={LINKED} onChanged={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+    });
+
+    it('teclado: Tab chega ao cartão e Enter o escolhe (abre o formulário daquele modo)', async () => {
+      const user = userEvent.setup();
+      renderPanel(LINKED);
+      fireEvent.click(screen.getByTestId('svc-contract-change-open'));
+      const end = screen.getByTestId('svc-contract-end-open');
+      end.focus();
+      expect(document.activeElement).toBe(end);
+      await user.keyboard('{Enter}');
+      expect(screen.getByTestId('svc-contract-form-end')).toBeTruthy();
+      expect(end.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('com vínculo futuro além do vivo, o selo diz "Desde el … pasa a …"', () => {
+      const withFuture = { ...LINKED, payerHistory: [{ linkId: 'l2', isPrivate: false, validFrom: '2026-11-01', validTo: null, names: { ...LINKED_058.payer.names, contractName: 'Plan 310' } }] } as PatientContractedServiceDetail;
+      renderPanel(withFuture);
+      expect(screen.getByTestId('svc-payer-future').textContent).toBe('Desde el 1/11/2026 pasa a OSDE · Plan 310');
+    });
+
+    it('vínculo terminado: "Sin cobertura vigente" + o último vínculo com a data de fim', () => {
+      renderPanel(ENDED);
+      expect(screen.getByTestId('svc-payer').textContent).toContain('Sin cobertura vigente');
+      expect(screen.getByTestId('svc-payer').textContent).toContain('OSDE · Plan 210, hasta el 30/6/2026');
+    });
+  });
+
+  describe('"Crear un servicio nuevo" fora do chooser: só com `patient_services:create` (a frase fica)', () => {
+    it('(a) erro REQUIRES_NEW_SERVICE: sem create o botão some e a frase continua; com create o botão aparece', () => {
+      mockCreateGate.mockReturnValue({ allowed: false });
+      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={UNLINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} initialError={erro(422, 'REQUIRES_NEW_SERVICE')} />);
+      expect(screen.getByTestId('svc-contract-error').textContent).toContain('otra admisión');
+      expect(screen.queryByTestId('svc-contract-error-new-service')).toBeNull();
+      unmount();
+      mockCreateGate.mockReturnValue({ allowed: true });
+      render(<ContractedServiceContractPanel patientId="pat1" service={UNLINKED} onChanged={vi.fn()} onRequestNewService={vi.fn()} initialError={erro(422, 'REQUIRES_NEW_SERVICE')} />);
+      expect(screen.getByTestId('svc-contract-error-new-service')).toBeTruthy();
+    });
+
+    it('(b) estado terminado: sem create o botão some e o texto "Sin cobertura vigente" continua; com create aparece', () => {
+      mockCreateGate.mockReturnValue({ allowed: false });
+      const { unmount } = render(<ContractedServiceContractPanel patientId="pat1" service={ENDED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      expect(screen.getByTestId('svc-payer').textContent).toContain('Sin cobertura vigente');
+      expect(screen.queryByTestId('svc-contract-new-service')).toBeNull();
+      expect(screen.getByTestId('svc-contract-link-open')).toBeTruthy(); // vincular segue (é `update`)
+      unmount();
+      mockCreateGate.mockReturnValue({ allowed: true });
+      render(<ContractedServiceContractPanel patientId="pat1" service={ENDED} onChanged={vi.fn()} onRequestNewService={vi.fn()} />);
+      expect(screen.getByTestId('svc-contract-new-service')).toBeTruthy();
+    });
+  });
+
+  describe('cascata — falhas de leitura', () => {
+    it('sem permissão para listar (403): avisa com a frase do idioma, sem lista e sem travar o formulário', async () => {
+      mockForService.mockRejectedValue(erro(403, ''));
+      renderPanel(UNLINKED);
+      fireEvent.click(screen.getByTestId('svc-contract-link-open'));
+      await waitFor(() => expect(screen.getByTestId('svc-contract-load-error').textContent).toContain('No tenés permiso'));
+    });
+
+    it('nenhuma obra social com contrato oferecido no país: aviso próprio (não uma lista vazia muda)', async () => {
+      mockForService.mockResolvedValue({ providers: [], asOf: '2026-10-19' });
+      renderPanel(UNLINKED);
+      fireEvent.click(screen.getByTestId('svc-contract-link-open'));
+      await waitFor(() => expect(screen.getByTestId('svc-contract-no-providers')).toBeTruthy());
+    });
+
+    it('serviço sem país válido: aviso e NENHUMA chamada à API', () => {
+      renderPanel({ ...UNLINKED, country: '' });
+      fireEvent.click(screen.getByTestId('svc-contract-link-open'));
+      expect(screen.getByTestId('svc-contract-no-country')).toBeTruthy();
+      expect(mockForService).not.toHaveBeenCalled();
+    });
+
+    it('a prévia do contrato escolhido mostra preço e imposto do termo, só leitura', async () => {
+      mockListContracts.mockResolvedValue([{ ...CONTRATO, currentTerm: { state: 'OK', termId: 't', validFrom: '2026-09-01', validTo: null, taxRatePercent: 0, price: { state: 'OK', hourlyRate: 2000, currency: 'ARS' } } }]);
+      renderPanel(UNLINKED);
+      fireEvent.click(screen.getByTestId('svc-contract-link-open'));
+      await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('OSDE'));
+      chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE'); // OSDE = OSDE
+      await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+      chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
+      expect(screen.getByTestId('svc-contract-preview-price').textContent).toMatch(/2\.?000/);
+      expect(screen.getByTestId('svc-contract-preview-tax').textContent).toBe('Exento (0 %)');
+    });
+  });
+});

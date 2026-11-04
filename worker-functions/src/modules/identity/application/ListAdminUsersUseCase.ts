@@ -5,9 +5,9 @@ import { toAdminUserDto, type AdminUserDto } from './adminUserDto';
 export class ListAdminUsersUseCase {
   private adminRepo = new AdminRepository();
 
-  async execute(limit = 50, offset = 0): Promise<Result<{ admins: AdminUserDto[]; total: number }>> {
+  async execute(limit = 50, offset = 0, forGroupId?: string | null): Promise<Result<{ admins: AdminUserDto[]; total: number }>> {
     try {
-      const data = await this.adminRepo.listAdmins(limit, offset);
+      const data = await this.adminRepo.listAdmins(limit, offset, forGroupId);
       return Result.ok({ admins: data.admins.map(toAdminUserDto), total: data.total });
     } catch (error) {
       return Result.fail(

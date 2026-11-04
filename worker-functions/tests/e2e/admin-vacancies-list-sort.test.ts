@@ -8,6 +8,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -73,6 +74,8 @@ describe('GET /api/admin/vacancies — sort/order (spec 046 F3)', () => {
            VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires', 'REGISTERED') RETURNING id`,
           [`uid-f3sort-${suffix}`, `worker-${suffix}@f3sort.test`],
         );
+        // spec 067: "Completados" da lista só conta prestador APTO; a intenção do teste é ordenar por Completados reais
+        await completeWorkerProfile(pool, w.rows[0].id, 'validated');
         await pool.query(
           `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage)
            VALUES ($1, $2, 'COMPLETED')`,
@@ -85,6 +88,8 @@ describe('GET /api/admin/vacancies — sort/order (spec 046 F3)', () => {
   afterAll(async () => {
     if (!pool) return;
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = ANY($1::uuid[])`, [vacancyIds]);
+    const ws = await pool.query<{ id: string }>(`SELECT id FROM workers WHERE email LIKE '%@f3sort.test'`);
+    await cleanWorkerProfile(pool, ws.rows.map((r) => r.id));
     await pool.query(`DELETE FROM workers WHERE email LIKE '%@f3sort.test'`);
     await pool.query(`DELETE FROM job_postings WHERE id = ANY($1::uuid[])`, [vacancyIds]);
     await pool.query(`DELETE FROM patients WHERE id = ANY($1::uuid[])`, [patientIds]);

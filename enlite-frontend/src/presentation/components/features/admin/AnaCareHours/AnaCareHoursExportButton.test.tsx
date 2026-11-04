@@ -83,7 +83,7 @@ describe('AnaCareHoursExportButton', () => {
     const user = userEvent.setup();
     renderButton({ patients: [{ anaCareId: 'AC-PAT-6', linked: false, providers: [], providersCount: 0, shiftsCount: 0, hoursActualSum: 0, hoursScheduledSumMissingActual: 0, validated: 0, contested: 0, originSinCheckin: 0, originWebAdmin: 0, originApp: 0 }], initialPatientId: 'AC-PAT-0', initialMonth: '2026-08' });
     await user.click(trigger());
-    expect(screen.getByTestId('anacare-hours-export-patient')).toHaveValue('Sin vínculo · ID AC-PAT-0');
+    expect(screen.getByTestId('anacare-hours-export-patient')).toHaveTextContent('Sin vínculo · ID AC-PAT-0');
     expect(screen.getByTestId('anacare-hours-export-desde')).toHaveValue('2026-08-01');
     expect(screen.getByTestId('anacare-hours-export-hasta')).toHaveValue('2026-08-31');
   });

@@ -12,8 +12,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
-import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { BillingAddressField, type BillingAddressValue } from './BillingAddressField';
@@ -130,15 +129,15 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  const documentTypeOptions: SelectOption[] = DOCUMENT_TYPES.map((d) => ({
+  const documentTypeOptions: ComboboxOption[] = DOCUMENT_TYPES.map((d) => ({
     value: d,
     label: t(`admin.patients.detail.documentTypes.${d}`, { defaultValue: d }),
   }));
-  const sexOptions: SelectOption[] = SEXES.map((s) => ({
+  const sexOptions: ComboboxOption[] = SEXES.map((s) => ({
     value: s,
     label: t(`admin.patients.detail.sex.${s}`, { defaultValue: s }),
   }));
-  const genderOptions: SelectOption[] = PATIENT_GENDERS.map((g) => ({
+  const genderOptions: ComboboxOption[] = PATIENT_GENDERS.map((g) => ({
     value: g,
     label: t(`admin.patients.detail.generalInfoCard.genderOptions.${g}`, { defaultValue: g }),
   }));
@@ -247,7 +246,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             </FormField>
             <FormField label={tc('documentType')} htmlFor="pge-documentType" optional>
               <Controller control={control} name="documentType" render={({ field }) => (
-                <SelectField inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-documentType" />
+                <Combobox inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-documentType" />
               )} />
             </FormField>
             <FormField label={tc('documentNumber')} htmlFor="pge-documentNumber" optional>
@@ -261,19 +260,19 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             </FormField>
             <FormField label={td('generalInfoCard.sex')} htmlFor="pge-sex" optional>
               <Controller control={control} name="sex" render={({ field }) => (
-                <SelectField inputSize="compact" options={sexOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-sex" />
+                <Combobox inputSize="compact" options={sexOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-sex" />
               )} />
             </FormField>
             {/* Spec 018 PR-3 (Emenda 13/09, migration 425): coleta SEMPRE facultativa (Ley 25.326
                 art. 7 inc. 1) — `optional`, nunca `required`, e nenhum `.min` no schema acima. */}
             <FormField label={td('generalInfoCard.gender')} htmlFor="pge-gender" optional>
               <Controller control={control} name="gender" render={({ field }) => (
-                <SelectField inputSize="compact" options={genderOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-gender" />
+                <Combobox inputSize="compact" options={genderOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-gender" />
               )} />
             </FormField>
             <FormField label={td('generalInfoCard.languages')} htmlFor="pge-languages" optional>
               <Controller control={control} name="languages" render={({ field }) => (
-                <MultiSelect options={languageOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pge-languages" />
+                <Combobox multiple options={languageOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pge-languages" inputSize="compact" />
               )} />
             </FormField>
             <BillingAddressField

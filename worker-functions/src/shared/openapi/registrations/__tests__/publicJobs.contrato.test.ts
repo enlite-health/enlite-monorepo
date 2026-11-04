@@ -91,4 +91,12 @@ describe('contrato: OpenAPI x domain dos filtros publicos', () => {
       }
     });
   });
+
+  describe('spec 067 FR-14/15/17 — o LINK da Talentum não sai da rota pública; sai só o booleano', () => {
+    it('o item de /api/public/v1/jobs documenta can_apply e NÃO documenta whatsapp_url', () => {
+      const campos = Object.keys(PublicJobV1ItemSchema.shape);
+      expect(campos).toContain('can_apply');
+      expect(campos).not.toContain('whatsapp_url');
+    });
+  });
 });

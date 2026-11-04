@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CARE_LOCATIONS, CONTRACT_TYPES, TAX_CONDITIONS, SUPERVISION_FREQUENCIES, GUARD_SHIFTS, PROVIDER_AGE_BANDS } from '../../domain/enums/ContractedService';
+import { CARE_LOCATIONS, SUPERVISION_FREQUENCIES, GUARD_SHIFTS, PROVIDER_AGE_BANDS } from '../../domain/enums/ContractedService';
 
 const SERVICE_CODES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 
@@ -36,18 +36,17 @@ const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
- * Horário do encuadre (migration 330) — o MESMO slot que o form da vaga persiste em
- * `job_postings.schedule` (`scheduleToJsonb`): `{ dayOfWeek 0-6, startTime, endTime }` em HH:MM.
+ * Horário do serviço (spec 056, plan.md §5.1): turno = `{ dayOfWeek 0-6, startTime HH:MM, durationMinutes 1..1440 }`.
+ * O fim NUNCA entra pela API (`.strict()`): é derivado (início + duração). Inicio/Fin → duração é conta só do front.
  * `null` = "ainda sem horário" (decisão do Gabriel 05/09: a vacante pode nascer sem horário).
  */
 const scheduleSlotSchema = z
   .object({
     dayOfWeek: z.number().int().min(0).max(6),
     startTime: z.string().regex(HHMM),
-    endTime: z.string().regex(HHMM),
+    durationMinutes: z.number().int().min(1).max(1440),
   })
-  .strict()
-  .refine((s) => s.startTime < s.endTime, { message: 'startTime must be before endTime' });
+  .strict();
 
 // `[]` vira `null` AQUI, na borda: "sem horário" tem UMA representação no banco (NULL), não
 // duas (NULL e '[]') — o `null` que significa duas coisas já apagou dado nesta casa (D167).
@@ -66,13 +65,8 @@ export const createContractedServiceSchema = z
     serviceCode: z.enum(SERVICE_CODES),
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
-    authorizedHours: z.number().nonnegative().nullable().optional(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
-    hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-    contractType: optionalEnum(CONTRACT_TYPES as unknown as [string, ...string[]]),
-    taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
     supervisionFrequency: optionalEnum(SUPERVISION_FREQUENCIES as unknown as [string, ...string[]]),
     guardShift: optionalEnum(GUARD_SHIFTS as unknown as [string, ...string[]]),
     // Spec 015 (US-A6.1, D191/D254/D256): franja etária solicitada do PRESTADOR para este
@@ -83,6 +77,8 @@ export const createContractedServiceSchema = z
     schedule: optionalSchedule,
     ...recruitmentFields,
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
+    // `hourlyValue`/`contractType`/`taxCondition` SAÍRAM (spec 058): preço e imposto vêm do termo do contrato, o pagador do vínculo. A rota recusa
+    // essas chaves com 422 `LEGACY_FIELD_REMOVED` ANTES do ABAC (`rejectLegacyKeys`); o `.strict()` abaixo é a rede de segurança (400).
     // `country` NÃO entra aqui de propósito (C7): a jurisdição é do PACIENTE e nasce do trigger da
     // migration 319, que só preenche quando a coluna vem NULL — valor explícito do cliente vencia
     // o trigger e carimbava `POST {country:'BR'}` num paciente AR. É a fronteira para a qual a
@@ -96,13 +92,8 @@ export const updateContractedServiceSchema = z
   .object({
     professionalProfile: z.string().max(PROFESSIONAL_PROFILE_MAX).nullable().optional(),
     providersNeeded: z.number().int().positive().nullable().optional(),
-    authorizedHours: z.number().nonnegative().nullable().optional(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
-    hourlyValue: z.number().nonnegative().nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-    contractType: optionalEnum(CONTRACT_TYPES as unknown as [string, ...string[]]),
-    taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
     supervisionFrequency: optionalEnum(SUPERVISION_FREQUENCIES as unknown as [string, ...string[]]),
     guardShift: optionalEnum(GUARD_SHIFTS as unknown as [string, ...string[]]),
     providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
@@ -115,20 +106,3 @@ export const updateContractedServiceSchema = z
   })
   .strict();
 export type UpdateContractedServiceBody = z.infer<typeof updateContractedServiceSchema>;
-
-export const associateProviderSchema = z
-  .object({
-    workerId: z.string().uuid(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
-  })
-  .strict();
-export type AssociateProviderBody = z.infer<typeof associateProviderSchema>;
-
-export const updateProviderSchema = z
-  .object({
-    weeklyHours: z.number().nonnegative().nullable().optional(),
-    // Só `false` (baixa, lex C-e.2) — reassociar cria linha nova via POST.
-    active: z.literal(false).optional(),
-  })
-  .strict();
-export type UpdateProviderBody = z.infer<typeof updateProviderSchema>;

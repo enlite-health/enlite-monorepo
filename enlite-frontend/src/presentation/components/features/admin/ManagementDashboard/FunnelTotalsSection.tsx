@@ -21,6 +21,7 @@ const COLUMN_DOT: Record<FunnelColumnId, { dot: string; value: string }> = {
   INICIADO: { dot: 'bg-indigo-400', value: 'text-indigo-600' },
   PRE_SCREENING: { dot: 'bg-[#06ADDD]', value: 'text-[#0E7C9E]' },
   IN_PROGRESS: { dot: 'bg-[#8932FD]', value: 'text-[#6B21C7]' },
+  BLOQUEADO: { dot: 'bg-amber-500', value: 'text-amber-700' },
   COMPLETED: { dot: 'bg-[#8932FD]', value: 'text-[#6B21C7]' },
   SELECTED: { dot: 'bg-[#10B981]', value: 'text-[#0F766E]' },
   REJECTED: { dot: 'bg-slate-400', value: 'text-slate-500' },

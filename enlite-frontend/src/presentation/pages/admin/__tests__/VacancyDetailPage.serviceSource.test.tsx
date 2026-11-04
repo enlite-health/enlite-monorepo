@@ -22,8 +22,10 @@ vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyPatientCar
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView', () => ({ VacancyFunnelView: () => <div /> }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal', () => ({ VacancyScheduleEditModal: () => null }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyProfessionCard', () => ({
-  VacancyProfessionCard: (p: { scheduleServicePatientId?: string | null }) => (
-    <div data-testid="profession-card-stub">{p.scheduleServicePatientId ?? 'manual'}</div>
+  VacancyProfessionCard: (p: { scheduleServicePatientId?: string | null; recruitmentServicePatientId?: string | null }) => (
+    <div data-testid="profession-card-stub" data-recruitment={p.recruitmentServicePatientId ?? 'none'}>
+      {p.scheduleServicePatientId ?? 'manual'}
+    </div>
   ),
 }));
 
@@ -69,6 +71,14 @@ describe('VacancyDetailPage — horário vindo do serviço contratado', () => {
     unmount();
     mount({ locked_fields: ['patient_id', 'providers_needed'] });
     expect(screen.getByTestId('profession-card-stub')).toHaveTextContent('manual');
+  });
+
+  it('057: locked_fields com required_sex → o card recebe o paciente para o link dos campos de recrutamento; sem ele, não', () => {
+    const { unmount } = mount({ locked_fields: ['patient_id', 'schedule', 'required_sex'] });
+    expect(screen.getByTestId('profession-card-stub')).toHaveAttribute('data-recruitment', 'p-9');
+    unmount();
+    mount({ locked_fields: ['patient_id', 'schedule'] });
+    expect(screen.getByTestId('profession-card-stub')).toHaveAttribute('data-recruitment', 'none');
   });
 
   it('sem avisos abertos → nenhuma faixa', () => {

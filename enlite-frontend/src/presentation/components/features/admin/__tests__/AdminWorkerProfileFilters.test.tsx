@@ -1,21 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdminWorkerProfileFilters } from '../AdminWorkerProfileFilters';
 import { INITIAL_PROFILE_FILTERS } from '../workerProfileFiltersConfig';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: unknown) =>
       typeof opts === 'string' ? opts : (opts as { defaultValue?: string } | undefined)?.defaultValue ?? key,
   }),
-}));
-
-// MultiSelect tem teste próprio; aqui só precisamos do onChange chegar ao pai.
-vi.mock('@presentation/components/atoms/MultiSelect', () => ({
-  MultiSelect: ({ onChange }: { onChange: (v: string[]) => void }) => (
-    <button type="button" data-testid="days-multiselect" onClick={() => onChange(['1', '3'])}>días</button>
-  ),
 }));
 
 const STATES = [
@@ -53,16 +47,16 @@ describe('AdminWorkerProfileFilters', () => {
     }
   });
 
-  it('native selects (short lists) forward their value to onChange', async () => {
+  it('short-list filters forward the chosen option to onChange', () => {
     const { onChange } = renderFilters();
-    const selects = screen.getAllByRole('combobox');
-    // profession(0), ageRange(1), experienceType(2), preferredType(3), language(4), sex(5)
-    await userEvent.selectOptions(selects[0], 'AT');
-    await userEvent.selectOptions(selects[1], 'adults');
-    await userEvent.selectOptions(selects[2], 'TEA');
-    await userEvent.selectOptions(selects[3], 'home');
-    await userEvent.selectOptions(selects[4], 'pt');
-    await userEvent.selectOptions(selects[5], 'female');
+    const combos = screen.getAllByRole('combobox');
+    // profession(0), ageRange(1), experienceType(2), preferredType(3), language(4), sex(5), state(6), city(7), days(8)
+    chooseCombo(combos[0], 'AT');
+    chooseCombo(combos[1], 'Adultos');
+    chooseCombo(combos[2], 'TEA');
+    chooseCombo(combos[3], 'Domicilio');
+    chooseCombo(combos[4], 'Portugués');
+    chooseCombo(combos[5], 'Femenino');
     expect(onChange).toHaveBeenCalledWith({ profession: 'AT' });
     expect(onChange).toHaveBeenCalledWith({ preferredAgeRange: 'adults' });
     expect(onChange).toHaveBeenCalledWith({ experienceType: 'TEA' });
@@ -77,14 +71,14 @@ describe('AdminWorkerProfileFilters', () => {
     expect(screen.getByRole('option', { name: 'Córdoba' })).toBeInTheDocument();
     await userEvent.type(screen.getByPlaceholderText('Buscar...'), 'cordoba'); // sem acento
     expect(screen.queryByRole('option', { name: 'Provincia de Buenos Aires' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('option', { name: 'Córdoba' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Córdoba' }).querySelector('button')!);
     expect(onChange).toHaveBeenCalledWith({ state: 'AR-X' });
   });
 
   it('Localidad is a searchable combobox: picking calls onChange({ city })', async () => {
     const { onChange } = renderFilters();
     await userEvent.click(screen.getByTestId('filter-locality'));
-    await userEvent.click(screen.getByRole('option', { name: 'Bosques' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Bosques' }).querySelector('button')!);
     expect(onChange).toHaveBeenCalledWith({ city: 'Bosques' });
   });
 
@@ -95,7 +89,8 @@ describe('AdminWorkerProfileFilters', () => {
 
   it('days multiselect forwards onChange({ days })', () => {
     const { onChange } = renderFilters();
-    fireEvent.click(screen.getByTestId('days-multiselect'));
-    expect(onChange).toHaveBeenCalledWith({ days: ['1', '3'] });
+    const combos = screen.getAllByRole('combobox');
+    chooseCombo(combos[8], 'admin.vacancyDetail.vacancyForm.days.lun');
+    expect(onChange).toHaveBeenCalledWith({ days: ['1'] });
   });
 });

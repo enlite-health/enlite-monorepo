@@ -53,8 +53,30 @@ export interface PatientCoverageEmergencyContact extends PatientCoverageEmergenc
  */
 export type PatientCoverageEmergencyContactPatch = Partial<PatientCoverageEmergencyContactInput>;
 
-/** Uma opção do catálogo de coberturas (GET /api/admin/catalogs/insurance-providers). */
+/** Uma opção do catálogo de coberturas (GET /api/admin/catalogs/insurance-providers). O nome vem do banco (spec 058 C3). */
 export interface InsuranceProvider {
   code: string;
+  name: string;
   sortOrder: number;
+}
+
+/** Uma cobertura verificada. `mapped: false` = rótulo cru sem mapeamento ao catálogo (`code`/`name` nulos). */
+export interface CoverageEntryView {
+  code: string | null;
+  name: string | null;
+  mapped: boolean;
+  /** Origem da linha (`clickup`, `admin_manual`...). */
+  source: string;
+}
+
+export type CoverageDisplaySource = 'INFORMED' | 'VERIFIED' | 'UNMAPPED_ONLY' | 'NONE';
+
+/**
+ * `coverage` da ficha (spec 058 §C). O back só devolve dado: quem traduz "sem mapeamento"/"não informada" é o front (i18n).
+ * `UNMAPPED_ONLY`/`NONE` <=> `display: null`.
+ */
+export interface PatientCoverageView {
+  display: string | null;
+  displaySource: CoverageDisplaySource;
+  entries: CoverageEntryView[];
 }

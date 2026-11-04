@@ -14,6 +14,7 @@
  */
 
 import type { PatientServiceUpsertInput } from '@modules/case';
+import { utcCivilDayOf } from '@shared/locale/civilClock';
 
 /** Marcador de "não consegui ler" — distinto de null (vazio). */
 export const UNREADABLE = { $unreadable: true } as const;
@@ -92,8 +93,10 @@ export function toCanonical(input: PatientServiceUpsertInput, country: string): 
     documentNumber: input.documentNumber ?? null,
     sex: input.sex ?? null,
     phoneWhatsapp: input.phoneWhatsapp ?? null,
-    healthInsuranceName: input.healthInsuranceName ?? null,
-    healthInsuranceMemberId: input.healthInsuranceMemberId ?? null,
+    // Spec 058: as CHAVES canônicas (`healthInsuranceName`/`healthInsuranceMemberId`) são dado de `source_field_map` (migration 438) e
+    // não mudam; o que muda é de onde o mapper as entrega — os donos `insuranceInformed` e `affiliateId`.
+    healthInsuranceName: input.insuranceInformed ?? null,
+    healthInsuranceMemberId: input.affiliateId ?? null,
     hasCud: input.hasCud ?? null,
     hasConsent: input.hasConsent ?? null,
     hasJudicialProtection: input.hasJudicialProtection ?? null,
@@ -132,7 +135,7 @@ export function isUnreadable(v: unknown): v is Unreadable {
 }
 
 function toIsoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return utcCivilDayOf(d);
 }
 
 function pickString(v: unknown): string | null {

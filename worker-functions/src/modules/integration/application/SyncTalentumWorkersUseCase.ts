@@ -425,10 +425,13 @@ export class SyncTalentumWorkersUseCase {
       return 0;
     }
 
+    // Spec 084 (R6/F10): vaga dada de baja não ganha candidatura nova pelo sync (a baixa nunca apaga o histórico, mas ninguém
+    // novo entra). Guardado no próprio INSERT — sem ida extra ao banco, e sem corrida entre ler o status e escrever.
     const wjaResult = await this.db.query(
       `INSERT INTO worker_job_applications
          (worker_id, job_posting_id, application_funnel_stage, source)
-       VALUES ($1, $2, 'INVITED', 'talentum')
+       SELECT $1::uuid, $2::uuid, 'INVITED', 'talentum'
+        WHERE NOT EXISTS (SELECT 1 FROM job_postings WHERE id = $2 AND status = 'DE_BAJA')
        ON CONFLICT (worker_id, job_posting_id) DO NOTHING
        RETURNING id`,
       [workerId, vacancy.id],
@@ -441,7 +444,8 @@ export class SyncTalentumWorkersUseCase {
       .digest('hex');
     await this.db.query(
       `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
-       VALUES ($1, $2, $3, $4, 'Talentum', $5)
+       SELECT $1::uuid, $2::uuid, $3::text, $4::text, 'Talentum', $5::text
+        WHERE NOT EXISTS (SELECT 1 FROM job_postings WHERE id = $2::uuid AND status = 'DE_BAJA')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          worker_id = COALESCE(encuadres.worker_id, EXCLUDED.worker_id), updated_at = NOW()`,
       [workerId, vacancy.id, workerName, seed.rawPhone, dedupHash],

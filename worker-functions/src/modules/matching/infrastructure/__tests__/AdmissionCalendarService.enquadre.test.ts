@@ -29,7 +29,7 @@ describe('AdmissionCalendarService — evento do enquadre', () => {
   const baseParams = {
     calendarId: CAL_ENC,
     impersonateEmail: IMPERSONATE,
-    summary: 'Encuadre terapéutico — Caso 1234 · Pérez · ENC-ABC234',
+    summary: 'Encuadre terapéutico — Caso 1234 · ENC-ABC234',
     startISO: '2026-10-20T10:00:00-03:00',
     endISO: '2026-10-20T11:00:00-03:00',
     timezone: AR_ZONE,

@@ -377,4 +377,19 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     }
     await expect(ro.query('SELECT diagnosis FROM patients WHERE id = $1', [patientId])).rejects.toThrow(/permission denied/);
   });
+
+  it('spec 058 Parte A (QA-caça): insurance_contract_terms (preço/imposto) NEGADA por inteiro; insurance_contracts sem scope_description e contracted_service_contract passam por coluna', async () => {
+    const priv = async (sql: string, args: string[]): Promise<boolean> => (await admin.query<{ t: boolean }>(sql, args)).rows[0].t;
+    // negado: o preço (mesma razão de patient_contracted_services.hourly_value) — nem tabela inteira, nem a coluna do valor
+    expect(await priv(`SELECT has_table_privilege('enlite_mcp_ro', $1, 'SELECT') AS t`, ['public.insurance_contract_terms'])).toBe(false);
+    expect(await priv(`SELECT has_column_privilege('enlite_mcp_ro', $1, 'hourly_rate', 'SELECT') AS t`, ['public.insurance_contract_terms'])).toBe(false);
+    expect(await priv(`SELECT has_column_privilege('enlite_mcp_ro', $1, 'tax_rate_percent', 'SELECT') AS t`, ['public.insurance_contract_terms'])).toBe(false);
+    await expect(ro.query('SELECT count(*) FROM insurance_contract_terms')).rejects.toThrow(/permission denied/);
+    // controle positivo (D157): as irmãs que ficam legíveis, por COLUNA, e a de texto livre fora
+    expect(await priv(`SELECT has_column_privilege('enlite_mcp_ro', $1, 'name', 'SELECT') AS t`, ['public.insurance_contracts'])).toBe(true);
+    expect(await priv(`SELECT has_column_privilege('enlite_mcp_ro', $1, 'scope_description', 'SELECT') AS t`, ['public.insurance_contracts'])).toBe(false);
+    expect(await priv(`SELECT has_table_privilege('enlite_mcp_ro', $1, 'SELECT') AS t`, ['public.insurance_contracts'])).toBe(false);
+    expect(await priv(`SELECT has_column_privilege('enlite_mcp_ro', $1, 'contract_id', 'SELECT') AS t`, ['public.contracted_service_contract'])).toBe(true);
+    expect(await priv(`SELECT has_table_privilege('enlite_mcp_ro', $1, 'SELECT') AS t`, ['public.contracted_service_contract'])).toBe(false);
+  });
 });

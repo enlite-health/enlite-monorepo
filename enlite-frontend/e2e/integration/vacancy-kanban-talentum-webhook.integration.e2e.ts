@@ -27,6 +27,7 @@ import {
   type TalentumWebhookOpts,
 } from '../helpers/talentumWebhookHelper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from '../helpers/eligibility-worker-helper';
 
 // ── State compartilhado pela suite ────────────────────────────────────────────
 
@@ -68,7 +69,11 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     worker1Phone = `+549118${rand()}`;
     worker1Email = `e2e-w1-${ts}-${rand()}@test.com`;
     worker1ProfileId = `prof-w1-${ts}-${rand()}`;
-    worker1Id = insertTestWorker({ firstName: 'Worker', lastName: 'Uno', phone: worker1Phone });
+    // spec 067: o worker1 chega a Completado/QUALIFIED e o card deve ficar em COMPLETED (a intenção do ciclo) → prestador APTO
+    const apto = insertAptoWorker({ docs: 'validated' });
+    worker1Id = apto.workerId;
+    worker1Phone = apto.phone!;
+    worker1Email = apto.email;
     cleanupWorkerIds.push(worker1Id);
 
     worker2Phone = `+549119${rand()}`;
@@ -99,7 +104,7 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
   });
 
   test.afterAll(() => {
-    for (const wid of cleanupWorkerIds) cleanupTestWorker(wid);
+    for (const wid of cleanupWorkerIds) { cleanupEligibilityWorkerChildren(wid); cleanupTestWorker(wid); }
     cleanupTestPatient(patientId);
   });
 

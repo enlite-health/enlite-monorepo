@@ -250,7 +250,8 @@ function LinhaRecurso({
           : null;
         return (
           <td key={col} className="text-center py-1.5 px-2">
-            {editable ? (
+            {/* Spec 078: célula `somenteAcessoMaster` nunca é marcável pela tela — só leitura. */}
+            {editable && !celula.somenteAcessoMaster ? (
               <span
                 className={`inline-flex justify-center ${estaTravada ? 'opacity-60 cursor-not-allowed' : ''}`}
                 title={porQue ?? titulo}

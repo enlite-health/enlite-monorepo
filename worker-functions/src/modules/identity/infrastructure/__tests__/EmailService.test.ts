@@ -199,4 +199,40 @@ describe('EmailService — guard de envio (teste nunca toca canal real)', () => 
       new EmailService().sendAccountLinkedNotice('alguem@enlite.health', { undoUrl: 'https://x' }),
     ).rejects.toBeInstanceOf(EmailChannelUnavailableError);
   });
+
+  describe('sendItineraryUncoveredShiftsDigest (spec 069 F4)', () => {
+    const items = [
+      { patientId: 'p-1', patientName: 'Ana <b>Gómez</b>', serviceId: 's-1', serviceCode: 'AT', shifts: 2, firstDate: '2026-11-02' },
+      { patientId: 'p-2', patientName: 'Beto "Díaz"', serviceId: 's-2', serviceCode: 'FA', shifts: 1, firstDate: '2026-11-04' },
+    ];
+
+    it('envia por sgMail com assunto (total de turnos × horizonte), link da aba do serviço e nome ESCAPADO; nada clínico', async () => {
+      envDeProducao(); // exercita o ENVIO: o SDK é o dublê `mockSend` (nenhuma requisição real)
+      await new EmailService().sendItineraryUncoveredShiftsDigest('qa.x@enlite.test', items, '2026-11-02', 7);
+      const msg = mockSend.mock.calls[0][0];
+      expect(msg.to).toBe('qa.x@enlite.test');
+      expect(msg.subject).toBe('Turnos sin cubrir: 3 en los próximos 7 días');
+      expect(msg.html).toContain('https://app.enlite.health/admin/patients/p-1?tab=itinerary&serviceId=s-1');
+      expect(msg.html).toContain('Ana &lt;b&gt;Gómez&lt;/b&gt;');
+      expect(msg.html).toContain('Beto &quot;Díaz&quot;');
+      expect(msg.html).not.toContain('<b>Gómez</b>');
+    });
+
+    it('T411 trava de canal: em NODE_ENV=test (mesmo com chave exportada) NÃO chama o SDK e lança o erro tipado ("ambiente de teste")', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.SENDGRID_API_KEY = 'SG.chave-de-verdade-exportada-no-shell';
+      await expect(new EmailService().sendItineraryUncoveredShiftsDigest('qa.x@enlite.test', items, '2026-11-02', 7)).rejects.toMatchObject({
+        name: 'EmailChannelUnavailableError',
+        motivo: 'ambiente de teste',
+      });
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('sem SENDGRID_API_KEY também não chama o SDK (motivo "sem SENDGRID_API_KEY")', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.SENDGRID_API_KEY;
+      await expect(new EmailService().sendItineraryUncoveredShiftsDigest('qa.x@enlite.test', items, '2026-11-02', 7)).rejects.toMatchObject({ motivo: 'sem SENDGRID_API_KEY' });
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+  });
 });

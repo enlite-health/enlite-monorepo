@@ -112,6 +112,7 @@ export class GetFunnelTableUseCase {
       stage: r.funnel_stage,
       source: r.source,
       messaged: r.messaged_at != null,
+      apto: r.worker_apto ?? null,
       n: 1,
     }));
     const blockedTallyRows: KanbanTallyRow[] = blockedRawRows.map(r => ({
@@ -120,6 +121,7 @@ export class GetFunnelTableUseCase {
       stage: null,
       source: null,
       messaged: false,
+      apto: null,
       n: 1,
     }));
     counts.columns = tallyKanbanColumns([...wjaTallyRows, ...blockedTallyRows]);
@@ -141,9 +143,9 @@ export class GetFunnelTableUseCase {
     // kanbanColumnForBlocked (INICIADO, ou REJECTED se dispensada, D474); o resto segue deriveKanbanColumn,
     // que agora devolve COMPATIBLE para o candidato do match nunca mensageado.
     // É essa coluna que decide, logo abaixo, se a projeção (e o KMS) rodam.
-    const kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> = raw.is_blocked
-      ? (kanbanColumnForBlocked(raw.is_dismissed === true) as Exclude<KanbanColumn, 'BLOQUEADO'>)
-      : (deriveKanbanColumn(raw.funnel_stage, raw.source, raw.messaged_at) as Exclude<KanbanColumn, 'BLOQUEADO'>);
+    const kanbanColumn: KanbanColumn = raw.is_blocked
+      ? kanbanColumnForBlocked(raw.is_dismissed === true)
+      : deriveKanbanColumn(raw.funnel_stage, raw.source, raw.messaged_at, raw.worker_apto ?? null);
 
     const ir = raw.interview_response ?? null;
     const accepted =

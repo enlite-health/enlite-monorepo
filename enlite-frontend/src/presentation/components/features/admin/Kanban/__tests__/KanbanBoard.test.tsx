@@ -147,6 +147,7 @@ function emptyStages(): FunnelStages {
     INICIADO: [],
     PRE_SCREENING: [],
     IN_PROGRESS: [],
+    BLOQUEADO: [],
     COMPLETED: [],
     SELECTED: [],
     QUICK_RESPONSE_TEAM: [],
@@ -169,11 +170,11 @@ beforeEach(() => {
 // ── Visual Rendering ─────────────────────────────────────────────────────────
 
 describe('KanbanBoard — column rendering', () => {
-  it('renders all 8 columns', () => {
+  it('renders all 9 columns', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const expectedColumns = [
-      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'BLOQUEADO', 'COMPLETED',
       'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ];
 
@@ -182,14 +183,14 @@ describe('KanbanBoard — column rendering', () => {
     }
   });
 
-  it('renders columns in correct order (COMPATIBLE → INVITED → INICIADO → PRE_SCREENING → COMPLETED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
+  it('renders columns in correct order (COMPATIBLE → INVITED → INICIADO → PRE_SCREENING → BLOQUEADO → COMPLETED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
 
     expect(ids).toEqual([
-      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'BLOQUEADO', 'COMPLETED',
       'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ]);
   });
@@ -283,13 +284,15 @@ describe('KanbanBoard — drag & drop rules', () => {
     }
   });
 
-  it('não existe coluna IN_PROGRESS nem BLOQUEADO (D433: mescladas/removidas do quadro B)', () => {
+  it('não existe coluna IN_PROGRESS (D433: mesclada em Pre Screening); BLOQUEADO existe (067) e não aceita drop', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     expect(screen.queryByTestId('kanban-column-IN_PROGRESS')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('kanban-column-BLOQUEADO')).not.toBeInTheDocument();
     expect(droppableIds.find((d) => d.id === 'IN_PROGRESS')).toBeUndefined();
-    expect(droppableIds.find((d) => d.id === 'BLOQUEADO')).toBeUndefined();
+    expect(screen.getByTestId('kanban-column-BLOQUEADO')).toBeInTheDocument();
+    // 067 FR-06: só leitura — o card sai de Bloqueados quando o prestador fica apto, não por arrasto.
+    // Registrada para COLISÃO no dnd-kit (o drop sobre ela é cancelado pelo shell), mas nunca como destino válido.
+    expect(droppableIds.find((d) => d.id === 'BLOQUEADO')?.disabled).toBe(false);
   });
 
   it('keeps droppable enabled on INVITED, SELECTED, and REJECTED columns', () => {
@@ -369,6 +372,35 @@ describe('KanbanBoard — não envia PUT de auto-movimento (DX-5.16)', () => {
   });
 });
 
+// ── 067 FR-06: Bloqueados não é destino de arrasto ───────────────────────────
+// Soltar com o PONTEIRO sobre a coluna Bloqueados cancela o drop. O `closestCenter` resolveria `over`
+// para a vizinha habilitada (Invitados); a P20b continua valendo para qualquer outra coluna não-droppable.
+describe('KanbanBoard — soltar sobre Bloqueados não move (067 FR-06)', () => {
+  it('over resolvido para a própria coluna Bloqueados: onMove NÃO é chamado e nenhum diálogo abre', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'enc-blk', encuadreId: 'enc-blk-id' })];
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+
+    act(() => capturedOnDragStart!({ active: { id: 'enc-blk' } }));
+    expect(screen.getByTestId('kanban-column-BLOQUEADO').className).not.toContain('border-green-400'); // nunca "destino válido"
+    act(() => capturedOnDragEnd!({ over: { id: 'BLOQUEADO' } }));
+
+    expect(noop).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('role-modal')).not.toBeInTheDocument();
+  });
+
+  it('controle P20b: over resolvido para a vizinha habilitada (Invitados) ainda move', () => {
+    const stages = emptyStages();
+    stages.REJECTED = [makeEncuadre({ id: 'enc-viz', encuadreId: 'enc-viz-id' })];
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+
+    act(() => capturedOnDragStart!({ active: { id: 'enc-viz' } }));
+    act(() => capturedOnDragEnd!({ over: { id: 'INVITED' } }));
+
+    expect(noop).toHaveBeenCalledWith('enc-viz-id', 'INVITED', undefined, undefined);
+  });
+});
+
 // ── Edge Cases ───────────────────────────────────────────────────────────────
 
 describe('KanbanBoard — edge cases', () => {
@@ -376,7 +408,7 @@ describe('KanbanBoard — edge cases', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
-    expect(columns).toHaveLength(8);
+    expect(columns).toHaveLength(9);
   });
 
   it('renders multiple cards across different Talentum columns', () => {

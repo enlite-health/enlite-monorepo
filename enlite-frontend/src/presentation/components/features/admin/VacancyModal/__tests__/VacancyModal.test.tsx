@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { selectCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('@infrastructure/http/AdminApiService', () => ({
@@ -42,7 +43,9 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, _opts?: Record<string, unknown>) => key,
+    // o rótulo do caso leva número e nível (o que o usuário lê na opção); o resto devolve a chave
+    t: (key: string, opts?: Record<string, unknown>) =>
+      key === 'admin.vacancyModal.caseSelectStep.caseOptionLabel' ? `CASO ${opts?.caseNumber} · ${opts?.dependencyLevel}` : key,
     i18n: { changeLanguage: vi.fn() },
   }),
 }));
@@ -289,7 +292,7 @@ describe('CaseSelectStep', () => {
     const selectCase = vi.fn();
     render(<CaseSelectStep {...base} selectCase={selectCase} />);
     const select = await screen.findByTestId('case-select');
-    await userEvent.selectOptions(select, '10');
+    await selectCombo(select, 'CASO 10 · SEVERE');
     expect(selectCase).toHaveBeenCalledWith(10, 'p-1');
   });
 
@@ -297,9 +300,9 @@ describe('CaseSelectStep', () => {
     const selectCase = vi.fn();
     render(<CaseSelectStep {...base} selectCase={selectCase} />);
     const select = await screen.findByTestId('case-select');
-    await userEvent.selectOptions(select, '10');
+    await selectCombo(select, 'CASO 10 · SEVERE');
     selectCase.mockClear();
-    await userEvent.selectOptions(select, '');
+    await selectCombo(select, 'admin.vacancyModal.caseSelectStep.casePlaceholder');
     expect(selectCase).not.toHaveBeenCalled();
   });
 
@@ -320,11 +323,12 @@ describe('CaseSelectStep', () => {
     vi.mocked(AdminApiService.getCasesForSelect).mockResolvedValueOnce([
       { caseNumber: 99, patientId: 'p-9', dependencyLevel: '' },
     ]);
-    const { container } = render(<CaseSelectStep {...base} />);
-    await screen.findByTestId('case-select');
-    const option = container.querySelector('option[value="99"]');
-    expect(option).not.toBeNull();
-    expect(option?.textContent).toBe('admin.vacancyModal.caseSelectStep.caseOptionLabel');
+    render(<CaseSelectStep {...base} />);
+    const select = await screen.findByTestId('case-select');
+    expect(comboLabels(select)).toEqual([
+      'admin.vacancyModal.caseSelectStep.casePlaceholder',
+      'CASO 99 · —',
+    ]);
   });
 
   it.each([

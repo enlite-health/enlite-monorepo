@@ -77,6 +77,8 @@
     }
   },
   "common": {
+    "optional": "(opcional)",
+    "progress": "Progresso",
     "home": "Início",
     "communication": "Comunicação",
     "notifications": "Notificações",
@@ -84,6 +86,7 @@
     "searchCountry": "Buscar país...",
     "previousPage": "Página anterior",
     "nextPage": "Próxima página",
+    "pageRange": "{{start}} - {{end}} de {{total}}",
     "view": "Ver",
     "all": "Todos",
     "allFeminine": "Todas",
@@ -106,7 +109,10 @@
     "close": "Fechar",
     "logout": "Sair",
     "multiSelect": {
-      "selectedCount": "{{count}} selecionados"
+      "selectedCount": "{{count}} selecionados",
+      "searchPlaceholder": "Buscar…",
+      "searchAriaLabel": "Buscar na lista",
+      "noResults": "Nenhum resultado"
     },
     "yes": "Sim",
     "no": "Não",
@@ -442,6 +448,19 @@
       "saturday": "Sábado",
       "timeSlots": "Horários",
       "timeSlotsCount": "Horários ({{count}})",
+      "copyTo": "Copiar para…",
+      "copyApply": "Aplicar",
+      "copyWeekdays": "Seg–Sex",
+      "copyAll": "Todos",
+      "copyConflict": "A faixa existente foi mantida em: {{days}} (sobrepõe).",
+      "invalidRange": "O fim deve ser posterior ao início.",
+      "sundayShort": "Dom",
+      "mondayShort": "Seg",
+      "tuesdayShort": "Ter",
+      "wednesdayShort": "Qua",
+      "thursdayShort": "Qui",
+      "fridayShort": "Sex",
+      "saturdayShort": "Sáb",
       "saveError": "Erro ao salvar. Tente novamente."
     },
     "navigation": {
@@ -652,6 +671,8 @@
   },
   "documents": {
     "title": "Documentos",
+    "removeAria": "Remover documento",
+    "viewAria": "Visualizar documento",
     "resumeCv": "Currículo",
     "identity": "RG/CPF - Frente",
     "identityBack": "RG/CPF - Verso",
@@ -1130,6 +1151,12 @@
           "origen": "• O card chega aqui ao avançar de Invitados/Iniciado — por resposta da pessoa ou movimento da recrutadora.",
           "cambia": "• Avanços de conversa: entra.\n• Completar a triagem, agendar, selecionar ou rejeitar: sai."
         },
+        "stage_BLOQUEADO": {
+          "title": "Bloqueados (coluna)",
+          "que": "Prestadores que concluíram a triagem mas ainda não estão aptos: falta algum dado obrigatório do cadastro ou há documento obrigatório sem validar.",
+          "origen": "• É a mesma regra da coluna Bloqueados do Kanban da vaga — painel e Kanban contam igual.\n• Não é o número \"Bloqueados ao se candidatar\" de tentativas de candidatura: aquele conta tentativas barradas por cadastro incompleto.",
+          "cambia": "• Concluir a triagem com dado obrigatório faltando ou sem documentos validados, ou um documento ser desvalidado ou apagado: entra.\n• Completar o cadastro E validar os documentos obrigatórios: sai e volta para Completos."
+        },
         "stage_COMPLETED": {
           "title": "Completos (coluna)",
           "que": "Prestadores que terminaram a triagem e estão prontos para a próxima etapa. A coluna agrupa três situações internas: completo, qualificado e em dúvida (por exemplo, falta na entrevista).",
@@ -1289,6 +1316,7 @@
           "INICIADO": "Iniciado",
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "Em progresso",
+          "BLOQUEADO": "Bloqueados",
           "COMPLETED": "Completos",
           "SELECTED": "Selecionados",
           "REJECTED": "Rejeitados"
@@ -1296,7 +1324,7 @@
         "periodLabel": "Entrada no funil:",
         "periodAll": "Tudo",
         "periodDays": "Últimos {{count}} dias",
-        "bloqueados": "Bloqueados",
+        "bloqueados": "Bloqueados ao se candidatar",
         "bloqueadosSub": "Tentaram se candidatar e o cadastro incompleto barrou — vagas ativas"
       },
       "cadastros": {
@@ -1343,6 +1371,7 @@
       "workers": "Prestadores",
       "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
+      "enquadres": "Enquadres",
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
@@ -1356,7 +1385,13 @@
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rotina e atividades",
-      "catalogSegments": "Segmentos (Ana Care)"
+      "catalogSegments": "Segmentos (Ana Care)",
+      "catalogServiceExitReasons": "Motivos de saída",
+      "catalogServiceShiftTemplates": "Guardias",
+      "aiPrompts": "Prompts de IA",
+      "interviewHosts": "Entrevistadores",
+      "insuranceProviders": "Obras sociais",
+      "pedidosIa": "Pedidos da IA"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -2056,7 +2091,8 @@
         "active": "Ativo",
         "onHold": "Em Espera",
         "suspended": "Suspenso",
-        "closed": "Encerrado"
+        "closed": "Encerrado",
+        "deBaja": "Baixada"
       },
       "priorityOptions": {
         "all": "Todas",
@@ -2099,6 +2135,33 @@
         "title": "O que você quer fazer com este rascunho?",
         "viewOnly": "Somente visualizar",
         "cancel": "Cancelar"
+      },
+      "baja": {
+        "showToggle": "Mostrar baixadas",
+        "talentumManualToggle": "Pausar à mão no Talentum",
+        "badge": "Baixada",
+        "readOnlyHint": "Só consulta",
+        "talentumManualBadge": "Pausar à mão no Talentum",
+        "talentumManualResumeBadge": "Retomar à mão no Talentum",
+        "selectAll": "Selecionar todas as vagas sem serviço",
+        "selectRow": "Selecionar vaga",
+        "selectedCount": "{{count}} vagas selecionadas",
+        "bulkButton": "Dar baixa ({{count}})",
+        "clearSelection": "Limpar seleção",
+        "confirmTitle": "Dar baixa em {{count}} vagas",
+        "confirmBody": "Você vai dar baixa em {{count}} vagas sem serviço contratado. Elas ficam ocultas para o recrutamento e nada é apagado. Só voltam se o serviço que as baixou for reativado; vaga sem serviço não volta: a nova nasce do botão de recrutamento do serviço.",
+        "confirmCases": "Casos: {{cases}}",
+        "confirm": "Dar baixa",
+        "cancel": "Cancelar",
+        "working": "Dando baixa…",
+        "done": "{{count}} vagas baixadas",
+        "error": "Não foi possível dar baixa",
+        "errors": {
+          "VACANCY_HAS_SERVICE": "Vaga de serviço contratado não recebe baixa manual: use \"Pausar\" (Em espera).",
+          "VACANCY_ALREADY_DE_BAJA": "A vaga já está baixada.",
+          "VACANCY_NOT_FOUND": "Vaga não encontrada."
+        },
+        "talentumPendingBadge": "Talentum: pausa/retomada pendente"
       }
     },
     "draftVacancy": {
@@ -2177,14 +2240,14 @@
         "requiredExperience": "Experiência exigida",
         "paymentDay": "Prazo de pagamento",
         "closesAt": "Data de encerramento",
-        "meetLinks": "Links do Google Meet",
-        "meetLinksAside": "para as entrevistas"
+        "serviceRecruitmentFields": "Completar {{count}} campos na ficha do paciente"
       },
       "lastUpdated": "Última edição: {{date}}"
     },
     "vacancyDetail": {
       "notFound": "Vaga não encontrada",
       "back": "Voltar",
+      "viewPatientItinerary": "Ver itinerário do paciente",
       "kanban": "Kanban",
       "case": "Caso",
       "vacancy": "Vaga",
@@ -2311,6 +2374,7 @@
           "compatibleReadOnlyInviteBySend": "Para convidar, envie a mensagem pela tarjeta.",
           "workerNotEligibleTitle": "Worker com cadastro incompleto",
           "workerEligibilityReason": {
+            "documents_not_validated": "O prestador enviou os documentos, mas eles ainda não estão validados. Valide-os para poder avançar no funil.",
             "registration_incomplete": "O worker ainda não completou o cadastro ou não enviou todos os documentos obrigatórios. Peça ao worker pra completar o perfil antes de avançar no funil.",
             "worker_disabled": "O worker está desativado no sistema e não pode ser movido no funil.",
             "worker_not_found": "Worker não encontrado ou fundido com outro registro."
@@ -2485,7 +2549,6 @@
           "scheduleDaysRequired": "Selecione pelo menos um dia",
           "scheduleTimeRequired": "Preencha o horário de início e fim",
           "providersMin": "Deve haver pelo menos 1 prestador",
-          "meetLinkRequired": "Você precisa de ao menos um link de Google Meet válido",
           "requiredProfessionsMin": "Selecione pelo menos um tipo de prestador",
           "stateRequired": "A província é obrigatória",
           "cityMin": "A localidade deve ter pelo menos 2 caracteres",
@@ -2548,7 +2611,13 @@
         }
       },
       "statusEditor": {
-        "editLabel": "Editar estado da vaga"
+        "editLabel": "Editar estado da vaga",
+        "resume": "Retomar",
+        "pauseHint": "Em espera mantém o quadro, o histórico e o link curto.",
+        "errors": {
+          "VACANCY_DE_BAJA_NO_REACTIVATION": "Vaga baixada não é reativada: só volta quando o serviço que a baixou é reativado.",
+          "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Vaga de serviço ativo não é encerrada: use \"Pausar\" (Em espera)."
+        }
       },
       "scheduleEditor": {
         "title": "Editar horários",
@@ -2575,6 +2644,7 @@
           "tactiqLinkRequired": "Esse entrevistador não tem Tactiq vinculado. Escolha outra pessoa.",
           "hostNotInRoster": "Essa pessoa não está na equipe de entrevistadores deste país.",
           "workerNotAvailable": "Algum prestador não está mais disponível (mudou de etapa ou já está em outro evento). Atualizamos a lista.",
+          "workerNotEligible": "Algum prestador não é mais apto (seus documentos deixaram de estar validados). Atualizamos a lista.",
           "workerEmailInvalid": "Algum prestador não tem e-mail válido: não dá para convocá-lo.",
           "guestNotAllowed": "Esse convite não é permitido para este evento.",
           "configInvalid": "A agenda de enquadres não está configurada. Avise a equipe técnica.",
@@ -2715,6 +2785,20 @@
         },
         "unassignedCount_one": "{{count}} completado sem evento",
         "unassignedCount_other": "{{count}} completados sem evento"
+      },
+      "baja": {
+        "button": "Dar baixa",
+        "confirmTitle": "Dar baixa nesta vaga",
+        "confirmBody": "A vaga fica oculta para o recrutamento e nada é apagado. Não dá para reativar: ela só volta se o serviço que a baixou for reativado. Vaga sem serviço não volta; a nova nasce do botão de recrutamento do serviço.",
+        "confirm": "Dar baixa",
+        "cancel": "Cancelar",
+        "working": "Dando baixa…",
+        "readOnlyBanner": "Vaga baixada: só consulta.",
+        "readOnlyDetail": "Não se movem candidatos nem se roda o match. Os candidatos e o histórico ficam guardados.",
+        "error": "Não foi possível dar baixa na vaga",
+        "talentumManual": "Pausar à mão no Talentum: o Talentum não aceitou pausar este projeto por API.",
+        "talentumManualResume": "Retomar à mão no Talentum: o Talentum não aceitou retomar este projeto por API.",
+        "talentumPending": "Talentum: a pausa ou a retomada deste projeto está pendente (ainda não confirmada). Se persistir, faça à mão no Talentum."
       }
     },
     "vacancyModal": {
@@ -2741,15 +2825,11 @@
       "jobDescription": "Descrição do trabalho",
       "interviewDates": "Datas para entrevistas de enquadre",
       "interviewDatesPlaceholder": "Em breve",
-      "meetLinksLabel": "Links de Google Meet (ao menos um)",
-      "meetLinkPlaceholder": "https://meet.google.com/xxx-xxxx-xxx",
-      "meetLinkNotFound": "Não encontramos esse meet no seu calendário.",
-      "meetLinkInvalid": "Formato inválido. Use meet.google.com/xxx-xxxx-xxx",
       "validationBanner": {
         "title": "Faltam dados para criar a vaga:"
       },
       "sectionCaseAndProfile": "Caso e perfil profissional",
-      "sectionScheduleAndDates": "Meet e datas",
+      "sectionScheduleAndDates": "Datas",
       "sectionStatusAndLocation": "Status e localização",
       "sectionConditions": "Condições da vaga",
       "publishDate": "Data de publicação",
@@ -3174,7 +3254,6 @@
       "editDrawer": {
         "generalTitle": "Editar informações gerais",
         "clinicalTitle": "Editar diagnóstico",
-        "serviceTitle": "Editar serviços contratados",
         "save": "Salvar",
         "close": "Fechar",
         "unset": "—",
@@ -3261,31 +3340,23 @@
         "onlyFichaNote": "Somente ficha: não é copiado para a vaga.",
         "freeTextHint": "Não incluir informação de saúde do paciente nem o motivo dos requisitos.",
         "providersNeeded": "Prestadores necessários",
-        "authorizedHours": "Horas autorizadas",
         "weeklyHours": "Horas semanais",
         "careLocation": "Local de atendimento",
-        "hourlyValue": "Valor por hora",
-        "hourlyValueRedacted": "🔒 Só admin",
         "startDate": "Data de início",
-        "contractType": "Tipo de contratação",
-        "taxCondition": "Condição de IVA",
         "supervisionFrequency": "Frequência de supervisão",
         "guardShift": "Turno de plantão",
         "providerAgeBand": "Faixa etária solicitada do prestador",
         "deviceTypes": "Dispositivo(s)",
-        "providersTitle": "Prestadores associados",
-        "noProviders": "Nenhum prestador associado ainda.",
-        "searchWorkerPlaceholder": "Buscar prestador por nome…",
-        "associateProvider": "Associar",
-        "deactivateProvider": "Dar baixa",
+        "legacyProvidersTitle": "Alocação anterior ao itinerário (somente leitura)",
         "providerActive": "Ativo",
         "providerInactive": "Baixado",
         "createServiceError": "Não foi possível criar o serviço",
         "updateServiceError": "Não foi possível atualizar o serviço",
-        "searchWorkerError": "Não foi possível buscar prestadores. Tente novamente.",
+        "providersNeededBelowOccupancy": "Não é possível baixar a quantidade de prestadores abaixo dos já alocados no itinerário.",
+        "providersNeededCannotClear": "Depois de informada, a quantidade de prestadores não pode ficar vazia.",
+        "providersNeededRequiredByLiveVacancy": "Não é possível deixar a quantidade de prestadores em branco: há uma vaga ativa que a lê. Encerre a vaga antes de apagá-la.",
+        "serviceFieldRequiredByLiveVacancy": "Não é possível deixar este dado em branco: há uma vaga ativa que o lê. Encerre a vaga antes de apagá-lo.",
         "deactivateServiceError": "Não foi possível dar baixa no serviço",
-        "deactivateProviderError": "Não foi possível dar baixa no prestador",
-        "associateProviderError": "Não foi possível associar o prestador",
         "selectServiceCode": "Serviço",
         "selectWorker": "Selecione um prestador",
         "discardChangesTitle": "Descartar as alterações?",
@@ -3303,6 +3374,8 @@
         "requiredField": "Este campo é obrigatório",
         "serviceAddress": "Endereço",
         "serviceAddressHint": "Onde ESTE serviço é prestado. Cada serviço se vincula a um endereço do paciente; a vaga nasce ali.",
+        "addressLockedLiveVacancy": "Não é possível alterar o endereço: o serviço tem uma vaga ativa. Se o local mudou, crie um serviço novo.",
+        "addressLockedAllocation": "Não é possível alterar o endereço: o serviço já tem prestadores alocados no itinerário. Se o local mudou, crie um serviço novo.",
         "serviceSchedule": "Horários",
         "serviceScheduleHint": "Opcional para salvar. Mas sem horário o paciente não pode passar a ativo, busca nem substituição.",
         "serviceScheduleNone": "Este serviço ainda não tem horário. Você pode salvar assim, mas o paciente não vai poder passar a ativo, busca nem substituição até você preenchê-lo.",
@@ -3320,7 +3393,39 @@
         "coverageContactRemove": "Remover contato",
         "coverageContactEmpty": "Sem contatos de emergência da cobertura.",
         "coverageContactNotice": "Estes dados ficam registrados na ficha do paciente e são impressos no Projeto Terapêutico entregue à família e à cobertura. Se cadastrar um profissional, avise-o de que o contato dele consta aqui.",
-        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui."
+        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui.",
+        "shift": {
+          "start": "Início",
+          "end": "Fim",
+          "allDay": "Dia inteiro",
+          "allDayRange": "Dia inteiro · 24 h",
+          "allDayCompact": "24 h",
+          "equalUseAllDay": "Para 24 h use 'Dia inteiro'",
+          "template": {
+            "label": "Guardia predefinida",
+            "apply": "Aplicar",
+            "placeholder": "Escolha uma guardia"
+          },
+          "hours": "{{hours}} h",
+          "nextDay": "(+1)",
+          "add": "Adicionar turno",
+          "remove": "Remover turno"
+        },
+        "scheduleOverlap": "Dois turnos do mesmo serviço se sobrepõem.",
+        "scheduleTotal": "Total do horário: {{hours}} h por semana",
+        "authorization": {
+          "title": "Autorização",
+          "hours": "Horas autorizadas (total do período)",
+          "from": "De",
+          "to": "Até",
+          "save": "Salvar autorização",
+          "current": "Vigente: {{hours}} h de {{from}} a {{to}}",
+          "none": "Sem autorização vigente",
+          "overlaps": "Já existe uma autorização vigente que se sobrepõe a esse período.",
+          "needsEnd": "A autorização precisa de data de fim.",
+          "saveError": "Não foi possível salvar a autorização."
+        },
+        "contractRequired": "Escolha o contrato e a data de início do vínculo, ou deixe a obra social vazia."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3351,7 +3456,18 @@
           "confirm": "Confirmar e mover"
         },
         "moveErrorCodes": {
+          "SUSPENSION_EXIT_REASON_REQUIRED": "É preciso indicar o motivo de saída de Suspenso.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para ativar, use \"Ativar recrutamento\" no serviço contratado da ficha do paciente."
+        },
+        "subcard": {
+          "weeklyUnit": "h/sem",
+          "pairAria": "{{covered}} de {{contracted}} horas semanais cobertas",
+          "reserve": "Reserva {{count}}/{{minimum}}",
+          "reserveNoVacancy": "sem vaga",
+          "openToActivate": "Abrir ficha para ativar {{service}}",
+          "loadError": "Não foi possível carregar os serviços dos pacientes.",
+          "uncoveredDayAria_one": "{{count}} dia sem cobertura",
+          "uncoveredDayAria_other": "{{count}} dias sem cobertura"
         }
       },
       "countryLabel": "País",
@@ -3399,11 +3515,6 @@
         "contactEmail": "E-mail de contato",
         "documentType": "Tipo de documento",
         "documentNumber": "Número do documento",
-        "coverageSection": "Cobertura médica",
-        "healthInsuranceName": "Nome da cobertura",
-        "healthInsuranceMemberId": "Número de afiliado",
-        "serviceSection": "Serviço requerido",
-        "serviceType": "Tipo de serviço",
         "saveError": "Erro ao criar o paciente",
         "birthDate": "Data de nascimento"
       },
@@ -3488,6 +3599,7 @@
           "supportNetwork": "Rede de Apoio",
           "documents": "Documentos",
           "contractedService": "Serviço Contratado",
+          "itinerary": "Itinerário",
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
           "appointments": "Agendamentos",
@@ -3552,6 +3664,15 @@
         },
         "identityCard": {
           "admission": "Admissão",
+          "currentCoverage": "Cobertura atual",
+          "currentCoverageNoService": "Sem serviço ativo",
+          "currentCoverageUnlinked": "Sem obra social vinculada",
+          "currentCoveragePrivate": "Particular",
+          "currentCoverageHidden": "Obra social (sem acesso ao nome)",
+          "entryDate": "Entrada no serviço",
+          "entryDateEmpty": "Sem data de início nos serviços",
+          "noPermission": "Sem permissão",
+          "unavailable": "Indisponível",
           "lastUpdate": "Atualização",
           "discharge": "Desligamento",
           "responsibleName": "Nome do Responsável",
@@ -3653,6 +3774,7 @@
           "devices": "Dispositivo",
           "patologiesUnavailable": "Não foi possível carregar o diagnóstico.",
           "patologiesEmpty": "Nenhum diagnóstico registrado.",
+          "patologiesRequiredHint": "É obrigatório para avançar a admissão.",
           "patologiesNoPermission": "Você não tem permissão para ver o diagnóstico.",
           "patologiesPrimaryBadge": "Principal",
           "patologies": "Patologias",
@@ -3767,7 +3889,6 @@
         },
         "coverageCard": {
           "title": "Cobertura Médica",
-          "providerName": "Nome da Cobertura",
           "plan": "Plano do Paciente",
           "emergencyNumbers": "Números de Emergência",
           "credential": "Credencial",
@@ -3780,7 +3901,10 @@
             "INSURANCE_EMERGENCY": "Emergência da cobertura/plano"
           },
           "emergencyContactsUnavailable": "Indisponível agora — recarregue a ficha ou avise o suporte.",
-          "directProfessionalRedacted": "Profissional direto: não visível com a sua permissão (precisa da célula da equipe tratante)."
+          "directProfessionalRedacted": "Profissional direto: não visível com a sua permissão (precisa da célula da equipe tratante).",
+          "informed": "Cobertura informada",
+          "redacted": "Sem permissão para ver a cobertura",
+          "unmapped": "Sem mapeamento ao catálogo ({{count}})"
         },
         "locationsCard": {
           "title": "Localizações",
@@ -3811,19 +3935,19 @@
           "tableProfessional": "Serviço",
           "tableProvidersNeeded": "Prest. necessários",
           "tableWeeklyHours": "Hs. semanais",
-          "tableAuthorizedHours": "Hs. autorizadas",
           "tableLocation": "Local de Atendimento",
           "tableValue": "Valor",
           "tableValueRedacted": "🔒",
           "tableStart": "Início",
-          "tableContract": "Contratação",
-          "tableIVA": "IVA",
+          "tableContract": "Obra social / contrato",
+          "tableIVA": "Imposto",
           "tableProviderAgeBand": "Faixa etária prestador",
           "inactiveBadge": "Baixa",
           "tableQuantity": "Quant.",
           "tableAddress": "Endereço",
           "tableSchedule": "Horários",
           "tableVacancyCode": "Vaga",
+          "viewVacancyAria": "Ver vaga de {{service}}",
           "noAddressLinked": "Sem endereço vinculado",
           "noSchedule": "Sem horário",
           "detailTitle": "Detalhe do serviço contratado",
@@ -3845,16 +3969,6 @@
             "SCHOOL": "Escola",
             "INSTITUTION": "Instituição",
             "OTHER": "Outro"
-          },
-          "contractTypeOptions": {
-            "OBRA_SOCIAL": "Obra Social",
-            "PREPAGA": "Prepaga",
-            "PRIVATE": "Privado"
-          },
-          "taxConditionOptions": {
-            "IVA_EXEMPT": "IVA Isento",
-            "IVA_10_5": "IVA 10,5%",
-            "IVA_21": "IVA 21%"
           },
           "supervisionFrequencyOptions": {
             "DAYS_15": "15 Dias",
@@ -3886,7 +4000,486 @@
           "activateRecruitmentToast": "Vaga em rascunho criada",
           "activateRecruitmentPatientNotMoved": "Vaga criada. O paciente continua em Admissão: falta {{items}} em um serviço ativo.",
           "activateRecruitmentError": "Não foi possível ativar o recrutamento",
-          "activateRecruitmentAlreadyRecruiting": "Este serviço já tem uma vaga em andamento"
+          "activateRecruitmentAlreadyRecruiting": "Este serviço já tem uma vaga em andamento",
+          "payerKindOptions": {
+            "OBRA_SOCIAL": "Obra Social",
+            "PREPAGA": "Prepaga",
+            "PRIVATE": "Particular"
+          },
+          "payerKind": "Tipo",
+          "taxExempt": "Isento (0 %)",
+          "priceState": {
+            "NO_CONTRACT": "Sem contrato vinculado",
+            "NO_TERM": "Sem termo vigente hoje",
+            "REDACTED": "🔒 Sem permissão para ver o valor"
+          },
+          "payer": {
+            "scheduled": "Vínculo programado a partir de {{date}}",
+            "none": "Sem contrato vinculado",
+            "private": "Particular (sem obra social)",
+            "hidden": "Obra social não visível com a sua permissão"
+          },
+          "contractSection": "Obra social e contrato",
+          "coverageMatchLabel": "Cobertura verificada x contrato",
+          "coverageMatch": {
+            "NO_PAYER": "Sem contrato vinculado: não há com o que comparar a cobertura.",
+            "PRIVATE_PAYER": "Pagador particular: não é comparado com a cobertura.",
+            "NO_COVERAGE": "O paciente não tem cobertura verificada.",
+            "UNMAPPED_ONLY": "Só há coberturas sem mapeamento ao catálogo: não dá para comparar.",
+            "MATCH": "A cobertura verificada coincide com a obra social do contrato.",
+            "MISMATCH": "A cobertura verificada NÃO coincide com a obra social do contrato.",
+            "REDACTED": "Não visível com a sua permissão (cobertura)."
+          },
+          "cascade": {
+            "provider": "Obra social",
+            "contract": "Contrato",
+            "validFrom": "Vigente desde",
+            "validTo": "Vigente até",
+            "validToHint": "Opcional. Vazio = sem data de fim; o dia indicado é incluído.",
+            "noCountry": "O serviço não tem país: não dá para escolher a obra social.",
+            "noProviders": "Não há obras sociais ativas com contrato oferecido neste país.",
+            "lockedHint": "Fixa neste serviço. Outra obra social? É outra admissão: crie um serviço novo.",
+            "contractPlaceholder": "Escolha o contrato",
+            "noEndMark": "(vazio = sem fim)"
+          },
+          "actions": {
+            "switch": "Trocar de contrato",
+            "correct": "Corrigir vínculo",
+            "end": "Encerrar vínculo",
+            "save": "Salvar vínculo",
+            "cancel": "Cancelar",
+            "newService": "Criar um serviço novo"
+          },
+          "summary": {
+            "eyebrow": "Vigente hoje · {{date}}",
+            "since": "Desde {{from}} · sem data de fim",
+            "sinceUntil": "Desde {{from}} · até {{to}}",
+            "futureChange": "Desde {{date}} passa para {{provider}} · {{contract}}",
+            "change": "Trocar, corrigir ou encerrar…",
+            "emptyTitle": "Este serviço ainda não tem obra social nem contrato",
+            "emptyBody": "Até vincular, não há valor nem imposto para este serviço.",
+            "linkCta": "Vincular obra social e contrato",
+            "noCoverage": "Sem cobertura vigente",
+            "lastLink": "{{provider}} · {{contract}}, até {{date}}"
+          },
+          "chooser": {
+            "title": "O que aconteceu com a cobertura?",
+            "switchTitle": "O contrato mudou, continua {{provider}}",
+            "switchHint": "Trocar de contrato · o atual fica no histórico.",
+            "correctTitle": "Foi cadastrado errado",
+            "correctHint": "Corrigir vínculo · substitui o atual. Única forma de trocar uma obra social cadastrada por engano.",
+            "endTitle": "A cobertura terminou",
+            "endHint": "Encerrar vínculo · você escolhe o último dia vigente.",
+            "newServiceTitle": "Agora outra obra social cobre",
+            "newServiceHint": "Criar um serviço novo · outra obra social é outra admissão."
+          },
+          "linkExistingVacancy": {
+            "button": "Vincular vaga existente",
+            "aria": "Vincular vaga existente a {{service}}",
+            "rocketNotice": "Este paciente já tem uma vaga sem serviço. Vincule-a a este serviço ou crie uma vaga nova.",
+            "createNew": "Criar vaga nova",
+            "confirmRocket": "Vincular à existente",
+            "leftovers": {
+              "title": "Outras vagas antigas",
+              "question_one": "Há mais {{count}} vaga antiga aberta deste paciente. Deseja excluí-la?",
+              "question_other": "Há mais {{count}} vagas antigas abertas deste paciente. Deseja excluí-las?",
+              "yes": "Sim, excluir",
+              "no": "Não",
+              "close": "Fechar",
+              "deleteFailed_one": "Não foi possível excluir {{count}} vaga.",
+              "deleteFailed_other": "Não foi possível excluir {{count}} vagas."
+            },
+            "modalTitle": "Vincular vaga existente ao serviço",
+            "selectLabel": "Vaga do paciente",
+            "selectPlaceholder": "Escolha uma vaga",
+            "noCandidates": "Este paciente não tem vaga sem serviço para vincular.",
+            "loading": "Carregando…",
+            "previewTitle": "O que muda ao vincular",
+            "colField": "Campo",
+            "colVacancyNow": "Vaga hoje",
+            "colWillBe": "Passa a valer",
+            "colOrigin": "Origem",
+            "originService": "Serviço",
+            "originNone": "Sem valor",
+            "noChanges": "Nenhum campo muda.",
+            "blockedTitle": "Não dá para vincular ainda",
+            "confirm": "Vincular",
+            "cancel": "Cancelar",
+            "success": "Vaga vinculada ao serviço.",
+            "warning": {
+              "PROVIDERS_NEEDED_NOT_INTEGER": "A quantidade de prestadores da vaga não é um número inteiro: o serviço não recebe esse valor.",
+              "AGE_RANGE_NO_EXACT_BAND": "A faixa etária da vaga não corresponde a nenhuma faixa do serviço: escolha a faixa no serviço.",
+              "VALUE_OUTSIDE_SERVICE_DOMAIN": "O valor da vaga não é aceito pelo serviço: preencha esse campo no serviço."
+            },
+            "blocker": {
+              "ADDRESS_MISMATCH": "O endereço da vaga é diferente do endereço do serviço."
+            },
+            "error": {
+              "VACANCY_NOT_LINKABLE": "Essa vaga não pode mais ser vinculada.",
+              "SERVICE_ALREADY_RECRUITING": "O serviço já tem uma vaga.",
+              "LINK_BLOCKED": "O vínculo foi bloqueado. Revise o que falta.",
+              "ADDRESS_NOT_OF_PATIENT": "O endereço da vaga não pertence a este paciente.",
+              "generic": "Não foi possível vincular a vaga."
+            },
+            "field": {
+              "required_professions": "Profissões",
+              "required_experience": "Experiência exigida",
+              "work_schedule": "Jornada",
+              "payment_day": "Dia de pagamento",
+              "required_sex": "Sexo do prestador",
+              "providers_needed": "Quantidade de prestadores",
+              "age_range": "Faixa etária do prestador",
+              "schedule": "Horários",
+              "address": "Endereço"
+            }
+          }
+        },
+        "serviceTeam": {
+          "unnamedWorker": "Prestador sem nome · {{shortId}}",
+          "columns": {
+            "SELECTED_FOR_SERVICE": "Selecionado",
+            "IN_SERVICE": "Em atendimento"
+          },
+          "substitution": {
+            "title": "Substituir num dia",
+            "slot": "Faixa",
+            "date": "Data",
+            "worker": "Substituto",
+            "noSubstitute": "Sem substituto (dia sem cobertura)",
+            "confirm": "Confirmar",
+            "cancel": "Cancelar",
+            "dateChip": "{{date}}",
+            "label": "Substituição",
+            "modeComplementary": "Complementar (só esse dia)",
+            "modePermanent": "Inteiro (substituição permanente)",
+            "reason": "Motivo",
+            "reasonPlaceholder": "Motivo da troca",
+            "reasonLoadError": "Não foi possível carregar os motivos.",
+            "startLabel": "Início da substituição",
+            "startNow": "Agora",
+            "startScheduled": "Programada",
+            "scheduledDate": "Data de início",
+            "scheduledReserveOnly": "Com início programado o prestador atual segue até o dia anterior, por isso só pode ficar como reserva. Para tirá-lo do encuadre, remova-o do itinerário a partir de {{date}}."
+          }
+        },
+        "itinerary": {
+          "assemble": {
+            "label": "Itinerário pronto",
+            "assembledSince": "Itinerário pronto desde {{date}}",
+            "errors": {
+              "NO_SERVICE_WITH_VACANCY": "Não há nenhum serviço com vaga viva: não é possível marcar o itinerário como pronto.",
+              "SERVICE_WITHOUT_SLOT": "Há um serviço com vaga viva que ainda não tem faixas de horário. Cadastre os horários e tente de novo.",
+              "generic": "Não foi possível marcar o itinerário como pronto. Tente de novo."
+            }
+          },
+          "noServices": "Este paciente não tem serviços contratados ativos.",
+          "assign": "Atribuir prestador",
+          "unassigned": "Sem atribuição",
+          "modal": {
+            "title": "Atribuir prestador · {{day}} {{start}} - {{end}}",
+            "worker": "Prestador selecionado",
+            "noOptions": "Não há prestadores em Selecionado para este serviço.",
+            "confirm": "Atribuir",
+            "cancel": "Cancelar"
+          },
+          "editModal": {
+            "title": "Editar agendamento",
+            "save": "Salvar",
+            "weekday": "Dia da semana",
+            "schedule": "Horário do agendamento",
+            "entryAddress": "Endereço de entrada",
+            "assignWorker": "Atribuir prestador",
+            "selectPlaceholder": "Selecionar",
+            "noOptions": "Não há prestadores em Selecionado para este serviço.",
+            "preselectedTitle": "Prestadores disponíveis - Pré-selecionados",
+            "viewProfile": "Ver perfil do prestador",
+            "urgentSearchTitle": "Busca de urgência - Complementar",
+            "urgentSearchNoSource": "Convide prestadores da região pela vaga.",
+            "goToVacancy": "Ir para a vaga",
+            "noVacancy": "Este serviço não tem uma vaga ativa.",
+            "removeFromItinerary": "Tirar do itinerário",
+            "cancel": "Fechar",
+            "addWorker": "Adicionar profissional",
+            "capacityFull": "Faixa completa: já há {{count}} alocados, que é o que o serviço precisa. Remova um ou aumente a quantidade de prestadores do serviço para incluir outro.",
+            "capacityNotInformed": "O serviço não tem a quantidade de prestadores cadastrada: a faixa não tem limite."
+          },
+          "removePanel": {
+            "title": "Tirar do itinerário",
+            "worker": "Prestador: {{worker}}",
+            "reason": "Motivo",
+            "confirm": "Confirmar",
+            "submitError": "Não foi possível tirar o prestador do itinerário. Tente novamente.",
+            "scheduledWarning": {
+              "title": "Este prestador tem atendimentos agendados",
+              "substitutions": "Cobre como substituto: {{dates}}. Se você o remover do encuadre, eles são cancelados e esses dias ficam sem cobertura.",
+              "entry": "Tem uma entrada agendada a partir de {{date}}. Se você o remover do encuadre, ela é cancelada e o titular atual segue sem data de saída.",
+              "confirm": "Confirmar e cancelar agendamentos",
+              "back": "Voltar"
+            }
+          },
+          "exitDestination": {
+            "label": "Destino",
+            "RESERVE": "Continua como reserva",
+            "LEAVE_SERVICE": "Sai do encuadre deste serviço"
+          },
+          "overlap": "Conflito de horário: o prestador já atende {{existing}} e o pedido é {{requested}}.",
+          "overlapGap": "Entre endereços diferentes exige-se um intervalo de {{minutes}} min.",
+          "loadError": "Não foi possível carregar o itinerário deste paciente.",
+          "refreshError": "A atribuição foi processada, mas não foi possível atualizar o itinerário. Recarregue a página.",
+          "actionErrors": {
+            "REASON_REQUIRED": "Escolha um motivo para continuar.",
+            "REASON_INVALID": "Esse motivo não é válido.",
+            "DESTINATION_REQUIRED": "Escolha o destino do prestador.",
+            "SERVICE_TEAM_WORKER_ALLOCATED": "Este prestador tem atendimentos agendados; cancele antes de tirá-lo do encuadre.",
+            "SERVICE_TEAM_NOT_SELECTED": "Este prestador não está mais em Selecionados.",
+            "SERVICE_TEAM_ALREADY_REJECTED": "Este prestador já está rejeitado.",
+            "NOT_SELECTED_FOR_SERVICE": "Este prestador não está mais em Selecionado para este serviço.",
+            "ALREADY_ALLOCATED_IN_SLOT": "Este prestador já está atribuído a esta faixa.",
+            "SLOT_INACTIVE": "Esta faixa não está mais ativa.",
+            "SERVICE_WITHOUT_ADDRESS": "Este serviço não tem endereço cadastrado.",
+            "ITINERARY_SLOT_CAPACITY_EXCEEDED": "A faixa já tem todos os prestadores que o serviço precisa. Atualizamos a tela.",
+            "ITINERARY_OVERLAP": "O prestador já tem outra faixa que se sobrepõe a este horário.",
+            "WORKER_HAS_SCHEDULED_ATTENDANCES": "Este prestador tem atendimentos agendados.",
+            "ALLOCATION_NOT_ACTIVE": "Essa alocação não está mais ativa. Atualizamos a tela.",
+            "REPLACEMENT_DATE_IN_PAST": "A data de início já passou. Escolha hoje ou uma data futura.",
+            "DESTINATION_NOT_AVAILABLE_FOR_SCHEDULED": "Com início programado o prestador só pode ficar como reserva.",
+            "NOT_FOUND": "A faixa ou o serviço não foi encontrado.",
+            "SUBSTITUTION_NO_SHIFTS_IN_PERIOD": "Essa pessoa não tem turnos no período escolhido.",
+            "WORKER_HAS_PENDING_ENTRY": "Essa pessoa tem uma entrada futura neste serviço. Desfaça primeiro o pedido que a trouxe.",
+            "REQUEST_NOT_UNDOABLE": "Este pedido não tem mais nada futuro para desfazer.",
+            "REQUEST_ALREADY_UNDONE": "Este pedido já estava desfeito. Atualizamos a tela.",
+            "ALLOCATION_RESTORE_CONFLICT": "O titular já tem uma alocação aberta nessa faixa, por isso não dá para restaurar.",
+            "ABSENCE_ALREADY_EXISTS": "Já existe uma falta lançada em um desses turnos.",
+            "ABSENCE_DATE_IN_PAST": "A data já passou. Escolha hoje ou uma data futura.",
+            "SUBSTITUTION_SHIFTS_MISMATCH": "Os turnos enviados não batem com os do período. Atualizamos a tela.",
+            "NOTHING_TO_COVER": "Não sobrou nenhum turno sem cobertura neste pedido.",
+            "WORKER_HAS_SCHEDULED_EXIT": "Essa pessoa já tem uma saída programada para {{date}}. Desfaça essa substituição para mudar a data.",
+            "WORKER_HAS_SCHEDULED_EXIT_UNDATED": "Essa pessoa já tem uma saída programada. Desfaça essa substituição para mudar a data.",
+            "ABSENCE_CANCELLED": "Esse turno não tem mais substituição pendente. Atualize a página.",
+            "ALREADY_COVERED": "Esse turno já tem quem o cubra. Atualizamos a tela.",
+            "SUBSTITUTE_IS_TITULAR": "O substituto não pode ser o próprio titular.",
+            "generic": "Não foi possível atribuir o prestador."
+          },
+          "serviceList": {
+            "title": "Qual serviço você quer organizar?"
+          },
+          "serviceCard": {
+            "organize": "Organizar agenda",
+            "complete": "Completo · {{total}} h",
+            "missing": "Faltam cobrir {{missing}} h de {{total}}",
+            "noSlots": "Nenhuma faixa de horário cadastrada",
+            "uncoveredShifts_one": "{{count}} turno sem cobertura nos próximos {{days}} dias",
+            "uncoveredShifts_other": "{{count}} turnos sem cobertura nos próximos {{days}} dias"
+          },
+          "serviceScreen": {
+            "back": "Voltar aos serviços",
+            "newSubstitution": "Nova substituição",
+            "coveredHours": "Horas cobertas: {{covered}} de {{total}} h",
+            "tabsLabel": "Seções do serviço",
+            "tabs": {
+              "upcoming": "Próximos dias",
+              "fixed": "Horário fixo",
+              "substitutions": "Substituições"
+            },
+            "workerFilter": "Prestador",
+            "workerFilterAll": "Todos",
+            "loading": "Carregando os turnos da semana…",
+            "loadError": "Não foi possível carregar os turnos desta semana.",
+            "forbidden": "Você não tem permissão para ver os turnos deste serviço."
+          },
+          "weekPicker": {
+            "calendarLabel": "Escolher semana",
+            "previous": "Semana anterior",
+            "next": "Semana seguinte",
+            "previousMonth": "Mês anterior",
+            "nextMonth": "Mês seguinte",
+            "goToCurrent": "Ir para esta semana",
+            "weekOf": "Semana de {{from}} a {{to}}",
+            "rangeSameMonth": "{{from}} a {{to}} de {{month}}",
+            "rangeCrossMonth": "{{from}} a {{to}}",
+            "relative": {
+              "current": "Esta semana",
+              "next": "Semana que vem",
+              "previous": "Semana passada",
+              "ahead": "Em {{count}} semanas",
+              "behind": "Há {{count}} semanas"
+            }
+          },
+          "upcoming": {
+            "columns": {
+              "day": "Dia",
+              "schedule": "Horário",
+              "attends": "Quem atende",
+              "action": "Ação"
+            },
+            "holder": "Titular",
+            "noHolder": "sem titular",
+            "covers": "Cobre {{holder}}",
+            "substitutionBadge": "Substituição",
+            "nobodyAssigned": "Ninguém escalado",
+            "holderAbsent": "{{holder}} não vem",
+            "slotWithoutProvider": "Faixa sem prestador",
+            "hours": "{{hours}} h",
+            "hoursEndsOn": "{{hours}} h · termina {{day}}",
+            "assign": "Escalar",
+            "change": "Trocar",
+            "empty": "Não há turnos nesta semana.",
+            "holderAbsentWithReason": "{{holder}} não vem · {{reason}}"
+          },
+          "serviceVacancy": {
+            "withCase": "Vaga CASO {{caseLabel}} · {{reserveCount}} na Resposta Rápida",
+            "openNoCase": "Vaga aberta · {{reserveCount}} na Resposta Rápida",
+            "none": "Sem vaga aberta"
+          },
+          "fixed": {
+            "endsNextDay": "termina no dia seguinte",
+            "changeProvider": "Trocar prestador",
+            "noAttention": "Sem atendimento: {{days}}",
+            "listLast": "{{head}} e {{last}}"
+          },
+          "saleEntra": {
+            "sale": "Sai",
+            "enters": "Entra",
+            "nobodyYet": "Ninguém ainda",
+            "pick": "Escolher quem entra",
+            "except": "exceto {{days}}: ninguém",
+            "roles": {
+              "IN_SERVICE": "Em atendimento",
+              "QUICK_RESPONSE": "Resposta rápida",
+              "SELECTED": "Selecionado"
+            }
+          },
+          "flow": {
+            "title": "Nova substituição",
+            "step": "Passo {{current}} de {{total}}",
+            "close": "Fechar",
+            "back": "Voltar",
+            "next": "Próximo",
+            "confirm": "Confirmar",
+            "confirming": "Confirmando…",
+            "states": {
+              "free": "Livre",
+              "conflict": "Conflito",
+              "unknown": "Não foi possível verificar",
+              "checking": "Verificando…"
+            },
+            "who": {
+              "title": "Quem não vai vir?",
+              "loading": "Carregando as pessoas do serviço…",
+              "loadError": "Não foi possível carregar as pessoas deste serviço.",
+              "empty": "Este serviço não tem ninguém com turnos para substituir."
+            },
+            "howLong": {
+              "title": "Por quanto tempo?",
+              "loadingShifts": "Buscando os turnos dessa pessoa…",
+              "previewError": "Não foi possível verificar os turnos. Tente de novo.",
+              "toBeforeFrom": "A data final é anterior à inicial.",
+              "from": "De",
+              "to": "Até",
+              "date": "Data",
+              "since": "A partir de",
+              "shiftsCount_one": "{{name}} tem {{count}} turno nessas datas",
+              "shiftsCount_other": "{{name}} tem {{count}} turnos nessas datas",
+              "permanentCount_one": "{{name}} sai de {{count}} faixa deste serviço",
+              "permanentCount_other": "{{name}} sai de {{count}} faixas deste serviço",
+              "options": {
+                "ONE_DAY": {
+                  "title": "Um só dia",
+                  "description": "Falta um dia inteiro."
+                },
+                "DAYS": {
+                  "title": "Vários dias",
+                  "description": "Férias, licença."
+                },
+                "PERMANENT": {
+                  "title": "Não volta mais",
+                  "description": "Deixa o serviço."
+                }
+              }
+            },
+            "whoCovers": {
+              "title": "Quem cobre?",
+              "one": {
+                "title": "Uma pessoa para todos os dias"
+              },
+              "perDay": {
+                "title": "Uma pessoa por dia",
+                "pickFor": "Quem cobre {{day}}"
+              },
+              "nobody": {
+                "title": "Ninguém ainda",
+                "description": "Os turnos ficam sem cobertura."
+              },
+              "pickPerson": "Escolher pessoa",
+              "pickOtherForDay": "Escolher outra pessoa para esse dia",
+              "conflict": "{{name}} já atende outro paciente em {{weekday}}, das {{start}} às {{end}}.",
+              "conflictAllDay": "{{name}} já atende outro paciente em {{weekday}}, o dia inteiro.",
+              "loadingCandidates": "Carregando quem pode cobrir…",
+              "candidatesError": "Não foi possível carregar a lista de quem pode cobrir.",
+              "previewError": "Não foi possível verificar o horário da pessoa. Tente de novo.",
+              "blocked": "Resolva cada dia para continuar."
+            },
+            "summary": {
+              "title": "Motivo e resumo",
+              "reason": "Motivo",
+              "registering": "Você vai registrar:",
+              "since": "A partir de {{date}}",
+              "shifts_one": "{{count}} turno",
+              "shifts_other": "{{count}} turnos",
+              "slots_one": "{{count}} faixa",
+              "slots_other": "{{count}} faixas",
+              "uncoveredFrom": "A partir de {{date}} os turnos ficam Sem cobertura",
+              "statusChange": "O estado do paciente passa de {{from}} para {{to}}.",
+              "cancelled_one": "Cancela-se {{count}} substituição já lançada a partir dessa data",
+              "cancelled_other": "Cancelam-se {{count}} substituições já lançadas a partir dessa data",
+              "cleared_one": "{{count}} turno em que ela cobria fica Sem cobertura",
+              "cleared_other": "{{count}} turnos em que ela cobria ficam Sem cobertura",
+              "createError": "Não foi possível registrar a substituição. Tente de novo.",
+              "statusChangeTo": "O estado do paciente passa para {{to}}."
+            }
+          },
+          "cover": {
+            "title": "Escolher quem entra",
+            "heading": "Quem entra?",
+            "cancel": "Cancelar",
+            "confirm": "Atribuir",
+            "confirming": "Atribuindo…",
+            "error": "Não foi possível atribuir a pessoa. Tente de novo."
+          },
+          "substitutions": {
+            "filterLabel": "Substituições",
+            "filters": {
+              "upcoming": "Próximas",
+              "past": "Passadas"
+            },
+            "columns": {
+              "when": "Quando",
+              "change": "Troca",
+              "action": "Ação"
+            },
+            "types": {
+              "ONE_DAY": "Um dia",
+              "DAYS": "Vários dias",
+              "PERMANENT": "Não volta mais"
+            },
+            "shifts_one": "{{count}} turno",
+            "shifts_other": "{{count}} turnos",
+            "since": "A partir de {{date}}",
+            "legacy": "Sem pedido (anterior)",
+            "undone": "Desfeita",
+            "adjusted": "Ajustado",
+            "viewDays": "Ver dias",
+            "hideDays": "Ocultar dias",
+            "undo": "Desfazer",
+            "undoError": "Não foi possível desfazer a substituição.",
+            "nobodyYet": "Ninguém ainda",
+            "daysListLabel": "Dias da substituição",
+            "loading": "Carregando as substituições…",
+            "loadError": "Não foi possível carregar as substituições.",
+            "forbidden": "Você não tem permissão para ver as substituições deste serviço.",
+            "emptyUpcoming": "Ainda não há substituições próximas neste serviço.",
+            "emptyPast": "Não há substituições passadas neste serviço."
+          }
         },
         "matchingCard": {
           "title": "Enquadre Terapêutico",
@@ -3965,6 +4558,7 @@
           "addressAutocompleteDown": "Não foi possível carregar o buscador de endereços do Google. Sem ele não dá para gravar endereço — avise o time técnico e tente de novo.",
           "addressRaw": "Endereço informado (texto livre)",
           "type": "Tipo",
+          "typePlaceholder": "Selecione",
           "type_domicilio_propio": "Domicílio próprio",
           "type_casa_madre": "Casa da mãe",
           "type_casa_padre": "Casa do pai",
@@ -3994,8 +4588,14 @@
             "CONTRACTED_SERVICE": "Serviço contratado",
             "SERVICE_ADDRESS": "Endereço do serviço",
             "SERVICE_SCHEDULE": "Horário do serviço",
-            "SERVICE_RECRUITMENT_FIELDS": "Dados de recrutamento do serviço (tipo de prestador, sexo, experiência, jornada e dia de pagamento)",
-            "CONSENT": "Consentimento"
+            "SERVICE_REQUIRED_PROFESSIONS": "Tipo de prestador do serviço",
+            "SERVICE_REQUIRED_SEX": "Sexo do prestador do serviço",
+            "SERVICE_REQUIRED_EXPERIENCE": "Experiência exigida do serviço",
+            "SERVICE_WORK_SCHEDULE": "Jornada do serviço",
+            "SERVICE_PAYMENT_DAY": "Dia de pagamento do serviço",
+            "CONSENT": "Consentimento",
+            "DIAGNOSIS": "Diagnóstico",
+            "CLINICAL_DATA": "Dados clínicos"
           }
         },
         "viewInKanban": "Ver no Kanban",
@@ -4100,6 +4700,8 @@
           },
           "composer": {
             "placeholder": "Digite uma mensagem…",
+            "counter": "{{count}}/{{max}}",
+            "tooLong": "A mensagem passa do limite de {{max}} caracteres",
             "send": "Enviar",
             "attach": "Anexar",
             "discardConfirm": "Descartar mensagem não enviada?",
@@ -4318,43 +4920,9 @@
           "onHoldReasonRequired": "Para deixar o paciente «Em espera», informe o motivo (escola, convênio ou outro).",
           "suspensionExitReasonRequired": "Para tirar o paciente de «Suspenso», escolha o motivo.",
           "notAvailable": "Esta mudança de estado não está disponível.",
-          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente."
+          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente.",
+          "lockedByAllocation": "Não é possível mudar o estado: o paciente tem prestador alocado no itinerário. Retire o prestador do itinerário primeiro."
         }
-      },
-      "insuranceProviderOptions": {
-        "API": "API",
-        "ACCORD_SALUD": "Accord Salud",
-        "ASISOC": "ASISOC",
-        "AVALIAN": "Avalian",
-        "BANCARIOS": "Bancarios",
-        "CASA": "CASA",
-        "DAS": "DAS",
-        "GALENO": "Galeno",
-        "MHM": "MHM",
-        "MEDICUS": "Medicus",
-        "HTAL_BRITANICO": "Htal Británico",
-        "OSPJN": "OSPJN",
-        "OSPECOM": "OSPECOM",
-        "OSMECON": "OSMECON",
-        "OSDE": "OSDE",
-        "OMINT": "Omint",
-        "OSPOCE": "OSPOCE",
-        "OGORMAN": "O'Gorman",
-        "OSPATCA": "OSPATCA",
-        "OBSBA": "ObSBA",
-        "OSPELSYM": "Ospelsym",
-        "OSTEE_LUZ_MEDICA": "Ostee Luz Médica",
-        "OSDEPYM": "Osdepym",
-        "OTHER": "Outra",
-        "PFA_SUPERINTENDENCIA": "PFA Superintendencia de Bienestar",
-        "PRIVATE": "Privado",
-        "SANIDAD": "SANIDAD",
-        "SWISS_MEDICAL": "Swiss Medical",
-        "UP": "UP",
-        "OSPICHA": "OSPICHA",
-        "USUOMRA": "USUOMRA",
-        "PREVENCION_SALUD": "Prevención Salud",
-        "IOSCOR": "IOSCOR"
       }
     },
     "pendingAddressReview": {
@@ -4432,14 +5000,7 @@
       "colOccupation": "Ocupação",
       "colZone": "Zona / Dist",
       "colCases": "Casos",
-      "colScore": "Score Final",
-      "missingMeetLinks": {
-        "title": "Esta vaga ainda não tem links de reunião",
-        "instructionsBefore": "Para convidar candidatos, adicione pelo menos um link de reunião na aba ",
-        "instructionsTab": "Links",
-        "instructionsAfter": ".",
-        "goToLinks": "Ir para Links"
-      }
+      "colScore": "Score Final"
     },
     "messaging": {
       "title": "Enviar convite",
@@ -4476,7 +5037,8 @@
         "COOLDOWN": "O worker recebeu uma mensagem nos últimos 3 dias.",
         "ALREADY_INVITED": "O worker já foi convidado para esta vaga nos últimos 7 dias.",
         "UNANSWERED_THROTTLE": "O worker recebeu vários convites sem nunca responder. Envio pausado até engajar.",
-        "WORKER_STATUS_INVALID": "O status do worker não permite enviar o convite de match."
+        "WORKER_STATUS_INVALID": "O status do worker não permite enviar o convite de match.",
+        "WORKER_NO_PHONE": "O worker não tem telefone cadastrado."
       }
     },
     "interviews": {
@@ -4621,6 +5183,7 @@
           "toRest": "Tirar dos membros",
           "unsaved": "Alterações não salvas",
           "locked": "Último gestor do time: não dá para tirar.",
+          "agentBadge": "Agente",
           "allInside": "O time inteiro já é membro."
         },
         "cells": {
@@ -4643,11 +5206,14 @@
             "export": "Exportar",
             "validate": "Validar",
             "execute": "Executar",
+            "chat": "Chat",
             "send": "Enviar",
             "disable": "Dar baixa",
             "write": "Criar e editar",
             "incomplete_alert": "Aviso dia 12",
             "waive_contact": "Não precisa",
+            "decidir": "Decidir",
+            "register": "Registrar",
             "resend_message": "Reenviar mensagem",
             "move_to_searching": "Para busca",
             "move_to_active": "Para ativo",
@@ -4675,9 +5241,28 @@
             "worker": "Prestador em operação",
             "worker_contact": "Contato: nome e telefone",
             "worker_pii": "Dossiê: DNI, nascimento, dados sensíveis",
+            "worker_application": "Candidatura do prestador a uma vaga (agente)",
+            "handover": "Repasse da conversa para a equipe humana (agente)",
             "worker_address": "Endereço do prestador: linha, coordenada, raio",
             "worker_document": "Documentos do prestador",
             "tag": "Catálogo de etiquetas",
+            "ai_prompt": "Prompts de IA",
+            "pedidos_ia": "Pedidos de IA",
+            "platform_costs": "Custos da plataforma",
+            "recruitment_activity_per_person": "Atividade do funil por recrutadora",
+            "assistant_scoreboard": "Placar dos agentes",
+            "assistant_escalation": "Relatório do assistente",
+            "assistant_maria": "Assistente de recrutamento",
+            "assistant_lucero": "Assistente Lucero",
+            "assistant_candela": "Assistente Candela",
+            "knowledge_clinical": "Conhecimento clínico",
+            "knowledge_coordination": "Conhecimento de coordenação",
+            "knowledge_financial": "Conhecimento financeiro",
+            "knowledge_management": "Conhecimento de gestão",
+            "knowledge_public": "Conhecimento público",
+            "knowledge_recruitment": "Conhecimento de recrutamento",
+            "knowledge_technical": "Conhecimento técnico",
+            "knowledge_product_meetings": "Conhecimento de reuniões de produto",
             "vacancy": "Vagas",
             "funnel": "Funil",
             "interview": "Entrevistas",
@@ -4715,19 +5300,28 @@
             "patient_therapeutic_project": "Projeto terapêutico: versões, objetivos e atividades",
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
             "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
+            "catalog_service_exit_reasons": "Catálogo de motivos de saída do serviço",
+            "catalog_service_shift_templates": "Catálogo de guardias predefinidas",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferência de horas do Ana Care",
             "patient_conversation": "Conversa do paciente",
             "own_notifications": "Minhas notificações",
             "own_presence": "Minha presença online",
             "staff_directory": "Diretório da equipe",
+            "patient_service_team": "Encuadre do serviço contratado (rejeitar/reverter)",
+            "patient_itinerary": "Itinerário do paciente (montar)",
             "patient_document": "Documentos do paciente",
             "patient_admission": "Admissão do paciente (reuniões e mensagens)",
             "own_tactiq_link": "Meu vínculo com o Tactiq",
             "patient_status": "Status do paciente: troca fora do fluxo",
             "enquadre_event": "Eventos de enquadre (criar, convocados e cancelar)",
             "enquadre_result": "Resultado do enquadre (marcar e encerrar)",
-            "enquadre_summary": "Resumo do enquadre (ver e baixar)"
+            "enquadre_summary": "Resumo do enquadre (ver e baixar)",
+            "interview_host": "Entrevistadores de enquadre e admissão",
+            "catalog_insurance_providers": "Cadastro de obras sociais",
+            "insurance_contracts": "Contratos da obra social",
+            "insurance_provider_contacts": "Empregados da obra social",
+            "insurance_provider_patients": "Pacientes da obra social"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -5061,6 +5655,9 @@
         "groupsLoadError": "Não foi possível carregar os grupos."
       },
       "screens": {
+        "custos": {
+          "label": "Custos da plataforma"
+        },
         "dashboard": {
           "label": "Gestão à Vista",
           "containers": {
@@ -5095,6 +5692,7 @@
             "services": "Serviço contratado",
             "contractValue": "Valor-hora do serviço contratado",
             "vacancies": "Vagas do paciente",
+            "itinerary": "Itinerário do paciente (atribuir)",
             "operational": "Status, ativação e histórico",
             "therapeuticProject": "Projeto terapêutico",
             "conversation": "Conversa",
@@ -5128,6 +5726,9 @@
         },
         "tags": {
           "label": "Etiquetas"
+        },
+        "integration.aiPrompts": {
+          "label": "Prompts de IA"
         },
         "vacancies.list": {
           "label": "Vagas: Lista"
@@ -5195,8 +5796,36 @@
         "patients.catalogSegments": {
           "label": "Pacientes: Catálogo de segmentos (Ana Care)"
         },
+        "patients.catalogServiceExitReasons": {
+          "label": "Pacientes: Catálogo de motivos de saída"
+        },
+        "patients.catalogServiceShiftTemplates": {
+          "label": "Pacientes: Catálogo de guardias predefinidas"
+        },
         "account.tactiq": {
           "label": "Meu perfil: Tactiq"
+        },
+        "interviewHosts": {
+          "label": "Entrevistadores"
+        },
+        "insurance.providers": {
+          "label": "Obras sociais: Lista"
+        },
+        "insurance.providerDetail": {
+          "label": "Obras sociais: Detalhes",
+          "containers": {
+            "general": "Dados gerais (nome, razão social, CUIT/CNPJ, tipo de pagador)",
+            "employees": "Empregados (nome, cargo, telefone, documento)",
+            "contracts": "Contratos",
+            "termValue": "Valor-hora e imposto do termo do contrato",
+            "patients": "Pacientes vinculados"
+          }
+        },
+        "enquadres": {
+          "label": "Enquadres"
+        },
+        "pedidosIa": {
+          "label": "Pedidos da IA"
         }
       }
     },
@@ -5760,6 +6389,12 @@
       "copiarParaTraduzir": "copiar o original para traduzir"
     },
     "therapeuticCatalog": {
+      "shiftTemplates": {
+        "notRetroactive": "Os serviços já cadastrados não mudam.",
+        "overlap": "Há turnos que se sobrepõem dentro da guardia.",
+        "addItem": "Adicionar turno",
+        "removeItem": "Remover turno"
+      },
       "kinds": {
         "specificObjectives": {
           "title": "Objetivos específicos do projeto terapêutico",
@@ -5772,6 +6407,15 @@
         "segments": {
           "title": "Segmentos do projeto terapêutico (Ana Care)",
           "subtitle": "Os segmentos que a equipe escolhe para enquadrar o projeto terapêutico de cada paciente (os da planilha da Ana Care). Editados aqui, sem deploy. Desativar não apaga: versões antigas do projeto guardam o texto que tinham."
+        },
+        "serviceExitReasons": {
+          "title": "Motivos de saída",
+          "subtitle": "As opções que a equipe escolhe ao registrar a saída de um prestador de um serviço. Editadas aqui, sem deploy. Desativar não apaga: registros anteriores guardam o motivo que tinham.",
+          "guidance": "Categorias genéricas, sem dado de saúde."
+        },
+        "serviceShiftTemplates": {
+          "title": "Guardias predefinidas",
+          "subtitle": "Modelos de turnos que a coordenação aplica ao cadastrar um serviço."
         }
       },
       "newItem": "Nova opção",
@@ -5784,6 +6428,8 @@
       "table": {
         "order": "Ordem",
         "label": "Texto",
+        "title": "Título",
+        "description": "Descrição",
         "segment": "Segmento",
         "status": "Estado",
         "actions": "Ações"
@@ -5791,6 +6437,12 @@
       "form": {
         "label": "Texto da opção",
         "labelHelp": "Em espanhol, como vai sair no PDF. Sem dados de nenhuma pessoa.",
+        "title": "Título da opção",
+        "titleHelp": "Em espanhol, como vai sair no PDF. Máximo 150 caracteres. Sem dados de nenhuma pessoa.",
+        "titleCounter": "{{count}}/{{max}} caracteres",
+        "description": "Descrição",
+        "descriptionHelp": "Opcional. Em espanhol, como vai sair no PDF. Sem dados de nenhuma pessoa.",
+        "descriptionCounter": "{{count}}/{{max}} caracteres",
         "sortOrder": "Ordem",
         "sortOrderHelp": "Posição na lista (menor primeiro). Vazio = no fim.",
         "segment": "Segmento (Ana Care)",
@@ -5837,7 +6489,59 @@
         "installed": "A extensão do Tactiq está instalada no seu Chrome. Para ficar apta a receber agendas, falta fazer a reunião de prova.",
         "missing": "A extensão do Tactiq não está ativa no seu Chrome. Instale-a para continuar recebendo agendas de admissão.",
         "disabled": "A extensão do Tactiq está desativada no seu Chrome. Ative-a de novo para continuar recebendo agendas de admissão."
-      }
+      },
+      "importBlocked": {
+        "dateLanguage": "pt-BR",
+        "meeting": {
+          "admission": "reunião de admissão",
+          "enquadre": "entrevista de enquadre"
+        },
+        "reason": {
+          "host": {
+            "no_link": "a sua conta do Tactiq não está conectada",
+            "wrong_account": "a conta do Tactiq conectada não é a sua"
+          },
+          "supervisor": {
+            "no_link": "a conta do Tactiq de {{host}} não está conectada",
+            "wrong_account": "a conta do Tactiq conectada por {{host}} não é a da própria pessoa"
+          }
+        },
+        "hostFallback": "a pessoa responsável",
+        "hostFallbackStart": "A pessoa responsável",
+        "blocked": {
+          "title": "Não conseguimos trazer a transcrição da sua reunião",
+          "body": "Não conseguimos trazer a transcrição da sua {{reuniao}} de {{data}}, porque {{motivo}}. Para resolver: abra Meu perfil, vá em Tactiq e toque em Vincular Tactiq. Você tem até {{prazo}}; depois disso não será mais possível trazer essa transcrição."
+        },
+        "reminder": {
+          "title": "Ainda falta vincular o Tactiq",
+          "body": "Lembrete: ainda não conseguimos trazer a transcrição da sua {{reuniao}} de {{data}}, porque {{motivo}}. Leva um minuto: Meu perfil, Tactiq, Vincular Tactiq. O prazo é {{prazo}}."
+        },
+        "expired": {
+          "title": "O prazo para trazer a transcrição acabou",
+          "body": "Passou o prazo e não foi possível trazer a transcrição da sua {{reuniao}} de {{data}}, porque {{motivo}}. Vincule sua conta em Meu perfil, Tactiq, Vincular Tactiq, para que as próximas reuniões não tenham o mesmo problema."
+        },
+        "willBeLost": {
+          "title": "A gravação da reunião de {{host}} vai ser perdida",
+          "body": "A gravação e a transcrição da {{reuniao}} de {{host}} de {{data}} ainda não chegaram, porque {{motivo}}. Se {{host}} não vincular o Tactiq até {{prazo}}, elas vão ser perdidas. {{hostStart}} precisa abrir Meu perfil, ir em Tactiq e tocar em Vincular Tactiq."
+        }
+      },
+      "itineraryUncoveredText": "{{shifts}} sem cobertura em {{services}}",
+      "itineraryUncoveredShifts_one": "{{count}} turno",
+      "itineraryUncoveredShifts_other": "{{count}} turnos",
+      "itineraryUncoveredServices_one": "{{count}} serviço",
+      "itineraryUncoveredServices_other": "{{count}} serviços",
+      "itineraryUncoveredContext": "Itinerário",
+      "itineraryUncoveredDetail": "Primeiro turno sem cobertura: {{date}}",
+      "pedidoIaNovo": "Novo pedido do Sol",
+      "pedidoIaGrave": "Pedido grave do Sol aguarda sua decisão",
+      "pedidoIaAplicar": "Pedido aceito no degrau {{degrau}}: aplicar {{prazo}}",
+      "pedidoIaAplicarSemDados": "Pedido aceito: aplicar",
+      "pedidoIaAplicarPrazo": {
+        "hoje": "hoje",
+        "semana": "esta semana"
+      },
+      "pedidoIaActor": "Sol",
+      "pedidoIaContext": "Pedidos do Sol"
     },
     "profile": {
       "title": "Meu perfil",
@@ -5919,6 +6623,688 @@
       "startError": "Não conseguimos iniciar a vinculação. Tente novamente.",
       "returnLinked": "Pronto: sua conta do Tactiq foi vinculada.",
       "returnError": "Não conseguimos concluir a vinculação com o Tactiq. Tente novamente."
+    },
+    "interviewHosts": {
+      "title": "Entrevistadores de enquadre e admissão",
+      "subtitle": "Só usuários da equipe podem ser entrevistadores. O vínculo com o Tactiq é feito por cada pessoa em “Meu perfil”.",
+      "add": "Adicionar entrevistador",
+      "filterCountry": "País",
+      "filterAll": "Todos",
+      "loadError": "Não conseguimos carregar os entrevistadores.",
+      "retry": "Tentar de novo",
+      "empty": "Ainda não há entrevistadores cadastrados.",
+      "emptyFiltered": "Nenhum entrevistador atende neste país.",
+      "table": {
+        "name": "Nome",
+        "email": "E-mail",
+        "country": "País",
+        "encuadre": "Enquadre",
+        "admission": "Admissão",
+        "tactiq": "Tactiq",
+        "actions": "Ações"
+      },
+      "userInactive": "Usuário inativo",
+      "userMissing": "Sem usuário no sistema",
+      "userMissingHelp": "Não tem usuário na equipe: não aparece para agendar. Crie o usuário em Usuários e adicione de novo, ou remova.",
+      "switchLabel": "{{flow}} — {{name}}",
+      "edit": "Editar",
+      "quit": "Remover",
+      "tactiqLinked": "Vinculado",
+      "tactiqUnlinked": "Sem vínculo",
+      "tactiqTip": "A pessoa vincula a conta dela em Meu perfil",
+      "saveError": "Não conseguimos salvar a alteração.",
+      "errors": {
+        "INTERVIEW_HOST_USER_NOT_ELIGIBLE": "Essa pessoa não é um usuário ativo da equipe.",
+        "INTERVIEW_HOST_NOT_FOUND": "O entrevistador não existe mais.",
+        "INTERVIEW_HOST_ALREADY_ACTIVE": "Essa pessoa já está na lista.",
+        "INVALID_REQUEST": "Revise os dados: é preciso ao menos um país e um tipo de agenda."
+      },
+      "panel": {
+        "titleAdd": "Adicionar entrevistador",
+        "titleEdit": "Editar entrevistador",
+        "close": "Fechar",
+        "user": "Usuário",
+        "searchPlaceholder": "Busque por nome ou e-mail",
+        "onlyActive": "Aparecem só usuários ativos da equipe.",
+        "noResults": "Nenhum usuário da equipe corresponde a “{{query}}”.",
+        "searching": "Buscando…",
+        "searchError": "Não conseguimos buscar usuários.",
+        "change": "Trocar",
+        "countries": "Países",
+        "countriesRequired": "Escolha ao menos um país.",
+        "attends": "Atende",
+        "encuadre": "Enquadre",
+        "admission": "Admissão",
+        "flowRequired": "Escolha ao menos um tipo de agenda: enquadre ou admissão.",
+        "cancel": "Cancelar",
+        "add": "Adicionar",
+        "save": "Salvar"
+      },
+      "quitModal": {
+        "title": "Remover entrevistador",
+        "body": "Remover {{name}} de enquadre e admissão? Deixa de aparecer para agendar.",
+        "cancel": "Cancelar",
+        "confirm": "Remover"
+      }
+    },
+    "aiPrompts": {
+      "title": "Prompts de IA",
+      "description": "Edite o texto que a IA usa em cada situação. As mudanças valem para o que a plataforma gerar dali em diante — não reescrevem nada que já foi enviado.",
+      "loading": "Carregando os prompts…",
+      "loadError": "Não foi possível carregar os prompts.",
+      "readOnlyNotice": "Somente leitura: você pode ver o conteúdo, mas não salvá-lo.",
+      "tabs": {
+        "vacancyDescription": "Descrição de vaga",
+        "prescreeningAt": "Pré-seleção — Acompanhante Terapêutico",
+        "prescreeningCaregiver": "Pré-seleção — Cuidador"
+      },
+      "editor": {
+        "charCount": "{{count}} caracteres",
+        "lastEditedBy": "Última edição: {{date}} · {{name}}"
+      },
+      "actions": {
+        "save": "Salvar",
+        "edit": "Editar",
+        "cancel": "Cancelar",
+        "saving": "Salvando…",
+        "undo": "Desfazer última alteração",
+        "undoConfirm": "Desfazer a última alteração? O texto volta para a versão anterior.",
+        "undoUnavailable": "Não há uma versão anterior para desfazer."
+      },
+      "errors": {
+        "emptyBody": "O texto não pode ficar vazio.",
+        "versionConflict": "Outra pessoa ({{updatedBy}}) já salvou uma mudança neste prompt. Recarregue para ver a versão atual antes de salvar de novo."
+      },
+      "preview": {
+        "notice": "SIMULAÇÃO — o que você vê abaixo é apenas uma prévia com o texto que você está editando. Nada foi salvo e nada foi enviado ao Talentum nem a ninguém.",
+        "cta": "Simular com este texto",
+        "title": "Simular com um caso real",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Escolha um caso…",
+        "casesLoading": "Carregando os casos…",
+        "casesError": "Não foi possível carregar os casos.",
+        "loading": "Gerando a simulação…",
+        "resultTitle": "Resultado da simulação",
+        "error": "Não foi possível gerar a simulação. O texto que você está editando foi preservado; tente de novo em instantes.",
+        "errorUnavailable": "O modelo de IA está indisponível no momento. O texto que você está editando foi preservado; tente de novo em instantes."
+      },
+      "simulation": {
+        "title": "Simular criação de vaga",
+        "description": "A criação de uma vaga usa os três textos juntos. Escolha um caso real e veja como ficaria, com o texto que está nos editores agora (mesmo sem salvar). É só uma simulação: nada é criado nem publicado.",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Escolha um caso…",
+        "casesLoading": "Carregando os casos…",
+        "casesError": "Não foi possível carregar os casos.",
+        "noCases": "Não há casos disponíveis para simular.",
+        "cta": "Simular criação",
+        "running": "Simulando… pode levar dezenas de segundos.",
+        "error": "Não foi possível gerar a simulação. Os textos dos editores foram preservados; tente de novo em instantes.",
+        "errorUnavailable": "O modelo de IA está indisponível no momento. Os textos dos editores foram preservados; tente de novo em instantes.",
+        "errorNotFound": "O caso escolhido não existe mais. Escolha outro.",
+        "notice": "SIMULAÇÃO — nada foi salvo, nenhuma vaga foi criada e nada foi enviado ao Talentum nem a ninguém. Reflete os textos que estavam nos editores no momento de simular.",
+        "usedTitle": "Prompts que foram exercitados",
+        "notExercised": "O seu texto de «{{label}}» NÃO entrou nesta simulação: a vaga escolhida usa o prompt de «{{used}}». Para testá-lo, escolha uma vaga desse tipo.",
+        "notExercisedDetail": "Não houve erro: a simulação simplesmente não usou esse texto.",
+        "resultEmptyDescription": "O modelo não devolveu descrição."
+      },
+      "unsavedTab": "Alterações não salvas"
+    },
+    "insuranceErrors": {
+      "generic": "Não foi possível concluir a operação. Tente de novo.",
+      "byStatus": {
+        "400": "Há dados inválidos no formulário.",
+        "403": "Você não tem permissão para esta ação.",
+        "404": "Não foi encontrado o que você buscava.",
+        "409": "Há um conflito com outro dado. Recarregue e tente de novo.",
+        "422": "Os dados não cumprem as regras. Revise o formulário."
+      },
+      "codes": {
+        "REQUIRES_NEW_SERVICE": "Trocar de obra social é outra admissão: é preciso criar um serviço novo.",
+        "USE_CORRECTION": "Este serviço já tem um contrato vigente e nenhum período anterior. Para mudá-lo, corrija o vínculo ou crie um serviço novo.",
+        "TWO_PAYERS_OVERLAP": "O paciente já tem outro pagador vigente nessas datas. Não pode haver dois pagadores ao mesmo tempo.",
+        "COUNTRY_MISMATCH": "O país do contrato não coincide com o do serviço.",
+        "PAYER_KIND_REQUIRED": "Falta classificar a obra social (tipo de pagador) antes de usá-la em um contrato.",
+        "PAYER_KIND_CANNOT_UNSET": "O tipo de pagador, depois de informado, não pode ser removido: só trocado.",
+        "SERVICE_HAS_CONTRACT_LINK": "O serviço já tem um contrato vinculado.",
+        "SAME_START_USE_CORRECTION": "A nova vigência começa no mesmo dia da atual. Use \"Corrigir\".",
+        "TERM_RANGE_INVALID": "A vigência do termo é inválida.",
+        "LINK_RANGE_INVALID": "A vigência está fora do vínculo vigente.",
+        "NAME_NOT_CODIFIABLE": "Esse nome não serve para gerar o código. Tente outro.",
+        "CODE_IMMUTABLE": "O código da obra social não pode ser alterado.",
+        "IMMUTABLE_FIELD": "Esse dado não pode ser alterado depois de informado (país e obra social do contrato).",
+        "VALIDATION_FAILED": "Há dados inválidos ou vazios. Revise os campos.",
+        "DOCUMENT_PAIR_INCOMPLETE": "Informe o tipo e o número do documento, ou nenhum dos dois.",
+        "LEGACY_FIELD_REMOVED": "Esse campo não existe mais: o valor e o imposto saem do contrato.",
+        "UNPROCESSABLE": "A operação não pode ser processada com esses dados.",
+        "INSURANCE_PROVIDER_CODE_EXISTS": "Já existe uma obra social com esse código.",
+        "INSURANCE_PROVIDER_SORT_ORDER_TAKEN": "Essa ordem já é usada por outra obra social.",
+        "INSURANCE_PROVIDER_NAME_EXISTS": "Já existe uma obra social com esse nome.",
+        "INSURANCE_PROVIDER_TAX_ID_EXISTS": "Já existe uma obra social com esse CUIT/CNPJ.",
+        "INSURANCE_CONTRACT_NAME_EXISTS": "Esta obra social já tem um contrato com esse nome.",
+        "RANGE_OVERLAP": "As datas se sobrepõem a outro período já cadastrado.",
+        "CONCURRENCY_CONFLICT": "Outra pessoa alterou isto ao mesmo tempo. Recarregue e tente de novo.",
+        "TERM_ALREADY_SUPERSEDED": "Esse termo já foi substituído. Recarregue a lista.",
+        "CONTACT_RETIRED": "Esse contato já foi retirado.",
+        "PROVIDER_NOT_FOUND": "A obra social não existe.",
+        "CONTRACT_NOT_FOUND": "O contrato não existe.",
+        "TERM_NOT_FOUND": "O termo de valor não existe.",
+        "SERVICE_NOT_FOUND": "O serviço contratado não existe.",
+        "NO_LIVE_LINK": "O serviço não tem um contrato vigente.",
+        "CONTACT_NOT_FOUND": "O contato não existe.",
+        "COUNTRY_SCOPE_REQUIRED": "Seu usuário não tem um país atribuído para esta operação."
+      },
+      "rangeOverlap": {
+        "insurance_contract_terms_sem_sobreposicao": "Essa vigência se sobrepõe a outro termo de valor do mesmo contrato.",
+        "contracted_service_contract_sem_sobreposicao": "Essa vigência se sobrepõe a outro vínculo do mesmo serviço."
+      },
+      "constraints": {
+        "insurance_providers_private_kind_chk": "A obra social \"Particular\" só pode ter o tipo de pagador \"Particular\".",
+        "insurance_providers_other_unclassified_chk": "A obra social \"Outra\" não pode ser classificada.",
+        "insurance_provider_contacts_document_pair_chk": "Informe o tipo e o número do documento, ou nenhum dos dois.",
+        "insurance_contracts_country_check": "O país do contrato deve ser Argentina ou Brasil."
+      }
+    },
+    "insuranceProviders": {
+      "title": "Obras sociais",
+      "subtitle": "Cadastre a obra social só com o nome e complete por cartões: dados gerais, empregados, contratos e pacientes.",
+      "searchLabel": "Buscar obra social",
+      "searchPlaceholder": "Buscar pelo nome",
+      "newProvider": "Nova obra social",
+      "showInactive": "Mostrar inativas",
+      "columns": {
+        "name": "Nome",
+        "payerKind": "Tipo de pagador",
+        "status": "Situação"
+      },
+      "active": "Ativa",
+      "inactive": "Inativa",
+      "unclassified": "Sem classificar",
+      "empty": "Ainda não há obras sociais cadastradas.",
+      "emptySearch": "Nenhuma obra social encontrada para essa busca.",
+      "loadError": "Não foi possível carregar as obras sociais.",
+      "noPermission": "Você não tem permissão para ver as obras sociais.",
+      "open": "Abrir",
+      "create": {
+        "title": "Nova obra social",
+        "nameLabel": "Nome",
+        "nameHelp": "Só o nome é obrigatório. O código é gerado a partir dele e não muda depois.",
+        "aliasesLabel": "Outros nomes",
+        "aliasesHelp": "Separe por vírgula. Servem só para reconhecer a obra social em outras fontes.",
+        "codeLabel": "Código",
+        "codeNeeded": "Não foi possível gerar o código a partir desse nome. Informe um código (letras e números, sem espaços).",
+        "submit": "Criar",
+        "saving": "Criando…",
+        "cancel": "Cancelar"
+      },
+      "detail": {
+        "back": "Voltar para as obras sociais",
+        "loading": "Carregando…",
+        "loadError": "Não foi possível carregar a obra social.",
+        "notFound": "Essa obra social não existe.",
+        "noPermission": "Você não tem permissão para ver este cartão.",
+        "notInformed": "Não informado",
+        "redacted": "Oculto",
+        "yes": "Sim",
+        "no": "Não",
+        "edit": "Editar",
+        "new": "Novo",
+        "save": "Salvar",
+        "saving": "Salvando…",
+        "cancel": "Cancelar",
+        "close": "Fechar"
+      },
+      "general": {
+        "title": "Dados gerais",
+        "fields": {
+          "name": "Nome",
+          "code": "Código",
+          "legalName": "Razão social",
+          "taxId": "CUIT / CNPJ",
+          "address": "Endereço",
+          "managementChatId": "ID do grupo de gestão",
+          "payerKind": "Tipo de pagador",
+          "active": "Situação"
+        },
+        "payerKindNone": "Sem classificar",
+        "payerKindHint": "Obra social, prepaga ou particular. Depois de classificado, só pode ser trocado, não removido.",
+        "activeLabel": "Ativa (aparece nas listas de escolha)",
+        "activeYes": "Ativa",
+        "activeNo": "Inativa"
+      },
+      "employees": {
+        "title": "Empregados",
+        "columns": {
+          "name": "Nome",
+          "role": "Cargo",
+          "phone": "Telefone",
+          "identification": "Identificação",
+          "actions": "Ações"
+        },
+        "empty": "Nenhum empregado cadastrado.",
+        "noPermission": "Você não tem permissão para ver os empregados desta obra social.",
+        "retire": "Retirar",
+        "retireConfirm": "Retirar {{name}} da lista? O registro é guardado, mas a pessoa deixa de aparecer.",
+        "form": {
+          "newTitle": "Novo empregado",
+          "editTitle": "Editar empregado",
+          "fullName": "Nome completo",
+          "roleTitle": "Cargo",
+          "phone": "Telefone",
+          "email": "E-mail",
+          "documentType": "Tipo de documento",
+          "documentNone": "Sem documento",
+          "documentNumber": "Número do documento",
+          "documentPairIncomplete": "Informe o tipo e o número do documento juntos, ou deixe os dois vazios.",
+          "required": "Preencha nome, cargo e telefone."
+        }
+      },
+      "contracts": {
+        "title": "Contratos",
+        "newContract": "Novo contrato",
+        "newTerm": "Novo termo",
+        "empty": "Esta obra social ainda não tem contratos.",
+        "noPermission": "Você não tem permissão para ver os contratos desta obra social.",
+        "countryOptions": {
+          "AR": "Argentina",
+          "BR": "Brasil"
+        },
+        "scopeNone": "Abrangência não definida",
+        "currentTerm": "Termo vigente",
+        "noTermToday": "Sem termo vigente hoje",
+        "futureTerms": "Termos futuros: {{count}}",
+        "futureTermsTitle": "Termos futuros",
+        "hourlyRate": "Valor-hora",
+        "tax": "Imposto",
+        "validity": "Vigência",
+        "validityRange": "de {{from}} até {{to}}",
+        "validityOpen": "desde {{from}}, sem data final",
+        "payerKindRequired": "Classifique o tipo do pagador (obra social, prepaga ou particular) em Dados gerais antes de criar contrato.",
+        "otherNotApplicable": "A obra social \"Outra\" agrupa as não listadas: não tem contratos nem exige classificar o tipo do pagador.",
+        "goToGeneral": "Ir para Dados gerais",
+        "contractForm": {
+          "title": "Novo contrato e primeiro termo",
+          "name": "Nome do contrato",
+          "country": "País",
+          "countryPlaceholder": "Escolha o país",
+          "scope": "Abrangência",
+          "scopeHelp": "Texto descritivo: região, turno, tipo de atendimento.",
+          "firstTerm": "Primeiro termo de valor",
+          "required": "Informe o nome e o país do contrato."
+        },
+        "termForm": {
+          "title": "Novo termo de valor",
+          "hourlyRate": "Valor-hora",
+          "tax": "Imposto (%)",
+          "taxHelp": "Obrigatório. Digite 0 se o contrato for isento.",
+          "taxRequired": "Informe o imposto. Digite 0 se for isento.",
+          "taxRange": "O imposto deve estar entre 0 e 100.",
+          "rateRequired": "Informe o valor-hora.",
+          "validFrom": "Início da vigência",
+          "validFromRequired": "Informe o início da vigência.",
+          "validTo": "Fim da vigência",
+          "validToBeforeFrom": "O fim não pode ser antes do início.",
+          "retroWarning": "Essa data é anterior a hoje ({{asOf}}). O termo será retroativo.",
+          "asOfLoading": "Escolha o país para ver a data de hoje.",
+          "submit": "Salvar termo",
+          "correctTitle": "Corrigir termo de valor",
+          "correctSubmit": "Salvar correção"
+        },
+        "correctTerm": "Corrigir termo"
+      },
+      "patients": {
+        "title": "Pacientes",
+        "empty": "Nenhum paciente tem vínculo vigente com esta obra social.",
+        "noPermission": "Você não tem permissão para ver os pacientes desta obra social.",
+        "asOf": "Vínculos vigentes em {{asOf}}",
+        "columns": {
+          "case": "Caso",
+          "service": "Serviço",
+          "contract": "Contrato",
+          "validity": "Vigência"
+        },
+        "caseNumber": "Caso {{number}}",
+        "noCase": "Sem número de caso"
+      }
+    },
+    "enquadres": {
+      "title": "Enquadres",
+      "filters": {
+        "from": "De",
+        "to": "Até",
+        "status": "Status",
+        "statusAll": "Todos os status",
+        "host": "Entrevistador",
+        "hostAll": "Todos os entrevistadores",
+        "hostPlaceholder": "Todos",
+        "country": "País",
+        "countryAll": "Todos os países",
+        "search": "Buscar",
+        "searchPlaceholder": "ENC-… ou número do caso",
+        "apply": "Aplicar"
+      },
+      "status": {
+        "open": "Aberto",
+        "closed": "Encerrado",
+        "cancelled": "Cancelado"
+      },
+      "columns": {
+        "dateTime": "Data e hora",
+        "host": "Entrevistador",
+        "case": "Caso",
+        "convoked": "Convocados",
+        "state": "Estado",
+        "import": "Importação"
+      },
+      "totals": {
+        "enquadres_one": "{{count}} enquadre",
+        "enquadres_other": "{{count}} enquadres",
+        "convoked_one": "{{count}} convocado",
+        "convoked_other": "{{count}} convocados"
+      },
+      "empty": "Não há enquadres entre {{from}} e {{to}}.",
+      "loadError": "Não conseguimos carregar os enquadres.",
+      "retry": "Tentar de novo",
+      "importBlocked": "Importação bloqueada: {{reason}}",
+      "helpNotIndicator21": "Esta lista conta eventos de enquadre (de qualquer status) e seus convocados ativos. Não bate com o indicador \"Enquadres agendados esta semana\" da Gestão à Vista, que conta pessoas por vaga, só de eventos abertos e com outros critérios.",
+      "errors": {
+        "ENQUADRE_LIST_RANGE_INCOMPLETE": "Preencha as duas datas: De e Até.",
+        "ENQUADRE_LIST_RANGE_INVERTED": "A data final não pode ser anterior à inicial.",
+        "ENQUADRE_LIST_RANGE_TOO_LONG": "O período não pode passar de 92 dias.",
+        "COUNTRY_SCOPE_REQUIRED": "Você não tem acesso aos países desta lista.",
+        "INVALID_COUNTRY": "O país escolhido não é válido.",
+        "generic": "Não conseguimos carregar os enquadres. Tente de novo."
+      }
+    },
+    "assistants": {
+      "button": "Assistentes",
+      "title": "Assistentes",
+      "yourGroup_one": "Seu grupo: {{group}} · {{count}} assistente",
+      "yourGroup_other": "Seu grupo: {{group}} · {{count}} assistentes",
+      "minimize": "Minimizar",
+      "openPicker": "Trocar de assistente",
+      "masterOnly": "Somente Acesso Master",
+      "typing": "digitando…",
+      "placeholder": "Escreva sua mensagem…",
+      "send": "Enviar",
+      "close": "Fechar",
+      "bringToSol": "Levar ao Sol",
+      "viewScoreboard": "Ver placar",
+      "cap": "Você atingiu o limite de hoje com {{assistant}}. Amanhã você pode continuar.",
+      "noAccess": "Não consigo ver isso com o seu acesso.",
+      "comingSoon": "em breve",
+      "available": "disponível",
+      "footer": "Cada assistente lê com o seu nível de acesso.",
+      "modelError": "Não consegui responder agora. Tente novamente em instantes.",
+      "noReachError": "Você não tem acesso a este assistente.",
+      "unavailableError": "Este assistente ainda não está disponível.",
+      "inputClinical": "Não posso receber dados clínicos. Reformule a pergunta sem eles.",
+      "genericError": "Algo deu errado. Tente novamente.",
+      "historyError": "Não conseguimos carregar a conversa. Tente de novo.",
+      "unreadBadge": "{{count}} mensagens não lidas"
+    },
+    "pedidosIa": {
+      "title": "Pedidos da IA",
+      "subtitle": "Pedidos do Sol como publicações: aceite, negue ou descreva o que fazer.",
+      "loading": "Carregando…",
+      "authzError": "Não foi possível carregar suas permissões. Tente recarregar a página.",
+      "readOnlyNotice": "Somente leitura: você não tem permissão para decidir sobre os pedidos.",
+      "empty": "Não há pedidos com esses filtros.",
+      "filters": {
+        "area": "Área",
+        "status": "Status",
+        "ordem": "Ordenar por idade",
+        "todas": "Todas as áreas",
+        "todos": "Todos os status",
+        "maisNovos": "Mais novos primeiro",
+        "maisAntigos": "Mais antigos primeiro"
+      },
+      "status": {
+        "novo": "Novo",
+        "aceito": "Aceito",
+        "negado": "Negado",
+        "redirecionado": "Redirecionado"
+      },
+      "badge": {
+        "novo": "NOVO",
+        "grave": "GRAVE"
+      },
+      "meta": {
+        "autor": "Autor",
+        "area": "Área"
+      },
+      "age": {
+        "hours": "há {{count}} h",
+        "days": "há {{count}} d"
+      },
+      "detail": {
+        "show": "Ver detalhe",
+        "hide": "Ocultar detalhe",
+        "descricao": "Descrição",
+        "atitude": "Atitude proposta",
+        "versao": "Versão",
+        "degrau": "Degrau",
+        "conteudo": "Conteúdo",
+        "casoTeste": "Caso de teste",
+        "medicao": "Medição",
+        "janela": "janela",
+        "rollback": "Gatilho de rollback",
+        "semAtitude": "Sem atitude proposta.",
+        "historico": "Histórico de eventos",
+        "semEventos": "Ainda sem eventos."
+      },
+      "acao": {
+        "aceitar": "Aceitou",
+        "negar": "Negou",
+        "descrever": "Descreveu o que fazer"
+      },
+      "actor": {
+        "humano": "pessoa",
+        "agente": "agente",
+        "sistema": "sistema"
+      },
+      "actions": {
+        "aceitar": "Aprovar",
+        "aceitarComentario": "Aprovar com comentário",
+        "negar": "Rejeitar",
+        "descrever": "Descrever o que fazer"
+      },
+      "modal": {
+        "cancel": "Cancelar",
+        "aceitar": {
+          "title": "Aprovar com comentário",
+          "label": "Comentário (obrigatório)",
+          "required": "Escreva o comentário para poder aprovar.",
+          "confirm": "Aprovar com comentário"
+        },
+        "negar": {
+          "title": "Rejeitar o pedido",
+          "label": "Motivo (obrigatório)",
+          "required": "Escreva o motivo para poder negar.",
+          "confirm": "Rejeitar pedido"
+        },
+        "descrever": {
+          "title": "Descrever o que fazer",
+          "label": "Comentário (obrigatório)",
+          "required": "Escreva o comentário para poder enviar.",
+          "confirm": "Enviar comentário"
+        }
+      },
+      "errors": {
+        "forbidden": "Você não tem permissão para decidir sobre este pedido.",
+        "notFound": "O pedido não existe mais.",
+        "alreadyDecided": "Este pedido já tem uma decisão registrada.",
+        "required": "Falta o texto obrigatório.",
+        "generic": "Não foi possível concluir a operação. Tente novamente."
+      },
+      "contadores": {
+        "title": "Aceitos sem contestar",
+        "loading": "Carregando contadores…",
+        "error": "Não foi possível carregar os contadores. O resto da página continua funcionando.",
+        "vazio": "Sem pedidos no período.",
+        "semanas": "{{atual}} de {{regua}} semanas seguidas",
+        "atingiu": "Atingiu a régua",
+        "naoAtingiu": "Ainda não atingiu a régua",
+        "ultimaContestacao": "Última contestação: semana de {{semana}}",
+        "semContestacao": "Sem contestações",
+        "pendentes": "Pendentes: {{count}}",
+        "pedidos": "Pedidos: {{count}}",
+        "c1": {
+          "title": "Propostas de outras pessoas artificiais",
+          "regra": "Régua: 1 mês seguido de aceitas sem contestar"
+        },
+        "c2": {
+          "title": "Propostas do próprio Sol",
+          "regra": "Régua: 6 meses seguidos de aceitas sem rejeitar nem comentar"
+        }
+      }
+    },
+    "custos": {
+      "title": "Custos da plataforma",
+      "authzLoading": "Carregando permissões…",
+      "authzError": "Não foi possível carregar suas permissões. Tente recarregar a página.",
+      "sync": "Sincronizar",
+      "syncing": "Sincronizando…",
+      "retry": "Tentar novamente",
+      "monthSelector": "Mês",
+      "dataUntil": "Dados do faturamento até {{date}}",
+      "stale": "O export está atrasado: os últimos dados têm mais de 36 horas.",
+      "staleDetail": "Último dado: {{date}}.",
+      "idle": {
+        "title": "Ainda não há dados nesta tela",
+        "text": "Os dados do faturamento aparecem aqui depois que você clicar em Sincronizar."
+      },
+      "loading": {
+        "title": "Buscando os dados",
+        "text": "Sincronizando o faturamento. Isso leva alguns instantes e os números aparecem aqui assim que terminar."
+      },
+      "empty": {
+        "title": "{{month}} ainda não tem dados no faturamento",
+        "text": "Escolha outro mês ou sincronize de novo mais tarde.",
+        "seeLast": "Ver {{month}}"
+      },
+      "errors": {
+        "generic": "Não conseguimos consultar o faturamento. Tente novamente.",
+        "bytesLimit": "A consulta passou do limite de bytes permitido (1 GiB) e foi cancelada sem custo extra. Avise o time técnico.",
+        "rateLimited": "Você sincronizou há pouco. Aguarde {{seconds}} s e tente novamente.",
+        "forbidden": "Você não tem permissão para ver os custos da plataforma."
+      },
+      "verdict": {
+        "region": "Sinais",
+        "one": "1 coisa fora do normal",
+        "many": "{{n}} coisas fora do normal",
+        "calm": "Nada fora do normal em {{day}}",
+        "insufficient": "Histórico insuficiente: a detecção começa com {{days}} dias de dados",
+        "insufficientText": "Até lá a tela mostra os valores sem marcar o que está fora do normal.",
+        "lastDay": "Dia completo mais recente: {{day}}.",
+        "rule": "Regra: custo do dia de pelo menos {{factor}} a mediana dos {{days}} dias anteriores e diferença de pelo menos {{amount}}.",
+        "closedMonth": "Mês fechado: a detecção de anomalias olha só o mês corrente."
+      },
+      "anomaly": {
+        "kind": {
+          "service": "serviço",
+          "resource": "recurso"
+        },
+        "new": "novo",
+        "seeDetail": "Ver detalhe",
+        "onDay": "no dia {{day}}",
+        "median": "Mediana, {{days}} dias anteriores",
+        "factor": "Fator",
+        "impact": "Impacto",
+        "impactValue": "+{{value}}/dia",
+        "topContributor": "Maior contribuinte do aumento ({{pct}})",
+        "noHistory": "Sem histórico para calcular a mediana dos {{days}} dias anteriores."
+      },
+      "spark": {
+        "label": "{{name}}, custo diário de {{from}} a {{to}}: mediana {{median}}, {{prevValue}} em {{prevDay}} e {{lastValue}} em {{lastDay}}",
+        "median": "mediana dos {{days}} dias anteriores: {{value}}"
+      },
+      "kpi": {
+        "region": "Números do mês",
+        "month": "Mês até agora",
+        "forecast": "Previsão do mês",
+        "vsPrev": "Contra o mês anterior, mesmo dia",
+        "noValue": "—",
+        "range": "1 a {{day}} de {{month}}",
+        "rangeOne": "1 de {{month}}",
+        "rangeTwo": "1 e 2 de {{month}}",
+        "forecastBasis": "Estimativa linear: gasto de {{n}} dias × {{d}} ÷ {{n}}.",
+        "forecastVsPrev": "{{pct}} sobre o mês anterior fechado ({{value}}).",
+        "forecastUnavailable": "Sem dias suficientes para estimar",
+        "estimateWith": "estimativa com {{n}} dias",
+        "prevRange": "{{month}}, 1 a {{day}}: {{value}}",
+        "noPrev": "Sem dado do mês anterior ainda.",
+        "monthClosed": "Total do mês",
+        "vsPrevClosed": "Contra o mês anterior",
+        "prevWhole": "{{month}}, inteiro: {{value}}"
+      },
+      "months": {
+        "title": "Últimos 6 meses",
+        "real": "Realizado",
+        "forecast": "Previsão",
+        "forecastLabel": "prev. {{value}}",
+        "partial": "(parcial)"
+      },
+      "who": {
+        "title": "Quem gasta",
+        "subtitle": "Participação sobre o gasto do mês ({{total}}).",
+        "tabsLabel": "Quem gasta, por",
+        "tabs": {
+          "service": "Serviço",
+          "resource": "Recurso",
+          "sector": "Setor",
+          "ai": "IA",
+          "project": "Projeto"
+        },
+        "first": {
+          "service": "Serviço",
+          "resource": "Recurso",
+          "sector": "Setor",
+          "ai": "Chamador de IA",
+          "project": "Projeto"
+        },
+        "cols": {
+          "month": "No mês",
+          "share": "Participação",
+          "signal": "Sinal"
+        },
+        "none": {
+          "resource": "sem recurso",
+          "sector": "sem setor",
+          "ai": "não atribuído",
+          "project": "sem projeto"
+        },
+        "rest": {
+          "resource": "demais recursos",
+          "other": "demais"
+        },
+        "signal": {
+          "factor": "{{factor}} a mediana",
+          "share": "{{pct}} do aumento",
+          "estimated": "estimado"
+        },
+        "empty": "Sem linhas neste mês.",
+        "aiNote": "Linha estimada: tokens × tabela de preço, usada só onde o faturamento não traz custo real. Os demais chamadores mostram custo real."
+      },
+      "detail": {
+        "back": "Voltar ao painel",
+        "dailyTitle": "Custo diário, {{month}} ({{currency}})",
+        "chartLabel": "{{name}}, custo diário de {{from}} a {{to}}: mediana {{median}} e {{value}} no último dia",
+        "medianLabel": "mediana dos {{days}} dias anteriores: {{value}}",
+        "dayCard": "Dia {{day}}",
+        "inMonth": "No mês",
+        "explainsTitle": "Quem explica o aumento do dia {{day}}",
+        "explainsNote": "Maior contribuinte é uma pista de onde olhar, não a causa confirmada.",
+        "topContributor": "maior contribuinte",
+        "cols": {
+          "resource": "Recurso",
+          "day": "Dia {{day}}",
+          "median": "Mediana",
+          "increase": "Aumento",
+          "share": "Parte do aumento",
+          "signal": "Sinal",
+          "month": "No mês"
+        }
+      }
     }
   },
   "publicVacancy": {
@@ -6006,9 +7392,13 @@
         "worker_availability": "Disponibilidade",
         "phone": "Telefone",
         "doc_resume_cv": "Currículo",
+        "unvalidated_resume_cv": "Currículo (em validação)",
         "doc_identity_document": "Documento de identidade",
+        "unvalidated_identity_document": "Documento de identidade (em validação)",
         "doc_criminal_record": "Antecedentes penais",
+        "unvalidated_criminal_record": "Antecedentes penais (em validação)",
         "doc_at_certificate": "Certificado de Acompanhante Terapêutico",
+        "unvalidated_at_certificate": "Certificado de Acompanhante Terapêutico (em validação)",
         "worker_documents": "Documentos"
       },
       "bodyGeneric": "Seu cadastro está incompleto. Vamos redirecioná-lo ao seu perfil para completá-lo.",

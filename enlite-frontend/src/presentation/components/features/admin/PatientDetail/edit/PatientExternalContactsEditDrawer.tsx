@@ -12,11 +12,11 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   patientId: string;
@@ -72,7 +72,7 @@ export function PatientExternalContactsEditDrawer({ patientId, externalContacts,
   const { fields, append, remove } = useFieldArray({ control, name: 'externalContacts' });
   const watched = watch('externalContacts');
 
-  const relationOptions: SelectOption[] = EXTERNAL_CONTACT_RELATION_CODES.map((r) => ({
+  const relationOptions: ComboboxOption[] = EXTERNAL_CONTACT_RELATION_CODES.map((r) => ({
     value: r,
     label: t(`admin.patients.detail.externalContactRelationOptions.${r}`, { defaultValue: r }),
   }));
@@ -204,7 +204,7 @@ export function PatientExternalContactsEditDrawer({ patientId, externalContacts,
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <FormField label={te('relation')} htmlFor={`pxc-relation-${index}`} required>
                   <Controller control={control} name={`externalContacts.${index}.relation` as const} render={({ field }) => (
-                    <SelectField id={`pxc-relation-${index}`} inputSize="compact" disabled={!rowEditable} options={relationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`pxc-relation-${index}`} />
+                    <Combobox id={`pxc-relation-${index}`} inputSize="compact" disabled={!rowEditable} options={relationOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`pxc-relation-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('name')} htmlFor={`pxc-name-${index}`} required error={terr(errors.externalContacts?.[index]?.name?.message)}>

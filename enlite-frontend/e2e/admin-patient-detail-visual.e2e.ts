@@ -41,7 +41,7 @@ const MOCK_PATIENT = {
   hasCud: false,
   hasConsent: true,
   insuranceInformed: null,
-  insuranceVerified: null,
+  coverage: { display: null, displaySource: 'NONE', entries: [] },
   cityLocality: 'São Paulo',
   province: 'SP',
   zoneNeighborhood: 'Consolação',

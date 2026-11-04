@@ -521,7 +521,8 @@ test.describe('funil da vacante @integration', () => {
       }
 
       // `readKanbanColumnCounts` termina no Kanban — direto os asserts do card.
-      await expect(page.getByTestId('kanban-column-BLOQUEADO')).toHaveCount(0);
+      // spec 067: a coluna Bloqueados existe (Completado sem apto); a tentativa negada NÃO vai para ela (D474) — fica em Iniciados
+      await expect(page.getByTestId('kanban-column-BLOQUEADO').getByTestId(`kanban-card-${wbaId}`)).toHaveCount(0);
       await expect(page.getByTestId('kanban-column-INICIADO')).toHaveCount(1);
       const card = page.locator(
         `[data-testid="kanban-column-INICIADO"] [data-testid="kanban-card-${wbaId}"]`,

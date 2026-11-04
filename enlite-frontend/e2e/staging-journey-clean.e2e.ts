@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { escolherNoCombo, escolherPrimeiroNoCombo } from './helpers/combobox';
 
 /**
  * Jornada COMPLETA do worker contra STAGING — navegador real, auth Firebase real,
@@ -38,25 +39,18 @@ window.google = { maps: { places: { Autocomplete: class {
   event:{ clearInstanceListeners:()=>{} } } };
 `;
 
+// rótulo (es) que a tela mostra para o 1º valor de cada Combobox (o gatilho é o button#id)
+const PRIMEIRO_ROTULO: Record<string, string> = {
+  sex: 'Masculino', gender: 'Masculino', knowledgeLevel: 'Secundario', yearsExperience: '0-2 años',
+};
+
 async function selectById(page: Page, id: string): Promise<void> {
-  const s = page.locator(`select#${id}`);
-  if (await s.count()) {
-    const opts = await s.locator('option').all();
-    for (const o of opts) { const v = await o.getAttribute('value'); if (v) { await s.selectOption(v); return; } }
-  }
+  const s = page.locator(`#${id}`);
+  if (await s.count()) await escolherNoCombo(page, s, PRIMEIRO_ROTULO[id]);
 }
 
 async function multi(page: Page, testId: string): Promise<void> {
-  const trig = page.locator(`[data-testid="${testId}-trigger"]`);
-  if (await trig.count() === 0) return;
-  await trig.first().click();
-  const dd = page.locator(`[data-testid="${testId}-dropdown"]`);
-  await dd.waitFor({ state: 'visible', timeout: 5000 }).catch(() => undefined);
-  const opt = dd.locator('> div').first(); // 1ª opção (filho direto)
-  await opt.click().catch(() => undefined);
-  await page.waitForTimeout(300);
-  await trig.first().click().catch(() => undefined); // fecha o dropdown
-  await page.waitForTimeout(200);
+  await escolherPrimeiroNoCombo(page, `[data-testid="${testId}"]`).catch(() => undefined);
 }
 
 test('jornada worker completa via UI real → REGISTERED → wa.me', async ({ page, context }) => {
@@ -102,9 +96,9 @@ test('jornada worker completa via UI real → REGISTERED → wa.me', async ({ pa
   // phone (PhoneInputIntl — input tel)
   const phone = page.locator('input[type="tel"]').first();
   if (await phone.count()) await phone.fill('11' + String(Date.now()).slice(-8)).catch(() => undefined);
-  // selects nativos por id (profissão = CAUIDADOR p/ docs simples: DNI frente/verso + antecedentes)
+  // Combobox por id (profissão = CAUIDADOR p/ docs simples: DNI frente/verso + antecedentes)
   for (const id of ['sex', 'gender', 'knowledgeLevel', 'yearsExperience']) await selectById(page, id);
-  await page.locator('select#profession').selectOption('CAREGIVER').catch(() => undefined);
+  await escolherNoCombo(page, page.locator('#profession'), 'Cuidador(a)').catch(() => undefined); // CAREGIVER
   // multiselects
   for (const m of ['languages', 'experience-types', 'preferred-types', 'preferred-age-range']) await multi(page, m);
   // blur + submit pra disparar auto-save

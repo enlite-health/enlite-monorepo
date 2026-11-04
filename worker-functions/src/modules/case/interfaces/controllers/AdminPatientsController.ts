@@ -12,7 +12,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell } from '../../application/patientContainerAccess';
+import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell, exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
 import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -36,6 +36,7 @@ import {
   PatientStatusPermissionError,
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
+  PatientStatusLockedByAllocationError,
   SuspensionExitReasonRequiredError,
 } from '../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
@@ -397,14 +398,22 @@ export class AdminPatientsController {
         res.status(422).json({ success: false, error: err.message, code: err.code });
         return;
       }
+      // D489/D530: prestador com alocação viva no itinerário. Só a contagem — sem nome (PII).
+      if (err instanceof PatientStatusLockedByAllocationError) {
+        res.status(422).json({ success: false, error: err.message, code: err.code, details: { allocations: err.allocations } });
+        return;
+      }
       // Decisão do Gabriel 07/09. `details.missing` tem o MESMO formato do 422 do
       // `POST /activate` — a tela reusa as traduções do checklist para nomear o que falta.
       if (err instanceof PatientStatusNotReadyError) {
+        // `DIAGNOSIS` (texto clínico: "sem diagnóstico" é dado clínico) sai como `CLINICAL_DATA` para quem não lê
+        // `patient_clinical` — a recusa é a mesma, só o NOME do item muda. Nunca o valor do diagnóstico.
+        const cells = clinicalCellsOf(req);
         res.status(422).json({
           success: false,
-          error: err.message,
+          error: exposeBlockingMessage(err.message, cells),
           code: err.code,
-          details: { to: err.to, missing: err.missing },
+          details: { to: err.to, missing: exposeBlockingCodes(err.missing, cells) },
         });
         return;
       }
@@ -443,8 +452,11 @@ export class AdminPatientsController {
       return;
     }
     try {
-      const data = await this.patientService.statusOptions(parsed.data.id, clinicalCellsOf(req), query.data.changeSource);
-      res.status(200).json({ success: true, data });
+      const cells = clinicalCellsOf(req);
+      const data = await this.patientService.statusOptions(parsed.data.id, cells, query.data.changeSource);
+      // `blockedBy` pode trazer `DIAGNOSIS`: sai como `CLINICAL_DATA` para quem não lê `patient_clinical`.
+      const options = data.options.map((o) => (o.blockedBy ? { ...o, blockedBy: exposeBlockingCodes(o.blockedBy, cells) } : o));
+      res.status(200).json({ success: true, data: { ...data, options } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       if (/not found/i.test(e.message)) {
@@ -599,7 +611,7 @@ export class AdminPatientsController {
         return;
       }
 
-      // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do `hourlyValue` (lex
+      // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do preço do contrato `price` (lex
       // C-c.4): as duas redações vivem em `AdminPatientView.projectAdminPatientDetail`.
       const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, hourlyValueActorOf(req));
       // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.
@@ -644,7 +656,11 @@ export class AdminPatientsController {
         diagnosesUnavailable = true;
       }
 
-      res.status(200).json({ success: true, data: { ...projected, diagnoses, diagnosesUnavailable, completeness } });
+      // `activeDiagnosisCount` é INSUMO interno da completude (já consumida acima): não faz parte do contrato da ficha
+      // (o front valida `.strict()`) e, mesmo redigida por container, não precisa sair — a existência vai em `completeness`.
+      const { activeDiagnosisCount: _insumoDaCompletude, ...ficha } = projected as typeof projected & { activeDiagnosisCount?: unknown };
+      void _insumoDaCompletude;
+      res.status(200).json({ success: true, data: { ...ficha, diagnoses, diagnosesUnavailable, completeness } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:getPatientById' });
@@ -774,7 +790,7 @@ export class AdminPatientsController {
     }
 
     try {
-      const stats = await this.repo.stats(scope.countries);
+      const stats = await this.repo.stats(scope.countries, req.query.exclude_discharged === 'true');
       res.status(200).json({ success: true, data: stats });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));

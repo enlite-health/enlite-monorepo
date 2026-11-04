@@ -19,7 +19,7 @@ export interface PatientIdentityUpsertInput {
   /**
    * A leitura da origem foi POSSÍVEL? `false` ⇒ `document_type` não é tocada (I2).
    *
-   * Mesma bandeira de `insuranceVerifiedReadable`, estendida aos irmãos que ficaram de fora:
+   * Bandeira de leitura (D167), estendida aos campos `drop_down` do sync:
    * `Tipo de Documento Paciente` é `drop_down`, e uma opção que deixa de resolver devolvia
    * `null`, que o `document_type = EXCLUDED.document_type` gravava como APAGAMENTO.
    * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
@@ -35,36 +35,12 @@ export interface PatientIdentityUpsertInput {
   sexReadable?: boolean;
   phoneWhatsapp?: string | null;
   insuranceInformed?: string | null;
-  insuranceVerified?: string | null;
-  /**
-   * A leitura da origem foi POSSÍVEL? `false` ⇒ `insurance_verified` não é tocada.
-   *
-   * ⚠️ Este campo existia no mapper e no `PatientService` desde a task 3.2 e **nunca era
-   * consumido aqui** — o `lex` achou (C-G). O mapper emitia o sinal, o tipo o declarava, um
-   * comentário dizia que era "a mesma distinção da D167", e o `UPDATE` gravava `?? null` de
-   * qualquer jeito. Uma leitura `options_partially_resolved` (pediu 2 rótulos, o catálogo
-   * traduziu 1) zerava a coluna que o painel lê, enquanto a tabela múltipla — corretamente —
-   * não era tocada: banco cheio, tela vazia.
-   *
-   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
-   */
-  insuranceVerifiedReadable?: boolean;
   cityLocality?: string | null;
   province?: string | null;
   zoneNeighborhood?: string | null;
   country?: string;
   needsAttention?: boolean;
   attentionReasons?: readonly AttentionReason[];
-  /**
-   * Cobertura médica informada (ClickUp: "Cobertura Informada"). Migration 147.
-   * Fill-only: COALESCE(existing, $new) — never overwrites a populated value.
-   */
-  healthInsuranceName?: string | null;
-  /**
-   * Número de ID de afiliado (ClickUp: "Número ID Afiliado Paciente"). Migration 147.
-   * Fill-only: COALESCE(existing, $new) — never overwrites a populated value.
-   */
-  healthInsuranceMemberId?: string | null;
   /**
    * Identificador PII-safe operacional (ClickUp "Caso Número"). Migration 164.
    * Origem: string no payload ClickUp; aqui já parseado para number.
@@ -127,39 +103,36 @@ export class PatientIdentityRepository {
         first_name, last_name, birth_date,
         document_type, document_number, affiliate_id,
         sex, phone_whatsapp,
-        insurance_informed, insurance_verified,
+        insurance_informed,
         city_locality, province, zone_neighborhood,
         country,
         needs_attention, attention_reasons,
-        health_insurance_name, health_insurance_member_id,
         case_number,
         status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
       )
       ON CONFLICT (clickup_task_id) DO UPDATE SET
         first_name          = EXCLUDED.first_name,
         last_name           = EXCLUDED.last_name,
         birth_date          = EXCLUDED.birth_date,
-        -- I2: os dois CASE WHEN abaixo são a MESMA bandeira do insurance_verified logo
-        -- adiante. false = "não consegui ler a opção" ⇒ a coluna fica como está; true com
-        -- valor nulo continua APAGANDO (vazio legítimo, D-E). Só no DO UPDATE: o INSERT é linha
-        -- nova e não tem o que apagar.
-        document_type       = CASE WHEN $23::boolean THEN EXCLUDED.document_type ELSE patients.document_type END,
+        -- I2: os dois CASE WHEN abaixo: false = "não consegui ler a opção" ⇒ a coluna fica como
+        -- está; true com valor nulo continua APAGANDO (vazio legítimo, D-E). Só no DO UPDATE: o
+        -- INSERT é linha nova e não tem o que apagar.
+        document_type       = CASE WHEN $19::boolean THEN EXCLUDED.document_type ELSE patients.document_type END,
         document_number     = EXCLUDED.document_number,
-        affiliate_id        = EXCLUDED.affiliate_id,
-        sex                 = CASE WHEN $24::boolean THEN EXCLUDED.sex ELSE patients.sex END,
+        -- Spec 058: FILL-ONLY nos DOIS donos da cobertura (affiliate_id, insurance_informed) — o sync do
+        -- ClickUp nunca sobrescreve valor existente (o cadastro da plataforma é a fonte). O mapper já
+        -- normaliza o literal 'null'/vazio para null.
+        affiliate_id        = COALESCE(patients.affiliate_id, EXCLUDED.affiliate_id),
+        sex                 = CASE WHEN $20::boolean THEN EXCLUDED.sex ELSE patients.sex END,
         phone_whatsapp      = EXCLUDED.phone_whatsapp,
-        insurance_informed  = EXCLUDED.insurance_informed,
-        insurance_verified  = CASE WHEN $22::boolean THEN EXCLUDED.insurance_verified ELSE patients.insurance_verified END,
+        insurance_informed  = COALESCE(patients.insurance_informed, EXCLUDED.insurance_informed),
         city_locality       = EXCLUDED.city_locality,
         province            = EXCLUDED.province,
         zone_neighborhood   = EXCLUDED.zone_neighborhood,
         needs_attention     = EXCLUDED.needs_attention,
         attention_reasons   = EXCLUDED.attention_reasons,
-        -- fill-only: only update when the current DB value is NULL
-        health_insurance_name       = COALESCE(patients.health_insurance_name, EXCLUDED.health_insurance_name),
-        health_insurance_member_id  = COALESCE(patients.health_insurance_member_id, EXCLUDED.health_insurance_member_id),
         case_number         = EXCLUDED.case_number,
         -- status: always overwrite. 11/09/2026: a PLATAFORMA é a fonte da verdade do paciente
         -- (decisão do Gabriel, sem sync automático) — este UPSERT só roda hoje na carga manual
@@ -181,22 +154,17 @@ export class PatientIdentityRepository {
         input.sex              ?? null,
         input.phoneWhatsapp    ?? null,
         input.insuranceInformed ?? null,
-        input.insuranceVerified ?? null,
         input.cityLocality      ?? null,
         input.province          ?? null,
         input.zoneNeighborhood  ?? null,
         country,
         input.needsAttention   ?? false,
         input.attentionReasons ? [...input.attentionReasons] : [],
-        // $22 — a bandeira da C-G. NÃO entra no INSERT (que é linha nova, sempre escreve);
-        // só no ON CONFLICT DO UPDATE, que é onde apagar é possível.
-        input.healthInsuranceName      ?? null,
-        input.healthInsuranceMemberId  ?? null,
         input.caseNumber       ?? null,
         input.status           ?? null,
-        input.insuranceVerifiedReadable ?? true,   // $22 — a bandeira da C-G
-        input.documentTypeReadable      ?? true,   // $23 — a bandeira do I2
-        input.sexReadable               ?? true,   // $24 — a bandeira do I2
+        // $19/$20 — as bandeiras do I2: só no ON CONFLICT DO UPDATE, que é onde apagar é possível.
+        input.documentTypeReadable      ?? true,   // $19
+        input.sexReadable               ?? true,   // $20
       ],
     );
 
@@ -232,16 +200,15 @@ export class PatientIdentityRepository {
         first_name, last_name, birth_date,
         document_type, document_number, affiliate_id,
         sex, phone_whatsapp,
-        insurance_informed, insurance_verified,
+        insurance_informed,
         city_locality, province, zone_neighborhood,
         country,
         needs_attention, attention_reasons,
-        health_insurance_name, health_insurance_member_id,
         case_number,
         status
       ) VALUES (
         NULL,
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
       )
       RETURNING id`,
       [
@@ -256,15 +223,12 @@ export class PatientIdentityRepository {
         input.sex              ?? null,
         input.phoneWhatsapp    ?? null,
         input.insuranceInformed ?? null,
-        input.insuranceVerified ?? null,
         input.cityLocality      ?? null,
         input.province          ?? null,
         input.zoneNeighborhood  ?? null,
         input.country,
         input.needsAttention   ?? false,
         input.attentionReasons ? [...input.attentionReasons] : [],
-        input.healthInsuranceName      ?? null,
-        input.healthInsuranceMemberId  ?? null,
         input.caseNumber       ?? null,
         input.status,
       ],
@@ -302,7 +266,6 @@ export class PatientIdentityRepository {
         document_number AS "documentNumber", affiliate_id AS "affiliateId",
         sex, phone_whatsapp AS "phoneWhatsapp",
         insurance_informed AS "insuranceInformed",
-        insurance_verified AS "insuranceVerified",
         city_locality AS "cityLocality", province,
         zone_neighborhood AS "zoneNeighborhood",
         country,

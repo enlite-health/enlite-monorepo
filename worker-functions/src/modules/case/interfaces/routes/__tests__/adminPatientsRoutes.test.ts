@@ -21,6 +21,9 @@ import type { AdminPatientsMapController } from '../../controllers/AdminPatients
 import type { AdminPatientAddressesController } from '../../controllers/AdminPatientAddressesController';
 import type { AdminInsuranceProvidersController } from '../../controllers/AdminInsuranceProvidersController';
 import type { AdminPatientContractedServicesController } from '../../controllers/AdminPatientContractedServicesController';
+import type { AdminPatientItineraryController } from '../../controllers/AdminPatientItineraryController';
+import type { AdminPatientKanbanServicesController } from '../../controllers/AdminPatientKanbanServicesController';
+import type { AdminContractedServiceAuthorizationController } from '../../controllers/AdminContractedServiceAuthorizationController';
 import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import type { AdminPatientContactRowsController } from '../../controllers/AdminPatientContactRowsController';
@@ -62,11 +65,15 @@ const ESPERADO: Record<string, string | null> = {
   'DELETE /patient-chat-roles/:code': 'patient:update',
   // Catálogo de coberturas (mig 311, spec 012): mesma régua dos papéis de chat.
   'GET /catalogs/insurance-providers': 'patient_coverage:read',
-  'POST /catalogs/insurance-providers': 'patient:create',
+  // Spec 058: o POST muda o catálogo de TODOS os pacientes — célula própria (só admin) no lugar de `patient:create`. O GET segue `patient_coverage:read` (C4).
+  'POST /catalogs/insurance-providers': 'catalog_insurance_providers:create',
   'GET /chat-groups': 'messaging:read',
   'GET /patients/stats': 'patient:read',
   'GET /patients/funnel': 'patient:read',
   'GET /patients/chat-map': 'patient:read',
+  // Agregado do subcard do Kanban (fase 8, Plano B, DX-8.1): mesma célula do itinerário — a
+  // resposta carrega weekly/authorized (DX-8.2).
+  'GET /patients/kanban/services': 'patient_services:read',
   // Mapa de pacientes (REQ-04): POST com corpo, leitura.
   'POST /patients/map': 'patient_address:read',
   'GET /patients': 'patient:read',
@@ -87,6 +94,9 @@ const ESPERADO: Record<string, string | null> = {
   // 410 de support-network.
   'POST /patients/:id/activate': null,
   'POST /patients/:id/contracted-services/:sid/activate-recruitment': 'patient_services:update',
+  // Spec 079: vincular vaga existente (preview + confirmação) — a MESMA cadeia do foguete.
+  'POST /patients/:id/contracted-services/:sid/link-existing-vacancy/preview': 'patient_services:update',
+  'POST /patients/:id/contracted-services/:sid/link-existing-vacancy': 'patient_services:update',
   'GET /patients/:id/chat-candidates': 'messaging:read',
   'PUT /patients/:id/chat-ids': 'patient_chat:update',
   'PATCH /patients/:id/test-flag': 'patient:update',
@@ -96,8 +106,15 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/:id/contracted-services': 'patient_services:read',
   'POST /patients/:id/contracted-services': 'patient_services:create',
   'PATCH /patients/:id/contracted-services/:sid': 'patient_services:update',
-  'POST /patients/:id/contracted-services/:sid/providers': 'patient_services:update',
-  'PATCH /patients/:id/contracted-services/:sid/providers/:pid': 'patient_services:update',
+  'GET /patients/:id/contracted-services/:sid/authorizations': 'patient_services:read',
+  'POST /patients/:id/contracted-services/:sid/authorizations': 'patient_services:update',
+  'POST /patients/:id/contracted-services/:sid/authorizations/:aid/supersede': 'patient_services:update',
+  // Itinerário — leitura (fase 7, DX-7.7, Q-7.3): mesma célula do GET de serviços contratados,
+  // porque a resposta carrega os mesmos horários e a autorização corrente.
+  'GET /patients/:id/itinerary': 'patient_services:read',
+  // D445.3 — "Próximos eventos/Substitución": a MESMA célula do GET acima, é a mesma leitura
+  // expandida no tempo.
+  'GET /patients/:id/itinerary/events': 'patient_services:read',
   'GET /patients/:id/diagnoses': 'patient_clinical:read',
   'POST /patients/:id/diagnoses': 'patient_clinical:create',
   'PATCH /patients/:id/diagnoses/:did': 'patient_clinical:update',
@@ -182,14 +199,25 @@ function pecas() {
     create: responde('cs.create'),
     update: responde('cs.update'),
     activateRecruitment: responde('cs.activateRecruitment'),
-    associateProvider: responde('cs.associateProvider'),
-    updateProvider: responde('cs.updateProvider'),
+    previewLinkExistingVacancy: responde('cs.previewLinkExistingVacancy'),
+    linkExistingVacancy: responde('cs.linkExistingVacancy'),
   } as unknown as AdminPatientContractedServicesController;
   const diagnoses = {
     list: responde('diag.list'),
     create: responde('diag.create'),
     update: responde('diag.update'),
   } as unknown as AdminPatientDiagnosesController;
+  // Fase 7 (DX-7.11, A-contrato): dublê só para o `build()` não construir o controller real
+  // (que abriria banco na leitura, DX-7.6) — é o molde do arquivo para o 15º argumento.
+  const itinerary = { get: responde('itinerary.get'), events: responde('itinerary.events') } as unknown as AdminPatientItineraryController;
+  // Fase 8 (DX-8.16, A-contrato): mesmo molde, 16º argumento — agregado do subcard do Kanban.
+  const kanbanServices = { list: responde('kanbanServices.list') } as unknown as AdminPatientKanbanServicesController;
+  // Spec 056 (T2.2): autorização de horas do serviço — 17º argumento, mesmo molde.
+  const authorization = {
+    list: responde('auth.list'),
+    create: responde('auth.create'),
+    supersede: responde('auth.supersede'),
+  } as unknown as AdminContractedServiceAuthorizationController;
   const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
   const contactRows = {
     createResponsible: responde('rows.createResponsible'),
@@ -215,7 +243,7 @@ function pecas() {
 
   return {
     controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology, contactRows,
-    externalContacts, emergencyContact,
+    externalContacts, emergencyContact, itinerary, kanbanServices, authorization,
     auth: authDouble(), permissions: permissionsDouble(),
   };
 }
@@ -226,7 +254,7 @@ function build() {
   return createAdminPatientsRoutes(
     p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
     p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology, p.contactRows,
-    p.externalContacts, p.emergencyContact,
+    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices, p.authorization,
   );
 }
 
@@ -245,20 +273,22 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 56 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + o DELETE de endereço (spec 044) + GET status-options (spec 051)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(56);
+  it('a família declara exatamente 62 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051) + as 3 da autorização de horas do serviço (spec 056) + as 2 do vínculo de vaga existente (spec 079)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(62);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_PATIENTS_FAMILY).toBe('admin.patients');
   });
 
-  it('sem o 12º/13º/14º argumento (contactRowsController/externalContacts/emergencyContact omitidos), o factory usa os DEFAULTS', () => {
+  it('sem o 12º/13º/14º/15º/16º argumento (contactRowsController/externalContacts/emergencyContact/itineraryController/kanbanServicesController omitidos), o factory usa os DEFAULTS', () => {
     // Os defaults `new AdminPatientContactRowsController()` / `new AdminPatientExternalContactsController()` /
     // `new AdminPatientEmergencyContactController()` constroem os repositórios reais, que pegam o
     // pool de `DatabaseConnection.getInstance()` NA CONSTRUÇÃO (não é preguiçoso como o comentário
     // do factory presumia) — precisa de config de banco só para o `new` não estourar; nenhuma
-    // query roda neste teste.
+    // query roda neste teste. `AdminPatientItineraryController`/`AdminPatientKanbanServicesController`
+    // default NÃO precisam disso: o pool só é pego dentro do reader/use case (DX-7.6/DX-8.4), nunca
+    // no construtor.
     const antes = process.env.DATABASE_URL;
     process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
     try {
@@ -266,12 +296,26 @@ describe('createAdminPatientsRoutes', () => {
       const router = createAdminPatientsRoutes(
         p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
-        // 12º/13º/14º omitidos de propósito
+        // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(56);
+      expect(scanExpressRouter(router)).toHaveLength(62);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
+  });
+
+  // Spec 079 (SUP-19): as 2 rotas do vínculo têm a MESMA cadeia do foguete, NESTA ordem —
+  // patient_services:update ANTES de vacancy:update (a 1ª negada corta antes de tocar vaga).
+  it.each([
+    'POST /patients/:id/contracted-services/:sid/activate-recruitment',
+    'POST /patients/:id/contracted-services/:sid/link-existing-vacancy/preview',
+    'POST /patients/:id/contracted-services/:sid/link-existing-vacancy',
+  ])('%s encadeia patient_services:update → vacancy:update, nesta ordem', (chave) => {
+    const rota = scanExpressRouter(build()).find((r) => `${r.method} ${r.path}` === chave);
+    expect((rota?.cells ?? []).map((c) => cellKey(c.resource, c.action))).toEqual([
+      'patient_services:update',
+      'vacancy:update',
+    ]);
   });
 
   // As 3 escolhas de célula que NÃO são o óbvio `patient:*`. Se alguém
@@ -307,6 +351,8 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/abc-123/addresses', 'listPatientAddresses'],
     ['put', '/api/admin/patients/abc-123/status', 'updatePatientStatus'],
     ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/activate-recruitment', 'cs.activateRecruitment'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/link-existing-vacancy/preview', 'cs.previewLinkExistingVacancy'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/link-existing-vacancy', 'cs.linkExistingVacancy'],
     ['get', '/api/admin/patients/abc-123/chat-candidates', 'getChatCandidates'],
     ['put', '/api/admin/patients/abc-123/chat-ids', 'updateChatIds'],
     ['patch', '/api/admin/patients/abc-123/test-flag', 'updatePatientTestFlag'],
@@ -320,6 +366,7 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/catalogs/insurance-providers', 'providers.list'],
     ['post', '/api/admin/catalogs/insurance-providers', 'providers.create'],
     ['post', '/api/admin/patients/map', 'getMapPoints'],
+    ['get', '/api/admin/patients/kanban/services', 'kanbanServices.list'],
     ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
     ['get', '/api/admin/patients/abc-123/status-options', 'getPatientStatusOptions'],
     ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
@@ -327,8 +374,11 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
     ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],
-    ['post', '/api/admin/patients/abc-123/contracted-services/s1/providers', 'cs.associateProvider'],
-    ['patch', '/api/admin/patients/abc-123/contracted-services/s1/providers/p1', 'cs.updateProvider'],
+    ['get', '/api/admin/patients/abc-123/contracted-services/s1/authorizations', 'auth.list'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/authorizations', 'auth.create'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/authorizations/a1/supersede', 'auth.supersede'],
+    ['get', '/api/admin/patients/abc-123/itinerary', 'itinerary.get'],
+    ['get', '/api/admin/patients/abc-123/itinerary/events?from=2026-09-01&to=2026-09-07', 'itinerary.events'],
     ['get', '/api/admin/patients/abc-123/diagnoses', 'diag.list'],
     ['post', '/api/admin/patients/abc-123/diagnoses', 'diag.create'],
     ['patch', '/api/admin/patients/abc-123/diagnoses/d1', 'diag.update'],
@@ -355,6 +405,20 @@ describe('createAdminPatientsRoutes', () => {
     const res = await request(app)[metodo](caminho).expect(200);
 
     expect(res.body.m).toBe(esperado);
+  });
+
+  // Fase 14 (DX-14.1): a escrita da alocação antiga saiu do router — 404, não 410, nenhum handler.
+  it.each([
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/providers'],
+    ['patch', '/api/admin/patients/abc-123/contracted-services/s1/providers/p1'],
+  ] as const)('%s %s → 404 (a rota da alocação antiga não existe mais)', async (metodo, caminho) => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/admin', build());
+
+    const res = await request(app)[metodo](caminho).send({ active: false }).expect(404);
+
+    expect(res.body.m).toBeUndefined();
   });
 
   // Os dois casos de captura que o cabeçalho do router chama de contrato:

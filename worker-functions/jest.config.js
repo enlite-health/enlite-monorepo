@@ -1,6 +1,11 @@
+// Prod (Cloud Run) roda em UTC; dev em São Paulo (-03 = Buenos Aires) mascarava bug de fuso. Fixar UTC nos testes.
+process.env.TZ = 'UTC';
+
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // Fora do CI: 2 workers (10 × ~1,7 GB derrubavam a máquina de 18 GB, 30/10). No CI, o default do jest.
+  ...(process.env.CI ? {} : { maxWorkers: 2 }),
   // R-16 (spec 050): a guarda de rede entra ANTES de qualquer teste; terceiro não conecta. Controle: tests/unit/__tests__/rede-bloqueada.controle.test.ts
   setupFiles: ['<rootDir>/../scripts/rede-bloqueada-em-teste.cjs'],
   // `scripts` entra aqui porque script que escreve em produção (o sync de
@@ -53,6 +58,9 @@ module.exports = {
     // Achado do gate (crit. 3): este arquivo FOI TOCADO (redação C1 do parecer do lex) — entra
     // no piso, medido 100/100/100/100 antes de entrar.
     'scripts/import-patients-dry-run.ts',
+    // Fusão rascunho→oficial (manutenção 03/11): a parte PURA do CLI (flags, mapa, relatório) entra pela mesma régua;
+    // o orquestrador `fusao-rascunho-oficial.ts` (Pool) fica fora — provado pelo ensaio na réplica de prd.
+    'scripts/fusao-rascunho-oficial-lib.ts',
   ],
   coverageDirectory: 'coverage',
 
@@ -319,6 +327,28 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Cadeia Fase 15 (DX-15.6): a regra de horas que deriva o estado do paciente no quadro A —
+    // cada guarda é a única barreira do seu caso; regressão aqui move paciente manual ou do funil.
+    'src/modules/case/domain/derivarEstadoPaciente.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Cadeia Fase 15 (gate fecho G-C3): quem lê, conta e move pela regra acima, na transação do
+    // escritor — o ramo da recusa de completude e o da flag desligada não podem ficar sem teste.
+    'src/modules/case/application/PatientStatusDerivation.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientStatusDerivationReader.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Decisão do Gabriel 07/09 (D298): carrega os contadores do checklist DENTRO da transação que
     // já segurou a linha do paciente — é o insumo da guarda que recusa a mudança de status. Nasceu
     // fora deste piso e o gate `revisao-pr` reprovou (85,71% stmts, 0% branches: o ramo
@@ -453,7 +483,7 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    'src/modules/matching/interfaces/controllers/{FunnelStageMessagesController,PublicJobsController,PublicVacancyController,VacancyMeetLinksController}.ts': {
+    'src/modules/matching/interfaces/controllers/{FunnelStageMessagesController,PublicJobsController,PublicVacancyController}.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
@@ -1042,6 +1072,21 @@ module.exports = {
     // nunca move o objeto no GCS — o caminho gravado segue com o prefixo do
     // absorvido). Arquivo NOVO, nasce 100/100/100/100 medido nesta rodada.
     'src/shared/database/findAbsorbedWorkerIds.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Fusão rascunho→oficial (manutenção 03/11): use case, regra da etapa e a parte pura do CLI nascem em 100%.
+    // `DraftFusionRepository.ts` é SQL: medido em 100/100/100/100 pelo e2e contra Postgres real
+    // (`tests/e2e/fusao-rascunho-oficial.e2e.test.ts`), não pelo unit — repositório não se testa com mock.
+    'src/modules/case/application/{FuseDraftIntoOfficialVacancyUseCase,draftFusionStage}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'scripts/fusao-rascunho-oficial-lib.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

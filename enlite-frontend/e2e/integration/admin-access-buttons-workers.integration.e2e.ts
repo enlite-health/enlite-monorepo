@@ -315,8 +315,8 @@ test.describe('Botões da família prestadores — esconder, não desabilitar (D
 
     // worker_document:delete — slot já enviado (resume_cv) mostra "Ver" mas não "Eliminar".
     const uploadedSlot = page.getByTestId('doc-slot-resume_cv');
-    await expect(uploadedSlot.getByLabel('Remover documento')).toHaveCount(0);
-    await expect(uploadedSlot.getByLabel('Visualizar documento')).toBeVisible();
+    await expect(uploadedSlot.getByLabel('Quitar documento')).toHaveCount(0);
+    await expect(uploadedSlot.getByLabel('Ver documento')).toBeVisible();
 
     // worker_document:write — "Agregar" (documentos adicionais) some.
     await expect(page.getByTestId('additional-doc-add')).toHaveCount(0);
@@ -351,7 +351,7 @@ test.describe('Botões da família prestadores — esconder, não desabilitar (D
     await expect(emptySlot.locator('input[type="file"]')).toHaveCount(1);
 
     const uploadedSlot = page.getByTestId('doc-slot-resume_cv');
-    await expect(uploadedSlot.getByLabel('Remover documento')).toBeVisible();
+    await expect(uploadedSlot.getByLabel('Quitar documento')).toBeVisible();
 
     await expect(page.getByTestId('additional-doc-add')).toBeVisible();
 

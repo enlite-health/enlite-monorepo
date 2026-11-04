@@ -13,7 +13,8 @@
  *     ACTIVE · ON_HOLD (en espera — exige `on_hold_reason`) · SEARCHING (búsqueda) ·
  *     REPLACEMENT (reemplazo) · SUSPENDED · DISCHARGED (baja)
  *     As transições permitidas vivem em `patient_status_transitions` (migration 315) e são
- *     validadas em `PatientService.moveStatus`. ⚠️ SUP-B7: nenhuma derivação automática por horas.
+ *     validadas em `PatientService.moveStatus`. A derivação por horas é da cadeia Fase 15
+ *     (`derivarEstadoPaciente`), só com itinerário montado (D429).
  *
  * DISCONTINUED saiu do vocabulário: a migration 314 converteu as linhas em DISCHARGED e o CHECK
  * ainda o tolera só até o código antigo sumir do ar. `isPatientStatus('DISCONTINUED')` é false.

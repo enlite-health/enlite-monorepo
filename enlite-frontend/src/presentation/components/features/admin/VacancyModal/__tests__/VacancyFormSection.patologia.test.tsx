@@ -50,7 +50,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     getNextVacancyNumber: vi.fn().mockResolvedValue(7),
     createVacancy: vi.fn(),
     updateVacancy: vi.fn(),
-    updateVacancyMeetLinks: vi.fn(),
   },
 }));
 
@@ -67,7 +66,7 @@ async function abrirComCasoSelecionado() {
   const options = await screen.findAllByRole('option');
   const alvo = options.find((o) => o.textContent === `CASO ${formatCaseNumber(CASE_N)}`);
   if (!alvo) throw new Error('opção do caso não encontrada');
-  await userEvent.click(alvo);
+  await userEvent.click(alvo.querySelector('button') as HTMLElement); // o clique real cai no <button> da linha
 }
 
 describe('VacancyFormSection — patología: o `null` do servidor não pode virar `[]`', () => {

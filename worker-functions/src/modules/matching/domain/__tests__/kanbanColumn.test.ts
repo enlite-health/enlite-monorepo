@@ -22,27 +22,27 @@ import {
  */
 describe('deriveKanbanColumn', () => {
   it('maps terminal stages to their own column', () => {
-    expect(deriveKanbanColumn('SELECTED', 'talentum', null)).toBe('SELECTED');
-    expect(deriveKanbanColumn('REJECTED', 'manual', null)).toBe('REJECTED');
+    expect(deriveKanbanColumn('SELECTED', 'talentum', null, true)).toBe('SELECTED');
+    expect(deriveKanbanColumn('REJECTED', 'manual', null, true)).toBe('REJECTED');
   });
 
   /** Fase 4 (D430): destino do arrasto manual do quadro B, entre SELECTED e REJECTED. */
   it('maps QUICK_RESPONSE_TEAM to its own column', () => {
-    expect(deriveKanbanColumn('QUICK_RESPONSE_TEAM', null, null)).toBe('QUICK_RESPONSE_TEAM');
+    expect(deriveKanbanColumn('QUICK_RESPONSE_TEAM', null, null, true)).toBe('QUICK_RESPONSE_TEAM');
   });
 
   it('groups COMPLETED / QUALIFIED / IN_DOUBT into COMPLETED', () => {
-    expect(deriveKanbanColumn('COMPLETED', 'talentum', null)).toBe('COMPLETED');
-    expect(deriveKanbanColumn('QUALIFIED', 'talentum', null)).toBe('COMPLETED');
-    expect(deriveKanbanColumn('IN_DOUBT', 'talentum', null)).toBe('COMPLETED');
+    expect(deriveKanbanColumn('COMPLETED', 'talentum', null, true)).toBe('COMPLETED');
+    expect(deriveKanbanColumn('QUALIFIED', 'talentum', null, true)).toBe('COMPLETED');
+    expect(deriveKanbanColumn('IN_DOUBT', 'talentum', null, true)).toBe('COMPLETED');
   });
 
   it('maps IN_PROGRESS', () => {
-    expect(deriveKanbanColumn('IN_PROGRESS', 'talentum', null)).toBe('IN_PROGRESS');
+    expect(deriveKanbanColumn('IN_PROGRESS', 'talentum', null, true)).toBe('IN_PROGRESS');
   });
 
   it('maps PRE_SCREENING', () => {
-    expect(deriveKanbanColumn('PRE_SCREENING', 'talentum', null)).toBe('PRE_SCREENING');
+    expect(deriveKanbanColumn('PRE_SCREENING', 'talentum', null, true)).toBe('PRE_SCREENING');
   });
 
   /**
@@ -52,21 +52,21 @@ describe('deriveKanbanColumn', () => {
    * regressão do transitório da Fase-1 (migration 230).
    */
   it('no longer special-cases INITIATED (removed from the DB CHECK in migration 264) — falls back to INVITED', () => {
-    expect(deriveKanbanColumn('INITIATED', 'talentum', null)).toBe('INVITED');
+    expect(deriveKanbanColumn('INITIATED', 'talentum', null, true)).toBe('INVITED');
   });
 
   it('INVITED + source=manual is a real manual postulation → INICIADO', () => {
-    expect(deriveKanbanColumn('INVITED', 'manual', null)).toBe('INICIADO');
+    expect(deriveKanbanColumn('INVITED', 'manual', null, true)).toBe('INICIADO');
   });
 
   it('INVITED from the auto-invite system (non-manual) → INVITED', () => {
-    expect(deriveKanbanColumn('INVITED', 'talentum', null)).toBe('INVITED');
-    expect(deriveKanbanColumn('INVITED', null, null)).toBe('INVITED');
+    expect(deriveKanbanColumn('INVITED', 'talentum', null, true)).toBe('INVITED');
+    expect(deriveKanbanColumn('INVITED', null, null, true)).toBe('INVITED');
   });
 
   it('null / unknown stage falls back to INVITED', () => {
-    expect(deriveKanbanColumn(null, 'manual', null)).toBe('INVITED');
-    expect(deriveKanbanColumn('SOMETHING_NEW', 'talentum', null)).toBe('INVITED');
+    expect(deriveKanbanColumn(null, 'manual', null, true)).toBe('INVITED');
+    expect(deriveKanbanColumn('SOMETHING_NEW', 'talentum', null, true)).toBe('INVITED');
   });
 
   it('maps an active blocked attempt to INICIADO (D474, revoga D433 item 5)', () => {
@@ -95,19 +95,19 @@ describe('deriveKanbanColumn', () => {
  */
 describe('deriveKanbanColumn — COMPATIBLE (Fase 5, D432)', () => {
   it('candidato do match nunca mensageado deriva COMPATIBLE', () => {
-    expect(deriveKanbanColumn('INVITED', 'system', null)).toBe('COMPATIBLE');
+    expect(deriveKanbanColumn('INVITED', 'system', null, true)).toBe('COMPATIBLE');
   });
 
   it('candidato do match já mensageado (convite real) deriva INVITED', () => {
-    expect(deriveKanbanColumn('INVITED', 'system', '2026-09-01T00:00:00Z')).toBe('INVITED');
+    expect(deriveKanbanColumn('INVITED', 'system', '2026-09-01T00:00:00Z', true)).toBe('INVITED');
   });
 
   it('postulação manual (source=manual) deriva INICIADO mesmo sem messaged_at', () => {
-    expect(deriveKanbanColumn('INVITED', 'manual', null)).toBe('INICIADO');
+    expect(deriveKanbanColumn('INVITED', 'manual', null, true)).toBe('INICIADO');
   });
 
   it('rejeitado nunca volta a COMPATIBLE, mesmo sem messaged_at', () => {
-    expect(deriveKanbanColumn('REJECTED', 'system', null)).toBe('REJECTED');
+    expect(deriveKanbanColumn('REJECTED', 'system', null, true)).toBe('REJECTED');
   });
 });
 
@@ -158,22 +158,21 @@ describe('kanbanColumnRank', () => {
   it('ranks every column deriveKanbanColumn can ever produce', () => {
     for (const stage of ALL_STAGES) {
       for (const source of ALL_SOURCES) {
-        const column = deriveKanbanColumn(stage, source, null);
+        const column = deriveKanbanColumn(stage, source, null, true);
         expect(() => kanbanColumnRank(column)).not.toThrow();
       }
     }
   });
 
   it('throws for a column with no declared rank (build-breaker, not a silent drop)', () => {
-    expect(() => kanbanColumnRank('BLOQUEADO' as KanbanColumn)).toThrow(/no declared advancement rank/);
-    expect(() => kanbanColumnRank('MADE_UP' as KanbanColumn)).toThrow();
+    expect(() => kanbanColumnRank('MADE_UP' as KanbanColumn)).toThrow(/no declared advancement rank/);
   });
 
   it('orders the funnel from least to most advanced (Fase 5: +COMPATIBLE entre REJECTED e INVITED)', () => {
     const ranked = [...FUNNEL_COLUMNS].sort((a, b) => kanbanColumnRank(a) - kanbanColumnRank(b));
     expect(ranked).toEqual([
       'REJECTED', 'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING',
-      'IN_PROGRESS', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM',
+      'IN_PROGRESS', 'BLOQUEADO', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM',
     ]);
   });
 
@@ -227,6 +226,7 @@ describe('tallyKanbanColumns', () => {
     stage: null,
     source: null,
     messaged: false,
+    apto: true,
     n: 1,
     ...overrides,
   });
@@ -270,15 +270,16 @@ describe('tallyKanbanColumns', () => {
 
   it('devolve as 9 colunas, todas zero, quando não há linhas (Fase 5: + COMPATIBLE; spec 052: sem Confirmado)', () => {
     const tally = tallyKanbanColumns([]);
-    expect(Object.keys(tally)).toHaveLength(9);
+    expect(Object.keys(tally)).toHaveLength(10);
     expect(Object.values(tally).every((n) => n === 0)).toBe(true);
   });
 });
 
 /** emptyFunnelColumnCounts — todas as colunas do funil, nunca uma chave ausente. */
 describe('emptyFunnelColumnCounts', () => {
-  it('tem 9 chaves (Fase 5: + COMPATIBLE; spec 052: sem Confirmado)', () => {
-    expect(Object.keys(emptyFunnelColumnCounts())).toHaveLength(9);
+  it('tem 10 chaves (Fase 5: + COMPATIBLE; spec 052: sem Confirmado; spec 067: + BLOQUEADO)', () => {
+    expect(Object.keys(emptyFunnelColumnCounts())).toHaveLength(10);
+    expect(emptyFunnelColumnCounts().BLOQUEADO).toBe(0);
   });
 });
 
@@ -287,9 +288,9 @@ describe('emptyFunnelColumnCounts', () => {
  * (DX-4.5), base do "salto" que WF/domain/moveReason.ts consome (P6).
  */
 describe('VACANCY_BOARD_COLUMNS / boardPosition', () => {
-  it('tem as 8 colunas do quadro, na ordem do operador (Fase 5: +COMPATIBLE na posição 0; spec 052: sem Confirmado)', () => {
+  it('tem as 9 colunas do quadro, na ordem do operador (spec 067: Bloqueados imediatamente antes de Completado)', () => {
     expect(VACANCY_BOARD_COLUMNS).toEqual([
-      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'BLOQUEADO', 'COMPLETED',
       'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ]);
   });
@@ -313,5 +314,73 @@ describe('VACANCY_BOARD_COLUMNS / boardPosition', () => {
   /** Fase 5 (DX-5.1): candidato do match nunca mensageado ocupa a posição 0 do quadro. */
   it('candidato de match nunca mensageado (COMPATIBLE) é a posição 0', () => {
     expect(boardPosition('INVITED', 'system', null)).toBe(0);
+  });
+});
+
+/**
+ * Spec 067 (FR-06/08/12) — a coluna Completado só abriga quem está APTO.
+ * Etapa de Completado + apto false/null → BLOQUEADO; apto true → COMPLETED; as outras etapas ignoram o apto.
+ */
+describe('deriveKanbanColumn — apto (spec 067, A8 i)', () => {
+  const ETAPAS_DE_COMPLETADO = ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'];
+
+  it.each(ETAPAS_DE_COMPLETADO)('%s + apto=false → BLOQUEADO', (stage) => {
+    expect(deriveKanbanColumn(stage, 'talentum', null, false)).toBe('BLOQUEADO');
+  });
+
+  it.each(ETAPAS_DE_COMPLETADO)('%s + apto=null (não lido) → BLOQUEADO (fail-closed)', (stage) => {
+    expect(deriveKanbanColumn(stage, 'talentum', null, null)).toBe('BLOQUEADO');
+  });
+
+  it.each(ETAPAS_DE_COMPLETADO)('%s + apto=true → COMPLETED', (stage) => {
+    expect(deriveKanbanColumn(stage, 'talentum', null, true)).toBe('COMPLETED');
+  });
+
+  it('as outras etapas ignoram o apto (false/null/true dão a mesma coluna)', () => {
+    const casos: Array<[string | null, string | null, string]> = [
+      ['SELECTED', 'talentum', 'SELECTED'],
+      ['QUICK_RESPONSE_TEAM', null, 'QUICK_RESPONSE_TEAM'],
+      ['REJECTED', 'talentum', 'REJECTED'],
+      ['IN_PROGRESS', 'talentum', 'IN_PROGRESS'],
+      ['PRE_SCREENING', 'talentum', 'PRE_SCREENING'],
+      ['INVITED', 'manual', 'INICIADO'],
+      ['INVITED', 'talentum', 'INVITED'],
+      ['INVITED', 'system', 'COMPATIBLE'],
+    ];
+    for (const [stage, source, esperada] of casos) {
+      for (const apto of [true, false, null]) {
+        expect(deriveKanbanColumn(stage, source, null, apto)).toBe(esperada);
+      }
+    }
+  });
+
+  it('BLOQUEADO fica entre IN_PROGRESS e COMPLETED no ranking', () => {
+    expect(kanbanColumnRank('BLOQUEADO')).toBeGreaterThan(kanbanColumnRank('IN_PROGRESS'));
+    expect(kanbanColumnRank('BLOQUEADO')).toBeLessThan(kanbanColumnRank('COMPLETED'));
+  });
+
+  it('boardPosition: PRE_SCREENING → COMPLETED continua a distância 1 (Bloqueados não é etapa que se atravessa)', () => {
+    expect(boardPosition('QUALIFIED', null, null) - boardPosition('PRE_SCREENING', null, null)).toBe(1);
+    expect(VACANCY_BOARD_COLUMNS.indexOf('COMPLETED') - VACANCY_BOARD_COLUMNS.indexOf('BLOQUEADO')).toBe(1);
+  });
+
+  it('tallyKanbanColumns separa Completado apto de Bloqueados e a soma das colunas = total', () => {
+    const base = { kind: 'wja' as const, source: 'talentum', messaged: false, stage: 'QUALIFIED' };
+    const tally = tallyKanbanColumns([
+      { ...base, apto: true, n: 3 },
+      { ...base, apto: false, n: 2 },
+      { ...base, apto: null, n: 1 },
+      { ...base, stage: 'IN_PROGRESS', apto: null, n: 4 },
+    ]);
+    expect(tally.COMPLETED).toBe(3);
+    expect(tally.BLOQUEADO).toBe(3);
+    expect(tally.IN_PROGRESS).toBe(4);
+    expect(Object.values(tally).reduce((a, n) => a + n, 0)).toBe(10);
+  });
+
+  it('a tentativa barrada (kind=blocked) NÃO vai para BLOQUEADO: segue em INICIADO (D474)', () => {
+    const tally = tallyKanbanColumns([{ kind: 'blocked', stage: null, source: null, messaged: false, apto: null, n: 2 }]);
+    expect(tally.INICIADO).toBe(2);
+    expect(tally.BLOQUEADO).toBe(0);
   });
 });

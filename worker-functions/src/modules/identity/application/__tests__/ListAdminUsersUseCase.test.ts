@@ -23,7 +23,7 @@ describe('ListAdminUsersUseCase', () => {
 
     const result = await new ListAdminUsersUseCase().execute(10, 0);
 
-    expect(mockListAdmins).toHaveBeenCalledWith(10, 0);
+    expect(mockListAdmins).toHaveBeenCalledWith(10, 0, undefined);
     expect(result.isSuccess).toBe(true);
     const { admins, total } = result.getValue();
     expect(total).toBe(2);
@@ -35,7 +35,7 @@ describe('ListAdminUsersUseCase', () => {
   it('usa os defaults de paginação (50, 0)', async () => {
     mockListAdmins.mockResolvedValue({ admins: [], total: 0 });
     await new ListAdminUsersUseCase().execute();
-    expect(mockListAdmins).toHaveBeenCalledWith(50, 0);
+    expect(mockListAdmins).toHaveBeenCalledWith(50, 0, undefined);
   });
 
   it('erro do repositório vira Result.fail com a mensagem (Error) ou a genérica (não-Error)', async () => {

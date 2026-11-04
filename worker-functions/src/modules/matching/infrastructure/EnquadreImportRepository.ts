@@ -3,8 +3,11 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { IMPORT_MIN_DELAY_MS } from '../domain/admissionImport';
 import { ENQUADRE_IMPORT_BATCH } from '../domain/enquadreJobConfig';
 import { MODEL_SIDE_SUMMARY_FAILURES, SUMMARY_ATTEMPTS_EXHAUSTED } from '../application/ports/AdmissionImportPorts';
-import type { ImportSource, ImportState, ImportSubject } from '../application/ports/ImportPorts';
+import { standingHumanBlockSql, lastBlockedEventSql, countRemindersSinceSql } from './importHumanBlockSql';
+import type { ImportSource, ImportState, ImportSubject, LastBlockedEvent } from '../application/ports/ImportPorts';
 import type { Ex } from '../application/ports/PostCallPorts';
+
+const HUMAN_BLOCK = { alias: 'e', trail: 'enquadre_event_trail', fk: 'event_id' } as const;
 
 /**
  * O evento como a importação o enxerga: o `ImportSubject` da admissão, com `admission_code` = o `ENC-` do evento, `slot_start` = o
@@ -28,7 +31,8 @@ export class EnquadreImportRepository implements ImportSource<EnquadreImportSubj
   /**
    * Devidos: evento `open`/`closed` COM o fim real gravado há mais de 10 min e ainda não terminal (`blocked` volta à fila: o vínculo do
    * Tactiq pode ter sido refeito). Os que esgotaram as tentativas de resumo (`summary_attempts_exhausted` na trilha) saem — o enquadre
-   * não tem botão de reprocesso. `FOR UPDATE ... SKIP LOCKED`: um evento com escrita em curso (outra transação) não entra no lote.
+   * não tem botão de reprocesso. Bloqueio que só uma pessoa resolve (`no_link`/`wrong_account`, spec 083) sai da fila até vínculo
+   * `linked` mais novo, lembrete vencido ou `fim + 72 h` (mesmo fragmento da admissão). `FOR UPDATE ... SKIP LOCKED`: um evento com escrita em curso (outra transação) não entra no lote.
    */
   async listDueIds(now: Date, limit: number = this.batchSize, ex: Ex = this.db): Promise<string[]> {
     const { rows } = await ex.query<{ id: string }>(
@@ -38,6 +42,7 @@ export class EnquadreImportRepository implements ImportSource<EnquadreImportSubj
           AND e.conference_ended_at <= $1::timestamptz - make_interval(secs => $3::double precision)
           AND e.import_status IN ('pending', 'waiting', 'blocked')
           AND NOT EXISTS (SELECT 1 FROM enquadre_event_trail t WHERE t.event_id = e.id AND t.kind = 'import_blocked' AND t.reason = $4)
+          AND NOT ${standingHumanBlockSql(HUMAN_BLOCK, '$1::timestamptz')}
         ORDER BY e.conference_ended_at
         LIMIT $2
           FOR UPDATE OF e SKIP LOCKED`,
@@ -94,6 +99,16 @@ export class EnquadreImportRepository implements ImportSource<EnquadreImportSubj
   async hasBlockedReason(eventId: string, reason: string, ex: Ex = this.db): Promise<boolean> {
     const { rows } = await ex.query(`SELECT 1 FROM enquadre_event_trail WHERE event_id = $1 AND kind = 'import_blocked' AND reason = $2 LIMIT 1`, [eventId, reason]);
     return rows.length > 0;
+  }
+
+  async lastBlockedEvent(eventId: string, ex: Ex = this.db): Promise<LastBlockedEvent | null> {
+    const { rows } = await ex.query<LastBlockedEvent>(lastBlockedEventSql(HUMAN_BLOCK), [eventId]);
+    return rows[0] ?? null;
+  }
+
+  async countRemindersSince(eventId: string, since: Date, ex: Ex = this.db): Promise<number> {
+    const { rows } = await ex.query<{ n: string }>(countRemindersSinceSql(HUMAN_BLOCK), [eventId, since]);
+    return Number(rows[0]?.n ?? 0);
   }
 
   /** Tentativas de resumo que chegaram ao Vertex (teto de 3), pela trilha. Sem autorização de reprocesso: conta desde sempre. */

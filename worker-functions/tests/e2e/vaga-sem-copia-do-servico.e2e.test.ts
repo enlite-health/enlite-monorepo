@@ -50,13 +50,18 @@ async function pgError(sql: string, params: unknown[] = []): Promise<{ code?: st
 async function insertVaga(opts: { withService: boolean; own?: keyof typeof OWN_VALUE }): Promise<{ id: string; err: Awaited<ReturnType<typeof pgError>> }> {
   const id = randomUUID();
   const caseNumber = caseSeq++;
+  // Mig. 530: uma vaga NÃO apagada por serviço (CLOSED conta). Cada caso semeia a sua; a anterior sai de cena
+  // (deleted_at) antes — as asserções são sobre a vaga recém-inserida, não sobre a convivência de duas.
+  if (opts.withService) {
+    await admin.query(`UPDATE job_postings SET deleted_at = now() WHERE contracted_service_id = $1 AND deleted_at IS NULL`, [serviceId]);
+  }
   const extraCols = opts.own ? `, ${opts.own}` : '';
   const extraVal = opts.own ? `, ${OWN_VALUE[opts.own].sql.replace('$1', '$4')}` : '';
   const params: unknown[] = [id, `CASO ${caseNumber}`, opts.withService ? serviceId : null];
   if (opts.own) params.push(OWN_VALUE[opts.own].param);
   const err = await pgError(
     `INSERT INTO job_postings (id, title, contracted_service_id, status, is_draft, required_professions, country, is_test${extraCols})
-     VALUES ($1, $2, $3, 'SEARCHING', false, ARRAY['AT'], 'AR', true${extraVal})`,
+     VALUES ($1, $2, $3, 'SEARCHING', false, ${opts.withService ? `'{}'::text[]` : `ARRAY['AT']`}, 'AR', true${extraVal})`,
     params,
   );
   return { id, err };

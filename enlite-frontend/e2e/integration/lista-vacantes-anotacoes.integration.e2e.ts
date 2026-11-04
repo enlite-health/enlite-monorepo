@@ -268,6 +268,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
       'vacancies-col-INVITED',
       'vacancies-col-INICIADO',
       'vacancies-col-PRE_SCREENING',
+      'vacancies-col-BLOQUEADO',
       'vacancies-col-COMPLETED',
       'vacancies-col-SELECTED',
       'vacancies-col-QUICK_RESPONSE_TEAM',
@@ -334,7 +335,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
     await page.goto(`/admin/vacancies/${vacancyA}`);
     await expect(page.getByTestId('kanban-column-COMPLETED')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('kanban-column-SELECTED')).toBeVisible();
-    await expect(page.locator('[data-testid^="kanban-column-"][data-testid$="-count"]')).toHaveCount(8);
+    await expect(page.locator('[data-testid^="kanban-column-"][data-testid$="-count"]')).toHaveCount(9); // 9 colunas desde a spec 067 (Bloqueados)
   });
 
   // ── alt · "Cuándo" no futuro: o servidor recusa (400), a tela avisa ─────────

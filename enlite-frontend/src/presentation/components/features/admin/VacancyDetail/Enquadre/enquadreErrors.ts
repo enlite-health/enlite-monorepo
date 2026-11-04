@@ -22,6 +22,8 @@ const CODES: Record<string, string> = {
   ENQUADRE_EVENT_NOT_ENDED: `${E}.errors.eventNotEnded`,
   ENQUADRE_PARTICIPANT_ALREADY_MARKED: `${E}.errors.participantAlreadyMarked`,
   ENQUADRE_EVENT_NOT_FOUND: `${E}.errors.eventNotFound`,
+  // 067 FR-24: o prestador deixou de estar apto (documento desvalidado/apagado) depois de aparecer na lista.
+  WORKER_NOT_ELIGIBLE: `${E}.errors.workerNotEligible`,
 };
 
 /** Códigos de 409 que dizem "o estado mudou": a tela recarrega os dados depois de mostrar o motivo. */

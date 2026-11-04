@@ -17,7 +17,7 @@ import { managementDashboardSchema, type ManagementDashboardData } from '../mana
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 const FUNNEL_COLUMNS = [
-  'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
+  'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'BLOQUEADO',
   'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
 ] as const;
 

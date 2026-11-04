@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Plus, LayoutGrid, Globe } from 'lucide-react';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { Select } from '@presentation/components/atoms/Select';
 import { Button } from '@presentation/components/atoms/Button';
 import { ActionButton } from '@presentation/components/features/access';
 import { PatientCreateModal } from '@presentation/components/features/admin/PatientCreateModal';
@@ -20,6 +19,7 @@ import {
   getCountryOptions,
   attentionToApiParam,
 } from './patientsData';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 
 export function AdminPatientsPage(): JSX.Element {
   const { t } = useTranslation();
@@ -88,6 +88,8 @@ export function AdminPatientsPage(): JSX.Element {
       // Opt-in (D-2026-09-28): só manda o param quando marcado — ausente mantém o
       // default do backend (esconde deleted_at), igual a hoje.
       include_deactivated: showDeactivated ? 'true' : undefined,
+      // Desmarcado = lista (e cards) sem baja; marcado = deletados + DISCHARGED, como antes.
+      exclude_discharged: showDeactivated ? undefined : 'true',
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
@@ -232,7 +234,7 @@ export function AdminPatientsPage(): JSX.Element {
         {/* Pagination */}
         <div className="flex flex-wrap items-center justify-end gap-4 mt-6">
           <div className="w-full sm:w-[164px]">
-            <Select
+            <Combobox
               inputSize="compact"
               options={[
                 { value: '10', label: '10' },
@@ -240,7 +242,7 @@ export function AdminPatientsPage(): JSX.Element {
                 { value: '50', label: '50' },
               ]}
               value={itemsPerPage}
-              onValueChange={handleItemsPerPageChange}
+              onChange={handleItemsPerPageChange}
             />
           </div>
           <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">

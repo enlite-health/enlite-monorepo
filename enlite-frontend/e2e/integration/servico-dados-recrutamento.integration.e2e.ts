@@ -24,6 +24,7 @@ import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? process.env.API_BASE_URL ?? 'http://localhost:8080';
 const STAFF: MockUser = { uid: `e2e-servico-recrutamento-${Date.now()}`, email: `e2e.servico-recrutamento.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
@@ -52,8 +53,8 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     const svc = await request.post(`${BACKEND_URL}/api/admin/patients/${seeded.patientId}/contracted-services`, {
       headers: AUTH_HEADERS,
       data: {
-        serviceCode: 'AT', providersNeeded: 1, weeklyHours: 20, careLocation: 'HOME', addressId: seeded.addressId,
-        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }], ...extra,
+        serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', addressId: seeded.addressId,
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], ...extra,
       },
     });
     expect(svc.ok(), `POST contracted-services falhou: ${svc.status()} ${await svc.text()}`).toBe(true);
@@ -80,7 +81,7 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     await expect(page.getByTestId('profession-checkboxes')).toBeVisible({ timeout: 25_000 });
   }
 
-  test('1. feliz — preenche os campos do serviço como humano, guarda, ativa: a vaga nasce rascunho com os 5 valores e sem os de ficha', async ({ page, request }) => {
+  test('1. feliz — preenche os campos do serviço como humano, guarda, ativa: a vaga nasce rascunho lendo os 5 do serviço, sem cópia, e sem os de ficha', async ({ page, request }) => {
     const { patientId, serviceId } = await semear(request, {});
     await loginComoStaffMock(page, STAFF, 'E2E Servico Recrutamento');
     await abrirCardDoServico(page, patientId, serviceId);
@@ -92,8 +93,8 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
     // O input real é `sr-only`: o alvo de um humano é o <label> (mesmo gesto do wizard da vaga).
     await page.locator('label[for="svc-profession-CAREGIVER-1"]').click();
-    await page.getByTestId('svc-requiredSex-1').selectOption('F');
-    await page.getByTestId('svc-workSchedule-1').selectOption('full-time');
+    await escolherNoCombo(page, page.getByTestId('svc-requiredSex-1'), 'Femenino'); // F
+    await escolherNoCombo(page, page.getByTestId('svc-workSchedule-1'), 'Full-time'); // full-time
     for (const [id, texto] of [
       ['svc-requiredExperience-1', EXPERIENCIA], ['svc-paymentDay-1', DIA_PAGO],
       ['svc-workerAttributes-1', ATRIBUTOS_FICHA], ['svc-dailyObs-1', OBS_FICHA],
@@ -114,14 +115,18 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     expect(runSQL(`SELECT is_draft FROM job_postings WHERE id = '${vacancyId}'`).trim()).toBe('t');
     await abrirEdicaoDaVaga(page, vacancyId);
     await expect(page.getByTestId('profession-checkbox-CAREGIVER')).toBeChecked();
-    await expect(page.locator('select').filter({ has: page.locator('option[value="BOTH"]') }).first()).toHaveValue('F');
+    await expect(page.getByTestId('required-sex-select')).toContainText('Femenino'); // F = Femenino
     // O "Día de pago" é um input de texto sem testid: lê o valor exibido em todos os inputs de texto da tela.
     await expect.poll(() => page.locator('input[type="text"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toContain(DIA_PAGO);
     // Os dois de ficha NÃO atravessam: o textarea de atributos da vaga está vazio.
     await expect(page.getByTestId('worker-attributes-textarea')).toHaveValue('');
-    // Experiência e jornada não têm campo em nenhuma tela da vaga: conferidos no banco (os 7 valores, sem texto clínico).
-    const linha = runSQL(`SELECT required_experience, work_schedule, coalesce(worker_attributes,'<null>'), coalesce(daily_obs,'<null>') FROM job_postings WHERE id = '${vacancyId}'`).split('\n')[0].trim();
-    expect(linha).toBe(`${EXPERIENCIA}|full-time|<null>|<null>`);
+    // D523 (057): a vaga com serviço NÃO copia os 5 — as colunas de `job_postings` ficam NULL (e as de ficha também);
+    // quem guarda os valores é o SERVIÇO. Experiência e jornada não têm campo de tela na vaga: conferidos no banco.
+    const linha = runSQL(`SELECT coalesce(required_experience,'<null>'), coalesce(work_schedule,'<null>'), coalesce(payment_day,'<null>'), coalesce(required_sex,'<null>'), coalesce(required_professions::text,'<null>'), coalesce(worker_attributes,'<null>'), coalesce(daily_obs,'<null>') FROM job_postings WHERE id = '${vacancyId}'`).split('\n')[0].trim();
+    expect(linha).toBe('<null>|<null>|<null>|<null>|<null>|<null>|<null>');
+    // O serviço guarda os valores digitados na ficha.
+    const noServico = runSQL(`SELECT required_experience, work_schedule, payment_day, required_sex FROM patient_contracted_services WHERE id = '${serviceId}'`).split('\n')[0].trim();
+    expect(noServico).toBe(`${EXPERIENCIA}|full-time|${DIA_PAGO}|F`);
   });
 
   test('2. alternativo — faltando o sexo: "Activar reclutamiento" desabilitado e o motivo traduzido aparece', async ({ page, request }) => {
@@ -133,7 +138,9 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     const botao = page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`);
     await expect(botao).toBeVisible();
     await expect(botao).toBeDisabled();
-    await expect(botao).toHaveAttribute('title', /Datos de reclutamiento del servicio/);
+    await expect(botao).toHaveAttribute('title', /Sexo del prestador del servicio/);
+    // Só o campo que falta aparece: os outros 4 estão preenchidos.
+    await expect(botao).not.toHaveAttribute('title', /Día de pago|Jornada|Experiencia requerida|Tipo de prestador/);
 
     // Nenhuma vaga nasceu.
     expect(runSQL(`SELECT count(*) FROM job_postings WHERE patient_id = '${patientId}'`).trim()).toBe('0');
@@ -141,7 +148,7 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     // Escolher o sexo como humano destrava (BOTH = indistinto conta como respondido).
     await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId('svc-requiredSex-1').selectOption('BOTH');
+    await escolherNoCombo(page, page.getByTestId('svc-requiredSex-1'), 'Indistinto'); // BOTH
     const guardou = page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${serviceId}$`).test(r.url()));
     await page.getByTestId(`contracted-service-save-${serviceId}`).click();
     expect((await guardou).status()).toBe(200);

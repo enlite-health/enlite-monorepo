@@ -3,45 +3,66 @@ import { z } from 'zod';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { PatientContractedServiceRepository, type ContractedServiceDetail } from '../../infrastructure/PatientContractedServiceRepository';
-import { ContractedServiceProviderRepository, ProviderAlreadyActiveError } from '../../infrastructure/ContractedServiceProviderRepository';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../infrastructure/PatientContractedServiceRepository';
+import { SlotHasActiveAllocationError } from '../../application/ItinerarySlotWriteUseCase';
+import { ServiceSlotOverlapError } from '../../infrastructure/ServiceSlotWriter';
 import {
   createContractedServiceSchema,
   updateContractedServiceSchema,
-  associateProviderSchema,
-  updateProviderSchema,
 } from '../validators/contractedServiceSchemas';
-import { hourlyValueActorOf, projectContractedServiceForActor, canReadHourlyValue, bodyWritesHourlyValue } from '../../application/contractedServiceHourlyValueAccess';
+import { hourlyValueActorOf, projectContractedServiceForActor } from '../../application/contractedServiceHourlyValueAccess';
 import {
   ActivateRecruitmentUseCase,
   PatientNotFoundForRecruitmentError,
   ServiceNotFoundForRecruitmentError,
   ServiceAlreadyRecruitingError,
+  LinkableVacancyExistsError,
   RecruitmentNotReadyError,
 } from '../../application/ActivateRecruitmentUseCase';
+import {
+  LinkExistingVacancyUseCase,
+  VacancyNotLinkableError,
+  LinkBlockedError,
+} from '../../application/LinkExistingVacancyUseCase';
+import { LinkExistingVacancyRepository } from '../../infrastructure/LinkExistingVacancyRepository';
+import { JobPostingAuditRepository } from '../../../matching/infrastructure/JobPostingAuditRepository';
+import { ACCEPT_ANY_SERVICE_VALUE } from '../../domain/LinkExistingVacancyPlan';
+import {
+  linkExistingVacancyPreviewBodySchema,
+  linkExistingVacancyConfirmBodySchema,
+} from '../validators/linkExistingVacancySchemas';
 import { vacancyActorFromRequest } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
+import { clinicalCellsOf } from '../../application/patientClinicalAccess';
+import { exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
+import { insuranceErrorBody } from './insuranceErrorResponse';
+
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
-const providerParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid(), pid: z.string().uuid() });
 
 /**
  * AdminPatientContractedServicesController — CRUD do serviço contratado (spec 013, bloco C).
  *
  *   GET/POST   /api/admin/patients/:id/contracted-services
  *   PATCH      /api/admin/patients/:id/contracted-services/:sid          (sem DELETE — lex C-a.4)
- *   POST/PATCH /api/admin/patients/:id/contracted-services/:sid/providers[/:pid]
  *
- * `hourlyValue` é redigido para quem não é admin (lex C-c.4) no ÚNICO ponto:
- * `projectContractedServiceForActor`. `professionalProfile` NUNCA entra em log/erro (lex C-b1) —
+ * O preço (`price`) e os nomes do pagador são redigidos por ator (lex C-c.4, spec 058 §0) no ÚNICO ponto:
+ * `projectContractedServiceForActor`. `requestNow` é capturado UMA vez por requisição e repassado ao repositório (dele sai o `asOf`). `professionalProfile` NUNCA entra em log/erro (lex C-b1) —
  * os `reportError` abaixo carregam só ids e nomes de campo, nunca `req.body`.
  */
 export class AdminPatientContractedServicesController {
   constructor(
     private readonly repo: PatientContractedServiceRepository = new PatientContractedServiceRepository(),
-    private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
     private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = new ActivateRecruitmentUseCase(),
+    /** `requestNow` único por requisição (spec 058 §H): é dele que o repositório tira o `asOf` do país do serviço. */
+    private readonly now: () => Date = () => new Date(),
+    /** Spec 079: vínculo de vaga existente ao serviço (composição aqui, como o foguete). */
+    private readonly linkExistingVacancyUseCase: LinkExistingVacancyUseCase = new LinkExistingVacancyUseCase(
+      new LinkExistingVacancyRepository(),
+      new JobPostingAuditRepository(),
+      ACCEPT_ANY_SERVICE_VALUE,
+    ),
   ) {}
 
   private project(req: Request, service: ContractedServiceDetail) {
@@ -52,18 +73,6 @@ export class AdminPatientContractedServicesController {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
   }
 
-  /**
-   * Recusa (403) quem manda `hourlyValue` sem poder LÊ-LO. Devolve `true` quando já respondeu.
-   * A rota abre com `patient_services:write`, mas o campo é `patient_contract_value:read` — sem
-   * esta guarda quem recebe `hourlyValue: null` em toda leitura gravava 0 por cima do valor.
-   */
-  private refuseHourlyValueWrite(req: Request, res: Response): boolean {
-    if (!bodyWritesHourlyValue(req.body) || canReadHourlyValue(hourlyValueActorOf(req))) return false;
-    // lex C-b1: só o NOME do campo, nunca o valor.
-    res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'hourlyValue' } });
-    return true;
-  }
-
   /** GET /api/admin/patients/:id/contracted-services */
   async list(req: Request, res: Response): Promise<void> {
     const params = patientParamsSchema.safeParse(req.params);
@@ -72,7 +81,7 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const services = await this.repo.listForPatient(params.data.id);
+      const services = await this.repo.listForPatient(params.data.id, this.now());
       res.status(200).json({ success: true, data: { services: services.map((s) => this.project(req, s)) } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -94,11 +103,15 @@ export class AdminPatientContractedServicesController {
       res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
       return;
     }
-    if (this.refuseHourlyValueWrite(req, res)) return;
     try {
-      const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) });
+      const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) }, this.now());
       res.status(201).json({ success: true, data: this.project(req, created) });
     } catch (err: unknown) {
+      // Spec 056: faixas do próprio corpo que se sobrepõem — 409, a criação inteira desfez.
+      if (err instanceof ServiceSlotOverlapError) {
+        res.status(409).json({ success: false, error: 'itinerary slot overlaps another slot of the service', code: 'SLOT_OVERLAP' });
+        return;
+      }
       if (err instanceof DeviceTypeUnknownError) {
         res.status(422).json({ success: false, error: 'Unknown device type code(s)', code: err.code, details: { codes: err.codes } });
         return;
@@ -127,15 +140,15 @@ export class AdminPatientContractedServicesController {
       res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
       return;
     }
-    if (this.refuseHourlyValueWrite(req, res)) return;
     try {
-      const existing = await this.repo.findById(params.data.sid);
+      const requestNow = this.now();
+      const existing = await this.repo.findById(params.data.sid, requestNow);
       // Guarda de posse: um :sid válido de OUTRO paciente não pode ser editado por este :id.
       if (!existing || existing.patientId !== params.data.id) {
         res.status(404).json({ success: false, error: 'Contracted service not found' });
         return;
       }
-      const updated = await this.repo.update(params.data.sid, { ...body.data, actorUid: this.actorUid(req) });
+      const updated = await this.repo.update(params.data.sid, { ...body.data, actorUid: this.actorUid(req) }, requestNow);
       if (!updated) {
         res.status(404).json({ success: false, error: 'Contracted service not found' });
         return;
@@ -152,9 +165,26 @@ export class AdminPatientContractedServicesController {
         res.status(422).json({ success: false, error: 'addressId does not belong to this patient', code: err.code, details: { addressId: err.addressId } });
         return;
       }
+      // D442 (Fase 12): o sync recusou desativar slot com alocação vigente — 422 nomeando o slot,
+      // o MESMO código da rota do itinerário; a transação inteira desfez.
+      if (err instanceof SlotHasActiveAllocationError) {
+        res.status(422).json({ success: false, error: 'itinerary slot has an active allocation — end it first', code: 'SLOT_HAS_ACTIVE_ALLOCATION', details: { slotId: err.slotId } });
+        return;
+      }
+      // Spec 056: a faixa nova sobrepõe outra do mesmo serviço (constraint `pis_sem_sobreposicao`) — 409; a transação desfez.
+      if (err instanceof ServiceSlotOverlapError) {
+        res.status(409).json({ success: false, error: 'itinerary slot overlaps another slot of the service', code: 'SLOT_OVERLAP' });
+        return;
+      }
       // F2/F5: apagar horário ou quantidade com vaga viva — a vaga lê esses campos do serviço (vaga-le-do-servico-contratado).
       if (err instanceof ServiceFieldRequiredByLiveVacancyError) {
         res.status(422).json({ success: false, error: `Service ${err.field} cannot be cleared while a live vacancy reads it`, code: err.code, details: { field: err.field, vacancyIds: err.vacancyIds } });
+        return;
+      }
+      // Spec 058 B (§K): Trava B (PROVIDERS_NEEDED_*) e demais erros conhecidos de banco saem pelo mapa único.
+      const mapped = insuranceErrorBody(err);
+      if (mapped) {
+        res.status(mapped.status).json(mapped.body);
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
@@ -178,6 +208,7 @@ export class AdminPatientContractedServicesController {
         params.data.id,
         params.data.sid,
         vacancyActorFromRequest(req, 'activate_recruitment'),
+        { createNewVacancy: req.body?.createNewVacancy === true }, // sinal explícito da pessoa; ausente/outro valor = guarda ativa
       );
       res.status(201).json({
         success: true,
@@ -185,7 +216,10 @@ export class AdminPatientContractedServicesController {
           vacancyId: result.vacancyId,
           patientStatus: result.patientStatus,
           statusChanged: result.statusChanged,
-          ...(result.patientNotMoved ? { patientNotMoved: result.patientNotMoved } : {}),
+          // `missing` pode trazer `DIAGNOSIS`: sai como `CLINICAL_DATA` para quem não lê `patient_clinical`.
+          ...(result.patientNotMoved
+            ? { patientNotMoved: { missing: exposeBlockingCodes(result.patientNotMoved.missing, clinicalCellsOf(req)) } }
+            : {}),
         },
       });
     } catch (err: unknown) {
@@ -197,12 +231,18 @@ export class AdminPatientContractedServicesController {
         res.status(409).json({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: err.vacancyId });
         return;
       }
+      if (err instanceof LinkableVacancyExistsError) {
+        res.status(409).json({ success: false, code: 'LINKABLE_VACANCY_EXISTS', vacancyIds: err.vacancyIds });
+        return;
+      }
       if (err instanceof RecruitmentNotReadyError) {
+        // `DIAGNOSIS` sai como `CLINICAL_DATA` para quem não lê `patient_clinical` (a recusa é a mesma).
+        const cells = clinicalCellsOf(req);
         res.status(422).json({
           success: false,
-          error: err.message,
+          error: exposeBlockingMessage(err.message, cells),
           code: 'PATIENT_NOT_READY',
-          details: { missing: err.missing },
+          details: { missing: exposeBlockingCodes(err.missing, cells) },
         });
         return;
       }
@@ -212,78 +252,66 @@ export class AdminPatientContractedServicesController {
     }
   }
 
-  /** POST /api/admin/patients/:id/contracted-services/:sid/providers */
-  async associateProvider(req: Request, res: Response): Promise<void> {
+  /** POST .../:sid/link-existing-vacancy/preview (spec 079). Nunca grava. */
+  async previewLinkExistingVacancy(req: Request, res: Response): Promise<void> {
     const params = serviceParamsSchema.safeParse(req.params);
-    if (!params.success) {
+    const body = linkExistingVacancyPreviewBodySchema.safeParse(req.body ?? {});
+    if (!params.success || !body.success) {
       res.status(400).json({ success: false, error: 'Invalid params' });
       return;
     }
-    const body = associateProviderSchema.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
-      return;
-    }
     try {
-      const service = await this.repo.findById(params.data.sid);
-      if (!service || service.patientId !== params.data.id) {
-        res.status(404).json({ success: false, error: 'Contracted service not found' });
-        return;
-      }
-      const created = await this.providerRepo.associate({
-        serviceId: params.data.sid,
-        workerId: body.data.workerId,
-        weeklyHours: body.data.weeklyHours,
-        country: service.country as 'AR' | 'BR',
-        actorUid: this.actorUid(req),
-      });
-      res.status(201).json({ success: true, data: created });
+      const data = await this.linkExistingVacancyUseCase.preview(params.data.id, params.data.sid, body.data.vacancyId);
+      res.status(200).json({ success: true, data });
     } catch (err: unknown) {
-      if (err instanceof ProviderAlreadyActiveError) {
-        res.status(409).json({ success: false, error: 'Worker already actively allocated to this service', code: err.code });
-        return;
-      }
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientContractedServicesController:associateProvider', serviceId: params.data.sid });
-      res.status(500).json({ success: false, error: 'Failed to associate provider' });
+      this.respondLinkError(err, res, 'previewLinkExistingVacancy', params.data);
     }
   }
 
-  /** PATCH /api/admin/patients/:id/contracted-services/:sid/providers/:pid */
-  async updateProvider(req: Request, res: Response): Promise<void> {
-    const params = providerParamsSchema.safeParse(req.params);
-    if (!params.success) {
+  /** POST .../:sid/link-existing-vacancy (spec 079). Vincula e alimenta o serviço numa transação. */
+  async linkExistingVacancy(req: Request, res: Response): Promise<void> {
+    const params = serviceParamsSchema.safeParse(req.params);
+    const body = linkExistingVacancyConfirmBodySchema.safeParse(req.body ?? {});
+    if (!params.success || !body.success) {
       res.status(400).json({ success: false, error: 'Invalid params' });
       return;
     }
-    const body = updateProviderSchema.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
+    try {
+      const data = await this.linkExistingVacancyUseCase.confirm(
+        params.data.id,
+        params.data.sid,
+        body.data.vacancyId,
+        vacancyActorFromRequest(req, 'link_existing_vacancy'),
+      );
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      this.respondLinkError(err, res, 'linkExistingVacancy', params.data);
+    }
+  }
+
+  private respondLinkError(err: unknown, res: Response, op: string, ids: { id: string; sid: string }): void {
+    if (err instanceof PatientNotFoundForRecruitmentError || err instanceof ServiceNotFoundForRecruitmentError) {
+      res.status(404).json({ success: false, code: 'NOT_FOUND' });
       return;
     }
-    try {
-      const service = await this.repo.findById(params.data.sid);
-      if (!service || service.patientId !== params.data.id) {
-        res.status(404).json({ success: false, error: 'Contracted service not found' });
-        return;
-      }
-      const provider = service.providers.find((p) => p.id === params.data.pid);
-      if (!provider) {
-        res.status(404).json({ success: false, error: 'Provider allocation not found' });
-        return;
-      }
-      const updated = await this.providerRepo.update(params.data.pid, { ...body.data, actorUid: this.actorUid(req) });
-      // `null` = a linha sumiu entre a leitura e a escrita. 200 com `data: null` mente para um
-      // cliente que tipa o campo como não-nulo — o irmão `update` do serviço já devolve 404.
-      if (!updated) {
-        res.status(404).json({ success: false, error: 'Provider allocation not found' });
-        return;
-      }
-      res.status(200).json({ success: true, data: updated });
-    } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientContractedServicesController:updateProvider', providerId: params.data.pid });
-      res.status(500).json({ success: false, error: 'Failed to update provider allocation' });
+    if (err instanceof ServiceAlreadyRecruitingError) {
+      res.status(409).json({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: err.vacancyId });
+      return;
     }
+    if (err instanceof VacancyNotLinkableError) {
+      res.status(409).json({ success: false, code: 'VACANCY_NOT_LINKABLE', reason: err.reason });
+      return;
+    }
+    if (err instanceof LinkBlockedError) {
+      res.status(422).json({ success: false, code: 'LINK_BLOCKED', blockers: err.blockers });
+      return;
+    }
+    if (err instanceof AddressNotOfPatientError) {
+      res.status(422).json({ success: false, code: 'ADDRESS_NOT_OF_PATIENT' });
+      return;
+    }
+    const e = err instanceof Error ? err : new Error(String(err));
+    reportError(e, { source: `AdminPatientContractedServicesController:${op}`, patientId: ids.id, serviceId: ids.sid });
+    res.status(500).json({ success: false, error: 'Failed to link existing vacancy' });
   }
 }

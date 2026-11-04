@@ -24,6 +24,7 @@
  */
 import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo, rotuloDoMes } from '../helpers/combobox';
 
 const DB_URL = process.env.ANACARE_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TENANT = '00000000-0000-0000-0000-000000000001';
@@ -113,8 +114,7 @@ async function abrirPacientePelaLista(page: Page, mes: string): Promise<void> {
   await expect(page).toHaveURL(/\/admin\/anacare\/horas$/);
   await expect(page.getByRole('heading', { name: 'Horas Ana Care' })).toBeVisible({ timeout: 15_000 });
   const seletorMes = page.getByLabel('Mes', { exact: true });
-  await seletorMes.selectOption(mes);
-  await expect(seletorMes).toHaveValue(mes);
+  await escolherNoCombo(page, seletorMes, rotuloDoMes(mes));
   const linha = page.getByTestId(`anacare-hours-patient-row-${PATIENT}`);
   await expect(linha).toBeVisible({ timeout: 15_000 });
   await linha.click();
@@ -246,7 +246,7 @@ test.describe('anacare-hours-detalhe-por-mes — o detalhe navega por mês @inte
     // Volver mantém o mês da página: a lista abre em outubro.
     await page.getByTestId('anacare-hours-back').click();
     await expect(page).toHaveURL(/\/admin\/anacare\/horas\?month=2026-10$/);
-    await expect(page.getByLabel('Mes', { exact: true })).toHaveValue('2026-10', { timeout: 15_000 });
+    await expect(page.getByLabel('Mes', { exact: true })).toContainText(rotuloDoMes('2026-10'), { timeout: 15_000 });
   });
 
   test('ALTERNATIVO 2 — o link antigo (sem ?month) e os meses inválidos (2026-07, abc) abrem no mês corrente, lido da tela', async ({ page }) => {
@@ -278,11 +278,14 @@ test.describe('anacare-hours-detalhe-por-mes — o detalhe navega por mês @inte
     await page.getByTestId('anacare-hours-patient-switch-button').click();
     await expect(page.getByRole('dialog', { name: 'Cambiar de paciente' })).toBeVisible();
     await campoTroca(page).click();
-    await expect(campoTroca(page)).toBeFocused();
-    await page.keyboard.type('PAT-6');
-    // O atual não é opção; o outro é.
-    await expect(page.getByTestId(`anacare-hours-patient-switch-combobox-option-${PATIENT}`)).toHaveCount(0);
-    const opcao = page.getByTestId(`anacare-hours-patient-switch-combobox-option-${OUTRO}`);
+    // O atual não é opção; o outro é (a busca, quando há 3+ opções, casa nome OU ID: digita parte do ID).
+    const busca = page.locator('input[data-testid$="-search"]');
+    if ((await busca.count()) > 0) {
+      await expect(busca).toBeFocused();
+      await page.keyboard.type('PAT-6');
+    }
+    await expect(page.getByRole('option', { name: `Sin vínculo · ID ${PATIENT}`, exact: true })).toHaveCount(0);
+    const opcao = page.getByRole('option', { name: `Sin vínculo · ID ${OUTRO}`, exact: true });
     await expect(opcao).toBeVisible({ timeout: 15_000 });
     await opcao.click();
 
@@ -299,9 +302,10 @@ test.describe('anacare-hours-detalhe-por-mes — o detalhe navega por mês @inte
 
     await page.getByTestId('anacare-hours-patient-switch-button').click();
     await campoTroca(page).click();
-    await expect(campoTroca(page)).toBeFocused();
+    // o campo de busca só existe com 3+ opções (SEARCH_MIN_OPTIONS): se faltar, o seed tem poucos pacientes neste mês
+    await expect(page.locator('input[data-testid$="-search"]')).toBeFocused();
     await page.keyboard.type('zzzz-nada');
-    await expect(page.getByTestId('anacare-hours-patient-switch-combobox-no-match')).toHaveText('Sin resultados');
+    await expect(page.getByTestId('anacare-hours-patient-switch-combobox-no-results')).toHaveText('Sin resultados');
     await page.keyboard.press('Escape');
 
     await expect(page.getByTestId('anacare-hours-patient-switch-modal')).toHaveCount(0);

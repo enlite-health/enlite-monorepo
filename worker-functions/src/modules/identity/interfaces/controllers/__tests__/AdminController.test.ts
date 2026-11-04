@@ -129,7 +129,7 @@ describe('GET /api/admin/users — listAdminUsers', () => {
     mocks.list.mockResolvedValue(Result.ok({ admins: [{ firebaseUid: 'u1' }], total: 1 }));
     const r = res();
     await new AdminController().listAdminUsers(req({ query: { limit: '500', offset: '10' } }), r);
-    expect(mocks.list).toHaveBeenCalledWith(200, 10);
+    expect(mocks.list).toHaveBeenCalledWith(200, 10, null);
     expect(r.json).toHaveBeenCalledWith({ success: true, data: [{ firebaseUid: 'u1' }], pagination: { limit: 200, offset: 10, total: 1 } });
   });
 
@@ -137,13 +137,24 @@ describe('GET /api/admin/users — listAdminUsers', () => {
     mocks.list.mockResolvedValueOnce(Result.fail('x'));
     const r1 = res();
     await new AdminController().listAdminUsers(req(), r1);
-    expect(mocks.list).toHaveBeenCalledWith(50, 0);
+    expect(mocks.list).toHaveBeenCalledWith(50, 0, null);
     expect(r1.status).toHaveBeenCalledWith(400);
 
     mocks.list.mockRejectedValueOnce(new Error('boom'));
     const r2 = res();
     await new AdminController().listAdminUsers(req(), r2);
     expect(r2.status).toHaveBeenCalledWith(500);
+  });
+
+  it('spec 078 (M2): `forGroupId` UUID válido chega ao caso de uso; lixo vira "sem contexto" (null) — nunca vira consulta', async () => {
+    mocks.list.mockResolvedValue(Result.ok({ admins: [], total: 0 }));
+    const GRUPO = '11111111-1111-4111-8111-111111111111';
+    await new AdminController().listAdminUsers(req({ query: { forGroupId: GRUPO } }), res());
+    expect(mocks.list).toHaveBeenLastCalledWith(50, 0, GRUPO);
+    for (const lixo of ["x' OR 1=1 --", 'not-a-uuid', '']) {
+      await new AdminController().listAdminUsers(req({ query: { forGroupId: lixo } }), res());
+      expect(mocks.list).toHaveBeenLastCalledWith(50, 0, null);
+    }
   });
 });
 

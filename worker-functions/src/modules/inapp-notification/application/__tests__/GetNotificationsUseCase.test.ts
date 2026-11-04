@@ -285,3 +285,67 @@ describe('GetNotificationsUseCase — aviso do vínculo do Tactiq (spec 049 F4):
     expect(b.payload).toBeNull();
   });
 });
+
+describe('GetNotificationsUseCase — aviso diário do itinerário (spec 069 F4): payload só-ids', () => {
+  const itRow = (payload: unknown): NotificationEventRow =>
+    row({ id: 'it1', typeCode: 'ITINERARY_UNCOVERED_SHIFTS', actorUid: 'system:itinerary-daily', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, payload: payload as never });
+  const run = async (payload: unknown) => (await new GetNotificationsUseCase(repoWith([itRow(payload)])).execute({ recipientUid: 'me', limit: 20 }))[0];
+
+  it('devolve operationDate + itens de 4 chaves (ids e números); chave extra (nome do paciente) é descartada e item malformado sai', async () => {
+    const dto = await run({
+      operationDate: '2026-11-02',
+      nomeDoPaciente: 'Ana Silva',
+      items: [
+        { patientId: 'p1', serviceId: 's1', shifts: 2, firstDate: '2026-11-02', nome: 'Ana Silva' },
+        { patientId: 'p2', serviceId: 's2', shifts: 'dois', firstDate: '2026-11-03' },
+      ],
+    });
+    expect(dto.payload).toEqual({ operationDate: '2026-11-02', items: [{ patientId: 'p1', serviceId: 's1', shifts: 2, firstDate: '2026-11-02' }] });
+    expect(dto.patientCaseNumber).toBeNull();
+  });
+
+  it('payload malformado ou ausente vira null (nunca explode o sino)', async () => {
+    expect((await run({ items: [] })).payload).toBeNull();
+    expect((await run({ operationDate: '2026-11-02', items: 'x' })).payload).toBeNull();
+    expect((await run(null)).payload).toBeNull();
+  });
+});
+
+describe('GetNotificationsUseCase — PEDIDO_IA_APLICAR (spec 078 M4.4.2): payload só-ids', () => {
+  const apRow = (payload: unknown): NotificationEventRow =>
+    row({ id: 'ap1', typeCode: 'PEDIDO_IA_APLICAR', actorUid: 'system:sol-fila', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, payload: payload as never });
+  const run = async (payload: unknown) => (await new GetNotificationsUseCase(repoWith([apRow(payload)])).execute({ recipientUid: 'me', limit: 20 }))[0];
+
+  it('devolve as 4 chaves; chave extra (assunto) é descartada', async () => {
+    const dto = await run({ pedido_id: 'p1', degrau: 3, grave: true, prazo: 'hoje', assunto: 'texto do pedido' });
+    expect(dto.payload).toEqual({ pedido_id: 'p1', degrau: 3, grave: true, prazo: 'hoje' });
+  });
+
+  it.each([[{ pedido_id: 'p1', degrau: 2, grave: false, prazo: 'semana' }], [{ pedido_id: 'p1', degrau: 3, grave: false, prazo: 'amanha' }], [null], [{}]])(
+    'payload fora do contrato (%j) -> null', async (payload) => {
+      expect((await run(payload)).payload).toBeNull();
+    });
+});
+
+describe('GetNotificationsUseCase — importação bloqueada (spec 083): payload fechado, sem paciente', () => {
+  const ib = (payload: Record<string, unknown> | null): NotificationEventRow =>
+    row({ id: 'ib1', typeCode: 'ADMISSION_IMPORT_BLOCKED', actorUid: 'system:admission', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, patientCaseNumber: null, payload });
+  const ok = { stage: 'blocked', kind: 'enquadre', reason: 'wrong_account', audience: 'host', meetingAt: '2026-11-02T15:00:00.000Z', deadlineAt: '2026-11-05T16:00:00.000Z' };
+
+  it('sai só com as chaves do contrato (chave extra descartada); hostName só se string', async () => {
+    const [a] = await new GetNotificationsUseCase(repoWith([ib({ ...ok, patientName: 'Ana Silva', token: 'seg' })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toEqual(ok);
+    expect(JSON.stringify(a)).not.toContain('Ana Silva');
+    const sup = { ...ok, stage: 'will_be_lost', audience: 'supervisor', hostName: 'Fulana' };
+    const [b] = await new GetNotificationsUseCase(repoWith([ib(sup)])).execute({ recipientUid: 'me', limit: 20 });
+    expect(b.payload).toEqual(sup);
+    expect(b.patientDisplayName).toBeNull();
+  });
+
+  it('enum fora do conjunto, data ausente ou payload nulo viram null', async () => {
+    for (const p of [{ ...ok, stage: 'x' }, { ...ok, reason: 'not_found' }, { ...ok, meetingAt: 5 }, null]) {
+      const [d] = await new GetNotificationsUseCase(repoWith([ib(p)])).execute({ recipientUid: 'me', limit: 20 });
+      expect(d.payload).toBeNull();
+    }
+  });
+});

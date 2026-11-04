@@ -3,13 +3,13 @@ import { VacanciesController } from '../controllers/VacanciesController';
 import { VacanciesAuxController } from '../controllers/VacanciesAuxController';
 import { VacancyTalentumController } from '../controllers/VacancyTalentumController';
 import { VacancyMatchController } from '../controllers/VacancyMatchController';
-import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksController';
 import { WJAFunnelController } from '../controllers/WJAFunnelController';
 import { WJAFunnelTableController } from '../controllers/WJAFunnelTableController';
 import { WJAContactNotesController } from '../controllers/WJAContactNotesController';
 import { VacancyNotesController } from '../controllers/VacancyNotesController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
 import { VacancyCrudController } from '../controllers/VacancyCrudController';
+import { VacancyBajaController } from '../controllers/VacancyBajaController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
 import { InterviewSlotsController } from '../controllers/InterviewSlotsController';
 import { VacancyAddressReviewController } from '../controllers/VacancyAddressReviewController';
@@ -60,7 +60,6 @@ export function createAdminVacanciesRoutes(
   vacancyCrudController: VacancyCrudController,
   vacancyTalentumController: VacancyTalentumController,
   vacancyMatchController: VacancyMatchController,
-  vacancyMeetLinksController: VacancyMeetLinksController,
   vacancySocialLinksController: VacancySocialLinksController,
   funnelController: WJAFunnelController,
   dashboardController: EncuadreDashboardController,
@@ -114,6 +113,11 @@ export function createAdminVacanciesRoutes(
   // ── CRUD (VacancyCrudController) ─────────────────────────────────────────────
   router.post('/vacancies', authMiddleware.requireStaff(), perm.require('vacancy', 'create'), (req: Request, res: Response) =>
     vacancyCrudController.createVacancy(req, res),
+  );
+  // Spec 084 F1: dar baixa (DE_BAJA), uma ou em lote, só vaga SEM serviço. NÃO existe rota inversa (R17).
+  const bajaController = new VacancyBajaController();
+  router.post('/vacancies/baja', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
+    bajaController.baja(req, res),
   );
   router.put('/vacancies/:id', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
     vacancyCrudController.updateVacancy(req, res),
@@ -169,16 +173,6 @@ export function createAdminVacanciesRoutes(
   );
   router.post('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), perm.require('prescreening', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.savePrescreeningConfig(req, res),
-  );
-
-  // ── Meet Links (VacancyMeetLinksController) ───────────────────────────────────
-  // Static lookup route MUST come before dynamic /:id/meet-links to prevent the
-  // express router from treating "meet-links" as the :id param.
-  router.post('/vacancies/meet-links/lookup', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
-    vacancyMeetLinksController.lookupMeetDatetime(req, res),
-  );
-  router.put('/vacancies/:id/meet-links', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
-    vacancyMeetLinksController.updateMeetLinks(req, res),
   );
 
   // ── Social Short Links (VacancySocialLinksController) ────────────────────────

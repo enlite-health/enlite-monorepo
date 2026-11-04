@@ -323,7 +323,7 @@ export class SyncPatientFromClickUpTaskUseCase {
 
   /**
    * Persiste a `Cobertura Verificada` múltipla. Nunca lança: o paciente já foi gravado, e a
-   * cobertura múltipla é acréscimo ao escalar que continua sendo escrito.
+   * cobertura verificada vive só na tabela múltipla (o escalar `insurance_verified` saiu, spec 058).
    *
    * Falha aqui não derruba o sync, mas NÃO passa muda — evento próprio, com contagem (C1).
    */

@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { patientDetailFixture, patientDetailMinimal } from '../../__tests__/patientDetailFixture';
 
 const translations = ptBR as Record<string, any>;
@@ -145,19 +146,18 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     expect(drawer.textContent).not.toMatch(/Especialidade|ICHOM/);
 
     // US-B4: dispositivo é multi-select de códigos do catálogo (HOME + SCHOOL), nunca texto livre
-    fireEvent.click(drawer.querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(drawer.querySelector('#pce-device') as HTMLElement);
     fireEvent.click(screen.getByText('Domiciliar'));
     fireEvent.click(screen.getByText('Escolar'));
-    fireEvent.change(screen.getByTestId('pce-dependency'), { target: { value: 'MODERATE' } });
+    await selectCombo(screen.getByTestId('pce-dependency'), 'Moderada'); // MODERATE = Moderada
     // hasJudicialProtection: false → true (strToBool 'true')
-    fireEvent.change(screen.getByTestId('pce-hasJudicialProtection'), { target: { value: 'true' } });
+    await selectCombo(screen.getByTestId('pce-hasJudicialProtection'), 'Sim');
     // hasCud: true → false (strToBool 'false')
-    fireEvent.change(screen.getByTestId('pce-hasCud'), { target: { value: 'false' } });
-    // hasConsent: true → '' (tri-state "unset", strToBool cai no branch `return null` — linhas 56-57)
-    fireEvent.change(screen.getByTestId('pce-hasConsent'), { target: { value: '' } });
-    // serviceType: ['AT'] → ['AT', 'CAREGIVER'] via MultiSelect (abre pelo botão com o valor atual)
-    fireEvent.click(screen.getByText('Acompanhante Terapêutico'));
-    fireEvent.click(screen.getByText('Cuidador'));
+    await selectCombo(screen.getByTestId('pce-hasCud'), 'Não');
+    // hasConsent: true → '' (tri-state "unset" = "—", strToBool cai no branch `return null` — linhas 56-57)
+    await selectCombo(screen.getByTestId('pce-hasConsent'), '—');
+    // tipo de serviço não é mais editável aqui (spec 071)
+    expect(document.querySelector('#pce-serviceType')).toBeNull();
 
     fireEvent.click(screen.getByTestId('pce-save'));
 
@@ -165,20 +165,31 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', {
       deviceTypes: ['HOME', 'SCHOOL'],
       dependencyLevel: 'MODERATE',
-      serviceType: ['AT', 'CAREGIVER'],
       hasJudicialProtection: true,
       hasCud: false,
       hasConsent: null,
     });
+    expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('serviceType');
+  });
+
+  it('salvar só a dependência: sem campo de tipo de serviço e o payload não leva serviceType', async () => {
+    const { container } = render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(container.querySelector('#pce-serviceType')).toBeNull();
+    await selectCombo(screen.getByTestId('pce-dependency'), 'Moderada'); // MODERATE = Moderada
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    const payload = updatePatientSection.mock.calls[0][2];
+    expect(payload).toEqual({ dependencyLevel: 'MODERATE' });
+    expect(payload).not.toHaveProperty('serviceType');
   });
 
   it('paciente mínimo (todos os campos vazios/null): sem mudança não chama a API — cobre os defaults `?? null`/`?? []`/boolToStr(null)', async () => {
     const onClose = vi.fn();
     render(<PatientClinicalEditDrawer patient={patientDetailMinimal} onClose={onClose} onSaved={vi.fn()} />);
     // os 3 tri-state ficam '' (unset) por default — confirma antes de salvar
-    expect(screen.getByTestId('pce-hasJudicialProtection')).toHaveValue('');
-    expect(screen.getByTestId('pce-hasCud')).toHaveValue('');
-    expect(screen.getByTestId('pce-hasConsent')).toHaveValue('');
+    for (const id of ['pce-hasJudicialProtection', 'pce-hasCud', 'pce-hasConsent']) {
+      expect(screen.getByTestId(id)).toHaveTextContent(ptBR.admin.patients.editDrawer.selectPlaceholder);
+    }
     fireEvent.click(screen.getByTestId('pce-save'));
     await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
     expect(updatePatientSection).not.toHaveBeenCalled();
@@ -209,7 +220,7 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
   it('spec 012: deviceTypes ausente na ficha → conjunto vazio; escolher HOME manda deviceTypes; erro não-Error → mensagem genérica', async () => {
     updatePatientSection.mockRejectedValueOnce('x');
     render(<PatientClinicalEditDrawer patient={{ ...patientDetailMinimal, deviceTypes: undefined as never }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('patient-clinical-edit-drawer').querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(screen.getByTestId('patient-clinical-edit-drawer').querySelector('#pce-device') as HTMLElement);
     fireEvent.click(screen.getByText('Domiciliar'));
     fireEvent.click(screen.getByTestId('pce-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailMinimal.id, 'clinical', { deviceTypes: ['HOME'] }));
@@ -262,7 +273,7 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
       expect(drawer.textContent).not.toMatch(/\(opcional\)/);
       // só rótulos com texto — a lupa da busca também é um <label for> (clicar nela foca o input), sem texto
       const labels = Array.from(drawer.querySelectorAll('label')).filter((l) => l.textContent?.trim());
-      expect(labels.length).toBeGreaterThanOrEqual(8);
+      expect(labels.length).toBeGreaterThanOrEqual(7);
       for (const l of labels) {
         expect(l.className).toMatch(/text-\[12px\]/);
         expect(l.className).toMatch(/\btext-primary\b/);

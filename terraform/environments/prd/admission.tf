@@ -86,6 +86,7 @@ resource "google_kms_crypto_key_iam_member" "admission_vault_gcs_agent" {
 resource "google_storage_bucket" "admission_transcripts" {
   project                     = var.project_id
   name                        = "enlite-admission-transcripts-prd"
+  labels                      = { service = "enlite-admission-transcripts-prd", setor = "admissao" }
   location                    = "SOUTHAMERICA-WEST1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
@@ -514,6 +515,7 @@ resource "google_monitoring_alert_policy" "admission_vault_read" {
 resource "google_storage_bucket" "admission_transcripts_rehearsal" {
   project                     = var.project_id
   name                        = "enlite-admission-rehearsal-prd"
+  labels                      = { service = "enlite-admission-rehearsal-prd", setor = "admissao" }
   location                    = "SOUTHAMERICA-WEST1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true

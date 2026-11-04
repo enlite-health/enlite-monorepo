@@ -59,12 +59,29 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // explícitos onde existem.
       'analytics:export',
       'analytics:read',
+      // Spec 080 — Master-only, sem tela (widget flutuante de assistentes, não é rota/tela do registry).
+      'assistant_candela:chat',
+      'assistant_escalation:register',
+      'assistant_lucero:chat',
+      'assistant_maria:chat',
+      'assistant_scoreboard:read',
       'funnel:write',
+      // Spec 078 (M2) — célula do AGENTE (grupo `AGENT`), sem tela: consumida só pela porta MCP da Luz (AGENT_CAPABILITY_CELLS).
+      'handover:create',
       'interview:create',
       'interview:delete',
       'interview:read',
       'interview:update',
       'interview:write',
+      // Spec 080 — Master-only, sem tela (widget flutuante de assistentes, não é rota/tela do registry).
+      'knowledge_clinical:read',
+      'knowledge_coordination:read',
+      'knowledge_financial:read',
+      'knowledge_management:read',
+      'knowledge_product_meetings:read',
+      'knowledge_public:read',
+      'knowledge_recruitment:read',
+      'knowledge_technical:read',
       // Spec 022, Bloco 4 (D-22, citação literal): `own_notifications:*` não tem tela própria
       // no registry (o sino não é uma rota de `App.tsx`, e o teste do registry exige `route`
       // existente) — fica SEM entrada dedicada por desenho do próprio mecanismo, mesmo
@@ -77,6 +94,7 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'own_presence:update',
       'patient:write',
       'patient_clinical:write',
+      'patient_service_team:update',
       // Spec 051 (F1): trocar o status do paciente por fora da FSM. Decidida no back por
       // `decidirTrocaForaDoFluxo`; a tela (PR-C) só mostra o destino que a lista do servidor trouxer.
       'patient_status:move_to_active',
@@ -91,6 +109,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'prescreening:write',
       'recruitment:read',
       'recruitment:write',
+      // Spec 081 (T064) — Master-only, sem tela (consumida só pela rota de atividade e pela Maria).
+      'recruitment_activity_per_person:read',
       'staff_directory:read',
       'talentum:write',
       'test_fixtures:execute',
@@ -102,6 +122,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'worker:delete',
       'worker:disable',
       'worker:write',
+      // Spec 078 (M2) — célula do AGENTE (grupo `AGENT`), sem tela (ver `handover:create` acima).
+      'worker_application:create',
       'worker_document:write',
     ]);
   });
@@ -132,7 +154,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(todasAsCelulas().get('worker_address:read')).toEqual(['map', 'workers.detail']);
   });
 
-  it('as abas do detalhe do paciente: cada uma sabe os seus containers; Matching saiu (05/09)', () => {
+  it('as abas do detalhe do paciente: cada uma sabe os seus containers; Matching saiu (05/09), Encuadre saiu de novo (05/10, 041 R3)', () => {
     const s = screenById('patients.detail');
     expect(containersOfTab(s, 'clinicalData').map((c) => c.resource)).toEqual(['patient_clinical', 'patient_care_team', 'patient_therapeutic_project']);
     expect(containersOfTab(s, 'supportNetwork').map((c) => c.resource)).toEqual(['patient_family', 'patient_chat']);
@@ -140,13 +162,16 @@ describe('screensByCell / containersOfTab / screenById', () => {
     // Spec 047 (F1, A1): a aba Vacante saiu; o container `vacancy` (célula `vacancy:read`) desceu para Serviço Contratado.
     expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value', 'vacancy']);
     // Spec 049 (F7): a aba Admissão vem logo depois de Documentos, com container próprio e 5 células (4 da 049 + o ensaio pago da 050).
-    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'history']);
+    // Spec 049 (F7) + cadeia do itinerário (D442) — sync main→stage 16/10, decisão C2: 7 abas, sem 'vacancies'.
+    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'history']);
     expect(containersOfTab(s, 'admission').map((c) => c.resource)).toEqual(['patient_admission']);
     expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message', 'patient_admission:release_paid_rehearsal', 'patient_admission:retry_summary']);
     expect(screenById('account.tactiq').cells).toEqual(['own_tactiq_link:read', 'own_tactiq_link:create']);
     expect(s.tabs).not.toContain('vacancies');
     expect(containersOfTab(s, 'vacancies' as never)).toEqual([]);
     expect(s.containers?.find((c) => c.resource === 'vacancy')?.cells).toEqual(['vacancy:read']);
+    expect(containersOfTab(s, 'encuadre')).toEqual([]);
+    expect(containersOfTab(s, 'itinerary').map((c) => c.resource)).toEqual(['patient_services', 'patient_itinerary']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);
     // 02/10 (spec 031): a aba Documentos vem logo depois da Rede de apoio, com as 4 células do recurso.
     expect(containersOfTab(s, 'documents').map((c) => c.resource)).toEqual(['patient_document']);
@@ -214,5 +239,19 @@ describe('screensByCell / containersOfTab / screenById', () => {
 
   it('tela desconhecida é erro, não undefined silencioso', () => {
     expect(() => screenById('nao.existe')).toThrow(/desconhecida/);
+  });
+});
+
+describe('SCREEN_REGISTRY — lista global de enquadres (spec 076)', () => {
+  it('a tela `enquadres` abre com as duas células (`openWith: all`), está em /admin/enquadres e a rota existe no App.tsx', () => {
+    const t = screenById('enquadres');
+    expect(t.route).toBe('/admin/enquadres');
+    expect(t.cells).toEqual(['enquadre_event:read', 'vacancy:read']);
+    expect(t.openWith).toBe('all');
+    expect(APP_TSX).toMatch(/path="enquadres"/);
+  });
+
+  it('só a tela de enquadres usa `openWith` (o OU das demais não muda)', () => {
+    expect(SCREEN_REGISTRY.filter((s) => s.openWith !== undefined).map((s) => s.id)).toEqual(['enquadres']);
   });
 });

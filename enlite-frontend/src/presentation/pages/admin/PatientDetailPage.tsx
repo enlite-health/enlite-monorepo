@@ -22,6 +22,7 @@ import { CoberturaMedicaCard } from '@presentation/components/features/admin/Pat
 import { LocalizacoesCard } from '@presentation/components/features/admin/PatientDetail/LocalizacoesCard';
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
+import { PatientItineraryTab } from '@presentation/components/features/admin/PatientDetail/PatientItineraryTab';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 import { PatientConversationHandle } from '@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle';
 import { PatientDocumentsSection } from '@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection';
@@ -49,6 +50,9 @@ const COMPLETENESS_TAB: Record<PatientCompletenessCode, PatientTab> = {
   // Decisão do Gabriel 07/09: serviço sem horário — o editor de horário vive no mesmo drawer.
   SERVICE_SCHEDULE: 'contractedService',
   CONSENT: 'clinicalData',
+  // Pedido do Javier: o diagnóstico CID-11 mora no card clínico (e o genérico, para quem não lê, aponta para o mesmo).
+  DIAGNOSIS: 'clinicalData',
+  CLINICAL_DATA: 'clinicalData',
 };
 
 const COUNTRY_FLAG: Record<string, string> = {
@@ -353,6 +357,11 @@ export default function PatientDetailPage() {
               />
             </ContainerGate>
           </>
+        )}
+        {shownTab === 'itinerary' && (
+          <ContainerGate resource="patient_services">
+            <PatientItineraryTab patient={patient} />
+          </ContainerGate>
         )}
         {shownTab === 'history' && (
           <PatientStatusHistoryCard patientId={patient.id} refreshKey={patient.status} />

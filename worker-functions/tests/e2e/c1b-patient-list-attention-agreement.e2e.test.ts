@@ -15,6 +15,9 @@ import { Pool } from 'pg';
 import { PatientQueryRepository } from '@modules/case/infrastructure/PatientQueryRepository';
 import { computePatientCompleteness, ACTIVATABLE_STATUSES, patientNeedsAttentionSql } from '@modules/case/domain/PatientCompleteness';
 import type { AdminPatientsListParams } from '@modules/case/interfaces/validators/adminPatientsListSchema';
+import { semearFaixas } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'C1B-attention-%';
@@ -40,9 +43,14 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     // idade), tudo mais completo, cujo ÚNICO responsável foi DESATIVADO (nunca DELETE) — o SQL
     // e o JS têm de concordar que RESPONSIBLE está faltando (linha ainda existe, `active=false`).
     { tag: 'C1B-attention-menor-resp-inativo',    status: 'ADMISSION',         completo: true, respInativo: true },
+    // Pedido do Javier: TUDO completo, menos o diagnóstico CID-11 — só DIAGNOSIS acusa (ADMISSION sem NENHUMA linha).
+    { tag: 'C1B-attention-sem-diagnostico',       status: 'ADMISSION',         completo: true, diagnostico: 'nenhum' },
+    // ...e a variante em que a linha EXISTE mas está INATIVA: não conta (o SQL tem `AND pdx.active`, o JS recebe a contagem de ativos).
+    { tag: 'C1B-attention-diagnostico-inativo',   status: 'ADMISSION',         completo: true, diagnostico: 'inativo' },
   ];
 
   const limpar = async (): Promise<void> => {
+    await pool.query(`DELETE FROM patient_diagnoses WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [TAG]);
     await pool.query(`DELETE FROM patient_contracted_services WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [TAG]);
     await pool.query('DELETE FROM patients WHERE clickup_task_id LIKE $1', [TAG]);
   };
@@ -74,11 +82,16 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         }
         // Migration 330: "completo" exige o serviço APONTANDO para o endereço; o cenário
         // `servicoSemEndereco` deixa address_id NULL de propósito.
-        await pool.query(
-          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE).
-          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2,'[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
+        const sid = (await pool.query<{ id: string }>(
+          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE) — spec 056: faixa em patient_itinerary_slot.
+          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2) RETURNING id`,
           [id, 'servicoSemEndereco' in c && c.servicoSemEndereco ? null : addr],
-        );
+        )).rows[0].id;
+        await semearFaixas(pool, sid, [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }], 'c1b-e2e');
+        // Diagnóstico CID-11 (pedido do Javier): "completo" em ADMISSION também exige ≥1 ATIVO.
+        const dx = 'diagnostico' in c ? c.diagnostico : 'ativo';
+        if (dx === 'ativo') await seedPatientDiagnosis(pool, id);
+        if (dx === 'inativo') await seedPatientDiagnosis(pool, id, { active: false });
       }
     }
     // CR-3 (achado do gate revisao-pr): o controle positivo do teste 'g' precisa de uma linha
@@ -108,10 +121,13 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     const rows = await minhas();
     expect(rows).toHaveLength(cenarios.length);
     const incompletos = rows.filter((r) => r.attentionReasons.includes('INCOMPLETE_ADMISSION'));
-    // 4 em ADMISSION/PENDING_ADMISSION e incompletos (2 sem nada + 1 só com serviço sem endereço,
-    // migration 330 + 1 menor com o único responsável desativado, task 1.7); o ACTIVE incompleto
-    // NÃO conta (já foi aprovado); o completo não aparece.
-    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true, true, true]);
+    // 6 em ADMISSION/PENDING_ADMISSION e incompletos (2 sem nada + 1 só com serviço sem endereço,
+    // migration 330 + 1 menor com o único responsável desativado, task 1.7 + 2 só sem diagnóstico
+    // ATIVO: nenhum e só-inativo); o ACTIVE incompleto NÃO conta (já foi aprovado); o completo não aparece.
+    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true, true, true, true, true]);
+    for (const tag of ['C1B-attention-sem-diagnostico', 'C1B-attention-diagnostico-inativo']) {
+      expect(rows.find((r) => r.clickupTaskId === tag)?.attentionReasons).toContain('INCOMPLETE_ADMISSION');
+    }
     const semDomicilio = rows.find((r) => r.clickupTaskId === 'C1B-attention-servico-sem-domicilio');
     expect(semDomicilio?.attentionReasons).toContain('INCOMPLETE_ADMISSION');
     const respInativo = rows.find((r) => r.clickupTaskId === 'C1B-attention-menor-resp-inativo');
@@ -120,7 +136,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     const completo = rows.find((r) => r.clickupTaskId === 'C1B-attention-completo-admission');
     expect(completo?.needsAttention).toBe(false);
     expect((ACTIVATABLE_STATUSES as readonly string[]).includes('ADMISSION')).toBe(true);
-    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, insuranceInformed: null, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0 }).missing.length).toBeGreaterThan(0);
+    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, insuranceInformed: null, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0, status: 'ADMISSION', activeDiagnosisCount: 0 }).missing.length).toBeGreaterThan(0);
   });
 
   it('b. filtrar por `needs_attention=true` devolve EXATAMENTE quem tem o badge — e nunca quem não tem', async () => {
@@ -171,17 +187,19 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     // é isto que impede as duas implementações da regra de divergirem sem ninguém ver.
     const { rows } = await pool.query<Record<string, never>>(`
       SELECT p.id, p.status, p.needs_attention, p.birth_date, p.has_consent,
-             COALESCE(p.insurance_informed, p.health_insurance_name) AS ins,
+             p.insurance_informed AS ins,
              (SELECT COUNT(*)::int FROM patient_addresses pa WHERE pa.patient_id = p.id AND pa.archived_at IS NULL) AS addrs,
              (EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = p.id AND pr.active))::int AS resp,
              (EXISTS (SELECT 1 FROM patient_contracted_services s WHERE s.patient_id = p.id AND s.active))::int AS svc,
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                         LEFT JOIN patient_addresses sa ON sa.id = s.address_id AND sa.archived_at IS NULL
                        WHERE s.patient_id = p.id AND s.active AND sa.id IS NULL))::int AS svc_noaddr,
-             -- Decisão do Gabriel 07/09: serviço ativo sem horário (NULL ou array vazio).
+             -- Decisão do Gabriel 07/09: serviço ativo sem horário — spec 056: nenhuma faixa vigente (mesmo fragmento de produção).
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                        WHERE s.patient_id = p.id AND s.active
-                         AND (s.schedule IS NULL OR jsonb_array_length(s.schedule) = 0)))::int AS svc_nosched,
+                         AND ${serviceWithoutScheduleSql('s')}))::int AS svc_nosched,
+             -- Pedido do Javier: nº de diagnósticos CID-11 ATIVOS (qualquer source) — só a contagem.
+             (SELECT COUNT(*)::int FROM patient_diagnoses pdx WHERE pdx.patient_id = p.id AND pdx.active) AS dx,
              ${patientNeedsAttentionSql('p')} AS sql_flag
         FROM patients p
        WHERE p.deleted_at IS NULL`);
@@ -198,6 +216,8 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         activeContractedServiceCount: r.svc as number,
         activeContractedServicesWithoutAddressCount: r.svc_noaddr as number,
         activeContractedServicesWithoutScheduleCount: r.svc_nosched as number,
+        status: (r.status as string | null) ?? null,
+        activeDiagnosisCount: r.dx as number,
         now,
       });
       const incompleta = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(r.status as string | null) && missing.length > 0;

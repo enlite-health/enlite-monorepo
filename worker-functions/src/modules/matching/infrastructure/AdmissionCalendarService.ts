@@ -29,6 +29,7 @@ export const AR_HOLIDAYS_2026: ReadonlySet<string> = new Set([
 const BUSINESS_START_HOUR = 9;
 const BUSINESS_END_HOUR = 18;
 const DEFAULT_SLOT_MINUTES = 45;
+const DEFAULT_STEP_MINUTES = 60;
 const DEFAULT_MIN_LEAD_MINUTES = 120; // now + 2h
 const DEFAULT_HORIZON_BUSINESS_DAYS = 10;
 
@@ -86,6 +87,8 @@ export interface ComputeFreeSlotsParams {
   /** Janela de expediente local (default 09–18). */
   businessHours?: BusinessHoursConfig;
   slotMinutes?: number;
+  /** Passo da grade de inícios, em minutos (default 60 = hora cheia, como a admissão pública). */
+  stepMinutes?: number;
   minLeadMinutes?: number;
   horizonBusinessDays?: number;
 }
@@ -169,6 +172,7 @@ export function computeFreeSlots(params: ComputeFreeSlotsParams): FreeSlot[] {
     holidays = AR_HOLIDAYS_2026,
     businessHours = { startHour: BUSINESS_START_HOUR, endHour: BUSINESS_END_HOUR },
     slotMinutes = DEFAULT_SLOT_MINUTES,
+    stepMinutes = DEFAULT_STEP_MINUTES,
     minLeadMinutes = DEFAULT_MIN_LEAD_MINUTES,
     horizonBusinessDays = DEFAULT_HORIZON_BUSINESS_DAYS,
   } = params;
@@ -199,8 +203,10 @@ export function computeFreeSlots(params: ComputeFreeSlotsParams): FreeSlot[] {
   while (businessDaysSeen < horizonBusinessDays) {
     if (isBusinessDay(cursor)) {
       businessDaysSeen += 1;
-      for (let hour = startHour; hour < endHour; hour += 1) {
-        const slotStart = cursor.set({ hour, minute: 0, second: 0, millisecond: 0 });
+      for (let minuteOfDay = startHour * 60; minuteOfDay < endHour * 60; minuteOfDay += stepMinutes) {
+        const hour = Math.floor(minuteOfDay / 60);
+        const minute = minuteOfDay % 60;
+        const slotStart = cursor.set({ hour, minute, second: 0, millisecond: 0 });
         const slotEnd = slotStart.plus({ minutes: slotMinutes });
         // Slot precisa terminar dentro do expediente.
         if (slotEnd.hour > endHour || (slotEnd.hour === endHour && slotEnd.minute > 0)) {

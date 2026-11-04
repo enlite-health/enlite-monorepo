@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Input } from '@presentation/components/atoms/Input';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import type { FunnelRowFilters, RegistrationFilter } from './funnelRowFilter';
 
 interface VacancyFunnelFiltersProps {
@@ -29,12 +29,12 @@ export function VacancyFunnelFilters({
         />
       </div>
       <div className="w-full sm:w-52">
-        <Select
+        <Combobox
           inputSize="dense"
           data-testid="funnel-filter-registration"
           aria-label={t(`${prefix}.filters.registrationLabel`)}
           value={filters.registration}
-          onValueChange={(value) =>
+          onChange={(value) =>
             onChange({ ...filters, registration: value as RegistrationFilter })
           }
           options={[

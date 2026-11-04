@@ -301,7 +301,7 @@ export function RegisterPage() {
                           partBeforeTerms,
                           <a
                             key="terms"
-                            href="https://enlite.health/es/politica-de-privacidad-enlite-health-solutions/"
+                            href="https://enlite.health/es/politica-de-privacidad/"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="underline text-primary"

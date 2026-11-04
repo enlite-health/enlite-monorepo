@@ -5,6 +5,7 @@ import { logger } from '@shared/logging';
 import { ApplicationFunnelStage } from '../domain/WorkerJobApplication';
 import { WorkerEngagement } from '../domain/WorkerEngagement';
 import { deriveKanbanColumn } from '../domain/kanbanColumn';
+import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { wjaSupersededByBlockedSql } from './BlockedApplicationQueryRepository';
 
 // =====================================================
@@ -197,6 +198,8 @@ export class WorkerApplicationRepository {
        WHERE wja.worker_id = $1
          AND wja.application_funnel_stage NOT IN ('REJECTED', 'NOT_QUALIFIED')
          AND jp.deleted_at IS NULL
+         -- spec 084 (P4/F9): vaga dada de baja some das vagas que o prestador vê (inclusive pela Luz)
+         AND jp.status != 'DE_BAJA'
        ORDER BY jp.created_at DESC`,
       [workerId],
     );
@@ -228,6 +231,8 @@ export class WorkerApplicationRepository {
          wja.application_funnel_stage AS funnel_stage,
          wja.source,
          wja.messaged_at,
+         -- Spec 067: apto só nas linhas de etapa de Completado (NULL nas outras → nenhuma chamada ao dono).
+         ${aptoWhenCompletedSql('wja.application_funnel_stage', 'wja.worker_id')} AS worker_apto,
          jp.case_number,
          jp.vacancy_number,
          jp.status AS vacancy_status,
@@ -254,6 +259,7 @@ export class WorkerApplicationRepository {
          LIMIT 1
        ) e ON true
        WHERE wja.worker_id = $1
+         AND (wja.job_posting_id IS NULL OR jp.deleted_at IS NULL)
          -- M6b (D474): o convite do sistema some quando o par tem tentativa bloqueada ativa;
          -- o card que a ficha mostra é o bloqueado (BlockedApplicationQueryRepository.listByWorker).
          AND NOT ${wjaSupersededByBlockedSql('wja', true)}
@@ -272,6 +278,7 @@ export class WorkerApplicationRepository {
         (r.funnel_stage as string | null) ?? null,
         (r.source as string | null) ?? null,
         (r.messaged_at as string | Date | null) ?? null,
+        (r.worker_apto as boolean | null) ?? null,
       ),
       resultado: (r.resultado as string | null) ?? null,
       interviewDate: (r.interview_date as string | null) ?? null,

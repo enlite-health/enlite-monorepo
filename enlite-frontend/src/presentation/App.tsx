@@ -19,6 +19,8 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
 import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
+import { PedidosIaPage } from './pages/admin/pedidos-ia';
+import { CustosPage } from './pages/admin/custos';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
@@ -36,11 +38,16 @@ import { AdminMapPage } from './pages/admin/AdminMapPage/AdminMapPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
+import InterviewHostsPage from './pages/admin/InterviewHostsPage';
+import AdminEnquadresPage from './pages/admin/AdminEnquadresPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
+import { AiPromptsPage } from './pages/admin/AiPromptsPage/AiPromptsPage';
 import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
 import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
 import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
+import InsuranceProvidersPage from './pages/admin/InsuranceProvidersPage';
+import InsuranceProviderDetailPage from './pages/admin/InsuranceProviderDetailPage/InsuranceProviderDetailPage';
 import TherapeuticCatalogPage from './pages/admin/TherapeuticCatalogPage/TherapeuticCatalogPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
 import { RedirectKeepingSearch } from './components/shared/RedirectKeepingSearch';
@@ -266,15 +273,25 @@ export function App() {
           {/* `/admin/mapa` (main, 05/09) não tem chave `screen:*` no manifest — fica sem FeatureRouteGate, como tags/dedup. */}
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="entrevistadores" element={<InterviewHostsPage />} />
+          {/* Spec 076: lista global de enquadres. Sem chave `screen:*` nem FeatureRouteGate (FR-03): a trava é a das duas células, na página. */}
+          <Route path="enquadres" element={<AdminEnquadresPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
+          <Route path="prompts-ia" element={<AiPromptsPage />} />
           <Route path="plantillas" element={<TemplateCatalogPage />} />
           <Route path="plantillas/registrar" element={<TemplateDraftsPage />} />
           {/* Depois de "registrar", senão o literal seria capturado pelo :slug. */}
           <Route path="plantillas/:slug" element={<TemplateCatalogDetailPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
+          {/* Spec 058: cadastro da obra social (lista + página de cartões). Sem chave `screen:*`: gateada pelas células próprias
+              (`catalog_insurance_providers:*` etc.), não por país (a obra social atende AR e BR). */}
+          <Route path="obras-sociales" element={<InsuranceProvidersPage />} />
+          <Route path="obras-sociales/:code" element={<InsuranceProviderDetailPage />} />
           {/* Spec 017: uma TELA por catálogo do projeto terapêutico (célula própria cada); sem `screen:*` no manifest, como patient-chat-roles. */}
           <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
+          <Route path="catalogos/motivos-de-salida" element={<TherapeuticCatalogPage kind="service-exit-reasons" />} />
+          <Route path="catalogos/guardias" element={<TherapeuticCatalogPage kind="service-shift-templates" />} />
           <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           {/* Perfil da conta logada (Identidade · Tactiq · Idioma · Accesos · Sair). Sem chave `screen:*`: é a conta do
@@ -284,6 +301,10 @@ export function App() {
               (`?tactiq=linked|error`) tem de sobreviver para o banner do retorno aparecer. */}
           <Route path="mi-cuenta/tactiq" element={<RedirectKeepingSearch to="/admin/mi-cuenta" />} />
           <Route path="dedup" element={<DedupCenterPage />} />
+          {/* Spec 078 (M3b-1): pedidos do Sol. Sem chave `screen:*` nem FeatureRouteGate: a trava é a célula `pedidos_ia:read`, na página. */}
+          <Route path="pedidos-ia" element={<PedidosIaPage />} />
+          {/* Spec 082 (painel de custos): só pela URL, SEM item de menu (DF-2). A trava é a célula `platform_costs:read`, na página e na API. */}
+          <Route path="custos" element={<CustosPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />
           <Route path="access/groups/:id" element={<FeatureRouteGate feature="screen:access-permissions"><GroupDetailPage /></FeatureRouteGate>} />

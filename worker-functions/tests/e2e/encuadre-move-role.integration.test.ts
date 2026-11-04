@@ -14,6 +14,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -38,13 +39,15 @@ describe('PUT /encuadres/:id/move — captura de papel (SELECTED) @integration',
       role: 'admin',
     });
 
-    // Worker REGISTERED (elegível a mover — assertWorkerCanApply exige registro completo).
+    // Worker REGISTERED e APTO (elegível a mover).
     const w = await pool.query<{ id: string }>(
       `INSERT INTO workers (auth_uid, email, status, country, timezone)
        VALUES ($1, $2, 'REGISTERED', 'AR', 'America/Argentina/Buenos_Aires') RETURNING id`,
       [`role-uid-${SUFFIX}`, `role-${SUFFIX}@e2e.local`],
     );
     workerId = w.rows[0].id;
+    // Spec 067 FR-24: SELECTED exige prestador APTO (cadastro completo + documentos validados).
+    await completeWorkerProfile(pool, workerId, 'validated');
 
     const jp = await pool.query<{ id: string }>(
       `INSERT INTO job_postings (title, status, is_draft, country, providers_needed)
@@ -65,6 +68,7 @@ describe('PUT /encuadres/:id/move — captura de papel (SELECTED) @integration',
     await pool.query(`DELETE FROM encuadres WHERE job_posting_id = $1`, [jobPostingId]);
     await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [jobPostingId]);
     await pool.query(`DELETE FROM job_postings WHERE id = $1`, [jobPostingId]);
+    await cleanWorkerProfile(pool, [workerId]);
     await pool.query(`DELETE FROM workers WHERE id = $1`, [workerId]);
     await pool.end();
   });

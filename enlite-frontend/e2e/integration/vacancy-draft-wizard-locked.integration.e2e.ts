@@ -8,14 +8,13 @@
  *
  * Mocks (ÚNICOS, mesmo molde de `full-create-vacancy.integration.e2e.ts` — "Custo de API = zero"
  * e "Teste nunca toca canal real", CLAUDE.md): Firebase Identity Toolkit, `/api/admin/auth/profile`,
- * `/generate-ai-content` (Gemini custaria), `/publish-talentum` (canal real proibido),
- * `/meet-links/lookup` (Google Calendar). GET/PUT de vacante, serviço contratado e o foguete são
+ * `/generate-ai-content` (Gemini custaria), `/publish-talentum` (canal real proibido). GET/PUT de vacante, serviço contratado e o foguete são
  * o backend REAL — nenhum mock neles, exceto a sabotagem do teste 5 (`page.route` reintroduzindo
  * `schedule` travado no body), que é o único ponto onde a doc pede isso.
  *
  * Fixture: 1 paciente + endereço, 1 serviço contratado ativado pelo foguete (mesmo caminho de
  * `vacancy-locked-fields.integration.e2e.ts`, fase 1) — a vaga nasce `is_draft=true` com
- * `contracted_service_id` setado, então `locked_fields` do GET traz os 8 nomes.
+ * `contracted_service_id` setado, então `locked_fields` do GET traz os 13 nomes (057/D523).
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
@@ -157,15 +156,6 @@ async function installInterceptors(page: Page): Promise<void> {
       return;
     }
 
-    if (url.includes('/meet-links/lookup')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { normalized: 'https://meet.google.com/abc-defg-hij', datetime: '2026-06-01T15:00:00-03:00' } }),
-      });
-      return;
-    }
-
     const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
     await route.continue({ headers });
   };
@@ -212,16 +202,15 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     expect(addressId, 'insertTestPatient não devolveu addressId').toBeTruthy();
 
     // Serviço contratado pela API real + foguete real (mesmo endpoint que "Lançar" chama) — a
-    // vaga nasce com contracted_service_id setado, então locked_fields traz os 8 nomes (F3).
+    // vaga nasce com contracted_service_id setado, então locked_fields traz os 13 nomes (057/D523) (F3).
     const svcRes = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services`, {
       headers: AUTH_HEADERS,
       data: {
         serviceCode: 'AT',
         providersNeeded: 1,
-        weeklyHours: 20,
         careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
-        schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+        schedule: [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }],
       },
     });
     expect(svcRes.ok(), `POST contracted-services falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);
@@ -263,7 +252,9 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     const lockedFields: string[] = getData.locked_fields;
     const updatedAtBefore: string = getData.updated_at;
     expect(new Set(lockedFields)).toEqual(
-      new Set(['case_number', 'patient_id', 'patient_address_id', 'contracted_service_id', 'age_range_min', 'age_range_max', 'schedule', 'providers_needed']),
+      new Set(['case_number', 'patient_id', 'patient_address_id', 'contracted_service_id', 'age_range_min', 'age_range_max', 'schedule', 'providers_needed',
+        // 057/D523: 13 — os 5 campos de recrutamento vindos do serviço.
+        'required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day']),
     );
 
     // Os 4 grupos com campo de FORM (patient_address_id, age_range_*, schedule, providers_needed)
@@ -295,11 +286,6 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await page.keyboard.press('Backspace');
     await page.keyboard.type('$5000');
     await expect(salaryInput).toHaveValue('$5000');
-
-    const meetInput = page.getByTestId('meet-link-0');
-    await meetInput.click();
-    await page.keyboard.type('meet.google.com/abc-defg-hij');
-    await meetInput.blur();
 
     const saveBtn = page.getByTestId('create-vacancy-save-btn');
     await expect(saveBtn).toBeEnabled({ timeout: 10_000 });

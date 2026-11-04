@@ -17,6 +17,7 @@
  */
 
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // ── Mock data ────────────────────────────────────────────────────────────────
 
@@ -227,9 +228,9 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     // Removed Clientes filter
     await expect(page.getByText(/^Clientes$/)).toHaveCount(0);
 
-    // Filter bar has at least 1 select (Estado) — Clientes e Prioridad se foram
-    // (additional selects added by advanced filters: Tipo, Provincia, Localidad, Sexo, De, Hasta)
-    const selectCount = await filterBar(page).locator('select').count();
+    // Filter bar has at least 1 combobox (Estado) — Clientes e Prioridad se foram
+    // (additional comboboxes added by advanced filters: Tipo, Provincia, Localidad, Sexo, Días)
+    const selectCount = await filterBar(page).getByRole('combobox').count();
     expect(selectCount).toBeGreaterThanOrEqual(1);
 
     // Estado fica na barra; Prioridad não (A4)
@@ -243,22 +244,23 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     await page.goto('/admin/vacancies');
     await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
-    const statusSelect = filterBar(page).locator('select').nth(0);
-    const values = await statusSelect.locator('option').evaluateAll(
-      (opts) => opts.map((o) => (o as HTMLOptionElement).value).filter((v) => v.length > 0),
-    );
-    expect(values.sort()).toEqual(
+    // O painel só existe aberto: abre o gatilho do Estado e lê os RÓTULOS que o usuário vê (o valor não está no DOM).
+    const statusSelect = filterBar(page).getByRole('combobox').nth(0);
+    await statusSelect.click();
+    const labels = await statusSelect.locator('xpath=..').getByRole('option').allTextContents();
+    expect(labels.map((l) => l.trim()).sort()).toEqual(
       [
-        'ACTIVE',
-        'CLOSED',
-        'ON_HOLD',
-        'PENDING_ACTIVATION',
-        'RAPID_RESPONSE',
-        'SEARCHING',
-        'SEARCHING_REPLACEMENT',
-        'SUSPENDED',
+        'Activo', // ACTIVE
+        'Cerrado', // CLOSED
+        'En Espera', // ON_HOLD
+        'Esperando Activación', // PENDING_ACTIVATION
+        'Respuesta Rápida', // RAPID_RESPONSE
+        'Buscando AT', // SEARCHING
+        'Buscando Sustituto', // SEARCHING_REPLACEMENT
+        'Suspendido', // SUSPENDED
       ].sort(),
     );
+    await page.keyboard.press('Escape');
   });
 
   test('Status filter forwards canonical value to /api/admin/vacancies query', async ({ page }) => {
@@ -267,12 +269,12 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     await page.goto('/admin/vacancies');
     await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
-    const statusSelect = filterBar(page).locator('select').nth(0);
+    const statusSelect = filterBar(page).getByRole('combobox').nth(0);
 
     const reqWait = page.waitForRequest((req) =>
       req.url().includes('/api/admin/vacancies') && req.url().includes('status=ON_HOLD'),
     );
-    await statusSelect.selectOption('ON_HOLD');
+    await escolherNoCombo(page, statusSelect, 'En Espera'); // ON_HOLD = En Espera
     const req = await reqWait;
     expect(req.url()).toContain('status=ON_HOLD');
   });

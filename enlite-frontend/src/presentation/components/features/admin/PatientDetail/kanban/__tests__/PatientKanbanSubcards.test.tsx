@@ -1,0 +1,267 @@
+/**
+ * PatientKanbanSubcards.test.tsx — Fase 8 (change cadeia-paciente-vacante-itinerario), DX-8.6/8.7/8.8.
+ *
+ * O subcard é a linha `nome · cobertas/horário · ícone` dentro do card do Kanban de
+ * pacientes. Invariante 3 ("o subcard só MOSTRA"): nenhum clique aqui pode disparar
+ * `updatePatientStatus`/`activateRecruitment` — o foguete só NAVEGA para a ficha (DX-8.8).
+ */
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import esJson from '@infrastructure/i18n/locales/es.json';
+import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
+import { PatientKanbanSubcards } from '../PatientKanbanSubcards';
+import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
+
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
+beforeAll(async () => {
+  await i18n.use(initReactI18next).init({
+    lng: 'es',
+    fallbackLng: 'es',
+    resources: { es: { translation: esJson }, 'pt-BR': { translation: ptBRJson } },
+    interpolation: { escapeValue: false },
+    initImmediate: false,
+  });
+});
+
+function service(overrides: Partial<PatientKanbanServiceSummary> = {}): PatientKanbanServiceSummary {
+  return {
+    contractedServiceId: 's-1',
+    serviceCode: 'AT',
+    scheduleHours: 20,
+    reserve: { count: 10, minimum: 10 },
+    cobertas: 4,
+    liveVacancyId: null,
+    ...overrides,
+  };
+}
+
+function renderSubcards(services: PatientKanbanServiceSummary[] | undefined, patientId = 'p-1') {
+  return render(
+    <MemoryRouter>
+      <PatientKanbanSubcards patientId={patientId} services={services} />
+    </MemoryRouter>,
+  );
+}
+
+describe('PatientKanbanSubcards (es)', () => {
+  beforeAll(() => { i18n.changeLanguage('es'); });
+
+  it('sem serviços (undefined) → nada no DOM', () => {
+    const { container } = renderSubcards(undefined);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('sem serviços ([]) → nada no DOM', () => {
+    const { container } = renderSubcards([]);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('2 serviços → 2 linhas com data-service-id próprio', () => {
+    renderSubcards([
+      service({ contractedServiceId: 's-1', serviceCode: 'AT' }),
+      service({ contractedServiceId: 's-2', serviceCode: 'NURSE' }),
+    ]);
+    const rows = screen.getAllByTestId('patient-kanban-subcard');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveAttribute('data-service-id', 's-1');
+    expect(rows[1]).toHaveAttribute('data-service-id', 's-2');
+  });
+
+  it('mostra 20/40 lendo scheduleHours', () => {
+    renderSubcards([service({ cobertas: 20, scheduleHours: 40 })]);
+    expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('20/40');
+  });
+
+  it('serviço sem horário → 4/0 (nunca traço)', () => {
+    renderSubcards([service({ cobertas: 4, scheduleHours: 0 })]);
+    expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/0');
+  });
+
+  it('o nome do serviço vem de serviceTypes.<code> (a mesma chave da ficha)', () => {
+    renderSubcards([service({ serviceCode: 'AT' })]);
+    expect(screen.getByTestId('patient-kanban-subcard')).toHaveTextContent('Acompañante Terapéutico');
+  });
+
+  it('sem liveVacancyId → foguete; clique navega para a ficha e para a propagação (DX-8.8, não dispara ação)', () => {
+    const onCardClick = vi.fn();
+    render(
+      <MemoryRouter>
+        <div onClick={onCardClick}>
+          <PatientKanbanSubcards patientId="p-42" services={[service({ liveVacancyId: null })]} />
+        </div>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByTestId('patient-kanban-subcard-vacancy')).toBeNull();
+    const rocket = screen.getByTestId('patient-kanban-subcard-rocket');
+    rocket.click();
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/patients/p-42');
+    expect(onCardClick).not.toHaveBeenCalled();
+  });
+
+  it('com liveVacancyId → link "ver vacante" com href, sem foguete', () => {
+    renderSubcards([service({ liveVacancyId: 'v-9' })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
+    expect(screen.getByTestId('patient-kanban-subcard-vacancy')).toHaveAttribute(
+      'href',
+      '/admin/vacancies/v-9',
+    );
+  });
+
+  it('o link "ver vacante" tem aria-label traduzido (nunca a chave crua)', () => {
+    renderSubcards([service({ liveVacancyId: 'v-9' })]);
+    const label = screen.getByTestId('patient-kanban-subcard-vacancy').getAttribute('aria-label') ?? '';
+    expect(label).toMatch(/^Ver vacante de /);
+    expect(label).not.toContain('viewVacancyAria');
+  });
+
+  it('a linha do par tem role="group" (G2, achado 10 — aria-label num div sem role é ignorado pelo AT)', () => {
+    renderSubcards([service()]);
+    expect(screen.getByTestId('patient-kanban-subcard')).toHaveAttribute('role', 'group');
+  });
+
+  it('nenhuma cor literal (hex/rgba) no DOM renderizado', () => {
+    const { container } = renderSubcards([service({ liveVacancyId: 'v-9' }), service({ contractedServiceId: 's-2', liveVacancyId: null })]);
+    expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+  });
+
+  describe('DX-13.14 — sinal de dia sem cobertura', () => {
+    it('uncoveredDays: 2 → "subcard-alerta-dia-descoberto" 1 vez, com o aria-label plural', () => {
+      renderSubcards([service({ uncoveredDays: 2 })]);
+      const alerts = screen.getAllByTestId('subcard-alerta-dia-descoberto');
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toHaveAttribute('aria-label', '2 días sin cobertura');
+    });
+
+    it('uncoveredDays: 1 → aria-label singular', () => {
+      renderSubcards([service({ uncoveredDays: 1 })]);
+      expect(screen.getByTestId('subcard-alerta-dia-descoberto')).toHaveAttribute('aria-label', '1 día sin cobertura');
+    });
+
+    it('uncoveredDays: 0 → nenhum sinal', () => {
+      renderSubcards([service({ uncoveredDays: 0 })]);
+      expect(screen.queryByTestId('subcard-alerta-dia-descoberto')).toBeNull();
+    });
+
+    it('uncoveredDays ausente → nenhum sinal', () => {
+      renderSubcards([service()]);
+      expect(screen.queryByTestId('subcard-alerta-dia-descoberto')).toBeNull();
+    });
+
+    it('clicar no ícone não navega nem chama nada (invariante 3: o subcard só MOSTRA)', () => {
+      mockNavigate.mockClear();
+      const onCardClick = vi.fn();
+      render(
+        <MemoryRouter>
+          <div onClick={onCardClick}>
+            <PatientKanbanSubcards patientId="p-1" services={[service({ uncoveredDays: 2 })]} />
+          </div>
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByTestId('subcard-alerta-dia-descoberto'));
+      expect(mockNavigate).not.toHaveBeenCalled();
+      // o clique borbulha normalmente (nenhum stopPropagation no ícone) — só não dispara ação própria.
+      expect(onCardClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('o par cobertas/horário é o MESMO com e sem o sinal', () => {
+      renderSubcards([service({ uncoveredDays: 0, cobertas: 4, scheduleHours: 20 })]);
+      expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
+      cleanup();
+      renderSubcards([service({ uncoveredDays: 3, cobertas: 4, scheduleHours: 20 })]);
+      expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
+    });
+  });
+});
+
+describe('PatientKanbanSubcards — selo de reserva (spec 056 T6.3)', () => {
+  it('reserva 7 → alerta', () => {
+    renderSubcards([service({ reserve: { count: 7, minimum: 10 } })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('Reserva 7/10');
+    expect(selo).toHaveAttribute('data-alert', 'true');
+  });
+
+  it('reserva 10 → sem alerta', () => {
+    renderSubcards([service({ reserve: { count: 10, minimum: 10 } })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('Reserva 10/10');
+    expect(selo).toHaveAttribute('data-alert', 'false');
+  });
+
+  it('null → sin vacante (nunca 0/10), sem alerta', () => {
+    renderSubcards([service({ reserve: null })]);
+    const selo = screen.getByTestId('subcard-reserva-s-1');
+    expect(selo).toHaveTextContent('sin vacante');
+    expect(selo).not.toHaveTextContent('0/10');
+    expect(selo).toHaveAttribute('data-alert', 'false');
+  });
+});
+
+describe('PatientKanbanSubcards (pt-BR)', () => {
+  beforeAll(() => { i18n.changeLanguage('pt-BR'); });
+
+  it('par e nome do serviço em pt-BR', () => {
+    renderSubcards([service({ serviceCode: 'AT', cobertas: 4, scheduleHours: 20 })]);
+    expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
+    expect(screen.getByTestId('patient-kanban-subcard')).toHaveTextContent('Acompanhante Terapêutico');
+  });
+});
+
+// ── G2 (achado 1) — o foguete segue a MESMA regra da ficha (ServicosContratadosCard.tsx:74-78):
+// só aparece com `patient_services:update` E `vacancy:update` JUNTAS. Mesmo molde de
+// `comEnforcement` de PatientSupportNetworkEditDrawer.test.tsx (PR-8b rodada B). ──────────────
+function comEnforcement(permissions: string[]) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on',
+    } as AuthzContract,
+  });
+}
+
+describe('PatientKanbanSubcards — gate do foguete (patient_services:update + vacancy:update)', () => {
+  beforeAll(() => { i18n.changeLanguage('es'); });
+  // N2 (gate fecho): `cleanup()` (unmount) ANTES do `setState` — o `afterEach` global de
+  // `src/test/setup.ts` roda DEPOIS deste (outermost por último), então sem este `cleanup()`
+  // aqui o `setState` disparava re-render num componente já "do teste anterior" ainda montado
+  // → warning `not wrapped in act(...)`.
+  afterEach(() => {
+    cleanup();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('com as duas células → foguete aparece', () => {
+    comEnforcement(['patient_services:update', 'vacancy:update']);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.getByTestId('patient-kanban-subcard-rocket')).toBeInTheDocument();
+  });
+
+  it('sem as células (enforcement on, permissions vazio) → sem foguete, só nome · par', () => {
+    comEnforcement([]);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
+    expect(screen.getByTestId('patient-kanban-subcard-pair')).toBeInTheDocument();
+  });
+
+  it('só uma das duas células (patient_services:update sem vacancy:update) → sem foguete', () => {
+    comEnforcement(['patient_services:update']);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
+  });
+
+  it('só a outra célula (vacancy:update sem patient_services:update) → sem foguete', () => {
+    comEnforcement(['vacancy:update']);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
+  });
+});

@@ -233,7 +233,6 @@ describe('GET /api/admin/vacancies/:id — diagnoses[] sob célula + bulkhead + 
             controllerStub('vacancyCrud') as never,
             controllerStub('vacancyTalentum') as never,
             controllerStub('vacancyMatch') as never,
-            controllerStub('vacancyMeetLinks') as never,
             controllerStub('vacancySocialLinks') as never,
             controllerStub('funnel') as never,
             controllerStub('dashboard') as never,

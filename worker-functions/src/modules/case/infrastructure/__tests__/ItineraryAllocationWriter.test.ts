@@ -1,0 +1,254 @@
+/**
+ * ItineraryAllocationWriter — DX-11.7 (P12). Recebe o `client` já aberto (a transação é de quem
+ * chama) — o dublê aqui é só o `client`, sem `DatabaseConnection`/`inPatientTransaction` (molde
+ * `ServiceTeamMarkWriter.test.ts`).
+ */
+import { ItineraryAllocationWriter } from '../ItineraryAllocationWriter';
+
+function clientStub(result: { rows: unknown[]; rowCount: number }) {
+  const query = jest.fn().mockResolvedValue(result);
+  return { query };
+}
+
+describe('ItineraryAllocationWriter', () => {
+  let writer: ItineraryAllocationWriter;
+
+  beforeEach(() => {
+    writer = new ItineraryAllocationWriter();
+  });
+
+  it('findSlotForAllocation: 1 query, junção slot→serviço→paciente pelos 3 ids', async () => {
+    const client = clientStub({ rows: [{ id: 'slot-1', vigente: true, address_id: 'addr-1' }], rowCount: 1 });
+
+    const result = await writer.findSlotForAllocation(client as never, 'p-1', 's-1', 'slot-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/FROM patient_itinerary_slot s/);
+    expect(String(sql)).toMatch(/JOIN patient_contracted_services pcs ON pcs\.id = s\.contracted_service_id/);
+    expect(String(sql)).toMatch(/WHERE pcs\.patient_id = \$1 AND s\.contracted_service_id = \$2 AND s\.id = \$3/);
+    expect(String(sql)).toContain('s.valid @> CURRENT_DATE');
+    expect(params).toEqual(['p-1', 's-1', 'slot-1']);
+    expect(result).toEqual({ slotId: 'slot-1', vigente: true, addressId: 'addr-1' });
+  });
+
+  it('findSlotForAllocation: rowCount 0 → null', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    const result = await writer.findSlotForAllocation(client as never, 'p-1', 's-1', 'slot-x');
+
+    expect(result).toBeNull();
+  });
+
+  it('findApplicationId: 1 query, SEM filtro de etapa do funil', async () => {
+    const client = clientStub({ rows: [{ id: 'wja-1' }], rowCount: 1 });
+
+    const result = await writer.findApplicationId(client as never, 'w-1', 'vac-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/SELECT id FROM worker_job_applications WHERE worker_id = \$1 AND job_posting_id = \$2/);
+    expect(String(sql)).not.toMatch(/application_funnel_stage/);
+    expect(params).toEqual(['w-1', 'vac-1']);
+    expect(result).toBe('wja-1');
+  });
+
+  it('findApplicationId: nenhuma linha → null', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    const result = await writer.findApplicationId(client as never, 'w-1', 'vac-1');
+
+    expect(result).toBeNull();
+  });
+
+  it('insertAllocation: 1 query, status ACTIVE e valid_from do PARÂMETRO (nunca now()/CURRENT_DATE)', async () => {
+    const client = clientStub({ rows: [{ id: 'alloc-1', valid_from: '2026-09-28' }], rowCount: 1 });
+
+    const result = await writer.insertAllocation(client as never, {
+      slotId: 'slot-1',
+      workerId: 'w-1',
+      applicationId: 'wja-1',
+      validFrom: '2026-09-28',
+      actorUid: 'staff:u-1',
+    });
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/INSERT INTO patient_itinerary_assignment/);
+    expect(String(sql)).toMatch(/'ACTIVE'/);
+    expect(String(sql)).not.toMatch(/now\(\)|CURRENT_DATE/);
+    expect(params).toEqual(['slot-1', 'w-1', 'wja-1', '2026-09-28', 'staff:u-1']);
+    expect(result).toEqual({ id: 'alloc-1', validFrom: '2026-09-28' });
+  });
+
+  it('findAllocation: 1 query, junção slot→serviço→paciente pela alocação', async () => {
+    const client = clientStub({ rows: [{ id: 'alloc-1', status: 'ACTIVE', valid_from: '2026-09-01', valid_to: '2026-11-01', slot_id: 'sl-1', worker_id: 'w-1' }], rowCount: 1 });
+
+    const result = await writer.findAllocation(client as never, 'p-1', 's-1', 'alloc-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/FROM patient_itinerary_assignment a/);
+    expect(String(sql)).toMatch(/JOIN patient_itinerary_slot s ON s\.id = a\.slot_id/);
+    expect(String(sql)).toMatch(/JOIN patient_contracted_services pcs ON pcs\.id = s\.contracted_service_id/);
+    expect(String(sql)).toMatch(/WHERE pcs\.patient_id = \$1 AND s\.contracted_service_id = \$2 AND a\.id = \$3/);
+    expect(params).toEqual(['p-1', 's-1', 'alloc-1']);
+    expect(result).toEqual({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01', validTo: '2026-11-01', slotId: 'sl-1', workerId: 'w-1' });
+  });
+
+  it('lockWorkerAllocations (D4): 1 query FOR UPDATE nas alocações ACTIVE da pessoa no serviço, em ordem estável (sem deadlock)', async () => {
+    const client = clientStub({ rows: [{ id: 'a-1' }], rowCount: 1 });
+    await writer.lockWorkerAllocations(client as never, 's-1', 'w-1');
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/a\.status = 'ACTIVE'[\s\S]*ORDER BY a\.id[\s\S]*FOR UPDATE OF a/);
+    expect(params).toEqual(['s-1', 'w-1']);
+  });
+
+  it('listWorkerAllocations: 1 query, só ACTIVE da pessoa no serviço que valem em fromDate ou depois (valid_to nulo ou >= fromDate); ordem estável', async () => {
+    const client = clientStub({ rows: [{ id: 'a-1', slot_id: 'sl-1', valid_from: '2026-01-01', valid_to: null }, { id: 'a-2', slot_id: 'sl-2', valid_from: '2026-01-01', valid_to: '2026-12-31' }], rowCount: 2 });
+
+    const result = await writer.listWorkerAllocations(client as never, 's-1', 'w-1', '2026-11-02');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/WHERE s\.contracted_service_id = \$1 AND a\.worker_id = \$2 AND a\.status = 'ACTIVE'/);
+    expect(String(sql)).toMatch(/\(a\.valid_to IS NULL OR a\.valid_to >= \$3::date\)/);
+    expect(params).toEqual(['s-1', 'w-1', '2026-11-02']);
+    expect(result).toEqual([
+      { id: 'a-1', slotId: 'sl-1', validFrom: '2026-01-01', validTo: null },
+      { id: 'a-2', slotId: 'sl-2', validFrom: '2026-01-01', validTo: '2026-12-31' },
+    ]);
+  });
+
+  it('findAllocation: rowCount 0 → null', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    const result = await writer.findAllocation(client as never, 'p-1', 's-1', 'alloc-x');
+
+    expect(result).toBeNull();
+  });
+
+  it('endAllocation: 1 query, GREATEST(valid_from, $2) e status ACTIVE no WHERE; devolve o rowCount', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.endAllocation(client as never, 'alloc-1', '2026-09-28', 'staff:u-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/UPDATE patient_itinerary_assignment/);
+    expect(String(sql)).toMatch(/valid_to = GREATEST\(valid_from, \$2::date\)/);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND status = 'ACTIVE'/);
+    expect(params).toEqual(['alloc-1', '2026-09-28', 'staff:u-1']);
+    expect(rowCount).toBe(1);
+  });
+
+  it('endAllocation: rowCount 0 quando a linha não está mais ACTIVE', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    const rowCount = await writer.endAllocation(client as never, 'alloc-1', '2026-09-28', 'staff:u-1');
+
+    expect(rowCount).toBe(0);
+  });
+
+  it('scheduleAllocationEnd: define SÓ o valid_to (inclusivo) e NUNCA muda o status — segue ACTIVE, vigente até o último dia', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.scheduleAllocationEnd(client as never, 'alloc-1', '2026-09-29', 'staff:u-1');
+
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/valid_to = GREATEST\(valid_from, \$2::date\)/);
+    expect(String(sql)).not.toMatch(/SET[^W]*status\s*=/i);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND status = 'ACTIVE'/);
+    expect(params).toEqual(['alloc-1', '2026-09-29', 'staff:u-1']);
+    expect(rowCount).toBe(1);
+  });
+
+  it('nenhuma SQL nomeia a tabela do paciente, o cadastro do legado ou o card antigo; só patient_itinerary_assignment (≥ 2×)', async () => {
+    const client = clientStub({ rows: [{ id: 'x', active: true, address_id: null, valid_from: '2026-09-28', status: 'ACTIVE' }], rowCount: 1 });
+
+    await writer.findSlotForAllocation(client as never, 'p-1', 's-1', 'slot-1');
+    await writer.findApplicationId(client as never, 'w-1', 'vac-1');
+    await writer.insertAllocation(client as never, {
+      slotId: 'slot-1',
+      workerId: 'w-1',
+      applicationId: 'wja-1',
+      validFrom: '2026-09-28',
+      actorUid: 'u-1',
+    });
+    await writer.findAllocation(client as never, 'p-1', 's-1', 'alloc-1');
+    await writer.endAllocation(client as never, 'alloc-1', '2026-09-28', 'u-1');
+
+    const allSql = client.query.mock.calls.map(([sql]) => String(sql)).join('\n');
+    expect(/UPDATE patients|contracted_service_providers|encuadres/i.test(allSql)).toBe(false);
+    expect((allSql.match(/patient_itinerary_assignment/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('cancelAllocation: 1 query, CANCELLED só de ACTIVE com valid_from >= minValidFrom; devolve o rowCount', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.cancelAllocation(client as never, 'alloc-1', '2026-10-21', 'u-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/SET status = 'CANCELLED'/);
+    expect(String(sql)).toMatch(/AND status = 'ACTIVE' AND valid_from >= \$2::date/);
+    expect(params).toEqual(['alloc-1', '2026-10-21', 'u-1']);
+    expect(rowCount).toBe(1);
+  });
+
+  it('cancelAllocation: nenhuma linha → 0', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    const rowCount = await writer.cancelAllocation(client as never, 'alloc-1', '2026-10-21', 'u-1');
+
+    expect(rowCount).toBe(0);
+  });
+
+  it('clearScheduledEnd: 1 query, valid_to = NULL só de ACTIVE; params [id, actor]', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.clearScheduledEnd(client as never, 'alloc-1', 'u-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/SET valid_to = NULL/);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND status = 'ACTIVE'/);
+    expect(params).toEqual(['alloc-1', 'u-1']);
+    expect(rowCount).toBe(1);
+  });
+
+  it('clearScheduledEnd: nenhuma linha → 0', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    const rowCount = await writer.clearScheduledEnd(client as never, 'alloc-1', 'u-1');
+
+    expect(rowCount).toBe(0);
+  });
+
+  it('restoreCancelled: 1 query, ACTIVE só de CANCELLED sem fim e com valid_from >= minValidFrom; params [id, min, actor]', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.restoreCancelled(client as never, 'alloc-1', '2026-10-22', 'u-1');
+
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/SET status = 'ACTIVE'/);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND status = 'CANCELLED' AND valid_to IS NULL AND valid_from >= \$2::date/);
+    expect(String(sql)).not.toMatch(/SET[^W]*valid_from/);
+    expect(params).toEqual(['alloc-1', '2026-10-22', 'u-1']);
+    expect(rowCount).toBe(1);
+  });
+
+  it('restoreCancelled: nenhuma linha → 0', async () => {
+    const client = clientStub({ rows: [], rowCount: 0 });
+
+    expect(await writer.restoreCancelled(client as never, 'alloc-1', '2026-10-22', 'u-1')).toBe(0);
+  });
+
+  it('restoreCancelled: rowCount ausente → 0', async () => {
+    const client = clientStub({ rows: [] } as never);
+
+    expect(await writer.restoreCancelled(client as never, 'alloc-1', '2026-10-22', 'u-1')).toBe(0);
+  });
+});

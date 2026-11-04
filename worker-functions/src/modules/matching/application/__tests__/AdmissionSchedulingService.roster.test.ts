@@ -367,7 +367,7 @@ describe('AdmissionSchedulingService — roster', () => {
 
       await service.getAvailableSlots('AR', NOW);
 
-      expect(hosts.listActiveByCountry).toHaveBeenCalledWith('AR');
+      expect(hosts.listActiveByCountry).toHaveBeenCalledWith('AR', 'admission');
       expect(calendar.getFreeBusyByCalendar).toHaveBeenCalledTimes(1);
       expect(calendar.getFreeBusyByCalendar).toHaveBeenCalledWith(
         [ANA.email, MARI.email],

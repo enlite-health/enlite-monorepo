@@ -37,8 +37,8 @@ describe('C6 — 23505 de `sort_order` não vira "código já existe" (Postgres 
   });
 
   it('b. `sortOrder` já usado por OUTRO código → erro de SORT ORDER, nunca "código já existe"', async () => {
-    await repo.create({ code: CODE_A, sortOrder: SORT });
-    const err = await repo.create({ code: CODE_B, sortOrder: SORT }).catch((e) => e);
+    await repo.create({ name: 'C1B Cobertura A', code: CODE_A, sortOrder: SORT });
+    const err = await repo.create({ name: 'C1B Cobertura B', code: CODE_B, sortOrder: SORT }).catch((e) => e);
 
     expect(err).not.toBeInstanceOf(InsuranceProviderExistsError);
     expect((err as { code?: string }).code).toBe('INSURANCE_PROVIDER_SORT_ORDER_TAKEN');
@@ -50,7 +50,7 @@ describe('C6 — 23505 de `sort_order` não vira "código já existe" (Postgres 
   });
 
   it('c. código repetido continua sendo `InsuranceProviderExistsError` (controle positivo da outra restrição)', async () => {
-    const err = await repo.create({ code: CODE_A, sortOrder: SORT + 1 }).catch((e) => e);
+    const err = await repo.create({ name: 'C1B Cobertura A2', code: CODE_A, sortOrder: SORT + 1 }).catch((e) => e);
     expect(err).toBeInstanceOf(InsuranceProviderExistsError);
     expect((err as InsuranceProviderExistsError).providerCode).toBe(CODE_A);
   });

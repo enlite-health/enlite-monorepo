@@ -1,7 +1,7 @@
 /**
  * Modal de contestação (1.5b, D344 — revoga em parte D342/D343 do protótipo). Divergências do
  * protótipo (`repos/infra/_worktrees/proto-anacare-horas/.../AnaCareHours/ContestModal.tsx`):
- *  - Motivo passa a ser um `<select>` de lista FECHADA (`ContestReason`/`CONTEST_REASONS`,
+ *  - Motivo passa a ser um `Combobox` de lista FECHADA (`ContestReason`/`CONTEST_REASONS`,
  *    `types.ts`) — a confirmação exige motivo escolhido, não mais "qualquer texto".
  *    Fonte do enum: `docs/decisoes.md` D344; `openspec/changes/anacare-conferencia-de-horas/
  *    specs/anacare-shift-hours/spec.md:296-298`.
@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Label } from '@presentation/components/atoms/Label';
-import { Select } from '@presentation/components/atoms/Select';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { CONTEST_NOTE_MAX_LENGTH, CONTEST_REASONS, type ContestReason } from './types';
@@ -44,11 +44,11 @@ export function ContestModal({ shiftDate, onConfirm, onCancel }: ContestModalPro
           <Label htmlFor="anacare-hours-contest-reason" required>
             {t('admin.anacareHours.contestModal.reasonLabel')}
           </Label>
-          <Select
+          <Combobox
             id="anacare-hours-contest-reason"
             options={reasonOptions}
             value={reason}
-            onValueChange={(v) => setReason(v as ContestReason)}
+            onChange={(v) => setReason(v as ContestReason)}
             placeholder={t('admin.anacareHours.contestModal.reasonPlaceholder')}
             aria-label={t('admin.anacareHours.contestModal.reasonLabel')}
             data-testid="anacare-hours-contest-reason"

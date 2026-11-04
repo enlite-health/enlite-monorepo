@@ -387,6 +387,7 @@ export class TalentumApiClient implements ITalentumApiClient {
   async getPrescreening(projectId: string): Promise<TalentumProject> {
     const { project } = await this.request<{ project: V2ProjectListItem }>('GET', `/projects/${projectId}`);
     const p = await this.request<{
+      _id?: string;
       publicId: string;
       slug: string;
       active: boolean;
@@ -398,6 +399,7 @@ export class TalentumApiClient implements ITalentumApiClient {
     return {
       projectId,
       publicId: p.publicId,
+      prescreeningId: p._id,
       title: project.name,
       description: p.jobDescription?.text ?? '',
       whatsappUrl: buildPublicPrescreeningUrl(p.publicId),
@@ -440,6 +442,16 @@ export class TalentumApiClient implements ITalentumApiClient {
 
   async deletePrescreening(projectId: string): Promise<void> {
     return this.request<void>('DELETE', `/projects/${projectId}`);
+  }
+
+  /** Spec 084 (F4): pausa o projeto — o ciclo de vida da v2 (`PUT /projects/:id/pause`); o projeto e os candidatos ficam. */
+  async pauseProject(projectId: string): Promise<void> {
+    await this.request<unknown>('PUT', `/projects/${projectId}/pause`);
+  }
+
+  /** Spec 084 (F4): retoma o projeto (`PUT /projects/:id/resume`); 400 se não estava pausado. */
+  async resumeProject(projectId: string): Promise<void> {
+    await this.request<unknown>('PUT', `/projects/${projectId}/resume`);
   }
 
   /**

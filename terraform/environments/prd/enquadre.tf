@@ -61,6 +61,7 @@ resource "google_kms_crypto_key_iam_member" "enquadre_vault_gcs_agent" {
 resource "google_storage_bucket" "enquadre_transcripts" {
   project                     = var.project_id
   name                        = "enlite-enquadre-transcripts-prd"
+  labels                      = { service = "enlite-enquadre-transcripts-prd", setor = "recrutamento" }
   location                    = "SOUTHAMERICA-WEST1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true

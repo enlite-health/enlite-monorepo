@@ -3,6 +3,7 @@
  * Fonte de verdade é o REFETCH próprio (não `patient.contractedServices` estático), porque o
  * drawer fica aberto durante várias mutações seguidas.
  */
+import { CONTRACT_058_DEFAULTS } from '@domain/entities/__tests__/fixtures/contractedService058';
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import i18n from 'i18next';
@@ -11,6 +12,7 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import { PatientContractedServicesEditDrawer } from '../PatientContractedServicesEditDrawer';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { chooseCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
 
 const mockList = vi.fn();
 vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
@@ -18,8 +20,18 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
     listContractedServices: (...a: unknown[]) => mockList(...a),
     createContractedService: vi.fn(),
     updateContractedService: vi.fn(),
-    associateProvider: vi.fn(),
-    updateProvider: vi.fn(),
+  },
+}));
+const mockForService = vi.fn();
+const mockListContracts = vi.fn();
+const mockCreateLink = vi.fn();
+vi.mock('@infrastructure/http/AdminInsuranceApiService', () => ({
+  AdminInsuranceApiService: {
+    listProvidersForService: (...a: unknown[]) => mockForService(...a),
+    listContracts: (...a: unknown[]) => mockListContracts(...a),
+    createContractLink: (...a: unknown[]) => mockCreateLink(...a),
+    endContractLink: vi.fn(),
+    supersedeContractLink: vi.fn(),
   },
 }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({
@@ -38,9 +50,8 @@ beforeAll(async () => {
 
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: patientDetailFixture.id, serviceCode: 'AT', professionalProfile: null,
-  providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
-  hourlyValue: 1500, hourlyValueRedacted: false, startDate: null,
-  contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
+  providersNeeded: 2, authorization: null, scheduleHours: 20, careLocation: 'HOME',
+  ...CONTRACT_058_DEFAULTS, startDate: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,
   liveVacancy: null, liveVacancyRedacted: false,
@@ -50,7 +61,12 @@ const SERVICE: PatientContractedServiceDetail = {
 };
 
 describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 06/09)', () => {
-  beforeEach(() => { mockList.mockReset(); vi.clearAllMocks(); });
+  beforeEach(() => {
+    mockList.mockReset();
+    vi.clearAllMocks();
+    mockForService.mockResolvedValue({ providers: [{ code: 'OSDE', name: 'OSDE' }], asOf: '2026-10-19' });
+    mockListContracts.mockResolvedValue([{ id: 'ct-1', name: 'Plan 210', country: 'BR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'NO_TERM' }, futureTerms: [] }]);
+  });
 
   const api = async () => (await import('@infrastructure/http/AdminContractedServicesApiService')).AdminContractedServicesApiService;
   const montar = (target: { kind: 'new' } | { kind: 'edit'; serviceId: string }, over: Partial<Parameters<typeof PatientContractedServicesEditDrawer>[0]> = {}) =>
@@ -127,7 +143,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     const onSaved = vi.fn();
     montar({ kind: 'new' }, { onSaved });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByTestId('svc-code-2'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-2'), 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await screen.findByTestId('contracted-service-form-novo');
     expect(screen.queryByTestId('contracted-service-new')).toBeNull();
@@ -141,7 +157,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     (await api()).createContractedService = vi.fn().mockResolvedValue(criado) as never;
     montar({ kind: 'new' });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await screen.findByTestId('contracted-service-form-novo');
     expect(screen.queryByTestId('contracted-service-new')).toBeNull();
@@ -171,7 +187,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     (await api()).createContractedService = vi.fn().mockResolvedValue(undefined) as never; // API antiga sem corpo
     montar({ kind: 'new' });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
     await screen.findByTestId('contracted-service-form-novo');
 
@@ -179,7 +195,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     mockList.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     const { unmount } = montar({ kind: 'new' });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getAllByTestId('svc-code-1')[0], { target: { value: 'AT' } });
+    chooseCombo(screen.getAllByTestId('svc-code-1')[0], 'Acompañante Terapéutico'); // AT
     fireEvent.click(screen.getAllByTestId('contracted-service-new-save')[0]);
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
     expect(screen.getAllByTestId('contracted-service-new').length).toBeGreaterThan(0);
@@ -274,6 +290,43 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
       await act(async () => { await Promise.resolve(); });
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.queryByTestId('discard-changes-confirm')).toBeNull();
+    });
+  });
+
+  // ── Spec 058: o contrato do serviço dentro do drawer ───────────────────────────────────────
+  describe('contrato do serviço (spec 058)', () => {
+    it('modo NOVO: a cascata lista as obras sociais do país do PACIENTE', async () => {
+      mockList.mockResolvedValue([]);
+      montar({ kind: 'new' });
+      await waitFor(() => expect(mockForService).toHaveBeenCalledWith(patientDetailFixture.country, undefined));
+    });
+
+    it('serviço criado + vínculo que FALHA: o drawer passa ao modo edição do serviço criado e o painel mostra o erro (nada se perde em silêncio)', async () => {
+      const criado = { ...SERVICE, id: 'novo', country: patientDetailFixture.country, createdAt: '2026-09-06T10:00:00Z' };
+      mockList.mockResolvedValueOnce([]).mockResolvedValueOnce([criado]);
+      (await api()).createContractedService = vi.fn().mockResolvedValue(criado) as never;
+      mockCreateLink.mockRejectedValue(Object.assign(new Error('x'), { status: 422, code: 'COUNTRY_MISMATCH' }));
+      const onSaved = vi.fn();
+      montar({ kind: 'new' }, { onSaved });
+      await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+      chooseCombo(screen.getByTestId('svc-code-1'), 'Acompañante Terapéutico'); // AT
+      await waitFor(() => expect(comboLabels(screen.getByTestId('svc-contract-1-provider'))).toContain('OSDE') /* OSDE */);
+      chooseCombo(screen.getByTestId('svc-contract-1-provider'), 'OSDE');
+      await waitFor(() => expect(comboLabels(screen.getByTestId('svc-contract-1-contract'))).toContain('Plan 210') /* ct-1 */);
+      chooseCombo(screen.getByTestId('svc-contract-1-contract'), 'Plan 210'); // ct-1
+      await waitFor(() => expect((screen.getByTestId('svc-contract-1-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await screen.findByTestId('contracted-service-form-novo');
+      expect(screen.getByTestId('svc-contract-error').textContent).toContain('país del contrato');
+    });
+
+    it('REQUIRES_NEW_SERVICE no painel de um serviço existente: o botão abre o formulário de serviço NOVO no mesmo drawer', async () => {
+      const encerrado = { ...SERVICE, payerHistory: [{ linkId: 'l1', isPrivate: false, validFrom: '2026-01-01', validTo: '2026-06-30', names: null }] } as PatientContractedServiceDetail;
+      mockList.mockResolvedValue([encerrado]);
+      montar({ kind: 'edit', serviceId: 's1' });
+      fireEvent.click(await screen.findByTestId('svc-contract-new-service'));
+      expect(screen.getByTestId('contracted-service-new')).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Nuevo servicio contratado' })).toBeTruthy();
     });
   });
 });

@@ -132,7 +132,7 @@ export class AdmissionPanelService {
 
   /** Responsáveis do roster do país, cada um com o estado do vínculo do Tactiq (`linked` → pode ser escolhido). */
   async listHosts(country: AdmissionCountry): Promise<Array<InterviewHost & { linked: boolean; linkState: TactiqLinkState }>> {
-    const hosts = await this.deps.hosts.listActiveByCountry(country);
+    const hosts = await this.deps.hosts.listActiveByCountry(country, 'admission');
     const states = await this.deps.tactiq.statesFor(hosts.map((h) => h.email));
     return hosts.map((h) => {
       const linkState = states.get(h.email.toLowerCase()) ?? 'missing';

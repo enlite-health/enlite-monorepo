@@ -24,7 +24,8 @@ export interface PublicJobListing {
   country: string | null;
   age_range_min: number | null;
   age_range_max: number | null;
-  whatsapp_url: string | null;
+  /** Spec 067 FR-14/15: a vaga aceita postulação. O LINK da Talentum não sai da rota pública — vem só no 200 de track-channel. */
+  can_apply: boolean;
 }
 
 export interface PublicJobListingResponse {

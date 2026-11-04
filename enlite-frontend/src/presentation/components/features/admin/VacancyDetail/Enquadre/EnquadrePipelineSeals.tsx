@@ -9,7 +9,6 @@
 import type { JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 import { useOpenEnquadreSummary } from '@hooks/admin/useOpenEnquadreSummary';
 import type { EnquadrePipelineState } from '@domain/entities/EnquadreEvent';
 import { SealChip } from '../../PatientDetail/admission/AdmissionSeals';
@@ -53,14 +52,14 @@ export function EnquadrePipelineSeals({ vacancyId, eventId, pipeline }: Props): 
           <Text as="span" size="2xs" color="primary" className="uppercase">{te('seals.summary')}</Text>
           <SealChip tone={SUMMARY_TONE[summary]} testId={`enquadre-seal-summary-chip-${eventId}`}>{summaryText}</SealChip>
           {summary === 'ready' && (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
               onClick={() => { void download.open(); }}
+              className="text-xs font-medium text-primary underline hover:no-underline"
               data-testid={`enquadre-summary-download-${eventId}`}
             >
               {te('seals.download')}
-            </Button>
+            </button>
           )}
           {download.error && (
             <Text color="inherit" as="span" size="xs" className="text-red-700" role="alert" data-testid={`enquadre-summary-download-error-${eventId}`}>

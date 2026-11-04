@@ -55,3 +55,33 @@ describe('CELL_DESCRIPTION — a célula diz o que protege', () => {
     expect(semDefinicao).toEqual([]);
   });
 });
+
+describe('CELL_DESCRIPTION — as 11 células da spec 058 (Parte A)', () => {
+  const ONZE = [
+    'catalog_insurance_providers:read', 'catalog_insurance_providers:create', 'catalog_insurance_providers:update',
+    'insurance_provider_contacts:read', 'insurance_provider_contacts:create', 'insurance_provider_contacts:update',
+    'insurance_contracts:read', 'insurance_contracts:create', 'insurance_contracts:update',
+    'patient_contract_value:create', 'insurance_provider_patients:read',
+  ];
+
+  it('cada uma tem definição REAL (não o placeholder da migration 538) e categoria — a de contatos e a de pacientes dizem por que são sensíveis', () => {
+    expect(ONZE).toHaveLength(11);
+    for (const chave of ONZE) {
+      const d = CELL_DESCRIPTION[chave];
+      expect(d?.trim().length ?? 0).toBeGreaterThan(40);
+      expect(d.toLowerCase()).not.toContain('placeholder');
+      const [recurso] = chave.split(':');
+      expect(RESOURCE_CATEGORY[recurso]).toBeDefined();
+    }
+    expect(RESOURCE_CATEGORY.insurance_provider_patients).toBe('Pacientes');
+    expect(RESOURCE_CATEGORY.insurance_contracts).toBe('Administração');
+    expect(CELL_DESCRIPTION['insurance_provider_contacts:read'].toLowerCase()).toContain('telefone');
+    expect(CELL_DESCRIPTION['insurance_provider_patients:read'].toLowerCase()).toContain('pacientes');
+  });
+
+  it('`patient_coverage:read` agora também diz que decide o nome do pagador e o tipo dele no serviço contratado', () => {
+    const d = CELL_DESCRIPTION['patient_coverage:read'].toLowerCase();
+    expect(d).toContain('serviço contratado');
+    expect(d).toContain('tipo do pagador');
+  });
+});

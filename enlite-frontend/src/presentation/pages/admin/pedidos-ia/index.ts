@@ -1,0 +1,1 @@
+export { PedidosIaPage } from './PedidosIaPage';

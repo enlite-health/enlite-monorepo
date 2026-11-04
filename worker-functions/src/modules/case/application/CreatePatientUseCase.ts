@@ -19,8 +19,8 @@ export interface CreatePatientInput {
   contactEmail?: string;
   documentType?: DocumentType;
   documentNumber?: string;
+  /** Cobertura informada: a chave do fio continua `healthInsuranceName`, mas o dono é `insurance_informed` (spec 058). */
   healthInsuranceName?: string;
-  healthInsuranceMemberId?: string;
   serviceType?: Profession[];
 }
 
@@ -73,8 +73,7 @@ export class CreatePatientUseCase {
       phoneWhatsapp: input.phoneWhatsapp ?? null,
       documentType: input.documentType ?? null,
       documentNumber: input.documentNumber ?? null,
-      healthInsuranceName: input.healthInsuranceName ?? null,
-      healthInsuranceMemberId: input.healthInsuranceMemberId ?? null,
+      insuranceInformed: input.healthInsuranceName ?? null,
       serviceType: input.serviceType ?? null,
     };
 

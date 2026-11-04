@@ -484,7 +484,6 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
         controllerStub('crud') as never,
         controllerStub('talentum') as never,
         controllerStub('match') as never,
-        controllerStub('meet') as never,
         controllerStub('social') as never,
         controllerStub('funnel') as never,
         controllerStub('dash') as never,

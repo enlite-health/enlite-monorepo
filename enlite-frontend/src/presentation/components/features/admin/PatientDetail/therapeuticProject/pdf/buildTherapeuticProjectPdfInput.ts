@@ -9,6 +9,7 @@ import type { ResolvedTherapeuticContact, TherapeuticProjectVersion } from '@dom
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from '../../contractedServiceScheduleText';
 import { ageFromBirthDate, formatIsoDateEsAr, type PdfContact, type PdfContactStatusLines, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
+import { PDF_LABELS } from './pdfFixedTexts';
 import { getInstantParts } from '@presentation/utils/dateTimeFormat';
 
 export interface PdfContainerReads {
@@ -113,8 +114,16 @@ export function buildTherapeuticProjectPdfInput(args: {
       }
     : null;
 
+  // Spec 058 §4.5: a cobertura do PDF é a INFORMADA e, na falta, os NOMES do catálogo (`coverage.display`). Sem texto: com só rótulos
+  // sem mapeamento (`UNMAPPED_ONLY`) o PDF diz "sin mapeo"; sem nada (`NONE`) diz "no informada" — o back só manda dado, a frase é do front.
+  const coverageView = patient.coverage ?? null;
   const coverage = reads.coverage
-    ? { insurance: patient.insuranceInformed ?? patient.insuranceVerified ?? null, affiliateId: patient.affiliateId }
+    ? {
+        insurance: coverageView === null
+          ? null
+          : coverageView.display ?? (coverageView.displaySource === 'UNMAPPED_ONLY' ? PDF_LABELS.coverageUnmapped : PDF_LABELS.coverageNone),
+        affiliateId: patient.affiliateId,
+      }
     : null;
 
   const pdfService = reads.services

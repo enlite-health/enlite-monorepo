@@ -81,21 +81,21 @@ describe('DocumentUploadCard', () => {
   it('isUploaded: mostra os ícones de excluir e visualizar, sem role="button"', () => {
     render(<DocumentUploadCard {...baseProps} isUploaded />);
     expect(screen.queryByRole('button', { name: /Upload/ })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Remover documento')).toBeInTheDocument();
-    expect(screen.getByLabelText('Visualizar documento')).toBeInTheDocument();
+    expect(screen.getByLabelText('documents.removeAria')).toBeInTheDocument();
+    expect(screen.getByLabelText('documents.viewAria')).toBeInTheDocument();
   });
 
   it('clica em excluir: chama onDelete sem propagar pro card', () => {
     const onDelete = vi.fn();
     render(<DocumentUploadCard {...baseProps} isUploaded onDelete={onDelete} />);
-    fireEvent.click(screen.getByLabelText('Remover documento'));
+    fireEvent.click(screen.getByLabelText('documents.removeAria'));
     expect(onDelete).toHaveBeenCalled();
   });
 
   it('clica em visualizar: chama onView', () => {
     const onView = vi.fn();
     render(<DocumentUploadCard {...baseProps} isUploaded onView={onView} />);
-    fireEvent.click(screen.getByLabelText('Visualizar documento'));
+    fireEvent.click(screen.getByLabelText('documents.viewAria'));
     expect(onView).toHaveBeenCalled();
   });
 
@@ -112,12 +112,12 @@ describe('DocumentUploadCard', () => {
 
   it('canDelete=false num doc enviado: ícone de excluir SOME, visualizar continua', () => {
     render(<DocumentUploadCard {...baseProps} isUploaded canDelete={false} />);
-    expect(screen.queryByLabelText('Remover documento')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Visualizar documento')).toBeInTheDocument();
+    expect(screen.queryByLabelText('documents.removeAria')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('documents.viewAria')).toBeInTheDocument();
   });
 
   it('default (sem passar canUpload/canDelete): comportamento igual ao self-service — upload e excluir disponíveis', () => {
     render(<DocumentUploadCard {...baseProps} isUploaded />);
-    expect(screen.getByLabelText('Remover documento')).toBeInTheDocument();
+    expect(screen.getByLabelText('documents.removeAria')).toBeInTheDocument();
   });
 });

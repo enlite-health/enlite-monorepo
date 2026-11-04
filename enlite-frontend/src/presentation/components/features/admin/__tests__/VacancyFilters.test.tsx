@@ -4,7 +4,7 @@
  * Testa o componente de filtros da página de vagas:
  * - Renderização dos selects (status, prioridade, tipo, sexo, provincia, localidade)
  * - Callbacks disparados ao alterar cada filtro
- * - MultiSelect para dias
+ * - Combobox (multiple) para dias
  * - TimeRangeFilter para horário
  * - Botão Limpiar filtros
  */
@@ -13,7 +13,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { VacancyFilters, type VacancyAdvancedFilters } from '../VacancyFilters';
-import { SelectOption } from '@presentation/components/atoms/Select';
+import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
+import { selectCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
+
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -23,7 +25,7 @@ vi.mock('react-i18next', () => ({
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-const STATUS_OPTIONS: SelectOption[] = [
+const STATUS_OPTIONS: ComboboxOption[] = [
   { value: 'SEARCHING',             label: 'Buscando AT' },
   { value: 'SEARCHING_REPLACEMENT', label: 'Buscando Sustituto' },
   { value: 'RAPID_RESPONSE',        label: 'Respuesta Rápida' },
@@ -109,18 +111,22 @@ describe('VacancyFilters — renderização', () => {
 describe('VacancyFilters — opções', () => {
   it('select de status renderiza os 8 valores canônicos do banco', () => {
     render(<VacancyFilters {...defaultProps()} />);
-    expect(screen.getByText('Buscando AT')).toBeInTheDocument();
-    expect(screen.getByText('Buscando Sustituto')).toBeInTheDocument();
-    expect(screen.getByText('Respuesta Rápida')).toBeInTheDocument();
-    expect(screen.getByText('Esperando Activación')).toBeInTheDocument();
-    expect(screen.getByText('Activo')).toBeInTheDocument();
-    expect(screen.getByText('En Espera')).toBeInTheDocument();
-    expect(screen.getByText('Suspendido')).toBeInTheDocument();
-    expect(screen.getByText('Cerrado')).toBeInTheDocument();
+    // o painel só existe aberto: abre o gatilho do Status (o 1º combobox) e lê as linhas
+    expect(comboLabels(screen.getAllByRole('combobox')[0])).toEqual([
+      'Buscando AT',
+      'Buscando Sustituto',
+      'Respuesta Rápida',
+      'Esperando Activación',
+      'Activo',
+      'En Espera',
+      'Suspendido',
+      'Cerrado',
+    ]);
   });
 
   it('Provincia é um combobox com busca e popula com stateOptions recebidas (REQ-06)', async () => {
-    const stateOptions = [{ value: 'BA', label: 'Buenos Aires' }, { value: 'CB', label: 'Córdoba' }];
+    // 3+ opções: é a regra do Combobox para existir o campo de busca (SEARCH_MIN_OPTIONS)
+    const stateOptions = [{ value: 'BA', label: 'Buenos Aires' }, { value: 'CB', label: 'Córdoba' }, { value: 'MZ', label: 'Mendoza' }];
     render(<VacancyFilters {...defaultProps({ stateOptions })} />);
     await userEvent.click(screen.getByTestId('vacancy-filter-province'));
     expect(screen.getByRole('option', { name: 'Buenos Aires' })).toBeInTheDocument();
@@ -140,8 +146,7 @@ describe('VacancyFilters — opções', () => {
     const onAdvancedChange = vi.fn();
     const stateOptions = [{ value: 'BA', label: 'Buenos Aires' }];
     render(<VacancyFilters {...defaultProps({ stateOptions, onAdvancedChange })} />);
-    await userEvent.click(screen.getByTestId('vacancy-filter-province'));
-    await userEvent.click(screen.getByRole('option', { name: 'Buenos Aires' }));
+    await selectCombo(screen.getByTestId('vacancy-filter-province'), 'Buenos Aires');
     expect(onAdvancedChange).toHaveBeenCalledWith({ state: 'BA' });
   });
 });
@@ -154,7 +159,7 @@ describe('VacancyFilters — callbacks', () => {
     render(<VacancyFilters {...defaultProps({ onStatusChange })} />);
 
     const selects = screen.getAllByRole('combobox');
-    await userEvent.selectOptions(selects[0], 'ACTIVE');
+    await selectCombo(selects[0], 'Activo'); // ACTIVE = Activo
 
     expect(onStatusChange).toHaveBeenCalledWith('ACTIVE');
   });
@@ -172,9 +177,9 @@ describe('VacancyFilters — callbacks', () => {
     const onAdvancedChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
 
-    // Tipo is the 2nd select (0=status, 1=type)
+    // Tipo é o 2º combobox (0=status, 1=type)
     const selects = screen.getAllByRole('combobox');
-    await userEvent.selectOptions(selects[1], 'AT');
+    await selectCombo(selects[1], 'admin.vacancies.filters.type.at'); // AT (o mock de i18n devolve a chave)
 
     expect(onAdvancedChange).toHaveBeenCalledWith({ workerType: 'AT' });
   });
@@ -183,10 +188,9 @@ describe('VacancyFilters — callbacks', () => {
     const onAdvancedChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
 
-    // Selects NATIVOS restantes: status(0), type(1), sex(2).
-    // Provincia, Localidad e horários viraram combobox com busca (REQ-06).
+    // Ordem dos combobox: status(0), type(1), província(2), localidade(3), sex(4), dias(5).
     const selects = screen.getAllByRole('combobox');
-    await userEvent.selectOptions(selects[2], 'F');
+    await selectCombo(selects[4], 'admin.vacancies.filters.sex.f'); // F
 
     expect(onAdvancedChange).toHaveBeenCalledWith({ requiredSex: 'F' });
   });
@@ -224,8 +228,8 @@ describe('VacancyFilters — callbacks', () => {
 describe('VacancyFilters — estado refletido nos selects', () => {
   it('selectedStatus="ON_HOLD" é refletido no select de status', () => {
     render(<VacancyFilters {...defaultProps({ selectedStatus: 'ON_HOLD' })} />);
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects[0].value).toBe('ON_HOLD');
+    const selects = screen.getAllByRole('combobox');
+    expect(selects[0]).toHaveTextContent('En Espera'); // ON_HOLD = En Espera
   });
 
   it('advancedFilters.workerType="AT" é refletido no select de Tipo', () => {
@@ -234,17 +238,17 @@ describe('VacancyFilters — estado refletido nos selects', () => {
         {...defaultProps({ advancedFilters: { ...INITIAL_ADVANCED, workerType: 'AT' } })}
       />,
     );
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects[1].value).toBe('AT');
+    const selects = screen.getAllByRole('combobox');
+    expect(selects[1]).toHaveTextContent('admin.vacancies.filters.type.at'); // AT
   });
 
-  it('advancedFilters.days com valores mostra count no MultiSelect', () => {
+  it('advancedFilters.days com valores mostra count no Combobox', () => {
     render(
       <VacancyFilters
         {...defaultProps({ advancedFilters: { ...INITIAL_ADVANCED, days: ['1', '3'] } })}
       />,
     );
-    // With 2 days selected, the MultiSelect button should show the count key
+    // With 2 days selected, the Combobox button should show the count key
     expect(screen.getByText('common.multiSelect.selectedCount')).toBeInTheDocument();
   });
 });

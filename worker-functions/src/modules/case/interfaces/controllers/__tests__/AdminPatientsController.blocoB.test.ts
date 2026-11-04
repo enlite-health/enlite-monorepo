@@ -32,6 +32,7 @@ import {
   PatientStatusTransitionError,
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
+  PatientStatusLockedByAllocationError,
   SuspensionExitReasonRequiredError,
 } from '../../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
@@ -145,6 +146,45 @@ describe('AdminPatientsController — bloco B', () => {
         code: 'PATIENT_STATUS_NOT_READY',
         details: { to: 'ACTIVE', missing: ['ADDRESS', 'SERVICE_SCHEDULE'] },
       });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    describe('DIAGNOSIS no 422 (pedido do Javier): "sem diagnóstico" é dado clínico', () => {
+      const run = async (cells: readonly string[] | null) => {
+        const moveStatus = jest.fn().mockRejectedValueOnce(new PatientStatusNotReadyError('SEARCHING', ['ADDRESS', 'DIAGNOSIS']));
+        const [req, res] = reqRes({ id: ID }, { status: 'SEARCHING', changeSource: 'kanban' }, { permissionCells: cells });
+        await makeController({ moveStatus }).updatePatientStatus(req, res);
+        expect(res.status).toHaveBeenCalledWith(422);
+        return bodyOf(res);
+      };
+
+      it('ator COM patient_clinical:read → missing traz DIAGNOSIS', async () => {
+        const body = await run(['patient:write', 'patient_clinical:read']);
+        expect(body.code).toBe('PATIENT_STATUS_NOT_READY');
+        expect(body.details).toEqual({ to: 'SEARCHING', missing: ['ADDRESS', 'DIAGNOSIS'] });
+        expect(body.error).toContain('DIAGNOSIS');
+      });
+
+      it('ator SEM patient_clinical:read → o 422 continua (a trava vale), mas o código sai genérico CLINICAL_DATA, na mensagem também', async () => {
+        const body = await run(['patient:write']);
+        expect(body.code).toBe('PATIENT_STATUS_NOT_READY');
+        expect(body.details).toEqual({ to: 'SEARCHING', missing: ['ADDRESS', 'CLINICAL_DATA'] });
+        expect(JSON.stringify(body)).not.toContain('DIAGNOSIS');
+        expect(body.error).toContain('CLINICAL_DATA');
+      });
+
+      it('engine neutro (cells null) → comportamento de antes: DIAGNOSIS', async () => {
+        expect((await run(null)).details.missing).toEqual(['ADDRESS', 'DIAGNOSIS']);
+      });
+    });
+
+    it('alocação viva no itinerário → 422 PATIENT_STATUS_LOCKED_BY_ALLOCATION só com a contagem (sem nome), sem reportError (D489/D530)', async () => {
+      const moveStatus = jest.fn().mockRejectedValueOnce(new PatientStatusLockedByAllocationError(2));
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes({ id: ID }, { status: 'ON_HOLD', changeSource: 'kanban' });
+      await ctrl.updatePatientStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(bodyOf(res)).toMatchObject({ success: false, code: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION', details: { allocations: 2 } });
       expect(reportError).not.toHaveBeenCalled();
     });
 

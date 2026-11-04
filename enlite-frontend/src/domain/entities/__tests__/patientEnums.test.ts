@@ -1,13 +1,12 @@
 /**
  * patientEnums — os vocabulários do bloco B (spec 012) que a tela traduz.
- * A fonte da verdade do CATÁLOGO de cobertura é o banco (insurance_providers, editável sem
- * deploy); a lista daqui é o SEED dos 33 do contrato 001 — serve ao teste de cobertura de i18n,
- * e o select cai no próprio código quando aparece um novo (t(key, code)).
+ * O CATÁLOGO de cobertura é do banco (insurance_providers, com o nome; spec 058 C3): não há mais lista de códigos nem
+ * tradução por código no front (a constante dos 33 saiu).
  */
 import { describe, it, expect } from 'vitest';
 import {
   CLINICAL_PATIENT_STATUSES, ADMISSION_FUNNEL_STATUSES, PATIENT_STATUSES, ON_HOLD_REASONS,
-  ADMISSION_STATUSES, INSURANCE_PROVIDER_CODES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES,
+  ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES,
 } from '../patientEnums';
 
 describe('patientEnums (spec 012)', () => {
@@ -26,14 +25,5 @@ describe('patientEnums (spec 012)', () => {
       'CHILD', 'PARENT', 'SIBLING', 'NEPHEW', 'GRANDCHILD', 'GUARDIAN', 'FRIEND', 'PARTNER', 'OTHER',
       'GRANDPARENT', 'UNCLE_AUNT', 'COUSIN', 'IN_LAW', 'STEP_RELATIVE', 'RESPONSIBLE_PERSON',
     ]); // ampliado na migration 421 (spec 018, PR-2, SUP-16)
-  });
-
-  it('os 33 códigos de cobertura do contrato 001 (§Enums canônicos), sem duplicata', () => {
-    expect(INSURANCE_PROVIDER_CODES).toHaveLength(33);
-    expect(new Set(INSURANCE_PROVIDER_CODES).size).toBe(33);
-    for (const c of ['API', 'OSDE', 'SWISS_MEDICAL', 'HTAL_BRITANICO', 'OGORMAN', 'PFA_SUPERINTENDENCIA', 'PRIVATE', 'OTHER', 'IOSCOR']) {
-      expect(INSURANCE_PROVIDER_CODES).toContain(c);
-    }
-    for (const c of INSURANCE_PROVIDER_CODES) expect(c).toMatch(/^[A-Z][A-Z0-9_]*$/);
   });
 });

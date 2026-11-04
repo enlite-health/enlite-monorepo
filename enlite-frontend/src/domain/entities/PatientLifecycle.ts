@@ -1,4 +1,5 @@
 import type { PatientStatus } from './patientEnums';
+import type { ServiceReserve } from './PatientItinerary';
 import type { PatientCompletenessCode } from './PatientCompleteness';
 
 /**
@@ -33,7 +34,8 @@ export interface UpdatePatientStatusPayload {
 export interface PatientStatusOption {
   status: PatientStatus;
   via: 'fluxo' | 'permissao';
-  blockedBy?: PatientCompletenessCode[];
+  /** + `ACTIVE_ALLOCATION` (D489/D530): alocação viva no itinerário bloqueia TODO destino. */
+  blockedBy?: Array<PatientCompletenessCode | 'ACTIVE_ALLOCATION'>;
 }
 
 export interface PatientStatusOptions {
@@ -55,6 +57,26 @@ export interface PatientStatusHistoryEntry {
   actorUid: string | null;
 }
 
+/**
+ * Uma linha do subcard do Kanban (fase 8, DX-8.1/8.5): um serviço contratado ativo do
+ * paciente, com o par `cobertas`/`scheduleHours` (ambos do agregado `GET
+ * /patients/kanban/services`, nunca calculado no cliente) e o sinal de vaga viva.
+ */
+export interface PatientKanbanServiceSummary {
+  contractedServiceId: string;
+  serviceCode: string;
+  /** Soma das faixas do serviço (horas/semana), da API. */
+  scheduleHours: number;
+  /** Reserva da vaga viva (`null` = sin vacante); alerta quando `count < minimum`. */
+  reserve: ServiceReserve | null;
+  /** Horas cobertas do itinerário (mesma conta do detalhe, `computeServiceCoverage`). */
+  cobertas: number;
+  /** Vaga viva (a mesma condição do `liveVacancyId` da ficha) — presente = já existe vacante. */
+  liveVacancyId: string | null;
+  /** Dias sem cobertura do serviço, a partir de hoje (Fase 13, `uncoveredDayAlerts` na API — nunca calculado no cliente). Opcional: fixtures vivas seguem válidas. */
+  uncoveredDays?: number;
+}
+
 /** Row shape used by the patient kanban board (grouped by status). */
 export interface PatientKanbanItem {
   id: string;
@@ -65,6 +87,11 @@ export interface PatientKanbanItem {
   status: string | null;
   /** Funil de admissão (spec 012): SOLICITANTE | ADMISSION | PENDING_ADMISSION | DONE — a coluna do board. */
   admissionStatus: string;
+  /**
+   * Serviços contratados ativos, do agregado do subcard (fase 8, DX-8.9). `undefined` = o
+   * agregado ainda não carregou (ou falhou); `[]` = carregou e o paciente não tem serviço ativo.
+   */
+  services?: PatientKanbanServiceSummary[];
   // Fase 4 — rastreabilidade / SLA (aditivo; opcional para não quebrar fixtures).
   /** ISO string of when the patient entered the current status column. */
   stageEnteredAt?: string | null;

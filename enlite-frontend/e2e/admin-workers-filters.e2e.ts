@@ -255,7 +255,7 @@ test.describe('AdminWorkersPage — Filtros', () => {
     // Digita "García" no input de busca do dropdown
     const searchInput = page.locator('input[placeholder*="Buscar"]').first();
     await expect(searchInput).toBeVisible({ timeout: 5000 });
-    await searchInput.fill('García');
+    await page.keyboard.type('García'); // o foco já está na busca do painel aberto
 
     // Apenas "CASO 101 - Juan García" deve aparecer
     await expect(page.getByText('CASO 101 - Juan García').first()).toBeVisible({ timeout: 5000 });

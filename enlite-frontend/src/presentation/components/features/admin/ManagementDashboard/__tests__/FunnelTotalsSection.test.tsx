@@ -23,7 +23,7 @@ vi.mock('lucide-react', () => {
 function counts(partial: Partial<FunnelColumnCounts>): FunnelColumnCounts {
   return {
     INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0,
-    COMPLETED: 0, SELECTED: 0, REJECTED: 0,
+    BLOQUEADO: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0,
     ...partial,
   };
 }
@@ -92,13 +92,27 @@ describe('FunnelTotalsSection', () => {
     expect(screen.queryByTestId('mgmt-encuadres-sem-data')).toBeNull();
   });
 
-  it('mostra "Bloqueados" FORA das colunas — tentativa barrada não tem candidatura', () => {
+  it('mostra as tentativas barradas (campo bloqueados) FORA das colunas — não têm candidatura', () => {
     render(<FunnelTotalsSection funnelPorPrestador={funnelPorPrestador} encuadres={encuadres} />);
 
-    // Aparece como card próprio, não como 9ª coluna: somá-lo quebraria o total.
+    // Aparece como card próprio: somá-lo quebraria o total.
     expect(screen.getByText('355')).toBeInTheDocument();
-    expect(screen.queryByTestId('mgmt-funnel-consolidado-BLOQUEADO')).toBeNull();
-    expect(screen.queryByTestId('mgmt-funnel-por-etapa-BLOQUEADO')).toBeNull();
+  });
+
+  it('067 FR-08: BLOQUEADO (Completado sem apto) é coluna do funil, entre En progreso e Completos, com a contagem do payload', () => {
+    const comBloqueado = {
+      ...funnelPorPrestador,
+      consolidado: { somavel: true as const, colunas: counts({ BLOQUEADO: 17, COMPLETED: 5 }) },
+      porEtapa: { somavel: false as const, colunas: counts({ BLOQUEADO: 19, COMPLETED: 6 }) },
+    };
+    render(<FunnelTotalsSection funnelPorPrestador={comBloqueado} encuadres={encuadres} />);
+
+    expect(screen.getByTestId('mgmt-funnel-consolidado-BLOQUEADO')).toHaveTextContent('17');
+    expect(screen.getByTestId('mgmt-funnel-por-etapa-BLOQUEADO')).toHaveTextContent('19');
+    const ids = screen
+      .getAllByTestId(/^mgmt-funnel-consolidado-[A-Z_]+$/)
+      .map((el) => el.getAttribute('data-testid')!.replace('mgmt-funnel-consolidado-', ''));
+    expect(ids.indexOf('BLOQUEADO')).toBe(ids.indexOf('COMPLETED') - 1);
   });
 
   it('mostra zero como 0 em coluna vazia (nunca célula em branco)', () => {

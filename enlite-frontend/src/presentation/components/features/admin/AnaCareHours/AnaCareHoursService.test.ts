@@ -6,6 +6,7 @@
  * de 1.5b (motivo fora do enum / nota acima do limite).
  */
 import { describe, it, expect } from 'vitest';
+import { totalHours } from './selectors';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import { CONTEST_NOTE_MAX_LENGTH } from './types';
 import type { AnaCareHoursPatientSnapshot, AnaCareShift } from './types';
@@ -113,6 +114,22 @@ describe('getMonthSnapshot', () => {
     expect(snapshot.patients[0].hoursActualSum).toBe(8);
     expect(snapshot.patients[0].hoursScheduledSumMissingActual).toBe(6);
     expect(snapshot.patients[0].shiftsCount).toBe(2);
+  });
+
+  it('lista do Fake = Σ hoursActual do detalhe (turno validado com realizada ≠ prevista; sem check-in soma 0)', async () => {
+    const service = makeService({}, [
+      makeShift({ id: 's1', hoursActual: 7.5, hoursScheduled: 8, status: 'validado' }),
+      makeShift({ id: 's2', hoursActual: null, hoursScheduled: 6, origin: 'sin_checkin' }),
+      makeShift({ id: 's3', hoursActual: 4, hoursScheduled: 5, status: 'contestado' }),
+    ]);
+    const lista = (await service.getMonthSnapshot('2026-08')).patients[0];
+    const detalhe = await service.getPatientMonth('2026-08', '90000');
+    const shifts = detalhe!.providers.flatMap((p) => p.shifts);
+    const somaDetalhe = shifts.reduce((acc, sh) => acc + (sh.hoursActual ?? 0), 0);
+    expect(lista.hoursActualSum).toBe(somaDetalhe);
+    expect(lista.hoursActualSum).toBe(11.5);
+    expect(lista.hoursActualSum).toBe(totalHours(shifts, 'zero')); // a MESMA soma do cabeçalho do detalhe
+    expect(lista.hoursScheduledSumMissingActual).toBe(6);
   });
 });
 

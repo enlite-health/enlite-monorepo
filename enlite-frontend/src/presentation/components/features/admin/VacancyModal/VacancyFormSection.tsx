@@ -11,7 +11,7 @@
  *   Right → status/conditions + address + schedule + payment
  */
 
-import { useState, useEffect, useRef, RefObject } from 'react';
+import { useState, useEffect, useMemo, useRef, RefObject } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, useWatch, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,12 +24,11 @@ import { handlePublishedVacancyForbidden } from './vacancyFormDefense';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import {
-  vacancyFormSchema,
+  buildVacancyFormSchema,
   type VacancyFormData,
   DEFAULT_FORM_VALUES,
   buildVacancyPayload,
   buildScheduleFromVacancy,
-  MEET_LINK_REGEX,
 } from '../vacancy-form-schema';
 import { listInvalidFields } from '../vacancyFormValidation';
 import { lockedFormFields, stripLockedFields } from '../vacancyLockedFields';
@@ -111,6 +110,12 @@ export function VacancyFormSection({
   // rápido da lista de vagas), que não passa essa prop e não tinha banner nenhum antes.
   const [invalidFields, setInvalidFields] = useState<string[]>([]);
 
+  // Fase 4: campos do form travados pela origem, derivados de `locked_fields` do GET.
+  const lockedFields = mode === 'edit' ? lockedFormFields(existingVacancy?.locked_fields) : new Set<keyof VacancyFormData>();
+  const professionsLocked = lockedFields.has('required_professions');
+  const providersLocked = lockedFields.has('providers_needed');
+  const schema = useMemo(() => buildVacancyFormSchema(professionsLocked, providersLocked), [professionsLocked, providersLocked]);
+
   const {
     register,
     handleSubmit,
@@ -119,7 +124,7 @@ export function VacancyFormSection({
     setValue,
     formState: { errors, isDirty },
   } = useForm<VacancyFormData>({
-    resolver: zodResolver(vacancyFormSchema),
+    resolver: zodResolver(schema),
     defaultValues: DEFAULT_FORM_VALUES,
   });
 
@@ -129,21 +134,17 @@ export function VacancyFormSection({
   // Fase 4 (F27): alimenta `useUnsavedChangesGuard` em `CreateVacancyPage`.
   useNotifyOnChange(isDirty, onDirtyChange);
 
-  // Fase 4: campos do form travados pela origem, derivados de `locked_fields` do GET.
-  const lockedFields = mode === 'edit' ? lockedFormFields(existingVacancy?.locked_fields) : new Set<keyof VacancyFormData>();
-
   // Watch the minimum invariants required by the schema so the parent can
   // gate the "Continuar" button without triggering a full RHF validation pass.
   const watched = useWatch({
     control,
-    name: ['required_professions', 'schedule', 'meet_links', 'providers_needed'],
+    name: ['required_professions', 'schedule', 'providers_needed'],
   }) as [
     string[] | undefined,
     Array<{ days: string[]; timeFrom: string; timeTo: string }> | undefined,
-    [string, string, string] | undefined,
     number | undefined,
   ];
-  const [professions, schedule, meetLinks, providersNeeded] = watched;
+  const [professions, schedule, providersNeeded] = watched;
 
   const isComplete =
     patientSelected &&
@@ -151,9 +152,7 @@ export function VacancyFormSection({
     Array.isArray(professions) && professions.length > 0 &&
     typeof providersNeeded === 'number' && providersNeeded >= 1 &&
     Array.isArray(schedule) &&
-    schedule.some((s) => s?.days?.length > 0 && !!s.timeFrom && !!s.timeTo) &&
-    Array.isArray(meetLinks) &&
-    meetLinks.some((l) => !!l && MEET_LINK_REGEX.test(l));
+    schedule.some((s) => s?.days?.length > 0 && !!s.timeFrom && !!s.timeTo);
 
   // `null` de propósito (≠ boolean): força a 1ª chamada no mount, mesmo quando `isComplete`
   // nasce `false` — o "Continuar" precisa saber que está incompleto desde o início, não só
@@ -198,7 +197,7 @@ export function VacancyFormSection({
         age_range_max: existingVacancy.age_range_max ?? undefined,
         required_experience: existingVacancy.required_experience ?? '',
         worker_attributes: existingVacancy.worker_attributes ?? '',
-        providers_needed: existingVacancy.providers_needed ?? 1,
+        providers_needed: existingVacancy.providers_needed ?? null,
         patientAddressId: existingVacancy.patient_address_id ?? '',
         work_schedule: existingVacancy.work_schedule ?? '',
         schedule: buildScheduleFromVacancy(existingVacancy),
@@ -213,11 +212,6 @@ export function VacancyFormSection({
         closes_at: existingVacancy.closes_at
           ? String(existingVacancy.closes_at).slice(0, 10)
           : '',
-        meet_links: [
-          existingVacancy.meet_link_1 ?? '',
-          existingVacancy.meet_link_2 ?? '',
-          existingVacancy.meet_link_3 ?? '',
-        ],
       });
     } else if (mode === 'create') {
       reset(DEFAULT_FORM_VALUES);
@@ -289,15 +283,6 @@ export function VacancyFormSection({
         const result = await AdminApiService.createVacancy(payload);
         vacancyId = (result as any)?.id ?? (result as unknown as string);
       }
-
-      // Save meet links (required by Step 1 → Step 2 gate). Form-level Zod
-      // already validated at least one is a valid Meet URL.
-      const meetLinksPayload: [string | null, string | null, string | null] = [
-        data.meet_links?.[0]?.trim() || null,
-        data.meet_links?.[1]?.trim() || null,
-        data.meet_links?.[2]?.trim() || null,
-      ];
-      await AdminApiService.updateVacancyMeetLinks(vacancyId, meetLinksPayload);
 
       onSuccess(vacancyId);
     } catch (err: unknown) {

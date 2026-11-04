@@ -816,18 +816,38 @@ describe('Talentum Outbound API', () => {
   // ═══════════════════════════════════════════════════════════════════
 
   describe('POST /api/admin/vacancies/:id/generate-talentum-description', () => {
-    it('returns 500 without Vertex AI credentials configured', async () => {
-      // Generation uses Vertex AI via ADC. The e2e env has no ADC (empty
-      // .keys, no GOOGLE_CLOUD_PROJECT, no metadata server), so the Vertex
-      // call fails to resolve a token/project → controller returns 500.
+    it('gera a descrição com o Vertex interceptado — nenhuma chamada sai à rede', async () => {
+      // ⚠️ HISTÓRIA, leia antes de "consertar" isto de volta para 500:
+      // Até 29/09/2026 este teste afirmava `500 without Vertex AI credentials configured`, e o
+      // comentário dizia "the e2e env has no ADC ... so the Vertex call fails". Ou seja: ele
+      // media um ACIDENTE DO AMBIENTE (a ausência de credencial no runner), não um
+      // comportamento desenhado. Passava por sorte.
+      //
+      // A spec 029 versionou a interceptação do Vertex no `docker-compose.test.yml` (o preload
+      // `vertexInterceptPreload.js`, que antes vivia num override fora do git e por isso nunca
+      // existiu no CI). Com ele, a chamada é interceptada e a rota responde 200 — que é o
+      // comportamento REAL desta rota quando o modelo responde.
+      //
+      // 🔴 COBERTURA QUE SE PERDEU AQUI: este era o único teste que exercitava a tradução de
+      // "geração falhou" em 500 na camada HTTP. Os caminhos de erro do serviço seguem cobertos
+      // no unit (`TalentumDescriptionService.test.ts`: erro HTTP do Gemini após as tentativas,
+      // resposta vazia, string de recusa), mas o mapeamento para 500 do controlador não tem mais
+      // prova de ponta a ponta. Restaurá-la exige um gatilho EXPLÍCITO de falha no preload —
+      // nunca a volta ao "não tem credencial".
       const res = await api.post(
         `/api/admin/vacancies/${vacancyId}/generate-talentum-description`,
         {},
         auth(adminToken),
       );
 
-      expect(res.status).toBe(500);
-      expect(res.data.success).toBe(false);
+      // Forma medida no controlador (`VacancyTalentumController.ts:148`):
+      // `res.status(200).json({ success: true, data: { description } })`.
+      expect(res.status).toBe(200);
+      expect(res.data.success).toBe(true);
+      // Não basta o 200: a descrição tem de ter atravessado. Um corpo vazio aqui significaria que
+      // a interceptação devolveu algo que o serviço engoliu em silêncio.
+      expect(typeof res.data.data?.description).toBe('string');
+      expect(res.data.data.description.length).toBeGreaterThan(0);
     });
 
     it('returns 401 without token', async () => {

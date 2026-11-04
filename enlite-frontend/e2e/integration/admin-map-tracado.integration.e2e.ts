@@ -179,7 +179,7 @@ test.describe('Traçado da rota sobre o mapa (@integration)', () => {
 
     // 1 · portão: escolher o paciente-âncora
     const seletor = page.getByTestId('map-center-patient');
-    await seletor.getByRole('button').click();
+    await seletor.getByRole('combobox').click();
     const opcao = seletor.getByRole('option').filter({ hasText: nomePaciente });
     await expect(opcao).toHaveCount(1, { timeout: 30_000 });
     await opcao.click();
@@ -313,7 +313,7 @@ test.describe('Traçado da rota sobre o mapa (@integration)', () => {
     await loginComoStaff(page);
     await page.goto('/admin/mapa');
     const seletor = page.getByTestId('map-center-patient');
-    await seletor.getByRole('button').click();
+    await seletor.getByRole('combobox').click();
     await seletor.getByRole('option').filter({ hasText: nomePaciente }).first().click();
     await page.getByTestId('map-list-item').filter({ hasText: nomePrestador }).first().click();
     await page.getByTestId('routes').waitFor({ timeout: 60_000 });

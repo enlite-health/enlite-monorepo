@@ -16,6 +16,7 @@ import {
 import type { TableSort } from '@hooks/useTableSort';
 import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 import { formatDateTime } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
+import { isBajaSelectable } from './bajaSelectable';
 
 export interface VacancyRow {
   id: string;
@@ -32,11 +33,18 @@ export interface VacancyRow {
   isDraft: boolean;
   /** GREATEST(última nota, último movimento de funil, talentum_published_at) — DX-3.5. null = sem nenhuma. */
   lastActionAt: string | null;
+  /** Spec 084: status cru (`DE_BAJA`, `SEARCHING`…); `status` é o rótulo. */
+  statusRaw?: string | null;
+  /** Spec 084: a vaga nasceu de um serviço contratado (P1: só vaga SEM serviço recebe baixa à mão). */
+  hasService?: boolean;
+  /** Spec 084 R13: `MANUAL_PAUSE` / `MANUAL_RESUME` = o Talentum recusou; a pessoa age à mão. */
+  talentumPauseState?: string | null;
 }
+
 
 /** Chaves aceitas pelo backend (`VACANCY_SORT_ALLOWLIST`, spec 046 F3). Caso e Status não ordenam. */
 export type VacancySortKey =
-  | 'compatible' | 'invited' | 'iniciado' | 'preScreening' | 'completed' | 'selected'
+  | 'compatible' | 'invited' | 'iniciado' | 'preScreening' | 'bloqueados' | 'completed' | 'selected'
   | 'quickResponseTeam' | 'rejected' | 'postulados' | 'faltantes' | 'lastActionAt';
 
 const FUNNEL_SORT_KEY: Record<string, VacancySortKey> = {
@@ -44,6 +52,7 @@ const FUNNEL_SORT_KEY: Record<string, VacancySortKey> = {
   INVITED: 'invited',
   INICIADO: 'iniciado',
   PRE_SCREENING: 'preScreening',
+  BLOQUEADO: 'bloqueados',
   COMPLETED: 'completed',
   SELECTED: 'selected',
   QUICK_RESPONSE_TEAM: 'quickResponseTeam',
@@ -57,6 +66,10 @@ interface VacanciesTableProps {
   /** F25/D425 (Fase 3) — o lápis saiu; o clique na linha inteira decide o destino,
    * inclusive a bifurcação por permissão em rascunho (`AdminVacanciesPage.tsx`). */
   onRowClick?: (id: string, isDraft: boolean) => void;
+  /** Spec 084 F1: seleção para baixa em lote. Ausente = a coluna de seleção não existe (sem `vacancy:update`). */
+  selectedIds?: ReadonlySet<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleAll?: (selectAll: boolean) => void;
 }
 
 const STATIC_COLUMNS_BEFORE = [
@@ -73,15 +86,20 @@ const STATIC_COLUMNS_AFTER = [
 const LIST_FUNNEL_COLUMNS = VACANCY_FUNNEL_COLUMNS;
 
 const TOTAL_COLUMNS =
-  1 + // coluna do olho
+  1 + // coluna do olho / seleção
   STATIC_COLUMNS_BEFORE.length +
   1 + // última ação
   LIST_FUNNEL_COLUMNS.length +
   STATIC_COLUMNS_AFTER.length;
 
-export function VacanciesTable({ vacancies, onRowClick, sort = null, onSort }: VacanciesTableProps): JSX.Element {
+export function VacanciesTable({
+  vacancies, onRowClick, sort = null, onSort, selectedIds, onToggleSelect, onToggleAll,
+}: VacanciesTableProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const safeVacancies = vacancies ?? [];
+  const selectable = !!selectedIds && !!onToggleSelect;
+  const eligible = safeVacancies.filter(isBajaSelectable);
+  const allSelected = selectable && eligible.length > 0 && eligible.every((r) => selectedIds!.has(r.id));
   const sortProps = (key: VacancySortKey) =>
     onSort ? { onSort: () => onSort(key), sortDirection: sort?.key === key ? sort.direction : null } : {};
 
@@ -89,7 +107,18 @@ export function VacanciesTable({ vacancies, onRowClick, sort = null, onSort }: V
     <div className="w-full rounded-xl overflow-hidden border border-gray-400">
       <Table className="min-w-[500px]">
         <TableHeader>
-          <TableHead className="w-10" />
+          <TableHead className="w-10">
+            {selectable && onToggleAll && eligible.length > 0 && (
+              <input
+                type="checkbox"
+                className="w-4 h-4 cursor-pointer accent-primary"
+                data-testid="vacancies-select-all"
+                aria-label={t('admin.vacancies.baja.selectAll')}
+                checked={allSelected}
+                onChange={(e) => onToggleAll(e.target.checked)}
+              />
+            )}
+          </TableHead>
           {STATIC_COLUMNS_BEFORE.map(({ key, hiddenClass }) => (
             <TableHead key={key} data-testid={`vacancies-col-${key}`} className={`whitespace-nowrap ${hiddenClass}`}>
               {t(`admin.vacancies.table.${key}`)}
@@ -128,13 +157,51 @@ export function VacanciesTable({ vacancies, onRowClick, sort = null, onSort }: V
               >
                 <TableCell unwrapped className="w-10">
                   <div className="flex items-center gap-1.5">
-                    <Eye className="w-4 h-4 text-gray-800" aria-label={t('admin.vacancies.table.view')} />
+                    {selectable && isBajaSelectable(row) ? (
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 cursor-pointer accent-primary"
+                        data-testid={`vacancy-select-${row.id}`}
+                        aria-label={t('admin.vacancies.baja.selectRow')}
+                        checked={selectedIds!.has(row.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => onToggleSelect!(row.id)}
+                      />
+                    ) : (
+                      <Eye className="w-4 h-4 text-gray-800" aria-label={t('admin.vacancies.table.view')} />
+                    )}
                   </div>
                 </TableCell>
                 <TableCell weight="medium">{formatVacancyCase(row.caseNumber, row.caseOrdinal)}</TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     <Text as="span" size="sm" weight="medium">{row.status}</Text>
+                    {row.statusRaw === 'DE_BAJA' && (
+                      <span
+                        className="inline-flex items-center bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full"
+                        title={t('admin.vacancies.baja.readOnlyHint')}
+                        data-testid={`vacancy-baja-badge-${row.id}`}
+                      >
+                        <Text as="span" size="xs" weight="medium" color="inherit">
+                          {t('admin.vacancies.baja.badge')}
+                        </Text>
+                      </span>
+                    )}
+                    {(row.talentumPauseState === 'MANUAL_PAUSE' || row.talentumPauseState === 'MANUAL_RESUME'
+                      || row.talentumPauseState === 'PENDING_PAUSE' || row.talentumPauseState === 'PENDING_RESUME') && (
+                      <span
+                        className="inline-flex items-center bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full"
+                        data-testid={`vacancy-talentum-manual-badge-${row.id}`}
+                      >
+                        <Text as="span" size="xs" weight="medium" color="inherit">
+                          {row.talentumPauseState === 'MANUAL_PAUSE'
+                            ? t('admin.vacancies.baja.talentumManualBadge')
+                            : row.talentumPauseState === 'MANUAL_RESUME'
+                              ? t('admin.vacancies.baja.talentumManualResumeBadge')
+                              : t('admin.vacancies.baja.talentumPendingBadge')}
+                        </Text>
+                      </span>
+                    )}
                     {row.isDraft && (
                       <span
                         className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"

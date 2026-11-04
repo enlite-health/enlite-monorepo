@@ -66,4 +66,43 @@ describe('VacancyStatusEditor', () => {
     fireEvent.click(trigger);
     expect(screen.queryByTestId('vacancy-status-editor-dropdown')).not.toBeInTheDocument();
   });
+
+  // ── Spec 084 F5 (R18/R4/P1) ───────────────────────────────────────────────
+  it('"En espera" (ON_HOLD) aparece no seletor e chama onChange(ON_HOLD)', () => {
+    const onChange = vi.fn().mockResolvedValue(undefined);
+    render(<VacancyStatusEditor status="SEARCHING" onChange={onChange} />);
+    fireEvent.click(screen.getByTestId('vacancy-status-editor-trigger'));
+    fireEvent.click(screen.getByTestId('vacancy-status-option-ON_HOLD'));
+    expect(onChange).toHaveBeenCalledWith('ON_HOLD');
+  });
+
+  it('vaga de serviço contratado: "Cerrado" NÃO é oferecido (só pausar); vaga sem serviço ainda encerra', () => {
+    const { unmount } = render(<VacancyStatusEditor status="SEARCHING" hasService onChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('vacancy-status-editor-trigger'));
+    expect(screen.queryByTestId('vacancy-status-option-CLOSED')).not.toBeInTheDocument();
+    expect(screen.getByTestId('vacancy-status-option-ON_HOLD')).toBeInTheDocument();
+    unmount();
+    render(<VacancyStatusEditor status="SEARCHING" onChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('vacancy-status-editor-trigger'));
+    expect(screen.getByTestId('vacancy-status-option-CLOSED')).toBeInTheDocument();
+  });
+
+  it('em "En espera", "Reanudar" devolve ao status de antes; sem registro volta para "En búsqueda"', () => {
+    const onChange = vi.fn().mockResolvedValue(undefined);
+    const { unmount } = render(<VacancyStatusEditor status="ON_HOLD" statusBeforeHold="SEARCHING_REPLACEMENT" onChange={onChange} />);
+    fireEvent.click(screen.getByTestId('vacancy-status-editor-trigger'));
+    fireEvent.click(screen.getByTestId('vacancy-status-option-RESUME'));
+    expect(onChange).toHaveBeenCalledWith('SEARCHING_REPLACEMENT');
+    unmount();
+    render(<VacancyStatusEditor status="ON_HOLD" statusBeforeHold={null} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId('vacancy-status-editor-trigger'));
+    fireEvent.click(screen.getByTestId('vacancy-status-option-RESUME'));
+    expect(onChange).toHaveBeenLastCalledWith('SEARCHING');
+  });
+
+  it('fora de "En espera" não existe a opção "Reanudar"', () => {
+    render(<VacancyStatusEditor status="SEARCHING" onChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('vacancy-status-editor-trigger'));
+    expect(screen.queryByTestId('vacancy-status-option-RESUME')).not.toBeInTheDocument();
+  });
 });

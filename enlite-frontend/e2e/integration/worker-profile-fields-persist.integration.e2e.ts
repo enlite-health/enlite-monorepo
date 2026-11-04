@@ -24,6 +24,7 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 test.describe('@integration Worker profile — campos não somem', () => {
   test.setTimeout(90_000);
@@ -121,7 +122,7 @@ test.describe('@integration Worker profile — campos não somem', () => {
     );
 
     // O ÚNICO gesto do teste. Sem clicar em mais nada, sem blur forçado.
-    await page.locator('select#yearsExperience').selectOption('3_5');
+    await escolherNoCombo(page, page.locator('#yearsExperience'), '3-5 años'); // 3_5
 
     const resp = await saved;
     expect(resp.status(), 'o PUT tem de sair sozinho e passar').toBeLessThan(400);

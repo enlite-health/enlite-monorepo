@@ -29,6 +29,8 @@ vi.mock('react-router-dom', () => ({
   useParams: () => ({ id: 'p1' }),
   useNavigate: () => navigate,
   useLocation: () => locationState(),
+  // A aba Itinerario (spec 069) lê `?serviceId=` por `useSearchParams`.
+  useSearchParams: () => [new URLSearchParams(locationState().search ?? ''), vi.fn()],
 }));
 const detail = { patient: null as unknown, isLoading: false, error: null as string | null, refetch: vi.fn() };
 const vac = { vacancies: [], isLoading: false, error: null, refetch: vi.fn() };
@@ -45,6 +47,10 @@ vi.mock('@presentation/components/features/admin/PatientDetail/ProjetoTerapeutic
 // cobria: `onSaved` refetcha ficha E vagas (a vaga nasce da ativação).
 vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratadosCard', () => ({ ServicosContratadosCard: (p: { onSaved?: () => void }) => <button data-testid="services-saved-stub" onClick={() => p.onSaved?.()}>services</button> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
+// Fase 12 (D442): a aba "Itinerário" — o hook é o ÚNICO I/O da aba; aqui ele devolve 0 serviços (estado vazio com testid próprio).
+vi.mock('@hooks/admin/usePatientItinerary', () => ({
+  usePatientItinerary: () => ({ itinerary: { services: [] }, status: 'ok', loadOptions: vi.fn(), allocate: vi.fn(), actionError: null, refreshError: false }),
+}));
 // Spec 031: a aba "Documentos" tem hook + HTTP próprios (testados no próprio arquivo); aqui só a montagem.
 vi.mock('@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection', () => ({
   PatientDocumentsSection: (p: { patientId: string }) => <div data-testid="documents-section-stub">{p.patientId}</div>,
@@ -123,6 +129,7 @@ describe('PatientDetailPage', () => {
     // A aba "Enquadre" saiu: era a MESMA tabela de serviços contratados montada uma 2ª vez, sem
     // `onSaved` — editar por ali salvava e a tela não atualizava.
     expect(screen.queryByText("Enquadre")).not.toBeInTheDocument();
+    expect(screen.queryByTestId('encuadre-tab')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Histórico"));
     expect(screen.getByTestId('history-stub')).toHaveTextContent(patientDetailFixture.id);
   });
@@ -271,10 +278,10 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
   });
 
-  it('serviços contratados: com ela, Serviço Contratado existe (Enquadre saiu em 05/09); Dados Clínicos não', () => {
+  it('serviços contratados: com ela, Serviço Contratado e Itinerário existem (sem Enquadre, 041 R3); Dados Clínicos não', () => {
     comCelulas(['patient:read', 'patient_services:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Itinerário', 'Histórico']);
     expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
   });
 
@@ -282,7 +289,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('047 A2: vacancy:read + patient_services:read → Serviço Contratado mostra o bloco da vacante ABAIXO dos serviços (ordem no DOM)', () => {
     comCelulas(['patient:read', 'patient_services:read', 'vacancy:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Itinerário', 'Histórico']);
     const servicos = screen.getByTestId('services-saved-stub');
     const vagas = screen.getByTestId('vacancies-stub');
     expect(servicos.compareDocumentPosition(vagas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -302,7 +309,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('047 A4: sem vacancy:read → o bloco da vacante não está no DOM mesmo com a aba Serviço Contratado', () => {
     comCelulas(['patient:read', 'patient_services:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Itinerário', 'Histórico']);
     expect(screen.queryByTestId('vacancies-stub')).not.toBeInTheDocument();
   });
 
@@ -347,6 +354,23 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.getByTestId('documents-section-stub')).toBeInTheDocument();
   });
 
+  it('Fase 12 (D442): só patient_itinerary:update → a aba Itinerário existe (container próprio), mas o conteúdo NÃO (gate de patient_services)', () => {
+    comCelulas(['patient:read', 'patient_itinerary:update'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Itinerário', 'Histórico']);
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('itinerario-erro')).not.toBeInTheDocument();
+  });
+
+  it('Fase 12 (D442): engine OFF, clicar Itinerário (6ª de 7 — Encuadre saiu em 05/10, Documentos entrou em 02/10) monta a aba do itinerário', () => {
+    comCelulas([], 'off');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()[5]).toBe('Itinerário');
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Itinerário'));
+    expect(screen.getByTestId('itinerario-sem-servicos')).toBeInTheDocument();
+  });
+
   // Spec 049 (F7) A7-1: a aba "Admissão" é do container `patient_admission`.
   it('049 A7-1: SEM patient_admission:* a aba Admissão não existe e a seção nunca monta', () => {
     comCelulas(['patient:read', 'patient_document:read'], 'on');
@@ -388,7 +412,9 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toHaveLength(6); // + "Admissão" (spec 049, F7)
+    // Spec 049 (F7: + Admissão) + cadeia do itinerário (D442: + Itinerário), sem 'Vagas' (spec 047) — sync main→stage 16/10, decisão C2.
+    // A lista inteira, na ordem (sabotagem: reintroduzir 'encuadre' ou 'vacancies' em patientTabs.ts quebra aqui).
+    expect(abasNaTela()).toEqual(['Dados Clínicos', 'Rede de Apoio', 'Documentos', 'Admissão', 'Serviço Contratado', 'Itinerário', 'Histórico']);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });
@@ -458,6 +484,29 @@ describe('PatientDetailPage — deep-link do sino reage a location.state NOVO (D
     locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
     rerender(<PatientDetailPage />);
     expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
+  });
+
+});
+
+// Spec 041 R4: `?tab=itinerary` (atalho da vacante) abre a aba Itinerario; sem query, o default não muda.
+describe('PatientDetailPage — ?tab= (atalho vacante → itinerário)', () => {
+  beforeEach(() => { detail.patient = { ...patientDetailFixture, admissionStatus: 'DONE', status: 'ACTIVE' }; detail.isLoading = false; detail.error = null; locationState.mockReturnValue({ state: null }); });
+
+  it('?tab=itinerary abre a aba Itinerario', () => {
+    locationState.mockReturnValue({ state: null, search: '?tab=itinerary' } as never);
+    render(<PatientDetailPage />);
+    expect(screen.getByTestId('itinerario-sem-servicos')).toBeInTheDocument();
+  });
+
+  it('sem ?tab= a ficha abre na aba padrão, não no Itinerario', () => {
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
+  });
+
+  it('?tab= inválido cai na aba padrão', () => {
+    locationState.mockReturnValue({ state: null, search: '?tab=nao-existe' } as never);
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
   });
 });
 

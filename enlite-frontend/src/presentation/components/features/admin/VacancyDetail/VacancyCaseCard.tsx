@@ -28,6 +28,9 @@ interface VacancyCaseCardProps {
   closedAt: string | null;
   onStatusChange?: (next: EditableVacancyStatus) => void | Promise<void>;
   isStatusSaving?: boolean;
+  /** Spec 084 F5: vaga de serviço contratado → o seletor não oferece "Cerrado" (só pausar). */
+  hasService?: boolean;
+  statusBeforeHold?: string | null;
 }
 
 function formatDateAR(dateStr: string | null): string {
@@ -90,6 +93,8 @@ export function VacancyCaseCard({
   closedAt,
   onStatusChange,
   isStatusSaving,
+  hasService,
+  statusBeforeHold,
 }: VacancyCaseCardProps) {
   const { t } = useTranslation();
   // PUT /vacancies/:id → updateVacancy → vacancy:write. O dropdown de status
@@ -135,6 +140,8 @@ export function VacancyCaseCard({
         {onStatusChange && !vacancyWriteGate.denied ? (
           <VacancyStatusEditor
             status={status}
+            hasService={hasService}
+            statusBeforeHold={statusBeforeHold}
             isSaving={isStatusSaving}
             onChange={onStatusChange}
           />

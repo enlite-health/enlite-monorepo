@@ -70,7 +70,7 @@ const CAMPOS_PUBLICOS = [
   'id', 'case_number', 'vacancy_number', 'title', 'status', 'is_disabled', 'service_type',
   'required_professions', 'required_sex', 'age_range_min', 'age_range_max',
   'worker_attributes', 'schedule', 'schedule_days_hours', 'salary_text',
-  'talentum_description', 'talentum_whatsapp_url', 'patient_zone', 'country', 'created_at',
+  'talentum_description', 'can_apply', 'patient_zone', 'country', 'created_at',
   'diagnosisLabel',
 ].sort();
 
@@ -91,7 +91,7 @@ function makeVacancyRow(overrides: Record<string, unknown> = {}) {
     schedule_days_hours: null,
     salary_text: '$1000/h',
     talentum_description: 'Buscamos AT con experiencia en TEA.',
-    talentum_whatsapp_url: 'https://wa.me/link',
+    can_apply: true,
     country: 'AR',
     created_at: '2025-01-01T00:00:00Z',
     patient_zone: 'Palermo',
@@ -385,7 +385,7 @@ describe('PublicVacancyController.getById', () => {
       'jp.schedule_days_hours',
       'jp.salary_text',
       'jp.talentum_description',
-      'jp.talentum_whatsapp_url',
+      "(NULLIF(jp.talentum_whatsapp_url, '') IS NOT NULL) AS can_apply",
       'jp.country',
       'jp.created_at',
     ];

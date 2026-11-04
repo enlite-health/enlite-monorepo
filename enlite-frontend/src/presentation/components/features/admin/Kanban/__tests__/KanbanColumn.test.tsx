@@ -97,3 +97,15 @@ describe('KanbanColumn — colapsar/expandir (trilho estilo ClickUp)', () => {
     expect(col.className).toContain('duration-300');
   });
 });
+
+describe('KanbanColumn — headerIcon (rodada 2, quadro C): aditivo, board que não passa fica como sempre foi', () => {
+  it('sem headerIcon (Kanban A/B, comportamento intocado): nada extra no cabeçalho', () => {
+    renderColumn();
+    expect(screen.queryByTestId('column-header-icon-stub')).not.toBeInTheDocument();
+  });
+
+  it('com headerIcon: renderiza ao lado do título, no cabeçalho expandido', () => {
+    renderColumn({ headerIcon: <span data-testid="column-header-icon-stub">i</span> });
+    expect(screen.getByTestId('column-header-icon-stub')).toBeInTheDocument();
+  });
+});

@@ -51,6 +51,16 @@ export default {
         '18': '4.5rem',
         '22': '5.5rem',
       },
+      keyframes: {
+        // Assistants chat "escribiendo": 3 dots fading in turn.
+        'typing-dot': {
+          '0%, 80%, 100%': { opacity: '0.3' },
+          '40%': { opacity: '1' },
+        },
+      },
+      animation: {
+        'typing-dot': 'typing-dot 1.2s infinite',
+      },
       boxShadow: {
         'small': '0px 4px 8px 0px rgba(0, 0, 0, 0.04)',
         'medium': '0px 8px 16px 0px rgba(0, 0, 0, 0.08)',

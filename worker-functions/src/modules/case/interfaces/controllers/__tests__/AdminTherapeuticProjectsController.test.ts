@@ -13,6 +13,9 @@ jest.mock('@modules/identity', () => ({
   AuthMiddleware: { getAuthContext: jest.fn() },
 }));
 jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: { getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ pool: 'fake' }) }) },
+}));
 // Só para a prova de memoização/lazy do getter `coverageContacts` (sem tocar o pool de verdade):
 // o resto do arquivo passa o 4º repo por injeção e nunca deixa este mock ser instanciado.
 jest.mock('../../../infrastructure/PatientCoverageEmergencyContactRepository', () => ({
@@ -335,15 +338,15 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(repo.createVersion).not.toHaveBeenCalled();
     });
 
-    it('403 sem `patient_clinical:write`: a célula que falta é NOMEADA e o repo nem é chamado (lex C7)', async () => {
+    it('403 sem `patient_clinical:create`: a célula que falta é NOMEADA e o repo nem é chamado (lex C7)', async () => {
       const repo = { createVersion: jest.fn() };
       const res = mockRes();
       await ctrl(repo).create(
-        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:write'] }),
+        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:create'] }),
         res,
       );
       expect(res.status).toHaveBeenCalledWith(403);
-      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:write' } });
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:create' } });
       expect(repo.createVersion).not.toHaveBeenCalled();
     });
 
@@ -586,6 +589,38 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(corpoDaResposta(res).data.version).toBe('V.1.0');
     });
 
+    it('201 no `new` com as células DIVIDIDAS (create), sem `write` — o que o painel de grupos de fato grava', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:create', 'patient_clinical:create'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(repo.createVersion).toHaveBeenCalledTimes(1);
+    });
+
+    it('`edit` exige `patient_clinical:update`: só `:create` → 403 nomeando `:update`; com `:update` → 201', async () => {
+      const corpoEdit = { mode: 'edit', fromVersionId: SOURCE_ID, version: VERSAO_DO_EDIT };
+      const repoNega = { createVersion: jest.fn() };
+      const resNega = mockRes();
+      await ctrl(repoNega).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpoEdit, permissionCells: ['patient_clinical:create'] }),
+        resNega,
+      );
+      expect(resNega.status).toHaveBeenCalledWith(403);
+      expect(corpoDaResposta(resNega)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:update' } });
+      expect(repoNega.createVersion).not.toHaveBeenCalled();
+
+      const repoOk = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const resOk = mockRes();
+      await ctrl(repoOk).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpoEdit, permissionCells: ['patient_clinical:update'] }),
+        resOk,
+      );
+      expect(resOk.status).toHaveBeenCalledWith(201);
+    });
+
     describe('030 — segmento (lex C3, C7)', () => {
       it('030 — o `segmentId` do corpo chega ao repositório no `new` (o `{id,label}` é do repositório, nunca do corpo)', async () => {
         const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
@@ -609,15 +644,15 @@ describe('AdminTherapeuticProjectsController', () => {
         expect(reportError).not.toHaveBeenCalled();
       });
 
-      it('030 — 403 sem `patient_clinical:write` mesmo com `segmentId` válido: nomeia a célula e o repo nem é chamado', async () => {
+      it('030 — 403 sem `patient_clinical:create` mesmo com `segmentId` válido: nomeia a célula e o repo nem é chamado', async () => {
         const repo = { createVersion: jest.fn() };
         const res = mockRes();
         await ctrl(repo).create(
-          mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:write'] }),
+          mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:create'] }),
           res,
         );
         expect(res.status).toHaveBeenCalledWith(403);
-        expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:write' } });
+        expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:create' } });
         expect(JSON.stringify(corpoDaResposta(res))).not.toContain(SEGMENT_ID);
         expect(repo.createVersion).not.toHaveBeenCalled();
       });
@@ -886,6 +921,28 @@ describe('AdminTherapeuticProjectsController', () => {
     });
   });
 
+  describe('listServiceExitReasonOptions (492)', () => {
+    const exitCtrl = (reader: Record<string, unknown>) =>
+      new AdminTherapeuticProjectsController({} as never, {} as never, stubContacts() as never, stubCoverageContacts() as never, undefined, undefined, reader as never);
+
+    it('200 com `{ items: [{ code, label }] }` vindo só dos ativos (o reader é quem filtra `active`)', async () => {
+      const reader = { listActiveOptions: jest.fn().mockResolvedValue([{ code: 'OTHER', label: 'Otro' }]) };
+      const res = mockRes();
+      await exitCtrl(reader).listServiceExitReasonOptions(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(reader.listActiveOptions).toHaveBeenCalledWith({ pool: 'fake' });
+      expect(corpoDaResposta(res)).toEqual({ success: true, data: { items: [{ code: 'OTHER', label: 'Otro' }] } });
+    });
+
+    it('500 quando o reader lança', async () => {
+      const reader = { listActiveOptions: jest.fn().mockRejectedValue(new Error('boom')) };
+      const res = mockRes();
+      await exitCtrl(reader).listServiceExitReasonOptions(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminTherapeuticProjectsController:listServiceExitReasonOptions' });
+    });
+  });
+
   describe('createCatalogItem', () => {
     it('400 quando o rótulo carrega dado de pessoa (lex C18) — só o nome do campo volta', async () => {
       const catalogs = { create: jest.fn() };
@@ -894,6 +951,22 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Invalid body', details: { fields: ['label'] } });
       expect(catalogs.create).not.toHaveBeenCalled();
+    });
+
+    it('spec 061: repassa `description` ao create; 1001 → 400 só com o nome do campo, sem ecoar o texto (controle: 1000 passa)', async () => {
+      const catalogs = { create: jest.fn().mockResolvedValue(ITEM) };
+      const ok = mockRes();
+      const dentro = 'DESCRIPCION-SINTETICA-' + 'a'.repeat(1000 - 'DESCRIPCION-SINTETICA-'.length);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: dentro } }), ok);
+      expect(ok.status).toHaveBeenCalledWith(201);
+      expect(catalogs.create).toHaveBeenCalledWith('activities', { label: 'TITULO-SINTETICO-1', description: dentro, actorUid: 'uid-1' });
+      const ruim = mockRes();
+      const fora = 'DESCRIPCION-SINTETICA-' + 'b'.repeat(1001 - 'DESCRIPCION-SINTETICA-'.length);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: fora } }), ruim);
+      expect(ruim.status).toHaveBeenCalledWith(400);
+      expect(corpoDaResposta(ruim)).toEqual({ success: false, error: 'Invalid body', details: { fields: ['description'] } });
+      expect(JSON.stringify(corpoDaResposta(ruim))).not.toContain('DESCRIPCION-SINTETICA');
+      expect(catalogs.create).toHaveBeenCalledTimes(1);
     });
 
     it('201 com o rótulo e o ator carimbado', async () => {
@@ -968,6 +1041,16 @@ describe('AdminTherapeuticProjectsController', () => {
       const res = mockRes();
       await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { active: false } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('spec 061: update só com `description` repassa a descrição (sem label); `null` limpa', async () => {
+      const catalogs = { update: jest.fn().mockResolvedValue(ITEM) };
+      const res = mockRes();
+      await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { description: 'DESCRIPCION-SINTETICA-2' } }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(catalogs.update).toHaveBeenLastCalledWith('activities', ITEM_ID, { description: 'DESCRIPCION-SINTETICA-2', actorUid: 'uid-1' });
+      await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { description: null } }), mockRes());
+      expect(catalogs.update).toHaveBeenLastCalledWith('activities', ITEM_ID, { description: null, actorUid: 'uid-1' });
     });
 
     it('200 repassando o patch parcial + o ator (a baixa é `active:false`, nunca DELETE)', async () => {

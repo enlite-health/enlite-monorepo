@@ -1,16 +1,16 @@
 import { TFunction } from 'i18next';
-import { SelectOption } from '@presentation/components/molecules/SelectField';
+import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 
-export const getAttentionOptions = (t: TFunction): SelectOption[] => [
+export const getAttentionOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'complete', label: t('admin.patients.attentionOptions.complete') },
   { value: 'needs_attention', label: t('admin.patients.attentionOptions.needsAttention') },
 ];
 
-export const getReasonOptions = (t: TFunction): SelectOption[] => [
+export const getReasonOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'MISSING_INFO', label: t('admin.patients.reasonOptions.MISSING_INFO') },
 ];
 
-export const getSpecialtyOptions = (t: TFunction): SelectOption[] => [
+export const getSpecialtyOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'INTELLECTUAL_DISABILITY', label: t('admin.patients.specialtyOptions.INTELLECTUAL_DISABILITY') },
   { value: 'NEUROLOGICAL', label: t('admin.patients.specialtyOptions.NEUROLOGICAL') },
   { value: 'MOTOR_LIMITATIONS', label: t('admin.patients.specialtyOptions.MOTOR_LIMITATIONS') },
@@ -23,7 +23,7 @@ export const getSpecialtyOptions = (t: TFunction): SelectOption[] => [
 ];
 
 /** Fase 4 — country scope options (Todos = empty value / placeholder). */
-export const getCountryOptions = (t: TFunction): SelectOption[] => [
+export const getCountryOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'AR', label: t('admin.patients.countryOptions.AR') },
   { value: 'BR', label: t('admin.patients.countryOptions.BR') },
 ];
@@ -34,17 +34,17 @@ export const getCountryOptions = (t: TFunction): SelectOption[] => [
  * `data.scope.countries` (resolvido no servidor); sem Portugal, sem jurisdição
  * fora do que o ator tem concedido.
  */
-export const getScopedCountryOptions = (t: TFunction, countries: readonly string[]): SelectOption[] =>
+export const getScopedCountryOptions = (t: TFunction, countries: readonly string[]): ComboboxOption[] =>
   countries.map((c) => ({ value: c, label: t(`admin.patients.countryOptions.${c}`) }));
 
 /** Fase 4 — funnel period presets (relative to now). */
-export const getFunnelPeriodOptions = (t: TFunction): SelectOption[] => [
+export const getFunnelPeriodOptions = (t: TFunction): ComboboxOption[] => [
   { value: '7', label: t('admin.patients.funnel.period.7') },
   { value: '30', label: t('admin.patients.funnel.period.30') },
   { value: '90', label: t('admin.patients.funnel.period.90') },
 ];
 
-export const getDependencyOptions = (t: TFunction): SelectOption[] => [
+export const getDependencyOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'SEVERE', label: t('admin.patients.dependencyOptions.SEVERE') },
   { value: 'VERY_SEVERE', label: t('admin.patients.dependencyOptions.VERY_SEVERE') },
   { value: 'MODERATE', label: t('admin.patients.dependencyOptions.MODERATE') },

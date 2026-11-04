@@ -88,7 +88,8 @@ describe('eventCounters', () => {
 
 describe('buildEnquadreEventTitle', () => {
   const FIRST_NAME = 'Primeironome';
-  const input = { caseNumber: 1234, patientLastName: 'Sobrenome Ficticio', eventCode: 'ENC-AB12CD' };
+  const LAST_NAME = 'Sobrenome Ficticio';
+  const input = { caseNumber: 1234, eventCode: 'ENC-AB12CD' };
 
   it('tem o código do evento e o título casa com o leitor do Tactiq (titleHasExactCode)', () => {
     const title = buildEnquadreEventTitle(input);
@@ -96,25 +97,26 @@ describe('buildEnquadreEventTitle', () => {
     expect(titleHasExactCode(title, 'ENC-AB12CD')).toBe(true);
   });
 
-  it('tem o número do caso e o sobrenome, no formato combinado', () => {
-    expect(buildEnquadreEventTitle(input)).toBe('Encuadre terapéutico — Caso 1234 · Sobrenome Ficticio · ENC-AB12CD');
+  it('tem o número do caso e o código, no formato combinado — e nada do paciente', () => {
+    expect(buildEnquadreEventTitle(input)).toBe('Encuadre terapéutico — Caso 1234 · ENC-AB12CD');
   });
 
-  it('NÃO contém o primeiro nome (a função nem recebe esse parâmetro)', () => {
-    const title = buildEnquadreEventTitle({ ...input, ...({ patientFirstName: FIRST_NAME } as object) });
+  it('NÃO contém nome nem sobrenome do paciente, mesmo que alguém os passe (a função nem recebe esses parâmetros)', () => {
+    // Regressão de 16/10/2026: o sobrenome aparecia no convite visto por prestadores que ainda não atuam no caso.
+    const title = buildEnquadreEventTitle({
+      ...input,
+      ...({ patientFirstName: FIRST_NAME, patientLastName: LAST_NAME, lastName: LAST_NAME } as object),
+    });
     expect(title).not.toContain(FIRST_NAME);
+    expect(title).not.toContain(LAST_NAME);
+    expect(title).toBe('Encuadre terapéutico — Caso 1234 · ENC-AB12CD');
   });
 
-  it('sem sobrenome (ou sem nº do caso) omite o trecho: nunca imprime undefined/null', () => {
-    for (const t of [
-      buildEnquadreEventTitle({ ...input, patientLastName: null }),
-      buildEnquadreEventTitle({ ...input, patientLastName: '   ' }),
-      buildEnquadreEventTitle({ ...input, caseNumber: null }),
-      buildEnquadreEventTitle({ caseNumber: null, patientLastName: null, eventCode: 'ENC-AB12CD' }),
-    ]) {
-      expect(t).not.toMatch(/undefined|null/);
+  it('sem nº do caso omite o trecho: nunca imprime undefined/null', () => {
+    for (const t of [buildEnquadreEventTitle({ ...input, caseNumber: null }), buildEnquadreEventTitle({ ...input, caseNumber: Number.NaN })]) {
+      expect(t).not.toMatch(/undefined|null|NaN/);
       expect(t).toContain('ENC-AB12CD');
     }
-    expect(buildEnquadreEventTitle({ ...input, patientLastName: null })).toBe('Encuadre terapéutico — Caso 1234 · ENC-AB12CD');
+    expect(buildEnquadreEventTitle({ ...input, caseNumber: null })).toBe('Encuadre terapéutico — ENC-AB12CD');
   });
 });

@@ -2,12 +2,12 @@
  * Campos EFETIVOS da vaga (change `vaga-le-do-servico-contratado`, F1).
  *
  * Vaga nascida de um serviço contratado (`contracted_service_id IS NOT NULL`) NÃO é dona do horário: o
- * dono é `patient_contracted_services.schedule`. A cópia em `job_postings.schedule` continua no banco
+ * dono são as faixas vigentes do serviço (`patient_itinerary_slot`, lidas por `horario_do_servico`; spec 056). A cópia em `job_postings.schedule` continua no banco
  * (os escritores seguem copiando até a F7), mas NENHUM leitor a lê: todo leitor obtém o valor por esta
  * peça. O teste `vacancyEffectiveFields.contract.test.ts` reprova o arquivo que ler a coluna crua.
  *
  * Regra do valor efetivo (nunca `COALESCE(serviço, vaga)`):
- *   CASE WHEN jp.contracted_service_id IS NOT NULL THEN <alias_eff>.schedule ELSE jp.schedule END
+ *   CASE WHEN jp.contracted_service_id IS NOT NULL THEN horario_do_servico(jp.contracted_service_id, CURRENT_DATE) ELSE jp.schedule END
  * Serviço com horário NULL = "vaga sem horário"; não cai na cópia velha (vazio ambíguo ≠ ausência).
  * Vaga sem serviço lê o próprio `jp.schedule`.
  *
@@ -27,6 +27,9 @@
  * entrega min/max do serviço: entrega a BANDA efetiva (`effective_provider_age_band`) e devolve `age_range_min/max`
  * NULL para vaga com serviço (nunca a cópia). Todo leitor aplica `applyEffectiveAgeRange(row)` à linha lida: serviço →
  * mapeamento da banda; manual → as colunas da própria vaga.
+ *
+ * 057 (D523): `required_sex`, `required_professions`, `required_experience`, `work_schedule` e `payment_day` também são do
+ * serviço contratado; a vaga com serviço não os edita (só a ficha do paciente). Vaga manual segue dona dos campos.
  */
 
 /** Alias padrão do serviço contratado na query do leitor. */
@@ -44,23 +47,28 @@ export const JOB_POSTING_COLUMNS = [
   'is_covered', 'coordinator_name', 'worker_profile_sought', 'schedule_days_hours', 'due_date',
   'search_start_date', 'patient_id', 'weekly_hours', 'providers_needed', 'active_providers',
   'authorized_period', 'marketing_channel', 'assignee', 'daily_obs', 'inferred_zone', 'coordinator_id',
-  'assignee_uid', 'deleted_at', 'meet_link_1', 'meet_datetime_1', 'meet_link_2', 'meet_datetime_2',
-  'meet_link_3', 'meet_datetime_3', 'talentum_project_id', 'talentum_public_id', 'talentum_whatsapp_url',
+  'assignee_uid', 'deleted_at', 'talentum_project_id', 'talentum_public_id', 'talentum_whatsapp_url',
   'talentum_slug', 'talentum_published_at', 'talentum_description', 'required_professions', 'required_sex',
   'age_range_min', 'age_range_max', 'required_experience', 'worker_attributes', 'salary_text',
   'payment_day', 'schedule', 'vacancy_number', 'social_short_links', 'enriched_at', 'patient_address_id',
   'service_lat', 'service_lng', 'service_location', 'is_draft', 'timezone', 'is_test',
-  'meet_recurring_weekday', 'meet_recurring_time', 'meet_recurring_link', 'contracted_service_id',
+  'contracted_service_id',
   'case_ordinal', 'title_before_en', 'status_before_baja',
+  // coluna da migration 558: ordem = `ordinal_position` (ADD COLUMN entra no fim da tabela)
+  'talentum_prescreening_id',
+  // migration 562 (spec 084): motivo do DE_BAJA, status antes do "En espera" e o estado do Talentum (lista manual)
+  'baja_reason', 'status_before_hold', 'talentum_pause_state',
 ] as const;
 
 /** Nome de saída da banda efetiva; `applyEffectiveAgeRange` a consome e a REMOVE da linha (o consumidor não a vê). */
 export const EFFECTIVE_AGE_BAND_ALIAS = 'effective_provider_age_band';
 
-/** Colunas que a vaga LÊ do serviço: `schedule` (F1), `providers_needed` (F5) e a faixa etária (F6). */
+/** Colunas que a vaga LÊ do serviço: `schedule` (F1), `providers_needed` (F5), a faixa etária (F6) e os 5 de recrutamento (057). */
 export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: string) => string> = {
-  schedule: (jp, eff) =>
-    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.schedule ELSE ${jp}.schedule END`,
+  // Spec 056: o horário do serviço NÃO é mais coluna (`pcs.schedule` morta) — vem das faixas vigentes hoje, em SQL
+  // (`horario_do_servico`, migration 527), no formato do antigo schedule + `durationMinutes`. `eff` não entra no horário.
+  schedule: (jp) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN horario_do_servico(${jp}.contracted_service_id, CURRENT_DATE) ELSE ${jp}.schedule END`,
   // `job_postings.providers_needed` é TEXT e `patient_contracted_services.providers_needed` é INT: os dois
   // ramos do CASE precisam do MESMO tipo (Postgres recusa o contrário) e os leitores esperam TEXT
   // (`~ '^[0-9]+$'`, `::INTEGER`). O cast mora AQUI, uma vez; leitor nenhum faz cast próprio.
@@ -69,6 +77,18 @@ export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: strin
   // F6: vaga com serviço devolve NULL (a faixa é derivada da banda em TS, sem cair na cópia); manual lê o próprio valor.
   age_range_min: (jp) => `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN NULL ELSE ${jp}.age_range_min END`,
   age_range_max: (jp) => `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN NULL ELSE ${jp}.age_range_max END`,
+  // 057 (D523): os 5 campos de recrutamento. `jp.required_professions` tem DEFAULT '{}' e a cópia pode ser NULL no
+  // serviço; os leitores fazem `ANY(...)`/`cardinality`, então a vaga com serviço devolve '{}' (nunca NULL).
+  required_sex: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.required_sex ELSE ${jp}.required_sex END`,
+  required_professions: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN COALESCE(${eff}.required_professions, '{}'::text[]) ELSE ${jp}.required_professions END`,
+  required_experience: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.required_experience ELSE ${jp}.required_experience END`,
+  work_schedule: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.work_schedule ELSE ${jp}.work_schedule END`,
+  payment_day: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.payment_day ELSE ${jp}.payment_day END`,
 };
 
 /** `LEFT JOIN` do serviço contratado da vaga (join por PK: no máximo 1 linha, não multiplica a vaga). */
@@ -90,6 +110,46 @@ export function vacancyEffectiveScheduleSql(
   eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
 ): string {
   return EFFECTIVE_FIELD_EXPRESSIONS.schedule(jp, eff);
+}
+
+/** Sexo requerido efetivo (057) (sem alias de saída; o leitor escreve `AS required_sex`). */
+export function vacancyEffectiveRequiredSexSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.required_sex(jp, eff);
+}
+
+/** Profissões requeridas efetivas, nunca NULL para vaga com serviço (057) (sem alias de saída; o leitor escreve `AS required_professions`). */
+export function vacancyEffectiveRequiredProfessionsSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.required_professions(jp, eff);
+}
+
+/** Experiência requerida efetiva (057) (sem alias de saída; o leitor escreve `AS required_experience`). */
+export function vacancyEffectiveRequiredExperienceSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.required_experience(jp, eff);
+}
+
+/** Modalidade/escala de trabalho efetiva (057) (sem alias de saída; o leitor escreve `AS work_schedule`). */
+export function vacancyEffectiveWorkScheduleSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.work_schedule(jp, eff);
+}
+
+/** Dia de pagamento efetivo (057) (sem alias de saída; o leitor escreve `AS payment_day`). */
+export function vacancyEffectivePaymentDaySql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.payment_day(jp, eff);
 }
 
 /** Expressão da quantidade de prestadores efetiva, sempre TEXT (sem alias de saída; o leitor escreve `AS providers_needed`). */

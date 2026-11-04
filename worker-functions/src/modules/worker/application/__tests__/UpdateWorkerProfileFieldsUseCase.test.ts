@@ -214,7 +214,7 @@ describe('UpdateWorkerProfileFieldsUseCase — transação + trilha de fonte', (
   });
 });
 
-describe('UpdateWorkerProfileFieldsUseCase — recálculo de status (043 A1)', () => {
+describe('UpdateWorkerProfileFieldsUseCase — recálculo de status (043 A1 → 067 FR-23)', () => {
   it('edição que escreve campo recalcula o status do worker, como o wizard', async () => {
     await new UpdateWorkerProfileFieldsUseCase().execute(
       { workerId: WORKER_ID, profession: 'AT' },
@@ -225,8 +225,18 @@ describe('UpdateWorkerProfileFieldsUseCase — recálculo de status (043 A1)', (
     expect(mockRecalculateWorkerStatus.mock.calls[0][1]).toBe(WORKER_ID);
   });
 
-  it('worker REGISTERED: o recálculo NÃO é chamado (só promove, nunca rebaixa)', async () => {
+  it('worker REGISTERED: o recálculo É chamado (067 FR-23: promove e rebaixa) — A8 v', async () => {
     workerStatus = 'REGISTERED';
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID, profession: 'AT' },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+    expect(mockRecalculateWorkerStatus).toHaveBeenCalledTimes(1);
+    expect(mockRecalculateWorkerStatus.mock.calls[0][1]).toBe(WORKER_ID);
+  });
+
+  it('worker DISABLED: o recálculo NÃO é chamado (baixa nunca é revertida por edição)', async () => {
+    workerStatus = 'DISABLED';
     await new UpdateWorkerProfileFieldsUseCase().execute(
       { workerId: WORKER_ID, profession: 'AT' },
       { source: 'admin_panel', actorUid: 'staff-uid-1' },

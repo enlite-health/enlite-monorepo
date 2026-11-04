@@ -20,6 +20,5 @@ export function listInvalidFields(
   if (errors.patientAddressId) labels.push(tp('serviceAddress'));
   if (errors.providers_needed) labels.push(tp('providersNeeded'));
   if (errors.schedule) labels.push(tp('schedule'));
-  if (errors.meet_links) labels.push(tp('meetLinksLabel'));
   return labels;
 }

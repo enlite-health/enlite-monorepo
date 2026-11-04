@@ -39,6 +39,13 @@ describe('ListWorkerApplicationsUseCase', () => {
     expect(out.applications).toEqual([]);
   });
 
+  it('vaga apagada (soft-delete) não entra: a query exclui jp.deleted_at', async () => {
+    const pool = makePool([]);
+    await new ListWorkerApplicationsUseCase(pool).execute('w1');
+    const [sql] = (pool as never as { query: jest.Mock }).query.mock.calls[0];
+    expect(String(sql)).toContain('jp.deleted_at IS NULL');
+  });
+
   it('query filtra por worker_id e só junta job_postings (sem patients)', async () => {
     const pool = makePool([]);
     await new ListWorkerApplicationsUseCase(pool).execute('w1');

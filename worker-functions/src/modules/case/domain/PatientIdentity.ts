@@ -15,7 +15,6 @@ export interface PatientIdentity {
   sex: string | null;
   phoneWhatsapp: string | null;
   insuranceInformed: string | null;
-  insuranceVerified: string | null;
   cityLocality: string | null;
   province: string | null;
   zoneNeighborhood: string | null;

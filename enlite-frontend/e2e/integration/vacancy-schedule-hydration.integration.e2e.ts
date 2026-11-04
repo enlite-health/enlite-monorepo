@@ -14,8 +14,7 @@
  * só libera `:5173`/`:3000`, `worker-functions/src/shared/http/corsConfig.ts`, sem
  * `CORS_ALLOWED_ORIGINS` setado neste container). Login por UI real + mocks ÚNICOS de
  * Firebase Identity Toolkit / `/api/admin/auth/profile` / `/generate-ai-content` (Gemini
- * custaria) / `/publish-talentum` (canal real proibido) / `/meet-links/lookup` (Google
- * Calendar) — molde `vacancy-draft-wizard-locked.integration.e2e.ts`
+ * custaria) / `/publish-talentum` (canal real proibido) — molde `vacancy-draft-wizard-locked.integration.e2e.ts`
  * (`_worktrees/completar-vacante-f4`). GET/PUT de vaga são o backend REAL, sem mock — é
  * exatamente esse round-trip que o bug quebrava.
  */
@@ -185,15 +184,6 @@ async function installInterceptors(page: Page): Promise<void> {
       return;
     }
 
-    if (url.includes('/meet-links/lookup')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { normalized: 'https://meet.google.com/abc-defg-hij', datetime: '2026-06-01T15:00:00-03:00' } }),
-      });
-      return;
-    }
-
     const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
     await route.continue({ headers });
   };
@@ -257,7 +247,6 @@ test.describe('vacancy-schedule-hydration @integration', () => {
       caseNumber: 9101,
       status: 'PENDING_ACTIVATION',
       isDraft: true, // draft → PUT aceita o payload inteiro do form, não só {schedule,status}
-      meetLink1: 'https://meet.google.com/abc-defg-hij',
     });
     vacancyIds.push(vacancyId);
     // Forma PERSISTIDA (array) — o GET do backend devolve isto NORMALIZADO como objeto
@@ -287,7 +276,6 @@ test.describe('vacancy-schedule-hydration @integration', () => {
     const putResponse = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/admin/vacancies/${vacancyId}`) &&
-        !res.url().includes('meet-links') &&
         res.request().method() === 'PUT',
     );
     await page.getByTestId('create-vacancy-save-btn').click();
@@ -316,7 +304,6 @@ test.describe('vacancy-schedule-hydration @integration', () => {
       caseNumber: 9102,
       status: 'PENDING_ACTIVATION',
       isDraft: true,
-      meetLink1: 'https://meet.google.com/abc-defg-hij',
     });
     vacancyIds.push(vacancyId);
     setSchedule(vacancyId, null);
@@ -341,7 +328,6 @@ test.describe('vacancy-schedule-hydration @integration', () => {
       caseNumber: 9103,
       status: 'PENDING_ACTIVATION',
       isDraft: true,
-      meetLink1: 'https://meet.google.com/abc-defg-hij',
     });
     vacancyIds.push(vacancyId);
     setSchedule(vacancyId, null);

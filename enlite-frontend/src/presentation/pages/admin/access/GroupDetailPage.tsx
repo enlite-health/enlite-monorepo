@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
+import { ACESSO_MASTER_GROUP_ID } from '@domain/entities/AccessMaster';
 import {
   AdminPermissionsApiService,
   type CatalogCategory,
@@ -24,6 +25,7 @@ import {
 } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { useToast } from '@presentation/hooks/useToast';
+import { CountryChips } from '@presentation/components/molecules/CountryChips';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
 
@@ -111,10 +113,10 @@ function GroupDetail(): JSX.Element {
   // buscar seria uma leitura sem propósito.
   useEffect(() => {
     if (!canWrite) return;
-    AdminApiService.listAdmins(200, 0)
+    AdminApiService.listAdmins(200, 0, id)
       .then((r) => setCandidates(r.admins))
       .catch(() => setCandidates([]));
-  }, [canWrite]);
+  }, [canWrite, id]);
 
   /**
    * O universo da transferência. O membro entra pelo que a API de membros sabe
@@ -128,10 +130,27 @@ function GroupDetail(): JSX.Element {
       porUid.set(m.userId, { userId: m.userId, name: null, email: m.email ?? m.userId });
     }
     for (const u of candidates) {
-      porUid.set(u.firebaseUid, { userId: u.firebaseUid, name: u.displayName, email: u.email });
+      porUid.set(u.firebaseUid, { userId: u.firebaseUid, name: u.displayName, email: u.email, isAgent: u.accountType === 'agent' });
     }
     return [...porUid.values()];
   }, [members, candidates]);
+
+  // Spec 078: célula `somenteAcessoMaster` (pedidos_ia:*) só aparece no Acesso Master (id fixo, o
+  // mesmo do anti-lockout) — nos demais grupos ela nem entra na grade, e o PUT não a manda (o
+  // servidor a recusaria com 422 `master_only_cell`).
+  const isMaster = group?.id === ACESSO_MASTER_GROUP_ID;
+  const catalogDoGrupo = useMemo(
+    () => (isMaster
+      ? catalog
+      : catalog
+        .map((cat) => ({ ...cat, cells: cat.cells.filter((c) => !c.somenteAcessoMaster) }))
+        .filter((cat) => cat.cells.length > 0)),
+    [catalog, isMaster],
+  );
+  const chavesSoMaster = useMemo(
+    () => new Set(catalog.flatMap((cat) => cat.cells).filter((c) => c.somenteAcessoMaster).map((c) => `${c.resource}:${c.action}`)),
+    [catalog],
+  );
 
   const diffCelulas = useMemo(
     () => cellDiff(group?.cells ?? [], cells),
@@ -291,49 +310,35 @@ function GroupDetail(): JSX.Element {
           quem já sabe o que ela quer dizer. */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-countries">
         <Heading level={3} weight="semibold" color="primary"><span id="sec-countries">{t('admin.access.group.countriesTitle')}</span></Heading>
-        <div className="flex flex-wrap gap-3 items-center">
-          {COUNTRIES.map((c) => {
-            const on = group.countries.includes(c);
-            const nome = t(`countries.${c}`, c);
-            // O PAÍS é o botão (pedido do Gabriel, 05/09). Não há "Conceder" ao
-            // lado: clicar em `Argentina` concede, clicar de novo revoga. O
-            // estado é o próprio botão — marcado (✓, fundo cheio) ou não.
-            //
-            // Sem motivo: a mig 412 tirou a exigência das três camadas
-            // (coluna, zod e a própria `iam.grant_country`). Decisão do Gabriel:
-            // "ninguém faz um grupo e coloca motivo por ser de um país ou dos
-            // dois" — e campo obrigatório sem conteúdo real vira "ok" e ".".
-            // Quem guarda o ato é `granted_by` + `created_at` + `revoked_at`.
-            // Em `read` o país é TEXTO, não botão desabilitado. `ActionButton`
-            // ESCONDE quando falta a célula de escrita (D269) — e o país virando
-            // botão fazia a seção inteira sumir para quem só lê, que é
-            // justamente quem precisa consultar o alcance do grupo.
-            if (!editableContent) {
-              return (
-                <span key={c} className="px-3 py-1 rounded border border-gray-300">
-                  <Text as="span" size="sm" weight={on ? 'semibold' : 'normal'} color={on ? 'primary' : 'secondary'}>
-                    {nome}{on ? ' ✓' : ''}
-                  </Text>
-                </span>
-              );
-            }
-            return (
-              <ActionButton
-                key={c}
-                resource={PANEL_RESOURCE}
-                size="sm"
-                variant={on ? 'primary' : 'outline'}
-                aria-pressed={on}
-                onClick={() => run(() => (on
-                  ? AdminPermissionsApiService.revokeCountry(group.id, c)
-                  : AdminPermissionsApiService.grantCountry(group.id, c)))}
-              >
-                {nome}{on ? ' ✓' : ''}
-              </ActionButton>
-            );
-          })}
+        {/* O PAÍS é o botão (pedido do Gabriel, 05/09): clicar em `Argentina` concede, clicar de novo revoga; o estado é o próprio
+            botão — marcado (✓, fundo cheio) ou não. Sem motivo (mig 412: "ninguém faz um grupo e coloca motivo por ser de um país").
+            Quem guarda o ato é `granted_by` + `created_at` + `revoked_at`.
+            Em `read` o país é TEXTO, não botão desabilitado — `ActionButton` ESCONDE sem a célula de escrita (D269), e o país virando
+            botão fazia a seção inteira sumir para quem só lê. O desenho dos chips vive em `CountryChips` (molecule compartilhada com a
+            tela Entrevistadores, spec 055); aqui só entram o gate (`ActionButton`) e a chamada da API. */}
+        <CountryChips
+          countries={COUNTRIES}
+          selected={group.countries}
+          readOnly={!editableContent}
+          size="sm"
+          onToggle={(c, next) => run(() => (next
+            ? AdminPermissionsApiService.grantCountry(group.id, c)
+            : AdminPermissionsApiService.revokeCountry(group.id, c)))}
+          renderChip={({ country, label, on, size, onToggle }) => (
+            <ActionButton
+              key={country}
+              resource={PANEL_RESOURCE}
+              size={size}
+              variant={on ? 'primary' : 'outline'}
+              aria-pressed={on}
+              onClick={onToggle}
+            >
+              {label}{on ? ' ✓' : ''}
+            </ActionButton>
+          )}
+        >
           {group.countries.length === 0 && !editableContent && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
-        </div>
+        </CountryChips>
 
       </section>
 
@@ -354,14 +359,14 @@ function GroupDetail(): JSX.Element {
           <Heading level={3} weight="semibold" color="primary"><span id="sec-cells">{t('admin.access.group.cellsTitle')}</span></Heading>
           {catalog.length > 0 && (
             <Text as="span" size="xs" color="secondary" className="shrink-0">
-              {t('admin.access.group.cells.selected', { total: contaSelecionadas(catalog, cells) })}
+              {t('admin.access.group.cells.selected', { total: contaSelecionadas(catalogDoGrupo, cells) })}
             </Text>
           )}
         </div>
 
         {/* Busca/filtro (US-21, FR-720): só sobre o que a grade DESENHA — o conjunto marcado que
             fica fora do filtro não muda e vai junto no PUT (contracts/permissions-split.md). */}
-        {catalog.length > 0 && (
+        {catalogDoGrupo.length > 0 && (
           <Input
             id="g-cells-search"
             type="search"
@@ -377,7 +382,7 @@ function GroupDetail(): JSX.Element {
 
         {/* D286: por TELA → container → ações (a matriz recurso × ação saiu; ver ScreenTree). */}
         <ScreenTree
-          catalog={catalog}
+          catalog={catalogDoGrupo}
           selected={cells}
           saved={group.cells}
           editable={editableContent}
@@ -408,7 +413,11 @@ function GroupDetail(): JSX.Element {
               /* Sem motivo: o servidor o aceita nulo para células
                  (`set_group_permissions` não o exige), e um campo obrigatório
                  que ninguém preenche colhe "ok" e "." — pedido do Gabriel. */
-              onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(group.id, [...cells].sort(), null))}
+              onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(
+                group.id,
+                [...cells].filter((k) => isMaster || !chavesSoMaster.has(k)).sort(),
+                null,
+              ))}
             >
               {t('admin.access.group.cellsSave')}
             </ActionButton>

@@ -15,9 +15,9 @@
  *   ProfileWizardFooter (Atrás/Siguiente/Finalizar), dentro do card.
  *
  * Componentes:
- *   - Selects nativos (SelectField): #sex #gender #profession #knowledgeLevel
- *     #yearsExperience — valores canônicos (profession/knowledge em UPPERCASE).
- *   - MultiSelect (dropdown custom, data-testid `<id>-trigger`/`<id>-dropdown`):
+ *   - Combobox de escolha única (gatilho = botão com o id): #sex #gender #profession #knowledgeLevel
+ *     #yearsExperience — escolhidos pelo RÓTULO que a tela mostra (o enum vai ao backend).
+ *   - Combobox `multiple` (gatilho com data-testid `<id>`, painel `ul[role=listbox]`):
  *     languages, experience-types, preferred-types, preferred-age-range.
  *   - DayScheduleEditor + TimeSelect (dropdown custom, NÃO input[type=time]).
  *
@@ -26,6 +26,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { escolherNoCombo, escolherVariosNoCombo } from './helpers/combobox';
 
 // Worker auth — gerado pelo auth.setup.ts (REST no Firebase)
 test.use({ storageState: 'e2e/.auth/profile-worker.json' });
@@ -42,16 +43,13 @@ const MSG = {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Abre o dropdown de um MultiSelect (data-testid), seleciona uma opção e fecha.
- * O MultiSelect NÃO fecha no select (é multi) nem no Escape — só toggla no
- * trigger ou fecha em mousedown fora. Re-clicamos o trigger pra fechar, senão o
- * dropdown aberto intercepta o clique no próximo campo.
+ * Abre o Combobox `multiple` (data-testid no gatilho), marca uma opção pelo rótulo e fecha.
+ * O painel fica aberto ao marcar (é multi); `escolherVariosNoCombo` fecha com Esc, senão ele
+ * intercepta o clique no próximo campo.
  */
 async function selectInMultiSelect(page: Page, testId: string, optionLabel: string): Promise<void> {
-  await page.locator(`[data-testid="${testId}-trigger"]`).click();
-  await page.locator(`[data-testid="${testId}-dropdown"]`).getByText(optionLabel, { exact: true }).click();
-  await page.locator(`[data-testid="${testId}-trigger"]`).click();
-  await expect(page.locator(`[data-testid="${testId}-dropdown"]`)).toHaveCount(0);
+  await escolherVariosNoCombo(page, page.locator(`[data-testid="${testId}"]`), [optionLabel]);
+  await expect(page.locator('ul[role="listbox"]')).toHaveCount(0);
 }
 
 /** Aguarda o toast de sucesso do autosave aparecer. */
@@ -109,12 +107,12 @@ async function fillGeneralInfoForm(page: Page): Promise<void> {
 
   await page.locator('#cpf').fill('20123456780');
 
-  // Selects nativos — valores canônicos
-  await page.selectOption('#sex', 'male');
-  await page.selectOption('#gender', 'male');
-  await page.selectOption('#profession', 'CAREGIVER');
-  await page.selectOption('#knowledgeLevel', 'TECNICATURA');
-  await page.selectOption('#yearsExperience', '0_2');
+  // Combobox — escolhidos pelo rótulo exibido
+  await escolherNoCombo(page, page.locator('#sex'), 'Masculino'); // male
+  await escolherNoCombo(page, page.locator('#gender'), 'Masculino'); // male
+  await escolherNoCombo(page, page.locator('#profession'), 'Cuidador(a)'); // CAREGIVER
+  await escolherNoCombo(page, page.locator('#knowledgeLevel'), 'Tecnicatura'); // TECNICATURA
+  await escolherNoCombo(page, page.locator('#yearsExperience'), '0-2 años'); // 0_2
 
   await page.locator('#professionalLicense').fill('Técnico en cuidados geriátricos');
 
@@ -351,40 +349,34 @@ test.describe('Worker Profile — Abas de Edição', () => {
     });
 
     // ── Labels e Opções em Espanhol ─────────────────────────
-    test.describe('Select — labels e opções em espanhol', () => {
+    test.describe('Combobox — labels e opções em espanhol', () => {
+      // abre o painel do campo e confere as opções PELO RÓTULO que a pessoa lê
+      async function opcoesDe(page: Page, id: string, rotulos: string[]): Promise<void> {
+        await page.locator(`#${id}`).click();
+        for (const rotulo of rotulos) {
+          await expect(page.getByRole('option', { name: rotulo, exact: true })).toBeVisible();
+        }
+        await page.keyboard.press('Escape');
+      }
 
       test('campo Sexo tem opções "Masculino" e "Femenino"', async ({ page }) => {
-        const select = page.locator('#sex');
-        await expect(select.locator('option[value="male"]')).toHaveText('Masculino');
-        await expect(select.locator('option[value="female"]')).toHaveText('Femenino');
+        await opcoesDe(page, 'sex', ['Masculino', 'Femenino']);
       });
 
       test('campo Sexo tem placeholder "Seleccione"', async ({ page }) => {
-        await expect(page.locator('#sex').locator('option[value=""]')).toHaveText('Seleccione');
+        await opcoesDe(page, 'sex', ['Seleccione']); // linha que volta o campo a vazio
       });
 
       test('campo Profissão tem as opções canônicas em espanhol', async ({ page }) => {
-        const select = page.locator('#profession');
-        await expect(select.locator('option[value="AT"]')).toHaveText('Acompañante Terapéutico');
-        await expect(select.locator('option[value="CAREGIVER"]')).toHaveText('Cuidador(a)');
-        await expect(select.locator('option[value="NURSE"]')).toHaveText('Enfermera(o)');
-        await expect(select.locator('option[value="PSYCHOLOGIST"]')).toHaveText('Psicóloga(o)');
+        await opcoesDe(page, 'profession', ['Acompañante Terapéutico', 'Cuidador(a)', 'Enfermera(o)', 'Psicóloga(o)']);
       });
 
       test('campo Nível de Conhecimento tem opções em espanhol', async ({ page }) => {
-        const select = page.locator('#knowledgeLevel');
-        await expect(select.locator('option[value="BACHELOR"]')).toHaveText('Licenciatura');
-        await expect(select.locator('option[value="TECNICATURA"]')).toHaveText('Tecnicatura');
-        await expect(select.locator('option[value="MASTERS"]')).toHaveText('Maestría');
-        await expect(select.locator('option[value="DOCTORATE"]')).toHaveText('Doctorado');
+        await opcoesDe(page, 'knowledgeLevel', ['Licenciatura', 'Tecnicatura', 'Maestría', 'Doctorado']);
       });
 
       test('campo Anos de Experiência tem as 4 faixas em espanhol', async ({ page }) => {
-        const select = page.locator('#yearsExperience');
-        await expect(select.locator('option[value="0_2"]')).toHaveText('0-2 años');
-        await expect(select.locator('option[value="3_5"]')).toHaveText('3-5 años');
-        await expect(select.locator('option[value="6_10"]')).toHaveText('6-10 años');
-        await expect(select.locator('option[value="10_plus"]')).toHaveText('10 o más');
+        await opcoesDe(page, 'yearsExperience', ['0-2 años', '3-5 años', '6-10 años', '10 o más']);
       });
 
       test('campo de documento exibe CUIL/CUIT (sem dropdown de tipo)', async ({ page }) => {

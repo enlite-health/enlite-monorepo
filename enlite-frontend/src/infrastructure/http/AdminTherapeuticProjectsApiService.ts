@@ -6,7 +6,10 @@ import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthServic
 import type {
   CreateTherapeuticProjectBody,
   TherapeuticCatalogItem,
-  TherapeuticCatalogKind,
+  AdminCatalogKind,
+  ServiceExitReasonOption,
+  ShiftTemplate,
+  ShiftTemplateItem,
   TherapeuticFieldClass,
   TherapeuticProjectVersion,
 } from '@domain/entities/TherapeuticProject';
@@ -107,22 +110,51 @@ class AdminTherapeuticProjectsApiServiceClass {
   }
 
   /** GET /api/admin/therapeutic-catalogs/<kind> */
-  async listCatalog(kind: TherapeuticCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<TherapeuticCatalogItem[]> {
+  async listCatalog(kind: AdminCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<TherapeuticCatalogItem[]> {
     const qs = opts.includeInactive ? '?includeInactive=true' : '';
-    const { items } = await this.request<{ kind: TherapeuticCatalogKind; items: TherapeuticCatalogItem[] }>('GET', `/api/admin/therapeutic-catalogs/${kind}${qs}`);
+    const { items } = await this.request<{ kind: AdminCatalogKind; items: TherapeuticCatalogItem[] }>('GET', `/api/admin/therapeutic-catalogs/${kind}${qs}`);
     return items;
   }
 
+  /** GET /api/admin/therapeutic-catalogs/service-exit-reasons/options — só ativos; sob `patient_services:read`. */
+  async listServiceExitReasonOptions(): Promise<ServiceExitReasonOption[]> {
+    const { items } = await this.request<{ items: ServiceExitReasonOption[] }>('GET', '/api/admin/therapeutic-catalogs/service-exit-reasons/options');
+    return items;
+  }
+
+  /** GET /api/admin/therapeutic-catalogs/service-shift-templates (spec 074). */
+  async listShiftTemplates(opts: { includeInactive?: boolean } = {}): Promise<ShiftTemplate[]> {
+    const qs = opts.includeInactive ? '?includeInactive=true' : '';
+    const { items } = await this.request<{ kind: string; items: ShiftTemplate[] }>('GET', `/api/admin/therapeutic-catalogs/service-shift-templates${qs}`);
+    return items;
+  }
+
+  /** GET …/service-shift-templates/options — só ativas, com os turnos; sob `patient_services:read`. */
+  async listShiftTemplateOptions(): Promise<ShiftTemplate[]> {
+    const { items } = await this.request<{ items: ShiftTemplate[] }>('GET', '/api/admin/therapeutic-catalogs/service-shift-templates/options');
+    return items;
+  }
+
+  /** POST …/service-shift-templates */
+  async createShiftTemplate(body: { label: string; items: ShiftTemplateItem[] }): Promise<ShiftTemplate> {
+    return this.request<ShiftTemplate>('POST', '/api/admin/therapeutic-catalogs/service-shift-templates', body);
+  }
+
+  /** PATCH …/service-shift-templates/:itemId — `items` presente substitui os turnos; sem DELETE (soft delete por `active`). */
+  async updateShiftTemplate(itemId: string, body: { label?: string; active?: boolean; items?: ShiftTemplateItem[] }): Promise<ShiftTemplate> {
+    return this.request<ShiftTemplate>('PATCH', `/api/admin/therapeutic-catalogs/service-shift-templates/${itemId}`, body);
+  }
+
   /** POST /api/admin/therapeutic-catalogs/<kind> */
-  async createCatalogItem(kind: TherapeuticCatalogKind, body: { label: string; sortOrder?: number; segmentId?: string | null }): Promise<TherapeuticCatalogItem> {
+  async createCatalogItem(kind: AdminCatalogKind, body: { label: string; sortOrder?: number; segmentId?: string | null; description?: string | null }): Promise<TherapeuticCatalogItem> {
     return this.request<TherapeuticCatalogItem>('POST', `/api/admin/therapeutic-catalogs/${kind}`, body);
   }
 
   /** PATCH /api/admin/therapeutic-catalogs/<kind>/:itemId — Merge Patch; sem DELETE (soft delete por `active`). */
   async updateCatalogItem(
-    kind: TherapeuticCatalogKind,
+    kind: AdminCatalogKind,
     itemId: string,
-    body: { label?: string; sortOrder?: number; active?: boolean; segmentId?: string | null },
+    body: { label?: string; sortOrder?: number; active?: boolean; segmentId?: string | null; description?: string | null },
   ): Promise<TherapeuticCatalogItem> {
     return this.request<TherapeuticCatalogItem>('PATCH', `/api/admin/therapeutic-catalogs/${kind}/${itemId}`, body);
   }

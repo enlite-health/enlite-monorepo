@@ -12,6 +12,7 @@ import { MemoryRouter } from 'react-router-dom';
 import es from '@infrastructure/i18n/locales/es.json';
 import { PatientKanbanBoard } from '../PatientKanbanBoard';
 import type { PatientKanbanGroups } from '@hooks/admin/usePatientKanban';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 // Mesmo molde de `PatientStatusControl.test.tsx`: `t()` real (com interpolação `{{x}}`), lendo o
 // es.json de verdade — precisa disto porque o teste confere que o NOME do paciente e o rótulo do
@@ -79,7 +80,7 @@ describe('soltar um card cuja origem é SUSPENDED', () => {
     const confirmar = screen.getByTestId('kanban-suspension-confirm');
     expect(confirmar).toBeDisabled();
 
-    fireEvent.change(screen.getByTestId('kanban-suspension-exit-reason'), { target: { value: 'RESUMED_SERVICE' } });
+    chooseCombo(screen.getByTestId('kanban-suspension-exit-reason'), es.admin.patients.suspensionExitReasonOptions.RESUMED_SERVICE); // RESUMED_SERVICE
     expect(confirmar).not.toBeDisabled();
 
     fireEvent.click(confirmar);

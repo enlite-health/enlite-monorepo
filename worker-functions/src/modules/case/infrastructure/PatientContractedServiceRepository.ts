@@ -10,6 +10,9 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
+import { operationDateOf } from '@shared/locale/operationDate';
+import { countVigenteForService } from './VacancyAllocationProbe';
+import { ContractedServiceContractLinkWriter } from './contractedServiceContractLinkWriter';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
 import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
 import {
@@ -22,14 +25,37 @@ import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
+import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours';
+import { JobPostingAuditRepository } from '../../matching/infrastructure/JobPostingAuditRepository';
+import { VacancyTalentumPauseService, type VacancyBajaSideEffects } from '../../matching/application/VacancyTalentumPauseService';
+import { dispatchTalentumPause } from '../../matching/application/dispatchTalentumPause';
+import { replaceServiceSlots } from './ServiceSlotWriter';
+import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
+import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
+import { fetchServiceSchedules } from './ContractedServiceDetailMapper';
+import {
+  batchEntry,
+  derivePayerCoverageMatch,
+  payerAtMany,
+  payerHistoryMany,
+  type PayerCoverageMatch,
+  type PayerHistoryItemRead,
+  type PayerRead,
+} from './contractedServicePayerRead';
+import { priceStateMany, type PriceState, type TaxState } from './contractedServicePriceRead';
+import { readCoverageEntries } from './patientCoverageRead';
 
 /**
- * Slot de horário do encuadre — o MESMO formato que `scheduleToJsonb` persiste em
- * `job_postings.schedule` (array; `normalizeSchedule` já lê). `dayOfWeek`: 0 = domingo.
+ * Turno do horário na ESCRITA (spec 056): início + duração; o fim nunca é gravado. `dayOfWeek`: 0 = domingo.
  */
 export interface ContractedServiceScheduleSlot {
   dayOfWeek: number;
   startTime: string;
+  durationMinutes: number;
+}
+
+/** Turno do horário na LEITURA: `horario_do_servico(id, asOf)` — o `endTime` é derivado (início + duração). */
+export interface ContractedServiceScheduleView extends ContractedServiceScheduleSlot {
   endTime: string;
 }
 
@@ -57,6 +83,18 @@ export class ServiceFieldRequiredByLiveVacancyError extends Error {
   }
 }
 
+/** 058 REGRA-05 (041): `addressId` diferente do atual com vaga viva ou alocação vigente — mudou o local = serviço novo. 422 via `insuranceErrorBody`. */
+export class ServiceAddressLockedError extends Error {
+  readonly httpStatus = 422;
+  readonly code = 'SERVICE_ADDRESS_LOCKED';
+  readonly details: { reason: 'LIVE_VACANCY' | 'ALLOCATION' };
+  constructor(reason: 'LIVE_VACANCY' | 'ALLOCATION') {
+    super(`service address cannot change: ${reason}`);
+    this.name = 'ServiceAddressLockedError';
+    this.details = { reason };
+  }
+}
+
 const ADDRESS_FK = 'pcs_address_same_patient_fk';
 
 function isAddressFkViolation(err: unknown): boolean {
@@ -70,14 +108,12 @@ export interface ContractedServiceDetail {
   serviceCode: string;
   professionalProfile: string | null;
   providersNeeded: number | null;
-  authorizedHours: number | null;
-  weeklyHours: number | null;
+  /** Autorização corrente e vigente hoje (spec 056, dono: `contracted_service_authorization`) — null = nenhuma. */
+  authorization: CurrentAuthorization | null;
+  /** Σ das faixas vigentes hoje (`computeScheduleWeeklyHours(schedule)`) — o horário é das faixas, não de coluna (spec 056). */
+  scheduleHours: number;
   careLocation: string | null;
-  /** Preço do contrato (lex C-c) — a REDAÇÃO por papel acontece no controller, nunca aqui. */
-  hourlyValue: number | null;
   startDate: string | null;
-  contractType: string | null;
-  taxCondition: string | null;
   supervisionFrequency: string | null;
   guardShift: string | null;
   /** Franja etária solicitada do prestador (spec 015, migration 322) — null = não informado. */
@@ -85,7 +121,7 @@ export interface ContractedServiceDetail {
   /** Endereço do paciente onde o serviço é prestado (migration 330) — null = ainda não vinculado. */
   addressId: string | null;
   /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
-  schedule: ContractedServiceScheduleSlot[] | null;
+  schedule: ContractedServiceScheduleView[] | null;
   /**
    * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros são COPIADOS para a vaga na ativação;
    * `workerAttributes` e `dailyObs` são SÓ FICHA (nunca copiados). Texto livre: nunca em log (lex T.4).
@@ -106,6 +142,17 @@ export interface ContractedServiceDetail {
   country: string;
   deviceTypes: string[];
   providers: ContractedServiceProviderDetail[];
+  /**
+   * Spec 058 (§G/§P/§D): pagador, preço, imposto e divergência pagador × cobertura NA DATA `asOf` (dia de operação do país do serviço,
+   * de `operationDateOf(country, requestNow)`). Vêm CRUS daqui — a redação por ator (preço, nomes, `coverageMatch`) é de
+   * `projectContractedServiceForActor`. A ficha e a rota montam estes campos pelas MESMAS funções em lote.
+   */
+  asOf: string;
+  payer: PayerRead;
+  payerHistory: PayerHistoryItemRead[];
+  price: PriceState;
+  tax: TaxState;
+  coverageMatch: PayerCoverageMatch;
   createdAt: string;
   updatedAt: string;
 }
@@ -114,13 +161,8 @@ export interface ContractedServiceWriteInput {
   serviceCode?: string;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  authorizedHours?: number | null;
-  weeklyHours?: number | null;
   careLocation?: string | null;
-  hourlyValue?: number | null;
   startDate?: string | null;
-  contractType?: string | null;
-  taxCondition?: string | null;
   supervisionFrequency?: string | null;
   guardShift?: string | null;
   providerAgeBand?: string | null;
@@ -146,28 +188,33 @@ export interface CreateContractedServiceInput extends ContractedServiceWriteInpu
 }
 
 /** Campo vigiado de `GUARDED_SERVICE_COLUMNS` → chave do corpo do PATCH. */
-const GUARDED_FIELDS: ReadonlyArray<readonly [GuardedServiceField, 'schedule' | 'providersNeeded' | 'providerAgeBand']> = [
+const GUARDED_FIELDS: ReadonlyArray<
+  readonly [
+    GuardedServiceField,
+    'schedule' | 'providersNeeded' | 'providerAgeBand' | 'requiredSex' | 'requiredProfessions' | 'requiredExperience' | 'workSchedule' | 'paymentDay',
+  ]
+> = [
   ['schedule', 'schedule'],
   ['providers_needed', 'providersNeeded'],
   ['age_range', 'providerAgeBand'],
+  // 057/D523: os 5 de recrutamento que a vaga lê do serviço.
+  ['required_sex', 'requiredSex'],
+  ['required_professions', 'requiredProfessions'],
+  ['required_experience', 'requiredExperience'],
+  ['work_schedule', 'workSchedule'],
+  ['payment_day', 'paymentDay'],
 ];
 
 const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['serviceCode', 'service_code'],
   ['professionalProfile', 'professional_profile'],
   ['providersNeeded', 'providers_needed'],
-  ['authorizedHours', 'authorized_hours'],
-  ['weeklyHours', 'weekly_hours'],
   ['careLocation', 'care_location'],
-  ['hourlyValue', 'hourly_value'],
   ['startDate', 'start_date'],
-  ['contractType', 'contract_type'],
-  ['taxCondition', 'tax_condition'],
   ['supervisionFrequency', 'supervision_frequency'],
   ['guardShift', 'guard_shift'],
   ['providerAgeBand', 'provider_age_band'],
   ['addressId', 'address_id'],
-  ['schedule', 'schedule'],
   ['requiredProfessions', 'required_professions'],
   ['requiredSex', 'required_sex'],
   ['requiredExperience', 'required_experience'],
@@ -177,33 +224,18 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['dailyObs', 'daily_obs'],
 ];
 
-/**
- * `schedule` é JSONB e chega como ARRAY JS: o driver `pg` serializa objeto como JSON, mas array
- * JS vira ARRAY Postgres (`{...}`), que o JSONB recusa. Só esta coluna precisa do stringify.
- */
-function toColumnValue(key: keyof ContractedServiceWriteInput, value: unknown): unknown {
-  if (key === 'schedule' && value != null) return JSON.stringify(value);
-  return value;
-}
-
 interface ServiceRow {
   id: string;
   patient_id: string;
   service_code: string;
   professional_profile: string | null;
   providers_needed: number | null;
-  authorized_hours: string | null;
-  weekly_hours: string | null;
   care_location: string | null;
-  hourly_value: string | null;
   start_date: string | null;
-  contract_type: string | null;
-  tax_condition: string | null;
   supervision_frequency: string | null;
   guard_shift: string | null;
   provider_age_band: string | null;
   address_id: string | null;
-  schedule: ContractedServiceScheduleSlot[] | null;
   required_professions: string[] | null;
   required_sex: string | null;
   required_experience: string | null;
@@ -226,6 +258,14 @@ export class PatientContractedServiceRepository {
 
   constructor(
     private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
+    /** Injeção só para o unitário; os call sites de produção não mudam — o default é o escritor real das faixas. */
+    private readonly replaceSlots: typeof replaceServiceSlots = replaceServiceSlots,
+    /** ⚑13 (spec 056): editar o horário muda o denominador da régua → recalcula o estado na MESMA transação. */
+    private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
+    /** Spec 084 F4 (R13): pausa/retoma o projeto do Talentum DEPOIS do commit. Injetável; o default é o serviço real. */
+    private readonly talentum?: VacancyBajaSideEffects,
+    /** Spec 084 P6: a baixa e a volta pelo serviço viram linha de auditoria (quem, status antes/depois, motivo). */
+    private readonly vacancyAudit: Pick<JobPostingAuditRepository, 'logEventSafe'> = new JobPostingAuditRepository(),
   ) {}
 
   private get pool(): Pool {
@@ -233,7 +273,12 @@ export class PatientContractedServiceRepository {
     return this.poolMemo;
   }
 
-  private async decorate(row: ServiceRow, cli: Pool | PoolClient): Promise<ContractedServiceDetail> {
+  /**
+   * `asOf` = dia de operação do país do serviço no `requestNow` da requisição. Pagador/preço/imposto/divergência saem das MESMAS funções
+   * em lote que a ficha (`mapContractedServices`), aqui com `[row.id]` — nenhuma query própria de pagador (D-44).
+   */
+  private async decorate(row: ServiceRow, cli: Pool | PoolClient, requestNow: Date): Promise<ContractedServiceDetail> {
+    const asOf = operationDateOf(row.country, requestNow);
     const devices = await cli.query<{ device_type: string }>(
       `SELECT csd.device_type
          FROM contracted_service_devices csd
@@ -245,6 +290,17 @@ export class PatientContractedServiceRepository {
     const providers = await this.providerRepo.listForService(row.id);
     // Spec 018 PR-6 / spec 047 F2: a MESMA leitura do mapper da ficha (`fetchLiveVacancies`) — um dono só.
     const liveVacancy = (await fetchLiveVacancies(cli, [row.id])).get(row.id) ?? null;
+    // Spec 058 (B1): agenda e autorização no dia de operação do serviço — as MESMAS funções da ficha (`ContractedServiceDetailMapper`).
+    const schedule = (await fetchServiceSchedules(cli, [row.id], asOf)).get(row.id) ?? null;
+    const authorization = (await fetchCurrentAuthorizations(cli, [row.id], asOf)).get(row.id) ?? null;
+    const [payers, histories, prices, coverageEntries] = await Promise.all([
+      payerAtMany(cli, [row.id], asOf),
+      payerHistoryMany(cli, [row.id]),
+      priceStateMany(cli, [row.id], asOf),
+      readCoverageEntries(cli, row.patient_id),
+    ]);
+    const payer = batchEntry(payers, row.id);
+    const priceTax = batchEntry(prices, row.id);
     return {
       id: row.id,
       liveVacancy,
@@ -252,18 +308,15 @@ export class PatientContractedServiceRepository {
       serviceCode: row.service_code,
       professionalProfile: row.professional_profile,
       providersNeeded: row.providers_needed,
-      authorizedHours: row.authorized_hours != null ? Number(row.authorized_hours) : null,
-      weeklyHours: row.weekly_hours != null ? Number(row.weekly_hours) : null,
+      authorization,
+      scheduleHours: computeScheduleWeeklyHours(schedule),
       careLocation: row.care_location,
-      hourlyValue: row.hourly_value != null ? Number(row.hourly_value) : null,
       startDate: row.start_date,
-      contractType: row.contract_type,
-      taxCondition: row.tax_condition,
       supervisionFrequency: row.supervision_frequency,
       guardShift: row.guard_shift,
       providerAgeBand: row.provider_age_band,
       addressId: row.address_id,
-      schedule: row.schedule,
+      schedule,
       requiredProfessions: row.required_professions,
       requiredSex: row.required_sex,
       requiredExperience: row.required_experience,
@@ -276,27 +329,33 @@ export class PatientContractedServiceRepository {
       country: row.country,
       deviceTypes: devices.rows.map((d) => d.device_type),
       providers,
+      asOf,
+      payer,
+      payerHistory: batchEntry(histories, row.id),
+      price: priceTax.price,
+      tax: priceTax.tax,
+      coverageMatch: derivePayerCoverageMatch(payer, coverageEntries),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   }
 
   /** Todos os serviços (ativos e inativos) de um paciente, mais recente primeiro. */
-  async listForPatient(patientId: string): Promise<ContractedServiceDetail[]> {
+  async listForPatient(patientId: string, requestNow: Date): Promise<ContractedServiceDetail[]> {
     const { rows } = await this.pool.query<ServiceRow>(
       `SELECT * FROM patient_contracted_services WHERE patient_id = $1 ORDER BY active DESC, created_at ASC`,
       [patientId],
     );
-    return Promise.all(rows.map((r) => this.decorate(r, this.pool)));
+    return Promise.all(rows.map((r) => this.decorate(r, this.pool, requestNow)));
   }
 
-  async findById(serviceId: string): Promise<ContractedServiceDetail | null> {
+  async findById(serviceId: string, requestNow: Date): Promise<ContractedServiceDetail | null> {
     const { rows } = await this.pool.query<ServiceRow>(
       `SELECT * FROM patient_contracted_services WHERE id = $1`,
       [serviceId],
     );
     if (rows.length === 0) return null;
-    return this.decorate(rows[0], this.pool);
+    return this.decorate(rows[0], this.pool, requestNow);
   }
 
   private async validateDeviceCodes(codes: readonly string[], cli: PoolClient): Promise<void> {
@@ -327,7 +386,7 @@ export class PatientContractedServiceRepository {
    * stage em 07/09. O helper reusa o client fixado da request (que já carrega o país) ou aplica
    * `SET LOCAL` na transação; o `ROLLBACK` também é dele.
    */
-  async create(input: CreateContractedServiceInput): Promise<ContractedServiceDetail> {
+  async create(input: CreateContractedServiceInput, requestNow: Date): Promise<ContractedServiceDetail> {
     try {
       const row = await withActorContext(this.pool, async (cli) => {
         const cols = ['patient_id', 'service_code', 'created_by', 'updated_by'];
@@ -341,7 +400,7 @@ export class PatientContractedServiceRepository {
           const value = input[key];
           if (value !== undefined) {
             cols.push(col);
-            values.push(toColumnValue(key, value));
+            values.push(value);
           }
         }
         const placeholders = cols.map((_, i) => `$${i + 1}`);
@@ -353,10 +412,16 @@ export class PatientContractedServiceRepository {
         if (input.deviceTypeCodes && input.deviceTypeCodes.length > 0) {
           await this.replaceDevices(serviceId, input.deviceTypeCodes, cli);
         }
+        // Spec 056: as faixas são o dono do horário — gravadas na MESMA transação, só quando o corpo manda
+        // `schedule` (chave ausente = nada a fazer). Falhar aqui desfaz o INSERT acima (nada de faixa sem
+        // serviço nem serviço com faixa velha).
+        if (input.schedule !== undefined) {
+          await this.replaceSlots(cli, serviceId, input.schedule ?? null, input.actorUid);
+        }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0];
       });
-      return this.decorate(row, this.pool);
+      return this.decorate(row, this.pool, requestNow);
     } catch (err) {
       if (isAddressFkViolation(err)) throw new AddressNotOfPatientError(input.addressId);
       throw err;
@@ -371,25 +436,82 @@ export class PatientContractedServiceRepository {
    * `true` → restaura `COALESCE(status_before_baja, 'SEARCHING')` (só vagas em `DE_BAJA`).
    * `undefined` → no-op. Vaga órfã (sem `contracted_service_id`) fica fora pelo WHERE.
    */
-  private async applyVacancyBajaGatilho(cli: PoolClient, serviceId: string, active: boolean | undefined): Promise<void> {
+  private async applyVacancyBajaGatilho(
+    cli: PoolClient,
+    serviceId: string,
+    active: boolean | undefined,
+    actorUid: string,
+  ): Promise<{ baixadas: string[]; devolvidas: string[] }> {
+    const out = { baixadas: [] as string[], devolvidas: [] as string[] };
     if (active === false) {
-      await cli.query(
-        `UPDATE job_postings SET status_before_baja = status, status = 'DE_BAJA'
-          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status != 'DE_BAJA'`,
+      const res = await cli.query<{ id: string; status_before_baja: string | null }>(
+        `UPDATE job_postings SET status_before_baja = status, status = 'DE_BAJA', baja_reason = 'SERVICE',
+                talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_PAUSE' ELSE talentum_pause_state END
+          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status != 'DE_BAJA'
+          RETURNING id, status_before_baja`,
         [serviceId],
       );
+      for (const r of res.rows) {
+        out.baixadas.push(r.id);
+        await this.auditBajaChange(cli, r.id, actorUid, { status: r.status_before_baja, baja_reason: null }, { status: 'DE_BAJA', baja_reason: 'SERVICE' });
+      }
     } else if (active === true) {
-      await cli.query(
-        `UPDATE job_postings SET status = COALESCE(status_before_baja, 'SEARCHING'), status_before_baja = NULL
-          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status = 'DE_BAJA'`,
+      // R17/P2: a ÚNICA volta de uma vaga baixada. Só as baixadas POR ESTE serviço (baja_reason = 'SERVICE'): a baixada
+      // à mão ou pela linha de corte NUNCA volta — vaga sem serviço contratado não reaparece (toda vaga ativa precisa de serviço).
+      const res = await cli.query<{ id: string; status: string }>(
+        `UPDATE job_postings SET status = COALESCE(status_before_baja, 'SEARCHING'), status_before_baja = NULL,
+                talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_RESUME' ELSE talentum_pause_state END
+          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status = 'DE_BAJA' AND baja_reason = 'SERVICE'
+          RETURNING id, status`,
         [serviceId],
       );
+      for (const r of res.rows) {
+        out.devolvidas.push(r.id);
+        await this.auditBajaChange(cli, r.id, actorUid, { status: 'DE_BAJA', baja_reason: 'SERVICE' }, { status: r.status, baja_reason: null });
+      }
     }
+    return out;
+  }
+
+  /** P6: UMA linha de auditoria por baixa/volta pelo serviço. `logEventSafe` usa SAVEPOINT: nunca derruba a transação. */
+  private async auditBajaChange(
+    cli: PoolClient,
+    vacancyId: string,
+    actorUid: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+  ): Promise<void> {
+    await this.vacancyAudit.logEventSafe(cli, {
+      jobPostingId: vacancyId,
+      eventType: 'STATUS_CHANGED',
+      fieldName: 'status',
+      changes: { before, after },
+      actorUserId: actorUid,
+      actorType: 'HUMAN',
+      actorLabel: 'contracted_service_active',
+    });
   }
 
   /**
-   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada e
-   * status fora de `DE_BAJA`/`CLOSED`). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
+   * 058 REGRA-05 (041): `addressId` DIFERENTE do atual com vaga viva ou alocação vigente → 422 `SERVICE_ADDRESS_LOCKED`. O formulário reenvia o mesmo
+   * `addressId` em todo PATCH (`ContractedServiceFormRow.tsx:201,215`): igual ao atual NÃO é mudança. ⚑ padrão: `null` diferente do atual também conta
+   * (limpar o local de um serviço em uso é mudar o local — plan §1 P6, já decidido pelo cto). Locka o serviço (mesma ordem do `refuseClearWhenLiveVacancy`).
+   */
+  private async refuseAddressChangeWhenInUse(cli: PoolClient, serviceId: string, next: string | null, requestNow: Date): Promise<void> {
+    const cur = await cli.query<{ address_id: string | null; country: string }>(
+      'SELECT address_id, country FROM patient_contracted_services WHERE id = $1 FOR UPDATE',
+      [serviceId],
+    );
+    const current = cur.rows[0];
+    if (!current || current.address_id === next) return;
+    const live = await cli.query(`SELECT 1 FROM job_postings WHERE contracted_service_id = $1 AND ${liveVacancySql('')} LIMIT 1`, [serviceId]);
+    if ((live.rowCount ?? live.rows.length) > 0) throw new ServiceAddressLockedError('LIVE_VACANCY');
+    if ((await countVigenteForService(cli, serviceId, operationDateOf(current.country, requestNow))) > 0) throw new ServiceAddressLockedError('ALLOCATION');
+  }
+
+  /**
+   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada,
+   * `deleted_at IS NULL`, qualquer status — vaga CLOSED/DE_BAJA ainda ocupa o serviço; spec 056 ⚑E). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
    * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
    * depois enxerga o commit do outro. Client = `withActorContext` (com identidade), nunca `connect()` cru.
    */
@@ -406,23 +528,38 @@ export class PatientContractedServiceRepository {
     }
   }
 
+  /** Mesma chave das triggers T1/T2/T3 e do `ContractedServiceContractLinkWriter`; antes de qualquer escrita da baixa (ordem: lock → UPDATE). */
+  private async lockPatientOfService(cli: PoolClient, serviceId: string): Promise<void> {
+    await cli.query(
+      `SELECT pg_advisory_xact_lock(hashtext('contract-link:patient:' || patient_id::text)) FROM patient_contracted_services WHERE id = $1`,
+      [serviceId],
+    );
+  }
+
   /**
    * Atualização PARCIAL (Merge Patch, molde `PatientClinicalRepository`): chave ausente não
    * toca a coluna. `active:false` grava `ended_at=NOW()` (baixa, C-a.4); o schema HTTP só
    * aceita `false` (reabrir não existe, lex C-a.4) — o repositório aceita as duas direções
    * porque `applyVacancyBajaGatilho` acima precisa da simetria.
    */
-  async update(serviceId: string, patch: ContractedServiceWriteInput): Promise<ContractedServiceDetail | null> {
+  async update(serviceId: string, patch: ContractedServiceWriteInput, requestNow: Date): Promise<ContractedServiceDetail | null> {
     try {
       // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
+      let affectedVacancies = { baixadas: [] as string[], devolvidas: [] as string[] };
       const row = await withActorContext(this.pool, async (cli) => {
-        // F2/F5: apagar um campo que a vaga viva lê → recusa (um campo por vez, na ordem de GUARDED_FIELDS).
-        for (const [field, key] of GUARDED_FIELDS) {
-          if (isClearedValue(field, patch[key])) await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
-        }
         // F3/F5: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o campo.
+        // Baixa: o lock do paciente vem ANTES de qualquer lock de linha (o FOR UPDATE do `captureFieldBefore`) — a mesma ordem do escritor do vínculo.
+        if (patch.active === false) await this.lockPatientOfService(cli, serviceId);
         const before = new Map<GuardedServiceField, unknown>();
         for (const [field, key] of GUARDED_FIELDS) before.set(field, await captureFieldBefore(cli, serviceId, field, patch[key]));
+        // F2/F5: apagar um campo que a vaga viva lê → recusa (um campo por vez, na ordem de GUARDED_FIELDS).
+        // 057 gate A1: só recusa se o PATCH realmente LIMPA (antes preenchido); reenviar `null` num campo já vazio não é apagar.
+        for (const [field, key] of GUARDED_FIELDS) {
+          if (isClearedValue(field, patch[key]) && !isClearedValue(field, before.get(field))) {
+            await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
+          }
+        }
+        if (patch.addressId !== undefined) await this.refuseAddressChangeWhenInUse(cli, serviceId, patch.addressId, requestNow);
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
@@ -431,7 +568,7 @@ export class PatientContractedServiceRepository {
         };
         for (const [key, col] of WRITABLE_COLUMNS) {
           const value = patch[key];
-          if (value !== undefined) push(col, toColumnValue(key, value));
+          if (value !== undefined) push(col, value);
         }
         if (patch.active !== undefined) {
           push('active', patch.active);
@@ -440,7 +577,8 @@ export class PatientContractedServiceRepository {
         if (patch.deviceTypeCodes !== undefined) {
           await this.replaceDevices(serviceId, patch.deviceTypeCodes, cli);
         }
-        if (sets.length > 0) {
+        // `schedule` não é coluna: PATCH só com horário ainda carimba autoria/`updated_at` (e detecta serviço inexistente).
+        if (sets.length > 0 || patch.schedule !== undefined) {
           params.push(patch.actorUid);
           sets.push(`updated_by = $${params.length}`);
           sets.push('updated_at = NOW()');
@@ -450,12 +588,26 @@ export class PatientContractedServiceRepository {
         }
         // F3/F5: valor mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
         for (const [field, key] of GUARDED_FIELDS) await recordFieldChange(cli, serviceId, field, before.get(field), patch[key]);
-        await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
+        affectedVacancies = await this.applyVacancyBajaGatilho(cli, serviceId, patch.active, patch.actorUid);
+        // Spec 056: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch: chave ausente não toca).
+        if (patch.schedule !== undefined) {
+          await this.replaceSlots(cli, serviceId, patch.schedule ?? null, patch.actorUid);
+        }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
-        return sel.rows[0] ?? null;
+        const updated = sel.rows[0] ?? null;
+        // Passo 7 (P§6): derivação no fim da transação. Erro (≠ NotReady, absorvido pela própria classe) desfaz tudo.
+        if (patch.schedule !== undefined && updated !== null) {
+          await this.derivation.run(cli, updated.patient_id, new Date());
+        }
+        // Baixa: o vínculo vivo com a obra social acaba junto (senão o serviço novo do paciente bate em TWO_PAYERS_OVERLAP).
+        if (patch.active === false && updated !== null) {
+          await new ContractedServiceContractLinkWriter().endOnServiceClose(cli, serviceId, operationDateOf(updated.country, requestNow), patch.actorUid);
+        }
+        return updated;
       });
       if (row === null) return null;
-      return this.decorate(row, this.pool);
+      dispatchTalentumPause(this.talentum ?? new VacancyTalentumPauseService(this.pool), { pause: affectedVacancies.baixadas, resume: affectedVacancies.devolvidas }, 'PatientContractedServiceRepository');
+      return this.decorate(row, this.pool, requestNow);
     } catch (err) {
       if (err === SERVICE_ROW_MISSING) return null;
       if (isAddressFkViolation(err)) throw new AddressNotOfPatientError(patch.addressId);

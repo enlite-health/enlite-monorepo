@@ -32,6 +32,9 @@ export const PDF_LABELS = {
   age: 'Edad',
   years: 'años',
   coverage: 'Cobertura médica',
+  /** Spec 058 §4.5: `coverage.displaySource` `NONE` / `UNMAPPED_ONLY` — o back manda `display: null`, a frase é do front. */
+  coverageNone: 'Cobertura no informada',
+  coverageUnmapped: 'Cobertura sin mapeo al catálogo',
   affiliateId: 'N.º de afiliado',
   requestedService: 'Servicio solicitado',
   deviceType: 'Tipo de Dispositivo',

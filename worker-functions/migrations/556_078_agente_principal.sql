@@ -1,0 +1,235 @@
+-- Migration 556: o agente como pessoa no ABAC (spec 078, fase M2, itens 30-36)
+--
+-- Data: 03/11/2026. Contrato: `contratos-M2/migration-556.md` (ebrain), ajustado pelas "Decisões do lote 0" do plano-M2.
+-- Seções (a ordem importa; NENHUMA FK nova, e REVOKE só sobre FUNÇÃO nova):
+--   1  users.account_type aceita 'agent'                       (M2.1.1)
+--   2  classe de grupo AGENT + função de células vedadas + 3 triggers   (M2.1.3)
+--   3  iam.permission_audit_log: actor_kind, gatilho_id, registro_versao (M2.1.5)
+--   4  seed: linha `agent:luz` e grupo AGENT "Luz — espelho Recrutador" (VAZIO) (M2.1.7)
+-- Idempotente (IF NOT EXISTS / DROP ... IF EXISTS / ON CONFLICT DO NOTHING). Sem BEGIN/COMMIT próprio (o runner envolve).
+-- Sem texto clínico. A migration NÃO concede célula a grupo nenhum.
+-- Rollback: `migrations/pending/ROLLBACK_556_078_agente_principal.sql` (manual, destrutivo, exige backup e o "vai" do Gabriel).
+
+-- ── 1. users.account_type aceita `agent` ─────────────────────────────────────────
+-- `agent` NÃO é staff (isStaffAccount segue false: fail-closed). A ponte `account_type_for_role` (414) e o COMMENT da 414 NÃO mudam.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_type_check;
+ALTER TABLE users ADD CONSTRAINT users_account_type_check
+  CHECK (account_type IN ('staff', 'worker', 'agent'));
+
+-- ── 2. Classe de grupo `AGENT` (molde: 285_actor_class_external_third_party.sql) ───
+-- 2a. a classe entra no CHECK existente (nome lido em 285: permission_groups_actor_class_ck)
+ALTER TABLE iam.permission_groups DROP CONSTRAINT IF EXISTS permission_groups_actor_class_ck;
+ALTER TABLE iam.permission_groups ADD CONSTRAINT permission_groups_actor_class_ck
+  CHECK (actor_class IN ('INTERNAL', 'EXTERNAL_THIRD_PARTY', 'AGENT'));
+
+-- 2b. as células que um grupo AGENT NUNCA recebe (cópia de leitura em TS: ActorClass.ts CELULAS_VEDADAS_A_AGENTE, com teste de paridade)
+--     Células de lote/massa além de worker:export: LISTA (M2.0.4 não fechou lista aprovada pelo Gabriel).
+CREATE OR REPLACE FUNCTION iam.celulas_vedadas_a_agente()
+RETURNS TEXT[] LANGUAGE sql IMMUTABLE
+SET search_path = pg_catalog
+AS $$ SELECT ARRAY[
+  'permission_management:read',   -- gestão de permissão (spec 078 item 36)
+  'permission_management:write',  -- idem; protege também o anti-lockout (iam.is_last_manager, 410)
+  'worker:export'                 -- lote: tira o cadastro do perímetro num arquivo (285)
+] $$;
+REVOKE ALL ON FUNCTION iam.celulas_vedadas_a_agente() FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    GRANT EXECUTE ON FUNCTION iam.celulas_vedadas_a_agente() TO app_runtime, app_system;
+  END IF;
+END
+$$;
+
+-- T1. célula vedada entrando em grupo AGENT (molde trg_veda_celula_a_terceiro, 285)
+CREATE OR REPLACE FUNCTION iam.trg_veda_celula_a_agente()
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE v_classe TEXT; v_celula TEXT;
+BEGIN
+  SELECT g.actor_class INTO v_classe FROM iam.permission_groups g WHERE g.id = NEW.group_id;
+  IF v_classe IS DISTINCT FROM 'AGENT' THEN RETURN NEW; END IF;
+  SELECT p.resource || ':' || p.action INTO v_celula FROM iam.permissions p WHERE p.id = NEW.permission_id;
+  IF v_celula = ANY (iam.celulas_vedadas_a_agente()) THEN
+    RAISE EXCEPTION 'celula % nao pode ser concedida a grupo AGENT (078 item 36)', v_celula
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS veda_celula_a_agente ON iam.group_permissions;
+CREATE TRIGGER veda_celula_a_agente BEFORE INSERT OR UPDATE ON iam.group_permissions
+  FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_celula_a_agente();
+
+-- T2. a classe do grupo mudando (molde trg_veda_virar_externo, 285)
+--     (a) virar AGENT com célula vedada já dentro -> erro
+--     (b) entrar em AGENT ou sair de AGENT com membro vivo (qualquer tipo) -> erro (a classe de um grupo com gente não muda)
+--     Transições que não envolvem AGENT (INTERNAL <-> EXTERNAL_THIRD_PARTY) seguem como a 285 as deixou.
+CREATE OR REPLACE FUNCTION iam.trg_veda_trocar_classe_agente()
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE v_celula TEXT;
+BEGIN
+  IF NEW.actor_class IS NOT DISTINCT FROM OLD.actor_class THEN RETURN NEW; END IF;
+  IF NEW.actor_class <> 'AGENT' AND OLD.actor_class <> 'AGENT' THEN RETURN NEW; END IF;
+  IF NEW.actor_class = 'AGENT' THEN
+    SELECT p.resource || ':' || p.action INTO v_celula
+      FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
+     WHERE gp.group_id = NEW.id AND p.resource || ':' || p.action = ANY (iam.celulas_vedadas_a_agente())
+     LIMIT 1;
+    IF v_celula IS NOT NULL THEN
+      RAISE EXCEPTION 'grupo nao pode virar AGENT: ja tem a celula vedada % (078 item 36)', v_celula
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  IF EXISTS (SELECT 1 FROM iam.user_groups ug WHERE ug.group_id = NEW.id AND ug.removed_at IS NULL) THEN
+    RAISE EXCEPTION 'grupo com membro vivo nao pode entrar nem sair da classe AGENT (078 item 36)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS veda_trocar_classe_agente ON iam.permission_groups;
+CREATE TRIGGER veda_trocar_classe_agente BEFORE UPDATE ON iam.permission_groups
+  FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_trocar_classe_agente();
+
+-- T3. agente só é membro de grupo AGENT, e grupo AGENT só tem agente como membro (as duas direções)
+CREATE OR REPLACE FUNCTION iam.trg_veda_agente_fora_de_grupo_agent()
+RETURNS TRIGGER LANGUAGE plpgsql
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE v_tipo TEXT; v_classe TEXT;
+BEGIN
+  IF NEW.removed_at IS NOT NULL THEN RETURN NEW; END IF;
+  SELECT u.account_type INTO v_tipo FROM users u WHERE u.firebase_uid = NEW.user_id;
+  SELECT g.actor_class INTO v_classe FROM iam.permission_groups g WHERE g.id = NEW.group_id;
+  IF v_tipo = 'agent' AND v_classe IS DISTINCT FROM 'AGENT' THEN
+    RAISE EXCEPTION 'agente so pode ser membro de grupo AGENT (078 item 36)' USING ERRCODE = 'check_violation';
+  END IF;
+  IF v_classe = 'AGENT' AND v_tipo IS DISTINCT FROM 'agent' THEN
+    RAISE EXCEPTION 'grupo AGENT so aceita agente como membro (078 item 36)' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS veda_agente_fora_de_grupo_agent ON iam.user_groups;
+CREATE TRIGGER veda_agente_fora_de_grupo_agent BEFORE INSERT OR UPDATE ON iam.user_groups
+  FOR EACH ROW EXECUTE FUNCTION iam.trg_veda_agente_fora_de_grupo_agent();
+
+-- ── 3. Trilha de auditoria distingue agente de pessoa (item 34) ──────────────────────
+-- `actor_kind` mantém o vocabulário PT da 551 (`humano|agente|sistema`). DEFAULT 'humano' preserva os INSERTs antigos
+-- (PgPermissionAuditRepository + as funções SQL 279/280/283/458) sem editar nenhum.
+-- `gatilho_id` e `registro_versao` são SÓ identificadores (id da mensagem do prestador; 12 hex do sha do registro): NUNCA texto de mensagem.
+ALTER TABLE iam.permission_audit_log
+  ADD COLUMN IF NOT EXISTS actor_kind      text NOT NULL DEFAULT 'humano',
+  ADD COLUMN IF NOT EXISTS gatilho_id      text,
+  ADD COLUMN IF NOT EXISTS registro_versao text;
+
+ALTER TABLE iam.permission_audit_log DROP CONSTRAINT IF EXISTS permission_audit_log_actor_kind_ck;
+ALTER TABLE iam.permission_audit_log ADD CONSTRAINT permission_audit_log_actor_kind_ck
+  CHECK (actor_kind IN ('humano', 'agente', 'sistema'));
+
+-- agente sempre carrega a versão do registro que o governava (o responsável é DERIVADO do registro, não copiado)
+ALTER TABLE iam.permission_audit_log DROP CONSTRAINT IF EXISTS permission_audit_log_agente_versao_ck;
+ALTER TABLE iam.permission_audit_log ADD CONSTRAINT permission_audit_log_agente_versao_ck
+  CHECK (actor_kind <> 'agente' OR registro_versao IS NOT NULL);
+
+-- parcial: só enxerga linha de agente (o limitador por agente); custo em escrita humana ~0.
+CREATE INDEX IF NOT EXISTS idx_pal_agente_user_created
+  ON iam.permission_audit_log (user_id, created_at) WHERE actor_kind = 'agente';
+
+-- ── 3b. iam.query_audit continua funcionando com as 3 colunas novas ──────────────────
+-- `iam.query_audit` (458) é `RETURNS SETOF iam.permission_audit_log` e devolve uma lista EXPLÍCITA de 11 colunas: depois da §3 a
+-- tabela tem 14 e a função levantaria "structure of query does not match function result type" (medido em 03/11, M2.1.5; o contrato
+-- dizia que a função "não é recriada" — estava errado). Mesmo corpo da 458, MESMA assinatura e mesmo mascaramento de país; só
+-- acrescenta as 3 colunas ao fim do SELECT. ACL preservada pelo CREATE OR REPLACE (REVOKE PUBLIC + GRANT app_runtime/app_system da 458).
+CREATE OR REPLACE FUNCTION iam.query_audit(p_user_id VARCHAR, p_resource VARCHAR, p_since TIMESTAMPTZ, p_until TIMESTAMPTZ, p_limit INT)
+RETURNS SETOF iam.permission_audit_log
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, iam, public
+AS $$
+DECLARE
+  v_actor     VARCHAR := iam._actor();
+  v_tenant    UUID    := iam.current_tenant_id();
+  v_countries TEXT[];
+  v_global    BOOLEAN;
+BEGIN
+  IF v_actor IS NULL OR NOT ('permission_management:read' = ANY (iam.effective_permissions(v_actor, v_tenant))) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = '[iam] permission_management:read ausente';
+  END IF;
+
+  v_countries := iam.effective_countries(v_actor, v_tenant);
+  -- Cobre todos os países suportados ⇒ não há "fora do escopo" a ocultar.
+  v_global := iam.supported_countries() <@ COALESCE(v_countries, ARRAY[]::TEXT[]);
+
+  -- O ato de auditar continua sendo auditado (280).
+  INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, resource_id, decision)
+  VALUES (v_tenant, v_actor, 'permission_audit', 'read', COALESCE(p_user_id, p_resource), 'ALLOW');
+
+  RETURN QUERY
+    SELECT a.id,
+           a.tenant_id,
+           a.user_id,
+           a.resource,
+           a.action,
+           CASE
+             WHEN v_global THEN a.resource_id
+             WHEN a.country IS NOT NULL AND a.country = ANY (COALESCE(v_countries, ARRAY[]::TEXT[]))
+               THEN a.resource_id
+             WHEN a.resource_id IS NULL THEN NULL
+             ELSE '<oculto>'
+           END,
+           a.decision,
+           a.ip_address,
+           a.created_at,
+           a.country,
+           a.simulation_id,
+           a.actor_kind,
+           a.gatilho_id,
+           a.registro_versao
+    FROM iam.permission_audit_log a
+    WHERE a.tenant_id = v_tenant
+      AND (p_user_id  IS NULL OR a.user_id  = p_user_id)
+      AND (p_resource IS NULL OR a.resource = p_resource)
+      AND (p_since    IS NULL OR a.created_at >= p_since)
+      AND (p_until    IS NULL OR a.created_at <  p_until)
+    ORDER BY a.created_at DESC
+    LIMIT LEAST(COALESCE(p_limit, 200), 1000);
+END;
+$$;
+
+-- ── 4. A linha do agente e o grupo AGENT "Luz — espelho Recrutador" (seed idempotente) ───────────
+-- Linha sem grupo é inerte (fail-closed: sem grupo → 0 célula e 0 país; a porta responde 403). A migration NÃO põe a Luz no grupo
+-- nem concede célula a ele: o grupo nasce VAZIO e pôr a Luz nele é ato da operação (🛑 da M2.F). Nenhum INSERT em iam.group_permissions/user_groups.
+-- `firebase_uid` = `agent:<slug>` (congelado). `role='support'` está no CHECK de users.role e não classifica na ponte (414): o `account_type`
+-- vai DECLARADO. Pânico = `status <> 'ACTIVE'` (o botão grava SUSPENDED; religar = ACTIVE). E-mail = conta de serviço do triage (chave de identidade do agente).
+INSERT INTO users (firebase_uid, email, display_name, role, account_type, status, is_active, tenant_id)
+VALUES ('agent:luz',
+        'triage-service-sa@enlite-prd.iam.gserviceaccount.com',
+        'Luz (agente)',
+        'support',
+        'agent',
+        'ACTIVE',
+        true,
+        '00000000-0000-0000-0000-000000000001')
+ON CONFLICT DO NOTHING;
+
+-- Grupo espelho: classe AGENT, país AR, SEM célula e SEM membro. `ON CONFLICT (tenant_id, name)`: a 2ª execução não duplica.
+INSERT INTO iam.permission_groups (tenant_id, name, description, is_system, actor_class)
+VALUES ('00000000-0000-0000-0000-000000000001',
+        'Luz — espelho Recrutador',
+        'Grupo da Luz (agente). Nasce vazio: a operação concede as células do espelho do Recrutador e põe a Luz aqui. Nunca recebe gestão de permissão nem operação em lote.',
+        false,
+        'AGENT')
+ON CONFLICT (tenant_id, name) DO NOTHING;
+
+INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason)
+SELECT g.id, 'AR', 'migration:556', 'Grupo da Luz: operação da Argentina (spec 078, M2)'
+  FROM iam.permission_groups g
+ WHERE g.tenant_id = '00000000-0000-0000-0000-000000000001'
+   AND g.name = 'Luz — espelho Recrutador'
+   AND NOT EXISTS (SELECT 1 FROM iam.group_country_scopes s WHERE s.group_id = g.id AND s.country = 'AR' AND s.revoked_at IS NULL);
+
+-- ── 5. Privilégios ───────────────────────────────────────────────────────────────────
+-- Nada a conceder a grupo de acesso. `iam.permission_audit_log`: o INSERT do agente usa o mesmo login do humano (app_runtime);
+-- as colunas novas herdam o GRANT de tabela. `iam.celulas_vedadas_a_agente()`: REVOKE PUBLIC + GRANT app_runtime/app_system (§2b).
+-- A prova é `has_*_privilege` no e2e (agent-schema-078).

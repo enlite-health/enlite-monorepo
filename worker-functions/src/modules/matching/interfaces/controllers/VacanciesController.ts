@@ -10,6 +10,7 @@ import {
 import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
 import { SortParamError } from '@shared/utils/parseSort';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
+import { computeScheduleWeeklyHours, hasStructuredSchedule } from '../../domain/scheduleHours';
 import { SOURCE_LOCKED_FIELDS } from './vacancyCrudHelpers';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
@@ -81,7 +82,7 @@ export class VacanciesController {
   async listVacancies(req: Request, res: Response): Promise<void> {
     try {
       const {
-        search, status,
+        search, status, include_baja, talentum_manual,
         worker_type, state, city, required_sex,
         days, time_from, time_to,
         limit = '20', offset = '0',
@@ -92,6 +93,8 @@ export class VacanciesController {
       const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
         search, status,
+        includeBaja: include_baja,
+        talentumManual: talentum_manual,
         workerType: worker_type,
         state,
         city,
@@ -250,7 +253,6 @@ export class VacanciesController {
           -- (O ponteiro para a guarda mora no JSDoc do metodo, nao aqui: comentario
           -- de SQL viaja DENTRO da query, e ate o NOME do arquivo de teste casaria
           -- a regex clinica da guarda -- D182.)
-          p.insurance_verified,
           p.service_type,
           -- F3 (vaga-le-do-servico): avisos ABERTOS de "o serviço mudou com a vaga publicada". Mesma query (sessão com
           -- identidade); sem aviso = '[]'. Só campo e instante, nunca valor.
@@ -290,7 +292,7 @@ export class VacanciesController {
         LEFT JOIN encuadres e ON jp.id = e.job_posting_id
         LEFT JOIN workers w ON e.worker_id = w.id
         LEFT JOIN publications pub ON jp.id = pub.job_posting_id
-        WHERE jp.id = $1
+        WHERE jp.id = $1 AND jp.deleted_at IS NULL
         GROUP BY jp.id, p.id, pa.id, ${vacancyEffectiveGroupBySql()}
       `, [id]);
 
@@ -349,8 +351,17 @@ export class VacanciesController {
         'VacanciesController:getVacancyById:diagnoses',
       );
 
+      // 056 T4.3: `weekly_hours` é DERIVADO do horário efetivo (o do serviço, com `durationMinutes`)
+      // quando há schedule estruturado; a vaga legada sem schedule segue com a coluna (sem outra fonte).
+      // `authorized_period` não sai da API (⚑15: fica no banco).
+      const { authorized_period: _authorizedPeriod, ...rowWithoutAuthorizedPeriod } = row;
+      const weeklyHours = hasStructuredSchedule(row.schedule)
+        ? Math.round(computeScheduleWeeklyHours(row.schedule) * 100) / 100
+        : row.weekly_hours;
+
       const normalized = projectPatientInVacancy({
-        ...row,
+        ...rowWithoutAuthorizedPeriod,
+        weekly_hours: weeklyHours,
         encuadres,
         schedule: normalizeSchedule(row.schedule),
         locked_fields: lockedFields,

@@ -25,6 +25,9 @@ import {
   PATIENT_CLINICAL_READ_CELL,
   PATIENT_SERVICES_READ_CELL,
   PATIENT_CLINICAL_WRITE_CELL,
+  PATIENT_CLINICAL_CREATE_CELL,
+  PATIENT_CLINICAL_UPDATE_CELL,
+  missingTherapeuticClinicalWriteCell,
   PATIENT_FAMILY_READ_CELL,
   PATIENT_COVERAGE_READ_CELL,
   PATIENT_CARE_TEAM_READ_CELL,
@@ -94,13 +97,36 @@ describe('canReadTherapeuticClinical', () => {
   });
 });
 
-describe('canWriteTherapeuticClinical', () => {
-  it('null/undefined → passa; [] → não; só a célula de escrita clínica libera (lex C7)', () => {
-    expect(canWriteTherapeuticClinical(null)).toBe(true);
-    expect(canWriteTherapeuticClinical(undefined)).toBe(true);
-    expect(canWriteTherapeuticClinical([])).toBe(false);
-    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_READ_CELL])).toBe(false);
-    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_WRITE_CELL])).toBe(true);
+describe('canWriteTherapeuticClinical — recurso SPLIT: o painel grava create+update, nunca write', () => {
+  const PROJETO_CREATE = `${THERAPEUTIC_PROJECT_RESOURCE}:create`;
+
+  it('null/undefined → passa (D113); [] → não', () => {
+    expect(canWriteTherapeuticClinical(null, 'create')).toBe(true);
+    expect(canWriteTherapeuticClinical(undefined, 'update')).toBe(true);
+    expect(canWriteTherapeuticClinical([], 'create')).toBe(false);
+  });
+
+  it('(a) criar: projeto:create + clinical:create (sem write) → permite', () => {
+    expect(canWriteTherapeuticClinical([PROJETO_CREATE, PATIENT_CLINICAL_CREATE_CELL], 'create')).toBe(true);
+    expect(missingTherapeuticClinicalWriteCell([PROJETO_CREATE, PATIENT_CLINICAL_CREATE_CELL], 'create')).toBeNull();
+  });
+
+  it('(b) só clinical:read → nega e nomeia a célula que faltou (create ou update)', () => {
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_READ_CELL], 'create')).toBe(false);
+    expect(missingTherapeuticClinicalWriteCell([PATIENT_CLINICAL_READ_CELL], 'create')).toBe('patient_clinical:create');
+    expect(missingTherapeuticClinicalWriteCell([PATIENT_CLINICAL_READ_CELL], 'update')).toBe('patient_clinical:update');
+  });
+
+  it('(c) clinical:write legado (Acesso Master) → permite criar e editar', () => {
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_WRITE_CELL], 'create')).toBe(true);
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_WRITE_CELL], 'update')).toBe(true);
+  });
+
+  it('(d) editar: clinical:update → permite; só clinical:create → nega nomeando :update (e o inverso)', () => {
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_UPDATE_CELL], 'update')).toBe(true);
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_CREATE_CELL], 'update')).toBe(false);
+    expect(missingTherapeuticClinicalWriteCell([PATIENT_CLINICAL_CREATE_CELL], 'update')).toBe('patient_clinical:update');
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_UPDATE_CELL], 'create')).toBe(false);
   });
 });
 
@@ -158,6 +184,18 @@ describe('projectTherapeuticVersionForActor', () => {
     const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL]);
     expect(out.specificObjectives).toEqual([{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
     expect(out.activities).toEqual([{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
+  });
+
+  it('spec 061/D-3: a `description` do item SOBREVIVE à projeção sem `patient_clinical:read` (controle: o `segmentId` do mesmo item sai null)', () => {
+    const base = versao();
+    const comDescricao = {
+      ...base,
+      specificObjectives: [{ id: 'o-1', label: 'TITULO-SINTETICO-O', description: 'DESCRIPCION-SINTETICA-O', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
+      activities: [{ id: 'a-1', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
+    };
+    const out = projectTherapeuticVersionForActor(comDescricao, [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
+    expect(out.specificObjectives[0]).toEqual({ id: 'o-1', label: 'TITULO-SINTETICO-O', description: 'DESCRIPCION-SINTETICA-O', segmentId: null, segmentLabel: null });
+    expect(out.activities[0]).toEqual({ id: 'a-1', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A', segmentId: null, segmentLabel: null });
   });
 
   it('lex-pr7 C3(b)/D303: SEM `patient_clinical:read` o segmento sai `null` por item, mas id/label continuam (não é o item inteiro que some)', () => {

@@ -1,5 +1,5 @@
 import { TFunction } from 'i18next';
-import { SelectOption } from '@presentation/components/atoms/Select';
+import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 export const getStatsData = (t: TFunction) => [
   { label: t('admin.vacancies.stats.moreThan7Days'), value: '2', icon: 'clock' as const },
@@ -8,7 +8,7 @@ export const getStatsData = (t: TFunction) => [
   { label: t('admin.vacancies.stats.totalVacancies'), value: '4,5h', icon: 'user-search' as const },
 ];
 
-export const getStatusOptions = (t: TFunction): SelectOption[] => [
+export const getStatusOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'SEARCHING',             label: t('admin.vacancies.statusOptions.searching') },
   { value: 'SEARCHING_REPLACEMENT', label: t('admin.vacancies.statusOptions.searchingReplacement') },
   { value: 'RAPID_RESPONSE',        label: t('admin.vacancies.statusOptions.rapidResponse') },
@@ -17,4 +17,6 @@ export const getStatusOptions = (t: TFunction): SelectOption[] => [
   { value: 'ON_HOLD',               label: t('admin.vacancies.statusOptions.onHold') },
   { value: 'SUSPENDED',             label: t('admin.vacancies.statusOptions.suspended') },
   { value: 'CLOSED',                label: t('admin.vacancies.statusOptions.closed') },
+  // Spec 084 F2: filtrar por "Dada de baja" mostra SÓ as baixadas (só consulta).
+  { value: 'DE_BAJA',               label: t('admin.vacancies.statusOptions.deBaja') },
 ];

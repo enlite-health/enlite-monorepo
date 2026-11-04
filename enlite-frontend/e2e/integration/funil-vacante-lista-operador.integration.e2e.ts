@@ -18,6 +18,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 import {
   insertTestPatient,
   cleanupTestPatient,
@@ -139,20 +140,20 @@ test.describe('funil da vacante — Lista como operador @integration', () => {
     await clearSearchAndType(page, '6660 22');
     await expect.poll(() => visibleNames(page)).toEqual(['Bernardo Pérez']);
 
-    // d) seletor Registro (select nativo: selectOption por rótulo é o gesto do usuário); combinado com a busca.
+    // d) seletor Registro (Combobox: abrir e clicar a opção pelo rótulo é o gesto do usuário); combinado com a busca.
     await clearSearchAndType(page, '');
     const registration = page.getByTestId('funnel-filter-registration');
-    await registration.selectOption({ label: 'Completo' });
+    await escolherNoCombo(page, registration, 'Completo');
     await expect.poll(() => visibleNames(page)).toEqual(['Ángela Gómez']);
-    await registration.selectOption({ label: 'Incompleto' });
+    await escolherNoCombo(page, registration, 'Incompleto');
     await expect.poll(() => visibleNames(page)).toEqual(['Bernardo Pérez']);
     await clearSearchAndType(page, 'gomez'); // Incompleto + busca da Completa → nada
     await expect(page.getByTestId('funnel-empty-filtered')).toBeVisible();
-    await registration.selectOption({ label: 'Completo' }); // Completo + busca da Completa → ela
+    await escolherNoCombo(page, registration, 'Completo'); // Completo + busca da Completa → ela
     await expect.poll(() => visibleNames(page)).toEqual(['Ángela Gómez']);
 
     // e) busca sem resultado → vazio FILTRADO; o vazio da vaga NÃO aparece (a vaga tem candidatos).
-    await registration.selectOption({ label: 'Todos' });
+    await escolherNoCombo(page, registration, 'Todos');
     await clearSearchAndType(page, 'zzzzqq');
     await expect(page.getByTestId('funnel-empty-filtered')).toBeVisible();
     await expect(page.getByText('Sin candidatos en esta vacante')).toHaveCount(0);

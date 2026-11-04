@@ -13,6 +13,7 @@ import { scanExpressRouter, cellKey, undeclaredRoutes } from '@modules/identity/
 import { authDouble, permissionsDouble } from '@modules/identity/interfaces/middleware/__tests__/permissionFamilyDoubles';
 import { createAdminTherapeuticProjectsRoutes } from '../adminTherapeuticProjectsRoutes';
 import type { AdminTherapeuticProjectsController } from '../../controllers/AdminTherapeuticProjectsController';
+import type { AdminServiceShiftTemplatesController } from '../../controllers/AdminServiceShiftTemplatesController';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -60,6 +61,16 @@ const ESPERADO: Record<string, string> = {
   'GET /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:read',
   'POST /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:create',
   'PATCH /therapeutic-catalogs/segments/:itemId': 'catalog_therapeutic_segments:update',
+  // Motivos de saída (492) — kind fora do laço terapêutico, célula literal própria; `/options` lê sob patient_services:read.
+  'GET /therapeutic-catalogs/service-exit-reasons': 'catalog_service_exit_reasons:read',
+  'POST /therapeutic-catalogs/service-exit-reasons': 'catalog_service_exit_reasons:create',
+  'PATCH /therapeutic-catalogs/service-exit-reasons/:itemId': 'catalog_service_exit_reasons:update',
+  'GET /therapeutic-catalogs/service-exit-reasons/options': 'patient_services:read',
+  // Guardias predefinidas (550, spec 074) — controller próprio; `/options` lê sob patient_services:read.
+  'GET /therapeutic-catalogs/service-shift-templates': 'catalog_service_shift_templates:read',
+  'POST /therapeutic-catalogs/service-shift-templates': 'catalog_service_shift_templates:create',
+  'PATCH /therapeutic-catalogs/service-shift-templates/:itemId': 'catalog_service_shift_templates:update',
+  'GET /therapeutic-catalogs/service-shift-templates/options': 'patient_services:read',
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado (e com que kind). */
@@ -76,10 +87,22 @@ function controllerDuble(): AdminTherapeuticProjectsController {
     listCatalog: respondeCatalogo('listCatalog'),
     createCatalogItem: respondeCatalogo('createCatalogItem'),
     updateCatalogItem: respondeCatalogo('updateCatalogItem'),
+    listServiceExitReasonOptions: responde('listServiceExitReasonOptions'),
   } as unknown as AdminTherapeuticProjectsController;
 }
 
-const build = () => createAdminTherapeuticProjectsRoutes(controllerDuble(), authDouble(), permissionsDouble());
+/** Dublê do controller das guardias (4º parâmetro): cada handler devolve o próprio nome. */
+function shiftTemplatesDuble(): AdminServiceShiftTemplatesController {
+  const responde = (nome: string) => (req: express.Request, res: express.Response) => res.json({ m: nome, itemId: req.params.itemId });
+  return {
+    listShiftTemplates: responde('listShiftTemplates'),
+    createShiftTemplate: responde('createShiftTemplate'),
+    updateShiftTemplate: responde('updateShiftTemplate'),
+    listShiftTemplateOptions: responde('listShiftTemplateOptions'),
+  } as unknown as AdminServiceShiftTemplatesController;
+}
+
+const build = () => createAdminTherapeuticProjectsRoutes(controllerDuble(), authDouble(), permissionsDouble(), shiftTemplatesDuble());
 
 /** App com o router montado onde ele vive em produção. `celulas` simula o que o engine carimba. */
 function app(celulas?: string[]) {
@@ -104,7 +127,7 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('cada uma das 13 rotas declara a célula do mapa (D299.3)', () => {
+  it('cada uma das 21 rotas declara a célula do mapa (D299.3)', () => {
     const declarado = Object.fromEntries(
       scanExpressRouter(build()).map((route) => [
         `${route.method} ${route.path}`,
@@ -114,8 +137,8 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('são exatamente 13 rotas: 4 do projeto + 3 catálogos × 3 verbos (tipo de patologia não é catálogo)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(13);
+  it('são exatamente 21 rotas: 4 do projeto + 3 catálogos × 3 verbos + motivos de saída (3 + options) + guardias (3 + options)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(21);
   });
 
   it('não existe DELETE em lugar nenhum — versão é imutável (lex C5) e catálogo é baixa lógica', () => {
@@ -156,6 +179,10 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     ['get', '/api/admin/therapeutic-catalogs/segments', 'listCatalog'],
     ['post', '/api/admin/therapeutic-catalogs/segments', 'createCatalogItem'],
     ['patch', '/api/admin/therapeutic-catalogs/segments/i-1', 'updateCatalogItem'],
+    ['get', '/api/admin/therapeutic-catalogs/service-exit-reasons', 'listCatalog'],
+    ['post', '/api/admin/therapeutic-catalogs/service-exit-reasons', 'createCatalogItem'],
+    ['patch', '/api/admin/therapeutic-catalogs/service-exit-reasons/i-1', 'updateCatalogItem'],
+    ['get', '/api/admin/therapeutic-catalogs/service-exit-reasons/options', 'listServiceExitReasonOptions'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const res = await request(app())[metodo](caminho).expect(200);
     expect(res.body.m).toBe(esperado);
@@ -165,13 +192,29 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     ['specific-objectives'],
     ['activities'],
     ['segments'],
+    ['service-exit-reasons'],
   ])('o kind `%s` chega ao controller pela ROTA, não por param do cliente', async (kind) => {
     const res = await request(app()).get(`/api/admin/therapeutic-catalogs/${kind}`).expect(200);
     expect(res.body.kind).toBe(kind);
   });
 
+  it('R1 rotas de guardias exigem a célula certa', async () => {
+    const guardias = scanExpressRouter(build()).filter((r) => r.path.startsWith('/therapeutic-catalogs/service-shift-templates'));
+    expect(guardias.map((r) => `${r.method} ${r.path} → ${r.cell ? cellKey(r.cell.resource, r.cell.action) : null}`).sort()).toEqual([
+      'GET /therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:read',
+      'GET /therapeutic-catalogs/service-shift-templates/options → patient_services:read',
+      'PATCH /therapeutic-catalogs/service-shift-templates/:itemId → catalog_service_shift_templates:update',
+      'POST /therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:create',
+    ]);
+    const base = '/api/admin/therapeutic-catalogs/service-shift-templates';
+    expect((await request(app()).get(base).expect(200)).body.m).toBe('listShiftTemplates');
+    expect((await request(app()).post(base).expect(200)).body.m).toBe('createShiftTemplate');
+    expect((await request(app()).patch(`${base}/i-1`).expect(200)).body.m).toBe('updateShiftTemplate');
+    expect((await request(app()).get(`${base}/options`).expect(200)).body.m).toBe('listShiftTemplateOptions');
+  });
+
   describe('trilha (lex C9/C13: só nomes de container)', () => {
-    it('as 4 rotas do projeto gravam trilha de `patient`; as 9 de catálogo NÃO gravam nenhuma', async () => {
+    it('as 4 rotas do projeto gravam trilha de `patient`; as de catálogo NÃO gravam nenhuma', async () => {
       await request(app()).get('/api/admin/patients/abc-123/therapeutic-projects').expect(200);
       await request(app()).get('/api/admin/therapeutic-catalogs/activities').expect(200);
       await request(app()).post('/api/admin/therapeutic-catalogs/activities').send({ label: 'x' }).expect(200);

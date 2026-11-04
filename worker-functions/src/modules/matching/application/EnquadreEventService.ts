@@ -53,6 +53,8 @@ const MAX_CODE_ATTEMPTS = 5;
 const EMAIL = z.string().email();
 const WALL_CLOCK = "yyyy-LL-dd'T'HH:mm";
 const FALLBACK_HOST_NAME = 'Entrevistadora';
+/** Grade de inícios dos "Horarios libres" do enquadre: de meia em meia hora (a admissão pública segue de hora em hora). */
+const ENQUADRE_SLOT_STEP_MINUTES = 30;
 
 // ─── Formas devolvidas: as MESMAS de `enlite-frontend/src/domain/entities/EnquadreEvent.ts` ───────────────────────────────
 
@@ -202,7 +204,7 @@ export class EnquadreEventService {
   /** Entrevistadoras ATIVAS do país da vaga. `linked` só quando o vínculo do Tactiq a torna apta (a mesma régua da admissão). */
   async listHosts(vacancyId: string): Promise<EnquadreHostOption[]> {
     const vacancy = await this.vacancyOf(vacancyId);
-    const hosts = await this.deps.hosts.listActiveWithIdByCountry(vacancy.country);
+    const hosts = await this.deps.hosts.listActiveWithIdByCountry(vacancy.country, 'enquadre');
     const states = await this.linkStatesOf(hosts.map((h) => h.email));
     return hosts.map((h) => ({
       id: h.id,
@@ -244,6 +246,7 @@ export class EnquadreEventService {
       holidays: cfg.holidays,
       businessHours: cfg.businessHours,
       slotMinutes: durationMinutes,
+      stepMinutes: ENQUADRE_SLOT_STEP_MINUTES,
       minLeadMinutes: 0,
       horizonBusinessDays: 1,
     });
@@ -312,7 +315,7 @@ export class EnquadreEventService {
           {
             calendarId,
             impersonateEmail,
-            summary: buildEnquadreEventTitle({ caseNumber: vacancy.case_number, patientLastName: vacancy.patient_last_name, eventCode: code }),
+            summary: buildEnquadreEventTitle({ caseNumber: vacancy.case_number, eventCode: code }),
             description: '',
             startISO: start.toISO() as string,
             endISO: end.toISO() as string,
@@ -380,7 +383,7 @@ export class EnquadreEventService {
   }
 
   private async findHost(country: AdmissionCountry, hostId: string) {
-    const roster = await this.deps.hosts.listActiveWithIdByCountry(country);
+    const roster = await this.deps.hosts.listActiveWithIdByCountry(country, 'enquadre');
     const host = roster.find((h) => h.id === hostId);
     if (!host) throw new HostNotInRosterError();
     return host;
@@ -451,7 +454,7 @@ export function hasValidEmail(email: string | null): boolean {
   return typeof email === 'string' && EMAIL.safeParse(email.trim()).success;
 }
 
-function inZone(d: Date, zone: string): string {
+export function inZone(d: Date, zone: string): string {
   return DateTime.fromJSDate(d, { zone }).toISO({ suppressMilliseconds: true }) as string;
 }
 

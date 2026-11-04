@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SearchInput } from '@presentation/components/molecules/SearchBar';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { JobFilters } from '@presentation/components/molecules/JobFilters';
 import { JobsTable } from '@presentation/components/organisms/JobsTable';
 import { TablePagination } from '@presentation/components/molecules/TablePagination';
@@ -92,32 +92,32 @@ export const JobVacanciesSection = (): JSX.Element => {
     { label: t('jobs.table.diagnosis', 'DIAGNÓSTICO'), key: 'diagnostico' },
   ];
 
-  const tipoOptions: SelectOption[] = [
+  const tipoOptions: ComboboxOption[] = [
     { value: '', label: t('jobs.options.all') },
     { value: 'Cuidador', label: t('jobs.options.caregiver') },
     { value: 'AT', label: t('jobs.options.at') },
   ];
 
-  const localOptions: SelectOption[] = [
+  const localOptions: ComboboxOption[] = [
     { value: '', label: t('jobs.options.all') },
     { value: 'Buenos Aires, Argentina', label: t('jobs.options.buenosAires') },
     { value: 'São Paulo, Brasil', label: t('jobs.options.saoPaulo') },
     { value: 'Rio de Janeiro, Brasil', label: t('jobs.options.rioDeJaneiro') },
   ];
 
-  const areaOptions: SelectOption[] = [
+  const areaOptions: ComboboxOption[] = [
     { value: '', label: t('jobs.options.allFeminine') },
     { value: 'Saúde Mental', label: t('jobs.options.mentalHealth') },
     { value: 'Geriatria', label: t('jobs.options.geriatrics') },
   ];
 
-  const sexoOptions: SelectOption[] = [
+  const sexoOptions: ComboboxOption[] = [
     { value: '', label: t('jobs.options.all') },
     { value: 'Mulher', label: t('jobs.options.woman') },
     { value: 'Homem', label: t('jobs.options.man') },
   ];
 
-  const statusOptions: SelectOption[] = [
+  const statusOptions: ComboboxOption[] = [
     { value: 'Inscrito', label: t('jobs.options.registered') },
     { value: 'Selecionado', label: t('jobs.options.selected') },
     { value: 'Todos', label: t('jobs.options.all') },
@@ -189,11 +189,11 @@ export const JobVacanciesSection = (): JSX.Element => {
                 placeholder={t('jobs.searchPlaceholder', 'Pesquisar pelo nome da vacante')}
                 className="flex-1"
               />
-              <SelectField
+              <Combobox
                 value={filters.status}
                 onChange={(value) => handleFilterChange('status', value)}
                 options={statusOptions}
-                label={t('jobs.status', 'Status')}
+                aria-label={t('jobs.status', 'Status')}
                 className="w-[220px]"
               />
             </div>

@@ -10,6 +10,8 @@ import type {
   EnquadreColumnId,
   EnquadreEventDetail,
   EnquadreEventListItem,
+  EnquadreGlobalList,
+  EnquadreGlobalListParams,
   EnquadreHostOption,
 } from '@domain/entities/EnquadreEvent';
 import { AdminAdmissionApiService } from './AdminAdmissionApiService';
@@ -17,7 +19,29 @@ import { AdminAdmissionApiService } from './AdminAdmissionApiService';
 const base = (vacancyId: string): string => `/api/admin/vacancies/${encodeURIComponent(vacancyId)}/enquadre-events`;
 const seg = encodeURIComponent;
 
+/** Querystring da lista global: omite o que está vazio; `from`/`to` só juntos; `status` por vírgula. */
+function globalListQuery(p: EnquadreGlobalListParams): string {
+  const qs = new URLSearchParams();
+  if (p.from && p.to) {
+    qs.set('from', p.from);
+    qs.set('to', p.to);
+  }
+  if (p.status && p.status.length > 0) qs.set('status', p.status.join(','));
+  if (p.host) qs.set('host', p.host);
+  if (p.country) qs.set('country', p.country);
+  if (p.q && p.q.trim() !== '') qs.set('q', p.q.trim());
+  if (p.limit !== undefined) qs.set('limit', String(p.limit));
+  if (p.offset !== undefined) qs.set('offset', String(p.offset));
+  const out = qs.toString();
+  return out === '' ? '' : `?${out}`;
+}
+
 export class AdminEnquadreApiService {
+  /** Lista GLOBAL de enquadres (spec 076): `GET /api/admin/enquadre-events` — cruza vagas, exige `enquadre_event:read` + `vacancy:read`. */
+  static async listAll(params: EnquadreGlobalListParams = {}): Promise<EnquadreGlobalList> {
+    return AdminAdmissionApiService.requestJson<EnquadreGlobalList>('GET', `/api/admin/enquadre-events${globalListQuery(params)}`);
+  }
+
   static async listEvents(vacancyId: string): Promise<EnquadreEventListItem[]> {
     return AdminAdmissionApiService.requestJson<EnquadreEventListItem[]>('GET', base(vacancyId));
   }

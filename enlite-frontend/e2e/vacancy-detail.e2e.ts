@@ -34,18 +34,11 @@ const MOCK_VACANCY = {
   patient_first_name: 'Paciente',
   patient_last_name: 'Teste',
   patient_zone: 'Palermo',
-  insurance_verified: false,
   required_professions: ['Acompañante Terapéutico', 'Enfermero'],
   required_sex: 'Indistinto',
   pathology_types: 'TEA leve',
   encuadres: [],
   publications: [],
-  meet_link_1: 'https://meet.google.com/nox-yqex-sdj',
-  meet_datetime_1: '2026-04-06T10:00:00Z',
-  meet_link_2: null,
-  meet_datetime_2: null,
-  meet_link_3: null,
-  meet_datetime_3: null,
 };
 
 const MOCK_VACANCIES_LIST = {

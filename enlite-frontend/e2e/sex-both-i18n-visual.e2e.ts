@@ -26,7 +26,6 @@ const MOCK_VACANCY = {
   patient_zone: 'Palermo',
   patient_city: 'Buenos Aires',
   patient_neighborhood: 'Palermo',
-  insurance_verified: false,
   required_professions: ['Acompañante Terapéutico'],
   required_sex: 'BOTH',
   pathology_types: null,
@@ -38,12 +37,6 @@ const MOCK_VACANCY = {
   worker_attributes: null,
   service_type: null,
   schedule: null,
-  meet_link_1: null,
-  meet_datetime_1: null,
-  meet_link_2: null,
-  meet_datetime_2: null,
-  meet_link_3: null,
-  meet_datetime_3: null,
 };
 
 async function mockPublicVacancy(page: import('@playwright/test').Page) {

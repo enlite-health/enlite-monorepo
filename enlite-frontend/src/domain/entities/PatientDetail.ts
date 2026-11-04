@@ -13,11 +13,12 @@ export type { PatientCompleteness, PatientCompletenessCode } from './PatientComp
 // batia no teto de 400 linhas do validador.
 export type { PatientCoverageSectionPayload } from './PatientCoverage';
 export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry, PatientStatusOptions, PatientStatusOption, PatientStatusChangeSource } from './PatientLifecycle';
-export type { InsuranceProvider } from './PatientCoverage';
+export type { InsuranceProvider, PatientCoverageView, CoverageEntryView } from './PatientCoverage';
+import type { PatientCoverageView } from './PatientCoverage';
 export type { PatientCoverageEmergencyContact, PatientCoverageEmergencyContactInput, CoverageEmergencyContactKind } from './PatientCoverage';
 import type { PatientCoverageEmergencyContact } from './PatientCoverage';
 export type { PatientAddressLogisticsPayload } from './PatientAddress';
-export type { PatientKanbanItem, PatientFunnelData } from './PatientLifecycle';
+export type { PatientKanbanItem, PatientKanbanServiceSummary, PatientFunnelData } from './PatientLifecycle';
 // Só os 2 tipos que algum consumidor importa DAQUI (o resto — payloads de escrita, enums —
 // vem direto de `PatientContractedService.ts`; reexportar tudo aqui estourava o teto de 400).
 export type { PatientContractedServiceDetail, PatientContractedServiceProvider } from './PatientContractedService';
@@ -155,6 +156,15 @@ export interface PatientDiagnosisDetail {
   active: boolean;
 }
 
+/** Spec 064: resumo da cobertura ATUAL (serviços ativos) — só contagens e nomes de provedor. */
+export interface CurrentCoverageSummary {
+  providers: { code: string; name: string }[];
+  privateServices: number;
+  hiddenServices: number;
+  unlinkedServices: number;
+  activeServices: number;
+}
+
 export interface PatientDetail {
   id: string;
   /** null para paciente NATIVO (criado no painel ou pelo formulário público, mig 251). */
@@ -222,8 +232,8 @@ export interface PatientDetail {
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;
+  /** Cobertura INFORMADA (texto livre; `insurance_informed`, dono único). `null` também quando o ator não lê `coverage`. */
   insuranceInformed: string | null;
-  insuranceVerified: string | null;
   cityLocality: string | null;
   province: string | null;
   zoneNeighborhood: string | null;
@@ -239,14 +249,21 @@ export interface PatientDetail {
   onHoldNoteRedacted?: boolean;
   /** Data de início do serviço (mig 317) — ISO; nativa do painel, não deriva da vaga. */
   serviceStartDate: string | null;
+  /**
+   * Spec 064: cobertura atual derivada dos serviços ativos. `null` = sem permissão
+   * (`redacted.services`); AUSENTE (undefined) = backend anterior, "não li".
+   */
+  currentCoverage?: CurrentCoverageSummary | null;
+  /** Spec 064: data de entrada (menor start_date dos serviços). `null` = sem permissão ou sem data; ausente = backend anterior. */
+  entryDate?: string | null;
   /** Coberturas verificadas por CÓDIGO do catálogo (mig 312), ordem do catálogo. */
   insuranceVerifiedCodes: string[];
   /**
-   * As mesmas coberturas, COM origem (QA 🟡3/SUP-B5) — o drawer usa `source` para travar o chip
-   * do ClickUp (não removível) e restringir o multi-select ao que o painel gravou
-   * (`source: 'admin_manual'`). Opcional: API anterior a esta rodada não manda o campo.
+   * Spec 058 §C: a cobertura em UM objeto — `display`/`displaySource` (só o PDF) e `entries[]` com
+   * `code`+`name`+`mapped`+`source` (o card mostra os nomes; o drawer trava o chip do ClickUp pela `source`).
+   * `null` = o ator não lê `coverage` (junto com `redacted.coverage`); "sem cobertura" é objeto com `NONE`.
    */
-  insuranceVerifiedEntries?: Array<{ code: string; source: string }>;
+  coverage: PatientCoverageView | null;
   /**
    * Hotfix gate-cobertura-verificada-vacante (28/09): ≥1 cobertura verificada
    * (`insuranceVerifiedCodes`) com provider ATIVO no catálogo — alimenta `recruitmentMissingCodes`
@@ -323,7 +340,6 @@ export interface CreatePatientPayload {
   documentType?: string; // 'DNI'|'PASSPORT'|'CEDULA'|'LE_LC'|'CPF'
   documentNumber?: string;
   healthInsuranceName?: string;
-  healthInsuranceMemberId?: string;
   serviceType?: string[]; // Profession[]: 'AT'|'CAREGIVER'|'NURSE'|'KINESIOLOGIST'|'PSYCHOLOGIST'
 }
 

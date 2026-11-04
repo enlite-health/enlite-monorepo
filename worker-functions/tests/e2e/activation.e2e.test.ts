@@ -18,10 +18,11 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const TAG = 'activation-e2e-%';
-const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]';
+const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","durationMinutes":240}]';
 // Spec 027 Fase 3 (D508 c): os 5 campos que o portão exige e que a vaga copia. Valores sintéticos.
 const RECRUITMENT_FIELDS = {
   requiredProfessions: ['AT'],
@@ -46,11 +47,14 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     coverage?: string | null;
     caseNumber?: number;
   }): Promise<string> {
-    return (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, health_insurance_name)
+    const id = (await pool.query<{ id: string }>(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number, insurance_informed)
        VALUES ($1, 'Activation', 'E2E', 'AR', 'PENDING_ADMISSION', $2, $3) RETURNING id`,
       [opts.tag, opts.caseNumber ?? null, opts.coverage ?? null],
     )).rows[0].id;
+    // Pedido do Javier: ativar recrutamento com o paciente pré-atendimento exige ≥1 diagnóstico ATIVO (esta suíte mede as outras travas).
+    await seedPatientDiagnosis(pool, id);
+    return id;
   }
 
   beforeAll(async () => {
@@ -79,8 +83,8 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     // O provider é INDEPENDENTE do paciente (catálogo global), por isso limpo à parte.
     await pool.query(`DELETE FROM insurance_providers WHERE code = $1`, [COVERAGE_INACTIVE_CODE]);
     await pool.query(
-      `INSERT INTO insurance_providers (code, active, retired_at, sort_order)
-       SELECT $1, false, NOW(), COALESCE(MAX(sort_order), 0) + 1 FROM insurance_providers`,
+      `INSERT INTO insurance_providers (code, name, active, retired_at, sort_order)
+       SELECT $1, 'Obra social inativa E2E activation', false, NOW(), COALESCE(MAX(sort_order), 0) + 1 FROM insurance_providers`,
       [COVERAGE_INACTIVE_CODE],
     );
   });
@@ -118,7 +122,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
 
     // COVERAGE: "Particular" é resposta EXPLÍCITA válida (FR-121/122) — grava depois da criação
     // do paciente para não acoplar este teste ao shape do INSERT de patients acima.
-    await pool.query(`UPDATE patients SET health_insurance_name = 'Particular' WHERE id = $1`, [patientId]);
+    await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [patientId]);
 
     const before = await pool.query<{ n: string }>(
       'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],
@@ -144,7 +148,8 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(vacancy.status).toBe('PENDING_ACTIVATION');
     expect(vacancy.is_draft).toBe(true);
 
-    // Spec 027 Fase 3 (D508): a vaga nasce com os 5 campos do serviço e SEM os dois de ficha.
+    // Spec 057 (D523): a vaga com serviço NÃO guarda os 5 (nasce NULL; o leitor lê do serviço) e SEM os dois de ficha;
+    // o valor vive no serviço.
     const { rows: [copied] } = await pool.query(
       `SELECT required_professions, required_sex, required_experience, work_schedule, payment_day,
               worker_attributes, daily_obs, worker_profile_sought
@@ -152,9 +157,18 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       [r.data.data.vacancyId],
     );
     expect(copied).toMatchObject({
+      required_professions: null, required_sex: null, required_experience: null,
+      work_schedule: null, payment_day: null,
+      worker_attributes: null, daily_obs: null, worker_profile_sought: null,
+    });
+    const { rows: [svcRow] } = await pool.query(
+      `SELECT required_professions, required_sex, required_experience, work_schedule, payment_day
+         FROM patient_contracted_services WHERE id = $1`,
+      [serviceId],
+    );
+    expect(svcRow).toMatchObject({
       required_professions: ['AT'], required_sex: 'F', required_experience: 'EXP-E2E-1',
       work_schedule: 'part-time', payment_day: 'DIA-E2E-5',
-      worker_attributes: null, daily_obs: null, worker_profile_sought: null,
     });
 
     const { rows: [patient] } = await pool.query<{ status: string }>(
@@ -378,7 +392,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(Number(n.n)).toBe(0);
   });
 
-  it('ALTERNATIVO (spec 027 Fase 3): serviço sem os 5 campos → 422 SERVICE_RECRUITMENT_FIELDS só ele, sem criar vaga; required_sex BOTH conta como preenchido', async () => {
+  it('ALTERNATIVO (spec 027 Fase 3): serviço sem os 5 campos → 422 com os 5 códigos SERVICE_* por campo, sem criar vaga; required_sex BOTH conta como preenchido', async () => {
     const patientId = await criarPacienteDeFunil({ tag: 'activation-e2e-recfields', caseNumber: 991010, coverage: 'Particular' });
     const addr = await api.post(`/api/admin/patients/${patientId}/addresses`, { address_formatted: 'Calle Campos 1', address_type: 'primary' }, asAdmin);
     const addressId = addr.data.data.id as string;
@@ -393,7 +407,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
 
     const refused = await api.post(url, {}, asAdmin);
     expect(refused.status).toBe(422);
-    expect(refused.data.details.missing).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    expect(refused.data.details.missing).toEqual(['SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY']);
     const { rows: [n] } = await pool.query<{ n: string }>('SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId]);
     expect(Number(n.n)).toBe(0);
 
@@ -414,6 +428,9 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       'SELECT required_sex, worker_attributes, daily_obs, is_draft FROM job_postings WHERE id = $1',
       [ok.data.data.vacancyId],
     );
-    expect(v).toEqual({ required_sex: 'BOTH', worker_attributes: null, daily_obs: null, is_draft: true });
+    // D523: a vaga não guarda o sexo; o serviço guarda BOTH.
+    expect(v).toEqual({ required_sex: null, worker_attributes: null, daily_obs: null, is_draft: true });
+    const { rows: [svcSex] } = await pool.query('SELECT required_sex FROM patient_contracted_services WHERE id = $1', [serviceId]);
+    expect(svcSex.required_sex).toBe('BOTH');
   });
 });

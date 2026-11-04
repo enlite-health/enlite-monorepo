@@ -1,8 +1,8 @@
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { Text } from '@presentation/components/atoms/Text';
 import { PATIENT_ADDRESS_TYPES, type PatientAddressType } from '@domain/entities/PatientAddress';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 /**
  * Teto do texto livre do "Otro" (40) — hoje garantido só pelo zod da API
@@ -12,7 +12,7 @@ import { PATIENT_ADDRESS_TYPES, type PatientAddressType } from '@domain/entities
 export const ADDRESS_TYPE_OTHER_MAX = 40;
 
 interface Props {
-  /** `''` representa "sin especificar" (`address_type = NULL`) — o placeholder do `SelectField`. */
+  /** `''` representa "sin especificar" (`address_type = NULL`) — a opção de placeholder do Combobox. */
   addressType: PatientAddressType | '';
   addressTypeOther: string;
   onAddressTypeChange: (value: PatientAddressType | '') => void;
@@ -41,17 +41,19 @@ export function AddressTypeFields({
   ta,
   otherError,
 }: Props): JSX.Element {
-  const typeOptions: SelectOption[] = PATIENT_ADDRESS_TYPES.map((v) => ({ value: v, label: ta(`type_${v}`) }));
+  const typeOptions: ComboboxOption[] = PATIENT_ADDRESS_TYPES.map((v) => ({ value: v, label: ta(`type_${v}`) }));
   const isOtro = addressType === 'otro';
 
   return (
     <>
       <FormField label={ta('type')} htmlFor="pad-type" optional>
         <div data-clarity-mask="True">
-          <SelectField
+          <Combobox
             id="pad-type"
             inputSize="compact"
             options={typeOptions}
+            placeholder={ta('typePlaceholder')}
+            clearLabel={ta('typePlaceholder')}
             value={addressType}
             onChange={(v) => onAddressTypeChange(v as PatientAddressType | '')}
             data-testid="pad-type"

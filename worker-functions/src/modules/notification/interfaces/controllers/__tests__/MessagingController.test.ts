@@ -217,7 +217,8 @@ describe('MessagingController.sendVacancyMatch', () => {
 
     expect(res.status).toHaveBeenCalledWith(422);
     expect((res.json as jest.Mock).mock.calls[0][0]).toEqual({
-      error: 'Worker não possui número de telefone cadastrado',
+      error: 'WORKER_NO_PHONE',
+      detail: 'Worker não possui número de telefone cadastrado',
     });
     expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
   });
@@ -400,9 +401,10 @@ describe('MessagingController.sendDirect — source=individual + admin: prefix',
     expect(insertCall[1][1]).toBe('admin:user-abc-123'); // triggered_by with prefix
     // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): a coluna phone recebe o
     // literal NULL no próprio SQL (não um placeholder) — o worker_id já vem resolvido em
-    // resolvedWorkerId ($1, migration 474, reaproveitado da auditoria abaixo), e o telefone
-    // normalizado não é gravado na linha do log. Isso é o que a regex abaixo prova: a lista de
-    // colunas tem `phone` mas a de VALUES tem `NULL` na mesma posição.
+    // resolvedWorkerId ($1, reaproveitado da SELECT acima e na auditoria abaixo), então o único
+    // telefone que aparece por perto (digitsOnly, usado na SELECT anterior) nunca chega a esta
+    // INSERT. Isso é o que a regex abaixo prova: a lista de colunas tem `phone` mas a de VALUES
+    // tem `NULL` na mesma posição.
     expect(insertCall[0]).toMatch(/\(worker_id, triggered_by, phone, template_slug, status, twilio_sid, source\)/);
     expect(insertCall[0]).toMatch(/\$1, \$2, NULL, \$3, 'sent', \$4, 'individual'/);
 

@@ -1,5 +1,6 @@
 export { normalizeSearch } from '@shared/utils/normalizeSearch';
 import { normalizeSearch } from '@shared/utils/normalizeSearch';
+import { optedOutExistsSql } from '@shared/database/messagingOptOutFilter';
 
 // Campos selecionados para detalhe de worker — compartilhado por getWorkerById e
 // getWorkerByPhone (AdminWorkersController). ana_care_id/ana_care_synced_at
@@ -17,6 +18,12 @@ export const WORKER_DETAIL_COLS = [
   'w.sexual_orientation_encrypted, w.race_encrypted, w.religion_encrypted',
   'w.weight_kg_encrypted, w.height_cm_encrypted',
   'w.ana_care_id, w.ana_care_synced_at',
+  // N7 (spec 078 M4.5): opt-out de mensagens VIGENTE, lido da MESMA fonte do envio
+  // (`messaging_opt_out`, predicado único `optedOutExistsSql`). A guarda de saída da Luz
+  // (triage) precisa saber, antes de responder, se quem escreveu pediu para não ser contatado.
+  `${optedOutExistsSql('w.id')} AS opted_out`,
+  `(SELECT moo.opted_out_at FROM messaging_opt_out moo
+     WHERE moo.worker_id = w.id AND moo.opted_in_at IS NULL) AS opted_out_at`,
 ].join(', ');
 
 export function mapPlatformLabel(dataSources: string[]): string {

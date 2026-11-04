@@ -91,20 +91,20 @@ export function eventCounters(participants: readonly ColumnedParticipant[]): {
 
 export interface EnquadreTitleInput {
   caseNumber: number | null;
-  /** Sobrenome do paciente. NUNCA o primeiro nome: esta função não tem esse parâmetro. */
-  patientLastName: string | null;
+  /**
+   * NUNCA nome nem sobrenome do paciente: esta função não tem esses parâmetros. O evento é visível aos prestadores
+   * convidados, que ainda não atuam no caso — dado pessoal do paciente não pode chegar a eles (Gabriel, 16/10/2026).
+   */
   eventCode: string;
 }
 
 /**
- * `Encuadre terapéutico — Caso {nº} · {sobrenome} · ENC-XXXXXX`. Trecho ausente (nº ou sobrenome) é OMITIDO — nunca
- * "undefined" nem "null". O código é o que liga a transcrição do Tactiq ao evento (`titleHasExactCode`).
+ * `Encuadre terapéutico — Caso {nº} · ENC-XXXXXX`. Nº do caso ausente é OMITIDO — nunca "undefined" nem "null".
+ * O código é o que liga a transcrição do Tactiq ao evento (`titleHasExactCode`).
  */
 export function buildEnquadreEventTitle(input: EnquadreTitleInput): string {
   const parts: string[] = [];
   if (input.caseNumber !== null && Number.isFinite(input.caseNumber)) parts.push(`Caso ${input.caseNumber}`);
-  const last = input.patientLastName?.trim();
-  if (last) parts.push(last);
   parts.push(input.eventCode);
   return `Encuadre terapéutico — ${parts.join(' · ')}`;
 }

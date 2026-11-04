@@ -13,6 +13,7 @@
  *   9. Params array length matches placeholder count
  */
 
+import { vacancyEffectiveRequiredProfessionsSql, vacancyEffectiveRequiredSexSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { buildPublicJobsWhere } from '../PublicJobsQueryBuilder';
 
 describe('buildPublicJobsWhere', () => {
@@ -88,14 +89,15 @@ describe('buildPublicJobsWhere', () => {
   it('adds worker_sex exact match clause', () => {
     const { whereClause, params } = buildPublicJobsWhere({ country: 'AR', worker_sex: 'FEMALE' });
 
-    expect(whereClause).toContain('jp.required_sex = $2');
+    expect(whereClause).toContain(`${vacancyEffectiveRequiredSexSql('jp')} = $2`);
     expect(params).toEqual(['AR', 'FEMALE']);
   });
 
   it('adds worker_type = ANY() clause', () => {
     const { whereClause, params } = buildPublicJobsWhere({ country: 'AR', worker_type: 'AT' });
 
-    expect(whereClause).toContain('= ANY(jp.required_professions)');
+    expect(whereClause).toContain(`= ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})`);
+    expect(whereClause).not.toMatch(/jp\.required_professions(?! END)/);
     expect(params).toEqual(['AR', 'AT']);
   });
 
@@ -122,7 +124,7 @@ describe('buildPublicJobsWhere', () => {
     // O 3o placeholder era `p.diagnosis ILIKE $3`. Com o filtro clinico fora, os seguintes
     // sobem uma posicao — e conferir a NUMERACAO importa: `push()` resolve o proximo $N
     // sozinho, entao remover uma condicao no meio renumera tudo em silencio.
-    expect(whereClause).toContain('jp.required_sex = $3');
+    expect(whereClause).toContain(`${vacancyEffectiveRequiredSexSql('jp')} = $3`);
     expect(params).toEqual(['AR', 'CABA', 'FEMALE']);
   });
 

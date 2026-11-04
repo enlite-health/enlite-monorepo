@@ -1,18 +1,21 @@
 import { Request, Response } from 'express';
+import { vacancyStatusOf, sendVacancyDeBajaReadOnly } from './vacancyDeBajaGuard';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
 import {
+  assertWorkerApto,
   assertWorkerCanApply,
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository, wjaSupersededByBlockedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
-import { deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
+import { APTO_REQUIRED_TARGET_STAGES, deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
 import {
   interviewScheduleSchema,
   INTERVIEW_DATE_RESOLVED_SQL,
@@ -144,6 +147,9 @@ export class WJAFunnelController {
              wja.application_funnel_stage AS funnel_stage,
              wja.source,
              wja.messaged_at,
+             -- Spec 067: o apto (fn_worker_is_apto) só é lido para etapa de Completado; as outras vêm NULL.
+             -- Completado sem apto cai em BLOQUEADO (deriveKanbanColumn).
+             ${aptoWhenCompletedSql('wja.application_funnel_stage', 'wja.worker_id')} AS worker_apto,
              -- D200.1: quando a janela de reenvio (MANUAL_RESEND_COOLDOWN_HOURS) abre de novo
              -- para este worker×vaga, ou NULL se o "Reenviar" está livre. MESMA expressão que
              -- o guard usa para o 422 — o card desabilita o botão antes do clique.
@@ -226,6 +232,7 @@ export class WJAFunnelController {
         INICIADO: [],       // INVITED+source='manual' — postulação real, não-bloqueada
         PRE_SCREENING: [],  // Antigo INITIATED — entrou no formulário Talentum
         IN_PROGRESS: [],
+        BLOQUEADO: [],      // spec 067: etapa de Completado, prestador NÃO apto (documentos sem validação)
         COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
         SELECTED: [],
         QUICK_RESPONSE_TEAM: [], // Fase 4 (D430) — destino do arrasto manual, entrada do quadro C
@@ -254,6 +261,7 @@ export class WJAFunnelController {
             row.funnel_stage as string | null,
             row.source as string | null,
             row.messaged_at as string | Date | null,
+            (row.worker_apto as boolean | null) ?? null,
           );
           if (column === 'COMPATIBLE' && !podeVerCandidatoDoMatch(cells)) {
             return { name: NOME_REDIGIDO, phone: null, column, matchRedigido: true };
@@ -410,11 +418,15 @@ export class WJAFunnelController {
         });
       }
 
+      // Spec 084 (P4): vaga dada de baja abre em LEITURA — o front esconde arrasto/ações e mostra o aviso.
+      const vacancyStatus = await vacancyStatusOf(this.db, id);
       res.json({
         success: true,
         data: {
           stages,
           totalEncuadres: classifiedCount, // cards do funil, SEM os de Compatíveis (subtítulo do quadro)
+          vacancyStatus,
+          readOnly: vacancyStatus === 'DE_BAJA',
         },
       });
     } catch (error) {
@@ -505,7 +517,9 @@ export class WJAFunnelController {
 
       // 1. Busca encuadre para obter worker_id + job_posting_id
       const encuadre = await this.db.query(
-        `SELECT worker_id, job_posting_id FROM encuadres WHERE id = $1`,
+        `SELECT e.worker_id, e.job_posting_id, jp.status AS job_posting_status
+           FROM encuadres e LEFT JOIN job_postings jp ON jp.id = e.job_posting_id AND jp.deleted_at IS NULL
+          WHERE e.id = $1`,
         [id],
       );
       if (encuadre.rowCount === 0) {
@@ -513,14 +527,23 @@ export class WJAFunnelController {
         return;
       }
 
-      const { worker_id: workerId, job_posting_id: jobPostingId } = encuadre.rows[0];
+      const { worker_id: workerId, job_posting_id: jobPostingId, job_posting_status: jobPostingStatus } = encuadre.rows[0];
       if (!workerId || !jobPostingId) {
         res.status(400).json({ success: false, error: 'Encuadre has no linked worker or job posting' });
         return;
       }
 
+      // Spec 084 (P4/R6): vaga dada de baja não recebe movimento no Kanban (só consulta).
+      if (jobPostingStatus === 'DE_BAJA') {
+        sendVacancyDeBajaReadOnly(res);
+        return;
+      }
+
       try {
-        await assertWorkerCanApply(this.db, workerId);
+        // Spec 067 FR-24: arrastar PARA Completado, Seleccionados ou Equipo de Respuesta Rápida exige APTO (documentos
+        // obrigatórios validados); os demais destinos seguem no limiar de hoje (`assertWorkerCanApply`).
+        if (APTO_REQUIRED_TARGET_STAGES.includes(targetStage)) await assertWorkerApto(this.db, workerId);
+        else await assertWorkerCanApply(this.db, workerId);
       } catch (err) {
         if (err instanceof WorkerNotEligibleError) {
           res.status(err.status).json({
@@ -623,6 +646,11 @@ export class WJAFunnelController {
         return;
       }
 
+      if (await this.blockedVacancyIsDeBaja(blockedId)) {
+        sendVacancyDeBajaReadOnly(res);
+        return;
+      }
+
       const ok = await this.blockedWriteRepo.dismiss(blockedId, rejectionReasonCategory);
       if (!ok) {
         res.status(404).json({ success: false, error: 'Blocked application not found' });
@@ -653,6 +681,11 @@ export class WJAFunnelController {
         return;
       }
 
+      if (await this.blockedVacancyIsDeBaja(blockedId)) {
+        sendVacancyDeBajaReadOnly(res);
+        return;
+      }
+
       const ok = await this.blockedWriteRepo.undismiss(blockedId);
       if (!ok) {
         res.status(404).json({ success: false, error: 'Blocked application not found' });
@@ -667,5 +700,15 @@ export class WJAFunnelController {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ success: false, error: message });
     }
+  }
+
+  /** Spec 084 (P4): o card bloqueado pertence a uma vaga dada de baja? (só consulta). */
+  private async blockedVacancyIsDeBaja(blockedId: string): Promise<boolean> {
+    const res = await this.db.query<{ status: string | null }>(
+      `SELECT jp.status FROM worker_blocked_applications b JOIN job_postings jp ON jp.id = b.job_posting_id
+        WHERE b.id = $1 AND jp.deleted_at IS NULL`,
+      [blockedId],
+    );
+    return res?.rows?.[0]?.status === 'DE_BAJA';
   }
 }

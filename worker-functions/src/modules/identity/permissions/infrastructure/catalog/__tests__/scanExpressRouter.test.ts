@@ -348,6 +348,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // explícitos abaixo.
       'catalog_therapeutic_objectives:read',
       'catalog_therapeutic_activities:read',
+      // Motivos de saída (492): mesma família, célula literal própria.
+      'catalog_service_exit_reasons:read',
+      'catalog_service_shift_templates:read',
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
       // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos recursos. Nesta rodada
@@ -379,6 +382,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'enquadre_event:read', 'enquadre_event:create', 'enquadre_event:update', 'enquadre_result:update',
       // Spec 052 (F3): o resumo do evento — declarada em `adminEnquadreEventRoutes.ts` (download do PDF).
       'enquadre_summary:read',
+      // Spec 055: tela Entrevistadores — declaradas em `adminInterviewHostRoutes.ts` (família admin.users).
+      'interview_host:read', 'interview_host:update',
       // Spec 049 (F4): vínculo do Tactiq — 2 células `own_*` declaradas por rota real (`tactiqLinkRoutes.ts`).
       'own_tactiq_link:read', 'own_tactiq_link:create',
       'staff_directory:read',
@@ -395,10 +400,25 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_care_team:create', 'patient_care_team:update',
       'patient_family:create', 'patient_family:update',
       'patient_coverage:create', 'patient_coverage:update',
-      'patient_services:create', 'patient_services:update',
+      'patient_services:create',
+      // Spec 058 (Parte A): as 11 células do cadastro de obra social/contratos/vínculo. TÊM rota no app real
+      // (`adminInsuranceRoutes.ts`, e o POST do catálogo em `adminPatientsRoutes.ts`); o fixture deste teste não as declara.
+      'catalog_insurance_providers:read',
+      'catalog_insurance_providers:create',
+      'catalog_insurance_providers:update',
+      'insurance_provider_contacts:read',
+      'insurance_provider_contacts:create',
+      'insurance_provider_contacts:update',
+      'insurance_contracts:read',
+      'insurance_contracts:create',
+      'insurance_contracts:update',
+      'patient_contract_value:create',
+      'insurance_provider_patients:read', 'patient_services:update',
       'patient_therapeutic_project:create', 'patient_therapeutic_project:update',
       'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update',
       'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update',
+      'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update',
+      'catalog_service_shift_templates:create', 'catalog_service_shift_templates:update',
       'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update',
       'user_management:create', 'user_management:update',
       'vacancy:create', 'vacancy:update',
@@ -414,12 +434,33 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // fixture de 2 rotas deste teste não as declara, por isso aparecem aqui como as demais
       // células de rota real acima (mesmo padrão de `patient_therapeutic_project:*` etc.).
       'anacare_hours:read', 'anacare_hours:validate', 'anacare_hours:export',
+      // cadeia Fase 10 (28/09) — quadro C: TEM rota própria (adminServiceTeamRoutes.ts, POST
+      // …/team/reject|revert), mas o fixture deste teste não a declara — mesma classe de dashboard_zones:read/worker_address:read.
+      'patient_service_team:update',
+      // cadeia Fase 11 (28/09) — itinerário: TEM rota própria (adminItineraryWriteRoutes.ts), mas
+      // o fixture deste teste não a declara — mesma classe de patient_service_team:update acima.
+      'patient_itinerary:update',
       // Spec 024 (D1/D2/D401, 21/09): DECLARADAS por rota real em `adminWorkerRoutes.ts`
       // (`tag:*`) e `recruitmentRoutes.ts` (`recruitment_blocked:read`) — o fixture de 2 rotas
       // deste teste não as declara, por isso aparecem aqui como as demais células de rota real
       // acima (mesmo padrão de `anacare_hours:*`).
       'tag:read', 'tag:create', 'tag:update', 'tag:delete',
       'recruitment_blocked:read',
+      // Spec 029 (prompts de IA): descrição em CELL_DESCRIPTION; a rota real é adminAiPromptRoutes.
+      'ai_prompt:read', 'ai_prompt:update',
+      // Spec 078 (pedidos do Sol): descrição em CELL_DESCRIPTION; a rota real é adminPedidosIaRoutes.
+      'pedidos_ia:read', 'pedidos_ia:decidir',
+      // Spec 082 (painel de custos): descrição em CELL_DESCRIPTION; a rota real é adminCostsRoutes.
+      'platform_costs:read',
+      // Spec 081 (T064): descrição em CELL_DESCRIPTION; a rota real é recruitmentRoutes.ts (T064b).
+      'recruitment_activity_per_person:read',
+      // Spec 080 (assistentes no app): 13 células com descrição em CELL_DESCRIPTION; as rotas reais vivem no
+      // assistants-service (não neste fixture de 2 rotas), então saem aqui como complemento.
+      'assistant_maria:chat', 'assistant_lucero:chat', 'assistant_candela:chat',
+      'assistant_scoreboard:read', 'assistant_escalation:register',
+      'knowledge_public:read', 'knowledge_recruitment:read', 'knowledge_clinical:read',
+      'knowledge_financial:read', 'knowledge_management:read', 'knowledge_coordination:read',
+      'knowledge_technical:read', 'knowledge_product_meetings:read',
       // Spec 051 (F1): trocar o status do paciente por FORA da FSM — uma célula por destino; o
       // consumidor é `decidirTrocaForaDoFluxo` (domínio), sem `perm.require` de rota neste PR.
       'patient_status:move_to_searching',
@@ -429,6 +470,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_status:move_to_suspended',
       'patient_status:move_to_alta',
       'patient_status:move_to_discharged',
+      // Spec 078 (M2): as 2 células da Luz como agente — consumidor é a porta MCP (`AgentCapabilityCells` + `AgentCellGuard`), sem rota REST.
+      'worker_application:create',
+      'handover:create',
     ]);
   });
 

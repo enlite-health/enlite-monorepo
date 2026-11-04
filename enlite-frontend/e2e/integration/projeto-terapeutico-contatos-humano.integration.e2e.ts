@@ -28,7 +28,8 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = `http://id.who.int/icd/entity/e2e-pr7-${RUN_ID}`;
@@ -50,8 +51,9 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
 
 /** Abre um multi-select do DS e marca as N primeiras opções (catálogo de objetivos/atividades). */
 async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcoes = root.locator('[role="option"] button');
   await expect(opcoes.first()).toBeVisible();
   for (let i = 0; i < n; i++) await opcoes.nth(i).click();
@@ -60,8 +62,9 @@ async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void>
 
 /** Abre um multi-select do DS e marca a opção CUJO TEXTO contém `texto` (contatos/equipe — nunca "os N primeiros"). */
 async function marcarPorTexto(page: Page, id: string, texto: string): Promise<void> {
-  const root = page.locator(`#${id}`);
-  await root.locator('button[aria-haspopup="listbox"]').click();
+  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
+  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
+  await gatilhoDoCampo.click();
   const opcao = root.locator('li[role="option"]', { hasText: texto });
   await expect(opcao).toBeVisible({ timeout: 10_000 });
   await opcao.locator('button').click();
@@ -98,7 +101,7 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
   let semExportGroupId = '';
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(710000); // faixa própria — 700000-709999 é do 017 humano
+    seed = seedActivatablePatient(710000, { withDiagnosis: false }); // faixa própria — 700000-709999 é do 017 humano
     seedIcd();
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -174,11 +177,11 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-    await page.getByTestId('tp-modality').selectOption('HYBRID');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID');
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
+    await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
     // spec 030: segmento obrigatório no "Nuevo" — pelo teclado.
-    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
+    await escolherSegmento(page, primeiroSegmento().label);
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
@@ -502,7 +505,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
   });
 
   test.beforeAll(async ({ request }) => {
-    seed = seedActivatablePatient(711000); // faixa própria — 700000-709999 e 710000-719999 são de outros arquivos
+    seed = seedActivatablePatient(711000, { withDiagnosis: false }); // faixa própria — 700000-709999 e 710000-719999 são de outros arquivos
     seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados pelo describe acima
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -579,8 +582,8 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
     await expect(page.getByTestId('tp-form-contact-removed')).toHaveCount(0);
 
     // Muda SÓ a modalidade (MICRO) — não toca nos multi-selects de contato.
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
+    await expect(page.getByTestId('tp-modality')).toContainText('On-line');
     await expect(page.getByTestId('tp-save')).toBeEnabled();
 
     const salvo = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
@@ -695,7 +698,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
   let groupId = '';
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(712000); // faixa própria — 710000/711000 já usadas neste arquivo
+    seed = seedActivatablePatient(712000, { withDiagnosis: false }); // faixa própria — 710000/711000 já usadas neste arquivo
     seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -749,9 +752,9 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
-    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label); // spec 030: obrigatório no "Nuevo"
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
+    await escolherSegmento(page, primeiroSegmento().label); // spec 030: obrigatório no "Nuevo"
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
@@ -810,8 +813,8 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
     await expect(page.getByTestId('tp-form-contact-removed')).toHaveCount(0);
 
     // Muda só a modalidade (MICRO) e salva — a minor nova tem de levar os DOIS contatos.
-    await page.getByTestId('tp-modality').selectOption('ONLINE');
-    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
+    await expect(page.getByTestId('tp-modality')).toContainText('On-line');
     await expect(page.getByTestId('tp-save')).toBeEnabled();
     const salvo = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
@@ -850,7 +853,7 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
   let groupId = '';
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(713000); // faixa própria — 710000/711000/712000 já usadas neste arquivo
+    seed = seedActivatablePatient(713000, { withDiagnosis: false }); // faixa própria — 710000/711000/712000 já usadas neste arquivo
     seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -910,8 +913,8 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
     await expect(page.getByTestId('tp-segment')).toBeVisible();
     await expect(page.getByTestId('tp-segment-empty')).toContainText('No hay segmentos activos');
 
-    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
-    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();

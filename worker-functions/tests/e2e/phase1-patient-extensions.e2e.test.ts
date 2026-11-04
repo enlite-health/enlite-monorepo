@@ -3,20 +3,20 @@
  *
  * Integration tests for Phase 1 of the vacancies refactor sprint:
  *   - Migration 147: patient_addresses.state/city/neighborhood columns
- *   - Migration 147: patients.health_insurance_name / health_insurance_member_id
+ *   - Migration 147 (colunas legadas health_insurance_*; spec 058: os donos são insurance_informed / affiliate_id)
  *   - Migration 147: patients.status ADMISSION value
- *   - Fill-only semantics: PatientIdentityRepository COALESCE on health insurance fields
+ *   - Fill-only semantics: PatientIdentityRepository COALESCE (fill-only) on the owner coverage fields
  *   - PatientService.replaceAddresses writes state/city/neighborhood
  *
  * Uses real Postgres (Docker E2E stack). No mocks.
  *
  * Invariants:
  *   I1: patient_addresses has state, city, neighborhood columns (migration 147)
- *   I2: patients has health_insurance_name, health_insurance_member_id columns (migration 147)
+ *   I2: patients has insurance_informed, affiliate_id columns (donos da cobertura, spec 058)
  *   I3: patients.status CHECK accepts ADMISSION (migration 147)
  *   I4: PatientService writes health insurance fields on INSERT
- *   I5: PatientService fill-only: does NOT overwrite existing health_insurance_name on UPDATE
- *   I6: PatientService fill-only: does NOT overwrite existing health_insurance_member_id on UPDATE
+ *   I5: PatientService fill-only: does NOT overwrite existing insurance_informed on UPDATE
+ *   I6: PatientService fill-only: does NOT overwrite existing affiliate_id on UPDATE
  *   I7: PatientService.replaceAddresses writes state/city/neighborhood
  *   I8: PatientService.replaceAddresses does NOT write state/city/neighborhood when absent
  */
@@ -93,22 +93,22 @@ describe('I1: patient_addresses has state/city/neighborhood columns (migration 1
 });
 
 // =============================================================================
-// I2: patients has health_insurance_name, health_insurance_member_id columns
+// I2: patients has insurance_informed, affiliate_id columns
 // =============================================================================
 
-describe('I2: patients has health insurance columns (migration 147)', () => {
-  it('health_insurance_name column exists in patients', async () => {
+describe('I2: patients has the owner coverage columns (spec 058: insurance_informed / affiliate_id)', () => {
+  it('insurance_informed column exists in patients', async () => {
     const res = await pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
-       WHERE table_name = 'patients' AND column_name = 'health_insurance_name'`,
+       WHERE table_name = 'patients' AND column_name = 'insurance_informed'`,
     );
     expect(res.rows).toHaveLength(1);
   });
 
-  it('health_insurance_member_id column exists in patients', async () => {
+  it('affiliate_id column exists in patients', async () => {
     const res = await pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
-       WHERE table_name = 'patients' AND column_name = 'health_insurance_member_id'`,
+       WHERE table_name = 'patients' AND column_name = 'affiliate_id'`,
     );
     expect(res.rows).toHaveLength(1);
   });
@@ -166,7 +166,7 @@ describe('I3: patients.status CHECK constraint accepts ADMISSION (migration 147)
 // I4: PatientService writes health insurance on INSERT
 // =============================================================================
 
-describe('I4: PatientService writes health_insurance_name/member_id on INSERT', () => {
+describe('I4: PatientService writes insurance_informed/member_id on INSERT', () => {
   it('creates patient with health insurance fields populated', async () => {
     const service = new PatientService();
 
@@ -175,8 +175,8 @@ describe('I4: PatientService writes health_insurance_name/member_id on INSERT', 
       firstName:               'Test',
       lastName:                'Patient',
       country:                 'AR',
-      healthInsuranceName:     'OSDE 210',
-      healthInsuranceMemberId: '9876543210',
+      insuranceInformed:     'OSDE 210',
+      affiliateId: '9876543210',
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Test',
@@ -188,26 +188,26 @@ describe('I4: PatientService writes health_insurance_name/member_id on INSERT', 
     }, { onMissingContact: 'flag' });
 
     const row = await pool.query<{
-      health_insurance_name: string | null;
-      health_insurance_member_id: string | null;
+      insurance_informed: string | null;
+      affiliate_id: string | null;
     }>(
-      `SELECT health_insurance_name, health_insurance_member_id
+      `SELECT insurance_informed, affiliate_id
        FROM patients WHERE clickup_task_id = $1`,
       [TASK.i4],
     );
 
     expect(row.rows).toHaveLength(1);
-    expect(row.rows[0].health_insurance_name).toBe('OSDE 210');
-    expect(row.rows[0].health_insurance_member_id).toBe('9876543210');
+    expect(row.rows[0].insurance_informed).toBe('OSDE 210');
+    expect(row.rows[0].affiliate_id).toBe('9876543210');
   });
 });
 
 // =============================================================================
-// I5: Fill-only: does NOT overwrite existing health_insurance_name on UPDATE
+// I5: Fill-only: does NOT overwrite existing insurance_informed on UPDATE
 // =============================================================================
 
-describe('I5: fill-only — existing health_insurance_name NOT overwritten on update', () => {
-  it('updates patient but keeps original health_insurance_name when new value differs', async () => {
+describe('I5: fill-only — existing insurance_informed NOT overwritten on update', () => {
+  it('updates patient but keeps original insurance_informed when new value differs', async () => {
     const service = new PatientService();
 
     // First upsert: establish original value
@@ -216,8 +216,8 @@ describe('I5: fill-only — existing health_insurance_name NOT overwritten on up
       firstName:               'Fill',
       lastName:                'Only',
       country:                 'AR',
-      healthInsuranceName:     'Swiss Medical',
-      healthInsuranceMemberId: '111000',
+      insuranceInformed:     'Swiss Medical',
+      affiliateId: '111000',
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Fill',
@@ -234,7 +234,7 @@ describe('I5: fill-only — existing health_insurance_name NOT overwritten on up
       firstName:               'Fill',
       lastName:                'Only',
       country:                 'AR',
-      healthInsuranceName:     'IOMA', // different — should NOT replace existing 'Swiss Medical'
+      insuranceInformed:     'IOMA', // different — should NOT replace existing 'Swiss Medical'
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Fill',
@@ -245,22 +245,22 @@ describe('I5: fill-only — existing health_insurance_name NOT overwritten on up
       }],
     }, { onMissingContact: 'flag' });
 
-    const row = await pool.query<{ health_insurance_name: string | null }>(
-      `SELECT health_insurance_name FROM patients WHERE clickup_task_id = $1`,
+    const row = await pool.query<{ insurance_informed: string | null }>(
+      `SELECT insurance_informed FROM patients WHERE clickup_task_id = $1`,
       [TASK.i5],
     );
 
     // Fill-only: original value preserved
-    expect(row.rows[0].health_insurance_name).toBe('Swiss Medical');
+    expect(row.rows[0].insurance_informed).toBe('Swiss Medical');
   });
 });
 
 // =============================================================================
-// I6: Fill-only: does NOT overwrite existing health_insurance_member_id on UPDATE
+// I6: Fill-only: does NOT overwrite existing affiliate_id on UPDATE
 // =============================================================================
 
-describe('I6: fill-only — existing health_insurance_member_id NOT overwritten on update', () => {
-  it('updates patient but keeps original health_insurance_member_id when new value differs', async () => {
+describe('I6: fill-only — existing affiliate_id NOT overwritten on update', () => {
+  it('updates patient but keeps original affiliate_id when new value differs', async () => {
     const service = new PatientService();
 
     // First upsert: establish original value
@@ -269,8 +269,8 @@ describe('I6: fill-only — existing health_insurance_member_id NOT overwritten 
       firstName:               'Afl',
       lastName:                'Id',
       country:                 'AR',
-      healthInsuranceName:     'Galeno',
-      healthInsuranceMemberId: '777888999',
+      insuranceInformed:     'Galeno',
+      affiliateId: '777888999',
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Afl',
@@ -287,7 +287,7 @@ describe('I6: fill-only — existing health_insurance_member_id NOT overwritten 
       firstName:               'Afl',
       lastName:                'Id',
       country:                 'AR',
-      healthInsuranceMemberId: '000000001', // different — should NOT replace existing
+      affiliateId: '000000001', // different — should NOT replace existing
       responsibles: [{
         firstName: 'Resp',
         lastName:  'Afl',
@@ -298,13 +298,13 @@ describe('I6: fill-only — existing health_insurance_member_id NOT overwritten 
       }],
     }, { onMissingContact: 'flag' });
 
-    const row = await pool.query<{ health_insurance_member_id: string | null }>(
-      `SELECT health_insurance_member_id FROM patients WHERE clickup_task_id = $1`,
+    const row = await pool.query<{ affiliate_id: string | null }>(
+      `SELECT affiliate_id FROM patients WHERE clickup_task_id = $1`,
       [TASK.i6],
     );
 
     // Fill-only: original value preserved
-    expect(row.rows[0].health_insurance_member_id).toBe('777888999');
+    expect(row.rows[0].affiliate_id).toBe('777888999');
   });
 });
 

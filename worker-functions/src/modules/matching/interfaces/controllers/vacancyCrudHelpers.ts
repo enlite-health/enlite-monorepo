@@ -6,14 +6,25 @@
  */
 
 import type { Pool } from 'pg';
+import { caseOrdinalFromServiceSql } from '@shared/sql/caseOrdinalSql';
 import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 import {
+  BAJA_REFUSAL_MESSAGES,
+  DE_BAJA_STATUS,
+  refusesCloseOfActiveServiceVacancy,
+} from '../../domain/VacancyBajaPolicy';
+import {
   vacancyEffectiveAgeRangeSql,
   vacancyEffectiveJoinSql,
+  vacancyEffectivePaymentDaySql,
   vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveRequiredExperienceSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
   vacancyEffectiveScheduleSql,
+  vacancyEffectiveWorkScheduleSql,
   vacancyRawColumnsSql,
 } from '@shared/sql/vacancyEffectiveFieldsSql';
 
@@ -71,6 +82,9 @@ export const CANONICAL_STATUSES = new Set([
   'RAPID_RESPONSE',
   'PENDING_ACTIVATION',
   'ACTIVE',
+  // Spec 084 F5 (R18): "En espera" — a pausa da vaga de serviço ativo. DE_BAJA fica FORA de propósito (R17): ninguém
+  // põe vaga em baixa nem a tira dela por este endpoint.
+  'ON_HOLD',
   'SUSPENDED',
   'CLOSED',
 ]);
@@ -114,6 +128,13 @@ export const SOURCE_LOCKED_FIELDS = [
   'age_range_max',
   'schedule',
   'providers_needed',
+  // 057/D523 (F3): os 5 campos de recrutamento também moram no serviço contratado (`patient_contracted_services`);
+  // a vaga com serviço não os guarda nem edita (os leitores buscam pela peça de campos efetivos, F2).
+  'required_sex',
+  'required_professions',
+  'required_experience',
+  'work_schedule',
+  'payment_day',
 ] as const satisfies readonly (keyof VacancyInsertParams)[];
 
 export type SourceLockedField = (typeof SOURCE_LOCKED_FIELDS)[number];
@@ -122,7 +143,7 @@ export type SourceLockedField = (typeof SOURCE_LOCKED_FIELDS)[number];
  * Extrai de `p` só os campos travados pela origem (`SOURCE_LOCKED_FIELDS`).
  * `buildInsertParams` consome isto para montar as colunas do INSERT que vêm
  * do serviço — nunca lê `p.case_number`/`p.patient_id`/etc. direto para
- * essas 8 colunas. O tipo de retorno (`Pick<VacancyInsertParams,
+ * essas 13 colunas. O tipo de retorno (`Pick<VacancyInsertParams,
  * SourceLockedField>`) é o que faz uma coluna nova "não compilar" sem
  * entrar na constante: não dá para ler `locked.<campo>` se `<campo>` não
  * está em `SOURCE_LOCKED_FIELDS`.
@@ -138,7 +159,15 @@ export function pickSourceLockedFields(
 }
 
 export type UpdateAuthorizationResult =
-  | { kind: 'error'; status: number; error: string; lockedFields?: readonly string[] }
+  | {
+      kind: 'error';
+      status: number;
+      error: string;
+      lockedFields?: readonly string[];
+      /** Spec 084: código estável + mensagem es/pt-BR (a tela traduz pelo código). */
+      code?: string;
+      messages?: { es: string; 'pt-BR': string };
+    }
   | { kind: 'ok'; isDraft: boolean; currentStatus: string | null };
 
 /**
@@ -172,14 +201,46 @@ export async function authorizeVacancyUpdate(
     is_draft: boolean | null;
     patient_id: string | null;
     contracted_service_id: string | null;
+    service_active: boolean | null;
   }>(
-    'SELECT status, is_draft, patient_id, contracted_service_id FROM job_postings WHERE id = $1',
+    `SELECT jp.status, jp.is_draft, jp.patient_id, jp.contracted_service_id, pcs.active AS service_active
+       FROM job_postings jp
+       LEFT JOIN patient_contracted_services pcs ON pcs.id = jp.contracted_service_id
+      WHERE jp.id = $1 AND jp.deleted_at IS NULL`,
     [vacancyId],
   );
   if (currentRow.rows.length === 0) {
     return { kind: 'error', status: 404, error: 'Vacancy not found' };
   }
   const currentStatus = currentRow.rows[0].status;
+
+  // Spec 084 R17 (REGRA DURA): vaga baixada é só consulta. NENHUM campo — e muito menos o status — muda por aqui; a
+  // única volta é a reativação do serviço que a baixou. Roda antes de qualquer outra regra.
+  if (currentStatus === DE_BAJA_STATUS) {
+    return {
+      kind: 'error',
+      status: 409,
+      code: 'VACANCY_DE_BAJA_NO_REACTIVATION',
+      error: BAJA_REFUSAL_MESSAGES.VACANCY_DE_BAJA_NO_REACTIVATION['pt-BR'],
+      messages: BAJA_REFUSAL_MESSAGES.VACANCY_DE_BAJA_NO_REACTIVATION,
+    };
+  }
+
+  // Spec 084 F5 (R4/P1): vaga de serviço ATIVO nunca é encerrada, só pausada (ON_HOLD) — recusado pelo servidor.
+  if (
+    refusesCloseOfActiveServiceVacancy(updates.status, {
+      contractedServiceId: currentRow.rows[0].contracted_service_id,
+      serviceActive: currentRow.rows[0].service_active,
+    })
+  ) {
+    return {
+      kind: 'error',
+      status: 409,
+      code: 'CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED',
+      error: BAJA_REFUSAL_MESSAGES.CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED['pt-BR'],
+      messages: BAJA_REFUSAL_MESSAGES.CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED,
+    };
+  }
   const isDraft = currentRow.rows[0].is_draft === true;
   const contractedServiceId = currentRow.rows[0].contracted_service_id;
   const effectivePatientId =
@@ -258,20 +319,15 @@ export async function authorizeVacancyUpdate(
   return { kind: 'ok', isDraft, currentStatus };
 }
 
+/** Mesma expressão do vínculo (`caseOrdinalFromServiceSql`); aqui o serviço é o $23 do INSERT. */
+export const CASE_ORDINAL_FROM_SERVICE_SQL = caseOrdinalFromServiceSql('$23');
+
 export function buildInsertQuery(): string {
   // `published_at` defaults to NOW() when the caller passes NULL — matches the
   // product rule that publication date auto-fills with today if left blank.
   // `closes_at` stays NULL when not provided (optional).
   //
-  // `case_ordinal` (spec 027 Fase 5, migration 460) — a enésima vaga do caso
-  // (patient_id). NÃO ganha placeholder novo: é computada por subquery DENTRO
-  // do próprio INSERT, reusando $4 (patient_id) — sempre a MESMA transação/
-  // statement de quem chama, nunca uma 2ª ida ao banco. Concorrência real (dois
-  // cliques simultâneos no mesmo caso) é resolvida pelo índice único
-  // idx_job_postings_case_ordinal: o 2º INSERT bloqueia no lock de valor do
-  // índice, e ao destravar já vê o valor commitado do 1º — reconta e bate 23505
-  // se ainda colidir. Callers tratam 23505 com retry (ver isCaseOrdinalConflict/
-  // retryOnCaseOrdinalConflict abaixo).
+  // `case_ordinal` (spec 084, migration 563): derivado do SERVIÇO ($23) dentro do próprio INSERT — ver `CASE_ORDINAL_FROM_SERVICE_SQL`.
   // RETURNING com lista explícita e SEM join: este INSERT roda também em client cru (sem identidade). O horário
   // efetivo da resposta é lido depois, por `withEffectiveFields`.
   return `
@@ -306,18 +362,14 @@ export function buildInsertQuery(): string {
       $22,
       $23,
       $24,
-      CASE WHEN $4::uuid IS NULL THEN NULL ELSE (
-        SELECT COALESCE(MAX(jp2.case_ordinal), 0) + 1
-          FROM job_postings jp2
-         WHERE jp2.patient_id = $4::uuid
-      ) END
+      ${CASE_ORDINAL_FROM_SERVICE_SQL}
     )
     RETURNING ${vacancyRawColumnsSql()}
   `;
 }
 
 /**
- * Troca os campos CRUS da linha escrita pelos EFETIVOS (`schedule`, `providers_needed` e a faixa etária: os do serviço, se
+ * Troca os campos CRUS da linha escrita pelos EFETIVOS (`schedule`, `providers_needed`, os 5 de recrutamento (057) e a faixa etária: os do serviço, se
  * a vaga tem serviço). Lê por `db.query` — o proxy do pool desvia para o client fixado da request, COM identidade — depois do
  * COMMIT, nunca no client cru da transação. Vaga que a sessão não enxerga mais (ou sem linha) devolve a linha como veio.
  * Campo novo efetivo entra aqui, pela peça — nunca num helper paralelo.
@@ -326,6 +378,11 @@ export async function withEffectiveFields<T extends Record<string, unknown>>(db:
   const r = await db.query(
     `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule,
             ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed,
+            ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex,
+            ${vacancyEffectiveRequiredProfessionsSql('jp')} AS required_professions,
+            ${vacancyEffectiveRequiredExperienceSql('jp')} AS required_experience,
+            ${vacancyEffectiveWorkScheduleSql('jp')} AS work_schedule,
+            ${vacancyEffectivePaymentDaySql('jp')} AS payment_day,
             ${vacancyEffectiveAgeRangeSql('jp')}
        FROM job_postings jp ${vacancyEffectiveJoinSql('jp')}
       WHERE jp.id = $1`,
@@ -337,46 +394,14 @@ export async function withEffectiveFields<T extends Record<string, unknown>>(db:
     ...row,
     schedule: eff.schedule,
     providers_needed: eff.providers_needed,
+    required_sex: eff.required_sex,
+    required_professions: eff.required_professions,
+    required_experience: eff.required_experience,
+    work_schedule: eff.work_schedule,
+    payment_day: eff.payment_day,
     age_range_min: eff.age_range_min,
     age_range_max: eff.age_range_max,
   };
-}
-
-// ─── case_ordinal conflict retry (spec 027 Fase 5) ───────────────────────────
-
-/** O 23505 que é CONFLITO DE case_ordinal — e só ele (mesma régua de isCaseNumberConflict). */
-export function isCaseOrdinalConflict(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false;
-  const e = err as { code?: string; constraint?: string };
-  return e.code === '23505' && e.constraint === 'idx_job_postings_case_ordinal';
-}
-
-export const CASE_ORDINAL_MAX_ATTEMPTS = 5;
-
-/**
- * Reexecuta `attempt` até MAX_ATTEMPTS quando o erro é um conflito de
- * case_ordinal (corrida entre dois INSERTs no mesmo caso). `onConflict`,
- * quando informado, roda ANTES de cada nova tentativa — usado pelos callers
- * que estão dentro de uma transação explícita para `ROLLBACK TO SAVEPOINT`
- * (o 23505 aborta a transação até lá). Erro que não é conflito de
- * case_ordinal sobe na hora, sem retry.
- */
-export async function retryOnCaseOrdinalConflict<T>(
-  attempt: () => Promise<T>,
-  onConflict?: () => Promise<void>,
-  maxAttempts: number = CASE_ORDINAL_MAX_ATTEMPTS,
-): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      return await attempt();
-    } catch (err) {
-      if (!isCaseOrdinalConflict(err)) throw err;
-      lastErr = err;
-      if (onConflict) await onConflict();
-    }
-  }
-  throw lastErr;
 }
 
 // ─── Diff helper (Onda A — pure, no DB) ──────────────────────────────────────
@@ -418,7 +443,7 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
   // fixture de E2E precisa nascer publicável sem tocar Talentum/Groq.
   const isDraft = !(p.is_test === true && p.is_draft === false);
 
-  // As 8 colunas que vêm do paciente/serviço (SOURCE_LOCKED_FIELDS) são lidas
+  // As 13 colunas que vêm do paciente/serviço (SOURCE_LOCKED_FIELDS) são lidas
   // SÓ daqui — nunca de `p.<campo>` direto — para que o INSERT e o `locked_fields`
   // do GET/PUT nunca divirjam (fonte única, teste de paridade).
   const locked = pickSourceLockedFields(p);
@@ -428,25 +453,27 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     locked.case_number,
     p.computedTitle,
     locked.patient_id,
-    p.required_professions ?? [],
-    p.required_sex ?? null,
+    // 057/D523: vaga COM serviço grava NULL nos 5 de recrutamento (o valor mora no serviço; `required_professions`
+    // é NULL, não `[]`); vaga manual segue gravando os próprios.
+    locked.contracted_service_id == null ? locked.required_professions ?? [] : null,
+    locked.contracted_service_id == null ? locked.required_sex ?? null : null,
     // F6: idem para a faixa etária — vaga COM serviço grava NULL (a faixa é derivada de `provider_age_band` do serviço
     // por `applyEffectiveAgeRange`); vaga manual segue gravando a própria faixa.
     locked.contracted_service_id == null ? locked.age_range_min ?? null : null,
     locked.contracted_service_id == null ? locked.age_range_max ?? null : null,
     p.worker_profile_sought ?? null,
-    p.required_experience ?? null,
+    locked.contracted_service_id == null ? locked.required_experience ?? null : null,
     p.worker_attributes ?? null,
     // F2 (vaga-le-do-servico-contratado): vaga COM serviço não grava o horário — o valor mora no serviço
     // (`patient_contracted_services.schedule`) e os leitores o buscam pela peça de campos efetivos.
     // Vaga manual (sem serviço) segue gravando o próprio horário.
     locked.contracted_service_id == null && locked.schedule ? JSON.stringify(locked.schedule) : null,
-    p.work_schedule ?? null,
+    locked.contracted_service_id == null ? locked.work_schedule ?? null : null,
     // F5: idem para a quantidade de prestadores — vaga COM serviço grava NULL (o valor mora em
     // `patient_contracted_services.providers_needed`); vaga manual segue gravando o próprio valor.
     locked.contracted_service_id == null ? locked.providers_needed : null,
     p.salary_text ?? 'A convenir',
-    p.payment_day ?? null,
+    locked.contracted_service_id == null ? locked.payment_day ?? null : null,
     p.daily_obs ?? null,
     locked.patient_address_id ?? null,
     status,

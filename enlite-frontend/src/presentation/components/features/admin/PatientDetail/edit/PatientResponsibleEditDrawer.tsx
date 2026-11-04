@@ -26,10 +26,10 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
   patientId: string;
@@ -88,12 +88,12 @@ export function PatientResponsibleEditDrawer({ patientId, responsible, responsib
     },
   });
 
-  const documentTypeOptions: SelectOption[] = DOCUMENT_TYPES.map((d) => ({
+  const documentTypeOptions: ComboboxOption[] = DOCUMENT_TYPES.map((d) => ({
     value: d,
     label: t(`admin.patients.detail.documentTypes.${d}`, { defaultValue: d }),
   }));
   // Spec 012 US-B5: os 9 códigos da migration 139 (CHECK) — texto livre dava 23514.
-  const relationshipOptions: SelectOption[] = RELATIONSHIP_CODES.map((r) => ({
+  const relationshipOptions: ComboboxOption[] = RELATIONSHIP_CODES.map((r) => ({
     value: r,
     label: t(`admin.patients.detail.relationshipOptions.${r}`, { defaultValue: r }),
   }));
@@ -198,7 +198,7 @@ export function PatientResponsibleEditDrawer({ patientId, responsible, responsib
             </FormField>
             <FormField label={te('relationship')} htmlFor="responsible-rel" optional>
               <Controller control={control} name="relationship" render={({ field }) => (
-                <SelectField id="responsible-rel" inputSize="compact" options={relationshipOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="responsible-rel" />
+                <Combobox id="responsible-rel" inputSize="compact" options={relationshipOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="responsible-rel" />
               )} />
             </FormField>
             <FormField label={te('phone')} htmlFor="responsible-phone" optional>
@@ -209,7 +209,7 @@ export function PatientResponsibleEditDrawer({ patientId, responsible, responsib
             </FormField>
             <FormField label={te('documentType')} htmlFor="responsible-documentType" optional>
               <Controller control={control} name="documentType" render={({ field }) => (
-                <SelectField id="responsible-documentType" inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="responsible-documentType" />
+                <Combobox id="responsible-documentType" inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} clearLabel={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="responsible-documentType" />
               )} />
             </FormField>
             <FormField label={te('documentNumber')} htmlFor="responsible-documentNumber" optional>

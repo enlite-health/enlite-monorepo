@@ -75,7 +75,6 @@ describe('AdminPatientsController.createPatient', () => {
         documentType: 'DNI',
         documentNumber: '12345678',
         healthInsuranceName: 'OSDE',
-        healthInsuranceMemberId: 'A-9',
         serviceType: ['CAREGIVER', 'NURSE'],
       };
       const [req, res] = mockReqRes(body);

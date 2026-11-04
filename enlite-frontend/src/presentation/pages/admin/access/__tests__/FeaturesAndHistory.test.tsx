@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { CountryFeaturesPage } from '../CountryFeaturesPage';
 import { PermissionHistoryPage } from '../PermissionHistoryPage';
 import { postura, renderRota, GRUPO } from './helpers';
+import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 vi.mock('@presentation/components/ui/skeletons', () => ({ TableSkeleton: () => <div data-testid="skeleton" /> }));
@@ -97,8 +98,8 @@ describe('PermissionHistoryPage', () => {
     postura('read');
     renderRota(<PermissionHistoryPage />, '/admin/access/audit');
     await screen.findAllByText('Ana Gestora');
-    await userEvent.selectOptions(screen.getByLabelText('admin.access.history.group'), GRUPO.id);
-    await userEvent.selectOptions(screen.getByLabelText('admin.access.history.typeLabel'), 'member');
+    await selectCombo(screen.getByLabelText('admin.access.history.group'), GRUPO.name);
+    await selectCombo(screen.getByLabelText('admin.access.history.typeLabel'), 'admin.access.history.type.member'); // member
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.history.search' }));
     await waitFor(() => expect(api.queryHistory).toHaveBeenLastCalledWith({ groupId: GRUPO.id, type: 'member', limit: 100 }));
   });

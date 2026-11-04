@@ -1,4 +1,5 @@
 import {
+  assertWorkerApto,
   assertWorkerCanApply,
   WorkerNotEligibleError,
 } from '../WorkerApplicationEligibility';
@@ -68,5 +69,60 @@ describe('assertWorkerCanApply', () => {
     expect(err.reason).toBe('registration_incomplete');
     expect(err.workerStatus).toBe('INCOMPLETE_REGISTER');
     expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe('assertWorkerApto (spec 067 FR-24)', () => {
+  /** 1ª query = status (assertWorkerCanApply); 2ª = fn_worker_is_apto. */
+  function makePoolApto(status: string | null, apto: boolean | undefined) {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce({ rows: status === null ? [] : [{ status }] })
+      .mockResolvedValueOnce({ rows: apto === undefined ? [] : [{ apto }] });
+    return { pool: { query } as unknown as import('pg').Pool, query };
+  }
+
+  it('REGISTERED e apto → resolve, e a 2ª query chama fn_worker_is_apto($1)', async () => {
+    const { pool, query } = makePoolApto('REGISTERED', true);
+    await expect(assertWorkerApto(pool, 'w-1')).resolves.toBeUndefined();
+    expect(String(query.mock.calls[1][0])).toContain('fn_worker_is_apto($1)');
+    expect(query.mock.calls[1][1]).toEqual(['w-1']);
+  });
+
+  it('REGISTERED sem documento validado → 403 documents_not_validated (WORKER_NOT_ELIGIBLE)', async () => {
+    const { pool } = makePoolApto('REGISTERED', false);
+    await expect(assertWorkerApto(pool, 'w-1')).rejects.toMatchObject({
+      name: 'WorkerNotEligibleError',
+      code: 'WORKER_NOT_ELIGIBLE',
+      status: 403,
+      reason: 'documents_not_validated',
+    });
+  });
+
+  it('resposta sem linha / NULL → fail-closed (não apto)', async () => {
+    const { pool } = makePoolApto('REGISTERED', undefined);
+    await expect(assertWorkerApto(pool, 'w-1')).rejects.toMatchObject({ reason: 'documents_not_validated' });
+  });
+
+  it('os 3 motivos de hoje continuam vindo de assertWorkerCanApply (e a 2ª query nem roda)', async () => {
+    const incompleto = makePoolApto('INCOMPLETE_REGISTER', true);
+    await expect(assertWorkerApto(incompleto.pool, 'w-1')).rejects.toMatchObject({ reason: 'registration_incomplete' });
+    expect(incompleto.query).toHaveBeenCalledTimes(1);
+
+    const desativado = makePoolApto('DISABLED', true);
+    await expect(assertWorkerApto(desativado.pool, 'w-1')).rejects.toMatchObject({ reason: 'worker_disabled' });
+
+    const inexistente = makePoolApto(null, true);
+    await expect(assertWorkerApto(inexistente.pool, 'w-x')).rejects.toMatchObject({ reason: 'worker_not_found' });
+  });
+});
+
+describe('isBlockedAttemptReason (067): documents_not_validated nunca vira tentativa barrada', () => {
+  it('só os 3 motivos da postulação são gravados em worker_blocked_applications', async () => {
+    const { isBlockedAttemptReason } = await import('../WorkerApplicationEligibility');
+    expect(isBlockedAttemptReason('worker_not_found')).toBe(true);
+    expect(isBlockedAttemptReason('registration_incomplete')).toBe(true);
+    expect(isBlockedAttemptReason('worker_disabled')).toBe(true);
+    expect(isBlockedAttemptReason('documents_not_validated')).toBe(false);
   });
 });

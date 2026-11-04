@@ -186,7 +186,7 @@ test.describe('Chat IDs do paciente por PAPEL — prova visual', () => {
       ['PROVIDERS', GROUP_PROVIDERS],
       ['HEALTH_PLAN', GROUP_HEALTH_PLAN],
     ] as const) {
-      await expect(page.getByTestId(`chat-ids-${role}-select`)).toHaveValue(group);
+      await expect(page.getByTestId(`chat-ids-${role}-select`)).toContainText(group); // o rótulo da opção já gravada é o próprio chatId
     }
     expect(await page.getByTestId('chat-ids-candidates').count()).toBe(0);
 

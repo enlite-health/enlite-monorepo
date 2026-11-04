@@ -57,6 +57,21 @@ import { SetWorkerAvailabilityUseCase } from '../../worker/application/SetWorker
 import { CaseMemoryRepository } from '../../worker/infrastructure/CaseMemoryRepository';
 import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
 import { ApplyToVacancyUseCase } from '../../matching/application/ApplyToVacancyUseCase';
+import { AgentesRepository } from '../infrastructure/AgentesRepository';
+import { AgentesVeredictoRegistrarCapability } from '../application/capabilities/AgentesVeredictoRegistrarCapability';
+import { AgentesReporteRegistrarCapability } from '../application/capabilities/AgentesReporteRegistrarCapability';
+import { AgentesReporteLerCapability } from '../application/capabilities/AgentesReporteLerCapability';
+import { AgentesPlacarLerCapability } from '../application/capabilities/AgentesPlacarLerCapability';
+import { AgentesIndicadoresLerCapability } from '../application/capabilities/AgentesIndicadoresLerCapability';
+import { AgentesPedidoDepositarCapability } from '../application/capabilities/AgentesPedidoDepositarCapability';
+import { AgentesMedicaoRegistrarCapability } from '../application/capabilities/AgentesMedicaoRegistrarCapability';
+import { AgentesAprovacaoVerificarCapability } from '../application/capabilities/AgentesAprovacaoVerificarCapability';
+import { AgentesAvisoReenviarCapability } from '../application/capabilities/AgentesAvisoReenviarCapability';
+import { criarAvisoPedidoService } from '../../agentes/infrastructure/criarAvisoPedidoService';
+import { criarWhatsappAviso, type TwilioContentSender } from '../../agentes/infrastructure/avisoWhatsapp';
+import { WorkerByPhoneCapability } from '../application/capabilities/WorkerByPhoneCapability';
+import { WorkerDetailByPhoneLookup, ResourceAccessWorkerTrail } from '../infrastructure/WorkerDetailByPhoneLookup';
+import { GCSStorageService } from '../../worker/infrastructure/GCSStorageService';
 import { ReadonlyDbQueryService } from '../application/ReadonlyDbQueryService';
 import { Pool } from 'pg';
 import { createMcpRoutes } from '../interfaces/routes/mcpRoutes';
@@ -64,6 +79,7 @@ import { mountOAuthRoutes, type OAuthMountResult } from './mountOAuthRoutes';
 import { AdminRepository } from '../../identity/infrastructure/AdminRepository';
 import { logger } from '@shared/logging/Logger';
 import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
+import { buildAgentGate, createAgentEntry, isAgentRequest, type AgentPortOverrides } from '../interfaces/middleware/agentActorContext';
 
 /**
  * Mounts the MCP server at /mcp on the Express app.
@@ -71,8 +87,10 @@ import { systemContextMiddleware } from '@shared/database/systemContextMiddlewar
  * Com MCP_OAUTH_ENABLED=true, monta também o authorization server OAuth 2.1
  * (conector claude.ai) e o /mcp/v1 passa a aceitar access tokens OAuth.
  */
-export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
-  const principalRepo = new ServicePrincipalSecretManagerRepo();
+/** `twilio`: o serviço de mensageria do boot (o aviso GRAVE do Sol manda pelo número do Sol através dele). Em teste o dublê vale, sempre. */
+export function mountMcpRoutes(app: Application, dbPool: PgPool, opts: { twilio?: TwilioContentSender; agent?: AgentPortOverrides; principalRepo?: Pick<ServicePrincipalSecretManagerRepo, 'findByToken'> } = {}): void {
+  // `principalRepo`: costura de teste (e2e troca só o cofre de segredos por um dublê); em produção é sempre o do Secret Manager.
+  const principalRepo = (opts.principalRepo as ServicePrincipalSecretManagerRepo | undefined) ?? new ServicePrincipalSecretManagerRepo();
   const auditor = new McpAuditLogger();
   const pubsub = new PubSubClient();
 
@@ -132,6 +150,10 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
 
   // Camada A: dossiê da Luz (worker_case_memory).
   const caseMemoryRepo = new CaseMemoryRepository(dbPool);
+
+  // Schema `agentes` (spec 078): quem enxerga cada capability é a allowlist do principal, não o registro.
+  const avisoPedidos = criarAvisoPedidoService(dbPool, criarWhatsappAviso(process.env, () => opts.twilio));
+  const agentesRepo = new AgentesRepository(dbPool, avisoPedidos);
 
   const getWorkerById = new GetWorkerByIdUseCase(new WorkerRepository(pubsub));
 
@@ -205,15 +227,31 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     applicationsList: new WorkerApplicationsListCapability(
       new ListWorkerApplicationsUseCase(dbPool),
     ),
+    agentesVeredictoRegistrar: new AgentesVeredictoRegistrarCapability(agentesRepo),
+    agentesReporteRegistrar: new AgentesReporteRegistrarCapability(agentesRepo),
+    agentesReporteLer: new AgentesReporteLerCapability(agentesRepo),
+    agentesPlacarLer: new AgentesPlacarLerCapability(agentesRepo),
+    agentesIndicadoresLer: new AgentesIndicadoresLerCapability(agentesRepo),
+    agentesPedidoDepositar: new AgentesPedidoDepositarCapability(agentesRepo),
+    agentesMedicaoRegistrar: new AgentesMedicaoRegistrarCapability(agentesRepo),
+    agentesAvisoReenviar: new AgentesAvisoReenviarCapability(avisoPedidos),
+    agentesAprovacaoVerificar: new AgentesAprovacaoVerificarCapability(agentesRepo),
     ...(readonlyDbCapability !== undefined ? { dbQuery: readonlyDbCapability } : {}),
+    byPhone: new WorkerByPhoneCapability(new WorkerDetailByPhoneLookup(dbPool, kms, new GCSStorageService()), new ResourceAccessWorkerTrail()),
     auditor,
+    agentGate: opts.agent?.gate ?? buildAgentGate(dbPool),
   });
+
+  // Porta do agente (spec 078, M2): header `x-enlite-agent-identity` presente => SÓ este caminho, em contexto de ATOR (não de sistema).
+  const agentEntry = createAgentEntry(dbPool, opts.agent);
+  const legacyContext = systemContextMiddleware('mcp:enlite-worker-mcp');
 
   app.use(
     '/mcp',
     // Capability MCP (Luz, conector claude.ai) é contexto de SISTEMA declarado:
     // o isolamento dela é por worker_id/allowlist, não por país (ABAC task 3.3).
-    systemContextMiddleware('mcp:enlite-worker-mcp'),
+    // Exceto a porta do agente (header próprio): ela roda como o ATOR `agent:luz`, nunca como sistema.
+    (req, res, next) => (isAgentRequest(req) ? agentEntry : legacyContext)(req, res, next),
     createMcpRoutes({
       principalRepo,
       auditor,

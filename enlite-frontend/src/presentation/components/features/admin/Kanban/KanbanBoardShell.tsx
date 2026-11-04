@@ -13,8 +13,20 @@ export interface KanbanColumnSpec {
   /** classe de cor do bolinha do cabeçalho (ex.: 'bg-green-500'). */
   color: string;
   droppable?: boolean;
+  /**
+   * Coluna registrada no dnd-kit só para colisão (não é destino válido, sem destaque): quando o
+   * `closestCenter` resolve o drop para ela, o drop é cancelado — não cai na coluna vizinha (P20b).
+   * Só faz sentido com `droppable=false`.
+   */
+  cancelDrop?: boolean;
   /** Cabeçalho em tom de alerta (vermelho) — coluna que pede ação do operador. */
   alert?: boolean;
+  /**
+   * Ícone "i" ao lado do título (Figma nó 11340:76576 — quadro C, rodada 2). Opcional: board que
+   * não passa mantém o cabeçalho como sempre foi (Kanban A/B intocados). `title` do `<span>` é o
+   * texto explicativo — tooltip nativo do browser, sem componente novo.
+   */
+  headerIcon?: ReactNode;
 }
 
 /** O que o board de negócio recebe quando um card é solto numa coluna válida. */
@@ -139,6 +151,9 @@ export function KanbanBoardShell<T>({
     const itemId = activeId;
     setActiveId(null);
     if (!itemId || !event.over) return;
+    // Coluna `cancelDrop` está registrada só para COLISÃO: o closestCenter resolve `over` para ela, e aqui o drop morre.
+    const overId = String(event.over.id);
+    if (columns.some((c) => c.id === overId && c.cancelDrop)) return;
 
     const toColumnId = String(event.over.id);
     // Coluna não-droppable nem chega aqui (useDroppable desabilitado), mas o
@@ -171,7 +186,9 @@ export function KanbanBoardShell<T>({
               count={items.length}
               color={col.color}
               droppable={col.droppable !== false}
+              cancelDrop={col.cancelDrop}
               alert={col.alert}
+              headerIcon={col.headerIcon}
               dragActive={activeId !== null}
               collapsed={collapsed.has(col.id)}
               onToggleCollapse={collapseStorageKey ? () => toggle(col.id) : undefined}

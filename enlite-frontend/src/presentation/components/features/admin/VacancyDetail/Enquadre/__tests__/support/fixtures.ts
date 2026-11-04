@@ -140,7 +140,7 @@ function card(n: string, convocation: Card['convocation'] = null, enquadreOrigin
 export function funnelStages(): FunnelStages {
   const at = { startsAt: '2026-10-16T14:00:00-03:00' };
   return {
-    COMPATIBLE: [], INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [],
+    COMPATIBLE: [], INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], BLOQUEADO: [],
     COMPLETED: [card('61', at), card('62', at), card('63')],
     SELECTED: [card('64', null, { eventCode: 'ENC-K7M2QX' })], QUICK_RESPONSE_TEAM: [card('65', null, { eventCode: 'ENC-R4T9WB' })], REJECTED: [],
   };

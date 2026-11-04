@@ -4,10 +4,12 @@ import type { ActorContext } from '@shared/audit/actorSource';
 import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
+  isBlockedAttemptReason,
   type WorkerEligibilityReason,
 } from '../domain/WorkerApplicationEligibility';
 import { RecordBlockedAttemptUseCase } from './RecordBlockedAttemptUseCase';
 import { CreateManualWjaWithEncuadreUseCase } from './CreateManualWjaWithEncuadreUseCase';
+import { vacancyIsDeBaja } from '../interfaces/controllers/vacancyDeBajaGuard';
 
 export interface ApplyToVacancyParams {
   workerId: string;
@@ -28,13 +30,30 @@ export interface ApplyToVacancyParams {
 }
 
 export type ApplyToVacancyResult =
-  | { ok: true; wjaId: string | null }
+  | {
+      ok: true;
+      wjaId: string | null;
+      /**
+       * Spec 067 FR-16: o link do pré-screening da Talentum, devolvido SÓ na postulação aprovada. Deixou de sair das rotas
+       * públicas (`/api/public/v1/jobs`, `/api/vacancies/:id`). `null` = a vaga não tem link (o front trata como indisponível).
+       */
+      prescreeningUrl: string | null;
+    }
   | {
       ok: false;
       code: 'WORKER_NOT_ELIGIBLE';
       httpStatus: number;
       reason: WorkerEligibilityReason;
       workerStatus: string | null;
+      missingFields: string[];
+    }
+  | {
+      /** Spec 084 (P4/R6): vaga dada de baja não recebe candidatura (app e Luz/MCP) — só consulta. */
+      ok: false;
+      code: 'VACANCY_DE_BAJA';
+      httpStatus: 409;
+      reason: 'vacancy_de_baja';
+      workerStatus: null;
       missingFields: string[];
     };
 
@@ -62,7 +81,7 @@ export class ApplyToVacancyUseCase {
     try {
       await assertWorkerCanApply(db, workerId);
     } catch (err) {
-      if (err instanceof WorkerNotEligibleError) {
+      if (err instanceof WorkerNotEligibleError && isBlockedAttemptReason(err.reason)) {
         // Instrumenta a tentativa bloqueada. Awaited de propósito: em Cloud Run,
         // trabalho em background após o response é estrangulado/descartado, o que
         // perderia a gravação. A conexão já está quente (assertWorkerCanApply acima)
@@ -86,6 +105,12 @@ export class ApplyToVacancyUseCase {
       throw err;
     }
 
+    // Spec 084 (P4/R6/F10): o recrutamento não trabalha vaga sem serviço contratado — candidatura em vaga baixada é recusada
+    // (mesma regra para o app e para a Luz, que usam este use case).
+    if (await vacancyIsDeBaja(db, jobPostingId)) {
+      return { ok: false, code: 'VACANCY_DE_BAJA', httpStatus: 409, reason: 'vacancy_de_baja', workerStatus: null, missingFields: [] };
+    }
+
     // Transação com carimbo de ator: o trigger de histórico grava quem postulou
     // (a Luz na conversa × o próprio prestador no app) — ver actorContext.
     const { wjaId } = await withActorContext(
@@ -101,6 +126,11 @@ export class ApplyToVacancyUseCase {
       actor,
     );
 
-    return { ok: true, wjaId };
+    // Spec 067 FR-16: o link só é lido no ramo APROVADO (depois do gate e da criação); o ramo `ok:false` nunca o toca.
+    const link = await db.query<{ url: string | null }>(
+      `SELECT NULLIF(talentum_whatsapp_url, '') AS url FROM job_postings WHERE id = $1`,
+      [jobPostingId],
+    );
+    return { ok: true, wjaId, prescreeningUrl: link.rows[0]?.url ?? null };
   }
 }

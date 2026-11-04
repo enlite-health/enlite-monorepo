@@ -1,6 +1,6 @@
 /**
  * PatientService.updatePatientSection — seções do bloco B (spec 012):
- *   'coverage' → escalares (health_insurance_name, affiliate_id) pelo update parcial do geral +
+ *   'coverage' → escalares (insurance_informed, affiliate_id) pelo update parcial do geral +
  *                verificadas por código pelo PatientInsuranceVerifiedRepository (só quando a chave veio);
  *   'clinical' → deviceTypes (códigos) pelo PatientDeviceTypeRepository (só quando a chave veio);
  *   'general'  → serviceStartDate entra na whitelist (service_start_date).
@@ -35,8 +35,8 @@ describe('PatientService.updatePatientSection — bloco B', () => {
   it('coverage: escalares no UPDATE parcial + códigos no repositório, na MESMA transação', async () => {
     await service.updatePatientSection(PID, 'coverage', { healthInsuranceName: 'OSDE 210', affiliateId: null, insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL'] });
     const upd = mockClient.query.mock.calls.find(([s]) => /^UPDATE patients SET/.test(String(s)));
-    // a ordem é a da whitelist do update geral (affiliate_id vem antes de health_insurance_name)
-    expect(upd?.[0]).toMatch(/affiliate_id = \$2, health_insurance_name = \$3/);
+    // a ordem é a da whitelist do update geral (affiliate_id vem antes de insurance_informed, o dono da cobertura informada — spec 058)
+    expect(upd?.[0]).toMatch(/affiliate_id = \$2, insurance_informed = \$3/);
     expect(upd?.[1]).toEqual([PID, null, 'OSDE 210']);
     expect(mockReplaceCodes).toHaveBeenCalledWith(PID, ['OSDE', 'SWISS_MEDICAL'], mockClient);
     expect(sqls()[0]).toBe('BEGIN'); expect(sqls().at(-1)).toBe('COMMIT');

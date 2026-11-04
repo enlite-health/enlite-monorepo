@@ -37,6 +37,29 @@ describe('computeScheduleWeeklyHours', () => {
     expect(computeScheduleWeeklyHours(schedule)).toBeCloseTo(2, 5);
   });
 
+  it('durationMinutes vence sobre start/end (turno noturno 20:00→08:00 = 12h)', () => {
+    const schedule = [{ startTime: '20:00', endTime: '08:00', durationMinutes: 720 }];
+    expect(computeScheduleWeeklyHours(schedule)).toBe(12);
+  });
+
+  it('durationMinutes vence mesmo quando discorda de start/end', () => {
+    const schedule = [{ startTime: '08:00', endTime: '12:00', durationMinutes: 480 }];
+    expect(computeScheduleWeeklyHours(schedule)).toBe(8);
+  });
+
+  it('start == end sem durationMinutes = 24h', () => {
+    expect(computeScheduleWeeklyHours([{ startTime: '08:00', endTime: '08:00' }])).toBe(24);
+  });
+
+  it('durationMinutes 0 é ignorado e cai na regra start/end', () => {
+    const schedule = [{ startTime: '08:00', endTime: '12:00', durationMinutes: 0 }];
+    expect(computeScheduleWeeklyHours(schedule)).toBe(4);
+  });
+
+  it('durationMinutes sem start/end é suficiente', () => {
+    expect(computeScheduleWeeklyHours([{ durationMinutes: 90 }])).toBeCloseTo(1.5, 5);
+  });
+
   it('retorna 0 para não-array / vazio / null', () => {
     expect(computeScheduleWeeklyHours(null)).toBe(0);
     expect(computeScheduleWeeklyHours(undefined)).toBe(0);

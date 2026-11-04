@@ -107,7 +107,7 @@ const MOCK_PATIENT_DETAIL = {
   hasCud: false,
   hasConsent: true,
   insuranceInformed: null,
-  insuranceVerified: null,
+  coverage: { display: null, displaySource: 'NONE', entries: [] },
   cityLocality: 'Buenos Aires',
   province: 'CABA',
   zoneNeighborhood: 'Palermo',

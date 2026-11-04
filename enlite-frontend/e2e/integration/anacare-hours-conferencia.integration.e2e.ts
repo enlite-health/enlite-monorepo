@@ -35,6 +35,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 
 /**
  * O caminho anterior era ABSOLUTO da máquina do autor (`/Users/gabrielstein-dev/...`) — no
@@ -426,15 +427,17 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     // motivos de lista fechada visíveis
     const reasonSelect = page.getByTestId('anacare-hours-contest-reason');
     await expect(reasonSelect).toBeVisible();
-    const opcoes = await reasonSelect.locator('option').allTextContents();
-    // 1ª option é o placeholder ("Seleccione un motivo…") — as 4 de verdade são as demais.
-    expect(opcoes.slice(1)).toEqual(['No asistió', 'Horario distinto al registrado', 'Horas mal cargadas', 'Otro']);
+    // o painel só existe aberto: abre o gatilho, lê as 4 linhas (sem linha de placeholder) e fecha.
+    await reasonSelect.click();
+    const opcoes = await page.getByRole('option').allTextContents();
+    expect(opcoes).toEqual(['No asistió', 'Horario distinto al registrado', 'Horas mal cargadas', 'Otro']);
+    await page.keyboard.press('Escape');
     await print(page, 'modal-contestar-motivos.png');
 
     // confirmar sem motivo é recusado (botão desabilitado)
     await expect(page.getByTestId('anacare-hours-contest-confirm')).toBeDisabled();
 
-    await reasonSelect.selectOption('horario_distinto');
+    await escolherNoCombo(page, reasonSelect, 'Horario distinto al registrado'); // horario_distinto
     const notaInput = page.getByTestId('anacare-hours-contest-note');
     await notaInput.click();
     await page.keyboard.type('Horario cargado a mano, no coincide con lo real');

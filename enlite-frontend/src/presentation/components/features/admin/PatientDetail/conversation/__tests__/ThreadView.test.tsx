@@ -426,14 +426,33 @@ describe('ThreadView', () => {
       expect(card.querySelector('[data-testid="message-avatar"]')).toBeInTheDocument();
     });
 
-    it('quebras de linha do corpo são preservadas visualmente (whitespace-pre-wrap) — achado: o \\n já chegava intacto do TipTap/backend, só faltava a CSS', async () => {
+    it('quebras de linha do corpo são preservadas visualmente (whitespace-pre-wrap no <p> do markdown) — achado: o \\n já chegava intacto do TipTap/backend, só faltava a CSS', async () => {
       getConversationReplies.mockResolvedValue([msg({ id: 'r1', body: 'linha 1\nlinha 2' })]);
       render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
 
       await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
       const body = screen.getByTestId('thread-reply-r1').querySelector('[data-testid="message-body"]');
-      expect(body).toHaveClass('whitespace-pre-wrap');
+      expect(body?.querySelector('p')).toHaveClass('whitespace-pre-wrap');
       expect(body?.textContent).toBe('linha 1\nlinha 2');
+    });
+
+    it('TV1 corpo em markdown: **negrito** vira strong e os asteriscos somem', async () => {
+      getConversationReplies.mockResolvedValue([msg({ id: 'r1', body: '**Atenção** ao horário' })]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      const body = screen.getByTestId('thread-reply-r1').querySelector('[data-testid="message-body"]');
+      expect(body?.querySelector('strong')?.textContent).toBe('Atenção');
+      expect(body?.textContent).not.toContain('**');
+    });
+
+    it('TV2 HTML cru no corpo não vira img', async () => {
+      getConversationReplies.mockResolvedValue([msg({ id: 'r1', body: '<img src=x onerror=1>' })]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      const body = screen.getByTestId('thread-reply-r1').querySelector('[data-testid="message-body"]');
+      expect(body?.querySelector('img')).toBeNull();
     });
 
     describe('contraste WCAG AA (achado "autor/hora quase invisíveis")', () => {

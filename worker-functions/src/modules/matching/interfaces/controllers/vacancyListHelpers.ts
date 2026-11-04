@@ -18,8 +18,14 @@ import {
 } from './vacancyScheduleFilter';
 import type { Pool } from 'pg';
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
-import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import {
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
+import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 import {
   tallyKanbanColumns,
@@ -46,6 +52,7 @@ export function mapStatus(status: string | null): string {
     'ON_HOLD':               'En Espera',
     'SUSPENDED':             'Suspendido',
     'CLOSED':                'Cerrado',
+    'DE_BAJA':               'Dada de baja',
   };
   return statusMap[status ?? ''] ?? 'Desconocido';
 }
@@ -68,6 +75,10 @@ const LIST_VACANCIES_BASE = `
     jp.title,
     jp.status,
     jp.is_draft,
+    -- spec 084: motivo da baixa, se a vaga nasceu de serviço e o estado do Talentum (lista "pausar à mão")
+    jp.baja_reason,
+    (jp.contracted_service_id IS NOT NULL) AS has_service,
+    jp.talentum_pause_state,
     p.zone_neighborhood as patient_zone,
     jp.search_start_date,
     jp.created_at,
@@ -131,6 +142,7 @@ const VALID_STATUSES: ReadonlySet<string> = new Set([
   'ON_HOLD',
   'SUSPENDED',
   'CLOSED',
+  'DE_BAJA',
 ]);
 
 /** Values accepted for the workerType filter (maps to required_professions column). */
@@ -159,6 +171,13 @@ export interface ListVacanciesFilters {
   timeFrom?: unknown;
   /** End of time window "HH:MM". Both timeFrom AND timeTo must be provided. */
   timeTo?: unknown;
+  /**
+   * Spec 084 F2: "Mostrar dadas de baja". Ausente/false = a lista ESCONDE as baixadas; `true` = aparecem (com selo).
+   * Filtrar por status DE_BAJA também as mostra. Só consulta — não há reativar (R17).
+   */
+  includeBaja?: unknown;
+  /** Spec 084 F4/R13: `true` = só as vagas na lista "pausar/retomar à mão no Talentum". */
+  talentumManual?: unknown;
   limit: string;
   offset: string;
 }
@@ -168,6 +187,8 @@ export interface ListVacanciesQuery {
   params: unknown[];
   paramIndex: number;
 }
+
+const isTrue = (v: unknown): boolean => v === true || v === 'true' || v === '1';
 
 export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { searchByPatientName?: boolean } = {}): ListVacanciesQuery {
   let baseQuery = LIST_VACANCIES_BASE;
@@ -200,10 +221,18 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
     baseQuery += ` AND jp.status = $${paramIndex}`;
     params.push(filters.status);
     paramIndex++;
+  } else if (!isTrue(filters.includeBaja) && !isTrue(filters.talentumManual)) {
+    // Spec 084 F2: por padrão a lista esconde as dadas de baja (nunca apagadas: R2). A lista manual do Talentum (R13) NÃO as
+    // esconde: quase toda vaga que espera pausa à mão é uma baixada.
+    baseQuery += ` AND jp.status != 'DE_BAJA'`;
+  }
+
+  if (isTrue(filters.talentumManual)) {
+    baseQuery += ` AND jp.talentum_pause_state IN ('MANUAL_PAUSE', 'MANUAL_RESUME', 'PENDING_PAUSE', 'PENDING_RESUME')`;
   }
 
   if (typeof filters.workerType === 'string' && VALID_WORKER_TYPES.has(filters.workerType)) {
-    baseQuery += ` AND $${paramIndex} = ANY(jp.required_professions)`;
+    baseQuery += ` AND $${paramIndex} = ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})`;
     params.push(filters.workerType);
     paramIndex++;
   }
@@ -221,7 +250,7 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
   }
 
   if (typeof filters.requiredSex === 'string' && VALID_REQUIRED_SEX.has(filters.requiredSex)) {
-    baseQuery += ` AND jp.required_sex = $${paramIndex}`;
+    baseQuery += ` AND ${vacancyEffectiveRequiredSexSql('jp')} = $${paramIndex}`;
     params.push(filters.requiredSex);
     paramIndex++;
   }
@@ -255,17 +284,20 @@ export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promis
   const { rows } = await db.query(
     `SELECT wja.job_posting_id AS id, 'wja' AS kind, wja.application_funnel_stage AS stage, wja.source,
             (wja.messaged_at IS NOT NULL) AS messaged, COUNT(*)::int AS n,
-            false AS dismissed
+            false AS dismissed,
+            -- Spec 067: o apto entra na coluna E no GROUP BY (8), senão Completado apto e não apto somariam juntos.
+            ${aptoWhenCompletedSql('wja.application_funnel_stage', 'wja.worker_id')} AS apto
        FROM worker_job_applications wja
       WHERE wja.job_posting_id = ANY($1::uuid[]) AND ${WORKER_ACTIVE_SQL}
         AND NOT ${wjaSupersededByBlockedSql('wja')}
-      GROUP BY 1, 2, 3, 4, 5
+      GROUP BY 1, 2, 3, 4, 5, 8
      UNION ALL
      SELECT wba.job_posting_id, 'blocked', NULL, NULL, false, COUNT(*)::int,
-            (wba.dismissed_at IS NOT NULL) AS dismissed
+            (wba.dismissed_at IS NOT NULL) AS dismissed,
+            NULL::boolean AS apto
        FROM worker_blocked_applications wba
       WHERE wba.job_posting_id = ANY($1::uuid[]) AND ${blockedNotPromotedSql('wba')}
-      GROUP BY 1, 7`,
+      GROUP BY 1, 7, 8`,
     [jobPostingIds],
   );
   const byId = new Map<string, KanbanTallyRow[]>();
@@ -318,6 +350,9 @@ export interface VacancyListRow {
   vacancy_number: number;
   status: string | null;
   is_draft: boolean | null;
+  baja_reason?: string | null;
+  has_service?: boolean | null;
+  talentum_pause_state?: string | null;
   dias_aberto: number | null;
   convidados: number | string | null;
   postulados: number | string | null;
@@ -340,6 +375,9 @@ export function mapVacancyListRow(row: VacancyListRow) {
     status: mapStatus(row.status),
     statusRaw: row.status,
     is_draft: row.is_draft === true,
+    bajaReason: row.baja_reason ?? null,
+    hasService: row.has_service === true,
+    talentumPauseState: row.talentum_pause_state ?? null,
     diasAberto: row.dias_aberto?.toString().padStart(2, '0') ?? '00',
     convidados: row.convidados?.toString().padStart(2, '0') ?? '00',
     postulados: row.postulados?.toString().padStart(2, '0') ?? '00',

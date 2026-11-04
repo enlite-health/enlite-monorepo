@@ -90,6 +90,10 @@ export interface InsertEligibilityWorkerResult {
   workerId: string;
   /** auth_uid stored in workers.auth_uid — use to build the mock_<base64> token */
   authUid: string;
+  /** workers.email (único por chamada) — o webhook da Talentum resolve o prestador por ele */
+  email: string;
+  /** workers.phone ('+54911…'), ou null quando `phone: false` */
+  phone: string | null;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -178,7 +182,7 @@ export function insertEligibilityWorker(
   if (availability) insertAvailability(workerId);
   insertDocuments(workerId, { docResumeCv, docIdentityDocument, docCriminalRecord, docAtCertificate });
 
-  return { workerId, authUid };
+  return { workerId, authUid, email, phone: hasPhone ? phoneVal : null };
 }
 
 function insertServiceArea(workerId: string, withAddressLine: boolean): void {
@@ -233,6 +237,67 @@ function insertDocuments(
       'submitted', NOW(), NOW()
     )
   `);
+}
+
+/**
+ * Spec 067 — o helper ÚNICO de prestador no limiar de "apto" (REGISTERED + cadastro completo + documentos obrigatórios VALIDADOS).
+ *
+ *   validated   : identity_document e criminal_record com URL e a chave em `document_validations` → apto
+ *   unvalidated : os mesmos documentos enviados, SEM validação → REGISTERED mas NÃO apto (Bloqueados)
+ *
+ * Profissão CAREGIVER (só identidade e antecedentes são obrigatórios); a regra mora no SQL (`fn_worker_is_apto`), este helper só
+ * semeia a massa. O INSERT nasce INCOMPLETE_REGISTER (o guard de REGISTERED exige cadastro completo) e sobe depois.
+ */
+export function insertAptoWorker(
+  opts: {
+    docs?: 'validated' | 'unvalidated';
+    /** 'AT' exige também resume_cv e at_certificate (workerDocumentPolicy); default CAREGIVER. */
+    occupation?: 'AT' | 'CAREGIVER';
+    /** Marca do e2e no nome (a limpeza/contagem por marca dos testes da cadeia). */
+    firstName?: string;
+    lastName?: string;
+    /** Coordenada do worker_service_areas (entra no match perto do paciente). */
+    lat?: number;
+    lng?: number;
+  } = {},
+): InsertEligibilityWorkerResult {
+  const { docs = 'validated', occupation = 'CAREGIVER', firstName, lastName, lat, lng } = opts;
+  const isAt = occupation === 'AT';
+  const w = insertEligibilityWorker({ occupation, docResumeCv: isAt, docAtCertificate: isAt });
+  runSQL(`UPDATE workers SET status = 'REGISTERED' WHERE id = '${w.workerId}'`);
+  if (firstName) runSQL(`UPDATE workers SET first_name_encrypted = ${enc(firstName)} WHERE id = '${w.workerId}'`);
+  if (lastName) runSQL(`UPDATE workers SET last_name_encrypted = ${enc(lastName)} WHERE id = '${w.workerId}'`);
+  if (lat != null && lng != null) {
+    runSQL(`UPDATE worker_service_areas SET latitude = ${lat}, longitude = ${lng} WHERE worker_id = '${w.workerId}'`);
+  }
+  if (isAt) {
+    runSQL(
+      `UPDATE worker_documents SET resume_cv_url = 'workers/${w.workerId}/resume_cv.pdf', ` +
+        `at_certificate_url = 'workers/${w.workerId}/at_certificate.pdf' WHERE worker_id = '${w.workerId}'`,
+    );
+  }
+  // Caminho no prefixo do dono (`workers/<id>/…`): é o que a API assina para a FICHA mostrar o documento como enviado
+  // (URL fora do prefixo vira `null` na leitura — hotfix 13/09). Nenhum arquivo existe: o armazenamento é mock no stack de teste.
+  runSQL(
+    `UPDATE worker_documents SET identity_document_url = 'workers/${w.workerId}/identity_document.pdf', ` +
+      `criminal_record_url = 'workers/${w.workerId}/criminal_record.pdf' WHERE worker_id = '${w.workerId}'`,
+  );
+  if (docs === 'validated') {
+    const v = `{"validated_by": "qa@example.test", "validated_at": "2026-10-22T00:00:00Z"}`;
+    runSQL(
+      `UPDATE worker_documents SET document_validations = '{"identity_document": ${v}, "criminal_record": ${v}${
+        isAt ? `, "resume_cv": ${v}, "at_certificate": ${v}` : ''
+      }}'::jsonb WHERE worker_id = '${w.workerId}'`,
+    );
+  }
+  return w;
+}
+
+/** Apaga os satélites que `insertEligibilityWorker`/`insertAptoWorker` criam (o worker em si sai por `cleanupTestWorker`). */
+export function cleanupEligibilityWorkerChildren(workerId: string): void {
+  runSQL(`DELETE FROM worker_documents WHERE worker_id = '${workerId}'`);
+  runSQL(`DELETE FROM worker_availability WHERE worker_id = '${workerId}'`);
+  runSQL(`DELETE FROM worker_service_areas WHERE worker_id = '${workerId}'`);
 }
 
 /**

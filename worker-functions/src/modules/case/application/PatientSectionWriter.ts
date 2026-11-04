@@ -56,7 +56,6 @@ export interface PatientGeneralSectionData {
   sex?: PatientServiceUpsertInput['sex'];
   phoneWhatsapp?: string | null;
   healthInsuranceName?: string | null;
-  healthInsuranceMemberId?: string | null;
   /** Plaintext; encrypted with KMS before storage. */
   contactEmail?: string | null;
   /** US-B9 (spec 012): data de início do serviço — nativa, não deriva da vaga. */
@@ -205,8 +204,8 @@ async function updateGeneralSection(
     affiliateId:             'affiliate_id',
     sex:                     'sex',
     phoneWhatsapp:           'phone_whatsapp',
-    healthInsuranceName:     'health_insurance_name',
-    healthInsuranceMemberId: 'health_insurance_member_id',
+    // Spec 058: a chave do fio `healthInsuranceName` grava no DONO (`insurance_informed`); `healthInsuranceMemberId` saiu (422 na rota).
+    healthInsuranceName:     'insurance_informed',
     serviceStartDate:        'service_start_date',
     billingAddressFormatted: 'billing_address_formatted',
     billingCity:             'billing_city',

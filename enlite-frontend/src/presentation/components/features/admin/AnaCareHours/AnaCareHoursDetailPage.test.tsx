@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { AnaCareHoursDetailPageWithNav as AnaCareHoursDetailPage } from './AnaCareHoursDetailPage.testHarness';
 import type { AnaCareHoursPatientSnapshot } from './types';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
@@ -356,7 +357,7 @@ describe('AnaCareHoursDetailPage', () => {
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onContestShift={onContestShift} />);
     fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
     expect(screen.getByTestId('anacare-hours-contest-modal')).toBeInTheDocument();
-    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    chooseCombo(screen.getByTestId('anacare-hours-contest-reason'), 'admin.anacareHours.contestModal.reasons.otro');
     fireEvent.click(screen.getByTestId('anacare-hours-contest-confirm'));
     expect(onContestShift).toHaveBeenCalledWith('s1', 'otro', '');
     expect(screen.queryByTestId('anacare-hours-contest-modal')).not.toBeInTheDocument();

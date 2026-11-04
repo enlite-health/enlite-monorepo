@@ -41,6 +41,7 @@ import {
   MOCK_TOKEN,
   BACKEND_URL,
 } from '../helpers/talentumWebhookHelper';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from '../helpers/eligibility-worker-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -138,7 +139,8 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     // automaticamente (origen='auto-trigger'), source != 'manual' para
     // permanecer na coluna INVITED (source='manual' iria para INICIADO —
     // migration 230 / feature BLOQUEADO).
-    positiveWorkerId = insertTestWorker({ firstName: 'Drag1', lastName: 'Positive', phone: `+549151${rand()}` });
+    // spec 067 FR-24: o arrasto INVITED → Seleccionados (2xx esperado) exige prestador APTO.
+    positiveWorkerId = insertAptoWorker({ docs: 'validated' }).workerId;
     cleanupWorkerIds.push(positiveWorkerId);
 
     runSQL(
@@ -159,7 +161,7 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
   test.afterAll(() => {
     runSQL(`DELETE FROM encuadres WHERE job_posting_id = '${vacancyId}'`);
     runSQL(`DELETE FROM worker_job_applications WHERE job_posting_id = '${vacancyId}'`);
-    for (const wid of cleanupWorkerIds) cleanupTestWorker(wid);
+    for (const wid of cleanupWorkerIds) { cleanupEligibilityWorkerChildren(wid); cleanupTestWorker(wid); }
     cleanupTestPatient(patientId);
   });
 

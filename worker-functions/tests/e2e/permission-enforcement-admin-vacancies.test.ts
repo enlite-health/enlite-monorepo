@@ -151,7 +151,6 @@ describe('família admin.vacancies sob a decisão real por célula (HTTP real, b
         'updateTalentumDescription', 'generateAIContent', 'syncFromTalentum', 'getPrescreeningConfig',
         'getTalentumStatus', 'savePrescreeningConfig']),
       match: de('match', ['getMatchResults', 'triggerMatch', 'updateEncuadreResult']),
-      meet: de('meet', ['lookupMeetDatetime', 'updateMeetLinks']),
       social: de('social', ['generateSocialLink', 'getSocialLinksStats']),
       funnel: de('funnel', ['getEncuadreFunnel', 'moveEncuadre', 'rejectBlockedApplication', 'undismissBlockedApplication']),
       dash: de('dash', ['getCoordinatorCapacity', 'getAlerts', 'getConversionByChannel']),
@@ -171,7 +170,7 @@ describe('família admin.vacancies sob a decisão real por célula (HTTP real, b
           '/api/admin',
           createAdminVacanciesRoutes(
             c.vac as never, c.crud as never, c.talentum as never, c.match as never,
-            c.meet as never, c.social as never, c.funnel as never, c.dash as never,
+            c.social as never, c.funnel as never, c.dash as never,
             c.slots as never, auth, permissions, c.addr as never, c.table as never,
           ),
         ),

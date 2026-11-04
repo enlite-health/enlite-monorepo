@@ -12,6 +12,7 @@
  *   GET /analytics/dashboard/zone-analytics?profession=
  */
 
+import { ServiceHoursSummaryReader } from '../../../case/infrastructure/ServiceHoursSummaryReader';
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -27,6 +28,7 @@ import { cellsOfRequest } from '@modules/identity/permissions';
 import { resolveCountryScope, CountryScopeError } from '@modules/identity';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { projectManagementDashboard } from '../../application/dashboardContainerAccess';
+import { operationDateOf } from '@shared/locale/civilClock';
 
 export class AnalyticsDashboardController {
   protected db: Pool;
@@ -132,7 +134,7 @@ export class AnalyticsDashboardController {
         throw err;
       }
 
-      const useCase = new GetManagementDashboardUseCase(this.db);
+      const useCase = new GetManagementDashboardUseCase(this.db, new ServiceHoursSummaryReader());
       const data = await useCase.execute({
         funnelPeriodDays,
         countries: scope.countries,
@@ -222,7 +224,7 @@ export class AnalyticsDashboardController {
           reemplazosCount:    remCount,
           pubChartData:       publicationsByChannel.map(p => ({ name: p.channel ?? 'Sin canal', value: p.count })),
           publicacionesList:  publicacionesList.map(p => ({
-            fecha:        p.publishedAt?.toISOString().split('T')[0] ?? 'Sin fecha',
+            fecha:        p.publishedAt ? operationDateOf('AR', p.publishedAt) : 'Sin fecha',
             canal:        p.channel,
             publicadoPor: p.recruiterName,
             descripcion:  p.observations ?? '',

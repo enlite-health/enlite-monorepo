@@ -95,9 +95,6 @@ const baseVacancy = {
   closes_at: null,
   salary_text: null,
   schedule: null,
-  meet_link_1: null,
-  meet_link_2: null,
-  meet_link_3: null,
 };
 
 function renderPage() {

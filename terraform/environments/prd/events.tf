@@ -57,11 +57,13 @@ data "google_secret_manager_secret_version" "internal_token" {
 resource "google_pubsub_topic" "worker_mirror_requested" {
   project = var.project_id
   name    = "worker-mirror-requested"
+  labels  = { service = "worker-mirror-requested", setor = "recrutamento" }
 }
 
 resource "google_pubsub_topic" "worker_registration_completed" {
   project = var.project_id
   name    = "worker-registration-completed"
+  labels  = { service = "worker-registration-completed", setor = "recrutamento" }
 }
 
 # ---------------------------------------------------------------------------

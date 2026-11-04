@@ -3,16 +3,12 @@ import { managementDashboardSchema, type ManagementDashboardData } from './manag
 import { GetArmedCasesUseCase } from './GetArmedCasesUseCase';
 import { GetFunnelByWorkerUseCase } from './GetFunnelByWorkerUseCase';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
-import {
-  computeScheduleWeeklyHours,
-  hasStructuredSchedule,
-} from '../domain/scheduleHours';
+import type { ServiceHoursSummaryPort } from './ServiceHoursSummaryPort';
 import {
   jobStatusCountsQuery,
   patientsActiveCountQuery,
   pacienteEstadosQuery,
   ubicacionesActivasQuery,
-  horasAtivasQuery,
   workerCadastrosQuery,
   funnelLegadoQuery,
   esperandoAgendaQuery,
@@ -79,7 +75,10 @@ function readEncuadreWeeklyCapacity(): number | null {
  * fonte verificada. A saída é validada pelo Zod antes de retornar.
  */
 export class GetManagementDashboardUseCase {
-  constructor(private readonly db: Pool) {}
+  constructor(
+    private readonly db: Pool,
+    private readonly hours: ServiceHoursSummaryPort,
+  ) {}
 
   async execute(options?: ManagementDashboardOptions): Promise<ManagementDashboardData> {
     const countries: CountryCode[] = options?.countries ?? [...COUNTRY_CODES];
@@ -87,7 +86,9 @@ export class GetManagementDashboardUseCase {
     // Equipe Armada RODA ANTES do Promise.all: o card "Em Busca" precisa dos ids
     // dos casos ARMADA (classificação de domínio em JS — nunca replicada em SQL).
     // Custo: 1 query serializada (~17ms em prod, medido na change anterior).
-    const armed = await new GetArmedCasesUseCase(this.db).execute(countries);
+    // Horas do SERVIÇO lidas UMA vez (spec 056 §8) e repassadas ao armed.
+    const hours = await this.hours.readServiceHours(countries);
+    const armed = await new GetArmedCasesUseCase(this.db, this.hours).execute(countries, hours);
 
     const [
       funnelPorPrestador,
@@ -95,7 +96,6 @@ export class GetManagementDashboardUseCase {
       patientRows,
       pacienteEstadosRow,
       ubicacionesRow,
-      horasAtivasRows,
       workerRow,
       funnelRows,
       esperandoRow,
@@ -110,7 +110,6 @@ export class GetManagementDashboardUseCase {
         patientsActiveCountQuery(this.db, countries),
         pacienteEstadosQuery(this.db, armed.armadaCaseIds, countries),
         ubicacionesActivasQuery(this.db, countries),
-        horasAtivasQuery(this.db, countries),
         workerCadastrosQuery(this.db, countries),
         funnelLegadoQuery(this.db, countries),
         esperandoAgendaQuery(this.db, countries),
@@ -130,16 +129,6 @@ export class GetManagementDashboardUseCase {
       en_busca: 0,
     };
     const ubicaciones = ubicacionesRow.rows[0]?.ubicaciones ?? 0;
-
-    // Horas ativas: soma em JS com o parser de domínio (mesmo padrão do armed).
-    let horasAtivas = 0;
-    let ativasConSchedule = 0;
-    let ativasSinSchedule = 0;
-    for (const row of horasAtivasRows.rows) {
-      horasAtivas += computeScheduleWeeklyHours(row.schedule);
-      if (hasStructuredSchedule(row.schedule)) ativasConSchedule += 1;
-      else ativasSinSchedule += 1;
-    }
 
     const capacidadeSemana = readEncuadreWeeklyCapacity();
     const worker = workerRow.rows[0] ?? { leads: 0, completos: 0, incompletos: 0, nuevos: 0 };
@@ -196,9 +185,9 @@ export class GetManagementDashboardUseCase {
       horas: {
         totais: armed.horasTotais,
         aPreencher: armed.horasAPreencher,
-        ativas: round1(horasAtivas),
-        ativasConSchedule,
-        ativasSinSchedule,
+        ativas: round1(hours.cobertas),
+        ativasConSchedule: hours.servicesWithSchedule,
+        ativasSinSchedule: hours.servicesWithoutSchedule,
         coberturaConSchedule: armed.coberturaConSchedule,
         coberturaSinSchedule: armed.coberturaSinSchedule,
       },

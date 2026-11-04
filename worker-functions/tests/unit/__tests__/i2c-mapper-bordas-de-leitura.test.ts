@@ -67,7 +67,6 @@ describe('I2 — leitura ILEGÍVEL propaga `*Readable: false` em TODOS os campos
       documentType: null,      documentTypeReadable: false,
       serviceType: null,       serviceTypeReadable: false,
       clinicalSpecialty: null, clinicalSpecialtyReadable: false,
-      insuranceVerified: null, insuranceVerifiedReadable: false,
     });
     // As listas viram RECUSA, nunca lista vazia — lista vazia apagaria a tabela.
     expect(out.insuranceVerifiedLabels).toMatchObject({ readable: false });

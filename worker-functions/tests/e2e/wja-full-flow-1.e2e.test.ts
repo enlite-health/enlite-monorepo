@@ -44,12 +44,6 @@ export const PSC_C   = 'wff-psc-c-fixed';
 const PROF_A = 'wff-prof-a-fixed';
 const PROF_C = 'wff-prof-c-fixed';
 
-const MEET_LINK_1 = 'https://meet.google.com/wff-e2e-slot1';
-const MEET_LINK_2 = 'https://meet.google.com/wff-e2e-slot2';
-const MEET_LINK_3 = 'https://meet.google.com/wff-e2e-slot3';
-const FUTURE_DT_1 = '2099-09-10T10:00:00Z';
-const FUTURE_DT_2 = '2099-09-10T14:00:00Z';
-const FUTURE_DT_3 = '2099-09-10T18:00:00Z';
 
 // Arquivo de estado compartilhado entre part1 e part2
 const STATE_FILE = path.join(__dirname, '.wja-full-flow-state.json');
@@ -116,22 +110,12 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
     );
     workerCId = wCRes.rows[0].id;
 
-    // Vaga com 3 meet links
+    // Vaga (sem link de reunião — spec 068)
     const jpRes = await pool.query<{ id: string }>(
-      `INSERT INTO job_postings (
-         case_number, title,
-         meet_link_1, meet_datetime_1,
-         meet_link_2, meet_datetime_2,
-         meet_link_3, meet_datetime_3,
-         status
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SEARCHING')
+      `INSERT INTO job_postings (case_number, title, status)
+       VALUES ($1, $2, 'SEARCHING')
        RETURNING id`,
-      [
-        CASE_NUMBER, `CASO ${CASE_NUMBER} WFF E2E`,
-        MEET_LINK_1, FUTURE_DT_1,
-        MEET_LINK_2, FUTURE_DT_2,
-        MEET_LINK_3, FUTURE_DT_3,
-      ],
+      [CASE_NUMBER, `CASO ${CASE_NUMBER} WFF E2E`],
     );
     jobPostingId = jpRes.rows[0].id;
 

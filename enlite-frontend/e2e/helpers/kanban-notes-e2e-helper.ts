@@ -67,18 +67,11 @@ export const mockVacancy = {
   patient_zone: 'Palermo',
   patient_city: 'CABA',
   patient_neighborhood: 'Palermo',
-  insurance_verified: true,
   required_professions: ['AT'],
   required_sex: 'F',
   pathology_types: 'TEA',
   encuadres: [],
   publications: [],
-  meet_link_1: null,
-  meet_datetime_1: null,
-  meet_link_2: null,
-  meet_datetime_2: null,
-  meet_link_3: null,
-  meet_datetime_3: null,
 };
 
 /**

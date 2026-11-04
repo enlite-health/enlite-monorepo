@@ -2,24 +2,20 @@
  * PatientContractedService — o serviço contratado como entidade (spec 013, bloco C).
  * Mirrors `ContractedServiceDetail`/`ContractedServiceProviderDetail`
  * (worker-functions/src/modules/case/infrastructure/PatientContractedServiceRepository.ts,
- * ContractedServiceProviderRepository.ts) + a redação de `hourlyValue`
- * (contractedServiceHourlyValueAccess.ts, lex C-c.4).
+ * ContractedServiceProviderRepository.ts) + a projeção por ator (contractedServiceHourlyValueAccess.ts):
+ * spec 058 — pagador, preço e imposto vêm do VÍNCULO com o contrato e do termo vigente (read-only no serviço).
  *
  * Extraído para arquivo próprio (molde PatientCoverage.ts/PatientAddress.ts): PatientDetail.ts
  * já batia no teto de 400 linhas do validador.
  */
+
+import type { Currency, PayerKind } from './InsuranceContract';
 
 export const SERVICE_CODES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 export type ServiceCode = (typeof SERVICE_CODES)[number];
 
 export const CARE_LOCATIONS = ['HOME', 'SCHOOL', 'INSTITUTION', 'OTHER'] as const;
 export type CareLocation = (typeof CARE_LOCATIONS)[number];
-
-export const CONTRACT_TYPES = ['OBRA_SOCIAL', 'PREPAGA', 'PRIVATE'] as const;
-export type ContractType = (typeof CONTRACT_TYPES)[number];
-
-export const TAX_CONDITIONS = ['IVA_EXEMPT', 'IVA_10_5', 'IVA_21'] as const;
-export type TaxCondition = (typeof TAX_CONDITIONS)[number];
 
 export const SUPERVISION_FREQUENCIES = ['DAYS_15', 'DAYS_30', 'DAYS_45', 'BIMONTHLY'] as const;
 export type SupervisionFrequency = (typeof SUPERVISION_FREQUENCIES)[number];
@@ -61,14 +57,18 @@ export const PROVIDER_AGE_BANDS = ['ANY', 'AGE_20_30', 'AGE_30_45', 'AGE_45_PLUS
 export type ProviderAgeBand = (typeof PROVIDER_AGE_BANDS)[number];
 
 /**
- * Slot de horário do encuadre (migration 330) — o MESMO `DayScheduleSlot` do
- * `DayScheduleEditor`/`scheduleToJsonb` que a vaga persiste em `job_postings.schedule`.
- * `dayOfWeek`: 0 = domingo. Na ativação, o array é copiado tal qual para a vaga nascida deste
- * serviço; `null` = "ainda sem horário" (a vaga nasce sem e o operador preenche nela).
+ * Turno do horário do encuadre (spec 056): `{dayOfWeek, startTime, durationMinutes}` — o que a API
+ * aceita e persiste. `dayOfWeek`: 0 = domingo. O turno pode atravessar a meia-noite (20:00 + 720 min).
+ * `null` no serviço = "ainda sem horário" (a vaga nasce sem e o operador preenche nela).
  */
 export interface ContractedServiceScheduleSlot {
   dayOfWeek: number;
   startTime: string;
+  durationMinutes: number;
+}
+
+/** O que a API DEVOLVE: o mesmo turno com o `endTime` derivado (início + duração, módulo 24 h). */
+export interface ContractedServiceScheduleSlotDetail extends ContractedServiceScheduleSlot {
   endTime: string;
 }
 
@@ -83,7 +83,6 @@ export interface PatientContractedServiceProvider {
   workerId: string;
   /** Nome descriptografado (KMS) — null quando o worker não tem nome cadastrado. */
   workerName: string | null;
-  weeklyHours: number | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -99,6 +98,61 @@ export interface PatientContractedServiceLiveVacancy {
   status: string | null;
 }
 
+/** Autorização de horas do serviço; `validTo` INCLUSIVO ('YYYY-MM-DD'). */
+export interface ContractedServiceAuthorization {
+  id: string;
+  hours: number;
+  validFrom: string;
+  validTo: string;
+}
+
+/** Corpo de POST .../authorizations e .../:aid/supersede. */
+export interface AuthorizationWriteBody {
+  hours: number;
+  validFrom: string;
+  validTo: string;
+}
+
+/** Nomes do pagador (catálogo). `payerKind` só chega a quem lê o container `coverage` (junto com todo o `names`). */
+export interface ContractedServicePayerNames {
+  providerCode: string;
+  providerName: string;
+  contractId: string;
+  contractName: string;
+  payerKind: PayerKind | null;
+}
+
+/** Pagador vigente na data `asOf` do serviço. `names: null` = o ator não lê `coverage` (redação); `isPrivate` continua visível. */
+export type ContractedServicePayer =
+  | { state: 'NO_CONTRACT' }
+  | { state: 'LINKED'; isPrivate: boolean; validFrom: string; validTo: string | null; names: ContractedServicePayerNames | null };
+
+/** Uma linha do histórico de vínculos (a ficha não escreve nele; só mostra). */
+export interface ContractedServicePayerHistoryItem {
+  linkId: string;
+  isPrivate: boolean;
+  validFrom: string;
+  validTo: string | null;
+  names: ContractedServicePayerNames | null;
+}
+
+/** Preço-hora do contrato na data `asOf`. `REDACTED` = sem `patient_contract_value:read`. */
+export type ContractedServicePrice =
+  | { state: 'NO_CONTRACT' }
+  | { state: 'NO_TERM' }
+  | { state: 'OK'; hourlyRate: number; currency: Currency }
+  | { state: 'REDACTED' };
+
+/** Imposto do termo vigente (nunca redigido). `0` = isento. */
+export type ContractedServiceTax =
+  | { state: 'NO_CONTRACT' }
+  | { state: 'NO_TERM' }
+  | { state: 'OK'; taxRatePercent: number };
+
+/** Os 6 estados da divergência pagador × cobertura verificada (+ `REDACTED` posto só pela projeção, sem `coverage`). */
+export const COVERAGE_MATCH_STATES = ['NO_PAYER', 'PRIVATE_PAYER', 'NO_COVERAGE', 'UNMAPPED_ONLY', 'MATCH', 'MISMATCH', 'REDACTED'] as const;
+export type CoverageMatchState = (typeof COVERAGE_MATCH_STATES)[number];
+
 export interface PatientContractedServiceDetail {
   id: string;
   patientId: string;
@@ -112,19 +166,21 @@ export interface PatientContractedServiceDetail {
   /** Texto livre — perfil do profissional buscado. NUNCA alimenta a vaga pública (lex C-b2). */
   professionalProfile: string | null;
   providersNeeded: number | null;
-  authorizedHours: number | null;
-  weeklyHours: number | null;
+  /** Autorização VIGENTE hoje (spec 056 §5.2) — dono único das horas autorizadas; `null` = sem vigente. */
+  authorization: ContractedServiceAuthorization | null;
+  /** Soma das faixas do horário vigente (horas/semana) — derivada pela API; o serviço não grava mais as horas semanais. */
+  scheduleHours: number;
   careLocation: string | null;
-  /**
-   * Preço do CONTRATO cobrado à família/obra social (lex C-c.2 — não é remuneração do
-   * prestador). `null` quando o backend redigiu (ator não-admin) — ver `hourlyValueRedacted`.
-   */
-  hourlyValue: number | null;
-  /** `true` quando o backend redigiu `hourlyValue` para este ator (lex C-c.4). */
-  hourlyValueRedacted: boolean;
   startDate: string | null;
-  contractType: string | null;
-  taxCondition: string | null;
+  /** Dia de operação (`YYYY-MM-DD`) do país do serviço em que `payer`/`price`/`tax`/`coverageMatch` foram lidos — o front nunca calcula "hoje". */
+  asOf: string;
+  /** Pagador vigente (vínculo serviço → contrato). Serviço sem vínculo = `NO_CONTRACT`. */
+  payer: ContractedServicePayer;
+  payerHistory: ContractedServicePayerHistoryItem[];
+  /** Preço (lex C-c.2: o que se cobra, não a remuneração do prestador) e imposto do termo vigente — SÓ exibidos. */
+  price: ContractedServicePrice;
+  tax: ContractedServiceTax;
+  coverageMatch: { state: CoverageMatchState };
   supervisionFrequency: string | null;
   guardShift: string | null;
   /** Franja etária solicitada do prestador (spec 015) — string frouxa, molde do resto do contrato. */
@@ -136,7 +192,7 @@ export interface PatientContractedServiceDetail {
    */
   addressId: string | null;
   /** Horário do encuadre (migration 330) — `null` = ainda sem horário. */
-  schedule: ContractedServiceScheduleSlot[] | null;
+  schedule: ContractedServiceScheduleSlotDetail[] | null;
   /**
    * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros (profissões, sexo, experiência, jornada, dia de
    * pago) são COPIADOS para a vaga ao ativar recrutamento; `workerAttributes` e `dailyObs` são SÓ FICHA.
@@ -171,13 +227,8 @@ export interface CreateContractedServiceBody {
   serviceCode: ServiceCode;
   professionalProfile?: string | null;
   providersNeeded?: number | null;
-  authorizedHours?: number | null;
-  weeklyHours?: number | null;
   careLocation?: CareLocation | null;
-  hourlyValue?: number | null;
   startDate?: string | null;
-  contractType?: ContractType | null;
-  taxCondition?: TaxCondition | null;
   supervisionFrequency?: SupervisionFrequency | null;
   guardShift?: GuardShift | null;
   providerAgeBand?: ProviderAgeBand | null;
@@ -199,13 +250,21 @@ export type UpdateContractedServiceBody = Omit<CreateContractedServiceBody, 'ser
   active?: false;
 };
 
-export interface AssociateProviderBody {
-  workerId: string;
-  weeklyHours?: number | null;
+/** `POST …/contracted-services/:sid/contract-link` — 1º vínculo. `validTo` é inclusivo. */
+export interface CreateContractLinkBody {
+  contractId: string;
+  validFrom: string;
+  validTo?: string | null;
 }
 
-export interface UpdateProviderBody {
-  weeklyHours?: number | null;
-  /** Só `false` (baixa) — reassociar é um novo POST. */
-  active?: false;
+/** `POST …/contract-link/end` — encerra o vínculo vivo (só encurta). */
+export interface EndContractLinkBody {
+  validTo: string;
+}
+
+export type SupersedeLinkReason = 'SWITCHED' | 'CORRECTION';
+
+/** `POST …/contract-link/supersede` — troca (`SWITCHED`, mesma obra social) ou corrige (`CORRECTION`). */
+export interface SupersedeContractLinkBody extends CreateContractLinkBody {
+  reason: SupersedeLinkReason;
 }

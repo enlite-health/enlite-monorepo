@@ -22,6 +22,7 @@
     "backfill:worker-names:dry": "ts-node -r dotenv/config scripts/backfill-worker-names-from-encuadres.ts --dry-run",
     "archive:stale-workers": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/bulk-archive-stale-workers-2026-01-30.ts --execute",
     "archive:stale-workers:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/bulk-archive-stale-workers-2026-01-30.ts",
+    "verificar:agente-abac": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/verificar-agente-abac.ts",
     "claims:country": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-staff-country-claim.ts --execute",
     "claims:country:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-staff-country-claim.ts",
     "claims:account-type": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-account-type-claim.ts --execute",
@@ -65,6 +66,7 @@
   "license": "PRIVATE",
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@google-cloud/bigquery": "^9.5.0",
     "@google-cloud/functions-framework": "^3.3.0",
     "@google-cloud/kms": "^5.4.0",
     "@google-cloud/pubsub": "^5.3.0",

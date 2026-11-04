@@ -272,6 +272,7 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ apto: true }] }); // spec 067 FR-24: SELECTED exige apto (fn_worker_is_apto)
       // etapa anterior: COMPLETED (1 posição antes de SELECTED) — não é salto (Fase 4,
       // DX-4.5), então não precisa de reasonCategory.
       mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
@@ -287,7 +288,7 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
         success: true,
         data: { encuadreId: 'e1', targetStage: 'SELECTED' },
       });
-      const updateCall = mockQuery.mock.calls[4]; // [3] é o upsert da WJA; a leitura da etapa anterior (PEND-14) entrou em [2]
+      const updateCall = mockQuery.mock.calls[5]; // [4] é o upsert da WJA; [3] a etapa anterior (PEND-14); [2] o apto (FR-24)
       expect(updateCall[1]).toEqual(['e1', 'TITULAR']);
     });
   });

@@ -63,10 +63,11 @@ beforeEach(() => {
 });
 
 describe('CoberturaMedicaCard — drawer', () => {
-  it('fechar pelo backdrop → drawer some (onClose); salvar com mudança → onSaved; codes ausentes caem no escalar', async () => {
+  it('fechar pelo backdrop → drawer some (onClose); salvar com mudança → onSaved; verificadas SEM mapeamento são ditas como tal', async () => {
     const onSaved = vi.fn();
-    render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, insuranceVerified: 'Plan cru', insuranceVerifiedCodes: undefined as never }} onSaved={onSaved} />);
-    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('Plan cru');
+    const coverage = { display: null, displaySource: 'UNMAPPED_ONLY' as const, entries: [{ code: null, name: null, mapped: false, source: 'clickup' }] };
+    render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverage, insuranceVerifiedCodes: undefined as never }} onSaved={onSaved} />);
+    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('Sem mapeamento ao catálogo (1)');
     fireEvent.click(screen.getByTestId('edit-coverage-btn'));
     fireEvent.click(screen.getByTestId('patient-coverage-edit-backdrop'));
     await waitFor(() => expect(screen.queryByTestId('patient-coverage-edit-drawer')).toBeNull(), { timeout: 1500 });

@@ -1,6 +1,6 @@
 /**
  * vaga-ciclo-staff.regression.ts — o ciclo da VAGA pela mão do staff, contra PRODUÇÃO.
- * (Spec 009, Fase 3 — itens 3.1, 3.2a e 3.3.)
+ * (Spec 009, Fase 3 — itens 3.1 e 3.3.)
  *
  * ── POR QUE ESTA FASE NÃO ESTÁ ATRÁS DO PORTÃO DO #261 ───────────────────────
  * O plano original marcou "Fases 1 e 3 tocam mensageria". Para a Fase 1 isso se
@@ -10,7 +10,7 @@
  * expõe `variables` e o log do handler grava só `slots: [source]`; provar por ali
  * exigiria mudar produto, o que a `spec.md` veta.
  *
- * O que sobra aqui — criar/editar vaga, gravar slot, filtrar lista — não tem passo
+ * O que sobra aqui — criar/editar vaga, filtrar lista — não tem passo
  * outbound. E não é opinião minha: `talentum-prescreening-audio.regression.ts` JÁ cria,
  * publica e apaga vaga `is_test` contra prod todo dia às 3h, desde julho. O precedente
  * é a evidência.
@@ -18,18 +18,12 @@
  * ── O QUE ESTE SPEC PROVA ────────────────────────────────────────────────────
  *  3.1  a vaga nasce `is_test`, é editada e a edição sobrevive à releitura — pela API
  *       E na tela do staff. Com controle positivo: o valor DEPOIS é diferente do ANTES.
- *  3.2a o slot recorrente grava e relê (`weekday`/`time`/`link`), e o Merge Patch da
- *       chave `recurring` funciona nos dois sentidos (grava valor · `null` limpa).
- *       (A 3.2b — a prova do fuso pela capability MCP de horários da Luz — saiu na spec 052: a capability foi removida.)
+ *  (A 3.2a — o slot recorrente da vaga — saiu na spec 068: a vaga não tem mais link/horário de reunião.
+ *   A 3.2b — a prova do fuso pela capability MCP de horários da Luz — saiu na spec 052.)
  *  3.3  o combobox das listas longas filtra por digitação e a escolha vira FILTRO na
  *       requisição — não só um rótulo bonito na tela.
  *
  * ── ⚠️ O QUE ESTE SPEC EXPLICITAMENTE NÃO PROVA ──────────────────────────────
- *  · **A 3.2a NÃO PROVA O FUSO** (D213). Isto é um rótulo, não uma ressalva de rodapé:
- *    `meet_recurring_time` é `TIME` do Postgres (sem fuso) e `weekday` é inteiro, então
- *    gravar `08:30` e reler `08:30:00` passa VERDE mesmo com a resolução 100% em UTC —
- *    **nenhum instante participa da asserção**. Seria falso positivo GARANTIDO, não
- *    provável. A prova de fuso era a 3.2b (capability MCP de horários da Luz), removida na spec 052 junto com ela.
  *  · Não prova a propagação para o Portal Jobs (3.4) — autorizada, mas com um conflito
  *    de orçamento aberto: o Cloud Run Job tem `--task-timeout=900s` e a 3.4 sozinha custa
  *    ~10 min (WP-Cron ≤5 min + Breeze 161 s + o ciclo da deleção). Ver `tasks.md`.
@@ -49,29 +43,13 @@ const STAMP = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 const ATTRS_INICIAL = `E2E-VAGA-INICIAL-${STAMP}`;
 const ATTRS_EDITADO = `E2E-VAGA-EDITADO-${STAMP}`;
 
-/** Sala sintética. O formato é validado (`isValidMeetLink`), então não pode ser qualquer string. */
-const SALA_RECORRENTE = 'https://meet.google.com/rte-stee-001';
-/** Segunda-feira (0=domingo), 08:30 local da vaga. */
-const RECORRENTE = { weekday: 1, time: '08:30', link: SALA_RECORRENTE } as const;
-
 const vaga: { id?: string } = {};
 
-/**
- * ⚠️ As DUAS rotas devolvem o slot recorrente em formas DIFERENTES — medido em prod,
- * 30/08, depois de eu ter chutado errado e o teste quebrar:
- *   · `PUT /meet-links`      → `data.meet_recurring = { weekday, time: 'HH:MM', link }` (aninhado)
- *   · `GET /vacancies/:id`   → PLANO: `meet_recurring_weekday`, `meet_recurring_time`
- *                              ('HH:MM:SS', o TIME do Postgres), `meet_recurring_link`
- * A releitura é feita pelo GET, então é a forma PLANA que vale aqui.
- */
 interface VacancyBody {
   data: {
     id: string;
     is_test?: boolean;
     worker_attributes?: string | null;
-    meet_recurring_weekday?: number | null;
-    meet_recurring_time?: string | null;
-    meet_recurring_link?: string | null;
   };
 }
 
@@ -143,8 +121,6 @@ test.describe.serial('Spec 009 · Fase 3 — ciclo da vaga pela mão do staff', 
     expect(antes.worker_attributes, 'o valor inicial está gravado').toBe(ATTRS_INICIAL);
 
     // ── a EDIÇÃO ────────────────────────────────────────────────────────────
-    // ⚠️ `PUT /vacancies/:id` NÃO aceita campos `meet_*` (não estão na whitelist) —
-    // medido; é por isso que o slot recorrente tem rota própria, exercitada na 3.2a.
     const editRes = await adminCtx!.put(`/api/admin/vacancies/${vaga.id}`, {
       data: { worker_attributes: ATTRS_EDITADO },
     });
@@ -192,53 +168,6 @@ test.describe.serial('Spec 009 · Fase 3 — ciclo da vaga pela mão do staff', 
     } finally {
       await fechar();
     }
-  });
-
-  test('[@route:PUT /api/admin/vacancies/:id/meet-links @depth:happy] 3.2a — slot recorrente: grava, relê, e o Merge Patch funciona nos DOIS sentidos (⚠️ NÃO prova o fuso)', async () => {
-    // ── grava ────────────────────────────────────────────────────────────────
-    // `meet_links` é OBRIGATÓRIO no schema mesmo quando só o `recurring` muda (medido).
-    const gravaRes = await adminCtx!.put(`/api/admin/vacancies/${vaga.id}/meet-links`, {
-      data: { meet_links: [null, null, null], recurring: RECORRENTE },
-    });
-    expect(gravaRes.status(), 'PUT /meet-links grava o slot recorrente (200)').toBe(200);
-
-    // A resposta do PUT já traz o slot — mas a PROVA é a releitura pelo GET, que é o
-    // que a tela do staff consome.
-    const comSlot = await lerVaga(adminCtx!);
-    expect(comSlot.meet_recurring_weekday, 'o dia da semana persistiu').toBe(RECORRENTE.weekday);
-    expect(
-      (comSlot.meet_recurring_time ?? '').slice(0, 5),
-      'a hora persistiu (o TIME do Postgres volta como HH:MM:SS — por isso o slice)',
-    ).toBe(RECORRENTE.time);
-    expect(comSlot.meet_recurring_link, 'a sala persistiu').toContain('meet.google.com');
-
-    // ── CONTROLE POSITIVO: a chave AUSENTE não mexe (Merge Patch) ────────────
-    const semRecurring = await adminCtx!.put(`/api/admin/vacancies/${vaga.id}/meet-links`, {
-      data: { meet_links: [null, null, null] },
-    });
-    expect(semRecurring.status(), 'PUT sem a chave `recurring` responde 200').toBe(200);
-    const intacto = await lerVaga(adminCtx!);
-    expect(
-      intacto.meet_recurring_weekday,
-      'CHAVE AUSENTE NÃO TOCA O SLOT — mesmo contrato do drawer clínico (RFC 7396)',
-    ).toBe(RECORRENTE.weekday);
-
-    // ── CONTROLE POSITIVO 2: `null` explícito LIMPA ─────────────────────────
-    // Sem esta metade, "o slot sobreviveu" passaria mesmo se o endpoint ignorasse
-    // toda escrita de `recurring` — que consertaria a preservação quebrando a edição.
-    const limpaRes = await adminCtx!.put(`/api/admin/vacancies/${vaga.id}/meet-links`, {
-      data: { meet_links: [null, null, null], recurring: null },
-    });
-    expect(limpaRes.status(), 'PUT com `recurring: null` responde 200').toBe(200);
-    const limpo = await lerVaga(adminCtx!);
-    // `?? null` de propósito: a chave pode voltar `null` OU ausente, e as duas leituras
-    // significam "limpo". Sem o `??`, `undefined` passaria por um `.not.toBeNull()` —
-    // foi exatamente esse o defeito da 1ª versão deste teste.
-    expect(
-      limpo.meet_recurring_weekday ?? null,
-      'NULL EXPLÍCITO LIMPA — o endpoint não está apenas ignorando escritas de `recurring`',
-    ).toBeNull();
-    expect(limpo.meet_recurring_link ?? null, 'e a sala foi junto').toBeNull();
   });
 
   test('[@route:/admin/vacancies @depth:happy] 3.3 — o combobox das listas longas filtra por digitação, e a escolha vira FILTRO na requisição', async ({ browser }) => {

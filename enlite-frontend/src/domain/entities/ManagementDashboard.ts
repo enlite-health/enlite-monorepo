@@ -4,12 +4,13 @@
  * Só métricas com fonte de dados real. Horas e Ubicaciones/Zona são GAPs
  * conhecidos (sem coluna estruturada / normalização de zona em outra task).
  */
-/** Colunas do funil, na ordem de avanço do Kanban (BLOQUEADO não entra: não tem WJA). */
+/** Colunas do funil, na ordem de avanço do Kanban (BLOQUEADO, spec 067: candidatura em Completado cujo prestador não está apto; NÃO é o campo `bloqueados` das tentativas barradas). */
 export const FUNNEL_COLUMN_ORDER = [
   'INVITED',
   'INICIADO',
   'PRE_SCREENING',
   'IN_PROGRESS',
+  'BLOQUEADO',
   'COMPLETED',
   'SELECTED',
   'REJECTED',

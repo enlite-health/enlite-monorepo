@@ -21,6 +21,7 @@
  */
 
 import { test, expect, Page, Route } from '@playwright/test';
+import { escolherNoCombo } from './helpers/combobox';
 
 // ── Auth constants ─────────────────────────────────────────────────────────────
 
@@ -132,11 +133,10 @@ const MOCK_VACANCY_1 = {
   patient_address_formatted: null, patient_address_raw: null, required_sex: null,
   age_range_min: null, age_range_max: null, required_experience: null,
   worker_attributes: null, schedule: null, schedule_days_hours: null, work_schedule: null,
-  city: null, insurance_verified: null, salary_text: null, payment_day: null,
+  city: null, salary_text: null, payment_day: null,
   daily_obs: null, published_at: null, closes_at: null, talentum_description: null,
   talentum_project_id: null, talentum_whatsapp_url: null, talentum_slug: null,
-  talentum_published_at: null, meet_link_1: null, meet_datetime_1: null,
-  meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null,
+  talentum_published_at: null,
   social_short_links: null,
 };
 
@@ -399,15 +399,15 @@ test.describe('BlockedAttemptsPage — visual proof', () => {
     await page.goto('/admin/recruitment/blocked-attempts');
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });
 
-    const select = page.locator('[data-testid="blocked-filters"] select').first();
-    await select.selectOption('registration_incomplete');
-
-    await page.waitForResponse(
+    const select = page.locator('[data-testid="blocked-filters"]').getByRole('combobox').first();
+    const resposta = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/admin/recruitment/blocked-attempts') &&
         resp.status() === 200,
       { timeout: 10000 },
     );
+    await escolherNoCombo(page, select, 'Registro incompleto'); // registration_incomplete = Registro incompleto
+    await resposta;
 
     await expect(page.locator('text=María González').first()).toBeVisible({ timeout: 20000 });
 

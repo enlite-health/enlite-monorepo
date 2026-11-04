@@ -7,7 +7,7 @@
  * nomes "Ficticia"/"Ficticio NN". Nenhum e-mail, nome ou telefone entra em log ou asserção de mensagem.
  *
  * O que cada caso mata (sabotagem → vermelho):
- *   1 tirar o índice único `uq_enquadre_participant_um_aberto`          2 pôr o primeiro nome do paciente no título
+ *   1 tirar o índice único `uq_enquadre_participant_um_aberto`          2 pôr o nome OU o sobrenome do paciente no título
  *   3 tirar o código ENC do título                                      4 deixar um escolhido fora dos convidados / ligar "modificar"
  *   5 gravar algo quando o Google falha (não fazer ROLLBACK)            6 encerrar sem carimbar / sem a nota do não marcado
  *   7 aceitar prestador sem e-mail válido                               8 cancelar sem liberar / sem apagar no Google
@@ -26,6 +26,8 @@ import {
 import { FakeAdmissionCalendar } from '../../src/modules/matching/infrastructure/doubles/FakeAdmissionCalendar';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { titleHasExactCode } from '../../src/modules/matching/domain/admissionImport';
+import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
+import { completeWorkerProfile, cleanWorkerProfile, type AptoDocs } from './helpers/aptoWorkerFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -86,8 +88,12 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     return DateTime.now().setZone('America/Argentina/Buenos_Aires').plus({ days: dayOffset }).set({ hour: 10, minute: 0, second: 0, millisecond: 0 }).toFormat("yyyy-LL-dd'T'HH:mm");
   }
 
-  /** Prestador com candidatura da vaga em COMPLETED. `email` explícito para o caso do e-mail inválido. */
-  async function novoWorker(email?: string): Promise<string> {
+  /**
+   * Prestador com candidatura da vaga em COMPLETED. `email` explícito para o caso do e-mail inválido.
+   * Spec 067: por padrão APTO (cadastro completo + documentos obrigatórios validados) — o convocável exige isso (FR-07);
+   * `docs` muda a massa para os casos de não apto.
+   */
+  async function novoWorker(email?: string, docs: AptoDocs = 'validated'): Promise<string> {
     seq += 1;
     const { rows } = await admin.query(
       `INSERT INTO workers (auth_uid, email, country, timezone, status, first_name_encrypted, last_name_encrypted)
@@ -96,6 +102,7 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     );
     const id = rows[0].id as string;
     workers.push(id);
+    await completeWorkerProfile(admin, id, docs);
     await admin.query(
       `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
        VALUES ($1, $2, 'COMPLETED', 'talentum')`,
@@ -130,7 +137,7 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
 
   async function limparTudo(): Promise<void> {
     await admin.query(`DELETE FROM job_postings WHERE title LIKE 'ENQ052 e2e %' AND (id = $1 OR $1::uuid IS NULL)`, [vacancyId ?? null]);
-    await admin.query(`DELETE FROM interview_hosts WHERE email = ANY($1)`, [[HOST_OK, HOST_FALHA]]);
+    await deleteInterviewHosts(admin, [HOST_OK, HOST_FALHA]);
     await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [[HOST_OK, HOST_FALHA]]);
     await limparIamFixtures(admin, { uids: [UID, UID_RESUMO], grupos: [GRUPO, GRUPO_RESUMO] });
   }
@@ -175,12 +182,8 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     );
     vacancyId = vac.rows[0].id;
 
-    const hosts = await admin.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Entrevistadora Uno','AR',true), ($2,'Entrevistadora Dos','AR',true) RETURNING id, email`,
-      [HOST_OK, HOST_FALHA],
-    );
-    hostOkId = hosts.rows.find((r) => r.email === HOST_OK).id;
-    hostFalhaId = hosts.rows.find((r) => r.email === HOST_FALHA).id;
+    hostOkId = (await insertInterviewHost(admin, { email: HOST_OK, displayName: 'Entrevistadora Uno' })).id;
+    hostFalhaId = (await insertInterviewHost(admin, { email: HOST_FALHA, displayName: 'Entrevistadora Dos' })).id;
     await admin.query(
       `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,$3,'linked'), ($2,$4,'linked')`,
       [HOST_OK, HOST_FALHA, `tq-ok-${RUN}`, `tq-falha-${RUN}`],
@@ -249,6 +252,7 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
               (SELECT count(*) FROM enquadre_event_participants WHERE job_posting_id = $1)::int AS pa`,
       [vacancyId ?? null],
     );
+    await cleanWorkerProfile(admin, workers);
     if (workers.length) await admin.query(`DELETE FROM workers WHERE id = ANY($1)`, [workers]);
     if (patientId) await admin.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
     await limparTudo();
@@ -298,13 +302,13 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     ).rejects.toMatchObject({ code: '23505', constraint: 'uq_enquadre_participant_um_aberto' });
   });
 
-  it('2. título sem nome: o summary NÃO tem o primeiro nome do paciente e TEM o sobrenome e o nº do caso', async () => {
+  it('2. título sem dado do paciente: o summary NÃO tem nome nem sobrenome do paciente e TEM o nº do caso (D517, 16/10)', async () => {
     const w = await novoWorker();
     const res = await create([w]);
     expect(res.status).toBe(201);
     const summary = calendar.created[calendar.created.length - 1].summary;
     expect(summary).not.toContain(PATIENT_FIRST);
-    expect(summary).toContain(PATIENT_LAST);
+    expect(summary).not.toContain(PATIENT_LAST);
     expect(summary).toContain(`Caso ${CASE_NUMBER}`);
   });
 
@@ -481,5 +485,71 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
 
     // evento de outra vaga / sem documento: 404, nunca a URL de outro
     expect((await http('GET', `/api/admin/vacancies/${vacancyId}/enquadre-events/00000000-0000-4000-8000-000000000000/summary/url`, undefined, UID_RESUMO)).status).toBe(404);
+  });
+  // ─── spec 067 F4 (FR-07, FR-24, A5, A8 ii): o convocável e o movimento exigem prestador APTO ─────────────────────────────────
+
+  it('11. [067 A5/A8 ii] não apto (documento enviado e SEM validação) NÃO aparece em convocáveis; a criação e o addParticipants o recusam com 409; o Google não é chamado', async () => {
+    const apto = await novoWorker();
+    const naoApto = await novoWorker(undefined, 'unvalidated');
+    const semDoc = await novoWorker(undefined, 'none');
+    // controle: a pré-condição é do dono (SQL), não do TS — o teste sabe dizer "apto" e "não apto"
+    const dono = await admin.query(`SELECT id, fn_worker_is_apto(id) AS apto FROM workers WHERE id = ANY($1)`, [[apto, naoApto, semDoc]]);
+    expect(Object.fromEntries(dono.rows.map((r) => [r.id, r.apto]))).toEqual({ [apto]: true, [naoApto]: false, [semDoc]: false });
+
+    const lista = await availableIds();
+    expect(lista).toContain(apto);
+    expect(lista).not.toContain(naoApto);
+    expect(lista).not.toContain(semDoc);
+
+    const antes = { ev: await count('enquadre_events'), pa: await count('enquadre_event_participants'), cal: calendar.created.length };
+    const criar = await create([apto, naoApto]);
+    expect(criar.status).toBe(409);
+    expect(criar.body.code).toBe('ENQUADRE_WORKER_NOT_AVAILABLE');
+    expect({ ev: await count('enquadre_events'), pa: await count('enquadre_event_participants'), cal: calendar.created.length }).toEqual(antes);
+
+    const ok = await create([apto]);
+    expect(ok.status).toBe(201);
+    const add = await http('POST', `${base()}/${ok.body.data.id}/participants`, { workerIds: [naoApto] });
+    expect(add.status).toBe(409);
+    expect(add.body.code).toBe('ENQUADRE_WORKER_NOT_AVAILABLE');
+    expect((await participantsOf(ok.body.data.id)).map((p) => p.worker_id)).toEqual([apto]);
+
+    // FR-11: apto que perde a validação some do convocável NA HORA, sem esperar recálculo de status
+    const perde = await novoWorker();
+    expect(await availableIds()).toContain(perde);
+    await admin.query(`UPDATE worker_documents SET document_validations = '{}'::jsonb WHERE worker_id = $1`, [perde]);
+    expect(await availableIds()).not.toContain(perde);
+    expect((await admin.query(`SELECT status FROM workers WHERE id = $1`, [perde])).rows[0].status).toBe('REGISTERED');
+  });
+
+  it('12. [067 FR-24] moveParticipant: quem perdeu a validação depois de convocado NÃO vai a CONVOKED/SELECTED/QUICK_RESPONSE_TEAM (403 documents_not_validated, nada gravado); REJECTED passa', async () => {
+    const a = await novoWorker();
+    const b = await novoWorker();
+    const created = await create([a, b]);
+    expect(created.status).toBe(201);
+    const eventId = created.body.data.id as string;
+    const pid = (workerId: string) => (created.body.data.participants as Array<{ id: string; workerId: string }>).find((p) => p.workerId === workerId)!.id;
+    const stageOf = async (w: string) =>
+      (await admin.query(`SELECT application_funnel_stage AS s FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`, [w, vacancyId])).rows[0].s as string;
+
+    // controle positivo: com validação, SELECTED passa
+    const controle = await http('PUT', `${base()}/${eventId}/participants/${pid(a)}/move`, { column: 'SELECTED' });
+    expect(controle.status).toBe(200);
+    expect(await stageOf(a)).toBe('SELECTED');
+
+    // a perde a validação: voltar a CONVOKED e ir a QRT são recusados; b idem para SELECTED
+    await admin.query(`UPDATE worker_documents SET document_validations = '{}'::jsonb WHERE worker_id = ANY($1)`, [[a, b]]);
+    for (const [w, column] of [[a, 'CONVOKED'], [a, 'QUICK_RESPONSE_TEAM'], [b, 'SELECTED'], [b, 'QUICK_RESPONSE_TEAM']] as const) {
+      const r = await http('PUT', `${base()}/${eventId}/participants/${pid(w)}/move`, { column });
+      expect(r.status).toBe(403);
+      expect(r.body).toMatchObject({ success: false, code: 'WORKER_NOT_ELIGIBLE', reason: 'documents_not_validated' });
+    }
+    expect(await stageOf(a)).toBe('SELECTED'); // a recusa saiu ANTES de qualquer escrita
+    expect(await stageOf(b)).toBe('COMPLETED');
+
+    // REJECTED segue no limiar de hoje: a operação consegue rejeitar quem perdeu a validação
+    const rej = await http('PUT', `${base()}/${eventId}/participants/${pid(b)}/move`, { column: 'REJECTED', reason: 'DISTANCE' });
+    expect(rej.status).toBe(200);
+    expect(await stageOf(b)).toBe('REJECTED');
   });
 });

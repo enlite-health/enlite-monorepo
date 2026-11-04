@@ -28,6 +28,10 @@ export interface CatalogSnapshotItem {
 export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentId?: string | null;
   segmentLabel?: string | null;
+  /** Só o catálogo de motivos de saída tem: identificador estável que as marcas referenciam. */
+  code?: string;
+  /** Spec 061: descrição congelada com a versão; ausente em versão antiga ou item sem descrição. */
+  description?: string | null;
 }
 
 export const THERAPEUTIC_MODALITIES = ['IN_PERSON', 'ONLINE', 'HYBRID'] as const;
@@ -169,6 +173,49 @@ export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKin
   segments: 'catalog_therapeutic_segments',
 };
 
+/**
+ * Catálogo de motivos de saída do serviço (change itinerario-trocas-motivos-e-figma, D1): usa o mesmo
+ * mecanismo dos catálogos, mas FICA FORA de `TherapeuticCatalogKind`/`THERAPEUTIC_CATALOG_KINDS` — o projeto
+ * terapêutico e a tela dele nunca o veem.
+ */
+export const SERVICE_EXIT_REASON_KIND = 'service-exit-reasons';
+export const SERVICE_EXIT_REASON_RESOURCE = 'catalog_service_exit_reasons';
+export type AdminCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND;
+
+/**
+ * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. `segments` e o catálogo de
+ * motivos de saída ficam como eram: Ordem, sem descrição. Espelho de `catalogHasDescription` do backend
+ * (checagem POSITIVA — kind novo nasce sem descrição).
+ */
+export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
+export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WITH_DESCRIPTION.includes(kind);
+
+/**
+ * Guardias predefinidas (spec 074): catálogo global de modelos de turnos. FICA FORA de `AdminCatalogKind` — não
+ * tem Ordem nem descrição, e tem o seu próprio contrato (`items`).
+ */
+export const SERVICE_SHIFT_TEMPLATE_KIND = 'service-shift-templates';
+export const SERVICE_SHIFT_TEMPLATE_RESOURCE = 'catalog_service_shift_templates';
+
+export interface ShiftTemplateItem {
+  startTime: string;
+  durationMinutes: number;
+}
+
+export interface ShiftTemplate {
+  id: string;
+  code: string;
+  label: string;
+  active: boolean;
+  items: ShiftTemplateItem[];
+}
+
+/** Opção de motivo para quem registra uma troca (GET …/service-exit-reasons/options). */
+export interface ServiceExitReasonOption {
+  code: string;
+  label: string;
+}
+
 export interface TherapeuticCatalogItem {
   id: string;
   label: string;
@@ -180,10 +227,16 @@ export interface TherapeuticCatalogItem {
   /** Só objetivos/atividades têm (migration 430, US-17); `segments` não referencia a si mesmo. */
   segmentId?: string | null;
   segmentLabel?: string | null;
+  /** Spec 061: só objetivos/atividades; `null`/ausente = sem descrição. */
+  description?: string | null;
 }
 
-/** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor. */
+/** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor (`segments`). */
 export const CATALOG_LABEL_MAX = 200;
+/** Teto do título de objetivo/atividade (spec 061) — só barra criar/renomear; espelha o zod do servidor. */
+export const CATALOG_TITLE_MAX = 150;
+/** Teto da descrição de objetivo/atividade (spec 061) — espelha o CHECK da migration 547. */
+export const CATALOG_DESCRIPTION_MAX = 1000;
 /** Teto dos textos clínicos — espelha o CHECK da 416 (lex C6). */
 export const THERAPEUTIC_TEXT_MAX = 4000;
 

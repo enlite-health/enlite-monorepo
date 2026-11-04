@@ -12,9 +12,9 @@ import {
 import { ActionButton } from '@presentation/components/features/access';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { GooglePlacesAutocomplete } from '@presentation/components/molecules/GooglePlacesAutocomplete';
 import { extractAddressComponents } from '@application/use-cases/extractAddressComponents';
 import { WorkerEditProfessionalFields } from './WorkerEditProfessionalFields';
@@ -136,11 +136,11 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const professionOptions: SelectOption[] = WORKER_PROFESSIONS.map((p) => ({
+  const professionOptions: ComboboxOption[] = WORKER_PROFESSIONS.map((p) => ({
     value: p,
     label: t(`admin.workerDetail.professionValue.${p}`, { defaultValue: p }),
   }));
-  const documentTypeOptions: SelectOption[] = WORKER_DOCUMENT_TYPES.map((d) => ({ value: d, label: d }));
+  const documentTypeOptions: ComboboxOption[] = WORKER_DOCUMENT_TYPES.map((d) => ({ value: d, label: d }));
 
   const handlePlaceSelected = (place: google.maps.places.PlaceResult): void => {
     if (place.geometry?.location) {
@@ -304,10 +304,10 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
                 control={control}
                 name="profession"
                 render={({ field }) => (
-                  <SelectField
+                  <Combobox
                     inputSize="compact"
                     options={professionOptions}
-                    placeholder={tm('unset', '—')}
+                    placeholder={tm('unset', '—')} clearLabel={tm('unset', '—')}
                     value={field.value}
                     onChange={field.onChange}
                     data-testid="we-profession"
@@ -320,10 +320,10 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
                 control={control}
                 name="documentType"
                 render={({ field }) => (
-                  <SelectField
+                  <Combobox
                     inputSize="compact"
                     options={documentTypeOptions}
-                    placeholder={tm('unset', '—')}
+                    placeholder={tm('unset', '—')} clearLabel={tm('unset', '—')}
                     value={field.value}
                     onChange={field.onChange}
                     data-testid="we-documentType"
@@ -371,10 +371,10 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
                   control={control}
                   name="serviceRadiusKm"
                   render={({ field }) => (
-                    <SelectField
+                    <Combobox
                       inputSize="compact"
                       options={RADIUS_OPTIONS.map((r) => ({ value: String(r), label: `${r} km` }))}
-                      placeholder={tm('unset', '—')}
+                      placeholder={tm('unset', '—')} clearLabel={tm('unset', '—')}
                       value={String(field.value)}
                       onChange={(v) => { field.onChange(Number(v)); setAddressDirty(true); }}
                       data-testid="we-radius"

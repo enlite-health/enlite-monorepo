@@ -51,7 +51,7 @@ describe('AdminPatientContractedServicesController — texto livre de recrutamen
       res,
     );
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ dailyObs: SECRET })); // controle: o corpo CHEGOU ao repo
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ dailyObs: SECRET }), expect.any(Date)); // controle: o corpo CHEGOU ao repo
     expect(reportError).toHaveBeenCalled(); // controle: o caminho de erro rodou
     expect(everythingEmitted(res)).not.toContain(SECRET);
   });
@@ -64,7 +64,7 @@ describe('AdminPatientContractedServicesController — texto livre de recrutamen
     const res = mockRes();
     await new AdminPatientContractedServicesController(repo as never, {} as never).update(req(FREE_TEXT), res);
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(repo.update).toHaveBeenCalledWith(SERVICE_ID, expect.objectContaining({ dailyObs: SECRET }));
+    expect(repo.update).toHaveBeenCalledWith(SERVICE_ID, expect.objectContaining({ dailyObs: SECRET }), expect.any(Date));
     expect(everythingEmitted(res)).not.toContain(SECRET);
   });
 

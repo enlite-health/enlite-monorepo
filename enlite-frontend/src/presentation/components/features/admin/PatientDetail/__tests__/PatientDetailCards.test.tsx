@@ -522,6 +522,21 @@ describe('DiagnosticoCard', () => {
     expect(screen.getByText(/Observações gerais/)).toBeInTheDocument();
   });
 
+  // ── Pedido do Javier: diagnóstico obrigatório nos 3 estágios pré-atendimento ──
+  it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s (pré-atendimento): o rótulo das patologías leva a marcação `required` (asterisco, o mesmo padrão do Label) e, sem diagnóstico, a dica de obrigatório', (status) => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, status, diagnoses: [], diagnosesUnavailable: false }} />);
+    const label = screen.getByTestId('diagnostico-card-required-label');
+    expect(label).toHaveTextContent(ptBR.admin.patients.detail.diagnosisCard.patologies);
+    expect(label.querySelector('span')?.textContent).toBe('*');
+    expect(screen.getByTestId('diagnostico-card-patologias-empty').textContent).toContain(ptBR.admin.patients.detail.diagnosisCard.patologiesRequiredHint);
+  });
+
+  it('em atendimento (ACTIVE): sem asterisco e sem a dica — a regra é só da saída da admissão', () => {
+    render(<DiagnosticoCard patient={{ ...patientDetailFixture, status: 'ACTIVE', diagnoses: [], diagnosesUnavailable: false }} />);
+    expect(screen.queryByTestId('diagnostico-card-required-label')).not.toBeInTheDocument();
+    expect(screen.getByTestId('diagnostico-card-patologias-empty').textContent).not.toContain(ptBR.admin.patients.detail.diagnosisCard.patologiesRequiredHint);
+  });
+
   // ── REQ-01: observações gerais com quebras, autoria e máscara do Clarity ──
   it('preserva quebras de linha (whitespace-pre-wrap) e mostra "Última edição: data · nome"', () => {
     render(<DiagnosticoCard patient={{ ...patientDetailFixture, additionalComments: 'linha 1\nlinha 2' }} />);
@@ -868,7 +883,8 @@ describe('PatientProfileTabs', () => {
   // placeholder genérico "Em breve" atrás, nenhum card real (decisão Gabriel 03/09, item 9).
   // 05/09 (decisão do Gabriel): "Enquadre" também saiu — era a tabela de serviços duplicada +
   // placeholder; o encuadre do paciente É o serviço contratado (endereço + horário).
-  it('renders the 6 tabs with real content (spec 049: + Admissão) — "Dados Financeiros"/"Agendamentos"/"Enquadre"/"Vagas" (spec 047) não existem mais', () => {
+  // Sync main→stage 16/10 (decisão C2): spec 049 (+ Admissão) + cadeia do itinerário (+ Itinerário), sem "Vagas" (spec 047) — 7 abas.
+  it('renders the 7 tabs with real content (spec 049: + Admissão; cadeia: + Itinerário) — "Dados Financeiros"/"Agendamentos"/"Enquadre"/"Vagas" (spec 047) não existem mais', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
@@ -876,12 +892,13 @@ describe('PatientProfileTabs', () => {
     expect(screen.getByText('Documentos')).toBeInTheDocument();
     expect(screen.getByText('Admissão')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
+    expect(screen.getByText('Itinerário')).toBeInTheDocument();
     expect(screen.queryByText('Vagas')).not.toBeInTheDocument();
     expect(screen.getByText('Histórico')).toBeInTheDocument();
     expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
     expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
     expect(screen.queryByText('Enquadre')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(6);
+    expect(screen.getAllByRole('button')).toHaveLength(7);
   });
 
   it('active tab has primary background class', () => {
@@ -1057,7 +1074,11 @@ describe('CoberturaMedicaCard', () => {
   const withInsurance = {
     ...patientDetailFixture,
     insuranceInformed: 'UNIMED',
-    insuranceVerified: 'Plano Unimed Empresarial',
+    coverage: {
+      display: 'UNIMED',
+      displaySource: 'INFORMED' as const,
+      entries: [{ code: 'UNIMED', name: 'Unimed Empresarial', mapped: true, source: 'admin_manual' }],
+    },
     affiliateId: '0000000000000000',
   };
 
@@ -1071,9 +1092,35 @@ describe('CoberturaMedicaCard', () => {
     expect(screen.getByText('UNIMED')).toBeInTheDocument();
   });
 
-  it('renders plan from insuranceVerified', () => {
+  // Spec 058 §4.5: a linha das VERIFICADAS lê `coverage.entries[].name` (nome do banco), não um escalar nem a tradução por código.
+  it('renders the verified coverage by the catalog NAME from coverage.entries', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
-    expect(screen.getByText('Plano Unimed Empresarial')).toBeInTheDocument();
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Unimed Empresarial');
+  });
+
+  it('lines: informada e verificadas são DUAS linhas distintas', () => {
+    render(<CoberturaMedicaCard patient={withInsurance} />);
+    expect(screen.getByTestId('coverage-informed')).toHaveTextContent('UNIMED');
+    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('Unimed Empresarial');
+  });
+
+  it('entradas sem mapeamento aparecem como "sin mapeo" junto das mapeadas — nunca escondidas', () => {
+    const coverage = {
+      display: 'UNIMED', displaySource: 'INFORMED' as const,
+      entries: [
+        { code: 'UNIMED', name: 'Unimed Empresarial', mapped: true, source: 'admin_manual' },
+        { code: null, name: null, mapped: false, source: 'clickup' },
+        { code: null, name: null, mapped: false, source: 'clickup' },
+      ],
+    };
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, coverage }} />);
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Unimed Empresarial, Sem mapeamento ao catálogo (2)');
+  });
+
+  it('coverage:null (ator sem a célula): "sem permissão" nas duas linhas — não "—", que diria "não tem"', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, insuranceInformed: null, coverage: null }} />);
+    expect(screen.getByTestId('coverage-informed')).toHaveTextContent('Sem permissão para ver a cobertura');
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('Sem permissão para ver a cobertura');
   });
 
   it('renders affiliateId as credential', () => {
@@ -1108,10 +1155,19 @@ describe('CoberturaMedicaCard', () => {
     expect(screen.getAllByTestId('patient-coverage-edit-drawer')).toHaveLength(2);
   });
 
-  it('spec 012 US-B3: verificadas por CÓDIGO aparecem traduzidas e têm precedência sobre o escalar cru', () => {
-    render(<CoberturaMedicaCard patient={{ ...withInsurance, insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL', 'CODIGO_NOVO'] }} />);
-    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('OSDE, Swiss Medical, CODIGO_NOVO');
-    expect(screen.queryByText('Plano Unimed Empresarial')).not.toBeInTheDocument();
+  it('spec 058: as verificadas aparecem pelo NOME do catálogo (coverage.entries), nunca pelo código; nome repetido (2 origens) sai uma vez', () => {
+    const coverage = {
+      display: 'UNIMED', displaySource: 'INFORMED' as const,
+      entries: [
+        { code: 'OSDE', name: 'OSDE', mapped: true, source: 'clickup' },
+        { code: 'OSDE', name: 'OSDE', mapped: true, source: 'admin_manual' },
+        { code: 'SWISS_MEDICAL', name: 'Swiss Medical', mapped: true, source: 'admin_manual' },
+        { code: 'CODIGO_NOVO', name: 'Nome Novo do Banco', mapped: true, source: 'admin_manual' },
+      ],
+    };
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, coverage }} />);
+    expect(screen.getByTestId('coverage-verified-value')).toHaveTextContent('OSDE, Swiss Medical, Nome Novo do Banco');
+    expect(screen.getByTestId('coverage-verified-value').textContent).not.toContain('CODIGO_NOVO');
   });
 });
 

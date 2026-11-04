@@ -68,14 +68,14 @@ const PROD_PAYLOAD: ManagementDashboardData = {
     porEtapa: {
       somavel: false,
       colunas: {
-        INVITED: 466, INICIADO: 182, PRE_SCREENING: 49, IN_PROGRESS: 1347,
+        INVITED: 466, INICIADO: 182, PRE_SCREENING: 49, IN_PROGRESS: 1347, BLOQUEADO: 0,
         COMPLETED: 631, SELECTED: 10, REJECTED: 626,
       },
     },
     consolidado: {
       somavel: true,
       colunas: {
-        INVITED: 303, INICIADO: 84, PRE_SCREENING: 23, IN_PROGRESS: 1173,
+        INVITED: 303, INICIADO: 84, PRE_SCREENING: 23, IN_PROGRESS: 1173, BLOQUEADO: 0,
         COMPLETED: 612, SELECTED: 10, REJECTED: 371,
       },
     },

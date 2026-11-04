@@ -11,6 +11,8 @@
  * categoria do recurso — e não conhece banco nem Express.
  */
 
+import { PermissionError } from './PermissionError';
+
 /** Categoria de tela do painel (agrupa as células na matriz). Seed da mig 206. */
 export const PERMISSION_CATEGORIES = [
   'Trabalhadores',
@@ -74,6 +76,12 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
   patient_contract_value: 'Pacientes',
+  // Spec 058 (Parte A): cadastro de obra social, contatos, contratos/termos e a lista de pacientes por obra social.
+  // Escritas de E1/E2/E3 só admin (sem célula nova além destas); o valor-hora/imposto de contrato é `patient_contract_value`.
+  catalog_insurance_providers: 'Administração',
+  insurance_provider_contacts: 'Administração',
+  insurance_contracts: 'Administração',
+  insurance_provider_patients: 'Pacientes',
   // patient_consent_documents (spec 018, PR-4) foi REMOVIDA por completo
   // (fix/018-remover-documentos-consentimento) — documento (prova) e consentimento de imagem
   // saíram; só a foto fica, sob patient_identity:read/write, sem célula própria.
@@ -82,11 +90,21 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_therapeutic_project: 'Pacientes',
   catalog_therapeutic_objectives: 'Pacientes',
   catalog_therapeutic_activities: 'Pacientes',
+  // Motivos de saída do serviço (migration 492): catálogo global de categorias genéricas, sem dado de saúde.
+  catalog_service_exit_reasons: 'Pacientes',
+  // Guardias predefinidas (migration 550, spec 074): catálogo global de modelos de turnos, sem dado de saúde.
+  catalog_service_shift_templates: 'Pacientes',
   // US-17 (spec 018, PR-7, migration 430): catálogo dos segmentos da Ana Care, mesma família.
   catalog_therapeutic_segments: 'Pacientes',
   // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345): célula PRÓPRIA, fora de qualquer
   // grupo padrão — vizinho de paciente (turnos/horas do Ana Care), não um container da ficha.
   anacare_hours: 'Pacientes',
+  // Cadeia Fase 10 (DX-10.1): rejeitar/reverter no quadro C (Servicio Contratado). Recurso novo
+  // com ação de domínio (`update`, nunca `write` — ressalva (b')); não entra em SPLIT_RESOURCES.
+  patient_service_team: 'Pacientes',
+  // Fase 11 (DX-11.1): montar o itinerário (slots, alocações, montado). Recurso novo com ação de
+  // domínio (`update`, nunca `write` — mesma ressalva da Fase 10); não entra em SPLIT_RESOURCES.
+  patient_itinerary: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -101,6 +119,34 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   dashboard_funnel: 'Operações',
   dashboard_zones: 'Operações',
   integration: 'Operações',
+  // Spec 029 — mesma casa do `integration`: as rotas vivem no módulo `integration` e na família
+  // `admin.integrations`. Sem esta linha o painel mostraria a permissão como "Não categorizado".
+  ai_prompt: 'Operações',
+  // Spec 078 (pedidos do Sol) — mesma casa do `ai_prompt`: rotas na família `admin.integrations`.
+  pedidos_ia: 'Operações',
+  // Spec 078 (M2, decisões do lote 0) — categoria das 2 células NOVAS da Luz como agente no ABAC (`worker_application:create`,
+  // `handover:create`). A DESCRIÇÃO (CELL_DESCRIPTION) entra no Lote 2 junto com o consumidor (a porta MCP): `catalogo-sem-orfao.test`
+  // reprova chave de CELL_DESCRIPTION sem consumidor real. A candidatura em nome do prestador mora com o prestador; o aviso, com a comunicação.
+  worker_application: 'Trabalhadores',
+  handover: 'Comunicação',
+  // Spec 082 (painel de custos) — Acesso Master only; rota em `adminCostsRoutes.ts`, família `admin.integrations`.
+  platform_costs: 'Operações',
+  // Spec 081 (D602a) — atividade do funil por recrutadora e semana; Acesso Master only. Rota em `recruitmentRoutes.ts`.
+  recruitment_activity_per_person: 'Operações',
+  // Spec 080 (assistants in the app) — same home as `pedidos_ia`: routes in the `admin.integrations` family.
+  assistant_maria: 'Operações',
+  assistant_lucero: 'Operações',
+  assistant_candela: 'Operações',
+  assistant_scoreboard: 'Operações',
+  assistant_escalation: 'Operações',
+  knowledge_public: 'Operações',
+  knowledge_recruitment: 'Operações',
+  knowledge_clinical: 'Operações',
+  knowledge_financial: 'Operações',
+  knowledge_management: 'Operações',
+  knowledge_coordination: 'Operações',
+  knowledge_technical: 'Operações',
+  knowledge_product_meetings: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
   messaging: 'Comunicação',
@@ -113,6 +159,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   own_presence: 'Administração',
   // Spec 049 (F4): o operador vê/gerencia o PRÓPRIO vínculo com o Tactiq (célula own_*).
   own_tactiq_link: 'Administração',
+  // Spec 055: tela "Entrevistadores" — quem atende enquadre e admissão (tabela interview_hosts).
+  interview_host: 'Administração',
 };
 
 /**
@@ -234,7 +282,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // F8/F9): órfã — coberta por `patient_chat:create`/`update` explícitos nos grupos que a tinham.
   'patient_coverage:read':
     'Ver a COBERTURA médica do paciente: obra social ou plano informado, número de afiliado e a '
-    + 'verificação de cobertura.',
+    + 'verificação de cobertura. Também decide quem vê QUAL obra social e contrato paga cada serviço contratado, '
+    + 'o tipo do pagador (obra social, prepaga ou particular) e se ele coincide com a cobertura verificada.',
   // `patient_coverage:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
   // F8/F9): órfã — coberta por `patient_coverage:create`/`update` explícitos nos grupos que a tinham.
   'patient_address:read':
@@ -282,6 +331,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o catálogo de ROTINA E ATIVIDADES do projeto terapêutico (lista global, sem dado de paciente).',
   // `catalog_therapeutic_activities:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
   // fase 1, F8/F9): órfã — coberta por `catalog_therapeutic_activities:create`/`update` explícitos.
+  'catalog_service_exit_reasons:read':
+    'Ver o catálogo de MOTIVOS DE SAÍDA do serviço (lista global de categorias genéricas, sem dado de paciente).',
+  'catalog_service_shift_templates:read':
+    'Ver o catálogo de GUARDIAS PREDEFINIDAS (modelos globais de turnos, sem dado de paciente).',
   'catalog_therapeutic_segments:read':
     'Ver o catálogo de SEGMENTOS da Ana Care (US-17, lista global, sem dado de paciente).',
   // `catalog_therapeutic_segments:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
@@ -356,6 +409,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o selo do resumo do evento de enquadre e baixar o resumo (PDF) gerado a partir da transcrição da call. Sem esta célula '
     + 'a linha do evento não mostra o selo do resumo nem o botão de baixar, e o download responde 403. '
     + 'Só o Acesso Master por enquanto.',
+  'interview_host:read':
+    'Ver a tela Entrevistadores: quem atende enquadre e admissão, em que países, quais fluxos e se já vinculou o Tactiq. '
+    + 'Mostra nome e e-mail do usuário. Só o Acesso Master por enquanto.',
+  'interview_host:update':
+    'Agregar, editar e quitar entrevistadores de enquadre e admissão (escolhidos entre os usuários staff ativos). Mexe em '
+    + 'quem aparece na lista de entrevistadora do enquadre e da admissão na próxima abertura. Só o Acesso Master por enquanto.',
   'own_tactiq_link:read':
     'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
     + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',
@@ -390,16 +449,42 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_coverage:create': 'Cadastrar a cobertura do paciente ou um contato de emergência da cobertura novo.',
   'patient_coverage:update': 'Editar a cobertura do paciente ou dar baixa em contato de emergência da cobertura já cadastrado.',
   'patient_services:create': 'Contratar um serviço novo para o paciente.',
+  // ── Spec 058 (Parte A): cadastro de obra social por cartões ──
+  'catalog_insurance_providers:read':
+    'Ver o cadastro das OBRAS SOCIAIS (Dados gerais): nome, razão social, CUIT/CNPJ, endereço, chat de gestão e o tipo do pagador '
+    + '(obra social, prepaga ou particular).',
+  'catalog_insurance_providers:create': 'Cadastrar uma obra social nova no catálogo (vale para o select de todos os pacientes).',
+  'catalog_insurance_providers:update':
+    'Editar os Dados gerais de uma obra social, classificar ou reclassificar o tipo do pagador e aposentar a obra social.',
+  'insurance_provider_contacts:read':
+    'Ver as PESSOAS DE CONTATO da obra social (cartão Empregados): telefone, e-mail e número do documento — dado pessoal de terceiro. '
+    + 'Sem esta célula o contato aparece sem esses campos.',
+  'insurance_provider_contacts:create': 'Cadastrar uma pessoa de contato nova numa obra social.',
+  'insurance_provider_contacts:update': 'Editar ou aposentar uma pessoa de contato já cadastrada numa obra social.',
+  'insurance_contracts:read':
+    'Ver os CONTRATOS de uma obra social (nome, país, abrangência) e a vigência dos termos. O valor-hora só sai com `patient_contract_value:read`; '
+    + 'o imposto em % é visível a quem lê o contrato. Também alimenta a escolha do contrato no serviço contratado.',
+  'insurance_contracts:create': 'Cadastrar um contrato novo numa obra social. Exige também `patient_contract_value:create` (a rota grava o 1º valor-hora e imposto).',
+  'insurance_contracts:update': 'Renomear um contrato ou editar a abrangência dele (país e obra social não mudam).',
+  'patient_contract_value:create':
+    'Registrar o VALOR-HORA e o imposto de um contrato da obra social: contrato novo com o 1º termo, termo novo, reajuste ou correção de termo.',
+  'insurance_provider_patients:read':
+    'Ver quais PACIENTES têm vínculo vigente com uma obra social (nº do caso, serviço contratado e contrato). Lista identificadora: '
+    + 'revela quem tem cobertura naquela obra social.',
   'patient_services:update':
     'Editar serviço contratado já existente, ativar recrutamento e associar/editar prestadores do serviço.',
   'patient_therapeutic_project:create':
-    'Criar uma nova versão MAJOR do projeto terapêutico ("Novo"). Exige também `patient_clinical:write`.',
+    'Criar uma nova versão MAJOR do projeto terapêutico ("Novo"). Exige também `patient_clinical:create`.',
   'patient_therapeutic_project:update':
-    'Criar uma nova versão MINOR ("Editar") ou anular uma versão do projeto terapêutico. Exige também `patient_clinical:write`.',
+    'Anular uma versão do projeto terapêutico. "Editar" (versão MINOR) NÃO usa esta célula: entra pela rota de criação e exige `patient_therapeutic_project:create` + `patient_clinical:update`.',
   'catalog_therapeutic_objectives:create': 'Adicionar objetivo específico novo ao catálogo (backoffice).',
   'catalog_therapeutic_objectives:update': 'Renomear e desativar objetivo específico do catálogo (backoffice).',
   'catalog_therapeutic_activities:create': 'Adicionar atividade nova ao catálogo (backoffice).',
   'catalog_therapeutic_activities:update': 'Renomear e desativar atividade do catálogo (backoffice).',
+  'catalog_service_exit_reasons:create': 'Adicionar motivo de saída novo ao catálogo (backoffice).',
+  'catalog_service_exit_reasons:update': 'Renomear e desativar motivo de saída do catálogo (backoffice).',
+  'catalog_service_shift_templates:create': 'Adicionar guardia predefinida ao catálogo (backoffice).',
+  'catalog_service_shift_templates:update': 'Renomear, trocar os turnos e desativar guardia predefinida (backoffice).',
   'catalog_therapeutic_segments:create': 'Adicionar segmento novo ao catálogo (backoffice).',
   'catalog_therapeutic_segments:update': 'Renomear e desativar segmento do catálogo (backoffice).',
   'user_management:create': 'Criar conta nova de staff.',
@@ -442,6 +527,20 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     + 'para o financeiro. Exige também anacare_hours:read; o NOME do paciente no arquivo segue sob '
     + 'patient_identity:read e o do prestador sob worker_contact:read (sem elas, sai "Sin vínculo · ID").',
 
+  // ── Cadeia Fase 10 (DX-10.1) — quadro C (Servicio Contratado): recurso novo, ação de domínio.
+  'patient_service_team:update':
+    'Rejeitar e reverter a rejeição de um prestador no quadro de ENCUADRE de um serviço '
+    + 'contratado (sempre com motivo de lista fechada). Não aloca nem desaloca, não move a '
+    + 'candidatura na vaga e não adiciona prestador.',
+
+  // ── Fase 11 (DX-11.1) — montar o itinerário do paciente: faixas semanais, alocação/desalocação
+  //    de prestador em Selecionado (C), e a marca de montado.
+  'patient_itinerary:update':
+    'Montar o itinerário do paciente: criar, editar e encerrar faixas semanais de um serviço '
+    + 'contratado, alocar e encerrar a alocação de um prestador que está em Selecionado (C) '
+    + 'daquele serviço, e marcar o itinerário como montado. Não move o paciente de coluna nem '
+    + 'rejeita prestador.',
+
   // ── Spec 024 (D1/D401, 21/09) — o catálogo de Etiquetas é DADO diferente do perfil do
   //    prestador: `tag:*` sai de `worker:*`. Atribuir/remover etiqueta DE UM prestador
   //    continua em `worker:update` — ali o dado é o prestador, não o catálogo. `worker:create`
@@ -462,6 +561,33 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     + 'serem bloqueadas antes de completar a aplicação (cadastro incompleto, prestador '
     + 'desativado ou não encontrado). Tela só leitura — sem ação.',
 
+  // ── Spec 029 (prompts de IA editáveis) — as 2 células que `adminAiPromptRoutes` cobra.
+  //    `ai_prompt:restore` (migration 488) NÃO entra: nenhuma rota a cobra ainda (Fase 5).
+  'ai_prompt:read': 'Ler o conteúdo e o histórico dos prompts de IA da plataforma, e comparar versões.',
+  'ai_prompt:update': 'Salvar e desfazer a última alteração de um prompt de IA.',
+
+  // ── Spec 078 (M3b-1) — as 2 células que `adminPedidosIaRoutes` cobra. Grupo "Decisores de pedidos IA" é da operação (a migration 552 não concede).
+  'pedidos_ia:read': 'Ver os pedidos do Sol e dos gestores.',
+  'pedidos_ia:decidir': 'Aceitar, negar ou redirecionar um pedido.',
+  // ── Spec 082 — Acesso Master only: painel de custos da plataforma (só valores de faturamento, sem dado de pessoa).
+  'platform_costs:read': 'Ver el panel de costos de la plataforma (facturación de GCP por servicio, recurso, sector y llamador de IA).',
+  // ── Spec 081 (T064, D602a) — Acesso Master only: contagens de atividade do funil POR RECRUTADORA e semana.
+  'recruitment_activity_per_person:read':
+    'Ver a atividade do funil de recrutamento POR RECRUTADORA e por semana (movimentos de etapa, trocas de status e edições de perfil — só contagens, sem nome de prestador).',
+  // ── Spec 080 — chat with the assistants in the app. Acesso Master only (phase A).
+  'assistant_maria:chat': 'Conversar con la asistente de gestión de reclutamiento',
+  'assistant_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
+  'assistant_candela:chat': 'Conversar con Candela (gestora de coordinación)',
+  'assistant_scoreboard:read': 'Ver el placar de los agentes (reportes por operador)',
+  'assistant_escalation:register': 'Registrar el reporte de un asistente en el placar',
+  'knowledge_public:read': 'Leer la gaveta de conocimiento pública',
+  'knowledge_recruitment:read': 'Leer la gaveta de conocimiento de reclutamiento',
+  'knowledge_clinical:read': 'Leer la gaveta de conocimiento clínico (solo estados y conteos)',
+  'knowledge_financial:read': 'Leer la gaveta de conocimiento financiera',
+  'knowledge_management:read': 'Leer la gaveta de conocimiento de gestión',
+  'knowledge_coordination:read': 'Leer la gaveta de conocimiento de coordinación',
+  'knowledge_technical:read': 'Leer la gaveta de conocimiento técnico',
+  'knowledge_product_meetings:read': 'Leer la gaveta de conocimiento de reuniones de producto',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
   //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
   //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
@@ -487,6 +613,16 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_status:move_to_discharged':
     'Trocar o paciente para BAJA (desligado) por FORA do fluxo normal de transições, a partir de '
     + 'qualquer estado clínico. Não vem em nenhum grupo por padrão.',
+
+  // ── Spec 078 (M2, decisões do lote 0) — a Luz como AGENTE no ABAC. As 2 células nascem com o consumidor (a porta MCP do agente,
+  //    `mcp/domain/AgentCapabilityCells.ts` + `AgentCellGuard`), sem rota REST. Nascem com 0 grupos: a operação as concede ao
+  //    espelho da Luz em /admin/access antes de ligar a identidade do agente.
+  'worker_application:create':
+    'Postular um prestador a uma vaga em nome dele, com a mesma elegibilidade do app; devolve o link do pré-screening '
+    + 'só quando aprovado. Não move etapa nem rejeita.',
+  'handover:create':
+    'Avisar a equipe no Periskope (grupo, ticket e nota interna) que um prestador precisa de atendimento humano. '
+    + 'Não envia mensagem ao prestador.',
 };
 
 /**
@@ -532,6 +668,8 @@ export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
   'catalog_therapeutic_objectives',
   'catalog_therapeutic_activities',
   'catalog_therapeutic_segments',
+  'catalog_service_exit_reasons',
+  'catalog_service_shift_templates',
 ]);
 
 export function isSplitResource(resource: string): boolean {
@@ -575,6 +713,12 @@ export interface PermissionCell {
   ownerService: string;
   /** Preenchido quando a célula sumiu do código — nunca apagamos linha. */
   deprecatedAt?: Date | null;
+  /**
+   * Spec 078 (decisão do Gabriel, 30/10): célula que só pode existir no grupo Acesso Master.
+   * Derivado de `SOMENTE_ACESSO_MASTER_CELLS` (a lista é do código, não do banco) — o painel
+   * esconde a célula dos demais grupos e o `SetGroupPermissionsUseCase` recusa a concessão.
+   */
+  somenteAcessoMaster?: boolean;
 }
 
 /** `recurso` e `ação` aceitos: minúsculas, dígitos e `_` (o formato do seed 206). */
@@ -629,6 +773,68 @@ export function isOwnCell(key: string): boolean {
   // `split(':', 1)[0]` sem ternário/branch: com ou sem ':' na string, o índice 0 sempre existe
   // (é o próprio `key` inteiro quando não há ':'), então não há ramo para cobrir.
   return key.split(':', 1)[0].startsWith(OWN_CELL_RESOURCE_PREFIX);
+}
+
+/**
+ * Id FIXO do grupo Acesso Master (seed 206) — o mesmo UUID que `iam.is_master_member` e
+ * `iam._require_master_membership` (mig 456/458) usam para identificá-lo. Nunca por nome.
+ */
+export const ACESSO_MASTER_GROUP_ID = 'a0000000-0000-0000-0000-000000000001';
+
+/** Spec 080 — chat with the assistants (Master-only, phase A). Order from contract §5. */
+export const ASSISTANT_CHAT_CELLS: readonly string[] = [
+  'assistant_maria:chat',
+  'assistant_lucero:chat',
+  'assistant_candela:chat',
+];
+
+/** Spec 080 — one cell per Sol compartment (never `default`). Order from contract §5. */
+export const KNOWLEDGE_CELLS: readonly string[] = [
+  'knowledge_public:read',
+  'knowledge_recruitment:read',
+  'knowledge_clinical:read',
+  'knowledge_financial:read',
+  'knowledge_management:read',
+  'knowledge_coordination:read',
+  'knowledge_technical:read',
+  'knowledge_product_meetings:read',
+];
+
+/**
+ * Células que SÓ o Acesso Master pode ter (decisão do Gabriel, 30/10, spec 078). O sync do boot continua
+ * concedendo ao Acesso Master; a concessão a qualquer outro grupo é recusada no
+ * `SetGroupPermissionsUseCase` (422 `master_only_cell`) e o painel nem as lista.
+ * `pedidos_ia:decidir` SAIU daqui em 03/11 (migration 557): decidir é de um grupo decisor só com o Marcel, criado e
+ * concedido pela operação; o Acesso Master só LÊ os pedidos (`pedidos_ia:read`).
+ */
+export const SOMENTE_ACESSO_MASTER_CELLS: ReadonlySet<string> = new Set([
+  'pedidos_ia:read',
+  'platform_costs:read',
+  'recruitment_activity_per_person:read',
+  ...ASSISTANT_CHAT_CELLS,
+  'assistant_scoreboard:read',
+  'assistant_escalation:register',
+  ...KNOWLEDGE_CELLS,
+]);
+
+export function isSomenteAcessoMaster(key: string): boolean {
+  return SOMENTE_ACESSO_MASTER_CELLS.has(key);
+}
+
+/**
+ * Recusa (`master_only_cell`, HTTP 422) a concessão de célula `somenteAcessoMaster` a grupo que
+ * não é o Acesso Master. Único ponto da regra — o use case da matriz e o import da configuração
+ * IAM chamam ESTA função, nunca reimplementam.
+ */
+export function assertCellsAllowedForGroup(groupId: string, cellKeys: readonly string[]): void {
+  if (groupId === ACESSO_MASTER_GROUP_ID) return;
+  const proibidas = cellKeys.filter(isSomenteAcessoMaster);
+  if (proibidas.length > 0) {
+    throw new PermissionError(
+      'master_only_cell',
+      `Célula(s) exclusiva(s) do Acesso Master: ${proibidas.join(', ')}`,
+    );
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 import { TFunction } from 'i18next';
-import { SelectOption } from '@presentation/components/molecules/SelectField';
+import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 
-export const getPlatformOptions = (t: TFunction): SelectOption[] => [
+export const getPlatformOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'talentum', label: t('admin.workers.platformOptions.talentum', 'Talentum') },
   { value: 'planilla_operativa', label: t('admin.workers.platformOptions.planillaOperativa', 'Planilla Operativa') },
   { value: 'ana_care', label: t('admin.workers.platformOptions.anaCare', 'Ana Care') },
@@ -9,12 +9,12 @@ export const getPlatformOptions = (t: TFunction): SelectOption[] => [
   { value: 'enlite_app', label: t('admin.workers.platformOptions.enliteApp', 'Enlite App') },
 ];
 
-export const getDocsStatusOptions = (t: TFunction): SelectOption[] => [
+export const getDocsStatusOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'complete', label: t('admin.workers.docsOptions.complete', 'Completos') },
   { value: 'incomplete', label: t('admin.workers.docsOptions.incomplete', 'Incompletos') },
 ];
 
-export const getValidationStatusOptions = (t: TFunction): SelectOption[] => [
+export const getValidationStatusOptions = (t: TFunction): ComboboxOption[] => [
   { value: 'all_validated', label: t('admin.workers.validationOptions.allValidated', 'Todos validados') },
   { value: 'pending_validation', label: t('admin.workers.validationOptions.pendingValidation', 'Falta validación') },
 ];

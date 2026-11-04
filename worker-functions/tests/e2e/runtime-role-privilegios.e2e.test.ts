@@ -21,9 +21,9 @@ const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
 /** Schemas que a aplicação lê em runtime (`grep 'FROM <schema>.' src/` + `CREATE SCHEMA` nas migrations). */
-const SCHEMAS = ['public', 'iam', 'terminology'] as const;
+const SCHEMAS = ['public', 'iam', 'terminology', 'agentes'] as const;
 /** Piso por schema: "a query voltou vazia" não pode passar por sucesso, e um schema inteiro fora da régua também não. */
-const PISO_POR_SCHEMA: Record<string, number> = { public: 120, iam: 95, terminology: 3 };
+const PISO_POR_SCHEMA: Record<string, number> = { public: 120, iam: 95, terminology: 3, agentes: 10 };
 const PAPEIS = ['app_runtime', 'app_system'] as const;
 
 /**
@@ -94,7 +94,7 @@ describe('privilégios do papel de runtime nos schemas da aplicação (banco rea
     // pode barrar a leitura aqui é falta de GRANT — exatamente o que este teste mede.
     const cliente = new Pool({ connectionString: urlFor(DATABASE_URL, LOGIN[papel], SENHA), max: 1 });
     try {
-      for (const [schema, tabela] of [['public', 'device_types'], ['iam', 'permissions'], ['terminology', 'icd_entities']]) {
+      for (const [schema, tabela] of [['public', 'device_types'], ['iam', 'permissions'], ['terminology', 'icd_entities'], ['agentes', 'veredictos']]) {
         await expect(cliente.query(`SELECT 1 FROM ${schema}.${tabela} LIMIT 1`)).resolves.toBeDefined();
       }
     } finally {

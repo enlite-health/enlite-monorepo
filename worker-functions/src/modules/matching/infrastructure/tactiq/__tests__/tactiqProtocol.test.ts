@@ -17,7 +17,7 @@ import {
   readTactiqOAuthConfig,
   refreshBody,
 } from '../tactiqOAuthProtocol';
-import { classifyMcpFailure, parseMcpJson, pingVerdict } from '../tactiqMcpProtocol';
+import { classifyMcpFailure, parseMcpJson, parseMeetingSearch, pingVerdict } from '../tactiqMcpProtocol';
 
 const cfg = {
   mcpUrl: 'https://mcp.tactiq.example/mcp',
@@ -132,5 +132,26 @@ describe('MCP — leitura do resultado e classificação de falha', () => {
     expect(classifyMcpFailure(new Error('ECONNRESET rt-segredo')).message).not.toContain('segredo');
     const u = new TactiqUnauthorizedError();
     expect(classifyMcpFailure(u)).toBe(u);
+  });
+});
+
+describe('parseMeetingSearch — formato real do search_meetings do Tactiq', () => {
+  const item = { id: 'm1', title: 'ENC-ABC123 encuadre', createdAt: '2026-10-21T18:53:22.000Z', durationSeconds: 120, attendees: ['A'], url: 'https://x.test/m1' };
+
+  it('lê o envelope { results: [...] } e mapeia os campos', () => {
+    expect(parseMeetingSearch({ results: [item] })).toEqual([
+      { id: 'm1', title: 'ENC-ABC123 encuadre', createdAt: '2026-10-21T18:53:22.000Z', durationSeconds: 120 },
+    ]);
+  });
+
+  it('mantém compat com { meetings: [...] } e com array cru', () => {
+    expect(parseMeetingSearch({ meetings: [item] })).toHaveLength(1);
+    expect(parseMeetingSearch([item])).toHaveLength(1);
+  });
+
+  it('corpo vazio/ilegível/item incompleto → lista vazia', () => {
+    expect(parseMeetingSearch(null)).toEqual([]);
+    expect(parseMeetingSearch({ results: [] })).toEqual([]);
+    expect(parseMeetingSearch({ results: [{ id: 'x' }] })).toEqual([]);
   });
 });

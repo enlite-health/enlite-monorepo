@@ -52,7 +52,7 @@ const MOCK_VACANCY = {
   salary_text: 'A convenir',
   talentum_description:
     'Buscamos Acompanhantes Terapêuticos mulheres para acompanhar adultos com mais de 80 anos.',
-  talentum_whatsapp_url: 'https://wa.me/5491112345678',
+  can_apply: true,
   patient_zone: 'Buenos Aires, Comuna 10',
   country: 'Argentina',
   created_at: '2026-04-01T00:00:00Z',
@@ -134,6 +134,9 @@ async function mockVacancyNotFound(page: Page): Promise<void> {
   );
 }
 
+/** Spec 067 FR-16: o link da Talentum chega SÓ na resposta 200 do track-channel (nunca na rota pública). */
+const PRESCREENING_URL = 'https://wa.me/5491112345678';
+
 /**
  * Mocks POST /api/worker-applications/track-channel.
  * Pass status=403 + code='WORKER_NOT_ELIGIBLE' para simular worker inelegível;
@@ -149,7 +152,7 @@ async function mockTrackChannel(
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: null }),
+        body: JSON.stringify({ success: true, data: { prescreeningUrl: PRESCREENING_URL } }),
       });
     }
     return route.fulfill({
@@ -531,7 +534,7 @@ test.describe('PublicVacancyPage', () => {
 
     // Verificar que window.open foi chamado com a URL do WhatsApp
     const openedUrls = await page.evaluate<string[]>(() => (window as any).__openedUrls ?? []);
-    expect(openedUrls).toContain(MOCK_VACANCY.talentum_whatsapp_url);
+    expect(openedUrls).toContain(PRESCREENING_URL);
   });
 
   // ── Cenário 7: FAIL-CLOSED — erro não-elegível NÃO abre WhatsApp ───────────
@@ -589,7 +592,7 @@ test.describe('PublicVacancyPage', () => {
     // Prova dura: WhatsApp NÃO foi aberto
     await page.waitForTimeout(500);
     const openedUrls = await page.evaluate<string[]>(() => (window as any).__openedUrls ?? []);
-    expect(openedUrls).not.toContain(MOCK_VACANCY.talentum_whatsapp_url);
+    expect(openedUrls).not.toContain(PRESCREENING_URL);
     expect(openedUrls).toHaveLength(0);
 
     // Screenshot: modal de erro fail-closed

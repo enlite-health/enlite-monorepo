@@ -5,7 +5,7 @@ import {
   type PermissionGroupDetail,
   type PermissionHistoryEvent,
 } from '@infrastructure/http/AdminPermissionsApiService';
-import { Heading, Text, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Input, Label, Select } from '@presentation/components/atoms';
+import { Heading, Text, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Input, Label, Combobox } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { PanelErrorAlert, permissionCellLabel } from '@presentation/components/features/access';
@@ -101,22 +101,22 @@ function PermissionHistory(): JSX.Element {
       >
         <div className="w-56">
           <Label htmlFor="ph-group">{t('admin.access.history.group')}</Label>
-          <Select
+          <Combobox
             id="ph-group"
             inputSize="compact"
             options={opcoesGrupo}
             value={filtros.groupId}
-            onValueChange={(v) => setFiltros((f) => ({ ...f, groupId: v }))}
+            onChange={(v) => setFiltros((f) => ({ ...f, groupId: v }))}
           />
         </div>
         <div className="w-48">
           <Label htmlFor="ph-type">{t('admin.access.history.typeLabel')}</Label>
-          <Select
+          <Combobox
             id="ph-type"
             inputSize="compact"
             options={opcoesTipo}
             value={filtros.type}
-            onValueChange={(v) => setFiltros((f) => ({ ...f, type: v as TipoFiltro }))}
+            onChange={(v) => setFiltros((f) => ({ ...f, type: v as TipoFiltro }))}
           />
         </div>
         <div className="w-28">

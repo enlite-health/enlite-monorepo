@@ -8,6 +8,7 @@ import type { PatientContractedServiceDetail } from '@domain/entities/PatientDet
 import type { TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import { Text } from '@presentation/components/atoms/Text';
 import { formatIsoDateEsAr } from './pdf/therapeuticProjectPdfInput';
+import { sortAlphabeticallyEs } from './alphabeticalOrder';
 
 interface Props {
   version: TherapeuticProjectVersion;
@@ -27,11 +28,19 @@ function Row({ label, children, testId, mask = false }: { label: string; childre
   );
 }
 
-function ListValue({ items }: { items: { id: string; label: string }[] }): JSX.Element {
+/** Spec 061: item com título e, se houver, a descrição congelada na versão (segundo parágrafo, mais discreto). */
+function ListValue({ items, testPrefix }: { items: { id: string; label: string; description?: string | null }[]; testPrefix: string }): JSX.Element {
   if (items.length === 0) return <Text as="span" size="sm" color="muted">—</Text>;
   return (
     <ul className="list-disc pl-5">
-      {items.map((i) => <li key={i.id}><Text as="span" size="sm" color="primary">{i.label}</Text></li>)}
+      {items.map((i) => (
+        <li key={i.id}>
+          <Text as="span" size="sm" color="primary">{i.label}</Text>
+          {i.description && (
+            <Text size="xs" color="tertiary" className="mt-0.5 whitespace-pre-line" data-testid={`${testPrefix}-description-${i.id}`}>{i.description}</Text>
+          )}
+        </li>
+      ))}
     </ul>
   );
 }
@@ -105,7 +114,7 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
         <Row label={tc('cid')} testId="tpv-cid">
           {redacted || v.diagnoses === null
             ? <Text as="span" size="sm" color="muted">{tc('redacted')}</Text>
-            : <ListValue items={v.diagnoses.map((d) => ({ id: d.uri, label: d.title }))} />}
+            : <ListValue testPrefix="tpv-diagnoses" items={v.diagnoses.map((d) => ({ id: d.uri, label: d.title }))} />}
         </Row>
         {/* Spec 030: `redacted` (sem `patient_clinical:read`) ≠ `null` sem marcador (versão anterior à 496 → "—"). */}
         <Row label={tc('segment')} testId="tpv-segment" mask>
@@ -120,10 +129,10 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
         </Row>
         <Row label={tc('currentClinicalContext')} testId="tpv-clinical">{clinical(v.clinicalContext, 'tpv-clinical-text')}</Row>
         <Row label={tc('generalObjective')} testId="tpv-objective">{clinical(v.generalObjective, 'tpv-objective-text')}</Row>
-        <Row label={tc('specificObjectives')} testId="tpv-specific"><ListValue items={compact ? v.specificObjectives.slice(0, 3) : v.specificObjectives} /></Row>
+        <Row label={tc('specificObjectives')} testId="tpv-specific"><ListValue testPrefix="tpv-specific" items={compact ? v.specificObjectives.slice(0, 3) : v.specificObjectives} /></Row>
       </div>
       <div className="flex flex-col gap-4">
-        <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue items={compact ? v.activities.slice(0, 3) : v.activities} /></Row>
+        <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue testPrefix="tpv-activities" items={compact ? sortAlphabeticallyEs(v.activities).slice(0, 3) : sortAlphabeticallyEs(v.activities)} /></Row>
         {/* "Tipo de patología" não aparece na tela: é máscara derivada do CID-11 para o Ana Care (DEC-09) — sai só no PDF. */}
         {!compact && (
           <Row label={tc('contacts')} testId="tpv-contacts">

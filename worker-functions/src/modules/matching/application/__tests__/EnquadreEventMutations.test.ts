@@ -33,6 +33,8 @@ interface Script {
   activeSeq?: Array<Array<Record<string, unknown>>>;
   available?: Array<{ id: string; email: string | null }>;
   noEvent?: boolean;
+  /** Resposta de `fn_worker_is_apto` (spec 067). Padrão: apto. */
+  apto?: boolean;
 }
 
 const P = (n: string, stage: string | null = 'COMPLETED', over: Record<string, unknown> = {}) => ({
@@ -62,7 +64,8 @@ function build(script: Script, opts: { calendar?: AdmissionCalendarPort; now?: D
       return { rows: [] };
     }),
   };
-  const pool = { connect: jest.fn(async () => client), query: jest.fn(async () => ({ rows: [{ status: 'REGISTERED' }] })) };
+  const pool = { connect: jest.fn(async () => client), query: jest.fn(async (sql: string) =>
+      String(sql).includes('fn_worker_is_apto') ? { rows: [{ apto: script.apto ?? true }] } : { rows: [{ status: 'REGISTERED' }] }) };
   const calendar = opts.calendar ?? new FakeAdmissionCalendar();
   const readEvent = jest.fn(async () => ({ id: EVENT }) as never);
   const pubsub = { publish: jest.fn(async (_t: string, _m: unknown): Promise<string | null> => null) };
@@ -186,6 +189,26 @@ describe('moveParticipant', () => {
     await back.mutations.moveParticipant(VACANCY, EVENT, 'p-01', 'CONVOKED', undefined, ACTOR);
     expect(mockMove.mock.calls[0][1]).toMatchObject({ targetStage: 'COMPLETED' });
     expect(mockMove.mock.calls[0][2]).toEqual({ skipJumpReason: true, eventSource: 'enquadre' });
+  });
+
+  it.each(['CONVOKED', 'SELECTED', 'QUICK_RESPONSE_TEAM'] as const)(
+    '(067 FR-24) prestador NÃO apto → %s: 403 documents_not_validated, miolo não chamado, ROLLBACK',
+    async (column) => {
+      const t = build({ active: [P('01', column === 'CONVOKED' ? 'SELECTED' : 'COMPLETED')], apto: false });
+      await expect(t.mutations.moveParticipant(VACANCY, EVENT, 'p-01', column, undefined, ACTOR)).rejects.toMatchObject({
+        status: 403,
+        body: { success: false, code: 'WORKER_NOT_ELIGIBLE', reason: 'documents_not_validated' },
+      });
+      expect(mockMove).not.toHaveBeenCalled();
+      expectRolledBack(t);
+    },
+  );
+
+  it('(067 FR-24) REJECTED fica no limiar de hoje: o NÃO apto (REGISTERED) pode ser rejeitado', async () => {
+    mockMove.mockResolvedValue({ moved: true, previousStage: 'COMPLETED', eventId: 'stage-evt-2' });
+    const t = build({ active: [P('01')], apto: false });
+    await t.mutations.moveParticipant(VACANCY, EVENT, 'p-01', 'REJECTED', 'DISTANCE', ACTOR);
+    expect(mockMove.mock.calls[0][1]).toMatchObject({ targetStage: 'REJECTED' });
   });
 
   it('mesma coluna de origem e destino: no-op, sem miolo e sem erro', async () => {

@@ -3,6 +3,7 @@ import { render, fireEvent, act } from '@testing-library/react';
 import { GeneralInfoTab } from '../GeneralInfoTab';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { useWorkerRegistrationStore } from '@presentation/stores/workerRegistrationStore';
+import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 
 /**
  * A guarda do laço das 129 — a metade do conserto que NÃO tinha teste.
@@ -106,8 +107,8 @@ describe('telefone recusado pelo servidor continua sendo reenviado', () => {
     expect(primeiro, 'o 1º save tem de levar o telefone').toHaveProperty('phone');
 
     // O servidor respondeu SEM telefone: não persistiu. Ela mexe noutro campo.
-    const select = container.querySelector('select#profession') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: 'CAREGIVER' } });
+    const select = container.querySelector('button#profession') as HTMLElement;
+    chooseCombo(select, 'Cuidador(a)'); // CAREGIVER
     await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
 
     const segundo = mockSave.mock.calls[mockSave.mock.calls.length - 1]?.[0];
@@ -135,8 +136,8 @@ describe('telefone recusado pelo servidor continua sendo reenviado', () => {
     fireEvent.blur(container.querySelector('form')!);
     await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
 
-    const select = container.querySelector('select#profession') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: 'CAREGIVER' } });
+    const select = container.querySelector('button#profession') as HTMLElement;
+    chooseCombo(select, 'Cuidador(a)'); // CAREGIVER
     await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
 
     const segundo = mockSave.mock.calls[mockSave.mock.calls.length - 1]?.[0];

@@ -90,6 +90,10 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: '/admission-ar', surface: 'public', tier: 'smoke' },
   { route: '/admission-br', surface: 'public', tier: 'smoke' },
   { route: '/admin/dedup', surface: 'admin', tier: 'regression' },
+  // Obras sociales (spec 058 Parte A): lista e detalhe (dados gerais, empregados, contratos, pacientes) — telas novas, entram no
+  // denominador junto com o código que as cria (regra do arquivo: rota nova do app ENTRA aqui, senão fica invisível ao gate).
+  { route: '/admin/obras-sociales', surface: 'admin', tier: 'regression' },
+  { route: '/admin/obras-sociales/:code', surface: 'admin', tier: 'regression' },
 
   // ───────────────────────── FRONTEND · excluídas ──────────────────────────
   {
@@ -140,9 +144,6 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   // entra agora porque o `kanban-staff` também a cobre.
   { route: 'GET /api/admin/vacancies/:vacancyId/workers/:workerId/delivery-status', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/workers/:workerId/presentation-invite', surface: 'api', tier: 'regression' },
-  // Slot recorrente da vaga (mig 291). Rota própria porque `PUT /vacancies/:id` NÃO aceita
-  // campos `meet_*` — não estão na whitelist (medido 30/08).
-  { route: 'PUT /api/admin/vacancies/:id/meet-links', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/workers/map', surface: 'api', tier: 'regression' },
   { route: 'PUT /api/admin/patients/:id/status', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/patients/:id/activate', surface: 'api', tier: 'regression' },

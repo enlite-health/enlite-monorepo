@@ -3,6 +3,10 @@ import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 import { resolveZoneKey, UNRESOLVED_ZONE_KEY } from '@shared/utils/zoneKey';
+import {
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveRequiredProfessionsSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 import { OPEN_JOB_STATUSES_SET } from '../domain/openJobStatuses';
 import {
   zoneAnalyticsSchema,
@@ -48,11 +52,12 @@ const PATIENT_DEMAND_SQL = `
     pa.city       AS city,
     jp.status     AS status
   FROM job_postings jp
+  ${vacancyEffectiveJoinSql('jp')}
   LEFT JOIN patient_addresses pa ON pa.id = jp.patient_address_id
   WHERE jp.deleted_at IS NULL
     AND jp.is_draft = false
     AND jp.is_test = false
-    AND ($1::text IS NULL OR $1 = ANY(jp.required_professions))
+    AND ($1::text IS NULL OR $1 = ANY(${vacancyEffectiveRequiredProfessionsSql('jp')}))
 `;
 
 const WORKER_ZONE_SQL = `

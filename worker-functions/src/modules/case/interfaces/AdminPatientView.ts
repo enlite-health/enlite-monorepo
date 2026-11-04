@@ -1,10 +1,11 @@
 import { projectPatientClinicalForActor } from '../application/patientClinicalAccess';
-import { projectContractedServiceForActor, type HourlyValueActor } from '../application/contractedServiceHourlyValueAccess';
+import { projectContractedServiceForActor, type HourlyValueActor, type ProjectableService } from '../application/contractedServiceHourlyValueAccess';
 import {
   projectCompletenessByContainers,
   projectPatientDetailByContainers,
   projectPatientListItemByContainers,
 } from '../application/patientContainerAccess';
+import { deriveCurrentCoverage, deriveEntryDate, type SummarizableService } from '../application/patientCoverageSummary';
 import { computePatientCompleteness, type PatientCompletenessResult } from '../domain/PatientCompleteness';
 import type { PatientListRow } from '../infrastructure/PatientQueryRows';
 
@@ -17,7 +18,7 @@ import type { PatientListRow } from '../infrastructure/PatientQueryRows';
  * `@modules/diagnosis/interfaces/DiagnosisPublicView`: um lugar só decide o formato público.
  *
  * Nada de comportamento mudou de lugar: mesmos campos, mesmos defaults, mesma ordem, mesmo
- * ponto ÚNICO de redação do texto clínico (D211.2) e do `hourlyValue` (lex C-c.4). O que NÃO
+ * ponto ÚNICO de redação do texto clínico (D211.2) e do preço do serviço (lex C-c.4). O que NÃO
  * está aqui, de propósito: as trilhas de leitura (`patient_clinical.read`,
  * `patient_lead_contact.read`), que dependem do `req` e continuam no controller.
  */
@@ -78,9 +79,9 @@ function toAdminPatientListItemRaw(row: PatientListRow) {
 /**
  * A ficha, com as TRÊS redações aplicadas na MESMA passada (`lex` C1: projeção única):
  *   - texto clínico restrito → ponto único (D211.2), por célula;
- *   - `hourlyValue` de cada serviço contratado → célula `patient_contract_value:read` (lex C-c.4;
+ *   - o `price` de cada serviço contratado → célula `patient_contract_value:read` (lex C-c.4;
  *     papel `admin` só enquanto o engine não decide), campo por campo — mantém portão PRÓPRIO,
- *     nunca embutido em `patient_services:read` (`lex` C6);
+ *     nunca embutido em `patient_services:read` (`lex` C6); `payer.names`/`coverageMatch` → container `coverage` (spec 058 §0);
  *   - cada CONTAINER (identidade, clínica, familiares, chat, cobertura, endereço, serviços,
  *     equipe) → por célula própria (D286), com marcador constante `redacted.<container>`.
  */
@@ -94,10 +95,18 @@ export function projectAdminPatientDetail(
   const withServices = Array.isArray(rawServices)
     ? {
         ...clinicalProjected,
-        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null; liveVacancy: unknown }, actor)),
+        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as ProjectableService, actor)),
       }
     : clinicalProjected;
-  return projectPatientDetailByContainers(withServices, cells);
+  // Spec 064: derivados SOBRE o array já projetado para o ator (nunca o cru) — quem não lê o
+  // container `coverage` não ganha o nome da obra social por esta porta. Os dois campos pertencem
+  // ao container `services` (DETAIL_FIELDS) e viram null sem a célula.
+  const services = (withServices as { contractedServices?: unknown }).contractedServices;
+  const summarizable = Array.isArray(services) ? (services as SummarizableService[]) : null;
+  return projectPatientDetailByContainers(
+    { ...withServices, currentCoverage: deriveCurrentCoverage(summarizable), entryDate: deriveEntryDate(summarizable) },
+    cells,
+  );
 }
 
 /**
@@ -113,6 +122,8 @@ export function patientDetailCompleteness(patient: unknown, cells?: readonly str
 function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResult {
   const detail = patient as {
     birthDate: string | Date | null;
+    status?: string | null;
+    activeDiagnosisCount?: number;
     hasConsent: boolean | null;
     insuranceInformed: string | null;
     addresses?: Array<{ id: string }>;
@@ -147,5 +158,9 @@ function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResu
     activeContractedServicesWithoutScheduleCount: activeServices.filter(
       (s) => !Array.isArray(s.schedule) || s.schedule.length === 0,
     ).length,
+    status: detail.status ?? null,
+    // Contagem de diagnósticos ativos lida no SQL do detalhe (nunca o valor). Ausente = 0 → em ADMISSION acusa DIAGNOSIS,
+    // o lado seguro (a trava continua valendo); o loader do writer recalcula do banco de qualquer jeito.
+    activeDiagnosisCount: Number(detail.activeDiagnosisCount ?? 0),
   });
 }

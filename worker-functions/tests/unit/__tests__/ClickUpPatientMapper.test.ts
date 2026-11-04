@@ -11,8 +11,8 @@
  *
  * Coverage plan:
  *   (a) Full task: all new fields present → output populated from location address_components
- *   (b) healthInsuranceName absent → null in output
- *   (c) healthInsuranceMemberId absent → null in output
+ *   (b) insuranceInformed absent → null in output
+ *   (c) affiliateId absent → null in output
  *   (d) Domicilio 1 location with address_components → slot 1 state extracted from component
  *   (e) Domicilio 1 has no components → slot 1 falls back to Provincia patient field (formatted segment)
  *   (e2) Domicilio 1 has no components, Provincia/Ciudad patient fields populated → both fallback applied
@@ -28,8 +28,8 @@
  *   (o) Responsibles built correctly (single responsible)
  *   (p) No addresses filled → empty addresses array
  *   (q) 3 address slots: slot 2/3 do NOT fallback to legacy patient-level fields
- *   (r) healthInsuranceName with whitespace → trimmed
- *   (s) healthInsuranceMemberId empty string → null
+ *   (r) insuranceInformed with whitespace → trimmed
+ *   (s) affiliateId empty string → null
  *   (t) REGRESSION 429-948: Domicilio 1 location updated but legacy Zona/Ciudad/Provincia stale
  *       → slot uses fresh location values (NOT stale legacy)
  */
@@ -140,8 +140,8 @@ describe('ClickUpPatientMapper', () => {
     const result = mapper.map(task);
 
     expect(result).not.toBeNull();
-    expect(result!.healthInsuranceName).toBe('OSDE 210');
-    expect(result!.healthInsuranceMemberId).toBe('1234567890');
+    expect(result!.insuranceInformed).toBe('OSDE 210');
+    expect(result!.affiliateId).toBe('1234567890');
 
     // Address populated on primary slot — from location's address_components,
     // NOT from the stale patient-level legacy fields.
@@ -153,9 +153,9 @@ describe('ClickUpPatientMapper', () => {
     expect(result!.addresses![0].neighborhood).toBe('Palermo Soho');
   });
 
-  // ── (b) healthInsuranceName absent ────────────────────────────────────────
+  // ── (b) insuranceInformed absent ────────────────────────────────────────
 
-  it('(b) "Cobertura Informada" absent → healthInsuranceName null', () => {
+  it('(b) "Cobertura Informada" absent → insuranceInformed null', () => {
     const task = makeTask('task-b', 'García, Ana', 'Activo', [
       { name: 'Nombre de Paciente', value: 'Ana' },
       { name: 'Apellido del Paciente', value: 'García' },
@@ -165,13 +165,13 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result).not.toBeNull();
-    expect(result!.healthInsuranceName).toBeNull();
-    expect(result!.healthInsuranceMemberId).toBe('999');
+    expect(result!.insuranceInformed).toBeNull();
+    expect(result!.affiliateId).toBe('999');
   });
 
-  // ── (c) healthInsuranceMemberId absent ────────────────────────────────────
+  // ── (c) affiliateId absent ────────────────────────────────────
 
-  it('(c) "Número ID Afiliado Paciente" absent → healthInsuranceMemberId null', () => {
+  it('(c) "Número ID Afiliado Paciente" absent → affiliateId null', () => {
     const task = makeTask('task-c', 'López, Pedro', 'Activo', [
       { name: 'Nombre de Paciente', value: 'Pedro' },
       { name: 'Apellido del Paciente', value: 'López' },
@@ -181,8 +181,8 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result).not.toBeNull();
-    expect(result!.healthInsuranceName).toBe('Swiss Medical');
-    expect(result!.healthInsuranceMemberId).toBeNull();
+    expect(result!.insuranceInformed).toBe('Swiss Medical');
+    expect(result!.affiliateId).toBeNull();
   });
 
   // ── (d) Slot 1 location with address_components → state from component ─────
@@ -535,7 +535,7 @@ describe('ClickUpPatientMapper', () => {
     expect(result!.addresses![2].neighborhood).toBeUndefined();
   });
 
-  // ── (r) healthInsuranceName with whitespace → trimmed ─────────────────────
+  // ── (r) insuranceInformed with whitespace → trimmed ─────────────────────
 
   it('(r) "Cobertura Informada" with surrounding whitespace → trimmed', () => {
     const task = makeTask('task-r', 'Reyes, Omar', 'Activo', [
@@ -545,10 +545,10 @@ describe('ClickUpPatientMapper', () => {
     ]);
 
     const result = mapper.map(task);
-    expect(result!.healthInsuranceName).toBe('IOMA');
+    expect(result!.insuranceInformed).toBe('IOMA');
   });
 
-  // ── (s) healthInsuranceMemberId empty string → null ───────────────────────
+  // ── (s) affiliateId empty string → null ───────────────────────
 
   it('(s) "Número ID Afiliado Paciente" empty string → null', () => {
     const task = makeTask('task-s', 'Herrera, Paula', 'Activo', [
@@ -558,7 +558,33 @@ describe('ClickUpPatientMapper', () => {
     ]);
 
     const result = mapper.map(task);
-    expect(result!.healthInsuranceMemberId).toBeNull();
+    expect(result!.affiliateId).toBeNull();
+  });
+
+  // ── Spec 058 T073: o literal "null" que o ClickUp devolve para campo vazio vira null ──
+  it('literal null — "Cobertura Informada" e "Número ID Afiliado" com o texto "null" (qualquer caixa) ou vazio → null; valor real passa', () => {
+    const rodada = (cobertura: unknown, afiliado: unknown) => mapper.map(makeTask('task-ln', 'Lopes, Rita', 'Activo', [
+      { name: 'Nombre de Paciente', value: 'Rita' },
+      { name: 'Apellido del Paciente', value: 'Lopes' },
+      { name: 'Cobertura Informada', value: cobertura },
+      { name: 'Número ID Afiliado Paciente', value: afiliado },
+    ]))!;
+    for (const lixo of ['null', 'NULL', ' Null ', '', '   ']) {
+      const r = rodada(lixo, lixo);
+      expect(r.insuranceInformed).toBeNull();
+      expect(r.affiliateId).toBeNull();
+    }
+    const real = rodada('OSDE 210', 'AF-77');
+    expect(real.insuranceInformed).toBe('OSDE 210');
+    expect(real.affiliateId).toBe('AF-77');
+    // não é prefixo/substring: "nullable" e "Null Care" são texto real
+    expect(rodada('Null Care', 'nullable').insuranceInformed).toBe('Null Care');
+    expect(rodada('Null Care', 'nullable').affiliateId).toBe('nullable');
+    // o mapper não emite mais as chaves legadas
+    expect(real).not.toHaveProperty('healthInsuranceName');
+    expect(real).not.toHaveProperty('healthInsuranceMemberId');
+    expect(real).not.toHaveProperty('insuranceVerified');
+    expect(real).not.toHaveProperty('insuranceVerifiedReadable');
   });
 
   // ── Additional: invalid location value (not an object) ────────────────────
@@ -920,8 +946,8 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     expect(result.hasJudicialProtection).toBe(false);
 
     // Health insurance
-    expect(result.healthInsuranceName).toBe('OSPICHA');
-    expect(result.healthInsuranceMemberId).toBe('12345678');
+    expect(result.insuranceInformed).toBe('OSPICHA');
+    expect(result.affiliateId).toBe('12345678');
 
     // Responsibles
     expect(result.responsibles).toHaveLength(1);
@@ -971,7 +997,7 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
      * will be non-empty and the test fails — forcing the author to update both.
      *
      * Keys intentionally NOT listed (optional fields the mapper never sets):
-     *   affiliateId, insuranceInformed, insuranceVerified, cityLocality, province,
+     *   cityLocality, province,
      *   zoneNeighborhood, needsAttention, attentionReasons, clinicalSegments, deviceType
      */
     const MAPPER_OUTPUT_KEYS = [
@@ -996,12 +1022,10 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       // coisas e apagava `'ASD'` de paciente real. Ver `PatientClinicalRepository`.
       'clinicalSpecialtyReadable',
       // Task 3.2/3.3 — `Cobertura Verificada`, que o mapper nunca leu (F7): 345 de 349
-      // pacientes têm cobertura no ClickUp e o banco tinha ZERO. O escalar continua sendo
-      // escrito (o 1º rótulo, para quem já lê a coluna antiga); a LISTA vai para a tabela
-      // `patient_insurance_verified`; e `Readable` carrega a mesma distinção da D167 — vazio
-      // legítimo grava, "não consegui ler" não toca em nada.
-      'insuranceVerified',
-      'insuranceVerifiedReadable',
+      // pacientes têm cobertura no ClickUp e o banco tinha ZERO. Spec 058: o escalar
+      // `insuranceVerified` (e a bandeira) SAIU; a LISTA vai para a tabela
+      // `patient_insurance_verified` e carrega a distinção da D167 — vazio legítimo grava,
+      // "não consegui ler" não toca em nada.
       'insuranceVerifiedLabels',
       // Task 4.2 — o Tipo de Dispositivo múltiplo. NÃO há `deviceType` escalar irmão aqui,
       // diferente da cobertura: `patients.device_type` é derivado por trigger (migration 310),
@@ -1009,7 +1033,7 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       'deviceTypeLabels',
       'serviceType', 'serviceTypeReadable', 'additionalComments',
       'hasCud', 'hasConsent', 'hasJudicialProtection',
-      'healthInsuranceName', 'healthInsuranceMemberId',
+      'insuranceInformed', 'affiliateId',
       'responsibles', 'addresses', 'professionals',
     ].sort();
 

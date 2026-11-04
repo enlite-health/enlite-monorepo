@@ -15,6 +15,7 @@
  */
 import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo } from '../helpers/combobox';
 
 const DB_URL = process.env.PR5_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5566/enlite_e2e';
 const TENANT = '00000000-0000-0000-0000-000000000001';
@@ -168,9 +169,8 @@ test.describe('Equipe tratante — Nuevo/lápis/desativar por LINHA (spec 018, P
     await page.getByTestId('professional-phone').click();
     await page.keyboard.type('+54 11 5555-9001');
 
-    // <select> nativo — selectOption é a interação real de um <select> (não input de texto:
-    // a régua de "nunca fill() onde a pessoa digita" vale para TEXTO, não para escolha em lista).
-    await page.getByTestId('professional-specialty').selectOption({ label: 'Kinesiólogo/a' });
+    // Combobox (spec 070): abre o gatilho, busca e clica a opção pelo rótulo que a pessoa lê.
+    await escolherNoCombo(page, page.getByTestId('professional-specialty'), 'Kinesiólogo/a');
 
     await page.getByTestId('professional-save').click();
     await expect(page.getByTestId('professional-edit-drawer')).toHaveCount(0, { timeout: 10_000 });

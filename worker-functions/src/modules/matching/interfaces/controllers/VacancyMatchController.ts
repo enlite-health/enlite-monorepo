@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { sendVacancyDeBajaReadOnly } from './vacancyDeBajaGuard';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
@@ -34,12 +35,17 @@ export class VacancyMatchController {
       const radiusKm               = req.query.radius_km ? parseInt(req.query.radius_km as string) : undefined;
       const excludeWithActiveCases = req.query.exclude_active === 'true';
 
-      const jobRes = await this.db.query<{ id: string }>(
-        `SELECT id FROM job_postings WHERE id = $1 LIMIT 1`,
+      const jobRes = await this.db.query<{ id: string; status: string | null }>(
+        `SELECT id, status FROM job_postings WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
         [id],
       );
       if (jobRes.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Job posting not found' });
+        return;
+      }
+      // Spec 084 (P4/R6): o Match não roda em vaga dada de baja — o recrutamento não trabalha vaga sem serviço contratado.
+      if (jobRes.rows[0].status === 'DE_BAJA') {
+        sendVacancyDeBajaReadOnly(res);
         return;
       }
 

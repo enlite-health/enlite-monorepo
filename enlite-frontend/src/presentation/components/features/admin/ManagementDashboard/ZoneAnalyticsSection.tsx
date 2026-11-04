@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { MapPin, AlertTriangle, Info, HelpCircle } from 'lucide-react';
 import {
   Text,
-  Select,
-  type SelectOption,
+  Combobox,
+  type ComboboxOption,
   Table,
   TableHeader,
   TableBody,
@@ -40,7 +40,7 @@ export function ZoneAnalyticsSection(): JSX.Element {
   const [profession, setProfession] = useState<WorkerProfession | undefined>(undefined);
   const { data, isLoading, error, refetch } = useZoneAnalytics(profession);
 
-  const professionOptions: SelectOption[] = WORKER_PROFESSIONS.map((value) => ({
+  const professionOptions: ComboboxOption[] = WORKER_PROFESSIONS.map((value) => ({
     value,
     label: t(`${PROFESSION_LABEL_KEY}.${value}`, value),
   }));
@@ -74,12 +74,12 @@ export function ZoneAnalyticsSection(): JSX.Element {
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t(`${P}filterLabel`)}
           </Text>
-          <Select
+          <Combobox
             inputSize="compact"
             options={professionOptions}
             value={profession ?? ''}
             placeholder={t(`${P}filterAll`)}
-            onValueChange={(v) => setProfession(v ? (v as WorkerProfession) : undefined)}
+            onChange={(v) => setProfession(v ? (v as WorkerProfession) : undefined)}
           />
         </div>
         <button

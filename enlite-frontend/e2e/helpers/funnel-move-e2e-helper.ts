@@ -25,6 +25,7 @@
  *      (`isMatchedNotInvited`, `WF/domain/kanbanColumn.ts:42-48`).
  */
 import type { APIRequestContext, Page } from '@playwright/test';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from './eligibility-worker-helper';
 import {
   insertTestPatient,
   insertBaseVacancy,
@@ -42,6 +43,11 @@ export interface SeedCardSpec {
   stage: string;
   /** worker_job_applications.source — default 'system' (o mesmo default de insertWJA). */
   source?: 'manual' | 'system';
+  /**
+   * Prestador APTO (documentos validados). Default: sim para as etapas que só recebem apto (Completado, Seleccionados, Equipo
+   * de Respuesta Rápida — spec 067 FR-24); quem precisa arrastar um card de outra etapa (ex.: INVITED) a Seleccionados/ERR passa `true`.
+   */
+  apto?: boolean;
 }
 
 export interface SeedVacancyCard {
@@ -103,11 +109,15 @@ export function seedVacancyWithCards(
     runSQL(`UPDATE job_postings SET providers_needed = ${providersNeeded} WHERE id = '${vacancyId}'`);
   }
 
-  const cards: SeedVacancyCard[] = stages.map(({ stage, source = 'system' }, idx) => {
-    const workerId = insertTestWorker({
-      firstName: `FunnelMove${stage}`,
-      lastName: `E2E${Date.now()}-${idx}`,
-    });
+  const cards: SeedVacancyCard[] = stages.map(({ stage, source = 'system', apto }, idx) => {
+    // spec 067: a coluna Completado só recebe prestador APTO — quem semeia card em etapa de Completado quer "apto" (a intenção do
+    // teste); os demais seguem com o prestador simples de sempre.
+    const workerId = (apto ?? ['COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'QUICK_RESPONSE_TEAM'].includes(stage))
+      ? insertAptoWorker({ docs: 'validated' }).workerId
+      : insertTestWorker({
+          firstName: `FunnelMove${stage}`,
+          lastName: `E2E${Date.now()}-${idx}`,
+        });
     const wjaId = insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: stage, source });
     // insertWJA não expõe messaged_at — sem isso, INVITED/system fica "matched not
     // invited" e some da coluna Invitados (isMatchedNotInvited, kanbanColumn.ts:42-48).
@@ -120,6 +130,7 @@ export function seedVacancyWithCards(
     for (const card of cards) {
       try {
         cleanupWJAAndEncuadre(card.workerId, vacancyId);
+        cleanupEligibilityWorkerChildren(card.workerId);
         cleanupTestWorker(card.workerId);
       } catch (err) {
         console.error('[cleanup] card falhou (seguindo)', err);

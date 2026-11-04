@@ -22,6 +22,24 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   },
 }));
 
+// DX-8.9/8.16: o agregado do subcard do Kanban, buscado EM PARALELO com a listagem. Default
+// `{ patients: [] }` — sem ele, o hook chamaria `fetch` real (nenhum dos 9 testes acima do agregado
+// precisa saber disso).
+const listKanbanServices = vi.fn();
+vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
+  AdminContractedServicesApiService: {
+    listKanbanServices: (...a: unknown[]) => listKanbanServices(...a),
+  },
+  ContractedServiceApiError: class ContractedServiceApiError extends Error {
+    readonly status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'ContractedServiceApiError';
+      this.status = status;
+    }
+  },
+}));
+
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import {
   usePatientKanban,
@@ -29,6 +47,8 @@ import {
   KANBAN_ACTIVATION_MOVED_TO_SERVICE,
   type PatientKanbanMoveError,
 } from '../usePatientKanban';
+import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
+import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
 
 const item = (id: string, admissionStatus: string, status: string) => ({
   id, firstName: 'P', lastName: id, caseNumber: null, dependencyLevel: null, status, admissionStatus, responsibleName: null,
@@ -44,6 +64,7 @@ describe('usePatientKanban — patients.status', () => {
       item('e', 'DONE', 'DISCHARGED'),     // alta definitiva → coluna DISCHARGED, nunca ACTIVE (1.6)
     ]);
     updatePatientStatus.mockReset().mockResolvedValue({ id: 'x', status: 'ACTIVE' });
+    listKanbanServices.mockReset().mockResolvedValue({ patients: [] });
     // A lista do SERVIDOR (spec 051): por padrão oferece todas as colunas, para os testes de PUT/rollback.
     getPatientStatusOptions.mockReset().mockResolvedValue({
       current: 'ACTIVE',
@@ -204,6 +225,80 @@ describe('usePatientKanban — patients.status', () => {
     const allIds = PATIENT_KANBAN_STATUSES.flatMap((key) => result.current.groups[key].map((p) => p.id));
     expect(allIds).toEqual(['a']);
   });
+
+  // DX-8.9: a listagem e o agregado saem no MESMO tick (Promise.allSettled dispara as duas
+  // chamadas antes de qualquer await resolver) — nunca uma chamada por card/coluna.
+  it('busca listagem e agregado em paralelo, uma vez cada, com o mesmo country', async () => {
+    const { result } = renderHook(() => usePatientKanban('BR'));
+    expect(listPatientsForKanban).toHaveBeenCalledTimes(1);
+    expect(listKanbanServices).toHaveBeenCalledTimes(1);
+    expect(listPatientsForKanban).toHaveBeenCalledWith('BR');
+    expect(listKanbanServices).toHaveBeenCalledWith('BR');
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+  });
+
+  // DX-8.9: casamento por patientId — 2 pacientes, um deles com 2 serviços; quem não está no
+  // agregado (ou o agregado não trouxe) recebe `[]`, nunca `undefined`, quando servicesStatus é 'ok'.
+  it('casa os serviços do agregado por patientId; paciente com 2 serviços mostra os 2, os demais ficam com []', async () => {
+    const svcA1: PatientKanbanServiceSummary = {
+      contractedServiceId: 's1', serviceCode: 'AT', scheduleHours: 20, cobertas: 4, reserve: null, liveVacancyId: null,
+    };
+    const svcA2: PatientKanbanServiceSummary = {
+      contractedServiceId: 's2', serviceCode: 'ENF', scheduleHours: 10, cobertas: 0, reserve: null, liveVacancyId: 'v1',
+    };
+    listKanbanServices.mockResolvedValueOnce({
+      patients: [{ patientId: 'a', asOf: '2026-09-27', services: [svcA1, svcA2] }],
+    });
+    const { result } = renderHook(() => usePatientKanban('AR'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.servicesStatus).toBe('ok');
+    const a = result.current.groups.ADMISSION.find((p) => p.id === 'a');
+    const d = result.current.groups.ADMISSION.find((p) => p.id === 'd');
+    expect(a?.services).toEqual([svcA1, svcA2]);
+    expect(d?.services).toEqual([]);
+  });
+
+  // DX-8.9: 403 — o ator não tem `patient_services:read`. Silencioso: sem subcard, sem aviso.
+  it('agregado 403 → servicesStatus "forbidden", nenhum item ganha `services`', async () => {
+    listKanbanServices.mockReset().mockRejectedValueOnce(new ContractedServiceApiError('Forbidden', 403));
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.servicesStatus).toBe('forbidden');
+    expect(result.current.error).toBeNull();
+    for (const key of PATIENT_KANBAN_STATUSES) {
+      for (const p of result.current.groups[key]) expect(p.services).toBeUndefined();
+    }
+  });
+
+  // DX-8.9: qualquer OUTRA falha do agregado (500, rede) → servicesStatus "error"; o board
+  // continua renderizando (a página, não o hook, mostra o aviso — P13).
+  it('agregado com outra falha (500) → servicesStatus "error", sem derrubar a página', async () => {
+    listKanbanServices.mockReset().mockRejectedValueOnce(new ContractedServiceApiError('Internal error', 500));
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.servicesStatus).toBe('error');
+    expect(result.current.error).toBeNull();
+    expect(result.current.groups.ADMISSION.map((p) => p.id)).toEqual(['a', 'd']);
+  });
+
+  // DX-8.9: o `moveStatus` otimista já copia o item inteiro (`{ ...card, status }`) — o subcard
+  // anda com o card sem refetch do agregado.
+  it('moveStatus otimista preserva os `services` do card movido', async () => {
+    const svc: PatientKanbanServiceSummary = {
+      contractedServiceId: 's1', serviceCode: 'AT', scheduleHours: 20, cobertas: 4, reserve: null, liveVacancyId: null,
+    };
+    listKanbanServices.mockReset().mockResolvedValueOnce({
+      patients: [{ patientId: 'a', asOf: '2026-09-27', services: [svc] }],
+    });
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const before = result.current.groups.ADMISSION.find((p) => p.id === 'a');
+    expect(before?.services).toEqual([svc]);
+    await act(async () => { await result.current.moveStatus('a', 'SEARCHING'); });
+    const moved = result.current.groups.SEARCHING.find((p) => p.id === 'a');
+    expect(moved?.services).toEqual([svc]);
+  });
+
   // ── Spec 051: o arrasto usa a MESMA lista do servidor que o select da ficha ──────────────────────
   describe('lista de destinos do servidor (GET status-options)', () => {
     it('lê a lista UMA vez por arrasto, do card arrastado, antes de qualquer PUT', async () => {
@@ -255,6 +350,17 @@ describe('usePatientKanban — patients.status', () => {
       let err: PatientKanbanMoveError | null = null;
       await act(async () => { err = await result.current.moveStatus('c', 'SEARCHING'); });
       expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'], to: 'SEARCHING' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
+    it('destino com blockedBy ACTIVE_ALLOCATION → recusa LOCKED_BY_ALLOCATION (não a de completude), sem PUT e sem mover o card (D489/D530)', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'ACTIVE', options: [{ status: 'ON_HOLD', via: 'fluxo', blockedBy: ['ACTIVE_ALLOCATION'] }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(err).toEqual({ code: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION', to: 'ON_HOLD' });
       expect(updatePatientStatus).not.toHaveBeenCalled();
       expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
     });

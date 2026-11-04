@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { SearchableSelect, type SearchableSelectOption } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
+import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 export interface TimeRangeFilterProps {
   from: string;
@@ -10,8 +10,8 @@ export interface TimeRangeFilterProps {
 }
 
 /** Generates HH:MM options from 00:00 to 23:30 in 30-minute steps. */
-function generateTimeOptions(): SearchableSelectOption[] {
-  const options: SearchableSelectOption[] = [];
+function generateTimeOptions(): ComboboxOption[] {
+  const options: ComboboxOption[] = [];
   for (let h = 0; h < 24; h++) {
     for (const m of [0, 30]) {
       const label = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -21,7 +21,7 @@ function generateTimeOptions(): SearchableSelectOption[] {
   return options;
 }
 
-const TIME_OPTIONS: SearchableSelectOption[] = generateTimeOptions();
+const TIME_OPTIONS: ComboboxOption[] = generateTimeOptions();
 
 export function TimeRangeFilter({
   from,
@@ -39,12 +39,12 @@ export function TimeRangeFilter({
       <div className="flex items-center gap-2">
         <div className="flex-1">
           {/* 48 horários: combobox com busca ("14" filtra) — REQ-06 */}
-          <SearchableSelect
+          <Combobox
             inputSize="compact"
             options={TIME_OPTIONS}
             value={from}
             onChange={onFromChange}
-            placeholder={t('admin.vacancies.filters.time.from')}
+            placeholder={t('admin.vacancies.filters.time.from')} clearLabel={t('admin.vacancies.filters.time.from')}
             searchPlaceholder={t('common.search', 'Buscar...')}
             data-testid="time-from"
           />
@@ -53,12 +53,12 @@ export function TimeRangeFilter({
           –
         </Text>
         <div className="flex-1">
-          <SearchableSelect
+          <Combobox
             inputSize="compact"
             options={TIME_OPTIONS}
             value={to}
             onChange={onToChange}
-            placeholder={t('admin.vacancies.filters.time.to')}
+            placeholder={t('admin.vacancies.filters.time.to')} clearLabel={t('admin.vacancies.filters.time.to')}
             searchPlaceholder={t('common.search', 'Buscar...')}
             data-testid="time-to"
           />

@@ -14,6 +14,7 @@ export * from './infrastructure/EncuadreMappers';
 export { TalentumPrescreeningRepository } from './infrastructure/TalentumPrescreeningRepository';
 export { WorkerApplicationRepository } from './infrastructure/WorkerApplicationRepository';
 export { JobPostingARRepository } from './infrastructure/JobPostingARRepository';
+export { JobPostingLookup } from './infrastructure/JobPostingLookup';
 export { MatchmakingService } from './infrastructure/MatchmakingService';
 export { GoogleCalendarService, googleCalendarService } from './infrastructure/GoogleCalendarService';
 export { BlockedApplicationRepository } from './infrastructure/BlockedApplicationRepository';
@@ -45,7 +46,6 @@ export { WJAFunnelTableController } from './interfaces/controllers/WJAFunnelTabl
 export { EncuadreDashboardController } from './interfaces/controllers/EncuadreDashboardController';
 export { VacanciesController } from './interfaces/controllers/VacanciesController';
 export { VacancyMatchController } from './interfaces/controllers/VacancyMatchController';
-export { VacancyMeetLinksController } from './interfaces/controllers/VacancyMeetLinksController';
 export { VacancyTalentumController } from './interfaces/controllers/VacancyTalentumController';
 export { TalentumWebhookController } from './interfaces/controllers/TalentumWebhookController';
 export { AnalyticsController } from './interfaces/controllers/AnalyticsController';
@@ -60,8 +60,6 @@ export {
   buildInsertQuery,
   buildInsertParams,
   CANONICAL_STATUSES,
-  isCaseOrdinalConflict,
-  retryOnCaseOrdinalConflict,
   SOURCE_LOCKED_FIELDS,
   pickSourceLockedFields,
 } from './interfaces/controllers/vacancyCrudHelpers';

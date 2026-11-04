@@ -87,7 +87,6 @@ describe('PatientRepository @repo (Postgres real, upsertFromClickUp + replaceAdd
         hasCud: true,
         hasConsent: true,
         insuranceInformed: 'OSDE',
-        insuranceVerified: 'OSDE-verificado',
         cityLocality: 'CABA',
         province: 'Buenos Aires',
         zoneNeighborhood: 'Palermo',
@@ -155,6 +154,17 @@ describe('PatientRepository @repo (Postgres real, upsertFromClickUp + replaceAdd
       expect(rows[0].first_name).toBeNull();
       // country default (AR) quando omitido no `data`
       expect(rows[0].country).toBe('AR');
+    });
+
+    it('spec 058 — insurance_informed e affiliate_id são FILL-ONLY no sync: o valor já gravado NÃO é sobrescrito, e o vazio é preenchido', async () => {
+      const repo = new PatientRepository(makeGeocoder());
+      const first = await repo.upsertFromClickUp({ clickupTaskId: 'repo-test-fill-only', insuranceInformed: 'OSDE 210', affiliateId: null });
+      await repo.upsertFromClickUp({ clickupTaskId: 'repo-test-fill-only', insuranceInformed: 'OUTRA', affiliateId: 'AF-1' });
+      const { rows: a } = await pool.query(`SELECT insurance_informed, affiliate_id FROM patients WHERE id = $1`, [first.id]);
+      expect(a[0]).toEqual({ insurance_informed: 'OSDE 210', affiliate_id: 'AF-1' }); // dono preenchido mantém; vazio preenche
+      await repo.upsertFromClickUp({ clickupTaskId: 'repo-test-fill-only', insuranceInformed: null, affiliateId: 'AF-2' });
+      const { rows: b } = await pool.query(`SELECT insurance_informed, affiliate_id FROM patients WHERE id = $1`, [first.id]);
+      expect(b[0]).toEqual({ insurance_informed: 'OSDE 210', affiliate_id: 'AF-1' }); // nem valor novo nem null apaga
     });
 
     it('created=false ao atualizar paciente existente COM addresses/professionals nesta chamada (ramo `!== undefined` verdadeiro no UPDATE)', async () => {

@@ -47,7 +47,7 @@ const MOCK_VACANCY = {
   salary_text: 'A convenir',
   talentum_description:
     'Buscamos un/a Acompañante Terapéutico para acompañar a paciente adulto con diagnóstico psiquiátrico.',
-  talentum_whatsapp_url: 'https://wa.me/5491112345678',
+  can_apply: true,
   patient_zone: 'Villa Ballester, Buenos Aires',
   country: 'Argentina',
   created_at: '2026-04-01T00:00:00Z',

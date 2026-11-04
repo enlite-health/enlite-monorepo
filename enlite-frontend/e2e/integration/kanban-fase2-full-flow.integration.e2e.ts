@@ -30,7 +30,6 @@
 import { execSync } from 'child_process';
 import { test, expect } from '@playwright/test';
 import {
-  insertTestWorker,
   insertTestPatient,
   insertBaseVacancy,
   cleanupTestWorker,
@@ -48,6 +47,7 @@ import {
   BACKEND_URL,
 } from '../helpers/talentumWebhookHelper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
+import { insertAptoWorker, cleanupEligibilityWorkerChildren } from '../helpers/eligibility-worker-helper';
 // DX-4.17/A-contrato (achado R2, Fase 4): salto de coluna agora pede motivo (422 →
 // modal → 2xx) — reusa o helper da própria fase, não duplica a escolha de opção.
 import { chooseReasonInModal } from '../helpers/funnel-move-e2e-helper';
@@ -166,49 +166,34 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
 
   test.beforeAll(() => {
     const ts = Date.now();
-    const rand = () =>
-      String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
-
     prescreeningId = `e2e-fase2-${ts}`;
 
     // Path A — admin manual
-    workerA_Phone = `+549118${rand()}`;
-    workerA_Id = insertTestWorker({
-      firstName: 'WorkerA',
-      lastName: 'Fase2',
-      phone: workerA_Phone,
-    });
+    // spec 067 FR-24: o arrasto INICIADO → Seleccionados exige prestador APTO.
+    const aptoA = insertAptoWorker({ docs: 'validated' });
+    workerA_Phone = aptoA.phone!;
+    workerA_Id = aptoA.workerId;
     cleanupWorkerIds.push(workerA_Id);
 
     // Path B — Talentum webhook
-    workerB_Phone = `+549119${rand()}`;
-    workerB_Email = `e2e-fase2-b-${ts}@test.com`;
+    // spec 067: o Path B chega a Completado/QUALIFIED e é arrastado a Selecionado → prestador APTO (documentos validados)
+    const aptoB = insertAptoWorker({ docs: 'validated' });
+    workerB_Phone = aptoB.phone!;
+    workerB_Email = aptoB.email;
     workerB_ProfileId = `prof-b-${ts}`;
-    workerB_Id = insertTestWorker({
-      firstName: 'WorkerB',
-      lastName: 'Webhook',
-      phone: workerB_Phone,
-    });
+    workerB_Id = aptoB.workerId;
     cleanupWorkerIds.push(workerB_Id);
 
     // Path C — talent_search via match trigger
-    const workerC_Phone = `+549120${rand()}`;
-    workerC_Id = insertTestWorker({
-      firstName: 'WorkerC',
-      lastName: 'TalentSearch',
-      phone: workerC_Phone,
-      lat: -34.6037,
-      lng: -58.3816,
-    });
+    // spec 067 FR-24: o arrasto a Seleccionados exige APTO; a área de serviço do helper está nas mesmas coordenadas (-34.6037, -58.3816).
+    workerC_Id = insertAptoWorker({ docs: 'validated' }).workerId;
     cleanupWorkerIds.push(workerC_Id);
 
     // Path D — INSERT direto / trigger anti-órfã
-    workerD_Phone = `+549121${rand()}`;
-    workerD_Id = insertTestWorker({
-      firstName: 'WorkerD',
-      lastName: 'DirectInsert',
-      phone: workerD_Phone,
-    });
+    // spec 067 FR-24: o arrasto a Seleccionados exige APTO.
+    const aptoD = insertAptoWorker({ docs: 'validated' });
+    workerD_Phone = aptoD.phone!;
+    workerD_Id = aptoD.workerId;
     cleanupWorkerIds.push(workerD_Id);
 
     // Vaga compartilhada
@@ -236,7 +221,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     if (orphanWorker1Id) runSQL(`DELETE FROM workers WHERE id = '${orphanWorker1Id}'`);
     if (orphanWorker2Id) runSQL(`DELETE FROM workers WHERE id = '${orphanWorker2Id}'`);
 
-    for (const wid of cleanupWorkerIds) cleanupTestWorker(wid);
+    for (const wid of cleanupWorkerIds) { cleanupEligibilityWorkerChildren(wid); cleanupTestWorker(wid); }
     cleanupTestPatient(patientId);
   });
 

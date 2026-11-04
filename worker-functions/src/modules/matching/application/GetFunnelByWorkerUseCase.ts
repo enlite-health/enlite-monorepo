@@ -9,6 +9,7 @@ import {
 } from '../domain/kanbanColumn';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { countryPredicateSql } from '@shared/database/countryScopeSql';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 
@@ -34,6 +35,8 @@ interface FunnelRow {
   stage: string | null;
   source: string | null;
   messaged_at: Date | null;
+  /** fn_worker_is_apto, só para etapa de Completado (NULL nas outras). */
+  worker_apto: boolean | null;
 }
 
 /**
@@ -84,7 +87,9 @@ export class GetFunnelByWorkerUseCase {
       `SELECT wja.worker_id,
               wja.application_funnel_stage AS stage,
               wja.source,
-              wja.messaged_at
+              wja.messaged_at,
+              -- Spec 067: apto só para etapa de Completado (NULL nas outras); sem apto → coluna BLOQUEADO.
+              ${aptoWhenCompletedSql('wja.application_funnel_stage', 'wja.worker_id')} AS worker_apto
          FROM worker_job_applications wja
          JOIN job_postings jp ON jp.id = wja.job_posting_id
          JOIN workers      w  ON w.id  = wja.worker_id
@@ -106,7 +111,7 @@ export class GetFunnelByWorkerUseCase {
       // Candidato de match salvo pelo algoritmo e nunca mensageado não é convite.
       if (isMatchedNotInvited(row.stage, row.source, row.messaged_at)) continue;
 
-      const column = deriveKanbanColumn(row.stage, row.source, row.messaged_at);
+      const column = deriveKanbanColumn(row.stage, row.source, row.messaged_at, row.worker_apto);
 
       let bucket = workersPorColuna.get(column);
       if (!bucket) {

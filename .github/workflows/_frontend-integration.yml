@@ -149,6 +149,9 @@ jobs:
         working-directory: enlite-frontend
         env:
           VITE_API_WORKER_FUNCTIONS_URL: http://localhost:8080
+          # Spec 080: sem esta variável o widget de assistentes NÃO faz fetch (fail-closed). A spec
+          # `assistants.integration` substitui o serviço NA REDE (page.route) nesta origem.
+          VITE_ASSISTANTS_SERVICE_URL: http://localhost:8080
           # Sem isto a home cai em `/api/jobs`, que dispara RASPAGEM REAL de
           # https://jobs.enlite.health/es/ a partir do runner — a mesma classe de
           # dependência de terceiro pela qual `worker-address-keyboard` está fora
@@ -302,7 +305,8 @@ jobs:
                  e2e/blocked-attempts-visual.e2e.ts \
                  e2e/vacancy-kanban.e2e.ts \
                  e2e/vacancy-kanban-eligibility-visual.e2e.ts \
-                 e2e/kanban-card-promover-elegivel.e2e.ts"
+                 e2e/kanban-card-promover-elegivel.e2e.ts \
+                 e2e/admin-patient-detail-happy.e2e.ts"
           for f in $SPECS; do
             [ -f "$f" ] || { echo "::error::spec sumiu ou foi renomeado: $f"; exit 1; }
           done
@@ -557,7 +561,7 @@ jobs:
   # há cenário de ERRO que exija recriar a API no meio do job.
   integration-e2e-group-simulation:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       E2E_BACKEND_URL: http://localhost:8080
 
@@ -567,7 +571,8 @@ jobs:
       - name: Sobe Postgres + API (override dedicado — engine ABAC ligado, 12 famílias)
         working-directory: worker-functions
         run: |
-          BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.group-simulation.yml"
+          # Spec 082 (T043): `docker-compose.bigquery-emulator.yml` troca o BigQuery por um emulador com billing export SINTÉTICO (e2e `custos-abac`).
+          BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.group-simulation.yml -f docker-compose.bigquery-emulator.yml"
           docker compose $BASE up -d postgres fake-gcs
 
           espera() {
@@ -741,6 +746,33 @@ jobs:
       # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`. Precisa do sync do
       # catálogo (`PERMISSION_CATALOG_SYNC_ENABLED`, já neste override): `grantCell` falha alto se as 7 células `patient_status:*` não existirem.
       # Usa `abac-stack-helper` (staff REAL em grupo). Sem canal externo: só Postgres.
+      # `vacante-anotacao-sem-celula` ENTROU (cadeia, Fase 3): precisa do engine ligado
+      # (403 sem `vacancy:update`); usa `abac-stack-helper`.
+      # `funil-compativeis-sem-celula` ENTROU (cadeia, Fase 5): precisa do engine ligado (card de
+      # Compatíveis redigido sem `match:read`); usa `abac-stack-helper`.
+      # `ai-prompts-humano` ENTROU (spec 029, T035): o humano lê/edita/simula/guarda/desfaz em
+      # `/admin/prompts-ia`. Precisa do engine ligado com `admin.integrations` enforçada — as rotas
+      # `/ai-prompts` usam `untilEnforced: 'admin'` e só checam a célula `ai_prompt:*` de verdade
+      # com a família ligada; o job padrão (engine OFF, sem `iam.rollout_state`) faria o spec falhar
+      # em `pollAuthz`/403. REUSO deste job, sem override novo: as 12 famílias de
+      # `docker-compose.group-simulation.yml` já incluem `admin.integrations` e `admin.vacancies`
+      # (lista de vacantes do seletor de caso), e `CATALOG_SYNC` já está ligado. O modelo NUNCA é o
+      # real: `docker-compose.test.yml` (base, versionado) carrega `vertexInterceptPreload.js` na API,
+      # e o próprio spec reprova se a contagem de `[VERTEX-STUB]` não subir. O spec lê o log do
+      # container achando-o pela porta 8080 publicada — sem nome fixo.
+      # `058a-` ENTROU (spec 058 Parte A, obra social + contrato: `058a-dados-gerais|empregados|contratos|pacientes-cartao|cascata-servico|cobertura-pdf`,
+      # 21 casos). Quatro casos são (ABAC) e SÓ medem com o engine ligado (com ele OFF `cells===null` mostra tudo e o teste ficaria verde sem medir nada):
+      # `058a-empregados` ALTERNATIVO 2 (sem `insurance_provider_contacts:read` o cartão diz "sem permissão" e o telefone/e-mail não aparece),
+      # `058a-contratos` ALTERNATIVO 3 (sem `patient_contract_value:read` o valor-hora é `REDACTED`), `058a-pacientes-cartao` ALTERNATIVO 2 (sem
+      # `insurance_provider_patients:read`: 403 + "sem permissão") e `058a-cobertura-pdf` ALTERNATIVO 2 (sem `patient_coverage:read` o cartão some e o PDF
+      # diz "sem permissão"); `058a-cascata-servico` ALTERNATIVO 4 (sem `patient_coverage:read` o pagador é `REDACTED` sem nome) é o quinto. Os demais casos
+      # (feliz e alternativos de regra) também entram AQUI e não no `grep:` do `pr-gate.yml`: os 6 arquivos montam o cenário com `abac-stack-helper`
+      # (staff REAL em grupo + `psql` na porta deste job), que o job padrão (engine OFF, token mock sem linha em `users`) não tem. Prefixo `058a-` casa
+      # pelo CAMINHO do arquivo (o `--grep` do Playwright inclui o título do arquivo). Cada arquivo tira `test-results/058a-<tela>.png` + vídeo (T141B):
+      # o passo "Evidências 058a" logo abaixo os publica mesmo com o job verde (o "Relatório" só sobe em falha).
+      # `pt-atividades-az-e-busca-060` ENTROU (spec 060): usa `abac-stack-helper` (staff REAL em grupo + células), então SÓ roda aqui — nem o `grep:` do `pr-gate.yml` nem o irmão `projeto-terapeutico-humano` o alcançam.
+      # `pt-catalogo-titulo-descricao-061` ENTROU (spec 061): mesma razão do 060 (`abac-stack-helper`); 3 casos — catálogo com título+descrição, versão do PT + PDF baixado, versão/PDF antigos congelados após editar o catálogo.
+      # `catalogo-vinculo-segmento-humano` ENTROU (spec 061): usa `abac-stack-helper` (staff REAL em grupo + células, `loginAs`) — mesma razão do 060/061, SÓ roda aqui. Semeia/limpa só `created_by = 'e2e-030'` (objetivos e segmentos), faixa própria de case_number 740000.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
@@ -750,7 +782,20 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|login-cai-na-gestao-a-vista"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|vagas-antigas-084|pt-todavia-no-hay-048|admissao-049|admissao-050|admissao-083|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-|064-cobertura-entrada|pt-atividades-az-e-busca-060|pt-catalogo-titulo-descricao-061|catalogo-vinculo-segmento-humano|patient-conversation-markdown|pedidos-ia-abac|vincular-vaga-existente|custos-abac|admin-access-agent-group"
+
+      # T141B (spec 058): vídeo + print das 6 telas da obra social. Passo 0 medido: o único upload de `test-results/` deste job é o "Relatório (só quando
+      # falha)" — com o job verde nenhum vídeo/print era publicado, então este passo roda SEMPRE (`if: always()`).
+      - name: Evidências 058a — vídeos e prints das telas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-058a-telas
+          path: |
+            enlite-frontend/test-results/**/*.webm
+            enlite-frontend/test-results/058a-*.png
+          retention-days: 14
+          if-no-files-found: warn
 
       # Spec 049 (F9): os e2e de API da aba Admissão têm blocos que só valem com a stack de ENGINE LIGADO + SYNC DO CATÁLOGO +
       # `ADMISSION_EXTERNALS=fake` — exatamente a API deste job. No job `backend-e2e` (sem sync, de propósito: ligá-lo ali

@@ -5,6 +5,7 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
+import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
@@ -65,6 +66,8 @@ export class InternalController {
     private readonly messagingRetentionService: MessagingRetentionService,
     /** spec 048: opcional — sem ele o bloco do PT é omitido (testes antigos do controller não o conhecem). */
     private readonly ptContactReminderHealthService?: TherapeuticContactReminderHealthService,
+    /** spec 069 F4: opcional pelo mesmo motivo — sem ele o bloco da rotina diária do itinerário é omitido. */
+    private readonly itineraryDailyRunHealthService?: ItineraryDailyRunHealthService,
   ) {}
 
   /**
@@ -313,6 +316,19 @@ export class InternalController {
         }
       }
 
+      /**
+       * spec 069 F4 — rotina diária do itinerário: "país sem rodada TERMINADA no dia de operação depois das 08:00 locais". Reemite a cada
+       * ciclo (heartbeat) enquanto faltar; a métrica de log + a política de alerta do terraform leem `itinerary_daily_run_missing`. Sem PII.
+       */
+      const itineraryDailyRun = this.itineraryDailyRunHealthService ? await this.itineraryDailyRunHealthService.getHealth() : null;
+      for (const m of itineraryDailyRun?.missing ?? []) {
+        logger.warn({ msg: 'itinerary_daily_run_missing', country: m.country, operationDate: m.operationDate });
+      }
+      // D2: a rotina TERMINOU, mas com falhas isoladas (ex.: e-mail/in-app que não saiu) — sem isto o `failures` só vivia na linha do banco.
+      for (const f of itineraryDailyRun?.failed ?? []) {
+        logger.warn({ msg: 'itinerary_daily_run_failures', country: f.country, operationDate: f.operationDate, failures: f.failures });
+      }
+
       const stuckRows = summary.filter(row => row.stuck);
 
       for (const row of stuckRows) {
@@ -340,6 +356,7 @@ export class InternalController {
         worstOldestRecentAgeMinutes,
         anaCareMirror: mirror,
         ...(ptContactReminders ? { ptContactReminders } : {}),
+        ...(itineraryDailyRun ? { itineraryDailyRun } : {}),
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

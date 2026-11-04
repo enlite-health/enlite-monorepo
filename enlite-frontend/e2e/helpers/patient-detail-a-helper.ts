@@ -33,7 +33,7 @@ export function seedPatientForBlocoA(): BlocoASeed {
   const responsible = { firstName: 'Marta', lastName: `Resp${stamp}`, phone: '+5491100000021', documentType: 'DNI', documentNumber: `22${stamp}`, source: 'web_form' };
   const professional = { name: `Dra. Tratante ${stamp}`, phone: '+5491100000022' };
 
-  runSQL(`UPDATE patients SET health_insurance_name = '${coverage}', contact_email_encrypted = '${b64(contactEmail)}' WHERE id = '${patientId}'`);
+  runSQL(`UPDATE patients SET insurance_informed = '${coverage}', contact_email_encrypted = '${b64(contactEmail)}' WHERE id = '${patientId}'`);
   runSQL(`INSERT INTO patient_responsibles (patient_id, first_name, last_name, relationship, phone_encrypted, email_encrypted, document_number_encrypted, document_type, is_primary, display_order, source) VALUES ('${patientId}', '${responsible.firstName}', '${responsible.lastName}', 'PARENT', '${b64(responsible.phone)}', NULL, '${b64(responsible.documentNumber)}', '${responsible.documentType}', true, 1, '${responsible.source}')`);
   runSQL(`INSERT INTO patient_professionals (patient_id, name, phone_encrypted, email_encrypted, display_order, is_team) VALUES ('${patientId}', '${professional.name}', '${b64(professional.phone)}', NULL, 1, false)`);
 

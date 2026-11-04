@@ -1,6 +1,6 @@
 /**
- * A QUARTA e MAIOR família (task 3.5-A2): 49 rotas, 16 células, um arquivo
- * (45 + `promote`, D300, entrada no merge main→stage 19/09, + `ack` do aviso de vaga publicada, F3).
+ * A QUARTA e MAIOR família (task 3.5-A2): 47 rotas, 16 células, um arquivo
+ * (43 + `promote`, D300, entrada no merge main→stage 19/09, + `ack` do aviso de vaga publicada, F3).
  * Mesmo papel dos testes de `admin.users`, `admin.patients` e `admin.workers`:
  * varrer o router de verdade (o mesmo `scanExpressRouter` do catálogo) e afirmar
  * que TODA rota declara, e declara a célula do MAPA — não a que o código escolheu.
@@ -8,7 +8,7 @@
  * ⚠️ Duas rotas ficam atrás de controller OPCIONAL
  * (`vacancyAddressReviewController` → `resolve-address-review`,
  * `funnelTableController` → `funnel-table`). O router é montado aqui COM os dois,
- * porque é assim que o `src/index.ts` monta — sem eles a conta daria 47 e o teste
+ * porque é assim que o `src/index.ts` monta — sem eles a conta daria 45 e o teste
  * passaria escondendo duas rotas sem célula.
  */
 
@@ -39,6 +39,13 @@ jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
   loggingAls: { getStore: () => undefined },
   reportError: jest.fn(),
+}));
+
+// Spec 084 F1: o router constrói o `VacancyBajaController` INTERNAMENTE (como os de `aux`); aqui ele é um dublê que responde com o nome.
+jest.mock('../../controllers/VacancyBajaController', () => ({
+  VacancyBajaController: jest.fn().mockImplementation(() => ({
+    baja: (_req: unknown, res: { json: (b: unknown) => void }) => res.json({ m: 'baja.baja' }),
+  })),
 }));
 
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
@@ -72,6 +79,8 @@ const ESPERADO: Record<string, string> = {
   'POST /interview-slots/:slotId/book': 'interview:update',
   'POST /vacancies': 'vacancy:create',
   'POST /vacancies/:id/generate-ai-content': 'vacancy:update',
+  // spec 084 F1: dar baixa (uma ou em lote), vaga sem serviço; NÃO existe rota inversa (R17)
+  'POST /vacancies/baja': 'vacancy:update',
   'POST /vacancies/:id/generate-talentum-description': 'talentum:update',
   'POST /vacancies/:id/interview-slots': 'interview:create',
   'POST /vacancies/:id/match': 'match:execute',
@@ -87,14 +96,12 @@ const ESPERADO: Record<string, string> = {
   'POST /vacancies/blocked-applications/:blockedId/promote': 'funnel:update',
   'POST /vacancies/blocked-applications/:blockedId/reject': 'funnel:update',
   'POST /vacancies/blocked-applications/:blockedId/restore': 'funnel:update',
-  'POST /vacancies/meet-links/lookup': 'vacancy:read',
   // PR-8b 8b.4: sync em massa exige create E update (regra-orquestrador 15/09); o scanner só
   // carimba o 1º guard — o 2º é provado em pr8b-ambiguous-routes.test.ts.
   'POST /vacancies/sync-talentum': 'talentum:create',
   'PUT /encuadres/:id/move': 'funnel:update',
   'PUT /encuadres/:id/result': 'funnel:update',
   'PUT /vacancies/:id': 'vacancy:update',
-  'PUT /vacancies/:id/meet-links': 'vacancy:update',
   'PUT /vacancies/:id/talentum-description': 'talentum:update',
 };
 
@@ -115,7 +122,6 @@ function build(): express.Router {
       'updateTalentumDescription', 'generateAIContent', 'syncFromTalentum', 'getPrescreeningConfig',
       'getTalentumStatus', 'savePrescreeningConfig']) as never,
     dubleDe('match', ['getMatchResults', 'triggerMatch', 'updateEncuadreResult']) as never,
-    dubleDe('meet', ['lookupMeetDatetime', 'updateMeetLinks']) as never,
     dubleDe('social', ['generateSocialLink', 'getSocialLinksStats']) as never,
     dubleDe('funnel', ['getEncuadreFunnel', 'moveEncuadre', 'rejectBlockedApplication',
       'undismissBlockedApplication']) as never,
@@ -137,7 +143,7 @@ function declaradas(): Record<string, string | null> {
   );
 }
 
-describe('família admin.vacancies — 49 rotas declaram célula', () => {
+describe('família admin.vacancies — 47 rotas declaram célula', () => {
   it('a família é `admin.vacancies` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_VACANCIES_FAMILY).toBe('admin.vacancies');
   });
@@ -150,9 +156,9 @@ describe('família admin.vacancies — 49 rotas declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('a família soma exatamente 49 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300) + ack do aviso (F3)', () => {
-    expect(Object.keys(ESPERADO)).toHaveLength(49);
-    expect(scanExpressRouter(build())).toHaveLength(49);
+  it('a família soma exatamente 48 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300) + ack do aviso (F3) + baja (spec 084)', () => {
+    expect(Object.keys(ESPERADO)).toHaveLength(48);
+    expect(scanExpressRouter(build())).toHaveLength(48);
   });
 
   it('as 2 rotas de controller OPCIONAL estão presentes — montadas como em produção', () => {
@@ -161,7 +167,7 @@ describe('família admin.vacancies — 49 rotas declaram célula', () => {
     expect(rotas['GET /vacancies/:id/funnel-table']).toBe('funnel:read');
   });
 
-  it('sem os controllers opcionais, o router encolhe para 47 — o motivo de o teste montar com eles', () => {
+  it('sem os controllers opcionais, o router encolhe para 46 — o motivo de o teste montar com eles', () => {
     const semOpcionais = createAdminVacanciesRoutes(
       dubleDe('vac', ['listVacancies', 'getVacanciesStats', 'getNextVacancyNumber', 'getCasesForSelect',
         'getVacancyById']) as never,
@@ -170,7 +176,6 @@ describe('família admin.vacancies — 49 rotas declaram célula', () => {
         'updateTalentumDescription', 'generateAIContent', 'syncFromTalentum', 'getPrescreeningConfig',
         'getTalentumStatus', 'savePrescreeningConfig']) as never,
       dubleDe('match', ['getMatchResults', 'triggerMatch', 'updateEncuadreResult']) as never,
-      dubleDe('meet', ['lookupMeetDatetime', 'updateMeetLinks']) as never,
       dubleDe('social', ['generateSocialLink', 'getSocialLinksStats']) as never,
       dubleDe('funnel', ['getEncuadreFunnel', 'moveEncuadre', 'rejectBlockedApplication',
         'undismissBlockedApplication']) as never,
@@ -179,7 +184,7 @@ describe('família admin.vacancies — 49 rotas declaram célula', () => {
       authDouble(),
       permissionsDouble(),
     );
-    expect(scanExpressRouter(semOpcionais)).toHaveLength(47);
+    expect(scanExpressRouter(semOpcionais)).toHaveLength(46);
   });
 
   describe('as células que separam ações de peso diferente', () => {
@@ -256,6 +261,14 @@ describe('família admin.vacancies — 49 rotas declaram célula', () => {
       expect(res.body).toMatchObject({ m: 'vac.getVacancyById', id: 'abc-123' });
     });
 
+    it('spec 084: POST /vacancies/baja chega no controller da baixa (e NÃO no create, nem em /:id)', async () => {
+      const app = appDeRota('adminVacancies', '/api/admin', build);
+
+      const res = await request(app).post('/api/admin/vacancies/baja').send({ vacancyIds: [] }).expect(200);
+
+      expect(res.body.m).toBe('baja.baja');
+    });
+
     it('blocked-applications não é engolido por /vacancies/:id', async () => {
       const app = appDeRota('adminVacancies', '/api/admin', build);
 
@@ -263,18 +276,10 @@ describe('família admin.vacancies — 49 rotas declaram célula', () => {
 
       expect(res.body.m).toBe('funnel.rejectBlockedApplication');
     });
-
-    it('meet-links/lookup não é engolido por /vacancies/:id', async () => {
-      const app = appDeRota('adminVacancies', '/api/admin', build);
-
-      const res = await request(app).post('/api/admin/vacancies/meet-links/lookup').expect(200);
-
-      expect(res.body.m).toBe('meet.lookupMeetDatetime');
-    });
   });
 
   /**
-   * As 45 rotas chegam no MÉTODO certo do controller. Trocar dois handlers de
+   * As 43 rotas chegam no MÉTODO certo do controller. Trocar dois handlers de
    * lugar numa família deste tamanho é o erro clássico, e o tsc não pega (todas
    * as assinaturas são iguais). Exaustivo de propósito: é o que faz a cobertura
    * per-file do router fechar em 100%, e o que faz rota nova sem teste derrubar
@@ -314,8 +319,6 @@ describe('família admin.vacancies — 49 rotas declaram célula', () => {
       ['get', '/api/admin/vacancies/v1/prescreening-config', 'talentum.getPrescreeningConfig'],
       ['get', '/api/admin/vacancies/v1/talentum-status', 'talentum.getTalentumStatus'],
       ['post', '/api/admin/vacancies/v1/prescreening-config', 'talentum.savePrescreeningConfig'],
-      ['post', '/api/admin/vacancies/meet-links/lookup', 'meet.lookupMeetDatetime'],
-      ['put', '/api/admin/vacancies/v1/meet-links', 'meet.updateMeetLinks'],
       ['post', '/api/admin/vacancies/v1/social-links', 'social.generateSocialLink'],
       ['get', '/api/admin/vacancies/v1/social-links-stats', 'social.getSocialLinksStats'],
       ['get', '/api/admin/vacancies/v1/funnel', 'funnel.getEncuadreFunnel'],

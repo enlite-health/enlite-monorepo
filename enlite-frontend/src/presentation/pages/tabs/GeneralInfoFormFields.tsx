@@ -8,9 +8,9 @@
 import { Controller } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { PhoneInputIntl } from '@presentation/components/shared/PhoneInputIntl';
-import { MultiSelect } from '@presentation/components/molecules/MultiSelect';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { maskDate, maskCuilCuit } from '@presentation/hooks/useMask';
-import { FormField, InputWithIcon, SelectField } from '@presentation/components/molecules';
+import { FormField, InputWithIcon } from '@presentation/components/molecules';
 import type { UseFormReturn } from 'react-hook-form';
 import type { GeneralInfoFormData } from '@presentation/validation/workerRegistrationSchemas';
 
@@ -86,15 +86,17 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         {/* Languages */}
         <div id="languages">
           <Controller name="languages" control={control} render={({ field }) => (
-            <MultiSelect testId="languages" label={t('workerRegistration.generalInfo.languages')}
-              options={[
-                { value: 'pt', label: t('workerRegistration.generalInfo.portuguese') },
-                { value: 'es', label: t('workerRegistration.generalInfo.spanish') },
-                { value: 'en', label: t('workerRegistration.generalInfo.english') },
-              ]}
-              value={field.value} onChange={(val) => { field.onChange(val); triggerSave(); }}
-              placeholder={t('workerRegistration.generalInfo.select')} error={errors.languages?.message}
-            />
+            <FormField label={t('workerRegistration.generalInfo.languages')} htmlFor="languages-combobox">
+              <Combobox multiple inputSize="compact" id="languages-combobox" data-testid="languages"
+                options={[
+                  { value: 'pt', label: t('workerRegistration.generalInfo.portuguese') },
+                  { value: 'es', label: t('workerRegistration.generalInfo.spanish') },
+                  { value: 'en', label: t('workerRegistration.generalInfo.english') },
+                ]}
+                value={field.value} onChange={(val) => { field.onChange(val); triggerSave(); }}
+                placeholder={t('workerRegistration.generalInfo.select')} error={errors.languages?.message}
+              />
+            </FormField>
           )} />
         </div>
 
@@ -112,12 +114,12 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         <Controller name="sex" control={control} render={({ field }) => (
           <FormField label={t('workerRegistration.generalInfo.sex')} htmlFor="sex" error={errors.sex?.message}
             hint={t('workerRegistration.generalInfo.sexHint')}>
-            <SelectField inputSize="compact" id="sex"
+            <Combobox inputSize="compact" id="sex"
               options={[
                 { value: 'male', label: t('workerRegistration.generalInfo.male') },
                 { value: 'female', label: t('workerRegistration.generalInfo.female') },
               ]}
-              placeholder={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
+              placeholder={t('workerRegistration.generalInfo.select')} clearLabel={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
               onChange={(val) => { field.onChange(val); triggerSave(); }}
             />
           </FormField>
@@ -127,13 +129,13 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         <Controller name="gender" control={control} render={({ field }) => (
           <FormField label={t('workerRegistration.generalInfo.gender')} htmlFor="gender"
             hint={t('workerRegistration.generalInfo.genderHint')}>
-            <SelectField inputSize="compact" id="gender"
+            <Combobox inputSize="compact" id="gender"
               options={[
                 { value: 'male', label: t('workerRegistration.generalInfo.male') },
                 { value: 'female', label: t('workerRegistration.generalInfo.female') },
                 { value: 'other', label: t('workerRegistration.generalInfo.other') },
               ]}
-              placeholder={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
+              placeholder={t('workerRegistration.generalInfo.select')} clearLabel={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
               onChange={(val) => { field.onChange(val); triggerSave(); }}
             />
           </FormField>
@@ -176,8 +178,8 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         {/* Profession */}
         <Controller name="profession" control={control} render={({ field }) => (
           <FormField label={t('workerRegistration.generalInfo.profession')} htmlFor="profession">
-            <SelectField inputSize="compact" id="profession" options={PROFESSION_OPTIONS}
-              placeholder={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
+            <Combobox inputSize="compact" id="profession" options={PROFESSION_OPTIONS}
+              placeholder={t('workerRegistration.generalInfo.select')} clearLabel={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
               onChange={(val) => { field.onChange(val); triggerSave(); }}
             />
           </FormField>
@@ -186,8 +188,8 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         {/* Knowledge Level */}
         <Controller name="knowledgeLevel" control={control} render={({ field }) => (
           <FormField label={t('workerRegistration.generalInfo.knowledgeLevel')} htmlFor="knowledgeLevel" error={errors.knowledgeLevel?.message}>
-            <SelectField inputSize="compact" id="knowledgeLevel" options={KNOWLEDGE_OPTIONS}
-              placeholder={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
+            <Combobox inputSize="compact" id="knowledgeLevel" options={KNOWLEDGE_OPTIONS}
+              placeholder={t('workerRegistration.generalInfo.select')} clearLabel={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
               onChange={(val) => { field.onChange(val); triggerSave(); }}
             />
           </FormField>
@@ -205,25 +207,27 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         {/* Experience Types */}
         <div id="experienceTypes">
           <Controller name="experienceTypes" control={control} render={({ field }) => (
-            <MultiSelect testId="experience-types" label={t('workerRegistration.generalInfo.experienceTypes')}
-              options={TRASTORNO_OPTIONS} value={field.value}
-              onChange={(val) => { field.onChange(val); triggerSave(); }}
-              placeholder={t('workerRegistration.generalInfo.select')} error={errors.experienceTypes?.message}
-            />
+            <FormField label={t('workerRegistration.generalInfo.experienceTypes')} htmlFor="experience-types-combobox">
+              <Combobox multiple inputSize="compact" id="experience-types-combobox" data-testid="experience-types"
+                options={TRASTORNO_OPTIONS} value={field.value}
+                onChange={(val) => { field.onChange(val); triggerSave(); }}
+                placeholder={t('workerRegistration.generalInfo.select')} error={errors.experienceTypes?.message}
+              />
+            </FormField>
           )} />
         </div>
 
         {/* Years Experience */}
         <Controller name="yearsExperience" control={control} render={({ field }) => (
           <FormField label={t('workerRegistration.generalInfo.yearsExperience')} htmlFor="yearsExperience" error={errors.yearsExperience?.message}>
-            <SelectField inputSize="compact" id="yearsExperience"
+            <Combobox inputSize="compact" id="yearsExperience"
               options={[
                 { value: '0_2', label: t('workerRegistration.generalInfo.years0to2') },
                 { value: '3_5', label: t('workerRegistration.generalInfo.years3to5') },
                 { value: '6_10', label: t('workerRegistration.generalInfo.years6to10') },
                 { value: '10_plus', label: t('workerRegistration.generalInfo.years10plus') },
               ]}
-              placeholder={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
+              placeholder={t('workerRegistration.generalInfo.select')} clearLabel={t('workerRegistration.generalInfo.select')} value={field.value ?? ''}
               onChange={(val) => { field.onChange(val); triggerSave(); }}
             />
           </FormField>
@@ -232,28 +236,32 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
         {/* Preferred Types */}
         <div id="preferredTypes">
           <Controller name="preferredTypes" control={control} render={({ field }) => (
-            <MultiSelect testId="preferred-types" label={t('workerRegistration.generalInfo.preferredTypes')}
-              options={TRASTORNO_OPTIONS} value={field.value}
-              onChange={(val) => { field.onChange(val); triggerSave(); }}
-              placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredTypes?.message}
-            />
+            <FormField label={t('workerRegistration.generalInfo.preferredTypes')} htmlFor="preferred-types-combobox">
+              <Combobox multiple inputSize="compact" id="preferred-types-combobox" data-testid="preferred-types"
+                options={TRASTORNO_OPTIONS} value={field.value}
+                onChange={(val) => { field.onChange(val); triggerSave(); }}
+                placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredTypes?.message}
+              />
+            </FormField>
           )} />
         </div>
 
         {/* Preferred Age Range */}
         <div id="preferredAgeRange">
           <Controller name="preferredAgeRange" control={control} render={({ field }) => (
-            <MultiSelect testId="preferred-age-range" label={t('workerRegistration.generalInfo.preferredAgeRange')}
-              options={[
-                { value: 'children', label: t('workerRegistration.generalInfo.ageRangeChildren') },
-                { value: 'adolescents', label: t('workerRegistration.generalInfo.ageRangeAdolescents') },
-                { value: 'adults', label: t('workerRegistration.generalInfo.ageRangeAdults') },
-                { value: 'elderly', label: t('workerRegistration.generalInfo.ageRangeElderly') },
-              ]}
-              value={field.value}
-              onChange={(val) => { field.onChange(val); triggerSave(); }}
-              placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredAgeRange?.message}
-            />
+            <FormField label={t('workerRegistration.generalInfo.preferredAgeRange')} htmlFor="preferred-age-range-combobox">
+              <Combobox multiple inputSize="compact" id="preferred-age-range-combobox" data-testid="preferred-age-range"
+                options={[
+                  { value: 'children', label: t('workerRegistration.generalInfo.ageRangeChildren') },
+                  { value: 'adolescents', label: t('workerRegistration.generalInfo.ageRangeAdolescents') },
+                  { value: 'adults', label: t('workerRegistration.generalInfo.ageRangeAdults') },
+                  { value: 'elderly', label: t('workerRegistration.generalInfo.ageRangeElderly') },
+                ]}
+                value={field.value}
+                onChange={(val) => { field.onChange(val); triggerSave(); }}
+                placeholder={t('workerRegistration.generalInfo.select')} error={errors.preferredAgeRange?.message}
+              />
+            </FormField>
           )} />
         </div>
       </div>

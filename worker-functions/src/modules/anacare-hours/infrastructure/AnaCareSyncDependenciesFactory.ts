@@ -12,12 +12,13 @@
 import { AnaCareSessionClient, AnaCareShiftsSourceReal, AnaCareEnliteDirectory } from '@modules/integration';
 import { reportError } from '@shared/logging';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
-import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository, ShiftValidationReader, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
 import { ANACARE_HOURS_SOURCE_ENV, FakeAnaCareShiftsSource } from './FakeAnaCareShiftsSource';
-import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository, FakeAnaCareSyncRunRepository } from './FakeAnaCareSyncDependencies';
+import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository, FakeAnaCareSyncRunRepository, FakeShiftValidationReader } from './FakeAnaCareSyncDependencies';
 import { AnaCareDirectorySnapshotRepository } from './AnaCareDirectorySnapshotRepository';
 import { AnaCarePatientMonthRepository } from './AnaCarePatientMonthRepository';
 import { AnaCareSyncRunRepository } from './AnaCareSyncRunRepository';
+import { ShiftHoursValidationRepository } from './ShiftHoursValidationRepository';
 
 export interface AnaCareSyncDependencies {
   source: AnaCareShiftsSource;
@@ -28,6 +29,8 @@ export interface AnaCareSyncDependencies {
   patientMonthRepository: PatientMonthSyncRepository;
   /** Gate `revisao-pr` (fecho 17/09): carimbo da corrida do SERVIDOR (`anacare_sync_run`, migration 443). */
   syncRunRepository: SyncRunRepository;
+  /** 056 T5.1: validações dos turnos da reserva, lidas antes de agregar (lista = detalhe). */
+  shiftValidationReader: ShiftValidationReader;
 }
 
 export function createAnaCareSyncDependencies(env: NodeJS.ProcessEnv = process.env): AnaCareSyncDependencies | null {
@@ -39,6 +42,7 @@ export function createAnaCareSyncDependencies(env: NodeJS.ProcessEnv = process.e
       directorySnapshotRepository: new FakeAnaCareDirectorySnapshotRepository(),
       patientMonthRepository: new FakeAnaCarePatientMonthRepository(),
       syncRunRepository: new FakeAnaCareSyncRunRepository(),
+      shiftValidationReader: new FakeShiftValidationReader(),
     };
   }
   if (selected === 'real') {
@@ -50,6 +54,7 @@ export function createAnaCareSyncDependencies(env: NodeJS.ProcessEnv = process.e
         directorySnapshotRepository: new AnaCareDirectorySnapshotRepository(),
         patientMonthRepository: new AnaCarePatientMonthRepository(),
         syncRunRepository: new AnaCareSyncRunRepository(),
+        shiftValidationReader: new ShiftHoursValidationRepository(),
       };
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));

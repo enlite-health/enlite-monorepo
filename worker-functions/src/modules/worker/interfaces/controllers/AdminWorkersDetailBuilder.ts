@@ -232,6 +232,11 @@ export async function buildWorkerDetailResponse(
     // que um worker is_test não foi espelhado (anaCareId null).
     anaCareId: w.ana_care_id ?? null,
     anaCareSyncedAt: w.ana_care_synced_at ?? null,
+    // N7: opt-out de mensagens vigente (`messaging_opt_out`, opted_in_at IS NULL). Não é PII
+    // (status operacional, como `status`), por isso sai fora das células de container. O nome
+    // é snake_case de propósito: é o contrato que o triage lê (`data.opted_out`).
+    opted_out: w.opted_out === true,
+    opted_out_at: w.opted_out === true ? w.opted_out_at ?? null : null,
     documents: doc
       ? await buildDocumentsWithSignedUrls(gcs, doc, [w.id, ...(await findAbsorbedWorkerIds(db, w.id))])
       : null,

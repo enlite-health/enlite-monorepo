@@ -44,6 +44,7 @@
  */
 import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { escolherNoCombo, mesIsoDoRotulo } from '../helpers/combobox';
 
 const DB_URL = process.env.ANACARE_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TENANT = '00000000-0000-0000-0000-000000000001';
@@ -333,14 +334,18 @@ test.describe('Botão "Sincronizar" — Horas Ana Care — E2E real @integration
 
     const seletorMes = page.getByLabel('Mes', { exact: true });
     await expect(seletorMes).toBeVisible({ timeout: 15_000 });
-    const mesInicial = await seletorMes.inputValue();
+    const rotuloInicial = (await seletorMes.innerText()).trim();
+    const mesInicial = mesIsoDoRotulo(rotuloInicial);
 
-    // Nunca cravar o mês-alvo: lê as opções REAIS do seletor na tela e escolhe qualquer uma
-    // diferente da atual — o defeito de hoje era justamente seletor e sync discordarem de mês,
-    // então fixar o valor no teste esconderia o próprio bug que ele existe para pegar.
-    const valoresDisponiveis = await seletorMes.locator('option').evaluateAll((opts) => opts.map((o) => (o as HTMLOptionElement).value));
-    const mesAlvo = valoresDisponiveis.find((v) => v !== mesInicial);
-    if (!mesAlvo) throw new Error(`Seletor de mês só tem uma opção (${mesInicial}) — não dá para provar a troca de mês`);
+    // Nunca cravar o mês-alvo: abre o painel, lê as opções REAIS na tela (só o rótulo "Mes Año" é exibido; o ISO
+    // sai de `mesIsoDoRotulo`) e escolhe qualquer uma diferente da atual — o defeito de hoje era justamente
+    // seletor e sync discordarem de mês, então fixar o valor no teste esconderia o próprio bug que ele pega.
+    await seletorMes.click();
+    const rotulosDisponiveis = (await page.getByRole('option').allInnerTexts()).map((r) => r.trim());
+    const rotuloAlvo = rotulosDisponiveis.find((r) => r !== rotuloInicial);
+    if (!rotuloAlvo) throw new Error(`Seletor de mês só tem uma opção (${rotuloInicial}) — não dá para provar a troca de mês`);
+    await page.keyboard.press('Escape'); // fecha o painel; a escolha de verdade vem abaixo, com o fetch seguro
+    const mesAlvo = mesIsoDoRotulo(rotuloAlvo);
 
     // Observa o corpo do POST de sync NO PORTÃO DE REDE (nunca no servidor, nunca troca a
     // requisição) — registrado ANTES da troca de mês, `route.fallback()` devolve pro `swap` do
@@ -353,15 +358,13 @@ test.describe('Botão "Sincronizar" — Horas Ana Care — E2E real @integration
 
     const holdMes = holdMonthFetch(page, mesAlvo);
 
-    // Interação HUMANA: `<select>` nativo (`atoms/Select`) — `selectOption` é o equivalente real
-    // de escolher a opção (dispara o mesmo evento `change` que o usuário dispara), mesmo padrão
-    // já usado em outras specs `@integration` deste repo para `<select>` nativo.
-    await seletorMes.selectOption(mesAlvo);
+    // Interação HUMANA: o seletor de mês é um Combobox — abre o gatilho e clica a opção pelo rótulo.
+    await escolherNoCombo(page, seletorMes, rotuloAlvo);
     await holdMes.captured; // GET de `/anacare-hours/months/{mesAlvo}` capturado e SEGURO — em voo, de propósito.
 
     // Lê o valor NA TELA, agora, com o fetch do mês novo ainda em voo — é este valor, nunca uma
     // constante, que a asserção final compara contra o corpo do POST.
-    const mesExibidoComFetchEmVoo = await seletorMes.inputValue();
+    const mesExibidoComFetchEmVoo = mesIsoDoRotulo((await seletorMes.innerText()).trim());
 
     const botao = page.getByTestId('anacare-hours-sync-button');
     await expect(botao).toBeVisible({ timeout: 15_000 });

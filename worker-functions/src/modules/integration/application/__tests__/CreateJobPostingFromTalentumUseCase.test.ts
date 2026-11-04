@@ -419,7 +419,7 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       );
       expect(updateCall).toBeDefined();
       expect(updateCall![0]).toContain('UPDATE job_postings');
-      expect(updateCall![1]).toEqual(['proj-link', 'jp-existing']);
+      expect(updateCall![1]).toEqual(['proj-link', 'jp-existing', null]); // sem resolver injetado: prescreening_id null
     });
 
     it('deve vincular vacante existente por case_number quando nome é "CASO 230" (sem vacancy_number)', async () => {
@@ -573,6 +573,66 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
 
       expect(prodResult.created).toBe(true);
       expect(testResult.created).toBe(true);
+    });
+  });
+  describe('talentum_prescreening_id (espelho do Talentum, M5)', () => {
+    it('vaga CRIADA pelo Talentum grava o _id do prescreening (resolvido por getPrescreening) no INSERT', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })                // anti-loop
+        .mockResolvedValueOnce({ rows: [] })                // case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '77' }] });  // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-77', talentum_prescreening_id: 'presc-xyz' }] })
+        .mockResolvedValue({ rows: [] });
+      const resolver = jest.fn().mockResolvedValue('presc-xyz');
+
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery), resolver);
+      const result = await useCase.execute(makeInput({ _id: 'proj-77', name: 'CASO 230' }), 'production');
+
+      expect(result.created).toBe(true);
+      expect(resolver).toHaveBeenCalledWith('proj-77'); // lê o _id pelo project id, não pelo próprio project id
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      )!;
+      expect(insertCall[0]).toContain('talentum_prescreening_id');
+      expect(insertCall[1][4]).toBe('presc-xyz');
+    });
+
+    it('vaga VINCULADA a uma existente também grava o _id', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-existing', vacancy_number: 42 }] });
+      mockClientQuery.mockResolvedValue({ rows: [{ talentum_prescreening_id: 'presc-link' }] });
+      const resolver = jest.fn().mockResolvedValue('presc-link');
+
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery), resolver);
+      await useCase.execute(makeInput({ _id: 'proj-link', name: 'CASO 230-42' }), 'production');
+
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings'),
+      )!;
+      expect(updateCall[0]).toContain('talentum_prescreening_id');
+      expect(updateCall[1]).toEqual(['proj-link', 'jp-existing', 'presc-link']);
+    });
+
+    it('sem _id disponível (resolver devolve null): a vaga nasce com NULL e não quebra (o backfill preenche)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ vn: '78' }] });
+      mockClientQuery.mockResolvedValueOnce({}).mockResolvedValueOnce({ rows: [{ id: 'jp-78' }] }).mockResolvedValue({ rows: [] });
+
+      const useCase = new CreateJobPostingFromTalentumUseCase(
+        makePool(mockQuery, mockClientQuery),
+        jest.fn().mockResolvedValue(null),
+      );
+      const result = await useCase.execute(makeInput({ _id: 'proj-78', name: 'Vaga sem caso' }), 'production');
+
+      expect(result.created).toBe(true);
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      )!;
+      expect(insertCall[1][4]).toBeNull();
     });
   });
 });

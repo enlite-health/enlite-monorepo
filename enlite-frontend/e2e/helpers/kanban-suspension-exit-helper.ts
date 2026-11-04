@@ -6,11 +6,13 @@
  * (conserto do e2e antigo pós-D444) — zero duplicação do "escolher motivo + confirmar" no
  * `SuspensionExitReasonDialog` do Kanban.
  *
- * `selectOption` é a forma canônica desta suíte para `<select>` (nunca fill/evaluate). O
+ * O motivo é um `Combobox` (spec 070): abre o gatilho e clica a opção pelo RÓTULO que a pessoa lê
+ * (`escolherNoCombo`; nunca fill/evaluate/selectOption). O
  * `waitForResponse` some DENTRO do helper: o PUT só sai ao clicar `kanban-suspension-confirm`
  * (o drag sozinho não dispara nada — o diálogo abriu e nada se moveu ainda).
  */
 import { expect, type Page } from '@playwright/test';
+import { escolherNoCombo } from './combobox';
 
 export type KanbanSuspensionExitReason =
   | 'RESUMED_SERVICE'
@@ -18,6 +20,15 @@ export type KanbanSuspensionExitReason =
   | 'NEEDS_NEW_WORKER'
   | 'WRONG_STATUS'
   | 'OTHER';
+
+/** Rótulos (es) de `admin.patients.suspensionExitReasonOptions.*` — o que a pessoa lê na lista. */
+const ROTULO_MOTIVO: Record<KanbanSuspensionExitReason, string> = {
+  RESUMED_SERVICE: 'Retomó el servicio (fin de vacaciones/internación)',
+  FAMILY_REQUESTED: 'La familia pidió retomar',
+  NEEDS_NEW_WORKER: 'Necesita nuevo prestador',
+  WRONG_STATUS: 'Estado cargado por error',
+  OTHER: 'Otro',
+};
 
 /**
  * Assume que o diálogo (`kanban-suspension-dialog`) já está visível (drag concluído,
@@ -30,7 +41,7 @@ export async function confirmKanbanSuspensionExit(
   const dialogo = page.getByTestId('kanban-suspension-dialog');
   await expect(dialogo).toBeVisible();
 
-  await page.getByTestId('kanban-suspension-exit-reason').selectOption(reason);
+  await escolherNoCombo(page, page.getByTestId('kanban-suspension-exit-reason'), ROTULO_MOTIVO[reason]);
   await Promise.all([
     page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url())),
     page.getByTestId('kanban-suspension-confirm').click(),

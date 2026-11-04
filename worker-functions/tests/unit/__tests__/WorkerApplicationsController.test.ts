@@ -228,8 +228,11 @@ describe('WorkerApplicationsController.trackChannel — branches adicionais', ()
       getValue: () => ({ id: WORKER_ID }),
     });
     mockAssertWorkerCanApply.mockResolvedValueOnce(undefined);
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ status: 'SEARCHING' }] }); // spec 084: vaga não está DE_BAJA
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
+    // FR-16 (spec 067): 3ª query = SELECT do talentum_whatsapp_url (prescreeningUrl) no ramo aprovado.
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ url: 'https://wa.me/talentum' }] });
 
     const res = mockRes();
     await controller.trackChannel(mockReq() as never, res as never);
@@ -244,8 +247,11 @@ describe('WorkerApplicationsController.trackChannel — branches adicionais', ()
       getValue: () => ({ id: WORKER_ID, firstName: 'Ana', lastName: 'Lima' }),
     });
     mockAssertWorkerCanApply.mockResolvedValueOnce(undefined);
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ status: 'SEARCHING' }] }); // spec 084: vaga não está DE_BAJA
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
+    // FR-16 (spec 067): 3ª query = SELECT do talentum_whatsapp_url (prescreeningUrl) no ramo aprovado.
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ url: 'https://wa.me/talentum' }] });
 
     const res = mockRes();
     await controller.trackChannel(mockReq() as never, res as never);

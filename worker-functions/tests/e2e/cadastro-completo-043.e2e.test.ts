@@ -208,8 +208,10 @@ describe('A1 — o admin completa o cadastro: TODAS as vagas bloqueadas do worke
   });
 });
 
-describe('A1 só promove — edição do admin NÃO rebaixa REGISTERED legado fora do critério', () => {
-  it('REGISTERED sem documentos/área (fora do critério do recálculo) + admin edita um campo → segue REGISTERED, sem evento novo', async () => {
+// Spec 067 R-4/FR-23: a decisão 043 A1 ("só promove", edição do admin NÃO rebaixa) foi REVERTIDA na P-4 — o recálculo
+// agora também REBAIXA. Este caso antes fixava o oposto (segue REGISTERED); passa a fixar o rebaixamento.
+describe('A1 revertida (067 R-4/FR-23) — edição do admin REBAIXA REGISTERED legado fora do critério para INCOMPLETE_REGISTER', () => {
+  it('REGISTERED sem documentos/área (fora do critério do recálculo) + admin edita um campo → vira INCOMPLETE_REGISTER (067 R-4/FR-23)', async () => {
     const w = await makeRegisteredWorker('a1-legado'); // INSERT já REGISTERED: o trigger só barra a transição PARA REGISTERED
     const eventosAntes = await pool.query(`SELECT count(*)::int AS n FROM domain_events WHERE payload->>'workerId' = $1`, [w]);
     const histAntes = await pool.query(`SELECT count(*)::int AS n FROM worker_status_history WHERE worker_id = $1`, [w]);
@@ -221,11 +223,11 @@ describe('A1 só promove — edição do admin NÃO rebaixa REGISTERED legado fo
 
     expect(r.fieldsUpdated).toEqual(['profession']);
     const { rows } = await pool.query(`SELECT status, profession FROM workers WHERE id = $1`, [w]);
-    expect(rows[0]).toEqual({ status: 'REGISTERED', profession: 'AT' });
+    expect(rows[0]).toEqual({ status: 'INCOMPLETE_REGISTER', profession: 'AT' });
     const eventosDepois = await pool.query(`SELECT count(*)::int AS n FROM domain_events WHERE payload->>'workerId' = $1`, [w]);
     const histDepois = await pool.query(`SELECT count(*)::int AS n FROM worker_status_history WHERE worker_id = $1`, [w]);
-    // o único evento permitido é o mirror da própria edição (já existia antes do A1); nenhum de status
-    expect(histDepois.rows[0].n).toBe(histAntes.rows[0].n);
+    // 067 R-4/FR-23: o rebaixamento deixa UMA linha no histórico de status (antes do A1 revertido, nenhuma)
+    expect(histDepois.rows[0].n - histAntes.rows[0].n).toBe(1);
     expect(eventosDepois.rows[0].n - eventosAntes.rows[0].n).toBe(1);
     const { rows: ev } = await pool.query(`SELECT event FROM domain_events WHERE payload->>'workerId' = $1`, [w]);
     expect(ev.map((e) => e.event)).toEqual(['worker.mirror_requested']);

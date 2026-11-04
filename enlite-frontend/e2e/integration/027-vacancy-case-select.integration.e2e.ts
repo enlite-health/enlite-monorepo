@@ -331,8 +331,9 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
     await expect(page.getByText('Nueva Vacante')).toBeVisible({ timeout: 15_000 });
 
     await openCaseSelectAndSearch(page, '999999999');
-    await expect(page.locator('[data-testid="searchable-select-empty"]')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('[data-testid="case-select"] [role="option"]')).toHaveCount(1); // só a opção "Todos"/placeholder, nenhum caso
+    // Combobox: sem resultado a mensagem leva `${data-testid do Combobox}-no-results` e, com termo digitado, nem a linha "limpar" aparece
+    await expect(page.locator('[data-testid="case-select-combobox-no-results"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="case-select"] [role="option"]')).toHaveCount(0); // nenhum caso e sem a linha do placeholder (busca ativa)
 
     // Nada foi selecionado: sem endereço, hint continua visível, botão continua no placeholder.
     await expect(page.locator('[data-testid^="address-option-"]')).toHaveCount(0);

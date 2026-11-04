@@ -3,24 +3,12 @@ import { Pool } from 'pg';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import { TalentumWebhookHandler, TalentumWebhookContext } from './TalentumWebhookHandler';
 import { TalentumPrescreeningResponseParsed } from '../validators/talentumPrescreeningSchema';
-import { TalentumPrescreeningRepository, ProcessTalentumPrescreening } from '@modules/matching';
-import type { IJobPostingLookup } from '@modules/matching';
+import { TalentumPrescreeningRepository, ProcessTalentumPrescreening, JobPostingLookup } from '@modules/matching';
 import { WorkerRepository } from '@modules/worker';
 import { PubSubClient } from '@shared/events/PubSubClient';
+import { reportError, toSafeError } from '@shared/logging';
 
 const TAG = '[TalentumWebhook:PrescreeningResponse]';
-
-class JobPostingLookup implements IJobPostingLookup {
-  constructor(private readonly pool: Pool) {}
-
-  async findByTitleILike(name: string): Promise<{ id: string } | null> {
-    const result = await this.pool.query(
-      `SELECT id FROM job_postings WHERE title ILIKE $1 AND deleted_at IS NULL LIMIT 1`,
-      [`%${name}%`],
-    );
-    return result.rows[0] ?? null;
-  }
-}
 
 export class PrescreeningResponseHandler implements TalentumWebhookHandler<TalentumPrescreeningResponseParsed> {
   constructor(private readonly pool: Pool) {}
@@ -57,6 +45,8 @@ export class PrescreeningResponseHandler implements TalentumWebhookHandler<Talen
       res.status(200).json(result);
     } catch (err) {
       console.error(`${TAG} ERROR | extId=${extId} |`, (err as Error)?.message ?? err);
+      // Alarme no caminho de exceção (o 500 ao Talentum não muda). Erro sem PII (sem o `detail` do pg).
+      reportError(toSafeError(err), { source: 'PrescreeningResponseHandler:process', talentumPrescreeningId: extId });
       res.status(500).json({ error: 'Internal server error' });
     }
   }

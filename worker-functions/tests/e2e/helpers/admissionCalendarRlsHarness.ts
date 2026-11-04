@@ -16,6 +16,7 @@ import { FakeMeetConference } from '../../../src/modules/matching/infrastructure
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import type { CreateEventParams } from '../../../src/modules/matching/infrastructure/AdmissionCalendarService';
 import { capturingLogger } from '../../../src/modules/matching/infrastructure/doubles/admissionTestKit';
+import { insertInterviewHost, deleteInterviewHosts } from './interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -103,7 +104,7 @@ export function definirCenariosCalendarioRls(conexao: ConexaoCalendario, sufixo:
     async function limpar(): Promise<void> {
       await admin.query(`DELETE FROM admission_appointments WHERE host_email = $1`, [HOST]);
       await admin.query(`DELETE FROM patients WHERE clickup_task_id = $1`, [`e2e-050-cal-rls-${sufixo}`]);
-      await admin.query('DELETE FROM interview_hosts WHERE email = $1', [HOST]);
+      await deleteInterviewHosts(admin, [HOST]);
       await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = $1', [HOST]);
       await admin.query('DELETE FROM users WHERE firebase_uid = $1', [STAFF.uid]);
     }
@@ -124,7 +125,7 @@ export function definirCenariosCalendarioRls(conexao: ConexaoCalendario, sufixo:
       setEnv('ADMISSION_CALENDAR_ID_AR', CAL_AR);
 
       await admin.query(`INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,$2,'admin','ACTIVE',true,$3)`, [STAFF.uid, STAFF.email, TENANT]);
-      await admin.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true)`, [HOST]);
+      await insertInterviewHost(admin, { email: HOST, displayName: 'Ana' });
       await admin.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,$2,'linked')`, [HOST, `tq-${sufixo}`]);
       patientId = (await admin.query(
         `INSERT INTO patients (clickup_task_id, first_name, last_name, country, is_test, has_consent, contact_email_encrypted)
