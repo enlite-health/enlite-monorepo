@@ -217,7 +217,13 @@ export class ProcessTalentumPrescreening {
 
     const phoneIds = await this.findCanonicalIdsByPhone(phoneNumber);
     if (phoneIds.length === 1) return { id: phoneIds[0], emailAmbiguous };
-    if (phoneIds.length > 1) console.log(`${TAG} resolveWorker → telefone casa ${phoneIds.length} cadastros vivos distintos: ambíguo, sem worker`);
+    if (phoneIds.length > 1) {
+      // Telefone ambíguo = MESMO tratamento do e-mail ambíguo: divergência, sem CUIL e sem auto-create (o índice de
+      // telefone normalizado não é único em prd: o INSERT passaria e nasceria duplicata). O `kind` da divergência tem
+      // CHECK no banco (migration 565): reaproveita WORKER_EMAIL_AMBIGUOUS em vez de criar kind novo.
+      console.log(`${TAG} resolveWorker → telefone casa ${phoneIds.length} cadastros vivos distintos: ambíguo, sem worker`);
+      return { id: null, emailAmbiguous: true };
+    }
 
     if (cuil) {
       const byCuil = this.extractId(await this.workerLookup.findByCuit(cuil));

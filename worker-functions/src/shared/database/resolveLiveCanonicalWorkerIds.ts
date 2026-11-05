@@ -6,6 +6,8 @@
  * 2+ ids devolvidos = sobreviventes DISTINTOS (ambíguo; quem chama decide). Quem chama já excluiu `deleted_at` na
  * linha casada; aqui só se confere que o SOBREVIVENTE de um id fundido não foi deletado.
  *
+ * Cadeia quebrada (ciclo): o script de reconciliação descarta o id; o webhook mantém o id cru com `reportError`.
+ *
  * `canonicalize` é de quem chama (o webhook passa o `toCanonical`, com alarme de cadeia quebrada); `null` = descarta.
  */
 import type { Pool, PoolClient } from 'pg';

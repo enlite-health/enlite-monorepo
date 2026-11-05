@@ -1858,6 +1858,22 @@ describe('ProcessTalentumPrescreening', () => {
       expect(divergenceKinds()).toContain('WORKER_EMAIL_AMBIGUOUS');
     });
 
+    it('(g) telefone com 2 sobreviventes vivos DISTINTOS: NÃO auto-cria, grava divergência (como o e-mail ambíguo)', async () => {
+      installFakeDb([
+        { id: 'w-f1', email: 'a@exemplo.invalid', phone: FONE_FUNDIDO, mergedIntoId: 'w-viva-1' },
+        { id: 'w-f2', email: 'b@exemplo.invalid', phone: '5491155550001', mergedIntoId: 'w-viva-2' },
+        { id: 'w-viva-1', email: 'v1@exemplo.invalid', phone: '5491100000010' },
+        { id: 'w-viva-2', email: 'v2@exemplo.invalid', phone: '5491100000011' },
+      ]);
+      mockWorkerLookup.findByCuit.mockClear();
+
+      const result = await run({ email: 'ninguem@exemplo.invalid' });
+
+      expect(result.workerId).toBeNull();
+      expect(mockPool.query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO workers'))).toBe(false);
+      expect(divergenceKinds()).toEqual(expect.arrayContaining(['WORKER_EMAIL_AMBIGUOUS', 'WORKER_NULL']));
+    });
+
     it('(e) cadastro DELETADO continua não sendo achado (nem direto, nem fundido)', async () => {
       installFakeDb([
         { id: 'w-deletado', email: EMAIL_FUNDIDO, phone: FONE_FUNDIDO, deletedAt: new Date() },
