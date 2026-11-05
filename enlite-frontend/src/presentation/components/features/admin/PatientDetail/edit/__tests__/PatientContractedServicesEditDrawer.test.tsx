@@ -65,7 +65,7 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     mockList.mockReset();
     vi.clearAllMocks();
     mockForService.mockResolvedValue({ providers: [{ code: 'OSDE', name: 'OSDE' }], asOf: '2026-10-19' });
-    mockListContracts.mockResolvedValue([{ id: 'ct-1', name: 'Plan 210', country: 'BR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'NO_TERM' }, futureTerms: [] }]);
+    mockListContracts.mockResolvedValue([{ id: 'ct-1', name: 'Plan 210', country: 'BR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'OK', termId: 't', validFrom: '2026-09-01', validTo: null, taxRatePercent: 0, price: { state: 'OK', hourlyRate: 2000, currency: 'ARS' } }, futureTerms: [] }]);
   });
 
   const api = async () => (await import('@infrastructure/http/AdminContractedServicesApiService')).AdminContractedServicesApiService;
