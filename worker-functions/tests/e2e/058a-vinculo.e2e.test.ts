@@ -433,7 +433,9 @@ describe('058a vínculo serviço → contrato — travas de banco (537) @integra
       expect(JSON.stringify(r.data.data.providers)).not.toMatch(/payer|OBRA_SOCIAL|PREPAGA/);
       expect(r.data.data.providers.find((p: { code: string }) => p.code === provA)).toEqual({ code: provA, name: expect.stringContaining('QA058') });
       const br = await api.get(`${BASE}/insurance-providers/for-service?country=BR`, admin);
-      expect((br.data.data.providers as Array<{ code: string }>).map((p) => p.code)).not.toContain(provA); // o contrato é AR
+      const brCodes = (br.data.data.providers as Array<{ code: string }>).map((p) => p.code);
+      expect(brCodes).toContain(provA); // provA tem o contrato cA_BR (sem termo): contrato no país basta
+      expect(brCodes).not.toContain(provB); // provB só tem contrato AR
       expect((await api.get(`${BASE}/insurance-providers/for-service`, admin)).status).toBe(400);
     });
 
