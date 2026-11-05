@@ -317,7 +317,12 @@ export class JobPostingARRepository {
 
          pa.state                             AS state,
          pa.city                              AS city,
-         jp.social_short_links->>'site'       AS detail_link,
+         -- Em PRD o canal 'site' e um objeto {id,url} (EnsureVacancyShortLinkUseCase); legado e string.
+         -- O feed so entrega URL ou NULL: ->> sobre o objeto devolveria o JSON inteiro como texto.
+         CASE WHEN jsonb_typeof(jp.social_short_links->'site') = 'object'
+              THEN jp.social_short_links->'site'->>'url'
+              ELSE jp.social_short_links->>'site'
+         END                                  AS detail_link,
          ${vacancyEffectiveRequiredProfessionsSql('jp')} AS worker_type,
          ${vacancyEffectiveRequiredSexSql('jp')} AS worker_sex,
          jp.inferred_zone                     AS job_zone,

@@ -384,6 +384,37 @@ describe('JobsEmbeddedSection — Ver Detalles (comportamento inalterado)', () =
     openSpy.mockRestore();
   });
 
+  // Defeito de prd (05/11): o feed trazia `detail_link` como o JSON cru do objeto {id,url}, e o
+  // window.open abria app.enlite.health/%7B"id"... (catch-all → home).
+  const JSON_CRU = '{"id": "link_56rR", "url": "https://go.enlite.health/Xi1G3B"}';
+
+  it('detail_link em JSON cru (prd) NUNCA vira window.open com esse texto: abre a rota interna /vacantes/:id', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    mockGetPublicJobs.mockResolvedValue([publicListing({ id: 'uuid-da-vaga', detail_link: JSON_CRU })]);
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitForLoaded();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'jobs.viewDetails' })[0]);
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(openSpy).toHaveBeenCalledWith('/vacantes/uuid-da-vaga', '_blank');
+    expect(String(openSpy.mock.calls[0][0])).not.toContain('{');
+    openSpy.mockRestore();
+  });
+
+  it('detail_link inválido e sem id (scraper legado): o botão fica desabilitado e nada abre', async () => {
+    mockFetchOnce(legacyResponse({ data: [{ ...legacyResponse().data[0], detailLink: JSON_CRU }] }));
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitForLoaded();
+
+    const btn = screen.getAllByRole('button', { name: 'jobs.viewDetails' })[0];
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
   it('cadastro incompleto: Ver Detalles abre o MESMO IncompleteRegistrationModal, NÃO abre o link, NENHUMA request pra track-channel', async () => {
     mockFetchOnce(legacyResponse());
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
