@@ -50,6 +50,13 @@ export interface NormalizedEmailLookup {
   /** 0 = nenhum, 1 = achou, >1 = ambíguo (`getValue()` é null: nunca se escolhe um). */
   ambiguousCount: number;
   getValue(): Worker | null;
+  /** Todos os ids casados (até 10, ORDER determinístico). Com `includeMerged`, inclui fundidos; o chamador canonicaliza. */
+  ids: string[];
+}
+
+export interface WorkerLookupOpts {
+  /** Inclui worker fundido (`merged_into_id` preenchido). Só o webhook Talentum usa; deletado fica sempre fora. */
+  includeMerged?: boolean;
 }
 
 export class WorkerRepository implements IWorkerRepository {
@@ -179,7 +186,8 @@ export class WorkerRepository implements IWorkerRepository {
    * que recebe o e-mail como a candidata digitou. Só worker VIVO (não merged, não deletado), ORDER BY determinístico.
    * Mais de 1 candidato = AMBÍGUO: devolve `worker: null` + `ambiguousCount` (nunca escolhe `rows[0]`).
    */
-  async findByEmailNormalized(email: string): Promise<NormalizedEmailLookup> {
+  async findByEmailNormalized(email: string, opts: WorkerLookupOpts = {}): Promise<NormalizedEmailLookup> {
+    const mergedFilter = opts.includeMerged ? '' : 'AND merged_into_id IS NULL';
     try {
       const result = await this.pool.query(
         `SELECT id, auth_uid as "authUid", email, phone,
@@ -189,20 +197,21 @@ export class WorkerRepository implements IWorkerRepository {
                 created_at as "createdAt", updated_at as "updatedAt"
          FROM workers
          WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
-           AND merged_into_id IS NULL AND deleted_at IS NULL
+           ${mergedFilter} AND deleted_at IS NULL
          ORDER BY created_at, id
-         LIMIT 2`,
+         LIMIT ${opts.includeMerged ? 10 : 2}`,
         [email],
       );
-      if (result.rows.length === 0) return { isSuccess: true, ambiguousCount: 0, getValue: () => null };
-      if (result.rows.length > 1) return { isSuccess: true, ambiguousCount: result.rows.length, getValue: () => null };
+      const ids: string[] = result.rows.map((r: { id: string }) => r.id);
+      if (result.rows.length === 0) return { isSuccess: true, ambiguousCount: 0, ids, getValue: () => null };
+      if (result.rows.length > 1) return { isSuccess: true, ambiguousCount: result.rows.length, ids, getValue: () => null };
 
       const row = result.rows[0];
       row.whatsappPhone = (await this.encryptionService.decrypt(row.whatsappPhoneEnc)) || undefined;
       delete row.whatsappPhoneEnc;
-      return { isSuccess: true, ambiguousCount: 1, getValue: () => row as Worker };
+      return { isSuccess: true, ambiguousCount: 1, ids, getValue: () => row as Worker };
     } catch {
-      return { isSuccess: false, ambiguousCount: 0, getValue: () => null };
+      return { isSuccess: false, ambiguousCount: 0, ids: [], getValue: () => null };
     }
   }
 
@@ -304,9 +313,24 @@ export class WorkerRepository implements IWorkerRepository {
     }
   }
 
-  async findByPhoneCandidates(candidates: string[]): Promise<Result<Worker | null>> {
+  async findByPhoneCandidates(
+    candidates: string[],
+    opts: WorkerLookupOpts = {},
+  ): Promise<Result<Worker | null> & { ids?: string[] }> {
     try {
       if (candidates.length === 0) return Result.ok<Worker | null>(null);
+      if (opts.includeMerged) {
+        // Webhook Talentum: o dono do telefone pode estar só num cadastro FUNDIDO (D111). Devolve TODOS os ids para
+        // o chamador seguir a cadeia e deduplicar; deletado continua fora. Os demais callers não passam a opção.
+        const merged = await this.pool.query(
+          `SELECT id FROM workers WHERE phone = ANY($1::text[]) AND deleted_at IS NULL ORDER BY created_at, id LIMIT 10`,
+          [candidates],
+        );
+        const ids: string[] = merged.rows.map((r: { id: string }) => r.id);
+        const first = (merged.rows[0] as Worker | undefined) ?? null;
+        // Result é congelado (Object.freeze): não dá para anexar `ids`; devolve a forma estrutural equivalente.
+        return { isSuccess: true, isFailure: false, getValue: () => first, ids } as unknown as Result<Worker | null> & { ids: string[] };
+      }
       // Só considera workers ATIVOS: não-merged (espelha idx_workers_phone_normalized,
       // mig 219) e não soft-deletados — conta com deleted_at não pode bloquear o
       // número de quem está se cadastrando (caso Edith, diagnóstico 03/08).

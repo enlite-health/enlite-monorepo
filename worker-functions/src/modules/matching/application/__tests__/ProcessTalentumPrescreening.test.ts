@@ -1483,6 +1483,7 @@ describe('ProcessTalentumPrescreening', () => {
           }
           return Promise.resolve({ rows: [{ id, depth: 0, merged_into_id: null }] });
         }
+        if (sql.includes('AS alive')) return Promise.resolve({ rows: [{ alive: 1 }] });
         if (sql.includes('INSERT INTO workers')) return Promise.resolve({ rows: [{ id: 'w-auto' }] });
         if (sql.includes('SELECT id FROM workers')) return Promise.resolve({ rows: [{ id: 'w-dead' }] });
         return Promise.resolve({ rows: [] });
@@ -1534,11 +1535,11 @@ describe('ProcessTalentumPrescreening', () => {
 
   describe('telefone do Talentum sem o 9 do móvel (prd 04/11: 29 candidatas sem worker)', () => {
     // Espelha o WHERE de WorkerRepository.findByPhoneCandidates:
-    // phone = ANY(candidatos) AND merged_into_id IS NULL AND deleted_at IS NULL.
+    // phone = ANY(candidatos) [AND merged_into_id IS NULL, salvo includeMerged] AND deleted_at IS NULL.
     function fakePhoneLookup(rows: Array<{ id: string; phone: string; mergedIntoId?: string | null; deletedAt?: Date | null }>) {
-      mockWorkerLookup.findByPhoneCandidates.mockImplementation(async (candidates: string[]) => {
-        const hit = rows.find((r) => candidates.includes(r.phone) && !r.mergedIntoId && !r.deletedAt);
-        return { getValue: () => (hit ? { id: hit.id } : null) } as never;
+      mockWorkerLookup.findByPhoneCandidates.mockImplementation(async (candidates: string[], opts?: { includeMerged?: boolean }) => {
+        const hits = rows.filter((r) => candidates.includes(r.phone) && (opts?.includeMerged || !r.mergedIntoId) && !r.deletedAt);
+        return { getValue: () => (hits[0] ? { id: hits[0].id } : null), ids: hits.map((h) => h.id) } as never;
       });
     }
     const SEM_O_9 = '541155261243'; // como o Talentum manda (12 dígitos)
@@ -1558,15 +1559,13 @@ describe('ProcessTalentumPrescreening', () => {
       expect(mockWorkerLookup.findByPhoneCandidates.mock.calls[0][0]).toContain(COM_O_9);
     });
 
-    it('(b) worker merged ou deletado com o mesmo telefone NÃO é escolhido', async () => {
+    it('(b) worker deletado com o mesmo telefone NÃO é escolhido', async () => {
       fakePhoneLookup([
-        { id: 'w-merged', phone: COM_O_9, mergedIntoId: 'w-outro' },
         { id: 'w-deleted', phone: COM_O_9, deletedAt: new Date() },
       ]);
 
       const result = await useCase.execute(buildPayload({ phoneNumber: SEM_O_9, status: 'INITIATED' }));
 
-      expect(result.workerId).not.toBe('w-merged');
       expect(result.workerId).not.toBe('w-deleted');
       expect(result.workerId).toBe('w-auto'); // caiu no auto-create
     });
@@ -1728,7 +1727,9 @@ describe('ProcessTalentumPrescreening', () => {
       const result = await useCase.execute(buildPayload());
 
       expect(result.workerId).toBeNull();
-      expect(selectSql).toMatch(/merged_into_id IS NULL AND deleted_at IS NULL/);
+      // o FUNDIDO entra na busca (índice único de e-mail/auth_uid o enxerga); só deletado fica fora
+      expect(selectSql).not.toMatch(/merged_into_id/);
+      expect(selectSql).toMatch(/deleted_at IS NULL/);
       expect(selectSql).toMatch(/ORDER BY created_at, id/);
     });
 
@@ -1741,6 +1742,158 @@ describe('ProcessTalentumPrescreening', () => {
       expect(result.workerId).toBe('w-fone');
       expect(divergenceKinds()).toContain('WORKER_EMAIL_AMBIGUOUS');
       expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ kind: 'WORKER_EMAIL_AMBIGUOUS' }));
+    });
+  });
+
+  describe('cadastro FUNDIDO (regressão 04/11: busca filtrava merged_into_id e o toCanonical nunca recebia o id fundido)', () => {
+    // Banco fake: reproduz os filtros REAIS do repositório (includeMerged liga o fundido; deletado nunca entra)
+    // e a cadeia de merge do resolveCanonicalWorkerId. Sintético: nenhum e-mail/telefone real.
+    const divergenceKinds = () =>
+      mockPrescreeningRepo.insertDivergence.mock.calls.map((c: any[]) => c[0].kind);
+    interface FakeWorker { id: string; email: string; phone: string; mergedIntoId?: string | null; deletedAt?: Date | null }
+    const EMAIL_FUNDIDO = 'pessoa.sintetica@exemplo.invalid';
+    const FONE_FUNDIDO = '5491155550001';
+    const FONE_FUNDIDO_SEM_9 = '541155550001';
+
+    function installFakeDb(db: FakeWorker[]) {
+      const byId = (id: unknown) => db.find((w) => w.id === id);
+      const norm = (e: string) => e.trim().toLowerCase();
+      mockWorkerLookup.findByEmailNormalized.mockImplementation(async (email: string, opts?: { includeMerged?: boolean }) => {
+        const hits = db.filter((w) => norm(w.email) === norm(email) && (opts?.includeMerged || !w.mergedIntoId) && !w.deletedAt);
+        return {
+          isSuccess: true, ambiguousCount: hits.length, ids: hits.map((h) => h.id),
+          getValue: () => (hits.length === 1 ? { id: hits[0].id } : null),
+        } as never;
+      });
+      mockWorkerLookup.findByPhoneCandidates.mockImplementation(async (candidates: string[], opts?: { includeMerged?: boolean }) => {
+        const hits = db.filter((w) => candidates.includes(w.phone) && (opts?.includeMerged || !w.mergedIntoId) && !w.deletedAt);
+        return { getValue: () => (hits[0] ? { id: hits[0].id } : null), ids: hits.map((h) => h.id) } as never;
+      });
+      mockWorkerLookup.findByCuit.mockResolvedValue({ getValue: () => null });
+      mockPool.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('WITH RECURSIVE chain')) {
+          let cur = byId(params?.[0]);
+          if (!cur) return Promise.resolve({ rows: [] });
+          let depth = 0;
+          while (cur.mergedIntoId && depth < 10) { cur = byId(cur.mergedIntoId) ?? { ...cur, mergedIntoId: null }; depth++; }
+          return Promise.resolve({ rows: [{ id: cur.id, depth, merged_into_id: cur.mergedIntoId ?? null }] });
+        }
+        if (sql.includes('AS alive')) {
+          const w = byId(params?.[0]);
+          return Promise.resolve({ rows: w && !w.deletedAt ? [{ alive: 1 }] : [] });
+        }
+        if (sql.includes('INSERT INTO workers')) return Promise.reject(Object.assign(new Error('dup'), { code: '23505' }));
+        if (/FROM workers\s+WHERE \(auth_uid/.test(sql)) {
+          const email = params?.[1] as string;
+          return Promise.resolve({ rows: db.filter((w) => norm(w.email) === norm(email) && !w.deletedAt && !(sql.includes('merged_into_id IS NULL') && w.mergedIntoId)).map((w) => ({ id: w.id })) });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+    }
+    const SOBREVIVENTE: FakeWorker = { id: 'w-sobrevivente', email: 'outro.email@exemplo.invalid', phone: '5491100009999' };
+    const run = (over: { email?: string; phoneNumber?: string } = {}) =>
+      useCase.execute(buildPayload({ status: 'INITIATED', email: EMAIL_FUNDIDO, phoneNumber: FONE_FUNDIDO_SEM_9, ...over }));
+
+    it('(a) e-mail existe só no fundido → resolve o SOBREVIVENTE (outro e-mail, outro telefone)', async () => {
+      installFakeDb([
+        { id: 'w-fundido', email: EMAIL_FUNDIDO, phone: '5491100000000', mergedIntoId: 'w-sobrevivente' },
+        SOBREVIVENTE,
+      ]);
+
+      const result = await run({ phoneNumber: '+5491100008888' });
+
+      expect(result.workerId).toBe('w-sobrevivente');
+      expect(mockWorkerLookup.findByEmailNormalized).toHaveBeenCalledWith(EMAIL_FUNDIDO, { includeMerged: true });
+      expect(mockPool.query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO workers'))).toBe(false);
+    });
+
+    it('(b) telefone existe só no fundido → resolve o SOBREVIVENTE', async () => {
+      installFakeDb([
+        { id: 'w-fundido', email: 'nao.casa@exemplo.invalid', phone: FONE_FUNDIDO, mergedIntoId: 'w-sobrevivente' },
+        SOBREVIVENTE,
+      ]);
+
+      const result = await run();
+
+      expect(result.workerId).toBe('w-sobrevivente');
+      expect(mockWorkerLookup.findByPhoneCandidates.mock.calls[0][1]).toEqual({ includeMerged: true });
+    });
+
+    it('(c) cadeia de 2 fusões A→B→C resolve para C', async () => {
+      installFakeDb([
+        { id: 'w-A', email: EMAIL_FUNDIDO, phone: '5491100000000', mergedIntoId: 'w-B' },
+        { id: 'w-B', email: 'b@exemplo.invalid', phone: '5491100000001', mergedIntoId: 'w-C' },
+        { id: 'w-C', email: 'c@exemplo.invalid', phone: '5491100000002' },
+      ]);
+
+      const result = await run({ phoneNumber: '+5491100008888' });
+
+      expect(result.workerId).toBe('w-C');
+    });
+
+    it('(d) dois fundidos distintos que apontam para o MESMO sobrevivente NÃO são ambíguos (e-mail)', async () => {
+      installFakeDb([
+        { id: 'w-f1', email: EMAIL_FUNDIDO, phone: '5491100000000', mergedIntoId: 'w-sobrevivente' },
+        { id: 'w-f2', email: ` ${EMAIL_FUNDIDO.toUpperCase()} `, phone: '5491100000001', mergedIntoId: 'w-sobrevivente' },
+        SOBREVIVENTE,
+      ]);
+
+      const result = await run({ phoneNumber: '+5491100008888' });
+
+      expect(result.workerId).toBe('w-sobrevivente');
+      expect(divergenceKinds()).not.toContain('WORKER_EMAIL_AMBIGUOUS');
+    });
+
+    it('(d2) dois sobreviventes DISTINTOS continuam ambíguos: registra WORKER_EMAIL_AMBIGUOUS e não escolhe pelo e-mail', async () => {
+      installFakeDb([
+        { id: 'w-f1', email: EMAIL_FUNDIDO, phone: '5491100000000', mergedIntoId: 'w-viva-1' },
+        { id: 'w-f2', email: EMAIL_FUNDIDO, phone: '5491100000001', mergedIntoId: 'w-viva-2' },
+        { id: 'w-viva-1', email: 'v1@exemplo.invalid', phone: '5491100000010' },
+        { id: 'w-viva-2', email: 'v2@exemplo.invalid', phone: '5491100000011' },
+      ]);
+
+      const result = await run({ phoneNumber: '+5491100008888' });
+
+      expect(result.workerId).toBeNull();
+      expect(divergenceKinds()).toContain('WORKER_EMAIL_AMBIGUOUS');
+    });
+
+    it('(e) cadastro DELETADO continua não sendo achado (nem direto, nem fundido)', async () => {
+      installFakeDb([
+        { id: 'w-deletado', email: EMAIL_FUNDIDO, phone: FONE_FUNDIDO, deletedAt: new Date() },
+        { id: 'w-fundido-deletado', email: EMAIL_FUNDIDO, phone: FONE_FUNDIDO, mergedIntoId: 'w-sobrevivente', deletedAt: new Date() },
+        SOBREVIVENTE,
+      ]);
+
+      const result = await run();
+
+      expect(result.workerId).toBeNull();
+    });
+
+    it('(e2) fundido cujo SOBREVIVENTE foi deletado não resolve (mantém o comportamento de não achar)', async () => {
+      installFakeDb([
+        { id: 'w-fundido', email: EMAIL_FUNDIDO, phone: '5491100000000', mergedIntoId: 'w-sobrevivente' },
+        { ...SOBREVIVENTE, deletedAt: new Date() },
+      ]);
+
+      const result = await run({ phoneNumber: '+5491100008888' });
+
+      expect(result.workerId).toBeNull();
+    });
+
+    it('(f) fallback de colisão do auto-create também acha o fundido e canonicaliza', async () => {
+      // O lookup do resolve não acha (corrida: o fundido aparece entre o lookup e o INSERT); o INSERT colide e o
+      // SELECT do fallback (agora sem filtro de merged) devolve o fundido.
+      installFakeDb([
+        { id: 'w-fundido', email: EMAIL_FUNDIDO, phone: '5491100000000', mergedIntoId: 'w-sobrevivente' },
+        SOBREVIVENTE,
+      ]);
+      mockWorkerLookup.findByEmailNormalized.mockResolvedValueOnce({ getValue: () => null, ids: [] } as never);
+      mockWorkerLookup.findByPhoneCandidates.mockResolvedValueOnce({ getValue: () => null, ids: [] } as never);
+
+      const result = await run({ phoneNumber: '+5491100008888' });
+
+      expect(result.workerId).toBe('w-sobrevivente');
     });
   });
 });
