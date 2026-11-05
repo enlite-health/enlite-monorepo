@@ -259,9 +259,9 @@ describe('InsuranceProviderRepository', () => {
     expect(mockPoolQuery.mock.calls[1][0]).not.toMatch(/payer_kind/);
   });
 
-  it('for-service mantém o escolhido: o `selected` entra mesmo sem contrato oferecido (ou inativo)', async () => {
+  it('for-service mantém o escolhido: o `selected` entra mesmo sem contrato no país (ou inativo)', async () => {
     mockPoolQuery
-      .mockResolvedValueOnce({ rows: [{ code: 'OSDE' }] }) // providersWithOfferedContract
+      .mockResolvedValueOnce({ rows: [{ code: 'OSDE' }] }) // providersWithContract
       .mockResolvedValueOnce({ rows: [{ code: 'OSDE', name: 'OSDE' }, { code: 'GALENO', name: 'Galeno' }] });
     const r = await new InsuranceProviderRepository().listForService('AR', '2026-10-19', 'GALENO');
     expect(mockPoolQuery.mock.calls[1][1]).toEqual([['OSDE', 'GALENO']]);
