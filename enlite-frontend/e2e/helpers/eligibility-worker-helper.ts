@@ -363,7 +363,7 @@ export function insertMinimalVacancy(
       ARRAY['AT']::varchar[], 1,
       'SEARCHING', false, 'AR',
       '${talentumWhatsappUrl}',
-      ${includeInPublicListing ? `'{"site": "https://jobs.enlite.health/es/vagas/${caseNum}/"}'::jsonb` : 'NULL'},
+      ${includeInPublicListing ? `'{"site": {"id": "link_e2e_${caseNum}", "url": "https://jobs.enlite.health/es/vagas/${caseNum}/"}}'::jsonb` : 'NULL'},
       NOW(), NOW()
     )
   `);
