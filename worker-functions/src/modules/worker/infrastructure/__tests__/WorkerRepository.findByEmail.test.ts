@@ -58,3 +58,30 @@ describe('WorkerRepository.findByEmailNormalized — só webhook/scripts do Tale
     expect(res.ambiguousCount).toBe(0);
   });
 });
+
+describe('includeMerged (só o webhook Talentum) — os demais callers não mudam', () => {
+  it('findByEmailNormalized com includeMerged: sem filtro de merged, deletado fora, devolve todos os ids', async () => {
+    const { repo, pool } = makeRepo([{ id: 'w-f1', whatsappPhoneEnc: null }, { id: 'w-f2', whatsappPhoneEnc: null }]);
+
+    const res = await repo.findByEmailNormalized('x@exemplo.invalid', { includeMerged: true });
+
+    const [sql] = pool.query.mock.calls[0];
+    expect(sql).not.toMatch(/merged_into_id/);
+    expect(sql).toMatch(/deleted_at IS NULL/);
+    expect(res.ids).toEqual(['w-f1', 'w-f2']);
+  });
+
+  it('findByPhoneCandidates: sem a opção continua filtrando merged; com a opção devolve os ids dos fundidos', async () => {
+    const { repo, pool } = makeRepo([{ id: 'w-f1' }]);
+
+    await repo.findByPhoneCandidates(['5491100000000']);
+    expect(pool.query.mock.calls[0][0]).toMatch(/merged_into_id IS NULL/);
+
+    const res = await repo.findByPhoneCandidates(['5491100000000'], { includeMerged: true });
+    const sql = pool.query.mock.calls[1][0];
+    expect(sql).not.toMatch(/merged_into_id/);
+    expect(sql).toMatch(/deleted_at IS NULL/);
+    expect(res.ids).toEqual(['w-f1']);
+    expect(res.getValue()?.id).toBe('w-f1');
+  });
+});

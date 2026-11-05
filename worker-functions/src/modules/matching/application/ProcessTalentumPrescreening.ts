@@ -6,6 +6,7 @@ import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
+import { resolveLiveCanonicalWorkerIds } from '@shared/database/resolveLiveCanonicalWorkerIds';
 import { reportError } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
@@ -49,14 +50,23 @@ interface ResolvedJobPosting {
   viaId: boolean;
 }
 
+export interface LookupOpts {
+  /** Inclui worker fundido (`merged_into_id` preenchido) na busca; o chamador segue a cadeia até o sobrevivente. */
+  includeMerged?: boolean;
+}
+
 export interface IWorkerLookup {
   /**
    * E-mail NORMALIZADO (LOWER/BTRIM), só worker vivo, determinístico. `ambiguousCount > 1` = mais de uma candidata
    * casa: `getValue()` é null e o webhook registra a divergência — nunca escolhe uma. (O `findByEmail` exato é do login.)
    */
-  findByEmailNormalized(email: string): Promise<{ getValue(): { id: string } | null; isSuccess?: boolean; ambiguousCount?: number }>;
-  /** Telefone por CANDIDATOS (`generatePhoneCandidates`): casa com/sem o 9 do móvel; ignora worker merged/deletado. */
-  findByPhoneCandidates(candidates: string[]): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
+  findByEmailNormalized(email: string, opts?: LookupOpts): Promise<{ getValue(): { id: string } | null; isSuccess?: boolean; ambiguousCount?: number; ids?: string[] }>;
+  /**
+   * Telefone por CANDIDATOS (`generatePhoneCandidates`): casa com/sem o 9 do móvel; por padrão ignora worker merged/deletado.
+   * `includeMerged` (só o webhook): inclui o cadastro FUNDIDO (o dono do e-mail/telefone pode estar só nele) e devolve
+   * TODOS os ids casados em `ids`, para o chamador canonicalizar e deduplicar. Deletado continua fora.
+   */
+  findByPhoneCandidates(candidates: string[], opts?: LookupOpts): Promise<{ getValue(): { id: string } | null; ids?: string[] } | { isSuccess: boolean; getValue(): { id: string } | null; ids?: string[] }>;
   findByCuit(cuit: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
 }
 
@@ -197,13 +207,23 @@ export class ProcessTalentumPrescreening {
   ): Promise<{ id: string | null; emailAmbiguous: boolean }> {
     const { email, phoneNumber, cuil } = payload.data.profile;
 
-    const emailLookup = await this.workerLookup.findByEmailNormalized(email);
-    const emailAmbiguous = (emailLookup.ambiguousCount ?? 0) > 1;
-    const byEmail = this.extractId(emailLookup);
-    if (byEmail) return { id: await this.toCanonical(byEmail), emailAmbiguous };
+    // D111 (13/08): o e-mail/telefone do payload pode existir só num cadastro FUNDIDO; busca incluindo fundido
+    // e segue a cadeia até o sobrevivente (regressão de 04/11: as queries filtravam fundido e o toCanonical nunca o via).
+    const emailLookup = await this.workerLookup.findByEmailNormalized(email, { includeMerged: true });
+    const emailIds = await this.liveCanonicalIds(emailLookup.ids ?? this.idsOf(emailLookup));
+    // Ambíguo = 2+ sobreviventes DISTINTOS (dois fundidos no mesmo sobrevivente não são). Sem `ids`, vale o legado.
+    const emailAmbiguous = emailIds.length > 1 || (emailLookup.ids === undefined && (emailLookup.ambiguousCount ?? 0) > 1);
+    if (emailIds.length === 1) return { id: emailIds[0], emailAmbiguous };
 
-    const byPhone = await this.findByPhoneAnyForm(phoneNumber);
-    if (byPhone) return { id: await this.toCanonical(byPhone), emailAmbiguous };
+    const phoneIds = await this.findCanonicalIdsByPhone(phoneNumber);
+    if (phoneIds.length === 1) return { id: phoneIds[0], emailAmbiguous };
+    if (phoneIds.length > 1) {
+      // Telefone ambíguo = MESMO tratamento do e-mail ambíguo: divergência, sem CUIL e sem auto-create (o índice de
+      // telefone normalizado não é único em prd: o INSERT passaria e nasceria duplicata). O `kind` da divergência tem
+      // CHECK no banco (migration 565): reaproveita WORKER_EMAIL_AMBIGUOUS em vez de criar kind novo.
+      console.log(`${TAG} resolveWorker → telefone casa ${phoneIds.length} cadastros vivos distintos: ambíguo, sem worker`);
+      return { id: null, emailAmbiguous: true };
+    }
 
     if (cuil) {
       const byCuil = this.extractId(await this.workerLookup.findByCuit(cuil));
@@ -213,15 +233,26 @@ export class ProcessTalentumPrescreening {
     return { id: null, emailAmbiguous };
   }
 
+  private idsOf(lookup: { getValue(): { id: string } | null }): string[] {
+    const id = this.extractId(lookup);
+    return id ? [id] : [];
+  }
+
+  /** Ids casados (possivelmente fundidos) → sobreviventes VIVOS, sem repetição (regra única em `shared/database`). */
+  private liveCanonicalIds(rawIds: string[]): Promise<string[]> {
+    return resolveLiveCanonicalWorkerIds(this.pool, rawIds, (id) => this.toCanonical(id));
+  }
+
   /**
    * O Talentum manda o celular argentino SEM o "9" (54 11…), o worker está gravado COM ele (549 11…).
    * Igualdade exata no telefone cru não casava (prd 04/11: 29 candidatas sem worker). Os candidatos
-   * cobrem as formas históricas; `findByPhoneCandidates` já exclui worker merged/deletado.
+   * cobrem as formas históricas; `includeMerged` acha também o cadastro fundido (deletado fica fora).
    */
-  private async findByPhoneAnyForm(phoneNumber: string): Promise<string | null> {
+  private async findCanonicalIdsByPhone(phoneNumber: string): Promise<string[]> {
     const candidates = generatePhoneCandidates(phoneNumber);
-    if (candidates.length === 0) return null;
-    return this.extractId(await this.workerLookup.findByPhoneCandidates(candidates));
+    if (candidates.length === 0) return [];
+    const lookup = await this.workerLookup.findByPhoneCandidates(candidates, { includeMerged: true });
+    return this.liveCanonicalIds(lookup.ids ?? this.idsOf(lookup));
   }
 
   private async autoCreateWorker(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
@@ -231,20 +262,22 @@ export class ProcessTalentumPrescreening {
       // Colisão: o cadastro já existe. Pode ser um registro já fundido em
       // outro — resolver o canônico antes de devolver, mesma razão do
       // `toCanonical` (ver `shared/database/canonicalWorker.ts`).
-      // Só worker VIVO, ORDER determinístico; mais de 1 candidato = ambíguo (não escolhe: fica sem worker).
+      // Só não-deletado (o fundido ENTRA: o índice único de e-mail/auth_uid também o enxerga), ORDER determinístico.
       const existing = await this.pool.query(
         `SELECT id FROM workers
-          WHERE (auth_uid = $1 OR LOWER(email) = LOWER($2)) AND merged_into_id IS NULL AND deleted_at IS NULL
-          ORDER BY created_at, id LIMIT 2`,
+          WHERE (auth_uid = $1 OR LOWER(email) = LOWER($2)) AND deleted_at IS NULL
+          ORDER BY created_at, id LIMIT 10`,
         [`talentum_${payload.data.profile.id}`, payload.data.profile.email],
       );
-      if (existing.rows.length > 1) {
+      let ids = await this.liveCanonicalIds(existing.rows.map((r: { id: string }) => r.id));
+      // Colisão no índice único de telefone: o dono está na forma com o 9 (o INSERT usa o normalizado).
+      if (ids.length === 0) ids = await this.findCanonicalIdsByPhone(payload.data.profile.phoneNumber);
+      if (ids.length > 1) {
+        // 2+ sobreviventes distintos = ambíguo (não escolhe: fica sem worker).
         console.log(`${TAG} autoCreateWorker → colisão com >1 worker vivo: ambíguo, sem worker`);
         return null;
       }
-      // Colisão no índice único de telefone: o dono está na forma com o 9 (o INSERT usa o normalizado).
-      const existingId = existing.rows[0]?.id ?? (await this.findByPhoneAnyForm(payload.data.profile.phoneNumber));
-      return existingId ? await this.toCanonical(existingId) : null;
+      return ids[0] ?? null;
     }
     console.error(`${TAG} autoCreateWorker failed:`, created.message);
     return null;
