@@ -14,6 +14,8 @@
  */
 import * as crypto from 'crypto';
 import type { PoolClient } from 'pg';
+import { resolveCanonicalWorkerId } from '../src/shared/database/resolveCanonicalWorkerId';
+import { resolveLiveCanonicalWorkerIds } from '../src/shared/database/resolveLiveCanonicalWorkerIds';
 import { generatePhoneCandidates, normalizePhoneAR } from '../src/shared/utils/phoneNormalization';
 import type { TalentumCandidate } from '../src/modules/integration/domain/ITalentumApiClient';
 // Implementação ÚNICA do webhook (não duplicada aqui): mapeamento de etapa, transição NOT_QUALIFIED e auto-create.
@@ -89,8 +91,10 @@ export const PENDING_SQL = `
    ORDER BY tp.created_at, tp.id`;
 
 /**
- * Workers VIVOS (não merged, não deletados) que casam por e-mail, telefone (com/sem o 9) ou o auth_uid sintético do
- * auto-create. Devolve todos os distintos: mais de um = ambíguo (o script não escolhe).
+ * Workers que casam por e-mail, telefone (com/sem o 9) ou o auth_uid sintético do auto-create. Mesma regra do webhook
+ * (D111): inclui FUNDIDOS, exclui deletados, segue a cadeia até o sobrevivente vivo e deduplica
+ * (`resolveLiveCanonicalWorkerIds`). Devolve os sobreviventes distintos: mais de um = ambíguo (o script não escolhe).
+ * Cadeia que não resolve (ciclo) descarta o id: o script nunca grava em cadastro fundido.
  */
 export async function findLiveWorkerIds(
   client: Pick<PoolClient, 'query'>, candidate: TalentumCandidate, email: string | null, profileId: string,
@@ -98,13 +102,13 @@ export async function findLiveWorkerIds(
   const phones = candidate.phoneNumber ? generatePhoneCandidates(candidate.phoneNumber) : [];
   const res = await client.query<{ id: string }>(
     `SELECT DISTINCT id FROM workers
-      WHERE merged_into_id IS NULL AND deleted_at IS NULL
+      WHERE deleted_at IS NULL
         AND ( auth_uid = $1
            OR ($2::text IS NOT NULL AND LOWER(email) = LOWER($2))
            OR (cardinality($3::text[]) > 0 AND phone = ANY($3::text[])) )`,
     [`talentum_${profileId}`, email, phones],
   );
-  return res.rows.map((r) => r.id);
+  return resolveLiveCanonicalWorkerIds(client, res.rows.map((r) => r.id), (id) => resolveCanonicalWorkerId(client as PoolClient, id));
 }
 
 async function applyRow(

@@ -6,6 +6,7 @@ import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
+import { resolveLiveCanonicalWorkerIds } from '@shared/database/resolveLiveCanonicalWorkerIds';
 import { reportError } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
@@ -231,24 +232,9 @@ export class ProcessTalentumPrescreening {
     return id ? [id] : [];
   }
 
-  /**
-   * Ids casados (possivelmente fundidos) → sobreviventes VIVOS, sem repetição. Reaproveita `toCanonical`.
-   * Id que mudou pelo caminho (estava fundido) só vale se o sobrevivente não foi deletado: o lookup só
-   * garante `deleted_at IS NULL` na linha casada, não no fim da cadeia.
-   */
-  private async liveCanonicalIds(rawIds: string[]): Promise<string[]> {
-    const live = new Set<string>();
-    for (const raw of new Set(rawIds)) {
-      const canonical = await this.toCanonical(raw);
-      if (canonical !== raw && !(await this.isAlive(canonical))) continue;
-      live.add(canonical);
-    }
-    return [...live];
-  }
-
-  private async isAlive(workerId: string): Promise<boolean> {
-    const res = await this.pool.query('SELECT 1 AS alive FROM workers WHERE id = $1::uuid AND deleted_at IS NULL', [workerId]);
-    return res.rows.length > 0;
+  /** Ids casados (possivelmente fundidos) → sobreviventes VIVOS, sem repetição (regra única em `shared/database`). */
+  private liveCanonicalIds(rawIds: string[]): Promise<string[]> {
+    return resolveLiveCanonicalWorkerIds(this.pool, rawIds, (id) => this.toCanonical(id));
   }
 
   /**

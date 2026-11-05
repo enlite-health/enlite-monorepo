@@ -13,7 +13,7 @@ const row = (n: number, status = 'QUALIFIED'): PendingRow => ({
 /** Banco em memória com transação: o que a transação escreve só vira "committed" se ela não lançar (COMMIT × ROLLBACK). */
 function fakeDb(
   workersBySelect: Record<string, string[]>,
-  opts: { workerInsert?: 'ok' | 'collision' | 'boom'; previousStage?: string | null; vagaStatus?: string } = {},
+  opts: { workerInsert?: 'ok' | 'collision' | 'boom'; previousStage?: string | null; vagaStatus?: string; mergedInto?: Record<string, string>; deleted?: string[] } = {},
 ) {
   const committed: string[] = [];
   const selectCalls: unknown[][] = [];
@@ -22,9 +22,18 @@ function fakeDb(
     const pending: string[] = [];
     const client = {
       query: async (sql: string, p: unknown[]) => {
+        // Cadeia de merge e checagem do sobrevivente (mesmas queries do resolveCanonicalWorkerId / helper compartilhado).
+        if (sql.includes('WITH RECURSIVE chain')) {
+          let id = String(p[0]); let depth = 0;
+          while (opts.mergedInto?.[id] && depth < 10) { id = opts.mergedInto[id]; depth++; }
+          return { rows: [{ id, depth, merged_into_id: null }] };
+        }
+        if (sql.includes('AS alive')) return { rows: opts.deleted?.includes(String(p[0])) ? [] : [{ alive: 1 }] };
         if (sql.includes('FROM workers')) {
           selectCalls.push(p);
-          return { rows: (workersBySelect[String(p[0])] ?? []).map((id) => ({ id })) };
+          // Honra o filtro do SQL: com `merged_into_id IS NULL` o fundido some da busca (era o defeito de 04/11).
+          const ids = (workersBySelect[String(p[0])] ?? []).filter((id) => !(sql.includes('merged_into_id IS NULL') && opts.mergedInto?.[id]));
+          return { rows: ids.map((id) => ({ id })) };
         }
         const head = sql.trim().split(/\s+/).slice(0, 3).join(' ');
         if (sql.includes('SELECT status FROM job_postings')) return { rows: opts.vagaStatus ? [{ status: opts.vagaStatus }] : [] };
@@ -99,6 +108,24 @@ describe('stageFromStatus', () => {
 });
 
 describe('reconcile', () => {
+  it('(m) e-mail/telefone só no cadastro FUNDIDO: resolve o SOBREVIVENTE (mesma regra do webhook), sem tentar criar', async () => {
+    // O SELECT (sem filtro de merged) acha o fundido; a cadeia w-fundido → w-meio → w-vivo leva ao sobrevivente.
+    const db = fakeDb({ 'talentum_prof-1': ['w-fundido'] }, { mergedInto: { 'w-fundido': 'w-meio', 'w-meio': 'w-vivo' } });
+    const out = await reconcile({ talentum: talentum(), runInTransaction: db.runInTransaction, listPending: async () => [row(1)] }, 'apply');
+
+    expect(out).toEqual([{ kind: 'RESOLVED', rowId: 'row-1', workerId: 'w-vivo', stage: 'QUALIFIED', committed: true }]);
+    expect(db.committed).not.toContain('INSERT INTO workers');
+  });
+
+  it('(m2) 2 fundidos no MESMO sobrevivente não são ambíguos; sobreviventes distintos são; sobrevivente deletado não resolve', async () => {
+    const mk = (ids: string[], o: Parameters<typeof fakeDb>[1]) =>
+      reconcile({ talentum: talentum(), runInTransaction: fakeDb({ 'talentum_prof-1': ids }, o).runInTransaction, listPending: async () => [row(1)] }, 'dry-run');
+
+    expect((await mk(['w-f1', 'w-f2'], { mergedInto: { 'w-f1': 'w-vivo', 'w-f2': 'w-vivo' } }))[0]).toMatchObject({ kind: 'RESOLVED', workerId: 'w-vivo' });
+    expect((await mk(['w-f1', 'w-f2'], { mergedInto: { 'w-f1': 'w-v1', 'w-f2': 'w-v2' } }))[0]).toMatchObject({ kind: 'AMBIGUOUS', workerIds: ['w-v1', 'w-v2'] });
+    expect((await mk(['w-f1'], { mergedInto: { 'w-f1': 'w-vivo' }, deleted: ['w-vivo'], workerInsert: 'collision' }))[0]).toMatchObject({ kind: 'NO_WORKER' });
+  });
+
   it('(d) dry-run executa tudo e dá ROLLBACK: NADA é gravado', async () => {
     const db = fakeDb({ 'talentum_prof-1': ['w-1'] });
     const out = await reconcile({ talentum: talentum(), runInTransaction: db.runInTransaction, listPending: async () => [row(1)] }, 'dry-run');
