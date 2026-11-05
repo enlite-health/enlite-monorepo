@@ -47,8 +47,21 @@ export function insuranceErrorKeys(err: unknown): string[] {
   return keys;
 }
 
+/** 400 de validação sem `code` (`details.fields`): os campos que a tela sabe nomear, nos rótulos dela. Vazio = nenhum conhecido. */
+function invalidFieldLabels(t: TFunction, err: unknown): string[] {
+  const { status, details } = asLike(err);
+  if (status !== 400 || insuranceErrorCode(err) !== null || typeof details !== 'object' || details === null) return [];
+  const fields = (details as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) return [];
+  return fields
+    .map((f) => (typeof f === 'string' ? t(`${NS}.fieldLabels.${f}`, { defaultValue: '' }) : ''))
+    .filter((label): label is string => typeof label === 'string' && label !== '');
+}
+
 /** O texto da tela para um erro de obra social/contrato/vínculo. Sempre devolve uma frase traduzida. */
 export function insuranceErrorText(t: TFunction, err: unknown): string {
+  const labels = invalidFieldLabels(t, err);
+  if (labels.length > 0) return t(`${NS}.invalidFields`, { fields: labels.join(', ') });
   for (const key of insuranceErrorKeys(err)) {
     const text = t(key, { defaultValue: '' });
     if (typeof text === 'string' && text !== '') return text;

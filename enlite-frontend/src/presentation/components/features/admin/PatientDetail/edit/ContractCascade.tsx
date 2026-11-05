@@ -28,7 +28,7 @@ function Step({ n, children }: { n: number; children: ReactNode }): JSX.Element 
 interface Props {
   /** Prefixo dos testids (`<prefix>-provider`, `-contract`, `-valid-from`, `-valid-to`, `-term-preview`). */
   idPrefix: string;
-  /** País do SERVIÇO: só as obras sociais com contrato oferecido nele entram. */
+  /** País do SERVIÇO: só as obras sociais com contrato nele entram. */
   country: string | null | undefined;
   value: ContractCascadeValue;
   onChange: (next: ContractCascadeValue) => void;
@@ -40,8 +40,8 @@ interface Props {
 /**
  * Cascata Obra social -> Contrato do serviço contratado (spec 058 §1.5, §4.4). Dentro do container "serviço contratado".
  *
- * - Obra social: GET `/insurance-providers/for-service?country=` (só as ATIVAS com contrato oferecido no país; o nome é do banco, C3).
- * - Contrato: GET `/insurance-providers/:code/contracts?offered=true` (só os que têm termo oferecido).
+ * - Obra social: GET `/insurance-providers/for-service?country=` (as ATIVAS com algum contrato no país; o nome é do banco, C3).
+ * - Contrato: GET `/insurance-providers/:code/contracts?country=` (TODOS do país: vincular não lê termo; o sem valor vigente leva a etiqueta).
  * - Vigência do vínculo: o início sugerido é o `asOf` DA RESPOSTA (o "hoje" do país vem do back; o front não calcula data).
  * - Preço e imposto do contrato escolhido só aparecem (prévia read-only); `REDACTED` sem permissão.
  */
@@ -78,7 +78,7 @@ export function ContractCascade({ idPrefix, country, value, onChange, lockedProv
   useEffect(() => {
     if (!providerCode || !validCountry) { setContracts([]); return; }
     let cancelled = false;
-    AdminInsuranceApiService.listContracts(providerCode, { offered: true, country: validCountry })
+    AdminInsuranceApiService.listContracts(providerCode, { country: validCountry })
       .then((items) => { if (!cancelled) { setContracts(items); setLoadError(null); } })
       .catch((err) => { if (!cancelled) { setContracts([]); setLoadError(insuranceErrorText(t, err)); } });
     return () => { cancelled = true; };
@@ -91,7 +91,17 @@ export function ContractCascade({ idPrefix, country, value, onChange, lockedProv
       : providers),
     [providers, lockedProvider],
   );
-  const contractOptions = useMemo<ComboboxOption[]>(() => contracts.map((c) => ({ value: c.id, label: c.name })), [contracts]);
+  const contractOptions = useMemo<ComboboxOption[]>(
+    () => contracts.map((c) => ({
+      value: c.id,
+      label: c.name,
+      // Sem termo vigente nem futuro: continua vinculável (o preço do serviço mostra "sem término vigente"), mas a pessoa vê o porquê.
+      adornment: c.currentTerm.state === 'NO_TERM' && c.futureTerms.length === 0
+        ? <Text as="span" size="2xs" color="tertiary" data-testid={`${idPrefix}-contract-no-term`}>{t(`${CARD}.cascade.noCurrentTerm`)}</Text>
+        : undefined,
+    })),
+    [contracts, idPrefix, t],
+  );
   const chosen = contracts.find((c) => c.id === value.contractId) ?? null;
   const preview = chosen ? contractTermTexts(t, chosen.currentTerm.state === 'OK' ? chosen.currentTerm : (chosen.futureTerms[0] ?? chosen.currentTerm), i18n.language) : null;
 

@@ -4038,10 +4038,11 @@
             "validTo": "Vigente até",
             "validToHint": "Opcional. Vazio = sem data de fim; o dia indicado é incluído.",
             "noCountry": "O serviço não tem país: não dá para escolher a obra social.",
-            "noProviders": "Não há obras sociais ativas com contrato oferecido neste país.",
+            "noProviders": "Não há obras sociais ativas com contrato neste país.",
             "lockedHint": "Fixa neste serviço. Outra obra social? É outra admissão: crie um serviço novo.",
             "contractPlaceholder": "Escolha o contrato",
-            "noEndMark": "(vazio = sem fim)"
+            "noEndMark": "(vazio = sem fim)",
+            "noCurrentTerm": "Sem valor vigente"
           },
           "actions": {
             "switch": "Trocar de contrato",
@@ -6753,6 +6754,13 @@
     },
     "insuranceErrors": {
       "generic": "Não foi possível concluir a operação. Tente de novo.",
+      "invalidFields": "Há dados inválidos em: {{fields}}.",
+      "fieldLabels": {
+        "contractId": "Contrato",
+        "validFrom": "Vigente desde",
+        "validTo": "Vigente até",
+        "reason": "Motivo"
+      },
       "byStatus": {
         "400": "Há dados inválidos no formulário.",
         "403": "Você não tem permissão para esta ação.",
@@ -6768,9 +6776,9 @@
         "PAYER_KIND_REQUIRED": "Falta classificar a obra social (tipo de pagador) antes de usá-la em um contrato.",
         "PAYER_KIND_CANNOT_UNSET": "O tipo de pagador, depois de informado, não pode ser removido: só trocado.",
         "SERVICE_HAS_CONTRACT_LINK": "O serviço já tem um contrato vinculado.",
-        "SAME_START_USE_CORRECTION": "A nova vigência começa no mesmo dia da atual. Use \"Corrigir\".",
+        "SAME_START_USE_CORRECTION": "Com a mesma data de início o contrato não é trocado: se foi cadastrado errado, use «Foi cadastrado errado».",
         "TERM_RANGE_INVALID": "A vigência do termo é inválida.",
-        "LINK_RANGE_INVALID": "A vigência está fora do vínculo vigente.",
+        "LINK_RANGE_INVALID": "As datas ficam fora da vigência do vínculo atual. Em «O contrato mudou», a data de início tem de ser posterior ao início do vínculo atual; em «A cobertura terminou», a data de fim tem de cair dentro do vínculo.",
         "NAME_NOT_CODIFIABLE": "Esse nome não serve para gerar o código. Tente outro.",
         "CODE_IMMUTABLE": "O código da obra social não pode ser alterado.",
         "IMMUTABLE_FIELD": "Esse dado não pode ser alterado depois de informado (país e obra social do contrato).",

@@ -56,7 +56,9 @@ const NO_COVERAGE_PERM = {
   coverageMatch: { state: 'REDACTED' },
 } as PatientContractedServiceDetail;
 
-const CONTRATO = { id: 'ct-2', name: 'Plan 310', country: 'AR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'NO_TERM' }, futureTerms: [] };
+const TERMO_VIGENTE = { state: 'OK', termId: 't', validFrom: '2026-09-01', validTo: null, taxRatePercent: 0, price: { state: 'OK', hourlyRate: 2000, currency: 'ARS' } };
+const CONTRATO = { id: 'ct-2', name: 'Plan 310', country: 'AR', scopeDescription: null, asOf: '2026-10-19', currentTerm: TERMO_VIGENTE, futureTerms: [] };
+const CONTRATO_SEM_VALOR = { ...CONTRATO, id: 'ct-9', name: 'Plan 999', currentTerm: { state: 'NO_TERM' }, futureTerms: [] };
 const erro = (status: number, code: string) => Object.assign(new Error('x'), { status, code });
 
 function renderPanel(service: PatientContractedServiceDetail, extra: Partial<React.ComponentProps<typeof ContractedServiceContractPanel>> = {}) {
@@ -104,12 +106,38 @@ describe('ContractedServiceContractPanel', () => {
     expect((screen.getByTestId('svc-contract-save') as HTMLButtonElement).disabled).toBe(true); // sem contrato escolhido não grava
     chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE'); // OSDE = OSDE
     await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
-    expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' });
+    expect(mockListContracts).toHaveBeenCalledWith('OSDE', { country: 'AR' });
     chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
     await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
     fireEvent.click(screen.getByTestId('svc-contract-save'));
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(vinculado));
     expect(mockCreateLink).toHaveBeenCalledWith('pat1', 's1', { contractId: 'ct-2', validFrom: '2026-10-19', validTo: null });
+  });
+
+  it('contrato SEM termo vigente nem futuro aparece na lista, com a etiqueta "Sin valor vigente", e dá para vinculá-lo (incidente 05/11)', async () => {
+    mockListContracts.mockResolvedValue([CONTRATO, CONTRATO_SEM_VALOR]);
+    mockCreateLink.mockResolvedValue({ ...LINKED });
+    renderPanel(UNLINKED);
+    fireEvent.click(screen.getByTestId('svc-contract-link-open'));
+    await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('OSDE'));
+    chooseCombo(screen.getByTestId('svc-contract-provider'), 'OSDE');
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toEqual(expect.arrayContaining(['Plan 310', 'Plan 999Sin valor vigente'])));
+    expect(mockListContracts).toHaveBeenCalledWith('OSDE', { country: 'AR' }); // sem `offered`: a lista traz todos do país
+    chooseCombo(screen.getByTestId('svc-contract-contract'), /Plan 999/);
+    await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(mockCreateLink).toHaveBeenCalledWith('pat1', 's1', { contractId: 'ct-9', validFrom: '2026-10-19', validTo: null }));
+  });
+
+  it('trocar com a MESMA data de início: o erro SAME_START_USE_CORRECTION mostra a ação ("Se cargó mal"), não um genérico', async () => {
+    mockSupersede.mockRejectedValueOnce(erro(422, 'SAME_START_USE_CORRECTION'));
+    renderPanel(LINKED);
+    choose('svc-contract-switch-open');
+    await waitFor(() => expect(mockListContracts).toHaveBeenCalled());
+    await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
+    chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310');
+    fireEvent.click(screen.getByTestId('svc-contract-save'));
+    await waitFor(() => expect(screen.getByTestId('svc-contract-error').textContent).toBe('Con la misma fecha de inicio no se cambia el contrato: si se cargó mal, usá «Se cargó mal».'));
   });
 
   it('vinculado: mostra obra social — contrato (nomes do banco), vigência, tipo do pagador, preço e imposto SÓ exibidos (sem campo editável)', () => {
@@ -132,7 +160,7 @@ describe('ContractedServiceContractPanel', () => {
     const { onChanged } = renderPanel(LINKED);
     choose('svc-contract-switch-open');
     const provider = screen.getByTestId('svc-contract-provider') as HTMLButtonElement;
-    await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' }));
+    await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('OSDE', { country: 'AR' }));
     expect(provider).toHaveTextContent('OSDE');
     expect(provider.disabled).toBe(true);
     await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
@@ -150,7 +178,7 @@ describe('ContractedServiceContractPanel', () => {
     await waitFor(() => expect(optionsOf('svc-contract-provider')).toContain('Galeno'));
     expect((screen.getByTestId('svc-contract-provider') as HTMLButtonElement).disabled).toBe(false);
     chooseCombo(screen.getByTestId('svc-contract-provider'), 'Galeno'); // GALENO = Galeno
-    await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('GALENO', { offered: true, country: 'AR' }));
+    await waitFor(() => expect(mockListContracts).toHaveBeenCalledWith('GALENO', { country: 'AR' }));
     await waitFor(() => expect(optionsOf('svc-contract-contract')).toContain('Plan 310'));
     chooseCombo(screen.getByTestId('svc-contract-contract'), 'Plan 310'); // ct-2 = Plan 310
     await waitFor(() => expect((screen.getByTestId('svc-contract-valid-from') as HTMLInputElement).value).toBe('2026-10-19'));
@@ -427,7 +455,7 @@ describe('ContractedServiceContractPanel', () => {
       await waitFor(() => expect(screen.getByTestId('svc-contract-load-error').textContent).toContain('No tenés permiso'));
     });
 
-    it('nenhuma obra social com contrato oferecido no país: aviso próprio (não uma lista vazia muda)', async () => {
+    it('nenhuma obra social com contrato no país: aviso próprio (não uma lista vazia muda)', async () => {
       mockForService.mockResolvedValue({ providers: [], asOf: '2026-10-19' });
       renderPanel(UNLINKED);
       fireEvent.click(screen.getByTestId('svc-contract-link-open'));

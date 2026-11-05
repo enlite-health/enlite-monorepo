@@ -659,7 +659,7 @@ describe('ContractedServiceFormRow', () => {
 
   // ── Spec 058: serviço NOVO escolhe Obra social -> Contrato; o vínculo é gravado depois de criar o serviço ─────────────
   describe('serviço novo + cascata (spec 058)', () => {
-    const CONTRATO = { id: 'ct-1', name: 'Plan 210', country: 'AR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'NO_TERM' }, futureTerms: [] };
+    const CONTRATO = { id: 'ct-1', name: 'Plan 210', country: 'AR', scopeDescription: null, asOf: '2026-10-19', currentTerm: { state: 'OK', termId: 't', validFrom: '2026-09-01', validTo: null, taxRatePercent: 0, price: { state: 'OK', hourlyRate: 2000, currency: 'ARS' } }, futureTerms: [] };
 
     async function escolherContrato(): Promise<void> {
       await waitFor(() => expect(mockForService).toHaveBeenCalled());
@@ -681,7 +681,7 @@ describe('ContractedServiceFormRow', () => {
       mockListContracts.mockResolvedValue([CONTRATO]);
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} patientCountry="AR" onSaved={vi.fn()} />);
       await escolherContrato();
-      expect(mockListContracts).toHaveBeenCalledWith('OSDE', { offered: true, country: 'AR' });
+      expect(mockListContracts).toHaveBeenCalledWith('OSDE', { country: 'AR' });
       chooseCombo(screen.getByTestId('svc-contract-1-provider'), PLACEHOLDER); // '' = limpar a obra social
       await waitFor(() => expect(screen.getByTestId('svc-contract-1-contract')).toHaveTextContent('Elegí el contrato'));
     });
