@@ -192,6 +192,9 @@ export class TalentumPrescreeningRepository {
        ) VALUES ($1, $2, $3, $4, 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          application_funnel_stage = CASE
+           WHEN EXCLUDED.application_funnel_stage = 'REJECTED'
+                AND funnel_stage_precedence(worker_job_applications.application_funnel_stage) > funnel_stage_precedence('QUALIFIED')
+           THEN worker_job_applications.application_funnel_stage
            WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
                 >= funnel_stage_precedence(worker_job_applications.application_funnel_stage)
            THEN EXCLUDED.application_funnel_stage

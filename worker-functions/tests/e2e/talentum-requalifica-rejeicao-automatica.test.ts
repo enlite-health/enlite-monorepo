@@ -10,23 +10,25 @@
  *  (a2) NOT_QUALIFIED (auto) → IN_DOUBT: card IN_DOUBT
  *  (b)  rejeição HUMANA do zero → QUALIFIED: continua REJECTED
  *  (b2) auto, humano move para fora e rejeita de novo → QUALIFIED: continua REJECTED
+ *  (d)  rejeição gravada por SCRIPT (changed_by 'system:<nome>', com o evento auto_not_qualified) → QUALIFIED: reverte
  *  (c)  nenhuma mensagem ao prestador (só evento qualified source 'talentum'; StageMessageHandler pula o que não é 'kanban')
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
+import { applyNotQualifiedTransition } from '../../src/modules/matching/application/talentumFunnel';
 
 type Analyzed = ResponseBlock & { score: number; statusLabel: 'QUALIFIED' | 'NOT_QUALIFIED' | 'IN_DOUBT' };
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const ENDPOINT = '/api/webhooks/talentum/prescreening';
-const KEYS = ['A', 'A2', 'B', 'B2', 'C'] as const;
+const KEYS = ['A', 'A2', 'B', 'B2', 'C', 'D'] as const;
 type Key = (typeof KEYS)[number];
 const PSC = (k: Key) => `rrej-psc-${k}`;
 const PROF = (k: Key) => `rrej-prof-${k}`;
 const EMAIL = (k: Key) => `rrej.${k.toLowerCase()}@test.local`;
-const TITLE: Record<Key, string> = { A: 'CASO 811 RREJ A', A2: 'CASO 812 RREJ A2', B: 'CASO 813 RREJ B', B2: 'CASO 814 RREJ B2', C: 'CASO 815 RREJ C' };
-const PHONE: Record<Key, string> = { A: '+5491181100001', A2: '+5491181200001', B: '+5491181300001', B2: '+5491181400001', C: '+5491181500001' };
+const TITLE: Record<Key, string> = { A: 'CASO 811 RREJ A', A2: 'CASO 812 RREJ A2', B: 'CASO 813 RREJ B', B2: 'CASO 814 RREJ B2', C: 'CASO 815 RREJ C', D: 'CASO 816 RREJ D' };
+const PHONE: Record<Key, string> = { A: '+5491181100001', A2: '+5491181200001', B: '+5491181300001', B2: '+5491181400001', C: '+5491181500001', D: '+5491181600001' };
 
 describe('Talentum — veredito positivo desfaz a rejeição AUTOMÁTICA (webhook real)', () => {
   let api: ReturnType<typeof createApiClient>;
@@ -140,6 +142,28 @@ describe('Talentum — veredito positivo desfaz a rejeição AUTOMÁTICA (webhoo
     expect(await stage('B2')).toBe('REJECTED');
     expect((await encuadre('B2')).resultado).toBe('RECHAZADO');
     expect(await events('B2', 'funnel_stage.rejection_reverted')).toHaveLength(0);
+  });
+
+  it("(d) rejeição por script (changed_by 'system:%', via applyNotQualifiedTransition) e depois QUALIFIED: reverte", async () => {
+    await send('D', 'IN_DOUBT');
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`SELECT set_config('app.current_uid', 'system:reconciliar-talentum-sem-worker', true)`);
+      expect(await applyNotQualifiedTransition(c, wid.D, jid.D, 'NOT_QUALIFIED', 'IN_DOUBT', 'rrej-psc-D')).toBe(true);
+      await c.query('COMMIT');
+    } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
+    const last = (await pool.query(
+      `SELECT h.new_value, h.changed_by FROM worker_job_application_stage_history h JOIN worker_job_applications a ON a.id = h.application_id
+        WHERE a.worker_id=$1 AND a.job_posting_id=$2 AND h.field_name='application_funnel_stage' ORDER BY h.created_at DESC, h.id DESC LIMIT 1`, [wid.D, jid.D])).rows[0];
+    expect(last).toEqual({ new_value: 'REJECTED', changed_by: 'system:reconciliar-talentum-sem-worker' });
+    expect(await stage('D')).toBe('REJECTED');
+
+    expect((await send('D', 'QUALIFIED')).status).toBe(200);
+
+    expect(await stage('D')).toBe('QUALIFIED');
+    expect(await encuadre('D')).toEqual({ resultado: null, cat: null });
+    expect(await events('D', 'funnel_stage.rejection_reverted')).toHaveLength(1);
   });
 
   it('(c) nenhuma mensagem ao prestador: só o evento qualified com source talentum (não kanban), reversão processed', async () => {
