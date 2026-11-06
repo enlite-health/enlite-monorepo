@@ -12,6 +12,7 @@ import {
   type ServiceLinkTarget,
   type VacancyLinkSource,
 } from '../domain/LinkExistingVacancyPlan';
+import { RESTORE_FROM_BAJA_SET } from './vacancyBajaRestoreSql';
 import { fetchPatientVacancies, type PatientVacancyRow } from './PatientVacanciesQueryHelper';
 
 export type VacancyForLinkRow = VacancyForLink & VacancyLinkSource & { id: string };
@@ -138,5 +139,19 @@ export class LinkExistingVacancyRepository {
       [vacancyId, serviceId],
     );
     return res.rowCount ?? 0;
+  }
+
+  /**
+   * Volta da vaga DE_BAJA ao status anterior (o vínculo a um serviço é o caminho de volta dela). Mesmo SET da reativação do
+   * serviço (P3): `status_before_baja`, ou 'SEARCHING' se NULL, e retoma o Talentum. Devolve o status restaurado (null = nada a fazer).
+   */
+  async restoreFromBaja(client: PoolClient, vacancyId: string): Promise<string | null> {
+    const res = await client.query<{ status: string }>(
+      `UPDATE job_postings SET ${RESTORE_FROM_BAJA_SET}, updated_at = NOW()
+        WHERE id = $1 AND status = 'DE_BAJA' AND deleted_at IS NULL
+        RETURNING status`,
+      [vacancyId],
+    );
+    return res.rows[0]?.status ?? null;
   }
 }

@@ -5,7 +5,8 @@
  *   1. as rotas MUTANTES de vaga em `adminVacanciesRoutes` são exatamente as da allowlist — uma rota nova
  *      (ex.: `/vacancies/:id/reactivate`) derruba o teste até alguém provar que ela não tira vaga de DE_BAJA;
  *   2. todo `UPDATE job_postings ... status` do código de produção está num arquivo da allowlist e, onde a
- *      linha pode sair de DE_BAJA, a saída é só a do gatilho do serviço (motivo SERVICE) ou está guardada;
+ *      linha pode sair de DE_BAJA, a saída é só a do gatilho do serviço (motivo SERVICE), a volta pelo VÍNCULO da vaga
+ *      a um serviço (D633) ou está guardada; e só 3 arquivos citam o SET compartilhado `RESTORE_FROM_BAJA_SET`;
  *   3. o PUT é recusado com 409 para qualquer vaga em DE_BAJA (`authorizeVacancyUpdate`).
  */
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit';
@@ -115,6 +116,7 @@ describe('R17 — todo UPDATE que escreve job_postings.status está numa allowli
 
   it('só estes arquivos de produção escrevem status de vaga (arquivo novo = revisar a R17)', () => {
     expect(arquivos.map((x) => x.f).sort()).toEqual([
+      'modules/case/infrastructure/LinkExistingVacancyRepository.ts',        // volta pelo VÍNCULO a um serviço (Gabriel, 06/11)
       'modules/case/infrastructure/PatientContractedServiceRepository.ts',   // baixa/volta pelo SERVIÇO (R17)
       'modules/matching/application/BajaVacanciesUseCase.ts',               // DAR baixa
       'modules/matching/infrastructure/JobPostingARRepository.ts',          // import do ClickUp — guardado abaixo
@@ -122,12 +124,37 @@ describe('R17 — todo UPDATE que escreve job_postings.status está numa allowli
     ]);
   });
 
-  it('a ÚNICA saída de DE_BAJA é a do serviço, filtrada pelo motivo SERVICE', () => {
+  it('as ÚNICAS saídas de DE_BAJA: a do serviço (motivo SERVICE) e o vínculo a um serviço; ambas pelo MESMO SET', () => {
+    const SET = '${RESTORE_FROM_BAJA_SET}';
+    // o SET compartilhado devolve ao status anterior (SEARCHING se NULL)
+    const sql = fs.readFileSync(path.join(SRC, 'modules/case/infrastructure/vacancyBajaRestoreSql.ts'), 'utf8');
+    expect(sql).toMatch(/status\s*=\s*COALESCE\(status_before_baja/);
+
     const repo = arquivos.find((x) => x.f.endsWith('PatientContractedServiceRepository.ts'))!;
-    const saida = repo.upd.find((u) => /status\s*=\s*COALESCE\(status_before_baja/.test(u))!;
+    const saida = repo.upd.find((u) => u.includes(SET))!;
     expect(saida).toBeDefined();
     expect(saida).toContain(`baja_reason = 'SERVICE'`);
     expect(saida).toContain(`status = 'DE_BAJA'`);
+    expect(repo.upd.filter((u) => u.includes(SET))).toHaveLength(1);
+
+    // vínculo: UMA vaga por id, só se DE_BAJA e viva; o use case só chama quando o vínculo gravou
+    const link = arquivos.find((x) => x.f.endsWith('LinkExistingVacancyRepository.ts'))!;
+    expect(link.upd).toHaveLength(1);
+    expect(link.upd[0]).toContain(SET);
+    expect(link.upd[0]).toContain('WHERE id = $1');
+    expect(link.upd[0]).toContain(`status = 'DE_BAJA'`);
+  });
+
+  it('só 3 arquivos de produção usam RESTORE_FROM_BAJA_SET (a definição, o serviço e o vínculo); um 4º reativaria vaga sem acusar', () => {
+    const citam = walk(SRC)
+      .filter((f) => fs.readFileSync(f, 'utf8').includes('RESTORE_FROM_BAJA_SET'))
+      .map((f) => path.relative(SRC, f))
+      .sort();
+    expect(citam).toEqual([
+      'modules/case/infrastructure/LinkExistingVacancyRepository.ts',
+      'modules/case/infrastructure/PatientContractedServiceRepository.ts',
+      'modules/case/infrastructure/vacancyBajaRestoreSql.ts',
+    ]);
   });
 
   it('o import do ClickUp não tira vaga de DE_BAJA (CASE no status nos dois UPDATEs)', () => {

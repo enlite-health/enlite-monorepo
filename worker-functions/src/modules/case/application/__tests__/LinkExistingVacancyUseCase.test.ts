@@ -63,6 +63,7 @@ function build(opts: { accepts?: (f: string, v: unknown) => boolean } = {}) {
     readServiceLinkTarget: jest.fn(async () => ({ provider_age_band: null, raw_address_id: null as string | null })),
     feedService: jest.fn(async () => { calls.push("feed"); }),
     linkVacancyAndClear: jest.fn(async () => { calls.push("link"); return 1; }),
+    restoreFromBaja: jest.fn(async (): Promise<string | null> => { calls.push("restore"); return "SEARCHING"; }),
   };
   const audit = { logFieldChangesSafe: jest.fn(async () => { calls.push("audit"); }) };
   const runner = jest.fn(async (fn: (c: unknown) => unknown) => fn(client)) as never;
@@ -86,7 +87,6 @@ describe("elegibilidade (confirmação)", () => {
     ["OTHER_PATIENT", { patientId: "outro" }],
     ["ALREADY_LINKED", { contractedServiceId: "x" }],
     ["DELETED", { deletedAt: new Date() }],
-    ["DE_BAJA", { status: "DE_BAJA" }],
   ])("%s -> VacancyNotLinkableError sem gravar", async (reason, over) => {
     const t = build();
     t.repo.readVacancyForLink.mockResolvedValue(vac(over as Partial<VacancyForLinkRow>));
@@ -264,12 +264,43 @@ describe("caminho feliz", () => {
   });
 });
 
+describe("vaga DE_BAJA: o vínculo é o caminho de volta (Gabriel, 06/11)", () => {
+  it("vincula e restaura o status na MESMA transação, depois do vínculo e antes da auditoria", async () => {
+    const t = build();
+    t.repo.readVacancyForLink.mockResolvedValue(vac({ status: "DE_BAJA" }));
+    t.repo.restoreFromBaja.mockImplementation(async () => { t.calls.push("restore"); return "FILLED"; });
+    const res = await t.uc.confirm(P, S, V, actor);
+    expect(res.vacancyId).toBe(V);
+    expect(t.calls).toEqual(["feed", "link", "restore", "audit"]);
+    expect(t.repo.restoreFromBaja).toHaveBeenCalledWith(client, V);
+    const params = (t.audit.logFieldChangesSafe.mock.calls[0] as unknown[])[1] as { fields: unknown[] };
+    expect(params.fields).toEqual(expect.arrayContaining([
+      { field: "contracted_service_id", before: null, after: S },
+      { field: "status", before: "DE_BAJA", after: "FILLED" },
+    ]));
+  });
+
+  it("vaga que NÃO está DE_BAJA não é restaurada", async () => {
+    const t = build();
+    await t.uc.confirm(P, S, V, actor);
+    expect(t.repo.restoreFromBaja).not.toHaveBeenCalled();
+  });
+
+  it("as outras checagens continuam valendo para DE_BAJA (outro paciente / já vinculada)", async () => {
+    const t = build();
+    t.repo.readVacancyForLink.mockResolvedValue(vac({ status: "DE_BAJA", contractedServiceId: "x" }));
+    await expect(t.uc.confirm(P, S, V, actor)).rejects.toMatchObject({ reason: "ALREADY_LINKED" });
+    noWrites(t);
+    expect(t.repo.restoreFromBaja).not.toHaveBeenCalled();
+  });
+});
+
 describe("prévia", () => {
   it("nunca grava; lista só as elegíveis; sem vacancyId -> preview null", async () => {
     const t = build();
     const r = await t.uc.preview(P, S);
     expect(r.preview).toBeNull();
-    expect(r.candidates.map((c) => c.id)).toEqual(["v-ok"]);
+    expect(r.candidates.map((c) => c.id)).toEqual(["v-ok", "v-baja"]); // DE_BAJA é candidata: o vínculo é o caminho de volta
     await t.uc.preview(P, S, V);
     noWrites(t);
     expect(t.repo.readVacancyForLink).toHaveBeenCalledWith(client, V, { forUpdate: false });
@@ -280,8 +311,15 @@ describe("prévia", () => {
     const t = build();
     t.repo.readVacancyForLink.mockResolvedValue(null);
     await expect(t.uc.preview(P, S, V)).rejects.toMatchObject({ reason: "NOT_FOUND" });
+    t.repo.readVacancyForLink.mockResolvedValue(vac({ contractedServiceId: "x" }));
+    await expect(t.uc.preview(P, S, V)).rejects.toMatchObject({ reason: "ALREADY_LINKED" });
+  });
+
+  it("vaga DE_BAJA é elegível na prévia e a prévia não restaura nada", async () => {
+    const t = build();
     t.repo.readVacancyForLink.mockResolvedValue(vac({ status: "DE_BAJA" }));
-    await expect(t.uc.preview(P, S, V)).rejects.toMatchObject({ reason: "DE_BAJA" });
+    await expect(t.uc.preview(P, S, V)).resolves.toMatchObject({ preview: { vacancyId: V } });
+    expect(t.repo.restoreFromBaja).not.toHaveBeenCalled();
   });
 });
 
