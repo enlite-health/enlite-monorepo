@@ -245,7 +245,7 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
   }, 30000);
 
   // ── 2. candidatas ───────────────────────────────────────────────────────────────────────────────────────────
-  it('2. prévia sem vacancyId → candidatas = só a vaga legada elegível (fora: outro paciente, já vinculada, apagada, DE_BAJA)', async () => {
+  it('2. prévia sem vacancyId → candidatas = vagas elegíveis (fora: outro paciente, já vinculada, apagada; DE_BAJA ENTRA: o vínculo é a volta dela)', async () => {
     const c = await cenario('cand');
     const outroPaciente = await criarPaciente('cand-outro');
     const vagaOutroPaciente = await semearVaga(outroPaciente, null);
@@ -259,10 +259,11 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
     expect(r.data.success).toBe(true);
     const ids = (r.data.data.candidates as Array<{ id: string }>).map((v) => v.id);
     expect(ids).toContain(c.vagaId);
-    for (const fora of [vagaOutroPaciente, vagaJaVinculada, vagaApagada, vagaDeBaja]) {
+    for (const fora of [vagaOutroPaciente, vagaJaVinculada, vagaApagada]) {
       expect(ids).not.toContain(fora);
     }
-    expect(ids).toEqual([c.vagaId]);
+    expect(ids).toContain(vagaDeBaja);
+    expect([...ids].sort()).toEqual([c.vagaId, vagaDeBaja].sort());
     expect(r.data.data.preview).toBeNull();
   });
 
@@ -360,6 +361,18 @@ describe('Vínculo de vaga existente ao serviço (spec 079, T025) @integration',
   });
 
   // ── 5. segunda confirmação ──────────────────────────────────────────────────────────────────────────────────
+  it('4b. vaga DE_BAJA: o vínculo é o caminho de volta — status volta a status_before_baja, status_before_baja zera e o vínculo grava', async () => {
+    const c = await cenario('baja');
+    await pool.query(`UPDATE job_postings SET status = 'DE_BAJA', status_before_baja = 'CLOSED', baja_reason = 'MANUAL' WHERE id = $1`, [c.vagaId]);
+
+    const r = await confirmar(c, U.completo, c.vagaId);
+    expect([r.status, r.data]).toEqual([200, expect.objectContaining({ success: true })]);
+
+    const { rows } = await pool.query<{ status: string; status_before_baja: string | null; contracted_service_id: string | null }>(
+      `SELECT status, status_before_baja, contracted_service_id FROM job_postings WHERE id = $1`, [c.vagaId]);
+    expect(rows[0]).toEqual({ status: 'CLOSED', status_before_baja: null, contracted_service_id: c.serviceId });
+  });
+
   it('5. segunda confirmação da mesma vaga → 409 SERVICE_ALREADY_RECRUITING (o serviço agora tem vaga viva); estado não muda', async () => {
     const c = await cenario('dupla');
     expect((await confirmar(c, U.completo, c.vagaId)).status).toBe(200);
