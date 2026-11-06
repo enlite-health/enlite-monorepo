@@ -6,7 +6,7 @@
 import { applyNotQualifiedTransition } from '../talentumFunnel';
 
 const PREC: Record<string, number> = {
-  INVITED: 0, PRE_SCREENING: 1, IN_PROGRESS: 2, COMPLETED: 3, IN_DOUBT: 4, QUALIFIED: 5, CONFIRMED: 6, SELECTED: 7, REJECTED: 7, QUICK_RESPONSE_TEAM: 8,
+  INVITED: 0, PRE_SCREENING: 1, IN_PROGRESS: 2, COMPLETED: 3, IN_DOUBT: 4, QUALIFIED: 5, SELECTED: 7, REJECTED: 7, QUICK_RESPONSE_TEAM: 8,
 };
 
 function fakeDb() {
@@ -23,7 +23,7 @@ function fakeDb() {
 const writes = (db: ReturnType<typeof fakeDb>) => db.calls.filter((c) => /^\s*(UPDATE|INSERT)/.test(c.sql));
 
 describe('applyNotQualifiedTransition (F3)', () => {
-  it.each(['SELECTED', 'CONFIRMED', 'QUICK_RESPONSE_TEAM'])(
+  it.each(['SELECTED', 'QUICK_RESPONSE_TEAM'])(
     'NOT_QUALIFIED sobre %s: não escreve nada (sem UPDATE de etapa, sem encuadre RECHAZADO, sem evento auto_not_qualified)',
     async (prev) => {
       const db = fakeDb();

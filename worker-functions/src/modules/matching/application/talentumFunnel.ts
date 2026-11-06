@@ -55,7 +55,7 @@ export async function applyNotQualifiedTransition(
   prescreeningId?: string,
 ): Promise<boolean> {
   if (funnelStage !== 'NOT_QUALIFIED' || previousStage === 'REJECTED') return false;
-  // F3: etapa humana ACIMA de QUALIFIED (CONFIRMED/SELECTED/QRT) fica com a operação — o card mostra o veredito
+  // F3: etapa humana ACIMA de QUALIFIED (SELECTED/QRT) fica com a operação — o card mostra o veredito
   // (talentum_prescreenings), mas WJA e encuadre não mudam e não nasce o evento auto_not_qualified. Fonte única da
   // ordem: `funnel_stage_precedence` (mig 477), a mesma do upsert; etapa desconhecida (-1) segue rebaixando como antes.
   if (previousStage !== null) {

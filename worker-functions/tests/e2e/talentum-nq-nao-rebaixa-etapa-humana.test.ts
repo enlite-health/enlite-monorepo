@@ -1,11 +1,11 @@
 /**
  * talentum-nq-nao-rebaixa-etapa-humana.test.ts
  *
- * F3 (regra do Gabriel, 05/11/2026): NOT_QUALIFIED do Talentum NÃO rebaixa etapa humana ACIMA de QUALIFIED (CONFIRMED, SELECTED,
+ * F3 (regra do Gabriel, 05/11/2026): NOT_QUALIFIED do Talentum NÃO rebaixa etapa humana ACIMA de QUALIFIED (SELECTED,
  * QUICK_RESPONSE_TEAM). O card mostra o veredito (talentum_prescreenings.status = NOT_QUALIFIED), mas a etapa da WJA e o encuadre
  * ficam com a operação. Etapas <= QUALIFIED seguem para REJECTED. Entra pela BORDA: POST real no webhook, Postgres real.
  *
- *  (a) CONFIRMED / (b) QUICK_RESPONSE_TEAM / (c) SELECTED + NOT_QUALIFIED → etapa e encuadre intactos, sem evento auto_not_qualified
+ *  (a) SELECTED (REJECTED empata 7 x 7 no upsert: prova o guard do CASE) / (b) QUICK_RESPONSE_TEAM + NOT_QUALIFIED → etapa e encuadre intactos, sem evento auto_not_qualified
  *  (d) controle QUALIFIED + NOT_QUALIFIED → REJECTED + encuadre RECHAZADO + evento (como hoje)
  * Nenhuma mensagem: os eventos desta transição nascem `processed` (audit-only); o e2e confere que não sobra evento pendente.
  */
@@ -17,14 +17,14 @@ type Analyzed = ResponseBlock & { score: number; statusLabel: 'NOT_QUALIFIED' | 
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const ENDPOINT = '/api/webhooks/talentum/prescreening';
-const KEYS = ['CONF', 'QRT', 'SEL', 'CTL'] as const;
+const KEYS = ['QRT', 'SEL', 'CTL'] as const;
 type Key = (typeof KEYS)[number];
-const START: Record<Key, string> = { CONF: 'CONFIRMED', QRT: 'QUICK_RESPONSE_TEAM', SEL: 'SELECTED', CTL: 'QUALIFIED' };
+const START: Record<Key, string> = { QRT: 'QUICK_RESPONSE_TEAM', SEL: 'SELECTED', CTL: 'QUALIFIED' };
 const PSC = (k: Key) => `nqhum-psc-${k}`;
 const PROF = (k: Key) => `nqhum-prof-${k}`;
 const EMAIL = (k: Key) => `nqhum.${k.toLowerCase()}@test.local`;
-const TITLE: Record<Key, string> = { CONF: 'CASO 821 NQHUM CONF', QRT: 'CASO 822 NQHUM QRT', SEL: 'CASO 823 NQHUM SEL', CTL: 'CASO 824 NQHUM CTL' };
-const PHONE: Record<Key, string> = { CONF: '+5491182100001', QRT: '+5491182200001', SEL: '+5491182300001', CTL: '+5491182400001' };
+const TITLE: Record<Key, string> = { QRT: 'CASO 822 NQHUM QRT', SEL: 'CASO 823 NQHUM SEL', CTL: 'CASO 824 NQHUM CTL' };
+const PHONE: Record<Key, string> = { QRT: '+5491182200001', SEL: '+5491182300001', CTL: '+5491182400001' };
 
 describe('Talentum — NOT_QUALIFIED não rebaixa etapa humana acima de QUALIFIED (webhook real)', () => {
   let api: ReturnType<typeof createApiClient>;
@@ -90,7 +90,7 @@ describe('Talentum — NOT_QUALIFIED não rebaixa etapa humana acima de QUALIFIE
     await pool.end();
   });
 
-  it.each([['CONF', 'CONFIRMED'], ['QRT', 'QUICK_RESPONSE_TEAM'], ['SEL', 'SELECTED']] as Array<[Key, string]>)(
+  it.each([['QRT', 'QUICK_RESPONSE_TEAM'], ['SEL', 'SELECTED']] as Array<[Key, string]>)(
     'WJA em %s (%s) + NOT_QUALIFIED: etapa e encuadre intactos, veredito gravado, sem evento auto_not_qualified',
     async (k, expected) => {
       await seed(k);
