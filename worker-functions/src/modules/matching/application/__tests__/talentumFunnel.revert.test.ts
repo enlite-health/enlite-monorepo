@@ -37,6 +37,22 @@ describe('revertAutoRejectionOnPositiveVerdict', () => {
     expect(await revertAutoRejectionOnPositiveVerdict(db, 'w', 'j', 'QUALIFIED', 'REJECTED')).toBe(true);
   });
 
+  it("changed_by 'system:<nome>' (rejeição por script) + evento auto_not_qualified: reverte", async () => {
+    const db = fakeDb({ new_value: 'REJECTED', changed_by: 'system:reconciliar-talentum-sem-worker' }, true);
+    expect(await revertAutoRejectionOnPositiveVerdict(db, 'w', 'j', 'QUALIFIED', 'REJECTED', 'p')).toBe(true);
+    expect(writes(db)).toHaveLength(3);
+  });
+
+  it.each([
+    ["system: SEM o evento auto_not_qualified (script que rejeitou por outro motivo)", { new_value: 'REJECTED', changed_by: 'system:outro-script' } as Hist, false],
+    ["uid humano que apenas CONTÉM system:", { new_value: 'REJECTED', changed_by: 'uid-system:humano' } as Hist, true],
+    ["'system' sem os dois pontos", { new_value: 'REJECTED', changed_by: 'system' } as Hist, true],
+  ])('%s: NÃO reverte e não escreve nada', async (_n, hist, auto) => {
+    const db = fakeDb(hist, auto);
+    expect(await revertAutoRejectionOnPositiveVerdict(db, 'w', 'j', 'QUALIFIED', 'REJECTED')).toBe(false);
+    expect(writes(db)).toEqual([]);
+  });
+
   it.each([
     ['rejeição humana (changed_by preenchido)', { new_value: 'REJECTED', changed_by: 'uid-humano' } as Hist, true],
     ['humano moveu depois (última linha não é REJECTED)', { new_value: 'SELECTED', changed_by: 'uid-humano' } as Hist, true],

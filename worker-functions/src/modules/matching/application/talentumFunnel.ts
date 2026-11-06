@@ -55,6 +55,15 @@ export async function applyNotQualifiedTransition(
   prescreeningId?: string,
 ): Promise<boolean> {
   if (funnelStage !== 'NOT_QUALIFIED' || previousStage === 'REJECTED') return false;
+  // F3: etapa humana ACIMA de QUALIFIED (SELECTED/QRT) fica com a operação — o card mostra o veredito
+  // (talentum_prescreenings), mas WJA e encuadre não mudam e não nasce o evento auto_not_qualified. Fonte única da
+  // ordem: `funnel_stage_precedence` (mig 477), a mesma do upsert; etapa desconhecida (-1) segue rebaixando como antes.
+  if (previousStage !== null) {
+    const above = await client.query(
+      `SELECT funnel_stage_precedence($1) > funnel_stage_precedence('QUALIFIED') AS above`, [previousStage],
+    );
+    if (above.rows[0]?.above === true) return false;
+  }
 
   await client.query(
     `UPDATE encuadres
@@ -82,6 +91,12 @@ export async function applyNotQualifiedTransition(
 /** Vereditos positivos do Talentum que o card espelha (os dois têm etapa própria no funil). */
 const POSITIVE_VERDICT_STAGES: readonly string[] = ['QUALIFIED', 'IN_DOUBT'];
 
+/** Ator automático da trilha: vazio/NULL (webhook) ou `system:<nome>` (script). uid humano = nunca automático. */
+const isAutomaticActor = (changedBy: string | null | undefined): boolean => {
+  const by = changedBy ?? '';
+  return by === '' || by.startsWith('system:');
+};
+
 /**
  * Caminho inverso de `applyNotQualifiedTransition`: o Talentum é a fonte da verdade do card, então um veredito
  * POSITIVO (QUALIFIED/IN_DOUBT) que chega para uma candidatura cujo REJECTED veio da rejeição AUTOMÁTICA do próprio
@@ -89,7 +104,7 @@ const POSITIVE_VERDICT_STAGES: readonly string[] = ['QUALIFIED', 'IN_DOUBT'];
  * deixaria o card preso em Rechazados.
  *
  * "Automática" = as DUAS provas, lidas do que já está gravado (sem migration):
- *  1. a ÚLTIMA linha da trilha `worker_job_application_stage_history` é um REJECTED com `changed_by` vazio — o gatilho
+ *  1. a ÚLTIMA linha da trilha `worker_job_application_stage_history` é um REJECTED com `changed_by` vazio ou `system:<nome>` (script) — o gatilho
  *     (mig 478) grava `app.current_uid`; o webhook roda fora de `withActorContext`, então NULL/''; "Mover a…" humano
  *     grava o uid de quem moveu, e qualquer movimento humano posterior vira a última linha (a rejeição humana NUNCA é revertida);
  *  2. existe o evento `funnel_stage.rejected` com `source = 'auto_not_qualified'` (gravado por `applyNotQualifiedTransition`).
@@ -113,7 +128,7 @@ export async function revertAutoRejectionOnPositiveVerdict(
     [workerId, jobPostingId],
   );
   const row = last.rows[0];
-  if (!row || row.new_value !== 'REJECTED' || (row.changed_by ?? '') !== '') return false;
+  if (!row || row.new_value !== 'REJECTED' || !isAutomaticActor(row.changed_by)) return false;
 
   const auto = await client.query(
     `SELECT 1 FROM domain_events
