@@ -79,6 +79,72 @@ export async function applyNotQualifiedTransition(
   return true;
 }
 
+/** Vereditos positivos do Talentum que o card espelha (os dois têm etapa própria no funil). */
+const POSITIVE_VERDICT_STAGES: readonly string[] = ['QUALIFIED', 'IN_DOUBT'];
+
+/**
+ * Caminho inverso de `applyNotQualifiedTransition`: o Talentum é a fonte da verdade do card, então um veredito
+ * POSITIVO (QUALIFIED/IN_DOUBT) que chega para uma candidatura cujo REJECTED veio da rejeição AUTOMÁTICA do próprio
+ * Talentum desfaz essa rejeição. O upsert do WJA ("etapa não regride", `funnel_stage_precedence`: REJECTED=7 > QUALIFIED=5)
+ * deixaria o card preso em Rechazados.
+ *
+ * "Automática" = as DUAS provas, lidas do que já está gravado (sem migration):
+ *  1. a ÚLTIMA linha da trilha `worker_job_application_stage_history` é um REJECTED com `changed_by` vazio — o gatilho
+ *     (mig 478) grava `app.current_uid`; o webhook roda fora de `withActorContext`, então NULL/''; "Mover a…" humano
+ *     grava o uid de quem moveu, e qualquer movimento humano posterior vira a última linha (a rejeição humana NUNCA é revertida);
+ *  2. existe o evento `funnel_stage.rejected` com `source = 'auto_not_qualified'` (gravado por `applyNotQualifiedTransition`).
+ * Sem as duas, não toca em nada. O encuadre só perde o resultado se ainda for o RECHAZADO/TALENTUM_NOT_QUALIFIED que a
+ * rejeição automática pôs. Evento de auditoria nasce `processed` (sem consumidor: nenhuma mensagem ao prestador).
+ * Chamar DEPOIS do upsert do WJA, com a `previousStage` que ele devolveu, na mesma transação.
+ */
+export async function revertAutoRejectionOnPositiveVerdict(
+  client: Queryable, workerId: string, jobPostingId: string, funnelStage: string, previousStage: string | null,
+  prescreeningId?: string,
+): Promise<boolean> {
+  if (previousStage !== 'REJECTED' || !POSITIVE_VERDICT_STAGES.includes(funnelStage)) return false;
+
+  const last = await client.query(
+    `SELECT h.new_value, h.changed_by
+       FROM worker_job_application_stage_history h
+       JOIN worker_job_applications a ON a.id = h.application_id
+      WHERE a.worker_id = $1 AND a.job_posting_id = $2 AND h.field_name = 'application_funnel_stage'
+      ORDER BY h.created_at DESC, h.id DESC
+      LIMIT 1`,
+    [workerId, jobPostingId],
+  );
+  const row = last.rows[0];
+  if (!row || row.new_value !== 'REJECTED' || (row.changed_by ?? '') !== '') return false;
+
+  const auto = await client.query(
+    `SELECT 1 FROM domain_events
+      WHERE event = 'funnel_stage.rejected'
+        AND payload->>'workerId' = $1 AND payload->>'jobPostingId' = $2
+        AND payload->>'source' = 'auto_not_qualified'
+      LIMIT 1`,
+    [workerId, jobPostingId],
+  );
+  if (auto.rows.length === 0) return false;
+
+  await client.query(
+    `UPDATE worker_job_applications
+        SET application_funnel_stage = $3, updated_at = NOW()
+      WHERE worker_id = $1 AND job_posting_id = $2 AND application_funnel_stage = 'REJECTED'`,
+    [workerId, jobPostingId, funnelStage],
+  );
+  await client.query(
+    `UPDATE encuadres
+        SET resultado = NULL, rejection_reason_category = NULL, updated_at = NOW()
+      WHERE worker_id = $1 AND job_posting_id = $2
+        AND resultado = 'RECHAZADO' AND rejection_reason_category = 'TALENTUM_NOT_QUALIFIED'`,
+    [workerId, jobPostingId],
+  );
+  await client.query(
+    `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.rejection_reverted', $1::jsonb, 'processed', NOW())`,
+    [JSON.stringify({ workerId, jobPostingId, prescreeningId: prescreeningId ?? null, toStage: funnelStage, source: 'talentum' })],
+  );
+  return true;
+}
+
 export type InsertTalentumWorkerResult =
   | { kind: 'CREATED'; id: string }
   | { kind: 'COLLISION' }

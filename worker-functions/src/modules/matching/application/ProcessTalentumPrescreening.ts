@@ -10,7 +10,7 @@ import { resolveLiveCanonicalWorkerIds } from '@shared/database/resolveLiveCanon
 import { reportError } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
-import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, insertTalentumWorker } from './talentumFunnel';
+import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker } from './talentumFunnel';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
@@ -520,6 +520,11 @@ export class ProcessTalentumPrescreening {
       );
       console.log(`${TAG} WJA: ${previousStage ?? 'NEW'} → ${effectiveFunnelStage} | worker=${workerId} | job=${jobPostingId} | score=${matchScore}`);
 
+      // Veredito positivo sobre um REJECTED que foi do próprio Talentum: o upsert acima manteve REJECTED (etapa não regride).
+      // Desfaz ANTES do evento qualified: o previousStage do evento continua o do upsert (REJECTED ≠ QUALIFIED → emite, source talentum).
+      if (await revertAutoRejectionOnPositiveVerdict(client, workerId, jobPostingId, effectiveFunnelStage, previousStage, prescreeningId)) {
+        console.log(`${TAG} auto-reject REVERTED → WJA stage=${effectiveFunnelStage} | worker=${workerId} | job=${jobPostingId}`);
+      }
       qualifiedEventId = await this.handleQualifiedTransition(client, workerId, jobPostingId, effectiveFunnelStage, previousStage);
       // Passa o funnelStage ORIGINAL (NOT_QUALIFIED) para handleNotQualifiedTransition identificar a transição,
       // mas o upsert já gravou REJECTED — handleNotQualifiedTransition só cuida do encuadre + domain events agora.

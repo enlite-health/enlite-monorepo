@@ -282,6 +282,40 @@ describe('ProcessTalentumPrescreening', () => {
     expect(rejectedPayload.prescreeningId).toBeNull();
   });
 
+  it('QUALIFIED sobre REJECTED automático (trilha sem changed_by + evento auto_not_qualified): desfaz WJA e encuadre na transação', async () => {
+    mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({ previousStage: 'REJECTED' });
+    mockPoolClient.query.mockImplementation((sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return Promise.resolve();
+      if (sql.includes('worker_job_application_stage_history')) return Promise.resolve({ rows: [{ new_value: 'REJECTED', changed_by: null }] });
+      if (sql.includes("'auto_not_qualified'")) return Promise.resolve({ rows: [{ x: 1 }] });
+      if (sql.includes('INSERT INTO domain_events')) return Promise.resolve({ rows: [{ id: 'evt-1' }] });
+      return Promise.resolve({ rows: [] });
+    });
+
+    await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+    const sqls: string[] = mockPoolClient.query.mock.calls.map((c: any[]) => c[0]);
+    expect(sqls.some((q) => q.includes('UPDATE worker_job_applications') && q.includes('application_funnel_stage = $3'))).toBe(true);
+    expect(sqls.some((q) => q.includes("rejection_reason_category = 'TALENTUM_NOT_QUALIFIED'") && q.includes('resultado = NULL'))).toBe(true);
+  });
+
+  it('QUALIFIED sobre REJECTED HUMANO (changed_by preenchido): não escreve a reversão', async () => {
+    mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({ previousStage: 'REJECTED' });
+    mockPoolClient.query.mockImplementation((sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return Promise.resolve();
+      if (sql.includes('worker_job_application_stage_history')) return Promise.resolve({ rows: [{ new_value: 'REJECTED', changed_by: 'uid-humano' }] });
+      if (sql.includes("'auto_not_qualified'")) return Promise.resolve({ rows: [{ x: 1 }] });
+      if (sql.includes('INSERT INTO domain_events')) return Promise.resolve({ rows: [{ id: 'evt-1' }] });
+      return Promise.resolve({ rows: [] });
+    });
+
+    await useCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+
+    const sqls: string[] = mockPoolClient.query.mock.calls.map((c: any[]) => c[0]);
+    expect(sqls.some((q) => q.includes('UPDATE worker_job_applications'))).toBe(false);
+    expect(sqls.some((q) => q.includes('rejection_reverted'))).toBe(false);
+  });
+
   it('não re-executa auto-rejeição se previousStage já era REJECTED (deduplicação — webhook duplicado)', async () => {
     const payload = buildPayload({ statusLabel: 'NOT_QUALIFIED' });
     mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
