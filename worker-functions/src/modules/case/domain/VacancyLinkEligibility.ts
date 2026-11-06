@@ -4,8 +4,8 @@
  * para a lista e o veredito final nunca divergirem.
  *
  * Ordem das checagens (a primeira que falha dá o motivo): DELETED -> OTHER_PATIENT ->
- * ALREADY_LINKED (inclusive se já for deste serviço) -> DE_BAJA. Qualquer outro status
- * (CLOSED, FILLED, SEARCHING, rascunho, null) é elegível: a spec só exclui DE_BAJA.
+ * ALREADY_LINKED (inclusive se já for deste serviço). Qualquer status é elegível, inclusive DE_BAJA: vincular a vaga
+ * baixada a um serviço é o caminho de volta dela (Gabriel, 06/11) — o use case restaura o status ao vincular.
  * `NOT_FOUND` é do use case (a vaga nem existe), não daqui.
  */
 import type { VacancyNotLinkableReason } from './LinkExistingVacancyContract';
@@ -28,7 +28,6 @@ export function vacancyLinkEligibility(
   if (vacancy.deletedAt != null) return { eligible: false, reason: 'DELETED' };
   if (vacancy.patientId !== service.patientId) return { eligible: false, reason: 'OTHER_PATIENT' };
   if (vacancy.contractedServiceId != null) return { eligible: false, reason: 'ALREADY_LINKED' };
-  if (vacancy.status === 'DE_BAJA') return { eligible: false, reason: 'DE_BAJA' };
   return { eligible: true };
 }
 
@@ -53,9 +52,9 @@ export function linkableVacancies<T extends { contractedServiceId: string | null
 /**
  * Status de vaga ENCERRADA para o FOGUETE (decisão do Gabriel): vaga antiga encerrada não conta como candidata —
  * se o paciente só tem encerrada, o foguete cria vaga nova direto. NÃO vale para o vínculo manual da 079, onde
- * CLOSED/FILLED continuam elegíveis. (`FILLED` não existe no CHECK de `job_postings.status`; fica aqui por decisão.)
+ * CLOSED/FILLED/DE_BAJA são elegíveis. DE_BAJA entra aqui para o foguete seguir como antes (baixada não conta como candidata). (`FILLED` não existe no CHECK de `job_postings.status`; fica aqui por decisão.)
  */
-export const ROCKET_CLOSED_VACANCY_STATUSES: readonly string[] = ['CLOSED', 'FILLED'];
+export const ROCKET_CLOSED_VACANCY_STATUSES: readonly string[] = ['CLOSED', 'FILLED', 'DE_BAJA'];
 
 /** Candidatas do FOGUETE: as vinculáveis (`linkableVacancies`, sem duplicar a elegibilidade) que NÃO estão encerradas. */
 export function linkableOpenVacancies<T extends { contractedServiceId: string | null; status: string | null }>(

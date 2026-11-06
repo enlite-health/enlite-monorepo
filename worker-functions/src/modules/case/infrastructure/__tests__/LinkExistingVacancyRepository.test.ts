@@ -109,4 +109,21 @@ describe('LinkExistingVacancyRepository', () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0][1]).toEqual(['p1']);
   });
+
+  it('restoreFromBaja: mesmo SET da P3 (COALESCE do status anterior, SEARCHING se NULL, retoma Talentum), só vaga DE_BAJA viva', async () => {
+    const { client, query } = cliente([{ status: 'FILLED' }]);
+    await expect(repo.restoreFromBaja(client, 'v1')).resolves.toBe('FILLED');
+    const sql = sqlOf(query);
+    expect(sql).toContain("COALESCE(status_before_baja, 'SEARCHING')");
+    expect(sql).toContain('status_before_baja = NULL');
+    expect(sql).toContain("'PENDING_RESUME'");
+    expect(sql).toContain("status = 'DE_BAJA'");
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(query.mock.calls[0][1]).toEqual(['v1']);
+  });
+
+  it('restoreFromBaja: nada atualizado -> null', async () => {
+    const { client } = cliente([]);
+    await expect(repo.restoreFromBaja(client, 'v1')).resolves.toBeNull();
+  });
 });

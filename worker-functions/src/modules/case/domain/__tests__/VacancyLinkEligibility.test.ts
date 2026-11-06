@@ -37,11 +37,13 @@ describe('vacancyLinkEligibility', () => {
     });
   });
 
-  it('vaga em DE_BAJA -> DE_BAJA', () => {
-    expect(vacancyLinkEligibility({ ...base, status: 'DE_BAJA' }, SERVICE)).toEqual({
-      eligible: false,
-      reason: 'DE_BAJA',
-    });
+  it('vaga em DE_BAJA é elegível (o vínculo é o caminho de volta dela)', () => {
+    expect(vacancyLinkEligibility({ ...base, status: 'DE_BAJA' }, SERVICE)).toEqual({ eligible: true });
+  });
+
+  it('DE_BAJA já vinculada ou de outro paciente continua inelegível', () => {
+    expect(vacancyLinkEligibility({ ...base, status: 'DE_BAJA', contractedServiceId: 's9' }, SERVICE)).toEqual({ eligible: false, reason: 'ALREADY_LINKED' });
+    expect(vacancyLinkEligibility({ ...base, status: 'DE_BAJA', patientId: 'p2' }, SERVICE)).toEqual({ eligible: false, reason: 'OTHER_PATIENT' });
   });
 
   it('status CLOSED é elegível', () => {

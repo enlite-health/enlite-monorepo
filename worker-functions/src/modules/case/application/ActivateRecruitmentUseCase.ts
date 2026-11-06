@@ -50,7 +50,7 @@ export class RecruitmentNotReadyError extends Error {
 }
 
 /**
- * O paciente já tem vaga vinculável (sem serviço, viva, não DE_BAJA — a MESMA régua do vínculo, spec 079):
+ * O paciente já tem vaga vinculável (sem serviço, viva, não encerrada nem DE_BAJA — a régua do vínculo (079) menos as encerradas):
  * criar outra duplicaria a vaga e deixaria o Kanban antigo órfão. Nada foi gravado. O controller mapeia para
  * 409 `LINKABLE_VACANCY_EXISTS`; a tela abre o modal "Vincular vaga existente".
  */

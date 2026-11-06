@@ -92,7 +92,8 @@ const pgCode = (err: unknown): string | undefined =>
 /**
  * LinkExistingVacancyUseCase — vincula uma vaga existente a um serviço contratado (spec 079, plan §3.4/§3.5).
  * `preview` nunca grava. `confirm` roda numa transação: lock → re-valida elegibilidade → plano → portão →
- * SÓ ENTÃO grava (alimenta o serviço, vincula e zera a vaga, audita). Não toca status de paciente nem de vaga.
+ * SÓ ENTÃO grava (alimenta o serviço, vincula e zera a vaga, audita). Não toca status de paciente; só a vaga DE_BAJA volta ao
+ * status anterior ao vincular.
  * `accepts` (domínio de escrita do serviço) é injetado pela composição.
  */
 export class LinkExistingVacancyUseCase {
@@ -251,11 +252,14 @@ export class LinkExistingVacancyUseCase {
     if (blockers.length > 0) throw new LinkBlockedError(blockers);
 
     // 5-6. gravação
+    let restoredStatus: string | null = null;
     const actorUid = actor.actorUserId ?? actor.actorLabel;
     try {
       await this.repo.feedService(client, serviceId, plan.serviceFeed, actorUid);
       const rowCount = await this.repo.linkVacancyAndClear(client, vacancyId, serviceId);
       if (rowCount === 0) throw new VacancyNotLinkableError("ALREADY_LINKED");
+      // Vaga DE_BAJA: o vínculo é o caminho de volta dela (decisão do Gabriel, 06/11) — mesma transação, mesmo SET da P3.
+      if (vacancy.status === "DE_BAJA") restoredStatus = await this.repo.restoreFromBaja(client, vacancyId);
     } catch (err) {
       const code = pgCode(err);
       if (code === "23505") throw new ServiceAlreadyRecruitingError(vacancyId);
@@ -266,6 +270,7 @@ export class LinkExistingVacancyUseCase {
     // 7. auditoria (best-effort, SAVEPOINT por campo)
     const fields: FieldChange[] = [
       { field: "contracted_service_id", before: null, after: serviceId },
+      ...(restoredStatus ? [{ field: "status", before: "DE_BAJA", after: restoredStatus }] : []),
       ...plan.vacancyClear.map((c) => ({ field: c.column as string, before: c.before, after: null })),
       ...(Object.entries(plan.serviceFeed) as Array<[keyof ServiceFeed, unknown]>).map(([key, value]) => ({
         field: LINK_AUDIT_SERVICE_FIELD_PREFIX + key,
