@@ -35,13 +35,14 @@ vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
   ),
 }));
 
+const realEnqueue = useInviteProgressStore.getState().enqueue;
 const cand = (id: string, d: number | null, extra = {}) => ({
   workerId: id, workerName: id, workerPhone: null, occupation: 'AT', workZone: null, distanceKm: d, lat: -34.6, lng: -58.4,
   activeCasesCount: 0, workerStatus: null, documentStatus: 'approved', source: 'system', funnelStage: 'INVITED', replied: false,
   matchScore: null, internalNotes: null, alreadyApplied: false, messagedAt: null, ...extra,
 });
 const ready = (candidates: unknown[], ids: string[]) => ({
-  status: 'ready', error: null, isRefreshing: false, refetch: vi.fn(), reload: vi.fn(), currentIds: new Set(ids),
+  status: 'ready', error: null, isRefreshing: false, refetch: vi.fn().mockResolvedValue(undefined), reload: vi.fn(), currentIds: new Set(ids),
   results: { jobPostingId: 'v1', operationDate: '2026-11-06', service: { lat: -34.6, lng: -58.4, addressLabel: 'X' }, candidates },
 });
 
@@ -61,7 +62,7 @@ function renderPage(entry: unknown = '/admin/vacancies/v1/match') {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useInviteProgressStore.setState({ isSending: false });
+  useInviteProgressStore.setState({ isSending: false, items: [], enqueue: realEnqueue });
   gates.allowed = { 'match:read': true, 'match:execute': true };
   detail.value = { vacancy: { id: 'v1', status: 'ACTIVE', case_number: 817, vacancy_number: 2, required_sex: 'F', required_professions: ['AT'], patient_address_formatted: 'Av. Santa Fe 3200' }, error: null };
   board.value = ready([cand('a', 3), cand('b', 7)], ['a', 'b']);
@@ -200,5 +201,75 @@ describe('VacancyInvitePage (T026a)', () => {
     expect(screen.getByTestId('invite-vacante-note')).toHaveTextContent('vacanteNote.noLocation{"count":1}');
     expect(screen.queryByTestId('invite-profile-note')).toBeNull();
     expect(screen.getByTestId('invite-map-legend')).toBeInTheDocument();
+  });
+
+  describe('envio (T026c)', () => {
+    const open5 = () => renderPage('/admin/vacancies/v1/match?paso=5');
+
+    it('F3: Invitar abre a confirmação com os elegidos; "No, volver" fecha sem enfileirar', async () => {
+      const enqueue = vi.fn();
+      useInviteProgressStore.setState({ enqueue });
+      board.value = ready([cand('a', 2), cand('b', 4), cand('c', 4.5)], ['a', 'b', 'c']);
+      open5();
+      await userEvent.click(screen.getByTestId('invite-row-check-c'));
+      await userEvent.click(screen.getByTestId('invite-btn-invite'));
+      const dlg = screen.getByRole('dialog');
+      expect(dlg).toHaveAttribute('aria-modal', 'true');
+      expect(screen.getByTestId('invite-confirm-lead')).toHaveTextContent('"count":2');
+      expect(screen.getByTestId('invite-confirm-item-a')).toHaveTextContent('"value":"2,0"');
+      expect(screen.queryByTestId('invite-confirm-item-c')).toBeNull();
+      expect(screen.queryByTestId('invite-confirm-already')).toBeNull();
+      await userEvent.click(screen.getByTestId('invite-confirm-cancel'));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('confirmar enfileira só os elegidos, SEM resend; o já convidado só entra com a caixa (resend:true)', async () => {
+      const enqueue = vi.fn();
+      useInviteProgressStore.setState({ enqueue });
+      board.value = ready([cand('a', 2), cand('old', 3, { messagedAt: '2026-11-03T15:00:00Z' })], ['a', 'old']);
+      open5();
+      await userEvent.click(screen.getByTestId('invite-btn-invite'));
+      expect(screen.getByTestId('invite-confirm-already')).toHaveTextContent('"date":"03/11"');
+      expect(screen.getByTestId('invite-confirm-resend')).not.toBeChecked();
+      await userEvent.click(screen.getByTestId('invite-confirm-send'));
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      expect(enqueue.mock.calls[0][1]).toEqual([{ workerId: 'a', workerName: 'Nome a'.replace('Nome a', 'a'), messagedAt: null }]);
+      await userEvent.click(screen.getByTestId('invite-btn-invite'));
+      await userEvent.click(screen.getByTestId('invite-confirm-resend'));
+      expect(screen.getByTestId('invite-confirm-send')).toHaveTextContent('"count":2');
+      await userEvent.click(screen.getByTestId('invite-confirm-send'));
+      expect(enqueue.mock.calls[1][1]).toEqual([
+        { workerId: 'a', workerName: 'a', messagedAt: null },
+        { workerId: 'old', workerName: 'old', messagedAt: '2026-11-03T15:00:00Z', resend: true },
+      ]);
+    });
+
+    it('F4/DF-19: ao terminar o envio, alerta só com quem saiu + "M no se enviaron", 1 GET (refetch), linha do erro', async () => {
+      const refetch = vi.fn().mockResolvedValue(undefined);
+      board.value = { ...ready([cand('a', 2), cand('b', 4)], ['a', 'b']), refetch };
+      useInviteProgressStore.setState({ enqueue: () => undefined });
+      open5();
+      await userEvent.click(screen.getByTestId('invite-btn-invite'));
+      await userEvent.click(screen.getByTestId('invite-confirm-send'));
+      act(() => useInviteProgressStore.setState({ isSending: true, items: [
+        { vacancyId: 'v1', workerId: 'a', workerName: 'a', status: 'sending' },
+        { vacancyId: 'v1', workerId: 'b', workerName: 'b', status: 'pending' },
+      ] }));
+      expect(screen.getByTestId('invite-row-badge-b')).toHaveTextContent('row.sending');
+      expect(refetch).not.toHaveBeenCalled();
+      act(() => useInviteProgressStore.setState({ isSending: false, items: [
+        { vacancyId: 'v1', workerId: 'a', workerName: 'a', status: 'sent' },
+        { vacancyId: 'v1', workerId: 'b', workerName: 'b', status: 'error', errorCode: 'COOLDOWN' },
+      ] }));
+      await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('invite-sent-alert')).toHaveAttribute('data-failed', '1');
+      expect(screen.getByTestId('invite-sent-alert')).toHaveTextContent('sent.title');
+      expect(screen.getByTestId('invite-sent-alert')).toHaveTextContent('"count":1');
+      expect(screen.getByTestId('invite-sent-progress')).toHaveTextContent('"sent":1,"total":2');
+      expect(screen.getByTestId('invite-sent-failed')).toHaveTextContent('"count":1');
+      expect(screen.getByTestId('invite-row-badge-b')).not.toHaveTextContent('row.invitedToday');
+      expect(screen.getByTestId('invite-step-5')).toHaveAttribute('data-tone', 'done');
+    });
   });
 });

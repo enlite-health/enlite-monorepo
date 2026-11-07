@@ -7512,6 +7512,28 @@
         "more": "Buscar más lejos · hasta {{km}} km ({{count}} más)",
         "moreFromVacante": "Buscar cerca del servicio · hasta {{km}} km ({{count}})",
         "finish": "Terminar"
+      },
+      "confirm": {
+        "title": "¿Enviar la invitación por WhatsApp?",
+        "lead_one": "Le vamos a mandar la vacante por WhatsApp a esta persona:",
+        "lead_other": "Le vamos a mandar la vacante por WhatsApp a estas {{count}} personas:",
+        "noLocation": "Sin ubicación",
+        "alreadyOne": "{{names}} ya recibió la invitación el {{date}}. No se la vamos a enviar de nuevo.",
+        "alreadyMany": "{{names}} ya recibieron la invitación el {{date}}. No se la vamos a enviar de nuevo.",
+        "resend": "Enviársela otra vez",
+        "note": "Los mensajes salen apenas confirmás y no se pueden cancelar.",
+        "cancel": "No, volver",
+        "send_one": "Sí, enviar a {{count}} persona",
+        "send_other": "Sí, enviar a {{count}} personas",
+        "and": "y"
+      },
+      "sent": {
+        "title_one": "Listo: invitaste a {{count}} persona",
+        "title_other": "Listo: invitaste a {{count}} personas",
+        "titleNone": "No se envió ninguna invitación",
+        "text": "Les enviamos la vacante por WhatsApp. Lo enviado queda enviado: podés volver a la vacante cuando quieras.",
+        "progress": "{{sent}} de {{total}} enviados",
+        "failed": "{{count}} no se enviaron"
       }
     }
   },

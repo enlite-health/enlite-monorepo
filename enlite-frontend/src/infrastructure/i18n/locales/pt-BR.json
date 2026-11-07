@@ -7433,6 +7433,28 @@
         "more": "Buscar mais longe · até {{km}} km ({{count}} a mais)",
         "moreFromVacante": "Buscar perto do serviço · até {{km}} km ({{count}})",
         "finish": "Terminar"
+      },
+      "confirm": {
+        "title": "Enviar o convite por WhatsApp?",
+        "lead_one": "Vamos enviar a vaga por WhatsApp para esta pessoa:",
+        "lead_other": "Vamos enviar a vaga por WhatsApp para estas {{count}} pessoas:",
+        "noLocation": "Sem localização",
+        "alreadyOne": "{{names}} já recebeu o convite em {{date}}. Não vamos enviá-lo de novo.",
+        "alreadyMany": "{{names}} já receberam o convite em {{date}}. Não vamos enviá-lo de novo.",
+        "resend": "Enviar de novo",
+        "note": "As mensagens saem assim que você confirma e não podem ser canceladas.",
+        "cancel": "Não, voltar",
+        "send_one": "Sim, enviar para {{count}} pessoa",
+        "send_other": "Sim, enviar para {{count}} pessoas",
+        "and": "e"
+      },
+      "sent": {
+        "title_one": "Pronto: você convidou {{count}} pessoa",
+        "title_other": "Pronto: você convidou {{count}} pessoas",
+        "titleNone": "Nenhum convite foi enviado",
+        "text": "Enviamos a vaga por WhatsApp. O que foi enviado fica enviado: você pode voltar à vaga quando quiser.",
+        "progress": "{{sent}} de {{total}} enviados",
+        "failed": "{{count}} não foram enviados"
       }
     }
   },

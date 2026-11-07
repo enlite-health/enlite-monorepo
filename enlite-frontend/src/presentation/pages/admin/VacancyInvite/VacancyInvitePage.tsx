@@ -8,6 +8,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Badge } from '@presentation/components/atoms/Badge';
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
 import { useVacancyInviteBoard } from '@hooks/admin/useVacancyInviteBoard';
+import { useInviteSending } from '@hooks/admin/useInviteSending';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 import { COUNTRY_TIME_ZONE } from '@presentation/utils/countryTimeZone';
@@ -17,9 +18,15 @@ import { InviteMapPane } from './InviteMapPane';
 import { InviteListHeader } from './InviteListHeader';
 import { InviteListFooter } from './InviteListFooter';
 import { InviteRow } from './InviteRow';
+import { InviteConfirmDialog } from './InviteConfirmDialog';
 import {
   applyDocOnly,
   buildBoardView,
+  dayInZone,
+  dayMonthOf,
+  isInvited,
+  selectedIds,
+  stepCandidates,
   openingStep,
   parseStep,
   setAllSelected,
@@ -112,6 +119,18 @@ export default function VacancyInvitePage(): JSX.Element {
     setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('paso', String(step)); return n; }, { replace: true, state: location.state });
   }, [board.status, step, searchParams, setSearchParams, location.state]);
 
+  const { sentByStep, localMessaged, rowSend, enqueue, outcomeOf } = useInviteSending(id, String(step), board.refetch);
+  // Contexto de desenho: o do servidor + o que já saiu nesta visita (transitório até o GET pós-envio).
+  const viewCtx: BoardContext | null = useMemo(
+    () =>
+      ctx && {
+        ...ctx,
+        candidates: ctx.candidates.map((c) => (localMessaged[c.workerId] ? { ...c, messagedAt: localMessaged[c.workerId] } : c)),
+        sent: sentByStep,
+      },
+    [ctx, localMessaged, sentByStep],
+  );
+
   const goBack = (): void => {
     const from = (location.state as { from?: string } | null)?.from;
     if (from) navigate(-1);
@@ -132,10 +151,36 @@ export default function VacancyInvitePage(): JSX.Element {
     row?.querySelector<HTMLElement>('button')?.focus();
   }, [selectedPin]);
 
+  // F3: o que vai sair (elegidos) e quem já recebeu neste passo (só reenvia marcando a caixa, DF-5).
+  const confirmData = (() => {
+    if (!viewCtx || !step) return null;
+    const rows = stepCandidates(viewCtx, step);
+    const chosen = new Set(selectedIds(viewCtx, step));
+    const invited = rows.filter(isInvited);
+    const latest = invited.map((c) => c.messagedAt as string).sort().pop();
+    const day = latest ? dayInZone(latest, timeZone) : null;
+    return {
+      targets: rows.filter((c) => chosen.has(c.workerId)).map((c) => ({ workerId: c.workerId, workerName: c.workerName, distanceKm: c.distanceKm })),
+      invited,
+      already: invited.length > 0 && day ? { names: invited.map((c) => c.workerName), date: dayMonthOf(day) } : null,
+    };
+  })();
+
+  const confirmSend = (resend: boolean): void => {
+    if (!confirmData) return;
+    setDialog(null);
+    enqueue([
+      ...confirmData.targets.map((tg) => ({ workerId: tg.workerId, workerName: tg.workerName, messagedAt: null })),
+      ...(resend && confirmData.already
+        ? confirmData.invited.map((c) => ({ workerId: c.workerId, workerName: c.workerName, messagedAt: c.messagedAt, resend: true }))
+        : []),
+    ]);
+  };
+
   if (!noPermission && isDraft) return <Navigate to={`/admin/vacancies/${id}/borrador`} replace />;
 
   const address: string | null = vacancy?.patient_address_formatted ?? vacancy?.patient_address_raw ?? null;
-  const view = ctx && step && board.status === 'ready' ? buildBoardView(ctx, step) : null;
+  const view = viewCtx && step && board.status === 'ready' ? buildBoardView(viewCtx, step) : null;
 
   const sexLabel = vacancy?.required_sex ? t(`admin.vacancyDetail.vacancyForm.sexOptions.${vacancy.required_sex}`, vacancy.required_sex) : null;
   const profession = vacancy?.required_professions?.[0];
@@ -219,6 +264,7 @@ export default function VacancyInvitePage(): JSX.Element {
                   docOnly={docOnly}
                   onSelectStep={selectStep}
                   onToggleAll={(select) => setUnselected(setAllSelected(ctx, step, select))}
+                  outcome={outcomeOf(String(step))}
                   onDocOnly={(on) => {
                     const next = applyDocOnly(on, unselected, ctx.candidates);
                     setDocOnly(next.docOnly);
@@ -232,6 +278,7 @@ export default function VacancyInvitePage(): JSX.Element {
                       row={row}
                       focused={selectedPin === row.candidate.workerId}
                       highlighted={hoveredId === row.candidate.workerId}
+                      send={rowSend(row.candidate.workerId)}
                       onToggle={(wid) => setUnselected(toggleOne(unselected, wid))}
                       onNameClick={(wid) => setSelectedPin((cur) => (cur === wid ? null : wid))}
                       onHover={setHoveredId}
@@ -252,6 +299,9 @@ export default function VacancyInvitePage(): JSX.Element {
             )}
           </div>
         </div>
+      )}
+      {dialog === 'confirm' && confirmData && (
+        <InviteConfirmDialog targets={confirmData.targets} already={confirmData.already} onCancel={() => setDialog(null)} onConfirm={confirmSend} />
       )}
     </div>
   );
