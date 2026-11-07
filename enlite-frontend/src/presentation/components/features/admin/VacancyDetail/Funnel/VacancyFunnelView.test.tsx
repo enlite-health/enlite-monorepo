@@ -233,7 +233,7 @@ describe('VacancyFunnelView', () => {
     expect(screen.queryByTestId('funnel-filter-registration')).toBeNull();
   });
 
-  it('um botão único "Invitar prestadores" nas DUAS visões, sem "Hacer match" nem "Enviar invitaciones" (089 T030)', async () => {
+  it('um botão único "Invitar prestadores" nas DUAS visões, sem os dois botões antigos (089 T030)', async () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
       authz: {
@@ -245,7 +245,7 @@ describe('VacancyFunnelView', () => {
     const { unmount } = renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /inviteEntry\.button/ })).toHaveLength(1);
-    expect(screen.queryByRole('button', { name: /Hacer match|dispatchInvitesButton/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /hacer.match|dispatchInvitesButton/i })).not.toBeInTheDocument();
     expect(await screen.findByTestId('invite-entry-count')).toHaveTextContent('3');
     unmount();
 

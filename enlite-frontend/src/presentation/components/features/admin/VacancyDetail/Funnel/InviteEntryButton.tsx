@@ -14,7 +14,7 @@ interface Props {
 
 /**
  * F0 (089 T030): entrada única da vacante para a página "Invitar prestadores". Substitui
- * "Hacer match" e "Enviar invitaciones (N)". Visível com `messaging:send` (⚑2).
+ * os dois botões antigos (match e envio em massa). Visível com `messaging:send` (⚑2).
  */
 export function InviteEntryButton({ vacancyId }: Props): JSX.Element | null {
   const { t } = useTranslation();
