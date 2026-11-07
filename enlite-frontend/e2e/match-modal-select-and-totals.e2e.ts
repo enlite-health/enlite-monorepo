@@ -25,7 +25,7 @@ function candidate(over: Record<string, unknown>) {
   return {
     workerId: 'w', workerName: 'Candidato', workerPhone: '+5491100000000',
     occupation: 'AT', workZone: 'Palermo', distanceKm: 3, activeCasesCount: 0,
-    overallStatus: 'REGISTERED', documentStatus: 'approved', matchScore: 80,
+    workerStatus: 'REGISTERED', documentStatus: 'approved', matchScore: 80,
     internalNotes: null, alreadyApplied: false, messagedAt: null, ...over,
   };
 }
