@@ -141,4 +141,22 @@ describe('PointsMap — props aditivas 089', () => {
     mount();
     await waitFor(() => expect(markers.some((m) => !m.opts.title)).toBe(true));
   });
+
+  it('centerLabel → aria-label/title no centro (casa e ponto); ausente ⇒ sem título', async () => {
+    mount({ centerIcon: 'house', centerLabel: 'Lugar del servicio' });
+    await waitFor(() => expect(overlays).toHaveLength(1));
+    const house = overlays[0].panes.overlayLayer.querySelector('[data-testid="points-map-center-house"]') as HTMLElement;
+    expect(house).toHaveAttribute('aria-label', 'Lugar del servicio');
+    expect(house.title).toBe('Lugar del servicio');
+    cleanup();
+    markers = [];
+    mount({ centerLabel: 'Lugar del servicio', points: [] });
+    await waitFor(() => expect(markers).toHaveLength(1));
+    expect(markers[0].opts.title).toBe('Lugar del servicio');
+    cleanup();
+    markers = [];
+    mount({ points: [] });
+    await waitFor(() => expect(markers).toHaveLength(1));
+    expect(markers[0].opts.title).toBeUndefined();
+  });
 });
