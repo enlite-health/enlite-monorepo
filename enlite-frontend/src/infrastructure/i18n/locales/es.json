@@ -2379,7 +2379,9 @@
           "button": "Invitar prestadores",
           "pending_one": "{{count}} persona de esta vacante todavía no recibió el WhatsApp",
           "pending_other": "{{count}} personas de esta vacante todavía no recibieron el WhatsApp",
-          "optional": "Opcional · También podés buscar prestadores cerca del servicio"
+          "optional": "Opcional · También podés buscar prestadores cerca del servicio",
+          "mergeNotice": "«Hacer match» y «Enviar invitaciones» ahora están juntos acá.",
+          "mergeNoticeClose": "Cerrar aviso"
         },
         "dispatchInvitesButton": "Enviar invitaciones",
         "dispatchInvitesButtonCount": "Enviar invitaciones ({{count}})",

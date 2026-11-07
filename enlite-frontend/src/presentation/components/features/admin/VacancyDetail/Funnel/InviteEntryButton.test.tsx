@@ -81,4 +81,19 @@ describe('InviteEntryButton (089 T030 — F0)', () => {
     expect(screen.queryByTestId('invite-entry')).not.toBeInTheDocument();
     expect(mockGet).not.toHaveBeenCalled();
   });
+
+  it('o número do contador usa #180149 sobre branco com borda #F227AF (⚑8)', async () => {
+    mockGet.mockResolvedValue({ pendingInVacancyCount: 3 });
+    renderAt();
+    const pill = await screen.findByTestId('invite-entry-count');
+    expect(pill.className).toContain('bg-white');
+    expect(pill.className).toContain('text-primary');
+    expect(pill.className).toContain('border-[#F227AF]');
+  });
+
+  it('o aviso temporário aparece abaixo do botão (⚑1)', async () => {
+    mockGet.mockResolvedValue({ pendingInVacancyCount: 0 });
+    renderAt();
+    expect(await screen.findByTestId('invite-merge-notice')).toBeInTheDocument();
+  });
 });

@@ -6,6 +6,7 @@ import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 import { useVacancyPendingInviteCount } from '@hooks/admin/useVacancyPendingInviteCount';
+import { InviteMergeNotice } from './InviteMergeNotice';
 
 interface Props {
   vacancyId: string;
@@ -50,7 +51,7 @@ export function InviteEntryButton({ vacancyId }: Props): JSX.Element | null {
         {count > 0 && (
           <span
             data-testid="invite-entry-count"
-            className="inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[#F227AF] px-1.5 text-xs font-semibold leading-none text-white"
+            className="inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full border-2 border-[#F227AF] bg-white px-1.5 text-xs font-semibold leading-none text-primary"
           >
             {count}
           </span>
@@ -67,6 +68,7 @@ export function InviteEntryButton({ vacancyId }: Props): JSX.Element | null {
       <span className="text-xs leading-4 text-[rgba(24,1,73,0.7)]">
         {t('admin.vacancyDetail.funnelView.inviteEntry.optional')}
       </span>
+      <InviteMergeNotice />
     </div>
   );
 }
