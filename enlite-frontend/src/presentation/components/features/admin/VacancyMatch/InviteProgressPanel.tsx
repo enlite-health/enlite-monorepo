@@ -9,6 +9,7 @@ import {
   Ban,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import { blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -78,8 +79,12 @@ function InviteRow({ item }: { item: SendItem }): JSX.Element {
  * Renderizado uma única vez no App (via portal), alimentado pelo
  * inviteProgressStore global.
  */
+/** A página "Invitar prestadores" já mostra o progresso (alerta F4 + "Enviando…"): o painel global não duplica nela. */
+export const isInviteMatchRoute = (pathname: string): boolean => /^\/admin\/vacancies\/[^/]+\/match\/?$/.test(pathname);
+
 export function InviteProgressPanel(): JSX.Element | null {
   const { t } = useTranslation();
+  const { pathname } = useLocation();
   const items = useInviteProgressStore((s) => s.items);
   const isOpen = useInviteProgressStore((s) => s.isOpen);
   const isSending = useInviteProgressStore((s) => s.isSending);
@@ -89,6 +94,7 @@ export function InviteProgressPanel(): JSX.Element | null {
   const toggleCollapsed = useInviteProgressStore((s) => s.toggleCollapsed);
 
   if (!isOpen || items.length === 0) return null;
+  if (isInviteMatchRoute(pathname)) return null;
   if (typeof document === 'undefined') return null;
 
   const total = items.length;
