@@ -7413,6 +7413,36 @@
           "month": "En el mes"
         }
       }
+    },
+    "vacancyInvite": {
+      "title": "Invitar prestadores",
+      "back": "Volver a la vacante",
+      "subtitle": "Caso {{caso}} · Vacante #{{nn}} · {{profession}}",
+      "seeking": "Buscamos:",
+      "chipSex": "Sexo: {{value}}",
+      "chipProfession": "Profesión: {{value}}",
+      "chipService": "Servicio: {{value}}",
+      "loading": {
+        "title": "Buscando prestadores cerca de {{address}}…",
+        "titleNoAddress": "Buscando prestadores cerca del servicio…",
+        "subtitle": "Puede tardar unos segundos."
+      },
+      "error": {
+        "load": "No pudimos cargar a los prestadores.",
+        "retry": "Reintentar"
+      },
+      "deBaja": {
+        "title": "Esta vacante fue dada de baja",
+        "text": "No se pueden invitar prestadores a una vacante dada de baja."
+      },
+      "noPermission": {
+        "title": "Sin permiso",
+        "text": "No tenés permiso para invitar prestadores a esta vacante."
+      },
+      "map": {
+        "center": "Lugar del servicio, fijo para esta vacante",
+        "unavailable": "El mapa no está disponible. La lista sigue funcionando."
+      }
     }
   },
   "publicVacancy": {

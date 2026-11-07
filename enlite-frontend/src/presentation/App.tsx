@@ -28,6 +28,7 @@ import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
 import AnaCareHoursPage from './pages/admin/AnaCareHoursPage';
 import AnaCareHoursPatientPage from './pages/admin/AnaCareHoursPatientPage';
 import VacancyDetailPage from './pages/admin/VacancyDetailPage';
+import VacancyInvitePage from './pages/admin/VacancyInvite/VacancyInvitePage';
 import DraftVacancyPage from './pages/admin/DraftVacancyPage';
 import CreateVacancyPage from './pages/admin/CreateVacancyPage';
 import TalentumConfigPage from './pages/admin/TalentumConfigPage';
@@ -260,6 +261,7 @@ export function App() {
           {/* Fase 2 (`completar-vacante-em-rascunho`): tela própria, somente leitura, para vaga
               em rascunho — o detalhe (`vacancies/:id`) redireciona pra cá quando `is_draft`. */}
           <Route path="vacancies/:id/borrador" element={<FeatureRouteGate feature="screen:vacancies"><DraftVacancyPage /></FeatureRouteGate>} />
+          <Route path="vacancies/:id/match" element={<FeatureRouteGate feature="screen:vacancies"><VacancyInvitePage /></FeatureRouteGate>} />
           <Route path="vacancies/:id" element={<FeatureRouteGate feature="screen:vacancies"><VacancyDetailPage /></FeatureRouteGate>} />
           <Route path="dashboard" element={<FeatureRouteGate feature="screen:management-dashboard"><ManagementDashboardPage /></FeatureRouteGate>} />
           <Route path="recruitment/blocked-attempts" element={<FeatureRouteGate feature="screen:funnel"><BlockedAttemptsPage /></FeatureRouteGate>} />

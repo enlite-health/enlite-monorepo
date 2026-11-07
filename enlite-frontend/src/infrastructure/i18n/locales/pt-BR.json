@@ -7334,6 +7334,36 @@
           "month": "No mês"
         }
       }
+    },
+    "vacancyInvite": {
+      "title": "Convidar prestadores",
+      "back": "Voltar à vaga",
+      "subtitle": "Caso {{caso}} · Vaga #{{nn}} · {{profession}}",
+      "seeking": "Buscamos:",
+      "chipSex": "Sexo: {{value}}",
+      "chipProfession": "Profissão: {{value}}",
+      "chipService": "Serviço: {{value}}",
+      "loading": {
+        "title": "Buscando prestadores perto de {{address}}…",
+        "titleNoAddress": "Buscando prestadores perto do serviço…",
+        "subtitle": "Pode demorar alguns segundos."
+      },
+      "error": {
+        "load": "Não conseguimos carregar os prestadores.",
+        "retry": "Tentar de novo"
+      },
+      "deBaja": {
+        "title": "Esta vaga foi dada de baixa",
+        "text": "Não é possível convidar prestadores para uma vaga dada de baixa."
+      },
+      "noPermission": {
+        "title": "Sem permissão",
+        "text": "Você não tem permissão para convidar prestadores para esta vaga."
+      },
+      "map": {
+        "center": "Local do serviço, fixo para esta vaga",
+        "unavailable": "O mapa não está disponível. A lista continua funcionando."
+      }
     }
   },
   "publicVacancy": {
