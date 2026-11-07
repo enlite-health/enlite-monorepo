@@ -11,7 +11,6 @@ import { useVacancyInviteBoard } from '@hooks/admin/useVacancyInviteBoard';
 import { useInviteSending } from '@hooks/admin/useInviteSending';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
-import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { COUNTRY_TIME_ZONE } from '@presentation/utils/countryTimeZone';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { InviteListSkeleton, InviteMapLoading } from './InviteLoadingState';
@@ -83,16 +82,12 @@ export default function VacancyInvitePage(): JSX.Element {
   const canSend = useActionGate('messaging', 'send').allowed;
   // ⚑2: sem `match:read` não há dado para mostrar → "Sin permiso", e NENHUMA request (nem a da vacante).
   const noPermission = !canRead;
-  // Enquanto o contrato de permissões não chegou, `useActionGate` devolve "permitido": sem esta espera a página
-  // pediria a vacante e o match antes de saber se pode (request de dado numa rota negada).
-  const authzStatus = useAdminAuthStore((s) => s.authzStatus);
-  const authzPending = authzStatus === 'idle' || authzStatus === 'loading';
-  const { vacancy, error: vacancyError } = useVacancyDetail(noPermission || authzPending ? undefined : id);
+  const { vacancy, error: vacancyError } = useVacancyDetail(noPermission ? undefined : id);
   const isDeBaja = vacancy?.status === 'DE_BAJA';
   const isDraft = vacancy?.is_draft === true;
 
   const board = useVacancyInviteBoard(id, {
-    enabled: !!vacancy && !isDraft && !isDeBaja && !noPermission && !authzPending,
+    enabled: !!vacancy && !isDraft && !isDeBaja && !noPermission,
     canExecute: canExecute && !isDeBaja,
   });
   const { results, currentIds } = board;
