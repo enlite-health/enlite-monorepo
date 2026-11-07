@@ -54,6 +54,17 @@ function isDocumentsStatus(value: string): value is DocumentsStatus {
   return value in STATUS_I18N_KEY;
 }
 
+/**
+ * Dono único da regra "documentação completa" (DF-16): `documents_status` ∈ {approved, submitted,
+ * under_review}. Nulo/desconhecido/sem linha em worker_documents = incompleto. Quem precisa da regra
+ * sem renderizar (ex.: modelo da página Invitar prestadores) importa esta função — não reescreve.
+ */
+export function isDocsComplete(status: string | null | undefined): boolean {
+  if (!status) return false;
+  const normalized = status.toLowerCase();
+  return isDocumentsStatus(normalized) && COMPLETE_STATUSES.has(normalized);
+}
+
 export function DocsStatusBadge({ status, complete }: DocsStatusBadgeProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -66,8 +77,7 @@ export function DocsStatusBadge({ status, complete }: DocsStatusBadgeProps): JSX
   }
 
   const normalized = status.toLowerCase();
-  const isComplete =
-    complete ?? (isDocumentsStatus(normalized) && COMPLETE_STATUSES.has(normalized));
+  const isComplete = complete ?? isDocsComplete(status);
 
   const label =
     complete === true

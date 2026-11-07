@@ -109,9 +109,9 @@ export function MatchCandidateRow({
         </TableCell>
 
         <TableCell unwrapped>
-          <span className={`inline-flex px-2 py-0.5 rounded-full ${statusColor(candidate.overallStatus)}`}>
+          <span className={`inline-flex px-2 py-0.5 rounded-full ${statusColor(candidate.workerStatus)}`}>
             <Text as="span" size="xs" weight="medium" color="inherit">
-              {candidate.overallStatus ?? '—'}
+              {candidate.workerStatus ?? '—'}
             </Text>
           </span>
         </TableCell>
