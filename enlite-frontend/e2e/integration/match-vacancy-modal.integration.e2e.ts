@@ -27,6 +27,8 @@ import {
   insertTestWorker,
   cleanupTestWorker,
 } from '../helpers/db-test-helper';
+import { seedMockStaff, cleanupMockStaff } from '../helpers/vacancy-notes-e2e-helper';
+import { loginComoStaffMock } from '../helpers/login-mock-staff';
 
 const BACKEND_URL = 'http://localhost:8080';
 
@@ -34,104 +36,15 @@ const MOCK_ADMIN_USER = {
   uid: 'e2e-int-match-modal',
   email: 'admin.match.modal@e2e.test',
   role: 'admin',
+  country: 'AR',
 };
-const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
-
-const FAKE_ID_TOKEN =
-  'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
-  Buffer.from(
-    JSON.stringify({
-      sub: MOCK_ADMIN_USER.uid,
-      uid: MOCK_ADMIN_USER.uid,
-      email: MOCK_ADMIN_USER.email,
-      iss: 'https://securetoken.google.com/enlite-prd',
-      aud: 'enlite-prd',
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    }),
-  ).toString('base64url') +
-  '.';
-
 // Patient address: Moreno, Buenos Aires (perto da vaga teste real)
 const PATIENT_LAT = -34.6506;
 const PATIENT_LNG = -58.7798;
 
-async function installInterceptors(page: Page): Promise<void> {
-  await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
-    const url = route.request().url();
-    if (url.includes('signInWithPassword') || url.includes('signUp')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          kind: 'identitytoolkit#VerifyPasswordResponse',
-          localId: MOCK_ADMIN_USER.uid,
-          email: MOCK_ADMIN_USER.email,
-          idToken: FAKE_ID_TOKEN,
-          refreshToken: 'fake-refresh-token',
-          expiresIn: '3600',
-          registered: true,
-        }),
-      });
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        users: [{ localId: MOCK_ADMIN_USER.uid, email: MOCK_ADMIN_USER.email, emailVerified: true }],
-      }),
-    });
-  });
-
-  await page.route('**/securetoken.googleapis.com/**', async (route: Route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        access_token: FAKE_ID_TOKEN,
-        expires_in: '3600',
-        token_type: 'Bearer',
-        refresh_token: 'fake-refresh-token',
-        id_token: FAKE_ID_TOKEN,
-      }),
-    });
-  });
-
-  await page.route('**/api/**', async (route: Route) => {
-    const url = route.request().url();
-    if (url.includes('/api/admin/auth/profile')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            id: MOCK_ADMIN_USER.uid,
-            email: MOCK_ADMIN_USER.email,
-            role: 'superadmin',
-            firstName: 'Match',
-            lastName: 'Admin',
-            isActive: true,
-            mustChangePassword: false,
-          },
-        }),
-      });
-      return;
-    }
-    const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
-    await route.continue({ headers });
-  });
-}
-
 async function loginAsAdmin(page: Page): Promise<void> {
-  await installInterceptors(page);
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(MOCK_ADMIN_USER.email);
-  await page.locator('input[type="password"]').fill('TestAdmin123!');
-  await page.getByRole('button', { name: /Iniciar sesión/i }).click();
-  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
+  // login do mock do stack (token `mock_*` com `country`, `/v1/me/authz` incluído) — o molde dos irmãos
+  await loginComoStaffMock(page, MOCK_ADMIN_USER, 'E2E Match');
 }
 
 test.describe('Invitar prestadores — anéis de distância @integration', () => {
@@ -143,6 +56,8 @@ test.describe('Invitar prestadores — anéis de distância @integration', () =>
   const workerIds: Record<string, string> = {};
 
   test.beforeAll(async () => {
+    // sem linha em `users` o claim de país vem nulo e as consultas protegidas voltam vazias ("Vacante no encontrada")
+    seedMockStaff(MOCK_ADMIN_USER, 'E2E Match');
     // 1. Patient em Moreno, BA — com geocoding
     const result = insertTestPatient({
       status: 'ACTIVE',
@@ -164,6 +79,9 @@ test.describe('Invitar prestadores — anéis de distância @integration', () =>
       caseNumber,
       requiredSex: 'F',
       requiredProfessions: ['AT'],
+      // vacante publicada: o rascunho redireciona para /borrador e a vacante nem tem funil
+      status: 'SEARCHING',
+      isDraft: false,
     });
 
     // 3. Workers — 5 cenários cobrindo os 4 buckets de distância + sem coords
@@ -205,6 +123,7 @@ test.describe('Invitar prestadores — anéis de distância @integration', () =>
   });
 
   test.afterAll(() => {
+    cleanupMockStaff(MOCK_ADMIN_USER);
     Object.values(workerIds).forEach(cleanupTestWorker);
     if (vacancyId) cleanupVacancies([vacancyId]);
     if (patientId) cleanupTestPatient(patientId);
@@ -281,6 +200,8 @@ test.describe('Invitar prestadores — painel de convite flutuante @integration'
   let workerIds: string[] = [];
 
   test.beforeAll(async () => {
+    // sem linha em `users` o claim de país vem nulo e as consultas protegidas voltam vazias ("Vacante no encontrada")
+    seedMockStaff(MOCK_ADMIN_USER, 'E2E Match');
     const result = insertTestPatient({
       status: 'ACTIVE',
       firstName: 'PanelTest',
@@ -300,6 +221,9 @@ test.describe('Invitar prestadores — painel de convite flutuante @integration'
       caseNumber,
       requiredSex: 'F',
       requiredProfessions: ['AT'],
+      // vacante publicada: o rascunho redireciona para /borrador e a vacante nem tem funil
+      status: 'SEARCHING',
+      isDraft: false,
     });
 
     // 3 workers perto garantem múltiplos candidatos — permite ver o estado
@@ -312,6 +236,7 @@ test.describe('Invitar prestadores — painel de convite flutuante @integration'
   });
 
   test.afterAll(() => {
+    cleanupMockStaff(MOCK_ADMIN_USER);
     workerIds.forEach(cleanupTestWorker);
     if (vacancyId) cleanupVacancies([vacancyId]);
     if (patientId) cleanupTestPatient(patientId);
