@@ -39,6 +39,7 @@ export const SCREEN_FEATURE_MAP: Readonly<Record<string, ScreenFeatureEntry>> = 
       '/admin/vacancies/pending-address-review',
       '/admin/vacancies/:id/edit',
       '/admin/vacancies/:id/borrador',
+      '/admin/vacancies/:id/match',
       '/admin/vacancies/:id',
     ],
   },
