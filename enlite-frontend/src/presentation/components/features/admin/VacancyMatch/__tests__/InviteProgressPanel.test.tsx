@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { InviteProgressPanel, isInviteMatchRoute } from '../InviteProgressPanel';
+import { InviteProgressPanel } from '../InviteProgressPanel';
+import { isInviteMatchRoute } from '../inviteMatchRoute';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 
 const renderAt = (path: string) =>

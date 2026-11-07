@@ -12,7 +12,7 @@
  */
 import type { SavedCandidate } from '../../../../types/match';
 import { isDocsComplete } from '../../../components/atoms/DocsStatusBadge';
-import { OPERATION_TIME_ZONE } from '../../../utils/dateTimeFormat';
+import { OPERATION_TIME_ZONE, formatInstant } from '../../../utils/dateTimeFormat';
 
 export type DistanceStep = 5 | 10 | 20 | 50;
 export type StepId = 'vacante' | DistanceStep;
@@ -187,14 +187,7 @@ export function applyDocOnly(
 
 /** Dia civil ('YYYY-MM-DD') de um INSTANTE no fuso IANA explícito (nunca o do navegador). */
 export function dayInZone(iso: string, timeZone: string = OPERATION_TIME_ZONE): string | null {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
+  return formatInstant(iso, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'en-CA', timeZone);
 }
 
 /** 'YYYY-MM-DD' → 'dd/MM'. */

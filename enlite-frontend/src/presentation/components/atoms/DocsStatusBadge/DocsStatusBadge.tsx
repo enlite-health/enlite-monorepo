@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
+import { isDocsComplete } from './docsComplete';
 
 /**
  * DocsStatusBadge
@@ -39,8 +40,6 @@ interface DocsStatusBadgeProps {
   complete?: boolean;
 }
 
-const COMPLETE_STATUSES = new Set<DocumentsStatus>(['approved', 'submitted', 'under_review']);
-
 const STATUS_I18N_KEY: Record<DocumentsStatus, string> = {
   pending: 'admin.workers.docsStatus.pending',
   incomplete: 'admin.workers.docsStatus.incomplete',
@@ -52,17 +51,6 @@ const STATUS_I18N_KEY: Record<DocumentsStatus, string> = {
 
 function isDocumentsStatus(value: string): value is DocumentsStatus {
   return value in STATUS_I18N_KEY;
-}
-
-/**
- * Dono único da regra "documentação completa" (DF-16): `documents_status` ∈ {approved, submitted,
- * under_review}. Nulo/desconhecido/sem linha em worker_documents = incompleto. Quem precisa da regra
- * sem renderizar (ex.: modelo da página Invitar prestadores) importa esta função — não reescreve.
- */
-export function isDocsComplete(status: string | null | undefined): boolean {
-  if (!status) return false;
-  const normalized = status.toLowerCase();
-  return isDocumentsStatus(normalized) && COMPLETE_STATUSES.has(normalized);
 }
 
 export function DocsStatusBadge({ status, complete }: DocsStatusBadgeProps): JSX.Element {

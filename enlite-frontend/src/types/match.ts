@@ -13,7 +13,7 @@ export interface SavedCandidate {
   activeCasesCount: number;
   workerStatus: string | null;     // nome real do campo no backend (F7; antes o front chamava de overallStatus)
   documentStatus: string | null;   // worker_documents.documents_status ('pending'|'incomplete'|'submitted'|'under_review'|'approved'|'rejected') ou null
-  source: 'system' | 'manual' | (string & {});
+  source: 'system' | 'manual' | (string & Record<never, never>);
   funnelStage: string | null;      // application_funnel_stage
   replied: boolean;                // interview_response ∈ {confirmed, declined, no_response, awaiting_reschedule, awaiting_reason}
   matchScore: number | null;

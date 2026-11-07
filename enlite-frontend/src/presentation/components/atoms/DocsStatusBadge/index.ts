@@ -1,1 +1,2 @@
-export { DocsStatusBadge, isDocsComplete } from './DocsStatusBadge';
+export { DocsStatusBadge } from './DocsStatusBadge';
+export { isDocsComplete } from './docsComplete';

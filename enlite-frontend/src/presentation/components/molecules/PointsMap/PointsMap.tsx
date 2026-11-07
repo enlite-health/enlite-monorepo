@@ -15,7 +15,7 @@
  * Estado exposto ao DOM (`data-map-status`, `data-markers`) para o E2E
  * afirmar sem depender de tiles — o canvas do Google não é determinístico.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouteOverlay, type RouteOverlayLeg } from './useRouteOverlay';
 import { createPortal } from 'react-dom';
 import { MapPin } from 'lucide-react';
@@ -131,7 +131,10 @@ export function PointsMap({
   const centerMarkerRef = useRef<google.maps.Marker | null>(null);
   const houseRef = useRef<HtmlOverlay | null>(null);
   const ringsRef = useRef<Array<{ circle: google.maps.Circle; label: HtmlOverlay }>>([]);
-  const iconFor = (p: MapPoint, on = false): google.maps.Symbol => (markerShape === 'dot' ? dotIcon(p, on) : pinIcon(p.color, on));
+  const iconFor = useCallback(
+    (p: MapPoint, on = false): google.maps.Symbol => (markerShape === 'dot' ? dotIcon(p, on) : pinIcon(p.color, on)),
+    [markerShape],
+  );
   const hasRings = !!rings;
   const ringsKey = JSON.stringify(rings ?? null);
   const infoRef = useRef<google.maps.InfoWindow | null>(null);
@@ -304,7 +307,7 @@ export function PointsMap({
       marker.addListener('mouseout', () => onHoverRef.current?.(null));
       markersRef.current.set(id, marker);
     }
-  }, [status, points]);
+  }, [status, points, iconFor, markerShape]);
 
   // 3b. Destaque (lista ↔ mapa): só os ids que ENTRARAM ou SAÍRAM do destaque
   //     são repintados — varrer 5.000 pinos a cada hover travaria a UI.
@@ -320,7 +323,7 @@ export function PointsMap({
       marker.setZIndex(on ? 900 : null);
     }
     emphasizedRef.current = next;
-  }, [status, hoveredId, selectedId, points]);
+  }, [status, hoveredId, selectedId, points, iconFor]);
 
   // 4. Balão do ponto selecionado.
   useEffect(() => {
