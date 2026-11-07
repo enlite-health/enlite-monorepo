@@ -2383,14 +2383,6 @@
           "mergeNotice": "«Hacer match» y «Enviar invitaciones» ahora están juntos acá.",
           "mergeNoticeClose": "Cerrar aviso"
         },
-        "dispatchInvitesButton": "Enviar invitaciones",
-        "dispatchInvitesButtonCount": "Enviar invitaciones ({{count}})",
-        "dispatchConfirm": {
-          "title": "Confirmar envío",
-          "body": "Se enviarán {{count}} mensajes de WhatsApp a candidatos invitados sin notificación previa.",
-          "confirm": "Enviar",
-          "cancel": "Cancelar"
-        },
         "kanban": {
           "totalEncuadres": "encuadres totales",
           "refresh": "Actualizar",

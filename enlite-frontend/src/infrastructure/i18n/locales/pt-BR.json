@@ -2367,14 +2367,6 @@
           "mergeNotice": "«Hacer match» e «Enviar convites» agora estão juntos aqui.",
           "mergeNoticeClose": "Fechar aviso"
         },
-        "dispatchInvitesButton": "Disparar novos convites",
-        "dispatchInvitesButtonCount": "Disparar convites ({{count}})",
-        "dispatchConfirm": {
-          "title": "Confirmar envio",
-          "body": "{{count}} candidatos receberão a mensagem de WhatsApp.",
-          "confirm": "Enviar",
-          "cancel": "Cancelar"
-        },
         "kanban": {
           "totalEncuadres": "encuadres totais",
           "refresh": "Atualizar",
