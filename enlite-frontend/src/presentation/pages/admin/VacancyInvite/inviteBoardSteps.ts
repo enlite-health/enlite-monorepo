@@ -30,9 +30,14 @@ export function stepSummary(ctx: BoardContext, step: StepId, current: StepId): S
   const pending = pendingOf(rows).length;
   const invited = rows.length - pending;
   const sent = sentIn(ctx, step);
-  const completed = sent > 0 || pending === 0;
+  // Apresentação (089 B): faixa SEM ninguém (nem convidado) e sem envio não é "concluída" — fica idle, sem ✓.
+  // O rodapé e os anéis seguem o `isStepCompleted` (não mudou).
+  const empty = sent === 0 && stepCandidatesUnfiltered(ctx, step).length === 0;
+  const completed = !empty && (sent > 0 || pending === 0);
   const isCurrent = step === current;
-  const tone: StepTone = completed
+  const tone: StepTone = empty
+    ? 'idle'
+    : completed
     ? 'done'
     : isCurrent
       ? 'current'

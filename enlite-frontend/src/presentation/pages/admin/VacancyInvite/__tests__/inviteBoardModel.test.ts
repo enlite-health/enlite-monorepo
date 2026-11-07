@@ -12,6 +12,7 @@ import {
   inviteBadge,
   matchResult,
   openingStep,
+  isStepCompleted,
   parseStep,
   selectedIds,
   setAllSelected,
@@ -228,7 +229,11 @@ describe('concluído e cartões de passo', () => {
     expect(stepSummary(ctxOf(cs, ['a', 'b'], { sent: { '5': 2 } }), 5, 5).completed).toBe(true);
     const all = [cand({ id: 'a', distanceKm: 2, messagedAt: '2026-11-03T12:00:00Z' })];
     expect(stepSummary(ctxOf(all, ['a']), 5, 5).completed).toBe(true);
-    expect(stepSummary(ctxOf([], []), 10, 5).completed).toBe(true);
+    // faixa SEM ninguém (nem convidado) e sem envio: apresentação idle, sem ✓ (089 B) — o rodapé segue o isStepCompleted
+    expect(stepSummary(ctxOf([], []), 10, 5)).toMatchObject({ completed: false, tone: 'idle', sub: { key: 'toInvite', count: 0 } });
+    expect(isStepCompleted(ctxOf([], []), 10)).toBe(true);
+    // faixa vazia COM envio nesta visita continua concluída
+    expect(stepSummary(ctxOf([], [], { sent: { '10': 1 } }), 10, 5)).toMatchObject({ completed: true, tone: 'done' });
   });
 
   it('só pendentes escondidos pelo interruptor também concluem o passo', () => {
@@ -249,7 +254,7 @@ describe('concluído e cartões de passo', () => {
     expect(by('vacante')).toMatchObject({ tone: 'current', sub: { key: 'withoutWhatsapp', count: 1 } });
     expect(by('5')).toMatchObject({ tone: 'idle', sub: { key: 'toInvite', count: 1 }, total: 2, invited: 1 });
     expect(by('10').sub).toEqual({ key: 'toInvite', count: 1 });
-    expect(by('20')).toMatchObject({ completed: true, tone: 'done' });
+    expect(by('20')).toMatchObject({ completed: false, tone: 'idle', sub: { key: 'toInvite', count: 0 } });
   });
 
   it('vacante fora do passo atual e pendente = amarelo; concluída mostra o enviado nesta visita', () => {
