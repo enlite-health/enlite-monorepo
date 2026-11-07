@@ -5046,26 +5046,6 @@
       }
     },
     "match": {
-      "title": "Match de candidatos",
-      "loading": "Buscando candidatos…",
-      "emptyBucket": "Sin candidatos en este rango.",
-      "candidatesCount_one": "{{count}} candidato",
-      "candidatesCount_other": "{{count}} candidatos",
-      "selectAllInGroup": "Seleccionar todos ({{group}})",
-      "totals": {
-        "available": "Disponibles",
-        "recruited": "Reclutados"
-      },
-      "selectedCount_one": "{{count}} seleccionado",
-      "selectedCount_other": "{{count}} seleccionados",
-      "inviteSelected": "Invitar seleccionados ({{count}})",
-      "noResultsInRadius": "No se encontraron candidatos en un radio de {{km}} km.",
-      "close": "Cerrar",
-      "closeAriaLabel": "Cerrar",
-      "alreadyApplied": "Ya postuló",
-      "notified": "Notificado {{date}}",
-      "sendWhatsappTooltip": "Enviar WhatsApp",
-      "viewProfileTooltip": "Ver perfil",
       "caseLabel": "Caso",
       "backToVacancy": "Vacante",
       "scheduleInterview": "Agendar entrevista",
@@ -5084,14 +5064,6 @@
       "colScore": "Score final"
     },
     "messaging": {
-      "title": "Enviar invitación",
-      "alreadyReceivedMessage_one": "{{count}} worker ya recibió este mensaje.",
-      "alreadyReceivedMessage_other": "{{count}} workers ya recibieron este mensaje.",
-      "notYetReceived_one": "{{count}} todavía no la recibió.",
-      "notYetReceived_other": "{{count}} todavía no la recibieron.",
-      "confirmResendQuestion": "¿Deseás reenviarla a todos de todos modos?",
-      "newOnly": "Sólo nuevos ({{count}})",
-      "resendAll": "Reenviar a todos",
       "statusSent": "✓ enviado",
       "statusErrorPrefix": "✗ ",
       "statusErrorFallback": "error",
