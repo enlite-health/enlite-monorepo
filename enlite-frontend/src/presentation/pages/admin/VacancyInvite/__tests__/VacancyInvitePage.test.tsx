@@ -147,18 +147,18 @@ describe('VacancyInvitePage (T026a)', () => {
     board.value = ready([cand('a', 2), cand('b', 4)], ['a', 'b']);
     renderPage('/admin/vacancies/v1/match?paso=5');
     await userEvent.hover(screen.getByTestId('invite-row-a'));
-    expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-hovered', 'a');
-    expect(screen.getByTestId('pin-a')).toHaveAttribute('data-size', '24');
+    await waitFor(() => expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-hovered', 'a'));
+    await waitFor(() => expect(screen.getByTestId('pin-a')).toHaveAttribute('data-size', '24'));
     await userEvent.unhover(screen.getByTestId('invite-row-a'));
     await userEvent.hover(screen.getByTestId('pin-b'));
-    expect(screen.getByTestId('invite-row-b')).toHaveAttribute('data-highlighted', 'true');
+    await waitFor(() => expect(screen.getByTestId('invite-row-b')).toHaveAttribute('data-highlighted', 'true'));
     await userEvent.click(screen.getByTestId('pin-b'));
-    expect(screen.getByTestId('invite-row-b')).toHaveAttribute('data-focused', 'true');
-    expect(screen.getByTestId('invite-row-name-b')).toHaveFocus();
+    await waitFor(() => expect(screen.getByTestId('invite-row-b')).toHaveAttribute('data-focused', 'true'));
+    await waitFor(() => expect(screen.getByTestId('invite-row-name-b')).toHaveFocus());
     await userEvent.click(screen.getByTestId('invite-row-name-a'));
-    expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-selected', 'a');
+    await waitFor(() => expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-selected', 'a'));
     await userEvent.click(screen.getByTestId('invite-row-name-a'));
-    expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-selected', '');
+    await waitFor(() => expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-selected', ''));
   });
 
   it('seleção: desmarcar 1 linha → "1 de 2", rodapé "Invitar a 1"; "Todos" re-marca', async () => {
