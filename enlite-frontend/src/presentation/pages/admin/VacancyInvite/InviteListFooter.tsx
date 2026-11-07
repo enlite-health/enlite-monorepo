@@ -31,7 +31,7 @@ export function InviteListFooter({ footer, step, invitedCount, inviteDisabledRea
 
   return (
     <div data-testid="invite-footer" data-mode={mode} className="flex h-[72px] items-center gap-3 border-t border-gray-300 bg-white px-6">
-      <Text as="span" size="sm" color="inherit" data-testid="invite-invited-total" className="mr-auto text-primary/70 !text-[13px]">
+      <Text as="span" size="sm" color="inherit" data-testid="invite-invited-total" className="mr-auto min-w-0 truncate text-primary/70 !text-[13px]">
         {t('admin.vacancyInvite.footer.invitedTotal', { count: invitedCount })}
       </Text>
       {mode === 'empty' && (
@@ -40,7 +40,7 @@ export function InviteListFooter({ footer, step, invitedCount, inviteDisabledRea
         </Text>
       )}
       {showMoreSecondary && (
-        <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-more-secondary" onClick={onMore}>{moreLabel}</Button>
+        <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-more-secondary" onClick={onMore} className="shrink-0 whitespace-nowrap">{moreLabel}</Button>
       )}
       {showFinishSecondary && (
         <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-finish-secondary" onClick={onFinish}>{t('admin.vacancyInvite.footer.finish')}</Button>
@@ -54,14 +54,14 @@ export function InviteListFooter({ footer, step, invitedCount, inviteDisabledRea
           disabled={mode === 'empty' || !!inviteDisabledReason}
           title={inviteDisabledReason}
           onClick={onInvite}
-          className="gap-2"
+          className="shrink-0 gap-2 whitespace-nowrap"
         >
           <Send size={16} aria-hidden="true" />
           {mode === 'empty' ? t('admin.vacancyInvite.footer.inviteEmpty') : t('admin.vacancyInvite.footer.invite', { count: selectedCount })}
         </Button>
       )}
       {showMorePrimary && (
-        <Button variant="primary" size="dense" shape="rounded" data-testid="invite-btn-more-primary" onClick={onMore} className="gap-2">
+        <Button variant="primary" size="dense" shape="rounded" data-testid="invite-btn-more-primary" onClick={onMore} className="shrink-0 gap-2 whitespace-nowrap">
           <Expand size={16} aria-hidden="true" />
           {moreLabel}
         </Button>

@@ -42,11 +42,14 @@ import {
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
-/** Altura do mapa = viewport − barra de 72 px do cabeçalho. */
+/** Cabeçalho da página (72 px) + o respiro de 24 px que o layout do admin põe em cima e embaixo. */
+const CHROME_PX = 72 + 48;
+
+/** Altura do mapa e da lista = viewport − cabeçalho − respiro do layout (a página cabe na tela, sem rolagem externa). */
 function useMapHeight(): number {
-  const [h, setH] = useState(() => Math.max(480, window.innerHeight - 72));
+  const [h, setH] = useState(() => Math.max(480, window.innerHeight - CHROME_PX));
   useEffect(() => {
-    const onResize = () => setH(Math.max(480, window.innerHeight - 72));
+    const onResize = () => setH(Math.max(480, window.innerHeight - CHROME_PX));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -208,11 +211,11 @@ export default function VacancyInvitePage(): JSX.Element {
 
   const header = (
     <header data-testid="invite-header" className="flex h-[72px] items-center gap-4 border-b border-gray-300 bg-white pl-3 pr-6">
-      <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-back" onClick={goBack} className="gap-2 !px-3.5">
+      <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-back" onClick={goBack} className="shrink-0 gap-2 whitespace-nowrap !px-3.5">
         <ArrowLeft size={16} aria-hidden="true" />
         {t('admin.vacancyInvite.back')}
       </Button>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[190px] flex-1">
         <Heading level={3} as="h1" weight="semibold" color="primary" className="truncate !leading-7" data-testid="invite-title">
           {t('admin.vacancyInvite.title')}
         </Heading>
@@ -223,7 +226,7 @@ export default function VacancyInvitePage(): JSX.Element {
         )}
       </div>
       {vacancy && (
-        <div className="flex items-center gap-2" data-testid="invite-chips">
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap" data-testid="invite-chips">
           <Text as="span" size="xs" color="inherit" className="text-primary/70">{t('admin.vacancyInvite.seeking')}</Text>
           {sexLabel && <Badge tone="neutral">{t('admin.vacancyInvite.chipSex', { value: sexLabel })}</Badge>}
           {professionLabel && <Badge tone="neutral">{t('admin.vacancyInvite.chipProfession', { value: professionLabel })}</Badge>}
@@ -253,12 +256,12 @@ export default function VacancyInvitePage(): JSX.Element {
   const service = results?.service;
 
   return (
-    <div className="flex min-h-screen flex-col bg-white" data-testid="invite-page" data-step={step ?? undefined} data-dialog={dialog ?? undefined}>
+    <div className="flex min-h-[calc(100vh-48px)] flex-col bg-white" data-testid="invite-page" data-step={step ?? undefined} data-dialog={dialog ?? undefined}>
       {header}
       {board.status === 'noService' ? (
         <InviteNoServiceCase address={address} fixHref={fixHref} onBack={goBack} onFix={(href) => navigate(href)} />
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[640px_1fr]">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(360px,min(640px,34%))_1fr]">
           <div className="relative border-r border-gray-300" data-testid="invite-map-pane">
             {view && service && service.lat != null && service.lng != null ? (
               <InviteMapPane

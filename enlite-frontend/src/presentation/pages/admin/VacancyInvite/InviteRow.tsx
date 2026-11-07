@@ -80,15 +80,19 @@ export function InviteRow({ row, focused, highlighted, send, onToggle, onNameCli
         >
           <Text as="span" size="sm" weight="medium" color="primary">{c.workerName}</Text>
         </button>
-        <div className="flex h-5 items-center gap-2">
-          {c.occupation && <Text as="span" size="xs" color="inherit" className="text-primary/70">{c.occupation}</Text>}
-          {c.activeCasesCount > 0 && <Badge tone="warning">{t('admin.vacancyInvite.row.activeCases', { count: c.activeCasesCount })}</Badge>}
+        <div className="flex h-5 min-w-0 items-center gap-2">
+          {c.occupation && <Text as="span" size="xs" color="inherit" className="min-w-0 truncate text-primary/70">{c.occupation}</Text>}
+          {c.activeCasesCount > 0 && (
+            <span className="shrink-0 whitespace-nowrap">
+              <Badge tone="warning">{t('admin.vacancyInvite.row.activeCases', { count: c.activeCasesCount })}</Badge>
+            </span>
+          )}
           <a
             href={`/admin/workers/${id}`}
             target="_blank"
             rel="noopener noreferrer"
             data-testid={`invite-row-profile-${id}`}
-            className="text-primary underline"
+            className="shrink-0 whitespace-nowrap text-primary underline"
           >
             <Text as="span" size="xs" color="inherit">{t('admin.vacancyInvite.row.viewProfile')}</Text>
           </a>
