@@ -7462,6 +7462,19 @@
         "between": "Entre {{min}} e {{max}} km",
         "text": "O que foi enviado fica enviado. Se mais tarde precisar de mais pessoas, toque de novo em «Convidar prestadores» na vaga.",
         "keep": "Continuar convidando"
+      },
+      "noService": {
+        "title": "Não sabemos onde fica o serviço",
+        "text": "O endereço do serviço desta vaga não pôde ser localizado no mapa, então não conseguimos buscar prestadores perto. Corrija o endereço do serviço e toque de novo em «Convidar prestadores».",
+        "addressLabel": "Endereço cadastrado",
+        "fix": "Corrigir o endereço do serviço"
+      },
+      "nobody": {
+        "title": "Não encontramos prestadores até 50 km",
+        "text": "Por enquanto ninguém com este perfil ({{profile}}) mora perto do local do serviço.",
+        "vacante_one": "Há {{count}} pessoa na vaga que ainda não recebeu o WhatsApp.",
+        "vacante_other": "Há {{count}} pessoas na vaga que ainda não receberam o WhatsApp.",
+        "seeVacante": "Ver as {{count}}"
       }
     }
   },

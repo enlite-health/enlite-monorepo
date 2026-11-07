@@ -11,7 +11,7 @@ vi.mock('react-i18next', () => ({
 
 const board = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const detail = vi.hoisted(() => ({ value: {} as Record<string, unknown>, calledWith: vi.fn() }));
-const gates = vi.hoisted(() => ({ allowed: { 'match:read': true, 'match:execute': true } as Record<string, boolean> }));
+const gates = vi.hoisted(() => ({ allowed: { 'match:read': true, 'match:execute': true, 'messaging:send': true } as Record<string, boolean> }));
 
 vi.mock('@hooks/admin/useVacancyInviteBoard', () => ({ useVacancyInviteBoard: () => board.value }));
 vi.mock('@hooks/admin/useVacancyDetail', () => ({
@@ -63,7 +63,7 @@ function renderPage(entry: unknown = '/admin/vacancies/v1/match') {
 beforeEach(() => {
   vi.clearAllMocks();
   useInviteProgressStore.setState({ isSending: false, items: [], enqueue: realEnqueue });
-  gates.allowed = { 'match:read': true, 'match:execute': true };
+  gates.allowed = { 'match:read': true, 'match:execute': true, 'messaging:send': true };
   detail.value = { vacancy: { id: 'v1', status: 'ACTIVE', case_number: 817, vacancy_number: 2, required_sex: 'F', required_professions: ['AT'], patient_address_formatted: 'Av. Santa Fe 3200' }, error: null };
   board.value = ready([cand('a', 3), cand('b', 7)], ['a', 'b']);
 });
@@ -290,5 +290,56 @@ describe('VacancyInvitePage (T026a)', () => {
     await userEvent.click(screen.getByTestId('invite-btn-finish-secondary'));
     await userEvent.click(screen.getByTestId('invite-finish-back'));
     expect(screen.getByTestId('loc')).toHaveTextContent('/admin/vacancies/v1?tab=encuadres');
+  });
+
+  describe('casos especiais e permissão (T026d)', () => {
+    it('F6 esquerda: serviço sem coordenada → sem mapa/lista; "Corregir" leva à aba itinerário do serviço (DF-12)', async () => {
+      detail.value = { vacancy: { id: 'v1', status: 'ACTIVE', patient_id: 'p1', contracted_service_id: 's1', patient_address_raw: 'Calle X 123' }, error: null };
+      board.value = { ...ready([], []), status: 'noService', results: { jobPostingId: 'v1', operationDate: '2026-11-06', service: { lat: null, lng: null, addressLabel: null }, candidates: [] } };
+      renderPage();
+      expect(screen.getByTestId('invite-special-case')).toHaveAttribute('data-kind', 'no-service');
+      expect(screen.getByTestId('invite-no-service-address')).toHaveTextContent('Calle X 123');
+      expect(screen.queryByTestId('points-map-stub')).toBeNull();
+      expect(screen.queryByTestId('invite-rows')).toBeNull();
+      await userEvent.click(screen.getByTestId('invite-special-fix'));
+      expect(screen.getByTestId('loc')).toHaveTextContent('/admin/patients/p1?tab=itinerary&serviceId=s1');
+    });
+
+    it('F6 direita: ninguém até 50 km; "Ver las N" leva ao passo vacante e some com N=0', async () => {
+      board.value = ready([cand('m1', 3, { source: 'manual' }), cand('m2', null, { source: 'manual', lat: null, lng: null })], []);
+      const { unmount } = renderPage('/admin/vacancies/v1/match?paso=5');
+      expect(screen.getByTestId('invite-special-case')).toHaveAttribute('data-kind', 'nobody');
+      expect(screen.getByTestId('invite-nobody-vacante')).toHaveTextContent('"count":2');
+      expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-rings', '4');
+      expect(screen.queryByTestId('pin-m1')).toBeNull();
+      await userEvent.click(screen.getByTestId('invite-nobody-see'));
+      expect(screen.getByTestId('loc')).toHaveTextContent('?paso=vacante');
+      expect(screen.queryByTestId('invite-special-case')).toBeNull();
+      expect(screen.getByTestId('invite-row-m1')).toBeInTheDocument();
+      unmount();
+      board.value = ready([], []);
+      renderPage('/admin/vacancies/v1/match?paso=5');
+      expect(screen.getByTestId('invite-special-case')).toHaveAttribute('data-kind', 'nobody');
+      expect(screen.queryByTestId('invite-nobody-vacante')).toBeNull();
+    });
+
+    it('⚑2 sem match:execute: só o passo vacante (a URL com ?paso=10 não leva a outro), sem "buscar más lejos"', () => {
+      gates.allowed['match:execute'] = false;
+      board.value = ready([cand('m1', 3, { source: 'manual' })], []);
+      renderPage('/admin/vacancies/v1/match?paso=10');
+      expect(screen.getByTestId('invite-page')).toHaveAttribute('data-step', 'vacante');
+      expect(screen.getByTestId('invite-step-vacante')).toBeInTheDocument();
+      expect(screen.queryByTestId('invite-step-5')).toBeNull();
+      expect(screen.queryByTestId('invite-btn-more-secondary')).toBeNull();
+      expect(screen.getByTestId('invite-row-m1')).toBeInTheDocument();
+    });
+
+    it('⚑2 sem messaging:send: só-ver — Invitar desabilitado com o motivo no title', () => {
+      gates.allowed['messaging:send'] = false;
+      renderPage('/admin/vacancies/v1/match?paso=5');
+      const btn = screen.getByTestId('invite-btn-invite');
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'access.actionDenied');
+    });
   });
 });

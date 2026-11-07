@@ -20,6 +20,8 @@ import { InviteListFooter } from './InviteListFooter';
 import { InviteRow } from './InviteRow';
 import { InviteConfirmDialog } from './InviteConfirmDialog';
 import { InviteFinishDialog } from './InviteFinishDialog';
+import { InviteNoServiceCase, InviteNobodyCard } from './InviteSpecialCase';
+import { InviteStepCards } from './InviteStepCards';
 import {
   applyDocOnly,
   buildBoardView,
@@ -27,6 +29,7 @@ import {
   dayMonthOf,
   finishSummary,
   isInvited,
+  matchResult,
   selectedIds,
   stepCandidates,
   openingStep,
@@ -75,6 +78,8 @@ export default function VacancyInvitePage(): JSX.Element {
 
   const canRead = useActionGate('match', 'read').allowed;
   const canExecute = useActionGate('match', 'execute').allowed;
+  // ⚑2: sem `messaging:send` a página abre só-ver (Invitar desabilitado, motivo no title).
+  const canSend = useActionGate('messaging', 'send').allowed;
   // ⚑2: sem `match:read` não há dado para mostrar → "Sin permiso", e NENHUMA request (nem a da vacante).
   const noPermission = !canRead;
   const { vacancy, error: vacancyError } = useVacancyDetail(noPermission ? undefined : id);
@@ -114,7 +119,8 @@ export default function VacancyInvitePage(): JSX.Element {
   // Passo de abertura decidido UMA vez (DF-14): depois, só a URL (`?paso=`) o muda.
   const opening = useRef<StepId | null>(null);
   if (ctx && board.status === 'ready' && opening.current == null) opening.current = openingStep(ctx, null);
-  const step: StepId | null = parseStep(searchParams.get('paso')) ?? opening.current;
+  // ⚑2: sem `match:execute` só existe o passo "Ya en la vacante" (a URL não leva a outro).
+  const step: StepId | null = !canExecute ? (opening.current ? 'vacante' : null) : (parseStep(searchParams.get('paso')) ?? opening.current);
 
   useEffect(() => {
     if (board.status !== 'ready' || !step || parseStep(searchParams.get('paso')) === step) return;
@@ -182,7 +188,16 @@ export default function VacancyInvitePage(): JSX.Element {
   if (!noPermission && isDraft) return <Navigate to={`/admin/vacancies/${id}/borrador`} replace />;
 
   const address: string | null = vacancy?.patient_address_formatted ?? vacancy?.patient_address_raw ?? null;
-  const view = viewCtx && step && board.status === 'ready' ? buildBoardView(viewCtx, step) : null;
+  const rawView = viewCtx && step && board.status === 'ready' ? buildBoardView(viewCtx, step) : null;
+  const view = rawView && !canExecute
+    ? { ...rawView, steps: rawView.steps.filter((c) => c.step === 'vacante'), footer: { ...rawView.footer, more: null, mode: rawView.footer.mode === 'after' ? ('last' as const) : rawView.footer.mode } }
+    : rawView;
+  // F6 direita (E8): ninguém até 50 km (fora do passo "vacante", que continua útil com os já na vacante).
+  const nobodyNear = !!viewCtx && !!view && canExecute && step !== 'vacante' && matchResult(viewCtx.candidates, currentIds).length === 0;
+  const vacanteView = nobodyNear && viewCtx ? buildBoardView(viewCtx, 'vacante') : null;
+  const fixHref = vacancy?.patient_id
+    ? `/admin/patients/${vacancy.patient_id}?tab=itinerary${vacancy.contracted_service_id ? `&serviceId=${vacancy.contracted_service_id}` : ''}`
+    : null;
 
   const sexLabel = vacancy?.required_sex ? t(`admin.vacancyDetail.vacancyForm.sexOptions.${vacancy.required_sex}`, vacancy.required_sex) : null;
   const profession = vacancy?.required_professions?.[0];
@@ -240,13 +255,13 @@ export default function VacancyInvitePage(): JSX.Element {
     <div className="flex min-h-screen flex-col bg-white" data-testid="invite-page" data-step={step ?? undefined} data-dialog={dialog ?? undefined}>
       {header}
       {board.status === 'noService' ? (
-        <div data-testid="invite-special-case" data-kind="no-service" />
+        <InviteNoServiceCase address={address} fixHref={fixHref} onBack={goBack} onFix={(href) => navigate(href)} />
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[640px_1fr]">
           <div className="relative border-r border-gray-300" data-testid="invite-map-pane">
             {view && service && service.lat != null && service.lng != null ? (
               <InviteMapPane
-                view={view}
+                view={vacanteView ? { ...vacanteView, pins: [], vacanteNote: null } : view}
                 center={{ lat: service.lat, lng: service.lng }}
                 height={mapHeight}
                 hoveredId={hoveredId}
@@ -257,9 +272,21 @@ export default function VacancyInvitePage(): JSX.Element {
             ) : (
               <InviteMapLoading address={address} />
             )}
+            {nobodyNear && vacanteView && (
+              <InviteNobodyCard
+                profile={`${sexLabel ?? '—'} · ${professionLabel ?? '—'}`}
+                vacanteCount={vacanteView.selection.pending}
+                onSeeVacante={() => selectStep('vacante')}
+                onBack={goBack}
+              />
+            )}
           </div>
           <div className="flex min-w-0 flex-col" style={{ height: mapHeight }} data-testid="invite-list-pane">
-            {view && ctx && step ? (
+            {view && ctx && step && nobodyNear ? (
+              <div className="flex flex-col gap-3 px-6 pt-5" data-testid="invite-nobody-steps">
+                <InviteStepCards steps={view.steps} onSelect={selectStep} />
+              </div>
+            ) : view && ctx && step ? (
               <>
                 <InviteListHeader
                   view={view}
@@ -291,6 +318,7 @@ export default function VacancyInvitePage(): JSX.Element {
                   footer={view.footer}
                   step={step}
                   invitedCount={results?.invitedCount ?? 0}
+                  inviteDisabledReason={canSend ? undefined : t('access.actionDenied')}
                   onInvite={() => setDialog('confirm')}
                   onMore={() => view.footer.more && selectStep(view.footer.more.km)}
                   onFinish={() => setDialog('finish')}
