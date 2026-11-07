@@ -150,7 +150,7 @@ test.describe('Vacancy enums via i18n — auth real + backend real @real-auth', 
     });
   });
 
-  test('modal Hacer match mostra chip Profesión "Cuidador/a"', async ({ page }) => {
+  test('página Invitar prestadores mostra chip Profesión "Cuidador/a"', async ({ page }) => {
     await loginAsAdmin(page);
 
     await page.goto(`/admin/vacancies/${SEED_VACANCY_ID}`);
@@ -158,18 +158,15 @@ test.describe('Vacancy enums via i18n — auth real + backend real @real-auth', 
       timeout: 20_000,
     });
 
-    await page.getByRole('button', { name: /Hacer match/i }).click();
-
-    // Chip Profesión com label traduzida, sem enum cru
-    const profesionLabel = page.getByText('Profesión:', { exact: false });
-    await expect(profesionLabel).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Cuidador/a').first()).toBeVisible();
-    await expect(page.locator('text=CAREGIVER')).toHaveCount(0);
-
-    // Prova visual obrigatória — o chip inteiro (ícone + label + valor)
-    const profesionChip = profesionLabel.locator('..');
-    await expect(profesionChip).toHaveScreenshot('match-chip-profesion-caregiver.png', {
-      maxDiffPixelRatio: 0.02,
+    await page.getByRole('button', { name: /Invitar prestadores/i }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${SEED_VACANCY_ID}/match`), {
+      timeout: 15_000,
     });
+
+    // Chip Profesión com label traduzida, sem enum cru (089: chips do cabeçalho da página)
+    const chips = page.getByTestId('invite-chips');
+    await expect(chips).toBeVisible({ timeout: 15_000 });
+    await expect(chips.getByText('Profesión: Cuidador/a')).toBeVisible();
+    await expect(page.locator('text=CAREGIVER')).toHaveCount(0);
   });
 });

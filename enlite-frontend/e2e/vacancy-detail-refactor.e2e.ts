@@ -608,7 +608,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     await expect(page.locator('text=Respondido').first()).toBeVisible();
   });
 
-  test('B6 — botão "Enviar invitaciones" visível na aba Reclutamiento', async ({
+  test('B6 — botão "Invitar prestadores" visível na aba Reclutamiento', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -620,11 +620,14 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     });
 
     await expect(
-      page.getByRole('button', { name: /Enviar invitaciones/i }),
+      page.getByRole('button', { name: /Invitar prestadores/i }),
     ).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByRole('button', { name: /Hacer match|Enviar invitaciones/i }),
+    ).toHaveCount(0);
   });
 
-  test('B7 — clique em "Enviar invitaciones" não navega e abre modal de confirmação', async ({
+  test('B7 — clique em "Invitar prestadores" navega para a página de match da vacante', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -635,18 +638,13 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    await page.getByRole('button', { name: /Enviar invitaciones/i }).click();
+    await page.getByRole('button', { name: /Invitar prestadores/i }).click();
 
-    // Permanece na mesma URL
+    // 089: o modal de confirmação saiu da vacante; o envio mora em /admin/vacancies/:id/match
     await expect(page).toHaveURL(
-      new RegExp(`/admin/vacancies/${MOCK_VACANCY_ID}`),
+      new RegExp(`/admin/vacancies/${MOCK_VACANCY_ID}/match$`),
+      { timeout: 10_000 },
     );
-
-    // O stub de console foi substituído pelo fluxo real de dispatch:
-    // o clique abre o DispatchConfirmModal (fluxo coberto em vacancy-funnel-dispatch.e2e.ts)
-    await expect(
-      page.getByRole('heading', { name: /Confirmar envío/i }),
-    ).toBeVisible({ timeout: 5_000 });
   });
 
   // ── C. Funil — toggle Kanban ─────────────────────────────────────────────────

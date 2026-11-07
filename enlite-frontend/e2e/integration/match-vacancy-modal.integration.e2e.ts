@@ -1,30 +1,21 @@
 /**
  * match-vacancy-modal.integration.e2e.ts @integration
  *
- * Integration E2E — clica "Hacer match" no funnel da vacancy detail e valida
- * que o modal abre com candidatos distribuídos pelos 4 buckets de distância +
- * "Sin ubicación".
+ * Integration E2E — 089 T030: o modal "Hacer match" saiu da vacante. O botão único "Invitar
+ * prestadores" do funnel leva à página /admin/vacancies/:id/match; aqui valida que ela distribui os
+ * candidatos pelos anéis de distância (passos 5/10/20/50 km) e o painel flutuante do envio.
+ * (O arquivo mantém o nome para não perder o histórico; a cobertura completa da página é do
+ * `funil-vacante-invitar-prestadores-089.integration.e2e.ts`.)
  *
  * Setup (DB direto):
  *   1. Paciente em Moreno, Buenos Aires (lat=-34.6506, lng=-58.7798)
  *   2. Vacante linkada ao address do paciente, required_sex='F', occupation='AT'
  *   3. 5 workers REGISTERED, sex=F, occupation=AT (passam os hard filters):
- *        W_NEAR     ~1km   (Moreno)
- *        W_MID      ~12km  (oeste)
- *        W_FAR      ~30km  (sul)
- *        W_OUT      Santiago, Chile  →  recusado pelo radius=50km
- *        W_NOCOORDS sem coords        →  bucket "Sin ubicación"
+ *        W_NEAR ~1km · W_MID ~12km · W_FAR ~30km · W_OUT Santiago (recusado pelo radius=50km)
+ *        · W_NOCOORDS sem coords
  *
- * Fluxo do teste (UI):
- *   - Login admin (mock auth)
- *   - GET /admin/vacancies/:id
- *   - Click "Hacer match"
- *   - Aguarda modal carregar (POST /api/admin/vacancies/:id/match termina)
- *   - Valida chips (Sexo · Profesión · Dirección)
- *   - Valida que os 4 buckets distintos (≤5km, ≤10km, ≤20km, ≤50km, Sin ubicación)
- *     têm os candidatos esperados
- *   - Worker em Santiago NÃO aparece (>50km recusado)
- *   - Screenshot final
+ * Fluxo do teste (UI): login admin (mock auth) → vacante → clique "Invitar prestadores" →
+ * POST /match → página; passos 5, 20 e 50 km mostram NearW, MidW e FarW; OutW nunca aparece.
  */
 
 import { test, expect, type Page, type Route } from '@playwright/test';
@@ -143,7 +134,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
 }
 
-test.describe('Match modal — buckets de distância @integration', () => {
+test.describe('Invitar prestadores — anéis de distância @integration', () => {
   test.setTimeout(120_000);
 
   let patientId: string;
@@ -219,7 +210,7 @@ test.describe('Match modal — buckets de distância @integration', () => {
     if (patientId) cleanupTestPatient(patientId);
   });
 
-  test('abre modal "Hacer match" e distribui candidatos pelos buckets de distância', async ({
+  test('abre a página Invitar prestadores e distribui candidatos pelos anéis de distância', async ({
     page,
   }) => {
     const SNAP = 'e2e/integration/match-vacancy-modal.integration.e2e.ts-snapshots';
@@ -230,61 +221,44 @@ test.describe('Match modal — buckets de distância @integration', () => {
     // Navega pra vacancy detail (default tab = encuadres → renderiza FunnelView)
     await page.goto(`/admin/vacancies/${vacancyId}`);
 
-    // Aguarda os botões da linha do funnel renderizarem (toggle + Hacer match + Enviar invitaciones)
-    await expect(page.getByRole('button', { name: /Hacer match/i })).toBeVisible({
-      timeout: 20_000,
-    });
+    const entry = page.getByRole('button', { name: /Invitar prestadores/i });
+    await expect(entry).toBeVisible({ timeout: 20_000 });
     await page.screenshot({ path: `${SNAP}/02-vacancy-detail.png`, fullPage: false });
 
-    // Aguarda a chamada do match completar antes de assertar buckets
+    // A página dispara o match 1× ao abrir (DF-9)
     const matchPromise = page.waitForResponse(
       (resp) =>
         resp.url().includes(`/api/admin/vacancies/${vacancyId}/match?`) &&
         resp.request().method() === 'POST',
       { timeout: 30_000 },
     );
-    await page.getByRole('button', { name: /Hacer match/i }).click();
+    await entry.click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}/match`), { timeout: 15_000 });
     const matchResp = await matchPromise;
     expect(matchResp.ok(), `Match POST failed: ${matchResp.status()}`).toBe(true);
 
-    // Modal aberto
-    const dialog = page.locator('text=Match de candidatos').first();
-    await expect(dialog).toBeVisible();
+    // Cabeçalho com os critérios e os cartões de passo
+    const chips = page.getByTestId('invite-chips');
+    await expect(chips).toBeVisible({ timeout: 30_000 });
+    await expect(chips).toContainText(/Sexo:/);
+    await expect(chips).toContainText(/Profesión:/);
+    await expect(chips).toContainText(/Servicio:/);
+    await expect(page.getByTestId('invite-step-cards')).toBeVisible({ timeout: 30_000 });
 
-    // Chips dos critérios
-    await expect(page.getByText(/Sexo:\s*F/i).first()).toBeVisible();
-    await expect(page.getByText(/Profesión:\s*AT/i).first()).toBeVisible();
-    await expect(page.getByText(/Dirección:\s*Av\. Corrientes|Dirección:.*Moreno|Dirección:.*Av\.|Dirección:.*Buenos Aires/i).first()).toBeVisible();
+    // ── Candidatos por anel (clique no cartão do passo) ───────────────────────
+    // NearW (~0.6 km) → Hasta 5 km
+    await page.getByTestId('invite-step-5').click();
+    await expect(page.getByText(/NearW/).first()).toBeVisible({ timeout: 10_000 });
+    // MidW (~12 km) → Hasta 20 km
+    await page.getByTestId('invite-step-20').click();
+    await expect(page.getByText(/MidW/).first()).toBeVisible({ timeout: 10_000 });
+    // FarW (~33 km) → Hasta 50 km
+    await page.getByTestId('invite-step-50').click();
+    await expect(page.getByText(/FarW/).first()).toBeVisible({ timeout: 10_000 });
 
-    // Aguarda buckets renderizarem (loading some, listas aparecem)
-    // O modal sempre renderiza os 5 cabeçalhos de bucket — aguarda o "Sin ubicación"
-    await expect(page.getByText('Sin ubicación').first()).toBeVisible({ timeout: 10_000 });
-
-    // ── Asserts de candidatos por bucket ──────────────────────────────────────
-    // Worker em Santiago (W_OUT) NÃO deve aparecer — radius=50km filtra ele
+    // Worker em Santiago (W_OUT) NÃO aparece em passo nenhum — radius=50km o recusa
     await expect(page.getByText(/OutW/)).toHaveCount(0);
 
-    // Worker sem coords aparece em "Sin ubicación"
-    await expect(page.getByText(/NoCoordsW/)).toBeVisible();
-
-    // Workers near/mid/far devem aparecer com distâncias preenchidas (X.X km)
-    // Validação: pelo menos um candidato com distância em km no DOM
-    const distanceLabels = page.locator('text=/\\d+\\.\\d+ km/');
-    await expect(distanceLabels.first()).toBeVisible();
-    const distanceCount = await distanceLabels.count();
-    expect(distanceCount).toBeGreaterThanOrEqual(3); // near + mid + far
-
-    // ── Asserts de cada bucket via DOM (independente de viewport) ────────────
-    // NearW (~0.6 km) → ≤ 5 km
-    await expect(page.getByText(/NearW/)).toBeVisible();
-    // MidW (~12 km) → > 10 ≤ 20
-    await expect(page.getByText(/MidW/)).toBeVisible();
-    // FarW (~33 km) → > 20 ≤ 50
-    await expect(page.getByText(/FarW/)).toBeVisible();
-    // NoCoordsW → Sin ubicación
-    await expect(page.getByText(/NoCoordsW/)).toBeVisible();
-
-    // ── Screenshot do modal inteiro com viewport alto pra mostrar TODOS os buckets
     await page.setViewportSize({ width: 1280, height: 1800 });
     await page.waitForTimeout(500);
     await page.screenshot({ path: `${SNAP}/03-modal-fullview.png`, fullPage: false });
@@ -298,7 +272,7 @@ test.describe('Match modal — buckets de distância @integration', () => {
  * suíte de buckets acima (vaga distinta ⇒ sem match concorrente/WJA duplicado)
  * e pra não depender das asserts de distribuição por bucket.
  */
-test.describe('Match modal — painel de convite flutuante @integration', () => {
+test.describe('Invitar prestadores — painel de convite flutuante @integration', () => {
   test.setTimeout(120_000);
 
   let patientId: string;
@@ -369,9 +343,8 @@ test.describe('Match modal — painel de convite flutuante @integration', () => 
     );
 
     await page.goto(`/admin/vacancies/${vacancyId}`);
-    await expect(page.getByRole('button', { name: /Hacer match/i })).toBeVisible({
-      timeout: 20_000,
-    });
+    const entry = page.getByRole('button', { name: /Invitar prestadores/i });
+    await expect(entry).toBeVisible({ timeout: 20_000 });
 
     const matchPromise = page.waitForResponse(
       (resp) =>
@@ -379,17 +352,19 @@ test.describe('Match modal — painel de convite flutuante @integration', () => 
         resp.request().method() === 'POST',
       { timeout: 30_000 },
     );
-    await page.getByRole('button', { name: /Hacer match/i }).click();
+    await entry.click();
     await matchPromise;
 
-    // Seleciona os 3 candidatos e dispara o envio em lote.
-    await page.getByRole('checkbox', { name: /Seleccionar PanelA/i }).first().check();
-    await page.getByRole('checkbox', { name: /Seleccionar PanelB/i }).first().check();
-    await page.getByRole('checkbox', { name: /Seleccionar PanelC/i }).first().check();
-    await page.getByRole('button', { name: /Invitar seleccionados/i }).click();
+    // Os 3 candidatos do passo 5 km vêm pré-selecionados (DF-6); a confirmação F3 lista os nomes.
+    for (const id of workerIds) {
+      await expect(page.getByTestId(`invite-row-check-${id}`)).toBeChecked({ timeout: 30_000 });
+    }
+    await page.getByTestId('invite-btn-invite').click();
+    await expect(page.getByTestId('invite-confirm-dialog')).toBeVisible();
+    await page.getByTestId('invite-confirm-send').click();
 
     // O painel flutuante aparece (canto inferior-direito) e NÃO é um modal
-    // bloqueante — o modal de match segue aberto/acessível por trás.
+    // bloqueante — a página de match segue acessível por trás.
     const panel = page.getByTestId('invite-progress-panel');
     await expect(panel).toBeVisible({ timeout: 10_000 });
 
