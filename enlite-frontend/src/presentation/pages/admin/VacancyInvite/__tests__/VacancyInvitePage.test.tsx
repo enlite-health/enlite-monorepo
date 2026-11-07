@@ -6,7 +6,7 @@ import VacancyInvitePage from '../VacancyInvitePage';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string, o?: unknown) => (o && typeof o === 'object' && 'value' in o ? `${k}|${(o as { value: string }).value}` : k), i18n: { language: 'es' } }),
+  useTranslation: () => ({ t: (k: string, o?: unknown) => (o && typeof o === 'object' ? `${k}${JSON.stringify(o)}` : k), i18n: { language: 'es' } }),
 }));
 
 const board = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -21,12 +21,21 @@ vi.mock('@presentation/hooks/useCellAccess', () => ({
   useActionGate: (r: string, a: string) => ({ allowed: gates.allowed[`${r}:${a}`] ?? true, denied: false }),
 }));
 vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
-  PointsMap: (p: { rings?: unknown[]; fitRadiusKm?: number }) => (
-    <div data-testid="points-map-stub" data-rings={p.rings?.length} data-fit={p.fitRadiusKm} />
+  PointsMap: (p: {
+    rings?: unknown[]; fitRadiusKm?: number; points: Array<{ id: string; style?: { sizePx: number } }>;
+    hoveredId?: string | null; selectedId?: string | null;
+    onHover?: (id: string | null) => void; onSelect?: (id: string | null) => void;
+  }) => (
+    <div data-testid="points-map-stub" data-rings={p.rings?.length} data-fit={p.fitRadiusKm} data-hovered={p.hoveredId ?? ''} data-selected={p.selectedId ?? ''}>
+      {p.points.map((pt) => (
+        <button key={pt.id} type="button" data-testid={`pin-${pt.id}`} data-size={pt.style?.sizePx}
+          onMouseEnter={() => p.onHover?.(pt.id)} onMouseLeave={() => p.onHover?.(null)} onClick={() => p.onSelect?.(pt.id)} />
+      ))}
+    </div>
   ),
 }));
 
-const cand = (id: string, d: number, extra = {}) => ({
+const cand = (id: string, d: number | null, extra = {}) => ({
   workerId: id, workerName: id, workerPhone: null, occupation: 'AT', workZone: null, distanceKm: d, lat: -34.6, lng: -58.4,
   activeCasesCount: 0, workerStatus: null, documentStatus: 'approved', source: 'system', funnelStage: 'INVITED', replied: false,
   matchScore: null, internalNotes: null, alreadyApplied: false, messagedAt: null, ...extra,
@@ -131,5 +140,65 @@ describe('VacancyInvitePage (T026a)', () => {
     act(() => useInviteProgressStore.setState({ isSending: false }));
     expect(remove.mock.calls.some((c) => c[0] === 'beforeunload')).toBe(true);
     add.mockRestore(); remove.mockRestore();
+  });
+
+  it('RF-11: hover na linha engorda o pino; hover no pino acende a linha; clique no pino foca a linha; clique no nome abre/fecha o pino', async () => {
+    board.value = ready([cand('a', 2), cand('b', 4)], ['a', 'b']);
+    renderPage('/admin/vacancies/v1/match?paso=5');
+    await userEvent.hover(screen.getByTestId('invite-row-a'));
+    expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-hovered', 'a');
+    expect(screen.getByTestId('pin-a')).toHaveAttribute('data-size', '24');
+    await userEvent.unhover(screen.getByTestId('invite-row-a'));
+    await userEvent.hover(screen.getByTestId('pin-b'));
+    expect(screen.getByTestId('invite-row-b')).toHaveAttribute('data-highlighted', 'true');
+    await userEvent.click(screen.getByTestId('pin-b'));
+    expect(screen.getByTestId('invite-row-b')).toHaveAttribute('data-focused', 'true');
+    expect(screen.getByTestId('invite-row-name-b')).toHaveFocus();
+    await userEvent.click(screen.getByTestId('invite-row-name-a'));
+    expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-selected', 'a');
+    await userEvent.click(screen.getByTestId('invite-row-name-a'));
+    expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-selected', '');
+  });
+
+  it('seleção: desmarcar 1 linha → "1 de 2", rodapé "Invitar a 1"; "Todos" re-marca', async () => {
+    board.value = ready([cand('a', 2), cand('b', 4)], ['a', 'b']);
+    renderPage('/admin/vacancies/v1/match?paso=5');
+    expect(screen.getByTestId('invite-counter')).toHaveTextContent('"selected":2,"pending":2');
+    await userEvent.click(screen.getByTestId('invite-row-check-a'));
+    expect(screen.getByTestId('invite-counter')).toHaveTextContent('"selected":1,"pending":2');
+    expect(screen.getByTestId('invite-btn-invite')).toHaveTextContent('"count":1');
+    await userEvent.click(screen.getByTestId('invite-select-all'));
+    expect(screen.getByTestId('invite-counter')).toHaveTextContent('"selected":2,"pending":2');
+  });
+
+  it('interruptor de documentos: esconde quem falta, desmarca, e desligar NÃO re-seleciona (DF-17)', async () => {
+    board.value = ready([cand('a', 3, { documentStatus: 'pending' }), cand('b', 4)], ['a', 'b']);
+    renderPage('/admin/vacancies/v1/match?paso=5');
+    await userEvent.click(screen.getByRole('switch'));
+    expect(screen.queryByTestId('invite-row-a')).toBeNull();
+    expect(screen.getByTestId('invite-docs-line')).toHaveTextContent('docs.on');
+    await userEvent.click(screen.getByRole('switch'));
+    expect(screen.getByTestId('invite-row-check-a')).not.toBeChecked();
+    expect(screen.getByTestId('invite-row-check-b')).toBeChecked();
+  });
+
+  it('trocar de passo (cartão e "Buscar más lejos") grava ?paso= sem tocar no dado', async () => {
+    renderPage('/admin/vacancies/v1/match?paso=5');
+    await userEvent.click(screen.getByTestId('invite-step-20'));
+    expect(screen.getByTestId('loc')).toHaveTextContent('?paso=20');
+    await userEvent.click(screen.getByTestId('invite-step-5'));
+    await userEvent.click(screen.getByTestId('invite-btn-more-secondary'));
+    expect(screen.getByTestId('loc')).toHaveTextContent('?paso=10');
+    expect(board.value.refetch).not.toHaveBeenCalled();
+    expect(board.value.reload).not.toHaveBeenCalled();
+  });
+
+  it('passo vacante: nota amarela com os 2 contadores e sem a nota do perfil (⚑7)', () => {
+    board.value = ready([cand('a', 3), cand('far', 61, { source: 'manual' }), cand('nl', null, { source: 'manual', lat: null, lng: null })], ['a']);
+    renderPage('/admin/vacancies/v1/match?paso=vacante');
+    expect(screen.getByTestId('invite-vacante-note')).toHaveTextContent('vacanteNote.far{"count":1}');
+    expect(screen.getByTestId('invite-vacante-note')).toHaveTextContent('vacanteNote.noLocation{"count":1}');
+    expect(screen.queryByTestId('invite-profile-note')).toBeNull();
+    expect(screen.getByTestId('invite-map-legend')).toBeInTheDocument();
   });
 });

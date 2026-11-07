@@ -7441,7 +7441,19 @@
       },
       "map": {
         "center": "Lugar del servicio, fijo para esta vacante",
-        "unavailable": "El mapa no está disponible. La lista sigue funcionando."
+        "unavailable": "El mapa no está disponible. La lista sigue funcionando.",
+        "legend": {
+          "selected": "Elegido para invitar",
+          "unselected": "No elegido",
+          "invited": "Ya invitado",
+          "service": "Lugar del servicio"
+        },
+        "hint": "Tocá un punto para ver quién es",
+        "vacanteNote": {
+          "intro": "Estas personas llegaron por otro camino y pueden estar lejos.",
+          "far": "{{count}} a más de 50 km (fuera del mapa).",
+          "noLocation": "{{count}} sin ubicación."
+        }
       },
       "steps": {
         "label": "Distancia del lugar del servicio",

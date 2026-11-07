@@ -6,7 +6,6 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { Badge } from '@presentation/components/atoms/Badge';
-import { PointsMap, type MapPoint, type MapRing } from '@presentation/components/molecules/PointsMap/PointsMap';
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
 import { useVacancyInviteBoard } from '@hooks/admin/useVacancyInviteBoard';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
@@ -14,20 +13,21 @@ import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore
 import { COUNTRY_TIME_ZONE } from '@presentation/utils/countryTimeZone';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { InviteListSkeleton, InviteMapLoading } from './InviteLoadingState';
+import { InviteMapPane } from './InviteMapPane';
+import { InviteListHeader } from './InviteListHeader';
+import { InviteListFooter } from './InviteListFooter';
+import { InviteRow } from './InviteRow';
 import {
+  applyDocOnly,
   buildBoardView,
   openingStep,
   parseStep,
+  setAllSelected,
+  toggleOne,
   type BoardContext,
-  type RingTone,
   type StepId,
 } from './inviteBoardModel';
 
-const RING_STYLE: Record<RingTone, Pick<MapRing, 'stroke' | 'strokeWeight' | 'fill' | 'fillOpacity'>> = {
-  idle: { stroke: 'rgba(24,1,73,.35)', strokeWeight: 1.5, fill: '#180149', fillOpacity: 0.03 },
-  current: { stroke: '#F227AF', strokeWeight: 2, fill: '#F227AF', fillOpacity: 0.06 },
-  done: { stroke: '#0B5E45', strokeWeight: 2, fill: '#0B5E45', fillOpacity: 0.05 },
-};
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
 /** Altura do mapa = viewport − barra de 72 px do cabeçalho. */
@@ -79,8 +79,9 @@ export default function VacancyInvitePage(): JSX.Element {
   const { results, currentIds } = board;
 
   // Docs/seleção/envios: estado de tela (a regra mora no modelo, `inviteBoardModel`).
-  const [docOnly] = useState(false);
-  const [unselected] = useState<ReadonlySet<string>>(EMPTY_SET);
+  const [docOnly, setDocOnly] = useState(false);
+  const [unselected, setUnselected] = useState<ReadonlySet<string>>(EMPTY_SET);
+  const [dialog, setDialog] = useState<'confirm' | 'finish' | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedPin, setSelectedPin] = useState<string | null>(null);
 
@@ -116,6 +117,20 @@ export default function VacancyInvitePage(): JSX.Element {
     if (from) navigate(-1);
     else navigate(`/admin/vacancies/${id}?tab=encuadres`, { replace: true });
   };
+
+  const selectStep = (next: StepId): void => {
+    setSelectedPin(null);
+    setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('paso', String(next)); return n; }, { replace: true, state: location.state });
+  };
+
+  // RF-11: clique no PINO rola e foca a linha (o clique no NOME alterna o foco do pino).
+  const onPinSelect = (workerId: string | null): void => setSelectedPin(workerId);
+  useEffect(() => {
+    if (!selectedPin) return;
+    const row = document.getElementById(`invite-row-${selectedPin}`);
+    row?.scrollIntoView?.({ block: 'nearest' });
+    row?.querySelector<HTMLElement>('button')?.focus();
+  }, [selectedPin]);
 
   if (!noPermission && isDraft) return <Navigate to={`/admin/vacancies/${id}/borrador`} replace />;
 
@@ -172,56 +187,69 @@ export default function VacancyInvitePage(): JSX.Element {
     return message('invite-error', t('admin.vacancyInvite.error.load'), '', board.status === 'error' ? board.reload : undefined);
   }
 
-  const loading = !view && board.status !== 'noService';
-  const points: MapPoint[] = (view?.pins ?? []).map((p) => ({
-    id: p.workerId,
-    lat: p.lat,
-    lng: p.lng,
-    title: p.workerName,
-    color: p.style.fill,
-    tooltip: `${p.workerName} · ${p.distanceKm.toFixed(1)} km`,
-    style: p.style,
-  }));
-  const rings: MapRing[] = (view?.rings ?? []).map((r) => ({
-    radiusKm: r.radiusKm,
-    ...RING_STYLE[r.tone],
-    label: `${r.radiusKm} km`,
-    labelTone: r.tone,
-  }));
   const service = results?.service;
 
   return (
-    <div className="flex min-h-screen flex-col bg-white" data-testid="invite-page" data-step={step ?? undefined}>
+    <div className="flex min-h-screen flex-col bg-white" data-testid="invite-page" data-step={step ?? undefined} data-dialog={dialog ?? undefined}>
       {header}
       {board.status === 'noService' ? (
         <div data-testid="invite-special-case" data-kind="no-service" />
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[640px_1fr]">
           <div className="relative border-r border-gray-300" data-testid="invite-map-pane">
-            {loading || !service || service.lat == null || service.lng == null ? (
-              <InviteMapLoading address={address} />
-            ) : (
-              <PointsMap
-                points={points}
+            {view && service && service.lat != null && service.lng != null ? (
+              <InviteMapPane
+                view={view}
                 center={{ lat: service.lat, lng: service.lng }}
-                radiusKm={null}
-                rings={rings}
-                fitRadiusKm={view?.fitRadiusKm}
-                markerShape="dot"
-                centerIcon="house"
-                centerLabel={t('admin.vacancyInvite.map.center')}
-                hoveredId={hoveredId}
-                onHover={setHoveredId}
-                selectedId={selectedPin}
-                onSelect={setSelectedPin}
-                placeholderText={t('admin.vacancyInvite.map.unavailable')}
-                className="!rounded-none !border-0"
                 height={mapHeight}
+                hoveredId={hoveredId}
+                selectedId={selectedPin}
+                onHover={setHoveredId}
+                onSelect={onPinSelect}
               />
+            ) : (
+              <InviteMapLoading address={address} />
             )}
           </div>
-          <div className="min-w-0" data-testid="invite-list-pane">
-            {loading ? <InviteListSkeleton /> : null}
+          <div className="flex min-w-0 flex-col" style={{ height: mapHeight }} data-testid="invite-list-pane">
+            {view && ctx && step ? (
+              <>
+                <InviteListHeader
+                  view={view}
+                  docOnly={docOnly}
+                  onSelectStep={selectStep}
+                  onToggleAll={(select) => setUnselected(setAllSelected(ctx, step, select))}
+                  onDocOnly={(on) => {
+                    const next = applyDocOnly(on, unselected, ctx.candidates);
+                    setDocOnly(next.docOnly);
+                    setUnselected(next.unselected);
+                  }}
+                />
+                <div className="min-h-0 flex-1 overflow-y-auto" data-testid="invite-rows">
+                  {view.rows.map((row) => (
+                    <InviteRow
+                      key={row.candidate.workerId}
+                      row={row}
+                      focused={selectedPin === row.candidate.workerId}
+                      highlighted={hoveredId === row.candidate.workerId}
+                      onToggle={(wid) => setUnselected(toggleOne(unselected, wid))}
+                      onNameClick={(wid) => setSelectedPin((cur) => (cur === wid ? null : wid))}
+                      onHover={setHoveredId}
+                    />
+                  ))}
+                </div>
+                <InviteListFooter
+                  footer={view.footer}
+                  step={step}
+                  invitedCount={results?.invitedCount ?? 0}
+                  onInvite={() => setDialog('confirm')}
+                  onMore={() => view.footer.more && selectStep(view.footer.more.km)}
+                  onFinish={() => setDialog('finish')}
+                />
+              </>
+            ) : (
+              <InviteListSkeleton />
+            )}
           </div>
         </div>
       )}

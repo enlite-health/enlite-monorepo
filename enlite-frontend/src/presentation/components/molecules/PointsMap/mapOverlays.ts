@@ -23,10 +23,12 @@ export function centerIcon(scale: number): google.maps.Symbol {
   return { path: google.maps.SymbolPath.CIRCLE, scale, fillColor: '#111827', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 };
 }
 
+// ⚑8 (contraste AAA): branco/#F227AF = 3,69:1 e #180149/#F227AF = 4,99:1 (ambos < 7) → o rosa do anel atual vira
+// BORDA + ponto, e o texto fica #180149 sobre branco (18,43:1). Concluído: #0A5540 sobre #E1F6EE = 7,80:1 (o canvas tinha #0B5E45 = 6,89:1).
 const TONES = {
-  idle: { bg: '#ffffff', fg: '#180149' },
-  current: { bg: '#F227AF', fg: '#ffffff' },
-  done: { bg: '#E1F6EE', fg: '#0B5E45' },
+  idle: { bg: '#ffffff', fg: '#180149', border: 'transparent' },
+  current: { bg: '#ffffff', fg: '#180149', border: '#F227AF' },
+  done: { bg: '#E1F6EE', fg: '#0A5540', border: 'transparent' },
 } as const;
 const SVG = 'xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 const HOUSE_SVG = `<svg ${SVG} width="16" height="16" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
@@ -45,8 +47,9 @@ export function ringLabelElement(text: string, tone: MapRing['labelTone']): HTML
   const el = document.createElement('div');
   const t = TONES[tone];
   el.setAttribute('data-testid', 'points-map-ring-label');
-  el.style.cssText = `background:${t.bg};color:${t.fg};font:500 11px/16px Lexend,sans-serif;padding:2px 8px;border-radius:100px;box-shadow:0 4px 8px rgba(0,0,0,.06);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;pointer-events:none`;
+  el.style.cssText = `background:${t.bg};color:${t.fg};font:500 11px/16px Lexend,sans-serif;padding:2px 8px;border:1.5px solid ${t.border};border-radius:100px;box-shadow:0 4px 8px rgba(0,0,0,.06);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;pointer-events:none`;
   if (tone === 'done') el.insertAdjacentHTML('beforeend', CHECK_SVG);
+  if (tone === 'current') el.insertAdjacentHTML('beforeend', '<span data-testid="points-map-ring-dot" style="width:6px;height:6px;border-radius:50%;background:#F227AF"></span>');
   el.appendChild(document.createTextNode(text));
   return el;
 }

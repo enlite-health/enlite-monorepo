@@ -53,6 +53,7 @@ export function InviteRow({ row, focused, highlighted, send, onToggle, onNameCli
       id={`invite-row-${id}`}
       data-testid={`invite-row-${id}`}
       data-focused={focused || undefined}
+      data-highlighted={highlighted || undefined}
       data-selected={row.selected}
       onMouseEnter={() => onHover(id)}
       onMouseLeave={() => onHover(null)}
