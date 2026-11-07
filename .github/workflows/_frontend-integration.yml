@@ -37,7 +37,8 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2]
-    runs-on: ubuntu-latest
+    # ubuntu-latest virou 26.04 (11/2026) e o Playwright fixado não instala o Chromium lá — fixado até subir o Playwright.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       E2E_BACKEND_URL: http://localhost:8080
@@ -362,7 +363,8 @@ jobs:
   #                           `ANACARE_SYNC_E2E_ERROR_SCENARIO=1` os outros cenários da spec
   #                           seriam pulados por `test.skip`.
   integration-e2e-anacare-hours:
-    runs-on: ubuntu-latest
+    # ubuntu-latest virou 26.04 (11/2026) e o Playwright fixado não instala o Chromium lá — fixado até subir o Playwright.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       E2E_BACKEND_URL: http://localhost:8080
@@ -560,7 +562,8 @@ jobs:
   # `PERMISSION_ENFORCED_ROUTES`, não só `admin.patients` do Ana Care), e não
   # há cenário de ERRO que exija recriar a API no meio do job.
   integration-e2e-group-simulation:
-    runs-on: ubuntu-latest
+    # ubuntu-latest virou 26.04 (11/2026) e o Playwright fixado não instala o Chromium lá — fixado até subir o Playwright.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       E2E_BACKEND_URL: http://localhost:8080
