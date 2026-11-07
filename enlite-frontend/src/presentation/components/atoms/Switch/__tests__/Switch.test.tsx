@@ -27,6 +27,14 @@ describe('Switch', () => {
     expect(sw).toHaveClass('bg-gray-600');
   });
 
+  it('desligado tem anel gray-800 (contraste 4,74:1 do limite); ligado não', async () => {
+    render(<Harness />);
+    const sw = screen.getByRole('switch');
+    expect(sw).toHaveClass('ring-1', 'ring-gray-800');
+    await userEvent.click(sw);
+    expect(sw).not.toHaveClass('ring-gray-800');
+  });
+
   it('Space e Enter alternam pelo teclado', async () => {
     render(<Harness />);
     const sw = screen.getByRole('switch');
