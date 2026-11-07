@@ -40,7 +40,7 @@ export function InviteListFooter({ footer, step, invitedCount, inviteDisabledRea
         </Text>
       )}
       {showMoreSecondary && (
-        <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-more-secondary" onClick={onMore} className="min-w-0 truncate">{moreLabel}</Button>
+        <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-more-secondary" onClick={onMore} className="min-w-0 !h-auto min-h-10 whitespace-normal py-1.5 text-center !leading-4">{moreLabel}</Button>
       )}
       {showFinishSecondary && (
         <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-finish-secondary" onClick={onFinish}>{t('admin.vacancyInvite.footer.finish')}</Button>

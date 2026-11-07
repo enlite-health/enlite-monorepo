@@ -215,7 +215,7 @@ export default function VacancyInvitePage(): JSX.Element {
         <ArrowLeft size={16} aria-hidden="true" />
         {t('admin.vacancyInvite.back')}
       </Button>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[190px] flex-1">
         <Heading level={3} as="h1" weight="semibold" color="primary" className="truncate !leading-7" data-testid="invite-title">
           {t('admin.vacancyInvite.title')}
         </Heading>

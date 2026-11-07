@@ -88,7 +88,7 @@ export function InviteMapPane({ view, center, height, hoveredId, selectedId, onH
         </div>
       )}
       {hasPins && (
-      <ul data-testid="invite-map-legend" className={`absolute bottom-8 left-4 right-4 flex flex-nowrap items-center justify-between gap-3 px-3 py-2.5 ${CARD}`}>
+      <ul data-testid="invite-map-legend" className={`absolute bottom-8 left-4 right-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 ${CARD}`}>
         <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="bg-[#F227AF]" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.selected')}</Text></li>
         <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="bg-primary" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.unselected')}</Text></li>
         <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="!border-gray-800 bg-white" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.invited')}</Text></li>

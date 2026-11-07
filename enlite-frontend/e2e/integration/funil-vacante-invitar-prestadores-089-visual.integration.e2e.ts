@@ -107,6 +107,7 @@ test.describe('funil da vacante — Invitar prestadores, visual por estado (089 
     await loginComoStaffMock(page, MOCK_STAFF, 'E2E Invitar 089 Visual');
     await gotoVacancy(page, seed.vacancyA.vacancyId);
     await expect(page.getByTestId('invite-entry-count')).toHaveText(String(seed.pending.length));
+    await page.getByTestId(ENTRY).scrollIntoViewIfNeeded(); // o botão tem de aparecer no print
     await shot(page, 'E0-botao-na-vacante');
   });
 
