@@ -200,7 +200,20 @@ describe('VacancyInvitePage (T026a)', () => {
     expect(screen.getByTestId('invite-vacante-note')).toHaveTextContent('vacanteNote.far{"count":1}');
     expect(screen.getByTestId('invite-vacante-note')).toHaveTextContent('vacanteNote.noLocation{"count":1}');
     expect(screen.queryByTestId('invite-profile-note')).toBeNull();
+    // sem nenhum pino (um a 61 km, outro sem ubicación): sem legenda e sem dica (089 C)
+    expect(screen.queryByTestId('invite-map-legend')).toBeNull();
+    expect(screen.queryByTestId('invite-map-hint')).toBeNull();
+  });
+
+  it('com pino: legenda sempre; dica "Tocá un punto…" só fora do passo vacante (a nota amarela ocupa o topo) (089 C)', () => {
+    board.value = ready([cand('a', 3), cand('near', 23, { source: 'manual' })], ['a']);
+    const { unmount } = renderPage('/admin/vacancies/v1/match?paso=vacante');
     expect(screen.getByTestId('invite-map-legend')).toBeInTheDocument();
+    expect(screen.queryByTestId('invite-map-hint')).toBeNull();
+    unmount();
+    renderPage('/admin/vacancies/v1/match?paso=5');
+    expect(screen.getByTestId('invite-map-legend')).toBeInTheDocument();
+    expect(screen.getByTestId('invite-map-hint')).toBeInTheDocument();
   });
 
   describe('envio (T026c)', () => {

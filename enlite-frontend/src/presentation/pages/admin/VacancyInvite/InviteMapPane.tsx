@@ -23,8 +23,9 @@ interface Props {
   onSelect: (id: string | null) => void;
 }
 
+/** Ponto da legenda com o mesmo estilo do pino do mapa: borda branca + anel de 1 px (`dotIcon`). */
 function Dot({ className, style }: { className?: string; style?: React.CSSProperties }): JSX.Element {
-  return <span aria-hidden="true" className={`inline-block h-3 w-3 shrink-0 rounded-full ${className ?? ''}`} style={style} />;
+  return <span aria-hidden="true" className={`inline-block h-3 w-3 shrink-0 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(24,1,73,.35)] ${className ?? ''}`} style={style} />;
 }
 
 /** L.1–L.9 — mapa com centro fixo, anéis, pinos-ponto, legenda, dica e a nota do passo vacante. */
@@ -49,6 +50,9 @@ export function InviteMapPane({ view, center, height, hoveredId, selectedId, onH
     labelTone: r.tone,
   }));
   const note = view.vacanteNote;
+  // Sem pinos (E8) não há o que explicar: sem dica e sem legenda. No passo vacante a nota amarela ocupa o topo: sem dica.
+  const hasPins = points.length > 0;
+  const showHint = hasPins && view.step !== 'vacante';
 
   return (
     <div className="relative" data-testid="invite-map-pane-map">
@@ -70,7 +74,7 @@ export function InviteMapPane({ view, center, height, hoveredId, selectedId, onH
         height={height}
       />
       {note && (
-        <div data-testid="invite-vacante-note" className="absolute left-4 top-4 max-w-[300px] rounded-xl bg-[#FFF4D6] px-3 py-2.5 text-[#5C3B00]">
+        <div data-testid="invite-vacante-note" className="absolute left-4 top-4 max-w-[300px] rounded-xl bg-[#FFF4D6] px-3 py-2.5 text-[#5C3B00] shadow-[0_4px_8px_rgba(0,0,0,.08)]">
           <Text size="xs" color="inherit">
             {t('admin.vacancyInvite.map.vacanteNote.intro')}
             {note.farCount > 0 && ` ${t('admin.vacancyInvite.map.vacanteNote.far', { count: note.farCount })}`}
@@ -78,15 +82,19 @@ export function InviteMapPane({ view, center, height, hoveredId, selectedId, onH
           </Text>
         </div>
       )}
-      <div data-testid="invite-map-hint" className={`absolute right-4 top-4 px-3 py-2 ${CARD}`}>
-        <Text size="xs" color="primary">{t('admin.vacancyInvite.map.hint')}</Text>
-      </div>
-      <ul data-testid="invite-map-legend" className={`absolute bottom-4 left-4 flex items-center gap-4 px-3.5 py-2.5 ${CARD}`}>
-        <li className="flex items-center gap-2"><Dot className="bg-[#F227AF]" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.selected')}</Text></li>
-        <li className="flex items-center gap-2"><Dot className="bg-primary" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.unselected')}</Text></li>
-        <li className="flex items-center gap-2"><Dot className="border-2 border-gray-800 bg-white" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.invited')}</Text></li>
-        <li className="flex items-center gap-2"><Dot className="!h-3.5 !w-3.5 bg-[#111827]" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.service')}</Text></li>
+      {showHint && (
+        <div data-testid="invite-map-hint" className={`absolute right-4 top-4 px-3 py-2 ${CARD}`}>
+          <Text size="xs" color="primary">{t('admin.vacancyInvite.map.hint')}</Text>
+        </div>
+      )}
+      {hasPins && (
+      <ul data-testid="invite-map-legend" className={`absolute bottom-8 left-4 right-4 flex flex-nowrap items-center justify-between gap-3 px-3 py-2.5 ${CARD}`}>
+        <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="bg-[#F227AF]" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.selected')}</Text></li>
+        <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="bg-primary" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.unselected')}</Text></li>
+        <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="!border-gray-800 bg-white" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.invited')}</Text></li>
+        <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="!h-3.5 !w-3.5 bg-[#111827]" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.service')}</Text></li>
       </ul>
+      )}
     </div>
   );
 }
