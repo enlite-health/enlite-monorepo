@@ -22,13 +22,13 @@ vi.mock('@presentation/hooks/useCellAccess', () => ({
 }));
 vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
   PointsMap: (p: {
-    rings?: unknown[]; fitRadiusKm?: number; points: Array<{ id: string; style?: { sizePx: number } }>;
+    rings?: unknown[]; fitRadiusKm?: number; centerLabel?: string; points: Array<{ id: string; tooltip?: string; style?: { sizePx: number } }>;
     hoveredId?: string | null; selectedId?: string | null;
     onHover?: (id: string | null) => void; onSelect?: (id: string | null) => void;
   }) => (
-    <div data-testid="points-map-stub" data-rings={p.rings?.length} data-fit={p.fitRadiusKm} data-hovered={p.hoveredId ?? ''} data-selected={p.selectedId ?? ''}>
+    <div data-testid="points-map-stub" data-rings={p.rings?.length} data-fit={p.fitRadiusKm} data-hovered={p.hoveredId ?? ''} data-selected={p.selectedId ?? ''} data-center-label={p.centerLabel}>
       {p.points.map((pt) => (
-        <button key={pt.id} type="button" data-testid={`pin-${pt.id}`} data-size={pt.style?.sizePx}
+        <button key={pt.id} type="button" data-testid={`pin-${pt.id}`} data-size={pt.style?.sizePx} data-tooltip={pt.tooltip}
           onMouseEnter={() => p.onHover?.(pt.id)} onMouseLeave={() => p.onHover?.(null)} onClick={() => p.onSelect?.(pt.id)} />
       ))}
     </div>
@@ -341,5 +341,12 @@ describe('VacancyInvitePage (T026a)', () => {
       expect(btn).toBeDisabled();
       expect(btn).toHaveAttribute('title', 'access.actionDenied');
     });
+  });
+
+  it('mapa: o ponto recebe o tooltip do inventário e o centro o rótulo traduzido', () => {
+    board.value = ready([cand('a', 1.25)], ['a']);
+    renderPage('/admin/vacancies/v1/match?paso=5');
+    expect(screen.getByTestId('pin-a')).toHaveAttribute('data-tooltip', 'admin.vacancyInvite.map.pin{"name":"a","distance":"1,3"}');
+    expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-center-label', 'admin.vacancyInvite.map.center');
   });
 });

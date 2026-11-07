@@ -7361,7 +7361,7 @@
         "text": "Você não tem permissão para convidar prestadores para esta vaga."
       },
       "map": {
-        "center": "Local do serviço, fixo para esta vaga",
+        "center": "Local do serviço · fixo para esta vaga",
         "unavailable": "O mapa não está disponível. A lista continua funcionando.",
         "legend": {
           "selected": "Escolhido para convidar",
@@ -7374,7 +7374,9 @@
           "intro": "Estas pessoas chegaram por outro caminho e podem estar longe.",
           "far": "{{count}} a mais de 50 km (fora do mapa).",
           "noLocation": "{{count}} sem localização."
-        }
+        },
+        "pin": "{{name}}, {{distance}} km. Mostrar na lista",
+        "pinNoDistance": "{{name}}. Mostrar na lista"
       },
       "steps": {
         "label": "Distância do local do serviço",

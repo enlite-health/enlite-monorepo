@@ -36,7 +36,10 @@ export function InviteMapPane({ view, center, height, hoveredId, selectedId, onH
     lng: p.lng,
     title: p.workerName,
     color: p.style.fill,
-    tooltip: `${p.workerName} · ${p.distanceKm.toFixed(1)} km`,
+    // Inventário L.6: "{nome}, {d} km. Mostrar en la lista" (sem distância: "{nome}. Mostrar en la lista").
+    tooltip: Number.isFinite(p.distanceKm)
+      ? t('admin.vacancyInvite.map.pin', { name: p.workerName, distance: p.distanceKm.toFixed(1).replace('.', ',') })
+      : t('admin.vacancyInvite.map.pinNoDistance', { name: p.workerName }),
     style: p.style,
   }));
   const rings: MapRing[] = view.rings.map((r) => ({

@@ -53,6 +53,8 @@ describe('admin.vacancyInvite — i18n (089 CA-15)', () => {
     expect((es.confirm as Tree).note).toBe('Los mensajes salen apenas confirmás y no se pueden cancelar.');
     expect((es.noService as Tree).title).toBe('No sabemos dónde es el servicio');
     expect((es.nobody as Tree).title).toBe('No encontramos prestadores hasta 50 km');
+    expect((es.map as Tree).center).toBe('Lugar del servicio · fijo para esta vacante');
+    expect((es.map as Tree).pin).toBe('{{name}}, {{distance}} km. Mostrar en la lista');
     expect((es.docs as Tree).switch).toBe('Solo con documentos completos');
   });
 });

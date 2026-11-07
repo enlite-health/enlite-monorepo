@@ -7440,7 +7440,7 @@
         "text": "No tenés permiso para invitar prestadores a esta vacante."
       },
       "map": {
-        "center": "Lugar del servicio, fijo para esta vacante",
+        "center": "Lugar del servicio · fijo para esta vacante",
         "unavailable": "El mapa no está disponible. La lista sigue funcionando.",
         "legend": {
           "selected": "Elegido para invitar",
@@ -7453,7 +7453,9 @@
           "intro": "Estas personas llegaron por otro camino y pueden estar lejos.",
           "far": "{{count}} a más de 50 km (fuera del mapa).",
           "noLocation": "{{count}} sin ubicación."
-        }
+        },
+        "pin": "{{name}}, {{distance}} km. Mostrar en la lista",
+        "pinNoDistance": "{{name}}. Mostrar en la lista"
       },
       "steps": {
         "label": "Distancia del lugar del servicio",
