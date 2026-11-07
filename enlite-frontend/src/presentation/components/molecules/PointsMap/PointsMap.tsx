@@ -39,13 +39,33 @@ export interface MapPoint {
   color: string;
   /** Rota interna aberta a partir do balão (ex.: /admin/workers/:id). */
   href?: string;
+  /** Aparência do pino em `markerShape='dot'` (ignorado em 'pin'). */
+  style?: { fill: string; stroke: string; strokeWeight: number; sizePx: number; outline?: boolean };
+}
+
+/** Anel estilizado (089 §9.4). O rótulo chega pronto/traduzido pela página. */
+export interface MapRing {
+  radiusKm: number;
+  stroke: string;
+  strokeWeight: number;
+  fill: string;
+  fillOpacity: number;
+  label: string;
+  labelTone: 'current' | 'done' | 'idle';
 }
 
 export interface PointsMapProps {
   points: MapPoint[];
   center: { lat: number; lng: number };
   radiusKm: number | null;
-  onCenterChange: (c: { lat: number; lng: number }) => void;
+  /** Ausente ⇒ o clique no mapa não é ouvido (centro fixo). */
+  onCenterChange?: (c: { lat: number; lng: number }) => void;
+  /** N círculos estilizados; com ele o `radiusKm` legado é ignorado. */
+  rings?: MapRing[];
+  /** Enquadra o círculo deste raio (fitBounds, padding 24); ausente ⇒ zoom 11. */
+  fitRadiusKm?: number;
+  markerShape?: 'pin' | 'dot';
+  centerIcon?: 'dot' | 'house';
   /** Id do ponto a destacar (abre o balão e leva a viewport até ele). */
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
@@ -93,6 +113,72 @@ const PIN_PATH =
 /** Ponto do centro do raio. `scale` maior = pulso de confirmação do clique. */
 function centerIcon(scale: number): google.maps.Symbol {
   return { path: google.maps.SymbolPath.CIRCLE, scale, fillColor: '#111827', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 };
+}
+
+const TONES = {
+  idle: { bg: '#ffffff', fg: '#180149' },
+  current: { bg: '#F227AF', fg: '#ffffff' },
+  done: { bg: '#E1F6EE', fg: '#0B5E45' },
+} as const;
+const SVG = 'xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const HOUSE_SVG = `<svg ${SVG} width="16" height="16" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
+const CHECK_SVG = `<svg ${SVG} width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`;
+
+function houseElement(): HTMLElement {
+  const el = document.createElement('div');
+  el.setAttribute('data-testid', 'points-map-center-house');
+  el.style.cssText = 'width:34px;height:34px;border-radius:50%;background:#111827;border:3px solid #fff;box-shadow:0 4px 10px rgba(0,0,0,.25);color:#fff;display:flex;align-items:center;justify-content:center;pointer-events:none;box-sizing:border-box';
+  el.innerHTML = HOUSE_SVG;
+  return el;
+}
+
+function ringLabelElement(text: string, tone: MapRing['labelTone']): HTMLElement {
+  const el = document.createElement('div');
+  const t = TONES[tone];
+  el.setAttribute('data-testid', 'points-map-ring-label');
+  el.style.cssText = `background:${t.bg};color:${t.fg};font:500 11px/16px Lexend,sans-serif;padding:2px 8px;border-radius:100px;box-shadow:0 4px 8px rgba(0,0,0,.06);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;pointer-events:none`;
+  if (tone === 'done') el.insertAdjacentHTML('beforeend', CHECK_SVG);
+  el.appendChild(document.createTextNode(text));
+  return el;
+}
+
+interface HtmlOverlay { setMap: (m: google.maps.Map | null) => void; setPosition: (p: google.maps.LatLngLiteral) => void }
+/** Elemento HTML ancorado numa coordenada (OverlayView criado sob demanda: `google` só existe após o load). */
+function htmlOverlay(el: HTMLElement, position: google.maps.LatLngLiteral, anchor: 'center' | 'top'): HtmlOverlay {
+  class O extends google.maps.OverlayView {
+    pos = position;
+    onAdd(): void { this.getPanes()?.overlayLayer.appendChild(el); }
+    draw(): void {
+      const pt = this.getProjection()?.fromLatLngToDivPixel(new google.maps.LatLng(this.pos));
+      if (!pt) return;
+      el.style.position = 'absolute';
+      el.style.left = `${pt.x}px`;
+      el.style.top = `${pt.y}px`;
+      el.style.transform = `translate(-50%, ${anchor === 'top' ? '-100%' : '-50%'})`;
+    }
+    onRemove(): void { el.remove(); }
+  }
+  const o = new O();
+  return { setMap: (m) => o.setMap(m), setPosition: (p) => { o.pos = p; o.draw(); } };
+}
+
+/** Bounds (literal) do círculo de `km` ao redor de `c` — sem depender de classe do SDK. */
+function circleBounds(c: { lat: number; lng: number }, km: number): google.maps.LatLngBoundsLiteral {
+  const dLat = km / 111.32;
+  const dLng = km / (111.32 * Math.max(Math.cos((c.lat * Math.PI) / 180), 0.01));
+  return { north: c.lat + dLat, south: c.lat - dLat, east: c.lng + dLng, west: c.lng - dLng };
+}
+
+function dotIcon(p: MapPoint, emphasized: boolean): google.maps.Symbol {
+  const st = p.style ?? { fill: p.color, stroke: '#ffffff', strokeWeight: 2, sizePx: 12 };
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    scale: st.sizePx / 2,
+    fillColor: st.fill,
+    fillOpacity: 1,
+    strokeColor: emphasized && st.outline ? '#180149' : st.stroke,
+    strokeWeight: emphasized && st.outline ? st.strokeWeight + 1.5 : st.strokeWeight,
+  };
 }
 
 function pinIcon(color: string, emphasized = false): google.maps.Symbol {
@@ -160,6 +246,10 @@ export function PointsMap({
   center,
   radiusKm,
   onCenterChange,
+  rings,
+  fitRadiusKm,
+  markerShape = 'pin',
+  centerIcon: centerIconKind = 'dot',
   selectedId = null,
   onSelect,
   hoveredId = null,
@@ -179,6 +269,11 @@ export function PointsMap({
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
   const circleRef = useRef<google.maps.Circle | null>(null);
   const centerMarkerRef = useRef<google.maps.Marker | null>(null);
+  const houseRef = useRef<HtmlOverlay | null>(null);
+  const ringsRef = useRef<Array<{ circle: google.maps.Circle; label: HtmlOverlay }>>([]);
+  const iconFor = (p: MapPoint, on = false): google.maps.Symbol => (markerShape === 'dot' ? dotIcon(p, on) : pinIcon(p.color, on));
+  const hasRings = !!rings;
+  const ringsKey = JSON.stringify(rings ?? null);
   const infoRef = useRef<google.maps.InfoWindow | null>(null);
   /** Nó estável para o React desenhar dentro do balão do Google. */
   const infoNodeRef = useRef<HTMLDivElement>(document.createElement('div'));
@@ -213,10 +308,12 @@ export function PointsMap({
             { featureType: 'transit', stylers: [{ visibility: 'off' }] },
           ],
         });
-        map.addListener('click', (e: google.maps.MapMouseEvent) => {
-          const ll = e.latLng;
-          if (ll) onCenterChangeRef.current({ lat: ll.lat(), lng: ll.lng() });
-        });
+        if (onCenterChangeRef.current) {
+          map.addListener('click', (e: google.maps.MapMouseEvent) => {
+            const ll = e.latLng;
+            if (ll) onCenterChangeRef.current?.({ lat: ll.lat(), lng: ll.lng() });
+          });
+        }
         map.addListener('tilesloaded', () => setTilesLoaded(true));
         // `headerDisabled`: a faixa de header do Google (com o X dele) some — era
         // ela a área branca acima do conteúdo. O fechar passa a ser do cartão.
@@ -241,8 +338,15 @@ export function PointsMap({
   useEffect(() => {
     const map = mapRef.current;
     if (status !== 'ready' || !map) return;
-    map.panTo(center);
-    if (!centerMarkerRef.current) {
+    if (fitRadiusKm === undefined) map.panTo(center);
+    if (centerIconKind === 'house') {
+      if (!houseRef.current) {
+        houseRef.current = htmlOverlay(houseElement(), center, 'center');
+        houseRef.current.setMap(map);
+      } else {
+        houseRef.current.setPosition(center);
+      }
+    } else if (!centerMarkerRef.current) {
       centerMarkerRef.current = new google.maps.Marker({ map, position: center, zIndex: 1000, icon: centerIcon(CENTER_SCALE) });
     } else {
       centerMarkerRef.current.setPosition(center);
@@ -254,7 +358,7 @@ export function PointsMap({
       if (pulseRef.current !== null) window.clearTimeout(pulseRef.current);
       pulseRef.current = window.setTimeout(() => centerMarkerRef.current?.setIcon(centerIcon(CENTER_SCALE)), PULSE_MS);
     }
-    if (radiusKm === null) {
+    if (radiusKm === null || hasRings) {
       circleRef.current?.setMap(null);
       circleRef.current = null;
       return;
@@ -275,7 +379,36 @@ export function PointsMap({
       circleRef.current.setCenter(center);
       circleRef.current.setRadius(radiusKm * 1000);
     }
-  }, [status, center, radiusKm]);
+  }, [status, center, radiusKm, hasRings, centerIconKind, fitRadiusKm]);
+
+  // 2b. Anéis estilizados + rótulo no topo (substituem o círculo legado).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== 'ready' || !map || !rings) return;
+    ringsRef.current = rings.map((r) => {
+      const circle = new google.maps.Circle({
+        map, center, radius: r.radiusKm * 1000, fillColor: r.fill, fillOpacity: r.fillOpacity,
+        strokeColor: r.stroke, strokeOpacity: 1, strokeWeight: r.strokeWeight, clickable: false,
+      });
+      const top = { lat: center.lat + r.radiusKm / 111.32, lng: center.lng };
+      const label = htmlOverlay(ringLabelElement(r.label, r.labelTone), top, 'top');
+      label.setMap(map);
+      return { circle, label };
+    });
+    return () => {
+      ringsRef.current.forEach(({ circle, label }) => { circle.setMap(null); label.setMap(null); });
+      ringsRef.current = [];
+    };
+    // `rings` entra por `ringsKey` (identidade nova a cada render da página não recria).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, center, ringsKey]);
+
+  // 2c. Enquadramento pelo raio.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== 'ready' || !map || fitRadiusKm === undefined) return;
+    map.fitBounds(circleBounds(center, fitRadiusKm), 24);
+  }, [status, center, fitRadiusKm]);
 
   // 3. Marcadores: diff por id (o Google cobra por tile, não por marker — mas
   //    recriar 1.500 pinos a cada filtro trava a UI).
@@ -294,11 +427,11 @@ export function PointsMap({
       const existing = markersRef.current.get(id);
       if (existing) {
         existing.setPosition(position);
-        existing.setIcon(pinIcon(p.color));
+        existing.setIcon(iconFor(p));
         existing.setTitle(p.tooltip ?? p.title);
         continue;
       }
-      const marker = new google.maps.Marker({ map, position, title: p.tooltip ?? p.title, icon: pinIcon(p.color) });
+      const marker = new google.maps.Marker({ map, position, title: p.tooltip ?? p.title, icon: iconFor(p), ...(markerShape === 'dot' ? { optimized: false } : {}) });
       marker.addListener('click', () => onSelectRef.current?.(id));
       marker.addListener('mouseover', () => onHoverRef.current?.(id));
       marker.addListener('mouseout', () => onHoverRef.current?.(null));
@@ -316,7 +449,7 @@ export function PointsMap({
       const p = points.find((x) => x.id === id);
       if (!marker || !p) continue;
       const on = next.has(id);
-      marker.setIcon(pinIcon(p.color, on));
+      marker.setIcon(iconFor(p, on));
       marker.setZIndex(on ? 900 : null);
     }
     emphasizedRef.current = next;
@@ -367,6 +500,10 @@ export function PointsMap({
         data-map-status={status}
         data-markers={status === 'ready' ? markersCount : 0}
         data-tiles={tilesLoaded ? 'loaded' : 'pending'}
+        data-rings={rings ? rings.map((r) => r.radiusKm).join(',') : undefined}
+        data-fit-radius-km={fitRadiusKm}
+        data-center={`${center.lat},${center.lng}`}
+        data-selected-id={selectedId ?? undefined}
       />
       {selectedPoint && createPortal(
         <InfoCard
