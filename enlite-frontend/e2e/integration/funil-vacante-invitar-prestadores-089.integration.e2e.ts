@@ -144,9 +144,9 @@ function annotateMap(testInfo: TestInfo, status: string): void {
 test.use({ video: process.env.E2E_089_VIDEO ? 'on' : 'off' });
 
 test.describe('funil da vacante — Invitar prestadores, pela borda (089 T043) @integration', () => {
-  // Viewport 1920×1080: com a barra lateral aberta, a 1440 a coluna da lista fica estreita e o link "Ver perfil" cobre o nome.
+  // Viewport do canvas (1440×900), com a barra lateral do admin ABERTA: o nome tem de ser clicável (R1 da spec).
   test.use({
-    viewport: { width: 1920, height: 1080 },
+    viewport: { width: 1440, height: 900 },
     locale: 'es-AR',
     timezoneId: 'America/Argentina/Buenos_Aires',
   });
@@ -241,8 +241,12 @@ test.describe('funil da vacante — Invitar prestadores, pela borda (089 T043) @
     expect(readMessagedAt(v02.workerId, idA())).not.toBeNull();
     expect(readMessagedAt(v03.workerId, idA())).not.toBeNull();
     expect(countMessagedAt(idA())).toBe(messagedBefore + 2);
-    // na tela (após o GET pós-envio): "Ya en la vacante" só lista quem ainda NÃO recebeu → esvazia; o cartão conta 2 invitados
-    await expect(rowOf(page, v02)).toHaveCount(0);
+    // na tela (após o GET pós-envio): as linhas enviadas NESTA visita ficam listadas como "Invitado hoy", sem caixa (F4/RF-14)
+    for (const w of [v02, v03]) {
+      await expect(rowOf(page, w)).toBeVisible();
+      await expect(page.getByTestId(`invite-row-badge-${w.workerId}`)).toHaveText('Invitado hoy');
+      await expect(rowCheck(page, w)).toHaveCount(0);
+    }
     await expect(counter(page)).toHaveText('Todos ya invitados');
     await expect(page.getByTestId('invite-step-vacante')).toContainText('2 invitados');
     await expect(page.getByTestId('invite-invited-total')).toHaveText(`Invitados en esta vacante: ${messagedBefore + 2}`);
