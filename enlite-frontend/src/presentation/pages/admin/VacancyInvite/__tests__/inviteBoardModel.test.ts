@@ -122,6 +122,47 @@ describe('resultado do match e "Ya en la vacante" (⚑4)', () => {
   });
 });
 
+describe('"Ya en la vacante" depois do envio (F4/RF-14, 089 T043)', () => {
+  const sentNow = '2026-11-06T18:00:00Z';
+  const cs = [
+    cand({ id: 'a', source: 'manual', messagedAt: sentNow }),
+    cand({ id: 'b', source: 'manual', messagedAt: sentNow }),
+    cand({ id: 'c', source: 'manual' }),
+    cand({ id: 'old', source: 'manual', messagedAt: '2026-11-03T12:00:00Z' }),
+  ];
+
+  it('quem saiu NESTA visita continua listado, sem caixa, como "Invitado hoy"; o enviado em outra visita não volta', () => {
+    const ctx = ctxOf(cs, [], { sentVacante: new Set(['a', 'b']), sent: { vacante: 2 }, operationDate: '2026-11-06', timeZone: 'America/Argentina/Buenos_Aires' });
+    expect(ids(stepCandidates(ctx, 'vacante'))).toEqual(['a', 'b', 'c']);
+    const rows = buildBoardView(ctx, 'vacante').rows;
+    expect(rows.map((r) => [r.candidate.workerId, r.selectable, r.badge?.kind ?? null])).toEqual([
+      ['a', false, 'today'],
+      ['b', false, 'today'],
+      ['c', true, null],
+    ]);
+    expect(buildBoardView(ctx, 'vacante').selection).toMatchObject({ pending: 1, selected: 1 });
+  });
+
+  it('sem sentVacante a lista esvazia do que já saiu (regra do ⚑4 intacta)', () => {
+    const ctx = ctxOf(cs, [], { sent: { vacante: 2 } });
+    expect(ids(stepCandidates(ctx, 'vacante'))).toEqual(['c']);
+  });
+
+  it('tudo enviado: lista mantém as linhas, 0 pendentes, rodapé "after"', () => {
+    const only = [cs[0], cs[1]];
+    const ctx = ctxOf(only, [], { sentVacante: new Set(['a', 'b']), sent: { vacante: 2 }, operationDate: '2026-11-06', timeZone: 'America/Argentina/Buenos_Aires' });
+    const v = buildBoardView(ctx, 'vacante');
+    expect(v.rows).toHaveLength(2);
+    expect(v.selection.allInvited).toBe(true);
+    expect(v.footer.mode).toBe('after');
+  });
+
+  it('quem está no resultado do match nunca entra por sentVacante', () => {
+    const ctx = ctxOf(cs, ['a'], { sentVacante: new Set(['a', 'b']) });
+    expect(ids(stepCandidates(ctx, 'vacante'))).not.toContain('a');
+  });
+});
+
 describe('passo de abertura', () => {
   const cs = [cand({ id: 'v', source: 'manual', documentStatus: 'pending' }), cand({ id: 'r' })];
 

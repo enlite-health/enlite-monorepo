@@ -127,7 +127,7 @@ export default function VacancyInvitePage(): JSX.Element {
     setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('paso', String(step)); return n; }, { replace: true, state: location.state });
   }, [board.status, step, searchParams, setSearchParams, location.state]);
 
-  const { sentByStep, localMessaged, rowSend, enqueue, outcomeOf } = useInviteSending(id, String(step), board.refetch);
+  const { sentByStep, sentVacante, localMessaged, rowSend, enqueue, outcomeOf } = useInviteSending(id, String(step), board.refetch);
   // Contexto de desenho: o do servidor + o que já saiu nesta visita (transitório até o GET pós-envio).
   const viewCtx: BoardContext | null = useMemo(
     () =>
@@ -135,8 +135,9 @@ export default function VacancyInvitePage(): JSX.Element {
         ...ctx,
         candidates: ctx.candidates.map((c) => (localMessaged[c.workerId] ? { ...c, messagedAt: localMessaged[c.workerId] } : c)),
         sent: sentByStep,
+        sentVacante,
       },
-    [ctx, localMessaged, sentByStep],
+    [ctx, localMessaged, sentByStep, sentVacante],
   );
 
   const goBack = (): void => {

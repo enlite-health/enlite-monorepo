@@ -42,6 +42,8 @@ export interface BoardContext {
   unselected: ReadonlySet<string>;
   /** quantos saíram em cada passo NESTA visita (chave = String(step)). */
   sent?: Readonly<Record<string, number>>;
+  /** ids que saíram do passo "Ya en la vacante" NESTA visita: ficam na lista como "Invitado hoy" (F4/RF-14). */
+  sentVacante?: ReadonlySet<string>;
   /** `operationDate` do servidor ('YYYY-MM-DD'). */
   operationDate?: string;
   /** IANA do país da vacante; default = fuso do operador (Buenos Aires). */
@@ -85,13 +87,14 @@ export function matchResult(
 export function alreadyInVacancy(
   candidates: readonly SavedCandidate[],
   currentIds: ReadonlySet<string>,
+  /** enviados deste passo nesta visita: continuam listados (já convidados, sem caixa). */
+  keepSent?: ReadonlySet<string>,
 ): SavedCandidate[] {
   return candidates.filter(
     (c) =>
-      c.funnelStage === 'INVITED' &&
-      c.messagedAt == null &&
-      !c.replied &&
-      !currentIds.has(c.workerId),
+      !currentIds.has(c.workerId) &&
+      ((keepSent?.has(c.workerId) ?? false) ||
+        (c.funnelStage === 'INVITED' && c.messagedAt == null && !c.replied)),
   );
 }
 
@@ -120,7 +123,7 @@ export function openingStep(
 
 /** Linhas do passo ANTES do interruptor (para contar completos × faltan). */
 export function stepCandidatesUnfiltered(ctx: BoardContext, step: StepId): SavedCandidate[] {
-  if (step === 'vacante') return alreadyInVacancy(ctx.candidates, ctx.currentIds);
+  if (step === 'vacante') return alreadyInVacancy(ctx.candidates, ctx.currentIds, ctx.sentVacante);
   const band = bandOfStep(step);
   return matchResult(ctx.candidates, ctx.currentIds).filter((c) => inBand(c.distanceKm, band));
 }

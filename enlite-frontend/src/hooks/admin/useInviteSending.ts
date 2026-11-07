@@ -25,6 +25,7 @@ export function useInviteSending(vacancyId: string | undefined, step: string, re
   refetchRef.current = refetch;
   const wasSending = useRef(isSending);
   const [sentByStep, setSentByStep] = useState<Record<string, number>>({});
+  const [sentVacante, setSentVacante] = useState<ReadonlySet<string>>(() => new Set());
   const [failed, setFailed] = useState<Record<string, { step: string; text: string }>>({});
   const [localMessaged, setLocalMessaged] = useState<Record<string, string>>({});
 
@@ -40,6 +41,11 @@ export function useInviteSending(vacancyId: string | undefined, step: string, re
       setSentByStep((cur) => {
         const next = { ...cur };
         for (const i of ok) next[stepFor(i.workerId)] = (next[stepFor(i.workerId)] ?? 0) + 1;
+        return next;
+      });
+      setSentVacante((cur) => {
+        const next = new Set(cur);
+        for (const i of ok) if (stepFor(i.workerId) === 'vacante') next.add(i.workerId);
         return next;
       });
       setFailed((cur) => {
@@ -77,5 +83,5 @@ export function useInviteSending(vacancyId: string | undefined, step: string, re
     failed: Object.values(failed).filter((f) => f.step === stepKey).length,
   });
 
-  return { isSending, sentByStep, localMessaged, rowSend, enqueue, outcomeOf };
+  return { isSending, sentByStep, sentVacante, localMessaged, rowSend, enqueue, outcomeOf };
 }
