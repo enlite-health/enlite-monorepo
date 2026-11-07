@@ -15,11 +15,12 @@
  * Estado exposto ao DOM (`data-map-status`, `data-markers`) para o E2E
  * afirmar sem depender de tiles — o canvas do Google não é determinístico.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouteOverlay, type RouteOverlayLeg } from './useRouteOverlay';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
-import { ArrowRight, Crosshair, MapPin, X } from 'lucide-react';
+import { MapPin } from 'lucide-react';
+import { InfoCard } from './PointsMapInfoCard';
+import { centerIcon, circleBounds, dotIcon, hideCollidingRingLabels, houseElement, htmlOverlay, pinIcon, ringLabelElement, type HtmlOverlay } from './mapOverlays';
 import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
 import { Text } from '@presentation/components/atoms/Text';
 
@@ -39,13 +40,35 @@ export interface MapPoint {
   color: string;
   /** Rota interna aberta a partir do balão (ex.: /admin/workers/:id). */
   href?: string;
+  /** Aparência do pino em `markerShape='dot'` (ignorado em 'pin'). */
+  style?: { fill: string; stroke: string; strokeWeight: number; sizePx: number; outline?: boolean };
+}
+
+/** Anel estilizado (089 §9.4). O rótulo chega pronto/traduzido pela página. */
+export interface MapRing {
+  radiusKm: number;
+  stroke: string;
+  strokeWeight: number;
+  fill: string;
+  fillOpacity: number;
+  label: string;
+  labelTone: 'current' | 'done' | 'idle';
 }
 
 export interface PointsMapProps {
   points: MapPoint[];
   center: { lat: number; lng: number };
   radiusKm: number | null;
-  onCenterChange: (c: { lat: number; lng: number }) => void;
+  /** Ausente ⇒ o clique no mapa não é ouvido (centro fixo). */
+  onCenterChange?: (c: { lat: number; lng: number }) => void;
+  /** N círculos estilizados; com ele o `radiusKm` legado é ignorado. */
+  rings?: MapRing[];
+  /** Enquadra o círculo deste raio (fitBounds, padding 24); ausente ⇒ zoom 11. */
+  fitRadiusKm?: number;
+  markerShape?: 'pin' | 'dot';
+  centerIcon?: 'dot' | 'house';
+  /** `title` + `aria-label` do centro (a página traduz). Ausente ⇒ como hoje. */
+  centerLabel?: string;
   /** Id do ponto a destacar (abre o balão e leva a viewport até ele). */
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
@@ -77,89 +100,16 @@ const CENTER_SCALE = 7;
 const CENTER_SCALE_PULSE = 13;
 const PULSE_MS = 320;
 
-/**
- * ⚠️ As flags do arco vão SEPARADAS (`0 1 1 0-5`), nunca na forma compacta
- * (`0 110-5`) dos ícones minificados: o SVG aceita as duas, o parser de
- * `google.maps.Symbol` só aceita a primeira. Com a compacta ele lança
- * "Expected number at position 109, found z" a cada redesenho e NENHUM pino
- * é desenhado — o mapa fica só com o centro e o círculo, e `data-markers`
- * continua marcando verde (ele conta o que a página quis, não o que o Google
- * pintou). Medido em 31/08 com controle positivo: compacta = 1 erro/0 pinos,
- * separada = 0 erros/desenha.
- */
-const PIN_PATH =
-  'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z';
-
-/** Ponto do centro do raio. `scale` maior = pulso de confirmação do clique. */
-function centerIcon(scale: number): google.maps.Symbol {
-  return { path: google.maps.SymbolPath.CIRCLE, scale, fillColor: '#111827', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 };
-}
-
-function pinIcon(color: string, emphasized = false): google.maps.Symbol {
-  return {
-    path: PIN_PATH,
-    fillColor: color,
-    fillOpacity: 1,
-    strokeColor: emphasized ? '#111827' : '#ffffff',
-    strokeWeight: emphasized ? 2.5 : 1.5,
-    scale: emphasized ? 2 : 1.4,
-    anchor: new google.maps.Point(12, 22),
-  };
-}
-
-/**
- * Cartão do balão. Vive DENTRO do InfoWindow do Google, por portal, e não como
- * string de HTML: assim o nome entra como texto (nunca como markup — não há o
- * que escapar), a tipografia é a dos atoms, e o link é o `Link` do router. Com
- * `<a href>` cru, clicar no balão recarregava o SPA inteiro e o mapa voltava
- * ao ponto de partida — o oposto do que o balão existe para fazer.
- */
-function InfoCard({ point, linkLabel, closeLabel, onClose, centerHereLabel, onCenterHere, extra }: { point: MapPoint; linkLabel?: string; closeLabel: string; onClose: () => void; centerHereLabel?: string; onCenterHere?: () => void; extra?: ReactNode }): JSX.Element {
-  return (
-    <div className="points-map-info relative font-lexend min-w-[210px] max-w-[330px] p-3" data-testid="points-map-info-card">
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={closeLabel}
-        data-testid="points-map-info-close"
-        className="absolute top-2 right-2 p-1 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-      >
-        <X size={14} />
-      </button>
-      <div className="flex items-baseline justify-between gap-3 pr-6">
-        <Text as="span" size="sm" weight="semibold" color="secondary">{point.title}</Text>
-        {point.distance && <Text as="span" size="xs" color="muted" className="shrink-0">{point.distance}</Text>}
-      </div>
-      {point.details && (
-        <Text as="div" size="xs" color="muted" className="mt-1 pr-6">{point.details}</Text>
-      )}
-      <div className="flex items-center gap-3 mt-2">
-        {point.href && linkLabel && (
-          <Link to={point.href} className="inline-flex items-center gap-1 text-primary hover:underline">
-            <Text as="span" size="xs" weight="medium" color="inherit">{linkLabel}</Text>
-            <ArrowRight size={12} />
-          </Link>
-        )}
-        {onCenterHere && centerHereLabel && (
-          <button type="button" onClick={onCenterHere} data-testid="points-map-info-center-here" className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 hover:underline">
-            <Crosshair size={12} />
-            <Text as="span" size="xs" weight="medium" color="inherit">{centerHereLabel}</Text>
-          </button>
-        )}
-      </div>
-      {/* Slot do chamador. O `PointsMap` desenha pontos; ele não sabe o que é um
-          corredor de transporte, e não deve saber — quem monta o conteúdo é a
-          página, que tem o contexto do par (âncora × pino). */}
-      {extra}
-    </div>
-  );
-}
-
 export function PointsMap({
   points,
   center,
   radiusKm,
   onCenterChange,
+  rings,
+  fitRadiusKm,
+  markerShape = 'pin',
+  centerIcon: centerIconKind = 'dot',
+  centerLabel,
   selectedId = null,
   onSelect,
   hoveredId = null,
@@ -179,6 +129,14 @@ export function PointsMap({
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
   const circleRef = useRef<google.maps.Circle | null>(null);
   const centerMarkerRef = useRef<google.maps.Marker | null>(null);
+  const houseRef = useRef<HtmlOverlay | null>(null);
+  const ringsRef = useRef<Array<{ circle: google.maps.Circle; label: HtmlOverlay }>>([]);
+  const iconFor = useCallback(
+    (p: MapPoint, on = false): google.maps.Symbol => (markerShape === 'dot' ? dotIcon(p, on) : pinIcon(p.color, on)),
+    [markerShape],
+  );
+  const hasRings = !!rings;
+  const ringsKey = JSON.stringify(rings ?? null);
   const infoRef = useRef<google.maps.InfoWindow | null>(null);
   /** Nó estável para o React desenhar dentro do balão do Google. */
   const infoNodeRef = useRef<HTMLDivElement>(document.createElement('div'));
@@ -207,16 +165,22 @@ export function PointsMap({
           zoom: 11,
           disableDefaultUI: true,
           zoomControl: true,
+          // Só com anéis/enquadramento: zoom fracionário + zoom fora do canto da legenda (o /admin/mapa não muda).
+          ...(hasRings || fitRadiusKm !== undefined
+            ? { isFractionalZoomEnabled: true, zoomControlOptions: { position: google.maps.ControlPosition?.RIGHT_CENTER } }
+            : {}),
           clickableIcons: false,
           styles: [
             { featureType: 'poi', stylers: [{ visibility: 'off' }] },
             { featureType: 'transit', stylers: [{ visibility: 'off' }] },
           ],
         });
-        map.addListener('click', (e: google.maps.MapMouseEvent) => {
-          const ll = e.latLng;
-          if (ll) onCenterChangeRef.current({ lat: ll.lat(), lng: ll.lng() });
-        });
+        if (onCenterChangeRef.current) {
+          map.addListener('click', (e: google.maps.MapMouseEvent) => {
+            const ll = e.latLng;
+            if (ll) onCenterChangeRef.current?.({ lat: ll.lat(), lng: ll.lng() });
+          });
+        }
         map.addListener('tilesloaded', () => setTilesLoaded(true));
         // `headerDisabled`: a faixa de header do Google (com o X dele) some — era
         // ela a área branca acima do conteúdo. O fechar passa a ser do cartão.
@@ -241,9 +205,16 @@ export function PointsMap({
   useEffect(() => {
     const map = mapRef.current;
     if (status !== 'ready' || !map) return;
-    map.panTo(center);
-    if (!centerMarkerRef.current) {
-      centerMarkerRef.current = new google.maps.Marker({ map, position: center, zIndex: 1000, icon: centerIcon(CENTER_SCALE) });
+    if (fitRadiusKm === undefined) map.panTo(center);
+    if (centerIconKind === 'house') {
+      if (!houseRef.current) {
+        houseRef.current = htmlOverlay(houseElement(centerLabel), center, 'center');
+        houseRef.current.setMap(map);
+      } else {
+        houseRef.current.setPosition(center);
+      }
+    } else if (!centerMarkerRef.current) {
+      centerMarkerRef.current = new google.maps.Marker({ map, position: center, zIndex: 1000, icon: centerIcon(CENTER_SCALE), ...(centerLabel ? { title: centerLabel } : {}) });
     } else {
       centerMarkerRef.current.setPosition(center);
       // Pulso de confirmação. Medido em 01/09: o clique é registrado em 7ms e a
@@ -254,7 +225,7 @@ export function PointsMap({
       if (pulseRef.current !== null) window.clearTimeout(pulseRef.current);
       pulseRef.current = window.setTimeout(() => centerMarkerRef.current?.setIcon(centerIcon(CENTER_SCALE)), PULSE_MS);
     }
-    if (radiusKm === null) {
+    if (radiusKm === null || hasRings) {
       circleRef.current?.setMap(null);
       circleRef.current = null;
       return;
@@ -275,7 +246,39 @@ export function PointsMap({
       circleRef.current.setCenter(center);
       circleRef.current.setRadius(radiusKm * 1000);
     }
-  }, [status, center, radiusKm]);
+  }, [status, center, radiusKm, hasRings, centerIconKind, fitRadiusKm, centerLabel]);
+
+  // 2b. Anéis estilizados + rótulo no topo (substituem o círculo legado).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== 'ready' || !map || !rings) return;
+    ringsRef.current = rings.map((r) => {
+      const circle = new google.maps.Circle({
+        map, center, radius: r.radiusKm * 1000, fillColor: r.fill, fillOpacity: r.fillOpacity,
+        strokeColor: r.stroke, strokeOpacity: 1, strokeWeight: r.strokeWeight, clickable: false,
+      });
+      const top = { lat: center.lat + r.radiusKm / 111.32, lng: center.lng };
+      const label: HtmlOverlay = r.label ? /* label vazio ⇒ sem rótulo (overlay nulo; mantém o índice) */ htmlOverlay(ringLabelElement(r.label, r.labelTone), top, 'top') : { setMap: () => undefined, setPosition: () => undefined };
+      label.setMap(map);
+      return { circle, label };
+    });
+    // Rótulos que colidem (enquadramento de 50 km): some o do anel de dentro, quando o mapa assenta.
+    const idle = map.addListener('idle', () => hideCollidingRingLabels(map, center, rings.map((r) => r.radiusKm), ringsRef.current.map((x) => x.label)));
+    return () => {
+      idle?.remove?.();
+      ringsRef.current.forEach(({ circle, label }) => { circle.setMap(null); label.setMap(null); });
+      ringsRef.current = [];
+    };
+    // `rings` entra por `ringsKey` (identidade nova a cada render da página não recria).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, center, ringsKey]);
+
+  // 2c. Enquadramento pelo raio.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== 'ready' || !map || fitRadiusKm === undefined) return;
+    map.fitBounds(circleBounds(center, fitRadiusKm), 24);
+  }, [status, center, fitRadiusKm]);
 
   // 3. Marcadores: diff por id (o Google cobra por tile, não por marker — mas
   //    recriar 1.500 pinos a cada filtro trava a UI).
@@ -294,17 +297,17 @@ export function PointsMap({
       const existing = markersRef.current.get(id);
       if (existing) {
         existing.setPosition(position);
-        existing.setIcon(pinIcon(p.color));
+        existing.setIcon(iconFor(p));
         existing.setTitle(p.tooltip ?? p.title);
         continue;
       }
-      const marker = new google.maps.Marker({ map, position, title: p.tooltip ?? p.title, icon: pinIcon(p.color) });
+      const marker = new google.maps.Marker({ map, position, title: p.tooltip ?? p.title, icon: iconFor(p), ...(markerShape === 'dot' ? { optimized: false } : {}) });
       marker.addListener('click', () => onSelectRef.current?.(id));
       marker.addListener('mouseover', () => onHoverRef.current?.(id));
       marker.addListener('mouseout', () => onHoverRef.current?.(null));
       markersRef.current.set(id, marker);
     }
-  }, [status, points]);
+  }, [status, points, iconFor, markerShape]);
 
   // 3b. Destaque (lista ↔ mapa): só os ids que ENTRARAM ou SAÍRAM do destaque
   //     são repintados — varrer 5.000 pinos a cada hover travaria a UI.
@@ -316,11 +319,11 @@ export function PointsMap({
       const p = points.find((x) => x.id === id);
       if (!marker || !p) continue;
       const on = next.has(id);
-      marker.setIcon(pinIcon(p.color, on));
+      marker.setIcon(iconFor(p, on));
       marker.setZIndex(on ? 900 : null);
     }
     emphasizedRef.current = next;
-  }, [status, hoveredId, selectedId, points]);
+  }, [status, hoveredId, selectedId, points, iconFor]);
 
   // 4. Balão do ponto selecionado.
   useEffect(() => {
@@ -367,6 +370,10 @@ export function PointsMap({
         data-map-status={status}
         data-markers={status === 'ready' ? markersCount : 0}
         data-tiles={tilesLoaded ? 'loaded' : 'pending'}
+        data-rings={rings ? rings.map((r) => r.radiusKm).join(',') : undefined}
+        data-fit-radius-km={fitRadiusKm}
+        data-center={`${center.lat},${center.lng}`}
+        data-selected-id={selectedId ?? undefined}
       />
       {selectedPoint && createPortal(
         <InfoCard

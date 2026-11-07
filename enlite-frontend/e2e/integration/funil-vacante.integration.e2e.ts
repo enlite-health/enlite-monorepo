@@ -394,13 +394,12 @@ test.describe('funil da vacante @integration', () => {
       ).toHaveAttribute('data-stage', col, { timeout: 15_000 });
     }
 
-    // Item 6 (054): "Hacer match" e "Enviar invitaciones (N)" nas duas visões, com o MESMO N.
-    // (Só presença e N igual; o envio em si fica fora — ver nota no PR.)
-    const matchButton = page.getByRole('button', { name: 'Hacer match' });
-    const dispatchButton = page.getByRole('button', { name: /^Enviar invitaciones \(\d+\)$/ });
-    await expect(matchButton, 'Lista: Hacer match').toBeVisible();
-    await expect(dispatchButton, 'Lista: Enviar invitaciones (N)').toBeVisible();
-    const dispatchLabelLista = (await dispatchButton.textContent())?.trim();
+    // Item 6 (054) → 089 T030: UM botão "Invitar prestadores" (no lugar de "Hacer match" e
+    // "Enviar invitaciones (N)") nas duas visões. (Só presença; o envio mora na página /match.)
+    const inviteButton = page.getByRole('button', { name: /Invitar prestadores/ });
+    const oldButtons = page.getByRole('button', { name: /Hacer match|Enviar invitaciones/ });
+    await expect(inviteButton, 'Lista: Invitar prestadores').toHaveCount(1);
+    await expect(oldButtons, 'Lista: sem os botões antigos').toHaveCount(0);
     await switchToKanban(page, vacancyIdV1);
     for (const letter of Object.keys(expectedColumnByLetter)) {
       await expect(
@@ -410,9 +409,8 @@ test.describe('funil da vacante @integration', () => {
         `Kanban: card do candidato ${letter} na coluna ${expectedColumnByLetter[letter]}`,
       ).toHaveCount(1, { timeout: 15_000 });
     }
-    await expect(matchButton, 'Kanban: Hacer match').toBeVisible();
-    await expect(dispatchButton, 'Kanban: Enviar invitaciones (N)').toBeVisible();
-    expect((await dispatchButton.textContent())?.trim(), 'mesmo N nas duas visões').toBe(dispatchLabelLista);
+    await expect(inviteButton, 'Kanban: Invitar prestadores').toHaveCount(1);
+    await expect(oldButtons, 'Kanban: sem os botões antigos').toHaveCount(0);
 
     expect(listagensDistintas, 'listagens distintas').toBe(1);
     expect(porVaga, 'requests por-vaga nesta tela').toBe(0);

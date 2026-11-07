@@ -171,7 +171,7 @@ test.describe('Spec 084 — vagas antigas: baixa, só consulta, En espera e #NN 
     await expect(page.getByTestId('vacancy-de-baja-banner')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: /reactiv|reativ/i })).toHaveCount(0);
     await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /Hacer match/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Invitar prestadores/ })).toHaveCount(0);
     expect(estado(S.vBaixada)).toBe('DE_BAJA'); // abrir não mexe em nada
   });
 

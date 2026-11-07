@@ -2359,13 +2359,13 @@
           "list": "Lista",
           "kanban": "Kanban"
         },
-        "dispatchInvitesButton": "Disparar novos convites",
-        "dispatchInvitesButtonCount": "Disparar convites ({{count}})",
-        "dispatchConfirm": {
-          "title": "Confirmar envio",
-          "body": "{{count}} candidatos receberão a mensagem de WhatsApp.",
-          "confirm": "Enviar",
-          "cancel": "Cancelar"
+        "inviteEntry": {
+          "button": "Convidar prestadores",
+          "pending_one": "{{count}} pessoa desta vaga ainda não recebeu o WhatsApp",
+          "pending_other": "{{count}} pessoas desta vaga ainda não receberam o WhatsApp",
+          "optional": "Opcional · Você também pode buscar prestadores perto do serviço",
+          "mergeNotice": "«Hacer match» e «Enviar convites» agora estão juntos aqui.",
+          "mergeNoticeClose": "Fechar aviso"
         },
         "kanban": {
           "totalEncuadres": "encuadres totais",
@@ -4967,26 +4967,6 @@
       }
     },
     "match": {
-      "title": "Match de candidatos",
-      "loading": "Buscando candidatos…",
-      "emptyBucket": "Sem candidatos neste intervalo.",
-      "candidatesCount_one": "{{count}} candidato",
-      "candidatesCount_other": "{{count}} candidatos",
-      "selectAllInGroup": "Selecionar todos ({{group}})",
-      "totals": {
-        "available": "Disponíveis",
-        "recruited": "Recrutados"
-      },
-      "selectedCount_one": "{{count}} selecionado",
-      "selectedCount_other": "{{count}} selecionados",
-      "inviteSelected": "Convidar selecionados ({{count}})",
-      "noResultsInRadius": "Nenhum candidato encontrado em um raio de {{km}} km.",
-      "close": "Fechar",
-      "closeAriaLabel": "Fechar",
-      "alreadyApplied": "Já candidatou",
-      "notified": "Notificado {{date}}",
-      "sendWhatsappTooltip": "Enviar WhatsApp",
-      "viewProfileTooltip": "Ver perfil",
       "caseLabel": "Caso",
       "backToVacancy": "Vaga",
       "scheduleInterview": "Agendar entrevista",
@@ -5005,14 +4985,6 @@
       "colScore": "Score Final"
     },
     "messaging": {
-      "title": "Enviar convite",
-      "alreadyReceivedMessage_one": "{{count}} worker já recebeu esta mensagem.",
-      "alreadyReceivedMessage_other": "{{count}} workers já receberam esta mensagem.",
-      "notYetReceived_one": "{{count}} ainda não recebeu.",
-      "notYetReceived_other": "{{count}} ainda não receberam.",
-      "confirmResendQuestion": "Deseja re-enviar para todos mesmo assim?",
-      "newOnly": "Só novos ({{count}})",
-      "resendAll": "Re-enviar para todos",
       "statusSent": "✓ enviado",
       "statusErrorPrefix": "✗ ",
       "statusErrorFallback": "erro",
@@ -7333,6 +7305,150 @@
           "signal": "Sinal",
           "month": "No mês"
         }
+      }
+    },
+    "vacancyInvite": {
+      "title": "Convidar prestadores",
+      "back": "Voltar à vaga",
+      "subtitle": "Caso {{caso}} · Vaga #{{nn}} · {{profession}}",
+      "seeking": "Buscamos:",
+      "chipSex": "Sexo: {{value}}",
+      "chipProfession": "Profissão: {{value}}",
+      "chipService": "Serviço: {{value}}",
+      "loading": {
+        "title": "Buscando prestadores perto de {{address}}…",
+        "titleNoAddress": "Buscando prestadores perto do serviço…",
+        "subtitle": "Pode demorar alguns segundos."
+      },
+      "error": {
+        "load": "Não conseguimos carregar os prestadores.",
+        "retry": "Tentar de novo"
+      },
+      "deBaja": {
+        "title": "Esta vaga foi dada de baixa",
+        "text": "Não é possível convidar prestadores para uma vaga dada de baixa."
+      },
+      "noPermission": {
+        "title": "Sem permissão",
+        "text": "Você não tem permissão para convidar prestadores para esta vaga."
+      },
+      "map": {
+        "center": "Local do serviço · fixo para esta vaga",
+        "unavailable": "O mapa não está disponível. A lista continua funcionando.",
+        "legend": {
+          "selected": "Escolhido para convidar",
+          "unselected": "Não escolhido",
+          "invited": "Já convidado",
+          "service": "Local do serviço"
+        },
+        "hint": "Toque em um ponto para ver quem é",
+        "vacanteNote": {
+          "intro": "Estas pessoas chegaram por outro caminho e podem estar longe.",
+          "far": "{{count}} a mais de 50 km (fora do mapa).",
+          "noLocation": "{{count}} sem localização."
+        },
+        "pin": "{{name}}, {{distance}} km. Mostrar na lista",
+        "pinNoDistance": "{{name}}. Mostrar na lista"
+      },
+      "steps": {
+        "label": "Distância do local do serviço",
+        "vacante": "Já na vaga",
+        "upTo": "Até {{km}} km",
+        "sub": {
+          "withoutWhatsapp": "{{count}} sem WhatsApp",
+          "toInvite": "{{count}} para convidar",
+          "invited": "{{count}} convidados"
+        }
+      },
+      "stepTitle": {
+        "vacante": "Já na vaga, sem WhatsApp",
+        "upTo": "Até {{max}} km do serviço",
+        "between": "Entre {{min}} e {{max}} km do serviço"
+      },
+      "guide": {
+        "vacantePending": "Estas pessoas já estão na vaga (se candidataram ou entraram por outro canal) e ainda não receberam o WhatsApp.",
+        "vacanteDone": "Pronto. Agora busque prestadores perto do serviço.",
+        "firstStep": "Comece pelos mais próximos. Revise a lista e toque em «Convidar».",
+        "nextStep": "Estas são as pessoas novas entre {{min}} e {{max}} km. Revise a lista e toque em «Convidar».",
+        "doneMore": "Pronto. Se precisar de mais pessoas, busque mais longe.",
+        "doneLast": "Pronto. Você já buscou até 50 km. Pode terminar quando quiser."
+      },
+      "profileNote": "Só aparecem prestadores que atendem ao perfil desta vaga.",
+      "docs": {
+        "off": "Completos: {{complete}} · Faltam documentos: {{missing}}",
+        "on": "Completos: {{complete}} · Ocultos por documentos: {{missing}}",
+        "switch": "Somente com documentos completos",
+        "complete": "Documentos completos",
+        "missing": "Faltam documentos"
+      },
+      "selection": {
+        "all": "Todos",
+        "counter": "{{selected}} de {{pending}} escolhidos",
+        "allInvited": "Todos já convidados"
+      },
+      "row": {
+        "choose": "Escolher {{name}}",
+        "showOnMap": "Mostrar no mapa",
+        "viewProfile": "Ver perfil",
+        "activeCases_one": "Já em {{count}} caso",
+        "activeCases_other": "Já em {{count}} casos",
+        "distance": "{{value}} km",
+        "noDistance": "—",
+        "invitedToday": "Convidado hoje",
+        "invitedOn": "Convidado em {{date}}",
+        "sending": "Enviando…"
+      },
+      "footer": {
+        "invitedTotal": "Convidados nesta vaga: {{count}}",
+        "pickOne": "Escolha pelo menos uma pessoa",
+        "inviteEmpty": "Convidar",
+        "invite_one": "Convidar {{count}} pessoa",
+        "invite_other": "Convidar {{count}} pessoas",
+        "more": "Buscar mais longe · até {{km}} km ({{count}} a mais)",
+        "moreFromVacante": "Buscar perto do serviço · até {{km}} km ({{count}})",
+        "finish": "Terminar"
+      },
+      "confirm": {
+        "title": "Enviar o convite por WhatsApp?",
+        "lead_one": "Vamos enviar a vaga por WhatsApp para esta pessoa:",
+        "lead_other": "Vamos enviar a vaga por WhatsApp para estas {{count}} pessoas:",
+        "noLocation": "Sem localização",
+        "alreadyOne": "{{names}} já recebeu o convite em {{date}}. Não vamos enviá-lo de novo.",
+        "alreadyMany": "{{names}} já receberam o convite em {{date}}. Não vamos enviá-lo de novo.",
+        "resend": "Enviar de novo",
+        "note": "As mensagens saem assim que você confirma e não podem ser canceladas.",
+        "cancel": "Não, voltar",
+        "send_one": "Sim, enviar para {{count}} pessoa",
+        "send_other": "Sim, enviar para {{count}} pessoas",
+        "and": "e"
+      },
+      "sent": {
+        "title_one": "Pronto: você convidou {{count}} pessoa",
+        "title_other": "Pronto: você convidou {{count}} pessoas",
+        "titleNone": "Nenhum convite foi enviado",
+        "text": "Enviamos a vaga por WhatsApp. O que foi enviado fica enviado: você pode voltar à vaga quando quiser.",
+        "progress": "{{sent}} de {{total}} enviados",
+        "failed": "{{count}} não foram enviados"
+      },
+      "finish": {
+        "title_one": "Hoje você convidou {{count}} prestador para esta vaga",
+        "title_other": "Hoje você convidou {{count}} prestadores para esta vaga",
+        "between": "Entre {{min}} e {{max}} km",
+        "text": "O que foi enviado fica enviado. Se mais tarde precisar de mais pessoas, toque de novo em «Convidar prestadores» na vaga.",
+        "keep": "Continuar convidando"
+      },
+      "noService": {
+        "title": "Não sabemos onde fica o serviço",
+        "text": "O endereço do serviço desta vaga não pôde ser localizado no mapa, então não conseguimos buscar prestadores perto. Corrija o endereço do serviço e toque de novo em «Convidar prestadores».",
+        "addressLabel": "Endereço cadastrado",
+        "fix": "Corrigir o endereço do serviço"
+      },
+      "nobody": {
+        "title": "Não encontramos prestadores até 50 km",
+        "text": "Por enquanto ninguém com este perfil ({{profile}}) mora perto do local do serviço.",
+        "vacante_one": "Há {{count}} pessoa na vaga que ainda não recebeu o WhatsApp.",
+        "vacante_other": "Há {{count}} pessoas na vaga que ainda não receberam o WhatsApp.",
+        "seeVacante": "Ver as {{count}}"
       }
     }
   },

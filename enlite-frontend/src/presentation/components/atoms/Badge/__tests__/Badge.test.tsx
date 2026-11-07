@@ -29,3 +29,16 @@ describe('Badge', () => {
     expect(container.firstChild).toHaveClass('text-gray-600', 'bg-gray-100');
   });
 });
+
+describe('Badge com tom (089)', () => {
+  it.each([
+    ['neutral', 'bg-gray-200', 'text-primary'],
+    ['brand', 'bg-[#ECE8F6]', 'text-primary'],
+    ['success', 'bg-[#E1F6EE]', 'text-[#0A5540]'],
+    ['warning', 'bg-[#FFF4D6]', 'text-[#5C3B00]'],
+  ] as const)('tom %s', (tone, bg, fg) => {
+    const { container } = render(<Badge tone={tone}>Texto</Badge>);
+    expect(container.firstChild).toHaveClass(bg, fg);
+    expect(container.textContent).toBe('Texto');
+  });
+});

@@ -19,6 +19,8 @@ export interface SendItem {
   vacancyId: string;
   workerId: string;
   workerName: string;
+  /** Reenvio explícito (DF-5): só quem foi marcado manda `{ resend: true }`. */
+  resend?: boolean;
   status: SendItemStatus;
   error?: string;
   /** Convite recusado (422): o componente resolve a mensagem localizada. */
@@ -90,7 +92,12 @@ export const useInviteProgressStore = create<InviteProgressState>((set, get) => 
   async function sendOne(item: SendItem): Promise<void> {
     patchItem(item.workerId, { status: 'sending' });
     try {
-      await AdminApiService.sendVacancyMatchInvite(item.workerId, item.vacancyId);
+      // Sem a marca, a chamada fica idêntica à de antes (sem 3º argumento → corpo sem `resend`).
+      if (item.resend) {
+        await AdminApiService.sendVacancyMatchInvite(item.workerId, item.vacancyId, { resend: true });
+      } else {
+        await AdminApiService.sendVacancyMatchInvite(item.workerId, item.vacancyId);
+      }
       const messagedAt = new Date().toISOString();
       messagedCallbacks.get(item.vacancyId)?.(item.workerId, messagedAt);
       patchItem(item.workerId, { status: 'sent' });
@@ -183,6 +190,7 @@ export const useInviteProgressStore = create<InviteProgressState>((set, get) => 
             vacancyId,
             workerId: c.workerId,
             workerName: c.workerName,
+            ...(c.resend ? { resend: true } : {}),
             status: 'pending' as const,
           }));
 

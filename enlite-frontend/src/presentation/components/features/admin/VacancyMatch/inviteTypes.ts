@@ -4,6 +4,8 @@ export interface InviteTarget {
   workerId: string;
   workerName: string;
   messagedAt: string | null;
+  /** Reenvio marcado pela recrutadora (DF-5): a fila manda `{ resend: true }`. */
+  resend?: boolean;
 }
 
 /**

@@ -48,7 +48,16 @@ export async function runHardFilterOnlyPath(
     return a.distanceKm - b.distanceKm;
   });
 
-  const top = withDistance.slice(0, topN);
+  // A query devolve 1 linha por ÁREA de atuação: a mesma pessoa pode vir 2x. Como a lista já está
+  // ordenada por distância ASC, a 1ª ocorrência de cada workerId é a de menor distância.
+  const seen = new Set<string>();
+  const unique = withDistance.filter(({ worker }) => {
+    if (seen.has(worker.workerId)) return false;
+    seen.add(worker.workerId);
+    return true;
+  });
+
+  const top = unique.slice(0, topN);
 
   const finalCandidates: ScoredCandidate[] = await Promise.all(
     top.map(async ({ worker, distanceKm }) => {

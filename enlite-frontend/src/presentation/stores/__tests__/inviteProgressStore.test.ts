@@ -20,8 +20,7 @@ const sendMock = vi.fn();
 
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
-    sendVacancyMatchInvite: (workerId: string, vacancyId: string) =>
-      sendMock(workerId, vacancyId),
+    sendVacancyMatchInvite: (...args: unknown[]) => sendMock(...args),
   },
 }));
 
@@ -46,6 +45,18 @@ describe('inviteProgressStore', () => {
   afterEach(() => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
+  });
+
+  it('CA-8: item marcado resend:true chama a API com { resend: true }; sem marca, sem 3º argumento', async () => {
+    store().enqueue('vac-1', [
+      { workerId: 'w-r', workerName: 'R', messagedAt: null, resend: true },
+      { workerId: 'w-n', workerName: 'N', messagedAt: null },
+    ]);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(sendMock).toHaveBeenNthCalledWith(1, 'w-r', 'vac-1', { resend: true });
+    expect(sendMock).toHaveBeenNthCalledWith(2, 'w-n', 'vac-1');
+    expect(sendMock.mock.calls[1]).toHaveLength(2);
   });
 
   it('envia sequencialmente e marca todos como enviados', async () => {

@@ -126,3 +126,22 @@ describe('variante e largura', () => {
     expect(buttonClasses({ fullWidth: false })).not.toContain('w-full');
   });
 });
+
+describe('dense e shape (089 T024) — aditivos', () => {
+  it('dense = 40px, px-4, texto 14, peso 500', () => {
+    const c = buttonClasses({ size: 'dense' });
+    expect(c).toContain('h-10');
+    expect(c).toContain('px-4');
+    expect(c).toContain('text-sm');
+    expect(c).toContain('font-medium');
+    expect(c).not.toContain('font-semibold');
+  });
+
+  it('shape default é pill (rounded-full) e rounded troca por rounded-[10px]', () => {
+    expect(buttonClasses()).toContain('rounded-full');
+    expect(buttonClasses({ shape: 'pill' })).toContain('rounded-full');
+    const r = buttonClasses({ shape: 'rounded' });
+    expect(r).toContain('rounded-[10px]');
+    expect(r).not.toContain('rounded-full');
+  });
+});

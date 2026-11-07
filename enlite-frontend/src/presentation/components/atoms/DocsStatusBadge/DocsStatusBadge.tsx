@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
+import { isDocsComplete } from './docsComplete';
 
 /**
  * DocsStatusBadge
@@ -39,8 +40,6 @@ interface DocsStatusBadgeProps {
   complete?: boolean;
 }
 
-const COMPLETE_STATUSES = new Set<DocumentsStatus>(['approved', 'submitted', 'under_review']);
-
 const STATUS_I18N_KEY: Record<DocumentsStatus, string> = {
   pending: 'admin.workers.docsStatus.pending',
   incomplete: 'admin.workers.docsStatus.incomplete',
@@ -66,8 +65,7 @@ export function DocsStatusBadge({ status, complete }: DocsStatusBadgeProps): JSX
   }
 
   const normalized = status.toLowerCase();
-  const isComplete =
-    complete ?? (isDocumentsStatus(normalized) && COMPLETE_STATUSES.has(normalized));
+  const isComplete = complete ?? isDocsComplete(status);
 
   const label =
     complete === true
