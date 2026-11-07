@@ -200,8 +200,8 @@ describe('VacancyInvitePage (T026a)', () => {
     expect(screen.getByTestId('invite-vacante-note')).toHaveTextContent('vacanteNote.far{"count":1}');
     expect(screen.getByTestId('invite-vacante-note')).toHaveTextContent('vacanteNote.noLocation{"count":1}');
     expect(screen.queryByTestId('invite-profile-note')).toBeNull();
-    // sem nenhum pino (um a 61 km, outro sem ubicación): sem legenda e sem dica (089 C)
-    expect(screen.queryByTestId('invite-map-legend')).toBeNull();
+    // sem pinos mas fora do E8: a legenda fica (só some em "ninguém até 50 km"); no passo vacante sem dica
+    expect(screen.getByTestId('invite-map-legend')).toBeInTheDocument();
     expect(screen.queryByTestId('invite-map-hint')).toBeNull();
   });
 
@@ -323,6 +323,9 @@ describe('VacancyInvitePage (T026a)', () => {
       const { unmount } = renderPage('/admin/vacancies/v1/match?paso=5');
       expect(screen.getByTestId('invite-special-case')).toHaveAttribute('data-kind', 'nobody');
       expect(screen.getByTestId('invite-nobody-vacante')).toHaveTextContent('"count":2');
+      // E8: sem legenda e sem dica no mapa (089 N2)
+      expect(screen.queryByTestId('invite-map-legend')).toBeNull();
+      expect(screen.queryByTestId('invite-map-hint')).toBeNull();
       expect(screen.getByTestId('points-map-stub')).toHaveAttribute('data-rings', '4');
       expect(screen.queryByTestId('pin-m1')).toBeNull();
       await userEvent.click(screen.getByTestId('invite-nobody-see'));

@@ -17,6 +17,8 @@ interface Props {
   view: View;
   center: { lat: number; lng: number };
   height: number;
+  /** E8 (ninguém até 50 km): anéis sem rótulo, sem legenda e sem dica. */
+  nobody?: boolean;
   hoveredId: string | null;
   selectedId: string | null;
   onHover: (id: string | null) => void;
@@ -29,7 +31,7 @@ function Dot({ className, style }: { className?: string; style?: React.CSSProper
 }
 
 /** L.1–L.9 — mapa com centro fixo, anéis, pinos-ponto, legenda, dica e a nota do passo vacante. */
-export function InviteMapPane({ view, center, height, hoveredId, selectedId, onHover, onSelect }: Props): JSX.Element {
+export function InviteMapPane({ view, center, height, nobody = false, hoveredId, selectedId, onHover, onSelect }: Props): JSX.Element {
   const { t } = useTranslation();
   const points: MapPoint[] = view.pins.map((p) => ({
     id: p.workerId,
@@ -46,13 +48,12 @@ export function InviteMapPane({ view, center, height, hoveredId, selectedId, onH
   const rings: MapRing[] = view.rings.map((r) => ({
     radiusKm: r.radiusKm,
     ...RING_STYLE[r.tone],
-    label: `${r.radiusKm} km`,
+    label: nobody ? '' : `${r.radiusKm} km`,
     labelTone: r.tone,
   }));
   const note = view.vacanteNote;
-  // Sem pinos (E8) não há o que explicar: sem dica e sem legenda. No passo vacante a nota amarela ocupa o topo: sem dica.
-  const hasPins = points.length > 0;
-  const showHint = hasPins && view.step !== 'vacante';
+  // E8 (ninguém até 50 km): sem dica, sem legenda e sem rótulo de anel. No passo vacante a nota amarela ocupa o topo: sem dica.
+  const showHint = !nobody && view.step !== 'vacante';
 
   return (
     <div className="relative" data-testid="invite-map-pane-map">
@@ -87,8 +88,8 @@ export function InviteMapPane({ view, center, height, hoveredId, selectedId, onH
           <Text size="xs" color="primary">{t('admin.vacancyInvite.map.hint')}</Text>
         </div>
       )}
-      {hasPins && (
-      <ul data-testid="invite-map-legend" className={`absolute bottom-8 left-4 right-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 ${CARD}`}>
+      {!nobody && (
+      <ul data-testid="invite-map-legend" className={`absolute bottom-8 left-4 max-w-[calc(100%-32px)] flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 ${CARD}`}>
         <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="bg-[#F227AF]" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.selected')}</Text></li>
         <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="bg-primary" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.unselected')}</Text></li>
         <li className="flex items-center gap-1.5 whitespace-nowrap"><Dot className="!border-gray-800 bg-white" /><Text as="span" size="xs" color="primary">{t('admin.vacancyInvite.map.legend.invited')}</Text></li>

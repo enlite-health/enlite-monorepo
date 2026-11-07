@@ -255,7 +255,7 @@ export function PointsMap({
         strokeColor: r.stroke, strokeOpacity: 1, strokeWeight: r.strokeWeight, clickable: false,
       });
       const top = { lat: center.lat + r.radiusKm / 111.32, lng: center.lng };
-      const label = htmlOverlay(ringLabelElement(r.label, r.labelTone), top, 'top');
+      const label: HtmlOverlay = r.label ? /* label vazio ⇒ sem rótulo (overlay nulo; mantém o índice) */ htmlOverlay(ringLabelElement(r.label, r.labelTone), top, 'top') : { setMap: () => undefined, setPosition: () => undefined };
       label.setMap(map);
       return { circle, label };
     });

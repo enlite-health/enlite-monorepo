@@ -269,6 +269,7 @@ export default function VacancyInvitePage(): JSX.Element {
           <div className="relative border-r border-gray-300" data-testid="invite-map-pane">
             {view && service && service.lat != null && service.lng != null ? (
               <InviteMapPane
+                nobody={nobodyNear}
                 view={vacanteView ? { ...vacanteView, pins: [], vacanteNote: null } : view}
                 center={{ lat: service.lat, lng: service.lng }}
                 height={mapHeight}
