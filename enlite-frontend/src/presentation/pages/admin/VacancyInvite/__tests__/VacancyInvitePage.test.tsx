@@ -272,4 +272,23 @@ describe('VacancyInvitePage (T026a)', () => {
       expect(screen.getByTestId('invite-step-5')).toHaveAttribute('data-tone', 'done');
     });
   });
+
+  it('F5: Terminar abre o resumo do servidor; Seguir invitando fecha; Volver volta à vacante (RF-3/RF-4)', async () => {
+    board.value = ready([
+      cand('a', 2, { messagedAt: '2026-11-06T12:00:00Z' }), cand('b', 7, { messagedAt: '2026-11-06T13:00:00Z' }),
+      cand('c', 8), cand('old', 3, { messagedAt: '2026-11-03T12:00:00Z' }),
+    ], ['a', 'b', 'c', 'old']);
+    renderPage('/admin/vacancies/v1/match?paso=5');
+    await userEvent.click(screen.getByTestId('invite-btn-finish-secondary'));
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByTestId('invite-finish-title')).toHaveTextContent('"count":2');
+    expect(screen.getByTestId('invite-finish-row-5')).toHaveTextContent('1');
+    expect(screen.getByTestId('invite-finish-row-10')).toBeInTheDocument();
+    expect(screen.queryByTestId('invite-finish-row-20')).toBeNull();
+    await userEvent.click(screen.getByTestId('invite-finish-keep'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(screen.getByTestId('invite-btn-finish-secondary'));
+    await userEvent.click(screen.getByTestId('invite-finish-back'));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/admin/vacancies/v1?tab=encuadres');
+  });
 });

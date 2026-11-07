@@ -7534,6 +7534,13 @@
         "text": "Les enviamos la vacante por WhatsApp. Lo enviado queda enviado: podés volver a la vacante cuando quieras.",
         "progress": "{{sent}} de {{total}} enviados",
         "failed": "{{count}} no se enviaron"
+      },
+      "finish": {
+        "title_one": "Hoy invitaste a {{count}} prestador para esta vacante",
+        "title_other": "Hoy invitaste a {{count}} prestadores para esta vacante",
+        "between": "Entre {{min}} y {{max}} km",
+        "text": "Lo enviado queda enviado. Si más adelante necesitás más personas, volvé a tocar «Invitar prestadores» en la vacante.",
+        "keep": "Seguir invitando"
       }
     }
   },

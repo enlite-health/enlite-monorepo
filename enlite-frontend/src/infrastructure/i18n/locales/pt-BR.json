@@ -7455,6 +7455,13 @@
         "text": "Enviamos a vaga por WhatsApp. O que foi enviado fica enviado: você pode voltar à vaga quando quiser.",
         "progress": "{{sent}} de {{total}} enviados",
         "failed": "{{count}} não foram enviados"
+      },
+      "finish": {
+        "title_one": "Hoje você convidou {{count}} prestador para esta vaga",
+        "title_other": "Hoje você convidou {{count}} prestadores para esta vaga",
+        "between": "Entre {{min}} e {{max}} km",
+        "text": "O que foi enviado fica enviado. Se mais tarde precisar de mais pessoas, toque de novo em «Convidar prestadores» na vaga.",
+        "keep": "Continuar convidando"
       }
     }
   },

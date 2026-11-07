@@ -19,11 +19,13 @@ import { InviteListHeader } from './InviteListHeader';
 import { InviteListFooter } from './InviteListFooter';
 import { InviteRow } from './InviteRow';
 import { InviteConfirmDialog } from './InviteConfirmDialog';
+import { InviteFinishDialog } from './InviteFinishDialog';
 import {
   applyDocOnly,
   buildBoardView,
   dayInZone,
   dayMonthOf,
+  finishSummary,
   isInvited,
   selectedIds,
   stepCandidates,
@@ -302,6 +304,13 @@ export default function VacancyInvitePage(): JSX.Element {
       )}
       {dialog === 'confirm' && confirmData && (
         <InviteConfirmDialog targets={confirmData.targets} already={confirmData.already} onCancel={() => setDialog(null)} onConfirm={confirmSend} />
+      )}
+      {dialog === 'finish' && viewCtx && results && (
+        <InviteFinishDialog
+          summary={finishSummary(viewCtx.candidates, currentIds, results.operationDate, timeZone)}
+          onKeepInviting={() => setDialog(null)}
+          onBack={goBack}
+        />
       )}
     </div>
   );
