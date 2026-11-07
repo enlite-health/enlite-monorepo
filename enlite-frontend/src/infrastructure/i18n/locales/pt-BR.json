@@ -2359,6 +2359,12 @@
           "list": "Lista",
           "kanban": "Kanban"
         },
+        "inviteEntry": {
+          "button": "Convidar prestadores",
+          "pending_one": "{{count}} pessoa desta vaga ainda não recebeu o WhatsApp",
+          "pending_other": "{{count}} pessoas desta vaga ainda não receberam o WhatsApp",
+          "optional": "Opcional · Você também pode buscar prestadores perto do serviço"
+        },
         "dispatchInvitesButton": "Disparar novos convites",
         "dispatchInvitesButtonCount": "Disparar convites ({{count}})",
         "dispatchConfirm": {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { selectCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { VacancyFunnelView } from './VacancyFunnelView';
@@ -20,13 +21,9 @@ vi.mock('@hooks/admin/useVacancyFunnelTable', () => ({
     mockUseVacancyFunnelTable(...args),
 }));
 
-vi.mock('@hooks/admin/useInvitedPendingCandidates', () => ({
-  useInvitedPendingCandidates: () => ({
-    candidates: [],
-    pendingCount: 3,
-    isLoading: false,
-    refetch: vi.fn(),
-  }),
+const mockGetMatchResults = vi.fn();
+vi.mock('@infrastructure/http/AdminApiService', () => ({
+  AdminApiService: { getMatchResults: (...a: unknown[]) => mockGetMatchResults(...a) },
 }));
 
 vi.mock('./VacancyFunnelKanban', () => ({
@@ -63,6 +60,8 @@ function frow(id: string, workerName: string, registrationComplete: boolean): Fu
   };
 }
 
+const renderView = (ui: JSX.Element) => render(<MemoryRouter>{ui}</MemoryRouter>);
+
 const mockData: FunnelTableData = {
   rows: [],
   counts: {
@@ -80,6 +79,8 @@ beforeEach(() => {
   // Reset calls entre tests pra evitar flakiness — sem isso, mock.calls acumula
   // chamadas dos testes anteriores e lastCall pode pegar invocação de outro test.
   mockUseVacancyFunnelTable.mockClear();
+  mockGetMatchResults.mockReset();
+  mockGetMatchResults.mockResolvedValue({ pendingInVacancyCount: 3 });
   mockUseVacancyFunnelTable.mockReturnValue({
     data: mockData,
     isLoading: false,
@@ -101,7 +102,7 @@ const listBtn = () => screen.getByRole('button', { name: LIST_BTN });
 
 describe('VacancyFunnelView', () => {
   it('abre no Kanban por padrão (054 item 5): botão Kanban pressionado, Lista não montada', () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(kanbanBtn()).toHaveAttribute('aria-pressed', 'true');
     expect(listBtn()).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
@@ -110,39 +111,39 @@ describe('VacancyFunnelView', () => {
 
   it('chave ANTIGA = "list" e nada na nova: abre no Kanban (a chave antiga não é lida)', () => {
     localStorage.setItem(OLD_KEY, 'list');
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(kanbanBtn()).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
     expect(screen.queryByTestId('funnel-table')).not.toBeInTheDocument();
   });
 
   it('escolher Lista grava "list" na chave v2 e, ao remontar, abre na Lista', async () => {
-    const { unmount } = render(<VacancyFunnelView vacancyId="vac-1" />);
+    const { unmount } = renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     expect(localStorage.getItem(NEW_KEY)).toBe('list');
     expect(localStorage.getItem(OLD_KEY)).toBeNull();
     unmount();
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(listBtn()).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
   });
 
   it('o primeiro botão do grupo "Cambiar vista" é o Kanban', () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     const [first, second] = within(screen.getByRole('group')).getAllByRole('button');
     expect(first).toHaveAccessibleName(KANBAN_BTN);
     expect(second).toHaveAccessibleName(LIST_BTN);
   });
 
   it('renders the table in list view', async () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument();
   });
 
   it('switches to kanban when kanban button is clicked', async () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     await userEvent.click(kanbanBtn());
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
@@ -150,19 +151,19 @@ describe('VacancyFunnelView', () => {
   });
 
   it('switches back to list from kanban', async () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument();
   });
 
   it('passes vacancyId to KanbanBoard when in kanban view', () => {
-    render(<VacancyFunnelView vacancyId="vac-42" />);
+    renderView(<VacancyFunnelView vacancyId="vac-42" />);
     expect(screen.getByTestId('kanban-board')).toHaveTextContent('vac-42');
   });
 
   it('does not call useVacancyFunnelTable with enabled=true in kanban view', () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     const lastCall =
       mockUseVacancyFunnelTable.mock.calls[
         mockUseVacancyFunnelTable.mock.calls.length - 1
@@ -171,7 +172,7 @@ describe('VacancyFunnelView', () => {
   });
 
   it('a Lista não tem abas: nenhum role="tab", funnel-tab-* nem funnel-panel-* (054 item 1)', async () => {
-    const { container } = render(<VacancyFunnelView vacancyId="vac-1" />);
+    const { container } = renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
     expect(screen.queryAllByRole('tabpanel')).toHaveLength(0);
@@ -180,7 +181,7 @@ describe('VacancyFunnelView', () => {
   });
 
   it('a Lista pede TODAS as colunas do Kanban (as 10 sources), não bucket=ALL', async () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     const lastCall =
       mockUseVacancyFunnelTable.mock.calls[
@@ -202,7 +203,7 @@ describe('VacancyFunnelView', () => {
       data: { ...mockData, rows: [frow('a', 'María López', true), frow('b', 'Juan Pérez', true)] },
       isLoading: false, error: null, refetch: vi.fn(),
     });
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     expect(screen.getAllByTestId('mock-row')).toHaveLength(2);
     await userEvent.type(screen.getByTestId('funnel-filter-search'), 'maria');
@@ -218,7 +219,7 @@ describe('VacancyFunnelView', () => {
       data: { ...mockData, rows: [frow('a', 'María', true), frow('b', 'Juan', false)] },
       isLoading: false, error: null, refetch: vi.fn(),
     });
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     await userEvent.click(listBtn());
     await selectCombo(screen.getByTestId('funnel-filter-registration'), 'admin.vacancyDetail.funnelTable.registration.incomplete'); // INCOMPLETE
     expect(screen.getAllByTestId('mock-row').map((n) => n.textContent)).toEqual(['b']);
@@ -227,12 +228,12 @@ describe('VacancyFunnelView', () => {
   });
 
   it('os filtros ficam só na Lista: o Kanban não tem busca nem seletor', () => {
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(screen.queryByTestId('funnel-filter-search')).toBeNull();
     expect(screen.queryByTestId('funnel-filter-registration')).toBeNull();
   });
 
-  it('na visão Kanban, "Hacer match" e "Enviar invitaciones (N)" estão presentes, com o mesmo N da Lista (054 item 6)', async () => {
+  it('um botão único "Invitar prestadores" nas DUAS visões, sem "Hacer match" nem "Enviar invitaciones" (089 T030)', async () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
       authz: {
@@ -241,30 +242,34 @@ describe('VacancyFunnelView', () => {
         countries: [], groups: [], features: {}, enforcement: 'on',
       } as AuthzContract,
     });
-    const { unmount } = render(<VacancyFunnelView vacancyId="vac-1" />);
+    const { unmount } = renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Hacer match/ })).toBeInTheDocument();
-    const kanbanInvite = screen.getByRole('button', {
-      name: /dispatchInvitesButtonCount/,
-    });
-    expect(kanbanInvite).toHaveTextContent('dispatchInvitesButtonCount:3');
-    expect(kanbanInvite).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: /inviteEntry\.button/ })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Hacer match|dispatchInvitesButton/ })).not.toBeInTheDocument();
+    expect(await screen.findByTestId('invite-entry-count')).toHaveTextContent('3');
     unmount();
 
     localStorage.setItem(NEW_KEY, 'list');
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /dispatchInvitesButtonCount/ }),
-    ).toHaveTextContent('dispatchInvitesButtonCount:3');
+    expect(screen.getAllByRole('button', { name: /inviteEntry\.button/ })).toHaveLength(1);
+    expect(await screen.findByTestId('invite-entry-count')).toHaveTextContent('3');
   });
+
+  it('vacante readOnly (dada de baja): sem botão e sem a chamada do contador', () => {
+    renderView(<VacancyFunnelView vacancyId="vac-1" readOnly />);
+    expect(screen.queryByTestId('invite-entry')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /inviteEntry\.button/ })).not.toBeInTheDocument();
+    expect(mockGetMatchResults).not.toHaveBeenCalled();
+  });
+
   it('falha de carga da Lista mostra funnel-table-error (não o vazio) e reintentar chama o refetch (054b item 4)', async () => {
     const refetch = vi.fn();
     mockUseVacancyFunnelTable.mockReturnValue({
       data: null, isLoading: false, error: 'HTTP 500', refetch,
     });
     localStorage.setItem(NEW_KEY, 'list');
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(screen.getByTestId('funnel-table-error')).toHaveTextContent(
       'admin.vacancyDetail.funnelTable.loadError',
     );
@@ -281,14 +286,14 @@ describe('VacancyFunnelView', () => {
       isLoading: false, error: 'HTTP 500', refetch: vi.fn(),
     });
     localStorage.setItem(NEW_KEY, 'list');
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(screen.getByTestId('funnel-table-error')).toBeInTheDocument();
     expect(screen.getAllByTestId('mock-row')).toHaveLength(1);
   });
 
   it('sem erro, funnel-table-error não aparece (054b item 4)', () => {
     localStorage.setItem(NEW_KEY, 'list');
-    render(<VacancyFunnelView vacancyId="vac-1" />);
+    renderView(<VacancyFunnelView vacancyId="vac-1" />);
     expect(screen.queryByTestId('funnel-table-error')).not.toBeInTheDocument();
   });
 });
