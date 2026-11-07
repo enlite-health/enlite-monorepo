@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import VacancyInvitePage from '../VacancyInvitePage';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string, o?: unknown) => (o && typeof o === 'object' ? `${k}${JSON.stringify(o)}` : k), i18n: { language: 'es' } }),
@@ -63,6 +64,7 @@ function renderPage(entry: unknown = '/admin/vacancies/v1/match') {
 beforeEach(() => {
   vi.clearAllMocks();
   useInviteProgressStore.setState({ isSending: false, items: [], enqueue: realEnqueue });
+  useAdminAuthStore.setState({ authzStatus: 'ready' });
   gates.allowed = { 'match:read': true, 'match:execute': true, 'messaging:send': true };
   detail.value = { vacancy: { id: 'v1', status: 'ACTIVE', case_number: 817, vacancy_number: 2, required_sex: 'F', required_professions: ['AT'], patient_address_formatted: 'Av. Santa Fe 3200' }, error: null };
   board.value = ready([cand('a', 3), cand('b', 7)], ['a', 'b']);
@@ -129,6 +131,14 @@ describe('VacancyInvitePage (T026a)', () => {
     renderPage();
     expect(screen.getByTestId('invite-no-permission')).toBeInTheDocument();
     expect(detail.calledWith).toHaveBeenCalledWith(undefined);
+  });
+
+  it('contrato de permissões ainda carregando: nem a vacante nem o board são pedidos (089 T043)', () => {
+    act(() => useAdminAuthStore.setState({ authzStatus: 'loading' }));
+    detail.value = { vacancy: null, error: null };
+    renderPage();
+    expect(detail.calledWith).toHaveBeenCalledWith(undefined);
+    expect(detail.calledWith).not.toHaveBeenCalledWith('v1');
   });
 
   it('CA-9: beforeunload só com isSending', async () => {
