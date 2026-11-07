@@ -104,3 +104,31 @@ export function pinIcon(color: string, emphasized = false): google.maps.Symbol {
     anchor: new google.maps.Point(12, 22),
   };
 }
+
+/**
+ * Rótulos de anel que colidem: dos anéis (raios em km) devolve os índices cujo rótulo deve sumir. Varre do maior para
+ * o menor; o rótulo do anel de fora é mantido e o de dentro some se o topo dos dois círculos estiver a menos de
+ * `minGapPx` na vertical (rótulo ~22 px de altura). `metersPerPx` vem do zoom (`156543,03·cos(lat)/2^zoom`).
+ */
+export function collidingRingLabels(radiiKm: readonly number[], metersPerPx: number, minGapPx = 24): Set<number> {
+  const hidden = new Set<number>();
+  if (!(metersPerPx > 0)) return hidden;
+  const order = radiiKm.map((r, i) => ({ r, i })).sort((a, b) => b.r - a.r);
+  let keptPx: number | null = null;
+  for (const { r, i } of order) {
+    const px = (r * 1000) / metersPerPx;
+    if (keptPx !== null && keptPx - px < minGapPx) hidden.add(i);
+    else keptPx = px;
+  }
+  return hidden;
+}
+
+export const metersPerPixel = (lat: number, zoom: number): number => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+
+/** Esconde (setMap(null)) os rótulos que colidem no zoom atual e mostra de novo os que deixaram de colidir. */
+export function hideCollidingRingLabels(map: google.maps.Map, center: { lat: number }, radiiKm: readonly number[], labels: readonly HtmlOverlay[]): void {
+  const zoom = map.getZoom?.();
+  if (zoom === undefined) return;
+  const hidden = collidingRingLabels(radiiKm, metersPerPixel(center.lat, zoom));
+  labels.forEach((label, i) => label.setMap(hidden.has(i) ? null : map));
+}

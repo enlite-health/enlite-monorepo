@@ -20,7 +20,7 @@ import { useRouteOverlay, type RouteOverlayLeg } from './useRouteOverlay';
 import { createPortal } from 'react-dom';
 import { MapPin } from 'lucide-react';
 import { InfoCard } from './PointsMapInfoCard';
-import { centerIcon, circleBounds, dotIcon, houseElement, htmlOverlay, pinIcon, ringLabelElement, type HtmlOverlay } from './mapOverlays';
+import { centerIcon, circleBounds, dotIcon, hideCollidingRingLabels, houseElement, htmlOverlay, pinIcon, ringLabelElement, type HtmlOverlay } from './mapOverlays';
 import { loadGoogleMaps } from '@infrastructure/services/loadGoogleMaps';
 import { Text } from '@presentation/components/atoms/Text';
 
@@ -162,6 +162,10 @@ export function PointsMap({
           zoom: 11,
           disableDefaultUI: true,
           zoomControl: true,
+          // Só com anéis/enquadramento: zoom fracionário + zoom fora do canto da legenda (o /admin/mapa não muda).
+          ...(hasRings || fitRadiusKm !== undefined
+            ? { isFractionalZoomEnabled: true, zoomControlOptions: { position: google.maps.ControlPosition?.RIGHT_CENTER } }
+            : {}),
           clickableIcons: false,
           styles: [
             { featureType: 'poi', stylers: [{ visibility: 'off' }] },
@@ -255,7 +259,10 @@ export function PointsMap({
       label.setMap(map);
       return { circle, label };
     });
+    // Rótulos que colidem (enquadramento de 50 km): some o do anel de dentro, quando o mapa assenta.
+    const idle = map.addListener('idle', () => hideCollidingRingLabels(map, center, rings.map((r) => r.radiusKm), ringsRef.current.map((x) => x.label)));
     return () => {
+      idle?.remove?.();
       ringsRef.current.forEach(({ circle, label }) => { circle.setMap(null); label.setMap(null); });
       ringsRef.current = [];
     };
