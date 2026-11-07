@@ -81,7 +81,7 @@ export function InviteListHeader({ view, docOnly, onSelectStep, onToggleAll, onD
           <Heading level={4} as="h2" weight="semibold" color="primary" data-testid="invite-list-title" className="truncate !leading-6">
             {titleText}
           </Heading>
-          <Text size="xs" color="inherit" data-testid="invite-docs-line" className="text-primary/70">
+          <Text size="xs" color="inherit" data-testid="invite-docs-line" className="truncate whitespace-nowrap text-primary/70">
             {t(`admin.vacancyInvite.docs.${docs.mode}`, { complete: docs.complete, missing: docs.missing })}
           </Text>
         </div>

@@ -215,7 +215,7 @@ export default function VacancyInvitePage(): JSX.Element {
         <ArrowLeft size={16} aria-hidden="true" />
         {t('admin.vacancyInvite.back')}
       </Button>
-      <div className="min-w-[190px] flex-1">
+      <div className="min-w-0 flex-1">
         <Heading level={3} as="h1" weight="semibold" color="primary" className="truncate !leading-7" data-testid="invite-title">
           {t('admin.vacancyInvite.title')}
         </Heading>
@@ -226,11 +226,15 @@ export default function VacancyInvitePage(): JSX.Element {
         )}
       </div>
       {vacancy && (
-        <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap" data-testid="invite-chips">
-          <Text as="span" size="xs" color="inherit" className="text-primary/70">{t('admin.vacancyInvite.seeking')}</Text>
-          {sexLabel && <Badge tone="neutral">{t('admin.vacancyInvite.chipSex', { value: sexLabel })}</Badge>}
-          {professionLabel && <Badge tone="neutral">{t('admin.vacancyInvite.chipProfession', { value: professionLabel })}</Badge>}
-          {address && <Badge tone="brand">{t('admin.vacancyInvite.chipService', { value: address })}</Badge>}
+        <div className="flex min-w-0 shrink items-center gap-2 whitespace-nowrap" data-testid="invite-chips">
+          <Text as="span" size="xs" color="inherit" className="shrink-0 text-primary/70">{t('admin.vacancyInvite.seeking')}</Text>
+          {sexLabel && <Badge tone="neutral" className="shrink-0">{t('admin.vacancyInvite.chipSex', { value: sexLabel })}</Badge>}
+          {professionLabel && <Badge tone="neutral" className="shrink-0">{t('admin.vacancyInvite.chipProfession', { value: professionLabel })}</Badge>}
+          {address && (
+            <span title={address} className="flex min-w-0">
+              <Badge tone="brand" className="min-w-0 max-w-full"><span className="truncate">{t('admin.vacancyInvite.chipService', { value: address })}</span></Badge>
+            </span>
+          )}
         </div>
       )}
     </header>

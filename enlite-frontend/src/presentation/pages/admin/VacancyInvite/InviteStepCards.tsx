@@ -30,13 +30,15 @@ export function InviteStepCards({ steps, onSelect }: Props): JSX.Element {
           data-tone={s.tone}
           aria-current={s.isCurrent ? 'step' : undefined}
           onClick={() => onSelect(s.step)}
-          className={`h-[72px] flex-auto rounded-2xl px-2.5 py-2.5 text-left ${TONE_CLASS[s.tone]}`}
+          className={`h-[72px] min-w-0 flex-1 basis-0 rounded-2xl px-3 py-2.5 text-left ${TONE_CLASS[s.tone]}`}
         >
-          <Heading level={4} as="h3" weight="semibold" color="inherit" className="flex items-center gap-1 truncate !text-sm !leading-5">
-            {s.step === 'vacante'
-              ? t('admin.vacancyInvite.steps.vacante')
-              : t('admin.vacancyInvite.steps.upTo', { km: s.band?.max })}
-            {s.completed && <CircleCheck size={16} aria-hidden="true" />}
+          <Heading level={4} as="h3" weight="semibold" color="inherit" className="flex items-center gap-1 !text-sm !leading-5">
+            {s.completed && <CircleCheck size={16} className="shrink-0" aria-hidden="true" />}
+            <span className="truncate">
+              {s.step === 'vacante'
+                ? t('admin.vacancyInvite.steps.vacante')
+                : t('admin.vacancyInvite.steps.upTo', { km: s.band?.max })}
+            </span>
           </Heading>
           <Text size="xs" color="inherit" className="truncate">
             {t(`admin.vacancyInvite.steps.sub.${s.sub.key}`, { count: s.sub.count })}

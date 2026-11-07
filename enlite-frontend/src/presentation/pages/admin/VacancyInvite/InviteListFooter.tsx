@@ -31,7 +31,7 @@ export function InviteListFooter({ footer, step, invitedCount, inviteDisabledRea
 
   return (
     <div data-testid="invite-footer" data-mode={mode} className="flex h-[72px] items-center gap-3 border-t border-gray-300 bg-white px-6">
-      <Text as="span" size="sm" color="inherit" data-testid="invite-invited-total" className="mr-auto min-w-0 truncate text-primary/70 !text-[13px]">
+      <Text as="span" size="sm" color="inherit" data-testid="invite-invited-total" className="mr-auto shrink-0 whitespace-nowrap text-primary/70 !text-[13px]">
         {t('admin.vacancyInvite.footer.invitedTotal', { count: invitedCount })}
       </Text>
       {mode === 'empty' && (
@@ -40,7 +40,7 @@ export function InviteListFooter({ footer, step, invitedCount, inviteDisabledRea
         </Text>
       )}
       {showMoreSecondary && (
-        <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-more-secondary" onClick={onMore} className="shrink-0 whitespace-nowrap">{moreLabel}</Button>
+        <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-more-secondary" onClick={onMore} className="min-w-0 truncate">{moreLabel}</Button>
       )}
       {showFinishSecondary && (
         <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-btn-finish-secondary" onClick={onFinish}>{t('admin.vacancyInvite.footer.finish')}</Button>

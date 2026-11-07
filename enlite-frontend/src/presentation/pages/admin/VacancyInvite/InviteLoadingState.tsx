@@ -22,7 +22,7 @@ export function InviteMapLoading({ address }: { address: string | null }): JSX.E
       <div
         role="status"
         data-testid="invite-loading-status"
-        className="absolute bottom-[72px] left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-white px-5 py-3.5 shadow-[0_8px_24px_rgba(0,0,0,.12)]"
+        className="absolute bottom-[72px] left-1/2 flex w-max max-w-[calc(100%-32px)] -translate-x-1/2 items-center gap-3 rounded-2xl bg-white px-5 py-3.5 shadow-[0_8px_24px_rgba(0,0,0,.12)]"
       >
         <LoaderCircle size={20} className="shrink-0 animate-spin text-primary" />
         <div>

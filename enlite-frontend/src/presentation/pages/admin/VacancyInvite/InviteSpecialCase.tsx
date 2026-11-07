@@ -61,15 +61,17 @@ export function InviteNobodyCard({ profile, vacanteCount, onSeeVacante, onBack }
       <Heading level={3} as="h2" weight="semibold" color="primary" className="!text-xl !leading-7">{t('admin.vacancyInvite.nobody.title')}</Heading>
       <Text size="sm" color="inherit" className="text-primary/70 !leading-[22px]">{t('admin.vacancyInvite.nobody.text', { profile })}</Text>
       {vacanteCount > 0 && (
-        <div className="flex flex-col items-center gap-2" data-testid="invite-nobody-vacante">
-          <Text size="sm" color="primary" className="!text-[13px] !leading-5">{t('admin.vacancyInvite.nobody.vacante', { count: vacanteCount })}</Text>
+        <Text size="sm" color="primary" data-testid="invite-nobody-vacante" className="!text-[13px] !leading-5">{t('admin.vacancyInvite.nobody.vacante', { count: vacanteCount })}</Text>
+      )}
+      <div className="mt-1 flex gap-3">
+        {vacanteCount > 0 && (
           <Button variant="quiet" size="dense" shape="rounded" data-testid="invite-nobody-see" className="gap-2" onClick={onSeeVacante}>
             <MapPinOff size={16} aria-hidden="true" />
             {t('admin.vacancyInvite.nobody.seeVacante', { count: vacanteCount })}
           </Button>
-        </div>
-      )}
-      <Button variant="primary" size="dense" shape="rounded" data-testid="invite-special-back" onClick={onBack}>{t('admin.vacancyInvite.back')}</Button>
+        )}
+        <Button variant="primary" size="dense" shape="rounded" data-testid="invite-special-back" onClick={onBack}>{t('admin.vacancyInvite.back')}</Button>
+      </div>
     </div>
   );
 }
