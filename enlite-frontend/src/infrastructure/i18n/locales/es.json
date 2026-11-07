@@ -7442,6 +7442,64 @@
       "map": {
         "center": "Lugar del servicio, fijo para esta vacante",
         "unavailable": "El mapa no está disponible. La lista sigue funcionando."
+      },
+      "steps": {
+        "label": "Distancia del lugar del servicio",
+        "vacante": "Ya en la vacante",
+        "upTo": "Hasta {{km}} km",
+        "sub": {
+          "withoutWhatsapp": "{{count}} sin WhatsApp",
+          "toInvite": "{{count}} por invitar",
+          "invited": "{{count}} invitados"
+        }
+      },
+      "stepTitle": {
+        "vacante": "Ya en la vacante, sin WhatsApp",
+        "upTo": "Hasta {{max}} km del servicio",
+        "between": "Entre {{min}} y {{max}} km del servicio"
+      },
+      "guide": {
+        "vacantePending": "Estas personas ya están en la vacante (se postularon o entraron por otro canal) y todavía no recibieron el WhatsApp.",
+        "vacanteDone": "Listo. Ahora buscá prestadores cerca del servicio.",
+        "firstStep": "Empezá por los más cercanos. Revisá la lista y tocá «Invitar».",
+        "nextStep": "Estas son las personas nuevas entre {{min}} y {{max}} km. Revisá la lista y tocá «Invitar».",
+        "doneMore": "Listo. Si necesitás más personas, buscá más lejos.",
+        "doneLast": "Listo. Ya buscaste hasta 50 km. Podés terminar cuando quieras."
+      },
+      "profileNote": "Solo aparecen prestadores que cumplen el perfil de esta vacante.",
+      "docs": {
+        "off": "Completos: {{complete}} · Faltan documentos: {{missing}}",
+        "on": "Completos: {{complete}} · Ocultos por documentos: {{missing}}",
+        "switch": "Solo con documentos completos",
+        "complete": "Documentos completos",
+        "missing": "Faltan documentos"
+      },
+      "selection": {
+        "all": "Todos",
+        "counter": "{{selected}} de {{pending}} elegidos",
+        "allInvited": "Todos ya invitados"
+      },
+      "row": {
+        "choose": "Elegir a {{name}}",
+        "showOnMap": "Mostrar en el mapa",
+        "viewProfile": "Ver perfil",
+        "activeCases_one": "Ya en {{count}} caso",
+        "activeCases_other": "Ya en {{count}} casos",
+        "distance": "{{value}} km",
+        "noDistance": "—",
+        "invitedToday": "Invitado hoy",
+        "invitedOn": "Invitado el {{date}}",
+        "sending": "Enviando…"
+      },
+      "footer": {
+        "invitedTotal": "Invitados en esta vacante: {{count}}",
+        "pickOne": "Elegí al menos una persona",
+        "inviteEmpty": "Invitar",
+        "invite_one": "Invitar a {{count}} persona",
+        "invite_other": "Invitar a {{count}} personas",
+        "more": "Buscar más lejos · hasta {{km}} km ({{count}} más)",
+        "moreFromVacante": "Buscar cerca del servicio · hasta {{km}} km ({{count}})",
+        "finish": "Terminar"
       }
     }
   },
