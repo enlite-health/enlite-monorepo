@@ -112,10 +112,12 @@ describe('Grant/RevokeAreaMembership + claim areas (Firebase dublê)', () => {
 
     mockSetCustomUserClaims.mockClear();
     const big = world({ uids: ['u1', 'u2'], claims: { u1: {}, u2: { lixo: 'x'.repeat(1100) } } });
+    const grantSpy = jest.spyOn(big.writer, 'grant');
     const r = await new GrantAreaMembershipUseCase(big.writer, big.registry, big.logins).execute({ pid: PID, area: 'learn', role: 'learner', actorUid: ACTOR });
     expect(r.isFailure).toBe(true);
     expect(r.error).toMatch(/1000 bytes/);
     expect(mockSetCustomUserClaims).not.toHaveBeenCalled();
+    expect(grantSpy).not.toHaveBeenCalled(); // pré-checagem: o banco não é tocado
   });
 
   it('falha de Firebase em um login não impede os outros e aparece em failedUids', async () => {

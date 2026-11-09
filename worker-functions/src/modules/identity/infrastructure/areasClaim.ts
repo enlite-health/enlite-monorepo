@@ -9,7 +9,7 @@
  */
 import * as admin from 'firebase-admin';
 import { Result } from '@shared/utils/Result';
-import { ListPersonAreasUseCase, type AreaRegistryReader } from '../application/ListPersonAreasUseCase';
+import { ListPersonAreasUseCase, type AreaRegistryReader, type StoredMembership } from '../application/ListPersonAreasUseCase';
 import { mergeCustomClaims } from './mergeCustomClaims';
 import { accountTypeOf } from './FirebaseAuthStrategy';
 
@@ -63,37 +63,69 @@ async function areasForLogin(
   return { areas, claims };
 }
 
+export interface ClaimsPlanEntry {
+  uid: string;
+  patch: { pid: string; areas: AreasClaim };
+}
+
+/**
+ * Calcula (sem escrever) o claim de cada login vivo. `prospective` são vínculos ainda NÃO gravados que entram no cálculo
+ * (pré-checagem do Grant). Estouro do teto → `Result.fail`, sem truncar.
+ */
+export async function planAreasClaims(
+  pid: string,
+  registry: AreaRegistryReader,
+  dir: LoginDirectory,
+  prospective: StoredMembership[] = [],
+): Promise<Result<{ uids: string[]; plan: ClaimsPlanEntry[] }>> {
+  try {
+    const reg: AreaRegistryReader = prospective.length
+      ? { hasWorkerInTree: (p) => registry.hasWorkerInTree(p), storedMemberships: async (p) => [...(await registry.storedMemberships(p)), ...prospective] }
+      : registry;
+    const uids = await dir.loginUids(pid);
+    const plan: ClaimsPlanEntry[] = [];
+    for (const uid of uids) {
+      const { areas, claims } = await areasForLogin(uid, pid, reg, dir);
+      const patch = { pid, areas };
+      const bytes = claimsBytes({ ...claims, ...patch });
+      if (bytes > MAX_CLAIMS_BYTES) {
+        return Result.fail(`claims do login excedem ${MAX_CLAIMS_BYTES} bytes (${bytes}); nada foi gravado`);
+      }
+      plan.push({ uid, patch });
+    }
+    return Result.ok({ uids, plan });
+  } catch (error) {
+    return Result.fail(error instanceof Error ? error.message : 'Failed to plan areas claims');
+  }
+}
+
+/** Grava o plano em cada login vivo; falha de um não impede os outros. */
+export async function applyAreasClaims(
+  uids: string[],
+  plan: ClaimsPlanEntry[],
+  opts: SyncAreasClaimsOptions,
+): Promise<SyncAreasClaimsResult> {
+  const failedUids: string[] = [];
+  for (const { uid, patch } of plan) {
+    try {
+      await mergeCustomClaims(uid, patch);
+      if (opts.revokeTokens) await admin.auth().revokeRefreshTokens(uid);
+    } catch {
+      failedUids.push(uid);
+    }
+  }
+  return { uids, failedUids };
+}
+
+/** Recalcula (já com o registro gravado) e grava. */
 export async function syncAreasClaims(
   pid: string,
   registry: AreaRegistryReader,
   dir: LoginDirectory,
   opts: SyncAreasClaimsOptions,
 ): Promise<Result<SyncAreasClaimsResult>> {
-  try {
-    const uids = await dir.loginUids(pid);
-    // 1) calcula TUDO antes de escrever: um login acima do teto recusa a operação inteira, sem truncar e sem escrita parcial.
-    const plan: Array<{ uid: string; patch: { pid: string; areas: AreasClaim } }> = [];
-    for (const uid of uids) {
-      const { areas, claims } = await areasForLogin(uid, pid, registry, dir);
-      const patch = { pid, areas };
-      const bytes = claimsBytes({ ...claims, ...patch });
-      if (bytes > MAX_CLAIMS_BYTES) {
-        return Result.fail(`claims do login excedem ${MAX_CLAIMS_BYTES} bytes (${bytes}); nada foi gravado no Firebase`);
-      }
-      plan.push({ uid, patch });
-    }
-    // 2) grava em cada login vivo; falha de um não impede os outros.
-    const failedUids: string[] = [];
-    for (const { uid, patch } of plan) {
-      try {
-        await mergeCustomClaims(uid, patch);
-        if (opts.revokeTokens) await admin.auth().revokeRefreshTokens(uid);
-      } catch {
-        failedUids.push(uid);
-      }
-    }
-    return Result.ok({ uids, failedUids });
-  } catch (error) {
-    return Result.fail(error instanceof Error ? error.message : 'Failed to sync areas claims');
-  }
+  const planned = await planAreasClaims(pid, registry, dir);
+  if (planned.isFailure) return Result.fail(planned.error as string);
+  const { uids, plan } = planned.getValue();
+  return Result.ok(await applyAreasClaims(uids, plan, opts));
 }

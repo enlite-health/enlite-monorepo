@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import { accountTypeForRole, isAccountType, type AccountType } from '../domain/AccountType';
+import { identityFromUsers, type UserIdentity } from './identityFromUsers';
 import { AuthContext, Credentials, CredentialType, Principal, PrincipalType, RequestMetadata } from '../domain/Auth';
 
 /**
@@ -106,17 +107,9 @@ export class FirebaseAuthStrategy {
     };
   }
 
-  private async getIdentityFromDB(uid: string, email?: string): Promise<{ role: string | null; account_type: string | null } | null> {
+  private async getIdentityFromDB(uid: string, email?: string): Promise<UserIdentity | null> {
     if (!this.db) return null;
-    try {
-      const result = await this.db.query<{ role: string | null; account_type: string | null }>(
-        'SELECT role, account_type FROM users WHERE (firebase_uid = $1 OR email = $2) AND is_active = true LIMIT 1',
-        [uid, email ?? ''],
-      );
-      return result.rows[0] ?? null;
-    } catch {
-      return null;
-    }
+    return identityFromUsers(this.db, uid, email);
   }
 }
 
