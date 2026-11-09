@@ -8,6 +8,7 @@ import { loggingAls, logger } from '@shared/logging';
 import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
 import { isCountryCode, isCountryRlsEnabled, setDbContext } from '@shared/database/requestDbSession';
 import { ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permissions';
+import { markRouteClass } from '../../permissions/infrastructure/catalog/routeClass';
 
 /**
  * E-mail do usuário autenticado para `req.user.email` — a MESMA chave que o mock preenche.
@@ -507,3 +508,13 @@ export class AuthMiddleware {
     console.error('[AUTHZ ERROR] Authorization middleware error');
   }
 }
+
+/**
+ * Marca de classe `staff` (acesso-do-cliente F3, DF-14): o guard devolvido por
+ * `requireStaff()` carrega a classe, lida por `scanExpressRouter`. Aplicada por
+ * decoração do método para o corpo do guard ficar intacto.
+ */
+const requireStaffSemMarca = AuthMiddleware.prototype.requireStaff;
+AuthMiddleware.prototype.requireStaff = function requireStaff(this: AuthMiddleware) {
+  return markRouteClass(requireStaffSemMarca.call(this), 'staff');
+};

@@ -104,10 +104,21 @@ export function isGovernedPath(path: string): boolean {
  * prestador NÃO é alcançada por isto — ela não carrega marca nenhuma — e o
  * desvio de não-staff do motor (D119) segue valendo.
  */
+/**
+ * Classe `public|service|client-policy` declarada na montagem (F3): é declaração
+ * explícita, como `exempt` — a rota está no perímetro e conta como declarada.
+ * `staff` fica de fora de propósito: `requireStaff` marca TODA rota de staff, e
+ * `staff` sem célula em rota governada continua sendo `undeclared`.
+ */
+function isDeclaredNonStaffClass(route: ScannedRoute): boolean {
+  return route.class != null && route.class !== 'staff';
+}
+
 export function isGovernedRoute(route: ScannedRoute): boolean {
   return (
     route.cell !== undefined ||
     route.exempt !== undefined ||
+    isDeclaredNonStaffClass(route) ||
     isGovernedPath(route.path) ||
     GOVERNED_ROUTES.has(routeKey(route.method, route.path))
   );
@@ -174,6 +185,7 @@ export class UndeclaredRouteRegistry {
     // isenção → isenta. Só o que não está marcado passa pelo prefixo/listas.
     if (route.cell) return 'declared';
     if (route.exempt) return 'exempt';
+    if (isDeclaredNonStaffClass(route)) return 'exempt';
     if (!isGovernedRoute(route)) return 'not_governed';
     const key = routeKey(route.method, route.path);
     if (this.exempt.has(key)) return 'exempt';

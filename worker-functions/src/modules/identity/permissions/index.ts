@@ -92,6 +92,14 @@ export {
   readExemptMetadata,
   exemptHandler,
 } from './infrastructure/catalog/permissionMetadata';
+export {
+  routeClass,
+  markRouteClass,
+  readRouteClass,
+  ROUTE_CLASS_METADATA,
+  ROUTE_CLASSES,
+} from './infrastructure/catalog/routeClass';
+export type { RouteClass } from './infrastructure/catalog/routeClass';
 export type { PermissionMetadata, ExemptMetadata } from './infrastructure/catalog/permissionMetadata';
 export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';

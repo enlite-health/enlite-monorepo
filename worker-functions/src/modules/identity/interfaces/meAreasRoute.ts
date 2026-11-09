@@ -16,7 +16,7 @@ import * as admin from 'firebase-admin';
 import { Router, type Request, type RequestHandler } from 'express';
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
-import { exemptHandler } from '../permissions/infrastructure/catalog/permissionMetadata';
+import { routeClass } from '../permissions/infrastructure/catalog/routeClass';
 import { ListPersonAreasUseCase } from '../application/ListPersonAreasUseCase';
 import { PgAreaRegistryRepository } from '../infrastructure/PgAreaRegistryRepository';
 import { PgAreaMembershipRepository } from '../infrastructure/PgAreaMembershipRepository';
@@ -37,7 +37,7 @@ export function createMeAreasRouter(requireAuth: RequestHandler, pool: Pool): Ro
   const registry = new PgAreaRegistryRepository(pool);
   const directory = new PgAreaMembershipRepository(pool);
   const listAreas = new ListPersonAreasUseCase(registry);
-  const provisoria = exemptHandler('client-policy (marca provisória até a F3): descreve o próprio ator; requireAuth é o portão');
+  const classe = routeClass('client-policy');
 
   async function reconcile(uid: string, pid: string): Promise<boolean> {
     const planned = await planAreasClaims(pid, registry, directory);
@@ -51,7 +51,7 @@ export function createMeAreasRouter(requireAuth: RequestHandler, pool: Pool): Ro
     return !failedUids.includes(uid);
   }
 
-  router.get('/me/areas', requireAuth, provisoria, async (req: Request, res) => {
+  router.get('/me/areas', requireAuth, classe, async (req: Request, res) => {
     const principal = (req as { user?: { uid?: string; roles?: string[]; accountType?: string | null } }).user;
     const uid = principal?.uid;
     if (!uid) {
