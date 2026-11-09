@@ -312,7 +312,8 @@ describe('mergeWorkers — transação atômica', () => {
 
     const calls = mockClient.query.mock.calls.map((c: any[]) => c[0]);
     expect(calls[0]).toBe('BEGIN');
-    expect(calls[calls.length - 2]).toMatch(/merged_into_id/);  // step 8
+    expect(calls[calls.length - 3]).toMatch(/merged_into_id/);  // step 8
+    expect(calls[calls.length - 2]).toMatch(/iam\.merge_person/); // gancho da pessoa (T130)
     expect(calls[calls.length - 1]).toBe('COMMIT');
   });
 
