@@ -344,7 +344,7 @@ export class AuthMiddleware {
    * que este guard decide — o que o staff PODE é a célula (`PermissionMiddleware`).
    */
   requireStaff() {
-    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    return markRouteClass(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       await this.requireAuth()(req, res, () => {
         const user = (req as any).user;
         if (!user || !isStaffAccount(user)) {
@@ -353,7 +353,7 @@ export class AuthMiddleware {
         }
         next();
       });
-    };
+    }, 'staff');
   }
 
   /**
@@ -508,13 +508,3 @@ export class AuthMiddleware {
     console.error('[AUTHZ ERROR] Authorization middleware error');
   }
 }
-
-/**
- * Marca de classe `staff` (acesso-do-cliente F3, DF-14): o guard devolvido por
- * `requireStaff()` carrega a classe, lida por `scanExpressRouter`. Aplicada por
- * decoração do método para o corpo do guard ficar intacto.
- */
-const requireStaffSemMarca = AuthMiddleware.prototype.requireStaff;
-AuthMiddleware.prototype.requireStaff = function requireStaff(this: AuthMiddleware) {
-  return markRouteClass(requireStaffSemMarca.call(this), 'staff');
-};
