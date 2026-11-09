@@ -72,7 +72,7 @@ import {
   createMockAuthEndpoints,
 } from '@modules/identity';
 import { createClientPolicyEngine } from '@modules/identity/clientAuthorization/createClientPolicyEngine';
-import { StaffOrClientEngine } from '@modules/identity/clientAuthorization/StaffOrClientEngine';
+import { StaffOrClientEngine, staffGroupGoverns } from '@modules/identity/clientAuthorization/StaffOrClientEngine';
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
@@ -267,7 +267,7 @@ const nonGovernedEngine = new StaffOrClientEngine(staffLegacyEngine, clientPolic
 // concedê-las. Rota não virada continua se comportando como hoje (design 6).
 const authzEngine = process.env.PERMISSION_ENGINE_ENABLED === 'true'
   ? new GroupPermissionEngine(permissionsBoundary.permissions.client, nonGovernedEngine, {
-      governsCell: (resource, action) => permissionsBoundary.registry.declaresCell(resource, action),
+      governsCell: staffGroupGoverns((resource, action) => permissionsBoundary.registry.declaresCell(resource, action)),
     })
   : nonGovernedEngine;
 

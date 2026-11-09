@@ -1,4 +1,4 @@
-import { StaffOrClientEngine } from '../StaffOrClientEngine';
+import { StaffOrClientEngine, staffGroupGoverns } from '../StaffOrClientEngine';
 import type { AuthContext } from '../../domain/Auth';
 
 const mk = (tag: string) => ({
@@ -14,8 +14,17 @@ describe('StaffOrClientEngine', () => {
   const client = mk('client');
   const e = new StaffOrClientEngine(legacy as never, client as never);
 
-  it('staff vai ao legado, mesmo em ação da tabela do Cedar', async () => {
-    expect((await e.checkPermission(staff, { type: 'worker' }, 'read')).reason).toBe('legacy');
+  it('staff + ação da tabela do Cedar → Cedar (DF-1/DF-4: o vínculo decide, não o account_type)', async () => {
+    expect((await e.checkPermission(staff, { type: 'worker' }, 'read')).reason).toBe('client');
+  });
+  it('staff + ação fora da tabela → legado', async () => {
+    expect((await e.checkPermission(staff, { type: 'vacancy' }, 'read')).reason).toBe('legacy');
+  });
+  it('staffGroupGoverns: declarada e fora da tabela → grupo; declarada e na tabela → não', () => {
+    const g = staffGroupGoverns(() => true);
+    expect(g('worker', 'read')).toBe(false);
+    expect(g('vacancy', 'read')).toBe(true);
+    expect(staffGroupGoverns(() => false)('vacancy', 'read')).toBe(false);
   });
   it('não-staff + worker:read → Cedar (deny do Cedar vale)', async () => {
     const r = await e.checkPermission(worker, { type: 'worker', id: 'outro' }, 'read');
