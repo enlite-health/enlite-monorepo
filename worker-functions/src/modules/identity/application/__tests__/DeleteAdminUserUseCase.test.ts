@@ -15,6 +15,7 @@ jest.mock('../../infrastructure/AdminRepository', () => ({
   })),
 }));
 
+const mockMarkDeleted = jest.fn();
 const mockDeleteUser = jest.fn();
 jest.mock('firebase-admin', () => ({
   auth: () => ({ deleteUser: (...args: unknown[]) => mockDeleteUser(...args) }),
@@ -30,12 +31,13 @@ describe('DeleteAdminUserUseCase', () => {
     mockIsLastManager.mockReset().mockResolvedValue(false);
     mockDeleteByFirebaseUid.mockReset().mockResolvedValue(undefined);
     mockDeleteUser.mockReset().mockResolvedValue(undefined);
+    mockMarkDeleted.mockReset().mockResolvedValue(undefined);
   });
 
   it('último gestor → falha `last_manager` SEM tocar no Firebase nem no banco', async () => {
     mockIsLastManager.mockResolvedValue(true);
 
-    const result = await new DeleteAdminUserUseCase().execute(UID);
+    const result = await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID);
 
     expect(result.isFailure).toBe(true);
     expect(result.error).toBe(LAST_MANAGER);
@@ -48,7 +50,7 @@ describe('DeleteAdminUserUseCase', () => {
     mockDeleteUser.mockImplementation(async () => { ordem.push('firebase'); });
     mockDeleteByFirebaseUid.mockImplementation(async () => { ordem.push('banco'); });
 
-    const result = await new DeleteAdminUserUseCase().execute(UID);
+    const result = await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID);
 
     expect(result.isSuccess).toBe(true);
     expect(ordem).toEqual(['firebase', 'banco']);
@@ -56,25 +58,45 @@ describe('DeleteAdminUserUseCase', () => {
     expect(mockDeleteByFirebaseUid).toHaveBeenCalledWith(UID);
   });
 
+  it('conta apagada no Firebase → marca o login no iam (ator informado, ou a própria conta), antes do banco', async () => {
+    const ordem: string[] = [];
+    mockDeleteUser.mockImplementation(async () => { ordem.push('firebase'); });
+    mockMarkDeleted.mockImplementation(async () => { ordem.push('iam'); });
+    mockDeleteByFirebaseUid.mockImplementation(async () => { ordem.push('banco'); });
+
+    await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID, 'uid-ator');
+    await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID);
+
+    expect(ordem.slice(0, 3)).toEqual(['firebase', 'iam', 'banco']);
+    expect(mockMarkDeleted).toHaveBeenNthCalledWith(1, UID, 'uid-ator');
+    expect(mockMarkDeleted).toHaveBeenNthCalledWith(2, UID, UID);
+  });
+
+  it('último gestor (recusado antes do Firebase) NÃO marca o login', async () => {
+    mockIsLastManager.mockResolvedValue(true);
+    await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID);
+    expect(mockMarkDeleted).not.toHaveBeenCalled();
+  });
+
   it('o trigger do banco recusando (23514 anti-lockout) vira o MESMO código — segunda tranca', async () => {
     mockDeleteByFirebaseUid.mockRejectedValue(
       Object.assign(new Error('[iam] DELETE rejeitado: deixaria ZERO gestores (anti-lockout)'), { code: '23514' }),
     );
 
-    const result = await new DeleteAdminUserUseCase().execute(UID);
+    const result = await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID);
 
     expect(result.error).toBe(LAST_MANAGER);
   });
 
   it('outro erro do banco segue com a mensagem original', async () => {
     mockDeleteByFirebaseUid.mockRejectedValue(new Error('connection reset'));
-    const result = await new DeleteAdminUserUseCase().execute(UID);
+    const result = await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID);
     expect(result.error).toBe('connection reset');
   });
 
   it('erro sem ser Error cai na mensagem padrão', async () => {
     mockDeleteUser.mockRejectedValue('boom');
-    const result = await new DeleteAdminUserUseCase().execute(UID);
+    const result = await new DeleteAdminUserUseCase({ markDeleted: mockMarkDeleted }).execute(UID);
     expect(result.error).toBe('Failed to delete admin user');
   });
 });

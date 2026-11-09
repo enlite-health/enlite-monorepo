@@ -62,7 +62,7 @@ export class AdminController {
         return;
       }
 
-      const result = await this.deleteUserByEmailUseCase.execute({ email });
+      const result = await this.deleteUserByEmailUseCase.execute({ email, actorUid: req.user?.uid });
 
       if (result.isFailure) {
         res.status(400).json({ success: false, error: result.error });
@@ -165,7 +165,7 @@ export class AdminController {
   async deleteAdminUser(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const result = await this.deleteAdminUseCase.execute(id);
+      const result = await this.deleteAdminUseCase.execute(id, req.user?.uid);
       if (result.isFailure) {
         // O MESMO status e a MESMA frase do painel — um mapa só (permissionErrorHttp).
         if (result.error === LAST_MANAGER) {

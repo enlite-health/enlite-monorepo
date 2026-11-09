@@ -1,6 +1,8 @@
 import { Result } from '@shared/utils/Result';
 import { GoogleIdentityService } from '../infrastructure/GoogleIdentityService';
 import { UserRepository } from '../infrastructure/UserRepository';
+import { PgLoginRemovalRepository } from '../infrastructure/PgLoginRemovalRepository';
+import type { AccountLoginRemoval } from './AccountLoginRemoval';
 
 export interface DeleteUserDTO {
   authUid: string;
@@ -12,14 +14,16 @@ export interface DeleteUserDTO {
  * 
  * This performs a cascading delete:
  * 1. Deletes user from Google Identity Platform
- * 2. Deletes from users base table (cascades to all related tables)
+ * 2. Marks the login as removed in iam (DF-20) — even when the user has no row in users
+ * 3. Deletes from users base table (cascades to all related tables)
  * 
  * HIPAA Compliance: No PII in logs or error messages
  */
 export class DeleteUserUseCase {
   constructor(
     private userRepository: UserRepository,
-    private googleIdentityService: GoogleIdentityService
+    private googleIdentityService: GoogleIdentityService,
+    private loginRemoval: AccountLoginRemoval = new PgLoginRemovalRepository()
   ) {}
 
   async execute(data: DeleteUserDTO): Promise<Result<void>> {
@@ -42,7 +46,16 @@ export class DeleteUserUseCase {
         return Result.fail<void>('Failed to delete user from authentication system');
       }
 
-      // Step 3: Delete from database (users table cascades to workers_extension)
+      // Step 3: iam — fora do `if (userExists)`: prestador sem linha em users também perde o login.
+      // Autoexclusão: o ator é a própria conta.
+      try {
+        await this.loginRemoval.markDeleted(data.authUid, data.authUid);
+      } catch {
+        console.error('Failed to mark login as removed in iam');
+        return Result.fail<void>('Failed to record account removal');
+      }
+
+      // Step 4: Delete from database (users table cascades to workers_extension)
       if (userExists) {
         const deleteResult = await this.userRepository.deleteUserComplete(data.authUid);
         
