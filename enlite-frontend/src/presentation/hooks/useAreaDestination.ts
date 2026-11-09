@@ -2,7 +2,7 @@
  * Destino do login por área (design §6, F4).
  *
  *  - `next` só é respeitado se a pessoa abre a área dele (senão é ignorado e vale o destino por área);
- *  - 0 áreas navegáveis → `/no-access`; 1 → o `entryRoute`; > 1 → a última usada (`localStorage`,
+ *  - 0 áreas → `/no-access`; áreas, mas nenhuma navegável → `/no-access?reason=unavailable`; 1 → o `entryRoute`; > 1 → a última usada (`localStorage`,
  *    chave por uid, com `try/catch`) ou a primeira da ordem estável que o servidor devolve;
  *  - `next` sob `/admin` chama o perfil admin ANTES (é ele que provisiona o staff novo) [AJUSTE A7];
  *  - `tokenRefreshRequired` → `getIdToken(true)` antes de navegar;
@@ -15,6 +15,8 @@ import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthServic
 import type { AreaEntry } from '@domain/entities/MyAreas';
 
 export const NO_ACCESS_ROUTE = '/no-access';
+/** Tem vínculo, mas só a áreas sem tela ainda (`entryRoute` nulo): a página diz "ainda não disponível". */
+export const NO_ACCESS_UNAVAILABLE_ROUTE = '/no-access?reason=unavailable';
 const LAST_AREA_KEY_PREFIX = 'enlite.lastArea.';
 /** Áreas que NÃO são a raiz: o caminho sob esse prefixo é só delas, mesmo que a pessoa abra `/`. */
 const NON_ROOT_PREFIXES = ['/admin'];
@@ -86,7 +88,7 @@ export function useAreaDestination() {
     }
 
     const navigable = areas.filter((a) => a.entryRoute != null);
-    if (navigable.length === 0) return NO_ACCESS_ROUTE;
+    if (navigable.length === 0) return areas.length > 0 ? NO_ACCESS_UNAVAILABLE_ROUTE : NO_ACCESS_ROUTE;
     if (next && nextIsOpenTo(next, navigable)) return next;
 
     const uid = (await authService.getCurrentUser().catch(() => null))?.id ?? null;

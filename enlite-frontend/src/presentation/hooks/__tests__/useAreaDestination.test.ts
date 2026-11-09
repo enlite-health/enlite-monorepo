@@ -15,7 +15,7 @@ vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   },
 }));
 
-import { useAreaDestination, NO_ACCESS_ROUTE, readLastArea } from '../useAreaDestination';
+import { useAreaDestination, NO_ACCESS_ROUTE, NO_ACCESS_UNAVAILABLE_ROUTE, readLastArea } from '../useAreaDestination';
 
 const STAFF = { area: 'backoffice', role: 'staff', entryRoute: '/admin' };
 const WORKER = { area: 'care', role: 'worker', entryRoute: '/' };
@@ -34,9 +34,17 @@ describe('useAreaDestination', () => {
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it('0 áreas navegáveis → /no-access (área sem tela não conta)', async () => {
+  it('só áreas sem tela (só-aluno) → /no-access?reason=unavailable', async () => {
     areas([LEARNER]);
-    expect(await resolve()).toBe(NO_ACCESS_ROUTE);
+    expect(await resolve()).toBe(NO_ACCESS_UNAVAILABLE_ROUTE);
+    expect(NO_ACCESS_UNAVAILABLE_ROUTE).toBe('/no-access?reason=unavailable');
+  });
+
+  it('0 áreas → /no-access, sem reason', async () => {
+    areas([]);
+    const dest = await resolve();
+    expect(dest).toBe(NO_ACCESS_ROUTE);
+    expect(dest).not.toContain('reason');
   });
 
   it('1 área → entryRoute dela', async () => {
