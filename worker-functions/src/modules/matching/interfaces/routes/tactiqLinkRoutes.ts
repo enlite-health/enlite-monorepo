@@ -1,6 +1,6 @@
 import { Router, Request, RequestHandler, Response } from 'express';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
-import { ADMIN_USERS_FAMILY, exemptHandler } from '@modules/identity/permissions';
+import { ADMIN_USERS_FAMILY, routeClass } from '@modules/identity/permissions';
 import { publicContextMiddleware } from '@shared/database/systemContextMiddleware';
 import { TactiqLinkController } from '../controllers/TactiqLinkController';
 import { TactiqCheckInternalController } from '../controllers/TactiqCheckInternalController';
@@ -43,8 +43,8 @@ export function createTactiqLinkRoutes(
 }
 
 /**
- * Callback do OAuth — SEM Bearer (navegação do browser), em contexto de banco público declarado. A isenção é declarada
- * na montagem (`exemptHandler`): o guard de rota sem célula a vê como `exempt`, não como `undeclared`.
+ * Callback do OAuth — SEM Bearer (navegação do browser), em contexto de banco público declarado. A classe `public` é declarada
+ * na montagem (`routeClass`): o guard de rota sem célula a vê como `exempt`, não como `undeclared`.
  * `rateLimit` entra de fora (o `index.ts` tem o `express-rate-limit`); a prova de identidade é o `state` single-use.
  */
 export function createTactiqLinkCallbackRoute(controller: TactiqLinkController, rateLimit: RequestHandler): Router {
@@ -53,7 +53,9 @@ export function createTactiqLinkCallbackRoute(controller: TactiqLinkController, 
     '/me/tactiq-link/callback',
     rateLimit,
     publicContextMiddleware('public:/api/admin/me/tactiq-link/callback'),
-    exemptHandler('state single-use criado pelo POST autenticado (own_tactiq_link:create); callback é navegação do browser, sem Bearer'),
+    // Classe `public` (antes `exemptHandler`): a prova de identidade é o `state` single-use criado pelo POST autenticado
+    // (own_tactiq_link:create); o callback é navegação do browser, sem Bearer.
+    routeClass('public'),
     (req: Request, res: Response) => controller.callback(req, res),
   );
   return router;
@@ -62,6 +64,6 @@ export function createTactiqLinkCallbackRoute(controller: TactiqLinkController, 
 /** Job diário. Montado em `/api/internal` com contexto de sistema + segredo interno no `app.use`. */
 export function createTactiqCheckInternalRoutes(controller: TactiqCheckInternalController): Router {
   const router = Router();
-  router.post('/jobs/admission-tactiq-check', (req: Request, res: Response) => controller.handle(req, res));
+  router.post('/jobs/admission-tactiq-check', routeClass('service'), (req: Request, res: Response) => controller.handle(req, res));
   return router;
 }

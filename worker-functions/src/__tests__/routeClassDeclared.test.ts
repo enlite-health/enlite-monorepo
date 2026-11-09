@@ -85,3 +85,59 @@ describe('T309 lote 3 — rotas service de admissão declaram classe', () => {
     esperarClasse(varrer((a) => a.use('/api/internal', createChromeReportInternalRoutes(dub()))), 1, 'service');
   });
 });
+
+describe('T309 lote 4 — enquadre, tactiq, internalRoutes e jobs-only declaram classe', () => {
+  it('enquadreJobRoutes', async () => {
+    const m = await import('@modules/matching/interfaces/routes/enquadreJobRoutes');
+    esperarClasse(
+      varrer((a) => {
+        a.use('/api/internal', m.createEnquadrePostCallInternalRoutes(dub()));
+        a.use('/api/internal', m.createEnquadreImportInternalRoutes(dub()));
+      }),
+      2,
+      'service',
+    );
+  });
+  it('tactiqLinkRoutes: callback public + job service', async () => {
+    const m = await import('@modules/matching/interfaces/routes/tactiqLinkRoutes');
+    const rotas = varrer((a) => {
+      a.use('/api/admin', m.createTactiqLinkCallbackRoute(dub(), passa));
+      a.use('/api/internal', m.createTactiqCheckInternalRoutes(dub()));
+    });
+    expect(rotas).toHaveLength(2);
+    expect(rotas.map((r) => `${r.method} ${r.path} ${r.class}`).sort()).toEqual([
+      'GET /api/admin/me/tactiq-link/callback public',
+      'POST /api/internal/jobs/admission-tactiq-check service',
+    ]);
+  });
+  it('notification/internalRoutes', async () => {
+    const { createInternalRoutes } = await import('@modules/notification/interfaces/routes/internalRoutes');
+    const rotas = varrer((a) => a.use('/api/internal', createInternalRoutes(dub())));
+    esperarClasse(
+      rotas.filter((r) => r.method !== 'USE'),
+      11,
+      'service',
+    );
+  });
+  it('jobs-only: 2 public + 1 staff (entrypoint sem auth; marca direto no handler)', () => {
+    // O entrypoint dá `app.listen` ao importar: instância FRESCA do express (isolateModules) com o `listen` capturado, sem abrir porta.
+    jest.doMock('@modules/worker', () => ({ JobsController: class {} }));
+    let app: express.Express | undefined;
+    jest.isolateModules(() => {
+      const expressFresco = jest.requireActual('express') as typeof express;
+      jest.spyOn(expressFresco.application, 'listen').mockImplementation(function (this: express.Express) {
+        app = this;
+        return {} as never;
+      });
+      jest.requireActual('../jobs-only');
+    });
+    jest.dontMock('@modules/worker');
+    expect(app).toBeDefined();
+    const rotas = scanExpressRouter(app as express.Express).filter((r) => r.method !== 'USE');
+    expect(rotas.map((r) => `${r.method} ${r.path} ${r.class}`).sort()).toEqual([
+      'GET /api/jobs public',
+      'GET /health public',
+      'POST /api/jobs/refresh staff',
+    ]);
+  });
+});

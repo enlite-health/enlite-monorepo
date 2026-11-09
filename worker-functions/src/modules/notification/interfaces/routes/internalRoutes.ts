@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { routeClass } from '@modules/identity/permissions';
 import { internalAuthMiddleware } from '../middleware/InternalAuthMiddleware';
 import { InternalController } from '../controllers/InternalController';
 import { pingVertex } from '@modules/integration/infrastructure/vertex-health';
@@ -16,7 +17,7 @@ export function createInternalRoutes(controller: InternalController): Router {
   // via ADC (the path that broke when the API key was revoked). The deploy
   // gate calls this and fails the rollout on non-200 — catching IAM drift,
   // region/model unavailability or broken ADC before users hit it.
-  router.get('/vertex-health', async (_req: Request, res: Response) => {
+  router.get('/vertex-health', routeClass('service'), async (_req: Request, res: Response) => {
     try {
       const result = await pingVertex();
       res.status(200).json({ status: 'ok', ...result });
@@ -28,54 +29,54 @@ export function createInternalRoutes(controller: InternalController): Router {
   });
 
   // Pub/Sub push: domain events
-  router.post('/events/process', (req: Request, res: Response) => {
+  router.post('/events/process', routeClass('service'), (req: Request, res: Response) => {
     controller.processEvent(req, res);
   });
 
   // Pub/Sub push: outbox messages
-  router.post('/outbox/process', (req: Request, res: Response) => {
+  router.post('/outbox/process', routeClass('service'), (req: Request, res: Response) => {
     controller.processOutbox(req, res);
   });
 
   // Cloud Tasks (queue: whatsapp-paced) — rate-limited outbox processing
-  router.post('/outbox/process-paced', (req: Request, res: Response) => {
+  router.post('/outbox/process-paced', routeClass('service'), (req: Request, res: Response) => {
     controller.processOutboxPaced(req, res);
   });
 
   // Cloud Scheduler safety net: orphaned outbox messages
-  router.post('/outbox/sweep', (req: Request, res: Response) => {
+  router.post('/outbox/sweep', routeClass('service'), (req: Request, res: Response) => {
     controller.sweepOutbox(req, res);
   });
 
   // Cloud Scheduler safety net: orphaned domain events
-  router.post('/events/sweep', (req: Request, res: Response) => {
+  router.post('/events/sweep', routeClass('service'), (req: Request, res: Response) => {
     controller.sweepEvents(req, res);
   });
 
   // Cloud Scheduler (semanal): retenção de mensageria — archive_old_messages() +
   // cleanup_expired_tokens() (migration 087, sem dono de execução até aqui)
-  router.post('/messaging/retention', (req: Request, res: Response) => {
+  router.post('/messaging/retention', routeClass('service'), (req: Request, res: Response) => {
     controller.sweepMessagingRetention(req, res);
   });
 
   // Cloud Scheduler / manual: safety net scoped to an explicit event allowlist
   // (SWEEP_SAFE_EVENTS — never a generic "all pending" sweep)
-  router.post('/events/sweep-safe', (req: Request, res: Response) => {
+  router.post('/events/sweep-safe', routeClass('service'), (req: Request, res: Response) => {
     controller.sweepSafeEvents(req, res);
   });
 
   // Read-only diagnostic: backlog + idade do outbox domain_events por tipo de evento
-  router.get('/events/health', (req: Request, res: Response) => {
+  router.get('/events/health', routeClass('service'), (req: Request, res: Response) => {
     controller.getEventsHealth(req, res);
   });
 
   // Cloud Scheduler: daily bulk dispatch
-  router.post('/bulk-dispatch/process', (req: Request, res: Response) => {
+  router.post('/bulk-dispatch/process', routeClass('service'), (req: Request, res: Response) => {
     controller.processBulkDispatch(req, res);
   });
 
   // Cloud Scheduler: daily Talentum incomplete reminder
-  router.post('/bulk-dispatch/talentum-incomplete', (req: Request, res: Response) => {
+  router.post('/bulk-dispatch/talentum-incomplete', routeClass('service'), (req: Request, res: Response) => {
     controller.processBulkDispatchTalentum(req, res);
   });
 
