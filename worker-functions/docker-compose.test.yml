@@ -94,6 +94,11 @@ services:
       # ausência da chave — e o e2e chegou a bater em api.sendgrid.com de
       # verdade (401), medido em revisão.
       SENDGRID_API_KEY: ""
+      # Canal de OTP (Twilio Verify) DECLARADAMENTE em bypass: sid sintético `TEST_<uuid>` e código fixo, sem tocar
+      # o Twilio (api.twilio.com já resolve para 127.0.0.1 em extra_hosts). Detecção de Cloud Run por K_SERVICE ausente
+      # (TwilioVerifyService.detectE2EBypass). Usado por tests/e2e/claim-uid-do-token.e2e.test.ts (H3, D650).
+      E2E_OTP_BYPASS: "true"
+      E2E_OTP_CODE: "123456"
       USE_CERBOS: "false"
       INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
       # Spec 018 PR-4 (foto do paciente) — conserto #1/#2 da 2ª revisão: a API dockerizada (usada

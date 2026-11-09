@@ -6,8 +6,8 @@
  * qualquer use case / write no banco:
  *  - POST /api/workers/init (H2/D650): exige token; sem Bearer → 401 no AuthMiddleware,
  *    antes de tocar controller, repositório ou Twilio.
- *  - ClaimController.start: valida authUid/email/phone e retorna 400 antes de startClaim
- *    .execute(). Body `{}` → "Missing required field: authUid".
+ *  - /api/auth/claim/start (H3, D650): exige token — sem Bearer, `requireAuth` devolve 401
+ *    antes do controller e de qualquer OTP.
  *
  * CUIDADO rate-limit: /api/auth/claim/start é 3/15min por IP (claimRoutes). Fazemos UMA
  * request só (sem novas requests ao claim neste arquivo). O 404 de GET /api/vacancies/:id
@@ -45,19 +45,17 @@ test('[@route:POST /api/workers/init @depth:error] sem token é rejeitado com 40
   expect(body).toHaveProperty('success', false);
 });
 
-test('[@route:POST /api/auth/claim/start @depth:error] body inválido é rejeitado com 400 (1 request — rate-limit 3/15min)', async () => {
-  // UMA request apenas: o endpoint é 3/15min por IP. 400 sai antes de startClaim.execute().
+test('[@route:POST /api/auth/claim/start @depth:error] sem token é rejeitado com 401 (1 request — rate-limit 3/15min)', async () => {
+  // UMA request apenas: o endpoint é 3/15min por IP. 401 sai do requireAuth, antes do controller/OTP (H3, D650).
   const res = await api.post('/api/auth/claim/start', { data: {} });
   const status = res.status();
   const body = await res.json().catch(() => ({}));
   test.info().annotations.push({
     type: 'validacao',
-    description: `status=${status} error=${body?.error ?? '(sem corpo)'} (esperado 400)`,
+    description: `status=${status} error=${body?.error ?? '(sem corpo)'} (esperado 401)`,
   });
-  expect(status).toBe(400);
+  expect(status).toBe(401);
   expect(body).toHaveProperty('success', false);
-  // Mensagem exata do guard (mesma request — NÃO fazemos outra ao claim/start).
-  expect(body).toHaveProperty('error', 'Missing required field: authUid');
 });
 
 test('[@route:GET /api/workers/lookup @depth:error] sem email é rejeitado com 400', async () => {
