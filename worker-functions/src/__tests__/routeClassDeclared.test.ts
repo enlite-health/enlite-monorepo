@@ -65,3 +65,23 @@ describe('T309 lote 2 — rotas service declaram classe', () => {
     esperarClasse(varrer((a) => a.use('/mcp', createMcpRoutes({ principalRepo: dub(), auditor: dub(), registry: dub(), serverName: 'x', serverVersion: '1' }))), 3, 'service');
   });
 });
+
+describe('T309 lote 3 — rotas service de admissão declaram classe', () => {
+  const R = '@modules/matching/interfaces/routes';
+  it('admissionImportRoutes', async () => {
+    const { createAdmissionImportInternalRoutes } = await import(`${R}/admissionImportRoutes`);
+    esperarClasse(varrer((a) => a.use('/api/internal', createAdmissionImportInternalRoutes(dub()))), 1, 'service');
+  });
+  it('admissionLiveRoutes', async () => {
+    const { createAdmissionLiveInternalRoutes } = await import(`${R}/admissionLiveRoutes`);
+    esperarClasse(varrer((a) => a.use('/api/internal', createAdmissionLiveInternalRoutes(dub()))), 1, 'service');
+  });
+  it('admissionPostCallRoutes', async () => {
+    const { createAdmissionPostCallInternalRoutes } = await import(`${R}/admissionPostCallRoutes`);
+    esperarClasse(varrer((a) => a.use('/api/internal', createAdmissionPostCallInternalRoutes(dub()))), 1, 'service');
+  });
+  it('chromeReportRoutes', async () => {
+    const { createChromeReportInternalRoutes } = await import(`${R}/chromeReportRoutes`);
+    esperarClasse(varrer((a) => a.use('/api/internal', createChromeReportInternalRoutes(dub()))), 1, 'service');
+  });
+});
