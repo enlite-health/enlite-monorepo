@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { markRouteClass } from '../permissions/infrastructure/catalog/routeClass';
 
 /**
  * Middleware de autenticação mock para testes E2E
@@ -95,7 +96,7 @@ export function createMockAuthEndpoints(app: any) {
   }
 
   // Endpoint para criar token de teste
-  app.post('/api/test/auth/token', (req: Request, res: Response) => {
+  app.post('/api/test/auth/token', markRouteClass((req: Request, res: Response) => {
     const { uid, email, role } = req.body;
 
     if (!uid || !email) {
@@ -124,10 +125,10 @@ export function createMockAuthEndpoints(app: any) {
         role,
       },
     });
-  });
+  }, 'public'));
 
   // Endpoint para verificar token
-  app.get('/api/test/auth/verify', mockAuthMiddleware, (req: Request, res: Response) => {
+  app.get('/api/test/auth/verify', mockAuthMiddleware, markRouteClass((req: Request, res: Response) => {
     const user = (req as any).user;
     
     if (!user) {
@@ -141,7 +142,7 @@ export function createMockAuthEndpoints(app: any) {
       success: true,
       data: user,
     });
-  });
+  }, 'public'));
 
   console.log('✅ Mock auth endpoints registered for E2E testing');
 }

@@ -141,3 +141,27 @@ describe('T309 lote 4 — enquadre, tactiq, internalRoutes e jobs-only declaram 
     ]);
   });
 });
+
+describe('T309 lote 5 — mock de auth, swagger e telemetria declaram classe', () => {
+  it('MockAuthMiddleware: 2 public (só existem com USE_MOCK_AUTH=true)', async () => {
+    const { createMockAuthEndpoints } = await import('@modules/identity/infrastructure/MockAuthMiddleware');
+    const antes = process.env.USE_MOCK_AUTH;
+    process.env.USE_MOCK_AUTH = 'true';
+    try {
+      esperarClasse(varrer((a) => createMockAuthEndpoints(a)), 2, 'public');
+    } finally {
+      if (antes === undefined) delete process.env.USE_MOCK_AUTH;
+      else process.env.USE_MOCK_AUTH = antes;
+    }
+  });
+  it('swaggerRouter: 3 staff, também sem guards (dev/test)', async () => {
+    const { createSwaggerRouter } = await import('@shared/openapi/swaggerRouter');
+    const rotas = varrer((a) => a.use('/api/docs', createSwaggerRouter({}))).filter((r) => r.method !== 'USE');
+    esperarClasse(rotas, 3, 'staff');
+  });
+  it('authTelemetryRoutes: 1 staff (pré-login, marca direto no handler)', async () => {
+    const { createAuthTelemetryRoutes } = await import('@modules/identity/interfaces/routes/authTelemetryRoutes');
+    const auth = { optionalAuth: () => passa } as never;
+    esperarClasse(varrer((a) => a.use('/api', createAuthTelemetryRoutes(auth))), 1, 'staff');
+  });
+});

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { AuthTelemetryController } from '../controllers/AuthTelemetryController';
 import { AuthMiddleware } from '../middleware/AuthMiddleware';
+import { markRouteClass } from '../../permissions/infrastructure/catalog/routeClass';
 
 /**
  * Telemetria do login administrativo — POST /api/admin/auth/telemetry.
@@ -25,7 +26,8 @@ export function createAuthTelemetryRoutes(authMiddleware: AuthMiddleware): Route
     '/admin/auth/telemetry',
     limiter,
     authMiddleware.optionalAuth(),
-    (req: Request, res: Response) => controller.logTrace(req, res),
+    // Sem `requireStaff` (é pré-login, `optionalAuth`): a classe `staff` vai direto no handler (T309-5, ⚑6).
+    markRouteClass((req: Request, res: Response) => controller.logTrace(req, res), 'staff'),
   );
 
   return router;
