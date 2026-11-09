@@ -198,13 +198,16 @@ describe('(c) dois logins', () => {
     await grant(pB, 'learn', 'learner');
 
     const rA = await chamar(a.uid);
-    expect(claims.get(a.uid)!.pid).toBe(pA); // o claim do login que chamou leva o pid do PRÓPRIO login
     const rB = await chamar(b.uid);
-    expect(claims.get(b.uid)!.pid).toBe(pB);
     expect(rA.areas).toEqual(['care:worker', 'learn:learner']);
     expect(rB.areas).toEqual(rA.areas);
     expect(pA).not.toBe(pB);
+    // depois das DUAS chamadas, cada login segue com o pid da PRÓPRIA pessoa (a chamada de B não sobrescreve o de A)
+    expect(claims.get(a.uid)!.pid).toBe(pA);
+    expect(claims.get(b.uid)!.pid).toBe(pB);
     expect(claims.get(a.uid)!.areas).toEqual(claims.get(b.uid)!.areas);
+    // convergiu: a 2ª chamada de A não vê divergência
+    expect((await chamar(a.uid)).refresh).toBe(false);
   });
 });
 
