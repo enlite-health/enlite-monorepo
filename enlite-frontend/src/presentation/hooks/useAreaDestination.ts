@@ -1,7 +1,7 @@
 /**
  * Destino do login por área (design §6, F4).
  *
- *  - `next` só é respeitado se a pessoa abre a área dele (senão é ignorado e vale o destino por área);
+ *  - `next` só é respeitado se a pessoa abre a área dele; senão → `/no-access` (design §6: sem laço, sem cair em silêncio noutra área);
  *  - 0 áreas → `/no-access`; áreas, mas nenhuma navegável → `/no-access?reason=unavailable`; 1 → o `entryRoute`; > 1 → a última usada (`localStorage`,
  *    chave por uid, com `try/catch`) ou a primeira da ordem estável que o servidor devolve;
  *  - `next` sob `/admin` chama o perfil admin ANTES (é ele que provisiona o staff novo) [AJUSTE A7];
@@ -89,7 +89,8 @@ export function useAreaDestination() {
 
     const navigable = areas.filter((a) => a.entryRoute != null);
     if (navigable.length === 0) return areas.length > 0 ? NO_ACCESS_UNAVAILABLE_ROUTE : NO_ACCESS_ROUTE;
-    if (next && nextIsOpenTo(next, navigable)) return next;
+    // `next` de área que a pessoa não abre → /no-access (design §6, "sem laço"): nunca ao login e nunca em silêncio na outra área.
+    if (next) return nextIsOpenTo(next, navigable) ? next : NO_ACCESS_ROUTE;
 
     const uid = (await authService.getCurrentUser().catch(() => null))?.id ?? null;
     const last = uid && navigable.length > 1 ? readLastArea(uid) : null;

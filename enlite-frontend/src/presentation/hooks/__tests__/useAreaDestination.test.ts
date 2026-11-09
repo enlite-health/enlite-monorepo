@@ -71,9 +71,9 @@ describe('useAreaDestination', () => {
     expect(readLastArea('uid-1')).toBe('backoffice:staff');
   });
 
-  it('next sem acesso é ignorado e cai no destino por área (sem ir ao /admin)', async () => {
+  it('next sem acesso → /no-access (sem ir ao /admin e sem cair em silêncio na outra área)', async () => {
     areas([WORKER]);
-    expect(await resolve('/admin/dashboard')).toBe('/');
+    expect(await resolve('/admin/dashboard')).toBe(NO_ACCESS_ROUTE);
     expect(getProfile).toHaveBeenCalledTimes(1);
   });
 
@@ -101,7 +101,7 @@ describe('useAreaDestination', () => {
     await resolve('/');
     expect(getProfile).not.toHaveBeenCalled();
     getProfile.mockRejectedValue(new Error('403'));
-    expect(await resolve('/admin')).toBe('/');
+    expect(await resolve('/admin')).toBe(NO_ACCESS_ROUTE); // o perfil falhou, as áreas decidem: prestador não abre /admin
   });
 
   it('next externo ou protocol-relative é ignorado', async () => {
