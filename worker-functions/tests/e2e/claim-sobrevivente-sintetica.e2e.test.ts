@@ -8,20 +8,24 @@
  *  (b) confirm direto por candidateWorkerId = S (2ª porta, findById) → recusado (NOT_IMPORTABLE) e S segue intacta
  *  (c) controle positivo: ficha sintética comum (nada absorvido) continua candidata: sid TEST_ no start
  *
- * Bate na API real e confere o BANCO. CANAL: nenhum OTP real (E2E_OTP_BYPASS no stack; sid `TEST_<uuid>`,
- * api.twilio.com → 127.0.0.1). Mesmo padrão de claim-uid-do-token.e2e.test.ts (H3).
+ * HTTP real (express numa porta efêmera, rotas `createClaimRoutes` + controller/use cases/WorkerRepository REAIS) contra
+ * o BANCO real; confere o banco. Padrão em processo dos e2e da F1 (o setup não sobe container `api`).
+ * Só o portão de token é mínimo (aceita `Bearer mock_<b64>` e põe `req.user`): o que se prova é o claim, não a auth.
+ * CANAL: nenhum OTP real. E2E_OTP_BYPASS=true → sid `TEST_<uuid>`, TwilioVerifyService nunca fala com o Twilio.
  */
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import express from 'express';
+import type { Server } from 'http';
+import type { AddressInfo } from 'net';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const OTP = process.env.E2E_OTP_CODE ?? '123456';
-const EMULATOR = process.env.USE_FIREBASE_EMULATOR === 'true';
 
 describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () => {
-  const api = createApiClient();
   let pool: Pool;
+  let server: Server;
+  let url = '';
   const stamp = `${Date.now()}`;
   const digits8 = stamp.slice(-8);
   const phoneSobrevivente = `54913${digits8}`;
@@ -35,15 +39,16 @@ describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () 
   let absorvidaId = '';
   let comumId = '';
 
-  // Rate limit por IP (em memória): cada chamada usa um X-Forwarded-For próprio.
-  let n = 0;
-  const bearer = async () => ({
-    headers: {
-      'X-Forwarded-For': `203.0.113.${(Number(digits8) + ++n) % 250 + 1}`,
-      Authorization: `Bearer ${await getMockToken(api, { uid: uidQuemReclama, email: emailQuemReclama, role: 'worker' })}`,
-    },
-  });
-  const bodyUid = EMULATOR ? {} : { authUid: uidQuemReclama };
+  const post = async (path: string, body: Record<string, unknown>) => {
+    const token = Buffer.from(JSON.stringify({ uid: uidQuemReclama, email: emailQuemReclama })).toString('base64');
+    const res = await fetch(`${url}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer mock_${token}` },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    return { status: res.status, data: text ? JSON.parse(text) : {} };
+  };
   const authUidDe = async (id: string) =>
     (await pool.query('SELECT auth_uid FROM workers WHERE id = $1', [id])).rows[0].auth_uid as string;
   const insert = async (authUid: string, email: string, phone: string | null) =>
@@ -56,8 +61,25 @@ describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () 
     ).rows[0].id as string;
 
   beforeAll(async () => {
-    await waitForBackend(api);
+    process.env.E2E_OTP_BYPASS = 'true';
+    delete process.env.K_SERVICE;
     pool = new Pool({ connectionString: DATABASE_URL });
+    const { createClaimController } = await import('../../src/bootstrap/createClaimController');
+    const { createClaimRoutes } = await import('../../src/modules/auth/interfaces/routes/claimRoutes');
+    const authMiddleware = {
+      requireAuth: () => (req: any, res: any, next: any) => {
+        const m = /^Bearer mock_(.+)$/.exec(req.headers.authorization ?? '');
+        if (!m) return res.status(401).json({ success: false, error: 'unauthorized' });
+        req.user = JSON.parse(Buffer.from(m[1], 'base64').toString());
+        next();
+      },
+    };
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createClaimRoutes(createClaimController(), authMiddleware as any));
+    server = app.listen(0);
+    await new Promise<void>((r) => server.once('listening', () => r()));
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     sobreviventeId = await insert(uidSobrevivente, `sobrev-${stamp}@exemplo.test`, phoneSobrevivente);
     absorvidaId = await insert(uidRealAbsorvido, `absorvida-${stamp}@exemplo.test`, null);
     await pool.query('UPDATE workers SET merged_into_id = $1 WHERE id = $2', [sobreviventeId, absorvidaId]);
@@ -68,14 +90,14 @@ describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () 
     for (const id of [absorvidaId, sobreviventeId, comumId]) {
       if (id) await pool.query('DELETE FROM workers WHERE id = $1', [id]).catch(() => {});
     }
+    await new Promise<void>((r) => server.close(() => r()));
     await pool.end();
   });
 
   it('(a) a busca NÃO oferece a sobrevivente que absorveu login real: 200 noCandidate, sem sid', async () => {
-    const res = await api.post(
+    const res = await post(
       '/api/auth/claim/start',
-      { ...bodyUid, email: emailQuemReclama, phone: `+${phoneSobrevivente}` },
-      await bearer(),
+      { email: emailQuemReclama, phone: `+${phoneSobrevivente}` }
     );
     expect(res.status).toBe(200);
     expect(res.data).toEqual({ success: true, data: { noCandidate: true } });
@@ -83,10 +105,9 @@ describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () 
   });
 
   it('(b) o confirm por candidateWorkerId = sobrevivente é recusado e a ficha segue intacta', async () => {
-    const res = await api.post(
+    const res = await post(
       '/api/auth/claim/confirm',
-      { ...bodyUid, verificationSid: 'TEST_p5-nao-importa', otp: OTP, email: emailQuemReclama, candidateWorkerId: sobreviventeId },
-      await bearer(),
+      { verificationSid: 'TEST_p5-nao-importa', otp: OTP, email: emailQuemReclama, candidateWorkerId: sobreviventeId }
     );
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
@@ -94,10 +115,9 @@ describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () 
   });
 
   it('(c) controle positivo: ficha sintética comum continua candidata (sid TEST_, sem canal real)', async () => {
-    const res = await api.post(
+    const res = await post(
       '/api/auth/claim/start',
-      { ...bodyUid, email: emailQuemReclama, phone: `+${phoneComum}` },
-      await bearer(),
+      { email: emailQuemReclama, phone: `+${phoneComum}` }
     );
     expect(res.status).toBe(200);
     const data = res.data.data as { candidateWorkerId: string; verificationSid: string };
