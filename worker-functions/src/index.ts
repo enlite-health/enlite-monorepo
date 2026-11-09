@@ -481,7 +481,7 @@ app.put('/api/workers/me/availability', authMiddleware.requireAuth(), authMiddle
 app.delete('/api/users/me', authMiddleware.requireAuth(), authMiddleware.requirePermission('user', 'delete'), (req: Request, res: Response) => {
   userController.deleteUser(req, res);
 });
-app.delete('/api/users/:userId', authMiddleware.requireAuth(), authMiddleware.requirePermission('user', 'admin_delete'), (req: Request, res: Response) => {
+app.delete('/api/users/:userId', authMiddleware.requireStaff(), authMiddleware.requirePermission('user', 'admin_delete'), (req: Request, res: Response) => {
   userController.deleteUserById(req, res);
 });
 
