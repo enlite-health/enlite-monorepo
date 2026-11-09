@@ -21,6 +21,7 @@ import { Router, type RequestHandler } from 'express';
 import { cellKey, routeClass } from '@modules/identity/permissions';
 import type { UndeclaredRouteRegistry } from '../middleware/denyUndeclaredRoutes';
 import { isGovernedRoute } from '../middleware/denyUndeclaredRoutes';
+import { unclassifiedRoutes } from '../middleware/sealUnclassifiedRoutes';
 
 export function createPermissionRoutesInventoryRouter(
   registry: UndeclaredRouteRegistry,
@@ -39,6 +40,7 @@ export function createPermissionRoutesInventoryRouter(
       // `vacancy:update`) ficavam com a 2ª invisível ao oráculo.
       cells: (route.cells ?? (route.cell ? [route.cell] : [])).map((c) => cellKey(c.resource, c.action)),
       status: registry.statusOfRoute(route),
+      class: route.class ?? null,
     }));
 
     // ⚠️ `declaredCells` NÃO é `governedRoutes` filtrado: é a varredura INTEIRA,
@@ -51,8 +53,16 @@ export function createPermissionRoutesInventoryRouter(
       ...new Set(routes.filter((r) => r.cell).map((r) => cellKey(r.cell!.resource, r.cell!.action))),
     ].sort();
 
+    // `class` de TODAS as rotas (não só as governadas): é o oráculo do selo F3 —
+    // `unclassified` lista o que o selo nega (sem classe, célula nem isenção).
+    const classes = routes
+      .filter((route) => route.method !== 'USE')
+      .map((route) => ({ method: route.method, path: route.path, class: route.class ?? null }));
+
     res.json({
       totalRoutes: routes.length,
+      routes: classes,
+      unclassified: unclassifiedRoutes(routes).map((route) => `${route.method} ${route.path}`),
       governedRoutes: governed,
       declaredCells,
       undeclared: registry.unexpectedlyUndeclared().map((route) => `${route.method} ${route.path}`),

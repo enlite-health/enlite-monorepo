@@ -58,7 +58,7 @@ import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfa
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { UserController, resolveCountryScope } from '@modules/identity';
+import { UserController, resolveCountryScope, sealUnclassifiedRoutes } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
 import { routeClass, markRouteClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
@@ -242,6 +242,8 @@ const permissionsBoundary = createPermissionsBoundary({
   systemPool: DatabaseConnection.getInstance().getSystemPool(),
 });
 const permissionMiddleware = permissionsBoundary.middleware;
+// Selo F3: rota sem classe, célula ou isenção → 403 (lê o índice que o boot publica).
+app.use(sealUnclassifiedRoutes(permissionsBoundary.registry));
 
 const useCerbos = process.env.USE_CERBOS === 'true';
 // Motor LEGADO — só de STAFF (rotas/células que o painel de grupos não governa). Não-staff NUNCA cai aqui.

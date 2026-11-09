@@ -81,6 +81,11 @@ export {
 } from './interfaces/middleware/denyUndeclaredRoutes';
 export type { RouteStatus } from './interfaces/middleware/denyUndeclaredRoutes';
 export {
+  isUnclassified,
+  sealUnclassifiedRoutes,
+  unclassifiedRoutes,
+} from './interfaces/middleware/sealUnclassifiedRoutes';
+export {
   EXEMPT_ROUTES,
   PENDING_DECLARATIONS,
   routeKey,

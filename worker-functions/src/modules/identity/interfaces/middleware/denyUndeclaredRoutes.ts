@@ -174,6 +174,11 @@ export class UndeclaredRouteRegistry {
     );
   }
 
+  /** Rota registrada que atende a request (método + caminho concreto); `undefined` antes do boot ou sem casamento. */
+  find(method: string, path: string): ScannedRoute | undefined {
+    return this.index?.find(method, path);
+  }
+
   /** Rotas governadas sem declaração e fora das duas listas — a dívida NOVA. */
   unexpectedlyUndeclared(): ScannedRoute[] {
     return this.all().filter((route) => this.statusOfRoute(route) === 'undeclared');
