@@ -16,7 +16,7 @@ const PID = '00000000-0000-4000-8000-000000000001';
 const ACTOR = 'actor-uid';
 
 /** Registro dublê mutável: o `writer` mexe nele como o banco mexeria. */
-function world(opts: { uids: string[]; claims: Record<string, Record<string, unknown>>; workerInTree?: boolean; stored?: StoredMembership[]; usersDb?: Record<string, { role: string | null; account_type: string | null }> }) {
+function world(opts: { uids: string[]; claims: Record<string, Record<string, unknown>>; workerInTree?: boolean; stored?: StoredMembership[]; loginPids?: Record<string, string>; usersDb?: Record<string, { role: string | null; account_type: string | null }> }) {
   const stored = [...(opts.stored ?? [])];
   const registry: AreaRegistryReader = {
     hasWorkerInTree: async () => opts.workerInTree ?? false,
@@ -35,6 +35,7 @@ function world(opts: { uids: string[]; claims: Record<string, Record<string, unk
   };
   const logins: LoginDirectory = {
     loginUids: async () => opts.uids,
+    personOfLogin: async (uid) => opts.loginPids?.[uid] ?? PID,
     identityFromUsers: async (uid) => opts.usersDb?.[uid] ?? null,
   };
   mockGetUser.mockImplementation(async (uid: string) => ({ uid, customClaims: opts.claims[uid] ?? {} }));
@@ -118,6 +119,19 @@ describe('Grant/RevokeAreaMembership + claim areas (Firebase dublê)', () => {
     expect(r.error).toMatch(/1000 bytes/);
     expect(mockSetCustomUserClaims).not.toHaveBeenCalled();
     expect(grantSpy).not.toHaveBeenCalled(); // pré-checagem: o banco não é tocado
+  });
+
+  it('pid por LOGIN: A absorvida em B — cada login recebe o PRÓPRIO pid; chamar por A e depois por B não muda o de A', async () => {
+    const PID_A = '00000000-0000-4000-8000-0000000000aa';
+    const PID_B = '00000000-0000-4000-8000-0000000000bb';
+    const w = world({ uids: ['uA', 'uB'], claims: {}, loginPids: { uA: PID_A, uB: PID_B }, stored: [{ area: 'learn', role: 'learner' }] });
+    const uc = new RevokeAreaMembershipUseCase(w.writer, w.registry, w.logins);
+    await uc.execute({ pid: PID_A, area: 'learn', role: 'learner', actorUid: ACTOR, reason: 'x' });
+    expect(lastClaims('uA').pid).toBe(PID_A);
+    expect(lastClaims('uB').pid).toBe(PID_B);
+    await uc.execute({ pid: PID_B, area: 'learn', role: 'learner', actorUid: ACTOR, reason: 'x' });
+    expect(lastClaims('uA').pid).toBe(PID_A);
+    expect(lastClaims('uB').pid).toBe(PID_B);
   });
 
   it('falha de Firebase em um login não impede os outros e aparece em failedUids', async () => {

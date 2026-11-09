@@ -22,6 +22,8 @@ export type AreasClaim = Record<string, string[]>;
 export interface LoginDirectory {
   /** `iam.person_login_uids(pid)` — logins vivos da árvore da pessoa. */
   loginUids(pid: string): Promise<string[]>;
+  /** `iam.resolve_person('firebase', uid)` — a pessoa DO login (o `pid` do claim daquele login); `null` = login removido. */
+  personOfLogin(uid: string): Promise<string | null>;
   /** `users` por uid OU e-mail com `is_active` — só chamada quando falta `role` ou `account_type` no claim. */
   identityFromUsers(uid: string, email?: string): Promise<{ role: string | null; account_type: string | null } | null>;
 }
@@ -86,7 +88,10 @@ export async function planAreasClaims(
     const plan: ClaimsPlanEntry[] = [];
     for (const uid of uids) {
       const { areas, claims } = await areasForLogin(uid, pid, reg, dir);
-      const patch = { pid, areas };
+      // o `pid` é o da pessoa DAQUELE login (design §3), não o de quem chamou: senão dois logins da árvore alternam o claim.
+      const loginPid = await dir.personOfLogin(uid);
+      if (!loginPid) return Result.fail(`login ${uid} sem pessoa viva (removido?); nada foi gravado`);
+      const patch = { pid: loginPid, areas };
       const bytes = claimsBytes({ ...claims, ...patch });
       if (bytes > MAX_CLAIMS_BYTES) {
         return Result.fail(`claims do login excedem ${MAX_CLAIMS_BYTES} bytes (${bytes}); nada foi gravado`);

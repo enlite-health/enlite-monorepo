@@ -79,6 +79,11 @@ export class PgAreaMembershipRepository implements AreaMembershipWriter, LoginDi
     return result.rows.map((r) => r.uid);
   }
 
+  async personOfLogin(uid: string): Promise<string | null> {
+    const result = await this.pool.query<{ pid: string | null }>(`SELECT iam.resolve_person('firebase', $1) AS pid`, [uid]);
+    return result.rows[0]?.pid ?? null;
+  }
+
   identityFromUsers(uid: string, email?: string): Promise<UserIdentity | null> {
     return identityFromUsers(this.pool, uid, email);
   }
