@@ -31,8 +31,8 @@ export class UserController {
    * 1. Removes from Google Identity Platform
    * 2. Removes worker record and all related data (cascading delete)
    * 
-   * Identity comes ONLY from the verified token (`req.user.uid`); the `x-auth-uid`
-   * header is never read (D650).
+   * Identity comes ONLY from the verified token (`req.user.uid`); no uid header
+   * sent by the client is ever read (D650).
    */
   async deleteUser(req: Request, res: Response): Promise<void> {
     try {
