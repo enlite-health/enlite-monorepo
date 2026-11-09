@@ -32,6 +32,12 @@ function useLabels() {
 /**
  * Direção A (F4, T409): desplegável na tira fina dentro do `<main>` do `AdminLayout`. Só aparece com
  * MAIS de uma área navegável (`entryRoute` não nulo); com uma só, não há para onde trocar.
+ *
+ * EMPILHAMENTO (medido pelo e2e `catalogo-terapeutico-humano`): a tira NÃO é `sticky` e não tem z-index. Os modais da
+ * casa são `fixed z-40/z-50` e moram DENTRO do `.page-enter` do <main> (animação de opacity com `both` = contexto de
+ * empilhamento); uma tira com z-index próprio fica por cima do conteúdo inteiro desse contexto, modal incluído, e o
+ * trigger intercepta o clique no X. Sem z-index, o conteúdo (depois dela no DOM) pinta acima. Só o MENU ABERTO leva
+ * z-30, para cobrir o conteúdo enquanto está aberto (clicar fora o fecha antes de qualquer modal abrir).
  * Ao escolher: grava a última área usada (`localStorage`, com try/catch) e navega à `entryRoute`.
  */
 export function AreaSwitcher({ areas, currentArea, uid }: AreaSwitcherProps): JSX.Element | null {
@@ -72,7 +78,7 @@ export function AreaSwitcher({ areas, currentArea, uid }: AreaSwitcherProps): JS
 
   return (
     <div
-      className="sticky top-0 z-20 flex h-12 items-center justify-end gap-2 border-b border-gray-600 bg-white px-6"
+      className="flex h-12 items-center justify-end gap-2 border-b border-gray-600 bg-white px-6"
       data-testid="area-switcher-strip"
     >
       <Text as="span" size="xs" color="tertiary">
@@ -101,7 +107,7 @@ export function AreaSwitcher({ areas, currentArea, uid }: AreaSwitcherProps): JS
             role="listbox"
             data-testid="area-switcher-menu"
             aria-label={t('areas.switcher.menuTitle')}
-            className="absolute right-0 top-full mt-1 w-64 rounded-input border border-gray-600 bg-white p-1 shadow-medium"
+            className="absolute right-0 top-full z-30 mt-1 w-64 rounded-input border border-gray-600 bg-white p-1 shadow-medium"
           >
             {areas.map((item) => {
               const enabled = item.entryRoute !== null;
