@@ -9,6 +9,16 @@ import i18n from "i18next";
 import es from "@infrastructure/i18n/locales/es.json";
 import { AssistantsWidget } from "../AssistantsWidget";
 
+// jsdom's PointerEvent may drop clientX/clientY; a MouseEvent subclass keeps them (same trick as useDraggableFab.test).
+class TestPointerEvent extends MouseEvent {
+  pointerId: number;
+  constructor(type: string, init: MouseEventInit & { pointerId?: number } = {}) {
+    super(type, init);
+    this.pointerId = init.pointerId ?? 1;
+  }
+}
+vi.stubGlobal("PointerEvent", TestPointerEvent);
+
 i18n.addResourceBundle("es", "translation", es, true, true);
 void i18n.changeLanguage("es");
 
@@ -332,5 +342,19 @@ describe("AssistantsWidget (spec 080, T158/T160)", () => {
     expect(fab.className).toContain("h-12");
     expect(fab.className).toContain("bottom-4");
     expect(screen.getByTestId("assistants-badge").className).toContain("h-3 w-3");
+  });
+
+  it("drag (pointerdown, 50px move, pointerup, click) does not open the panel; a plain click does", async () => {
+    svc.list.mockResolvedValue([MARIA]);
+    render(<AssistantsWidget />);
+    const fab = await screen.findByTestId("assistants-fab");
+    const pt = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
+    fireEvent.pointerDown(fab, pt(500, 500));
+    fireEvent.pointerMove(fab, pt(450, 500));
+    fireEvent.pointerUp(fab, pt(450, 500));
+    fireEvent.click(fab);
+    expect(screen.queryByTestId("assistants-panel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("assistants-fab"));
+    expect(screen.getByTestId("assistants-panel")).toBeInTheDocument();
   });
 });
