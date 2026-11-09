@@ -21,30 +21,7 @@ const CLASSES = ['public', 'service', 'client-policy', 'staff'];
 const F0_TOTAL_REGISTERED = 445;
 
 interface InventoryRoute { method: string; path: string; class: string | null }
-interface GovernedRoute { method: string; path: string; cells: string[] }
-interface Inventory { totalRoutes: number; routes: InventoryRoute[]; unclassified: string[]; governedRoutes: GovernedRoute[] }
-
-/**
- * ACHADO DA T315 (LISTA, não conserto): 11 rotas têm `class == null` no inventário MAS declaram célula (`perm.require`),
- * então o selo (que só nega "sem classe, sem célula, sem isenção") as deixa passar. Causa: guard de papel que não carimba
- * classe — `requireStaffOrApiKey()` (4 rotas: `adminWorkerRoutes.ts:85` e `workerContextRoutes.ts:79,86,93`) ou
- * `requireStaff()` aplicado no MOUNT (`index.ts:854`, 7 rotas de `/api/admin/messaging`) e não herdado pelo scan. O critério literal da F3 (item 1: 0 com `class == null`)
- * NÃO fecha com estas 11. Este teste é um TRINQUETE: a lista é nomeada; rota nova sem classe → vermelho; rota que ganhar classe
- * → vermelho também (tire-a daqui). Ao classificar as 11 (decisão do Gabriel), esvaziar a lista e o critério vira o literal.
- */
-const KNOWN_NULL_CLASS_WITH_CELL = [
-  'GET /api/admin/workers/by-phone',
-  'GET /api/admin/workers/:id/current-interview',
-  'GET /api/admin/workers/:id/available-vacancies',
-  'POST /api/admin/workers/:id/documents/ingest-from-url',
-  'POST /api/admin/messaging/whatsapp/vacancy-match',
-  'POST /api/admin/messaging/whatsapp/direct',
-  'GET /api/admin/messaging/templates',
-  'POST /api/admin/messaging/templates',
-  'PUT /api/admin/messaging/templates/:slug',
-  'DELETE /api/admin/messaging/templates/:slug',
-  'POST /api/admin/messaging/bulk-dispatch-incomplete',
-].sort();
+interface Inventory { totalRoutes: number; routes: InventoryRoute[]; unclassified: string[] }
 
 async function readInventory(): Promise<Inventory> {
   const res = await axios.get(`${API_URL}/.well-known/permissions/routes`, {
@@ -64,7 +41,7 @@ describe('F3 — inventário de rotas com a app de pé (T315)', () => {
     expect([401, 403]).toContain(res.status);
   });
 
-  it('nenhuma rota sem classe E sem célula (unclassified[] vazio); class == null só nas 11 nomeadas (trinquete); contagem > 0', () => {
+  it('0 rotas com class == null (e unclassified[] vazio), com contagem percorrida > 0', () => {
     const semClasse = inv.routes.filter((r) => r.class == null);
     const porClasse: Record<string, number> = {};
     for (const r of inv.routes) porClasse[r.class ?? 'NULL'] = (porClasse[r.class ?? 'NULL'] ?? 0) + 1;
@@ -77,12 +54,8 @@ describe('F3 — inventário de rotas com a app de pé (T315)', () => {
       writeFileSync(process.env.INVENTORY_DUMP, inv.routes.map((r) => `${r.method}\t${r.path}\t${r.class ?? ''}`).join('\n') + '\n');
     }
     expect(inv.routes.length).toBeGreaterThan(0);
-    const nulas = semClasse.map((r) => `${r.method} ${r.path}`).sort();
-    // toda `class == null` tem de declarar célula (é o que impede o selo de negá-la) — senão é rota aberta de verdade
-    const semCelula = semClasse.filter((r) => !(inv.governedRoutes.find((g) => g.method === r.method && g.path === r.path)?.cells.length));
-    expect(semCelula.map((r) => `${r.method} ${r.path}`)).toEqual([]);
+    expect(semClasse.map((r) => `${r.method} ${r.path}`)).toEqual([]);
     expect(inv.unclassified).toEqual([]);
-    expect(nulas).toEqual(KNOWN_NULL_CLASS_WITH_CELL);
     for (const r of inv.routes.filter((x) => x.class != null)) expect(CLASSES).toContain(r.class);
   });
 

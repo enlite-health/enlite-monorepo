@@ -159,24 +159,47 @@ function methodsOf(route: NonNullable<ExpressLayer['route']>): string[] {
   return methods.length > 0 ? methods.map((m) => m.toUpperCase()) : ['USE'];
 }
 
-function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void {
+/** Middleware classificado montado ANTES (`app.use(path, requireStaff(), router)`): cobre o que vem abaixo de `path`. */
+interface ClassedMount {
+  path: string;
+  cls: RouteClass;
+}
+
+/** Classe do último mount (já visto, portanto anterior na pilha) que cobre `fullPath`; `/` cobre tudo. */
+function coveringClass(mounts: ClassedMount[], fullPath: string): RouteClass | null {
+  for (let i = mounts.length - 1; i >= 0; i--) {
+    const m = mounts[i];
+    if (m.path === '/' || fullPath === m.path || fullPath.startsWith(`${m.path}/`)) return m.cls;
+  }
+  return null;
+}
+
+/**
+ * `inherited`: classe de um mount ancestral. A classe PRÓPRIA da rota vence; sem ela, vale a do middleware classificado
+ * montado antes, no mesmo caminho ou acima (`app.use('/api/admin/messaging', requireStaff(), router)` → filhas `staff`).
+ */
+function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[], inherited: RouteClass | null = null): void {
+  const mounts: ClassedMount[] = [];
   for (const layer of layers) {
     if (layer.route) {
       const cells = cellsOfRoute(layer.route);
       const cell = cells[0];
       const exempt = exemptOfRoute(layer.route);
-      const routeClass = classOfRoute(layer.route);
+      const ownClass = classOfRoute(layer.route);
       const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path ?? ''];
       for (const path of paths) {
+        const full = joinPaths(prefix, path);
+        const routeClass = ownClass ?? coveringClass(mounts, full) ?? inherited;
         for (const method of methodsOf(layer.route)) {
-          out.push({ method, path: joinPaths(prefix, path), cells, class: routeClass, ...(cell ? { cell } : {}), ...(exempt ? { exempt } : {}) });
+          out.push({ method, path: full, cells, class: routeClass, ...(cell ? { cell } : {}), ...(exempt ? { exempt } : {}) });
         }
       }
       continue;
     }
     const nested = stackOf(layer.handle);
     if (nested.length > 0) {
-      walk(nested, joinPaths(prefix, mountPathOf(layer)), out);
+      const mountPath = joinPaths(prefix, mountPathOf(layer));
+      walk(nested, mountPath, out, coveringClass(mounts, mountPath) ?? inherited);
       continue;
     }
     // Middleware montado com célula (ex.: `app.use('/api/docs', requirePermission(...))`)
@@ -187,9 +210,11 @@ function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void
     const mountedClass = readRouteClass(layer.handle) ?? null;
     // Sem `|| '/'`: `joinPaths` já devolve '/' quando o resultado seria vazio.
     if (cell || mountedClass) {
+      const mountPath = joinPaths(prefix, mountPathOf(layer));
+      if (mountedClass) mounts.push({ path: mountPath, cls: mountedClass });
       out.push({
         method: 'USE',
-        path: joinPaths(prefix, mountPathOf(layer)),
+        path: mountPath,
         cells: cell ? [cell] : [],
         class: mountedClass,
         ...(cell ? { cell } : {}),

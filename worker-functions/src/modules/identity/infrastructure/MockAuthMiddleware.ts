@@ -27,7 +27,7 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
   // devolveria 401 antes do guard real rodar — e o e2e não conseguiria ler o
   // catálogo nem o inventário de rotas do app de pé.
   // `/v1/persons/` (T138): rota serviço a serviço com o mesmo guard interno; token de usuário é recusado POR ELE (403).
-  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/api/admin/me/tactiq-link/callback', '/.well-known', '/v1/persons/'];
+  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/api/admin/me/tactiq-link/callback', '/.well-known', '/v1/persons/', '/api/account-link/undo/', '/api/admin/auth/telemetry', '/api/test/auth/verify'];
   if (publicPaths.some(path => req.path === path || req.path.startsWith(path))) {
     return next();
   }

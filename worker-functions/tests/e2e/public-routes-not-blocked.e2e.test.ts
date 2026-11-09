@@ -18,18 +18,9 @@ interface InventoryRoute { method: string; path: string; class: string | null }
 /**
  * Rotas `public` que NÃO entram na asserção ∉{401,403}, com o motivo. Ainda checadas: o selo não pode tê-las negado
  * (status !== 403 e sem `code: unclassified_route`).
- *
- * ACHADO DA T321 (LISTA): na stack de teste (USE_MOCK_AUTH=true) o `mockAuthMiddleware` global (`index.ts:223`) devolve 401
- * "Authorization header required" ANTES da rota para tudo que não está no `publicPaths` fixo de `MockAuthMiddleware.ts:30`.
- * Três rotas `public` não estão lá. O 401 vem do dublê de auth (que em prd não roda), não do selo nem do código de prd.
- * Conserto = 3 entradas em `publicPaths` (arquivo fora do escopo desta task).
  */
-const MOCK_PUBLICPATHS = 'o 401 vem do mockAuthMiddleware (publicPaths do dublê não lista esta rota; em prd o mock não roda), não do selo';
 const SKIP: Record<string, string> = {
   'GET /api/test/auth/verify': 'handler próprio devolve 401 sem token mock (exige token por desenho; só existe com USE_MOCK_AUTH) — o 401 não vem do selo',
-  'GET /api/account-link/undo/:token': MOCK_PUBLICPATHS,
-  'POST /api/account-link/undo/:token': MOCK_PUBLICPATHS,
-  'POST /api/admin/auth/telemetry': MOCK_PUBLICPATHS,
 };
 
 const concretePath = (p: string) => p.replace(/:[A-Za-z0-9_]+/g, 'x');

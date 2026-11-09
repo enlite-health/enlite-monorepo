@@ -82,6 +82,33 @@ describe('routeClass — marca de classe lida pelo scanner', () => {
     expect(classOf(scanExpressRouter(app), 'GET', '/admin-like')).toBe('staff');
   });
 
+  it('requireStaffOrApiKey() marca staff (a marca não muda o guard)', () => {
+    const middleware = new AuthMiddleware({} as never, {} as never);
+    const guard = middleware.requireStaffOrApiKey();
+    expect(readRouteClass(guard)).toBe('staff');
+    const app = express();
+    app.get('/staff-ou-chave', guard, ok);
+    expect(classOf(scanExpressRouter(app), 'GET', '/staff-ou-chave')).toBe('staff');
+  });
+
+  it('classe de middleware no MOUNT é herdada pelas filhas; a classe própria da filha vence', () => {
+    const middleware = new AuthMiddleware({} as never, {} as never);
+    const child = express.Router();
+    child.get('/sem-classe', ok);
+    child.get('/propria', routeClass('service'), ok);
+    const deep = express.Router();
+    deep.post('/fundo', ok);
+    child.use('/sub', deep);
+    const app = express();
+    app.use('/api/admin/messaging', middleware.requireStaff(), child);
+    app.use('/api/outro', express.Router().get('/x', ok)); // sem classe no mount: continua sem classe
+    const routes = scanExpressRouter(app);
+    expect(classOf(routes, 'GET', '/api/admin/messaging/sem-classe')).toBe('staff');
+    expect(classOf(routes, 'GET', '/api/admin/messaging/propria')).toBe('service');
+    expect(classOf(routes, 'POST', '/api/admin/messaging/sub/fundo')).toBe('staff');
+    expect(classOf(routes, 'GET', '/api/outro/x')).toBeNull();
+  });
+
   it('readRouteClass ignora o que não é função', () => {
     expect(readRouteClass(undefined)).toBeUndefined();
     expect(readRouteClass({})).toBeUndefined();

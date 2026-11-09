@@ -365,7 +365,8 @@ export class AuthMiddleware {
    * e verifica o tipo de conta (staff).
    */
   requireStaffOrApiKey() {
-    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Classe `staff` (guard de staff com atalho de chave de serviço; o titular é o staff) — só a marca, o guard não muda.
+    return markRouteClass(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       // Short-circuit para MockAuth em testes E2E
       if (process.env.USE_MOCK_AUTH === 'true') {
         const mockUser = req.user;
@@ -440,7 +441,7 @@ export class AuthMiddleware {
       }
 
       res.status(401).end();
-    };
+    }, 'staff');
   }
 
   /**
