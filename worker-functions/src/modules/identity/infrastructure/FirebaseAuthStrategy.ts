@@ -124,7 +124,7 @@ export class FirebaseAuthStrategy {
  * O tipo declarado vence; sem ele, a ponte pelo papel (D294). Valor desconhecido no
  * claim é IGNORADO (fail-closed: não vira staff nem worker por acidente).
  */
-function accountTypeOf(declared: string | null | undefined, role: string | null | undefined): AccountType | null {
+export function accountTypeOf(declared: string | null | undefined, role: string | null | undefined): AccountType | null {
   if (isAccountType(declared)) return declared;
   return accountTypeForRole(role);
 }
