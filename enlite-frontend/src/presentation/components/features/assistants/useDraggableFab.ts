@@ -99,6 +99,8 @@ export function useDraggableFab(): UseDraggableFab {
       offsetY: e.clientY - rect.top,
       dragging: false,
     };
+    // Capture at pointerdown so a fast drag (first move far outside the button) still reaches us.
+    e.currentTarget.setPointerCapture?.(e.pointerId);
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -107,7 +109,6 @@ export function useDraggableFab(): UseDraggableFab {
     if (!d.dragging) {
       if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= DRAG_THRESHOLD_PX) return;
       d.dragging = true;
-      e.currentTarget.setPointerCapture?.(e.pointerId);
     }
     const fab = size ?? { width: 0, height: 0 };
     setDragPos(pointFor(e.clientX, e.clientY, d, fab));
@@ -116,6 +117,7 @@ export function useDraggableFab(): UseDraggableFab {
   const onPointerUp = (e: ReactPointerEvent<HTMLButtonElement>) => {
     const d = drag.current;
     drag.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
     if (!d?.dragging) return;
     const fab = size ?? { width: 0, height: 0 };
     const vp = readViewport();
@@ -131,8 +133,9 @@ export function useDraggableFab(): UseDraggableFab {
     justDragged.current = true;
   };
 
-  const onPointerCancel = () => {
+  const onPointerCancel = (e: ReactPointerEvent<HTMLButtonElement>) => {
     drag.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
     setDragPos(null);
   };
 

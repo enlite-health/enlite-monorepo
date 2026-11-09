@@ -113,4 +113,17 @@ describe("useDraggableFab", () => {
     expect(hook.consumeClick()).toBe(true);
     expect(hook.style).toBeDefined(); // kept in memory
   });
+
+  it("(g) captures the pointer at pointerdown, before any move (fast drag)", () => {
+    const { fab } = mount();
+    const set = vi.fn();
+    const release = vi.fn();
+    Object.assign(fab, { setPointerCapture: set, releasePointerCapture: release });
+    fireEvent.pointerDown(fab, pt(950, 750));
+    expect(set).toHaveBeenCalledWith(1);
+    fireEvent.pointerMove(fab, pt(100, 100));
+    fireEvent.pointerUp(fab, pt(100, 100));
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(1);
+  });
 });
