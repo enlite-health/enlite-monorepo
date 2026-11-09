@@ -61,7 +61,7 @@ import { AdminTerminologySearchController } from '@modules/terminology/interface
 import { UserController, resolveCountryScope } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
-import { createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
+import { routeClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -318,7 +318,7 @@ const { messagingService, twilioMessagingService, periskopeMessagingService } =
 const outboxProcessor = new OutboxProcessor(messagingService, DatabaseConnection.getInstance().getPool());
 
 // ========== Public Routes ==========
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/health', routeClass('public'), (_req: Request, res: Response) => {
   res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
@@ -335,7 +335,7 @@ createMockAuthEndpoints(app);
 // H2 (D650): exige token. Sem `publicContextMiddleware` de propósito: `requireAuth` carimba
 // `worker_self` (pool de runtime) — `workers` não tem RLS e `app_runtime` tem CRUD nela
 // (migrations 269), então o INSERT do 1º cadastro funciona; `public` seria o pool de sistema.
-app.post('/api/workers/init', authMiddleware.requireAuth(), (req: Request, res: Response) => {
+app.post('/api/workers/init', routeClass('client-policy'), authMiddleware.requireAuth(), (req: Request, res: Response) => {
   workerController.initWorker(req, res);
 });
 
@@ -360,7 +360,7 @@ const workerLookupRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/workers/lookup', workerLookupRateLimit, publicContextMiddleware('public:/api/workers/lookup'), (req: Request, res: Response) => {
+app.get('/api/workers/lookup', routeClass('public'), workerLookupRateLimit, publicContextMiddleware('public:/api/workers/lookup'), (req: Request, res: Response) => {
   workerController.lookupByEmail(req, res);
 });
 
@@ -378,11 +378,11 @@ const publicVacancyRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/vacancies/:id', publicVacancyRateLimit, publicContextMiddleware('public:/api/vacancies/:id'), (req: Request, res: Response) => {
+app.get('/api/vacancies/:id', routeClass('public'), publicVacancyRateLimit, publicContextMiddleware('public:/api/vacancies/:id'), (req: Request, res: Response) => {
   publicVacancyController.getById(req, res);
 });
 
-app.get('/api/jobs', publicContextMiddleware('public:/api/jobs'), (req: Request, res: Response) => {
+app.get('/api/jobs', routeClass('public'), publicContextMiddleware('public:/api/jobs'), (req: Request, res: Response) => {
   jobsController.getJobs(req, res);
 });
 
@@ -394,7 +394,7 @@ const publicJobsRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/public/v1/jobs', publicJobsRateLimit, publicContextMiddleware('public:/api/public/v1/jobs'), (req: Request, res: Response) => {
+app.get('/api/public/v1/jobs', routeClass('public'), publicJobsRateLimit, publicContextMiddleware('public:/api/public/v1/jobs'), (req: Request, res: Response) => {
   publicJobsController.listActiveJobs(req, res);
 });
 
@@ -409,7 +409,7 @@ const publicLeadsRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.post('/api/public/v1/leads', publicLeadsRateLimit, publicContextMiddleware('public:/api/public/v1/leads'), (req: Request, res: Response) => {
+app.post('/api/public/v1/leads', routeClass('public'), publicLeadsRateLimit, publicContextMiddleware('public:/api/public/v1/leads'), (req: Request, res: Response) => {
   publicLeadsController.createLead(req, res);
 });
 
@@ -465,35 +465,35 @@ const admissionBookRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/public/v1/admission/slots', admissionSlotsRateLimit, publicContextMiddleware('public:/api/public/v1/admission/slots'), (req: Request, res: Response) => {
+app.get('/api/public/v1/admission/slots', routeClass('public'), admissionSlotsRateLimit, publicContextMiddleware('public:/api/public/v1/admission/slots'), (req: Request, res: Response) => {
   admissionSchedulingController.getSlots(req, res);
 });
-app.post('/api/public/v1/admission/book', admissionBookRateLimit, publicContextMiddleware('public:/api/public/v1/admission/book'), (req: Request, res: Response) => {
+app.post('/api/public/v1/admission/book', routeClass('public'), admissionBookRateLimit, publicContextMiddleware('public:/api/public/v1/admission/book'), (req: Request, res: Response) => {
   admissionSchedulingController.book(req, res);
 });
 
 // ========== Protected Worker Routes ==========
-app.put('/api/workers/step', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/step', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveStep(req, res);
 });
-app.get('/api/workers/me', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+app.get('/api/workers/me', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getProgress(req, res);
 });
-app.put('/api/workers/me/general-info', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveGeneralInfo(req, res);
 });
-app.put('/api/workers/me/service-area', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/service-area', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveServiceArea(req, res);
 });
-app.get('/api/workers/me/availability', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+app.get('/api/workers/me/availability', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getAvailability(req, res);
 });
-app.put('/api/workers/me/availability', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/availability', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveAvailability(req, res);
 });
 
 // ========== User Routes ==========
-app.delete('/api/users/me', authMiddleware.requireAuth(), authMiddleware.requirePermission('user', 'delete'), (req: Request, res: Response) => {
+app.delete('/api/users/me', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('user', 'delete'), (req: Request, res: Response) => {
   userController.deleteUser(req, res);
 });
 app.delete('/api/users/:userId', authMiddleware.requireStaff(), authMiddleware.requirePermission('user', 'admin_delete'), (req: Request, res: Response) => {
@@ -501,7 +501,7 @@ app.delete('/api/users/:userId', authMiddleware.requireStaff(), authMiddleware.r
 });
 
 // ========== Service-to-Service Routes ==========
-app.post('/api/internal/workers/webhook', authMiddleware.requireApiKey(), systemContextMiddleware('job:workers-webhook'), (req: Request, res: Response) => {
+app.post('/api/internal/workers/webhook', routeClass('service'), authMiddleware.requireApiKey(), systemContextMiddleware('job:workers-webhook'), (req: Request, res: Response) => {
   res.status(200).json({ success: true, message: 'Webhook received' });
 });
 
@@ -600,7 +600,7 @@ app.use('/v1', createMeAreasRouter(authMiddleware.requireAuth(), DatabaseConnect
 // `GET /v1/persons/:pid/tree` — árvore do `iam` para serviços (learn-service/spec B), guard OIDC + allowlist de SA fail-closed (T138).
 app.use('/v1', createPersonTreeRouter(requirePersonTreeService, DatabaseConnection.getInstance().getPool()));
 // NOTE: requireAuth (not requireAdmin) — auto-provisioning on first Google login.
-app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
+app.get('/api/admin/auth/profile', routeClass('client-policy'), authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);
 });
 // Telemetria do login admin (frontend → servidor); rota modularizada.
@@ -948,7 +948,7 @@ app.use(
 const admissionReminderController = new AdmissionReminderController(
   new AdmissionReminderService(admissionMessaging, admissionMessageContent, dbPool),
 );
-app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
+app.post('/api/internal/reminders/admission-30min', routeClass('service'), internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
   admissionReminderController.handle(req, res),
 );
 
