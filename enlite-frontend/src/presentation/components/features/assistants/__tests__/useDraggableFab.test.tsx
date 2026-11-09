@@ -2,6 +2,7 @@
  * useDraggableFab — spec 090 (T005). Real hook, real jsdom localStorage; the button size is stubbed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useState } from "react";
 import { render, fireEvent, act } from "@testing-library/react";
 import { useDraggableFab, type UseDraggableFab } from "../useDraggableFab";
 import { FAB_STORAGE_KEY } from "../fabPosition";
@@ -125,5 +126,26 @@ describe("useDraggableFab", () => {
     fireEvent.pointerUp(fab, pt(100, 100));
     expect(set).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledWith(1);
+  });
+
+  it("(h) measures the button when it mounts AFTER the hook's first render", () => {
+    setViewport(800, 600);
+    localStorage.setItem(FAB_STORAGE_KEY, JSON.stringify({ x: 0.88, y: 0.5 }));
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width: 131, height: 48, right: 131, bottom: 48, x: 0, y: 0, toJSON: () => ({}),
+    });
+    let setShow: (v: boolean) => void = () => {};
+    function LateHarness() {
+      const [show, set] = useState(false);
+      setShow = set;
+      hook = useDraggableFab();
+      return show ? <button ref={hook.ref} style={hook.style} data-testid="fab" /> : null;
+    }
+    render(<LateHarness />);
+    expect(hook.fabRect).toBeNull();
+    act(() => setShow(true));
+    expect(hook.fabRect).not.toBeNull();
+    expect(hook.fabRect?.width).toBe(131);
+    expect(hook.fabRect!.left + 131).toBeLessThanOrEqual(800 - 16);
   });
 });

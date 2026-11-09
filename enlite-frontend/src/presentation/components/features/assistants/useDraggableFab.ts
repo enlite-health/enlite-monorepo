@@ -3,8 +3,8 @@
  * Pointer events only (no drag library). A move up to DRAG_THRESHOLD_PX is a click; beyond it, a drag.
  * The position is written to localStorage ONLY on pointerup, as a fraction of the viewport (DF-4).
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, DOMAttributes, PointerEvent as ReactPointerEvent, RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties, DOMAttributes, PointerEvent as ReactPointerEvent, RefCallback } from "react";
 import {
   DRAG_THRESHOLD_PX,
   FAB_STORAGE_KEY,
@@ -25,7 +25,8 @@ type FabHandlers = Pick<
 >;
 
 export interface UseDraggableFab {
-  ref: RefObject<HTMLButtonElement>;
+  /** Callback ref: measures the button when it mounts (it may mount after the hook's first render). */
+  ref: RefCallback<HTMLButtonElement>;
   /** undefined = no saved position → the button keeps its default classes (DF-9). */
   style: CSSProperties | undefined;
   handlers: FabHandlers;
@@ -59,7 +60,7 @@ function readStoredFraction(): FabFraction | null {
 }
 
 export function useDraggableFab(): UseDraggableFab {
-  const ref = useRef<HTMLButtonElement>(null);
+  const node = useRef<HTMLButtonElement | null>(null);
   const drag = useRef<DragState | null>(null);
   const justDragged = useRef(false);
   const [fraction, setFraction] = useState<FabFraction | null>(readStoredFraction);
@@ -69,13 +70,20 @@ export function useDraggableFab(): UseDraggableFab {
   const [size, setSize] = useState<Size | null>(null);
 
   const measure = useCallback(() => {
-    const el = ref.current;
+    const el = node.current;
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
     setSize((prev) => (prev && prev.width === width && prev.height === height ? prev : { width, height }));
   }, []);
 
-  useLayoutEffect(measure, [measure]);
+  // Measures when the node MOUNTS; on unmount keeps the last measurement (panel open hides the button).
+  const ref = useCallback<RefCallback<HTMLButtonElement>>(
+    (el) => {
+      node.current = el;
+      measure();
+    },
+    [measure],
+  );
 
   useEffect(() => {
     const onResize = () => {
@@ -162,7 +170,7 @@ export function useDraggableFab(): UseDraggableFab {
   const fabRect: Rect | null = size ? { ...(pos ?? defaultFab(size, viewport)), ...size } : null;
 
   return {
-    ref: ref as RefObject<HTMLButtonElement>,
+    ref,
     style,
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
     consumeClick,
