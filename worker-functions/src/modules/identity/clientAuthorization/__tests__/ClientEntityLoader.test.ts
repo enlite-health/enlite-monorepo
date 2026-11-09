@@ -1,17 +1,8 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { CedarClientPolicyEngine } from '../CedarClientPolicyEngine';
 import { ClientEntityLoader, type ClientOwnershipReader, type PersonBootstrap } from '../ClientEntityLoader';
 import type { AreaRegistryReader } from '../../application/ListPersonAreasUseCase';
 import type { AuthContext } from '../../domain/Auth';
-
-const schema = readFileSync(join(__dirname, '..', 'schema.cedarschema'), 'utf8');
-const POLICIES = `
-permit(principal is Person, action in [Action::"ReadOwnWorkerProfile", Action::"UpdateOwnWorkerProfile"], resource is Worker)
-  when { principal.areas.contains("care:worker") && resource.owner == principal };
-permit(principal is Person, action == Action::"DeleteOwnAccount", resource is Account)
-  when { resource.owner == principal && resource.uid == context.tokenUid };`;
-
+import { CLIENT_POLICIES as POLICIES, CLIENT_SCHEMA as schema } from '../policies';
 // Dados 100% sintéticos: A e B são a mesma pessoa (B foi absorvida: raiz = P1); P2 é outra pessoa.
 const P1 = '00000000-0000-4000-8000-000000000001';
 const P1_ABSORBED = '00000000-0000-4000-8000-000000000011';

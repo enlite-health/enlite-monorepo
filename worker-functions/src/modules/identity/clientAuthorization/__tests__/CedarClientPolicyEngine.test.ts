@@ -1,12 +1,9 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import {
   CedarClientPolicyEngine,
   ClientEntityProvider,
 } from '../CedarClientPolicyEngine';
 import { AuthContext } from '../../domain/Auth';
-
-const schema = readFileSync(join(__dirname, '..', 'schema.cedarschema'), 'utf8');
+import { CLIENT_SCHEMA as schema } from '../policies/schema';
 
 // Dados 100% sintéticos.
 const PID = '00000000-0000-4000-8000-000000000001';
