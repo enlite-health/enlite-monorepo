@@ -59,7 +59,7 @@ import { createAdminNotificationRoutes } from '@modules/inapp-notification/inter
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { UserController, resolveCountryScope } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
 import { createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
 import {
@@ -529,6 +529,16 @@ app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, pe
 // `GET /api/admin/staff-directory` (spec 022, T128) — mesma família `admin.users`, célula nova
 // `staff_directory:read`. Alimenta o autocomplete de menção do chat interno de paciente.
 app.use('/api/admin', createAdminStaffDirectoryRoutes(authMiddleware, permissionMiddleware));
+// `/api/admin/area-memberships` (acesso-do-cliente, F1/T111) — registro de vínculos de área; células `area_membership:read|write`
+// (nenhum grupo as recebe por migration: conceder é ato da operação).
+app.use(
+  '/api/admin',
+  createAdminAreaMembershipRoutes(
+    authMiddleware,
+    permissionMiddleware,
+    AreaMembershipController.fromPool(DatabaseConnection.getInstance().getPool()),
+  ),
+);
 // `POST /api/admin/me/presence` (change 022-ux-mencao-e-notificacao, Rodada 2/R2-B) — heartbeat
 // de presença do painel admin aberto. Mesma família `admin.users`, célula `own_presence:update`
 // (nasce concedida a todo staff, mesma regra de `own_notifications`, D-07).

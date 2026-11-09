@@ -14,6 +14,12 @@ export class PgAreaRegistryRepository implements AreaRegistryReader {
     return result.rows[0]?.pid ?? null;
   }
 
+  /** Pessoa do login SEM criar (580: `iam.resolve_person`); login desconhecido ou removido → `null`. */
+  async resolvePerson(uid: string): Promise<string | null> {
+    const result = await this.pool.query<{ pid: string | null }>(`SELECT iam.resolve_person('firebase', $1) AS pid`, [uid]);
+    return result.rows[0]?.pid ?? null;
+  }
+
   async hasWorkerInTree(pid: string): Promise<boolean> {
     const result = await this.pool.query<{ found: boolean }>(
       `SELECT EXISTS (

@@ -7,8 +7,8 @@ import { ADMIN_USERS_FAMILY } from '@modules/identity/permissions';
  * Rotas de staff do registro de vínculos de área (design §3 "Rotas de staff"; change
  * acesso-do-cliente-areas-e-login-unico, T111). Montada sob `/api/admin`.
  *
- * ESQUELETO (T113): o contrato (método, path, célula) é o definitivo; os handlers são `notImplemented` (501)
- * até a T111 injetar o `AreaMembershipController`. Famílias/células: `admin.users` (agrupamento temático,
+ * Contrato (T113): GET/POST `/area-memberships` e POST `/area-memberships/:id/revoke`; handlers = `AreaMembershipController`
+ * (T111). Sem handlers injetados, cada rota responde 501 (o teste de contrato de rotas monta o router assim). Famílias/células: `admin.users` (agrupamento temático,
  * mesmo molde de `adminStaffDirectoryRoutes.ts`); células LITERAIS no `perm.require`, nunca em variável/closure
  * (`celula-em-closure-nao-entra-no-catalogo`). `staffOnly` SEMPRE antes de `perm.require`.
  *

@@ -7,6 +7,33 @@ import type { AreaMembershipWriter } from '../application/GrantAreaMembershipUse
 import type { LoginDirectory } from './areasClaim';
 import { identityFromUsers, type UserIdentity } from './identityFromUsers';
 
+export interface LiveMembership {
+  id: string;
+  personId: string;
+  area: string;
+  role: string;
+  grantedBy: string;
+  grantedAt: Date;
+}
+
+interface LiveMembershipRow {
+  id: string;
+  person_id: string;
+  area: string;
+  role: string;
+  granted_by: string;
+  granted_at: Date;
+}
+
+const toLive = (r: LiveMembershipRow): LiveMembership => ({
+  id: r.id,
+  personId: r.person_id,
+  area: r.area,
+  role: r.role,
+  grantedBy: r.granted_by,
+  grantedAt: r.granted_at,
+});
+
 export class PgAreaMembershipRepository implements AreaMembershipWriter, LoginDirectory {
   constructor(private readonly pool: Pool) {}
 
@@ -24,6 +51,27 @@ export class PgAreaMembershipRepository implements AreaMembershipWriter, LoginDi
       [pid, area, role, actorUid, reason],
     );
     return result.rows[0].n;
+  }
+
+  /** Vínculos VIVOS da árvore da pessoa, com id (a rota de staff revoga por id). SELECT é o único privilégio de tabela do runtime (581). */
+  async liveByTree(pid: string): Promise<LiveMembership[]> {
+    const result = await this.pool.query<LiveMembershipRow>(
+      `SELECT id, person_id, area, role, granted_by, granted_at
+         FROM iam.area_membership
+        WHERE person_id IN (SELECT iam.person_tree($1::uuid)) AND revoked_at IS NULL
+        ORDER BY area, role, granted_at`,
+      [pid],
+    );
+    return result.rows.map(toLive);
+  }
+
+  /** Um vínculo VIVO pelo id; revogado ou inexistente → `null`. */
+  async findLive(id: string): Promise<LiveMembership | null> {
+    const result = await this.pool.query<LiveMembershipRow>(
+      `SELECT id, person_id, area, role, granted_by, granted_at FROM iam.area_membership WHERE id = $1::uuid AND revoked_at IS NULL`,
+      [id],
+    );
+    return result.rows[0] ? toLive(result.rows[0]) : null;
   }
 
   async loginUids(pid: string): Promise<string[]> {
