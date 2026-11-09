@@ -8,6 +8,12 @@ import type { AreaRegistryReader, StoredMembership } from '../application/ListPe
 export class PgAreaRegistryRepository implements AreaRegistryReader {
   constructor(private readonly pool: Pool) {}
 
+  /** Bootstrap (580): pessoa do login; cria pessoa + login se não existe; login removido → `null`. */
+  async ensurePerson(uid: string): Promise<string | null> {
+    const result = await this.pool.query<{ pid: string | null }>(`SELECT iam.ensure_person('firebase', $1) AS pid`, [uid]);
+    return result.rows[0]?.pid ?? null;
+  }
+
   async hasWorkerInTree(pid: string): Promise<boolean> {
     const result = await this.pool.query<{ found: boolean }>(
       `SELECT EXISTS (

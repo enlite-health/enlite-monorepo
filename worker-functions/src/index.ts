@@ -84,6 +84,7 @@ import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProc
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { createMeAreasRouter } from '@modules/identity/interfaces/meAreasRoute';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
 import { dbSessionMiddleware } from './shared/database/dbSessionMiddleware';
@@ -573,6 +574,8 @@ app.use('/v1', createMeSimulationRouter({
   staffGuard: authMiddleware.requireStaff(),
   uidOf: principalUid,
 }));
+// `GET /v1/me/areas` — descoberta única de áreas + bootstrap da pessoa (acesso-do-cliente F1, T109).
+app.use('/v1', createMeAreasRouter(authMiddleware.requireAuth(), DatabaseConnection.getInstance().getPool()));
 // NOTE: requireAuth (not requireAdmin) — auto-provisioning on first Google login.
 app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);
