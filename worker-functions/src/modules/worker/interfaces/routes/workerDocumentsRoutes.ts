@@ -12,10 +12,9 @@ import { routeClass } from '@modules/identity/permissions';
  *
  * ⚠️ Este arquivo tem os DOIS lados, e só um deles é decisão de staff. As 9
  * rotas `/workers/me/*` são do PRÓPRIO prestador sobre os PRÓPRIOS documentos:
- * não declaram célula e não entram na família — quem as recorta é o `requireAuth`
- * + o dono do dado, não a matriz de permissão do time. Célula ali negaria o app
- * do candidato inteiro no dia da virada (é o mesmo motivo do desvio de não-staff
- * do `GroupPermissionEngine`, D119.1a).
+ * classe `client-policy`, decididas pelo Cedar do cliente (`worker:read|update`
+ * = `ReadOwnWorkerProfile|UpdateOwnWorkerProfile`, ficha própria `owner == principal`;
+ * o recurso vem do token, não do cliente). Não entram na família `admin.workers`.
  *
  * As 4 rotas `/admin/workers/:id/additional-documents*` são da família
  * `admin.workers` (task 3.5).
@@ -31,27 +30,29 @@ export function createWorkerDocumentsRoutes(
   const auth = authMiddleware.requireAuth();
   const staffOnly = authMiddleware.requireStaff();
   const perm = permissions.family(ADMIN_WORKERS_FAMILY);
+  // Documentos são parte da ficha do prestador (`worker`): mesma célula e mesma ação Cedar das rotas /workers/me da F2 (T311).
+  const selfPerm = (action: 'read' | 'update') => authMiddleware.requirePermission('worker', action);
 
   // ── Worker self-service: fixed docs ─────────────────────────────────────
-  router.get('/workers/me/documents', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.get('/workers/me/documents', routeClass('client-policy'), auth, selfPerm('read'), (req: Request, res: Response) =>
     meController.getDocuments(req, res));
-  router.post('/workers/me/documents/upload-url', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.post('/workers/me/documents/upload-url', routeClass('client-policy'), auth, selfPerm('update'), (req: Request, res: Response) =>
     meController.getUploadSignedUrl(req, res));
-  router.post('/workers/me/documents/save', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.post('/workers/me/documents/save', routeClass('client-policy'), auth, selfPerm('update'), (req: Request, res: Response) =>
     meController.saveDocumentPath(req, res));
-  router.post('/workers/me/documents/view-url', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.post('/workers/me/documents/view-url', routeClass('client-policy'), auth, selfPerm('read'), (req: Request, res: Response) =>
     meController.getViewSignedUrl(req, res));
-  router.delete('/workers/me/documents/:type', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.delete('/workers/me/documents/:type', routeClass('client-policy'), auth, selfPerm('update'), (req: Request, res: Response) =>
     meController.deleteDocument(req, res));
 
   // ── Worker self-service: additional docs ────────────────────────────────
-  router.get('/workers/me/additional-documents', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.get('/workers/me/additional-documents', routeClass('client-policy'), auth, selfPerm('read'), (req: Request, res: Response) =>
     additionalMeController.list(req, res));
-  router.post('/workers/me/additional-documents/upload-url', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.post('/workers/me/additional-documents/upload-url', routeClass('client-policy'), auth, selfPerm('update'), (req: Request, res: Response) =>
     additionalMeController.getUploadUrl(req, res));
-  router.post('/workers/me/additional-documents', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.post('/workers/me/additional-documents', routeClass('client-policy'), auth, selfPerm('update'), (req: Request, res: Response) =>
     additionalMeController.save(req, res));
-  router.delete('/workers/me/additional-documents/:id', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.delete('/workers/me/additional-documents/:docId', routeClass('client-policy'), auth, selfPerm('update'), (req: Request, res: Response) =>
     additionalMeController.remove(req, res));
 
   // ── Admin: additional docs ──────────────────────────────────────────────

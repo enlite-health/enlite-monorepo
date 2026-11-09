@@ -62,6 +62,8 @@ export function authDouble(): AuthMiddleware {
     requireStaff: passa,
     requireStaffOrApiKey: passa,
     requireAuth: passa,
+    // rotas `client-policy` do prestador (T311): `requirePermission('worker', …)` direto no AuthMiddleware, sem célula de família
+    requirePermission: passa,
   } as unknown as AuthMiddleware;
 }
 

@@ -14,7 +14,7 @@ export function createWorkerApplicationsRoutes(
   const router = Router();
   const auth = authMiddleware.requireAuth();
 
-  router.post('/worker-applications/track-channel', routeClass('client-policy'), auth, (req: Request, res: Response) =>
+  router.post('/worker-applications/track-channel', routeClass('client-policy'), auth, authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) =>
     controller.trackChannel(req, res),
   );
 

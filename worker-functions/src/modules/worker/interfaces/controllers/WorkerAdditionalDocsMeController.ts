@@ -93,7 +93,7 @@ export class WorkerAdditionalDocsMeController {
     try {
       const authUid = this.getAuthUid(req);
       if (!authUid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
-      const { id } = req.params;
+      const { docId: id } = req.params; // não `:id`: o requirePermission lê `req.params.id` como a ficha (T311)
       const worker = await this.resolveWorker(authUid);
       if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
       // Fetch doc to delete from GCS
