@@ -5,12 +5,16 @@
  *  - 0 áreas → `/no-access`; áreas, mas nenhuma navegável → `/no-access?reason=unavailable`; 1 → o `entryRoute`; > 1 → a última usada (`localStorage`,
  *    chave por uid, com `try/catch`) ou a primeira da ordem estável que o servidor devolve;
  *  - `next` sob `/admin` chama o perfil admin ANTES (é ele que provisiona o staff novo) [AJUSTE A7];
+ *  - lista VAZIA (e `next` fora de `/admin`) é o 1º login: o perfil provisiona o staff `@enlite.health` novo; quem não é staff
+ *    passa pelo `initWorker` (autocadastro, ou religa por e-mail a ficha importada — H2: identidade só do token) e as áreas
+ *    são relidas. Só aqui há init: staff, aluno e prestador já vinculado nunca ganham ficha no login;
  *  - `tokenRefreshRequired` → `getIdToken(true)` antes de navegar;
  *  - devolve só um caminho: quem navega, navega UMA vez (sem laço de redirect).
  */
 import { useCallback } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AreasApiService } from '@infrastructure/http/AreasApiService';
+import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import type { AreaEntry } from '@domain/entities/MyAreas';
 
@@ -65,6 +69,28 @@ export function nextIsOpenTo(next: string, navigable: AreaEntry[]): boolean {
   return owner ? entries.includes(owner) : entries.includes('/');
 }
 
+/**
+ * 1º login de quem não tem área nenhuma. `true` = algo foi provisionado e as áreas devem ser relidas.
+ * Perfil antes do init: o staff `@enlite.health` ainda sem linha em `users` também chega aqui com a lista vazia, e o init
+ * lhe daria uma ficha de prestador. Perfil que falha (403: não é staff) → o init, como o autocadastro de sempre.
+ */
+async function provisionFirstLogin(): Promise<boolean> {
+  try {
+    await AdminApiService.getProfile();
+    return true;
+  } catch {
+    /* não é staff: segue para o prestador */
+  }
+  const user = await authService.getCurrentUser().catch(() => null);
+  if (!user) return false;
+  try {
+    await WorkerApiService.initWorker({ authUid: user.id, email: user.email });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function useAreaDestination() {
   const resolveDestination = useCallback(async (rawNext: string | null): Promise<string> => {
     const next = isInternalPath(rawNext) ? rawNext : null;
@@ -78,7 +104,13 @@ export function useAreaDestination() {
       }
     }
 
-    const { areas, tokenRefreshRequired } = await AreasApiService.getMyAreas();
+    let { areas, tokenRefreshRequired } = await AreasApiService.getMyAreas();
+    if (areas.length === 0 && !isAdminPath(next)) {
+      if (!(await provisionFirstLogin())) return NO_ACCESS_ROUTE;
+      const reread = await AreasApiService.getMyAreas();
+      areas = reread.areas;
+      tokenRefreshRequired = tokenRefreshRequired || reread.tokenRefreshRequired;
+    }
     if (tokenRefreshRequired) {
       try {
         await authService.forceRefreshToken();

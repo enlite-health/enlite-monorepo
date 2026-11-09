@@ -11,7 +11,10 @@
  * Casos (fase-4.md itens 2 e 3):
  *   feliz        prestador → WorkerHome
  *   alt 1        staff → /admin/dashboard
- *   alt 2        conta sem área → /no-access; só-aluno → /no-access?reason=unavailable
+ *   alt 2        só-aluno → /no-access?reason=unavailable, SEM ficha de prestador
+ *   1º login     conta sem nenhuma área vira prestador (autocadastro: init + releitura → `/`, 1 ficha); ficha importada
+ *                com o mesmo e-mail é RELIGADA (auth_uid passa ao uid do login, sem ficha nova)
+ *   sem ficha    staff (com linha) e staff @enlite.health novo (sem claim) entram por /login e NÃO ganham linha em `workers`
  *   extra        2 áreas → última usada + seletor visível
  *   extra        prestador com next=/admin → /no-access com ≤ 2 navegações (sem laço)
  *   redirect     /admin/login → /login?next=%2Fadmin
@@ -28,6 +31,7 @@ const TENANT = '00000000-0000-0000-0000-000000000001';
 const STAMP = Date.now();
 const DOMINIO = `login-unico-${STAMP}.e2e.local`;
 const EMAIL_STAFF_NOVO = `novo.${STAMP}@enlite.health`;
+const EMAIL_STAFF_NOVO_SEM_CLAIM = `novo-sem-claim.${STAMP}@enlite.health`;
 
 const NO_ACCESS = /\/no-access$/;
 const NO_ACCESS_UNAVAILABLE = /\/no-access\?reason=unavailable$/;
@@ -68,20 +72,21 @@ async function contaNoEmulador(addr: string, uid: string): Promise<string> {
   return ((await res.json()) as { localId: string }).localId;
 }
 
+/** Fichas de prestador operadas pelo login `uid` (a mesma chave de `hasWorkerInTree`). */
+const fichasDoLogin = (uid: string): string => runSQL(`SELECT count(*) FROM workers WHERE auth_uid = '${uid}'`);
+
 /**
- * O `authStore` dispara `POST /api/workers/init` (sem await) em TODO login e a API cria a ficha de prestador de qualquer
- * conta com e-mail — o que daria à conta "sem área"/"só-aluno" a área `care` numa corrida com `GET /v1/me/areas` (flaky medido).
- * Aqui a escrita é BLOQUEADA (não há resposta fabricada): o caso testado é a conta que de fato não tem ficha.
+ * Espera a URL sair do `/login` e assentar: o `initWorker` de antes do conserto era disparado SEM await no login, então a
+ * contagem de fichas só é lida depois que a navegação terminou e a rede ficou ociosa.
  */
-async function semFichaDePrestador(page: Page): Promise<void> {
-  // Registrada DEPOIS do swap de `/api/**` (Playwright prioriza a rota mais recente).
-  await page.route(/\/workers\/init$/, (route) => route.abort());
+async function assentar(page: Page): Promise<void> {
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 });
+  await page.waitForLoadState('networkidle');
 }
 
 /** Entra pela tela de login, como uma pessoa: clica no campo, digita, clica no botão. */
-async function entrar(page: Page, u: MockUser, caminho = '/login', semFicha = false): Promise<void> {
+async function entrar(page: Page, u: MockUser, caminho = '/login'): Promise<void> {
   await installAuthInterceptors(page, u);
-  if (semFicha) await semFichaDePrestador(page);
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
   await page.goto(caminho);
   const campoEmail = page.locator('input[type="email"]');
@@ -101,7 +106,7 @@ test.describe('@integration login único: destino por área (F4)', () => {
 
   test.afterAll(() => {
     for (const sql of [
-      `DELETE FROM users WHERE email LIKE '%@${DOMINIO}' OR email = '${EMAIL_STAFF_NOVO}'`,
+      `DELETE FROM users WHERE email LIKE '%@${DOMINIO}' OR email IN ('${EMAIL_STAFF_NOVO}', '${EMAIL_STAFF_NOVO_SEM_CLAIM}')`,
       `DELETE FROM workers WHERE email LIKE '%@${DOMINIO}' OR auth_uid LIKE 'e2e-lu-%-${STAMP}'`,
     ]) {
       try { runSQL(sql); } catch { /* limpeza não esconde o resultado do teste */ }
@@ -125,24 +130,53 @@ test.describe('@integration login único: destino por área (F4)', () => {
     await entrar(page, u);
     await expect(page).toHaveURL(/\/admin\/dashboard\/?$/, { timeout: 30_000 });
     await expect(page.getByTestId('admin-layout')).toHaveCount(1);
+    await page.waitForLoadState('networkidle');
+    expect(fichasDoLogin(u.uid), 'o login do staff criou ficha de prestador').toBe('0');
   });
 
-  test('alt 2: conta sem nenhuma área → /no-access', async ({ page }) => {
-    const u = conta('sem-area', 'worker');
-
-    await entrar(page, u, '/login', true);
-    await expect(page).toHaveURL(NO_ACCESS, { timeout: 30_000 });
-    await expect(page.getByTestId('no-access-page')).toBeVisible();
-    await expect(page.getByTestId('admin-layout')).toHaveCount(0);
-  });
-
-  test('alt 2: conta só-aluno (área sem tela ainda) → /no-access?reason=unavailable', async ({ page }) => {
+  test('alt 2: conta só-aluno (área sem tela ainda) → /no-access?reason=unavailable, sem ficha de prestador', async ({ page }) => {
     const u = conta('so-aluno', 'worker');
     vinculoDeAluno(u);
 
-    await entrar(page, u, '/login', true);
+    await entrar(page, u);
     await expect(page).toHaveURL(NO_ACCESS_UNAVAILABLE, { timeout: 30_000 });
     await expect(page.getByTestId('no-access-page')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    expect(fichasDoLogin(u.uid), 'o login do aluno criou ficha de prestador').toBe('0');
+  });
+
+  test('1º login: conta sem nenhuma área vira prestador (autocadastro) → home do prestador e UMA ficha', async ({ page }) => {
+    const u = conta('sem-area', 'worker');
+    expect(fichasDoLogin(u.uid)).toBe('0'); // controle: não existe ficha antes
+
+    await entrar(page, u);
+    await expect(page).toHaveURL((url) => url.pathname === '/', { timeout: 30_000 });
+    await expect(page.getByTestId('admin-layout')).toHaveCount(0);
+    expect(fichasDoLogin(u.uid)).toBe('1');
+  });
+
+  test('1º login: ficha importada com o mesmo e-mail é RELIGADA ao login (sem ficha nova)', async ({ page }) => {
+    const u = conta('importada', 'worker');
+    const uidAntigo = `e2e-lu-importada-antigo-${STAMP}`;
+    runSQL(`INSERT INTO workers (auth_uid, email, status, country) VALUES ('${uidAntigo}', '${u.email}', 'INCOMPLETE_REGISTER', 'AR')`);
+
+    await entrar(page, u);
+    await expect(page).toHaveURL((url) => url.pathname === '/', { timeout: 30_000 });
+    expect(runSQL(`SELECT auth_uid FROM workers WHERE email = '${u.email}'`)).toBe(u.uid); // uma linha só, religada
+  });
+
+  test('staff @enlite.health NOVO, sem claim, entra por /login sem next: o perfil o provisiona e ele NÃO ganha ficha', async ({ page }) => {
+    // Sem `role` no token: como o 1º login real, antes do claim. Só o perfil (provisionamento) o reconhece como staff.
+    const uid = await contaNoEmulador(EMAIL_STAFF_NOVO_SEM_CLAIM, `e2e-lu-novo-sem-claim-${STAMP}`);
+    const u: MockUser = { uid, email: EMAIL_STAFF_NOVO_SEM_CLAIM, role: '', country: 'AR' };
+
+    await entrar(page, u);
+    await assentar(page);
+    // O mock não relê o claim do banco (o token real relê, `FirebaseAuthStrategy`): aqui a URL final NÃO é a prova; a prova
+    // é a linha em `users` (provisionado) e a AUSÊNCIA de linha em `workers`.
+    await expect(page).not.toHaveURL((url) => url.pathname === '/');
+    expect(runSQL(`SELECT count(*) FROM users WHERE email = '${EMAIL_STAFF_NOVO_SEM_CLAIM}'`)).toBe('1');
+    expect(fichasDoLogin(uid), 'o login do staff novo criou ficha de prestador').toBe('0');
   });
 
   test('extra: conta com 2 áreas → começa em uma, o seletor aparece e a última usada vale no próximo login', async ({ page }) => {
@@ -212,5 +246,7 @@ test.describe('@integration login único: destino por área (F4)', () => {
     expect(runSQL(`SELECT count(*) FROM users WHERE email = '${EMAIL_STAFF_NOVO}'`)).toBe('1'); // o login provisionou
     expect(ordem.indexOf('profile'), `ordem das chamadas: ${ordem.join(' → ')}`).toBeGreaterThanOrEqual(0);
     expect(ordem.indexOf('profile')).toBeLessThan(ordem.indexOf('areas'));
+    await page.waitForLoadState('networkidle');
+    expect(fichasDoLogin(u.uid), 'o login do staff novo criou ficha de prestador').toBe('0');
   });
 });

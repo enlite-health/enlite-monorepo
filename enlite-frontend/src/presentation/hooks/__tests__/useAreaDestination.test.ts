@@ -5,8 +5,10 @@ const getProfile = vi.fn();
 const getMyAreas = vi.fn();
 const forceRefreshToken = vi.fn();
 const getCurrentUser = vi.fn();
+const initWorker = vi.fn();
 
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { getProfile: (...a: unknown[]) => getProfile(...a) } }));
+vi.mock('@infrastructure/http/WorkerApiService', () => ({ WorkerApiService: { initWorker: (...a: unknown[]) => initWorker(...a) } }));
 vi.mock('@infrastructure/http/AreasApiService', () => ({ AreasApiService: { getMyAreas: (...a: unknown[]) => getMyAreas(...a) } }));
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   FirebaseAuthService: class {
@@ -29,7 +31,8 @@ describe('useAreaDestination', () => {
     vi.clearAllMocks();
     localStorage.clear();
     getProfile.mockResolvedValue({});
-    getCurrentUser.mockResolvedValue({ id: 'uid-1' });
+    getCurrentUser.mockResolvedValue({ id: 'uid-1', email: 'p@e2e.local' });
+    initWorker.mockResolvedValue({ status: 'ok', worker: { id: 'w-1' } });
     forceRefreshToken.mockResolvedValue('t');
   });
   afterEach(() => { vi.restoreAllMocks(); });
@@ -40,11 +43,86 @@ describe('useAreaDestination', () => {
     expect(NO_ACCESS_UNAVAILABLE_ROUTE).toBe('/no-access?reason=unavailable');
   });
 
-  it('0 áreas → /no-access, sem reason', async () => {
+  it('0 áreas e nada a provisionar (init falha) → /no-access, sem reason', async () => {
     areas([]);
+    getProfile.mockRejectedValue(new Error('403'));
+    initWorker.mockRejectedValue(new Error('HTTP 500'));
     const dest = await resolve();
     expect(dest).toBe(NO_ACCESS_ROUTE);
     expect(dest).not.toContain('reason');
+  });
+
+  describe('init de prestador só na lista VAZIA (login único: staff e aluno não ganham ficha)', () => {
+    it('staff → sem init', async () => {
+      areas([STAFF]);
+      expect(await resolve()).toBe('/admin');
+      expect(initWorker).not.toHaveBeenCalled();
+    });
+
+    it('aluno (só learn) → sem init', async () => {
+      areas([LEARNER]);
+      expect(await resolve()).toBe(NO_ACCESS_UNAVAILABLE_ROUTE);
+      expect(initWorker).not.toHaveBeenCalled();
+    });
+
+    it('prestador já vinculado → sem init', async () => {
+      areas([WORKER]);
+      expect(await resolve()).toBe('/');
+      expect(initWorker).not.toHaveBeenCalled();
+    });
+
+    it('vazio, não é staff (perfil 403) → init UMA vez com o uid/e-mail da sessão, relê as áreas → care', async () => {
+      getProfile.mockRejectedValue(new Error('403'));
+      getMyAreas
+        .mockResolvedValueOnce({ areas: [], tokenRefreshRequired: false })
+        .mockResolvedValueOnce({ areas: [WORKER], tokenRefreshRequired: true });
+      expect(await resolve()).toBe('/');
+      expect(initWorker).toHaveBeenCalledTimes(1);
+      expect(initWorker).toHaveBeenCalledWith({ authUid: 'uid-1', email: 'p@e2e.local' });
+      expect(getMyAreas).toHaveBeenCalledTimes(2);
+      expect(forceRefreshToken).toHaveBeenCalledTimes(1); // o claim novo (`care`) da 2ª leitura
+    });
+
+    it('vazio com next fora de /admin (ex.: vaga) → init e o next vale', async () => {
+      getProfile.mockRejectedValue(new Error('403'));
+      getMyAreas
+        .mockResolvedValueOnce({ areas: [], tokenRefreshRequired: false })
+        .mockResolvedValueOnce({ areas: [WORKER], tokenRefreshRequired: false });
+      expect(await resolve('/vacancies/12')).toBe('/vacancies/12');
+      expect(initWorker).toHaveBeenCalledTimes(1);
+    });
+
+    it('vazio e o perfil provisiona (staff @enlite.health novo) → sem init, relê → backoffice', async () => {
+      getMyAreas
+        .mockResolvedValueOnce({ areas: [], tokenRefreshRequired: false })
+        .mockResolvedValueOnce({ areas: [STAFF], tokenRefreshRequired: false });
+      expect(await resolve()).toBe('/admin');
+      expect(getProfile).toHaveBeenCalledTimes(1);
+      expect(initWorker).not.toHaveBeenCalled();
+    });
+
+    it('init que falha → /no-access, sem reler', async () => {
+      getProfile.mockRejectedValue(new Error('403'));
+      areas([]);
+      initWorker.mockRejectedValue(new Error('HTTP 500'));
+      expect(await resolve()).toBe(NO_ACCESS_ROUTE);
+      expect(getMyAreas).toHaveBeenCalledTimes(1);
+    });
+
+    it('sem sessão no Firebase → /no-access sem init', async () => {
+      getProfile.mockRejectedValue(new Error('403'));
+      areas([]);
+      getCurrentUser.mockResolvedValue(null);
+      expect(await resolve()).toBe(NO_ACCESS_ROUTE);
+      expect(initWorker).not.toHaveBeenCalled();
+    });
+
+    it('vazio com next=/admin → /no-access sem init (quem veio ao painel não vira prestador)', async () => {
+      areas([]);
+      expect(await resolve('/admin')).toBe(NO_ACCESS_ROUTE);
+      expect(initWorker).not.toHaveBeenCalled();
+      expect(getMyAreas).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('1 área → entryRoute dela', async () => {

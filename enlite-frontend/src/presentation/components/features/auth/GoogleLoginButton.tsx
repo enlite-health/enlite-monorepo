@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@presentation/hooks/useAuth';
+import type { User } from '@domain/entities/User';
 
 interface GoogleLoginButtonProps {
-  onSuccess?: () => void;
+  onSuccess?: (user: User) => void;
   onError?: (error: Error) => void;
   variant?: 'register' | 'login';
 }
@@ -16,8 +17,8 @@ export function GoogleLoginButton({ onSuccess, onError, variant = 'login' }: Goo
   const handleClick = async () => {
     try {
       setIsLoading(true);
-      await loginWithGoogle();
-      onSuccess?.();
+      const user = await loginWithGoogle();
+      onSuccess?.(user);
     } catch (error) {
       onError?.(error instanceof Error ? error : new Error('Google login failed'));
     } finally {
