@@ -5389,6 +5389,7 @@
             "upload": "Importación de archivos",
             "user_management": "Usuarios del panel",
             "permission_management": "Accesos y permisos",
+            "area_membership": "Vínculos de área",
             "patient_identity": "Identidad: nombre, documento, teléfono",
             "patient_clinical": "Cuadro clínico: patologías, dependencia, textos restringidos",
             "patient_care_team": "Equipo tratante",

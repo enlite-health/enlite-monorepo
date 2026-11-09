@@ -61,7 +61,8 @@ async function abrirAccess(page: Page, u: MockUser): Promise<void> {
 async function buscarPorUid(page: Page, uid: string): Promise<void> {
   const secao = page.getByTestId('area-memberships-section');
   await expect(secao).toBeVisible({ timeout: 20_000 });
-  await secao.getByLabel('Buscar por').selectOption({ label: 'UID de login' });
+  await secao.getByLabel('Buscar por').click();
+  await page.getByRole('option', { name: 'UID de login' }).click();
   const campo = secao.getByLabel('Valor');
   await campo.click();
   await expect(campo).toBeFocused();
@@ -109,8 +110,10 @@ test.describe('vínculos de área na /admin/access — conceder, revogar com mot
 
     // conceder learn · learner
     const form = page.getByTestId('area-membership-grant-form');
-    await form.getByLabel('Área').selectOption({ label: 'Learn' });
-    await form.getByLabel('Rol').selectOption({ label: 'Alumno/a' });
+    await form.getByLabel('Área').click();
+    await page.getByRole('option', { name: 'Learn' }).click();
+    await form.getByLabel('Rol').click();
+    await page.getByRole('option', { name: 'Alumno/a' }).click();
     await form.getByRole('button', { name: 'Conceder' }).click();
     const linha = secao.getByRole('row').filter({ hasText: 'Learn' }).filter({ hasText: 'Alumno/a' });
     await expect(linha).toHaveCount(1, { timeout: 20_000 }); // lido pela TELA

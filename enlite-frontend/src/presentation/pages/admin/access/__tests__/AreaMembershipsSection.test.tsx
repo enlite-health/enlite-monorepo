@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AreaMembershipsSection } from '../AreaMembershipsSection';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -31,6 +31,12 @@ function cells(permissions: string[]): void {
     authzStatus: 'ready',
     authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
   });
+}
+
+/** Combobox da casa: abre o gatilho (achado pelo rótulo) e clica na opção pelo nome. */
+async function pick(label: string, option: string): Promise<void> {
+  await userEvent.click(screen.getByLabelText(label));
+  await userEvent.click(within(screen.getByRole('option', { name: option })).getByRole('button'));
 }
 
 async function search(value = PID): Promise<void> {
@@ -77,7 +83,7 @@ describe('AreaMembershipsSection', () => {
   it('busca por uid manda `{ uid }`', async () => {
     cells(['area_membership:read']);
     render(<AreaMembershipsSection />);
-    await userEvent.selectOptions(screen.getByLabelText('admin.access.areaMemberships.search.mode'), 'uid');
+    await pick('admin.access.areaMemberships.search.mode', 'admin.access.areaMemberships.search.uid');
     await search('firebase-uid-1');
     await waitFor(() => expect(api.list).toHaveBeenCalledWith({ uid: 'firebase-uid-1' }));
   });
@@ -107,8 +113,9 @@ describe('AreaMembershipsSection', () => {
     await search();
     await screen.findByText('uid-staff');
     // trocar de área reinicia o papel para um par válido: care só admite family
-    await userEvent.selectOptions(screen.getByLabelText('admin.access.areaMemberships.grant.area'), 'care');
-    const roles = screen.getAllByRole('option').map((o) => (o as HTMLOptionElement).value);
+    await pick('admin.access.areaMemberships.grant.area', 'areas.names.care');
+    await userEvent.click(screen.getByLabelText('admin.access.areaMemberships.grant.role'));
+    const roles = screen.getAllByRole('option').map((o) => o.getAttribute('data-value'));
     expect(roles).toContain('family');
     expect(roles).not.toContain('teacher');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.areaMemberships.grant.submit' }));

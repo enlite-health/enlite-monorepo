@@ -5310,6 +5310,7 @@
             "upload": "Importação de arquivos",
             "user_management": "Usuários do painel",
             "permission_management": "Acessos e permissões",
+            "area_membership": "Vínculos de área",
             "patient_identity": "Identidade: nome, documento, telefone",
             "patient_clinical": "Quadro clínico: patologias, dependência, textos restritos",
             "patient_care_team": "Equipe tratante",

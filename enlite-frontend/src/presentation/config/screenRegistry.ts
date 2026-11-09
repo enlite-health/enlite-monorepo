@@ -289,7 +289,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'pedidosIa', route: '/admin/pedidos-ia', cells: ['pedidos_ia:read', 'pedidos_ia:decidir'] },
   // Spec 082: painel de custos. Só-Master; NÃO entra em `adminNavigation.tsx` (DF-2) — acesso só pela URL digitada.
   { id: 'custos', route: '/admin/custos', cells: ['platform_costs:read'] },
-  { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
+  { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write', 'area_membership:read', 'area_membership:write'] },
 ];
 
 /** Todas as células que alguma tela lista, com as telas que as consomem. */

@@ -9,7 +9,7 @@ import {
   type AreaMembershipList,
   type StoredArea,
 } from '@domain/entities/AreaMembership';
-import { Heading, Text, Input, Label, Textarea, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms';
+import { Heading, Text, Input, Combobox, Label, Textarea, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 import { Gated, PanelErrorAlert } from '@presentation/components/features/access';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
@@ -18,7 +18,6 @@ import { formatInstant } from '@presentation/utils/dateTimeFormat';
 export const AREA_MEMBERSHIP_RESOURCE = 'area_membership';
 
 const K = 'admin.access.areaMemberships';
-const SELECT_CLASS = 'rounded-lg border border-gray-800 bg-white px-3 py-2 text-sm text-primary';
 
 type LookupMode = 'personId' | 'uid';
 type Phase = 'idle' | 'loading' | 'ready' | 'error';
@@ -77,10 +76,15 @@ function MembershipsPanel(): JSX.Element {
       <form className="flex flex-wrap items-end gap-3" onSubmit={handleSearch} data-testid="area-memberships-search">
         <div className="space-y-1">
           <Label size="compact" htmlFor="am-mode">{t(`${K}.search.mode`)}</Label>
-          <select id="am-mode" className={`${SELECT_CLASS} block`} value={mode} onChange={(e) => setMode(e.target.value as LookupMode)}>
-            <option value="personId">{t(`${K}.search.personId`)}</option>
-            <option value="uid">{t(`${K}.search.uid`)}</option>
-          </select>
+          <Combobox
+            id="am-mode"
+            value={mode}
+            onChange={(v) => setMode(v as LookupMode)}
+            options={[
+              { value: 'personId', label: t(`${K}.search.personId`) },
+              { value: 'uid', label: t(`${K}.search.uid`) },
+            ]}
+          />
         </div>
         <div className="space-y-1 min-w-[16rem] flex-1">
           <Label size="compact" htmlFor="am-query">{t(`${K}.search.value`)}</Label>
@@ -251,15 +255,21 @@ function GrantForm({ personId, onGranted }: { personId: string; onGranted: () =>
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label size="compact" htmlFor="am-area">{t(`${K}.grant.area`)}</Label>
-          <select id="am-area" className={`${SELECT_CLASS} block`} value={area} onChange={(e) => changeArea(e.target.value as StoredArea)}>
-            {STORED_AREAS.map((a) => <option key={a} value={a}>{t(`areas.names.${a}`)}</option>)}
-          </select>
+          <Combobox
+            id="am-area"
+            value={area}
+            onChange={(v) => changeArea(v as StoredArea)}
+            options={STORED_AREAS.map((a) => ({ value: a, label: t(`areas.names.${a}`) }))}
+          />
         </div>
         <div className="space-y-1">
           <Label size="compact" htmlFor="am-role">{t(`${K}.grant.role`)}</Label>
-          <select id="am-role" className={`${SELECT_CLASS} block`} value={role} onChange={(e) => setRole(e.target.value)}>
-            {STORED_AREA_ROLES[area].map((r) => <option key={r} value={r}>{t(`${K}.roles.${r}`)}</option>)}
-          </select>
+          <Combobox
+            id="am-role"
+            value={role}
+            onChange={setRole}
+            options={STORED_AREA_ROLES[area].map((r) => ({ value: r, label: t(`${K}.roles.${r}`) }))}
+          />
         </div>
         <Button type="submit" variant="primary" isLoading={busy}>{t(`${K}.grant.submit`)}</Button>
       </div>
