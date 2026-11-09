@@ -7078,6 +7078,7 @@
     },
     "assistants": {
       "button": "Asistentes",
+      "resetPosition": "Volver a la esquina",
       "title": "Asistentes",
       "yourGroup_one": "Tu grupo: {{group}} · {{count}} asistente",
       "yourGroup_other": "Tu grupo: {{group}} · {{count}} asistentes",

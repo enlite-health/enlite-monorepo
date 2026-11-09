@@ -13,7 +13,7 @@ import {
   type KeyboardEvent,
   type SetStateAction,
 } from "react";
-import { ChevronDown, Lock, Minus, Sparkles, X } from "lucide-react";
+import { ChevronDown, CornerDownRight, Lock, Minus, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PersonAvatar } from "@presentation/components/atoms/PersonAvatar";
 import { MessageMarkdown } from "@presentation/components/shared/MessageMarkdown/MessageMarkdown";
@@ -22,6 +22,7 @@ import { LuzPruebaTab } from "./LuzPruebaTab";
 import { ASSISTANT_MARKDOWN_CLASS, bubbleClass } from "./assistantsStyles";
 import type { UseAssistants } from "@presentation/hooks/useAssistants";
 import { useLuzPrueba } from "@presentation/hooks/useLuzPrueba";
+import type { Rect } from "./fabPosition";
 
 interface Props {
   assistants: UseAssistants;
@@ -34,6 +35,10 @@ interface Props {
   onMinimize: () => void;
   /** The person has the `luz_prueba:chat` cell (computed by the widget): adds the "Luz (prueba)" tab (spec 086, RF-1). */
   pruebaEnabled?: boolean;
+  /** Free position (spec 090): without it the panel keeps the fixed bottom-right corner. */
+  placement?: Rect;
+  /** Only passed when there is a saved position: shows the "back to the corner" action. */
+  onResetPosition?: () => void;
 }
 
 
@@ -44,6 +49,8 @@ export function AssistantsPanel({
   onClose,
   onMinimize,
   pruebaEnabled = false,
+  placement,
+  onResetPosition,
 }: Props) {
   const { t } = useTranslation();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -186,7 +193,14 @@ export function AssistantsPanel({
       aria-label={t("admin.assistants.title")}
       data-testid="assistants-panel"
       onKeyDown={onPanelKeyDown}
-      className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-white font-poppins text-[#262626] shadow-extra-large sm:inset-auto sm:bottom-4 sm:right-4 sm:h-[480px] sm:w-[356px] sm:max-w-[calc(100vw-32px)] sm:rounded-card sm:border sm:border-gray-300"
+      className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-white font-poppins text-[#262626] shadow-extra-large sm:inset-auto ${
+        placement ? "" : "sm:bottom-4 sm:right-4 sm:h-[480px] "
+      }sm:w-[356px] sm:max-w-[calc(100vw-32px)] sm:rounded-card sm:border sm:border-gray-300`}
+      style={
+        placement
+          ? { left: placement.left, top: placement.top, width: placement.width, height: placement.height }
+          : undefined
+      }
     >
       <header className="flex items-center gap-[10px] border-b border-gray-300 py-3 pl-[14px] pr-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-white">
@@ -232,6 +246,18 @@ export function AssistantsPanel({
             </span>
           </span>
         </div>
+        {onResetPosition && (
+          <button
+            type="button"
+            data-testid="assistants-reset-position"
+            aria-label={t("admin.assistants.resetPosition")}
+            title={t("admin.assistants.resetPosition")}
+            onClick={onResetPosition}
+            className={iconBtn}
+          >
+            <CornerDownRight size={16} aria-hidden="true" />
+          </button>
+        )}
         {multiple && (
           <button
             type="button"

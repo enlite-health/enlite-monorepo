@@ -13,6 +13,8 @@ import { useTranslation } from "react-i18next";
 import { useAssistants } from "@presentation/hooks/useAssistants";
 import { useHasCell } from "@presentation/hooks/useCellAccess";
 import { AssistantsPanel } from "./AssistantsPanel";
+import { useDraggableFab } from "./useDraggableFab";
+import { DESKTOP_MIN_WIDTH, placePanel } from "./fabPosition";
 
 export function AssistantsWidget() {
   const { t } = useTranslation();
@@ -21,6 +23,8 @@ export function AssistantsWidget() {
   const [draft, setDraft] = useState("");
   // Spec 086: the "Luz (prueba)" tab exists only for who has the cell (Acesso Master); without it, no tab, no request.
   const luzPrueba = useHasCell('luz_prueba', 'chat');
+  // Spec 090: the button is draggable; the hook is called before the early return (rules of hooks).
+  const fab = useDraggableFab();
 
   if (a.assistants.length === 0 && !luzPrueba) return null;
 
@@ -36,6 +40,12 @@ export function AssistantsWidget() {
         }}
         onMinimize={() => setOpen(false)}
         pruebaEnabled={luzPrueba}
+        placement={
+          fab.viewport.width >= DESKTOP_MIN_WIDTH && fab.hasCustomPosition && fab.fabRect
+            ? placePanel(fab.fabRect, fab.viewport)
+            : undefined
+        }
+        onResetPosition={fab.hasCustomPosition ? fab.resetPosition : undefined}
       />
     );
   }
@@ -45,8 +55,14 @@ export function AssistantsWidget() {
       type="button"
       data-testid="assistants-fab"
       aria-label={t("admin.assistants.button")}
-      onClick={() => setOpen(true)}
-      className="fixed bottom-4 right-4 z-40 flex h-12 items-center gap-[10px] rounded-full bg-primary pl-[14px] pr-[18px] font-poppins text-[13px] font-semibold text-white shadow-large"
+      ref={fab.ref}
+      {...fab.handlers}
+      style={fab.style}
+      onClick={() => {
+        if (fab.consumeClick()) return;
+        setOpen(true);
+      }}
+      className={`${fab.style ? "fixed" : "fixed bottom-4 right-4"} z-40 touch-none select-none cursor-grab active:cursor-grabbing flex h-12 items-center gap-[10px] rounded-full bg-primary pl-[14px] pr-[18px] font-poppins text-[13px] font-semibold text-white shadow-large`}
     >
       <MessageCircle size={20} aria-hidden="true" />
       {t("admin.assistants.button")}
