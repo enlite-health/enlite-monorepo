@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
+import { adminLoginPath } from '@presentation/config/adminLoginPath';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { shouldShowWelcomeNoGroup, welcomeNoGroupReason } from '@domain/entities/Authz';
@@ -36,6 +37,7 @@ function AuthzLoading() {
  */
 export function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
   const { isAuthenticated, isLoading, adminProfile } = useAdminAuth();
+  const location = useLocation();
   const authz = useAdminAuthStore((s) => s.authz);
   const authzStatus = useAdminAuthStore((s) => s.authzStatus);
 
@@ -59,12 +61,12 @@ export function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
 
   if (!isAuthenticated) {
     console.log('[AdminProtectedRoute] Não autenticado, redirecionando para login');
-    return <Navigate to="/admin/login" replace />;
+    return <Navigate to={adminLoginPath(location.pathname + location.search)} replace />;
   }
 
   if (!adminProfile) {
     console.log('[AdminProtectedRoute] Sem perfil admin, redirecionando para login');
-    return <Navigate to="/admin/login" replace />;
+    return <Navigate to={adminLoginPath(location.pathname + location.search)} replace />;
   }
 
   if (authzStatus === 'loading' && !authz) {
