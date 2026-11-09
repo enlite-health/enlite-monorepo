@@ -86,6 +86,7 @@ import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastruct
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createMeAreasRouter } from '@modules/identity/interfaces/meAreasRoute';
 import { createPersonTreeRouter } from '@modules/identity/interfaces/personTreeRoute';
+import { requirePersonTreeService } from '@modules/identity/interfaces/middleware/requirePersonTreeService';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
 import { dbSessionMiddleware } from './shared/database/dbSessionMiddleware';
@@ -587,8 +588,8 @@ app.use('/v1', createMeSimulationRouter({
 }));
 // `GET /v1/me/areas` — descoberta única de áreas + bootstrap da pessoa (acesso-do-cliente F1, T109).
 app.use('/v1', createMeAreasRouter(authMiddleware.requireAuth(), DatabaseConnection.getInstance().getPool()));
-// `GET /v1/persons/:pid/tree` — árvore do `iam` para serviços (learn-service/spec B), guard interno (T138).
-app.use('/v1', createPersonTreeRouter(internalAuthMiddleware, DatabaseConnection.getInstance().getPool()));
+// `GET /v1/persons/:pid/tree` — árvore do `iam` para serviços (learn-service/spec B), guard OIDC + allowlist de SA fail-closed (T138).
+app.use('/v1', createPersonTreeRouter(requirePersonTreeService, DatabaseConnection.getInstance().getPool()));
 // NOTE: requireAuth (not requireAdmin) — auto-provisioning on first Google login.
 app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);

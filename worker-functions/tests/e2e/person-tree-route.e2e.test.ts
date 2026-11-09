@@ -4,7 +4,7 @@
  * Mesmo molde de `me-areas-route.e2e.test.ts` (cadeia real em porta efêmera; migrations 580/581). Fixtures sintéticas, sem PII.
  * `iam.*` é append-only: pessoas criadas por SQL direto como dono, com sufixo aleatório; o teste não apaga.
  * Substituição única: a verificação do OIDC do Google (`OAuth2Client.verifyIdToken`) — sem rede no e2e; ela só aceita
- * o token `oidc-de-servico-valido`. O guard, a rota, o controller e o banco são os reais.
+ * o token `oidc-de-servico-valido` e devolve a SA de `E2E_TREE_SA_EMAIL` (a allowlist é lida da env a cada request). O guard, a rota, o controller e o banco são os reais.
  */
 import { randomBytes } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -15,6 +15,8 @@ const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const RUN = randomBytes(4).toString('hex');
 const OIDC_OK = 'oidc-de-servico-valido';
+const SA_OK = 'learn-service-sa@e2e.iam.gserviceaccount.com';
+const SA_OUTRA = 'outra-sa@e2e.iam.gserviceaccount.com';
 
 describe('GET /v1/persons/:pid/tree — HTTP real, banco real (acesso-do-cliente F1, T138)', () => {
   let pool: Pool;
@@ -36,6 +38,8 @@ describe('GET /v1/persons/:pid/tree — HTTP real, banco real (acesso-do-cliente
       DATABASE_URL,
       INTERNAL_TOKEN_SECRET: 'test-secret-for-e2e-only',
       CLOUD_RUN_SERVICE_URL: 'https://wf.e2e.local',
+      PERSON_TREE_ALLOWED_SAS: ` ${SA_OK} , outra-na-lista@e2e.iam.gserviceaccount.com`,
+      E2E_TREE_SA_EMAIL: SA_OK,
     })) {
       envAnterior[k] = process.env[k];
       process.env[k] = v;
@@ -43,14 +47,14 @@ describe('GET /v1/persons/:pid/tree — HTTP real, banco real (acesso-do-cliente
     pool = new Pool({ connectionString: DATABASE_URL });
     jest.spyOn(OAuth2Client.prototype, 'verifyIdToken').mockImplementation((async (opts: { idToken: string }) => {
       if (opts.idToken !== OIDC_OK) throw new Error('Invalid token');
-      return {};
+      return { getPayload: () => ({ email: process.env.E2E_TREE_SA_EMAIL, email_verified: true }) };
     }) as never);
     app = await montarAppDeFamilia({
       montarRotas: ({ app: expressApp }) => {
-        const { internalAuthMiddleware } = require('@modules/notification');
+        const { requirePersonTreeService } = require('@modules/identity/interfaces/middleware/requirePersonTreeService');
         const { createPersonTreeRouter } = require('@modules/identity/interfaces/personTreeRoute');
         const { DatabaseConnection } = require('@shared/database/DatabaseConnection');
-        expressApp.use('/v1', createPersonTreeRouter(internalAuthMiddleware, DatabaseConnection.getInstance().getPool()));
+        expressApp.use('/v1', createPersonTreeRouter(requirePersonTreeService, DatabaseConnection.getInstance().getPool()));
       },
     });
   }, 30000);
@@ -89,6 +93,28 @@ describe('GET /v1/persons/:pid/tree — HTTP real, banco real (acesso-do-cliente
     const solo = await pessoa();
     const r = await chamar(solo, { 'X-Internal-Secret': 'test-secret-for-e2e-only' });
     expect(r.status).toBe(200);
+  });
+
+  it('OIDC válido com SA FORA da allowlist → 403', async () => {
+    const solo = await pessoa();
+    process.env.E2E_TREE_SA_EMAIL = SA_OUTRA;
+    try {
+      expect((await chamar(solo, oidc)).status).toBe(403);
+    } finally {
+      process.env.E2E_TREE_SA_EMAIL = SA_OK;
+    }
+  });
+
+  it('allowlist VAZIA → OIDC válido dá 403 (fail-closed), mas o X-Internal-Secret segue passando', async () => {
+    const solo = await pessoa();
+    const anterior = process.env.PERSON_TREE_ALLOWED_SAS;
+    process.env.PERSON_TREE_ALLOWED_SAS = '';
+    try {
+      expect((await chamar(solo, oidc)).status).toBe(403);
+      expect((await chamar(solo, { 'X-Internal-Secret': 'test-secret-for-e2e-only' })).status).toBe(200);
+    } finally {
+      process.env.PERSON_TREE_ALLOWED_SAS = anterior;
+    }
   });
 
   it('pid desconhecido → 404', async () => {
