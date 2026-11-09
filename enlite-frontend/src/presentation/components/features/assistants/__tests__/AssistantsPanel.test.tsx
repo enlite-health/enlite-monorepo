@@ -601,3 +601,55 @@ describe("AssistantsPanel — assistant replies in markdown", () => {
     expect(mine.textContent).toBe("**mío**");
   });
 });
+
+describe("AssistantsPanel — free placement and reset (spec 090)", () => {
+  const a: UseAssistants = {
+    assistants: [ag("maria", "Maria")],
+    active: ag("maria", "Maria"),
+    setTab: vi.fn(),
+    messages: [],
+    waiting: false,
+    notice: null,
+    historyError: false,
+    unreadTotal: 0,
+    send: vi.fn(),
+    markRead: vi.fn().mockResolvedValue(undefined),
+    loadConversation: vi.fn(),
+  };
+  const ui = (extra: Partial<React.ComponentProps<typeof AssistantsPanel>> = {}) => (
+    <AssistantsPanel assistants={a} draft="" setDraft={vi.fn()} onClose={vi.fn()} onMinimize={vi.fn()} {...extra} />
+  );
+
+  it("without placement: keeps today's corner classes and no inline style", () => {
+    render(ui());
+    const p = screen.getByTestId("assistants-panel");
+    expect(p.className).toContain("sm:bottom-4 sm:right-4 sm:h-[480px]");
+    expect(p.getAttribute("style")).toBeNull();
+  });
+
+  it("with placement: inline left/top/width/height and no corner anchors", () => {
+    render(ui({ placement: { left: 10, top: 20, width: 356, height: 480 } }));
+    const p = screen.getByTestId("assistants-panel");
+    expect(p.style.left).toBe("10px");
+    expect(p.style.top).toBe("20px");
+    expect(p.style.width).toBe("356px");
+    expect(p.style.height).toBe("480px");
+    expect(p.className).not.toContain("sm:bottom-4");
+  });
+
+  it("reset button exists only with onResetPosition, and clicking it calls it", () => {
+    const { unmount } = render(ui());
+    expect(screen.queryByTestId("assistants-reset-position")).toBeNull();
+    unmount();
+    const onReset = vi.fn();
+    render(ui({ onResetPosition: onReset }));
+    fireEvent.click(screen.getByTestId("assistants-reset-position"));
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("reset label: 'Volver a la esquina' (es) and pt-BR key present", () => {
+    render(ui({ onResetPosition: vi.fn() }));
+    expect(screen.getByLabelText("Volver a la esquina")).toBe(screen.getByTestId("assistants-reset-position"));
+    expect((ptBR.admin.assistants as Record<string, string>).resetPosition).toBe("Voltar ao canto");
+  });
+});
