@@ -7604,5 +7604,36 @@
       "switchUnconfirmed": "Não conseguimos confirmar a troca de grupo. Tente novamente.",
       "switchRetry": "Tentar novamente"
     }
+  },
+  "areas": {
+    "switcher": {
+      "label": "Área",
+      "ariaLabel": "Trocar de área",
+      "menuTitle": "Trocar de área",
+      "comingSoon": "Em breve"
+    },
+    "names": {
+      "backoffice": "Backoffice",
+      "care": "Care",
+      "learn": "Learn"
+    },
+    "roles": {
+      "staff": "Staff",
+      "worker": "Prestador(a)",
+      "family": "Família",
+      "learner": "Aluno(a)"
+    },
+    "noAccess": {
+      "none": {
+        "title": "Sua conta ainda não tem acesso a nenhuma área",
+        "message": "Fale com o gestor de acessos da sua equipe para que ele adicione você a uma."
+      },
+      "unavailable": {
+        "title": "Sua área ainda não está disponível",
+        "message": "Sua conta tem acesso a uma área que ainda não está disponível. Quando estiver, você poderá entrar com esta mesma conta."
+      },
+      "retry": "Tentar de novo",
+      "logout": "Sair"
+    }
   }
 }
