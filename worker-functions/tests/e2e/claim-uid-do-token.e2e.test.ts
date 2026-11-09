@@ -134,7 +134,5 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
     expect(row.email).toBe(emailA); // do token, não do body
     expect(row.auth_uid).not.toBe(fichaUid);
     if (!EMULATOR) expect(row.auth_uid).toBe(uidA);
-    // eslint-disable-next-line no-console
-    console.log(`PROVA (d): start=${start.status} sid=${verificationSid.slice(0, 5)}… confirm=${confirm.status} row.email=${row.email}`);
   });
 });
