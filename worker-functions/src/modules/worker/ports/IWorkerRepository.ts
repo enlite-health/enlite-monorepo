@@ -28,4 +28,9 @@ export interface IWorkerRepository {
    * abrir/apagar documento cujo caminho no GCS ainda carrega o id absorvido.
    */
   findAbsorbedWorkerIds(survivorId: string): Promise<string[]>;
+  /**
+   * Existe ficha com `merged_into_id = workerId` cujo `auth_uid` é REAL (não sintético)?
+   * Usado por `isClaimableWorker` (claim): a sobrevivente que absorveu um login real não é reclamável.
+   */
+  hasAbsorbedRealLogin(workerId: string): Promise<Result<boolean>>;
 }

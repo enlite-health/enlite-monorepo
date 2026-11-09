@@ -33,6 +33,7 @@ const importedWorker: Worker = {
 };
 
 const makeRepo = (overrides = {}) => ({
+  hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(false)),
   findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
   findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
   findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(null)),
@@ -203,6 +204,51 @@ describe('StartClaimUseCase', () => {
       expect(result.isSuccess).toBe(true);
       const output = result.getValue();
       expect('noCandidate' in output && output.noCandidate).toBe(true);
+    });
+
+    it('P5: sobrevivente sintética que absorveu login real NÃO é candidata (sem OTP)', async () => {
+      const repo = makeRepo({
+        findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
+        hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(true)),
+      });
+      const twilio = makeTwilio();
+      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+
+      const result = await useCase.execute({ authUid: 'newUid', email: 'joana@gmail.com', phone: '+5491155261243' });
+
+      expect(repo.hasAbsorbedRealLogin).toHaveBeenCalledWith(WORKER_ID);
+      expect(result.isSuccess).toBe(true);
+      const output = result.getValue();
+      expect('noCandidate' in output && output.noCandidate).toBe(true);
+      expect(twilio.startVerification).not.toHaveBeenCalled();
+    });
+
+    it('controle positivo: ficha sintética comum (nada absorvido) continua candidata', async () => {
+      const repo = makeRepo({
+        findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
+      });
+      const twilio = makeTwilio();
+      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+
+      const result = await useCase.execute({ authUid: 'newUid', email: 'joana@gmail.com', phone: '+5491155261243' });
+
+      expect(repo.hasAbsorbedRealLogin).toHaveBeenCalledWith(WORKER_ID);
+      expect('noCandidate' in result.getValue()).toBe(false);
+      expect(twilio.startVerification).toHaveBeenCalledTimes(1);
+    });
+
+    it('falha ao consultar o repositório vira falha (nunca candidata por omissão)', async () => {
+      const repo = makeRepo({
+        findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
+        hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.fail('db down')),
+      });
+      const twilio = makeTwilio();
+      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+
+      const result = await useCase.execute({ authUid: 'newUid', email: 'joana@gmail.com', phone: '+5491155261243' });
+
+      expect(result.isFailure).toBe(true);
+      expect(twilio.startVerification).not.toHaveBeenCalled();
     });
 
     it('loga claim_start_no_candidate quando não encontra ficha', async () => {
