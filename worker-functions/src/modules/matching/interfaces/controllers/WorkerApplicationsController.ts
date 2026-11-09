@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -46,9 +47,7 @@ export class WorkerApplicationsController {
   }
 
   private getAuthUid(req: Request): string | null {
-    return (req as Request & { user?: { uid: string } }).user?.uid
-      ?? (req.headers['x-auth-uid'] as string | undefined)
-      ?? null;
+    return selfUid(req);
   }
 
   private async resolveWorker(authUid: string): Promise<{

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import { Pool } from 'pg';
 import { InitWorkerUseCase } from '../../application/InitWorkerUseCase';
 import { SaveQuizResponsesUseCase } from '../../application/SaveQuizResponsesUseCase';
@@ -215,7 +216,7 @@ export class WorkerControllerV2 {
   async getProgress(req: Request, res: Response): Promise<void> {
     try {
       // Support both header-based (legacy) and body-injected auth UID from middleware
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
 
       if (!authUid) {
         res.status(401).json({
@@ -273,7 +274,7 @@ export class WorkerControllerV2 {
 
   async saveGeneralInfo(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
@@ -303,7 +304,7 @@ export class WorkerControllerV2 {
 
   async saveServiceArea(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
@@ -331,7 +332,7 @@ export class WorkerControllerV2 {
 
   async getAvailability(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
@@ -359,7 +360,7 @@ export class WorkerControllerV2 {
 
   async saveAvailability(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;

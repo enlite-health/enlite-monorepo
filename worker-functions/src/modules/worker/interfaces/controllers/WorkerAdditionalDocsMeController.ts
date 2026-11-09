@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import { GCSStorageService, DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
@@ -21,9 +22,7 @@ export class WorkerAdditionalDocsMeController {
   }
 
   private getAuthUid(req: Request): string | null {
-    return (req as Request & { user?: { uid: string } }).user?.uid
-      ?? (req.headers['x-auth-uid'] as string | undefined)
-      ?? null;
+    return selfUid(req);
   }
 
   private async resolveWorker(authUid: string): Promise<{ id: string } | null> {

@@ -84,7 +84,7 @@ function mockReq(
   const uid = overrides.uid !== undefined ? overrides.uid : 'firebase-uid-001';
   return {
     body: overrides.body ?? { jobPostingId: JOB_POSTING_ID, channel: 'facebook' },
-    headers: overrides.headers ?? (uid ? { 'x-auth-uid': uid } : {}),
+    headers: overrides.headers ?? {},
     user: uid ? { uid } : undefined,
   };
 }

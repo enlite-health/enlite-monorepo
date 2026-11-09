@@ -6,7 +6,7 @@
  *   PUT /api/workers/me/service-area
  *   PUT /api/workers/me/availability
  *
- * Esses endpoints usam o authUid do token (header x-auth-uid) para resolver
+ * Esses endpoints usam o authUid do token (só o Bearer; x-auth-uid é ignorado) para resolver
  * o workerId, sem exigir que o cliente envie workerId no body.
  */
 
@@ -166,7 +166,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
       });
       const novoId = init.data.data.worker.id;
       const tk = await api.post('/api/test/auth/token', { uid, email: `${uid}@example.com`, role: 'worker' });
-      const headers = { headers: { Authorization: `Bearer ${tk.data.data.token}`, 'x-auth-uid': uid } };
+      const headers = { headers: { Authorization: `Bearer ${tk.data.data.token}`, 'x-auth-uid': 'uid-de-outro' } };
 
       try {
         // Telefone PRÓPRIO: o `payload` do describe carrega o número do worker
