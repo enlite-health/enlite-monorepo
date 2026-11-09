@@ -225,3 +225,120 @@ test.describe('Assistentes no app — o widget que a pessoa ve @integration', ()
     await expect(page.getByTestId('assistants-badge')).toHaveCount(0);
   });
 });
+
+test.describe('Botao flutuante em posicao livre (090) @integration', () => {
+  test.setTimeout(120_000);
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const FAB_KEY = 'enlite.assistants.fabPosition.v1';
+  const TOL = 2;
+  type Box = { x: number; y: number; width: number; height: number };
+
+  async function box(page: Page, testId: string): Promise<Box> {
+    const b = await page.getByTestId(testId).boundingBox();
+    if (!b) throw new Error(`${testId} sem boundingBox`);
+    return b;
+  }
+
+  /** Arrasta pelo centro do botao ate o ponto em que o canto sup. esquerdo dele fica em (left, top). */
+  async function dragFabTo(page: Page, left: number, top: number): Promise<void> {
+    const b = await box(page, 'assistants-fab');
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(left + b.width / 2, top + b.height / 2, { steps: 10 });
+    await page.mouse.up();
+  }
+
+  async function setup(page: Page): Promise<void> {
+    const served = await stubService(page, [assistant('recruiting', 'Asistente Reclutamiento')]);
+    await enter(page, served);
+    await expect(page.getByTestId('assistants-fab')).toBeVisible();
+    await page.evaluate(() => window.localStorage.clear());
+  }
+
+  const near = (actual: number, expected: number) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOL);
+
+  test('090 — E1: arrastar o botao para o canto sup. esquerdo nao abre; o clique abre o painel a partir dele, inteiro na tela', async ({ page }) => {
+    await setup(page);
+    await dragFabTo(page, 40, 40);
+    await expect(page.getByTestId('assistants-panel')).toHaveCount(0); // arraste nao abre
+    const fab = await box(page, 'assistants-fab');
+    near(fab.x, 40);
+    near(fab.y, 40);
+
+    await page.getByTestId('assistants-fab').click();
+    const panel = page.getByTestId('assistants-panel');
+    await expect(panel).toBeVisible();
+    await page.screenshot({ path: 'test-results/090-e1.png' });
+    const p = await box(page, 'assistants-panel');
+    near(p.y, fab.y);
+    near(p.x, fab.x);
+    expect(p.x).toBeGreaterThanOrEqual(16 - TOL);
+    expect(p.y).toBeGreaterThanOrEqual(16 - TOL);
+    expect(p.x + p.width).toBeLessThanOrEqual(1264 + TOL);
+    expect(p.y + p.height).toBeLessThanOrEqual(784 + TOL);
+  });
+
+  test('090 — E2: mover 3px e soltar e clique: o painel abre no canto padrao', async ({ page }) => {
+    await setup(page);
+    const b = await box(page, 'assistants-fab');
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + 3, b.y + b.height / 2);
+    await page.mouse.up();
+
+    await expect(page.getByTestId('assistants-panel')).toBeVisible();
+    const p = await box(page, 'assistants-panel');
+    near(p.x + p.width, 1264);
+    near(p.y + p.height, 784);
+  });
+
+  test('090 — E3: a posicao sobrevive ao reload; "Volver a la esquina" volta ao canto e a escolha tambem sobrevive', async ({ page }) => {
+    await setup(page);
+    await dragFabTo(page, 300, 300);
+    const moved = await box(page, 'assistants-fab');
+    near(moved.x, 300);
+    near(moved.y, 300);
+    expect(await page.evaluate((k) => window.localStorage.getItem(k), FAB_KEY)).not.toBeNull();
+
+    await page.reload();
+    await expect(page.getByTestId('assistants-fab')).toBeVisible({ timeout: 30_000 });
+    const after = await box(page, 'assistants-fab');
+    near(after.x, moved.x);
+    near(after.y, moved.y);
+
+    await page.getByTestId('assistants-fab').click();
+    await expect(page.getByTestId('assistants-panel')).toBeVisible();
+    await page.getByTestId('assistants-reset-position').click();
+    await expect(page.getByTestId('assistants-panel')).toBeVisible(); // nao fecha
+    await expect.poll(async () => { const p = await box(page, 'assistants-panel'); return Math.abs(p.x + p.width - 1264) <= TOL && Math.abs(p.y + p.height - 784) <= TOL; }).toBe(true);
+
+    await page.getByTestId('assistants-close').click();
+    await expect(page.getByTestId('assistants-fab')).toBeVisible();
+    const home = await box(page, 'assistants-fab');
+    near(home.x + home.width, 1264);
+    near(home.y + home.height, 784);
+
+    await page.reload();
+    await expect(page.getByTestId('assistants-fab')).toBeVisible({ timeout: 30_000 });
+    const home2 = await box(page, 'assistants-fab');
+    near(home2.x + home2.width, 1264);
+    near(home2.y + home2.height, 784);
+    await page.getByTestId('assistants-fab').click();
+    await expect(page.getByTestId('assistants-panel')).toBeVisible();
+    await expect(page.getByTestId('assistants-reset-position')).toHaveCount(0);
+  });
+
+  test('090 — E4: encolher a janela reajusta o botao para dentro da tela', async ({ page }) => {
+    await setup(page);
+    await dragFabTo(page, 1100, 400);
+    const b = await box(page, 'assistants-fab');
+    near(b.x, 1100);
+
+    await page.setViewportSize({ width: 800, height: 600 });
+    await expect.poll(async () => {
+      const f = await box(page, 'assistants-fab');
+      return f.x >= 16 - TOL && f.y >= 16 - TOL && f.x + f.width <= 784 + TOL && f.y + f.height <= 584 + TOL;
+    }).toBe(true);
+  });
+});
