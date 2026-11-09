@@ -31,11 +31,12 @@ export class UserController {
    * 1. Removes from Google Identity Platform
    * 2. Removes worker record and all related data (cascading delete)
    * 
-   * Requires x-auth-uid header
+   * Identity comes ONLY from the verified token (`req.user.uid`); the `x-auth-uid`
+   * header is never read (D650).
    */
   async deleteUser(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = req.headers['x-auth-uid'] as string;
+      const authUid = req.user?.uid;
 
       if (!authUid) {
         res.status(401).json({
@@ -77,14 +78,14 @@ export class UserController {
   /**
    * DELETE /api/users/:userId
    * 
-   * Admin endpoint to delete a specific user by ID
-   * Requires appropriate authorization (to be implemented)
+   * Admin endpoint to delete a specific user by ID (the `:userId` path param,
+   * which is the target's auth uid). Staff-only: the route is guarded by
+   * `requireStaff()` in index.ts. The caller's identity is never read from headers.
    */
   async deleteUserById(req: Request, res: Response): Promise<void> {
     try {
-      // TODO: Add admin authorization check
       const { userId } = req.params;
-      const authUid = req.headers['x-auth-uid'] as string;
+      const callerUid = req.user?.uid;
 
       if (!userId) {
         res.status(400).json({
@@ -94,8 +95,8 @@ export class UserController {
         return;
       }
 
-      // For now, require authUid for this endpoint as well
-      if (!authUid) {
+      // Defensive: the staff guard already authenticated the caller
+      if (!callerUid) {
         res.status(401).json({
           success: false,
           error: 'Authentication required',
@@ -104,8 +105,9 @@ export class UserController {
       }
 
       // Execute deletion
+      // The target is the path param, never the caller (nor any header)
       const result = await this.deleteUserUseCase.execute({
-        authUid,
+        authUid: userId,
         userId,
       });
 
