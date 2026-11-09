@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { GoogleLoginButton } from '@presentation/components/features/auth/GoogleLoginButton';
 import { useAuth } from '@presentation/hooks/useAuth';
+import { useAreaDestination } from '@presentation/hooks/useAreaDestination';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField, InputWithIcon, PasswordInput } from '@presentation/components/molecules';
@@ -22,21 +23,25 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { login } = useAuth();
+  const { resolveDestination } = useAreaDestination();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSuccess = () => {
-    // Support ?next= redirect for auth-guarded pages
-    const next = searchParams.get('next');
-    navigate(next || '/');
-  };
-
   const handleError = (err: Error) => {
     console.error('Login failed:', err);
     const translatedError = getAuthErrorMessage(err, t);
     setError(translatedError);
+  };
+
+  const handleSuccess = async () => {
+    // ?next= só vale se a pessoa abre a área dele; o resto vai para o destino por área (design §6).
+    try {
+      navigate(await resolveDestination(searchParams.get('next')));
+    } catch (err) {
+      handleError(err instanceof Error ? err : new Error('Login failed'));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -53,7 +58,7 @@ export function LoginPage() {
 
     try {
       await login(email, password);
-      handleSuccess();
+      await handleSuccess();
     } catch (err) {
       handleError(err instanceof Error ? err : new Error('Login failed'));
     } finally {
