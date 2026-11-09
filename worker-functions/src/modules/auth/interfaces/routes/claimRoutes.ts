@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ClaimController } from '../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
+import { routeClass } from '@modules/identity/permissions';
 
 /**
  * Chave por IP (com X-Forwarded-For como preferência) normalizada por
@@ -54,6 +55,7 @@ export function createClaimRoutes(controller: ClaimController, authMiddleware: A
   // O usuário pode ainda não ter worker — `requireAuth` só valida o token, não exige ficha.
   router.post(
     '/auth/claim/start',
+    routeClass('client-policy'),
     claimStartRateLimit,
     authMiddleware.requireAuth(),
     (req: Request, res: Response) => controller.start(req, res),
@@ -61,6 +63,7 @@ export function createClaimRoutes(controller: ClaimController, authMiddleware: A
 
   router.post(
     '/auth/claim/confirm',
+    routeClass('client-policy'),
     claimConfirmRateLimit,
     authMiddleware.requireAuth(),
     (req: Request, res: Response) => controller.confirm(req, res),

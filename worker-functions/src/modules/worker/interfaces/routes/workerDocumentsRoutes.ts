@@ -4,6 +4,7 @@ import { WorkerAdditionalDocsMeController } from '../controllers/WorkerAdditiona
 import { AdminAdditionalDocsController } from '../controllers/AdminAdditionalDocsController';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { ADMIN_WORKERS_FAMILY } from './adminWorkerRoutes';
+import { routeClass } from '@modules/identity/permissions';
 
 /**
  * Worker document routes — both self-service (/api/workers/me/documents)
@@ -32,25 +33,25 @@ export function createWorkerDocumentsRoutes(
   const perm = permissions.family(ADMIN_WORKERS_FAMILY);
 
   // ── Worker self-service: fixed docs ─────────────────────────────────────
-  router.get('/workers/me/documents', auth, (req: Request, res: Response) =>
+  router.get('/workers/me/documents', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     meController.getDocuments(req, res));
-  router.post('/workers/me/documents/upload-url', auth, (req: Request, res: Response) =>
+  router.post('/workers/me/documents/upload-url', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     meController.getUploadSignedUrl(req, res));
-  router.post('/workers/me/documents/save', auth, (req: Request, res: Response) =>
+  router.post('/workers/me/documents/save', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     meController.saveDocumentPath(req, res));
-  router.post('/workers/me/documents/view-url', auth, (req: Request, res: Response) =>
+  router.post('/workers/me/documents/view-url', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     meController.getViewSignedUrl(req, res));
-  router.delete('/workers/me/documents/:type', auth, (req: Request, res: Response) =>
+  router.delete('/workers/me/documents/:type', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     meController.deleteDocument(req, res));
 
   // ── Worker self-service: additional docs ────────────────────────────────
-  router.get('/workers/me/additional-documents', auth, (req: Request, res: Response) =>
+  router.get('/workers/me/additional-documents', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     additionalMeController.list(req, res));
-  router.post('/workers/me/additional-documents/upload-url', auth, (req: Request, res: Response) =>
+  router.post('/workers/me/additional-documents/upload-url', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     additionalMeController.getUploadUrl(req, res));
-  router.post('/workers/me/additional-documents', auth, (req: Request, res: Response) =>
+  router.post('/workers/me/additional-documents', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     additionalMeController.save(req, res));
-  router.delete('/workers/me/additional-documents/:id', auth, (req: Request, res: Response) =>
+  router.delete('/workers/me/additional-documents/:id', routeClass('client-policy'), auth, (req: Request, res: Response) =>
     additionalMeController.remove(req, res));
 
   // ── Admin: additional docs ──────────────────────────────────────────────
