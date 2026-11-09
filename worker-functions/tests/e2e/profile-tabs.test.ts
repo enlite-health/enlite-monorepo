@@ -12,6 +12,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { Pool } from 'pg';
+import { postWorkerInit } from './helpers';
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const DATABASE_URL =
@@ -35,8 +36,8 @@ describe('Profile Tabs — Endpoints por aba', () => {
 
     await waitForBackend();
 
-    // Criar worker para os testes (rota pública, não precisa de token)
-    const res = await api.post('/api/workers/init', {
+    // Criar worker para os testes (exige o token do próprio worker — H2/D650)
+    const res = await postWorkerInit(api, {
       authUid: testAuthUid,
       email: testEmail,
       country: 'AR',
@@ -160,7 +161,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
       // COALESCE no banco — uma vez gravado não dá para "desgravar". Depender
       // da ordem dos testes vizinhos seria fixture frágil.
       const uid = `profile-tabs-missing-${Date.now()}`;
-      const init = await api.post('/api/workers/init', {
+      const init = await postWorkerInit(api, {
         authUid: uid, email: `${uid}@example.com`, country: 'AR',
       });
       const novoId = init.data.data.worker.id;

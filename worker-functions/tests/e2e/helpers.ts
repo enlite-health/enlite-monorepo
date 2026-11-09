@@ -36,6 +36,24 @@ export async function getMockToken(
   return res.data.data.token;
 }
 
+/**
+ * `POST /api/workers/init` — exige token e usa só o uid/email DELE (H2, D650).
+ * Emite o token do próprio worker (mesmo uid/email do body) e o manda como Bearer.
+ *
+ * No emulador do Firebase o uid do token é o que o emulador atribui (não o do
+ * body): lá o `authUid` sai do body — o backend não o lê mesmo, e o mesmo e-mail
+ * devolve sempre o mesmo uid nos tokens seguintes.
+ */
+export async function postWorkerInit(
+  api: AxiosInstance,
+  body: { authUid: string; email: string; [k: string]: unknown },
+) {
+  const token = await getMockToken(api, { uid: body.authUid, email: body.email, role: 'worker' });
+  const { authUid: _omit, ...semUid } = body;
+  const payload = process.env.USE_FIREBASE_EMULATOR === 'true' ? semUid : body;
+  return api.post('/api/workers/init', payload, { headers: { Authorization: `Bearer ${token}` } });
+}
+
 async function getFirebaseEmulatorToken(
   opts: { uid: string; email: string },
 ): Promise<string> {

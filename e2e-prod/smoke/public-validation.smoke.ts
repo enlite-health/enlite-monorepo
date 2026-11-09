@@ -4,8 +4,8 @@
  * Manda body inválido em endpoints públicos de escrita e prova que prod devolve 400
  * SEM efeito colateral. Confirmado no código-fonte do backend que o 400 sai antes de
  * qualquer use case / write no banco:
- *  - WorkerControllerV2.initWorker: `if (!authUid || !email) → 400` (linha 57), antes
- *    de tocar repositório ou Twilio. Body `{}` → "Missing required fields: authUid, email".
+ *  - POST /api/workers/init (H2/D650): exige token; sem Bearer → 401 no AuthMiddleware,
+ *    antes de tocar controller, repositório ou Twilio.
  *  - ClaimController.start: valida authUid/email/phone e retorna 400 antes de startClaim
  *    .execute(). Body `{}` → "Missing required field: authUid".
  *
@@ -31,16 +31,17 @@ test.afterAll(async () => {
   await api.dispose();
 });
 
-test('[@route:POST /api/workers/init @depth:error] body vazio é rejeitado com 400 antes de gravar', async () => {
+test('[@route:POST /api/workers/init @depth:error] sem token é rejeitado com 401 antes de gravar (H2/D650)', async () => {
+  // A rota deixou de ser pública: exige Bearer e usa só o uid/email do token. Sem token o
+  // 401 sai no AuthMiddleware, antes do controller — nenhuma leitura, escrita ou OTP.
   const res = await api.post('/api/workers/init', { data: {} });
   const status = res.status();
   const body = await res.json().catch(() => ({}));
   test.info().annotations.push({
     type: 'validacao',
-    description: `status=${status} error=${body?.error ?? '(sem corpo)'} (esperado 400)`,
+    description: `status=${status} error=${body?.error ?? '(sem corpo)'} (esperado 401)`,
   });
-  // Zod/guard barra: sem authUid+email não há candidato criado nem OTP disparado.
-  expect(status).toBe(400);
+  expect(status).toBe(401);
   expect(body).toHaveProperty('success', false);
 });
 

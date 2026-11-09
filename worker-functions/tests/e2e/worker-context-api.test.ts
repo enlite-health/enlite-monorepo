@@ -12,7 +12,7 @@
 
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
 
 /**
  * Cria uma job_posting mínima com timezone explícita e retorna o id.
@@ -63,7 +63,7 @@ describe('Worker Context API (triage-service endpoints)', () => {
     pool = new Pool({ connectionString: DATABASE_URL });
 
     // Seed: cria um worker para os testes
-    const initRes = await api.post('/api/workers/init', {
+    const initRes = await postWorkerInit(api, {
       authUid: `wc-api-${Date.now()}`,
       email: `wc-api-${Date.now()}@e2e.local`,
       country: 'AR',

@@ -125,8 +125,8 @@ test.describe('Jornada worker — FATIA 1 (encanamento: signup → init → is_t
     workerCtx = await newWorkerApiContext(idToken);
 
     // ── PASSO 2: POST /api/workers/init (contrato: authUid + email obrigatórios) ──
-    // authUid = localId (UID Firebase). Enviamos o Bearer do worker (a rota é pública,
-    // mas espelhamos o cliente real). Omitimos `phone` de propósito: sem telefone não
+    // authUid = localId (UID Firebase). O Bearer do worker é OBRIGATÓRIO (H2/D650: uid/email
+    // saem só do token). Omitimos `phone` de propósito: sem telefone não
     // há caminho de claim/OTP (imported-worker match) — mantém a fatia determinística.
     const initRes = await workerCtx.post('/api/workers/init', {
       data: { authUid: localId, email: WORKER_EMAIL, lgpdOptIn: true, country: 'AR' },
