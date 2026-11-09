@@ -9,12 +9,17 @@ import { CLIENT_POLICIES, CLIENT_SCHEMA } from './policies';
 
 type Resource = { type: string; id?: string; attrs?: Record<string, unknown> };
 
-/** Vocabulário que as rotas usam hoje (`requirePermission(recurso, ação)`) → ação/tipo Cedar. Fora da tabela = deny. */
+/** Vocabulário que as rotas usam hoje (`requirePermission(recurso, ação)`) → ação/tipo Cedar. Fonte única da tabela. */
 const ROUTE_TO_CEDAR: Record<string, { type: string; action: string }> = {
   'worker:read': { type: 'Worker', action: 'ReadOwnWorkerProfile' },
   'worker:update': { type: 'Worker', action: 'UpdateOwnWorkerProfile' },
   'user:delete': { type: 'Account', action: 'DeleteOwnAccount' },
 };
+
+/** O Cedar governa este par (recurso, ação) das rotas? Fora da tabela, o não-staff segue no motor legado até a F3 (bloqueio por padrão). */
+export function governsAction(resource: { type: string }, action: string): boolean {
+  return `${resource.type}:${action}` in ROUTE_TO_CEDAR;
+}
 
 class PgPersonBootstrap implements PersonBootstrap {
   constructor(private readonly pool: Pool) {}
