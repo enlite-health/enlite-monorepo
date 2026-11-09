@@ -20,7 +20,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -60,7 +60,7 @@ describe('Worker Tags E2E', () => {
     pool = new Pool({ connectionString: DATABASE_URL });
 
     // Seed: cria worker para testar assign/remove e filtro tag_ids
-    const initRes = await api.post('/api/workers/init', {
+    const initRes = await postWorkerInit(api, {
       authUid: testWorkerAuthUid,
       email: testWorkerEmail,
       country: 'AR',

@@ -109,6 +109,18 @@ describe('mockAuthMiddleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('POST /api/workers/init NÃO é rota pública: sem Bearer → 401, com Bearer vira req.user (H2/D650)', () => {
+    const [req, res, next] = makeReqRes('/api/workers/init');
+    mockAuthMiddleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+
+    const [req2, , next2] = makeReqRes('/api/workers/init', mockToken({ uid: 'uid-a', email: 'a@exemplo.test' }));
+    mockAuthMiddleware(req2, {} as Response, next2);
+    expect(next2).toHaveBeenCalled();
+    expect((req2 as Request & { user: Record<string, unknown> }).user).toMatchObject({ uid: 'uid-a', email: 'a@exemplo.test' });
+  });
+
   it('token mock sem uid/email → 401', () => {
     const [req, res, next] = makeReqRes('/api/admin/patients', mockToken({ role: 'admin' }));
     mockAuthMiddleware(req, res, next);

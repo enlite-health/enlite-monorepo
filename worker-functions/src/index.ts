@@ -320,7 +320,10 @@ app.use(
 
 createMockAuthEndpoints(app);
 
-app.post('/api/workers/init', publicContextMiddleware('public:/api/workers/init'), (req: Request, res: Response) => {
+// H2 (D650): exige token. Sem `publicContextMiddleware` de propósito: `requireAuth` carimba
+// `worker_self` (pool de runtime) — `workers` não tem RLS e `app_runtime` tem CRUD nela
+// (migrations 269), então o INSERT do 1º cadastro funciona; `public` seria o pool de sistema.
+app.post('/api/workers/init', authMiddleware.requireAuth(), (req: Request, res: Response) => {
   workerController.initWorker(req, res);
 });
 

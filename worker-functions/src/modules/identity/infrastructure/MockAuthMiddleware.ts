@@ -25,7 +25,7 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
   // de serviço com guard próprio (`X-Internal-Secret`/OIDC). Sem isso o mock
   // devolveria 401 antes do guard real rodar — e o e2e não conseguiria ler o
   // catálogo nem o inventário de rotas do app de pé.
-  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/init', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/api/admin/me/tactiq-link/callback', '/.well-known'];
+  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/api/admin/me/tactiq-link/callback', '/.well-known'];
   if (publicPaths.some(path => req.path === path || req.path.startsWith(path))) {
     return next();
   }

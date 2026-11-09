@@ -18,7 +18,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -59,7 +59,7 @@ describe('PATCH /api/admin/workers/:id/profile', () => {
     pool = new Pool({ connectionString: DATABASE_URL });
 
     // Seed: cria um worker via endpoint público para ter um ID válido
-    const initRes = await api.post('/api/workers/init', {
+    const initRes = await postWorkerInit(api, {
       authUid: testAuthUid,
       email: testEmail,
       country: 'AR',

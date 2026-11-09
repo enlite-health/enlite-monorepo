@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { Pool } from 'pg';
+import { postWorkerInit } from './helpers';
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -108,18 +109,10 @@ describe('Firebase Authentication E2E', () => {
     it('should authenticate POST /api/workers/init with Bearer token', async () => {
       const testEmail = `test-${Date.now()}@example.com`;
       
-      const response = await api.post(
-        '/api/workers/init',
-        {
-          authUid: 'test-user-123',
-          email: testEmail,
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${mockAuthToken}`,
-          },
-          validateStatus: () => true,
-        }
+      // H2/D650: o token é do PRÓPRIO worker (uid/email do token são a identidade)
+      const response = await postWorkerInit(
+        axios.create({ baseURL: API_URL, validateStatus: () => true }),
+        { authUid: 'test-user-123', email: testEmail },
       );
 
       // Should not return 401 Unauthorized
@@ -139,18 +132,7 @@ describe('Firebase Authentication E2E', () => {
     it('should authenticate PUT /api/workers/step with Bearer token', async () => {
       // First init a worker
       const testEmail = `test-step-${Date.now()}@example.com`;
-      const initResponse = await api.post(
-        '/api/workers/init',
-        {
-          authUid: 'test-user-step',
-          email: testEmail,
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${mockAuthToken}`,
-          },
-        }
-      );
+      const initResponse = await postWorkerInit(api, { authUid: 'test-user-step', email: testEmail });
 
       const workerId = initResponse.data.data.worker.id;
 

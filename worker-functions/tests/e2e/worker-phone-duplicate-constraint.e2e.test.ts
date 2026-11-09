@@ -21,6 +21,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { Pool } from 'pg';
+import { postWorkerInit } from './helpers';
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const DATABASE_URL =
@@ -123,7 +124,7 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
   }
 
   async function initWorker(authUid: string, email: string): Promise<string> {
-    const res = await api.post('/api/workers/init', { authUid, email, country: 'AR' });
+    const res = await postWorkerInit(api, { authUid, email, country: 'AR' });
     return res.data.data.worker.id;
   }
 

@@ -13,9 +13,11 @@
  *   sem depender de uma injeção de dependência real.
  *
  * Cenários:
- * initWorker:
- *   1. authUid ausente → 400 com erro descritivo
- *   2. email ausente → 400 com erro descritivo
+ * initWorker (H2/D650: identidade SÓ do token — req.user):
+ *   1. sem token (req.user ausente) → 401, nada lido/gravado
+ *   2. token sem email → 400
+ *   2b. body.authUid de outra identidade → 403, nada devolvido
+ *   2c. body.email de ficha alheia não decide a reconexão (use case recebe o email do token)
  *   3. Worker já existe por authUid (idempotência) → 200 sem chamar initWorkerUseCase
  *   4. Worker novo → initWorkerUseCase cria → 201
  *   5. initWorkerUseCase falha → 400 com erro
@@ -62,7 +64,7 @@ import { Worker } from '../../../domain/Worker';
 function mockReqRes(
   body: Record<string, unknown> = {},
   headers: Record<string, string> = {},
-  user?: { uid: string }
+  user?: { uid: string; email?: string }
 ): [Request, Response] {
   const req = {
     body,
@@ -84,6 +86,11 @@ function mockReqRes(
 
 const AUTH_UID = 'firebase-uid-test-abc123';
 const WORKER_EMAIL = 'worker@example.com';
+const UID_A = 'uid-a';
+const UID_B = 'uid-b';
+const EMAIL_A = 'a@exemplo.test';
+const EMAIL_B = 'b@exemplo.test';
+const EMAIL_C = 'c@exemplo.test';
 const WORKER_ID = 'b2c3d4e5-0000-4bcd-9000-000000000002';
 
 const mockWorker: Worker = {
@@ -119,22 +126,20 @@ describe('WorkerControllerV2', () => {
 
   describe('initWorker', () => {
 
-    it('retorna 400 com erro descritivo quando authUid está ausente no body', async () => {
-      const [req, res] = mockReqRes({ email: WORKER_EMAIL });
+    it('retorna 401 sem token (req.user ausente) e não lê nem grava nada', async () => {
+      const getSpy = jest.spyOn(controller['getProgressUseCase'], 'execute');
+      const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute');
+      const [req, res] = mockReqRes({ authUid: UID_B, email: EMAIL_B });
 
       await controller.initWorker(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: false,
-          error: expect.stringContaining('authUid'),
-        })
-      );
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(initSpy).not.toHaveBeenCalled();
     });
 
-    it('retorna 400 com erro descritivo quando email está ausente no body', async () => {
-      const [req, res] = mockReqRes({ authUid: AUTH_UID });
+    it('retorna 400 quando o token não traz email', async () => {
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
 
       await controller.initWorker(req, res);
 
@@ -147,13 +152,53 @@ describe('WorkerControllerV2', () => {
       );
     });
 
+    it('retorna 403 e não devolve nada de B quando o token é de A e o body traz authUid de B', async () => {
+      const getSpy = jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok({ ...mockWorker, authUid: UID_B }));
+      const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute');
+      const [req, res] = mockReqRes({ authUid: UID_B, email: EMAIL_B }, {}, { uid: UID_A, email: EMAIL_A });
+
+      await controller.initWorker(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(initSpy).not.toHaveBeenCalled();
+      expect(JSON.stringify((res.json as jest.Mock).mock.calls)).not.toContain(WORKER_ID);
+    });
+
+    it('usa o email do TOKEN, não o do body, na reconexão (ficha de C não é tocada)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.fail('Worker not found'));
+      const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute')
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: mockWorker }));
+      const [req, res] = mockReqRes({ authUid: UID_A, email: EMAIL_C }, {}, { uid: UID_A, email: EMAIL_A });
+
+      await controller.initWorker(req, res);
+
+      expect(initSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ authUid: UID_A, email: EMAIL_A })
+      );
+      expect(initSpy).not.toHaveBeenCalledWith(expect.objectContaining({ email: EMAIL_C }));
+    });
+
+    it('consulta o progresso pelo uid do token (não pelo body ausente)', async () => {
+      const getSpy = jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      const [req, res] = mockReqRes({ email: EMAIL_C }, {}, { uid: UID_A, email: EMAIL_A });
+
+      await controller.initWorker(req, res);
+
+      expect(getSpy).toHaveBeenCalledWith(UID_A);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
     it('retorna 200 com worker existente sem chamar initWorkerUseCase quando worker já existe para o authUid', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
 
       const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute');
 
-      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL });
+      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
 
       await controller.initWorker(req, res);
 
@@ -174,7 +219,7 @@ describe('WorkerControllerV2', () => {
       jest.spyOn(controller['initWorkerUseCase'], 'execute')
         .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: mockWorker }));
 
-      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL });
+      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
 
       await controller.initWorker(req, res);
 
@@ -200,7 +245,7 @@ describe('WorkerControllerV2', () => {
         lgpdOptIn: true,
         whatsappPhone: '+5411234567890',
         country: 'AR',
-      });
+      }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
 
       await controller.initWorker(req, res);
 
@@ -221,7 +266,7 @@ describe('WorkerControllerV2', () => {
       jest.spyOn(controller['initWorkerUseCase'], 'execute')
         .mockResolvedValue(Result.fail(mensagemDeErro));
 
-      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL });
+      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
 
       await controller.initWorker(req, res);
 
@@ -238,7 +283,7 @@ describe('WorkerControllerV2', () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockRejectedValue(new Error('Unhandled database crash'));
 
-      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL });
+      const [req, res] = mockReqRes({ authUid: AUTH_UID, email: WORKER_EMAIL }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
 
       await controller.initWorker(req, res);
 
@@ -489,7 +534,7 @@ describe('WorkerControllerV2', () => {
         .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: { ...mockWorker, authUid: AUTH_UID_ROUND_TRIP } }));
 
       // 1. Chama initWorker
-      const [initReq, initRes] = mockReqRes({ authUid: AUTH_UID_ROUND_TRIP, email: WORKER_EMAIL });
+      const [initReq, initRes] = mockReqRes({ authUid: AUTH_UID_ROUND_TRIP, email: WORKER_EMAIL }, {}, { uid: AUTH_UID_ROUND_TRIP, email: WORKER_EMAIL });
       await controller.initWorker(initReq, initRes);
       expect(initRes.status).toHaveBeenCalledWith(201);
 

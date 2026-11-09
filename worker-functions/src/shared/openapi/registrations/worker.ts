@@ -99,12 +99,14 @@ registry.registerPath({
   summary: 'Inicializa conta de worker',
   description:
     'Cria o registro de worker a partir do Firebase ID token. Idempotente — se já existir retorna o existente. ' +
-    'Não requer autenticação prévia; o `authUid` deve bater com o token Firebase.',
-  security: [],
+    'Exige `Authorization: Bearer`; uid e e-mail vêm SÓ do token. `authUid` no body, se enviado, deve bater com o token (senão 403).',
+  security: [{ firebaseAuth: [] }],
   request: { body: { content: { 'application/json': { schema: WorkerInitBody } } } },
   responses: {
     201: { description: 'Worker criado com sucesso.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Campos obrigatórios ausentes ou dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: '`authUid` do body difere do uid do token.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
