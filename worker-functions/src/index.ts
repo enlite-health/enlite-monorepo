@@ -16,7 +16,7 @@ process.on('uncaughtException', (err: Error) => {
   process.exit(1);
 });
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, RequestHandler } from 'express';
 import { AnaCareHoursController, createAnaCareHoursRoutes, AnaCareHoursSyncController, createAnaCareHoursSyncAdminRoutes, createAnaCareHoursSyncInternalRoutes } from '@modules/anacare-hours';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
@@ -61,7 +61,7 @@ import { AdminTerminologySearchController } from '@modules/terminology/interface
 import { UserController, resolveCountryScope } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
-import { routeClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
+import { routeClass, markRouteClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -515,7 +515,7 @@ app.use('/api', createWorkerDocumentsRoutes(
 ));
 
 // ========== Jobs refresh ==========
-app.post('/api/jobs/refresh', authMiddleware.requireAuth(), (req: Request, res: Response) => {
+app.post('/api/jobs/refresh', authMiddleware.requireStaff(), (req: Request, res: Response) => {
   jobsController.refreshJobs(req, res);
 });
 
@@ -527,13 +527,14 @@ app.post('/api/jobs/refresh', authMiddleware.requireAuth(), (req: Request, res: 
 // Bootstrap sem auth: precisa CONTAR admins para se recusar (task 1.6). Sob RLS,
 // sem contexto a contagem viria 0 e o bootstrap se RE-ARMARIA — por isso vai
 // como sistema declarado, além do gate ADMIN_SETUP_ENABLED.
-app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), (req: Request, res: Response) => {
+// Bootstrap sem auth (não pode exigir staff: o 1º admin ainda não existe); classe declarada para inventário e selo.
+app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), markRouteClass(((req: Request, res: Response) => {
   if (process.env.ADMIN_SETUP_ENABLED !== 'true') {
     res.status(403).json({ success: false, error: 'Setup disabled' });
     return;
   }
   adminController.setup(req, res);
-});
+}) as RequestHandler, 'staff'));
 // Família `admin.users` — extraída para router próprio na task 3.5 (primeira a
 // declarar célula). Ver modules/identity/interfaces/routes/adminUsersRoutes.ts.
 app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, permissionMiddleware));
