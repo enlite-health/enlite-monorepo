@@ -9,6 +9,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { logger } from '@shared/logging';
+import { hasValidInternalSecret } from '@modules/notification/interfaces/middleware/InternalAuthMiddleware';
 
 export const PERSON_TREE_ALLOWLIST_ENV = 'PERSON_TREE_ALLOWED_SAS';
 
@@ -22,9 +23,7 @@ export function readPersonTreeAllowlist(env: NodeJS.ProcessEnv = process.env): s
 const client = new OAuth2Client();
 
 export const requirePersonTreeService: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
-  const secret = req.headers['x-internal-secret'];
-  const expected = process.env.INTERNAL_TOKEN_SECRET;
-  if (typeof secret === 'string' && expected && secret === expected) return next();
+  if (hasValidInternalSecret(req)) return next();
 
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ') && header.length > 7) {

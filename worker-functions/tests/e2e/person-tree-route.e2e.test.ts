@@ -29,8 +29,12 @@ describe('GET /v1/persons/:pid/tree — HTTP real, banco real (acesso-do-cliente
     return { status: res.status, body: texto ? JSON.parse(texto) : null };
   };
   const oidc = { Authorization: `Bearer ${OIDC_OK}` };
-  const pessoa = async (mergedInto?: string): Promise<string> =>
-    (await pool.query(`INSERT INTO iam.person (merged_into_id) VALUES ($1) RETURNING id`, [mergedInto ?? null])).rows[0].id;
+  /** Pessoa nasce não absorvida (trigger); a absorção é um UPDATE posterior do dono, que o guard permite. */
+  const pessoa = async (mergedInto?: string): Promise<string> => {
+    const id: string = (await pool.query(`INSERT INTO iam.person DEFAULT VALUES RETURNING id`)).rows[0].id;
+    if (mergedInto) await pool.query(`UPDATE iam.person SET merged_into_id = $1, merged_at = now() WHERE id = $2`, [mergedInto, id]);
+    return id;
+  };
 
   beforeAll(async () => {
     for (const [k, v] of Object.entries({
