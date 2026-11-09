@@ -29,7 +29,7 @@ export async function loginComoHumano(page: Page, staffEmail: string, displayNam
   expect(claims.ok).toBe(true);
   runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${staffEmail}', '${displayName}', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').click();
   await page.keyboard.type(staffEmail);
   await page.locator('input[type="password"]').click();

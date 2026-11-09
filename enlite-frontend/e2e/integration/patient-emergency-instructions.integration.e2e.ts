@@ -46,7 +46,7 @@ async function loginAsRealStaff(page: Page): Promise<string> {
   expect(claims.ok).toBe(true);
   runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${STAFF_EMAIL}', '${STAFF_NAME}', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(STAFF_EMAIL);
   await page.locator('input[type="password"]').fill(STAFF_PASSWORD);
   await page.getByRole('button', { name: /Iniciar sesi/i }).click();

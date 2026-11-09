@@ -5,7 +5,7 @@
  *
  * Fluxos cobertos:
  *   - Worker clica em logout e é redirecionado visualmente para /login
- *   - Admin clica em logout e é redirecionado visualmente para /admin/login
+ *   - Admin clica em logout e é redirecionado visualmente para /login?next=%2Fadmin
  *   - Após logout, acessar / sem auth redireciona para /login
  *   - Após logout, o formulário de login está visível (verificação visual)
  *
@@ -154,7 +154,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar|Entrar/i }).click();
@@ -247,8 +247,8 @@ test.describe('Logout — Admin', () => {
     // Clica em logout
     await logoutBtn.click();
 
-    // Verifica redirecionamento para /admin/login
-    await expect(page).toHaveURL('/admin/login', { timeout: 10_000 });
+    // Verifica redirecionamento para /login?next=%2Fadmin (login único)
+    await expect(page).toHaveURL('/login?next=%2Fadmin', { timeout: 10_000 });
 
     // Screenshot depois do logout
     await page.screenshot({ path: 'e2e/screenshots/admin-after-logout.png', fullPage: false });

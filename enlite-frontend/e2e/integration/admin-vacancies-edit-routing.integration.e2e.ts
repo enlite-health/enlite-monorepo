@@ -71,6 +71,7 @@ import {
   cleanupVacancies,
 } from '../helpers/db-test-helper';
 import { execSync } from 'child_process';
+import { swapAreasComToken } from '../helpers/areas-do-painel';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -79,7 +80,7 @@ const MOCK_ADMIN_USER = {
   email: 'admin.edit-routing@e2e.test',
   role: 'admin',
   // Sem isto, `/v1/me/authz` (agora interceptado — ver `installInterceptors`) devolve
-  // 401/403 mudo e o login nunca sai de `/admin/login` (memória `stack-e2e-abac-ligado`).
+  // 401/403 mudo e o login nunca sai de `/login` (memória `stack-e2e-abac-ligado`).
   country: 'AR',
 };
 
@@ -242,6 +243,7 @@ async function installInterceptors(page: Page): Promise<void> {
   // resolve rota sobreposta pela ÚLTIMA registrada), fazendo o login de verdade sair pro
   // Google com header forjado → 401 real, `not toHaveURL(login)` nunca passa (achado medido
   // rodando este arquivo contra um stack isolado antes deste ajuste).
+  await swapAreasComToken(page, MOCK_TOKEN);
   await page.route('**/v1/me/authz', async (route: Route) => {
     const headers = {
       ...route.request().headers(),
@@ -253,7 +255,7 @@ async function installInterceptors(page: Page): Promise<void> {
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await installInterceptors(page);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(MOCK_ADMIN_USER.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();

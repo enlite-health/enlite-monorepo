@@ -19,6 +19,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { execSync } from 'child_process';
+import { mockAreasDoPainel } from './helpers/areas-do-painel';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY  = 'test-api-key';
@@ -111,6 +112,7 @@ async function seedAdminAndLogin(page: Page, permissions: string[] | null = null
 
   // 4. Contrato ABAC — só quando o teste quer o engine ligado.
   if (permissions !== null) {
+    await mockAreasDoPainel(page);
     await page.route('**/v1/me/authz', (route) => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
@@ -121,7 +123,7 @@ async function seedAdminAndLogin(page: Page, permissions: string[] | null = null
   }
 
   // 5. Login
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar|Entrar/i }).click();

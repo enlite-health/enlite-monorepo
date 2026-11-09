@@ -155,7 +155,7 @@ async function installInterceptors(page: Page, uid: string): Promise<void> {
 /** Digitação humana (click + keyboard.type) — `.fill()` prova estado, não uso. */
 async function loginAsAdmin(page: Page, uid: string): Promise<void> {
   await installInterceptors(page, uid);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
 
   const emailInput = page.locator('input[type="email"]');
   await emailInput.click();

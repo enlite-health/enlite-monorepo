@@ -131,7 +131,7 @@ async function loginAndMockApi(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(E2E_EMAIL!);
   await page.locator('input[type="password"]').fill(E2E_PASSWORD!);
   await page.locator('button[type="submit"]').first().click();

@@ -43,7 +43,7 @@ const rotuloDaVaga = (v: LegacyVacancySeed): string =>
 async function login(page: Page): Promise<void> {
   await installAuthInterceptors(page, staff);
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   const email = page.locator('input[type="email"]');
   await email.click();
   await expect(email).toBeFocused();

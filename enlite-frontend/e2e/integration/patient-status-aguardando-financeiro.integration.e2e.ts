@@ -4,7 +4,7 @@
  * PONTA A PONTA, com login MOCK: navegador real → worker-functions real (Docker) →
  * Postgres real. O login é o do stack de CI (`loginComoStaffMock`: click + `keyboard.type`,
  * token `mock_*`, `/auth/profile` mockado); o resto (Kanban, ficha, API, banco) é real.
- * Antes o login era real no emulador do Firebase (`fill()`) e nunca saía de `/admin/login` no CI.
+ * Antes o login era real no emulador do Firebase (`fill()`) e nunca saía de `/login` (login único) no CI.
  *
  * O que prova (D195, 26/08 — "o estado leva o nome do motivo real da espera"):
  *   - o estado de paciente PENDING_ADMISSION aparece como "Esperando financiero"
