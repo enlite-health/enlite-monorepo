@@ -1,6 +1,6 @@
 import { Router, Request, RequestHandler, Response } from 'express';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
-import { ADMIN_USERS_FAMILY, routeClass } from '@modules/identity/permissions';
+import { ADMIN_USERS_FAMILY, exemptHandler, routeClass } from '@modules/identity/permissions';
 import { publicContextMiddleware } from '@shared/database/systemContextMiddleware';
 import { TactiqLinkController } from '../controllers/TactiqLinkController';
 import { TactiqCheckInternalController } from '../controllers/TactiqCheckInternalController';
@@ -44,7 +44,7 @@ export function createTactiqLinkRoutes(
 
 /**
  * Callback do OAuth — SEM Bearer (navegação do browser), em contexto de banco público declarado. A classe `public` é declarada
- * na montagem (`routeClass`): o guard de rota sem célula a vê como `exempt`, não como `undeclared`.
+ * na montagem (`routeClass`, eixo do selo); a isenção (`exemptHandler`) é o que o guard de rota sem célula lê como `exempt`.
  * `rateLimit` entra de fora (o `index.ts` tem o `express-rate-limit`); a prova de identidade é o `state` single-use.
  */
 export function createTactiqLinkCallbackRoute(controller: TactiqLinkController, rateLimit: RequestHandler): Router {
@@ -53,9 +53,10 @@ export function createTactiqLinkCallbackRoute(controller: TactiqLinkController, 
     '/me/tactiq-link/callback',
     rateLimit,
     publicContextMiddleware('public:/api/admin/me/tactiq-link/callback'),
-    // Classe `public` (antes `exemptHandler`): a prova de identidade é o `state` single-use criado pelo POST autenticado
-    // (own_tactiq_link:create); o callback é navegação do browser, sem Bearer.
+    // Classe `public` (eixo do selo F3) E isenção (perímetro antigo, uma das 11 decididas): a classe não vira `exempt`
+    // sozinha, então a marca `exemptHandler` continua sendo o que põe esta rota `/api/admin/...` como isenta.
     routeClass('public'),
+    exemptHandler('state single-use criado pelo POST autenticado (own_tactiq_link:create); callback é navegação do browser, sem Bearer'),
     (req: Request, res: Response) => controller.callback(req, res),
   );
   return router;

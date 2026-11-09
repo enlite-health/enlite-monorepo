@@ -105,20 +105,18 @@ export function isGovernedPath(path: string): boolean {
  * desvio de não-staff do motor (D119) segue valendo.
  */
 /**
- * Classe `public|service|client-policy` declarada na montagem (F3): é declaração
- * explícita, como `exempt` — a rota está no perímetro e conta como declarada.
- * `staff` fica de fora de propósito: `requireStaff` marca TODA rota de staff, e
- * `staff` sem célula em rota governada continua sendo `undeclared`.
+ * ⚠️ A CLASSE da rota (`route.class`, acesso-do-cliente F3) NÃO entra aqui nem
+ * em `statusOfRoute`: ela é um eixo SEPARADO, decidido pelo selo
+ * (`sealUnclassifiedRoutes`). Contar classe não-staff como `exempt` puxava as
+ * ~150 rotas `/api/workers/me…` (client-policy) e as `/v1/...` de serviço para
+ * dentro do perímetro e inflava as isenções decididas — o perímetro antigo
+ * mudava de significado sem decisão. Classe só vira isenção por `exemptHandler`
+ * ou `EXEMPT_ROUTES`, como antes.
  */
-function isDeclaredNonStaffClass(route: ScannedRoute): boolean {
-  return route.class != null && route.class !== 'staff';
-}
-
 export function isGovernedRoute(route: ScannedRoute): boolean {
   return (
     route.cell !== undefined ||
     route.exempt !== undefined ||
-    isDeclaredNonStaffClass(route) ||
     isGovernedPath(route.path) ||
     GOVERNED_ROUTES.has(routeKey(route.method, route.path))
   );
@@ -190,7 +188,6 @@ export class UndeclaredRouteRegistry {
     // isenção → isenta. Só o que não está marcado passa pelo prefixo/listas.
     if (route.cell) return 'declared';
     if (route.exempt) return 'exempt';
-    if (isDeclaredNonStaffClass(route)) return 'exempt';
     if (!isGovernedRoute(route)) return 'not_governed';
     const key = routeKey(route.method, route.path);
     if (this.exempt.has(key)) return 'exempt';

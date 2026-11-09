@@ -209,17 +209,14 @@ function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[], inher
     const cell = readPermissionMetadata(layer.handle);
     const mountedClass = readRouteClass(layer.handle) ?? null;
     // Sem `|| '/'`: `joinPaths` já devolve '/' quando o resultado seria vazio.
-    if (cell || mountedClass) {
-      const mountPath = joinPaths(prefix, mountPathOf(layer));
-      if (mountedClass) mounts.push({ path: mountPath, cls: mountedClass });
-      out.push({
-        method: 'USE',
-        path: mountPath,
-        cells: cell ? [cell] : [],
-        class: mountedClass,
-        ...(cell ? { cell } : {}),
-      });
-    }
+    // ⚠️ Middleware só com CLASSE (sem célula) NÃO vira entrada `USE`: ela não é
+    // endpoint, e no índice (`buildRouteIndex`) `USE` casa por PREFIXO e vem antes
+    // das filhas — `USE /api/admin/messaging` (staff, sem célula) sombreava todas
+    // as rotas de mensageria e as dava como `undeclared` no perímetro antigo. A
+    // classe chega às filhas pela herança (`mounts` → `coveringClass`).
+    const mountPath = joinPaths(prefix, mountPathOf(layer));
+    if (mountedClass) mounts.push({ path: mountPath, cls: mountedClass });
+    if (cell) out.push({ method: 'USE', path: mountPath, cell, cells: [cell], class: mountedClass });
   }
 }
 

@@ -63,13 +63,15 @@ describe('routeClass — marca de classe lida pelo scanner', () => {
     expect(classOf(routes, 'POST', '/api/x/outra')).toBeNull();
   });
 
-  it('app.use(path, mw) com classe é lida (limitação (a) da T301)', () => {
+  it('app.use(path, mw) com classe chega às rotas abaixo (limitação (a) da T301), sem virar entrada USE', () => {
+    // Entrada `USE` só de classe sombrearia as filhas no índice (casa por prefixo e vem antes) e as daria como
+    // `undeclared` no perímetro antigo — foi o `USE /api/admin/messaging` do inventário.
     const app = express();
     app.use('/api/aberto', routeClass('public'));
+    app.get('/api/aberto/x', ok);
     const routes = scanExpressRouter(app);
-    const used = routes.find((r) => r.method === 'USE' && r.path === '/api/aberto');
-    expect(used?.class).toBe('public');
-    expect(used?.cells).toEqual([]);
+    expect(routes.filter((r) => r.method === 'USE')).toEqual([]);
+    expect(classOf(routes, 'GET', '/api/aberto/x')).toBe('public');
   });
 
   it('requireStaff() marca staff', () => {
@@ -114,14 +116,17 @@ describe('routeClass — marca de classe lida pelo scanner', () => {
     expect(readRouteClass({})).toBeUndefined();
   });
 
-  it('rota com classe não-staff conta como declarada para o denyUndeclaredRoutes; staff sem célula não', () => {
+  it('a classe NÃO muda o perímetro do denyUndeclaredRoutes: status igual ao da mesma rota sem classe', () => {
+    // Eixo separado: quem lê a classe é o selo (`sealUnclassifiedRoutes`). Isenção continua sendo `exemptHandler` ou
+    // `EXEMPT_ROUTES`; fora dos prefixos, classe nenhuma põe a rota no perímetro (prestador e `/v1/...` seguem fora).
     const registry = new UndeclaredRouteRegistry();
     const rota = (cls: RouteClass | null, path: string): ScannedRoute => ({ method: 'GET', path, cells: [], class: cls });
-    for (const cls of ['service', 'client-policy', 'public'] as const) {
-      expect(isGovernedRoute(rota(cls, '/v1/fora-do-prefixo'))).toBe(true);
-      expect(registry.statusOfRoute(rota(cls, '/api/admin/x'))).toBe('exempt');
+    for (const cls of ['staff', 'service', 'client-policy', 'public', null] as const) {
+      expect(isGovernedRoute(rota(cls, '/v1/fora-do-prefixo'))).toBe(false);
+      expect(isGovernedRoute(rota(cls, '/api/workers/me/x'))).toBe(false);
+      expect(registry.statusOfRoute(rota(cls, '/v1/fora-do-prefixo'))).toBe('not_governed');
+      expect(registry.statusOfRoute(rota(cls, '/api/admin/x'))).toBe('undeclared');
+      expect(registry.statusOfRoute({ ...rota(cls, '/api/admin/setup'), method: 'POST' })).toBe('exempt'); // pela lista, não pela classe
     }
-    expect(registry.statusOfRoute(rota('staff', '/api/admin/x'))).toBe('undeclared');
-    expect(registry.statusOfRoute(rota(null, '/api/admin/x'))).toBe('undeclared');
   });
 });
