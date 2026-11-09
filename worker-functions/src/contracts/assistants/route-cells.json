@@ -108,6 +108,27 @@
         "assistant_count_vacancies"
       ],
       "enforcedIn": "perm.require"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/area-memberships",
+      "cell": "area_membership:read",
+      "irmas": [],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/area-memberships",
+      "cell": "area_membership:write",
+      "irmas": [],
+      "enforcedIn": "perm.require"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/area-memberships/:id/revoke",
+      "cell": "area_membership:write",
+      "irmas": [],
+      "enforcedIn": "perm.require"
     }
   ]
 }
