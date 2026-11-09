@@ -7,16 +7,19 @@ import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { ActionButton, PanelErrorAlert } from '@presentation/components/features/access';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
+import { AreaMembershipsSection } from './AreaMembershipsSection';
 import { panelErrorKey } from './panelErrors';
 
 /**
  * `/admin/access` — a lista de grupos. "Novo grupo" é `ActionButton`: sem
- * `permission_management:write` ele não existe, e o formulário tampouco.
+ * `permission_management:write` ele não existe, e o formulário tampouco. Abaixo, a seção de vínculos
+ * de área (T411): exige também `area_membership:read|write` e some do DOM sem a célula.
  */
 export function AccessPage(): JSX.Element {
   return (
     <AccessGate>
       <GroupsList />
+      <AreaMembershipsSection />
     </AccessGate>
   );
 }

@@ -8,6 +8,8 @@
     "anacare_hours:validate",
     "analytics:export",
     "analytics:read",
+    "area_membership:read",
+    "area_membership:write",
     "assistant_candela:chat",
     "assistant_escalation:register",
     "assistant_lucero:chat",

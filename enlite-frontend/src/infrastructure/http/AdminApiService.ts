@@ -75,6 +75,7 @@ import {
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 import { withTransientRetry } from './retryTransient';
+import type { AreaMembershipList, AreaMembershipLookup, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
 
 export { ApiError } from './ApiError';
 
@@ -157,6 +158,24 @@ class AdminApiServiceClass {
       throw new ApiError(json as ApiErrorResponse, response.status);
     }
     return (json as ApiSuccessResponse<T>).data;
+  }
+
+  // ========== Vínculos de área (acesso-do-cliente, T111/T411) ==========
+
+  /** `area_membership:read` — vínculos VIVOS da árvore da pessoa; `uid` é resolvido no servidor. */
+  listAreaMemberships(lookup: AreaMembershipLookup): Promise<AreaMembershipList> {
+    const qs = new URLSearchParams('personId' in lookup ? { personId: lookup.personId } : { uid: lookup.uid });
+    return this.request<AreaMembershipList>('GET', `/api/admin/area-memberships?${qs.toString()}`);
+  }
+
+  /** `area_membership:write` — 201; par inválido/teto → 422. */
+  grantAreaMembership(input: GrantAreaMembershipInput): Promise<unknown> {
+    return this.request<unknown>('POST', '/api/admin/area-memberships', input);
+  }
+
+  /** `area_membership:write` — motivo obrigatório (400 sem ele); vínculo já revogado → 404. */
+  revokeAreaMembership(id: string, reason: string): Promise<unknown> {
+    return this.request<unknown>('POST', `/api/admin/area-memberships/${encodeURIComponent(id)}/revoke`, { reason });
   }
 
   // ========== Auth / Profile ==========

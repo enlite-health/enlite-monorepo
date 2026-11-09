@@ -5171,6 +5171,53 @@
       "logout": "Cerrar sesión"
     },
     "access": {
+      "areaMemberships": {
+        "title": "Vínculos de área",
+        "subtitle": "Qué áreas puede abrir una persona y con qué rol. Buscala por ID de persona o por UID de login.",
+        "search": {
+          "mode": "Buscar por",
+          "personId": "ID de persona",
+          "uid": "UID de login",
+          "value": "Valor",
+          "submit": "Buscar"
+        },
+        "prompt": "Buscá una persona para ver sus vínculos.",
+        "loading": "Cargando vínculos…",
+        "empty": "Esta persona no tiene vínculos vivos.",
+        "columns": {
+          "area": "Área",
+          "role": "Rol",
+          "grantedBy": "Concedido por",
+          "grantedAt": "Fecha"
+        },
+        "roles": {
+          "family": "Familia",
+          "learner": "Alumno/a",
+          "teacher": "Docente",
+          "manager": "Gestor/a"
+        },
+        "grant": {
+          "title": "Conceder vínculo",
+          "area": "Área",
+          "role": "Rol",
+          "submit": "Conceder"
+        },
+        "revoke": {
+          "open": "Revocar",
+          "reason": "Motivo de la revocación (obligatorio)",
+          "confirm": "Confirmar revocación",
+          "cancel": "Cancelar"
+        },
+        "errors": {
+          "load": "No se pudieron cargar los vínculos.",
+          "notFound": "No encontramos a esa persona.",
+          "invalidQuery": "El valor buscado no es válido.",
+          "grant": "No se pudo conceder el vínculo.",
+          "grantRejected": "El vínculo no se puede conceder: revisá el área y el rol.",
+          "revoke": "No se pudo revocar el vínculo.",
+          "revokeGone": "Ese vínculo ya estaba revocado."
+        }
+      },
       "title": "Accesos y permisos",
       "subtitle": "Grupos, células, países y disponibilidad por país. Lo que no ves acá, no existe para vos.",
       "tabs": {
