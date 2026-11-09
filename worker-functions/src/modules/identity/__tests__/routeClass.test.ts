@@ -4,11 +4,18 @@
  */
 
 import express, { Router, type RequestHandler } from 'express';
-import { scanExpressRouter, type ScannedRoute } from '../scanExpressRouter';
-import { markRouteClass, type RouteClass, readRouteClass, routeClass, ROUTE_CLASSES } from '../routeClass';
-import { exemptHandler } from '../permissionMetadata';
-import { UndeclaredRouteRegistry, isGovernedRoute } from '../../../../interfaces/middleware/denyUndeclaredRoutes';
-import { AuthMiddleware } from '../../../../interfaces/middleware/AuthMiddleware';
+import {
+  scanExpressRouter,
+  type ScannedRoute,
+  markRouteClass,
+  type RouteClass,
+  readRouteClass,
+  routeClass,
+  ROUTE_CLASSES,
+  exemptHandler,
+} from '@modules/identity/permissions';
+import { UndeclaredRouteRegistry, isGovernedRoute } from '../interfaces/middleware/denyUndeclaredRoutes';
+import { AuthMiddleware } from '../interfaces/middleware/AuthMiddleware';
 
 const ok: RequestHandler = (_req, res) => res.json({});
 

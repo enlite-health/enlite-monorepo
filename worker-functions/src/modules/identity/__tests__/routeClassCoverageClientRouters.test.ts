@@ -5,13 +5,12 @@
  */
 
 import express, { type RequestHandler } from 'express';
-import { scanExpressRouter, type ScannedRoute } from '../scanExpressRouter';
-import { markRouteClass } from '../routeClass';
-import { createAccountLinkRoutes } from '../../../../../account-link/accountLinkRoutes';
-import { createWorkerDocumentsRoutes } from '../../../../../worker/interfaces/routes/workerDocumentsRoutes';
-import { createWorkerApplicationsRoutes } from '../../../../../matching/interfaces/routes/workerApplicationsRoutes';
-import { createConsentRoutes } from '../../../../../mcp/interfaces/oauth/consentRoutes';
-import { createClaimRoutes } from '../../../../../auth/interfaces/routes/claimRoutes';
+import { scanExpressRouter, type ScannedRoute, markRouteClass } from '@modules/identity/permissions';
+import { createAccountLinkRoutes } from '../../account-link/accountLinkRoutes';
+import { createWorkerDocumentsRoutes } from '../../worker/interfaces/routes/workerDocumentsRoutes';
+import { createWorkerApplicationsRoutes } from '../../matching/interfaces/routes/workerApplicationsRoutes';
+import { createConsentRoutes } from '../../mcp/interfaces/oauth/consentRoutes';
+import { createClaimRoutes } from '../../auth/interfaces/routes/claimRoutes';
 
 const pass: RequestHandler = (_req, _res, next) => next();
 // Dublê do AuthMiddleware: `requireStaff` marca `staff`, como o real.

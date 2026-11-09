@@ -159,9 +159,9 @@ describe('T309 lote 5 — mock de auth, swagger e telemetria declaram classe', (
     const rotas = varrer((a) => a.use('/api/docs', createSwaggerRouter({}))).filter((r) => r.method !== 'USE');
     esperarClasse(rotas, 3, 'staff');
   });
-  it('authTelemetryRoutes: 1 staff (pré-login, marca direto no handler)', async () => {
+  it('authTelemetryRoutes: 1 public (pré-login, marca direto no handler)', async () => {
     const { createAuthTelemetryRoutes } = await import('@modules/identity/interfaces/routes/authTelemetryRoutes');
     const auth = { optionalAuth: () => passa } as never;
-    esperarClasse(varrer((a) => a.use('/api', createAuthTelemetryRoutes(auth))), 1, 'staff');
+    esperarClasse(varrer((a) => a.use('/api', createAuthTelemetryRoutes(auth))), 1, 'public');
   });
 });

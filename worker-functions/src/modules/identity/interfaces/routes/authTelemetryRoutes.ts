@@ -26,8 +26,8 @@ export function createAuthTelemetryRoutes(authMiddleware: AuthMiddleware): Route
     '/admin/auth/telemetry',
     limiter,
     authMiddleware.optionalAuth(),
-    // Sem `requireStaff` (é pré-login, `optionalAuth`): a classe `staff` vai direto no handler (T309-5, ⚑6).
-    markRouteClass((req: Request, res: Response) => controller.logTrace(req, res), 'staff'),
+    // Pré-login, aceita chamada anônima (`optionalAuth`): classe `public` direto no handler (T309-5; decisão do orquestrador).
+    markRouteClass((req: Request, res: Response) => controller.logTrace(req, res), 'public'),
   );
 
   return router;
