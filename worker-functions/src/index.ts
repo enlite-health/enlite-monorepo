@@ -71,6 +71,8 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
+import { createClientPolicyEngine } from '@modules/identity/clientAuthorization/createClientPolicyEngine';
+import { StaffOrClientEngine } from '@modules/identity/clientAuthorization/StaffOrClientEngine';
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
@@ -242,25 +244,32 @@ const permissionsBoundary = createPermissionsBoundary({
 const permissionMiddleware = permissionsBoundary.middleware;
 
 const useCerbos = process.env.USE_CERBOS === 'true';
-const baseAuthzEngine = useCerbos && process.env.CERBOS_ENDPOINT
+// Motor LEGADO — só de STAFF (rotas/células que o painel de grupos não governa). Não-staff NUNCA cai aqui.
+const staffLegacyEngine = useCerbos && process.env.CERBOS_ENDPOINT
   ? new CerbosAuthorizationAdapter({
       cerbosEndpoint: process.env.CERBOS_ENDPOINT,
       playgroundEnabled: process.env.NODE_ENV === 'development',
     })
   : new SimplifiedAuthorizationEngine();
 
+// Plano do cliente (DF-1): quem NÃO é staff decide pelo Cedar (`createClientPolicyEngine`, com o pool de runtime
+// roteado por identidade — o mesmo do AuthMiddleware/controllers — e log de decisão sem PII). Staff nas células que o
+// painel não governa segue no motor legado.
+const clientPolicyEngine = createClientPolicyEngine(DatabaseConnection.getInstance().getPool());
+const nonGovernedEngine = new StaffOrClientEngine(staffLegacyEngine, clientPolicyEngine);
+
 // Com o engine ligado, staff decide por CÉLULA; quem não é staff (app do
-// prestador, serviço) continua no motor anterior — o enforcement por célula é
+// prestador, serviço) decide pelo plano do cliente — o enforcement por célula é
 // do painel administrativo (spec permission-enforcement).
 // ⚠️ `governsCell` é o que impede a flag global de virar a decisão de rotas que
 // NENHUMA família ligou: `requirePermission` legado (`/api/users/:userId` etc.)
 // usa células que nem existem no catálogo, e sem este recorte ninguém poderia
 // concedê-las. Rota não virada continua se comportando como hoje (design 6).
 const authzEngine = process.env.PERMISSION_ENGINE_ENABLED === 'true'
-  ? new GroupPermissionEngine(permissionsBoundary.permissions.client, baseAuthzEngine, {
+  ? new GroupPermissionEngine(permissionsBoundary.permissions.client, nonGovernedEngine, {
       governsCell: (resource, action) => permissionsBoundary.registry.declaresCell(resource, action),
     })
-  : baseAuthzEngine;
+  : nonGovernedEngine;
 
 const authMiddleware = new AuthMiddleware(authService, authzEngine, permissionsBoundary.permissions.client);
 

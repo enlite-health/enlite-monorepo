@@ -4,6 +4,7 @@ import type { AuthContext, AccessDecision } from '../domain/Auth';
 import { PgAreaRegistryRepository } from '../infrastructure/PgAreaRegistryRepository';
 import { CedarClientPolicyEngine } from './CedarClientPolicyEngine';
 import { ClientEntityLoader, PgClientOwnershipRepository, type PersonBootstrap } from './ClientEntityLoader';
+import { LoggedClientEngine } from './clientDecisionLog';
 import { CLIENT_POLICIES, CLIENT_SCHEMA } from './policies';
 
 type Resource = { type: string; id?: string; attrs?: Record<string, unknown> };
@@ -63,9 +64,9 @@ export class ClientRouteAuthorizationEngine implements IAuthorizationEngine {
   }
 }
 
-/** Ponto de composição do engine de NÃO-STAFF (a T213 liga isto no `index.ts`). */
+/** Ponto de composição do engine de NÃO-STAFF (ligado no `index.ts`; cada decisão sai pelo `clientDecisionLog`, sem PII). */
 export function createClientPolicyEngine(pool: Pool): IAuthorizationEngine {
   const loader = new ClientEntityLoader(new PgPersonBootstrap(pool), new PgAreaRegistryRepository(pool), new PgClientOwnershipRepository(pool));
   const cedar = new CedarClientPolicyEngine({ schema: CLIENT_SCHEMA, policies: CLIENT_POLICIES, entityProvider: loader });
-  return new ClientRouteAuthorizationEngine(cedar, pool);
+  return new LoggedClientEngine(new ClientRouteAuthorizationEngine(cedar, pool));
 }
