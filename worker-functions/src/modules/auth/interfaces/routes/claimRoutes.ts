@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ClaimController } from '../controllers/ClaimController';
+import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 
 /**
  * Chave por IP (com X-Forwarded-For como preferência) normalizada por
@@ -45,22 +46,23 @@ const claimConfirmRateLimit = rateLimit({
   message: { success: false, error: 'Too many confirmation attempts. Try again in 15 minutes.' },
 });
 
-export function createClaimRoutes(controller: ClaimController): Router {
+export function createClaimRoutes(controller: ClaimController, authMiddleware: AuthMiddleware): Router {
   const router = Router();
 
-  // authMiddleware.requireAuth() é deliberadamente omitido aqui:
-  // o usuário pode não ter um worker ainda — o token Firebase é validado
-  // implicitamente pelo authUid no body (mesma estratégia de /api/workers/init).
-  // Se o projeto exigir auth middleware no futuro, adicionar aqui.
+  // H3 (D650): as duas rotas exigem token e usam só o uid/email DELE. A ordem importa:
+  // rate limit primeiro (barato, por IP, segura rajada anônima) e `requireAuth` depois.
+  // O usuário pode ainda não ter worker — `requireAuth` só valida o token, não exige ficha.
   router.post(
     '/auth/claim/start',
     claimStartRateLimit,
+    authMiddleware.requireAuth(),
     (req: Request, res: Response) => controller.start(req, res),
   );
 
   router.post(
     '/auth/claim/confirm',
     claimConfirmRateLimit,
+    authMiddleware.requireAuth(),
     (req: Request, res: Response) => controller.confirm(req, res),
   );
 

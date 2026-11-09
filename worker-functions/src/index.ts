@@ -329,10 +329,10 @@ app.post('/api/workers/init', authMiddleware.requireAuth(), (req: Request, res: 
 
 // Contexto público declarado por PREFIXO (não no `use('/api', ...)`, que rodaria
 // para toda request /api/* antes de qualquer auth e mascararia caminho não
-// classificado). Reivindicação de conta é pré-auth: o token vem no body.
-app.use('/api/auth/claim', publicContextMiddleware('public:/api/auth/claim'));
+// classificado). `/api/auth/claim` NÃO é público (H3, D650): `createClaimRoutes` aplica
+// `requireAuth`, que carimba `worker_self` (pool de runtime) — como em /api/workers/init.
 app.use('/api/account-link/undo', publicContextMiddleware('public:/api/account-link/undo'));
-app.use('/api', createClaimRoutes(claimController));
+app.use('/api', createClaimRoutes(claimController, authMiddleware));
 
 // Vínculo self-service de contas por colisão de telefone (ACCOUNT_LINK_ENABLED
 // gate por request → OFF = 404 em tudo, prod neutro). openspec:
