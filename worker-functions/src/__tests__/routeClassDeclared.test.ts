@@ -7,6 +7,10 @@
 import express from 'express';
 import { scanExpressRouter } from '@modules/identity/permissions';
 
+// Os controllers de webhook abrem conexão com o banco no construtor; aqui só a montagem importa.
+jest.mock('@modules/integration/interfaces/webhooks/controllers/TalentumWebhookController', () => ({ TalentumWebhookController: class {} }));
+jest.mock('@modules/notification/interfaces/controllers/TwilioWebhookController', () => ({ TwilioWebhookController: class {} }));
+
 const dub = <T>(): T => ({}) as T;
 
 function varrer(montar: (app: express.Express) => void) {
@@ -33,5 +37,31 @@ describe('T309 lote 1 — rotas service declaram classe', () => {
   it('therapeuticContactRemindersInternalRoutes', async () => {
     const { createTherapeuticContactRemindersInternalRoutes } = await import('@modules/case/interfaces/routes/therapeuticContactRemindersInternalRoutes');
     esperarClasse(varrer((a) => a.use('/api/internal', createTherapeuticContactRemindersInternalRoutes(dub()))), 1, 'service');
+  });
+});
+
+const passa: express.RequestHandler = (_req, _res, next) => next();
+
+describe('T309 lote 2 — rotas service declaram classe', () => {
+  it('permissionRoutesInventoryRoute', async () => {
+    const { createPermissionRoutesInventoryRouter } = await import('@modules/identity/interfaces/routes/permissionRoutesInventoryRoute');
+    esperarClasse(varrer((a) => a.use('/.well-known', createPermissionRoutesInventoryRouter(dub(), passa))), 1, 'service');
+  });
+  it('wellKnownPermissionsRoute', async () => {
+    const { createWellKnownPermissionsRouter } = await import('@modules/identity/permissions/interface/wellKnownPermissionsRoute');
+    esperarClasse(varrer((a) => a.use('/.well-known', createWellKnownPermissionsRouter(dub(), passa, { ownerService: 'x' }))), 1, 'service');
+  });
+  it('webhookRoutes (4 rotas por montagem; o TSV conta 2 montagens = 8)', async () => {
+    const { createWebhookRoutes } = await import('@modules/integration/interfaces/webhooks/routes/webhookRoutes');
+    const partner = { requirePartnerKey: () => passa } as never;
+    const rotas = varrer((a) => {
+      a.use('/api/webhooks', createWebhookRoutes(partner, dub(), dub()));
+      a.use('/api/webhooks-test', createWebhookRoutes(partner, dub(), dub()));
+    });
+    esperarClasse(rotas, 8, 'service');
+  });
+  it('mcpRoutes', async () => {
+    const { createMcpRoutes } = await import('@modules/mcp/interfaces/routes/mcpRoutes');
+    esperarClasse(varrer((a) => a.use('/mcp', createMcpRoutes({ principalRepo: dub(), auditor: dub(), registry: dub(), serverName: 'x', serverVersion: '1' }))), 3, 'service');
   });
 });

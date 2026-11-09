@@ -18,7 +18,7 @@
  */
 
 import { Router, type RequestHandler } from 'express';
-import { cellKey } from '@modules/identity/permissions';
+import { cellKey, routeClass } from '@modules/identity/permissions';
 import type { UndeclaredRouteRegistry } from '../middleware/denyUndeclaredRoutes';
 import { isGovernedRoute } from '../middleware/denyUndeclaredRoutes';
 
@@ -28,7 +28,7 @@ export function createPermissionRoutesInventoryRouter(
 ): Router {
   const router = Router();
 
-  router.get('/permissions/routes', guard, (_req, res) => {
+  router.get('/permissions/routes', routeClass('service'), guard, (_req, res) => {
     const routes = registry.all();
     const governed = routes.filter(isGovernedRoute).map((route) => ({
       method: route.method,
