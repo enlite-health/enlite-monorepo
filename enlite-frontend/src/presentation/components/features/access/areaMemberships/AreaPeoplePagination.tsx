@@ -10,9 +10,9 @@ interface AreaPeoplePaginationProps {
 }
 
 /**
- * O `TablePagination` da casa. O desenho lê o intervalo em #374151 e a seta do seletor em #737373 (o do
- * molecule é #737373 e `gray-400` = #ECEFF1, quase invisível): ajuste por seletor, SÓ aqui — o molecule
- * é compartilhado e não muda.
+ * O `TablePagination` da casa. Os ícones (lucide) e o aria-label do seletor foram para o próprio molecule
+ * (vale para as 3 telas que o usam). Aqui fica só o que é desta aba: o desenho lê o intervalo
+ * ("1 - 20 de N") em #374151 e o molecule o desenha em #737373 — ajuste por seletor, sem mexer nas outras telas.
  */
 export function AreaPeoplePagination({ page, perPage, total, onPrev, onNext, onPerPage }: AreaPeoplePaginationProps): JSX.Element {
   const pages = Math.max(1, Math.ceil(total / perPage));

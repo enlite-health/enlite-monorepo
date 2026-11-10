@@ -48,6 +48,8 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
   const [role, setRole] = useState<string>(STORED_AREA_ROLES[GRANT_AREAS[0]][0]);
   const [grantError, setGrantError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A concessão passou, mas a releitura falhou: o painel NÃO mostra a lista antiga como se fosse a atual.
+  const [reloadFailed, setReloadFailed] = useState(false);
 
   // Esc fecha e o foco começa no botão de fechar (mesmo contrato do painel de ajuda das células).
   useEffect(() => {
@@ -99,12 +101,22 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
     setGrantError(null);
     try {
       await AdminApiService.grantAreaMembership({ ...target, area, role });
-      const fresh = await fetchFreshAreaPerson(person);
-      onChanged(fresh ?? person, `${K}.toast.granted`);
     } catch (err) {
       setGrantError(err instanceof ApiError && err.status === 422 ? `${K}.errors.grantRejected` : `${K}.errors.grant`);
-    } finally {
       setBusy(false);
+      return;
+    }
+    await reloadAfterGrant();
+    setBusy(false);
+  };
+
+  /** Relê a pessoa (também é o "Reintentar" do erro de recarga: reler NÃO repete a concessão). */
+  const reloadAfterGrant = async (): Promise<void> => {
+    setReloadFailed(false);
+    try {
+      onChanged(await fetchFreshAreaPerson(person), `${K}.toast.granted`);
+    } catch {
+      setReloadFailed(true);
     }
   };
 
@@ -142,53 +154,62 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
 
         <section>
           <Heading level={4} weight="semibold" color="primary" className="mb-2">{t(`${K}.drawer.current`)}</Heading>
+          {reloadFailed ? (
+            <div className="space-y-3" data-testid="area-drawer-reload-error">
+              <PanelErrorAlert keyName={`${K}.errors.reload`} />
+              <Button type="button" size="xs" variant="quiet" data-testid="area-drawer-reload-retry" onClick={() => { void reloadAfterGrant(); }}>
+                {t(`${K}.retry`)}
+              </Button>
+            </div>
+          ) : (
           <ul className="space-y-2">
-            {person.memberships.length === 0 && (
-              <li><Text size="sm" color="tertiary" className="!leading-5" data-testid="area-drawer-none">{t(`${K}.drawer.none`)}</Text></li>
-            )}
-            {person.memberships.map((m) => (
-              <li key={m.id} className="border border-gray-600 rounded-lg p-3" data-testid="area-drawer-membership">
-                <div className="flex items-center justify-between gap-3">
-                  <AreaMembershipChip membership={m} />
-                  {revoking !== m.id && (
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="quiet"
-                      data-testid="area-drawer-revoke"
-                      aria-label={t(`${K}.revoke.openAria`, { vinculo: label(m), name: person.displayName })}
-                      onClick={() => startRevoke(m)}
-                    >
-                      {t(`${K}.revoke.open`)}
-                    </Button>
-                  )}
-                </div>
-                {revoking === m.id && (
-                  <form className="mt-3 space-y-3" data-testid="area-drawer-revoke-form" onSubmit={(e) => { void submitRevoke(e); }}>
-                    <div className="space-y-1">
-                      <Label size="compact" className="block !font-normal" htmlFor="area-revoke-reason">{t(`${K}.revoke.reason`)}</Label>
-                      <Textarea
-                        id="area-revoke-reason"
-                        data-testid="area-revoke-reason"
-                        inputSize="dense"
-                        rows={3}
-                        autoFocus
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                      />
-                    </div>
-                    <PanelErrorAlert keyName={revokeError} />
-                    <div className="flex gap-2 justify-end">
-                      <Button type="button" size="compact" variant="ghost" onClick={() => setRevoking(null)}>{t(`${K}.revoke.cancel`)}</Button>
-                      <Button type="submit" size="compact" variant="primary" disabled={!reason.trim() || busy} data-testid="area-revoke-confirm">
-                        {t(`${K}.revoke.confirm`)}
+              {person.memberships.length === 0 && (
+                <li><Text size="sm" color="tertiary" className="!leading-5" data-testid="area-drawer-none">{t(`${K}.drawer.none`)}</Text></li>
+              )}
+              {person.memberships.map((m) => (
+                <li key={m.id} className="border border-gray-600 rounded-lg p-3" data-testid="area-drawer-membership">
+                  <div className="flex items-center justify-between gap-3">
+                    <AreaMembershipChip membership={m} />
+                    {revoking !== m.id && (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="quiet"
+                        data-testid="area-drawer-revoke"
+                        aria-label={t(`${K}.revoke.openAria`, { vinculo: label(m), name: person.displayName })}
+                        onClick={() => startRevoke(m)}
+                      >
+                        {t(`${K}.revoke.open`)}
                       </Button>
-                    </div>
-                  </form>
-                )}
-              </li>
-            ))}
-          </ul>
+                    )}
+                  </div>
+                  {revoking === m.id && (
+                    <form className="mt-3 space-y-3" data-testid="area-drawer-revoke-form" onSubmit={(e) => { void submitRevoke(e); }}>
+                      <div className="space-y-1">
+                        <Label size="compact" className="block !font-normal" htmlFor="area-revoke-reason">{t(`${K}.revoke.reason`)}</Label>
+                        <Textarea
+                          id="area-revoke-reason"
+                          data-testid="area-revoke-reason"
+                          inputSize="dense"
+                          rows={3}
+                          autoFocus
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                        />
+                      </div>
+                      <PanelErrorAlert keyName={revokeError} />
+                      <div className="flex gap-2 justify-end">
+                        <Button type="button" size="compact" variant="ghost" onClick={() => setRevoking(null)}>{t(`${K}.revoke.cancel`)}</Button>
+                        <Button type="submit" size="compact" variant="primary" disabled={!reason.trim() || busy} data-testid="area-revoke-confirm">
+                          {t(`${K}.revoke.confirm`)}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="border-t border-gray-300 pt-4">

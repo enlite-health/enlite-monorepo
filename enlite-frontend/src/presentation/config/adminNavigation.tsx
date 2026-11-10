@@ -10,9 +10,11 @@ import { CalendarDays, Inbox, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
-  // O item do painel de acessos deriva da célula que toda rota da família exige.
-  // Sem ela, o item não existe no menu.
-  const { canRead: canSeeAccess } = useCellAccess('permission_management');
+  // O item do painel de acessos abre com a MESMA regra da página (`AccessGate`): `permission_management:read`
+  // OU `area_membership:read` (quem só tem a segunda vê só a aba "Vínculos de área"). Sem nenhuma, o item não existe.
+  const canSeeGroups = useCellAccess('permission_management').canRead;
+  const canSeeAreaMemberships = useCellAccess('area_membership').canRead;
+  const canSeeAccess = canSeeGroups || canSeeAreaMemberships;
 
   // Os itens da seção Administración NÃO têm gate próprio: passam pelo MESMO filtro dos itens
   // de topo (`comAlgumaCelulaDaTela`, abaixo — PR #313), que lê as células da tela no

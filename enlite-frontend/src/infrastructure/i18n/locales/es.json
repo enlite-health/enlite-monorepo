@@ -5253,7 +5253,8 @@
           "grantDuplicate": "Esta persona ya tiene ese vínculo.",
           "grantRejected": "El vínculo no se puede conceder: revisá el área y el rol.",
           "revoke": "No se pudo revocar el vínculo.",
-          "revokeGone": "Ese vínculo ya estaba revocado."
+          "revokeGone": "Ese vínculo ya estaba revocado.",
+          "reload": "Se concedió el vínculo, pero no pudimos recargar los vínculos de la persona."
         }
       },
       "title": "Accesos y permisos",

@@ -11,7 +11,7 @@ import { AreaPeopleSkeleton } from '@presentation/components/features/access/are
 import { AreaPeopleTable } from '@presentation/components/features/access/areaMemberships/AreaPeopleTable';
 import { AreaPeopleToolbar } from '@presentation/components/features/access/areaMemberships/AreaPeopleToolbar';
 import { AreaPersonDrawer } from '@presentation/components/features/access/areaMemberships/AreaPersonDrawer';
-import { areaPersonKey, type AreaPerson } from '@domain/entities/AreaMembership';
+import { sameAreaPerson, type AreaPerson } from '@domain/entities/AreaMembership';
 import { AREA_MEMBERSHIP_RESOURCE } from './AccessGate';
 
 const K = 'admin.access.areaMemberships';
@@ -38,7 +38,7 @@ export function AreaMembershipsTab(): JSX.Element {
   const changed = (next: AreaPerson, toastKey: string): void => {
     setSelected(next);
     setToast(toastKey);
-    if (lookup && lookup !== 'none' && areaPersonKey(lookup) === areaPersonKey(next)) setLookup(next);
+    if (lookup && lookup !== 'none' && sameAreaPerson(lookup, next)) setLookup(next);
     people.reload();
   };
 

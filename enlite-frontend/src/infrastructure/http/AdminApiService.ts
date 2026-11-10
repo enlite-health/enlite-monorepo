@@ -75,7 +75,7 @@ import {
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 import { withTransientRetry } from './retryTransient';
-import type { AreaPeoplePage, AreaPeopleQuery, AreaPerson, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
+import type { AreaMembershipsOfPerson, AreaPeoplePage, AreaPeopleQuery, AreaPerson, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
 
 export { ApiError } from './ApiError';
 
@@ -180,6 +180,12 @@ class AdminApiServiceClass {
   findAreaPersonByEmail(email: string): Promise<AreaPerson> {
     const qs = new URLSearchParams({ email });
     return this.request<AreaPerson>('GET', `/api/admin/area-memberships/people/by-email?${qs.toString()}`);
+  }
+
+  /** `area_membership:read` — os vínculos vivos de UMA pessoa; com `uid` o servidor resolve (e devolve) o `personId`. */
+  listAreaMembershipsOf(target: { personId: string } | { uid: string }): Promise<AreaMembershipsOfPerson> {
+    const qs = new URLSearchParams(target);
+    return this.request<AreaMembershipsOfPerson>('GET', `/api/admin/area-memberships?${qs.toString()}`);
   }
 
   /** `area_membership:write` — 201; par inválido/duplicado → 422; pessoa/uid inexistente → 404. */

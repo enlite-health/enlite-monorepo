@@ -5174,7 +5174,8 @@
           "grantDuplicate": "Esta pessoa já tem esse vínculo.",
           "grantRejected": "O vínculo não pode ser concedido: confira a área e o papel.",
           "revoke": "Não foi possível revogar o vínculo.",
-          "revokeGone": "Esse vínculo já estava revogado."
+          "revokeGone": "Esse vínculo já estava revogado.",
+          "reload": "O vínculo foi concedido, mas não foi possível recarregar os vínculos da pessoa."
         }
       },
       "title": "Acessos e permissões",

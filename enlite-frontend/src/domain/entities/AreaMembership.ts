@@ -71,6 +71,17 @@ export function areaPersonKey(p: Pick<AreaPerson, 'personId' | 'uid' | 'email'>)
   return p.personId ?? p.uid ?? p.email ?? '';
 }
 
+/** Mesma pessoa? Pelo `uid` (que não muda) ou pelo `personId`; a chave sozinha não serve — conceder por uid cria o `personId`. */
+export function sameAreaPerson(a: Pick<AreaPerson, 'personId' | 'uid'>, b: Pick<AreaPerson, 'personId' | 'uid'>): boolean {
+  return (!!a.uid && a.uid === b.uid) || (!!a.personId && a.personId === b.personId);
+}
+
+/** Resposta de `GET /api/admin/area-memberships?personId|uid=` — os vínculos vivos da árvore, com o `personId` já resolvido. */
+export interface AreaMembershipsOfPerson {
+  personId: string;
+  memberships: { id: string; personId: string; area: string; role: string; grantedBy: string; grantedAt: string }[];
+}
+
 /** Como conceder a esta pessoa: por `personId` quando existe, senão por `uid`. */
 export function grantTarget(p: Pick<AreaPerson, 'personId' | 'uid'>): { personId: string } | { uid: string } | null {
   if (p.personId) return { personId: p.personId };

@@ -10,10 +10,11 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken: vi.fn().mockResolvedValue('t') })),
 }));
-const api = { list: vi.fn(), byEmail: vi.fn(), grant: vi.fn(), revoke: vi.fn() };
+const api = { list: vi.fn(), of: vi.fn(), byEmail: vi.fn(), grant: vi.fn(), revoke: vi.fn() };
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     listAreaPeople: (...a: unknown[]) => api.list(...a),
+    listAreaMembershipsOf: (...a: unknown[]) => api.of(...a),
     findAreaPersonByEmail: (...a: unknown[]) => api.byEmail(...a),
     grantAreaMembership: (...a: unknown[]) => api.grant(...a),
     revokeAreaMembership: (...a: unknown[]) => api.revoke(...a),
@@ -30,6 +31,11 @@ async function pick(label: string, option: string): Promise<void> {
   await userEvent.click(screen.getByLabelText(label));
   await userEvent.click(within(screen.getByRole('option', { name: option })).getByRole('button'));
 }
+
+const ofPerson = (personId: string, ms: { id: string; area: string; role: string }[]) => ({
+  personId,
+  memberships: ms.map((m) => ({ ...m, personId, grantedBy: 'u', grantedAt: '2026-11-01T00:00:00Z' })),
+});
 
 async function openDrawer(): Promise<HTMLElement> {
   await userEvent.click((await screen.findAllByRole('button', { name: `${K}.manageAria` }))[0]);
@@ -181,13 +187,13 @@ describe('AreaMembershipsTab — painel "Gestionar" (conceder e revogar)', () =>
   });
 
   it('conceder: envia personId + área + papel escolhidos, mostra o aviso e relê a pessoa (o vínculo novo aparece)', async () => {
-    const updated = { ...ANA, memberships: [...ANA.memberships, { id: 'm-new', area: 'learn', role: 'teacher' }] };
-    api.list.mockImplementation(async (q: { search?: string }) => (q.search ? pagina([updated]) : pagina([ANA, BETO])));
+    api.of.mockResolvedValue(ofPerson(PID_ANA, [...ANA.memberships, { id: 'm-new', area: 'learn', role: 'teacher' }]));
     mount();
     const drawer = await openDrawer();
     await pick(`${K}.grant.role`, `${K}.roles.teacher`);
     await userEvent.click(within(drawer).getByTestId('area-grant-submit'));
     await waitFor(() => expect(api.grant).toHaveBeenCalledWith({ personId: PID_ANA, area: 'learn', role: 'teacher' }));
+    expect(api.of).toHaveBeenCalledWith({ personId: PID_ANA });
     expect(await screen.findByTestId('area-toast')).toHaveTextContent(`${K}.toast.granted`);
     await waitFor(() => expect(within(screen.getByTestId('area-person-drawer')).getAllByTestId('area-drawer-membership')).toHaveLength(2));
   });
@@ -218,6 +224,55 @@ describe('AreaMembershipsTab — painel "Gestionar" (conceder e revogar)', () =>
     await pick(`${K}.grant.area`, 'areas.names.learn');
     await userEvent.click(within(drawer).getByTestId('area-grant-submit'));
     expect(await within(drawer).findByRole('alert')).toHaveTextContent(`${K}.errors.grant`);
+  });
+});
+
+describe('AreaMembershipsTab — releitura depois de conceder', () => {
+  beforeEach(() => {
+    cells(WRITE);
+    api.list.mockReset().mockResolvedValue(pagina([ANA, BETO]));
+    api.of.mockReset();
+    api.byEmail.mockReset();
+    api.grant.mockReset().mockResolvedValue({ membershipId: 'x' });
+  });
+
+  it('🔴 a releitura falha: o painel NÃO mostra a lista antiga nem o aviso "concedido" — mostra o erro, e "Reintentar" relê SEM conceder de novo', async () => {
+    api.of.mockRejectedValueOnce(new Error('rede')).mockResolvedValueOnce(ofPerson(PID_ANA, [...ANA.memberships, { id: 'm-new', area: 'learn', role: 'learner' }]));
+    mount();
+    const drawer = await openDrawer();
+    await userEvent.click(within(drawer).getByTestId('area-grant-submit')); // padrão: learn · learner (a Ana só tem care · family)
+    expect(await within(drawer).findByTestId('area-drawer-reload-error')).toHaveTextContent(`${K}.errors.reload`);
+    expect(within(drawer).queryAllByTestId('area-drawer-membership')).toHaveLength(0);
+    expect(screen.queryByTestId('area-toast')).not.toBeInTheDocument();
+    await userEvent.click(within(drawer).getByTestId('area-drawer-reload-retry'));
+    await waitFor(() => expect(within(screen.getByTestId('area-person-drawer')).getAllByTestId('area-drawer-membership')).toHaveLength(2));
+    expect(api.grant).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('area-toast')).toHaveTextContent(`${K}.toast.granted`);
+  });
+
+  it('🔴 conceder por uid a quem não tinha personId: o painel e o cartão do e-mail exato seguem a MESMA pessoa, agora com o personId novo', async () => {
+    const NEW_PID = '99999999-9999-4999-8999-999999999999';
+    api.list.mockResolvedValue(pagina([ANA]));
+    api.byEmail.mockResolvedValue(CUENTA);
+    api.of.mockResolvedValue(ofPerson(NEW_PID, [{ id: 'm9', area: 'learn', role: 'learner' }]));
+    mount();
+    await screen.findByText('Ana Ejemplo');
+    await userEvent.click(screen.getByTestId('area-lookup-open-link'));
+    await userEvent.type(screen.getByLabelText(`${K}.lookup.email`), 'algo@ejemplo.com');
+    await userEvent.click(screen.getByTestId('area-lookup-submit'));
+    await userEvent.click(await screen.findByTestId('area-lookup-manage'));
+    const drawer = await screen.findByTestId('area-person-drawer');
+    await userEvent.click(within(drawer).getByTestId('area-grant-submit'));
+    await waitFor(() => expect(api.grant).toHaveBeenCalledWith({ uid: 'uid-cuenta', area: 'learn', role: 'learner' }));
+    expect(api.of).toHaveBeenCalledWith({ uid: 'uid-cuenta' });
+    await waitFor(() => expect(within(screen.getByTestId('area-person-drawer')).getAllByTestId('area-drawer-membership')).toHaveLength(1));
+    // o cartão continua lá, agora também com o vínculo novo na releitura (mesma pessoa, sem perder a seleção)
+    await waitFor(() => expect(within(screen.getByTestId('lookup-card')).getByText(`${K}.lookup.inList`)).toBeInTheDocument());
+    // a próxima concessão já vai pelo personId novo — prova de que a pessoa foi atualizada, e não só a lista
+    await pick(`${K}.grant.area`, 'areas.names.care');
+    api.of.mockResolvedValue(ofPerson(NEW_PID, [{ id: 'm9', area: 'learn', role: 'learner' }, { id: 'm10', area: 'care', role: 'family' }]));
+    await userEvent.click(within(screen.getByTestId('area-person-drawer')).getByTestId('area-grant-submit'));
+    await waitFor(() => expect(api.grant).toHaveBeenLastCalledWith({ personId: NEW_PID, area: 'care', role: 'family' }));
   });
 });
 

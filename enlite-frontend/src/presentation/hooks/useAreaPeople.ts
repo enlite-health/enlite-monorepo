@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import {
   AREA_PEOPLE_MIN_SEARCH,
-  areaPersonKey,
+  grantTarget,
   type AreaPeoplePage,
   type AreaPeopleTypeFilter,
   type AreaPerson,
@@ -122,22 +122,17 @@ export function useAreaPeople(): UseAreaPeople {
 }
 
 /**
- * A pessoa como o servidor a vê AGORA — para o painel mostrar o resultado de uma concessão. Procura pelo
- * e-mail na própria lista (só banco); se ela não está lá (conta que ainda não tem vínculo), cai no e-mail exato.
- * `null` = não deu para reler (o chamador mantém o que já tinha).
+ * A pessoa como o servidor a vê AGORA — para o painel mostrar o resultado de uma concessão. Lê pelo
+ * `personId` (ou, para quem só tinha login, pelo `uid`: a resposta já traz o `personId` que a concessão
+ * criou). NÃO engole erro: quem chama decide mostrar a falha — a pessoa antiga nunca vale como "atual".
  */
-export async function fetchFreshAreaPerson(person: AreaPerson): Promise<AreaPerson | null> {
-  const key = areaPersonKey(person);
-  const email = person.email?.trim();
-  if (!email) return null;
-  try {
-    if (email.length >= AREA_PEOPLE_MIN_SEARCH) {
-      const page = await AdminApiService.listAreaPeople({ search: email, type: 'all', limit: 20 });
-      const hit = page.items.find((p) => areaPersonKey(p) === key);
-      if (hit) return hit;
-    }
-    return await AdminApiService.findAreaPersonByEmail(email);
-  } catch {
-    return null;
-  }
+export async function fetchFreshAreaPerson(person: AreaPerson): Promise<AreaPerson> {
+  const target = grantTarget(person);
+  if (!target) throw new Error('pessoa sem personId nem uid');
+  const fresh = await AdminApiService.listAreaMembershipsOf(target);
+  return {
+    ...person,
+    personId: fresh.personId,
+    memberships: fresh.memberships.map((m) => ({ id: m.id, area: m.area, role: m.role })),
+  };
 }
