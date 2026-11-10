@@ -23,6 +23,8 @@ describe('GET /v1/me/areas — HTTP real, banco real (acesso-do-cliente F1)', ()
   let pool: Pool;
   let app: AppDeFamilia;
   const claims = new Map<string, Claims>();
+  /** Liga o Firebase pendurado: `getUser` nunca responde (DNS/Identity Platform sem resposta, CI do PR #831). */
+  let firebasePendurado = false;
   const emailOf = (u: string) => `${u}@e2e.local`;
   const envAnterior: Record<string, string | undefined> = {};
 
@@ -44,7 +46,10 @@ describe('GET /v1/me/areas — HTTP real, banco real (acesso-do-cliente F1)', ()
     pool = new Pool({ connectionString: DATABASE_URL });
     // Dublê do Firebase Admin (só identidade/claims).
     jest.spyOn(firebaseAdmin, 'auth').mockImplementation((() => ({
-      getUser: async (u: string) => ({ uid: u, email: emailOf(u), customClaims: claims.get(u) ?? {} }),
+      getUser: (u: string) =>
+        firebasePendurado
+          ? new Promise(() => undefined)
+          : Promise.resolve({ uid: u, email: emailOf(u), customClaims: claims.get(u) ?? {} }),
       setCustomUserClaims: async (u: string, c: Claims) => void claims.set(u, c),
       revokeRefreshTokens: async () => undefined,
     })) as never);
@@ -152,6 +157,28 @@ describe('GET /v1/me/areas — HTTP real, banco real (acesso-do-cliente F1)', ()
     await pool.query(`UPDATE iam.person_login SET removed_at = now(), removed_reason = 'account_deleted' WHERE uid = $1`, [u]);
     expect((await chamar(u, 'worker')).status).toBe(401);
   });
+
+  it('(8) Firebase pendurado → a lista sai certa, sem a flag, dentro do orçamento da reconciliação', async () => {
+    const { RECONCILE_TIMEOUT_MS } = require('@modules/identity/interfaces/meAreasRoute');
+    const u = uid('pendurado');
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id)
+       VALUES ($1, $2, 'admin', 'ACTIVE', true, '00000000-0000-0000-0000-000000000001')`,
+      [u, emailOf(u)],
+    );
+    firebasePendurado = true;
+    try {
+      const inicio = Date.now();
+      const r = await chamar(u, 'admin');
+      const ms = Date.now() - inicio;
+      expect(r.status).toBe(200);
+      expect(r.body.areas).toEqual([{ area: 'backoffice', role: 'staff', entryRoute: '/admin' }]);
+      expect(r.body.tokenRefreshRequired).toBe(false);
+      expect(ms).toBeLessThan(RECONCILE_TIMEOUT_MS + 2_000);
+    } finally {
+      firebasePendurado = false;
+    }
+  }, 15_000);
 
   it('(V1) login não-staff numa árvore com login staff → sem backoffice (o login A segue com ele)', async () => {
     const a = uid('v1-staff');

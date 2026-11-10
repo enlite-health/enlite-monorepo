@@ -11,6 +11,9 @@
  * regravado em cada login vivo (`applyAreasClaims`) com `tokenRefreshRequired: true` — o servidor não força o refresh
  * (`revokeRefreshTokens` desloga); a web faz `getIdToken(true)` ao ver a flag.
  * Falha na reconciliação NÃO derruba a descoberta: a lista sai correta, sem a flag, e o erro vai ao log (sem PII).
+ * Nem a segura por tempo indefinido: a reconciliação tem orçamento de `RECONCILE_TIMEOUT_MS`. O Firebase Admin sem
+ * resposta (DNS ou Identity Platform pendurados) levava a rota a 25 s+ e o login único ficava parado em `/login` (CI do
+ * PR #831); estourado o orçamento, a lista sai sem a flag, e a escrita do claim, se ainda correr, termina por fora.
  */
 import * as admin from 'firebase-admin';
 import { Router, type Request, type RequestHandler } from 'express';
@@ -21,6 +24,17 @@ import { ListPersonAreasUseCase } from '../application/ListPersonAreasUseCase';
 import { PgAreaRegistryRepository } from '../infrastructure/PgAreaRegistryRepository';
 import { PgAreaMembershipRepository } from '../infrastructure/PgAreaMembershipRepository';
 import { applyAreasClaims, planAreasClaims, type AreasClaim } from '../infrastructure/areasClaim';
+
+/** Orçamento da reconciliação do claim dentro da resposta (o login espera por ela). */
+export const RECONCILE_TIMEOUT_MS = 3_000;
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`reconciliação passou de ${ms} ms`)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
 
 function sameAreas(a: unknown, b: AreasClaim): boolean {
   if (!a || typeof a !== 'object') return false;
@@ -68,7 +82,7 @@ export function createMeAreasRouter(requireAuth: RequestHandler, pool: Pool): Ro
       if (listed.isFailure) throw new Error(listed.error as string);
       let tokenRefreshRequired = false;
       try {
-        tokenRefreshRequired = await reconcile(uid, pid);
+        tokenRefreshRequired = await withTimeout(reconcile(uid, pid), RECONCILE_TIMEOUT_MS);
       } catch (error) {
         logger.error({ err: error }, '[me/areas] reconciliação do claim falhou; a lista segue correta');
       }
