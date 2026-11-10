@@ -39,16 +39,34 @@ const REACHES: Record<string, string> = {
   'POST /api/auth/claim/confirm': 'requireAuth sem Cedar (claimRoutes.ts:65): idem; 400 = corpo vazio',
   'DELETE /api/users/me': 'user:delete é Cedar (DeleteOwnAccount, policies/account.ts:5): qualquer Person apaga o PRÓPRIO login (resource.uid == token); 400 = sem credencial Identity no stack',
   'GET /v1/me/areas': 'requireAuth por desenho (F1): é como o aluno descobre as próprias áreas — devolve só as dele',
-  'GET /api/admin/auth/profile': 'requireAuth sem requireStaff (index.ts:606, "auto-provisioning no 1º login Google"): 404 para o aluno (sem users)',
   'POST /api/webhooks/talentum/prescreening': 'PartnerAuthMiddleware pula a chave com USE_MOCK_AUTH=true (só stack de teste; em prd 401 sem X-Partner-Key); 400 = corpo vazio',
   'POST /api/webhooks-test/talentum/prescreening': 'idem (mesmo router montado em /api/webhooks-test)',
+  // As 5 abaixo só alcançam no STACK DE TESTE (docker-compose.test.yml não tem os segredos dos webhooks — e não pode ter:
+  // `inbound-whatsapp.test.ts` e `admission-049-mensageria` postam sem assinatura e esperam 200). Mesmo caso da Talentum acima.
+  'POST /api/webhooks/twilio/status': 'TwilioWebhookController.ts:38 pula a assinatura sem TWILIO_STATUS_CALLBACK_URL+TWILIO_AUTH_TOKEN (stack de teste); em prd os dois estão setados (backend-prd.yml:147,205) → 403 sem X-Twilio-Signature',
+  'POST /api/webhooks-test/twilio/status': 'idem (mesmo controller montado em /api/webhooks-test)',
+  'POST /api/webhooks/twilio/inbound': 'InboundWhatsAppController.ts:293 pula a assinatura sem TWILIO_INBOUND_WEBHOOK_URL+TWILIO_AUTH_TOKEN (stack de teste); em prd setados (backend-prd.yml:148,205)',
+  'POST /api/webhooks-test/twilio/inbound': 'idem (mesmo controller montado em /api/webhooks-test)',
+  'POST /api/webhooks/chatwoot/mirror': 'ChatwootMirrorController.ts:25 pula o token sem CHATWOOT_MIRROR_WEBHOOK_TOKEN; 200 sem efeito com PERISKOPE_NOTE_MIRROR_ENABLED≠true',
   'GET /api/docs/openapi.json': 'swaggerRouter sem guard fora de NODE_ENV=production (shouldGateDocs); classe staff só vale gateado',
   'GET /api/docs/_routes': 'idem — enumera as rotas registradas',
   'GET /api/docs': 'idem — UI do Swagger (301 → /api/docs/)',
 };
 
 /** Rotas que o teste não percorre, com o motivo. */
-const SKIP: Record<string, string> = {};
+const SKIP: Record<string, string> = {
+  'GET /api/admin/auth/profile':
+    'requireAuth sem requireStaff (index.ts:606): conta sem `users` cai no auto-provisionamento, que chama `admin.auth().getUser` '
+    + '(GetAdminProfileUseCase.ts:56). O contêiner do job aponta o Admin SDK para `firebase-emulator:9099`, que não sobe ali: no '
+    + 'runner a chamada leva ~32 s (medido no CI: 32024 ms em admin-access-control.test.ts, na main também) e estourava este loop. '
+    + 'Conta não-staff nesta rota (403/404) é provada por admin-access-control.test.ts:97, com o mesmo caminho (sem `users`).',
+};
+
+/**
+ * Teto por chamada. A rota mais lenta medida no stack do CI fica em ~3 s (`/v1/me/areas`: orçamento da reconciliação do
+ * claim, meAreasRoute); as internas, < 1 s. Estourar não aprova: vira status `TIMEOUT` na lista de alcançadas, com a rota.
+ */
+const TIMEOUT_POR_CHAMADA_MS = 10000;
 
 const concretePath = (p: string) => p.replace(/\\\./g, '.').replace(/:[A-Za-z0-9_]+/g, SYNTHETIC_ID);
 
@@ -60,16 +78,21 @@ describe('F3 — só-aluno fora de tudo (T317)', () => {
   let routes: InventoryRoute[];
   const auth = bearer(UID, 'worker');
 
-  async function hit(method: string, path: string, headers: Record<string, string> = { Authorization: auth }) {
-    return axios.request({
-      method: method as 'GET',
-      url: `${API_URL}${concretePath(path)}`,
-      data: method === 'GET' || method === 'DELETE' ? undefined : {},
-      headers: { ...headers, ...(method === 'GET' || method === 'DELETE' ? {} : { 'Content-Type': 'application/json' }) },
-      validateStatus: () => true,
-      maxRedirects: 0,
-      timeout: 30000,
-    });
+  async function hit(method: string, path: string, headers: Record<string, string> = { Authorization: auth }): Promise<{ status: number | 'TIMEOUT'; data: any }> {
+    try {
+      return await axios.request({
+        method: method as 'GET',
+        url: `${API_URL}${concretePath(path)}`,
+        data: method === 'GET' || method === 'DELETE' ? undefined : {},
+        headers: { ...headers, ...(method === 'GET' || method === 'DELETE' ? {} : { 'Content-Type': 'application/json' }) },
+        validateStatus: () => true,
+        maxRedirects: 0,
+        timeout: TIMEOUT_POR_CHAMADA_MS,
+      });
+    } catch (e) {
+      if (axios.isAxiosError(e) && e.code === 'ECONNABORTED') return { status: 'TIMEOUT', data: null };
+      throw e;
+    }
   }
 
   beforeAll(async () => {

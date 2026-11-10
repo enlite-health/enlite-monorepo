@@ -14,6 +14,10 @@ import axios from 'axios';
 import { Pool } from 'pg';
 import { signLinkToken } from '../../src/modules/account-link/linkToken';
 
+// O `finalize` é assinado AQUI e validado pela API do contêiner: o segredo tem de ser o MESMO de
+// `docker-compose.accountlink.yml` (que o job backend-e2e sobe junto, com ACCOUNT_LINK_ENABLED=true). `linkToken` lê a env por chamada.
+process.env.ACCOUNT_LINK_TOKEN_SECRET ??= 'local-fullstack-e2e-secret';
+
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const INTERNAL_SECRET = process.env.INTERNAL_TOKEN_SECRET || 'test-secret-for-e2e-only';
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -121,6 +125,11 @@ describe('F3 — prestador continua dentro das 21 rotas (T319)', () => {
   it('controle: conta SEM ficha (só-aluno) → 403 em GET /api/workers/me (estas rotas sabem negar neste stack)', async () => {
     const res = await chamar('so-aluno', 'GET', '/api/workers/me');
     expect(res.status).toBe(403);
+  });
+
+  it('controle: o vínculo de contas está LIGADO neste stack — senão as 4 rotas account-link dariam o 404 do flagGate e passariam sem testar guard', async () => {
+    const res = await chamar('so-prestador', 'POST', '/api/workers/me/account-link/lookup');
+    expect(res.data).not.toEqual({ success: false, error: 'Not found' });
   });
 
   it('21 rotas × {só-prestador, staff+prestador} = 42 chamadas, nenhuma com 401/403', async () => {
