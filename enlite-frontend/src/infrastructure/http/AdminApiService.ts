@@ -75,7 +75,7 @@ import {
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 import { withTransientRetry } from './retryTransient';
-import type { AreaMembershipList, AreaMembershipLookup, AreaPeoplePage, AreaPeopleQuery, AreaPerson, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
+import type { AreaPeoplePage, AreaPeopleQuery, AreaPerson, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
 
 export { ApiError } from './ApiError';
 
@@ -161,12 +161,6 @@ class AdminApiServiceClass {
   }
 
   // ========== Vínculos de área (acesso-do-cliente, T111/T411) ==========
-
-  /** `area_membership:read` — vínculos VIVOS da árvore da pessoa; `uid` é resolvido no servidor. */
-  listAreaMemberships(lookup: AreaMembershipLookup): Promise<AreaMembershipList> {
-    const qs = new URLSearchParams('personId' in lookup ? { personId: lookup.personId } : { uid: lookup.uid });
-    return this.request<AreaMembershipList>('GET', `/api/admin/area-memberships?${qs.toString()}`);
-  }
 
   /**
    * `area_membership:read` — a lista paginada de pessoas da aba "Vínculos de área". Busca por nome exige

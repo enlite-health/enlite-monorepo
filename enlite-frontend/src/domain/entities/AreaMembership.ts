@@ -15,23 +15,6 @@ export type StoredArea = keyof typeof STORED_AREA_ROLES;
 
 export const STORED_AREAS = Object.keys(STORED_AREA_ROLES) as StoredArea[];
 
-export interface AreaMembership {
-  id: string;
-  personId: string;
-  area: string;
-  role: string;
-  grantedBy: string;
-  grantedAt: string;
-}
-
-export interface AreaMembershipList {
-  personId: string;
-  memberships: AreaMembership[];
-}
-
-/** Como a busca identifica a pessoa — o contrato aceita um, e só um, dos dois. */
-export type AreaMembershipLookup = { personId: string } | { uid: string };
-
 /**
  * Conceder aceita `personId` OU `uid` (quem só tem login e nunca virou pessoa): o servidor
  * resolve o uid e concede na mesma transação.

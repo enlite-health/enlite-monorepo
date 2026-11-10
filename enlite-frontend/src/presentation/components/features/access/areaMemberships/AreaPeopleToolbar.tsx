@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Combobox, Input, Label, Text } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 import { AREA_PERSON_KINDS, type AreaPeopleTypeFilter } from '@domain/entities/AreaMembership';
-import { BUTTON_35, DENSE_COMBO_VALUE, DENSE_PLACEHOLDER } from './formStyles';
+import { BUTTON_35, DENSE_CHEVRON, DENSE_COMBO_VALUE, DENSE_PLACEHOLDER } from './formStyles';
 
 interface AreaPeopleToolbarProps {
   search: string;
@@ -23,7 +23,7 @@ export function AreaPeopleToolbar(p: AreaPeopleToolbarProps): JSX.Element {
   return (
     <div className="flex flex-wrap items-end gap-3" data-testid="vinculos-toolbar">
       <div className="relative space-y-1 flex-1 min-w-[14rem] max-w-[26rem]">
-        <Label size="compact" htmlFor="area-people-search">{t(`${K}.toolbar.search`)}</Label>
+        <Label size="compact" className="block !font-normal" htmlFor="area-people-search">{t(`${K}.toolbar.search`)}</Label>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#737373]" aria-hidden="true"><Search className="w-4 h-4" /></span>
           <Input
@@ -47,11 +47,12 @@ export function AreaPeopleToolbar(p: AreaPeopleToolbarProps): JSX.Element {
         )}
       </div>
       <div className="space-y-1 w-44">
-        <Label size="compact" htmlFor="area-people-type">{t(`${K}.toolbar.type`)}</Label>
+        <Label size="compact" className="block !font-normal" htmlFor="area-people-type">{t(`${K}.toolbar.type`)}</Label>
         <Combobox
           id="area-people-type"
           data-testid="area-people-type"
           inputSize="dense"
+          className={DENSE_CHEVRON}
           valueClassName={DENSE_COMBO_VALUE}
           value={p.type}
           disabled={p.disabled}

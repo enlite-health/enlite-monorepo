@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Heading, Text } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
@@ -52,7 +53,7 @@ export function AreaMembershipsTab(): JSX.Element {
 
   const lookupLink = !lookupOpen && (
     <button type="button" className="underline" data-testid="area-lookup-open-link" onClick={() => setLookupOpen(true)}>
-      <Text as="span" size="xs" color="primary">{t(`${K}.lookup.open`)}</Text>
+      <Text as="span" size="xs" color="primary" className="!leading-4">{t(`${K}.lookup.open`)}</Text>
     </button>
   );
 
@@ -68,7 +69,7 @@ export function AreaMembershipsTab(): JSX.Element {
   } else if (total === 0) {
     content = (
       <div className="bg-white rounded-xl border border-gray-400 px-6 py-10 text-center space-y-3" data-testid="empty">
-        <Text size="sm" color="primary">
+        <Text size="sm" color="primary" className="!leading-5">
           {searching ? t(`${K}.emptySearch`, { term: people.appliedSearch }) : t(`${K}.emptyFilters`)}
         </Text>
         {!lookupOpen && (
@@ -91,7 +92,7 @@ export function AreaMembershipsTab(): JSX.Element {
           onPerPage={people.setPerPage}
         />
         {!lookupOpen && (
-          <Text size="xs" color="tertiary" className="text-right">{t(`${K}.lookup.hint`)} {lookupLink}</Text>
+          <Text size="xs" color="tertiary" className="text-right !leading-4">{t(`${K}.lookup.hint`)} {lookupLink}</Text>
         )}
       </>
     );
@@ -125,14 +126,15 @@ export function AreaMembershipsTab(): JSX.Element {
         <AreaEmailLookup result={lookup} onResult={setLookup} canWrite={canWrite} onManage={setSelected} onClose={closeLookup} />
       )}
       {selected && canWrite && <AreaPersonDrawer person={selected} onClose={closeDrawer} onChanged={changed} />}
-      {toast && (
+      {toast && createPortal(
         <div
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-primary text-white px-4 py-2 rounded-lg shadow-medium"
           role="status"
           data-testid="area-toast"
         >
-          <Text as="span" size="sm" color="white">{t(toast)}</Text>
-        </div>
+          <Text as="span" size="sm" color="white" className="!leading-5">{t(toast)}</Text>
+        </div>,
+        document.body,
       )}
     </section>
   );

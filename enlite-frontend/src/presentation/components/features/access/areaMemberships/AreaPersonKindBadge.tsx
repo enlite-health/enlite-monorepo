@@ -7,7 +7,7 @@ const TONE: Record<AreaPersonKind, BadgeTone> = { staff: 'brand', worker: 'succe
 export function AreaPersonKindBadge({ kind, className = '' }: { kind: AreaPersonKind; className?: string }): JSX.Element {
   const { t } = useTranslation();
   return (
-    <Badge tone={TONE[kind]} className={className}>
+    <Badge tone={TONE[kind]} className={`whitespace-nowrap ${className}`}>
       <span data-testid="area-person-kind" data-kind={kind}>{t(`admin.access.areaMemberships.kinds.${kind}`)}</span>
     </Badge>
   );

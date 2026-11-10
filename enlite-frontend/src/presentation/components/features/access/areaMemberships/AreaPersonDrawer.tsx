@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Heading, Label, Text, Textarea } from '@presentation/components/atoms';
@@ -8,7 +9,6 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { fetchFreshAreaPerson } from '@presentation/hooks/useAreaPeople';
 import {
-  STORED_AREAS,
   STORED_AREA_ROLES,
   grantTarget,
   type AreaPerson,
@@ -16,6 +16,7 @@ import {
   type StoredArea,
 } from '@domain/entities/AreaMembership';
 import { AreaGrantFields } from './AreaGrantFields';
+import { GRANT_AREAS } from './grantAreas';
 import { AreaMembershipChip } from './AreaMembershipChip';
 import { AreaPersonAvatar } from './AreaPersonAvatar';
 import { AreaPersonKindBadge } from './AreaPersonKindBadge';
@@ -42,8 +43,8 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
   const [revoking, setRevoking] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [revokeError, setRevokeError] = useState<string | null>(null);
-  const [area, setArea] = useState<StoredArea>(STORED_AREAS[0]);
-  const [role, setRole] = useState<string>(STORED_AREA_ROLES[STORED_AREAS[0]][0]);
+  const [area, setArea] = useState<StoredArea>(GRANT_AREAS[0]);
+  const [role, setRole] = useState<string>(STORED_AREA_ROLES[GRANT_AREAS[0]][0]);
   const [grantError, setGrantError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -106,7 +107,8 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
     }
   };
 
-  return (
+  // Portal no <body>: dentro de `space-y-*` o `margin-top` do irmão empurraria o painel `fixed` 16px para baixo.
+  return createPortal(
     <>
       <div aria-hidden="true" className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
       <aside
@@ -121,7 +123,7 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
             <AreaPersonAvatar name={person.displayName} />
             <div className="min-w-0">
               <Heading level={3} weight="semibold" color="primary">{person.displayName}</Heading>
-              <Text size="xs" color="tertiary">{person.email}</Text>
+              <Text size="xs" color="tertiary" className="!leading-4">{person.email}</Text>
               <AreaPersonKindBadge kind={person.kind} className="mt-1" />
             </div>
           </div>
@@ -141,7 +143,7 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
           <Heading level={4} weight="semibold" color="primary" className="mb-2">{t(`${K}.drawer.current`)}</Heading>
           <ul className="space-y-2">
             {person.memberships.length === 0 && (
-              <li><Text size="sm" color="tertiary" data-testid="area-drawer-none">{t(`${K}.drawer.none`)}</Text></li>
+              <li><Text size="sm" color="tertiary" className="!leading-5" data-testid="area-drawer-none">{t(`${K}.drawer.none`)}</Text></li>
             )}
             {person.memberships.map((m) => (
               <li key={m.id} className="border border-gray-600 rounded-lg p-3" data-testid="area-drawer-membership">
@@ -163,7 +165,7 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
                 {revoking === m.id && (
                   <form className="mt-3 space-y-3" data-testid="area-drawer-revoke-form" onSubmit={(e) => { void submitRevoke(e); }}>
                     <div className="space-y-1">
-                      <Label size="compact" htmlFor="area-revoke-reason">{t(`${K}.revoke.reason`)}</Label>
+                      <Label size="compact" className="block !font-normal" htmlFor="area-revoke-reason">{t(`${K}.revoke.reason`)}</Label>
                       <Textarea
                         id="area-revoke-reason"
                         data-testid="area-revoke-reason"
@@ -199,6 +201,7 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
           </form>
         </section>
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }

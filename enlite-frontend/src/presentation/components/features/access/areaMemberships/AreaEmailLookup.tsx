@@ -61,11 +61,11 @@ export function AreaEmailLookup({ result, onResult, canWrite, onManage, onClose 
       data-testid="lookup"
       onSubmit={(e) => { void submit(e); }}
     >
-      <Text size="sm" weight="medium" color="primary">{t(`${K}.title`)}</Text>
-      <Text size="xs" color="tertiary" className="mb-2">{t(`${K}.help`)}</Text>
+      <Text size="sm" weight="medium" color="primary" className="!leading-5">{t(`${K}.title`)}</Text>
+      <Text size="xs" color="tertiary" className="mb-2 !leading-4">{t(`${K}.help`)}</Text>
       <div className="flex items-end gap-3 flex-wrap">
         <div className="flex-1 min-w-[14rem] max-w-[26rem] space-y-1">
-          <Label size="compact" htmlFor="area-lookup-email">{t(`${K}.email`)}</Label>
+          <Label size="compact" className="block !font-normal" htmlFor="area-lookup-email">{t(`${K}.email`)}</Label>
           <Input
             id="area-lookup-email"
             data-testid="area-lookup-email"
@@ -87,7 +87,7 @@ export function AreaEmailLookup({ result, onResult, canWrite, onManage, onClose 
       </div>
       <PanelErrorAlert keyName={error} />
       {result === 'none' && (
-        <Text size="sm" color="primary" role="status" className="mt-1" data-testid="lookup-none">{t(`${K}.none`)}</Text>
+        <Text size="sm" color="primary" role="status" className="mt-1 !leading-5" data-testid="lookup-none">{t(`${K}.none`)}</Text>
       )}
       {result && result !== 'none' && (
         <div
@@ -97,9 +97,9 @@ export function AreaEmailLookup({ result, onResult, canWrite, onManage, onClose 
           <div className="flex items-center gap-3 min-w-0">
             <AreaPersonAvatar name={result.displayName} />
             <div className="min-w-0">
-              <Text size="sm" weight="medium" color="primary">{result.displayName}</Text>
-              <Text size="xs" color="tertiary">{result.email}</Text>
-              <Text size="xs" color="tertiary" className="mt-0.5">{t(isOffList(result) ? `${K}.newAccount` : `${K}.inList`)}</Text>
+              <Text size="sm" weight="medium" color="primary" className="!leading-5">{result.displayName}</Text>
+              <Text size="xs" color="tertiary" className="!leading-4">{result.email}</Text>
+              <Text size="xs" color="tertiary" className="mt-0.5 !leading-4">{t(isOffList(result) ? `${K}.newAccount` : `${K}.inList`)}</Text>
             </div>
           </div>
           <div className="flex items-center gap-3">

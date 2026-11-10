@@ -185,7 +185,6 @@ describe('AreaMembershipsTab — painel "Gestionar" (conceder e revogar)', () =>
     api.list.mockImplementation(async (q: { search?: string }) => (q.search ? pagina([updated]) : pagina([ANA, BETO])));
     mount();
     const drawer = await openDrawer();
-    await pick(`${K}.grant.area`, 'areas.names.learn');
     await pick(`${K}.grant.role`, `${K}.roles.teacher`);
     await userEvent.click(within(drawer).getByTestId('area-grant-submit'));
     await waitFor(() => expect(api.grant).toHaveBeenCalledWith({ personId: PID_ANA, area: 'learn', role: 'teacher' }));
@@ -196,7 +195,8 @@ describe('AreaMembershipsTab — painel "Gestionar" (conceder e revogar)', () =>
   it('🔴 duplicado: a pessoa já tem o par → mensagem no painel e NENHUMA chamada de conceder', async () => {
     mount();
     const drawer = await openDrawer();
-    // o padrão do formulário é care · family — exatamente o vínculo que a Ana já tem
+    // a Ana já tem care · family: escolhe exatamente esse par (o padrão do formulário é learn · alumno/a)
+    await pick(`${K}.grant.area`, 'areas.names.care');
     await userEvent.click(within(drawer).getByTestId('area-grant-submit'));
     expect(await within(drawer).findByRole('alert')).toHaveTextContent(`${K}.errors.grantDuplicate`);
     expect(api.grant).not.toHaveBeenCalled();
