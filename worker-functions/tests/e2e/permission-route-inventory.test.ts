@@ -516,6 +516,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/interview-hosts/:id → interview_host:update',
         // acesso-do-cliente F1 (T111, `adminAreaMembershipRoutes.ts`): família admin.users, células area_membership:read|write.
         'GET /api/admin/area-memberships → area_membership:read',
+        'GET /api/admin/area-memberships/people → area_membership:read',
+        'GET /api/admin/area-memberships/people/by-email → area_membership:read',
         'POST /api/admin/area-memberships → area_membership:write',
         'POST /api/admin/area-memberships/:id/revoke → area_membership:write',
         // spec 080 (scoreboard and escalations of the assistants, `adminAssistantsRoutes.ts`): families assistant_scoreboard/assistant_escalation, contract rotas-plataforma-novas.md.
