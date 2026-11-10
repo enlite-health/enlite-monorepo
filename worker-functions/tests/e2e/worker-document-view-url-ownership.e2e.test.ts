@@ -204,13 +204,14 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
       expect(res.status).toBe(404);
     });
 
-    it('conta autenticada sem worker vinculado → 404', async () => {
+    // acesso-do-cliente T215: sem ficha não há recurso próprio, o Cedar do cliente nega antes do handler (era 404).
+    it('conta autenticada sem worker vinculado → 403', async () => {
       const res = await api.post(
         '/api/workers/me/documents/view-url',
         { filePath: workerAPath },
         authHeaders(noWorkerToken),
       );
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(403);
     });
 
     it('sem token → 401', async () => {

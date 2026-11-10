@@ -218,7 +218,8 @@ describe('Profile Tabs — Endpoints por aba', () => {
       ).rejects.toMatchObject({ response: { status: 401 } });
     });
 
-    it('deve retornar 404 se authUid não corresponde a nenhum worker', async () => {
+    // acesso-do-cliente T215: sem ficha não há recurso próprio, o Cedar do cliente nega antes do handler (era 404).
+    it('deve retornar 403 se authUid não corresponde a nenhum worker', async () => {
       const ghostTokenRes = await api.post('/api/test/auth/token', {
         uid: 'nonexistent-auth-uid',
         email: 'ghost@e2e.local',
@@ -232,7 +233,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
           payload,
           { headers: { Authorization: `Bearer ${ghostToken}` } },
         ),
-      ).rejects.toMatchObject({ response: { status: 404 } });
+      ).rejects.toMatchObject({ response: { status: 403 } });
     });
 
     it('deve permitir salvar múltiplas vezes (idempotente)', async () => {
