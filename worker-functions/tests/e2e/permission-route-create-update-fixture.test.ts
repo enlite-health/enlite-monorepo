@@ -47,6 +47,19 @@ const PERMISSION_MANAGEMENT_WRITE_ROUTES = new Set([
   'PUT /api/admin/country-features/:country/:featureKey',
 ]);
 
+/**
+ * As 2 rotas de `area_membership` — `write` por contrato da change `acesso-do-cliente-areas-e-login-unico` (T111):
+ * `specs/area-registry/spec.md` e `specs/unified-login/spec.md` nomeiam `area_membership:read` / `area_membership:write`
+ * (conceder E revogar sob a mesma célula). Contrato nominal como o de `permission_management`, não `write` que sobrou do split.
+ */
+const AREA_MEMBERSHIP_WRITE_ROUTES = new Set([
+  'POST /api/admin/area-memberships',
+  'POST /api/admin/area-memberships/:id/revoke',
+]);
+
+/** Toda rota que fica `write` por contrato nominal; fora daqui, `write` é resto do split. */
+const WRITE_POR_CONTRATO = new Set([...PERMISSION_MANAGEMENT_WRITE_ROUTES, ...AREA_MEMBERSHIP_WRITE_ROUTES]);
+
 interface InventarioRota {
   method: string;
   path: string;
@@ -111,12 +124,12 @@ describe('PR-8b (8b.1/8b.4) — fixture nominal create/update contra o inventár
     expect(divergentes).toEqual([]);
   });
 
-  it('NENHUMA célula fora de permission_management ainda declara `write` — QUALQUER posição no array de guards (achado pós-#391: `vacancy:write` só existia na 2ª célula, invisível a este teste antes de ler `cells`)', () => {
+  it('NENHUMA célula fora de permission_management e area_membership (contrato nominal) ainda declara `write` — QUALQUER posição no array de guards (achado pós-#391: `vacancy:write` só existia na 2ª célula, invisível a este teste antes de ler `cells`)', () => {
     const comWrite = Array.from(porChave.values())
       .flatMap((r) => (r.cells ?? []).map((celula) => ({ r, celula })))
       .filter(({ celula }) => celula.endsWith(':write'))
       .map(({ r, celula }) => `${r.method} ${r.path} → ${celula}`)
-      .filter((chave) => !PERMISSION_MANAGEMENT_WRITE_ROUTES.has(chave.split(' → ')[0]));
+      .filter((chave) => !WRITE_POR_CONTRATO.has(chave.split(' → ')[0]));
 
     expect(comWrite).toEqual([]);
   });
@@ -128,6 +141,16 @@ describe('PR-8b (8b.1/8b.4) — fixture nominal create/update contra o inventár
     });
     expect(observadas).toEqual(
       Array.from(PERMISSION_MANAGEMENT_WRITE_ROUTES).map((chave) => `${chave} → permission_management:write`),
+    );
+  });
+
+  it('as 2 rotas de area_membership CONTINUAM `write` e só ela (contrato da change acesso-do-cliente, T111)', () => {
+    const observadas = Array.from(AREA_MEMBERSHIP_WRITE_ROUTES).map((chave) => {
+      const rota = porChave.get(chave);
+      return `${chave} → ${rota ? rota.cells.join(',') : 'FORA DO INVENTÁRIO'}`;
+    });
+    expect(observadas).toEqual(
+      Array.from(AREA_MEMBERSHIP_WRITE_ROUTES).map((chave) => `${chave} → area_membership:write`),
     );
   });
 });
