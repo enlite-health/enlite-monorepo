@@ -6,6 +6,8 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useAdminNavItems } from '@presentation/config/adminNavigation';
 import { AppSidebar } from '@presentation/components/templates/DashboardLayout';
 import { AssistantsWidget } from '@presentation/components/features/assistants/AssistantsWidget';
+import { AreaSwitcherSlot } from '@presentation/components/features/areas/AreaSwitcherSlot';
+import { adminLoginPath } from '@presentation/config/adminLoginPath';
 
 export function AdminLayout() {
   const { logout, adminProfile, user } = useAdminAuth();
@@ -31,7 +33,7 @@ export function AdminLayout() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/admin/login');
+    navigate(adminLoginPath());
   };
 
   return (
@@ -53,6 +55,8 @@ export function AdminLayout() {
           de 700. Resultado: a operadora rola o main até o fim e depois a página inteira rola de novo
           ("scroll duplo"). Com `relative`, o main vira o containing block e clipa o que escapava. */}
       <main className="relative flex-1 ml-[200px] overflow-y-auto">
+        {/* Direção A (F4): tira fina do seletor de área; só aparece com > 1 área navegável. */}
+        <AreaSwitcherSlot />
         <div key={location.pathname} className="container mx-auto p-6 page-enter">
           <Outlet />
         </div>

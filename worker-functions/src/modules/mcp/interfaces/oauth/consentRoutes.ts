@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { OAuthTokenService } from '../../application/oauth/OAuthTokenService';
 import type { McpAuditEvent } from '../../domain/McpAuditEvent';
 import { logger } from '@shared/logging';
+import { routeClass } from '@modules/identity/permissions';
 
 export interface StaffRecord {
   email: string;
@@ -44,7 +45,7 @@ export function createConsentRoutes(deps: Deps): Router {
   const verifyIdToken =
     deps.verifyIdToken ?? ((idToken: string) => admin.auth().verifyIdToken(idToken));
 
-  router.post('/consent', async (req: Request, res: Response): Promise<void> => {
+  router.post('/consent', routeClass('client-policy'), async (req: Request, res: Response): Promise<void> => {
     const start = Date.now();
     const audit = (outcome: 'success' | 'error', principal: string, errorMessage?: string) => {
       deps.auditor.emit({

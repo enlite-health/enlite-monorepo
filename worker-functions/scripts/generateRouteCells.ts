@@ -42,6 +42,11 @@ const MAPA: Array<{ method: string; path: string; irmas: string[] }> = [
   { method: 'GET', path: '/api/admin/assistants/count/workers', irmas: ['assistant_count_workers'] },
   { method: 'GET', path: '/api/admin/assistants/count/patients', irmas: ['assistant_count_patients'] },
   { method: 'GET', path: '/api/admin/assistants/count/vacancies', irmas: ['assistant_count_vacancies'] },
+  // T113 (acesso-do-cliente, F1): rotas de staff do registro de vínculos de área. Sem irmã da Maria (irmas: []):
+  // entram aqui para a célula existir no inventário/catálogo ANTES de a rota ser exigida (invariante ABAC).
+  { method: 'GET', path: '/api/admin/area-memberships', irmas: [] },
+  { method: 'POST', path: '/api/admin/area-memberships', irmas: [] },
+  { method: 'POST', path: '/api/admin/area-memberships/:id/revoke', irmas: [] },
 ];
 
 const DOCUMENTS = {
@@ -78,6 +83,7 @@ export async function gerarRouteCells(): Promise<RouteCellEntry[]> {
   const { createWorkerEncuadreRoutes } = await import('@modules/matching/interfaces/routes/workerEncuadreRoutes');
   const { createRecruitmentRoutes } = await import('@modules/matching/interfaces/routes/recruitmentRoutes');
   const { createAdminAssistantsRoutes } = await import('@modules/agentes/interfaces/routes/adminAssistantsRoutes');
+  const { createAdminAreaMembershipRoutes } = await import('@modules/identity/interfaces/adminAreaMembershipRoutes');
 
   const app = express();
   app.use(
@@ -138,6 +144,7 @@ export async function gerarRouteCells(): Promise<RouteCellEntry[]> {
     '/api/admin',
     createAdminAssistantsRoutes({} as never, authDouble(), permissionsDouble(), { service: {} as never, resolveCountries: async () => [] }),
   );
+  app.use('/api/admin', createAdminAreaMembershipRoutes(authDouble(), permissionsDouble()));
   app.use('/api', createRecruitmentRoutes(authDouble(), permissionsDouble(), dubleDe('act', ['list']) as never));
 
   const scanned = scanExpressRouter(app);

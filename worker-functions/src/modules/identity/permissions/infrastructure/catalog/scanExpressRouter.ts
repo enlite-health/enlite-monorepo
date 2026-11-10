@@ -24,6 +24,7 @@ import {
   type ExemptMetadata,
   type PermissionMetadata,
 } from './permissionMetadata';
+import { readRouteClass, type RouteClass } from './routeClass';
 import { CELL_DESCRIPTION, cellKey, parseCellKey } from '../../domain/PermissionCell';
 
 export interface ScannedRoute {
@@ -42,6 +43,8 @@ export interface ScannedRoute {
   cells?: PermissionMetadata[];
   /** Isenção declarada na montagem (`exemptHandler`) — governada sem célula. */
   exempt?: ExemptMetadata;
+  /** Classe declarada (`routeClass(...)` ou `requireStaff`); `null` = rota sem marca. */
+  class?: RouteClass | null;
 }
 
 /** Camada interna do Express — tipada só no que esta varredura usa. */
@@ -142,35 +145,78 @@ function exemptOfRoute(route: NonNullable<ExpressLayer['route']>): ExemptMetadat
   return undefined;
 }
 
+/** Classe declarada em QUALQUER handler da rota (a primeira da pilha). */
+function classOfRoute(route: NonNullable<ExpressLayer['route']>): RouteClass | null {
+  for (const layer of route.stack ?? []) {
+    const cls = readRouteClass(layer.handle);
+    if (cls) return cls;
+  }
+  return null;
+}
+
 function methodsOf(route: NonNullable<ExpressLayer['route']>): string[] {
   const methods = Object.keys(route.methods ?? {}).filter((m) => route.methods?.[m]);
   return methods.length > 0 ? methods.map((m) => m.toUpperCase()) : ['USE'];
 }
 
-function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void {
+/** Middleware classificado montado ANTES (`app.use(path, requireStaff(), router)`): cobre o que vem abaixo de `path`. */
+interface ClassedMount {
+  path: string;
+  cls: RouteClass;
+}
+
+/** Classe do último mount (já visto, portanto anterior na pilha) que cobre `fullPath`; `/` cobre tudo. */
+function coveringClass(mounts: ClassedMount[], fullPath: string): RouteClass | null {
+  for (let i = mounts.length - 1; i >= 0; i--) {
+    const m = mounts[i];
+    if (m.path === '/' || fullPath === m.path || fullPath.startsWith(`${m.path}/`)) return m.cls;
+  }
+  return null;
+}
+
+/**
+ * `inherited`: classe de um mount ancestral. A classe PRÓPRIA da rota vence; sem ela, vale a do middleware classificado
+ * montado antes, no mesmo caminho ou acima (`app.use('/api/admin/messaging', requireStaff(), router)` → filhas `staff`).
+ */
+function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[], inherited: RouteClass | null = null): void {
+  const mounts: ClassedMount[] = [];
   for (const layer of layers) {
     if (layer.route) {
       const cells = cellsOfRoute(layer.route);
       const cell = cells[0];
       const exempt = exemptOfRoute(layer.route);
+      const ownClass = classOfRoute(layer.route);
       const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path ?? ''];
       for (const path of paths) {
+        const full = joinPaths(prefix, path);
+        const routeClass = ownClass ?? coveringClass(mounts, full) ?? inherited;
         for (const method of methodsOf(layer.route)) {
-          out.push({ method, path: joinPaths(prefix, path), cells, ...(cell ? { cell } : {}), ...(exempt ? { exempt } : {}) });
+          out.push({ method, path: full, cells, class: routeClass, ...(cell ? { cell } : {}), ...(exempt ? { exempt } : {}) });
         }
       }
       continue;
     }
     const nested = stackOf(layer.handle);
     if (nested.length > 0) {
-      walk(nested, joinPaths(prefix, mountPathOf(layer)), out);
+      const mountPath = joinPaths(prefix, mountPathOf(layer));
+      walk(nested, mountPath, out, coveringClass(mounts, mountPath) ?? inherited);
       continue;
     }
     // Middleware montado com célula (ex.: `app.use('/api/docs', requirePermission(...))`)
     // é endpoint para efeito de catálogo: sem isso a família some da matriz.
+    // A classe (F3) também chega por `app.use(path, mw)`: sem isto a marca de um
+    // middleware montado desse jeito sumia do inventário (limitação (a) da T301).
     const cell = readPermissionMetadata(layer.handle);
+    const mountedClass = readRouteClass(layer.handle) ?? null;
     // Sem `|| '/'`: `joinPaths` já devolve '/' quando o resultado seria vazio.
-    if (cell) out.push({ method: 'USE', path: joinPaths(prefix, mountPathOf(layer)), cell, cells: [cell] });
+    // ⚠️ Middleware só com CLASSE (sem célula) NÃO vira entrada `USE`: ela não é
+    // endpoint, e no índice (`buildRouteIndex`) `USE` casa por PREFIXO e vem antes
+    // das filhas — `USE /api/admin/messaging` (staff, sem célula) sombreava todas
+    // as rotas de mensageria e as dava como `undeclared` no perímetro antigo. A
+    // classe chega às filhas pela herança (`mounts` → `coveringClass`).
+    const mountPath = joinPaths(prefix, mountPathOf(layer));
+    if (mountedClass) mounts.push({ path: mountPath, cls: mountedClass });
+    if (cell) out.push({ method: 'USE', path: mountPath, cell, cells: [cell], class: mountedClass });
   }
 }
 

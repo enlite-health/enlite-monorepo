@@ -10,7 +10,7 @@
  *   - Todas as rotas admin carregam sem tela branca
  *   - Navegação via botão Voltar do browser funciona
  *   - Refresh (F5) em qualquer rota funciona
- *   - Redirect sem auth redireciona para /admin/login
+ *   - Redirect sem auth redireciona para /login?next=… (login único)
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -102,7 +102,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
   });
 
   // 7. Login via UI
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar|Entrar/i }).click();
@@ -218,13 +218,13 @@ test.describe('Fase 3 — Fade-in de navegação', () => {
     await expect(page.locator('.page-enter').first()).toBeAttached({ timeout: 10000 });
   });
 
-  test('acesso sem autenticação redireciona para /admin/login', async ({ browser }) => {
+  test('acesso sem autenticação redireciona para /login?next=… (login único)', async ({ browser }) => {
     // Use a fresh context with no stored auth
     const context = await browser.newContext();
     const page    = await context.newPage();
 
     await page.goto('/admin');
-    await expect(page).toHaveURL(/\/admin\/login/, { timeout: 10000 });
+    await expect(page).toHaveURL(/\/login\?next=%2Fadmin/, { timeout: 10000 });
 
     await context.close();
   });

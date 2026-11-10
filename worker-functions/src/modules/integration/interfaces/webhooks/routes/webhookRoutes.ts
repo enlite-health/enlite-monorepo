@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { routeClass } from '@modules/identity/permissions';
 import { PartnerAuthMiddleware } from '../middleware/PartnerAuthMiddleware';
 import { TalentumWebhookController } from '../controllers/TalentumWebhookController';
 import { TwilioWebhookController } from '@modules/notification/interfaces/controllers/TwilioWebhookController';
@@ -22,6 +23,7 @@ export function createWebhookRoutes(
   // ── Talentum — autenticado via partner key (X-Partner-Key) ──────
   router.post(
     '/talentum/prescreening',
+    routeClass('service'),
     partnerAuth.requirePartnerKey(),
     (req: Request, res: Response) => talentumController.handlePrescreening(req, res),
   );
@@ -29,6 +31,7 @@ export function createWebhookRoutes(
   // ── Twilio Status — auth próprio via X-Twilio-Signature (sem partner key) ──
   router.post(
     '/twilio/status',
+    routeClass('service'),
     (req: Request, res: Response) => twilioController.handleStatusCallback(req, res),
   );
 
@@ -36,6 +39,7 @@ export function createWebhookRoutes(
   if (inboundWhatsAppController) {
     router.post(
       '/twilio/inbound',
+      routeClass('service'),
       (req: Request, res: Response) => inboundWhatsAppController.handleInbound(req, res),
     );
   }
@@ -44,6 +48,7 @@ export function createWebhookRoutes(
   if (periskopeWebhookController) {
     router.post(
       '/periskope/inbound',
+      routeClass('service'),
       (req: Request, res: Response) => periskopeWebhookController.handleWebhook(req, res),
     );
   }

@@ -8,6 +8,7 @@ import { loggingAls, logger } from '@shared/logging';
 import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
 import { isCountryCode, isCountryRlsEnabled, setDbContext } from '@shared/database/requestDbSession';
 import { ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permissions';
+import { markRouteClass } from '../../permissions/infrastructure/catalog/routeClass';
 
 /**
  * E-mail do usuário autenticado para `req.user.email` — a MESMA chave que o mock preenche.
@@ -343,7 +344,7 @@ export class AuthMiddleware {
    * que este guard decide — o que o staff PODE é a célula (`PermissionMiddleware`).
    */
   requireStaff() {
-    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    return markRouteClass(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       await this.requireAuth()(req, res, () => {
         const user = (req as any).user;
         if (!user || !isStaffAccount(user)) {
@@ -352,7 +353,7 @@ export class AuthMiddleware {
         }
         next();
       });
-    };
+    }, 'staff');
   }
 
   /**
@@ -364,7 +365,8 @@ export class AuthMiddleware {
    * e verifica o tipo de conta (staff).
    */
   requireStaffOrApiKey() {
-    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Classe `staff` (guard de staff com atalho de chave de serviço; o titular é o staff) — só a marca, o guard não muda.
+    return markRouteClass(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       // Short-circuit para MockAuth em testes E2E
       if (process.env.USE_MOCK_AUTH === 'true') {
         const mockUser = req.user;
@@ -439,7 +441,7 @@ export class AuthMiddleware {
       }
 
       res.status(401).end();
-    };
+    }, 'staff');
   }
 
   /**

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { routeClass } from '@modules/identity/permissions';
 import { ItineraryDailyInternalController } from '../controllers/ItineraryDailyInternalController';
 
 /**
@@ -8,6 +9,6 @@ import { ItineraryDailyInternalController } from '../controllers/ItineraryDailyI
  */
 export function createItineraryDailyInternalRoutes(controller: ItineraryDailyInternalController): Router {
   const router = Router();
-  router.post('/itinerary/daily', (req: Request, res: Response) => controller.handle(req, res));
+  router.post('/itinerary/daily', routeClass('service'), (req: Request, res: Response) => controller.handle(req, res));
   return router;
 }

@@ -81,6 +81,11 @@ export {
 } from './interfaces/middleware/denyUndeclaredRoutes';
 export type { RouteStatus } from './interfaces/middleware/denyUndeclaredRoutes';
 export {
+  isUnclassified,
+  sealUnclassifiedRoutes,
+  unclassifiedRoutes,
+} from './interfaces/middleware/sealUnclassifiedRoutes';
+export {
   EXEMPT_ROUTES,
   PENDING_DECLARATIONS,
   routeKey,
@@ -94,6 +99,8 @@ export type {
 } from './application/resolveCountryScope';
 export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRoutes';
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
+export { createAdminAreaMembershipRoutes } from './interfaces/adminAreaMembershipRoutes';
+export { AreaMembershipController } from './interfaces/controllers/AreaMembershipController';
 export { createAdminStaffDirectoryRoutes } from './interfaces/routes/adminStaffDirectoryRoutes';
 export { AdminStaffDirectoryController } from './interfaces/controllers/AdminStaffDirectoryController';
 // Heartbeat de presença mudou para módulo PRÓPRIO em 22/09/2026 (change

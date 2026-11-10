@@ -25,6 +25,7 @@ import {
   recalculateWorkerStatus as _recalculateWorkerStatus,
 } from './WorkerStatusRepository';
 import { findAbsorbedWorkerIds as _findAbsorbedWorkerIds } from '@shared/database/findAbsorbedWorkerIds';
+import { SYNTHETIC_AUTH_UID_PREFIXES } from '../../../infrastructure/services/WorkerPhoneMergeTypes';
 
 // ── WorkerWithPii — dados decriptados retornados por findByIdWithPii ──────────
 export interface WorkerWithPii {
@@ -410,5 +411,24 @@ export class WorkerRepository implements IWorkerRepository {
   /** Ver `@shared/database/findAbsorbedWorkerIds` — doc no próprio helper. */
   async findAbsorbedWorkerIds(survivorId: string): Promise<string[]> {
     return _findAbsorbedWorkerIds(this.pool, survivorId);
+  }
+
+  /** Ver `IWorkerRepository.hasAbsorbedRealLogin`. `starts_with` (não LIKE): os prefixos têm `_`. */
+  async hasAbsorbedRealLogin(workerId: string): Promise<Result<boolean>> {
+    try {
+      const r = await this.pool.query<{ absorbed: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM workers a
+            WHERE a.merged_into_id = $1
+              AND a.auth_uid IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM unnest($2::text[]) p WHERE starts_with(a.auth_uid, p))
+         ) AS absorbed`,
+        [workerId, [...SYNTHETIC_AUTH_UID_PREFIXES]],
+      );
+      return Result.ok<boolean>(r.rows[0].absorbed);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return Result.fail<boolean>(`Failed to check absorbed login: ${msg}`);
+    }
   }
 }

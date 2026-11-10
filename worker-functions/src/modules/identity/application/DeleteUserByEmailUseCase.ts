@@ -1,9 +1,13 @@
 import { Result } from '@shared/utils/Result';
 import { GoogleIdentityService } from '../infrastructure/GoogleIdentityService';
 import { UserRepository } from '../infrastructure/UserRepository';
+import { PgLoginRemovalRepository } from '../infrastructure/PgLoginRemovalRepository';
+import type { AccountLoginRemoval } from './AccountLoginRemoval';
 
 export interface DeleteUserByEmailDTO {
   email: string;
+  /** uid de quem pede (vai para revoked_by); ausente → a própria conta. */
+  actorUid?: string;
 }
 
 /**
@@ -20,7 +24,8 @@ export interface DeleteUserByEmailDTO {
 export class DeleteUserByEmailUseCase {
   constructor(
     private userRepository: UserRepository,
-    private googleIdentityService: GoogleIdentityService
+    private googleIdentityService: GoogleIdentityService,
+    private loginRemoval: AccountLoginRemoval = new PgLoginRemovalRepository()
   ) {}
 
   async execute(data: DeleteUserByEmailDTO): Promise<Result<void>> {
@@ -46,6 +51,14 @@ export class DeleteUserByEmailUseCase {
       if (identityDeleteResult.isFailure) {
         console.error('Failed to delete user from Identity Platform');
         // Continue with database deletion even if Identity Platform deletion fails
+      } else {
+        // Conta apagada no Firebase → o login sai do iam (DF-20). Só no sucesso: conta viva não perde o login.
+        try {
+          await this.loginRemoval.markDeleted(firebaseUid, data.actorUid ?? firebaseUid);
+        } catch {
+          console.error('Failed to mark login as removed in iam');
+          return Result.fail<void>('Failed to record account removal');
+        }
       }
 
       // Step 3: Delete from database (users table cascades to all extension tables)

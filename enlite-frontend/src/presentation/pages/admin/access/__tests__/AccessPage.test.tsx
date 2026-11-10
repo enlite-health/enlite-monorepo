@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AccessPage } from '../AccessPage';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { postura, renderRota, GRUPO } from './helpers';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
@@ -140,5 +141,24 @@ describe('AccessPage — rótulos de sistema/arquivado e nome só com espaços',
     await userEvent.type(screen.getByLabelText('admin.access.groups.name'), '   ');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.groups.create' }));
     expect(api.createGroup).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccessPage — seção de vínculos de área (T411)', () => {
+  beforeEach(() => { api.listGroups.mockReset().mockResolvedValue([GRUPO]); });
+
+  it('sem `area_membership:read` a seção não existe; com ela, aparece abaixo de Grupos', async () => {
+    postura('read');
+    const { unmount } = renderRota(<AccessPage />, '/admin/access');
+    await screen.findByText('Recrutadores AR');
+    expect(screen.queryByTestId('area-memberships-section')).not.toBeInTheDocument();
+    unmount();
+
+    postura('read');
+    useAdminAuthStore.setState((s) => ({ authz: { ...s.authz!, permissions: ['permission_management:read', 'area_membership:read'] } }));
+    renderRota(<AccessPage />, '/admin/access');
+    const groups = await screen.findByTestId('access-groups-header');
+    const section = screen.getByTestId('area-memberships-section');
+    expect(groups.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -87,7 +87,7 @@ const MOCK_PATIENT_DETAIL = {
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 // Login offline (`page.route` em identitytoolkit/securetoken) — o mesmo helper dos irmãos mockados.
-// O `accounts:signUp` no emulador + INSERT via `docker exec` nunca saía de /admin/login no CI
+// O `accounts:signUp` no emulador + INSERT via `docker exec` nunca saía de /login (login único) no CI
 // (Vite com config Firebase falsa); o helper intercepta a auth e o perfil sem emulador nem banco.
 async function seedAdminAndLogin(page: Page): Promise<void> {
   await loginAsStaffOffline(page);

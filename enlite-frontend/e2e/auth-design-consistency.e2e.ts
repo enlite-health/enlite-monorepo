@@ -128,7 +128,7 @@ test.describe('Consistência visual e estrutural: AdminLoginPage vs AuthActionPa
   test('1. AdminLoginPage — screenshot baseline para deteccao de regressao visual', async ({
     page,
   }) => {
-    await page.goto('/admin/login');
+    await page.goto('/login?next=%2Fadmin');
 
     // Aguarda o formulário de login estar visível
     await expect(page.locator('form').first()).toBeVisible({ timeout: 15000 });
@@ -163,7 +163,7 @@ test.describe('Consistência visual e estrutural: AdminLoginPage vs AuthActionPa
   test('3. AdminLoginPage — tem navbar, container 440px, botao primary, bg consistente', async ({
     page,
   }) => {
-    await page.goto('/admin/login');
+    await page.goto('/login?next=%2Fadmin');
     await expect(page.locator('form').first()).toBeVisible({ timeout: 15000 });
 
     // 3a. Navbar presente
@@ -221,7 +221,7 @@ test.describe('Consistência visual e estrutural: AdminLoginPage vs AuthActionPa
     page,
   }) => {
     // Verifica AdminLoginPage
-    await page.goto('/admin/login');
+    await page.goto('/login?next=%2Fadmin');
     await expect(page.locator('form').first()).toBeVisible({ timeout: 15000 });
     const adminHasBg = await hasBgBackgroundClass(page);
 

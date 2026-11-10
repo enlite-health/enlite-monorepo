@@ -350,7 +350,8 @@ jobs:
   # `USE_MOCK_AUTH=true` (interceptação de `identitytoolkit.googleapis.com` via
   # `page.route`, igual às demais specs `@integration`) e não tocam foto/documento. Provado
   # local: a API sobe saudável e a suíte passa só com `postgres` + `api` (sem os outros dois
-  # containers) — ver cabeçalho de cada spec.
+  # containers) — ver cabeçalho de cada spec. EXCEÇÃO desde o login único (acesso-do-cliente): o emulador SOBE
+  # aqui também — não para autenticar, mas para o `GET /v1/me/areas` do login não pendurar o DNS da API (ver o passo).
   #
   # `anacare-hours-sync-real.integration.e2e.ts` (botão "Sincronizar") existia desde antes e
   # NUNCA era executada aqui (achado 20/09: `git grep "sync-real" -- '.github/'` vazio) — um
@@ -423,6 +424,19 @@ jobs:
           docker compose $BASE up -d api
           espera "api" http://localhost:8080/health || {
             docker compose $BASE logs api | tail -50
+            exit 1
+          }
+
+          # Login único (acesso-do-cliente): todo login passa por `GET /v1/me/areas`, que reconcilia o claim `areas` pelo
+          # Firebase Admin em `FIREBASE_AUTH_EMULATOR_HOST=firebase-emulator:9099`. Sem o emulador, o DNS do runner Linux
+          # PENDURA no nome `firebase-emulator` (no macOS dá ENOTFOUND na hora): a rota estoura o orçamento de 3 s e as
+          # consultas penduradas ocupam o pool do libuv, então o `fetch` da API ao stub do Axonico (`host.docker.internal:9912`)
+          # espera a vez na fila do DNS e morre por timeout de conexão (502 `AxonicoTetoIndisponivelError ... fetch failed`,
+          # 10,5 s, CI do PR #831). Mesmo passo e mesmo `--no-deps` do job `integration-e2e`. Fica de pé para a API recriada
+          # no cenário de ERRO do sync (mesma rede do compose).
+          docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
+          espera "emulador Firebase" http://localhost:9099/ || {
+            docker compose $BASE -f docker-compose.firebase.yml logs firebase-emulator | tail -50
             exit 1
           }
 
@@ -630,6 +644,15 @@ jobs:
             exit 1
           }
 
+          # `area-membership-admin` (acesso-do-cliente F4, T415): conceder/revogar vínculo recalcula o claim `areas` pela conta REAL no emulador
+          # (`admin.auth().getUser`); o spec cria a conta lá. `--no-deps` pelo mesmo motivo do job `integration-e2e` (healthcheck do emulador quebrado:
+          # quem decide é a espera por HTTP).
+          docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
+          espera "emulador Firebase" http://localhost:9099/ || {
+            docker compose $BASE -f docker-compose.firebase.yml logs firebase-emulator | tail -50
+            exit 1
+          }
+
       - uses: pnpm/action-setup@v2
         with:
           version: 8
@@ -790,8 +813,11 @@ jobs:
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
           TRIAGE_STUB_URL: http://localhost:59060
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|vagas-antigas-084|pt-todavia-no-hay-048|admissao-049|admissao-050|admissao-083|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-|064-cobertura-entrada|pt-atividades-az-e-busca-060|pt-catalogo-titulo-descricao-061|catalogo-vinculo-segmento-humano|patient-conversation-markdown|pedidos-ia-abac|vincular-vaga-existente|custos-abac|luz-prueba|admin-access-agent-group|funil-vacante-invitar-prestadores-089.*12 permiss"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|vagas-antigas-084|pt-todavia-no-hay-048|admissao-049|admissao-050|admissao-083|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano|058a-|064-cobertura-entrada|pt-atividades-az-e-busca-060|pt-catalogo-titulo-descricao-061|catalogo-vinculo-segmento-humano|patient-conversation-markdown|pedidos-ia-abac|vincular-vaga-existente|custos-abac|luz-prueba|admin-access-agent-group|area-membership-admin|funil-vacante-invitar-prestadores-089.*12 permiss"
 
+      # `area-membership-admin` ENTROU (acesso-do-cliente F4, T415): o alt 2 mede a AUSÊNCIA da seção de vínculos sem `area_membership:read` — só vale com o engine
+      # ABAC ligado (com ele OFF `cells===null` mostra tudo). Usa `abac-stack-helper` (staff REAL em grupo + células por SQL) e conta no emulador Firebase (a concessão
+      # recalcula o claim `areas`); NÃO entra no `grep:` do `pr-gate.yml`. O job ganhou o passo do emulador Firebase (acima, no passo que sobe a API).
       # T141B (spec 058): vídeo + print das 6 telas da obra social. Passo 0 medido: o único upload de `test-results/` deste job é o "Relatório (só quando
       # falha)" — com o job verde nenhum vídeo/print era publicado, então este passo roda SEMPRE (`if: always()`).
       - name: Evidências 058a — vídeos e prints das telas

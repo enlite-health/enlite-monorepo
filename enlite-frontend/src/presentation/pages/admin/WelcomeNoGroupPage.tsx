@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Heading, Text, Button } from '@presentation/components/atoms';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import type { WelcomeNoGroupReason } from '@domain/entities/Authz';
+import { adminLoginPath } from '@presentation/config/adminLoginPath';
 
 interface WelcomeNoGroupPageProps {
   /** `sem-grupo` (default) ou `inativo` — `welcomeNoGroupReason(authz)` decide qual. */
@@ -31,7 +32,7 @@ export function WelcomeNoGroupPage({ reason = 'sem-grupo' }: WelcomeNoGroupPageP
 
   const handleLogout = async (): Promise<void> => {
     await logout();
-    navigate('/admin/login');
+    navigate(adminLoginPath());
   };
 
   const tituloKey = reason === 'inativo' ? 'admin.welcomeNoGroup.inactiveTitle' : 'admin.welcomeNoGroup.title';

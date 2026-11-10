@@ -128,7 +128,28 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it('accepts auth via x-auth-uid header fallback', async () => {
+  it('Bearer de A + x-auth-uid de B: resolve o worker só por A', async () => {
+    const req = {
+      body: { jobPostingId: 'jp-1', channel: 'facebook' },
+      params: {}, query: {},
+      user: { uid: 'uid-A' },
+      headers: { 'x-auth-uid': 'uid-B' },
+    } as unknown as Request;
+    const res = {
+      json: jest.fn().mockReturnThis(),
+      status: jest.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    mockWorkerFound('w-1');
+    mockDbSuccess();
+
+    await controller.trackChannel(req, res);
+    const params = JSON.stringify(mockQuery.mock.calls.map((c) => c[1]));
+    expect(params).toContain('uid-A');
+    expect(params).not.toContain('uid-B');
+  });
+
+  it('returns 401 when only x-auth-uid header is sent (header is not read)', async () => {
     const req = {
       body: { jobPostingId: 'jp-1', channel: 'facebook' },
       params: {}, query: {},
@@ -140,11 +161,8 @@ describe('WorkerApplicationsController — trackChannel', () => {
       status: jest.fn().mockReturnThis(),
     } as unknown as Response;
 
-    mockWorkerFound('w-1');
-    mockDbSuccess();
-
     await controller.trackChannel(req, res);
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: { prescreeningUrl: PRESCREENING_URL } });
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it('returns 400 when channel is invalid', async () => {

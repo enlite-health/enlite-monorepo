@@ -16,7 +16,7 @@ process.on('uncaughtException', (err: Error) => {
   process.exit(1);
 });
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, RequestHandler } from 'express';
 import { AnaCareHoursController, createAnaCareHoursRoutes, AnaCareHoursSyncController, createAnaCareHoursSyncAdminRoutes, createAnaCareHoursSyncInternalRoutes } from '@modules/anacare-hours';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
@@ -58,10 +58,10 @@ import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfa
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { UserController, resolveCountryScope } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
+import { UserController, resolveCountryScope, sealUnclassifiedRoutes } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
-import { createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
+import { routeClass, markRouteClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -71,6 +71,8 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
+import { createClientPolicyEngine } from '@modules/identity/clientAuthorization/createClientPolicyEngine';
+import { StaffOrClientEngine, staffGroupGoverns } from '@modules/identity/clientAuthorization/StaffOrClientEngine';
 import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
@@ -84,6 +86,9 @@ import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProc
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { createMeAreasRouter } from '@modules/identity/interfaces/meAreasRoute';
+import { createPersonTreeRouter } from '@modules/identity/interfaces/personTreeRoute';
+import { requirePersonTreeService } from '@modules/identity/interfaces/middleware/requirePersonTreeService';
 import { createMessagingRoutes } from '@modules/notification/interfaces/routes/messagingRoutes';
 import { correlationMiddleware } from './shared/logging/correlationMiddleware';
 import { dbSessionMiddleware } from './shared/database/dbSessionMiddleware';
@@ -237,27 +242,36 @@ const permissionsBoundary = createPermissionsBoundary({
   systemPool: DatabaseConnection.getInstance().getSystemPool(),
 });
 const permissionMiddleware = permissionsBoundary.middleware;
+// Selo F3: rota sem classe, célula ou isenção → 403 (lê o índice que o boot publica).
+app.use(sealUnclassifiedRoutes(permissionsBoundary.registry));
 
 const useCerbos = process.env.USE_CERBOS === 'true';
-const baseAuthzEngine = useCerbos && process.env.CERBOS_ENDPOINT
+// Motor LEGADO — só de STAFF (rotas/células que o painel de grupos não governa). Não-staff NUNCA cai aqui.
+const staffLegacyEngine = useCerbos && process.env.CERBOS_ENDPOINT
   ? new CerbosAuthorizationAdapter({
       cerbosEndpoint: process.env.CERBOS_ENDPOINT,
       playgroundEnabled: process.env.NODE_ENV === 'development',
     })
   : new SimplifiedAuthorizationEngine();
 
+// Plano do cliente (DF-1): quem NÃO é staff decide pelo Cedar (`createClientPolicyEngine`, com o pool de runtime
+// roteado por identidade — o mesmo do AuthMiddleware/controllers — e log de decisão sem PII). Staff nas células que o
+// painel não governa segue no motor legado.
+const clientPolicyEngine = createClientPolicyEngine(DatabaseConnection.getInstance().getPool());
+const nonGovernedEngine = new StaffOrClientEngine(staffLegacyEngine, clientPolicyEngine);
+
 // Com o engine ligado, staff decide por CÉLULA; quem não é staff (app do
-// prestador, serviço) continua no motor anterior — o enforcement por célula é
+// prestador, serviço) decide pelo plano do cliente — o enforcement por célula é
 // do painel administrativo (spec permission-enforcement).
 // ⚠️ `governsCell` é o que impede a flag global de virar a decisão de rotas que
 // NENHUMA família ligou: `requirePermission` legado (`/api/users/:userId` etc.)
 // usa células que nem existem no catálogo, e sem este recorte ninguém poderia
 // concedê-las. Rota não virada continua se comportando como hoje (design 6).
 const authzEngine = process.env.PERMISSION_ENGINE_ENABLED === 'true'
-  ? new GroupPermissionEngine(permissionsBoundary.permissions.client, baseAuthzEngine, {
-      governsCell: (resource, action) => permissionsBoundary.registry.declaresCell(resource, action),
+  ? new GroupPermissionEngine(permissionsBoundary.permissions.client, nonGovernedEngine, {
+      governsCell: staffGroupGoverns((resource, action) => permissionsBoundary.registry.declaresCell(resource, action)),
     })
-  : baseAuthzEngine;
+  : nonGovernedEngine;
 
 const authMiddleware = new AuthMiddleware(authService, authzEngine, permissionsBoundary.permissions.client);
 
@@ -306,7 +320,7 @@ const { messagingService, twilioMessagingService, periskopeMessagingService } =
 const outboxProcessor = new OutboxProcessor(messagingService, DatabaseConnection.getInstance().getPool());
 
 // ========== Public Routes ==========
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/health', routeClass('public'), (_req: Request, res: Response) => {
   res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
@@ -323,7 +337,7 @@ createMockAuthEndpoints(app);
 // H2 (D650): exige token. Sem `publicContextMiddleware` de propósito: `requireAuth` carimba
 // `worker_self` (pool de runtime) — `workers` não tem RLS e `app_runtime` tem CRUD nela
 // (migrations 269), então o INSERT do 1º cadastro funciona; `public` seria o pool de sistema.
-app.post('/api/workers/init', authMiddleware.requireAuth(), (req: Request, res: Response) => {
+app.post('/api/workers/init', routeClass('client-policy'), authMiddleware.requireAuth(), (req: Request, res: Response) => {
   workerController.initWorker(req, res);
 });
 
@@ -348,7 +362,7 @@ const workerLookupRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/workers/lookup', workerLookupRateLimit, publicContextMiddleware('public:/api/workers/lookup'), (req: Request, res: Response) => {
+app.get('/api/workers/lookup', routeClass('public'), workerLookupRateLimit, publicContextMiddleware('public:/api/workers/lookup'), (req: Request, res: Response) => {
   workerController.lookupByEmail(req, res);
 });
 
@@ -366,11 +380,11 @@ const publicVacancyRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/vacancies/:id', publicVacancyRateLimit, publicContextMiddleware('public:/api/vacancies/:id'), (req: Request, res: Response) => {
+app.get('/api/vacancies/:id', routeClass('public'), publicVacancyRateLimit, publicContextMiddleware('public:/api/vacancies/:id'), (req: Request, res: Response) => {
   publicVacancyController.getById(req, res);
 });
 
-app.get('/api/jobs', publicContextMiddleware('public:/api/jobs'), (req: Request, res: Response) => {
+app.get('/api/jobs', routeClass('public'), publicContextMiddleware('public:/api/jobs'), (req: Request, res: Response) => {
   jobsController.getJobs(req, res);
 });
 
@@ -382,7 +396,7 @@ const publicJobsRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/public/v1/jobs', publicJobsRateLimit, publicContextMiddleware('public:/api/public/v1/jobs'), (req: Request, res: Response) => {
+app.get('/api/public/v1/jobs', routeClass('public'), publicJobsRateLimit, publicContextMiddleware('public:/api/public/v1/jobs'), (req: Request, res: Response) => {
   publicJobsController.listActiveJobs(req, res);
 });
 
@@ -397,7 +411,7 @@ const publicLeadsRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.post('/api/public/v1/leads', publicLeadsRateLimit, publicContextMiddleware('public:/api/public/v1/leads'), (req: Request, res: Response) => {
+app.post('/api/public/v1/leads', routeClass('public'), publicLeadsRateLimit, publicContextMiddleware('public:/api/public/v1/leads'), (req: Request, res: Response) => {
   publicLeadsController.createLead(req, res);
 });
 
@@ -453,35 +467,35 @@ const admissionBookRateLimit = rateLimit({
   message: { success: false, error: 'Too many requests' },
 });
 
-app.get('/api/public/v1/admission/slots', admissionSlotsRateLimit, publicContextMiddleware('public:/api/public/v1/admission/slots'), (req: Request, res: Response) => {
+app.get('/api/public/v1/admission/slots', routeClass('public'), admissionSlotsRateLimit, publicContextMiddleware('public:/api/public/v1/admission/slots'), (req: Request, res: Response) => {
   admissionSchedulingController.getSlots(req, res);
 });
-app.post('/api/public/v1/admission/book', admissionBookRateLimit, publicContextMiddleware('public:/api/public/v1/admission/book'), (req: Request, res: Response) => {
+app.post('/api/public/v1/admission/book', routeClass('public'), admissionBookRateLimit, publicContextMiddleware('public:/api/public/v1/admission/book'), (req: Request, res: Response) => {
   admissionSchedulingController.book(req, res);
 });
 
 // ========== Protected Worker Routes ==========
-app.put('/api/workers/step', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/step', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveStep(req, res);
 });
-app.get('/api/workers/me', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+app.get('/api/workers/me', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getProgress(req, res);
 });
-app.put('/api/workers/me/general-info', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveGeneralInfo(req, res);
 });
-app.put('/api/workers/me/service-area', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/service-area', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveServiceArea(req, res);
 });
-app.get('/api/workers/me/availability', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+app.get('/api/workers/me/availability', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getAvailability(req, res);
 });
-app.put('/api/workers/me/availability', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/availability', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerController.saveAvailability(req, res);
 });
 
 // ========== User Routes ==========
-app.delete('/api/users/me', authMiddleware.requireAuth(), authMiddleware.requirePermission('user', 'delete'), (req: Request, res: Response) => {
+app.delete('/api/users/me', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('user', 'delete'), (req: Request, res: Response) => {
   userController.deleteUser(req, res);
 });
 app.delete('/api/users/:userId', authMiddleware.requireStaff(), authMiddleware.requirePermission('user', 'admin_delete'), (req: Request, res: Response) => {
@@ -489,7 +503,7 @@ app.delete('/api/users/:userId', authMiddleware.requireStaff(), authMiddleware.r
 });
 
 // ========== Service-to-Service Routes ==========
-app.post('/api/internal/workers/webhook', authMiddleware.requireApiKey(), systemContextMiddleware('job:workers-webhook'), (req: Request, res: Response) => {
+app.post('/api/internal/workers/webhook', routeClass('service'), authMiddleware.requireApiKey(), systemContextMiddleware('job:workers-webhook'), (req: Request, res: Response) => {
   res.status(200).json({ success: true, message: 'Webhook received' });
 });
 
@@ -503,7 +517,7 @@ app.use('/api', createWorkerDocumentsRoutes(
 ));
 
 // ========== Jobs refresh ==========
-app.post('/api/jobs/refresh', authMiddleware.requireAuth(), (req: Request, res: Response) => {
+app.post('/api/jobs/refresh', authMiddleware.requireStaff(), (req: Request, res: Response) => {
   jobsController.refreshJobs(req, res);
 });
 
@@ -515,19 +529,30 @@ app.post('/api/jobs/refresh', authMiddleware.requireAuth(), (req: Request, res: 
 // Bootstrap sem auth: precisa CONTAR admins para se recusar (task 1.6). Sob RLS,
 // sem contexto a contagem viria 0 e o bootstrap se RE-ARMARIA — por isso vai
 // como sistema declarado, além do gate ADMIN_SETUP_ENABLED.
-app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), (req: Request, res: Response) => {
+// Bootstrap sem auth (não pode exigir staff: o 1º admin ainda não existe); classe declarada para inventário e selo.
+app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), markRouteClass(((req: Request, res: Response) => {
   if (process.env.ADMIN_SETUP_ENABLED !== 'true') {
     res.status(403).json({ success: false, error: 'Setup disabled' });
     return;
   }
   adminController.setup(req, res);
-});
+}) as RequestHandler, 'staff'));
 // Família `admin.users` — extraída para router próprio na task 3.5 (primeira a
 // declarar célula). Ver modules/identity/interfaces/routes/adminUsersRoutes.ts.
 app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, permissionMiddleware));
 // `GET /api/admin/staff-directory` (spec 022, T128) — mesma família `admin.users`, célula nova
 // `staff_directory:read`. Alimenta o autocomplete de menção do chat interno de paciente.
 app.use('/api/admin', createAdminStaffDirectoryRoutes(authMiddleware, permissionMiddleware));
+// `/api/admin/area-memberships` (acesso-do-cliente, F1/T111) — registro de vínculos de área; células `area_membership:read|write`
+// (nenhum grupo as recebe por migration: conceder é ato da operação).
+app.use(
+  '/api/admin',
+  createAdminAreaMembershipRoutes(
+    authMiddleware,
+    permissionMiddleware,
+    AreaMembershipController.fromPool(DatabaseConnection.getInstance().getPool()),
+  ),
+);
 // `POST /api/admin/me/presence` (change 022-ux-mencao-e-notificacao, Rodada 2/R2-B) — heartbeat
 // de presença do painel admin aberto. Mesma família `admin.users`, célula `own_presence:update`
 // (nasce concedida a todo staff, mesma regra de `own_notifications`, D-07).
@@ -573,8 +598,12 @@ app.use('/v1', createMeSimulationRouter({
   staffGuard: authMiddleware.requireStaff(),
   uidOf: principalUid,
 }));
+// `GET /v1/me/areas` — descoberta única de áreas + bootstrap da pessoa (acesso-do-cliente F1, T109).
+app.use('/v1', createMeAreasRouter(authMiddleware.requireAuth(), DatabaseConnection.getInstance().getPool()));
+// `GET /v1/persons/:pid/tree` — árvore do `iam` para serviços (learn-service/spec B), guard OIDC + allowlist de SA fail-closed (T138).
+app.use('/v1', createPersonTreeRouter(requirePersonTreeService, DatabaseConnection.getInstance().getPool()));
 // NOTE: requireAuth (not requireAdmin) — auto-provisioning on first Google login.
-app.get('/api/admin/auth/profile', authMiddleware.requireAuth(), (req: Request, res: Response) => {
+app.get('/api/admin/auth/profile', routeClass('client-policy'), authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);
 });
 // Telemetria do login admin (frontend → servidor); rota modularizada.
@@ -922,7 +951,7 @@ app.use(
 const admissionReminderController = new AdmissionReminderController(
   new AdmissionReminderService(admissionMessaging, admissionMessageContent, dbPool),
 );
-app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
+app.post('/api/internal/reminders/admission-30min', routeClass('service'), internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
   admissionReminderController.handle(req, res),
 );
 

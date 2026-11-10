@@ -12,6 +12,7 @@
  */
 
 import { test, expect, Page, type TestInfo } from '@playwright/test';
+import { mockAreasDoPainel } from './helpers/areas-do-painel';
 
 /**
  * Prova VISUAL em duas camadas: (1) `toHaveScreenshot` compara com a referência
@@ -53,6 +54,7 @@ async function login(page: Page, permissions: string[]): Promise<void> {
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ success: true, data: { id: uid, firebaseUid: uid, email, displayName: 'Access E2E', role: 'recruiter', department: null, lastLoginAt: null, loginCount: 1, createdAt: new Date().toISOString() } }),
   }));
+  await mockAreasDoPainel(page);
   await page.route('**/v1/me/authz', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ uid, tenantId: 't', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {} }),
@@ -74,7 +76,7 @@ async function login(page: Page, permissions: string[]): Promise<void> {
     status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }),
   }));
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.locator('form button[type="submit"]').click();

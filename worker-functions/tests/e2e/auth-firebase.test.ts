@@ -81,9 +81,9 @@ describe('Firebase Authentication E2E', () => {
       // Should not return 401 Unauthorized
       expect(response.status).not.toBe(401);
       
-      // Either 200 (worker exists) or 404 (worker not found) is acceptable
+      // Either 200 (worker exists) or 403 (no worker: the client Cedar denies — acesso-do-cliente T215, was 404)
       // Both indicate successful authentication
-      expect([200, 404]).toContain(response.status);
+      expect([200, 403]).toContain(response.status);
     });
 
     it('should reject request without Bearer token', async () => {

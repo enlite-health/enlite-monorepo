@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
-import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
+import { ADMIN_PATIENTS_FAMILY, routeClass } from '@modules/identity/permissions';
 import { AnaCareHoursSyncController } from '../controllers/AnaCareHoursSyncController';
 
 /**
@@ -28,7 +28,7 @@ export function createAnaCareHoursSyncAdminRoutes(controller: AnaCareHoursSyncCo
 export function createAnaCareHoursSyncInternalRoutes(controller: AnaCareHoursSyncController): Router {
   const router = Router();
 
-  router.post('/anacare-hours/sync', (req: Request, res: Response) => controller.triggerCron(req, res));
+  router.post('/anacare-hours/sync', routeClass('service'), (req: Request, res: Response) => controller.triggerCron(req, res));
 
   return router;
 }

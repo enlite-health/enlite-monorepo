@@ -125,25 +125,25 @@ describe('createAccountLinkRoutes — montagem, flagGate e limitadores', () => {
   });
 
   describe('ordem: só start/confirm têm rate limiter; lookup/finalize/undo não', () => {
-    it('lookup: flagGate + 2 middlewares de auth + handler (SEM rate limit) — 4 na pilha', () => {
+    it('lookup: flagGate + routeClass + 2 middlewares de auth + handler (SEM rate limit) — 5 na pilha', () => {
       const rota = encontrarRota(router, '/workers/me/account-link/lookup', 'post');
-      expect(rota.stack).toHaveLength(4);
+      expect(rota.stack).toHaveLength(5);
     });
-    it('finalize: mesma forma do lookup (SEM rate limit) — 4 na pilha', () => {
+    it('finalize: mesma forma do lookup (SEM rate limit) — 5 na pilha', () => {
       const rota = encontrarRota(router, '/workers/me/account-link/finalize', 'post');
-      expect(rota.stack).toHaveLength(4);
+      expect(rota.stack).toHaveLength(5);
     });
-    it('start: flagGate + rate limit + 2 de auth + handler — 5 na pilha, uma a mais que lookup', () => {
+    it('start: flagGate + routeClass + rate limit + 2 de auth + handler — 6 na pilha, uma a mais que lookup', () => {
       const rota = encontrarRota(router, '/workers/me/account-link/start', 'post');
-      expect(rota.stack).toHaveLength(5);
+      expect(rota.stack).toHaveLength(6);
     });
-    it('confirm: mesma forma do start (COM rate limit) — 5 na pilha', () => {
+    it('confirm: mesma forma do start (COM rate limit) — 6 na pilha', () => {
       const rota = encontrarRota(router, '/workers/me/account-link/confirm', 'post');
-      expect(rota.stack).toHaveLength(5);
+      expect(rota.stack).toHaveLength(6);
     });
-    it('undo GET/POST: só flagGate + handler (SEM auth, SEM rate limit) — 2 na pilha', () => {
-      expect(encontrarRota(router, '/account-link/undo/:token', 'get').stack).toHaveLength(2);
-      expect(encontrarRota(router, '/account-link/undo/:token', 'post').stack).toHaveLength(2);
+    it('undo GET/POST: só flagGate + routeClass + handler (SEM auth, SEM rate limit) — 3 na pilha', () => {
+      expect(encontrarRota(router, '/account-link/undo/:token', 'get').stack).toHaveLength(3);
+      expect(encontrarRota(router, '/account-link/undo/:token', 'post').stack).toHaveLength(3);
     });
   });
 

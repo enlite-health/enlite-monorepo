@@ -10,7 +10,7 @@
  * VacancyCaseCard e no chip Profesión do modal de match.
  *
  * Setup real:
- *  - Login via UI em /admin/login com a conta real (gabriel.g.stein@gmail.com)
+ *  - Login via UI em /login?next=%2Fadmin com a conta real (gabriel.g.stein@gmail.com)
  *  - Um row admin dedicado é UPSERTado em users com o uid REAL do Firebase
  *    prod (obtido via signInWithPassword REST) — NUNCA muta o row existente
  *    (firebase_uid é PK referenciado por FKs sem ON UPDATE CASCADE)
@@ -43,7 +43,7 @@ function sql(query: string): string {
 }
 
 async function loginAsAdmin(page: Page): Promise<void> {
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(TEST_EMAIL);
   await page.locator('input[type="password"]').fill(TEST_PASSWORD);
   await page

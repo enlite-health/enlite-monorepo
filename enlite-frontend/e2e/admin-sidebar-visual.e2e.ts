@@ -22,6 +22,7 @@
  */
 
 import { test, expect, Page, Route } from '@playwright/test';
+import { mockAreasDoPainel } from './helpers/areas-do-painel';
 
 const BASE = process.env.SIDEBAR_TEST_BASE_URL ?? 'http://localhost:5173';
 
@@ -131,6 +132,7 @@ async function installFakeFirebaseAuth(page: Page, permissions: string[] | null 
 
   // O contrato ABAC é o que controla se os itens da seção aparecem no sidebar.
   if (permissions !== null) {
+    await mockAreasDoPainel(page);
     await page.route('**/v1/me/authz', (route) =>
       route.fulfill({
         status: 200,
@@ -146,7 +148,7 @@ async function installFakeFirebaseAuth(page: Page, permissions: string[] | null 
 
 async function loginAsAdmin(page: Page, permissions: string[] | null = null): Promise<void> {
   await installFakeFirebaseAuth(page, permissions);
-  await page.goto(`${BASE}/admin/login`);
+  await page.goto(`${BASE}/login?next=%2Fadmin`);
   await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();

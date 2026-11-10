@@ -7,6 +7,7 @@
  */
 
 import type { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import type { Pool } from 'pg';
 import { logger, reportError } from '@shared/logging';
 import { AccountLinkService } from './AccountLinkService';
@@ -35,8 +36,7 @@ export class AccountLinkController {
   }
 
   private authUid(req: Request): string | null {
-    return ((req as { user?: { uid?: string } }).user?.uid
-      ?? (req.headers['x-auth-uid'] as string | undefined)) || null;
+    return selfUid(req);
   }
 
   private fail(res: Response, err: unknown, fallbackSource: string): void {

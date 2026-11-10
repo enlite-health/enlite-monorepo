@@ -9,6 +9,7 @@ import {
 import type { ServicePrincipalSecretManagerRepo } from '../../infrastructure/ServicePrincipalSecretManagerRepo';
 import type { McpAuditLogger } from '../../infrastructure/McpAuditLogger';
 import type { CapabilityRegistry } from '../../application/CapabilityRegistry';
+import { routeClass } from '@modules/identity/permissions';
 import { agentCallOf } from '../middleware/agentActorContext';
 
 interface Deps {
@@ -35,6 +36,7 @@ export function createMcpRoutes(deps: Deps): Router {
 
   router.post(
     '/v1',
+    routeClass('service'),
     // Porta do agente (spec 078, M2): a identidade já foi resolvida por `createAgentEntry` (header próprio). Só ela seta `req.agentPrincipal`.
     (req: Request, res: Response, next: NextFunction): void => (req.agentPrincipal ? next() : legacyAuth(req, res, next)),
     async (req: Request, res: Response): Promise<void> => {
@@ -62,11 +64,11 @@ export function createMcpRoutes(deps: Deps): Router {
   );
 
   // GET and DELETE not supported in stateless mode
-  router.get('/v1', (_req: Request, res: Response): void => {
+  router.get('/v1', routeClass('service'), (_req: Request, res: Response): void => {
     res.status(405).json({ error: 'Method not allowed in stateless mode' });
   });
 
-  router.delete('/v1', (_req: Request, res: Response): void => {
+  router.delete('/v1', routeClass('service'), (_req: Request, res: Response): void => {
     res.status(405).json({ error: 'Method not allowed in stateless mode' });
   });
 

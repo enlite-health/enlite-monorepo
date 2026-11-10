@@ -304,8 +304,8 @@ describe('WorkerControllerV2', () => {
 
   describe('getProgress', () => {
 
-    it('retorna 401 quando não há user.uid nem header x-auth-uid', async () => {
-      const [req, res] = mockReqRes({}, {});
+    it('retorna 401 quando não há user.uid (nem com header x-auth-uid: o header não é lido)', async () => {
+      const [req, res] = mockReqRes({}, { 'x-auth-uid': AUTH_UID });
 
       await controller.getProgress(req, res);
 
@@ -336,15 +336,17 @@ describe('WorkerControllerV2', () => {
       );
     });
 
-    it('retorna 200 com dados do worker quando getProgressUseCase encontra o worker via header x-auth-uid', async () => {
+    it('retorna 200 com dados do worker com Bearer de A + x-auth-uid de B: age só em A (header ignorado)', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
       mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
 
-      const [req, res] = mockReqRes({}, { 'x-auth-uid': AUTH_UID });
+      const [req, res] = mockReqRes({}, { 'x-auth-uid': 'uid-de-B' }, { uid: AUTH_UID });
 
       await controller.getProgress(req, res);
 
+      expect(controller['getProgressUseCase'].execute).toHaveBeenCalledWith(AUTH_UID);
+      expect(controller['getProgressUseCase'].execute).not.toHaveBeenCalledWith('uid-de-B');
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -499,7 +501,7 @@ describe('WorkerControllerV2', () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.fail('Worker not found'));
 
-      const [req, res] = mockReqRes({}, { 'x-auth-uid': 'uid-sem-vinculo' });
+      const [req, res] = mockReqRes({}, {}, { uid: 'uid-sem-vinculo' });
 
       await controller.getProgress(req, res);
 
@@ -539,7 +541,7 @@ describe('WorkerControllerV2', () => {
       expect(initRes.status).toHaveBeenCalledWith(201);
 
       // 2. Chama getProgress com o mesmo authUid
-      const [meReq, meRes] = mockReqRes({}, { 'x-auth-uid': AUTH_UID_ROUND_TRIP });
+      const [meReq, meRes] = mockReqRes({}, {}, { uid: AUTH_UID_ROUND_TRIP });
       await controller.getProgress(meReq, meRes);
 
       // O getProgressUseCase deve ter sido chamado com o authUid exato nas duas ocasiões

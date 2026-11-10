@@ -158,7 +158,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
   );
 
   // 5. Login via UI
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   // Click the submit button (email/password login), NOT "Entrar con Google" (OAuth).
@@ -402,12 +402,12 @@ test.describe('AdminPatientsPage', () => {
     await expect(page.locator('text=Error al cargar pacientes').first()).toBeVisible({ timeout: 15000 });
   });
 
-  test('acesso sem autenticação redireciona para /admin/login', async ({ browser }) => {
+  test('acesso sem autenticação redireciona para /login?next=… (login único)', async ({ browser }) => {
     const context = await browser.newContext();
     const page    = await context.newPage();
 
     await page.goto('/admin/patients');
-    await expect(page).toHaveURL(/\/admin\/login/, { timeout: 10000 });
+    await expect(page).toHaveURL(/\/login\?next=%2Fadmin/, { timeout: 10000 });
 
     await context.close();
   });

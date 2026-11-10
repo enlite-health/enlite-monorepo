@@ -15,6 +15,7 @@ import { IdentitySection } from './IdentitySection';
 import TactiqLinkSection from './TactiqLinkSection';
 import { LanguageSection } from './LanguageSection';
 import { AccessSection } from './AccessSection';
+import { adminLoginPath } from '@presentation/config/adminLoginPath';
 
 export default function MyProfilePage(): JSX.Element {
   const { t, i18n } = useTranslation();
@@ -27,7 +28,7 @@ export default function MyProfilePage(): JSX.Element {
 
   const handleLogout = async (): Promise<void> => {
     await logout();
-    navigate('/admin/login');
+    navigate(adminLoginPath());
   };
 
   return (

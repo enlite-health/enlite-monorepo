@@ -16,6 +16,7 @@
  * `loginAsAdmin`.
  */
 import { expect, type Page, type Route } from '@playwright/test';
+import { mockAreasDoPainel } from './areas-do-painel';
 
 export const E2E_EMAIL =
   process.env.E2E_ADMIN_EMAIL ?? process.env.E2E_TEST_EMAIL ?? 'gabriel.g.stein@gmail.com';
@@ -107,7 +108,7 @@ export async function mockAdminBaseRoutes(page: Page): Promise<void> {
 
 /** Login REAL no Firebase (sem interceptar identitytoolkit). */
 export async function loginAsAdmin(page: Page): Promise<void> {
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(E2E_EMAIL);
   await page.locator('input[type="password"]').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').first().click();
@@ -256,6 +257,7 @@ export async function loginAsStaffOffline(page: Page, role: string = AUTH_FALSA.
   // authz nunca "assenta" — medido: ~150-200 refetches/seg da vaga por trás
   // disso, o suficiente pra qualquer `toBeVisible` pegar a página no meio do
   // ciclo (D300, achado da 2ª rodada).
+  await mockAreasDoPainel(page);
   await page.route('**/v1/me/authz', (route: Route) =>
     route.fulfill(json({
       uid: AUTH_FALSA.uid, tenantId: 'e2e', status: 'ACTIVE', permissions: [],
@@ -271,7 +273,7 @@ export async function loginAsStaffOffline(page: Page, role: string = AUTH_FALSA.
     })),
   );
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(AUTH_FALSA.email);
   await page.locator('input[type="password"]').fill('nao-importa-a-auth-e-forjada');
   await page.locator('button[type="submit"]').first().click();

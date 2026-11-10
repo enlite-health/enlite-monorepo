@@ -49,7 +49,7 @@ async function loginAsRealStaff(page: Page): Promise<void> {
     strip();
     new MutationObserver(strip).observe(document.documentElement, { childList: true, subtree: true });
   });
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(STAFF_EMAIL);
   await page.locator('input[type="password"]').fill(STAFF_PASSWORD);
   await forceClick(page.getByRole('button', { name: /Iniciar sesi/i }));

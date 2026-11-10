@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { routeClass } from '@modules/identity/permissions';
 import { TherapeuticContactRemindersInternalController } from '../controllers/TherapeuticContactRemindersInternalController';
 
 /**
@@ -8,6 +9,6 @@ import { TherapeuticContactRemindersInternalController } from '../controllers/Th
  */
 export function createTherapeuticContactRemindersInternalRoutes(controller: TherapeuticContactRemindersInternalController): Router {
   const router = Router();
-  router.post('/therapeutic-projects/contact-reminders/sweep', (req: Request, res: Response) => controller.handle(req, res));
+  router.post('/therapeutic-projects/contact-reminders/sweep', routeClass('service'), (req: Request, res: Response) => controller.handle(req, res));
   return router;
 }

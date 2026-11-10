@@ -14,8 +14,9 @@ import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Import direto — páginas e layout carregam junto com o bundle admin
 import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
-import { AdminLoginPage } from './pages/admin/AdminLoginPage';
+import { AdminLoginRedirect } from './components/features/admin/AdminLoginRedirect';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
+import { NoAccessPage } from './pages/NoAccessPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
 import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
@@ -80,7 +81,6 @@ const AdmisionBrPage = lazyWithRetry(() =>
 );
 // Mantém lazy — são a fronteira worker/admin; carregados uma única vez
 const AdminProtectedRoute = lazy(() => import('./components/features/admin/AdminProtectedRoute').then(m => ({ default: m.AdminProtectedRoute })));
-const AdminLoginGuard = lazy(() => import('./components/features/admin/AdminLoginGuard').then(m => ({ default: m.AdminLoginGuard })));
 
 const AdminFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -143,6 +143,7 @@ export function App() {
       <InviteProgressPanel />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/no-access" element={<NoAccessPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/complete-whatsapp" element={<CompleteWhatsappPage />} />
         <Route path="/auth/action" element={<AuthActionPage />} />
@@ -218,15 +219,8 @@ export function App() {
         )}
 
         {/* Admin module — lazy-loaded, isolated from worker module */}
-        <Route path="/admin/login" element={
-          <AdminErrorBoundary>
-            <Suspense fallback={<AdminFallback />}>
-              <AdminLoginGuard>
-                <AdminLoginPage />
-              </AdminLoginGuard>
-            </Suspense>
-          </AdminErrorBoundary>
-        } />
+        {/* Login único: a rota legada só redireciona para /login?next=… */}
+        <Route path="/admin/login" element={<AdminLoginRedirect />} />
         {/* Nested routes — AdminLayout is the persistent shell */}
         <Route
           path="/admin"

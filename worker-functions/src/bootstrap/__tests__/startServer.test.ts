@@ -65,6 +65,7 @@ jest.mock('@modules/matching', () => ({ GoogleCalendarService: class {} }));
 const chatwootClientMock = jest.fn().mockReturnValue({});
 jest.mock('../buildChatwootClient', () => ({ buildChatwootClient: () => chatwootClientMock() }));
 
+import { readRouteClass } from '@modules/identity/permissions';
 import { startServer } from '../startServer';
 
 /** App mínima: só precisa aceitar montagem de rota e registrar o `listen`. */
@@ -183,6 +184,15 @@ describe('startServer — ramos de wiring e desligamento', () => {
     const handler = rota?.[rota.length - 1] as (req: unknown, res: unknown) => void;
     handler({ body: {} }, {});
     expect(chatwootHandleMock).toHaveBeenCalled();
+  });
+
+  it('o espelho do Chatwoot declara a classe service (T309)', async () => {
+    const app = fakeApp() as { post: jest.Mock };
+
+    await startServer(app as never, false, messaging);
+
+    const rota = app.post.mock.calls.find((c) => String(c[0]).includes('chatwoot/mirror'));
+    expect(rota?.slice(1).map((h: unknown) => readRouteClass(h))).toContain('service');
   });
 
   it('sem Chatwoot configurado, o boot segue (o cliente é opcional)', async () => {

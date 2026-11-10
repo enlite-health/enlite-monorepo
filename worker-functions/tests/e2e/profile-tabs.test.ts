@@ -6,7 +6,7 @@
  *   PUT /api/workers/me/service-area
  *   PUT /api/workers/me/availability
  *
- * Esses endpoints usam o authUid do token (header x-auth-uid) para resolver
+ * Esses endpoints usam o authUid do token (só o Bearer; x-auth-uid é ignorado) para resolver
  * o workerId, sem exigir que o cliente envie workerId no body.
  */
 
@@ -166,7 +166,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
       });
       const novoId = init.data.data.worker.id;
       const tk = await api.post('/api/test/auth/token', { uid, email: `${uid}@example.com`, role: 'worker' });
-      const headers = { headers: { Authorization: `Bearer ${tk.data.data.token}`, 'x-auth-uid': uid } };
+      const headers = { headers: { Authorization: `Bearer ${tk.data.data.token}`, 'x-auth-uid': 'uid-de-outro' } };
 
       try {
         // Telefone PRÓPRIO: o `payload` do describe carrega o número do worker
@@ -218,7 +218,8 @@ describe('Profile Tabs — Endpoints por aba', () => {
       ).rejects.toMatchObject({ response: { status: 401 } });
     });
 
-    it('deve retornar 404 se authUid não corresponde a nenhum worker', async () => {
+    // acesso-do-cliente T215: sem ficha não há recurso próprio, o Cedar do cliente nega antes do handler (era 404).
+    it('deve retornar 403 se authUid não corresponde a nenhum worker', async () => {
       const ghostTokenRes = await api.post('/api/test/auth/token', {
         uid: 'nonexistent-auth-uid',
         email: 'ghost@e2e.local',
@@ -232,7 +233,7 @@ describe('Profile Tabs — Endpoints por aba', () => {
           payload,
           { headers: { Authorization: `Bearer ${ghostToken}` } },
         ),
-      ).rejects.toMatchObject({ response: { status: 404 } });
+      ).rejects.toMatchObject({ response: { status: 403 } });
     });
 
     it('deve permitir salvar múltiplas vezes (idempotente)', async () => {

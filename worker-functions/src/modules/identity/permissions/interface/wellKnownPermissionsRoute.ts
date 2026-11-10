@@ -16,6 +16,7 @@
 
 import { Router, type RequestHandler } from 'express';
 import { cellKey } from '../domain/PermissionCell';
+import { routeClass } from '../infrastructure/catalog/routeClass';
 import type { ListPermissionCatalogUseCase } from '../application/ListPermissionCatalogUseCase';
 
 export interface WellKnownPermissionsOptions {
@@ -29,7 +30,7 @@ export function createWellKnownPermissionsRouter(
 ): Router {
   const router = Router();
 
-  router.get('/permissions', guard, async (_req, res) => {
+  router.get('/permissions', routeClass('service'), guard, async (_req, res) => {
     const categories = await listCatalog.execute({ includeDeprecated: true });
     res.json({
       service: options.ownerService,

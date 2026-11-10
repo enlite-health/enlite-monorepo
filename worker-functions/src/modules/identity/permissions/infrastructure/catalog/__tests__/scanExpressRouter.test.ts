@@ -199,7 +199,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `stack` e sem `methods` vira USE, sem quebrar', () => {
     expect(comCamadas([{ route: { path: '/api/admin/x' } }])).toEqual([
-      { method: 'USE', path: '/api/admin/x', cells: [] },
+      { method: 'USE', path: '/api/admin/x', cells: [], class: null },
     ]);
   });
 
@@ -209,7 +209,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `path` cai na raiz em vez de virar caminho vazio', () => {
     expect(comCamadas([{ route: { methods: { get: true }, stack: [] } }])).toEqual([
-      { method: 'GET', path: '/', cells: [] },
+      { method: 'GET', path: '/', cells: [], class: null },
     ]);
   });
 
@@ -217,7 +217,7 @@ describe('ramos defensivos da varredura', () => {
     const cell = { resource: 'api_docs', action: 'read' };
     const handle = markPermissionHandler(((_req, _res, next) => next()) as RequestHandler, cell);
     expect(comCamadas([{ handle, regexp: Object.assign(/^\/?$/, { fast_slash: true }) }])).toEqual([
-      { method: 'USE', path: '/', cell, cells: [cell] },
+      { method: 'USE', path: '/', cell, cells: [cell], class: null },
     ]);
   });
 
@@ -386,6 +386,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'interview_host:read', 'interview_host:update',
       // Spec 049 (F4): vínculo do Tactiq — 2 células `own_*` declaradas por rota real (`tactiqLinkRoutes.ts`).
       'own_tactiq_link:read', 'own_tactiq_link:create',
+      // acesso-do-cliente (F1, T111): registro de vínculos de área — declaradas em `adminAreaMembershipRoutes.ts` (família admin.users).
+      'area_membership:read', 'area_membership:write',
       'staff_directory:read',
       // Spec 022, Bloco 4 (fecho, 21/09): notificações in-app — `own_notifications:read|update`
       // (família `admin.users`). Mesma situação das 5 células acima: rota real existe

@@ -5092,6 +5092,53 @@
       "logout": "Sair"
     },
     "access": {
+      "areaMemberships": {
+        "title": "Vínculos de área",
+        "subtitle": "Quais áreas uma pessoa pode abrir e com qual papel. Busque por ID da pessoa ou por UID de login.",
+        "search": {
+          "mode": "Buscar por",
+          "personId": "ID da pessoa",
+          "uid": "UID de login",
+          "value": "Valor",
+          "submit": "Buscar"
+        },
+        "prompt": "Busque uma pessoa para ver os vínculos dela.",
+        "loading": "Carregando vínculos…",
+        "empty": "Esta pessoa não tem vínculos vivos.",
+        "columns": {
+          "area": "Área",
+          "role": "Papel",
+          "grantedBy": "Concedido por",
+          "grantedAt": "Data"
+        },
+        "roles": {
+          "family": "Família",
+          "learner": "Aluno(a)",
+          "teacher": "Docente",
+          "manager": "Gestor(a)"
+        },
+        "grant": {
+          "title": "Conceder vínculo",
+          "area": "Área",
+          "role": "Papel",
+          "submit": "Conceder"
+        },
+        "revoke": {
+          "open": "Revogar",
+          "reason": "Motivo da revogação (obrigatório)",
+          "confirm": "Confirmar revogação",
+          "cancel": "Cancelar"
+        },
+        "errors": {
+          "load": "Não foi possível carregar os vínculos.",
+          "notFound": "Não encontramos essa pessoa.",
+          "invalidQuery": "O valor buscado não é válido.",
+          "grant": "Não foi possível conceder o vínculo.",
+          "grantRejected": "O vínculo não pode ser concedido: confira a área e o papel.",
+          "revoke": "Não foi possível revogar o vínculo.",
+          "revokeGone": "Esse vínculo já estava revogado."
+        }
+      },
       "title": "Acessos e permissões",
       "subtitle": "Grupos, células, países e disponibilidade por país. O que você não vê aqui, não existe para você.",
       "tabs": {
@@ -5263,6 +5310,7 @@
             "upload": "Importação de arquivos",
             "user_management": "Usuários do painel",
             "permission_management": "Acessos e permissões",
+            "area_membership": "Vínculos de área",
             "patient_identity": "Identidade: nome, documento, telefone",
             "patient_clinical": "Quadro clínico: patologias, dependência, textos restritos",
             "patient_care_team": "Equipe tratante",
@@ -7603,6 +7651,37 @@
       "switchingBack": "Voltando ao seu acesso habitual…",
       "switchUnconfirmed": "Não conseguimos confirmar a troca de grupo. Tente novamente.",
       "switchRetry": "Tentar novamente"
+    }
+  },
+  "areas": {
+    "switcher": {
+      "label": "Área",
+      "ariaLabel": "Trocar de área",
+      "menuTitle": "Trocar de área",
+      "comingSoon": "Em breve"
+    },
+    "names": {
+      "backoffice": "Backoffice",
+      "care": "Care",
+      "learn": "Learn"
+    },
+    "roles": {
+      "staff": "Staff",
+      "worker": "Prestador(a)",
+      "family": "Família",
+      "learner": "Aluno(a)"
+    },
+    "noAccess": {
+      "none": {
+        "title": "Sua conta ainda não tem acesso a nenhuma área",
+        "message": "Fale com o gestor de acessos da sua equipe para que ele adicione você a uma."
+      },
+      "unavailable": {
+        "title": "Sua área ainda não está disponível",
+        "message": "Sua conta tem acesso a uma área que ainda não está disponível. Quando estiver, você poderá entrar com esta mesma conta."
+      },
+      "retry": "Tentar de novo",
+      "logout": "Sair"
     }
   }
 }

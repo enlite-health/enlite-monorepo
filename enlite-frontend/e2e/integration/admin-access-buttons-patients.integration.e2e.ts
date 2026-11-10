@@ -156,7 +156,7 @@ async function installAuthInterceptors(page: Page, u: MockUser): Promise<void> {
 
 async function loginAs(page: Page, u: MockUser): Promise<void> {
   await installAuthInterceptors(page, u);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(u.email);
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();

@@ -172,7 +172,7 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'delete',
-  path: '/api/workers/me/additional-documents/{id}',
+  path: '/api/workers/me/additional-documents/{docId}',
   tags: ['Worker · Documents'],
   summary: 'Remove documento adicional do worker',
   description:
@@ -180,7 +180,7 @@ registry.registerPath({
     'Só pode remover documentos do próprio worker autenticado.',
   security: [{ firebaseAuth: [] }],
   request: {
-    params: z.object({ id: UuidParam }),
+    params: z.object({ docId: UuidParam }),
   },
   responses: {
     200: { description: 'Documento adicional removido.', content: { 'application/json': { schema: OkMessage } } },

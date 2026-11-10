@@ -1,6 +1,8 @@
 import { Result } from '@shared/utils/Result';
 import { AdminRepository } from '../infrastructure/AdminRepository';
 import { isPermissionError, toPermissionError, type PermissionErrorCode } from '@modules/identity/permissions';
+import { PgLoginRemovalRepository } from '../infrastructure/PgLoginRemovalRepository';
+import type { AccountLoginRemoval } from './AccountLoginRemoval';
 import * as admin from 'firebase-admin';
 
 /** O único código de domínio que este use case emite — o mesmo do painel (409). */
@@ -9,7 +11,10 @@ export const LAST_MANAGER: PermissionErrorCode = 'last_manager';
 export class DeleteAdminUserUseCase {
   private adminRepo = new AdminRepository();
 
-  async execute(firebaseUid: string): Promise<Result<void>> {
+  constructor(private loginRemoval: AccountLoginRemoval = new PgLoginRemovalRepository()) {}
+
+  /** `actorUid`: quem pede (vai para revoked_by); ausente → a própria conta. */
+  async execute(firebaseUid: string, actorUid?: string): Promise<Result<void>> {
     try {
       // 0. Anti-lockout (410): o último gestor não sai por aqui. Checado ANTES do
       //    Firebase porque a ordem abaixo apaga a conta lá primeiro — a recusa do
@@ -22,6 +27,9 @@ export class DeleteAdminUserUseCase {
 
       // 1. Delete from Firebase
       await admin.auth().deleteUser(firebaseUid);
+
+      // 1b. Conta apagada → o login sai do iam (DF-20).
+      await this.loginRemoval.markDeleted(firebaseUid, actorUid ?? firebaseUid);
 
       // 2. Delete from DB — o trigger `trg_users_guard_last_manager` é a segunda tranca.
       await this.adminRepo.deleteByFirebaseUid(firebaseUid);

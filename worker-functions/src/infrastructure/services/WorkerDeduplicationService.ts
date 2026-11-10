@@ -286,6 +286,15 @@ export class WorkerDeduplicationService {
         [canonicalId, duplicateId],
       );
 
+      // 4. Une as PESSOAS (iam) por ponteiro, na mesma transação. Este caminho não tem
+      //    worker_merge_audit: auditId NULL = merge sem undo possível.
+      await client.query(
+        `SELECT iam.merge_person(a.auth_uid, s.auth_uid, NULL)
+           FROM workers a, workers s
+          WHERE a.id = $1 AND s.id = $2`,
+        [duplicateId, canonicalId],
+      );
+
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');

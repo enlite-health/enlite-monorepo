@@ -75,9 +75,9 @@ test.describe('login cai na Gestão à Vista @integration', () => {
     await expect(page).toHaveURL(DASHBOARD_URL);
   });
 
-  test('ALTERNATIVO 1 — já autenticado abrindo /admin/login é levado a /admin/dashboard (AdminLoginGuard)', async ({ page }) => {
+  test('ALTERNATIVO 1 — já autenticado abrindo /login?next=/admin cai em /admin/dashboard (regra de destino do login único)', async ({ page }) => {
     await loginAs(page, STAFF_COM);
-    await page.goto('/admin/login');
+    await page.goto('/login?next=%2Fadmin');
     await expect(page).toHaveURL(DASHBOARD_URL, { timeout: 15_000 });
 
     await page.waitForTimeout(1_500);
