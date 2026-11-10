@@ -42,7 +42,10 @@ jobs:
     # 15 min não bastava: no PR #299 o job foi cancelado no teto com 181 de 182 suítes
     # concluídas, e agora entram o boot do container da OMS (~16 s) e a ingestão (~13 s
     # medidos localmente). O teto é rede de segurança contra travamento, não orçamento.
-    timeout-minutes: 30
+    # 30 → 40 (acesso-do-cliente, PALIATIVO declarado): no run 42726917702 a mediana por suíte foi 3,1 s contra 1,5 s do
+    # controle (+1,6 s em 383 de 401 suítes comuns; 1662 s para 419 suítes contra 1067 s para 446), e o job bateu os 30 min.
+    # Local (macOS) a suíte inteira leva 990 s. Causa do custo por suíte não medida — ver a LISTA da change.
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: worker-functions
