@@ -55,12 +55,17 @@ export class ClientRouteAuthorizationEngine implements IAuthorizationEngine {
     return this.cedar.listAccessibleResources(context, resourceType, action);
   }
 
+  /**
+   * Resolve a árvore do login UMA vez (InitPlan: `person_login_uids` já sobe à raiz e desce a árvore) e só então lê
+   * `workers` pelo índice de `auth_uid`. Nunca chamar função SECURITY DEFINER por linha de `workers`: a forma
+   * anterior (`person_root(resolve_person(w.auth_uid)) = …`) varria as ~8,2 mil fichas vivas, ~250 ms por request
+   * na réplica de prd, contra ~1,5 ms desta (medido 09/11). Mesma semântica: login sem pessoa → só `auth_uid = uid`.
+   */
   private async selfWorkerId(uid: string): Promise<string | null> {
     const r = await this.pool.query<{ id: string }>(
       `SELECT w.id FROM workers w
         WHERE w.merged_into_id IS NULL
-          AND (w.auth_uid = $1
-               OR iam.person_root(iam.resolve_person('firebase', w.auth_uid)) = iam.person_root(iam.resolve_person('firebase', $1)))
+          AND w.auth_uid = ANY (ARRAY(SELECT $1 UNION ALL SELECT iam.person_login_uids(iam.resolve_person('firebase', $1))))
         ORDER BY (w.auth_uid = $1) DESC, w.created_at ASC
         LIMIT 1`,
       [uid],
