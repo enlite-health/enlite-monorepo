@@ -18,7 +18,7 @@ export function AreaPeoplePagination({ page, perPage, total, onPrev, onNext, onP
   const pages = Math.max(1, Math.ceil(total / perPage));
   const start = (page - 1) * perPage;
   return (
-    <div data-testid="pagination" className="[&_p]:!text-[#374151] [&_select+svg]:!text-[#737373]">
+    <div data-testid="pagination" className="[&_p]:!text-[#374151]">
       <TablePagination
         currentPage={page}
         totalPages={pages}

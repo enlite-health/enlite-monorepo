@@ -85,6 +85,7 @@
     "chats": "Chats",
     "searchCountry": "Buscar país...",
     "previousPage": "Página anterior",
+    "rowsPerPage": "Linhas por página",
     "nextPage": "Próxima página",
     "pageRange": "{{start}} - {{end}} de {{total}}",
     "view": "Ver",

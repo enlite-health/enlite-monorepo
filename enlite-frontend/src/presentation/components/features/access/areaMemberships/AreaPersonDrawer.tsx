@@ -17,6 +17,7 @@ import {
 } from '@domain/entities/AreaMembership';
 import { AreaGrantFields } from './AreaGrantFields';
 import { GRANT_AREAS } from './grantAreas';
+import { FOCUS_RING_KEYBOARD_ONLY } from './formStyles';
 import { AreaMembershipChip } from './AreaMembershipChip';
 import { AreaPersonAvatar } from './AreaPersonAvatar';
 import { AreaPersonKindBadge } from './AreaPersonKindBadge';
@@ -196,7 +197,7 @@ export function AreaPersonDrawer({ person, onClose, onChanged }: AreaPersonDrawe
             <AreaGrantFields area={area} role={role} onArea={changeArea} onRole={(r) => { setRole(r); setGrantError(null); }} />
             {grantError && <div className="mt-3"><PanelErrorAlert keyName={grantError} /></div>}
             <div className="flex justify-end mt-4">
-              <Button type="submit" size="compact" variant="primary" disabled={busy} data-testid="area-grant-submit">{t(`${K}.grant.submit`)}</Button>
+              <Button type="submit" size="compact" variant="primary" className={FOCUS_RING_KEYBOARD_ONLY} disabled={busy} data-testid="area-grant-submit">{t(`${K}.grant.submit`)}</Button>
             </div>
           </form>
         </section>

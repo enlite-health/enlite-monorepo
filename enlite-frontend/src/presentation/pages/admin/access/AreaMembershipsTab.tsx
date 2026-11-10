@@ -128,7 +128,7 @@ export function AreaMembershipsTab(): JSX.Element {
       {selected && canWrite && <AreaPersonDrawer person={selected} onClose={closeDrawer} onChanged={changed} />}
       {toast && createPortal(
         <div
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-primary text-white px-4 py-2 rounded-lg shadow-medium"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-primary text-white leading-5 px-4 py-2 rounded-lg shadow-medium"
           role="status"
           data-testid="area-toast"
         >

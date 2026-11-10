@@ -14,3 +14,6 @@ export const BUTTON_35 = '!h-[35px]';
 
 /** Seta do Combobox a 16px e, desabilitado, borda sólida + seta #737373 (o atom põe tracejado e #D9D9D9) — o `<select disabled>` do desenho não muda de aparência; (o atom desenha 20px; o `<select>` do desenho tem 16px) — por seletor, sem mexer no atom. */
 export const DENSE_CHEVRON = '[&_button>svg]:!w-4 [&_button>svg]:!h-4 [&_button>svg]:!-mr-[3px] [&_button>svg]:translate-y-px [&_button:disabled]:!border-solid [&_button:disabled>svg]:!text-[#737373]';
+
+/** Anel de foco só pelo teclado: depois de um clique do mouse o botão não fica "aceso" (o desenho recria o DOM e perde o foco). */
+export const FOCUS_RING_KEYBOARD_ONLY = 'focus:!ring-0 focus-visible:!ring-2';
