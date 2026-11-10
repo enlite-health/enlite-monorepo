@@ -2,8 +2,8 @@
  * person-login-removal.e2e.test.ts — conta apagada (spec acesso-do-cliente, F1, T132; DF-20, design §2.2).
  *
  * Os use cases REAIS (DeleteUser, DeleteUserByEmail, DeleteAdminUser) + o adapter REAL (PgLoginRemovalRepository)
- * contra o banco, conectado como membro de app_runtime (sem superuser). O Firebase Admin é dublê (`jest.spyOn`, nunca o
- * Firebase real). O `AdminRepository` é o REAL: `isLastManager` e `deleteByFirebaseUid` rodam contra o Postgres, com linha
+ * contra o banco, conectado como membro de app_runtime (sem superuser). O Firebase (Admin e Identity Platform) é dublê declarado
+ * (`jest.spyOn` / `google`; nunca o real). `UserRepository` e `AdminRepository` são os REAIS, contra o Postgres, com linha
  * real em `users` onde o caso precisa. O prestador "puro" não tem linha em users. Fixtures sintéticas, sem PII.
  */
 import { randomBytes } from 'crypto';
@@ -16,6 +16,7 @@ const mockFirebaseDelete = jest.fn();
 import { DeleteUserUseCase } from '../../src/modules/identity/application/DeleteUserUseCase';
 import { DeleteUserByEmailUseCase } from '../../src/modules/identity/application/DeleteUserByEmailUseCase';
 import { DeleteAdminUserUseCase } from '../../src/modules/identity/application/DeleteAdminUserUseCase';
+import { UserRepository } from '../../src/modules/identity/infrastructure/UserRepository';
 import { PgLoginRemovalRepository } from '../../src/modules/identity/infrastructure/PgLoginRemovalRepository';
 
 const DATABASE_URL =
@@ -40,13 +41,17 @@ const urlAs = (user: string, password: string) => {
 
 /** Firebase dublê: `existe=false` imita "conta já ausente" — o service real devolve ok (NOT_FOUND = sucesso). */
 const google = { deleteUser: jest.fn(), deleteUserByEmail: jest.fn() };
-/** `users` dublê: o prestador puro não tem linha (userExists=false). */
-const users = {
-  existsByFirebaseUid: jest.fn(),
-  deleteUserComplete: jest.fn(),
-  findByEmail: jest.fn(),
-};
-const deleteUser = () => new DeleteUserUseCase(users as any, google as any, removal);
+/** `UserRepository` REAL sobre o Postgres (o singleton lê `DATABASE_URL`, setado no beforeAll). O prestador puro não tem linha em users. */
+const deleteUser = () => new DeleteUserUseCase(new UserRepository(), google as any, removal);
+const emailOf = (n: string) => `${uid(n)}@e2e.local`;
+/** Linha REAL em `users` (staff sem grupo), para os casos em que a conta tem registro além do iam. */
+const semeiaUsers = (n: string) =>
+  admin.query(
+    `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1, $2, 'admin', 'ACTIVE', true, $3)`,
+    [uid(n), emailOf(n), TENANT],
+  );
+const linhasEmUsers = async (n: string): Promise<string> =>
+  (await admin.query(`SELECT count(*) AS n FROM users WHERE firebase_uid = $1`, [uid(n)])).rows[0].n;
 
 const pessoa = async (n: string): Promise<string> =>
   (await runtime.query(`SELECT iam.ensure_person('firebase', $1) AS p`, [uid(n)])).rows[0].p;
@@ -87,9 +92,6 @@ beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   google.deleteUser.mockReset().mockResolvedValue(Result.ok());
   google.deleteUserByEmail.mockReset().mockResolvedValue(Result.ok());
-  users.existsByFirebaseUid.mockReset().mockResolvedValue(Result.ok(false));
-  users.deleteUserComplete.mockReset().mockResolvedValue(Result.ok());
-  users.findByEmail.mockReset();
   mockFirebaseDelete.mockReset().mockResolvedValue(undefined);
 });
 
@@ -101,7 +103,7 @@ describe('DeleteUserUseCase → iam.remove_login', () => {
     const r = await deleteUser().execute({ authUid: uid('basico') });
 
     expect(r.isSuccess).toBe(true);
-    expect(users.deleteUserComplete).not.toHaveBeenCalled();
+    expect(await linhasEmUsers('basico')).toBe('0'); // nunca teve linha, e o login saiu mesmo assim
     const l = await login('basico');
     expect(l.removed_at).toBeInstanceOf(Date);
     expect(l.removed_reason).toBe('account_deleted');
@@ -110,8 +112,11 @@ describe('DeleteUserUseCase → iam.remove_login', () => {
   it('última conta da árvore → vínculos vivos revogados com account_deleted (revoked_by = ator)', async () => {
     const p = await pessoa('ultima');
     await grantLearn(p);
+    await semeiaUsers('ultima');
 
     await deleteUser().execute({ authUid: uid('ultima') });
+
+    expect(await linhasEmUsers('ultima')).toBe('0'); // o UserRepository real apagou a linha
 
     expect(await memberships(p)).toEqual([{ revogado: true, revoked_by: uid('ultima'), reason: 'account_deleted' }]);
   });
@@ -143,11 +148,13 @@ describe('DeleteUserUseCase → iam.remove_login', () => {
 
   it('Firebase falhou → o login NÃO é marcado', async () => {
     await pessoa('fb-falha');
+    await semeiaUsers('fb-falha');
     google.deleteUser.mockResolvedValue(Result.fail('x'));
 
     const r = await deleteUser().execute({ authUid: uid('fb-falha') });
 
     expect(r.isFailure).toBe(true);
+    expect(await linhasEmUsers('fb-falha')).toBe('1'); // Firebase falhou: a linha em users fica
     expect((await login('fb-falha')).removed_at).toBeNull();
   });
 
@@ -163,12 +170,13 @@ describe('os outros caminhos conta-apagada usam a mesma porta', () => {
   it('DeleteUserByEmailUseCase: marca o login e grava o ator informado', async () => {
     const p = await pessoa('email');
     await grantLearn(p);
-    users.findByEmail.mockResolvedValue(Result.ok({ firebase_uid: uid('email'), email: 'x@example.test', role: 'worker' }));
+    await semeiaUsers('email');
 
-    const r = await new DeleteUserByEmailUseCase(users as any, google as any, removal)
-      .execute({ email: 'x@example.test', actorUid: ATOR });
+    const r = await new DeleteUserByEmailUseCase(new UserRepository(), google as any, removal)
+      .execute({ email: emailOf('email'), actorUid: ATOR });
 
     expect(r.isSuccess).toBe(true);
+    expect(await linhasEmUsers('email')).toBe('0');
     expect((await login('email')).removed_reason).toBe('account_deleted');
     expect(await memberships(p)).toEqual([{ revogado: true, revoked_by: ATOR, reason: 'account_deleted' }]);
   });
