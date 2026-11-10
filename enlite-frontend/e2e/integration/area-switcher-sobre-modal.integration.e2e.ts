@@ -6,39 +6,34 @@
  *
  * Regressão curta, pela borda real do navegador: staff com MAIS de uma área navegável abre o modal do catálogo
  * terapêutico e clica no X com click real (o Playwright recusa o clique se outro elemento o intercepta).
- * Só `GET /v1/me/areas` é substituído (o stack de CI não tem uma pessoa com staff + prestador); o resto é o stack real.
+ * Sem mock de DADO: a pessoa tem linha em `users` (staff) E ficha em `workers` (prestador) com o mesmo uid, e `GET /v1/me/areas`
+ * vem da API real com banco real (`installAuthInterceptors` só troca o Authorization por `mock_*`; a resposta é a real).
  */
 import { test, expect } from '@playwright/test';
 import { runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
 
+const TENANT = '00000000-0000-0000-0000-000000000001';
 const STAMP = Date.now();
-const STAFF: MockUser = { uid: `e2e-areasw-${STAMP}`, email: `e2e.areasw.${STAMP}@enlite.health`, role: 'admin', country: 'AR' };
+const STAFF: MockUser = { uid: `e2e-areasw-${STAMP}`, email: `e2e.areasw.${STAMP}@enlite.health`, role: 'recruiter', country: 'AR' };
 
 test.use({ viewport: { width: 1600, height: 1000 } });
 
 test.afterAll(() => {
+  try { runSQL(`DELETE FROM workers WHERE auth_uid = '${STAFF.uid}'`); } catch { /* idem */ }
   try { runSQL(`DELETE FROM users WHERE email = '${STAFF.email}'`); } catch { /* limpeza não esconde o resultado */ }
 });
 
 test('com > 1 área navegável, a tira do seletor aparece e NÃO intercepta o X do modal do catálogo @integration', async ({ page }) => {
-  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${STAFF.uid}', '${STAFF.email}', 'E2E AreaSw', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
-  await loginComoStaffMock(page, STAFF, 'E2E AreaSw');
-  await page.route('**/v1/me/areas', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        areas: [
-          { area: 'backoffice', role: 'staff', entryRoute: '/admin' },
-          { area: 'care', role: 'worker', entryRoute: '/' },
-        ],
-        tokenRefreshRequired: false,
-      }),
-    }),
+  // Mesma semente do `unified-login` (`linhaDeStaff` + `fichaDePrestador`): staff que também é prestador → 2 áreas navegáveis.
+  runSQL(
+    `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id)
+     VALUES ('${STAFF.uid}', '${STAFF.email}', 'E2E AreaSw', 'recruiter', 'ACTIVE', true, '${TENANT}')
+     ON CONFLICT (firebase_uid) DO UPDATE SET email = EXCLUDED.email, status = 'ACTIVE', is_active = true`,
   );
-
+  runSQL(`INSERT INTO workers (auth_uid, email, status, country) VALUES ('${STAFF.uid}', '${STAFF.email}', 'INCOMPLETE_REGISTER', 'AR')`);
+  await loginComoStaffMock(page, STAFF, 'E2E AreaSw');
   await page.goto('/admin/catalogos/objetivos-especificos');
   await expect(page.getByTestId('area-switcher-trigger')).toBeVisible({ timeout: 30_000 }); // controle de não-vacuidade: a tira existe
   await expect(page.getByTestId('therapeutic-catalog-table')).toBeVisible();
