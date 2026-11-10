@@ -85,6 +85,7 @@
     "chats": "Chats",
     "searchCountry": "Buscar país...",
     "previousPage": "Página anterior",
+    "rowsPerPage": "Filas por página",
     "nextPage": "Próxima página",
     "pageRange": "{{start}} - {{end}} de {{total}}",
     "view": "Ver",
@@ -5173,22 +5174,55 @@
     "access": {
       "areaMemberships": {
         "title": "Vínculos de área",
-        "subtitle": "Qué áreas puede abrir una persona y con qué rol. Buscala por ID de persona o por UID de login.",
-        "search": {
-          "mode": "Buscar por",
-          "personId": "ID de persona",
-          "uid": "UID de login",
-          "value": "Valor",
-          "submit": "Buscar"
+        "subtitle": "Qué áreas puede abrir cada persona y con qué rol.",
+        "subtitleSearch": "Buscá por nombre o e-mail.",
+        "auditLabel": "Vista de auditoría:",
+        "auditText": "solo personas con al menos un vínculo vivo.",
+        "toolbar": {
+          "search": "Buscar persona",
+          "searchPlaceholder": "Nombre o e-mail",
+          "minChars": "Escribí al menos 3 caracteres para buscar.",
+          "type": "Tipo",
+          "onlyWithMembership": "Solo con vínculo"
         },
-        "prompt": "Buscá una persona para ver sus vínculos.",
-        "loading": "Cargando vínculos…",
-        "empty": "Esta persona no tiene vínculos vivos.",
+        "kinds": {
+          "all": "Todos",
+          "staff": "Staff",
+          "worker": "Prestador",
+          "account": "Solo cuenta"
+        },
         "columns": {
-          "area": "Área",
-          "role": "Rol",
-          "grantedBy": "Concedido por",
-          "grantedAt": "Fecha"
+          "name": "Nombre",
+          "email": "E-mail",
+          "kind": "Tipo",
+          "memberships": "Vínculos actuales",
+          "actions": "Acciones"
+        },
+        "manage": "Gestionar",
+        "manageAria": "Gestionar vínculos de {{name}}",
+        "loadingLabel": "Cargando personas",
+        "loadingText": "Cargando personas…",
+        "retry": "Reintentar",
+        "emptySearch": "No encontramos a nadie con «{{term}}».",
+        "emptyFilters": "No hay personas con estos filtros.",
+        "lookup": {
+          "open": "Buscar por e-mail exacto",
+          "hint": "¿No aparece la persona?",
+          "title": "Buscar por e-mail exacto",
+          "help": "Para cuentas de login que no tienen ficha ni vínculos y por eso no aparecen en la lista.",
+          "email": "E-mail",
+          "placeholder": "persona@ejemplo.com",
+          "submit": "Buscar",
+          "cancel": "Cancelar",
+          "none": "No existe ninguna cuenta con ese e-mail.",
+          "newAccount": "Cuenta de login sin ficha y sin vínculos.",
+          "inList": "Ya aparece en la lista.",
+          "error": "No se pudo buscar la cuenta."
+        },
+        "drawer": {
+          "ariaLabel": "Vínculos de {{name}}",
+          "current": "Vínculos actuales",
+          "none": "Esta persona no tiene vínculos vivos."
         },
         "roles": {
           "family": "Familia",
@@ -5204,24 +5238,30 @@
         },
         "revoke": {
           "open": "Revocar",
+          "openAria": "Revocar {{vinculo}} de {{name}}",
           "reason": "Motivo de la revocación (obligatorio)",
           "confirm": "Confirmar revocación",
           "cancel": "Cancelar"
         },
+        "toast": {
+          "granted": "Vínculo concedido.",
+          "revoked": "Vínculo revocado."
+        },
         "errors": {
           "load": "No se pudieron cargar los vínculos.",
-          "notFound": "No encontramos a esa persona.",
-          "invalidQuery": "El valor buscado no es válido.",
           "grant": "No se pudo conceder el vínculo.",
+          "grantDuplicate": "Esta persona ya tiene ese vínculo.",
           "grantRejected": "El vínculo no se puede conceder: revisá el área y el rol.",
           "revoke": "No se pudo revocar el vínculo.",
-          "revokeGone": "Ese vínculo ya estaba revocado."
+          "revokeGone": "Ese vínculo ya estaba revocado.",
+          "reload": "Se concedió el vínculo, pero no pudimos recargar los vínculos de la persona."
         }
       },
       "title": "Accesos y permisos",
       "subtitle": "Grupos, células, países y disponibilidad por país. Lo que no ves acá, no existe para vos.",
       "tabs": {
         "groups": "Grupos",
+        "areaMemberships": "Vínculos de área",
         "features": "Funciones por país",
         "history": "Historial"
       },

@@ -7,19 +7,28 @@ import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { ActionButton, PanelErrorAlert } from '@presentation/components/features/access';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
-import { AreaMembershipsSection } from './AreaMembershipsSection';
 import { panelErrorKey } from './panelErrors';
 
 /**
  * `/admin/access` — a lista de grupos. "Novo grupo" é `ActionButton`: sem
- * `permission_management:write` ele não existe, e o formulário tampouco. Abaixo, a seção de vínculos
- * de área (T411): exige também `area_membership:read|write` e some do DOM sem a célula.
+ * `permission_management:write` ele não existe, e o formulário tampouco. Os vínculos de área
+ * são a aba vizinha (`/admin/access/area-memberships`).
  */
+/**
+ * Desvios do desenho (protótipo "Vínculos de área", estado 01) que valem SÓ nesta lista — classes locais,
+ * nunca token global: textos secundários em #374151 (o do atom é #737373, 4,7:1), rótulo do checkbox
+ * centrado e sem a folga do atom.
+ */
+const ARCHIVED_CHECKBOX = '[&_label]:!items-center [&_label]:!min-h-0 [&_label>div]:!mt-0 [&_label>span]:!text-[#374151] [&_label>span]:!leading-4';
+const HEAD = 'text-[#374151]';
+const CELL = '!leading-5';
+/** O `td` do desenho é 14px/20px; sem isto o strut de 16px/24px do `td` desce o texto 1px. */
+const CELL_BOX = '!text-sm !leading-5';
+
 export function AccessPage(): JSX.Element {
   return (
     <AccessGate>
       <GroupsList />
-      <AreaMembershipsSection />
     </AccessGate>
   );
 }
@@ -78,6 +87,7 @@ function GroupsList(): JSX.Element {
           <Checkbox
             id="include-archived"
             label={t('admin.access.groups.includeArchived')}
+            className={ARCHIVED_CHECKBOX}
             checked={includeArchived}
             onChange={(e) => setIncludeArchived(e.target.checked)}
           />
@@ -116,26 +126,26 @@ function GroupsList(): JSX.Element {
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-400">
           <Table>
             <TableHeader>
-              <TableHead>{t('admin.access.groups.name')}</TableHead>
-              <TableHead>{t('admin.access.groups.cells')}</TableHead>
-              <TableHead>{t('admin.access.groups.countries')}</TableHead>
-              <TableHead>{t('admin.access.groups.members')}</TableHead>
-              <TableHead align="right" />
+              <TableHead className={HEAD}>{t('admin.access.groups.name')}</TableHead>
+              <TableHead className={HEAD}>{t('admin.access.groups.cells')}</TableHead>
+              <TableHead className={HEAD}>{t('admin.access.groups.countries')}</TableHead>
+              <TableHead className={HEAD}>{t('admin.access.groups.members')}</TableHead>
+              <TableHead align="right" className={HEAD} />
             </TableHeader>
             <TableBody>
               {groups.map((g) => (
                 <TableRow key={g.id}>
-                  <TableCell weight="medium">
-                    {g.name}
-                    {g.isSystem && <Text as="span" size="xs" color="secondary"> · {t('admin.access.groups.system')}</Text>}
-                    {g.archivedAt && <Text as="span" size="xs" color="secondary"> · {t('admin.access.groups.archived')}</Text>}
+                  <TableCell unwrapped>
+                    <Text as="span" size="sm" weight="medium" color="primary">{g.name}</Text>
+                    {g.isSystem && <>{' '}<Text as="span" size="xs" color="tertiary">· {t('admin.access.groups.system')}</Text></>}
+                    {g.archivedAt && <>{' '}<Text as="span" size="xs" color="tertiary">· {t('admin.access.groups.archived')}</Text></>}
                   </TableCell>
-                  <TableCell>{g.cells.length}</TableCell>
-                  <TableCell>{g.countries.join(', ') || '—'}</TableCell>
-                  <TableCell>{g.memberCount}</TableCell>
+                  <TableCell unwrapped className={CELL_BOX}><Text as="span" size="sm" color="tertiary" className={CELL}>{g.cells.length}</Text></TableCell>
+                  <TableCell unwrapped className={CELL_BOX}><Text as="span" size="sm" color="tertiary" className={CELL}>{g.countries.join(', ') || '—'}</Text></TableCell>
+                  <TableCell unwrapped className={CELL_BOX}><Text as="span" size="sm" color="tertiary" className={CELL}>{g.memberCount}</Text></TableCell>
                   <TableCell unwrapped align="right">
-                    <button type="button" className="text-blue-600 hover:underline" onClick={() => navigate(`/admin/access/groups/${g.id}`)}>
-                      <Text as="span" size="xs" color="inherit">{t('admin.access.groups.open')}</Text>
+                    <button type="button" className="text-blue-700 underline" onClick={() => navigate(`/admin/access/groups/${g.id}`)}>
+                      <Text as="span" size="xs" color="inherit" className="!leading-4">{t('admin.access.groups.open')}</Text>
                     </button>
                   </TableCell>
                 </TableRow>

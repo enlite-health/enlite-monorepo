@@ -426,8 +426,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Vincular a PRÓPRIA conta do Tactiq (OAuth no navegador). O token fica cifrado e só o teste diário o usa; nunca '
     + 'vincula a conta de outro usuário. Quais perfis recebem esta célula é decisão do Diego.',
   'area_membership:read':
-    'Ver os vínculos de ÁREA vivos de uma pessoa (cuidado·família, aprendizado·aluno/professor/gestor): qual área, qual papel, '
-    + 'quem concedeu e quando. Busca por pessoa ou por login. Não mostra nome, e-mail nem telefone.',
+    'Ver a lista de pessoas da aba "Vínculos de área" e os vínculos de ÁREA vivos de cada uma (cuidado·família, '
+    + 'aprendizado·aluno/professor/gestor): qual área e qual papel. Mostra NOME e E-MAIL de staff, prestadores e contas só de login '
+    + '(estas vêm do Firebase) e aceita busca por nome, e-mail ou telefone e por e-mail exato. Não devolve telefone, documento '
+    + 'nem dado clínico.',
   'area_membership:write':
     'Conceder e revogar o vínculo de ÁREA de uma pessoa. Conceder abre o acesso à área na próxima renovação do token; revogar encerra '
     + 'as sessões dela já (motivo obrigatório). Quais perfis recebem esta célula é decisão da operação, nunca de migration.',

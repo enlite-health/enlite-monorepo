@@ -48,13 +48,4 @@ export interface WorkerListItem {
   createdAt: string;
 }
 
-/**
- * Verifica se todos os tokens da busca aparecem em ao menos um dos campos.
- * Suporta multi-palavra ("John Snow") e é insensível a acentos/case.
- */
-export function matchesSearch(searchTerm: string, fields: string[]): boolean {
-  const tokens = normalizeSearch(searchTerm).split(/\s+/).filter(Boolean);
-  const normalizedFields = fields.map(normalizeSearch);
-  const concatenated = normalizedFields.join(' ');
-  return tokens.every((token) => concatenated.includes(token));
-}
+export { matchesSearch } from '@shared/security/workerNameSearch';

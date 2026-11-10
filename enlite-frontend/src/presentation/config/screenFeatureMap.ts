@@ -54,7 +54,7 @@ export const SCREEN_FEATURE_MAP: Readonly<Record<string, ScreenFeatureEntry>> = 
   'screen:management-dashboard': { navHref: '/admin/dashboard', routes: ['/admin/dashboard'] },
   'screen:access-permissions': {
     navHref: '/admin/access',
-    routes: ['/admin/access', '/admin/access/groups/:id', '/admin/access/features', '/admin/access/audit'],
+    routes: ['/admin/access', '/admin/access/area-memberships', '/admin/access/groups/:id', '/admin/access/features', '/admin/access/audit'],
   },
   /** Sem item de topo — chega-se via link dentro do detalhe de vaga (`vacancies/:id/talentum`). */
   'screen:talentum': { routes: ['/admin/vacancies/:id/talentum'] },

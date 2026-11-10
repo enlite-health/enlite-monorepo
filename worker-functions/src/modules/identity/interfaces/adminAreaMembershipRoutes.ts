@@ -7,7 +7,7 @@ import { ADMIN_USERS_FAMILY } from '@modules/identity/permissions';
  * Rotas de staff do registro de vínculos de área (design §3 "Rotas de staff"; change
  * acesso-do-cliente-areas-e-login-unico, T111). Montada sob `/api/admin`.
  *
- * Contrato (T113): GET/POST `/area-memberships` e POST `/area-memberships/:id/revoke`; handlers = `AreaMembershipController`
+ * Contrato (T113): GET/POST `/area-memberships` e POST `/area-memberships/:id/revoke`; aba de pessoas: GET `/area-memberships/people` e `/people/by-email`; handlers = `AreaMembershipController`
  * (T111). Sem handlers injetados, cada rota responde 501 (o teste de contrato de rotas monta o router assim). Famílias/células: `admin.users` (agrupamento temático,
  * mesmo molde de `adminStaffDirectoryRoutes.ts`); células LITERAIS no `perm.require`, nunca em variável/closure
  * (`celula-em-closure-nao-entra-no-catalogo`). `staffOnly` SEMPRE antes de `perm.require`.
@@ -16,6 +16,8 @@ import { ADMIN_USERS_FAMILY } from '@modules/identity/permissions';
  */
 export interface AreaMembershipHandlers {
   list(req: Request, res: Response): unknown;
+  people(req: Request, res: Response): unknown;
+  peopleByEmail(req: Request, res: Response): unknown;
   grant(req: Request, res: Response): unknown;
   revoke(req: Request, res: Response): unknown;
 }
@@ -26,6 +28,8 @@ const notImplemented = (_req: Request, res: Response) => {
 
 const NOT_IMPLEMENTED_HANDLERS: AreaMembershipHandlers = {
   list: notImplemented,
+  people: notImplemented,
+  peopleByEmail: notImplemented,
   grant: notImplemented,
   revoke: notImplemented,
 };
@@ -41,6 +45,16 @@ export function createAdminAreaMembershipRoutes(
 
   router.get('/area-memberships', staffOnly, perm.require('area_membership', 'read'), (req: Request, res: Response) =>
     handlers.list(req, res),
+  );
+  // `/people` e `/people/by-email` ANTES de qualquer `/:id`; célula `area_membership:read` (a aba existe só com ela).
+  router.get('/area-memberships/people', staffOnly, perm.require('area_membership', 'read'), (req: Request, res: Response) =>
+    handlers.people(req, res),
+  );
+  router.get(
+    '/area-memberships/people/by-email',
+    staffOnly,
+    perm.require('area_membership', 'read'),
+    (req: Request, res: Response) => handlers.peopleByEmail(req, res),
   );
   router.post('/area-memberships', staffOnly, perm.require('area_membership', 'write'), (req: Request, res: Response) =>
     handlers.grant(req, res),
