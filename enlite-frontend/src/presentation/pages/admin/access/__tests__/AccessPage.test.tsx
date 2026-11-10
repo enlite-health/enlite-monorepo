@@ -144,21 +144,22 @@ describe('AccessPage — rótulos de sistema/arquivado e nome só com espaços',
   });
 });
 
-describe('AccessPage — seção de vínculos de área (T411)', () => {
+describe('AccessPage — a aba "Vínculos de área" (a seção antiga saiu da página)', () => {
   beforeEach(() => { api.listGroups.mockReset().mockResolvedValue([GRUPO]); });
 
-  it('sem `area_membership:read` a seção não existe; com ela, aparece abaixo de Grupos', async () => {
+  it('a página de grupos NÃO carrega mais a seção de vínculos; a aba só existe com `area_membership:read`', async () => {
     postura('read');
     const { unmount } = renderRota(<AccessPage />, '/admin/access');
     await screen.findByText('Recrutadores AR');
     expect(screen.queryByTestId('area-memberships-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('access-tab-area-memberships')).not.toBeInTheDocument();
     unmount();
 
     postura('read');
     useAdminAuthStore.setState((s) => ({ authz: { ...s.authz!, permissions: ['permission_management:read', 'area_membership:read'] } }));
     renderRota(<AccessPage />, '/admin/access');
-    const groups = await screen.findByTestId('access-groups-header');
-    const section = screen.getByTestId('area-memberships-section');
-    expect(groups.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await screen.findByText('Recrutadores AR');
+    expect(screen.getByTestId('access-tab-area-memberships')).toHaveAttribute('href', '/admin/access/area-memberships');
+    expect(screen.queryByTestId('area-memberships-section')).not.toBeInTheDocument();
   });
 });

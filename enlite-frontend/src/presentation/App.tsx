@@ -19,7 +19,7 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { NoAccessPage } from './pages/NoAccessPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
-import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
+import { AccessPage, AreaMembershipsPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
 import { PedidosIaPage } from './pages/admin/pedidos-ia';
 import { CustosPage } from './pages/admin/custos';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
@@ -303,6 +303,8 @@ export function App() {
           <Route path="custos" element={<CustosPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />
+          {/* Aba "Vínculos de área": a guarda é `area_membership:read` (AccessGate com tab) — quem só tem ela entra só aqui. */}
+          <Route path="access/area-memberships" element={<FeatureRouteGate feature="screen:access-permissions"><AreaMembershipsPage /></FeatureRouteGate>} />
           <Route path="access/groups/:id" element={<FeatureRouteGate feature="screen:access-permissions"><GroupDetailPage /></FeatureRouteGate>} />
           <Route path="access/features" element={<FeatureRouteGate feature="screen:access-permissions"><CountryFeaturesPage /></FeatureRouteGate>} />
           {/* Histórico de mudanças de permissão — substitui a Auditoría ALLOW/DENY (mesma URL, mesma célula). */}

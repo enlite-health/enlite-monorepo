@@ -5094,22 +5094,55 @@
     "access": {
       "areaMemberships": {
         "title": "Vínculos de área",
-        "subtitle": "Quais áreas uma pessoa pode abrir e com qual papel. Busque por ID da pessoa ou por UID de login.",
-        "search": {
-          "mode": "Buscar por",
-          "personId": "ID da pessoa",
-          "uid": "UID de login",
-          "value": "Valor",
-          "submit": "Buscar"
+        "subtitle": "Quais áreas cada pessoa pode abrir e com qual papel.",
+        "subtitleSearch": "Busque por nome ou e-mail.",
+        "auditLabel": "Visão de auditoria:",
+        "auditText": "somente pessoas com pelo menos um vínculo vivo.",
+        "toolbar": {
+          "search": "Buscar pessoa",
+          "searchPlaceholder": "Nome ou e-mail",
+          "minChars": "Digite pelo menos 3 caracteres para buscar.",
+          "type": "Tipo",
+          "onlyWithMembership": "Somente com vínculo"
         },
-        "prompt": "Busque uma pessoa para ver os vínculos dela.",
-        "loading": "Carregando vínculos…",
-        "empty": "Esta pessoa não tem vínculos vivos.",
+        "kinds": {
+          "all": "Todos",
+          "staff": "Staff",
+          "worker": "Prestador",
+          "account": "Somente conta"
+        },
         "columns": {
-          "area": "Área",
-          "role": "Papel",
-          "grantedBy": "Concedido por",
-          "grantedAt": "Data"
+          "name": "Nome",
+          "email": "E-mail",
+          "kind": "Tipo",
+          "memberships": "Vínculos atuais",
+          "actions": "Ações"
+        },
+        "manage": "Gerenciar",
+        "manageAria": "Gerenciar vínculos de {{name}}",
+        "loadingLabel": "Carregando pessoas",
+        "loadingText": "Carregando pessoas…",
+        "retry": "Tentar novamente",
+        "emptySearch": "Não encontramos ninguém com «{{term}}».",
+        "emptyFilters": "Não há pessoas com esses filtros.",
+        "lookup": {
+          "open": "Buscar por e-mail exato",
+          "hint": "A pessoa não aparece?",
+          "title": "Buscar por e-mail exato",
+          "help": "Para contas de login que não têm ficha nem vínculos e por isso não aparecem na lista.",
+          "email": "E-mail",
+          "placeholder": "pessoa@exemplo.com",
+          "submit": "Buscar",
+          "cancel": "Cancelar",
+          "none": "Não existe nenhuma conta com esse e-mail.",
+          "newAccount": "Conta de login sem ficha e sem vínculos.",
+          "inList": "Já aparece na lista.",
+          "error": "Não foi possível buscar a conta."
+        },
+        "drawer": {
+          "ariaLabel": "Vínculos de {{name}}",
+          "current": "Vínculos atuais",
+          "none": "Esta pessoa não tem vínculos vivos."
         },
         "roles": {
           "family": "Família",
@@ -5125,15 +5158,19 @@
         },
         "revoke": {
           "open": "Revogar",
+          "openAria": "Revogar {{vinculo}} de {{name}}",
           "reason": "Motivo da revogação (obrigatório)",
           "confirm": "Confirmar revogação",
           "cancel": "Cancelar"
         },
+        "toast": {
+          "granted": "Vínculo concedido.",
+          "revoked": "Vínculo revogado."
+        },
         "errors": {
           "load": "Não foi possível carregar os vínculos.",
-          "notFound": "Não encontramos essa pessoa.",
-          "invalidQuery": "O valor buscado não é válido.",
           "grant": "Não foi possível conceder o vínculo.",
+          "grantDuplicate": "Esta pessoa já tem esse vínculo.",
           "grantRejected": "O vínculo não pode ser concedido: confira a área e o papel.",
           "revoke": "Não foi possível revogar o vínculo.",
           "revokeGone": "Esse vínculo já estava revogado."
@@ -5143,6 +5180,7 @@
       "subtitle": "Grupos, células, países e disponibilidade por país. O que você não vê aqui, não existe para você.",
       "tabs": {
         "groups": "Grupos",
+        "areaMemberships": "Vínculos de área",
         "features": "Funções por país",
         "history": "Histórico"
       },

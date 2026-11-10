@@ -75,7 +75,7 @@ import {
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 import { withTransientRetry } from './retryTransient';
-import type { AreaMembershipList, AreaMembershipLookup, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
+import type { AreaMembershipList, AreaMembershipLookup, AreaPeoplePage, AreaPeopleQuery, AreaPerson, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
 
 export { ApiError } from './ApiError';
 
@@ -168,7 +168,27 @@ class AdminApiServiceClass {
     return this.request<AreaMembershipList>('GET', `/api/admin/area-memberships?${qs.toString()}`);
   }
 
-  /** `area_membership:write` — 201; par inválido/teto → 422. */
+  /**
+   * `area_membership:read` — a lista paginada de pessoas da aba "Vínculos de área". Busca por nome exige
+   * ≥ 3 caracteres (o servidor devolve 400 abaixo disso — quem chama não deve nem pedir).
+   */
+  listAreaPeople(query: AreaPeopleQuery = {}): Promise<AreaPeoplePage> {
+    const qs = new URLSearchParams();
+    if (query.search) qs.set('search', query.search);
+    if (query.type && query.type !== 'all') qs.set('type', query.type);
+    if (query.withMembership !== undefined) qs.set('withMembership', String(query.withMembership));
+    qs.set('limit', String(query.limit ?? 20));
+    qs.set('offset', String(query.offset ?? 0));
+    return this.request<AreaPeoplePage>('GET', `/api/admin/area-memberships/people?${qs.toString()}`);
+  }
+
+  /** `area_membership:read` — busca por e-mail EXATO no login (Firebase); 404 = não existe. GET: não escreve. */
+  findAreaPersonByEmail(email: string): Promise<AreaPerson> {
+    const qs = new URLSearchParams({ email });
+    return this.request<AreaPerson>('GET', `/api/admin/area-memberships/people/by-email?${qs.toString()}`);
+  }
+
+  /** `area_membership:write` — 201; par inválido/duplicado → 422; pessoa/uid inexistente → 404. */
   grantAreaMembership(input: GrantAreaMembershipInput): Promise<unknown> {
     return this.request<unknown>('POST', '/api/admin/area-memberships', input);
   }
