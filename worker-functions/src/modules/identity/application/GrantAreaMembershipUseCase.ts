@@ -16,12 +16,35 @@ export interface GrantAreaMembershipInput {
   actorUid: string;
 }
 
+/** Bootstrap da pessoa (`iam.ensure_person`): cria pessoa + login se não existe; login removido → `null`. */
+export interface PersonBootstrap {
+  ensurePerson(uid: string): Promise<string | null>;
+}
+
 export class GrantAreaMembershipUseCase {
   constructor(
     private readonly writer: AreaMembershipWriter,
     private readonly registry: AreaRegistryReader,
     private readonly logins: LoginDirectory,
+    private readonly bootstrap?: PersonBootstrap,
   ) {}
+
+  /**
+   * Concede para quem AINDA NÃO virou pessoa (staff/prestador/conta só-Firebase sem bootstrap): `ensure_person` (idempotente)
+   * e depois o mesmo `execute`. A pessoa é criada ANTES da pré-checagem do teto porque o cálculo do claim parte do `pid`;
+   * o `ensure_person` é o que todo login já faz no bootstrap, então uma pessoa vazia de uma concessão recusada é inofensiva.
+   */
+  async executeForUid(input: Omit<GrantAreaMembershipInput, 'pid'> & { uid: string }): Promise<Result<{ membershipId: string } & SyncAreasClaimsResult>> {
+    if (!this.bootstrap) return Result.fail('bootstrap de pessoa não configurado');
+    let pid: string | null;
+    try {
+      pid = await this.bootstrap.ensurePerson(input.uid);
+    } catch (error) {
+      return Result.fail(error instanceof Error ? error.message : 'Failed to ensure person');
+    }
+    if (!pid) return Result.fail('pessoa inexistente: login removido (conta apagada)');
+    return this.execute({ pid, area: input.area, role: input.role, actorUid: input.actorUid });
+  }
 
   async execute(input: GrantAreaMembershipInput): Promise<Result<{ membershipId: string } & SyncAreasClaimsResult>> {
     if (!isStoredAreaRole(input.area, input.role)) {
