@@ -60,9 +60,9 @@ export function buildPeopleSql(query: PeopleRowsQuery): { sql: string; params: u
   const accountRows = searching
     ? ''
     : `UNION ALL
-       SELECT l.root, a.uid, 3, (SELECT p.created_at FROM iam.person p WHERE p.id = l.root),
-              NULL, NULL, NULL, NULL, NULL, false
+       SELECT l.root, a.uid, 3, rp.created_at, NULL, NULL, NULL, NULL, NULL, false, rp.created_at
          FROM live l
+         JOIN iam.person rp ON rp.id = l.root
          CROSS JOIN LATERAL (SELECT x AS uid FROM iam.person_login_uids(l.root) AS x LIMIT 1) a
         WHERE NOT EXISTS (SELECT 1 FROM keyed k WHERE k.root = l.root)`;
 
@@ -99,16 +99,26 @@ export function buildPeopleSql(query: PeopleRowsQuery): { sql: string; params: u
        WHERE w.auth_uid IS NOT NULL AND w.merged_into_id IS NULL AND ${excludeDisabledWorkersSql('w')}
          AND NOT EXISTS (SELECT 1 FROM unnest($1::text[]) AS p WHERE starts_with(w.auth_uid, p))
     ),
+    -- Raiz em CONJUNTO (join em login/pessoa; \`iam.person_root\` só para a minoria absorvida por merge): a função por linha
+    -- custava ~250 ms em ~8 mil logins. Mesma semântica de \`iam.person_root(iam.resolve_person('firebase', uid))\`.
     keyed AS (
-      SELECT s.*, iam.person_root(iam.resolve_person('firebase', s.uid)) AS root FROM src s
+      SELECT s.*, r.root, rp.created_at AS person_created_at
+        FROM src s
+        LEFT JOIN iam.person_login l ON l.provider = 'firebase' AND l.uid = s.uid AND l.removed_at IS NULL
+        LEFT JOIN iam.person p ON p.id = l.person_id
+        LEFT JOIN LATERAL (
+          SELECT CASE WHEN p.id IS NULL THEN NULL WHEN p.merged_into_id IS NULL THEN p.id ELSE iam.person_root(p.id) END AS root
+        ) r ON true
+        LEFT JOIN iam.person rp ON rp.id = r.root
     ),
     live AS (
-      SELECT DISTINCT iam.person_root(am.person_id) AS root
-        FROM iam.area_membership am WHERE am.revoked_at IS NULL
+      SELECT DISTINCT CASE WHEN p.merged_into_id IS NULL THEN p.id ELSE iam.person_root(p.id) END AS root
+        FROM iam.area_membership am JOIN iam.person p ON p.id = am.person_id
+       WHERE am.revoked_at IS NULL
     ),
     rows AS (
       SELECT k.root, k.uid, k.prio, k.created_at, k.email, k.display_name, k.first_name_encrypted,
-             k.last_name_encrypted, k.phone, k.hit
+             k.last_name_encrypted, k.phone, k.hit, k.person_created_at
         FROM keyed k
       ${accountRows}
     ),
@@ -117,7 +127,7 @@ export function buildPeopleSql(query: PeopleRowsQuery): { sql: string; params: u
              r.root,
              min(r.prio) AS prio,
              (array_agg(r.uid ORDER BY r.prio, r.uid))[1] AS uid,
-             COALESCE((SELECT p.created_at FROM iam.person p WHERE p.id = r.root), min(r.created_at)) AS created_at,
+             COALESCE(min(r.person_created_at), min(r.created_at)) AS created_at,
              (array_agg(r.email ORDER BY r.prio) FILTER (WHERE r.email IS NOT NULL))[1] AS email,
              (array_agg(r.display_name ORDER BY r.prio) FILTER (WHERE r.display_name IS NOT NULL))[1] AS display_name,
              (array_agg(r.first_name_encrypted ORDER BY r.prio) FILTER (WHERE r.first_name_encrypted IS NOT NULL))[1] AS first_name_encrypted,
