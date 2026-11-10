@@ -2,23 +2,16 @@
  * person-login-removal.e2e.test.ts — conta apagada (spec acesso-do-cliente, F1, T132; DF-20, design §2.2).
  *
  * Os use cases REAIS (DeleteUser, DeleteUserByEmail, DeleteAdminUser) + o adapter REAL (PgLoginRemovalRepository)
- * contra o banco, conectado como membro de app_runtime (sem superuser). Firebase e repositório de `users` são dublês
- * (nunca o Firebase real; o prestador "puro" não tem linha em users). Fixtures sintéticas, sem PII.
+ * contra o banco, conectado como membro de app_runtime (sem superuser). O Firebase Admin é dublê (`jest.spyOn`, nunca o
+ * Firebase real). O `AdminRepository` é o REAL: `isLastManager` e `deleteByFirebaseUid` rodam contra o Postgres, com linha
+ * real em `users` onde o caso precisa. O prestador "puro" não tem linha em users. Fixtures sintéticas, sem PII.
  */
 import { randomBytes } from 'crypto';
+import * as firebaseAdmin from 'firebase-admin';
 import { Pool } from 'pg';
 import { Result } from '@shared/utils/Result';
 
 const mockFirebaseDelete = jest.fn();
-jest.mock('firebase-admin', () => ({
-  auth: () => ({ deleteUser: (...a: unknown[]) => mockFirebaseDelete(...a) }),
-}));
-jest.mock('../../src/modules/identity/infrastructure/AdminRepository', () => ({
-  AdminRepository: jest.fn().mockImplementation(() => ({
-    isLastManager: jest.fn().mockResolvedValue(false),
-    deleteByFirebaseUid: jest.fn().mockResolvedValue(undefined),
-  })),
-}));
 
 import { DeleteUserUseCase } from '../../src/modules/identity/application/DeleteUserUseCase';
 import { DeleteUserByEmailUseCase } from '../../src/modules/identity/application/DeleteUserByEmailUseCase';
@@ -32,6 +25,7 @@ const uid = (n: string) => `e2e-login-rm-${RUN}-${n}`;
 const ATOR = uid('ator');
 const RT_USER = 'wf_login_removal_runtime';
 const RT_PASSWORD = 'wf_login_removal_runtime_pw';
+const TENANT = '00000000-0000-0000-0000-000000000001';
 
 let admin: Pool;
 let runtime: Pool;
@@ -65,6 +59,11 @@ const memberships = async (p: string) =>
     `SELECT revoked_at IS NOT NULL AS revogado, revoked_by, reason FROM iam.area_membership WHERE person_id = $1`, [p])).rows;
 
 beforeAll(async () => {
+  // O `AdminRepository` real abre o pool pelo singleton, que lê `DATABASE_URL` na 1ª vez.
+  process.env.DATABASE_URL = DATABASE_URL;
+  jest.spyOn(firebaseAdmin, 'auth').mockImplementation((() => ({
+    deleteUser: (...a: unknown[]) => mockFirebaseDelete(...a),
+  })) as never);
   admin = new Pool({ connectionString: DATABASE_URL });
   await admin.query(`DO $$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${RT_USER}') THEN
@@ -76,6 +75,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  jest.restoreAllMocks();
+  const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+  await DatabaseConnection.getInstance().close();
+  await admin.query(`DELETE FROM users WHERE firebase_uid LIKE $1`, [`e2e-login-rm-${RUN}-%`]);
   await runtime.end();
   await admin.end();
 });
@@ -172,10 +175,16 @@ describe('os outros caminhos conta-apagada usam a mesma porta', () => {
 
   it('DeleteAdminUserUseCase: marca o login depois do Firebase', async () => {
     await pessoa('admin');
+    // Linha REAL em `users` (staff sem grupo → não é o último gestor): o `AdminRepository` real a checa e a apaga.
+    await admin.query(
+      `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1, $2, 'admin', 'ACTIVE', true, $3)`,
+      [uid('admin'), `${uid('admin')}@e2e.local`, TENANT],
+    );
 
     const r = await new DeleteAdminUserUseCase(removal).execute(uid('admin'), ATOR);
 
     expect(r.isSuccess).toBe(true);
+    expect((await admin.query(`SELECT count(*) AS n FROM users WHERE firebase_uid = $1`, [uid('admin')])).rows[0].n).toBe('0');
     expect(mockFirebaseDelete).toHaveBeenCalledWith(uid('admin'));
     expect((await login('admin')).removed_reason).toBe('account_deleted');
   });
