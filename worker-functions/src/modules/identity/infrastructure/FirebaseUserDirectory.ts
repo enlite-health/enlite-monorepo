@@ -4,6 +4,7 @@
  * cuja mensagem NUNCA carrega o e-mail pedido; nada aqui loga.
  */
 import * as admin from 'firebase-admin';
+import type { LoginVerifier } from '../application/GrantAreaMembershipUseCase';
 import { FirebaseLookupError, type FirebaseProfile, type FirebaseUserLookup } from '../application/AreaPeople';
 
 const FIREBASE_BATCH = 100;
@@ -14,7 +15,18 @@ const toProfile = (u: { uid: string; displayName?: string; email?: string }): Fi
   email: u.email ?? null,
 });
 
-export class FirebaseUserDirectory implements FirebaseUserLookup {
+export class FirebaseUserDirectory implements FirebaseUserLookup, LoginVerifier {
+  /** `false` = o Firebase diz que o uid não existe; qualquer outra falha vira `FirebaseLookupError` (sem eco do uid). */
+  async exists(uid: string): Promise<boolean> {
+    try {
+      await admin.auth().getUser(uid);
+      return true;
+    } catch (error) {
+      if ((error as { code?: string } | null)?.code === 'auth/user-not-found') return false;
+      throw new FirebaseLookupError();
+    }
+  }
+
   async getUsers(uids: string[]): Promise<Map<string, FirebaseProfile>> {
     const found = new Map<string, FirebaseProfile>();
     try {

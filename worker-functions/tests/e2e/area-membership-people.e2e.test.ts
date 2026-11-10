@@ -37,6 +37,7 @@ const STAFF_MULTI = [0, 1, 2, 3, 4].map((i) => `e2e-ppl-${RUN}-s${i}`);
 const DUAL = `e2e-ppl-${RUN}-dual`; // staff E prestador com o MESMO login
 const NOVA = `e2e-ppl-${RUN}-nova`; // login só-Firebase que nunca foi pessoa
 const SO_PRESTADOR = `e2e-ppl-${RUN}-worker`;
+const FANTASMA = `e2e-ppl-${RUN}-fantasma`; // uid que o Firebase não conhece
 
 describe('lista de pessoas da aba Vínculos de área — HTTP real, banco real, engine LIGADO', () => {
   let admin: Pool;
@@ -73,7 +74,10 @@ describe('lista de pessoas da aba Vínculos de área — HTTP real, banco real, 
     setEnv('DATABASE_URL', DATABASE_URL);
 
     jest.spyOn(firebaseAdmin, 'auth').mockImplementation((() => ({
-      getUser: async (u: string) => ({ uid: u, email: firebaseProfiles.get(u)?.email ?? `${u}@ejemplo.com`, customClaims: {} }),
+      getUser: async (u: string) => {
+        if (u === FANTASMA) throw Object.assign(new Error('nope'), { code: 'auth/user-not-found' });
+        return { uid: u, email: firebaseProfiles.get(u)?.email ?? `${u}@ejemplo.com`, customClaims: {} };
+      },
       setCustomUserClaims: async () => undefined,
       revokeRefreshTokens: async () => undefined,
       getUsers: async (ids: Array<{ uid: string }>) => {
@@ -199,6 +203,16 @@ describe('lista de pessoas da aba Vínculos de área — HTTP real, banco real, 
     // withMembership=false não traz quem tem vínculo
     const sem = await people(`search=${TAG}%40&withMembership=false&limit=100`);
     expect(sem.body.data.items.every((i: any) => i.memberships.length === 0)).toBe(true);
+  });
+
+  it('(c2) conceder por `uid` que o Firebase não conhece → 404 e NADA é criado (0 linhas novas em iam.person, person_login e area_membership)', async () => {
+    const cont = async () =>
+      (await admin.query(`SELECT (SELECT count(*) FROM iam.person) AS p, (SELECT count(*) FROM iam.person_login) AS l, (SELECT count(*) FROM iam.area_membership) AS m`)).rows[0];
+    const antes = await cont();
+    const r = await http('POST', '/api/admin/area-memberships', U.editor, { uid: FANTASMA, area: 'learn', role: 'learner' });
+    expect(r.status).toBe(404);
+    expect(await cont()).toEqual(antes);
+    expect((await admin.query(`SELECT iam.resolve_person('firebase', $1) AS p`, [FANTASMA])).rows[0].p).toBeNull();
   });
 
   it('e-mail exato: acha a pessoa (mesma forma de item), 404 sem usuário, 502 com Firebase fora (sem eco do e-mail)', async () => {

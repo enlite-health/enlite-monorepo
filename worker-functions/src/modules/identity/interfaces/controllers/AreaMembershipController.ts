@@ -78,7 +78,7 @@ export class AreaMembershipController implements AreaMembershipHandlers {
     const directory = new PgPeopleDirectoryRepository(pool);
     const firebase = new FirebaseUserDirectory();
     return new AreaMembershipController(
-      new GrantAreaMembershipUseCase(memberships, registry, memberships, registry),
+      new GrantAreaMembershipUseCase(memberships, registry, memberships, registry, firebase),
       new RevokeAreaMembershipUseCase(memberships, registry, memberships),
       registry,
       memberships,
@@ -212,5 +212,6 @@ export class AreaMembershipController implements AreaMembershipHandlers {
 
 /** Recusas de negócio dos use cases chegam como texto: pessoa inexistente → 404; o resto (par inválido, teto, absorvida) → 422. */
 function statusOfFailure(message: string): number {
+  if (message === new FirebaseLookupError().message) return 502; // o Firebase caiu ao conferir o login: nada foi gravado
   return message.includes('pessoa inexistente') ? 404 : 422;
 }
