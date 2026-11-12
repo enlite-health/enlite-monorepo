@@ -12,6 +12,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { AccountLinkController } from './AccountLinkController';
 import type { AuthMiddleware } from '../identity/interfaces/middleware/AuthMiddleware';
+import { routeClass } from '../identity/permissions';
 
 function flagGate(req: Request, res: Response, next: NextFunction): void {
   if (process.env.ACCOUNT_LINK_ENABLED !== 'true') {
@@ -48,23 +49,23 @@ export function createAccountLinkRoutes(
   const router = Router();
   const auth = [authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update')];
 
-  router.post('/workers/me/account-link/lookup', flagGate, ...auth,
+  router.post('/workers/me/account-link/lookup', flagGate, routeClass('client-policy'), ...auth,
     (req: Request, res: Response) => void controller.lookup(req, res));
 
-  router.post('/workers/me/account-link/start', flagGate, startIpLimit, ...auth,
+  router.post('/workers/me/account-link/start', flagGate, routeClass('client-policy'), startIpLimit, ...auth,
     (req: Request, res: Response) => void controller.start(req, res));
 
-  router.post('/workers/me/account-link/confirm', flagGate, confirmIpLimit, ...auth,
+  router.post('/workers/me/account-link/confirm', flagGate, routeClass('client-policy'), confirmIpLimit, ...auth,
     (req: Request, res: Response) => void controller.confirm(req, res));
 
-  router.post('/workers/me/account-link/finalize', flagGate, ...auth,
+  router.post('/workers/me/account-link/finalize', flagGate, routeClass('client-policy'), ...auth,
     (req: Request, res: Response) => void controller.finalize(req, res));
 
   // Undo do email: SEM auth de sessão — a credencial é o token assinado (a
   // pessoa que recebeu o aviso pode nem ter mais login funcional).
-  router.get('/account-link/undo/:token', flagGate,
+  router.get('/account-link/undo/:token', flagGate, routeClass('public'),
     (req: Request, res: Response) => controller.undoPage(req, res));
-  router.post('/account-link/undo/:token', flagGate,
+  router.post('/account-link/undo/:token', flagGate, routeClass('public'),
     (req: Request, res: Response) => void controller.undoExecute(req, res));
 
   return router;

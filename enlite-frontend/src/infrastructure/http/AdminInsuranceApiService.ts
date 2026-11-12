@@ -133,7 +133,7 @@ class AdminInsuranceApiServiceClass {
   }
 
   /**
-   * GET /api/admin/insurance-providers/for-service?country= — a cascata do serviço: só as ATIVAS com contrato oferecido no país
+   * GET /api/admin/insurance-providers/for-service?country= — a cascata do serviço: as ATIVAS com algum contrato no país, com ou sem termo vigente
    * (mais a `selected`, mesmo inativa). `asOf` = o "hoje" do país, que o formulário usa como início sugerido do vínculo.
    */
   listProvidersForService(country: string, selected?: string): Promise<InsuranceProvidersForService> {
@@ -169,7 +169,7 @@ class AdminInsuranceApiServiceClass {
   // ── Contratos e termos ─────────────────────────────────────────────────────
 
   /**
-   * GET …/:code/contracts — `offered: true` devolve só os contratos com termo OFERECIDO (o que a cascata do serviço lista).
+   * GET …/:code/contracts — `offered: true` devolve só os contratos com termo OFERECIDO (vigente ou futuro); sem ele, todos do país (o que a cascata do serviço lista).
    * `country` recorta (o back também recorta pelo escopo do ator).
    */
   async listContracts(code: string, opts: { offered?: boolean; country?: string } = {}): Promise<InsuranceContractItem[]> {

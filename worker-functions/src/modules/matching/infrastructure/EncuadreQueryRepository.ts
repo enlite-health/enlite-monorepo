@@ -24,32 +24,6 @@ export class EncuadreQueryRepository {
     this.encryptionService = new KMSEncryptionService();
   }
 
-  async findSoftMatch(
-    jobPostingId: string,
-    phone: string,
-    interviewDate: Date | null,
-    recruitmentDate: Date | null,
-  ): Promise<Encuadre | null> {
-    const conditions: string[] = ['job_posting_id = $1', 'worker_raw_phone = $2'];
-    const values: unknown[] = [jobPostingId, phone];
-    let idx = 3;
-
-    if (interviewDate) {
-      conditions.push(`interview_date = $${idx++}`);
-      values.push(interviewDate.toISOString().split('T')[0]);
-    }
-    if (recruitmentDate) {
-      conditions.push(`recruitment_date = $${idx++}`);
-      values.push(recruitmentDate.toISOString().split('T')[0]);
-    }
-
-    const result = await this.pool.query(
-      `SELECT * FROM encuadres WHERE ${conditions.join(' AND ')} LIMIT 1`,
-      values,
-    );
-    return result.rows[0] ? mapEncuadreRow(result.rows[0], this.encryptionService) : null;
-  }
-
   async updateSupplement(id: string, dto: SupplementEncuadreDTO): Promise<void> {
     const workerEmailEnc = await this.encryptionService.encrypt(dto.workerEmail ?? null);
 

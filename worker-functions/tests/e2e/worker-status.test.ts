@@ -18,7 +18,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -86,16 +86,12 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
   describe('Cenário 1 — Criar worker → status deve ser INCOMPLETE_REGISTER', () => {
     it('POST /api/workers/init retorna 201 e cria worker com status INCOMPLETE_REGISTER', async () => {
       // Act
-      const res = await api.post(
-        '/api/workers/init',
-        {
-          authUid: TEST_AUTH_UID,
-          email: TEST_EMAIL,
-          phone: '+5511987654321',
-          country: 'BR',
-        },
-        workerHeaders(),
-      );
+      const res = await postWorkerInit(api, {
+        authUid: TEST_AUTH_UID,
+        email: TEST_EMAIL,
+        phone: '+5511987654321',
+        country: 'BR',
+      });
 
       // Assert — HTTP
       expect(res.status).toBe(201);

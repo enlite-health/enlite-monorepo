@@ -3,13 +3,12 @@ import { Text } from '@presentation/components/atoms/Text';
 import type { SubstitutionRequestItem } from '@domain/entities/SubstitutionRequest';
 import { workerLabel } from '../workerLabel';
 import { NOWRAP, SingleLine } from './SingleLine';
+import { shiftRangeLabel } from './shiftRange';
 import { fullDayLabel } from './substitutionLabels';
 
 interface SubstitutionDaysListProps {
   request: SubstitutionRequestItem;
 }
-
-const hhmm = (value: string): string => value.slice(0, 5);
 
 /** "Ver días": os turnos do pedido, um por linha, com quem entra em cada um (ou "Nadie todavía") — o `shiftDisplayNames` já vem do servidor, na ordem de `shifts`. */
 export function SubstitutionDaysList({ request }: SubstitutionDaysListProps): JSX.Element {
@@ -26,7 +25,7 @@ export function SubstitutionDaysList({ request }: SubstitutionDaysListProps): JS
             </Text>
             {shift.startTime !== null && shift.endTime !== null && (
               <Text as="span" size="sm" color="tertiary" className="whitespace-nowrap" {...NOWRAP}>
-                {`${hhmm(shift.startTime)}–${hhmm(shift.endTime)}`}
+                {shiftRangeLabel(t, { startTime: shift.startTime, endTime: shift.endTime })}
               </Text>
             )}
             {name === null ? (

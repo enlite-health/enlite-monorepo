@@ -421,7 +421,7 @@ describe('058a vínculo serviço → contrato — travas de banco (537) @integra
       expect([nada.status, nada.data.code]).toEqual([422, 'NAME_NOT_CODIFIABLE']);
     });
 
-    it('cascata do serviço (for-service): só ativas com contrato oferecido no país + o escolhido; nunca payerKind', async () => {
+    it('cascata do serviço (for-service): ativas com contrato no país (com ou sem termo vigente) + o escolhido; nunca payerKind', async () => {
       await termo(cA1);
       const sem = await criarPagador(pool, 'PREPAGA'); // sem contrato oferecido
       const r = await api.get(`${BASE}/insurance-providers/for-service?country=AR&selected=${sem}`, admin);
@@ -429,11 +429,13 @@ describe('058a vínculo serviço → contrato — travas de banco (537) @integra
       const codes = (r.data.data.providers as Array<{ code: string }>).map((p) => p.code);
       expect(codes).toContain(provA);
       expect(codes).toContain(sem); // o escolhido entra mesmo sem oferta
-      expect(codes).not.toContain(provB); // provB tem contrato mas sem termo oferecido
+      expect(codes).toContain(provB); // provB tem contrato mas sem termo vigente: a operação precisa vinculá-lo (incidente 05/11)
       expect(JSON.stringify(r.data.data.providers)).not.toMatch(/payer|OBRA_SOCIAL|PREPAGA/);
       expect(r.data.data.providers.find((p: { code: string }) => p.code === provA)).toEqual({ code: provA, name: expect.stringContaining('QA058') });
       const br = await api.get(`${BASE}/insurance-providers/for-service?country=BR`, admin);
-      expect((br.data.data.providers as Array<{ code: string }>).map((p) => p.code)).not.toContain(provA); // o contrato oferecido é AR
+      const brCodes = (br.data.data.providers as Array<{ code: string }>).map((p) => p.code);
+      expect(brCodes).toContain(provA); // provA tem o contrato cA_BR (sem termo): contrato no país basta
+      expect(brCodes).not.toContain(provB); // provB só tem contrato AR
       expect((await api.get(`${BASE}/insurance-providers/for-service`, admin)).status).toBe(400);
     });
 

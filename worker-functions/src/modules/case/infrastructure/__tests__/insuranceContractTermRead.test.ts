@@ -3,6 +3,7 @@ import {
   countFutureTerms,
   liveTermContainingSql,
   offeredContractsOf,
+  providersWithContract,
   termAt,
   termsOfContracts,
   termView,
@@ -76,6 +77,17 @@ describe('offeredContractsOf', () => {
     expect(sql).toContain('daterange($3::date, NULL)');
     expect(sql).not.toMatch(/CURRENT_DATE|now\(\)/i);
     expect(params).toEqual(['OSDE', 'AR', ASOF]);
+  });
+});
+
+describe('providersWithContract', () => {
+  it('a obra social entra por QUALQUER contrato do país: a SQL não lê termo nem data (contrato sem valor vigente aparece)', async () => {
+    const cli = q([{ code: 'OSDE' }, { code: 'GALENO' }]);
+    expect(await providersWithContract(cli as never, 'AR')).toEqual(['OSDE', 'GALENO']);
+    const [sql, params] = cli.query.mock.calls[0];
+    expect(sql).toContain('FROM insurance_contracts c');
+    expect(sql).not.toMatch(/insurance_contract_terms|daterange/);
+    expect(params).toEqual(['AR']);
   });
 });
 

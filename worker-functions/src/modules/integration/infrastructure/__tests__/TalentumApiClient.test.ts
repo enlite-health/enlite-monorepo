@@ -409,6 +409,7 @@ describe('TalentumApiClient (API v2)', () => {
       expect(mockFetch).toHaveBeenCalledTimes(3);
       expect(p).toMatchObject({
         projectId: 'proj-1',
+        prescreeningId: 'ps-1',
         publicId: 'pub-uuid-1',
         title: 'EN 1#1',
         description: 'descripción del puesto',
@@ -444,6 +445,7 @@ describe('TalentumApiClient (API v2)', () => {
       const p = await client.getPrescreening('proj-2');
 
       expect(p.description).toBe('');
+      expect(p.prescreeningId).toBeUndefined();
       expect(p.questions).toEqual([]);
       expect(p.active).toBe(false);
     });
@@ -546,6 +548,31 @@ describe('TalentumApiClient (API v2)', () => {
 
       await expect(client.deletePrescreening('proj-1')).resolves.toBeUndefined();
       expect([method(1), url(1)]).toEqual(['DELETE', `${V2_HOST}/projects/proj-1`]);
+    });
+  });
+
+  // ── pausar / retomar (spec 084 F4) ──────────────────────────────
+
+  describe('pauseProject / resumeProject (spec 084 F4)', () => {
+    it('pauseProject: PUT /projects/:id/pause — e NUNCA DELETE', async () => {
+      mockFetch.mockResolvedValueOnce(loginRes());
+      mockFetch.mockResolvedValueOnce(res(200));
+      await expect(client.pauseProject('proj-1')).resolves.toBeUndefined();
+      expect([method(1), url(1)]).toEqual(['PUT', `${V2_HOST}/projects/proj-1/pause`]);
+      expect(mockFetch.mock.calls.some((c) => (c[1] as RequestInit).method === 'DELETE')).toBe(false);
+    });
+
+    it('resumeProject: PUT /projects/:id/resume', async () => {
+      mockFetch.mockResolvedValueOnce(loginRes());
+      mockFetch.mockResolvedValueOnce(res(200));
+      await expect(client.resumeProject('proj-1')).resolves.toBeUndefined();
+      expect([method(1), url(1)]).toEqual(['PUT', `${V2_HOST}/projects/proj-1/resume`]);
+    });
+
+    it('403 (conta sem posse do projeto) propaga com "HTTP 403" — é o que manda a vaga para a lista manual', async () => {
+      mockFetch.mockResolvedValueOnce(loginRes());
+      mockFetch.mockResolvedValueOnce(res(403, undefined, 'forbidden'));
+      await expect(client.pauseProject('proj-1')).rejects.toThrow(/HTTP 403/);
     });
   });
 

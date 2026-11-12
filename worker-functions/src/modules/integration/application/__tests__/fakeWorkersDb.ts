@@ -19,6 +19,8 @@ export interface FakeVacancy {
   id: string;
   talentumProjectId: string;
   caseNumber: number | null;
+  /** Spec 084: `DE_BAJA` → o INSERT guardado (`WHERE NOT EXISTS … status = 'DE_BAJA'`) não insere. */
+  status?: string;
 }
 
 export class FakeWorkersDb {
@@ -52,7 +54,7 @@ export class FakeWorkersDb {
     this.sqlLog.push(sql);
     if (this.failOn && sql.includes(this.failOn)) throw new Error('falha injetada');
 
-    if (sql.includes('FROM job_postings')) {
+    if (sql.includes('FROM job_postings') && !sql.includes('INSERT INTO')) {
       const ids = params[0] as string[];
       return { rows: this.vacancies.filter((v) => ids.includes(v.talentumProjectId))
         .map((v) => ({ id: v.id, talentum_project_id: v.talentumProjectId, case_number: v.caseNumber })) };
@@ -108,12 +110,14 @@ export class FakeWorkersDb {
       return { rows: w ? [{ status: w.status }] : [] };
     }
     if (sql.includes('INSERT INTO worker_job_applications')) {
+      if (this.vacancies.find((v) => v.id === params[1])?.status === 'DE_BAJA') return { rows: [], rowCount: 0 };
       const key = `${params[0]}|${params[1]}`;
       if (this.wja.has(key)) return { rows: [], rowCount: 0 };
       this.wja.add(key);
       return { rows: [{ id: key }], rowCount: 1 };
     }
     if (sql.includes('INSERT INTO encuadres')) {
+      if (this.vacancies.find((v) => v.id === params[1])?.status === 'DE_BAJA') return { rows: [], rowCount: 0 };
       const [workerId, jobPostingId, rawName, rawPhone, dedupHash] = params as [string, string, string, string | null, string];
       if (!this.encuadres.some((e) => e.workerId === workerId && e.jobPostingId === jobPostingId)) {
         this.encuadres.push({ workerId, jobPostingId, dedupHash, rawName, rawPhone });

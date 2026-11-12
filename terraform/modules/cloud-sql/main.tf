@@ -13,6 +13,7 @@ resource "google_sql_database_instance" "this" {
     disk_size         = var.disk_size_gb
     disk_type         = var.disk_type
     disk_autoresize   = true
+    user_labels       = var.user_labels
 
     location_preference {
       zone = var.zone

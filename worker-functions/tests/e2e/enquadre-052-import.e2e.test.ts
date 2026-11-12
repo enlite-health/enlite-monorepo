@@ -115,8 +115,8 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
 
   async function vincular(host: string, uid: string, token: string): Promise<void> {
     const ins = await admin.query(
-      `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status) VALUES ($1,$2,'linked',$3,'linked') RETURNING id`,
-      [host, uid, clock],
+      `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status, created_at) VALUES ($1,$2,'linked',$3,'linked',$4) RETURNING id`,
+      [host, uid, clock, new Date(clock.getTime() - 24 * HOUR)], /* o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account) */
     );
     await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [ins.rows[0].id, b64(token)]);
   }
@@ -358,6 +358,7 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
     expect(vault.objects.size).toBe(0);
     expect(vertex.received).toHaveLength(0);
 
+    clock = new Date(Date.now() + 5_000); // o vínculo é refeito DEPOIS do bloqueio (spec 083: só vínculo `linked` mais novo que o `import_blocked` reabre)
     await vincular(e.host, e.uid, e.token.replace(/^at-/, ''));
     expect(await service.importOne(e.id, clock)).toBe('done');
     expect(await row(e.id)).toMatchObject({ import_status: 'done', blocked_reason: null }); // sai do blocked → o motivo some (CHECK da 521)

@@ -16,6 +16,12 @@ import {
   type AdmissionTactiqExtensionState,
   type PtContactsPendingPayload,
   type ItineraryUncoveredShiftsPayload,
+  type PedidoIaAplicarPayload,
+  type AdmissionImportBlockedPayload,
+  IMPORT_STAGES,
+  IMPORT_KINDS,
+  IMPORT_REASONS,
+  IMPORT_AUDIENCES,
 } from '../infrastructure/NotificationRepository';
 
 export const SYSTEM_NOTIFICATION_ACTOR_UID = 'system:pt-contact-reminders';
@@ -24,6 +30,21 @@ export const SYSTEM_ADMISSION_ACTOR_UID = 'system:admission';
 
 /** Sentinela do aviso diário do itinerário (spec 069 F4): sem autor humano, sem FK (461). */
 export const SYSTEM_ITINERARY_ACTOR_UID = 'system:itinerary-daily';
+
+/** Sentinela do aviso da fila de pedidos do Sol (spec 078 M3b-2): sem autor humano, sem FK (461). */
+export const SYSTEM_SOL_FILA_ACTOR_UID = 'system:sol-fila';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Payload fechado do aviso "aplicar" (spec 078 M4.4, gatilho (d)): id do pedido + degrau (3|4) + grave + prazo. `hoje` se grave, `semana`
+ * se não — o prazo é DERIVADO do `grave`, nunca passado de fora. Valor fora do contrato é erro de programação (lança).
+ */
+export function buildPedidoIaAplicarPayload(input: { pedidoId: string; degrau: number; grave: boolean }): PedidoIaAplicarPayload {
+  if (!UUID_RE.test(input.pedidoId)) throw new Error('PedidoIaAplicarPayload: pedidoId inválido');
+  if (input.degrau !== 3 && input.degrau !== 4) throw new Error('PedidoIaAplicarPayload: degrau fora de {3,4}');
+  return { pedido_id: input.pedidoId, degrau: input.degrau, grave: input.grave, prazo: input.grave ? 'hoje' : 'semana' };
+}
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -63,6 +84,32 @@ export function buildAdmissionTactiqExtensionPayload(state: string): AdmissionTa
     throw new Error('admission_tactiq_extension_payload: estado fora do conjunto fechado');
   }
   return { state: state as AdmissionTactiqExtensionState };
+}
+
+const inSet = (set: readonly string[], v: unknown): boolean => typeof v === 'string' && set.includes(v);
+const isIso = (v: unknown): v is string => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+
+/**
+ * Payload fechado do aviso de importação bloqueada (spec 083, D-7). Reconstrói chave a chave: qualquer chave extra (nome de paciente,
+ * código, id) NÃO entra. Lança em valor fora do contrato e em combinação inválida (`will_be_lost` só com `supervisor`; os outros só
+ * com `host`; `hostName` só na cópia do supervisor).
+ */
+export function buildAdmissionImportBlockedPayload(input: {
+  stage: string; kind: string; reason: string; audience: string; meetingAt: string; deadlineAt: string; hostName?: string | null;
+}): AdmissionImportBlockedPayload {
+  if (!inSet(IMPORT_STAGES, input.stage) || !inSet(IMPORT_KINDS, input.kind) || !inSet(IMPORT_REASONS, input.reason)
+    || !inSet(IMPORT_AUDIENCES, input.audience) || !isIso(input.meetingAt) || !isIso(input.deadlineAt)) {
+    throw new Error('admission_import_blocked_payload: valor fora do contrato');
+  }
+  if ((input.stage === 'will_be_lost') !== (input.audience === 'supervisor')) {
+    throw new Error('admission_import_blocked_payload: combinação stage/audience inválida');
+  }
+  const base = {
+    stage: input.stage, kind: input.kind, reason: input.reason, audience: input.audience, meetingAt: input.meetingAt, deadlineAt: input.deadlineAt,
+  } as AdmissionImportBlockedPayload;
+  if (input.hostName === undefined || input.hostName === null || input.hostName === '') return base;
+  if (input.audience !== 'supervisor') throw new Error('admission_import_blocked_payload: hostName só na cópia do supervisor');
+  return { ...base, hostName: String(input.hostName) };
 }
 
 /** Os campos de contato que o aviso pode listar — espelha `ContactStatusKind` sem importar do módulo `case`. */
@@ -127,6 +174,24 @@ export class SystemNotificationPublisher {
   }
 
   /**
+   * Spec 083: UM aviso (evento + 1 notificação) da importação bloqueada, na transação do chamador (o estado e o sino andam juntos: se
+   * o INSERT falha, a transação inteira desfaz). `patientId` sempre `null`. Sem destinatário não grava e devolve `null`.
+   */
+  async publishAdmissionImportBlocked(
+    client: PoolClient,
+    input: { recipientUid: string | null; payload: Parameters<typeof buildAdmissionImportBlockedPayload>[0] },
+  ): Promise<string | null> {
+    const payload = buildAdmissionImportBlockedPayload(input.payload);
+    if (!input.recipientUid) return null;
+    const eventId = await this.repository.insertEvent(
+      { typeCode: 'ADMISSION_IMPORT_BLOCKED', actorUid: SYSTEM_ADMISSION_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
    * Aviso da transição do relatório do Chrome (spec 050 F15, R-3): UM evento + UMA notificação para a operadora. Quem decide SE avisa
    * (1 por transição) é o `ChromeReportJob`; aqui só se grava, na transação do chamador. Sem destinatário não grava e devolve `null`.
    */
@@ -172,6 +237,49 @@ export class SystemNotificationPublisher {
       client,
     );
     await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Spec 078 M3b-2: UM evento + uma notificação por decisor, SEM payload (nem assunto, nem texto, nem id: o aviso só diz que há
+   * pedido; a página é que mostra). Sem destinatário não grava e devolve `null`. O `client` é a transação de quem deposita o pedido.
+   */
+  async publishPedidoIa(
+    client: PoolClient,
+    input: { typeCode: 'PEDIDO_IA_NOVO' | 'PEDIDO_IA_GRAVE'; recipientUids: readonly string[] },
+  ): Promise<string | null> {
+    const uids = [...new Set(input.recipientUids)];
+    if (uids.length === 0) return null;
+    const eventId = await this.repository.insertEvent(
+      { typeCode: input.typeCode, actorUid: SYSTEM_SOL_FILA_ACTOR_UID, patientId: null, conversationId: null, messageId: null },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, uids, client);
+    return eventId;
+  }
+
+  /**
+   * Spec 078 M4.4 (gatilho (d)): pedido ACEITO em degrau 3/4 — UM evento com payload só-ids + uma notificação por decisor. Sem destinatário
+   * não grava e devolve `null`. O `client` é a transação de quem notifica.
+   */
+  async publishPedidoIaAplicar(
+    client: PoolClient,
+    input: { pedidoId: string; degrau: number; grave: boolean; recipientUids: readonly string[] },
+  ): Promise<string | null> {
+    const uids = [...new Set(input.recipientUids)];
+    if (uids.length === 0) return null;
+    const eventId = await this.repository.insertEvent(
+      {
+        typeCode: 'PEDIDO_IA_APLICAR',
+        actorUid: SYSTEM_SOL_FILA_ACTOR_UID,
+        patientId: null,
+        conversationId: null,
+        messageId: null,
+        payload: buildPedidoIaAplicarPayload({ pedidoId: input.pedidoId, degrau: input.degrau, grave: input.grave }),
+      },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, uids, client);
     return eventId;
   }
 

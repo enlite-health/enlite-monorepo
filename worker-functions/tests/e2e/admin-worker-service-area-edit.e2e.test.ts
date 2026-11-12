@@ -16,7 +16,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -50,7 +50,7 @@ describe('PUT /api/admin/workers/:id/service-area', () => {
 
     pool = new Pool({ connectionString: DATABASE_URL });
 
-    const initRes = await api.post('/api/workers/init', {
+    const initRes = await postWorkerInit(api, {
       authUid: testAuthUid,
       email: testEmail,
       country: 'AR',

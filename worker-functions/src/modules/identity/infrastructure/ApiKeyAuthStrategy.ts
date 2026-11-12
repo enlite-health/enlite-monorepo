@@ -69,8 +69,7 @@ export class ApiKeyAuthStrategy {
     const apiKey = `enlite_${randomString(32)}`;
     const secret = randomString(64);
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+    const expiresAt = new Date(Date.now() + expiresInDays * 86_400_000);
 
     this.store.set(apiKey, {
       principal: { id: `service:${serviceName}`, type: PrincipalType.SERVICE },

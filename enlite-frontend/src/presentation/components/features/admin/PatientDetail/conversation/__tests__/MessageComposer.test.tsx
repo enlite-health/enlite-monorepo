@@ -637,9 +637,38 @@ describe('MessageComposer', () => {
       expect(body).not.toContain('<li>');
     });
 
-    it('CO2: a dica de markdown aparece com o texto do pt-BR', () => {
+    it('CO2: a dica de markdown NÃO aparece (removida a pedido)', () => {
       render(<MessageComposer patientId="p1" />);
-      expect(screen.getByTestId('composer-markdown-hint')).toHaveTextContent(PT.markdownHint);
+      expect(screen.queryByTestId('composer-markdown-hint')).toBeNull();
+      expect(screen.getByTestId('composer-counter')).toBeInTheDocument();
+    });
+
+    async function colarEEnviar(texto: string): Promise<string> {
+      postConversationMessage.mockResolvedValue({ id: 'm-1' });
+      render(<MessageComposer patientId="p1" />);
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('composer-editor'));
+      // jsdom não tem ClipboardEvent/DataTransfer: o ProseMirror só lê `clipboardData.getData`.
+      const ev = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, 'clipboardData', {
+        value: { getData: (tipo: string) => (tipo === 'text/plain' || tipo === 'text' ? texto : ''), types: ['text/plain'] },
+      });
+      act(() => {
+        screen.getByTestId('composer-editor').dispatchEvent(ev);
+      });
+      fireEvent.click(screen.getByTestId('composer-send-btn'));
+      await waitFor(() => expect(postConversationMessage).toHaveBeenCalledTimes(1));
+      return postConversationMessage.mock.calls[0][1].body as string;
+    }
+
+    it('P1: colar uma tabela GFM envia EXATAMENTE o texto colado', async () => {
+      const colado = '| a | b |\n|---|---|\n| 1 | 2 |';
+      expect(await colarEEnviar(colado)).toBe(colado);
+    });
+
+    it('P2: colar lista com linha em branco preserva a linha em branco', async () => {
+      const colado = '- um\n\n- dois';
+      expect(await colarEEnviar(colado)).toBe(colado);
     });
 
     it('CO3: sem a prop, o contador mostra 0/4000', () => {

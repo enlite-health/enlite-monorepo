@@ -16,6 +16,7 @@ import { buildChatwootClient } from './buildChatwootClient';
 import { PeriskopeNoteService } from '@modules/notification/infrastructure/PeriskopeNoteService';
 import { ChatwootMirrorController } from '@modules/notification/interfaces/controllers/ChatwootMirrorController';
 import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
+import { routeClass } from '@modules/identity/permissions';
 import { assertDbRoleMembership } from '@shared/database/assertDbRoleMembership';
 
 /** Concretos de mensageria (não o RoutingMessagingService) — TriggerWorkerHandoverUseCase
@@ -99,7 +100,7 @@ export async function startServer(
   // Configurar um 2º webhook message_created no Chatwoot apontando pra cá (go-live).
   // Gated por PERISKOPE_NOTE_MIRROR_ENABLED — neutro até virar a flag.
   const chatwootMirrorController = new ChatwootMirrorController(new PeriskopeNoteService());
-  app.post('/api/webhooks/chatwoot/mirror', systemContextMiddleware('webhook:chatwoot-mirror'), (req, res) => chatwootMirrorController.handle(req, res));
+  app.post('/api/webhooks/chatwoot/mirror', systemContextMiddleware('webhook:chatwoot-mirror'), routeClass('service'), (req, res) => chatwootMirrorController.handle(req, res));
 
   // ── Gates que precisam do router pronto ───────────────────────────────────
   // Depois de TODAS as rotas (as de webhook são montadas acima) e antes do

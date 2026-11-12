@@ -104,6 +104,15 @@ export function isGovernedPath(path: string): boolean {
  * prestador NÃO é alcançada por isto — ela não carrega marca nenhuma — e o
  * desvio de não-staff do motor (D119) segue valendo.
  */
+/**
+ * ⚠️ A CLASSE da rota (`route.class`, acesso-do-cliente F3) NÃO entra aqui nem
+ * em `statusOfRoute`: ela é um eixo SEPARADO, decidido pelo selo
+ * (`sealUnclassifiedRoutes`). Contar classe não-staff como `exempt` puxava as
+ * ~150 rotas `/api/workers/me…` (client-policy) e as `/v1/...` de serviço para
+ * dentro do perímetro e inflava as isenções decididas — o perímetro antigo
+ * mudava de significado sem decisão. Classe só vira isenção por `exemptHandler`
+ * ou `EXEMPT_ROUTES`, como antes.
+ */
 export function isGovernedRoute(route: ScannedRoute): boolean {
   return (
     route.cell !== undefined ||
@@ -161,6 +170,11 @@ export class UndeclaredRouteRegistry {
     return this.all().some(
       (route) => route.cell?.resource === resource && route.cell?.action === action,
     );
+  }
+
+  /** Rota registrada que atende a request (método + caminho concreto); `undefined` antes do boot ou sem casamento. */
+  find(method: string, path: string): ScannedRoute | undefined {
+    return this.index?.find(method, path);
   }
 
   /** Rotas governadas sem declaração e fora das duas listas — a dívida NOVA. */

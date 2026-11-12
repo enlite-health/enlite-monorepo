@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { Pool } from 'pg';
+import { postWorkerInit } from './helpers';
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -60,7 +61,7 @@ describe('Worker E2E Flow', () => {
 
   describe('Step 0: Initialize Worker', () => {
     it('should create a new worker', async () => {
-      const response = await api.post('/api/workers/init', {
+      const response = await postWorkerInit(api, {
         authUid: testAuthUid,
         email: testEmail,
         phone: '+5511999999999',
@@ -79,7 +80,7 @@ describe('Worker E2E Flow', () => {
     });
 
     it('should return existing worker if already exists', async () => {
-      const response = await api.post('/api/workers/init', {
+      const response = await postWorkerInit(api, {
         authUid: testAuthUid,
         email: testEmail,
         phone: '+5511999999999',

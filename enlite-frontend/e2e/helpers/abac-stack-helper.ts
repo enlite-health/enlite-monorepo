@@ -133,6 +133,8 @@ export async function installAuthInterceptors(page: Page, u: MockUser): Promise<
   };
   await page.route('**/api/**', swapToken);
   await page.route('**/v1/me/authz', swapToken);
+  // Login único (T407): o destino pós-login sai de `GET /v1/me/areas` (useAreaDestination); sem o swap o JWT fake leva 401.
+  await page.route('**/v1/me/areas', swapToken);
   // spec 026 (F3/T3.6): rotas de simulação de grupo, mesmo `/v1/me/*`.
   await page.route('**/v1/me/simulation**', swapToken);
   // ds-table-nao-regressao (Fase 9, gate parcial #1): `ManagementDashboardApiService`/
@@ -144,7 +146,7 @@ export async function installAuthInterceptors(page: Page, u: MockUser): Promise<
 /** Login como uma pessoa faz: clica no campo, digita, clica no botão. */
 export async function loginAs(page: Page, u: MockUser): Promise<void> {
   await installAuthInterceptors(page, u);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   const email = page.locator('input[type="email"]');
   await email.click();
   await expect(email).toBeFocused();
@@ -155,9 +157,9 @@ export async function loginAs(page: Page, u: MockUser): Promise<void> {
   await page.keyboard.type(PASSWORD);
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
-  // ⚠️ A página de login dispara um SEGUNDO redirect (o guard `AdminLoginGuard`) ~500 ms depois (medido em
-  // `admin-access.e2e.ts`). Os dois vão para `ADMIN_HOME_PATH` (`/admin/dashboard`, Gestão à Vista). Clicar num
-  // item do menu antes disso leva a uma foto da tela ERRADA. Espera-se o redirect assentar.
+  // ⚠️ Login único (T407): `LoginPage` decide o destino UMA vez (`useAreaDestination`) e navega para `ADMIN_HOME_PATH`
+  // (`/admin/dashboard`, Gestão à Vista); o `AdminLoginGuard` antigo não está mais montado. Mantida a espera para o
+  // redirect `/admin` → dashboard assentar: clicar num item do menu antes leva a uma foto da tela ERRADA.
   await page.waitForTimeout(1_200);
   await expect(page).toHaveURL(/\/admin\/dashboard\/?$/);
 }

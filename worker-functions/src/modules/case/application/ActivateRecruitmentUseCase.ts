@@ -4,7 +4,6 @@ import { inPatientTransaction } from "./patientTransaction";
 import {
   buildInsertQuery,
   buildInsertParams,
-  retryOnCaseOrdinalConflict,
   type VacancyInsertParams,
   type SourceLockedField,
 } from "@modules/matching";
@@ -19,36 +18,22 @@ import {
 import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
 import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWriter";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
-import { slotVigenteSql } from "@shared/sql/serviceScheduleSql";
+import { LinkExistingVacancyRepository } from "../infrastructure/LinkExistingVacancyRepository";
+import { linkableOpenVacancies } from "../domain/VacancyLinkEligibility";
+import { JobPostingAuditRepository } from "../../matching/infrastructure/JobPostingAuditRepository";
+import {
+  lockRecruitmentContext,
+  readinessInputFromContext,
+  PatientNotFoundForRecruitmentError,
+  ServiceNotFoundForRecruitmentError,
+  ServiceAlreadyRecruitingError,
+} from "./recruitmentReadinessContext";
 
-/** Paciente inexistente (ou soft-deletado). O controller mapeia para 404. */
-export class PatientNotFoundForRecruitmentError extends Error {
-  constructor(patientId: string) {
-    super(`Patient not found: ${patientId}`);
-    this.name = "PatientNotFoundForRecruitmentError";
-  }
-}
-
-/** Serviço inexistente, de OUTRO paciente, ou inativo. O controller mapeia para 404. */
-export class ServiceNotFoundForRecruitmentError extends Error {
-  constructor(patientId: string, serviceId: string) {
-    super(
-      `Contracted service not found: ${serviceId} (patientId=${patientId})`,
-    );
-    this.name = "ServiceNotFoundForRecruitmentError";
-  }
-}
-
-/**
- * O serviço já tem vaga viva (`job_postings.contracted_service_id = :sid AND deleted_at IS
- * NULL`). O controller mapeia para 409 com `{ code: 'SERVICE_ALREADY_RECRUITING', vacancyId }`.
- */
-export class ServiceAlreadyRecruitingError extends Error {
-  constructor(readonly vacancyId: string) {
-    super(`Contracted service already has a live vacancy: ${vacancyId}`);
-    this.name = "ServiceAlreadyRecruitingError";
-  }
-}
+export {
+  PatientNotFoundForRecruitmentError,
+  ServiceNotFoundForRecruitmentError,
+  ServiceAlreadyRecruitingError,
+} from "./recruitmentReadinessContext";
 
 /** Gate `RECRUITMENT_BLOCKING_CODES` recusou. O controller mapeia para 422 `PATIENT_NOT_READY`. */
 export class RecruitmentNotReadyError extends Error {
@@ -62,6 +47,30 @@ export class RecruitmentNotReadyError extends Error {
     );
     this.name = "RecruitmentNotReadyError";
   }
+}
+
+/**
+ * O paciente já tem vaga vinculável (sem serviço, viva, não encerrada nem DE_BAJA — a régua do vínculo (079) menos as encerradas):
+ * criar outra duplicaria a vaga e deixaria o Kanban antigo órfão. Nada foi gravado. O controller mapeia para
+ * 409 `LINKABLE_VACANCY_EXISTS`; a tela abre o modal "Vincular vaga existente".
+ */
+export class LinkableVacancyExistsError extends Error {
+  constructor(
+    readonly patientId: string,
+    readonly serviceId: string,
+    readonly vacancyIds: string[],
+  ) {
+    super(`Patient already has a linkable vacancy (serviceId=${serviceId}): ${vacancyIds.join(", ")}`);
+    this.name = "LinkableVacancyExistsError";
+  }
+}
+
+export interface ActivateRecruitmentOptions {
+  /**
+   * Sinal EXPLÍCITO da pessoa ("Criar vaga nova" no modal do foguete): cria mesmo havendo candidata aberta ao vínculo.
+   * Sem ele, candidata aberta → `LinkableVacancyExistsError`. A recusa fica registrada no audit da vaga criada.
+   */
+  createNewVacancy?: boolean;
 }
 
 export interface ActivateRecruitmentResult {
@@ -83,13 +92,13 @@ export interface ActivateRecruitmentResult {
  * máximo, UMA vaga em rascunho. Um paciente pode ter N serviços, cada um ativado (ou não)
  * independente dos demais.
  *
- * Efeitos em UMA transação: `SELECT … FOR UPDATE` do paciente e do serviço (trava a mesma corrida
- * que o antecessor travava); gate `RECRUITMENT_BLOCKING_CODES`; 409 se já há vaga viva do
+ * Efeitos em UMA transação: lock de linha do paciente e do serviço (`lockRecruitmentContext`) (trava a mesma corrida
+ * que o antecessor travava); 409 `LinkableVacancyExistsError` se o paciente já tem vaga vinculável (sem serviço); gate `RECRUITMENT_BLOCKING_CODES`; 409 se já há vaga viva do
  * serviço; 1 INSERT em `job_postings` via `buildInsertQuery/buildInsertParams` (mesmo caminho de
  * `POST /api/admin/vacancies` — nunca SQL duplicado). D469 (02/10/2026, revê a D434): se o
  * paciente está no funil de admissão (SOLICITANTE/ADMISSION/PENDING_ADMISSION), o foguete o move
  * para SEARCHING por `movePatientStatus` (catálogo + trilha `change_source = 'recruitment_activation'`),
- * NA MESMA transação (`txClient` — sem 2ª transação, sem deadlock no FOR UPDATE). Fora do funil
+ * NA MESMA transação (`txClient` — sem 2ª transação, sem deadlock no lock de linha). Fora do funil
  * (já ACTIVE, ON_HOLD, etc.) o status NÃO muda. Se a pré-condição de completude do SEARCHING
  * (horário de TODO serviço ativo) falhar, a vaga é criada mesmo assim e o paciente fica onde está
  * (`statusChanged: false`). O envio à Talentum (`VacancyLaunchHook`) continua movendo quem sobrar.
@@ -99,15 +108,21 @@ export interface ActivateRecruitmentResult {
  * antecessor.
  */
 export class ActivateRecruitmentUseCase {
+  constructor(
+    private readonly linkRepo: LinkExistingVacancyRepository = new LinkExistingVacancyRepository(),
+    private readonly auditRepo: Pick<JobPostingAuditRepository, "logFieldChangesSafe"> = new JobPostingAuditRepository(),
+  ) {}
+
   async execute(
     patientId: string,
     serviceId: string,
     actor?: HumanActor,
+    opts: ActivateRecruitmentOptions = {},
   ): Promise<ActivateRecruitmentResult> {
     const startMs = Date.now();
     try {
       const result = await inPatientTransaction((client) =>
-        this.runInTransaction(client, patientId, serviceId, actor),
+        this.runInTransaction(client, patientId, serviceId, actor, opts),
       );
       functions.logger.info("activate_recruitment.completed", {
         patientId,
@@ -122,6 +137,7 @@ export class ActivateRecruitmentUseCase {
         err instanceof PatientNotFoundForRecruitmentError ||
         err instanceof ServiceNotFoundForRecruitmentError ||
         err instanceof ServiceAlreadyRecruitingError ||
+        err instanceof LinkableVacancyExistsError ||
         err instanceof RecruitmentNotReadyError;
       if (!expected) {
         functions.logger.error("activate_recruitment.failed", {
@@ -139,90 +155,21 @@ export class ActivateRecruitmentUseCase {
     client: PoolClient,
     patientId: string,
     serviceId: string,
-    actor?: HumanActor,
+    actor: HumanActor | undefined,
+    opts: ActivateRecruitmentOptions, // sempre vem de `execute` (que tem o default `{}`): sem default aqui, que seria ramo morto
   ): Promise<ActivateRecruitmentResult> {
-    const patientRes = await client.query<{
-      id: string;
-      status: string;
-      case_number: number | null;
-      insurance_informed: string | null;
-      has_verified_active_coverage: boolean;
-    }>(
-      `SELECT id, status, case_number,
-                insurance_informed,
-                -- Hotfix gate-cobertura-verificada-vacante (28/09): caminho NOVO da cobertura
-                -- (patient_insurance_verified, migration 305/312) — o gate deixa de conhecer só
-                -- o escalar insurance_informed. Mesmo critério "provider
-                -- ativo" medido em produção antes deste hotfix.
-                EXISTS (
-                  SELECT 1 FROM patient_insurance_verified piv
-                  JOIN insurance_providers ip ON ip.code = piv.provider_code AND ip.active
-                  WHERE piv.patient_id = patients.id
-                ) AS has_verified_active_coverage
-           FROM patients
-          WHERE id = $1 AND deleted_at IS NULL
-          FOR UPDATE`,
-      [patientId],
-    );
-    if ((patientRes.rowCount ?? 0) === 0) {
-      throw new PatientNotFoundForRecruitmentError(patientId);
-    }
-    const { status, case_number, insurance_informed, has_verified_active_coverage } = patientRes.rows[0];
+    const { patient, service } = await lockRecruitmentContext(client, patientId, serviceId);
+    const { status, case_number } = patient;
 
-    const serviceRes = await client.query<{
-      id: string;
-      providers_needed: number | null;
-      has_schedule: boolean;
-      live_address_id: string | null;
-      required_professions: string[] | null;
-      required_sex: string | null;
-      required_experience: string | null;
-      work_schedule: string | null;
-      payment_day: string | null;
-    }>(
-      // Spec 027 Fase 3 (D508): SÓ os 5 campos que a vaga copia. `worker_attributes`/`daily_obs` ficam na
-      // ficha e NÃO são lidos aqui (não são usados: nem pelo portão, nem pela cópia).
-      `SELECT pcs.id, pcs.providers_needed,
-                EXISTS (SELECT 1 FROM patient_itinerary_slot s
-                         WHERE s.contracted_service_id = pcs.id AND ${slotVigenteSql('s')}) AS has_schedule,
-                pcs.required_professions, pcs.required_sex, pcs.required_experience,
-                pcs.work_schedule, pcs.payment_day,
-                pa.id AS live_address_id
-           FROM patient_contracted_services pcs
-           LEFT JOIN patient_addresses pa
-                  ON pa.id = pcs.address_id AND pa.archived_at IS NULL
-          WHERE pcs.id = $1 AND pcs.patient_id = $2 AND pcs.active
-          FOR UPDATE OF pcs`,
-      [serviceId, patientId],
-    );
-    if ((serviceRes.rowCount ?? 0) === 0) {
-      throw new ServiceNotFoundForRecruitmentError(patientId, serviceId);
-    }
-    const service = serviceRes.rows[0];
-
-    const liveVacancyRes = await client.query<{ id: string }>(
-      `SELECT id FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL LIMIT 1`,
-      [serviceId],
-    );
-    if ((liveVacancyRes.rowCount ?? 0) > 0) {
-      throw new ServiceAlreadyRecruitingError(liveVacancyRes.rows[0].id);
+    // Um serviço = UMA vaga: se o paciente já tem vaga ABERTA sem serviço (legada), ela se VINCULA (spec 079), não se duplica.
+    // Mesma transação e mesma régua do vínculo (`linkableOpenVacancies` = `linkableVacancies` sem as encerradas, que não
+    // contam para o foguete); antes do portão e de qualquer escrita. `createNewVacancy` (escolha explícita) pula a trava.
+    const linkable = linkableOpenVacancies(await this.linkRepo.listPatientVacanciesForLink(client, patientId), patientId);
+    if (linkable.length > 0 && !opts.createNewVacancy) {
+      throw new LinkableVacancyExistsError(patientId, serviceId, linkable.map((v) => v.id));
     }
 
-    // Spec 056: "tem horário" = ≥ 1 faixa vigente hoje (o serviço não carrega mais `schedule`).
-    const hasSchedule = service.has_schedule;
-    const { missing, ready } = computeRecruitmentReadiness({
-      serviceHasAddress: service.live_address_id != null,
-      serviceHasSchedule: hasSchedule,
-      insuranceInformed: insurance_informed,
-      hasVerifiedActiveCoverage: has_verified_active_coverage,
-      serviceRecruitmentFields: {
-        requiredProfessions: service.required_professions,
-        requiredSex: service.required_sex,
-        requiredExperience: service.required_experience,
-        workSchedule: service.work_schedule,
-        paymentDay: service.payment_day,
-      },
-    });
+    const { missing, ready } = computeRecruitmentReadiness(readinessInputFromContext({ patient, service }));
     if (!ready) {
       throw new RecruitmentNotReadyError(patientId, serviceId, missing);
     }
@@ -288,24 +235,9 @@ export class ActivateRecruitmentUseCase {
       ...fromRecruitment,
       ...fromOrigin,
     });
-    // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT
-    // (buildInsertQuery); a corrida entre dois cliques simultâneos no mesmo
-    // caso bate no índice único idx_job_postings_case_ordinal — SAVEPOINT +
-    // retry recalcula o ordinal e tenta de novo.
-    const insRes = await retryOnCaseOrdinalConflict(
-      async () => {
-        await client.query("SAVEPOINT case_ordinal_retry");
-        const res = await client.query<Record<string, unknown> & { id: string }>(
-          buildInsertQuery(),
-          params,
-        );
-        await client.query("RELEASE SAVEPOINT case_ordinal_retry");
-        return res;
-      },
-      async () => {
-        await client.query("ROLLBACK TO SAVEPOINT case_ordinal_retry");
-      },
-    );
+    // case_ordinal (spec 084 R12/R16) é derivado do SERVIÇO dentro do próprio INSERT (buildInsertQuery): sem MAX+1, sem corrida,
+    // sem índice único — não há mais conflito de case_ordinal para retentar.
+    const insRes = await client.query<Record<string, unknown> & { id: string }>(buildInsertQuery(), params);
     const vacancyId = insRes.rows[0].id;
 
     // T018 (spec 027, US2) — trilha de auditoria da vaga criada. O ator vem do
@@ -318,11 +250,23 @@ export class ActivateRecruitmentUseCase {
     // best-effort do fluxo manual (VacancyCrudController.createVacancy): falha
     // de auditoria não pode derrubar a vaga que acabou de ser inserida nesta
     // MESMA transação.
-    await auditVacancyCreated(client, vacancyId, insRes.rows[0], actor ?? {
+    const auditActor: HumanActor = actor ?? {
       actorUserId: null,
       actorType: "SYSTEM",
       actorLabel: "activate_recruitment",
-    });
+    };
+    await auditVacancyCreated(client, vacancyId, insRes.rows[0], auditActor);
+    if (linkable.length > 0) {
+      // Criação COM candidata aberta recusada pela pessoa ("Criar vaga nova"): fica na trilha da vaga criada (só ids).
+      await this.auditRepo.logFieldChangesSafe(client, {
+        jobPostingId: vacancyId,
+        fields: [{ field: "linkable_vacancies_declined", before: null, after: linkable.map((v) => v.id) }],
+        actorUserId: auditActor.actorUserId,
+        actorType: auditActor.actorType,
+        actorLabel: auditActor.actorLabel,
+        traceId: auditActor.traceId ?? null,
+      });
+    }
 
     // D469 — o foguete volta a mover o paciente do funil para SEARCHING (revê DX-6.6/D434).
     if (!(ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(status)) {

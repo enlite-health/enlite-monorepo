@@ -120,6 +120,18 @@ export function nextWeekdaySql(dow: number): string {
   );
 }
 
+/**
+ * Primeira ocorrência do dia da semana `dow` em `[hoje, hoje + 6]` (Buenos Aires) — a MESMA janela do aviso "sin cubrir" (`uncoveredWindow`:
+ * hoje incluso, hoje + 7 fora). Existe sempre, em qualquer dia da semana; `nextWeekdaySql` (estritamente futura) cai em hoje + 7, FORA da janela,
+ * quando hoje já é `dow`. A ausência "para hoje" é válida (`date >= asOf`).
+ */
+export function weekdayInHorizonSql(dow: number): string {
+  return runSQL(
+    `SELECT to_char(g::date,'YYYY-MM-DD') FROM (SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS t) x, ` +
+      `generate_series(x.t, x.t + 6, interval '1 day') g WHERE extract(dow FROM g) = ${dow}`,
+  );
+}
+
 /** A ocorrência PASSADA mais recente do dia da semana `dow` (Buenos Aires), lida do banco. */
 export function pastWeekdaySql(dow: number): string {
   return runSQL(

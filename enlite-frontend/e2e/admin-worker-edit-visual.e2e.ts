@@ -13,6 +13,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { mockAreasDoPainel } from './helpers/areas-do-painel';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY = 'test-api-key';
@@ -63,6 +64,7 @@ async function seedAndLogin(page: Page, permissions: string[] | null = null): Pr
       body: JSON.stringify({ success: true, data: { id: uid, email,
         firstName: 'Edit', lastName: 'Visual', isActive: true, mustChangePassword: false } }) }));
   if (permissions !== null) {
+    await mockAreasDoPainel(page);
     await page.route('**/v1/me/authz', (r) =>
       r.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ uid, tenantId: 't', status: 'ACTIVE', permissions,
@@ -75,7 +77,7 @@ async function seedAndLogin(page: Page, permissions: string[] | null = null): Pr
     r.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ success: true, data: [] }) }));
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar|Entrar/i }).click();

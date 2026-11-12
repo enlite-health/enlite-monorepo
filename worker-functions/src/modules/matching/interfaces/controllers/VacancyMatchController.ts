@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { sendVacancyDeBajaReadOnly } from './vacancyDeBajaGuard';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
@@ -12,7 +13,11 @@ import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreRes
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
 import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/identity/permissions';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
-import { distanceKmSql } from '../../infrastructure/candidateDistanceSql';
+import { distanceKmSql, nearestServiceAreaLateralSql, repliedSql } from '../../infrastructure/candidateDistanceSql';
+import { operationDateOf } from '@shared/locale/operationDate';
+
+/** Teto do `limit` do GET `match-results` (emenda 06/11 da spec 089: prd mediu máx 438 prestadores até 50 km). */
+export const MATCH_RESULTS_MAX_LIMIT = 500;
 
 /**
  * VacancyMatchController
@@ -34,12 +39,17 @@ export class VacancyMatchController {
       const radiusKm               = req.query.radius_km ? parseInt(req.query.radius_km as string) : undefined;
       const excludeWithActiveCases = req.query.exclude_active === 'true';
 
-      const jobRes = await this.db.query<{ id: string }>(
-        `SELECT id FROM job_postings WHERE id = $1 LIMIT 1`,
+      const jobRes = await this.db.query<{ id: string; status: string | null }>(
+        `SELECT id, status FROM job_postings WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
         [id],
       );
       if (jobRes.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Job posting not found' });
+        return;
+      }
+      // Spec 084 (P4/R6): o Match não roda em vaga dada de baja — o recrutamento não trabalha vaga sem serviço contratado.
+      if (jobRes.rows[0].status === 'DE_BAJA') {
+        sendVacancyDeBajaReadOnly(res);
         return;
       }
 
@@ -61,23 +71,61 @@ export class VacancyMatchController {
   async getMatchResults(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const limit  = Math.min(parseInt((req.query.limit  as string) || '50'), 200);
-      const offset = parseInt((req.query.offset as string) || '0');
+      // Spec 089 (emenda 06/11): teto 500. `limit=0` é válido (só meta — contador do botão da vacante).
+      const rawLimit = parseInt((req.query.limit as string) || '50', 10);
+      const limit    = Number.isNaN(rawLimit) ? 50 : Math.min(Math.max(rawLimit, 0), MATCH_RESULTS_MAX_LIMIT);
+      const rawOffset = parseInt((req.query.offset as string) || '0', 10);
+      const offset   = Number.isNaN(rawOffset) ? 0 : Math.max(rawOffset, 0);
+      const requestNow = new Date();
 
-      const metaResult = await this.db.query<{ total: string; last_match_at: Date | null }>(
-        `SELECT COUNT(*)::text AS total, MAX(wja.updated_at) AS last_match_at
-         FROM worker_job_applications wja
-         WHERE wja.job_posting_id = $1
+      // Meta numa query só. Contagens por PESSOA (DISTINCT worker) e só de worker não desativado, a mesma regra da lista.
+      //   invitedCount          = DF-4: messaged_at IS NOT NULL.
+      //   pendingInVacancyCount = ⚑4 (contador do F0): INVITED, sem WhatsApp, source='manual', sem resposta.
+      const metaResult = await this.db.query<{
+        total: string; last_match_at: Date | null; invited: string; pending: string;
+        country: string | null; lat: string | null; lng: string | null; address_label: string | null;
+      }>(
+        `SELECT
+           COUNT(DISTINCT wja.worker_id)::text AS total,
+           MAX(wja.updated_at) AS last_match_at,
+           COUNT(DISTINCT wja.worker_id) FILTER (WHERE wja.messaged_at IS NOT NULL)::text AS invited,
+           COUNT(DISTINCT wja.worker_id) FILTER (
+             WHERE wja.application_funnel_stage = 'INVITED' AND wja.messaged_at IS NULL
+               AND wja.source = 'manual' AND NOT ${repliedSql('wja.interview_response')}
+           )::text AS pending,
+           MAX(jpx.country) AS country,
+           MAX(pax.lat)::text AS lat,
+           MAX(pax.lng)::text AS lng,
+           MAX(COALESCE(NULLIF(pax.address_formatted, ''), NULLIF(pax.address_raw, ''))) AS address_label
+         FROM job_postings jpx
+         LEFT JOIN patient_addresses pax ON pax.id = jpx.patient_address_id
+         LEFT JOIN worker_job_applications wja ON wja.job_posting_id = jpx.id
            -- total tem que bater com a lista abaixo (que exclui baixados)
-           AND ${workerNotDisabledSql('wja.worker_id')}`,
+           AND ${workerNotDisabledSql('wja.worker_id')}
+         WHERE jpx.id = $1`,
         [id]
       );
-      const totalCandidates = parseInt(metaResult.rows[0]?.total || '0');
-      const lastMatchAt     = metaResult.rows[0]?.last_match_at ?? null;
+      const meta = metaResult.rows[0];
+      const totalCandidates = parseInt(meta?.total || '0', 10);
+      const lastMatchAt     = meta?.last_match_at ?? null;
+      const invitedCount    = parseInt(meta?.invited || '0', 10);
+      const pendingInVacancyCount = parseInt(meta?.pending || '0', 10);
+      // Sem coordenada = null, nunca 0 (um 0 desenharia o serviço no Golfo da Guiné).
+      const serviceLat = meta?.lat != null ? parseFloat(meta.lat) : null;
+      const serviceLng = meta?.lng != null ? parseFloat(meta.lng) : null;
+      const hasPoint   = serviceLat !== null && serviceLng !== null;
+      const service = {
+        lat: hasPoint ? serviceLat : null,
+        lng: hasPoint ? serviceLng : null,
+        addressLabel: meta?.address_label ?? null,
+      };
+      // Dia de operação do PAÍS DA VACANTE (SUP-5), pelo único dono da conta. País vazio = default da coluna (AR).
+      const operationDate = operationDateOf(meta?.country ?? 'AR', requestNow);
 
       // F7.c (ADR-004): application_status removido do SELECT; source + application_funnel_stage
       // adicionados para derivar alreadyApplied sem depender do campo depreciado.
-      const result = await this.db.query(
+      // Spec 089: uma linha por prestador — área viva mais próxima (LATERAL) e documentos por LATERAL LIMIT 1 (SUP-1).
+      const result = limit === 0 ? { rows: [] as any[] } : await this.db.query(
         `SELECT
            wja.worker_id,
            wja.match_score,
@@ -85,6 +133,7 @@ export class VacancyMatchController {
            wja.source,
            wja.application_funnel_stage,
            wja.messaged_at,
+           ${repliedSql('wja.interview_response')} AS replied,
            w.phone,
            w.first_name_encrypted,
            w.last_name_encrypted,
@@ -92,6 +141,8 @@ export class VacancyMatchController {
            w.status,
            wd.documents_status,
            wsa.work_zone,
+           wsa.latitude  AS area_lat,
+           wsa.longitude AS area_lng,
            ${distanceKmSql('wsa.location', 'pa.lat', 'pa.lng')} AS distance_km,
            (
              SELECT COUNT(*)::int
@@ -104,13 +155,15 @@ export class VacancyMatchController {
          FROM worker_job_applications wja
          JOIN workers w    ON w.id  = wja.worker_id
          JOIN job_postings jp ON jp.id = wja.job_posting_id
-         LEFT JOIN worker_documents wd ON wd.worker_id = w.id
-         LEFT JOIN worker_service_areas wsa ON wsa.worker_id = w.id AND wsa.deleted_at IS NULL
+         LEFT JOIN LATERAL (
+           SELECT d.documents_status FROM worker_documents d WHERE d.worker_id = w.id ORDER BY d.updated_at DESC NULLS LAST LIMIT 1
+         ) wd ON true
          LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
+         ${nearestServiceAreaLateralSql()}
          WHERE wja.job_posting_id = $1
            -- worker que deu baixa na conta não é candidato contatável
            AND ${excludeDisabledWorkersSql('w')}
-         ORDER BY wja.match_score DESC NULLS LAST
+         ORDER BY distance_km ASC NULLS LAST, wja.worker_id
          LIMIT $2 OFFSET $3`,
         [id, limit, offset]
       );
@@ -139,9 +192,15 @@ export class VacancyMatchController {
             occupation:        row.occupation,
             workZone:          row.work_zone,
             distanceKm:        row.distance_km,
+            // Spec 089: lat/lng da MESMA área que deu a distância (DECIMAL chega como string do pg).
+            lat:               row.area_lat != null ? parseFloat(row.area_lat) : null,
+            lng:               row.area_lng != null ? parseFloat(row.area_lng) : null,
             activeCasesCount:  row.active_cases_count ?? 0,
             workerStatus:      row.status,
             documentStatus:    row.documents_status ?? null,
+            source:            row.source,
+            funnelStage:       row.application_funnel_stage ?? null,
+            replied:           row.replied === true,
             matchScore:        row.match_score !== null ? parseFloat(row.match_score) : null,
             internalNotes:     row.internal_notes,
             // F7.c (ADR-004): applicationStatus REMOVIDO. alreadyApplied agora deriva da combinação
@@ -163,7 +222,10 @@ export class VacancyMatchController {
 
       res.status(200).json({
         success: true,
-        data: { jobPostingId: id, lastMatchAt, totalCandidates, candidates },
+        data: {
+          jobPostingId: id, lastMatchAt, totalCandidates, service,
+          invitedCount, pendingInVacancyCount, operationDate, candidates,
+        },
       });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));

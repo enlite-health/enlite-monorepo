@@ -101,7 +101,7 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
   let semExportGroupId = '';
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(710000); // faixa própria — 700000-709999 é do 017 humano
+    seed = seedActivatablePatient(710000, { withDiagnosis: false }); // faixa própria — 700000-709999 é do 017 humano
     seedIcd();
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -505,7 +505,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
   });
 
   test.beforeAll(async ({ request }) => {
-    seed = seedActivatablePatient(711000); // faixa própria — 700000-709999 e 710000-719999 são de outros arquivos
+    seed = seedActivatablePatient(711000, { withDiagnosis: false }); // faixa própria — 700000-709999 e 710000-719999 são de outros arquivos
     seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados pelo describe acima
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -698,7 +698,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
   let groupId = '';
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(712000); // faixa própria — 710000/711000 já usadas neste arquivo
+    seed = seedActivatablePatient(712000, { withDiagnosis: false }); // faixa própria — 710000/711000 já usadas neste arquivo
     seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -853,7 +853,7 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
   let groupId = '';
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(713000); // faixa própria — 710000/711000/712000 já usadas neste arquivo
+    seed = seedActivatablePatient(713000, { withDiagnosis: false }); // faixa própria — 710000/711000/712000 já usadas neste arquivo
     seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);

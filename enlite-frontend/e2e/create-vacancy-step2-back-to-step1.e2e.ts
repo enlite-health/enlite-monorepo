@@ -135,7 +135,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();
@@ -236,7 +236,7 @@ test.describe('CreateVacancy — Step 2 → Voltar → Step 1 (edit mode)', () =
 
     // Stepper marca Step 1 como step ativo (não Step 2)
     await expect(
-      page.locator('ol[aria-label="Progress"] li[aria-current="step"]'),
+      page.locator('ol[aria-label="Progreso"] li[aria-current="step"]'),
     ).toContainText(/Datos de la vacante/i);
 
     // Visual snapshot — header com Continuar habilitado + endereço linkado

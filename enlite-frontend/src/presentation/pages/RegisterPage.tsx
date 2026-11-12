@@ -173,7 +173,13 @@ export function RegisterPage() {
    * Google login success → navigate to /complete-whatsapp so the user can
    * provide their WhatsApp number for claim reconciliation.
    */
-  const handleGoogleSuccess = () => {
+  const handleGoogleSuccess = async (googleUser: { id: string; email: string }) => {
+    // O cadastro pelo Google cria a ficha AQUI (o `authStore` não faz mais init no login). Não bloqueia a navegação.
+    try {
+      await WorkerApiService.initWorker({ authUid: googleUser.id, email: googleUser.email });
+    } catch (err) {
+      console.error('[Register] Worker init (Google) failed:', err);
+    }
     navigate('/complete-whatsapp');
   };
 
@@ -301,7 +307,7 @@ export function RegisterPage() {
                           partBeforeTerms,
                           <a
                             key="terms"
-                            href="https://enlite.health/es/politica-de-privacidad-enlite-health-solutions/"
+                            href="https://enlite.health/es/politica-de-privacidad/"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="underline text-primary"

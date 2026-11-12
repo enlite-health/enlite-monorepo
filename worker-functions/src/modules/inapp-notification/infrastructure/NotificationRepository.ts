@@ -42,7 +42,11 @@ export type NotificationTypeCode =
   | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
   | 'ADMISSION_TACTIQ_LINK_REQUIRED'
   | 'ADMISSION_TACTIQ_EXTENSION_CHANGED'
-  | 'ITINERARY_UNCOVERED_SHIFTS';
+  | 'ADMISSION_IMPORT_BLOCKED'
+  | 'ITINERARY_UNCOVERED_SHIFTS'
+  | 'PEDIDO_IA_NOVO'
+  | 'PEDIDO_IA_GRAVE'
+  | 'PEDIDO_IA_APLICAR';
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
@@ -74,12 +78,47 @@ export interface AdmissionTactiqExtensionPayload {
 }
 
 /**
+ * Payload do aviso "a transcrição desta reunião não foi importada" (spec 083, D-7): 6 chaves fechadas, só enums e datas — nunca nome de
+ * paciente, código ADM, id de reunião nem texto livre. `hostName` (nome de FUNCIONÁRIO) só na cópia da gestão. Construído por
+ * `buildAdmissionImportBlockedPayload`.
+ */
+export type AdmissionImportBlockedStage = 'blocked' | 'reminder' | 'expired' | 'will_be_lost';
+export type AdmissionImportBlockedKind = 'admission' | 'enquadre';
+export type AdmissionImportBlockedReason = 'no_link' | 'wrong_account';
+export type AdmissionImportBlockedAudience = 'host' | 'supervisor';
+/** Conjuntos fechados do contrato (fonte única: o publicador valida na escrita e o leitor na leitura). */
+export const IMPORT_STAGES: readonly AdmissionImportBlockedStage[] = ['blocked', 'reminder', 'expired', 'will_be_lost'];
+export const IMPORT_KINDS: readonly AdmissionImportBlockedKind[] = ['admission', 'enquadre'];
+export const IMPORT_REASONS: readonly AdmissionImportBlockedReason[] = ['no_link', 'wrong_account'];
+export const IMPORT_AUDIENCES: readonly AdmissionImportBlockedAudience[] = ['host', 'supervisor'];
+export interface AdmissionImportBlockedPayload {
+  stage: AdmissionImportBlockedStage;
+  kind: AdmissionImportBlockedKind;
+  reason: AdmissionImportBlockedReason;
+  audience: AdmissionImportBlockedAudience;
+  meetingAt: string;
+  deadlineAt: string;
+  hostName?: string;
+}
+
+/**
  * Payload do aviso diário de turnos sin cubrir (spec 069 F4): SÓ ids e números — nunca nome do paciente (resolvido na tela, sob a RLS
  * de quem lê) nem texto livre. Construído por `buildItineraryUncoveredShiftsPayload`, nunca por objeto livre.
  */
 export interface ItineraryUncoveredShiftsPayload {
   operationDate: string;
   items: Array<{ patientId: string; serviceId: string; shifts: number; firstDate: string }>;
+}
+
+/**
+ * Payload do aviso "pedido aceito em degrau 3/4: aplicar" (spec 078 M4.4, gatilho (d)): SÓ ids e enums — nunca assunto, descrição
+ * nem texto do pedido. Construído por `buildPedidoIaAplicarPayload`.
+ */
+export interface PedidoIaAplicarPayload {
+  pedido_id: string;
+  degrau: 3 | 4;
+  grave: boolean;
+  prazo: 'hoje' | 'semana';
 }
 
 export interface InsertNotificationEventInput {
@@ -89,7 +128,7 @@ export interface InsertNotificationEventInput {
   conversationId: string | null;
   messageId: string | null;
   /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload;
 }
 
 export interface NotificationEventRow {

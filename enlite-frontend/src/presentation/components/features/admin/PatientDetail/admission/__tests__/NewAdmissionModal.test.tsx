@@ -55,6 +55,7 @@ describe('A7-3 — responsável sem vínculo', () => {
     expect(radio).toBeDisabled();
     expect(screen.getByTestId('admission-host-beto@example.test')).toHaveAttribute('data-disabled', 'true');
     expect(screen.getByTestId('admission-host-reason-beto@example.test')).toHaveTextContent('Sin Tactiq vinculado');
+    expect(screen.getByTestId('admission-host-reason-beto@example.test').textContent).not.toContain('Google Calendar');
     // Clique de verdade (user-event respeita `disabled`; o `fireEvent` do jsdom marca um radio desabilitado).
     await userEvent.click(radio);
     expect(radio).not.toBeChecked();

@@ -8,6 +8,7 @@ import {
 } from '../domain/InterviewSlot';
 import { Result } from '@shared/utils/Result';
 import { TokenService } from './TokenService';
+import { operationDateOf } from '@shared/locale/civilClock';
 
 export class InterviewSchedulingService {
   private tokenService: TokenService;
@@ -24,7 +25,7 @@ export class InterviewSchedulingService {
    */
   async createSlotsForJob(dto: CreateInterviewSlotsDTO): Promise<InterviewSlot[]> {
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const today = operationDateOf('AR', now);
 
     for (const slot of dto.slots) {
       if (slot.date < today) {
@@ -108,6 +109,7 @@ export class InterviewSchedulingService {
       const nameToken = await this.tokenService.generate(worker_id, 'worker_first_name');
 
       const dateFormatted = new Date(slot.slotDate).toLocaleDateString('es-AR', {
+        timeZone: 'UTC',
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',

@@ -40,9 +40,11 @@ interface KanbanBoardProps {
    * (enfileirado ou pulado com motivo); lança em falha. Ausente = o board não mostra o botão.
    */
   onPresentationInvite?: (workerId: string) => Promise<PresentationInviteResult>;
+  /** Spec 084 (P4/R6): vaga dada de baja — só consulta. Nenhum card é arrastável nem tem menu de mover/rechazar. */
+  readOnly?: boolean;
 }
 
-export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite, readOnly = false }: KanbanBoardProps) {
   const { t } = useTranslation();
   // PUT /encuadres/:id/move, /result
   // → todos funnel:write. Arrasto e menu de clique chamam a MESMA rota — D269
@@ -51,7 +53,9 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
   // significa "sem listener do dnd-kit" — não é um drag "travado") e os
   // callbacks de mover/rechazar viram `undefined`, então `KanbanCard`
   // nem monta o `MoveToMenu`/botão (mesmo `{onX && <.../>}` de sempre).
-  const funnelWriteGate = useActionGate('funnel', 'update');
+  const funnelGate = useActionGate('funnel', 'update');
+  // Spec 084: vaga baixada = leitura. Mesmo predicado do gate de célula (esconder, não desabilitar).
+  const funnelWriteGate = { ...funnelGate, denied: funnelGate.denied || readOnly };
   /** Modal de motivo de rejeição: move o encuadre para REJECTED (onMove). */
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId?: string; blockedId?: string } | null>(null);
   /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */

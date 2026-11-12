@@ -1,12 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { Sparkles } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActionButton } from '@presentation/components/features/access';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { useVacancyFunnelTable } from '@hooks/admin/useVacancyFunnelTable';
-import { useInvitedPendingCandidates } from '@hooks/admin/useInvitedPendingCandidates';
-import type { InviteTarget } from '../../VacancyMatch/inviteTypes';
 import { VacancyFunnelToggle } from './VacancyFunnelToggle';
 import type { FunnelView } from './VacancyFunnelToggle';
 import { VacancyFunnelFilters } from './VacancyFunnelFilters';
@@ -18,10 +14,7 @@ import {
 } from './funnelRowFilter';
 import { VacancyFunnelTable } from './VacancyFunnelTable';
 import { VacancyFunnelKanban } from './VacancyFunnelKanban';
-import { DispatchConfirmModal } from './DispatchConfirmModal';
-import { MatchVacancyModal } from '../../VacancyMatch/MatchVacancyModal';
-import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
-import type { VacancyForMatch } from '../../VacancyMatch/matchModalHelpers';
+import { InviteEntryButton } from './InviteEntryButton';
 import { VACANCY_FUNNEL_COLUMNS } from './funnelTabsConfig';
 import type { FunnelTableTab } from '@hooks/admin/useVacancyFunnelTable';
 
@@ -60,12 +53,13 @@ function persistView(vacancyId: string, view: FunnelView): void {
 
 interface VacancyFunnelViewProps {
   vacancyId: string;
-  vacancy?: VacancyForMatch;
+  /** Spec 084 (P4/R6): vaga dada de baja — o funil abre só para consulta (sem Match, sem envio, sem arrasto). */
+  readOnly?: boolean;
 }
 
 export function VacancyFunnelView({
   vacancyId,
-  vacancy,
+  readOnly = false,
 }: VacancyFunnelViewProps): JSX.Element {
   const { t } = useTranslation();
   const [view, setView] = useState<FunnelView>(() =>
@@ -73,12 +67,6 @@ export function VacancyFunnelView({
   );
   // Filtros só da Lista; não são salvos (voltam ao padrão ao recarregar).
   const [filters, setFilters] = useState<FunnelRowFilters>(DEFAULT_FUNNEL_ROW_FILTERS);
-  const [showMatchModal, setShowMatchModal] = useState(false);
-  const [showDispatchConfirm, setShowDispatchConfirm] = useState(false);
-  const [dispatchSnapshot, setDispatchSnapshot] = useState<InviteTarget[]>([]);
-
-  const enqueueInvites = useInviteProgressStore((s) => s.enqueue);
-  const isSendingInvites = useInviteProgressStore((s) => s.isSending);
 
   const isListView = view === 'list';
 
@@ -88,39 +76,10 @@ export function VacancyFunnelView({
     isListView,
   );
 
-  const {
-    candidates: pendingCandidates,
-    pendingCount,
-    refetch: refetchPending,
-  } = useInvitedPendingCandidates(vacancyId);
-
   function handleViewChange(newView: FunnelView) {
     setView(newView);
     persistView(vacancyId, newView);
   }
-
-  function handleDispatchInvites() {
-    if (pendingCount === 0) return;
-    setDispatchSnapshot(pendingCandidates);
-    setShowDispatchConfirm(true);
-  }
-
-  function handleConfirmDispatch() {
-    setShowDispatchConfirm(false);
-    // Envio em background — o painel flutuante mostra o progresso e o operador
-    // segue trabalhando (não trava mais a tela).
-    enqueueInvites(vacancyId, dispatchSnapshot);
-  }
-
-  // Ao concluir um lote de envio (isSending true → false), recarrega a lista de
-  // pendentes pra refletir os que saíram (equivale ao antigo refetch-on-close).
-  const wasSending = useRef(false);
-  useEffect(() => {
-    if (wasSending.current && !isSendingInvites) {
-      refetchPending();
-    }
-    wasSending.current = isSendingInvites;
-  }, [isSendingInvites, refetchPending]);
 
   const visibleRows = filterFunnelRows(data?.rows ?? [], filters);
 
@@ -129,32 +88,7 @@ export function VacancyFunnelView({
       {/* Linha 1: toggle (esquerda) + ações (direita, nas duas visões — 054 item 6) */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <VacancyFunnelToggle view={view} onChange={handleViewChange} />
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {/* POST /vacancies/:id/match → match:execute · POST /messaging/whatsapp/vacancy-match →
-              messaging:send (D286 fase 2 — a rota já decidia; sem a célula o botão SOME). */}
-          <ActionButton
-            resource="match"
-            action="execute"
-            variant="outline"
-            size="md"
-            onClick={() => setShowMatchModal(true)}
-          >
-            <Sparkles size={16} aria-hidden="true" />
-            Hacer match
-          </ActionButton>
-          <ActionButton
-            resource="messaging"
-            action="send"
-            variant="primary"
-            size="md"
-            onClick={handleDispatchInvites}
-            disabled={pendingCount === 0}
-          >
-            {t('admin.vacancyDetail.funnelView.dispatchInvitesButtonCount', {
-              count: pendingCount,
-            })}
-          </ActionButton>
-        </div>
+        {!readOnly && <InviteEntryButton vacancyId={vacancyId} />}
       </div>
 
       {/* List view content */}
@@ -204,23 +138,7 @@ export function VacancyFunnelView({
       )}
 
       {/* Kanban view content */}
-      {!isListView && <VacancyFunnelKanban vacancyId={vacancyId} />}
-
-      {showMatchModal && (
-        <MatchVacancyModal
-          vacancyId={vacancyId}
-          vacancy={vacancy}
-          onClose={() => setShowMatchModal(false)}
-        />
-      )}
-
-      {showDispatchConfirm && (
-        <DispatchConfirmModal
-          pendingCount={dispatchSnapshot.length}
-          onConfirm={handleConfirmDispatch}
-          onCancel={() => setShowDispatchConfirm(false)}
-        />
-      )}
+      {!isListView && <VacancyFunnelKanban vacancyId={vacancyId} readOnly={readOnly} />}
     </div>
   );
 }

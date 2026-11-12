@@ -141,6 +141,14 @@ describe('TwilioMessagingService', () => {
       });
     });
 
+    it('remetente alternativo (número do Sol, spec 078): `from` vira o remetente; omitido, segue o TWILIO_WHATSAPP_NUMBER', async () => {
+      mockCreate.mockResolvedValue({ sid: 'SM-sol-1', status: 'queued' });
+      await service.sendWithContentSid('+5491100001111', 'HXsol', { '1': 'https://x/y' }, '+5491199990000');
+      expect(mockCreate).toHaveBeenLastCalledWith(expect.objectContaining({ from: 'whatsapp:+5491199990000' }));
+      await service.sendWithContentSid('+5491100001111', 'HXsol', { '1': 'https://x/y' });
+      expect(mockCreate).toHaveBeenLastCalledWith(expect.objectContaining({ from: 'whatsapp:+14155238886' }));
+    });
+
     it('retorna fail se serviço não configurado', async () => {
       delete process.env.TWILIO_ACCOUNT_SID;
       const unconfigured = new TwilioMessagingService(mockTemplateRepo as any);

@@ -1,3 +1,4 @@
+import { ADMISSION_FUNNEL_STATUSES } from '../enums/PatientStatus';
 import {
   computePatientCompleteness,
   isMinor,
@@ -13,6 +14,8 @@ import {
   RECRUITMENT_BLOCKING_CODES,
   isPlaceholderCoverageValue,
   computeRecruitmentReadiness,
+  CLINICAL_DATA_GENERIC_CODE,
+  CARE_ENTRY_STATUSES,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
@@ -27,11 +30,14 @@ const baseInput = {
   activeContractedServiceCount: 1,
   activeContractedServicesWithoutAddressCount: 0,
   activeContractedServicesWithoutScheduleCount: 0,
+  // Neutro para o DIAGNOSIS (só avaliado em estágio pré-atendimento): os testes antigos não dependem dele.
+  status: 'ACTIVE' as string | null,
+  activeDiagnosisCount: 0,
   now: NOW,
 };
 
 describe('PATIENT_COMPLETENESS_CODES (lex D1.2)', () => {
-  it('é exatamente os 7 códigos administrativos — sem item clínico', () => {
+  it('é exatamente os 7 códigos administrativos + DIAGNOSIS (pedido do Javier), nesta ordem', () => {
     expect(PATIENT_COMPLETENESS_CODES).toEqual([
       'ADDRESS',
       'RESPONSIBLE',
@@ -40,14 +46,14 @@ describe('PATIENT_COMPLETENESS_CODES (lex D1.2)', () => {
       'SERVICE_ADDRESS',
       'SERVICE_SCHEDULE',
       'CONSENT',
+      'DIAGNOSIS',
     ]);
   });
 
-  it('nenhum código nomeia conteúdo clínico (diagnóstico, patología, instrucciones)', () => {
+  it('o ÚNICO código que nomeia conteúdo clínico é DIAGNOSIS (existência, nunca valor) — patología/instrucciones/emergencia seguem fora', () => {
     const clinicalWords = /diagn|patol|clinic|instruc|emerg/i;
-    for (const code of PATIENT_COMPLETENESS_CODES as readonly string[]) {
-      expect(clinicalWords.test(code)).toBe(false);
-    }
+    const clinicos = (PATIENT_COMPLETENESS_CODES as readonly string[]).filter((c) => clinicalWords.test(c));
+    expect(clinicos).toEqual(['DIAGNOSIS']);
   });
 
   // Spec 018 PR-3 (Emenda 13/09, `lex` L2b-4/L2c): gênero e idiomas são SEMPRE facultativos —
@@ -65,7 +71,8 @@ describe('PATIENT_COMPLETENESS_CODES (lex D1.2)', () => {
     const result = computePatientCompleteness({
       birthDate: null, hasConsent: null, insuranceInformed: null, activeAddressCount: 0,
       activeResponsibleCount: 0, activeContractedServiceCount: 0,
-      activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0, now: NOW,
+      activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0,
+      status: 'ADMISSION', activeDiagnosisCount: 0, now: NOW,
     });
     expect(result.missing as readonly string[]).not.toContain('GENDER');
     expect(result.missing as readonly string[]).not.toContain('LANGUAGES');
@@ -109,8 +116,8 @@ describe('isMinor', () => {
 });
 
 describe('ACTIVATION_BLOCKING_CODES (D255, decisão 03/09 + migration 330, decisão 05/09)', () => {
-  it('é ADDRESS, SERVICE_ADDRESS e SERVICE_SCHEDULE — os demais códigos são checklist informativo, não bloqueio do activate', () => {
-    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
+  it('é ADDRESS, SERVICE_ADDRESS, SERVICE_SCHEDULE e DIAGNOSIS (pedido do Javier) — os demais códigos são checklist informativo, não bloqueio', () => {
+    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'DIAGNOSIS']);
   });
 
   it('todo código de ACTIVATION_BLOCKING_CODES pertence a PATIENT_COMPLETENESS_CODES (sem código órfão)', () => {
@@ -121,8 +128,9 @@ describe('ACTIVATION_BLOCKING_CODES (D255, decisão 03/09 + migration 330, decis
 });
 
 describe('blockingCodesForStatusChange (decisão do Gabriel 07/09)', () => {
-  it('ACTIVE exige o checklist bloqueante INTEIRO — fecha o atalho do drop no Kanban', () => {
-    expect(blockingCodesForStatusChange('ACTIVE')).toEqual(ACTIVATION_BLOCKING_CODES);
+  it('ACTIVE exige o checklist bloqueante INTEIRO — fecha o atalho do drop no Kanban (DIAGNOSIS só quando vem de ADMISSION)', () => {
+    expect(blockingCodesForStatusChange('ACTIVE')).toEqual(ACTIVATION_BLOCKING_CODES.filter((c) => c !== 'DIAGNOSIS'));
+    expect(blockingCodesForStatusChange('ACTIVE', false, 'ADMISSION')).toEqual(ACTIVATION_BLOCKING_CODES);
   });
 
   it('SEARCHING e REPLACEMENT exigem SÓ o horário — não reabrem a admissão numa troca urgente', () => {
@@ -205,6 +213,8 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
+      status: 'ACTIVE',
+      activeDiagnosisCount: 0,
       now: NOW,
     });
     expect(r.missing).toEqual(['RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT']);
@@ -343,6 +353,8 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
+      status: 'ACTIVE',
+      activeDiagnosisCount: 0,
       now: NOW,
     });
     const expected: PatientCompletenessCode[] = [
@@ -366,10 +378,90 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
       activeContractedServicesWithoutScheduleCount: 0,
+      status: 'ACTIVE',
+      activeDiagnosisCount: 0,
       now: NOW,
     });
     const indices = r.missing.map((code) => PATIENT_COMPLETENESS_CODES.indexOf(code));
     expect(indices).toEqual([...indices].sort((a, b) => a - b));
+  });
+});
+
+describe('DIAGNOSIS no checklist e na troca de status (pedido do Javier / decisão do Gabriel)', () => {
+  const PRE_CARE = ['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'] as const;
+  const CARE = ['SEARCHING', 'ACTIVE', 'ON_HOLD', 'REPLACEMENT', 'SUSPENDED'] as const;
+
+  it.each(PRE_CARE)('%s sem diagnóstico ativo → DIAGNOSIS em missing E em blocking (o que falta para entrar em atendimento)', (st) => {
+    const r = computePatientCompleteness({ ...baseInput, status: st, activeDiagnosisCount: 0 });
+    expect(r.missing).toEqual(['DIAGNOSIS']);
+    expect(r.blocking).toEqual(['DIAGNOSIS']);
+    expect(r.canActivate).toBe(false);
+    expect(r.ready).toBe(false);
+  });
+
+  it.each(PRE_CARE)('%s com ≥1 diagnóstico ativo → nada falta', (st) => {
+    expect(computePatientCompleteness({ ...baseInput, status: st, activeDiagnosisCount: 1 }).missing).toEqual([]);
+  });
+
+  it.each([...CARE, 'ALTA', 'DISCHARGED', null])(
+    'paciente em %p (já em atendimento, ou saído) sem diagnóstico → NÃO acusa DIAGNOSIS',
+    (st) => {
+      expect(computePatientCompleteness({ ...baseInput, status: st, activeDiagnosisCount: 0 }).missing).toEqual([]);
+    },
+  );
+
+  it('contagem inválida (NaN) num estágio pré-atendimento conta como FALTANDO, nunca como "tem" (contagem zero/lixo é falha)', () => {
+    expect(computePatientCompleteness({ ...baseInput, status: 'ADMISSION', activeDiagnosisCount: NaN }).missing).toEqual(['DIAGNOSIS']);
+  });
+
+  describe('blockingCodesForStatusChange(to, foraDoFluxo, from)', () => {
+    it.each(PRE_CARE.flatMap((from) => CARE.map((to) => [from, to] as const)))(
+      '%s → %s exige DIAGNOSIS',
+      (from, to) => {
+        expect(blockingCodesForStatusChange(to, false, from)).toContain('DIAGNOSIS');
+      },
+    );
+
+    it('o desvio dos dois passos: ADMISSION → PENDING_ADMISSION é livre, mas PENDING_ADMISSION → SEARCHING cobra', () => {
+      expect(blockingCodesForStatusChange('PENDING_ADMISSION', false, 'ADMISSION')).not.toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('SEARCHING', false, 'PENDING_ADMISSION')).toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('SEARCHING', false, 'SOLICITANTE')).toContain('DIAGNOSIS');
+    });
+
+    it.each(PRE_CARE.flatMap((from) => ['ALTA', 'DISCHARGED', ...PRE_CARE].map((to) => [from, to] as const)))(
+      '%s → %s (descarte ou andar entre os estágios pré-atendimento) NÃO exige DIAGNOSIS',
+      (from, to) => {
+        expect(blockingCodesForStatusChange(to, false, from)).not.toContain('DIAGNOSIS');
+      },
+    );
+
+    it.each(CARE.flatMap((from) => [...CARE, 'ALTA', 'DISCHARGED', ...PRE_CARE].map((to) => [from, to] as const)))(
+      'paciente já em %s → %s NÃO exige DIAGNOSIS (a regra só olha a entrada)',
+      (from, to) => {
+        expect(blockingCodesForStatusChange(to, false, from)).not.toContain('DIAGNOSIS');
+      },
+    );
+
+    it('sem `from` (chamador que não pergunta pela origem) → comportamento de antes, sem DIAGNOSIS', () => {
+      expect(blockingCodesForStatusChange('ACTIVE')).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
+      expect(blockingCodesForStatusChange('SEARCHING', true)).not.toContain('DIAGNOSIS');
+    });
+
+    it('acumula com o que o destino já cobrava (pré-atendimento → ACTIVE = checklist bloqueante + DIAGNOSIS)', () => {
+      expect(blockingCodesForStatusChange('ACTIVE', false, 'ADMISSION')).toEqual([...ACTIVATION_BLOCKING_CODES]);
+      expect(blockingCodesForStatusChange('SEARCHING', true, 'PENDING_ADMISSION')).toContain('SERVICE_SCHEDULE');
+    });
+  });
+
+  it('o pré-atendimento é o funil (ADMISSION_FUNNEL_STATUSES) e CARE_ENTRY_STATUSES é o clínico sem ALTA/DISCHARGED (e não se cruzam)', () => {
+    expect([...ADMISSION_FUNNEL_STATUSES].sort()).toEqual([...PRE_CARE].sort()); // o dono é o enum do funil
+    expect([...CARE_ENTRY_STATUSES].sort()).toEqual([...CARE].sort());
+    expect(PRE_CARE.some((s) => (CARE as readonly string[]).includes(s))).toBe(false);
+  });
+
+  it('CLINICAL_DATA é o genérico e NÃO é um código calculado (fora de PATIENT_COMPLETENESS_CODES)', () => {
+    expect(CLINICAL_DATA_GENERIC_CODE).toBe('CLINICAL_DATA');
+    expect(PATIENT_COMPLETENESS_CODES as readonly string[]).not.toContain(CLINICAL_DATA_GENERIC_CODE);
   });
 });
 
@@ -392,6 +484,8 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       SERVICE_SCHEDULE:
         /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\s+AND NOT EXISTS \(SELECT 1 FROM patient_itinerary_slot s_ws WHERE s_ws\.contracted_service_id = pcs\.id AND s_ws\.valid @> CURRENT_DATE\)\)/,
       CONSENT: /p\.has_consent IS NOT TRUE/,
+      // Só nos 3 estágios pré-atendimento, e só linha ATIVA de patient_diagnoses (qualquer source).
+      DIAGNOSIS: /COALESCE\(p\.status, ''\) IN \('SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'\)\s+AND NOT EXISTS \(SELECT 1 FROM patient_diagnoses pdx WHERE pdx\.patient_id = p\.id AND pdx\.active\)/,
     };
     for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);
     expect(Object.keys(clausulaDe).sort()).toEqual([...PATIENT_COMPLETENESS_CODES].sort());
@@ -473,14 +567,29 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
     workSchedule: 'part-time',
     paymentDay: 'dia 5',
   };
-  const READY = { serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', serviceRecruitmentFields: FIELDS };
+  const READY = { serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', serviceRecruitmentFields: FIELDS, patientStatus: 'ADMISSION' as string | null, activeDiagnosisCount: 1 };
 
-  it('RECRUITMENT_BLOCKING_CODES é exatamente [SERVICE_ADDRESS, SERVICE_SCHEDULE, os 5 SERVICE_* por campo, COVERAGE]', () => {
+  it('RECRUITMENT_BLOCKING_CODES é exatamente [SERVICE_ADDRESS, SERVICE_SCHEDULE, os 5 SERVICE_* por campo, COVERAGE, DIAGNOSIS]', () => {
     expect([...RECRUITMENT_BLOCKING_CODES]).toEqual([
       'SERVICE_ADDRESS', 'SERVICE_SCHEDULE',
       'SERVICE_REQUIRED_PROFESSIONS', 'SERVICE_REQUIRED_SEX', 'SERVICE_REQUIRED_EXPERIENCE', 'SERVICE_WORK_SCHEDULE', 'SERVICE_PAYMENT_DAY',
-      'COVERAGE',
+      'COVERAGE', 'DIAGNOSIS',
     ]);
+  });
+
+  describe('DIAGNOSIS no gate de recrutamento (pedido do Javier)', () => {
+    it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s sem diagnóstico ativo → DIAGNOSIS em missing; ready false', (st) => {
+      expect(computeRecruitmentReadiness({ ...READY, patientStatus: st, activeDiagnosisCount: 0 })).toEqual({ missing: ['DIAGNOSIS'], ready: false });
+    });
+    it.each(['SOLICITANTE', 'PENDING_ADMISSION', 'ADMISSION'])('%s com ≥1 diagnóstico ativo → pronto', (st) => {
+      expect(computeRecruitmentReadiness({ ...READY, patientStatus: st, activeDiagnosisCount: 1 })).toEqual({ missing: [], ready: true });
+    });
+    it.each(['SEARCHING', 'ACTIVE', 'ON_HOLD', null])(
+      'paciente já em atendimento (%p) sem diagnóstico → NÃO é afetado',
+      (st) => {
+        expect(computeRecruitmentReadiness({ ...READY, patientStatus: st, activeDiagnosisCount: 0 })).toEqual({ missing: [], ready: true });
+      },
+    );
   });
 
   describe('SERVICE_* por campo (spec 027 Fase 3, D508 c, lex S.2)', () => {
@@ -553,7 +662,7 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
 
   it('os três juntos, NA ORDEM address → schedule → coverage', () => {
     expect(
-      computeRecruitmentReadiness({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null, serviceRecruitmentFields: FIELDS }),
+      computeRecruitmentReadiness({ ...READY, serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null }),
     ).toEqual({ missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'], ready: false });
   });
 
@@ -581,11 +690,11 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
   it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com COVERAGE satisfeito pela verificada', () => {
     expect(
       computeRecruitmentReadiness({
+        ...READY,
         serviceHasAddress: false,
         serviceHasSchedule: false,
         insuranceInformed: null,
         hasVerifiedActiveCoverage: true,
-        serviceRecruitmentFields: FIELDS,
       }),
     ).toEqual({ missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE'], ready: false });
   });

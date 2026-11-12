@@ -44,6 +44,9 @@ export async function undoMergeTx(
     // Carimba QUEM desfez — só quando houve reversão real (não em no-op idempotente).
     if (!result.alreadyUndone) {
       await recordUndoAudit(client, mergeAuditId, undoAudit ?? {});
+      // Desfaz a união das PESSOAS (iam) feita por este merge — só com reversão real,
+      // na mesma transação, antes do COMMIT.
+      await client.query('SELECT iam.unmerge_person($1)', [mergeAuditId]);
     }
 
     await client.query('COMMIT');

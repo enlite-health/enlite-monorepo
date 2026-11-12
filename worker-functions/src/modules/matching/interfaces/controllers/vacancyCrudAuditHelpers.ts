@@ -26,9 +26,9 @@ import {
   FULL_ALLOWED_UPDATE_FIELDS,
   buildInsertQuery,
   buildInsertParams,
-  retryOnCaseOrdinalConflict,
   type VacancyInsertParams,
 } from './vacancyCrudHelpers';
+import { vacancyRawColumnsSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 const auditRepo = new JobPostingAuditRepository();
 
@@ -159,6 +159,38 @@ export async function auditVacancyDeleted(
   });
 }
 
+// ─── soft-delete (semântica única do DELETE de vaga) ─────────────────────────
+
+/**
+ * Snapshot da vaga VIVA travada (`FOR UPDATE`: segura contra delete concorrente) — ou null se não existe
+ * ou já foi apagada. É o `before` de `auditVacancyDeleted`. Extraído do `deleteVacancy`
+ * para a fusão rascunho→oficial apagar o rascunho pela MESMA semântica, sem cópia.
+ */
+export async function lockLiveVacancySnapshot(
+  client: PoolClient,
+  jobPostingId: string,
+): Promise<Record<string, unknown> | null> {
+  const res = await client.query<Record<string, unknown>>(
+    `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+    [jobPostingId],
+  );
+  return res.rows[0] ?? null;
+}
+
+/**
+ * Soft-delete da linha (status=CLOSED + deleted_at), na transação do chamador. Devolve false se a linha não existe.
+ * O evento DELETED (`auditVacancyDeleted`), a guarda de alocação vigente (058 P6) e a limpeza de short link
+ * pós-COMMIT ficam com o chamador.
+ */
+export async function softDeleteVacancyRow(client: PoolClient, jobPostingId: string): Promise<boolean> {
+  const result = await client.query<{ id: string }>(
+    `UPDATE job_postings SET status = 'CLOSED', deleted_at = NOW(), updated_at = NOW()
+     WHERE id = $1 RETURNING id`,
+    [jobPostingId],
+  );
+  return result.rows.length > 0;
+}
+
 // ─── createWithPatientUpdate ──────────────────────────────────────────────────
 
 /**
@@ -221,20 +253,8 @@ export async function createWithPatientUpdate(
       }
     }
 
-    // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT; em conflito
-    // (23505 de idx_job_postings_case_ordinal) SAVEPOINT + retry recalcula e tenta de novo,
-    // sem abortar a transação (paciente + audit) que o envolve.
-    const result = await retryOnCaseOrdinalConflict(
-      async () => {
-        await client.query('SAVEPOINT case_ordinal_retry');
-        const r = await client.query(buildInsertQuery(), buildInsertParams(insertArgs));
-        await client.query('RELEASE SAVEPOINT case_ordinal_retry');
-        return r;
-      },
-      async () => {
-        await client.query('ROLLBACK TO SAVEPOINT case_ordinal_retry');
-      },
-    );
+    // case_ordinal é derivado do serviço dentro do próprio INSERT (spec 084): sem conflito a retentar.
+    const result = await client.query(buildInsertQuery(), buildInsertParams(insertArgs));
     const newVacancy = result.rows[0] as Record<string, unknown>;
 
     // Audit inside the same transaction — atomic with the insert

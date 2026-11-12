@@ -7,6 +7,11 @@
  * use case real, que aqui vai falhar contra um Pool falso — comportamento
  * esperado e fora do escopo deste teste, coberto pelo `catch`).
  */
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  reportError: jest.fn(),
+}));
+
 import { PrescreeningResponseHandler } from '../PrescreeningResponseHandler';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import type { TalentumWebhookContext } from '../TalentumWebhookHandler';
@@ -67,5 +72,30 @@ describe('PrescreeningResponseHandler — PII guard (log INCOMING)', () => {
     const oldLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(oldLines).toContain(valorAntigoCru); // confirma: o formato antigo vazava
     logSpy.mockRestore();
+  });
+});
+
+describe('PrescreeningResponseHandler — alarme no caminho de exceção', () => {
+  it('erro do banco → reportError com source e talentumPrescreeningId, SEM PII; o 500 não muda', async () => {
+    const { reportError } = jest.requireMock('@shared/logging') as { reportError: jest.Mock };
+    reportError.mockClear();
+    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const errSpy = jest.spyOn(console, 'error').mockImplementation();
+    const pgErr = Object.assign(new Error('invalid input syntax for type uuid: "candidata.sensivel@example.com"'), {
+      code: '22P02', constraint: 'workers_x', detail: 'Key (email)=(candidata.sensivel@example.com) já existe',
+    });
+    const res = fakeRes();
+    const handler = new PrescreeningResponseHandler({ query: jest.fn().mockRejectedValue(pgErr) } as never);
+
+    await handler.handle(makePayload(), { environment: 'test' } as TalentumWebhookContext, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    const [err, ctx] = reportError.mock.calls[0];
+    expect(ctx).toEqual({ source: 'PrescreeningResponseHandler:process', talentumPrescreeningId: 'tp-1' });
+    expect(JSON.stringify([err.message, err.stack, ctx])).not.toContain('candidata.sensivel');
+    expect(err).toBeInstanceOf(Error);
+    logSpy.mockRestore();
+    errSpy.mockRestore();
   });
 });

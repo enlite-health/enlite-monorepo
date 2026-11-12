@@ -6,6 +6,8 @@ module "sql_enlite_ar_db" {
   zone       = "southamerica-west1-b"
   tier       = "db-custom-1-3840"
 
+  user_labels = { service = "enlite-ar-db", setor = "plataforma" }
+
   # authorized_networks fica no default do módulo: [] — NENHUMA rede autorizada.
   #
   # Antes daqui saía [{ name = "", value = "0.0.0.0/0" }], ou seja, a internet

@@ -245,9 +245,10 @@ async function loginAs(page: Page, u: MockUser): Promise<void> {
   };
   await page.route('**/api/**', swap);
   await page.route('**/v1/me/authz', swap);
+  await page.route('**/v1/me/areas', swap);
 
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   const email = page.locator('input[type="email"]');
   await email.click();
   await expect(email).toBeFocused();

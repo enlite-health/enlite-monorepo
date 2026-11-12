@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import { GCSStorageService, DocumentType } from '../../infrastructure/GCSStorageService';
 import { WorkerDocumentsRepository } from '../../infrastructure/WorkerDocumentsRepository';
 import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
@@ -63,9 +64,7 @@ export class WorkerDocumentsMeController {
   }
 
   private getAuthUid(req: Request): string | null {
-    return (req as Request & { user?: { uid: string } }).user?.uid
-      ?? (req.headers['x-auth-uid'] as string | undefined)
-      ?? null;
+    return selfUid(req);
   }
 
   private async resolveWorker(authUid: string): Promise<{ id: string } | null> {

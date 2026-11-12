@@ -6,9 +6,15 @@
  */
 
 import type { Pool } from 'pg';
+import { caseOrdinalFromServiceSql } from '@shared/sql/caseOrdinalSql';
 import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
+import {
+  BAJA_REFUSAL_MESSAGES,
+  DE_BAJA_STATUS,
+  refusesCloseOfActiveServiceVacancy,
+} from '../../domain/VacancyBajaPolicy';
 import {
   vacancyEffectiveAgeRangeSql,
   vacancyEffectiveJoinSql,
@@ -76,6 +82,9 @@ export const CANONICAL_STATUSES = new Set([
   'RAPID_RESPONSE',
   'PENDING_ACTIVATION',
   'ACTIVE',
+  // Spec 084 F5 (R18): "En espera" — a pausa da vaga de serviço ativo. DE_BAJA fica FORA de propósito (R17): ninguém
+  // põe vaga em baixa nem a tira dela por este endpoint.
+  'ON_HOLD',
   'SUSPENDED',
   'CLOSED',
 ]);
@@ -150,7 +159,15 @@ export function pickSourceLockedFields(
 }
 
 export type UpdateAuthorizationResult =
-  | { kind: 'error'; status: number; error: string; lockedFields?: readonly string[] }
+  | {
+      kind: 'error';
+      status: number;
+      error: string;
+      lockedFields?: readonly string[];
+      /** Spec 084: código estável + mensagem es/pt-BR (a tela traduz pelo código). */
+      code?: string;
+      messages?: { es: string; 'pt-BR': string };
+    }
   | { kind: 'ok'; isDraft: boolean; currentStatus: string | null };
 
 /**
@@ -184,14 +201,46 @@ export async function authorizeVacancyUpdate(
     is_draft: boolean | null;
     patient_id: string | null;
     contracted_service_id: string | null;
+    service_active: boolean | null;
   }>(
-    'SELECT status, is_draft, patient_id, contracted_service_id FROM job_postings WHERE id = $1',
+    `SELECT jp.status, jp.is_draft, jp.patient_id, jp.contracted_service_id, pcs.active AS service_active
+       FROM job_postings jp
+       LEFT JOIN patient_contracted_services pcs ON pcs.id = jp.contracted_service_id
+      WHERE jp.id = $1 AND jp.deleted_at IS NULL`,
     [vacancyId],
   );
   if (currentRow.rows.length === 0) {
     return { kind: 'error', status: 404, error: 'Vacancy not found' };
   }
   const currentStatus = currentRow.rows[0].status;
+
+  // Spec 084 R17 (REGRA DURA): vaga baixada é só consulta. NENHUM campo — e muito menos o status — muda por aqui; a
+  // única volta é a reativação do serviço que a baixou. Roda antes de qualquer outra regra.
+  if (currentStatus === DE_BAJA_STATUS) {
+    return {
+      kind: 'error',
+      status: 409,
+      code: 'VACANCY_DE_BAJA_NO_REACTIVATION',
+      error: BAJA_REFUSAL_MESSAGES.VACANCY_DE_BAJA_NO_REACTIVATION['pt-BR'],
+      messages: BAJA_REFUSAL_MESSAGES.VACANCY_DE_BAJA_NO_REACTIVATION,
+    };
+  }
+
+  // Spec 084 F5 (R4/P1): vaga de serviço ATIVO nunca é encerrada, só pausada (ON_HOLD) — recusado pelo servidor.
+  if (
+    refusesCloseOfActiveServiceVacancy(updates.status, {
+      contractedServiceId: currentRow.rows[0].contracted_service_id,
+      serviceActive: currentRow.rows[0].service_active,
+    })
+  ) {
+    return {
+      kind: 'error',
+      status: 409,
+      code: 'CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED',
+      error: BAJA_REFUSAL_MESSAGES.CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED['pt-BR'],
+      messages: BAJA_REFUSAL_MESSAGES.CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED,
+    };
+  }
   const isDraft = currentRow.rows[0].is_draft === true;
   const contractedServiceId = currentRow.rows[0].contracted_service_id;
   const effectivePatientId =
@@ -270,20 +319,15 @@ export async function authorizeVacancyUpdate(
   return { kind: 'ok', isDraft, currentStatus };
 }
 
+/** Mesma expressão do vínculo (`caseOrdinalFromServiceSql`); aqui o serviço é o $23 do INSERT. */
+export const CASE_ORDINAL_FROM_SERVICE_SQL = caseOrdinalFromServiceSql('$23');
+
 export function buildInsertQuery(): string {
   // `published_at` defaults to NOW() when the caller passes NULL — matches the
   // product rule that publication date auto-fills with today if left blank.
   // `closes_at` stays NULL when not provided (optional).
   //
-  // `case_ordinal` (spec 027 Fase 5, migration 460) — a enésima vaga do caso
-  // (patient_id). NÃO ganha placeholder novo: é computada por subquery DENTRO
-  // do próprio INSERT, reusando $4 (patient_id) — sempre a MESMA transação/
-  // statement de quem chama, nunca uma 2ª ida ao banco. Concorrência real (dois
-  // cliques simultâneos no mesmo caso) é resolvida pelo índice único
-  // idx_job_postings_case_ordinal: o 2º INSERT bloqueia no lock de valor do
-  // índice, e ao destravar já vê o valor commitado do 1º — reconta e bate 23505
-  // se ainda colidir. Callers tratam 23505 com retry (ver isCaseOrdinalConflict/
-  // retryOnCaseOrdinalConflict abaixo).
+  // `case_ordinal` (spec 084, migration 563): derivado do SERVIÇO ($23) dentro do próprio INSERT — ver `CASE_ORDINAL_FROM_SERVICE_SQL`.
   // RETURNING com lista explícita e SEM join: este INSERT roda também em client cru (sem identidade). O horário
   // efetivo da resposta é lido depois, por `withEffectiveFields`.
   return `
@@ -318,11 +362,7 @@ export function buildInsertQuery(): string {
       $22,
       $23,
       $24,
-      CASE WHEN $4::uuid IS NULL THEN NULL ELSE (
-        SELECT COALESCE(MAX(jp2.case_ordinal), 0) + 1
-          FROM job_postings jp2
-         WHERE jp2.patient_id = $4::uuid
-      ) END
+      ${CASE_ORDINAL_FROM_SERVICE_SQL}
     )
     RETURNING ${vacancyRawColumnsSql()}
   `;
@@ -362,43 +402,6 @@ export async function withEffectiveFields<T extends Record<string, unknown>>(db:
     age_range_min: eff.age_range_min,
     age_range_max: eff.age_range_max,
   };
-}
-
-// ─── case_ordinal conflict retry (spec 027 Fase 5) ───────────────────────────
-
-/** O 23505 que é CONFLITO DE case_ordinal — e só ele (mesma régua de isCaseNumberConflict). */
-export function isCaseOrdinalConflict(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false;
-  const e = err as { code?: string; constraint?: string };
-  return e.code === '23505' && e.constraint === 'idx_job_postings_case_ordinal';
-}
-
-export const CASE_ORDINAL_MAX_ATTEMPTS = 5;
-
-/**
- * Reexecuta `attempt` até MAX_ATTEMPTS quando o erro é um conflito de
- * case_ordinal (corrida entre dois INSERTs no mesmo caso). `onConflict`,
- * quando informado, roda ANTES de cada nova tentativa — usado pelos callers
- * que estão dentro de uma transação explícita para `ROLLBACK TO SAVEPOINT`
- * (o 23505 aborta a transação até lá). Erro que não é conflito de
- * case_ordinal sobe na hora, sem retry.
- */
-export async function retryOnCaseOrdinalConflict<T>(
-  attempt: () => Promise<T>,
-  onConflict?: () => Promise<void>,
-  maxAttempts: number = CASE_ORDINAL_MAX_ATTEMPTS,
-): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      return await attempt();
-    } catch (err) {
-      if (!isCaseOrdinalConflict(err)) throw err;
-      lastErr = err;
-      if (onConflict) await onConflict();
-    }
-  }
-  throw lastErr;
 }
 
 // ─── Diff helper (Onda A — pure, no DB) ──────────────────────────────────────

@@ -21,6 +21,7 @@ import { openFixedSchedule, openServiceScreen, openUpcomingDays } from '../helpe
 import {
   abrirNuevaSustitucion, confirmarPedido, irParaSemanaPeloCalendario, paso1QuienNoViene, paso2PorCuantoTiempo, paso3UnaPersona, paso4Motivo, siguiente, somaDias,
 } from '../helpers/itinerario-069-flow-helper';
+import { swapAreasComToken } from '../helpers/areas-do-painel';
 
 const MOCK_ADMIN_USER = { uid: 'e2e-int-admin-itinerario', email: 'admin.itinerario@e2e.test', role: 'admin' };
 const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
@@ -107,11 +108,12 @@ async function installInterceptors(page: Page): Promise<void> {
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await installInterceptors(page);
+    await swapAreasComToken(page, MOCK_TOKEN);
     await page.route('**/v1/me/authz**', async (route: Route) => {
     const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
     await route.continue({ headers });
   });
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').click();
   await page.keyboard.type(MOCK_ADMIN_USER.email);
   await page.locator('input[type="password"]').click();

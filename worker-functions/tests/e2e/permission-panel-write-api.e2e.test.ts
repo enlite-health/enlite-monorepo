@@ -158,6 +158,37 @@ describe('escrita do painel — caminho feliz, efeito no banco (F4)', () => {
     expect(r.rows.map((x) => x.k)).not.toContain('worker:read');
   });
 
+  it('PUT /permissions com pedidos_ia:decidir em grupo comum -> 200 e a célula fica no grupo (a 557 tirou decidir da lista master-only; spec 078 M7)', async () => {
+    const conjunto = async () => (await pool.query(
+      `SELECT p.resource || ':' || p.action AS k FROM iam.group_permissions gp
+         JOIN iam.permissions p ON p.id = gp.permission_id WHERE gp.group_id = $1 ORDER BY 1`, [idTrabalho])).rows.map((x) => x.k as string);
+    const antes = await conjunto();
+    const res = await chamar('PUT', `/api/admin/permission-groups/${idTrabalho}/permissions`, {
+      cellKeys: ['worker:read', 'pedidos_ia:decidir'],
+    });
+
+    expect(res.status).toBe(200);
+    expect(await conjunto()).toEqual(['pedidos_ia:decidir', 'worker:read']);
+    // devolve o grupo ao conjunto anterior para não contaminar os testes seguintes
+    expect((await chamar('PUT', `/api/admin/permission-groups/${idTrabalho}/permissions`, { cellKeys: antes })).status).toBe(200);
+    expect(await conjunto()).toEqual(antes);
+  });
+
+  it('PUT /permissions com pedidos_ia:read em grupo comum -> 422 master_only_cell e o conjunto do grupo não muda (spec 078)', async () => {
+    const conjunto = async () => (await pool.query(
+      `SELECT p.resource || ':' || p.action AS k FROM iam.group_permissions gp
+         JOIN iam.permissions p ON p.id = gp.permission_id WHERE gp.group_id = $1 ORDER BY 1`, [idTrabalho])).rows.map((x) => x.k as string);
+    const antes = await conjunto();
+    const res = await chamar('PUT', `/api/admin/permission-groups/${idTrabalho}/permissions`, {
+      cellKeys: ['worker:read', 'pedidos_ia:read'],
+    });
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('master_only_cell');
+    expect((await conjunto()).filter((k) => k.startsWith('pedidos_ia:'))).toHaveLength(0);
+    expect(await conjunto()).toEqual(antes);
+  });
+
   it('POST /countries concede, e o MOTIVO fica na trilha do grupo', async () => {
     const res = await chamar('POST', `/api/admin/permission-groups/${idTrabalho}/countries`, {
       country: 'BR', reason: 'expansão piloto',

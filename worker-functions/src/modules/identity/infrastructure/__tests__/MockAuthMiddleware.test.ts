@@ -36,6 +36,16 @@ describe('mockAuthMiddleware', () => {
     process.env.USE_MOCK_AUTH = 'true';
   });
 
+  it.each(['/api/account-link/undo/abc', '/api/admin/auth/telemetry', '/api/test/auth/verify'])(
+    'rota public por classe %s passa sem token (publicPaths do mock)',
+    (path) => {
+      const [req, res, next] = makeReqRes(path);
+      mockAuthMiddleware(req, res, next);
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    },
+  );
+
   it('propaga o país do token mock para req.user (é o que o e2e da RLS usa)', () => {
     const [req, , next] = makeReqRes('/api/admin/patients', mockToken({ uid: 'u1', email: 'a@b.c', role: 'admin', country: 'BR' }));
 
@@ -107,6 +117,18 @@ describe('mockAuthMiddleware', () => {
     mockAuthMiddleware(req, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/workers/init NÃO é rota pública: sem Bearer → 401, com Bearer vira req.user (H2/D650)', () => {
+    const [req, res, next] = makeReqRes('/api/workers/init');
+    mockAuthMiddleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+
+    const [req2, , next2] = makeReqRes('/api/workers/init', mockToken({ uid: 'uid-a', email: 'a@exemplo.test' }));
+    mockAuthMiddleware(req2, {} as Response, next2);
+    expect(next2).toHaveBeenCalled();
+    expect((req2 as Request & { user: Record<string, unknown> }).user).toMatchObject({ uid: 'uid-a', email: 'a@exemplo.test' });
   });
 
   it('token mock sem uid/email → 401', () => {

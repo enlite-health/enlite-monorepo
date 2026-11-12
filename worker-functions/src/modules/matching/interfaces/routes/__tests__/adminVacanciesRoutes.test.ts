@@ -41,6 +41,13 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
+// Spec 084 F1: o router constrói o `VacancyBajaController` INTERNAMENTE (como os de `aux`); aqui ele é um dublê que responde com o nome.
+jest.mock('../../controllers/VacancyBajaController', () => ({
+  VacancyBajaController: jest.fn().mockImplementation(() => ({
+    baja: (_req: unknown, res: { json: (b: unknown) => void }) => res.json({ m: 'baja.baja' }),
+  })),
+}));
+
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
 const ESPERADO: Record<string, string> = {
   'DELETE /interview-slots/:slotId': 'interview:delete',
@@ -72,6 +79,8 @@ const ESPERADO: Record<string, string> = {
   'POST /interview-slots/:slotId/book': 'interview:update',
   'POST /vacancies': 'vacancy:create',
   'POST /vacancies/:id/generate-ai-content': 'vacancy:update',
+  // spec 084 F1: dar baixa (uma ou em lote), vaga sem serviço; NÃO existe rota inversa (R17)
+  'POST /vacancies/baja': 'vacancy:update',
   'POST /vacancies/:id/generate-talentum-description': 'talentum:update',
   'POST /vacancies/:id/interview-slots': 'interview:create',
   'POST /vacancies/:id/match': 'match:execute',
@@ -147,9 +156,9 @@ describe('família admin.vacancies — 47 rotas declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('a família soma exatamente 47 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300) + ack do aviso (F3)', () => {
-    expect(Object.keys(ESPERADO)).toHaveLength(47);
-    expect(scanExpressRouter(build())).toHaveLength(47);
+  it('a família soma exatamente 48 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300) + ack do aviso (F3) + baja (spec 084)', () => {
+    expect(Object.keys(ESPERADO)).toHaveLength(48);
+    expect(scanExpressRouter(build())).toHaveLength(48);
   });
 
   it('as 2 rotas de controller OPCIONAL estão presentes — montadas como em produção', () => {
@@ -158,7 +167,7 @@ describe('família admin.vacancies — 47 rotas declaram célula', () => {
     expect(rotas['GET /vacancies/:id/funnel-table']).toBe('funnel:read');
   });
 
-  it('sem os controllers opcionais, o router encolhe para 45 — o motivo de o teste montar com eles', () => {
+  it('sem os controllers opcionais, o router encolhe para 46 — o motivo de o teste montar com eles', () => {
     const semOpcionais = createAdminVacanciesRoutes(
       dubleDe('vac', ['listVacancies', 'getVacanciesStats', 'getNextVacancyNumber', 'getCasesForSelect',
         'getVacancyById']) as never,
@@ -175,7 +184,7 @@ describe('família admin.vacancies — 47 rotas declaram célula', () => {
       authDouble(),
       permissionsDouble(),
     );
-    expect(scanExpressRouter(semOpcionais)).toHaveLength(45);
+    expect(scanExpressRouter(semOpcionais)).toHaveLength(46);
   });
 
   describe('as células que separam ações de peso diferente', () => {
@@ -250,6 +259,14 @@ describe('família admin.vacancies — 47 rotas declaram célula', () => {
       const res = await request(app).get('/api/admin/vacancies/abc-123').expect(200);
 
       expect(res.body).toMatchObject({ m: 'vac.getVacancyById', id: 'abc-123' });
+    });
+
+    it('spec 084: POST /vacancies/baja chega no controller da baixa (e NÃO no create, nem em /:id)', async () => {
+      const app = appDeRota('adminVacancies', '/api/admin', build);
+
+      const res = await request(app).post('/api/admin/vacancies/baja').send({ vacancyIds: [] }).expect(200);
+
+      expect(res.body.m).toBe('baja.baja');
     });
 
     it('blocked-applications não é engolido por /vacancies/:id', async () => {

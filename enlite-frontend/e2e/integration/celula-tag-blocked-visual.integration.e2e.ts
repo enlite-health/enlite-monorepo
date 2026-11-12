@@ -98,8 +98,9 @@ async function loginAs(page: Page, u: MockUser): Promise<void> {
   };
   await page.route('**/api/**', swap);
   await page.route('**/v1/me/authz', swap);
+  await page.route('**/v1/me/areas', swap);
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(u.email);
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();

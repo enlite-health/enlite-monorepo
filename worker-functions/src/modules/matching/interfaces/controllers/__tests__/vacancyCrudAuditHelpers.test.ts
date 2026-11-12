@@ -15,7 +15,7 @@
  */
 import type { Request } from 'express';
 import { loggingAls } from '@shared/logging';
-import { vacancyActorFromRequest } from '../vacancyCrudAuditHelpers';
+import { lockLiveVacancySnapshot, softDeleteVacancyRow, vacancyActorFromRequest } from '../vacancyCrudAuditHelpers';
 
 function makeReq(user?: { uid?: string }): Request {
   return { user } as unknown as Request;
@@ -62,5 +62,29 @@ describe('vacancyActorFromRequest', () => {
       actor = vacancyActorFromRequest(makeReq({ uid: 'u-1' }), 'activate_recruitment');
     });
     expect(actor?.traceId).toBe('trace-abc');
+  });
+});
+
+// ─── SQL do DELETE de vaga extraído (reusado pela fusão rascunho→oficial) ─────
+describe('lockLiveVacancySnapshot / softDeleteVacancyRow', () => {
+  const clientWith = (rows: unknown[]) => ({ query: jest.fn(async () => ({ rows })) });
+
+  it('snapshot: só vaga VIVA, travada FOR UPDATE; devolve a linha', async () => {
+    const c = clientWith([{ id: 'v1', is_draft: true }]);
+    await expect(lockLiveVacancySnapshot(c as never, 'v1')).resolves.toEqual({ id: 'v1', is_draft: true });
+    const [sql, params] = c.query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toMatch(/WHERE id = \$1 AND deleted_at IS NULL FOR UPDATE$/);
+    expect(params).toEqual(['v1']);
+  });
+
+  it('snapshot: vaga inexistente/apagada → null', async () => {
+    await expect(lockLiveVacancySnapshot(clientWith([]) as never, 'v1')).resolves.toBeNull();
+  });
+
+  it('soft-delete: status CLOSED + deleted_at; true quando a linha existe, false quando não', async () => {
+    const ok = clientWith([{ id: 'v1' }]);
+    await expect(softDeleteVacancyRow(ok as never, 'v1')).resolves.toBe(true);
+    expect((ok.query.mock.calls[0] as unknown as [string])[0]).toMatch(/SET status = 'CLOSED', deleted_at = NOW\(\)/);
+    await expect(softDeleteVacancyRow(clientWith([]) as never, 'v1')).resolves.toBe(false);
   });
 });

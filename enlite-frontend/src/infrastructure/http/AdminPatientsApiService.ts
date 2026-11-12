@@ -77,6 +77,11 @@ export interface PatientListFilters {
    * pacientes fantasma).
    */
   include_deactivated?: string;
+  /**
+   * Lista da operação sem os DISCHARGED (baja). Opt-in: a tela manda 'true' com "Mostrar
+   * desactivados" desmarcado. Kanban e dashboard não passam — a coluna DISCHARGED segue cheia.
+   */
+  exclude_discharged?: string;
   limit?: string;
   offset?: string;
 }
@@ -146,11 +151,12 @@ export class AdminPatientsApiServiceClass {
     return { data: json.data ?? [], total: json.total ?? 0 };
   }
 
-  /** GET /api/admin/patients/stats — `country` opcional escopa por país (AR|BR). */
-  async getPatientStats(params?: { country?: string }): Promise<PatientStats> {
-    const country = params?.country;
-    const qs = country ? `?country=${encodeURIComponent(country)}` : '';
-    return this.request<PatientStats>('GET', `/api/admin/patients/stats${qs}`);
+  /** GET /api/admin/patients/stats — `country` opcional escopa por país (AR|BR); `exclude_discharged` tira a baja dos cards. */
+  async getPatientStats(params?: { country?: string; exclude_discharged?: string }): Promise<PatientStats> {
+    const qs = new URLSearchParams(
+      Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== '') as [string, string][],
+    ).toString();
+    return this.request<PatientStats>('GET', `/api/admin/patients/stats${qs ? `?${qs}` : ''}`);
   }
 
   async getPatientById(id: string): Promise<PatientDetail> {

@@ -22,6 +22,12 @@ describe('menu — o item de acessos deriva da CÉLULA', () => {
     expect(result.current.map((i) => i.href)).toContain('/admin/access');
   });
 
+  it('🔴 só `area_membership:read` (sem `permission_management`): o item aparece — a página abre para essa célula também (decisão 4)', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['area_membership:read']) });
+    const { result } = renderHook(() => useAdminNavItems());
+    expect(result.current.map((i) => i.href)).toContain('/admin/access');
+  });
+
   it('contrato ainda não carregado: o item não aparece (fail-closed)', () => {
     useAdminAuthStore.setState({ authzStatus: 'loading' });
     const { result } = renderHook(() => useAdminNavItems());

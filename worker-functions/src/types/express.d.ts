@@ -39,6 +39,8 @@ declare global {
        */
       recursoAcessadoId?: string;
       servicePrincipal?: ServicePrincipal;
+      /** Porta MCP do agente (spec 078, M2): quem `requireAgentPrincipal` autenticou (uid `agent:*`). */
+      agentPrincipal?: { uid: string; email: string };
       onBehalfOfWorkerId?: string;
     }
   }

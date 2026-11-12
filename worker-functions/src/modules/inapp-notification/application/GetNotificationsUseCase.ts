@@ -12,9 +12,15 @@
  */
 import {
   NotificationRepository,
+  IMPORT_STAGES,
+  IMPORT_KINDS,
+  IMPORT_REASONS,
+  IMPORT_AUDIENCES,
   type AdmissionTactiqLinkPayload,
   type AdmissionTactiqExtensionPayload,
+  type AdmissionImportBlockedPayload,
   type ItineraryUncoveredShiftsPayload,
+  type PedidoIaAplicarPayload,
   type NotificationTypeCode,
   type PtContactsPendingPayload,
 } from '../infrastructure/NotificationRepository';
@@ -40,7 +46,7 @@ export interface NotificationDto {
    *  origem É o root, ou quando não há `messageId` no evento. */
   rootMessageId: string | null;
   /** spec 048: SÓ no tipo `THERAPEUTIC_PROJECT_CONTACTS_PENDING` (4 chaves, ids + nome de campo); `null` nos de conversa. */
-  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | null;
+  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null;
   /** spec 048: número do Caso (`patients.case_number`) do tipo do PT — o sino NUNCA mostra o nome do paciente nele. */
   patientCaseNumber: number | null;
   /** Item 2 (card com trecho, F7/F8): MESMO gate de `patientDisplayName` — só resolvido quando o
@@ -122,18 +128,39 @@ const isSystemPtType = (code: NotificationTypeCode): boolean => code === 'THERAP
 function payloadOf(
   code: NotificationTypeCode,
   raw: Record<string, unknown> | null,
-): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | null {
+): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null {
   if (isSystemPtType(code)) return ptPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
     const reason = raw?.reason;
     return reason === 'missing' || reason === 'broken' || reason === 'wrong_account' ? { reason } : null;
   }
   if (code === 'ITINERARY_UNCOVERED_SHIFTS') return itineraryPayloadOf(raw);
+  if (code === 'PEDIDO_IA_APLICAR') return pedidoAplicarPayloadOf(raw);
+  if (code === 'ADMISSION_IMPORT_BLOCKED') return importBlockedPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_EXTENSION_CHANGED') {
     const state = raw?.state;
     return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
   }
   return null;
+}
+
+/** Spec 083 D-7: lê chave a chave (enums conferidos); linha malformada = sem payload; `hostName` só se for string não vazia. */
+function importBlockedPayloadOf(raw: Record<string, unknown> | null): AdmissionImportBlockedPayload | null {
+  if (!raw) return null;
+  const { stage, kind, reason, audience, meetingAt, deadlineAt, hostName } = raw;
+  const inSet = (v: unknown, set: readonly string[]): boolean => typeof v === 'string' && set.includes(v);
+  if (!inSet(stage, IMPORT_STAGES) || !inSet(kind, IMPORT_KINDS) || !inSet(reason, IMPORT_REASONS) || !inSet(audience, IMPORT_AUDIENCES)) return null;
+  if (typeof meetingAt !== 'string' || typeof deadlineAt !== 'string') return null;
+  const base = { stage, kind, reason, audience, meetingAt, deadlineAt } as AdmissionImportBlockedPayload;
+  return typeof hostName === 'string' && hostName !== '' ? { ...base, hostName } : base;
+}
+
+/** Spec 078 M4.4: as 4 chaves do contrato, com tipos e enums conferidos; qualquer outra coisa = sem payload (o front cai no texto neutro). */
+function pedidoAplicarPayloadOf(raw: Record<string, unknown> | null): PedidoIaAplicarPayload | null {
+  if (!raw || typeof raw.pedido_id !== 'string' || typeof raw.grave !== 'boolean') return null;
+  if (raw.degrau !== 3 && raw.degrau !== 4) return null;
+  if (raw.prazo !== 'hoje' && raw.prazo !== 'semana') return null;
+  return { pedido_id: raw.pedido_id, degrau: raw.degrau, grave: raw.grave, prazo: raw.prazo };
 }
 
 /** Spec 069 F4: filtra o payload bruto às chaves do contrato (data + itens só-ids); item malformado é descartado, nunca repassado. */

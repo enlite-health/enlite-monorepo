@@ -29,10 +29,6 @@
       "motivo": "D269 — recurso \"upload\" (categoria Importação) sem nenhuma rota perm.require em worker-functions; sem consumidor possível hoje. Candidata a descontinuar pelo sync."
     },
     {
-      "cell": "vacancy:delete",
-      "motivo": "D269 F3 (vagas) — DELETE /vacancies/:id existe no client (deleteVacancy) mas nenhuma tela o chama; \"arquivar\" vaga é status CLOSED via vacancy:write. Sem botão, sem gate."
-    },
-    {
       "cell": "worker:delete",
       "motivo": "D269 — célula existe no catálogo (seed 206) mas NENHUMA rota do backend a declara (grep perm.require = 0) e nenhum botão a chama. Sem rota, não há o que gatear; candidata a descontinuar pelo sync."
     },

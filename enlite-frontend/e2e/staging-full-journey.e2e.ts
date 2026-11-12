@@ -14,7 +14,7 @@
  *   3. Visitar vaga pública → clicar Postularse com cadastro incompleto →
  *      modal "Registro incompleto" aparece NA TELA (CORS resolvido)
  *   4. Completar cadastro → Postularse de novo → window.open(wa.me) confirmado
- *   5. Login admin via /admin/login → navegar até /admin/recruitment/blocked-attempts →
+ *   5. Login admin via /login?next=%2Fadmin → navegar até /admin/recruitment/blocked-attempts →
  *      ver worker barrado na tabela renderizada
  *
  * Pré-condições (conta worker criada fresh neste run):
@@ -1314,13 +1314,13 @@ test.describe('Staging Full Journey — Navegador Real (CORS corrigido)', () => 
     }
   });
 
-  // ── Passo 5: Painel admin /admin/login → /admin/recruitment/blocked-attempts ──
+  // ── Passo 5: Painel admin /login?next=%2Fadmin → /admin/recruitment/blocked-attempts ──
 
-  test('Passo 5 — Admin: login via /admin/login + navegar para blocked-attempts (100% UI)', async ({
+  test('Passo 5 — Admin: login via /login?next=%2Fadmin + navegar para blocked-attempts (100% UI)', async ({
     page,
   }) => {
     // Login como admin via UI real
-    await page.goto(`${BASE_URL}/admin/login`);
+    await page.goto(`${BASE_URL}/login?next=%2Fadmin`);
     await expect(page.locator('input[type="email"]')).toBeVisible({ timeout: 20_000 });
 
     await captureEvidence(page, '05a-admin-login-page.png');
@@ -1337,7 +1337,7 @@ test.describe('Staging Full Journey — Navegador Real (CORS corrigido)', () => 
 
     await captureEvidence(page, '05b-admin-post-login.png');
 
-    const isOnAdminDashboard = !postAdminLoginUrl.includes('/admin/login');
+    const isOnAdminDashboard = !postAdminLoginUrl.includes('/login');
 
     if (!isOnAdminDashboard) {
       // Se CORS ainda estiver bloqueando o /api/admin/auth/profile,

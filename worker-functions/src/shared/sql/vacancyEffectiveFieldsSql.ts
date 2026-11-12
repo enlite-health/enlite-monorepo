@@ -54,6 +54,10 @@ export const JOB_POSTING_COLUMNS = [
   'service_lat', 'service_lng', 'service_location', 'is_draft', 'timezone', 'is_test',
   'contracted_service_id',
   'case_ordinal', 'title_before_en', 'status_before_baja',
+  // coluna da migration 558: ordem = `ordinal_position` (ADD COLUMN entra no fim da tabela)
+  'talentum_prescreening_id',
+  // migration 562 (spec 084): motivo do DE_BAJA, status antes do "En espera" e o estado do Talentum (lista manual)
+  'baja_reason', 'status_before_hold', 'talentum_pause_state',
 ] as const;
 
 /** Nome de saída da banda efetiva; `applyEffectiveAgeRange` a consome e a REMOVE da linha (o consumidor não a vê). */

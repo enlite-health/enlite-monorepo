@@ -25,6 +25,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'vls-fecho-e2e';
@@ -78,6 +79,8 @@ describe('Vaga lê do serviço contratado — fecho por API (vaga-le-do-servico-
        VALUES ($1, 'VagaLeServico', 'Fecho E2E', 'AR', 'PENDING_ADMISSION', $2, 'Particular') RETURNING id`,
       [`${TAG}-${caseNumber}`, caseNumber],
     )).rows[0].id;
+    // Pedido do Javier: ativar recrutamento com o paciente pré-atendimento exige ≥1 diagnóstico ATIVO.
+    await seedPatientDiagnosis(pool, patientId);
     const addr = await api.post(
       `/api/admin/patients/${patientId}/addresses`,
       { address_formatted: 'Av. Siempre Viva 742', address_type: 'primary' },

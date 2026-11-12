@@ -237,6 +237,7 @@ export { AdminPatientContractedServicesController } from './interfaces/controlle
 // Fase 7 (DX-7.8): o contrato publicado da leitura do itinerário.
 export { patientItineraryResponseSchema } from './interfaces/validators/itinerarySchemas';
 export { AdminTherapeuticProjectsController } from './interfaces/controllers/AdminTherapeuticProjectsController';
+export { AdminServiceShiftTemplatesController } from './interfaces/controllers/AdminServiceShiftTemplatesController';
 export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminTherapeuticProjectsRoutes';
 // Cadeia Fase 10 (DX-10.7): quadro C (Servicio Contratado).
 export { AdminServiceTeamController } from './interfaces/controllers/AdminServiceTeamController';

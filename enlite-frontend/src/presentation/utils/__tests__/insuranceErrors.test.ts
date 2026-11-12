@@ -7,10 +7,10 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import { insuranceErrorCode, insuranceErrorKeys, insuranceErrorText, NEEDS_CORRECTION, NEEDS_NEW_SERVICE } from '../insuranceErrors';
 
 // `t` real sobre o es.json: chave que não existe devolve o defaultValue ('') — o mesmo contrato do i18next.
-const t = ((key: string, opts?: { defaultValue?: string }) => {
+const t = ((key: string, opts?: { defaultValue?: string; fields?: string }) => {
   let cur: unknown = esJson;
   for (const part of key.split('.')) cur = (cur as Record<string, unknown> | undefined)?.[part];
-  return typeof cur === 'string' ? cur : (opts?.defaultValue ?? key);
+  return typeof cur === 'string' ? cur.replace('{{fields}}', opts?.fields ?? '') : (opts?.defaultValue ?? key);
 }) as unknown as TFunction;
 
 const err = (status: number, code?: string, details?: Record<string, unknown>) => Object.assign(new Error('boom'), { status, code, details });
@@ -38,6 +38,17 @@ describe('insuranceErrors', () => {
       expect(text).not.toBe(code);
       expect(text).not.toBe(esJson.admin.insuranceErrors.generic);
     }
+  });
+
+  it('SAME_START_USE_CORRECTION e LINK_RANGE_INVALID dizem a AÇÃO (o botão "Se cargó mal" / a data certa), não só o problema', () => {
+    expect(insuranceErrorText(t, err(422, 'SAME_START_USE_CORRECTION'))).toBe('Con la misma fecha de inicio no se cambia el contrato: si se cargó mal, usá «Se cargó mal».');
+    expect(insuranceErrorText(t, err(422, 'LINK_RANGE_INVALID'))).toContain('tiene que ser posterior al inicio del vínculo actual');
+  });
+
+  it('400 de validação sem code nomeia os campos de details.fields (rótulos da tela); campo desconhecido cai na frase do status', () => {
+    expect(insuranceErrorText(t, err(400, undefined, { fields: ['contractId', 'validFrom'] }))).toBe('Hay datos inválidos en: Contrato, Vigente desde.');
+    expect(insuranceErrorText(t, err(400, undefined, { fields: ['campoNovo'] }))).toBe(esJson.admin.insuranceErrors.byStatus['400']);
+    expect(insuranceErrorText(t, err(400))).toBe(esJson.admin.insuranceErrors.byStatus['400']);
   });
 
   it('sem code usa o status; sem status nem code usa a frase genérica; não-Error também não quebra', () => {

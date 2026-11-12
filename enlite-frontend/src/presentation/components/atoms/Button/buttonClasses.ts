@@ -14,7 +14,8 @@
 // `inputClasses.ts` já usa para input, textarea e select.
 
 export type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger' | 'quiet';
-export type ButtonSize = 'xs' | 'compact' | 'sm' | 'md' | 'lg';
+export type ButtonSize = 'xs' | 'compact' | 'dense' | 'sm' | 'md' | 'lg';
+export type ButtonShape = 'pill' | 'rounded';
 
 /**
  * Tokens de tamanho.
@@ -44,6 +45,11 @@ const SIZE: Record<ButtonSize, string> = {
    */
   xs: 'h-7 px-3.5 text-[13px] font-medium leading-[1.35]',
   compact: 'h-[38px] px-[18px] py-2 text-[13px] font-medium leading-[1.5]',
+  /**
+   * `dense` (089 T024) — o botão do canvas "Invitar prestadores": 40px, texto 14 em peso 500.
+   * Só acrescenta; `md` (também 40px) segue 16/600 e não mudou.
+   */
+  dense: 'h-10 px-4 text-sm font-medium leading-[1.35]',
   sm: 'h-8 px-4 text-sm font-semibold leading-[1.35]',
   md: 'h-10 px-6 text-base font-semibold leading-[1.35]',
   lg: 'h-12 px-8 text-base font-semibold leading-[1.35]',
@@ -97,8 +103,14 @@ const VARIANT: Record<ButtonVariant, string> = {
  * ordem em que o Tailwind as emite, não da ordem em que eu as escrevo. Um
  * peso por tamanho elimina a disputa. `sm`/`md`/`lg` seguem em 600.
  */
+/** `pill` é o raio de sempre (default). `rounded` = raio 10px do canvas 089. */
+const SHAPE: Record<ButtonShape, string> = {
+  pill: 'rounded-full',
+  rounded: 'rounded-[10px]',
+};
+
 const BASE =
-  'inline-flex items-center justify-center gap-2 rounded-full overflow-hidden ' +
+  'inline-flex items-center justify-center gap-2 overflow-hidden ' +
   'font-poppins tracking-normal text-center ' +
   'transition-colors duration-200 ' +
   'disabled:opacity-50 disabled:cursor-not-allowed ' +
@@ -108,14 +120,16 @@ export interface ButtonClassesOpts {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  shape?: ButtonShape;
 }
 
 export function buttonClasses({
   variant = 'primary',
   size = 'md',
   fullWidth = false,
+  shape = 'pill',
 }: ButtonClassesOpts = {}): string {
-  return [BASE, SIZE[size], VARIANT[variant], fullWidth ? 'w-full' : '']
+  return [BASE, SHAPE[shape], SIZE[size], VARIANT[variant], fullWidth ? 'w-full' : '']
     .filter(Boolean)
     .join(' ');
 }

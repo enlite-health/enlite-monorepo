@@ -199,7 +199,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `stack` e sem `methods` vira USE, sem quebrar', () => {
     expect(comCamadas([{ route: { path: '/api/admin/x' } }])).toEqual([
-      { method: 'USE', path: '/api/admin/x', cells: [] },
+      { method: 'USE', path: '/api/admin/x', cells: [], class: null },
     ]);
   });
 
@@ -209,7 +209,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `path` cai na raiz em vez de virar caminho vazio', () => {
     expect(comCamadas([{ route: { methods: { get: true }, stack: [] } }])).toEqual([
-      { method: 'GET', path: '/', cells: [] },
+      { method: 'GET', path: '/', cells: [], class: null },
     ]);
   });
 
@@ -217,7 +217,7 @@ describe('ramos defensivos da varredura', () => {
     const cell = { resource: 'api_docs', action: 'read' };
     const handle = markPermissionHandler(((_req, _res, next) => next()) as RequestHandler, cell);
     expect(comCamadas([{ handle, regexp: Object.assign(/^\/?$/, { fast_slash: true }) }])).toEqual([
-      { method: 'USE', path: '/', cell, cells: [cell] },
+      { method: 'USE', path: '/', cell, cells: [cell], class: null },
     ]);
   });
 
@@ -350,6 +350,7 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'catalog_therapeutic_activities:read',
       // Motivos de saída (492): mesma família, célula literal própria.
       'catalog_service_exit_reasons:read',
+      'catalog_service_shift_templates:read',
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
       // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos recursos. Nesta rodada
@@ -385,6 +386,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'interview_host:read', 'interview_host:update',
       // Spec 049 (F4): vínculo do Tactiq — 2 células `own_*` declaradas por rota real (`tactiqLinkRoutes.ts`).
       'own_tactiq_link:read', 'own_tactiq_link:create',
+      // acesso-do-cliente (F1, T111): registro de vínculos de área — declaradas em `adminAreaMembershipRoutes.ts` (família admin.users).
+      'area_membership:read', 'area_membership:write',
       'staff_directory:read',
       // Spec 022, Bloco 4 (fecho, 21/09): notificações in-app — `own_notifications:read|update`
       // (família `admin.users`). Mesma situação das 5 células acima: rota real existe
@@ -417,6 +420,7 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update',
       'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update',
       'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update',
+      'catalog_service_shift_templates:create', 'catalog_service_shift_templates:update',
       'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update',
       'user_management:create', 'user_management:update',
       'vacancy:create', 'vacancy:update',
@@ -446,6 +450,21 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'recruitment_blocked:read',
       // Spec 029 (prompts de IA): descrição em CELL_DESCRIPTION; a rota real é adminAiPromptRoutes.
       'ai_prompt:read', 'ai_prompt:update',
+      // Spec 078 (pedidos do Sol): descrição em CELL_DESCRIPTION; a rota real é adminPedidosIaRoutes.
+      'pedidos_ia:read', 'pedidos_ia:decidir',
+      // Spec 082 (painel de custos): descrição em CELL_DESCRIPTION; a rota real é adminCostsRoutes.
+      'platform_costs:read',
+      // Spec 081 (T064): descrição em CELL_DESCRIPTION; a rota real é recruitmentRoutes.ts (T064b).
+      'recruitment_activity_per_person:read',
+      // Spec 086 (Luz prueba): descrição em CELL_DESCRIPTION; a rota real é adminLuzPruebaRoutes (fora do fixture de 2 rotas).
+      'luz_prueba:chat',
+      // Spec 080 (assistentes no app): 13 células com descrição em CELL_DESCRIPTION; as rotas reais vivem no
+      // assistants-service (não neste fixture de 2 rotas), então saem aqui como complemento.
+      'assistant_maria:chat', 'assistant_lucero:chat', 'assistant_candela:chat',
+      'assistant_scoreboard:read', 'assistant_escalation:register',
+      'knowledge_public:read', 'knowledge_recruitment:read', 'knowledge_clinical:read',
+      'knowledge_financial:read', 'knowledge_management:read', 'knowledge_coordination:read',
+      'knowledge_technical:read', 'knowledge_product_meetings:read',
       // Spec 051 (F1): trocar o status do paciente por FORA da FSM — uma célula por destino; o
       // consumidor é `decidirTrocaForaDoFluxo` (domínio), sem `perm.require` de rota neste PR.
       'patient_status:move_to_searching',
@@ -455,6 +474,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_status:move_to_suspended',
       'patient_status:move_to_alta',
       'patient_status:move_to_discharged',
+      // Spec 078 (M2): as 2 células da Luz como agente — consumidor é a porta MCP (`AgentCapabilityCells` + `AgentCellGuard`), sem rota REST.
+      'worker_application:create',
+      'handover:create',
     ]);
   });
 

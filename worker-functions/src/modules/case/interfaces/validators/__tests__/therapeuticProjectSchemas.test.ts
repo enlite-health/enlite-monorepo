@@ -6,6 +6,7 @@ import {
   createCatalogItemSchemaFor,
   updateCatalogItemSchemaFor,
   catalogKindSchema,
+  createShiftTemplateSchema,
   THERAPEUTIC_TEXT_MAX,
 } from '../therapeuticProjectSchemas';
 
@@ -224,5 +225,22 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'fulano@example.com' }).success).toBe(false);
     // O kind novo NÃO é catálogo terapêutico: o schema do domínio clínico continua recusando.
     expect(catalogKindSchema.safeParse(kind).success).toBe(false);
+  });
+});
+
+describe('createShiftTemplateSchema — guardias predefinidas (spec 074)', () => {
+  it('R3 guardia com items vazio é recusada', () => {
+    expect(createShiftTemplateSchema.safeParse({ label: 'QA', items: [] }).success).toBe(false);
+  });
+
+  it('R4 guardia com startTime 25:00 é recusada', () => {
+    expect(createShiftTemplateSchema.safeParse({ label: 'QA', items: [{ startTime: '25:00', durationMinutes: 60 }] }).success).toBe(false);
+  });
+
+  it('R5 guardia válida com 2 turnos passa', () => {
+    const r = createShiftTemplateSchema.safeParse({
+      label: 'QA', items: [{ startTime: '08:00', durationMinutes: 720 }, { startTime: '20:00', durationMinutes: 720 }],
+    });
+    expect(r.success).toBe(true);
   });
 });

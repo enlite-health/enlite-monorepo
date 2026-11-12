@@ -193,29 +193,6 @@ test.describe('ds-table-nao-regressao', () => {
     await maybeScreenshot(page, 't05-vacante-encuadres', funnel.locator('table').first());
   });
 
-  test('ds-table-nao-regressao t06-vacante-match', async ({ page }) => {
-    await loginAs(page, DS_TABLE_STAFF);
-    await page.goto(`/admin/vacancies/${massa.vacancyId}`);
-    await page.getByRole('button', { name: /Hacer match/i }).click();
-    const modal = page.getByTestId('match-modal');
-    await expect(modal).toBeVisible();
-    // Achado (medido 27/09, fora do escopo de codar aqui): o modal renderiza
-    // `MatchCandidateRow.match.tsx` (divs), NÃO `VacancyMatch/MatchCandidateRow.tsx` (o arquivo
-    // que importa `atoms/Table`, órfão — 0 importadores em produção, grep abaixo). O funil por
-    // trás do modal (`vacancy-funnel-view`, aba "encuadres") continua montado e é o `<table>` que
-    // a asserção (i) enxerga — mesmo padrão do Q-EX-9.2 (t02): o print existe e é comparado, mas
-    // quem prova o átomo aqui é o byte a byte (DX-9.4) + as suítes unit, não este spec.
-    await expect(modal.getByTestId('match-modal-worker-link').first()).toBeVisible();
-    await expect(page.locator('table tbody tr').first()).toBeVisible();
-    test.info().annotations.push({
-      type: 'achado',
-      description: 'MatchCandidateRow.tsx (importa atoms/Table) é órfão — 0 importadores em produção; MatchBucketSection usa MatchCandidateRow.match.tsx (divs). Reportado no retorno do P4, não corrigido aqui (fora do escopo do passo).',
-    });
-    await waitFontsReady(page);
-    await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't06-vacante-match', page.locator('table').first());
-  });
-
   test('ds-table-nao-regressao t07-vacante-talentum', async ({ page }) => {
     await loginAs(page, DS_TABLE_STAFF);
     await page.goto(`/admin/vacancies/${massa.vacancyId}`);

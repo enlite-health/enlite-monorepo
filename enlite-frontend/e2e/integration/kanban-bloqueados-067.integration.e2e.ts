@@ -251,7 +251,7 @@ test.describe('Kanban da vaga — coluna Bloqueados (spec 067) @integration', ()
     // o admin apaga o documento de antecedentes (clique no "remover" do cartão)
     await abrirFicha(page, apagado.workerId);
     const slot = page.getByTestId('doc-slot-criminal_record');
-    await slot.getByRole('button', { name: 'Remover documento' }).click();
+    await slot.getByRole('button', { name: 'Quitar documento' }).click();
     await expect(slot.getByTestId('validation-badge-criminal_record')).toHaveCount(0, { timeout: 15_000 });
 
     await waitForCardInStage(page, vacancyId, `kanban-card-${wjaApagado}`, 'BLOQUEADO');

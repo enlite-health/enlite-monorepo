@@ -6,6 +6,7 @@
  * continua significando "nada informado" — o status é sempre explícito, nunca inferido da lista vazia.
  */
 import { countryToTimezone } from '@shared/locale/CountryTimezone';
+import { addCivilDays } from '@shared/locale/civilClock';
 
 export const CONTACT_STATUS_KINDS = ['RESPONSIBLE', 'EXTERNAL', 'COVERAGE', 'CARE_TEAM'] as const;
 export type ContactStatusKind = (typeof CONTACT_STATUS_KINDS)[number];
@@ -40,12 +41,6 @@ export function localDateOf(instant: Date, country: string): string {
     month: '2-digit',
     day: '2-digit',
   }).format(instant);
-}
-
-/** Soma `days` dias a uma data civil `YYYY-MM-DD` (aritmética em UTC: sem horário de verão no meio). */
-export function addCivilDays(isoDate: string, days: number): string {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
 /** Vencimento do campo: dia civil local de `pendingSince` + 15. */

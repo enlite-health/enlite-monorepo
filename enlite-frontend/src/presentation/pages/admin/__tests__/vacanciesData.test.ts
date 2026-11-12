@@ -3,7 +3,7 @@
  *
  * GARANTIA: As opções dos selects de vacantes:
  *  - Não contêm opção duplicada com value="" (o Select já adiciona placeholder)
- *  - Usam os valores canônicos do banco para status (8 valores)
+ *  - Usam os valores canônicos do banco para status (8 valores + DE_BAJA, spec 084)
  *  - Usam i18n keys, nunca strings hardcoded
  */
 
@@ -21,14 +21,15 @@ describe('vacanciesData — no duplicate empty-value options', () => {
   });
 });
 
-describe('vacanciesData — status options match the 8 canonical DB values', () => {
-  it('contains exactly the 8 canonical job_postings.status values', () => {
+describe('vacanciesData — status options match the 9 filterable DB values', () => {
+  it('contains the 8 canonical job_postings.status values + DE_BAJA (spec 084 F2: filtro "Dada de baja")', () => {
     const options = getStatusOptions(t);
     const values = options.map((o) => o.value).sort();
     expect(values).toEqual(
       [
         'ACTIVE',
         'CLOSED',
+        'DE_BAJA',
         'ON_HOLD',
         'PENDING_ACTIVATION',
         'RAPID_RESPONSE',

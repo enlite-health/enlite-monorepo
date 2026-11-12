@@ -59,12 +59,31 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // explícitos onde existem.
       'analytics:export',
       'analytics:read',
+      // Spec 080 — Master-only, sem tela (widget flutuante de assistentes, não é rota/tela do registry).
+      'assistant_candela:chat',
+      'assistant_escalation:register',
+      'assistant_lucero:chat',
+      'assistant_maria:chat',
+      'assistant_scoreboard:read',
       'funnel:write',
+      // Spec 078 (M2) — célula do AGENTE (grupo `AGENT`), sem tela: consumida só pela porta MCP da Luz (AGENT_CAPABILITY_CELLS).
+      'handover:create',
       'interview:create',
       'interview:delete',
       'interview:read',
       'interview:update',
       'interview:write',
+      // Spec 080 — Master-only, sem tela (widget flutuante de assistentes, não é rota/tela do registry).
+      'knowledge_clinical:read',
+      'knowledge_coordination:read',
+      'knowledge_financial:read',
+      'knowledge_management:read',
+      'knowledge_product_meetings:read',
+      'knowledge_public:read',
+      'knowledge_recruitment:read',
+      'knowledge_technical:read',
+      // Spec 086 — Master-only, sem tela: aba "Luz (prueba)" do widget de assistentes (não é rota/tela do registry).
+      'luz_prueba:chat',
       // Spec 022, Bloco 4 (D-22, citação literal): `own_notifications:*` não tem tela própria
       // no registry (o sino não é uma rota de `App.tsx`, e o teste do registry exige `route`
       // existente) — fica SEM entrada dedicada por desenho do próprio mecanismo, mesmo
@@ -92,6 +111,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'prescreening:write',
       'recruitment:read',
       'recruitment:write',
+      // Spec 081 (T064) — Master-only, sem tela (consumida só pela rota de atividade e pela Maria).
+      'recruitment_activity_per_person:read',
       'staff_directory:read',
       'talentum:write',
       'test_fixtures:execute',
@@ -103,6 +124,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'worker:delete',
       'worker:disable',
       'worker:write',
+      // Spec 078 (M2) — célula do AGENTE (grupo `AGENT`), sem tela (ver `handover:create` acima).
+      'worker_application:create',
       'worker_document:write',
     ]);
   });
@@ -218,5 +241,19 @@ describe('screensByCell / containersOfTab / screenById', () => {
 
   it('tela desconhecida é erro, não undefined silencioso', () => {
     expect(() => screenById('nao.existe')).toThrow(/desconhecida/);
+  });
+});
+
+describe('SCREEN_REGISTRY — lista global de enquadres (spec 076)', () => {
+  it('a tela `enquadres` abre com as duas células (`openWith: all`), está em /admin/enquadres e a rota existe no App.tsx', () => {
+    const t = screenById('enquadres');
+    expect(t.route).toBe('/admin/enquadres');
+    expect(t.cells).toEqual(['enquadre_event:read', 'vacancy:read']);
+    expect(t.openWith).toBe('all');
+    expect(APP_TSX).toMatch(/path="enquadres"/);
+  });
+
+  it('só a tela de enquadres usa `openWith` (o OU das demais não muda)', () => {
+    expect(SCREEN_REGISTRY.filter((s) => s.openWith !== undefined).map((s) => s.id)).toEqual(['enquadres']);
   });
 });

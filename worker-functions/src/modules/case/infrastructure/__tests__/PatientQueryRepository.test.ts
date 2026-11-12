@@ -80,6 +80,8 @@ function baseListRow(overrides: Record<string, unknown> = {}) {
     hasActiveServiceWithoutAddress: false,
     // Decisão do Gabriel 07/09: serviço ativo sem horário — default false (= com horário).
     hasActiveServiceWithoutSchedule: false,
+    // Pedido do Javier: ≥1 diagnóstico CID-11 ATIVO — default true (= completo); só a EXISTÊNCIA sai do SELECT.
+    hasActiveDiagnosis: true,
     ...overrides,
   };
 }
@@ -122,8 +124,8 @@ describe('PatientQueryRepository.list', () => {
     // $1 search (trimmed), $2 needsAttention bool, $3 attentionReason,
     // $4 clinicalSpecialty, $5 dependencyLevel, $6 caseNumber, $7 country,
     // $8 reads.family (o ramo do nome do responsável), $9 limit, $10 offset,
-    // $11 include_deactivated (checkbox "Mostrar desactivados" — ausente aqui → false).
-    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0, false]);
+    // $11 include_deactivated (checkbox "Mostrar desactivados" — ausente aqui → false), $12 exclude_discharged (ausente → false).
+    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0, false, false]);
     // lex 08/09: o ramo do responsável é gated pelo parâmetro, não por string SQL montada.
     expect(sql).toMatch(/\$8::boolean AND EXISTS \(\s*SELECT 1 FROM patient_responsibles/);
   });
@@ -340,6 +342,34 @@ describe('PatientQueryRepository.list', () => {
     expect(rows[0].attentionReasons).toEqual([]);
   });
 
+  it.each(['ADMISSION', 'PENDING_ADMISSION'])('a14c. status %s + tudo completo MENOS o diagnóstico ativo → needsAttention TRUE, INCOMPLETE_ADMISSION', async (status) => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow({ status, hasActiveDiagnosis: false })] });
+    const { rows } = await new PatientQueryRepository().list(baseFilters());
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReasons).toContain('INCOMPLETE_ADMISSION');
+  });
+
+  it.each(['ADMISSION', 'PENDING_ADMISSION'])('a14d. status %s COM diagnóstico ativo → completo (needsAttention false)', async (status) => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow({ status, hasActiveDiagnosis: true })] });
+    const { rows } = await new PatientQueryRepository().list(baseFilters());
+    expect(rows[0].needsAttention).toBe(false);
+  });
+
+  it('a14e. paciente já em atendimento (ACTIVE) sem diagnóstico → NÃO é afetado', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow({ status: 'ACTIVE', hasActiveDiagnosis: false })] });
+    const { rows } = await new PatientQueryRepository().list(baseFilters());
+    expect(rows[0].needsAttention).toBe(false);
+  });
+
+  it('a14f. o SELECT da lista projeta SÓ a existência do diagnóstico ativo (pelo fragmento único), nunca o valor', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow()] });
+    await new PatientQueryRepository().list(baseFilters());
+    const sql = String(mockPoolQuery.mock.calls[0][0]);
+    expect(sql).toContain('EXISTS (SELECT 1 FROM patient_diagnoses pdx WHERE pdx.patient_id = p.id AND pdx.active)');
+    expect(sql).toContain('"hasActiveDiagnosis"');
+    expect(sql).not.toMatch(/concept_(title|code|uri|group)/);
+  });
+
   it('a14b. attentionReasons já tem INCOMPLETE_ADMISSION gravado (legado) → não duplica ao derivar de novo', async () => {
     mockPoolQuery.mockResolvedValueOnce({
       rows: [
@@ -497,7 +527,7 @@ describe('PatientQueryRepository.stats', () => {
 
     const result = await repo.stats(['AR', 'BR']);
 
-    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['AR', 'BR']]);
+    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['AR', 'BR'], false]);
     expect(mockPoolQuery.mock.calls[0][0]).toContain('ANY($1::bpchar[])');
     expect(result).toEqual({
       total: 10,
@@ -514,7 +544,7 @@ describe('PatientQueryRepository.stats', () => {
     const repo = new PatientQueryRepository();
 
     await repo.stats(['BR']);
-    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['BR']]);
+    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['BR'], false]);
   });
 });
 

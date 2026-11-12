@@ -1,6 +1,6 @@
-import { useState, type MouseEvent } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Plus, Rocket } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -13,13 +13,13 @@ import {
 } from '@presentation/components/atoms/Table';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate, useCanActivateRecruitment, useContainerAccess } from '@presentation/hooks/useCellAccess';
-import { useToast } from '@presentation/hooks/useToast';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
-import { recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
-import { runActivateRecruitmentClick } from './activateRecruitmentClick';
+import { diagnosisGapOf, recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
+import { ActivateRecruitmentAction } from './ActivateRecruitmentAction';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ServiceVacancyCells } from './ServiceVacancyCells';
+import { LinkExistingVacancyAction } from './LinkExistingVacancyAction';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -40,62 +40,13 @@ interface ServicosContratadosCardProps {
 const EMPTY = '—';
 
 
-function ActivateRecruitmentAction({
-  patientId,
-  service,
-  missing,
-  onActivated,
-  t,
-}: {
-  patientId: string;
-  service: PatientContractedServiceDetail;
-  missing: string[];
-  onActivated: () => void;
-  t: (k: string, o?: any) => string;
-}) {
-  const showToast = useToast();
-  const [busy, setBusy] = useState(false);
-  const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
-  const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
-
-  // Hook incondicional (regra do React) — o GATE em si só se aplica depois do ramo
-  // "Ver vacante" abaixo, que não muda em relação à `stage`. Fonte única com o subcard do
-  // Kanban de pacientes (PatientKanbanSubcards.tsx) — gate fecho N3.
+/**
+ * Visibilidade ÚNICA das ações de recrutamento da linha (foguete + "Vincular vaga existente", spec 079):
+ * serviço ativo ∧ sem vaga viva (nem redigida) ∧ ator com as 2 células (`useCanActivateRecruitment`).
+ */
+function useShowRecruitmentActions(service: PatientContractedServiceDetail): boolean {
   const podeAtivar = useCanActivateRecruitment();
-
-  // Spec 047 (F3): o ícone "Ver vacante" saiu — o código da vacante (coluna) é o caminho. Com vaga viva não há o que
-  // ativar; com `liveVacancyRedacted` o ator não lê vagas, então "tem vaga ou não" é desconhecido — nunca oferecer.
-  if (service.liveVacancy || service.liveVacancyRedacted) return null;
-
-  // Regra do Gabriel (12/09, PR-8b 15/09): a rota de ativação (POST .../activate-recruitment) exige
-  // patient_services:update E vacancy:update JUNTAS (contracts/permissions-split.md — "ação sobre
-  // recurso existente") — quem não tem as duas células não vê o BOTÃO de ativar. Só este ramo
-  // (o "Ver vacante" acima já retornou e não passa por aqui).
-  if (!podeAtivar) return null;
-
-  const handleClick = async (e: MouseEvent): Promise<void> => {
-    e.stopPropagation();
-    await runActivateRecruitmentClick({
-      patientId, serviceId: service.id, missing, busy, setBusy, onActivated, tc, t, showToast,
-    });
-  };
-
-  return (
-    <ActionButton
-      resource="patient_services"
-      action="update"
-      variant="ghost"
-      size="sm"
-      onClick={handleClick}
-      disabled={missing.length > 0 || busy}
-      title={missing.length > 0 ? tc('activateRecruitmentTooltip', { items: missing.map((code) => t(`admin.patients.detail.completeness.items.${code}`, code)).join(', ') }) : undefined}
-      aria-label={tc('activateRecruitmentAria', { service: serviceLabel })}
-      data-testid={`contracted-service-activate-recruitment-${service.id}`}
-      className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40 disabled:cursor-not-allowed"
-    >
-      <Rocket className="w-4 h-4" strokeWidth={2} />
-    </ActionButton>
-  );
+  return service.active && !service.liveVacancy && !service.liveVacancyRedacted && podeAtivar;
 }
 
 function ServiceRow({
@@ -104,6 +55,7 @@ function ServiceRow({
   addresses,
   insuranceInformed,
   hasVerifiedActiveCoverage,
+  diagnosisGap,
   onOpen,
   onEdit,
   onActivated,
@@ -117,6 +69,8 @@ function ServiceRow({
   insuranceInformed: string | null;
   /** Hotfix gate-cobertura-verificada-vacante (28/09) — ver `PatientDetail.hasVerifiedActiveCoverage`. */
   hasVerifiedActiveCoverage?: boolean;
+  /** Pedido do Javier: pendência de diagnóstico da ficha (só existe com o paciente em ADMISSION). */
+  diagnosisGap?: 'DIAGNOSIS' | 'CLINICAL_DATA' | null;
   onOpen: (service: PatientContractedServiceDetail) => void;
   onEdit: (service: PatientContractedServiceDetail) => void;
   onActivated: () => void;
@@ -128,6 +82,7 @@ function ServiceRow({
 }) {
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
   const address = addresses.find((a) => a.id === service.addressId) ?? null;
+  const showRecruitmentActions = useShowRecruitmentActions(service);
   const scheduleText = contractedServiceScheduleText(service.schedule);
 
   return (
@@ -210,7 +165,8 @@ function ServiceRow({
           {/* Spec 018, PR-6: ativar recrutamento é POR SERVIÇO ATIVO — a baixa (não `service.active`)
               não mostra o ícone, é ativação de nada. As 2 células que alimentam o gate (endereço
               vivo + horário) já estão nesta MESMA linha, mais a cobertura do paciente. */}
-          {service.active && (
+          {showRecruitmentActions && (
+            <>
             <ActivateRecruitmentAction
               patientId={patientId}
               service={service}
@@ -220,10 +176,14 @@ function ServiceRow({
                 insuranceInformed,
                 hasVerifiedActiveCoverage,
                 serviceRecruitmentFields: service,
+                diagnosisGap,
               })}
               onActivated={onActivated}
               t={t}
             />
+            {/* Spec 079: mesma visibilidade do foguete, mas NUNCA desabilitado por `missing` (o portão é do preview). */}
+            <LinkExistingVacancyAction patientId={patientId} serviceId={service.id} serviceCode={service.serviceCode} onLinked={onActivated} />
+            </>
           )}
           {/* D269/D286: o lápis faz PATCH → mesma régua do "Nuevo" (`useActionGate`, só com enforcement on). */}
           {podeEditar && (
@@ -343,6 +303,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
                 addresses={patient.addresses ?? []}
                 insuranceInformed={patient.insuranceInformed}
                 hasVerifiedActiveCoverage={patient.hasVerifiedActiveCoverage}
+                diagnosisGap={diagnosisGapOf(patient.completeness)}
                 onOpen={setSelected}
                 onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}
                 onActivated={() => onSaved?.()}

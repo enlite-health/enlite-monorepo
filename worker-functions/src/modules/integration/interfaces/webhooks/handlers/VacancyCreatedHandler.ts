@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { Pool } from 'pg';
 import { TalentumWebhookHandler, TalentumWebhookContext } from './TalentumWebhookHandler';
 import { TalentumPrescreeningCreatedParsed } from '../validators/talentumPrescreeningSchema';
-import { CreateJobPostingFromTalentumUseCase } from '../../../application/CreateJobPostingFromTalentumUseCase';
+import { CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from '../../../application/CreateJobPostingFromTalentumUseCase';
 
 const TAG = '[TalentumWebhook:VacancyCreated]';
 
@@ -14,7 +14,7 @@ export class VacancyCreatedHandler implements TalentumWebhookHandler<TalentumPre
     console.log(`${TAG} talentum_project_id=${_id} | name="${name}" | env=${ctx.environment}`);
 
     try {
-      const useCase = new CreateJobPostingFromTalentumUseCase(this.pool);
+      const useCase = new CreateJobPostingFromTalentumUseCase(this.pool, talentumPrescreeningIdResolver);
       const result = await useCase.execute(payload.data, ctx.environment);
 
       /* istanbul ignore next — ?? branches are cosmetic logging fallbacks */

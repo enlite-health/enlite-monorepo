@@ -208,7 +208,8 @@ export class PromoteBlockedApplicationsUseCase {
           [row.job_posting_id],
         );
         const jp = jpRows[0];
-        if (!jp || jp.is_draft || jp.status === 'CLOSED') {
+        // spec 084 (P4/R6): vaga baixada não recebe candidato bloqueado promovido
+        if (!jp || jp.is_draft || jp.status === 'CLOSED' || jp.status === 'DE_BAJA') {
           bumpSkip('vacancy_invalid');
           continue;
         }

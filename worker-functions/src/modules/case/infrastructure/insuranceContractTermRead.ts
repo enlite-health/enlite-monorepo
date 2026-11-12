@@ -132,15 +132,18 @@ export async function offeredContractsOf(q: Queryable, providerCode: string, cou
   return rows.map((r) => ({ id: r.id, name: r.name, country: r.country, scopeDescription: r.scope_description }));
 }
 
-/** Códigos dos pagadores ATIVOS com ao menos 1 contrato "oferecido" no país (cascata do serviço contratado). */
-export async function providersWithOfferedContract(q: Queryable, country: string, asOf: string): Promise<string[]> {
+/**
+ * Códigos dos pagadores ATIVOS com ao menos 1 contrato NO PAÍS (cascata do serviço contratado), tenha ele termo vigente ou não:
+ * vincular não lê termo (o preço do serviço já trata `NO_TERM`), então o contrato sem valor vigente não pode esconder a obra social.
+ */
+export async function providersWithContract(q: Queryable, country: string): Promise<string[]> {
   const { rows } = await q.query<{ code: string }>(
     `SELECT p.code
        FROM insurance_providers p
       WHERE p.active
-        AND EXISTS (SELECT 1 FROM insurance_contracts c WHERE c.provider_code = p.code AND c.country = $1 AND ${offeredTermExistsSql('c', '$2')})
+        AND EXISTS (SELECT 1 FROM insurance_contracts c WHERE c.provider_code = p.code AND c.country = $1)
       ORDER BY p.sort_order, p.code`,
-    [country, asOf],
+    [country],
   );
   return rows.map((r) => r.code);
 }

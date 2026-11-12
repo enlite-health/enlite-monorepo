@@ -11,7 +11,7 @@
 
 import { Pool } from 'pg';
 import { AxiosInstance } from 'axios';
-import { getMockToken } from './helpers';
+import { getMockToken, postWorkerInit } from './helpers';
 
 // ── Tipos de domínio ────────────────────────────────────────────────────────
 
@@ -109,11 +109,7 @@ export async function createWorker(
   const authUid = `uid-journey-${tag}-${suffix}`;
   const email = `journey-${tag}-${suffix}@e2e.test`;
 
-  const res = await api.post('/api/workers/init', {
-    authUid,
-    email,
-    country: 'AR',
-  });
+  const res = await postWorkerInit(api, { authUid, email, country: 'AR' });
 
   if (res.status !== 201 && res.status !== 200) {
     throw new Error(

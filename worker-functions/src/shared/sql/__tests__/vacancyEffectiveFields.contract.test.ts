@@ -49,6 +49,10 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
     rules: ['raw-export'],
     motivo: 'LEITOR 13 em client cru (connect() sem identidade): SELECT/RETURNING com lista explícita SEM join, só para auditar o que foi gravado; a resposta traz o efetivo via withEffectiveSchedule.',
   },
+  'src/modules/matching/interfaces/controllers/vacancyCrudAuditHelpers.ts': {
+    rules: ['raw-export'],
+    motivo: 'SNAPSHOT do DELETE de vaga (`lockLiveVacancySnapshot`, extraído do VacancyCrudController.deleteVacancy para a fusão rascunho→oficial reusar): SELECT com lista explícita SEM join, FOR UPDATE, só para o `before` da auditoria DELETED — nunca vai para resposta.',
+  },
   'src/modules/matching/interfaces/controllers/vacancyCrudHelpers.ts': {
     rules: [
       'schedule:bare', 'providers_needed:bare', 'age_range_min:bare', 'age_range_max:bare', 'raw-export',
@@ -66,6 +70,13 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
       'required_sex:bare', 'required_professions:bare', 'required_experience:bare', 'payment_day:bare',
     ],
     motivo: 'ESCRITOR (F2/F6/057): UPDATE do enrichment (inclui required_sex/professions/experience e payment_day), sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
+  },
+  'src/modules/case/infrastructure/LinkExistingVacancyRepository.ts': {
+    rules: [
+      'schedule:alias', 'providers_needed:alias', 'age_range_min:alias', 'age_range_max:alias',
+      'required_sex:alias', 'required_professions:alias', 'required_experience:alias', 'work_schedule:alias', 'payment_day:alias',
+    ],
+    motivo: 'spec 079: lê a vaga legada sem serviço — cru = efetivo — para alimentar o serviço e zerar; o use case rejeita contracted_service_id não nulo (ALREADY_LINKED) antes de usar os valores, e o UPDATE filtra contracted_service_id IS NULL.',
   },
 };
 

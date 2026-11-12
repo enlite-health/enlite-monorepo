@@ -43,6 +43,7 @@ export class ListWorkerApplicationsUseCase {
          FROM worker_job_applications wja
          JOIN job_postings jp ON jp.id = wja.job_posting_id
         WHERE wja.worker_id = $1
+          AND jp.deleted_at IS NULL
         ORDER BY wja.created_at DESC
         LIMIT 20`,
       [workerId],

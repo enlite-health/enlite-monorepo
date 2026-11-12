@@ -78,7 +78,7 @@ const MOCK_MATCH_RESULTS = {
       workZone: 'Palermo',
       distanceKm: 3.2,
       activeCasesCount: 0,
-      overallStatus: 'QUALIFICADO',
+      workerStatus: 'QUALIFICADO',
       documentStatus: 'approved',
       matchScore: 92,
       internalNotes: null,
@@ -93,7 +93,7 @@ const MOCK_MATCH_RESULTS = {
       workZone: 'Caballito',
       distanceKm: 6.7,
       activeCasesCount: 1,
-      overallStatus: 'TALENTUM',
+      workerStatus: 'TALENTUM',
       documentStatus: 'pending',
       matchScore: 78,
       internalNotes: null,
@@ -278,7 +278,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem('i18nextLng', 'es');
   });
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(MOCK_ADMIN_USER.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.getByRole('button', { name: /Iniciar sesi/i }).click();

@@ -742,7 +742,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       // pelas duas chamadas a `grant_active_permissions_to_master()` acima.
     });
 
-    it('invariante: hoje NENHUMA permissão ATIVA do catálogo falta no Master (grant nunca é removido — deprecar não tira o histórico)', async () => {
+    it('invariante: hoje NENHUMA permissão ATIVA do catálogo (exceto pedidos_ia:decidir, 557) falta no Master (grant nunca é removido — deprecar não tira o histórico)', async () => {
       const master = await admin.query(
         `SELECT id FROM iam.permission_groups WHERE name = 'Acesso Master' AND tenant_id = $1`,
         [ENLITE_TENANT_ID],
@@ -754,6 +754,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       const faltando = await admin.query<{ n: number }>(
         `SELECT count(*)::int n FROM iam.permissions p
           WHERE p.deprecated_at IS NULL
+            AND NOT (p.resource = 'pedidos_ia' AND p.action = 'decidir') -- 557: decidir é do grupo decisor (Marcel), não do Master
             AND NOT EXISTS (
               SELECT 1 FROM iam.group_permissions gp
                WHERE gp.group_id = $1 AND gp.permission_id = p.id

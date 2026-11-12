@@ -149,7 +149,7 @@ async function abrirListaDePacientes(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem('i18nextLng', 'es');
   });
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(MOCK_ADMIN_USER.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.locator('button[type="submit"]').click();

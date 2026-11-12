@@ -17,9 +17,13 @@ import {
   SERVICE_EXIT_REASON_KIND,
   catalogHasDescription,
   SERVICE_EXIT_REASON_RESOURCE,
+  SERVICE_SHIFT_TEMPLATE_KIND,
+  SERVICE_SHIFT_TEMPLATE_RESOURCE,
   THERAPEUTIC_CATALOG_RESOURCE,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogItem,
+  type ShiftTemplate,
+  type ShiftTemplateItem,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -31,19 +35,27 @@ import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { TherapeuticCatalogFormModal, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
 import { segmentDisplayLabel } from './catalogSegment';
+import { shiftEndTime } from '@domain/scheduleHours';
+import { shiftRangeLabel } from '@presentation/components/features/admin/PatientDetail/itinerary/shiftRange';
 import { sortAlphabeticallyEs } from '@presentation/components/features/admin/PatientDetail/therapeuticProject/alphabeticalOrder';
 
 /**
  * Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030) e
  * (change itinerario-trocas) os motivos de saída do serviço — o mesmo conjunto de `AdminCatalogKind`.
  */
-type ManagedCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND;
+type ManagedCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND | typeof SERVICE_SHIFT_TEMPLATE_KIND;
+
+/** Linha da tabela; a guardia predefinida (spec 074) chega com `items` e sem Ordem/descrição/segmento. */
+type CatalogRow = TherapeuticCatalogItem & { items?: ShiftTemplateItem[] };
+
+const templateRow = (tpl: ShiftTemplate): CatalogRow => ({ id: tpl.id, label: tpl.label, active: tpl.active, items: tpl.items, sortOrder: 0, deactivatedAt: null, createdAt: '', updatedAt: '' });
 
 const CATALOG_RESOURCE: Readonly<Record<ManagedCatalogKind, string>> = {
   'specific-objectives': THERAPEUTIC_CATALOG_RESOURCE['specific-objectives'],
   activities: THERAPEUTIC_CATALOG_RESOURCE.activities,
   segments: THERAPEUTIC_CATALOG_RESOURCE.segments,
   [SERVICE_EXIT_REASON_KIND]: SERVICE_EXIT_REASON_RESOURCE,
+  [SERVICE_SHIFT_TEMPLATE_KIND]: SERVICE_SHIFT_TEMPLATE_RESOURCE,
 };
 
 interface Props {
@@ -56,6 +68,7 @@ const KIND_KEY: Readonly<Record<ManagedCatalogKind, string>> = {
   activities: 'activities',
   [SERVICE_EXIT_REASON_KIND]: 'serviceExitReasons',
   segments: 'segments',
+  [SERVICE_SHIFT_TEMPLATE_KIND]: 'serviceShiftTemplates',
 };
 
 export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
@@ -77,12 +90,15 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
     activities: useActionGate('catalog_therapeutic_activities', 'update'),
     'service-exit-reasons': useActionGate('catalog_service_exit_reasons', 'update'),
     segments: useActionGate('catalog_therapeutic_segments', 'update'),
+    'service-shift-templates': useActionGate('catalog_service_shift_templates', 'update'),
   } as const;
   const writeGate = writeGates[kind];
 
-  const [items, setItems] = useState<TherapeuticCatalogItem[]>([]);
+  const isTemplate = kind === SERVICE_SHIFT_TEMPLATE_KIND;
+  const [items, setItems] = useState<CatalogRow[]>([]);
   // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; `segments` e motivos de saída seguem na ordem do servidor.
-  const showOrder = !catalogHasDescription(kind);
+  // A guardia predefinida (spec 074) também não tem Ordem: lista A–Z, com os turnos sob o rótulo.
+  const showOrder = !catalogHasDescription(kind) && !isTemplate;
   const shownItems = showOrder ? items : sortAlphabeticallyEs(items);
   // Segmentos (spec 030): só objetivos/atividades se vinculam; `null` = sem célula (403) ou catálogo sem vínculo.
   const [segments, setSegments] = useState<TherapeuticCatalogItem[] | null>(null);
@@ -91,7 +107,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [formModal, setFormModal] = useState<{ open: boolean; item: TherapeuticCatalogItem | null }>({ open: false, item: null });
+  const [formModal, setFormModal] = useState<{ open: boolean; item: CatalogRow | null }>({ open: false, item: null });
 
   const fetchItems = useCallback(async () => {
     try {
@@ -99,7 +115,9 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
       setLoadError(null);
       // includeInactive: quem administra precisa ver o que está desligado para poder reativar.
       const [itemsRes, segmentsRes] = await Promise.allSettled([
-        AdminTherapeuticProjectsApiService.listCatalog(kind, { includeInactive: true }),
+        isTemplate
+          ? AdminTherapeuticProjectsApiService.listShiftTemplates({ includeInactive: true }).then((list) => list.map(templateRow))
+          : AdminTherapeuticProjectsApiService.listCatalog(kind as TherapeuticCatalogKind, { includeInactive: true }),
         hasSegmentLink ? AdminTherapeuticProjectsApiService.listCatalog('segments', { includeInactive: true }) : Promise.resolve(null),
       ]);
       if (itemsRes.status === 'rejected') throw itemsRes.reason;
@@ -111,25 +129,30 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [kind, hasSegmentLink]);
+  }, [kind, hasSegmentLink, isTemplate]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
   async function handleFormSave(data: CatalogItemFormData): Promise<void> {
-    if (formModal.item) {
-      await AdminTherapeuticProjectsApiService.updateCatalogItem(kind, formModal.item.id, data);
+    if (isTemplate) {
+      const body = { label: data.label ?? '', items: data.items ?? [] };
+      if (formModal.item) await AdminTherapeuticProjectsApiService.updateShiftTemplate(formModal.item.id, body);
+      else await AdminTherapeuticProjectsApiService.createShiftTemplate(body);
+    } else if (formModal.item) {
+      await AdminTherapeuticProjectsApiService.updateCatalogItem(kind as TherapeuticCatalogKind, formModal.item.id, data);
     } else {
-      await AdminTherapeuticProjectsApiService.createCatalogItem(kind, { ...data, label: data.label ?? '' });
+      await AdminTherapeuticProjectsApiService.createCatalogItem(kind as TherapeuticCatalogKind, { ...data, label: data.label ?? '' });
     }
     setFormModal({ open: false, item: null });
     setActionError(null);
     await fetchItems();
   }
 
-  async function handleToggleActive(item: TherapeuticCatalogItem): Promise<void> {
+  async function handleToggleActive(item: CatalogRow): Promise<void> {
     try {
       setActionError(null);
-      await AdminTherapeuticProjectsApiService.updateCatalogItem(kind, item.id, { active: !item.active });
+      if (isTemplate) await AdminTherapeuticProjectsApiService.updateShiftTemplate(item.id, { active: !item.active });
+      else await AdminTherapeuticProjectsApiService.updateCatalogItem(kind as TherapeuticCatalogKind, item.id, { active: !item.active });
       await fetchItems();
     } catch (err: unknown) {
       setActionError(catalogRefusalMessage(err, t));
@@ -183,7 +206,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
           <Table>
             <TableHeader>
               {showOrder && <TableHead>{tr('table.order')}</TableHead>}
-              <TableHead>{tr(showOrder ? 'table.label' : 'table.title')}</TableHead>
+              <TableHead>{tr(catalogHasDescription(kind) ? 'table.title' : 'table.label')}</TableHead>
               {segments !== null && <TableHead>{tr('table.segment')}</TableHead>}
               <TableHead>{tr('table.status')}</TableHead>
               <TableHead align="right">{tr('table.actions')}</TableHead>
@@ -198,6 +221,11 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
                   )}
                   <TableCell unwrapped>
                     <Text as="span" size="sm" color={item.active ? 'primary' : 'muted'} data-testid={`therapeutic-catalog-label-${item.id}`}>{item.label}</Text>
+                    {item.items && (
+                      <Text size="xs" color="tertiary" className="mt-0.5" data-testid={`therapeutic-catalog-shifts-${item.id}`}>
+                        {item.items.map((it) => shiftRangeLabel(t, { startTime: it.startTime, endTime: shiftEndTime(it.startTime, it.durationMinutes), durationMinutes: it.durationMinutes }, 'full')).join(' · ')}
+                      </Text>
+                    )}
                     {!showOrder && item.description && (
                       <Text
                         size="xs"

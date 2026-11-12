@@ -12,6 +12,8 @@ export interface AdminRecord {
   lastLoginAt: string | null;
   loginCount: number;
   createdAt: string;
+  /** Só presente nas linhas do diretório de grupo `AGENT` (spec 078, M2): o painel marca o agente. Staff não traz o campo. */
+  accountType?: 'agent';
 }
 
 /**
@@ -59,8 +61,15 @@ export class AdminRepository {
 
   /**
    * Lists all staff members (`account_type = 'staff'`) with pagination.
+   *
+   * `forGroupId` (spec 078, M2 — seletor de membro do `/admin/access`): quando o grupo existe, não está arquivado e é de classe
+   * `AGENT`, o diretório devolve SÓ contas `account_type = 'agent'` ativas (a Luz como candidata). Para qualquer outro grupo
+   * (`INTERNAL`/`EXTERNAL_THIRD_PARTY`), grupo inexistente, id inválido ou SEM contexto devolve EXATAMENTE o que sempre devolveu
+   * (staff): o agente nunca aparece fora de um grupo `AGENT`. Os demais usos de `account_type = 'staff'` deste arquivo ficam intactos.
    */
-  async listAdmins(limit = 50, offset = 0): Promise<{ admins: AdminRecord[]; total: number }> {
+  async listAdmins(limit = 50, offset = 0, forGroupId?: string | null): Promise<{ admins: AdminRecord[]; total: number }> {
+    if (forGroupId && (await this.isAgentGroup(forGroupId))) return this.listAgents(limit, offset);
+
     const countResult = await this.pool.query(
       `SELECT COUNT(*) AS total FROM users
        WHERE account_type = 'staff' AND is_active = true`
@@ -83,6 +92,40 @@ export class AdminRepository {
       [limit, offset]
     );
 
+    return { admins: result.rows, total: parseInt(countResult.rows[0].total) };
+  }
+
+  /** O grupo é de classe `AGENT` (e vivo)? Só `AGENT` abre o diretório de agentes (spec 078, M2). */
+  private async isAgentGroup(groupId: string): Promise<boolean> {
+    const r = await this.pool.query(
+      `SELECT 1 FROM iam.permission_groups WHERE id = $1 AND actor_class = 'AGENT' AND archived_at IS NULL`,
+      [groupId],
+    );
+    return (r.rows?.length ?? 0) > 0;
+  }
+
+  /** Contas `agent` ativas (candidatas a grupo `AGENT`). Nunca `staff`. */
+  private async listAgents(limit: number, offset: number): Promise<{ admins: AdminRecord[]; total: number }> {
+    const countResult = await this.pool.query(
+      `SELECT COUNT(*) AS total FROM users WHERE account_type = 'agent' AND is_active = true`
+    );
+    const result = await this.pool.query(
+      `SELECT
+        u.firebase_uid      AS "firebaseUid",
+        u.email,
+        u.display_name      AS "displayName",
+        u.role,
+        u.department,
+        u.last_login_at     AS "lastLoginAt",
+        COALESCE(u.login_count, 0) AS "loginCount",
+        u.created_at        AS "createdAt",
+        'agent'             AS "accountType"
+      FROM users u
+      WHERE u.account_type = 'agent' AND u.is_active = true
+      ORDER BY u.created_at DESC
+      LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
     return { admins: result.rows, total: parseInt(countResult.rows[0].total) };
   }
 

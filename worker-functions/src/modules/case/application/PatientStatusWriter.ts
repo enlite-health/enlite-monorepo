@@ -295,7 +295,7 @@ export async function movePatientStatus(
     // "Activo" no Kanban ativava sem checklist NENHUM, furando inclusive o ADDRESS que barra o
     // botão "Activar" desde a D255. SEARCHING/REPLACEMENT cobram só o horário.
     if (from !== status) {
-      const required = blockingCodesForStatusChange(status, foraDoFluxo);
+      const required = blockingCodesForStatusChange(status, foraDoFluxo, from);
       if (required.length > 0) {
         const { missing } = await loadPatientCompleteness(client, patientId);
         const faltando = required.filter((code) => missing.includes(code));

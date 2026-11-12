@@ -26,6 +26,9 @@ import {
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
 import { computeScheduleWeeklyHours } from '../../matching/domain/scheduleHours';
+import { JobPostingAuditRepository } from '../../matching/infrastructure/JobPostingAuditRepository';
+import { VacancyTalentumPauseService, type VacancyBajaSideEffects } from '../../matching/application/VacancyTalentumPauseService';
+import { dispatchTalentumPause } from '../../matching/application/dispatchTalentumPause';
 import { replaceServiceSlots } from './ServiceSlotWriter';
 import { PatientStatusDerivation, type PatientStatusDerivationPort } from '../application/PatientStatusDerivation';
 import { fetchCurrentAuthorizations, type CurrentAuthorization } from './contractedServiceAuthorizationRead';
@@ -41,6 +44,7 @@ import {
 } from './contractedServicePayerRead';
 import { priceStateMany, type PriceState, type TaxState } from './contractedServicePriceRead';
 import { readCoverageEntries } from './patientCoverageRead';
+import { RESTORE_FROM_BAJA_SET } from './vacancyBajaRestoreSql';
 
 /**
  * Turno do horário na ESCRITA (spec 056): início + duração; o fim nunca é gravado. `dayOfWeek`: 0 = domingo.
@@ -259,6 +263,10 @@ export class PatientContractedServiceRepository {
     private readonly replaceSlots: typeof replaceServiceSlots = replaceServiceSlots,
     /** ⚑13 (spec 056): editar o horário muda o denominador da régua → recalcula o estado na MESMA transação. */
     private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
+    /** Spec 084 F4 (R13): pausa/retoma o projeto do Talentum DEPOIS do commit. Injetável; o default é o serviço real. */
+    private readonly talentum?: VacancyBajaSideEffects,
+    /** Spec 084 P6: a baixa e a volta pelo serviço viram linha de auditoria (quem, status antes/depois, motivo). */
+    private readonly vacancyAudit: Pick<JobPostingAuditRepository, 'logEventSafe'> = new JobPostingAuditRepository(),
   ) {}
 
   private get pool(): Pool {
@@ -429,20 +437,59 @@ export class PatientContractedServiceRepository {
    * `true` → restaura `COALESCE(status_before_baja, 'SEARCHING')` (só vagas em `DE_BAJA`).
    * `undefined` → no-op. Vaga órfã (sem `contracted_service_id`) fica fora pelo WHERE.
    */
-  private async applyVacancyBajaGatilho(cli: PoolClient, serviceId: string, active: boolean | undefined): Promise<void> {
+  private async applyVacancyBajaGatilho(
+    cli: PoolClient,
+    serviceId: string,
+    active: boolean | undefined,
+    actorUid: string,
+  ): Promise<{ baixadas: string[]; devolvidas: string[] }> {
+    const out = { baixadas: [] as string[], devolvidas: [] as string[] };
     if (active === false) {
-      await cli.query(
-        `UPDATE job_postings SET status_before_baja = status, status = 'DE_BAJA'
-          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status != 'DE_BAJA'`,
+      const res = await cli.query<{ id: string; status_before_baja: string | null }>(
+        `UPDATE job_postings SET status_before_baja = status, status = 'DE_BAJA', baja_reason = 'SERVICE',
+                talentum_pause_state = CASE WHEN talentum_project_id IS NOT NULL THEN 'PENDING_PAUSE' ELSE talentum_pause_state END
+          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status != 'DE_BAJA'
+          RETURNING id, status_before_baja`,
         [serviceId],
       );
+      for (const r of res.rows) {
+        out.baixadas.push(r.id);
+        await this.auditBajaChange(cli, r.id, actorUid, { status: r.status_before_baja, baja_reason: null }, { status: 'DE_BAJA', baja_reason: 'SERVICE' });
+      }
     } else if (active === true) {
-      await cli.query(
-        `UPDATE job_postings SET status = COALESCE(status_before_baja, 'SEARCHING'), status_before_baja = NULL
-          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status = 'DE_BAJA'`,
+      // R17/P2: a ÚNICA volta de uma vaga baixada. Só as baixadas POR ESTE serviço (baja_reason = 'SERVICE'): a baixada
+      // à mão ou pela linha de corte NUNCA volta — vaga sem serviço contratado não reaparece (toda vaga ativa precisa de serviço).
+      const res = await cli.query<{ id: string; status: string }>(
+        `UPDATE job_postings SET ${RESTORE_FROM_BAJA_SET}
+          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status = 'DE_BAJA' AND baja_reason = 'SERVICE'
+          RETURNING id, status`,
         [serviceId],
       );
+      for (const r of res.rows) {
+        out.devolvidas.push(r.id);
+        await this.auditBajaChange(cli, r.id, actorUid, { status: 'DE_BAJA', baja_reason: 'SERVICE' }, { status: r.status, baja_reason: null });
+      }
     }
+    return out;
+  }
+
+  /** P6: UMA linha de auditoria por baixa/volta pelo serviço. `logEventSafe` usa SAVEPOINT: nunca derruba a transação. */
+  private async auditBajaChange(
+    cli: PoolClient,
+    vacancyId: string,
+    actorUid: string,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+  ): Promise<void> {
+    await this.vacancyAudit.logEventSafe(cli, {
+      jobPostingId: vacancyId,
+      eventType: 'STATUS_CHANGED',
+      fieldName: 'status',
+      changes: { before, after },
+      actorUserId: actorUid,
+      actorType: 'HUMAN',
+      actorLabel: 'contracted_service_active',
+    });
   }
 
   /**
@@ -498,6 +545,7 @@ export class PatientContractedServiceRepository {
   async update(serviceId: string, patch: ContractedServiceWriteInput, requestNow: Date): Promise<ContractedServiceDetail | null> {
     try {
       // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
+      let affectedVacancies = { baixadas: [] as string[], devolvidas: [] as string[] };
       const row = await withActorContext(this.pool, async (cli) => {
         // F3/F5: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o campo.
         // Baixa: o lock do paciente vem ANTES de qualquer lock de linha (o FOR UPDATE do `captureFieldBefore`) — a mesma ordem do escritor do vínculo.
@@ -540,7 +588,7 @@ export class PatientContractedServiceRepository {
         }
         // F3/F5: valor mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
         for (const [field, key] of GUARDED_FIELDS) await recordFieldChange(cli, serviceId, field, before.get(field), patch[key]);
-        await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
+        affectedVacancies = await this.applyVacancyBajaGatilho(cli, serviceId, patch.active, patch.actorUid);
         // Spec 056: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch: chave ausente não toca).
         if (patch.schedule !== undefined) {
           await this.replaceSlots(cli, serviceId, patch.schedule ?? null, patch.actorUid);
@@ -558,6 +606,7 @@ export class PatientContractedServiceRepository {
         return updated;
       });
       if (row === null) return null;
+      dispatchTalentumPause(this.talentum ?? new VacancyTalentumPauseService(this.pool), { pause: affectedVacancies.baixadas, resume: affectedVacancies.devolvidas }, 'PatientContractedServiceRepository');
       return this.decorate(row, this.pool, requestNow);
     } catch (err) {
       if (err === SERVICE_ROW_MISSING) return null;

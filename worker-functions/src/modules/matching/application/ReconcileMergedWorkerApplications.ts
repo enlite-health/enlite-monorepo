@@ -268,7 +268,7 @@ async function moveApplicationChildren(
 }
 
 /** Colunas que identificam a linha ou são mantidas pelo banco — nunca copiadas. */
-const ENCUADRE_KEY_COLUMNS = ['id', 'worker_id', 'job_posting_id', 'created_at', 'updated_at'];
+export const ENCUADRE_KEY_COLUMNS = ['id', 'worker_id', 'job_posting_id', 'created_at', 'updated_at'];
 
 /**
  * Colunas da postulação que não entram no merge de campos vazios.
@@ -276,7 +276,7 @@ const ENCUADRE_KEY_COLUMNS = ['id', 'worker_id', 'job_posting_id', 'created_at',
  * `application_funnel_stage` sai porque não é "campo vazio": é a posição da
  * pessoa no funil, e tem regra própria (ver {@link ENTRY_STAGES}).
  */
-const APPLICATION_KEY_COLUMNS = [
+export const APPLICATION_KEY_COLUMNS = [
   'id',
   'worker_id',
   'job_posting_id',
@@ -300,7 +300,7 @@ const APPLICATION_KEY_COLUMNS = [
  * total confiável entre as etapas (`funnel_stage_precedence` empata REJECTED
  * com SELECTED), por isso a regra é esta, e não "a maior vence".
  */
-const ENTRY_STAGES = ['INVITED', 'PRE_SCREENING', 'INICIADO'];
+export const ENTRY_STAGES = ['INVITED', 'PRE_SCREENING', 'INICIADO'];
 
 /** Move para a linha que fica o que aponta para o encuadre a ser descartado. */
 async function moveEncuadreChildren(
@@ -330,7 +330,7 @@ async function moveEncuadreChildren(
  * migration 192 consolidou encuadres duplicados pelo mesmo princípio, elegendo
  * o sobrevivente por quantidade de campos preenchidos.
  */
-async function mergeEmptyColumns(
+export async function mergeEmptyColumns(
   client: PoolClient,
   opts: { table: string; keyColumns: string[]; srcId: string; dstId: string },
 ): Promise<void> {

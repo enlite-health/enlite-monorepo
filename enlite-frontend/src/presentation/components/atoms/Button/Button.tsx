@@ -1,12 +1,13 @@
 import { ButtonHTMLAttributes, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export type { ButtonVariant, ButtonSize } from './buttonClasses';
-import { buttonClasses, type ButtonSize, type ButtonVariant } from './buttonClasses';
+export type { ButtonVariant, ButtonSize, ButtonShape } from './buttonClasses';
+import { buttonClasses, type ButtonShape, type ButtonSize, type ButtonVariant } from './buttonClasses';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  shape?: ButtonShape;
   children: ReactNode;
   fullWidth?: boolean;
   borderColor?: string;
@@ -17,6 +18,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export const Button = ({
   variant = 'primary',
   size = 'md',
+  shape = 'pill',
   children,
   fullWidth = false,
   borderColor,
@@ -32,7 +34,7 @@ export const Button = ({
   const customTextColor = textColor ? `text-[${textColor}]` : '';
 
   const classes = [
-    buttonClasses({ variant, size, fullWidth }),
+    buttonClasses({ variant, size, fullWidth, shape }),
     customBorderColor,
     customTextColor,
     className,

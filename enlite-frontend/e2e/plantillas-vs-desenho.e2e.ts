@@ -33,6 +33,7 @@
  * Precisa do emulador do Firebase em :9099 e do `enlite-frontend/.env`.
  */
 import { test, expect, Page } from '@playwright/test';
+import { mockAreasDoPainel } from './helpers/areas-do-painel';
 
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY = 'test-api-key';
@@ -165,6 +166,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
   // spinner — o token do emulador leva 401 na API de teste. Contrato mockado SEM `enforcement`
   // (engine indeciso, D113): nada gateia, e o que se prova aqui é a tela, não a permissão.
   // Mesmo molde de `admin-access.e2e.ts`.
+  await mockAreasDoPainel(page);
   await page.route('**/v1/me/authz', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ uid, tenantId: 't', status: 'ACTIVE', permissions: [], countries: ['AR'], groups: [], features: {} }),
@@ -173,7 +175,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: uid, email, role: 'admin', displayName: 'Gabriel', isActive: true } }) }));
 
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar sesi/i }).click();

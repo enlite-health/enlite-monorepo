@@ -103,7 +103,7 @@ test.describe('spec 061 — atividade do catálogo com título + descrição: do
 
   test.beforeAll(() => {
     runSQL(`DELETE FROM therapeutic_activities WHERE label LIKE 'Aaa TITULO-SINTETICO-%'`); // sobra de rodada interrompida
-    seed = seedActivatablePatient(760000); // faixa própria (as vizinhas: 700000-756000)
+    seed = seedActivatablePatient(760000, { withDiagnosis: false }); // faixa própria (as vizinhas: 700000-756000)
     runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-061', 'e2e-061')`);
     seedIcd();
     const uid = `e2e-pt061-${RUN_ID}`;

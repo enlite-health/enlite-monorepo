@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { AdminProtectedRoute } from '../AdminProtectedRoute';
 import type { AuthzContract, AuthzStatus } from '@domain/entities/Authz';
@@ -33,10 +33,11 @@ const contrato = (over: Partial<AuthzContract> = {}): AuthzContract => ({
 
 function montar() {
   return render(
-    <MemoryRouter>
-      <AdminProtectedRoute>
-        <div>painel-operacional</div>
-      </AdminProtectedRoute>
+    <MemoryRouter initialEntries={['/admin']}>
+      <Routes>
+        <Route path="/admin/*" element={<AdminProtectedRoute><div>painel-operacional</div></AdminProtectedRoute>} />
+        <Route path="/login" element={null} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -201,5 +202,37 @@ describe('AdminProtectedRoute — presença (heartbeat monta aqui, não mais no 
     montar();
     await act(async () => { await vi.advanceTimersByTimeAsync(60000 * 2); });
     expect(AdminPresenceApiService.heartbeat).not.toHaveBeenCalled();
+  });
+});
+
+/** Destino do redirect: o login único com `next` = a rota admin atual (T407) — nunca a página antiga. */
+describe('AdminProtectedRoute → login único com next', () => {
+  function Destino() {
+    const l = useLocation();
+    return <div data-testid="destino">{l.pathname + l.search}</div>;
+  }
+
+  function irPara(rota: string) {
+    render(
+      <MemoryRouter initialEntries={[rota]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminProtectedRoute><div>painel-operacional</div></AdminProtectedRoute>} />
+          <Route path="/login" element={<Destino />} />
+          <Route path="/admin/login" element={<div data-testid="pagina-antiga" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it.each([
+    ['não autenticado', { isAuthenticated: false, adminProfile: null }],
+    ['autenticado sem perfil admin', { isAuthenticated: true, adminProfile: null }],
+  ])('%s em /admin/patients?q=1 → /login?next=%2Fadmin%2Fpatients%3Fq%3D1', (_n, estado) => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      isLoading: false, logout, ...estado,
+    } as unknown as ReturnType<typeof useAdminAuth>);
+    irPara('/admin/patients?q=1');
+    expect(screen.getByTestId('destino')).toHaveTextContent('/login?next=%2Fadmin%2Fpatients%3Fq%3D1');
+    expect(screen.queryByTestId('pagina-antiga')).not.toBeInTheDocument();
   });
 });

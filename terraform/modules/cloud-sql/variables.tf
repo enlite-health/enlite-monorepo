@@ -90,3 +90,9 @@ variable "edition" {
   type    = string
   default = "ENTERPRISE"
 }
+
+variable "user_labels" {
+  type        = map(string)
+  default     = {}
+  description = "Labels da instância (settings.user_labels)"
+}

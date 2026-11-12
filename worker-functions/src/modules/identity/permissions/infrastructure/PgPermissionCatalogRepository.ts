@@ -17,7 +17,7 @@ import type {
   DeclaredCell,
   PermissionCatalogRepository,
 } from '../application/ports';
-import { categoryFor, cellKey, type PermissionCell } from '../domain/PermissionCell';
+import { categoryFor, cellKey, isSomenteAcessoMaster, type PermissionCell } from '../domain/PermissionCell';
 import { readRows, withSystemWrite } from './dbAccess';
 import { logger } from '@shared/logging';
 
@@ -61,6 +61,7 @@ export class PgPermissionCatalogRepository implements PermissionCatalogRepositor
       description: row.description,
       ownerService: row.owner_service ?? 'worker-functions',
       deprecatedAt: row.deprecated_at,
+      somenteAcessoMaster: isSomenteAcessoMaster(cellKey(row.resource, row.action)),
     }));
   }
 

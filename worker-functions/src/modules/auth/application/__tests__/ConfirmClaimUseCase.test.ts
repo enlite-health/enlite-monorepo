@@ -41,6 +41,7 @@ const claimedWorker: Worker = {
 };
 
 const makeRepo = (overrides = {}) => ({
+  hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(false)),
   findById: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
   updateImportedWorkerData: jest.fn().mockResolvedValue(Result.ok(claimedWorker)),
   findByAuthUid: jest.fn(),
@@ -223,6 +224,33 @@ describe('ConfirmClaimUseCase', () => {
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('NOT_IMPORTABLE');
       expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
+    });
+
+    it('P5: sobrevivente sintética que absorveu login real → NOT_IMPORTABLE, sem gravar', async () => {
+      const repo = makeRepo({
+        hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(true)),
+      });
+      const twilio = makeTwilio();
+      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+
+      const result = await useCase.execute(makeInput());
+
+      expect(repo.hasAbsorbedRealLogin).toHaveBeenCalledWith(CANDIDATE_ID);
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('NOT_IMPORTABLE');
+      expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
+    });
+
+    it('controle positivo: ficha sintética comum (nada absorvido) é reclamada', async () => {
+      const repo = makeRepo();
+      const twilio = makeTwilio();
+      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+
+      const result = await useCase.execute(makeInput());
+
+      expect(repo.hasAbsorbedRealLogin).toHaveBeenCalledWith(CANDIDATE_ID);
+      expect(result.isSuccess).toBe(true);
+      expect(repo.updateImportedWorkerData).toHaveBeenCalledTimes(1);
     });
 
     it('loga claim_confirm_candidate_not_importable_anymore na race condition', async () => {

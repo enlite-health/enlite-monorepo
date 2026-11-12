@@ -13,6 +13,7 @@
  */
 
 import { type Page, type Route } from '@playwright/test';
+import { swapAreasComToken } from './areas-do-painel';
 
 /** Build the mock_<base64> token the backend accepts (USE_MOCK_AUTH=true). */
 export function buildMockToken(authUid: string, email: string): string {
@@ -151,6 +152,9 @@ export async function installWorkerInterceptors(
       }),
     });
   });
+
+  // Login único (T407): `GET /v1/me/areas` fica fora de `/api/**`; sem o swap o JWT fake leva 401 e o prestador fica em `/login`.
+  await swapAreasComToken(page, mockToken);
 
   await page.route('**/api/**', async (route: Route) => {
     const url = route.request().url();

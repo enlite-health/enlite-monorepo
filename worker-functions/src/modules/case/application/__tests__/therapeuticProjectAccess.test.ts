@@ -25,6 +25,9 @@ import {
   PATIENT_CLINICAL_READ_CELL,
   PATIENT_SERVICES_READ_CELL,
   PATIENT_CLINICAL_WRITE_CELL,
+  PATIENT_CLINICAL_CREATE_CELL,
+  PATIENT_CLINICAL_UPDATE_CELL,
+  missingTherapeuticClinicalWriteCell,
   PATIENT_FAMILY_READ_CELL,
   PATIENT_COVERAGE_READ_CELL,
   PATIENT_CARE_TEAM_READ_CELL,
@@ -94,13 +97,36 @@ describe('canReadTherapeuticClinical', () => {
   });
 });
 
-describe('canWriteTherapeuticClinical', () => {
-  it('null/undefined → passa; [] → não; só a célula de escrita clínica libera (lex C7)', () => {
-    expect(canWriteTherapeuticClinical(null)).toBe(true);
-    expect(canWriteTherapeuticClinical(undefined)).toBe(true);
-    expect(canWriteTherapeuticClinical([])).toBe(false);
-    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_READ_CELL])).toBe(false);
-    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_WRITE_CELL])).toBe(true);
+describe('canWriteTherapeuticClinical — recurso SPLIT: o painel grava create+update, nunca write', () => {
+  const PROJETO_CREATE = `${THERAPEUTIC_PROJECT_RESOURCE}:create`;
+
+  it('null/undefined → passa (D113); [] → não', () => {
+    expect(canWriteTherapeuticClinical(null, 'create')).toBe(true);
+    expect(canWriteTherapeuticClinical(undefined, 'update')).toBe(true);
+    expect(canWriteTherapeuticClinical([], 'create')).toBe(false);
+  });
+
+  it('(a) criar: projeto:create + clinical:create (sem write) → permite', () => {
+    expect(canWriteTherapeuticClinical([PROJETO_CREATE, PATIENT_CLINICAL_CREATE_CELL], 'create')).toBe(true);
+    expect(missingTherapeuticClinicalWriteCell([PROJETO_CREATE, PATIENT_CLINICAL_CREATE_CELL], 'create')).toBeNull();
+  });
+
+  it('(b) só clinical:read → nega e nomeia a célula que faltou (create ou update)', () => {
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_READ_CELL], 'create')).toBe(false);
+    expect(missingTherapeuticClinicalWriteCell([PATIENT_CLINICAL_READ_CELL], 'create')).toBe('patient_clinical:create');
+    expect(missingTherapeuticClinicalWriteCell([PATIENT_CLINICAL_READ_CELL], 'update')).toBe('patient_clinical:update');
+  });
+
+  it('(c) clinical:write legado (Acesso Master) → permite criar e editar', () => {
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_WRITE_CELL], 'create')).toBe(true);
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_WRITE_CELL], 'update')).toBe(true);
+  });
+
+  it('(d) editar: clinical:update → permite; só clinical:create → nega nomeando :update (e o inverso)', () => {
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_UPDATE_CELL], 'update')).toBe(true);
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_CREATE_CELL], 'update')).toBe(false);
+    expect(missingTherapeuticClinicalWriteCell([PATIENT_CLINICAL_CREATE_CELL], 'update')).toBe('patient_clinical:update');
+    expect(canWriteTherapeuticClinical([PATIENT_CLINICAL_UPDATE_CELL], 'create')).toBe(false);
   });
 });
 

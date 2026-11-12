@@ -46,7 +46,6 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 const mockAuthorizeVacancyUpdate = jest.fn();
 const mockBuildInsertQuery = jest.fn(() => 'INSERT INTO job_postings (...) VALUES (...) RETURNING *');
 const mockBuildInsertParams = jest.fn(() => ['param1', 'param2']);
-const mockRetryOnCaseOrdinalConflict = jest.fn((attempt: () => Promise<unknown>) => attempt());
 
 jest.mock('../vacancyCrudHelpers', () => {
   const actual = jest.requireActual('../vacancyCrudHelpers');
@@ -55,7 +54,6 @@ jest.mock('../vacancyCrudHelpers', () => {
     authorizeVacancyUpdate: (...args: any[]) => (mockAuthorizeVacancyUpdate as any)(...args),
     buildInsertQuery: (...args: any[]) => (mockBuildInsertQuery as any)(...args),
     buildInsertParams: (...args: any[]) => (mockBuildInsertParams as any)(...args),
-    retryOnCaseOrdinalConflict: (...args: any[]) => (mockRetryOnCaseOrdinalConflict as any)(...args),
   };
 });
 
@@ -74,6 +72,9 @@ jest.mock('../vacancyCrudAuditHelpers', () => ({
   auditVacancyCreated: (...args: any[]) => (mockAuditVacancyCreated as any)(...args),
   auditVacancyUpdated: (...args: any[]) => (mockAuditVacancyUpdated as any)(...args),
   auditVacancyDeleted: (...args: any[]) => (mockAuditVacancyDeleted as any)(...args),
+  // SQL do DELETE extraído para a fusão rascunho→oficial reusar: o REAL roda no mockClient (mesmas queries de antes).
+  lockLiveVacancySnapshot: jest.requireActual('../vacancyCrudAuditHelpers').lockLiveVacancySnapshot,
+  softDeleteVacancyRow: jest.requireActual('../vacancyCrudAuditHelpers').softDeleteVacancyRow,
   createWithPatientUpdate: (...args: any[]) => (mockCreateWithPatientUpdate as any)(...args),
   // spec 029 — `extractHumanActor` (SUT) passa a delegar para esta função nova.
   // Mock replica o shape real (`vacancyActorFromRequest`, vacancyCrudAuditHelpers.ts):
@@ -251,7 +252,7 @@ describe('VacancyCrudController', () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ id: 'p-1' }] })      // patientCheck
         .mockResolvedValueOnce({ rows: [{ vn: '10' }] })       // nextval
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-new', status: 'SEARCHING', is_test: false }] }); // INSERT (via retryOnCaseOrdinalConflict)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-new', status: 'SEARCHING', is_test: false }] }); // INSERT
       mockClientQuery.mockResolvedValue({ rows: [] }); // audit client: BEGIN/COMMIT
 
       const req = makeReq({ body: { patient_id: 'p-1', case_number: 230 } });
@@ -261,7 +262,7 @@ describe('VacancyCrudController', () => {
 
       expect(res.status).toHaveBeenCalledWith(201);
       expect((res.json as jest.Mock).mock.calls[0][0].data.id).toBe('jp-new');
-      expect(mockRetryOnCaseOrdinalConflict).toHaveBeenCalled();
+      expect(mockBuildInsertQuery).toHaveBeenCalled();
       expect(mockCreateWithPatientUpdate).not.toHaveBeenCalled();
       expect(mockAuditVacancyCreated).toHaveBeenCalledWith(mockClient, 'jp-new', expect.any(Object), expect.objectContaining({ actorUserId: 'admin-1' }));
       expect(mockClientQuery).toHaveBeenCalledWith('BEGIN');
@@ -291,7 +292,7 @@ describe('VacancyCrudController', () => {
 
       expect(res.status).toHaveBeenCalledWith(201);
       expect(mockCreateWithPatientUpdate).toHaveBeenCalledWith(expect.anything(), 230, { zone_neighborhood: 'x' }, expect.any(Object), expect.any(Object));
-      expect(mockRetryOnCaseOrdinalConflict).not.toHaveBeenCalled();
+      expect(mockBuildInsertQuery).not.toHaveBeenCalled();
     });
 
     it('updatePatient objeto VAZIO → tratado como sem update (hasUpdate=false)', async () => {
@@ -306,7 +307,7 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req, res);
 
       expect(mockCreateWithPatientUpdate).not.toHaveBeenCalled();
-      expect(mockRetryOnCaseOrdinalConflict).toHaveBeenCalled();
+      expect(mockBuildInsertQuery).toHaveBeenCalled();
     });
 
     it('audit best-effort falha (client.query rejeita no BEGIN/audit) → ROLLBACK engolido, resposta 201 intocada', async () => {
@@ -490,6 +491,21 @@ describe('VacancyCrudController', () => {
       expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
     });
 
+    it('vaga apagada (soft-delete): SELECT before e UPDATE carregam deleted_at IS NULL', async () => {
+      mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'SEARCHING' });
+      mockClientQuery
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValue({});
+
+      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE' } });
+      await controller.updateVacancy(req, makeRes());
+
+      expect(String(mockClientQuery.mock.calls[1][0])).toContain('deleted_at IS NULL');
+      expect(String(mockClientQuery.mock.calls[2][0])).toContain('deleted_at IS NULL');
+    });
+
     it('vacante não encontrada NO UPDATE (rows vazio após SELECT ok) → 404, ROLLBACK', async () => {
       mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'SEARCHING' });
       mockClientQuery
@@ -584,6 +600,25 @@ describe('VacancyCrudController', () => {
 
       expect(res.status).toHaveBeenCalledWith(404);
       expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('spec 084 (R2): vaga DE_BAJA NUNCA é apagada → 409 VACANCY_DE_BAJA_NO_DELETE es/pt-BR; ROLLBACK; sem soft-delete nem audit', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({})                                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1', status: 'DE_BAJA' }] }) // SELECT before
+        .mockResolvedValue({});
+      const res = makeRes();
+
+      await controller.deleteVacancy(makeReq({ params: { id: 'jp-1' } }), res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({
+        code: 'VACANCY_DE_BAJA_NO_DELETE',
+        messages: { es: expect.stringMatching(/nunca se borra/), 'pt-BR': expect.stringMatching(/nunca é apagada/) },
+      });
+      expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClientQuery.mock.calls.some((c) => /deleted_at = NOW\(\)/.test(String(c[0])))).toBe(false);
+      expect(mockAuditVacancyDeleted).not.toHaveBeenCalled();
     });
 
     it('vacante não encontrada NO UPDATE de soft-delete (race) → 404, ROLLBACK', async () => {

@@ -2,10 +2,13 @@
  * EnquadreTab — aba "Enquadre" do detalhe da vaga (spec 052): o cabeçalho (criar evento + contador de completados sem
  * evento), os estados carregando/erro/vazio e a tabela de eventos. Molde: AdmissionTab (mesma anatomia).
  *
- * "Crear evento" é `ActionButton` (`enquadre_event:create`). `createOpen` monta o drawer; o clique
- * na linha guarda `selectedEventId` e a aba troca a lista pelo kanban do evento ("← Eventos" volta e recarrega).
+ * "Crear evento" é `ActionButton` (`enquadre_event:create`). `createOpen` monta o drawer. O evento aberto vive na URL
+ * (`?event=`, spec 076): o clique na linha faz PUSH (o voltar do navegador desfaz a seleção) e a aba troca a lista pelo kanban
+ * do evento ("← Eventos" apaga `event` com `replace` e recarrega). O kanban só monta com a lista da vaga carregada E o id
+ * dentro dela: id inexistente ou de OUTRA vaga cai na lista (FR-16) e `getEvent` nunca é chamado para ele.
  */
-import { useState, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CalendarPlus, Loader2 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -30,18 +33,56 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
   const available = useEnquadreAvailableWorkers(vacancyId);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const eventParam = searchParams.get('event');
+  // Só vale o id que a lista DESTA vaga contém (nunca monta o kanban antes de conferir a lista).
+  const selectedEventId = status === 'ok' && eventParam !== null && events.some((e) => e.id === eventParam) ? eventParam : null;
+
+  const setEvent = (eventId: string | null, replace: boolean): void => {
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (eventId === null) n.delete('event');
+        else n.set('event', eventId);
+        return n;
+      },
+      { replace },
+    );
+  };
+
+  // Lista carregada e o id não está nela (outra vaga, inexistente): apaga `event` e fica na lista.
+  useEffect(() => {
+    if (status === 'ok' && eventParam !== null && selectedEventId === null) setEvent(null, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, eventParam, selectedEventId]);
+
+  // Abrir um evento (deep link ou clique na linha) alinha a aba no TOPO da tela: o kanban nasce abaixo da dobra do cabeçalho da
+  // vaga. Medido (e2e, 1440x900): quem rola é o <main> do AdminLayout (não o window); o scroll disparado no clique corria ANTES
+  // do kanban carregar (scrollHeight curto, rolou ~120px) e o conteúdo cresceu depois. Por isso o alinhamento espera o kanban
+  // assentar (`onSettled`, 1× por abertura) e roda no próximo frame, com o layout já final; a `min-h-screen` do wrapper garante
+  // altura abaixo para o topo da aba chegar ao topo mesmo com poucos cards. "← Eventos", coluna e re-render não rolam.
+  // Molde: ThreadView (`prefers-reduced-motion` + `scrollIntoView?.` porque o jsdom não o tem).
+  const tabRef = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
+    [],
+  );
+  const alignTab = useCallback((): void => {
+    requestAnimationFrame(() => {
+      tabRef.current?.scrollIntoView?.({ block: 'start', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    });
+  }, [prefersReducedMotion]);
 
   const backToList = (): void => {
-    setSelectedEventId(null);
+    setEvent(null, true);
     void reload();
     void available.reload();
   };
 
   if (selectedEventId) {
     return (
-      <div className="flex flex-col gap-4" data-testid="enquadre-tab" data-selected-event={selectedEventId}>
-        <EnquadreEventKanban vacancyId={vacancyId} eventId={selectedEventId} now={now} onBack={backToList} />
+      <div ref={tabRef} className="flex flex-col gap-4 min-h-screen" data-testid="enquadre-tab" data-selected-event={selectedEventId}>
+        <EnquadreEventKanban vacancyId={vacancyId} eventId={selectedEventId} now={now} onBack={backToList} onSettled={alignTab} />
       </div>
     );
   }
@@ -85,7 +126,7 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
         </div>
       )}
       {status === 'ok' && events.length > 0 && (
-        <EnquadreEventsTable vacancyId={vacancyId} events={events} now={now()} onSelect={setSelectedEventId} />
+        <EnquadreEventsTable vacancyId={vacancyId} events={events} now={now()} onSelect={(id) => setEvent(id, false)} />
       )}
 
       {createOpen && (

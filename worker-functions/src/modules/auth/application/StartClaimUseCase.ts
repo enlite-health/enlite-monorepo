@@ -3,20 +3,8 @@ import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
+import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
 import { ITwilioVerifyService } from '../infrastructure/TwilioVerifyService';
-
-const IMPORT_PREFIXES = [
-  'anacareimport_',
-  'candidatoimport_',
-  'pretalnimport_',
-  'base1import_',
-  'clickup_encuadre_',
-] as const;
-
-function isImportedWorker(authUid: string | null | undefined): boolean {
-  if (!authUid) return false;
-  return IMPORT_PREFIXES.some(prefix => authUid.startsWith(prefix));
-}
 
 export interface StartClaimInput {
   authUid: string;
@@ -72,7 +60,12 @@ export class StartClaimUseCase {
 
     const candidate = phoneCheckResult.getValue();
 
-    if (!candidate || !isImportedWorker(candidate.authUid)) {
+    const claimable = candidate ? await isClaimableWorker(this.workerRepository, candidate) : null;
+    if (claimable?.isFailure) {
+      return Result.fail<StartClaimOutput>(claimable.error!);
+    }
+
+    if (!candidate || !claimable?.getValue()) {
       log.info({ msg: 'claim_start_no_candidate' });
       return Result.ok<StartClaimOutput>({ noCandidate: true });
     }

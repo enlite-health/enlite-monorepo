@@ -1,6 +1,8 @@
 export { Badge } from './Badge';
 export { Button } from './Button';
 export { Checkbox } from './Checkbox';
+export { Switch } from './Switch';
+export type { SwitchProps } from './Switch';
 export { Combobox, SEARCH_MIN_OPTIONS } from './Combobox';
 export type { ComboboxOption, ComboboxProps } from './Combobox';
 export { Divider } from './Divider';

@@ -92,6 +92,15 @@ describe('VacancyMatchController — triggerMatch (segregação de realm delegad
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
+  it('vaga apagada (soft-delete) não é encontrada: o SELECT carrega deleted_at IS NULL', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const [req, res] = makeReqRes();
+    await controller.triggerMatch(req, res);
+
+    expect(String(mockQuery.mock.calls[0][0])).toContain('deleted_at IS NULL');
+  });
+
   it('erro no matchmaking — 500 (fluxo de erro existente intacto)', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ id: JOB_ID }] });
     mockMatchWorkersForJob.mockRejectedValueOnce(new Error('boom'));

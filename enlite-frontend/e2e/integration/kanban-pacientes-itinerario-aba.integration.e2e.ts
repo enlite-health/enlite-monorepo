@@ -340,8 +340,8 @@ test.describe('itinerario-aba @integration', () => {
       // A recusa é DITA: os 2 horários e a folga, todos lidos do corpo do 409.
       const erro = page.getByTestId('itinerario-sobreposicao-erro');
       await expect(erro).toBeVisible();
-      await expect(erro).toContainText(`${body.existing.startTime}-${body.existing.endTime}`);
-      await expect(erro).toContainText(`${body.requested.startTime}-${body.requested.endTime}`);
+      await expect(erro).toContainText(`${body.existing.startTime} – ${body.existing.endTime}`);
+      await expect(erro).toContainText(`${body.requested.startTime} – ${body.requested.endTime}`);
       await expect(erro).toContainText(String(body.minGapMinutes));
 
       // Nada nasceu: o DOM do slot continua vazio e W só tem a alocação do 2º paciente.

@@ -153,7 +153,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();
@@ -316,7 +316,7 @@ test.describe('CreateVacancy — flow completo Step 1 → Step 2 → Voltar → 
 
     // ── STEP 2: arrived ─────────────────────────────────────────────────────
     await expect(
-      page.locator('ol[aria-label="Progress"] li[aria-current="step"]'),
+      page.locator('ol[aria-label="Progreso"] li[aria-current="step"]'),
     ).toContainText(/Configuración Talentum/i);
 
     // ── STEP 2 → STEP 1 edit: clica Volver no header ────────────────────────
@@ -329,7 +329,7 @@ test.describe('CreateVacancy — flow completo Step 1 → Step 2 → Voltar → 
     // ── STEP 1 EDIT: regression checks ──────────────────────────────────────
     // Stepper marca Step 1 ativo de novo
     await expect(
-      page.locator('ol[aria-label="Progress"] li[aria-current="step"]'),
+      page.locator('ol[aria-label="Progreso"] li[aria-current="step"]'),
     ).toContainText(/Datos de la vacante/i);
 
     // Endereço linkado pré-selecionado (border-primary)

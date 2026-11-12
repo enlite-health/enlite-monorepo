@@ -77,6 +77,13 @@ describe('AdminContractedServicesApiService', () => {
     ).rejects.toMatchObject({ status: 422, code: 'PATIENT_NOT_READY', details: { missing: ['SERVICE_SCHEDULE'] } });
   });
 
+  it('ContractedServiceApiError (spec 079): lê vacancyId/reason/blockers do TOPO do corpo; ausentes ficam undefined', () => {
+    const e = new ContractedServiceApiError('x', 409, { code: 'VACANCY_NOT_LINKABLE', vacancyId: 'v9', reason: 'DELETED', blockers: ['ADDRESS_MISMATCH'] });
+    expect(e).toMatchObject({ code: 'VACANCY_NOT_LINKABLE', vacancyId: 'v9', reason: 'DELETED', blockers: ['ADDRESS_MISMATCH'] });
+    const bare = new ContractedServiceApiError('x', 500);
+    expect([bare.vacancyId, bare.reason, bare.blockers]).toEqual([undefined, undefined, undefined]);
+  });
+
   it('erro do backend (success:false) vira ContractedServiceApiError com status/code/details', async () => {
     mockFetch({ success: false, error: 'conflito', code: 'SERVICE_CONFLICT' }, 409);
     await expect(

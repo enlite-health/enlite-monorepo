@@ -190,6 +190,26 @@ describe('AdminPatientsController.getPatientById', () => {
       });
     });
 
+    it('DIAGNOSIS (pedido do Javier): ADMISSION sem diagnóstico ativo → checklist acusa; sem patient_clinical:read vira CLINICAL_DATA; o insumo `activeDiagnosisCount` NUNCA sai (contrato .strict do front)', async () => {
+      mockFindDetailById.mockResolvedValue(makePatientDetail({ status: 'ADMISSION', activeDiagnosisCount: 0 } as never));
+      const [reqCom, resCom] = mockReqRes({ id: PATIENT_ID });
+      (reqCom as any).permissionCells = ['patient:read', 'patient_clinical:read', 'patient_address:read', 'patient_services:read'];
+      await controller.getPatientById(reqCom, resCom);
+      const dataCom = (resCom as any).json.mock.calls[0][0].data;
+      expect(dataCom.completeness.missing).toContain('DIAGNOSIS');
+      expect(dataCom).not.toHaveProperty('activeDiagnosisCount');
+
+      mockFindDetailById.mockResolvedValue(makePatientDetail({ status: 'ADMISSION', activeDiagnosisCount: 0 } as never));
+      const [reqSem, resSem] = mockReqRes({ id: PATIENT_ID });
+      (reqSem as any).permissionCells = ['patient:read', 'patient_address:read', 'patient_services:read'];
+      await controller.getPatientById(reqSem, resSem);
+      const dataSem = (resSem as any).json.mock.calls[0][0].data;
+      expect(dataSem.completeness.missing).toContain('CLINICAL_DATA');
+      expect(JSON.stringify(dataSem.completeness)).not.toContain('DIAGNOSIS');
+      expect(dataSem).not.toHaveProperty('activeDiagnosisCount');
+      expect(dataSem.diagnoses).toBeNull(); // continua null (nunca []), como antes
+    });
+
     it('ponto único (D211.2): sem células (engine não decidiu) devolve as instruções de emergência; células sem `patient_clinical:read` → null + redacted', async () => {
       const patient = makePatientDetail({ emergencyInstructions: 'Llamar 107', emergencyInstructionsUpdatedAt: new Date('2026-08-29T00:00:00Z'), emergencyInstructionsUpdatedBy: 'Gabi' } as never);
       mockFindDetailById.mockResolvedValue(patient);

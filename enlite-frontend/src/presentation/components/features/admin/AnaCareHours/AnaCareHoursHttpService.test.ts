@@ -431,6 +431,12 @@ describe('triggerSync', () => {
     await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'FONTE_NAO_CONFIGURADA' });
   });
 
+  it('NEGATIVO — 502 DIRETORIO_ANACARE_INCOMPLETO é reconhecido (não vira DESCONHECIDO)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(502, { success: false, error: 'Ana Care directory incomplete', code: 'DIRETORIO_ANACARE_INCOMPLETO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'DIRETORIO_ANACARE_INCOMPLETO' });
+  });
+
   it('NEGATIVO — 503 cujo corpo JSON não tem `error` cai no fallback padrão da mensagem (ramo direito do `??`)', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, {}));
     const service = new AnaCareHoursHttpService();

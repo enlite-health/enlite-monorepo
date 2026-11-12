@@ -1,6 +1,7 @@
 module "bucket_worker_documents" {
   source                      = "../../modules/storage"
   name                        = "enlite-worker-documents"
+  labels                      = { service = "enlite-worker-documents", setor = "recrutamento" }
   location                    = "SOUTHAMERICA-EAST1"
   uniform_bucket_level_access = true
 
@@ -37,6 +38,7 @@ resource "google_storage_bucket_iam_member" "worker_documents_functions_sa" {
 module "bucket_patient_photos" {
   source                      = "../../modules/storage"
   name                        = "enlite-patient-photos"
+  labels                      = { service = "enlite-patient-photos", setor = "clinico" }
   location                    = "SOUTHAMERICA-WEST1"
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
@@ -59,6 +61,7 @@ resource "google_storage_bucket_iam_member" "patient_photos_functions_sa" {
 module "bucket_patient_documents" {
   source                      = "../../modules/storage"
   name                        = "enlite-patient-documents"
+  labels                      = { service = "enlite-patient-documents", setor = "clinico" }
   location                    = "SOUTHAMERICA-WEST1"
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"

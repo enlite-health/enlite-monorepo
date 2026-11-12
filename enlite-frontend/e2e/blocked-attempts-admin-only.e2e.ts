@@ -60,7 +60,7 @@ async function backendIsProdAuth(): Promise<boolean> {
 }
 
 async function loginReal(page: Page, email: string): Promise<void> {
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.locator('button[type="submit"]').click();

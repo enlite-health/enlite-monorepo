@@ -140,7 +140,7 @@ describe('SubstitutionsTab — a lista', () => {
     const items = within(days).getAllByTestId('sustituciones-dia');
     expect(items).toHaveLength(3);
     expect(items[0]).toHaveTextContent('Lunes 9 de noviembre');
-    expect(items[0]).toHaveTextContent('09:00–17:00');
+    expect(items[0]).toHaveTextContent('09:00 – 17:00');
     expect(items[0]).toHaveTextContent('Nadie todavía');
     expect(items[1]).toHaveTextContent('Martín Gómez');
     expect(items[2]).toHaveTextContent('Prestador sin nombre');

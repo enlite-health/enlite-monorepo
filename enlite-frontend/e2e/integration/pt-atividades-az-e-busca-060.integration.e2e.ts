@@ -40,7 +40,7 @@ test.describe('spec 060 — atividades do PT: A–Z e busca @integration', () =>
   let staff: { user: MockUser; groupId: string };
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(756000); // faixa própria (as vizinhas: 755000 e 800000)
+    seed = seedActivatablePatient(756000, { withDiagnosis: false }); // faixa própria (as vizinhas: 755000 e 800000)
     runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-060', 'e2e-060') RETURNING id`);
     const uid = `e2e-pt060-${RUN_ID}`;
     const user: MockUser = { uid, email: `${uid}@e2e.test`, role: 'admin', country: 'AR' };

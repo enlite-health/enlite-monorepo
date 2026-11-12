@@ -77,6 +77,14 @@ jobs:
             --region="${REGION}" \
             --image="${IMAGE}"
 
+      - name: 'Labels de custo do Cloud Run Job (merge, não substitui)'
+        run: |
+          set -euo pipefail
+          gcloud run jobs update "${JOB_NAME}" \
+            --project="${{ secrets.GCP_PROJECT_ID }}" \
+            --region="${REGION}" \
+            --update-labels=service=e2e-prod-smoke,setor=plataforma
+
       - name: 'Resumo'
         run: |
           echo "Runner atualizado para ${IMAGE}. Próxima run do scheduler (3h Argentina) usa a imagem nova." >> "$GITHUB_STEP_SUMMARY"

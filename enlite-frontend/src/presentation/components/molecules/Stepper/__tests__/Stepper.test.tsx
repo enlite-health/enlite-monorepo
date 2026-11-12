@@ -37,3 +37,16 @@ describe('Stepper', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 });
+
+describe('Stepper — aria-label vem da tradução (common.progress)', () => {
+  it('usa a chave, não um literal fixo', async () => {
+    const { default: i18n } = await import('i18next');
+    i18n.addResourceBundle('pt-BR', 'translation', { common: { progress: '(SENTINELA)' } }, true, true);
+    try {
+      render(<Stepper steps={STEPS} currentStep={1} />);
+      expect(screen.getByRole('list', { name: '(SENTINELA)' })).toBeInTheDocument();
+    } finally {
+      i18n.removeResourceBundle('pt-BR', 'translation');
+    }
+  });
+});

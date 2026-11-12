@@ -318,6 +318,16 @@ export class WorkerPhoneMergeService {
         [survivorId, absorbedId],
       );
 
+      // 7. Une as PESSOAS (iam) por ponteiro, na mesma transação: depois do UPDATE de
+      //    merged_into_id (o gate da função confere esse ponteiro) e antes do COMMIT.
+      //    Ficha sintética/sem uid → a função não faz nada (não há login a unir).
+      await client.query(
+        `SELECT iam.merge_person(a.auth_uid, s.auth_uid, $3)
+           FROM workers a, workers s
+          WHERE a.id = $1 AND s.id = $2`,
+        [absorbedId, survivorId, auditId],
+      );
+
       await client.query('COMMIT');
 
       // AUDIT: log completo (Cloud Logging — fora do alcance de quem mexe no DB).

@@ -1,9 +1,10 @@
 /**
- * D286 fase 2 — "Hacer match" (match:execute) e "Enviar convites" (messaging:send) somem sem a
- * célula. A rota já decidia; o botão cru era a dívida da F14 apontada no inventário.
+ * 089 T030 — o botão único "Invitar prestadores" é gateado por `messaging:send` (⚑2) e SOME sem a
+ * célula (ActionButton hide, só com enforcement=on), nas duas visões.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { VacancyFunnelView } from './VacancyFunnelView';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
@@ -12,8 +13,8 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('@hooks/admin/useVacancyFunnelTable', () => ({
   useVacancyFunnelTable: () => ({ data: { rows: [], counts: { INVITED: 0, POSTULATED: 0, PRE_SELECTED: 0, REJECTED: 0, WITHDREW: 0, ALL: 0, columns: {} } }, isLoading: false, error: null, refetch: vi.fn() }),
 }));
-vi.mock('@hooks/admin/useInvitedPendingCandidates', () => ({
-  useInvitedPendingCandidates: () => ({ candidates: [], pendingCount: 2, isLoading: false, refetch: vi.fn() }),
+vi.mock('@infrastructure/http/AdminApiService', () => ({
+  AdminApiService: { getMatchResults: vi.fn().mockResolvedValue({ pendingInVacancyCount: 2 }) },
 }));
 vi.mock('./VacancyFunnelKanban', () => ({ VacancyFunnelKanban: () => <div /> }));
 vi.mock('./VacancyFunnelTable', () => ({ VacancyFunnelTable: () => <div /> }));
@@ -25,44 +26,35 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
     authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement } as AuthzContract,
   });
 }
-const vacancy = { id: 'v1' } as never;
-
+const renderView = () => render(<MemoryRouter><VacancyFunnelView vacancyId="v1" /></MemoryRouter>);
+const BTN = { name: /inviteEntry\.button/ };
 const VIEW_KEY = 'vacancy-funnel-view-v2-v1';
 
-// 054 item 6: os portões valem nas DUAS visões. O Toggle é mockado (<div/>), então a visão
-// é forçada pela chave v2.
+// O Toggle é mockado (<div/>), então a visão é forçada pela chave v2.
 describe.each(['kanban', 'list'] as const)('visão %s', (view) => {
-beforeEach(() => {
-  localStorage.clear();
-  localStorage.setItem(VIEW_KEY, view);
-});
-
-describe('VacancyFunnelView — portões por célula (D286 fase 2)', () => {
-  it('enforcement=on sem match:execute nem messaging:send: os dois botões SOMEM', () => {
-    comEnforcement(['funnel:read'], 'on');
-    render(<VacancyFunnelView vacancyId="v1" vacancy={vacancy} />);
-    expect(screen.queryByRole('button', { name: /Hacer match/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /dispatchInvitesButtonCount/ })).not.toBeInTheDocument();
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem(VIEW_KEY, view);
   });
 
-  it('match:execute mostra só "Hacer match"; messaging:send mostra só os convites', () => {
-    comEnforcement(['funnel:read', 'match:execute'], 'on');
-    const { unmount } = render(<VacancyFunnelView vacancyId="v1" vacancy={vacancy} />);
-    expect(screen.getByRole('button', { name: /Hacer match/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /dispatchInvitesButtonCount/ })).not.toBeInTheDocument();
-    unmount();
+  describe('VacancyFunnelView — portão messaging:send', () => {
+    it('enforcement=on sem messaging:send: o botão e as linhas SOMEM (match:execute sozinha não basta)', () => {
+      comEnforcement(['funnel:read', 'match:execute'], 'on');
+      renderView();
+      expect(screen.queryByRole('button', BTN)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('invite-entry')).not.toBeInTheDocument();
+    });
 
-    comEnforcement(['funnel:read', 'messaging:send'], 'on');
-    render(<VacancyFunnelView vacancyId="v1" vacancy={vacancy} />);
-    expect(screen.queryByRole('button', { name: /Hacer match/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /dispatchInvitesButtonCount/ })).toBeInTheDocument();
-  });
+    it('enforcement=on com messaging:send: um botão visível', () => {
+      comEnforcement(['funnel:read', 'messaging:send'], 'on');
+      renderView();
+      expect(screen.getAllByRole('button', BTN)).toHaveLength(1);
+    });
 
-  it('enforcement=off: os dois existem, como antes', () => {
-    comEnforcement([], 'off');
-    render(<VacancyFunnelView vacancyId="v1" vacancy={vacancy} />);
-    expect(screen.getByRole('button', { name: /Hacer match/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /dispatchInvitesButtonCount/ })).toBeInTheDocument();
+    it('enforcement=off: o botão existe, como antes', () => {
+      comEnforcement([], 'off');
+      renderView();
+      expect(screen.getByRole('button', BTN)).toBeInTheDocument();
+    });
   });
-});
 });

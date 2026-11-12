@@ -9,17 +9,19 @@ import {
   buildInsertParams,
   FULL_ALLOWED_UPDATE_FIELDS,
   OPERATIONAL_EDITABLE_FIELDS,
-  retryOnCaseOrdinalConflict,
   withEffectiveFields,
 } from './vacancyCrudHelpers';
 import {
   auditVacancyCreated,
   auditVacancyUpdated,
   auditVacancyDeleted,
+  lockLiveVacancySnapshot,
+  softDeleteVacancyRow,
   createWithPatientUpdate,
   vacancyActorFromRequest,
   type HumanActor,
 } from './vacancyCrudAuditHelpers';
+import { sendVacancyDeBajaRefusal } from './vacancyDeBajaGuard';
 import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
 import { PurgeVacancyShortLinksUseCase } from '../../application/PurgeVacancyShortLinksUseCase';
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
@@ -89,6 +91,7 @@ function extractHumanActor(req: Request): HumanActor {
 }
 
 class VacancyNotFound extends Error {}
+class VacancyIsDeBaja extends Error {}
 class VacancyHasAllocations extends Error {
   constructor(readonly count: number) {
     super('vacancy has active allocations');
@@ -199,12 +202,8 @@ export class VacancyCrudController {
         newVacancy = await createWithPatientUpdate(this.db, case_number, updatePatient, insertArgs, actor);
       } else {
         // Non-transactional path: insert, then best-effort audit in separate transaction.
-        // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT; em conflito
-        // (23505 de idx_job_postings_case_ordinal) o retry refaz a MESMA query — cada
-        // this.db.query já é sua própria transação implícita, sem SAVEPOINT a limpar.
-        const result = await retryOnCaseOrdinalConflict(() =>
-          this.db.query(buildInsertQuery(), buildInsertParams(insertArgs)),
-        );
+        // case_ordinal é derivado do serviço dentro do próprio INSERT (spec 084): sem conflito a retentar.
+        const result = await this.db.query(buildInsertQuery(), buildInsertParams(insertArgs));
         newVacancy = result.rows[0] as Record<string, unknown>;
         // Best-effort audit: acquire a throwaway client, do the insert, release.
         // Audit failure MUST NOT affect the 201 response already committed above.
@@ -258,11 +257,19 @@ export class VacancyCrudController {
       if (auth.kind === 'error') {
         // F3/fase-1: 422 de campo travado pela origem carrega `locked_fields` —
         // as chaves recusadas, na MESMA forma que `GET /vacancies/:id` anuncia.
-        const body: { success: false; error: string; locked_fields?: readonly string[] } = {
+        const body: {
+          success: false;
+          error: string;
+          locked_fields?: readonly string[];
+          code?: string;
+          messages?: { es: string; 'pt-BR': string };
+        } = {
           success: false,
           error: auth.error,
         };
         if (auth.lockedFields) body.locked_fields = auth.lockedFields;
+        if (auth.code) body.code = auth.code;
+        if (auth.messages) body.messages = auth.messages;
         res.status(auth.status).json(body);
         return;
       }
@@ -292,6 +299,18 @@ export class VacancyCrudController {
         return;
       }
 
+      // Spec 084 F5: "Retomar" devolve ao status de antes do "En espera". Guarda ao entrar, limpa ao sair.
+      const nextStatus = updates.status;
+      if (typeof nextStatus === 'string' && allowedFields.includes('status')) {
+        if (nextStatus === 'ON_HOLD' && auth.currentStatus !== 'ON_HOLD') {
+          setClause.push(`status_before_hold = $${paramIndex}`);
+          values.push(auth.currentStatus);
+          paramIndex++;
+        } else if (nextStatus !== 'ON_HOLD' && auth.currentStatus === 'ON_HOLD') {
+          setClause.push('status_before_hold = NULL');
+        }
+      }
+
       const actor = extractHumanActor(req);
 
       // Wrap UPDATE + audit in a transaction to guarantee atomicity.
@@ -303,7 +322,7 @@ export class VacancyCrudController {
 
         // Snapshot before
         const beforeResult = await client.query<Record<string, unknown>>(
-          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1`,
+          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL`,
           [id],
         );
         if (beforeResult.rows.length === 0) {
@@ -316,7 +335,7 @@ export class VacancyCrudController {
         values.push(id);
         const result = await client.query<Record<string, unknown>>(
           `UPDATE job_postings SET ${setClause.join(', ')}, updated_at = NOW()
-           WHERE id = $${paramIndex} RETURNING ${vacancyRawColumnsSql()}`,
+           WHERE id = $${paramIndex} AND deleted_at IS NULL RETURNING ${vacancyRawColumnsSql()}`,
           values,
         );
         if (result.rows.length === 0) {
@@ -365,23 +384,16 @@ export class VacancyCrudController {
 
       await withActorContext(this.db, async (client) => {
         // Snapshot before soft-delete (FOR UPDATE: segura a vaga contra delete concorrente)
-        const beforeResult = await client.query<Record<string, unknown>>(
-          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
-          [id],
-        );
-        if (beforeResult.rows.length === 0) throw new VacancyNotFound();
-        const before = beforeResult.rows[0];
+        const before = await lockLiveVacancySnapshot(client, id);
+        if (!before) throw new VacancyNotFound();
+        // Spec 084 (R2): vaga dada de baja nunca é apagada — fica guardada para consulta.
+        if (before.status === 'DE_BAJA') throw new VacancyIsDeBaja();
 
         // 058 P6: vaga com alocação vigente no itinerário não se apaga. A probe roda NO client do ator (RLS) e toma o lock do serviço.
         const vigentes = await countVigenteForVacancy(client, id, new Date());
         if (vigentes > 0) throw new VacancyHasAllocations(vigentes);
 
-        const result = await client.query<{ id: string }>(
-          `UPDATE job_postings SET status = 'CLOSED', deleted_at = NOW(), updated_at = NOW()
-           WHERE id = $1 RETURNING id`,
-          [id],
-        );
-        if (result.rows.length === 0) throw new VacancyNotFound();
+        if (!(await softDeleteVacancyRow(client, id))) throw new VacancyNotFound();
 
         // auditVacancyDeleted uses logEventSafe (SAVEPOINT) — FK failure cannot
         // abort this transaction; the soft-delete always commits.
@@ -397,6 +409,10 @@ export class VacancyCrudController {
     } catch (error: unknown) {
       if (error instanceof VacancyNotFound) {
         res.status(404).json({ success: false, error: 'Vacancy not found' });
+        return;
+      }
+      if (error instanceof VacancyIsDeBaja) {
+        sendVacancyDeBajaRefusal(res, 'VACANCY_DE_BAJA_NO_DELETE');
         return;
       }
       if (error instanceof VacancyHasAllocations) {

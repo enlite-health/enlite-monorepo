@@ -35,6 +35,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 import { logger, reportError } from '@shared/logging';
+import { LUZ_PRUEBA_SINTETICA_AUTH_UID } from '../../modules/agentes/domain/LuzPruebaSintetica';
 
 const log = logger.child({ source: 'CleanupTestFixturesUseCase' });
 
@@ -125,7 +126,9 @@ export class CleanupTestFixturesUseCase {
       deleted.job_postings = jobPostingsRes.rowCount ?? 0;
 
       const workersRes = await client.query(
-        `DELETE FROM workers WHERE is_test = true`,
+        // Spec 086: a prestadora sintética da Luz (prueba) é is_test=true mas FICA (auth_uid fixo); os filhos dela acima somem como os de qualquer is_test.
+        `DELETE FROM workers WHERE is_test = true AND auth_uid <> $1`,
+        [LUZ_PRUEBA_SINTETICA_AUTH_UID],
       );
       deleted.workers = workersRes.rowCount ?? 0;
 

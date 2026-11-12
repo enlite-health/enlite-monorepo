@@ -17,7 +17,7 @@ import type { AuthzContract } from '@domain/entities/Authz';
 import type { TherapeuticCatalogItem, TherapeuticCatalogKind } from '@domain/entities/TherapeuticProject';
 
 // Mesmo conjunto da tela: os 3 catálogos do projeto terapêutico (inclui `segments`, spec 030) + motivos de saída.
-type ManagedCatalogKind = TherapeuticCatalogKind | 'service-exit-reasons';
+type ManagedCatalogKind = TherapeuticCatalogKind | 'service-exit-reasons' | 'service-shift-templates';
 
 const translations = ptBR as Record<string, any>;
 
@@ -37,11 +37,18 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 const listCatalog = vi.fn();
 const createCatalogItem = vi.fn();
 const updateCatalogItem = vi.fn();
+// Guardia predefinida (spec 074): 3 turnos, o último atravessa a meia-noite.
+const TEMPLATE = {
+  id: 'ativa', code: 'G6_6_12', label: 'Guardia 6 + 6 + 12', active: true,
+  items: [{ startTime: '08:00', durationMinutes: 360 }, { startTime: '14:00', durationMinutes: 360 }, { startTime: '20:00', durationMinutes: 720 }],
+};
+const listShiftTemplates = vi.fn().mockResolvedValue([TEMPLATE]);
 vi.mock('@infrastructure/http/AdminTherapeuticProjectsApiService', () => ({
   AdminTherapeuticProjectsApiService: {
     listCatalog: (...a: unknown[]) => listCatalog(...a),
     createCatalogItem: (...a: unknown[]) => createCatalogItem(...a),
     updateCatalogItem: (...a: unknown[]) => updateCatalogItem(...a),
+    listShiftTemplates: (...a: unknown[]) => listShiftTemplates(...a),
   },
 }));
 
@@ -99,6 +106,7 @@ describe('TherapeuticCatalogPage — os 3 catálogos, uma tela cada (D299, decis
     ['specific-objectives', COPY.kinds.specificObjectives],
     ['activities', COPY.kinds.activities],
     ['service-exit-reasons', COPY.kinds.serviceExitReasons],
+    ['service-shift-templates', COPY.kinds.serviceShiftTemplates],
   ] as const)('kind %s: título e subtítulo próprios', async (kind, copy) => {
     await renderPage(kind);
     // ⚠️ `getByRole` e não o `data-testid` do código: o atom `Heading` NÃO repassa `data-*`
@@ -367,6 +375,7 @@ describe('TherapeuticCatalogPage — trava de rota pela célula de leitura (D286
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
     ['service-exit-reasons', 'catalog_service_exit_reasons'],
+    ['service-shift-templates', 'catalog_service_shift_templates'],
   ] as const)('engine ON com %s:read não redireciona', async (kind, resource) => {
     comEnforcement([`${resource}:read`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -405,6 +414,7 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
     ['service-exit-reasons', 'catalog_service_exit_reasons'],
+    ['service-shift-templates', 'catalog_service_shift_templates'],
   ] as const)('engine ON com %s:create + :update (PR-8b) — as ações existem', async (kind, resource) => {
     comEnforcement([`${resource}:read`, `${resource}:create`, `${resource}:update`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -568,5 +578,32 @@ describe('TherapeuticCatalogPage — vínculo de segmento (spec 030, F4)', () =>
       expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
       unmount();
     }
+  });
+});
+
+describe('TherapeuticCatalogPage — guardias predefinidas (spec 074)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listShiftTemplates.mockResolvedValue([TEMPLATE]);
+  });
+
+  it('P1 guardias: lista mostra os turnos de cada guardia', async () => {
+    await renderPage('service-shift-templates');
+    expect(listShiftTemplates).toHaveBeenCalledWith({ includeInactive: true });
+    expect(listCatalog).not.toHaveBeenCalled();
+    expect(screen.queryByRole('columnheader', { name: COPY.table.order })).toBeNull();
+    expect(screen.getByTestId('therapeutic-catalog-label-ativa')).toHaveTextContent('Guardia 6 + 6 + 12');
+    expect(screen.getByTestId('therapeutic-catalog-shifts-ativa')).toHaveTextContent('08:00 – 14:00 · 14:00 – 20:00 · 20:00 – 08:00');
+  });
+
+  it('P2 guardias sem update: sem botões de criar e editar', async () => {
+    comEnforcement(['catalog_service_shift_templates:read', 'catalog_service_exit_reasons:update'], 'on');
+    render(<TherapeuticCatalogPage kind="service-shift-templates" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    expect(screen.queryByTestId('therapeutic-catalog-new-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-edit-ativa')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-toggle-ativa')).not.toBeInTheDocument();
+    expect(screen.getByTestId('therapeutic-catalog-shifts-ativa')).toBeInTheDocument();
   });
 });

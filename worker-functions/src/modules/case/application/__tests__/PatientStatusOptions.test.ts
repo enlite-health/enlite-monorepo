@@ -22,6 +22,8 @@ const FICHA_COMPLETA = {
   birth_date: '1980-01-01', has_consent: true, insurance_informed: 'OSDE',
   active_address_count: '1', active_responsible_count: '0', active_service_count: '1',
   services_without_address_count: '0', services_without_schedule_count: '0',
+  /** Neutros (status null ≠ ADMISSION): a matriz T6 mede FSM/células, não o diagnóstico. */
+  status: null as string | null, active_diagnosis_count: '0',
 };
 
 /** `de` = status atual; `existe=false` = paciente inexistente/deletado; `de=null` com `existe` = paciente com status NULO. */
@@ -173,6 +175,37 @@ describe('F3 — regras próprias da lista', () => {
     expect(r.options.find((o) => o.status === 'ACTIVE')?.blockedBy).toEqual(['ADDRESS']);
     const ok = await lista('DISCHARGED', null);
     expect(ok.options.find((o) => o.status === 'ACTIVE')).toEqual({ status: 'ACTIVE', via: 'fluxo' });
+  });
+
+  describe('DIAGNOSIS ao ENTRAR em atendimento (pedido do Javier)', () => {
+    const SEM = { status: 'ADMISSION', active_diagnosis_count: '0' };
+
+    it('ADMISSION sem diagnóstico ativo: destino de atendimento vem com blockedBy DIAGNOSIS; ALTA/DISCHARGED e andar no funil, não', async () => {
+      const r = await lista('ADMISSION', null, SEM, 'kanban'); // kanban: D469 só deixa o funil ir a SEARCHING por ele
+      const por = (st: string) => r.options.find((o) => o.status === st);
+      expect(por('SEARCHING')?.blockedBy).toContain('DIAGNOSIS');
+      expect(por('PENDING_ADMISSION')).toEqual({ status: 'PENDING_ADMISSION', via: 'fluxo' }); // andar no funil: livre
+      expect(por('SOLICITANTE')).toEqual({ status: 'SOLICITANTE', via: 'fluxo' });
+      expect(por('ALTA')).toEqual({ status: 'ALTA', via: 'fluxo' });
+      expect(por('DISCHARGED')).toEqual({ status: 'DISCHARGED', via: 'fluxo' });
+    });
+
+    it('ADMISSION COM diagnóstico ativo: nenhum destino traz DIAGNOSIS em blockedBy', async () => {
+      const r = await lista('ADMISSION', null, { status: 'ADMISSION', active_diagnosis_count: '1' });
+      expect(r.options.flatMap((o) => o.blockedBy ?? [])).not.toContain('DIAGNOSIS');
+    });
+
+    it.each(['PENDING_ADMISSION', 'SOLICITANTE'])('%s sem diagnóstico (pré-atendimento): SEARCHING vem com blockedBy DIAGNOSIS; andar no funil e descarte, livres', async (de) => {
+      const r = await lista(de, null, { status: de, active_diagnosis_count: '0' }, 'kanban');
+      expect(r.options.find((o) => o.status === 'SEARCHING')?.blockedBy).toContain('DIAGNOSIS');
+      expect(r.options.find((o) => o.status === 'ADMISSION')).toEqual({ status: 'ADMISSION', via: 'fluxo' });
+      expect(r.options.find((o) => o.status === 'ALTA')).toEqual({ status: 'ALTA', via: 'fluxo' });
+    });
+
+    it('paciente JÁ em atendimento (ON_HOLD) sem diagnóstico: nenhum destino traz DIAGNOSIS', async () => {
+      const r = await lista('ON_HOLD', null, { status: 'ON_HOLD', active_diagnosis_count: '0' });
+      expect(r.options.flatMap((o) => o.blockedBy ?? [])).not.toContain('DIAGNOSIS');
+    });
   });
 
   it('motivo de ON_HOLD e de saída de SUSPENDED NÃO entram em blockedBy (a tela coleta)', async () => {

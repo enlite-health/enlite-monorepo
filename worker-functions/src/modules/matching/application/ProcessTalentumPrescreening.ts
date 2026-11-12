@@ -1,18 +1,33 @@
 import * as crypto from 'crypto';
 import { Pool, PoolClient } from 'pg';
 import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescreeningRepository';
+import type { TalentumDivergenceKind } from '../domain/TalentumPrescreening';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
+import { resolveLiveCanonicalWorkerIds } from '@shared/database/resolveLiveCanonicalWorkerIds';
 import { reportError } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
+import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker } from './talentumFunnel';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
+import { vacancyIsDeBaja } from '../interfaces/controllers/vacancyDeBajaGuard';
 
 const TAG = '[ProcessTalentumPrescreening]';
+
+/**
+ * Um Error DISTINTO por tipo de divergência: mensagem e stack sintético próprios, para o Cloud Error Reporting agrupar
+ * cada tipo no seu grupo (a stack real seria a mesma para os cinco e eles cairiam num grupo só).
+ */
+function divergenceError(kind: TalentumDivergenceKind): Error {
+  const err = new Error(`${TAG} divergência webhook × card: ${kind}`);
+  err.name = `TalentumDivergence_${kind}`;
+  err.stack = `${err.name}: ${err.message}\n    at ProcessTalentumPrescreening.divergence.${kind} (talentum-webhook)`;
+  return err;
+}
 
 export type WebhookEnvironment = 'production' | 'test';
 
@@ -29,13 +44,36 @@ export interface ProcessTalentumPrescreeningResult {
   resolved: { worker: boolean; jobPosting: boolean };
 }
 
+/** Vaga resolvida + o CAMINHO: `viaId` = pelo `talentum_prescreening_id` (a dona); false = só pelo título. */
+interface ResolvedJobPosting {
+  id: string | null;
+  viaId: boolean;
+}
+
+export interface LookupOpts {
+  /** Inclui worker fundido (`merged_into_id` preenchido) na busca; o chamador segue a cadeia até o sobrevivente. */
+  includeMerged?: boolean;
+}
+
 export interface IWorkerLookup {
-  findByEmail(email: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
-  findByPhone(phone: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
+  /**
+   * E-mail NORMALIZADO (LOWER/BTRIM), só worker vivo, determinístico. `ambiguousCount > 1` = mais de uma candidata
+   * casa: `getValue()` é null e o webhook registra a divergência — nunca escolhe uma. (O `findByEmail` exato é do login.)
+   */
+  findByEmailNormalized(email: string, opts?: LookupOpts): Promise<{ getValue(): { id: string } | null; isSuccess?: boolean; ambiguousCount?: number; ids?: string[] }>;
+  /**
+   * Telefone por CANDIDATOS (`generatePhoneCandidates`): casa com/sem o 9 do móvel; por padrão ignora worker merged/deletado.
+   * `includeMerged` (só o webhook): inclui o cadastro FUNDIDO (o dono do e-mail/telefone pode estar só nele) e devolve
+   * TODOS os ids casados em `ids`, para o chamador canonicalizar e deduplicar. Deletado continua fora.
+   */
+  findByPhoneCandidates(candidates: string[], opts?: LookupOpts): Promise<{ getValue(): { id: string } | null; ids?: string[] } | { isSuccess: boolean; getValue(): { id: string } | null; ids?: string[] }>;
   findByCuit(cuit: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
 }
 
 export interface IJobPostingLookup {
+  /** Vaga viva pelo `_id` do prescreening (`job_postings.talentum_prescreening_id`, único entre vivas). */
+  findByTalentumPrescreeningId(prescreeningId: string): Promise<{ id: string } | null>;
+  /** Fallback por título: prefere a oficial; 2+ sem desempate oficial → null. */
   findByTitleILike(name: string): Promise<{ id: string } | null>;
 }
 
@@ -59,14 +97,27 @@ export class ProcessTalentumPrescreening {
     const environment = options?.environment ?? 'production';
     const dryRun = options?.dryRun ?? false;
 
-    const workerId = await this.resolveOrCreateWorker(payload, dryRun);
-    const jobPostingId = await this.resolveJobPosting(payload.data.prescreening.name);
+    const { workerId, emailAmbiguous } = await this.resolveOrCreateWorker(payload, dryRun);
+    const job = await this.resolveJobPosting(payload.data.prescreening.id, payload.data.prescreening.name);
+    const jobPostingId = job.id;
 
     if (dryRun) {
       return this.buildResult(payload.data.prescreening.id, payload.data.prescreening.id, workerId, jobPostingId);
     }
 
-    const prescreening = await this.persistPrescreening(payload, workerId, jobPostingId, environment);
+    const prescreening = await this.persistPrescreening(payload, workerId, job, environment, emailAmbiguous);
+
+    // Spec 084 (F4/R6/F17): projeto de vaga DADA DE BAJA que ainda recebe candidato — a resposta fica GUARDADA (nada se
+    // perde) e MARCADA, mas NÃO entra no Kanban de trabalho: sem WJA, sem encuadre, sem evento de funil (logo, sem
+    // mensagem ao prestador). A baixa nunca apaga o histórico; só impede que a vaga volte a ser trabalhada.
+    // O guard olha a vaga FINAL em que o card foi gravado (`prescreening.jobPostingId`: a dona depois do M2, ou a já
+    // gravada que o título não sobrescreve) — NÃO a resolvida neste evento, que pode ser outra.
+    if (prescreening.jobPostingId && (await vacancyIsDeBaja(this.pool, prescreening.jobPostingId))) {
+      await this.pool.query(`UPDATE talentum_prescreenings SET held_for_baja = true WHERE id = $1`, [prescreening.id]);
+      console.log(`${TAG} vaga em DE_BAJA → resposta guardada e marcada, fora do Kanban | prescreening=${prescreening.id}`);
+      await this.questionsWriter.persist(prescreening.id, payload);
+      return this.buildResult(prescreening.id, prescreening.talentumPrescreeningId, prescreening.workerId, prescreening.jobPostingId);
+    }
 
     await this.syncFunnelAndEncuadre(prescreening, payload);
     await this.questionsWriter.persist(prescreening.id, payload);
@@ -79,27 +130,36 @@ export class ProcessTalentumPrescreening {
   private async resolveOrCreateWorker(
     payload: TalentumPrescreeningResponseParsed,
     dryRun: boolean,
-  ): Promise<string | null> {
+  ): Promise<{ workerId: string | null; emailAmbiguous: boolean }> {
     const { email, phoneNumber } = payload.data.profile;
     // PII: e-mail/telefone mascarados (maskEmailForLog/maskPhoneForLog); CUIL é documento —
     // nunca no log, nem mascarado (achado do gate, 11/09).
     console.log(`${TAG} resolveWorker | email=${maskEmailForLog(email)} | phone=${maskPhoneForLog(phoneNumber)}`);
 
-    const workerId = await this.resolveWorkerId(payload);
+    const { id: workerId, emailAmbiguous } = await this.resolveWorkerId(payload);
     if (workerId) {
       console.log(`${TAG} resolveWorker → found ${workerId}`);
-      return workerId;
+      return { workerId, emailAmbiguous };
     }
 
     if (dryRun) {
       console.log(`${TAG} resolveWorker → NOT FOUND (dryRun, skip auto-create)`);
-      return null;
+      return { workerId: null, emailAmbiguous };
+    }
+
+    // E-mail ambíguo (>1 worker vivo) e nem telefone nem CUIL acharam ninguém: NÃO cria nem escolhe — o auto-create ou
+    // duplicaria a pessoa ou, na colisão, pegaria um dos candidatos. Fica sem worker; a divergência registra o caso.
+    if (emailAmbiguous) {
+      console.log(`${TAG} resolveWorker → e-mail ambíguo e sem acerto por telefone/CUIL: sem auto-create`);
+      return { workerId: null, emailAmbiguous };
     }
 
     console.log(`${TAG} resolveWorker → NOT FOUND, auto-creating...`);
     const created = await this.autoCreateWorker(payload);
     console.log(`${TAG} resolveWorker → auto-created: ${created ?? 'FAILED'}`);
-    return created;
+    // O alarme de worker não resolvido é UM só: a divergência WORKER_NULL (linha + reportError) em persistPrescreening.
+    // O status HTTP da resposta ao Talentum NÃO muda.
+    return { workerId: created, emailAmbiguous };
   }
 
   /**
@@ -142,56 +202,90 @@ export class ProcessTalentumPrescreening {
     return canonical;
   }
 
-  private async resolveWorkerId(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
+  private async resolveWorkerId(
+    payload: TalentumPrescreeningResponseParsed,
+  ): Promise<{ id: string | null; emailAmbiguous: boolean }> {
     const { email, phoneNumber, cuil } = payload.data.profile;
 
-    const byEmail = this.extractId(await this.workerLookup.findByEmail(email));
-    if (byEmail) return this.toCanonical(byEmail);
+    // D111 (13/08): o e-mail/telefone do payload pode existir só num cadastro FUNDIDO; busca incluindo fundido
+    // e segue a cadeia até o sobrevivente (regressão de 04/11: as queries filtravam fundido e o toCanonical nunca o via).
+    const emailLookup = await this.workerLookup.findByEmailNormalized(email, { includeMerged: true });
+    const emailIds = await this.liveCanonicalIds(emailLookup.ids ?? this.idsOf(emailLookup));
+    // Ambíguo = 2+ sobreviventes DISTINTOS (dois fundidos no mesmo sobrevivente não são). Sem `ids`, vale o legado.
+    const emailAmbiguous = emailIds.length > 1 || (emailLookup.ids === undefined && (emailLookup.ambiguousCount ?? 0) > 1);
+    if (emailIds.length === 1) return { id: emailIds[0], emailAmbiguous };
 
-    const byPhone = this.extractId(await this.workerLookup.findByPhone(phoneNumber));
-    if (byPhone) return this.toCanonical(byPhone);
+    const phoneIds = await this.findCanonicalIdsByPhone(phoneNumber);
+    if (phoneIds.length === 1) return { id: phoneIds[0], emailAmbiguous };
+    if (phoneIds.length > 1) {
+      // Telefone ambíguo = MESMO tratamento do e-mail ambíguo: divergência, sem CUIL e sem auto-create (o índice de
+      // telefone normalizado não é único em prd: o INSERT passaria e nasceria duplicata). O `kind` da divergência tem
+      // CHECK no banco (migration 565): reaproveita WORKER_EMAIL_AMBIGUOUS em vez de criar kind novo.
+      console.log(`${TAG} resolveWorker → telefone casa ${phoneIds.length} cadastros vivos distintos: ambíguo, sem worker`);
+      return { id: null, emailAmbiguous: true };
+    }
 
     if (cuil) {
       const byCuil = this.extractId(await this.workerLookup.findByCuit(cuil));
-      if (byCuil) return this.toCanonical(byCuil);
+      if (byCuil) return { id: await this.toCanonical(byCuil), emailAmbiguous };
     }
 
-    return null;
+    return { id: null, emailAmbiguous };
+  }
+
+  private idsOf(lookup: { getValue(): { id: string } | null }): string[] {
+    const id = this.extractId(lookup);
+    return id ? [id] : [];
+  }
+
+  /** Ids casados (possivelmente fundidos) → sobreviventes VIVOS, sem repetição (regra única em `shared/database`). */
+  private liveCanonicalIds(rawIds: string[]): Promise<string[]> {
+    return resolveLiveCanonicalWorkerIds(this.pool, rawIds, (id) => this.toCanonical(id));
+  }
+
+  /**
+   * O Talentum manda o celular argentino SEM o "9" (54 11…), o worker está gravado COM ele (549 11…).
+   * Igualdade exata no telefone cru não casava (prd 04/11: 29 candidatas sem worker). Os candidatos
+   * cobrem as formas históricas; `includeMerged` acha também o cadastro fundido (deletado fica fora).
+   */
+  private async findCanonicalIdsByPhone(phoneNumber: string): Promise<string[]> {
+    const candidates = generatePhoneCandidates(phoneNumber);
+    if (candidates.length === 0) return [];
+    const lookup = await this.workerLookup.findByPhoneCandidates(candidates, { includeMerged: true });
+    return this.liveCanonicalIds(lookup.ids ?? this.idsOf(lookup));
   }
 
   private async autoCreateWorker(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
-    const phone = normalizePhoneAR(payload.data.profile.phoneNumber) || null;
-    const authUid = `talentum_${payload.data.profile.id}`;
-
-    try {
-      const result = await this.pool.query(
-        `INSERT INTO workers (auth_uid, email, phone, status, country)
-         VALUES ($1, $2, $3, 'INCOMPLETE_REGISTER', 'AR')
-         RETURNING id`,
-        [authUid, payload.data.profile.email, phone],
+    const created = await insertTalentumWorker(this.pool, payload.data.profile);
+    if (created.kind === 'CREATED') return created.id;
+    if (created.kind === 'COLLISION') {
+      // Colisão: o cadastro já existe. Pode ser um registro já fundido em
+      // outro — resolver o canônico antes de devolver, mesma razão do
+      // `toCanonical` (ver `shared/database/canonicalWorker.ts`).
+      // Só não-deletado (o fundido ENTRA: o índice único de e-mail/auth_uid também o enxerga), ORDER determinístico.
+      const existing = await this.pool.query(
+        `SELECT id FROM workers
+          WHERE (auth_uid = $1 OR LOWER(email) = LOWER($2)) AND deleted_at IS NULL
+          ORDER BY created_at, id LIMIT 10`,
+        [`talentum_${payload.data.profile.id}`, payload.data.profile.email],
       );
-      return result.rows[0].id;
-    } catch (err: unknown) {
-      const pgErr = err as { code?: string; message?: string };
-      if (pgErr.code === '23505') {
-        // Colisão: o cadastro já existe. Pode ser um registro já fundido em
-        // outro — resolver o canônico antes de devolver, mesma razão do
-        // `toCanonical` (ver `shared/database/canonicalWorker.ts`).
-        const existing = await this.pool.query(
-          `SELECT id FROM workers WHERE auth_uid = $1 OR LOWER(email) = LOWER($2) LIMIT 1`,
-          [authUid, payload.data.profile.email],
-        );
-        const existingId = existing.rows[0]?.id ?? null;
-        return existingId ? await this.toCanonical(existingId) : null;
+      let ids = await this.liveCanonicalIds(existing.rows.map((r: { id: string }) => r.id));
+      // Colisão no índice único de telefone: o dono está na forma com o 9 (o INSERT usa o normalizado).
+      if (ids.length === 0) ids = await this.findCanonicalIdsByPhone(payload.data.profile.phoneNumber);
+      if (ids.length > 1) {
+        // 2+ sobreviventes distintos = ambíguo (não escolhe: fica sem worker).
+        console.log(`${TAG} autoCreateWorker → colisão com >1 worker vivo: ambíguo, sem worker`);
+        return null;
       }
-      console.error(`${TAG} autoCreateWorker failed:`, pgErr.message);
-      return null;
+      return ids[0] ?? null;
     }
+    console.error(`${TAG} autoCreateWorker failed:`, created.message);
+    return null;
   }
 
   // ── Job posting resolution ───────────────────────────────────────
 
-  private async resolveJobPosting(caseName: string): Promise<string | null> {
+  private async resolveJobPosting(prescreeningId: string, caseName: string): Promise<ResolvedJobPosting> {
     // PII (achado do gate, C3 do parecer do lex, 11/09): `caseName`/`searchTerm`
     // são texto livre do título do projeto no Talentum, não um id — MEDIDO em prd
     // (7d, textPayload local, nunca colado): 400/590 nomes NÃO batem o formato
@@ -213,6 +307,13 @@ export class ProcessTalentumPrescreening {
     const caseRef = searchTerm ?? '<outro>';
     console.log(`${TAG} resolveJobPosting | caseRef=${caseRef}`);
     try {
+      // Resolução primária pelo `_id` do prescreening (payload `prescreening.id`): o título
+      // `CASO N` é do PACIENTE e também casa rascunho/outra vaga do mesmo paciente.
+      const byPrescreening = await this.jobPostingLookup.findByTalentumPrescreeningId(prescreeningId);
+      if (byPrescreening) {
+        console.log(`${TAG} resolveJobPosting → ${byPrescreening.id} (caminho=por_prescreening_id)`);
+        return { id: byPrescreening.id, viaId: true };
+      }
       let posting = await this.jobPostingLookup.findByTitleILike(searchTerm ?? caseName);
       // Achado CI #515 (24/09/2026): o título formatado (prefixo `EN` decidido pela FAIXA
       // numérica, não pelo texto real) não bate quando o título gravado ainda não segue
@@ -222,11 +323,11 @@ export class ProcessTalentumPrescreening {
         posting = await this.jobPostingLookup.findByTitleILike(caseName);
       }
       const id = posting?.id ?? null;
-      console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caseRef=${caseRef})`);
-      return id;
+      console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caminho=${id ? 'por_titulo_unico' : 'nao_resolvido'}, caseRef=${caseRef})`);
+      return { id, viaId: false };
     } catch {
       console.log(`${TAG} resolveJobPosting → ERROR (returning null)`);
-      return null;
+      return { id: null, viaId: false };
     }
   }
 
@@ -235,8 +336,9 @@ export class ProcessTalentumPrescreening {
   private async persistPrescreening(
     payload: TalentumPrescreeningResponseParsed,
     workerId: string | null,
-    jobPostingId: string | null,
+    job: ResolvedJobPosting,
     environment: WebhookEnvironment,
+    emailAmbiguous = false,
   ) {
     // For ANALYZED, store the statusLabel (QUALIFIED/NOT_QUALIFIED/IN_DOUBT/PENDING)
     // instead of the generic 'ANALYZED' subtype — more granular for Kanban tags.
@@ -245,17 +347,111 @@ export class ProcessTalentumPrescreening {
       : payload.subtype;
 
     console.log(`${TAG} persistPrescreening | extId=${payload.data.prescreening.id} | status=${effectiveStatus}`);
-    const { prescreening } = await this.prescreeningRepo.upsertPrescreening({
-      talentumPrescreeningId: payload.data.prescreening.id,
-      talentumProfileId:      payload.data.profile.id,
-      workerId,
-      jobPostingId,
-      jobCaseName: payload.data.prescreening.name,
-      status:      effectiveStatus,
-      environment,
-    });
+
+    // Card + divergência na MESMA transação: o espelho nunca fica gravado sem o registro do que não bateu.
+    const client = await this.pool.connect();
+    let prescreening;
+    const divergences: Array<{ kind: TalentumDivergenceKind; jobPostingId: string | null; expectedJobPostingId: string | null }> = [];
+    try {
+      await client.query('BEGIN');
+      const upserted = await this.prescreeningRepo.upsertPrescreening({
+        talentumPrescreeningId: payload.data.prescreening.id,
+        talentumProfileId:      payload.data.profile.id,
+        workerId,
+        jobPostingId:           job.id,
+        jobPostingResolvedById: job.viaId,
+        jobCaseName: payload.data.prescreening.name,
+        status:      effectiveStatus,
+        environment,
+      }, client);
+      prescreening = upserted.prescreening;
+
+      divergences.push(...this.collectDivergences(workerId, job, upserted.previousJobPostingId ?? null, emailAmbiguous));
+      for (const d of divergences) {
+        await this.recordDivergence(client, payload, prescreening.id, workerId, d, environment);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    for (const d of divergences) {
+      // BY_TITLE_ONLY é ruído esperado (vaga antiga sem id): só a linha na tabela, sem reporter.
+      if (d.kind === 'JOB_POSTING_BY_TITLE_ONLY') continue;
+      // Reporter oficial do projeto (Cloud Error Reporting). Só ids: sem telefone/e-mail/nome.
+      reportError(divergenceError(d.kind), {
+        source: 'ProcessTalentumPrescreening:divergence',
+        kind: d.kind,
+        // WORKER_NULL mantém o marcador histórico do log-based metric (jsonPayload.alert).
+        ...(d.kind === 'WORKER_NULL' ? { alert: 'TALENTUM_WORKER_UNRESOLVED' } : {}),
+        talentumPrescreeningId: payload.data.prescreening.id,
+        talentumProfileId: payload.data.profile.id,
+        workerId,
+        jobPostingId: d.jobPostingId,
+        expectedJobPostingId: d.expectedJobPostingId,
+      });
+    }
     console.log(`${TAG} persistPrescreening → id=${prescreening.id}`);
     return prescreening;
+  }
+
+  /**
+   * O que NÃO bateu neste evento. `previous` = vaga gravada antes dele.
+   * - worker/vaga null: o card fica sem vínculo (ou sem avanço de etapa);
+   * - dona por id ≠ gravada: a dona venceu (M2) e a gravada foi trocada — o card antigo ainda pode estar na vaga errada;
+   * - só título e ≠ gravada: a gravada foi MANTIDA (título não sobrescreve id), o título aponta outra vaga;
+   * - só título (sem conflito): resolução frágil, não é a dona por id.
+   */
+  private collectDivergences(workerId: string | null, job: ResolvedJobPosting, previous: string | null, emailAmbiguous = false) {
+    const out: Array<{ kind: TalentumDivergenceKind; jobPostingId: string | null; expectedJobPostingId: string | null }> = [];
+    if (emailAmbiguous) out.push({ kind: 'WORKER_EMAIL_AMBIGUOUS', jobPostingId: job.id, expectedJobPostingId: null });
+    if (!workerId) out.push({ kind: 'WORKER_NULL', jobPostingId: job.id, expectedJobPostingId: null });
+    if (!job.id) {
+      out.push({ kind: 'JOB_POSTING_NULL', jobPostingId: previous, expectedJobPostingId: null });
+    } else if (job.viaId) {
+      if (previous && previous !== job.id) {
+        out.push({ kind: 'JOB_POSTING_REPOINTED_TO_OWNER', jobPostingId: previous, expectedJobPostingId: job.id });
+      }
+    } else if (previous && previous !== job.id) {
+      out.push({ kind: 'JOB_POSTING_TITLE_DIFFERS_STORED', jobPostingId: previous, expectedJobPostingId: job.id });
+    } else {
+      out.push({ kind: 'JOB_POSTING_BY_TITLE_ONLY', jobPostingId: job.id, expectedJobPostingId: null });
+    }
+    return out;
+  }
+
+  /** SAVEPOINT: falha ao gravar a divergência não derruba o card (best-effort, mas nunca mudo: reportError). */
+  private async recordDivergence(
+    client: PoolClient,
+    payload: TalentumPrescreeningResponseParsed,
+    prescreeningRowId: string,
+    workerId: string | null,
+    d: { kind: TalentumDivergenceKind; jobPostingId: string | null; expectedJobPostingId: string | null },
+    environment: WebhookEnvironment,
+  ): Promise<void> {
+    await client.query('SAVEPOINT talentum_divergence');
+    try {
+      await this.prescreeningRepo.insertDivergence({
+        kind: d.kind,
+        talentumPrescreeningId: payload.data.prescreening.id,
+        talentumProfileId: payload.data.profile.id,
+        prescreeningId: prescreeningRowId,
+        workerId,
+        jobPostingId: d.jobPostingId,
+        expectedJobPostingId: d.expectedJobPostingId,
+        environment,
+      }, client);
+      await client.query('RELEASE SAVEPOINT talentum_divergence');
+    } catch (err) {
+      await client.query('ROLLBACK TO SAVEPOINT talentum_divergence');
+      reportError(err instanceof Error ? err : new Error(String(err)), {
+        source: 'ProcessTalentumPrescreening:recordDivergence',
+        kind: d.kind,
+      });
+    }
   }
 
   // ── Funnel stage sync + encuadre ─────────────────────────────────
@@ -265,10 +461,10 @@ export class ProcessTalentumPrescreening {
     payload: TalentumPrescreeningResponseParsed,
   ): Promise<void> {
     if (!prescreening.workerId || !prescreening.jobPostingId) {
-      console.error(
-        `${TAG} ALERT: syncFunnel SKIPPED — missing mandatory field! workerId=${prescreening.workerId}, ` +
-        `jobPostingId=${prescreening.jobPostingId}, prescreeningId=${prescreening.id}, ` +
-        `talentumId=${prescreening.talentumPrescreeningId}. This should NEVER happen.`,
+      // O alarme (linha em talentum_webhook_divergences + reportError) já saiu em persistPrescreening.
+      console.log(
+        `${TAG} syncFunnel SKIPPED — sem worker/vaga: workerId=${prescreening.workerId}, ` +
+        `jobPostingId=${prescreening.jobPostingId}, prescreeningId=${prescreening.id}`,
       );
       return;
     }
@@ -299,14 +495,7 @@ export class ProcessTalentumPrescreening {
    * A conversão é INTERNA aqui, antes de qualquer persistência em worker_job_applications.
    */
   deriveFunnelStage(payload: TalentumPrescreeningResponseParsed): string {
-    if (payload.subtype === 'ANALYZED' && payload.data.response.statusLabel) {
-      // 'ANALYZED' é sentinel local — usa-se pra pular upsert em WJA quando statusLabel === 'PENDING';
-      // nunca persiste em application_funnel_stage (não consta em ApplicationFunnelStage)
-      if (payload.data.response.statusLabel === 'PENDING') return 'ANALYZED';
-      return payload.data.response.statusLabel;
-    }
-    if (payload.subtype === 'INITIATED') return 'PRE_SCREENING';
-    return payload.subtype;
+    return deriveFunnelStage(payload.subtype, payload.data.response.statusLabel);
   }
 
   private async upsertApplicationAndEmitEvent(
@@ -317,7 +506,7 @@ export class ProcessTalentumPrescreening {
     prescreeningId?: string,
   ): Promise<void> {
     // F3 (mig 191): NOT_QUALIFIED não existe mais no enum — converter pra REJECTED antes do upsert.
-    const effectiveFunnelStage = funnelStage === 'NOT_QUALIFIED' ? 'REJECTED' : funnelStage;
+    const effectiveFunnelStage = toPersistedFunnelStage(funnelStage);
 
     let qualifiedEventId: string | null = null;
     const client = await this.pool.connect();
@@ -331,6 +520,11 @@ export class ProcessTalentumPrescreening {
       );
       console.log(`${TAG} WJA: ${previousStage ?? 'NEW'} → ${effectiveFunnelStage} | worker=${workerId} | job=${jobPostingId} | score=${matchScore}`);
 
+      // Veredito positivo sobre um REJECTED que foi do próprio Talentum: o upsert acima manteve REJECTED (etapa não regride).
+      // Desfaz ANTES do evento qualified: o previousStage do evento continua o do upsert (REJECTED ≠ QUALIFIED → emite, source talentum).
+      if (await revertAutoRejectionOnPositiveVerdict(client, workerId, jobPostingId, effectiveFunnelStage, previousStage, prescreeningId)) {
+        console.log(`${TAG} auto-reject REVERTED → WJA stage=${effectiveFunnelStage} | worker=${workerId} | job=${jobPostingId}`);
+      }
       qualifiedEventId = await this.handleQualifiedTransition(client, workerId, jobPostingId, effectiveFunnelStage, previousStage);
       // Passa o funnelStage ORIGINAL (NOT_QUALIFIED) para handleNotQualifiedTransition identificar a transição,
       // mas o upsert já gravou REJECTED — handleNotQualifiedTransition só cuida do encuadre + domain events agora.
@@ -366,39 +560,10 @@ export class ProcessTalentumPrescreening {
     client: PoolClient, workerId: string, jobPostingId: string, funnelStage: string, previousStage: string | null,
     prescreeningId?: string,
   ): Promise<void> {
-    // Guard: skip if not NOT_QUALIFIED transition, or already auto-rejected
-    if (funnelStage !== 'NOT_QUALIFIED' || previousStage === 'REJECTED') return;
-
-    console.log(`${TAG} NOT_QUALIFIED transition → marking encuadre RECHAZADO + auto-rejecting WJA`);
-    await client.query(
-      `UPDATE encuadres
-       SET resultado = 'RECHAZADO', rejection_reason_category = 'TALENTUM_NOT_QUALIFIED', updated_at = NOW()
-       WHERE worker_id = $1 AND job_posting_id = $2 AND resultado IS NULL`,
-      [workerId, jobPostingId],
-    );
-    // Evento AUDIT-ONLY: o efeito (encuadre RECHAZADO + WJA REJECTED) é síncrono
-    // aqui; este domain_event é só rastreabilidade da classificação e NÃO tem
-    // consumidor (diferente de funnel_stage.qualified, que agenda entrevista).
-    // Nasce `processed` para não virar órfão pending (que empilhava e falseava o
-    // health check + exigia exclusão de métrica no terraform).
-    await client.query(
-      `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.not_qualified', $1::jsonb, 'processed', NOW())`,
-      [JSON.stringify({ workerId, jobPostingId })],
-    );
-
-    // Auto-reject: immediately promote WJA to REJECTED so NOT_QUALIFIED is never persisted
-    await client.query(
-      `UPDATE worker_job_applications
-       SET application_funnel_stage = 'REJECTED', updated_at = NOW()
-       WHERE worker_id = $1 AND job_posting_id = $2`,
-      [workerId, jobPostingId],
-    );
-    // Idem: audit-only, sem consumidor → nasce `processed`.
-    await client.query(
-      `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.rejected', $1::jsonb, 'processed', NOW())`,
-      [JSON.stringify({ workerId, jobPostingId, prescreeningId: prescreeningId ?? null, source: 'auto_not_qualified' })],
-    );
-    console.log(`${TAG} NOT_QUALIFIED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);
+    // Implementação única em talentumFunnel.ts (também usada pelo script de reconciliação).
+    if (await applyNotQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId)) {
+      console.log(`${TAG} NOT_QUALIFIED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);
+    }
   }
 
   private async publishQualifiedEvent(eventId: string | null): Promise<void> {

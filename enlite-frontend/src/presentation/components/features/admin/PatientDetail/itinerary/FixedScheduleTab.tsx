@@ -9,6 +9,7 @@ import { weekdayName } from '../substitutionDates';
 import { workerLabel } from '../workerLabel';
 import { NOWRAP, SingleLine } from './SingleLine';
 import { shiftHours } from './weekRange';
+import { shiftRangeLabel } from './shiftRange';
 
 interface FixedScheduleTabProps {
   service: PatientItineraryService;
@@ -33,7 +34,7 @@ export function FixedScheduleTab({ service, asOf, actionError, onEditSlot }: Fix
   const { allowed: canEdit } = useActionGate('patient_itinerary', 'update');
   const serviceId = service.contractedServiceId;
   const dayName = (weekday: number): string => weekdayName(weekday, i18n.language);
-  const sideLabel = (side: ItineraryOverlapSide): string => `${dayName(side.weekday)} ${side.startTime}-${side.endTime}`;
+  const sideLabel = (side: ItineraryOverlapSide): string => `${dayName(side.weekday)} ${shiftRangeLabel(t, side)}`;
   const overlap = actionError?.overlap;
 
   const slotsOf = (weekday: number): PatientItinerarySlot[] =>
@@ -75,7 +76,7 @@ export function FixedScheduleTab({ service, asOf, actionError, onEditSlot }: Fix
                   <div className="flex items-center gap-2">
                     <span className="flex h-9 w-[130px] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-primary" data-testid={`itinerario-slot-horario-${slot.id}`} {...NOWRAP}>
                       <Text as="span" size="sm" weight="medium" color="white">
-                        {`${slot.startTime} – ${slot.endTime}`}
+                        {shiftRangeLabel(t, slot)}
                       </Text>
                     </span>
                     <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap" data-testid={`itinerario-slot-duracao-${slot.id}`} {...NOWRAP}>
