@@ -698,4 +698,31 @@ describe('ItineraryAbsenceUseCase.setSubstituteWith (spec 069, T209)', () => {
     await expect(mk(1).useCase.setSubstituteWith(FAKE_CLIENT, base)).resolves.toMatchObject({ substituteWorkerId: 'w-sub' });
     await expect(mk(0).useCase.setSubstituteWith(FAKE_CLIENT, { ...base, onlyIfUncovered: false })).rejects.toBeInstanceOf(AbsenceCancelledError);
   });
+
+  describe('onlyIfUncovered com 0 linhas: a releitura no MESMO client diz a causa', () => {
+    const base = { patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', substituteWorkerId: 'w-sub', actorUid: 'u-1', now: new Date('2026-09-27T15:00:00Z'), onlyIfUncovered: true };
+    const mkRace = (reread: unknown) => {
+      const findAbsence = jest.fn().mockResolvedValueOnce(OPEN_ABSENCE).mockResolvedValueOnce(reread);
+      const writer = writerStub({ findAbsence, updateSubstitute: jest.fn().mockResolvedValue(0) });
+      const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+      const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriterStub({ findApplicationId: jest.fn().mockResolvedValue('wja-sub') }), runInTransactionStub(), catalogStub(), changeLogStub(), requestStub());
+      return { findAbsence, useCase };
+    };
+
+    it('cancelou entre a leitura e o UPDATE → AbsenceCancelledError (NÃO AlreadyCovered)', async () => {
+      const { findAbsence, useCase } = mkRace(CANCELLED_ABSENCE);
+      await expect(useCase.setSubstituteWith(FAKE_CLIENT, base)).rejects.toBeInstanceOf(AbsenceCancelledError);
+      expect(findAbsence).toHaveBeenNthCalledWith(2, FAKE_CLIENT, 'p-1', 's-1', 'abs-1');
+    });
+
+    it('outro cobriu entre a leitura e o UPDATE → AbsenceAlreadyCoveredError', async () => {
+      const { useCase } = mkRace({ ...OPEN_ABSENCE, substituteWorkerId: 'w-outro' });
+      await expect(useCase.setSubstituteWith(FAKE_CLIENT, base)).rejects.toBeInstanceOf(AbsenceAlreadyCoveredError);
+    });
+
+    it('a falta sumiu na releitura → AbsenceNotFoundError', async () => {
+      const { useCase } = mkRace(null);
+      await expect(useCase.setSubstituteWith(FAKE_CLIENT, base)).rejects.toBeInstanceOf(AbsenceNotFoundError);
+    });
+  });
 });
