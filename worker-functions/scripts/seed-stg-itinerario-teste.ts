@@ -69,6 +69,7 @@ const SCHEDULE = [
   { dayOfWeek: 3, startTime: '08:00', durationMinutes: 240 },
 ];
 const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const DX_URI = 'http://id.who.int/icd/release/11/2026-01/mms/437815624';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // ── dependências injetáveis (o teste troca por fakes) ───────────────────────────────────────
@@ -236,6 +237,17 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
     log('servico', 'criado', serviceId);
   }
 
+  // 3b. completude que a rota link-existing-vacancy cobra (blockers COVERAGE e DIAGNOSIS): cobertura "Particular" + 1 CID-11 do catálogo
+  await api.must([200], 'PATCH', `/api/admin/patients/${patientId}/coverage`, { healthInsuranceName: 'Particular' });
+  const dxAll = asRows(await api.must([200], 'GET', `/api/admin/patients/${patientId}/diagnoses`), 'diagnoses');
+  if (dxAll.length === 0) {
+    await api.must([201], 'POST', `/api/admin/patients/${patientId}/diagnoses`, { conceptUri: DX_URI, isPrimary: true });
+    log('diagnostico', 'criado (catalogo CID-11)', patientId);
+  } else {
+    log('diagnostico', 'reusado', patientId);
+  }
+  log('cobertura', 'Particular', patientId);
+
   // 4. pagador sintético próprio + contrato + vínculo (o catálogo real nunca é alterado)
   const providers = asRows(await api.must([200], 'GET', `/api/admin/insurance-providers?search=${MARK}&includeInactive=true`), 'items');
   const provider = providers.find((p) => p.code === PROVIDER_CODE);
@@ -283,7 +295,7 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
       mode: 'new',
       version: {
         contractedServiceId: serviceId, modality: 'IN_PERSON', segmentId: await firstActive('segments'),
-        diagnoses: [{ uri: 'http://id.who.int/icd/release/11/2026-01/mms/437815624', title: 'Trastorno del espectro autista' }],
+        diagnoses: [{ uri: DX_URI, title: 'Trastorno del espectro autista' }],
         clinicalContext: TEXT_MARK, generalObjective: TEXT_MARK,
         specificObjectiveIds: [await firstActive('specific-objectives')], activityIds: [await firstActive('activities')],
         startDate: '2026-11-01', endDate: '2027-10-31',
@@ -412,7 +424,7 @@ export async function cleanup(api: Api, deps: SeedDeps): Promise<void> {
       `DELETE FROM patient_itinerary_change_log WHERE assignment_id IN (SELECT a.id FROM patient_itinerary_assignment a WHERE a.slot_id IN (SELECT id FROM patient_itinerary_slot WHERE contracted_service_id IN (SELECT id FROM patient_contracted_services WHERE patient_id = :'pat'::uuid)))
           OR new_assignment_id IN (SELECT a.id FROM patient_itinerary_assignment a WHERE a.slot_id IN (SELECT id FROM patient_itinerary_slot WHERE contracted_service_id IN (SELECT id FROM patient_contracted_services WHERE patient_id = :'pat'::uuid)));
        DELETE FROM patient_itinerary_assignment WHERE slot_id IN (SELECT id FROM patient_itinerary_slot WHERE contracted_service_id IN (SELECT id FROM patient_contracted_services WHERE patient_id = :'pat'::uuid));
-       DELETE FROM worker_job_applications WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id = :'pat'::uuid AND is_test = true) AND application_funnel_stage = 'QUICK_RESPONSE_TEAM';`,
+       DELETE FROM worker_job_applications WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id = :'pat'::uuid AND is_test = true);`,
       { pat: patientId },
     );
     log('candidatura+alocacoes', 'removidas (SQL, só vacante is_test do paciente)', patientId);
