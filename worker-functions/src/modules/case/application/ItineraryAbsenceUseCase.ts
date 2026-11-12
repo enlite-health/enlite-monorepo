@@ -326,9 +326,16 @@ export class ItineraryAbsenceUseCase {
 
     try {
       const rowCount = await this.writer.updateSubstitute(client, absenceId, substituteWorkerId, substituteApplicationId, actorUid, onlyIfUncovered);
-      if (rowCount === 0) throw onlyIfUncovered ? new AbsenceAlreadyCoveredError(absenceId) : new AbsenceCancelledError(absenceId);
+      if (rowCount === 0) {
+        if (!onlyIfUncovered) throw new AbsenceCancelledError(absenceId);
+        // 0 linhas com a guarda tem DUAS causas (cancelou OU outro cobriu entre a leitura e o UPDATE): reler no MESMO client
+        // para dizer a verdadeira — "cancelada" não pode virar "já coberta".
+        const current = await this.writer.findAbsence(client, patientId, serviceId, absenceId);
+        if (current === null) throw new AbsenceNotFoundError(patientId, serviceId, absenceId);
+        throw current.cancelled ? new AbsenceCancelledError(absenceId) : new AbsenceAlreadyCoveredError(absenceId);
+      }
     } catch (err) {
-      if (err instanceof AbsenceCancelledError || err instanceof AbsenceAlreadyCoveredError) throw err;
+      if (err instanceof AbsenceCancelledError || err instanceof AbsenceAlreadyCoveredError || err instanceof AbsenceNotFoundError) throw err;
       const mapped = absenceErrorFromPg(err, absence.allocationId, absence.date);
       throw mapped ?? err;
     }
