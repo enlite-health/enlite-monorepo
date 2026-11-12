@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { GoogleLoginButton } from '@presentation/components/features/auth/GoogleLoginButton';
 import { useAuth } from '@presentation/hooks/useAuth';
+import { useAreaDestination } from '@presentation/hooks/useAreaDestination';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField, InputWithIcon, PasswordInput } from '@presentation/components/molecules';
@@ -21,23 +22,41 @@ export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { resolveDestination } = useAreaDestination();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleSuccess = () => {
-    // Support ?next= redirect for auth-guarded pages
-    const next = searchParams.get('next');
-    navigate(next || '/');
-  };
 
   const handleError = (err: Error) => {
     console.error('Login failed:', err);
     const translatedError = getAuthErrorMessage(err, t);
     setError(translatedError);
   };
+
+  // Uma única decisão de destino por montagem: o login por formulário, o Google e a sessão já ativa
+  // passam pelo mesmo caminho, e o guard impede reentrada (sem laço). Falha libera para nova tentativa.
+  const navigatedRef = useRef(false);
+  const next = searchParams.get('next');
+  const goToDestination = useCallback(async () => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    try {
+      const destination = await resolveDestination(next);
+      // Nunca de volta para o login: seria o laço que o design §6 proíbe.
+      if (destination.split(/[?#]/)[0] !== '/login') navigate(destination, { replace: true });
+    } catch (err) {
+      navigatedRef.current = false;
+      handleError(err instanceof Error ? err : new Error('Login failed'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleError só usa setters e `t`
+  }, [next, resolveDestination, navigate]);
+
+  // Sessão já ativa ao montar (ex.: `/admin/login` → `/login?next=%2Fadmin` com a pessoa logada).
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated) void goToDestination();
+  }, [isAuthLoading, isAuthenticated, goToDestination]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +72,7 @@ export function LoginPage() {
 
     try {
       await login(email, password);
-      handleSuccess();
+      await goToDestination();
     } catch (err) {
       handleError(err instanceof Error ? err : new Error('Login failed'));
     } finally {
@@ -128,7 +147,7 @@ export function LoginPage() {
 
               <Divider text={t('login.orLoginWith')} />
 
-              <GoogleLoginButton onSuccess={handleSuccess} onError={handleError} />
+              <GoogleLoginButton onSuccess={goToDestination} onError={handleError} />
             </div>
           </form>
 

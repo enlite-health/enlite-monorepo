@@ -16,6 +16,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { semearFaixas, type FaixaSemente } from './helpers/seedFaixaDoServico';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
@@ -38,12 +39,16 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     comEndereco?: boolean;
     /** `insurance_informed` — só usado pelos testes de `activate-recruitment` (RECRUITMENT_BLOCKING_CODES cobra COVERAGE). */
     coverage?: string | null;
+    /** Diagnóstico CID-11 ativo (pedido do Javier): ativar recrutamento com o paciente pré-atendimento o exige. Default: não. */
+    comDiagnostico?: boolean;
   }): Promise<string> {
     const id = (await pool.query<{ id: string }>(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, insurance_informed)
        VALUES ($1, 'Horario', 'Gate', 'AR', $2, $3) RETURNING id`,
       [opts.tag, opts.status, opts.coverage ?? null],
     )).rows[0].id;
+
+    if (opts.comDiagnostico) await seedPatientDiagnosis(pool, id);
 
     let addr: string | null = null;
     if (opts.comEndereco !== false) {
@@ -267,6 +272,7 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
       status: 'PENDING_ADMISSION',
       schedule: HORARIO,
       coverage: 'Particular',
+      comDiagnostico: true,
     });
     const { rows: svcRows } = await pool.query<{ id: string }>(
       'SELECT id FROM patient_contracted_services WHERE patient_id = $1', [id],

@@ -152,7 +152,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
   ];
 
   test.beforeAll(() => {
-    seed = seedActivatablePatient(720000);
+    seed = seedActivatablePatient(720000, { withDiagnosis: false });
     safeSql(`UPDATE patients SET case_number = ${CASE_NUMBER} WHERE id = '${seed.patientId}'`);
     runSQL(`INSERT INTO terminology.icd_releases (release, entity_count, is_current, promoted_at, promoted_by) VALUES ('${RELEASE}', 1, true, now(), 'e2e-048') ON CONFLICT (release) DO UPDATE SET is_current = true, promoted_at = now(), promoted_by = 'e2e-048'`);
     runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) VALUES ('${ICD_URI}', '${RELEASE}', '6E48', '${ICD_TITLE}', 'Synthetic disorder 048', '06', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`);

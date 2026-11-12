@@ -14,7 +14,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { deriveProviderCode } from './deriveProviderCode';
-import { providersWithOfferedContract } from './insuranceContractTermRead';
+import { providersWithContract } from './insuranceContractTermRead';
 
 export type PayerKind = 'OBRA_SOCIAL' | 'PREPAGA' | 'PRIVATE';
 
@@ -253,11 +253,11 @@ export class InsuranceProviderRepository {
   }
 
   /**
-   * Opções da cascata do serviço: só ATIVAS com ≥1 contrato oferecido no país (`providersWithOfferedContract`, §T) MAIS o pagador já
-   * vinculado (`selected`, mesmo inativo/sem oferta) — para o select não perder o valor escolhido. Devolve `{code, name}`, nunca `payerKind`.
+   * Opções da cascata do serviço: só ATIVAS com ≥1 contrato no país (`providersWithContract`; com ou sem termo vigente) MAIS o pagador já
+   * vinculado (`selected`, mesmo inativo/sem contrato) — para o select não perder o valor escolhido. Devolve `{code, name}`, nunca `payerKind`.
    */
-  async listForService(country: string, asOf: string, selected?: string): Promise<ForServiceOption[]> {
-    const offered = await providersWithOfferedContract(this.pool, country, asOf);
+  async listForService(country: string, _asOf: string, selected?: string): Promise<ForServiceOption[]> {
+    const offered = await providersWithContract(this.pool, country);
     const codes = selected !== undefined && !offered.includes(selected) ? [...offered, selected] : offered;
     if (codes.length === 0) return [];
     const r = await this.pool.query<{ code: string; name: string }>(

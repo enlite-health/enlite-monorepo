@@ -222,7 +222,7 @@ async function loginAsAdminMock(page: Page, uid: string, email: string): Promise
   });
 
   // O mock injeta a sessão via `enlite_e2e_mock_auth` (localStorage) ANTES do
-  // primeiro paint (addInitScript) — `/admin/login` já reconheceria a sessão e
+  // primeiro paint (addInitScript) — `/login` já reconheceria a sessão e
   // redirecionaria pra fora do form antes do input existir (medido: timeout
   // esperando `input[type="email"]`, porque a página nunca é a de login).
   // Vai direto pra rota protegida — é exatamente o que `ProtectedRoute` +

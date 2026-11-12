@@ -20,12 +20,13 @@ interface StepHowLongProps {
 const OPTIONS: SubstitutionRequestType[] = ['ONE_DAY', 'DAYS', 'PERMANENT'];
 
 function ShiftChips({ shifts, language }: { shifts: PreviewShift[]; language: string }): JSX.Element {
+  const { t } = useTranslation();
   return (
     <div className="grid grid-cols-3 gap-1.5" data-testid="substitucion-turnos">
       {shifts.map((shift) => (
         <span key={`${shift.date}|${shift.slotId}`} className="flex h-7 items-center justify-center whitespace-nowrap rounded-full bg-[#F1E8FF] px-2 text-[#3B0A8C]" {...NOWRAP}>
           <Text as="span" size="xs" weight="medium" color="inherit">
-            {shiftChipLabel(shift.date, shift.startTime, shift.endTime, language)}
+            {shiftChipLabel(t, shift.date, shift.startTime, shift.endTime, language)}
           </Text>
         </span>
       ))}

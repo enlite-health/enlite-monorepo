@@ -82,12 +82,12 @@ export async function loadStatusOptions(
 
   // Completude lida uma vez, só se algum destino pede algo. Motivo de ON_HOLD e de saída de
   // SUSPENDED NÃO entram: são dado que a tela coleta, não falta no paciente.
-  const { missing } = aceitos.some((o) => blockingCodesForStatusChange(o.status, o.via === 'permissao').length > 0)
+  const { missing } = aceitos.some((o) => blockingCodesForStatusChange(o.status, o.via === 'permissao', current).length > 0)
     ? await loadPatientCompleteness(client, patientId)
     : { missing: [] as PatientCompletenessCode[] };
 
   const options = aceitos.map((o): PatientStatusOption => {
-    const faltando = blockingCodesForStatusChange(o.status, o.via === 'permissao').filter((c) => missing.includes(c));
+    const faltando = blockingCodesForStatusChange(o.status, o.via === 'permissao', current).filter((c) => missing.includes(c));
     return faltando.length > 0 ? { ...o, blockedBy: [...faltando] } : o;
   });
   return { current, changeSource, options };

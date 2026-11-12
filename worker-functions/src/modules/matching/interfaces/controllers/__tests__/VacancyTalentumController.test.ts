@@ -428,3 +428,45 @@ describe('VacancyTalentumController — getTalentumStatus', () => {
     expect(getBody().details).toBe('HTTP 500: boom');
   });
 });
+
+
+describe('VacancyTalentumController — vaga DE_BAJA (spec 084 R2/P7)', () => {
+  const publishSpy = jest.fn();
+  const unpublishSpy = jest.fn();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { PublishVacancyToTalentumUseCase } = require('@modules/integration');
+    (PublishVacancyToTalentumUseCase as jest.Mock).mockImplementation(() => ({ publish: publishSpy, unpublish: unpublishSpy }));
+  });
+
+  it.each([['publishToTalentum', publishSpy], ['unpublishFromTalentum', unpublishSpy]] as const)(
+    '%s em vaga DE_BAJA → 409 com código e es/pt-BR; o use case (que APAGA o projeto no despublicar) nem roda',
+    async (method, spy) => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'DE_BAJA' }] });
+      const { res, getStatus, getBody } = makeMockRes();
+      const req = makeMockReq();
+      req.params = { id: 'jp-1' };
+
+      await new VacancyTalentumController()[method](req as Request, res as Response);
+
+      expect(getStatus()).toBe(409);
+      expect(getBody()).toMatchObject({
+        code: 'VACANCY_DE_BAJA_TALENTUM_REFUSED',
+        messages: { es: expect.any(String), 'pt-BR': expect.any(String) },
+      });
+      expect(spy).not.toHaveBeenCalled();
+    },
+  );
+
+  it('controle: vaga SEARCHING publica normalmente (o 409 não é geral)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'SEARCHING' }] });
+    publishSpy.mockResolvedValueOnce({ ok: true });
+    const { res, getStatus } = makeMockRes();
+    const req = makeMockReq();
+    req.params = { id: 'jp-1' };
+    await new VacancyTalentumController().publishToTalentum(req as Request, res as Response);
+    expect(getStatus()).toBe(200);
+    expect(publishSpy).toHaveBeenCalled();
+  });
+});

@@ -164,11 +164,12 @@ async function installInterceptors(page: Page): Promise<void> {
   // — sem esta 2ª rota o token fake do Firebase vaza pra lá e vira 401 mudo (medido).
   await page.route('**/api/**', backendRouteHandler);
   await page.route('**/v1/me/authz', backendRouteHandler);
+  await page.route('**/v1/me/areas', backendRouteHandler);
 }
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await installInterceptors(page);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').click();
   await page.keyboard.type(MOCK_ADMIN_USER.email);
   await page.locator('input[type="password"]').click();

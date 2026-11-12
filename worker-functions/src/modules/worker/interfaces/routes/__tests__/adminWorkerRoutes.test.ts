@@ -101,7 +101,7 @@ const ROTAS_DO_PRESTADOR = [
   'GET /workers/me/additional-documents',
   'POST /workers/me/additional-documents/upload-url',
   'POST /workers/me/additional-documents',
-  'DELETE /workers/me/additional-documents/:id',
+  'DELETE /workers/me/additional-documents/:docId',
 ];
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado. */

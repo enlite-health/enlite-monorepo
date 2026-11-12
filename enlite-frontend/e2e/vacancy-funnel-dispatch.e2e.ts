@@ -1,13 +1,15 @@
 /**
  * vacancy-funnel-dispatch.e2e.ts
  *
- * Playwright E2E — Botão "Enviar invitaciones" no VacancyFunnelView
+ * Playwright E2E — Botão único "Invitar prestadores" no VacancyFunnelView (089 T030)
+ *
+ * Substitui "Hacer match" e "Enviar invitaciones (N)". Backend mockado (só a entrada da vacante);
+ * o fluxo de envio da página /match é do e2e integration `funil-vacante-invitar-prestadores-089`.
  *
  * Cenários cobertos:
- *   1. Botão disabled quando não há candidatos NOT_SENT (0 pendentes)
- *   2. Botão enabled com label "(3)" quando há 3 candidatos NOT_SENT
- *   3. Clique abre DispatchConfirmModal
- *   4. Confirmar abre InviteProgressModal e dispara o envio
+ *   1. Contador 0: botão visível, sem bolinha e sem a 1ª linha; a 2ª linha fica
+ *   2. Contador 3: bolinha "3" + "3 personas de esta vacante todavía no recibieron el WhatsApp"
+ *   3. Clique navega para /admin/vacancies/:id/match
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -104,16 +106,6 @@ const BASE_COUNTS = {
   ALL: 4,
 };
 
-const WHATSAPP_INVITE_SUCCESS = {
-  success: true,
-  data: {
-    templateSlug: 'ar_vacancy_match_complete',
-    externalId: 'SM999',
-    status: 'queued',
-    to: '+5491100000001',
-  },
-};
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function loginAsAdmin(page: Page): Promise<void> {
@@ -193,7 +185,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
@@ -203,6 +195,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
 async function mockBaseApis(
   page: Page,
   funnelRows: ReturnType<typeof makeRow>[],
+  pendingInVacancyCount = 0,
 ): Promise<void> {
   // 054: o padrão da tela agora é Kanban, mas estes cenários mockam só `funnel-table` (Lista).
   // Fixa a Lista na chave v2 para o cenário mockado continuar coerente.
@@ -272,7 +265,7 @@ async function mockBaseApis(
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { jobPostingId: VACANCY_ID, lastMatchAt: null, totalCandidates: 0, candidates: [] },
+          data: { jobPostingId: VACANCY_ID, lastMatchAt: null, totalCandidates: 0, pendingInVacancyCount, candidates: [] },
         }),
       }),
   );
@@ -280,91 +273,45 @@ async function mockBaseApis(
 
 // ── Testes ────────────────────────────────────────────────────────────────────
 
-test.describe('VacancyFunnelView — Dispatch Invites Button', () => {
+test.describe('VacancyFunnelView — botão único Invitar prestadores (089 T030)', () => {
   test.setTimeout(90_000);
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('D1 — botão disabled quando 0 candidatos NOT_SENT', async ({ page }) => {
+  test('D1 — contador 0: botão visível, sem bolinha e sem a 1ª linha; a 2ª linha fica', async ({ page }) => {
     await loginAsAdmin(page);
-    await mockBaseApis(page, ROWS_ALL_SENT);
+    await mockBaseApis(page, ROWS_ALL_SENT, 0);
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}`);
     await expect(page.locator('text=429').first()).toBeVisible({ timeout: 15_000 });
 
-    const btn = page.getByRole('button', { name: /Enviar invitaciones/i });
-    await expect(btn).toBeVisible();
-    await expect(btn).toBeDisabled();
-
-    await expect(page).toHaveScreenshot('dispatch-button-disabled.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(page.getByRole('button', { name: /Invitar prestadores/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Hacer match|Enviar invitaciones/i })).toHaveCount(0);
+    await expect(page.getByTestId('invite-entry-count')).toHaveCount(0);
+    await expect(page.getByTestId('invite-entry-pending-line')).toHaveCount(0);
+    await expect(page.getByText(/Opcional · También podés buscar prestadores cerca del servicio/)).toBeVisible();
   });
 
-  test('D2 — botão enabled com "(3)" quando há 3 candidatos NOT_SENT', async ({
-    page,
-  }) => {
+  test('D2 — contador 3: bolinha 3 e a 1ª linha', async ({ page }) => {
     await loginAsAdmin(page);
-    await mockBaseApis(page, ROWS_WITH_PENDING);
+    await mockBaseApis(page, ROWS_WITH_PENDING, 3);
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}`);
     await expect(page.locator('text=429').first()).toBeVisible({ timeout: 15_000 });
 
-    const btn = page.getByRole('button', { name: /Enviar invitaciones \(3\)/i });
-    await expect(btn).toBeVisible();
-    await expect(btn).toBeEnabled();
-
-    await expect(page).toHaveScreenshot('dispatch-button-enabled.png', {
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test('D3 — clique abre DispatchConfirmModal', async ({ page }) => {
-    await loginAsAdmin(page);
-    await mockBaseApis(page, ROWS_WITH_PENDING);
-
-    await page.goto(`/admin/vacancies/${VACANCY_ID}`);
-    await expect(page.locator('text=429').first()).toBeVisible({ timeout: 15_000 });
-
-    await page.getByRole('button', { name: /Enviar invitaciones \(3\)/i }).click();
-
-    await expect(
-      page.getByRole('heading', { name: /Confirmar envío/i }),
-    ).toBeVisible({ timeout: 5_000 });
-
-    await expect(page).toHaveScreenshot('dispatch-confirm-modal.png', {
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test('D4 — confirmar abre InviteProgressModal', async ({ page }) => {
-    await loginAsAdmin(page);
-    await mockBaseApis(page, ROWS_WITH_PENDING);
-
-    await page.route('**/api/admin/messaging/whatsapp/vacancy-match', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(WHATSAPP_INVITE_SUCCESS),
-      }),
+    await expect(page.getByTestId('invite-entry-count')).toHaveText('3', { timeout: 10_000 });
+    await expect(page.getByTestId('invite-entry-pending-line')).toHaveText(
+      '3 personas de esta vacante todavía no recibieron el WhatsApp',
     );
+  });
+
+  test('D3 — clique navega para a página de match da vacante', async ({ page }) => {
+    await loginAsAdmin(page);
+    await mockBaseApis(page, ROWS_WITH_PENDING, 3);
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}`);
     await expect(page.locator('text=429').first()).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole('button', { name: /Enviar invitaciones \(3\)/i }).click();
-    await expect(
-      page.getByRole('heading', { name: /Confirmar envío/i }),
-    ).toBeVisible({ timeout: 5_000 });
-
-    await page.getByRole('button', { name: /^Enviar$/ }).click();
-
-    // Título atual do InviteProgressModal é admin.messaging.title ("Enviar invitación")
-    await expect(
-      page.getByRole('heading', { name: /Enviar invitación/i }),
-    ).toBeVisible({ timeout: 5_000 });
-
-    await expect(page).toHaveScreenshot('dispatch-progress-modal.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await page.getByRole('button', { name: /Invitar prestadores/i }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${VACANCY_ID}/match$`), { timeout: 10_000 });
   });
 });

@@ -84,7 +84,7 @@ function mockReq(
   const uid = overrides.uid !== undefined ? overrides.uid : 'firebase-uid-001';
   return {
     body: overrides.body ?? { jobPostingId: JOB_POSTING_ID, channel: 'facebook' },
-    headers: overrides.headers ?? (uid ? { 'x-auth-uid': uid } : {}),
+    headers: overrides.headers ?? {},
     user: uid ? { uid } : undefined,
   };
 }
@@ -228,6 +228,7 @@ describe('WorkerApplicationsController.trackChannel — branches adicionais', ()
       getValue: () => ({ id: WORKER_ID }),
     });
     mockAssertWorkerCanApply.mockResolvedValueOnce(undefined);
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ status: 'SEARCHING' }] }); // spec 084: vaga não está DE_BAJA
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     // FR-16 (spec 067): 3ª query = SELECT do talentum_whatsapp_url (prescreeningUrl) no ramo aprovado.
@@ -246,6 +247,7 @@ describe('WorkerApplicationsController.trackChannel — branches adicionais', ()
       getValue: () => ({ id: WORKER_ID, firstName: 'Ana', lastName: 'Lima' }),
     });
     mockAssertWorkerCanApply.mockResolvedValueOnce(undefined);
+    mockDbQuery.mockResolvedValueOnce({ rows: [{ status: 'SEARCHING' }] }); // spec 084: vaga não está DE_BAJA
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     mockDbQuery.mockResolvedValueOnce({ rows: [] });
     // FR-16 (spec 067): 3ª query = SELECT do talentum_whatsapp_url (prescreeningUrl) no ramo aprovado.

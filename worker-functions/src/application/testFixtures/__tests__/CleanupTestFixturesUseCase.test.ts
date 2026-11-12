@@ -22,6 +22,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 import { CleanupTestFixturesUseCase } from '../CleanupTestFixturesUseCase';
+import { LUZ_PRUEBA_SINTETICA_AUTH_UID } from '../../../modules/agentes/domain/LuzPruebaSintetica';
 
 jest.mock('@shared/logging', () => ({
   logger: { child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
@@ -35,6 +36,7 @@ interface Row {
   worker_id?: string | null;
   job_posting_id?: string | null;
   is_test?: boolean;
+  auth_uid?: string;
 }
 
 interface FakeDb {
@@ -98,7 +100,7 @@ function makeFixture(): FakeDb {
 
 /** Interpreta `DELETE FROM <table> WHERE ...` contra a fixture mutável. */
 function makeFakeClient(db: FakeDb): PoolClient {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, params?: unknown[]) => {
     const trimmed = sql.trim();
 
     if (trimmed === 'BEGIN' || trimmed === 'COMMIT' || trimmed === 'ROLLBACK') {
@@ -111,7 +113,9 @@ function makeFakeClient(db: FakeDb): PoolClient {
 
     if (table === 'workers') {
       const before = db.workers.length;
-      db.workers = db.workers.filter(w => !w.is_test);
+      // Honra `AND auth_uid <> $1` quando o SQL o traz (sem o predicado, apaga todo is_test).
+      const poupa = trimmed.includes('auth_uid <> $1') ? String(params?.[0]) : null;
+      db.workers = db.workers.filter(w => !w.is_test || (poupa !== null && w.auth_uid === poupa));
       return { rows: [], rowCount: before - db.workers.length };
     }
     if (table === 'job_postings') {
@@ -176,6 +180,17 @@ describe('CleanupTestFixturesUseCase', () => {
     expect(db.messaging_outbox.map(r => r.id)).toEqual(['mo-2']);
     expect(db.worker_documents.map(r => r.id)).toEqual(['doc-1']);
     expect(db.worker_service_areas.map(r => r.id)).toEqual(['sa-2']);
+  });
+
+  it('spec 086: a prestadora sintética (is_test=true, auth_uid fixo) PERMANECE; o outro is_test some; os filhos da sintética somem', async () => {
+    const db = makeFixture();
+    db.workers.push({ id: 'w-sint', is_test: true, auth_uid: LUZ_PRUEBA_SINTETICA_AUTH_UID });
+    db.messaging_outbox.push({ id: 'mo-sint', worker_id: 'w-sint', job_posting_id: null });
+    const result = await new CleanupTestFixturesUseCase(makePool(makeFakeClient(db))).execute();
+
+    expect(result.deleted.workers).toBe(1); // só w-test; a sintética fica
+    expect(db.workers.map(w => w.id).sort()).toEqual(['w-real', 'w-sint']);
+    expect(db.messaging_outbox.map(r => r.id)).not.toContain('mo-sint'); // rastro de teste da sintética some
   });
 
   it('roda dentro de uma transação (BEGIN...COMMIT) e libera o client', async () => {

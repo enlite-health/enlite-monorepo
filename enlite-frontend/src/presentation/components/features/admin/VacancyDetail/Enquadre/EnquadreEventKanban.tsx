@@ -9,7 +9,7 @@
  * Evento `closed`/`cancelled`: nada se arrasta, não há menu nem "Rechazar".
  * O botão de notas do card abre o `ContactNotesModal` do funil da vaga (mesmo modal, mesma API de notas).
  */
-import { useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
@@ -40,6 +40,8 @@ interface Props {
   onBack: () => void;
   /** Relógio injetável (teste e harness). */
   now?: () => Date;
+  /** Chamado 1× quando o evento terminou de carregar (ou falhou): o layout já tem a altura final do kanban. */
+  onSettled?: () => void;
 }
 
 /** Props de exibição do card — as MESMAS na coluna e no overlay de arrasto. Sem telefone: o convocado não o expõe. */
@@ -60,13 +62,17 @@ function cardProps(p: EnquadreParticipant, column: string) {
   };
 }
 
-export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => new Date() }: Props): JSX.Element {
+export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => new Date(), onSettled }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
   const { event, status, reload } = useEnquadreEvent(vacancyId, eventId);
   const timeZone = timeZoneForCountry(event?.country ?? null);
   // Marcar o resultado (arrasto, "Mover a…", "Rechazar") é `enquadre_result:update`; sem a célula a OFERTA some (molde KanbanBoard).
   const resultGate = useActionGate('enquadre_result', 'update');
+  const settled = !(status === 'loading' && !event);
+  const onSettledRef = useRef(onSettled);
+  onSettledRef.current = onSettled;
+  useEffect(() => { if (settled) onSettledRef.current?.(); }, [settled, eventId]);
 
   const [pendingReject, setPendingReject] = useState<string | null>(null);
   const [pendingLeave, setPendingLeave] = useState<{ participantId: string; column: EnquadreColumnId } | null>(null);

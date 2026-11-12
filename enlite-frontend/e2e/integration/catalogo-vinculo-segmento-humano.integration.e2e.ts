@@ -87,7 +87,7 @@ test.describe('spec 030 — vínculo de segmento no catálogo de objetivos: um H
   test.beforeAll(() => {
     admin = semearStaff('vinc-adm', [...COM_SEGMENTOS, ...CELULAS_PTI]);
     semCelula = semearStaff('vinc-sem', COM_SEGMENTOS.filter(([r]) => r !== 'catalog_therapeutic_segments'));
-    seed = seedActivatablePatient(740000); // faixa própria
+    seed = seedActivatablePatient(740000, { withDiagnosis: false }); // faixa própria
     runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-030', 'e2e-030')`);
     objFeliz = semearObjetivo(OBJ_FELIZ, null);
     segDesligado = runSQL(`INSERT INTO therapeutic_segments (label, sort_order, active, deactivated_at, created_by, updated_by) VALUES ('${SEG_DESLIGADO}', 90000, false, now(), 'e2e-030', 'e2e-030') RETURNING id`).split('\n')[0].trim();

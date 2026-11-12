@@ -120,9 +120,9 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     const mode = opts.link ?? 'linked';
     if (mode !== 'none') {
       const ins = await admin.query(
-        `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [host, uid, mode, clock, mode === 'linked' ? 'linked' : null],
+        `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [host, uid, mode, clock, mode === 'linked' ? 'linked' : null, new Date(clock.getTime() - 24 * HOUR)], /* o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account) */
       );
       // `broken` também guarda o token (o teste diário não o apaga): só o ESTADO do vínculo pode impedir o uso dele.
       await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [ins.rows[0].id, b64(token)]);
@@ -1004,10 +1004,13 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     expect(mcp.transcriptCalls).toHaveLength(0);
     expect(logLines('admission.import_blocked').filter((l) => l.appointmentId === quebrado.id && l.reason === 'no_link')).toHaveLength(1);
 
-    // a 2ª passada continua bloqueada, sem evento novo (1 evento por transição) mas com o alarme no log
+    // a 2ª passada continua bloqueada, sem evento novo e SEM log novo (spec 083: o alarme sai na transição, não a cada rodada), 0 MCP, e a fila não o relista
     expect(await service.importOne(quebrado.id, clock)).toBe('blocked');
     expect((await events(quebrado.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(1);
-    expect(logLines('admission.import_blocked').filter((l) => l.appointmentId === quebrado.id)).toHaveLength(2);
+    expect(logLines('admission.import_blocked').filter((l) => l.appointmentId === quebrado.id)).toHaveLength(1);
+    expect(mcp.searchCalls).toHaveLength(0);
+    const repo = (service as unknown as { deps: { repo: { listDueIds(now: Date): Promise<string[]> } } }).deps.repo;
+    expect(await repo.listDueIds(clock)).not.toContain(quebrado.id);
 
     const vivo = await appt();
     mcp.searchError = new TactiqUnauthorizedError();

@@ -16,6 +16,11 @@ export interface PermissionCell {
   description?: string | null;
   ownerService: string;
   deprecatedAt?: string | null;
+  /**
+   * Spec 078 (decisão do Gabriel, 30/10): célula que só pode existir no Acesso Master. O painel
+   * a esconde dos demais grupos e a mostra, somente leitura, no Acesso Master.
+   */
+  somenteAcessoMaster?: boolean;
 }
 
 export interface CatalogCategory {

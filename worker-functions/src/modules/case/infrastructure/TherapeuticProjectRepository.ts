@@ -86,6 +86,7 @@ import {
   isServiceOfOtherPatient, isContactInactiveViolation, isForeignKeyViolation, ServiceNotOfPatientError, SourceVersionNotFoundError,
   VersionNotCurrentError, MacroFieldsLockedError, PatientNotFoundForProjectError, ContactInactiveError, ContactNotFoundError, WaiveContactForbiddenError,
 } from './therapeuticProjectErrors';
+import { utcCivilDayOf } from '@shared/locale/civilClock';
 
 const CONTACT_COLUMN: Record<'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEAM', string> = {
   RESPONSIBLE: 'responsible_id',
@@ -95,7 +96,7 @@ const CONTACT_COLUMN: Record<'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEA
 };
 
 // `date` chega como Date pelo driver quando não há tipo customizado; a API fala ISO yyyy-mm-dd.
-const isoDate = (v: unknown): string => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
+const isoDate = (v: unknown): string => (v instanceof Date ? utcCivilDayOf(v) : String(v));
 const isoTs = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v));
 
 // Só o NOME do autor — nunca o e-mail como fallback (o e-mail do staff é dado pessoal do colaborador e

@@ -78,7 +78,7 @@ const FOREIGN_PATH = `workers/${WORKER_B_ID}/additional/${DOC_UUID}.pdf`;
 
 function mockReqRes(overrides: Record<string, unknown> = {}): [Request, Response] {
   const req = {
-    params: { id: 'doc-1' },
+    params: { docId: 'doc-1' },
     headers: {},
     body: { label: 'Certificado extra', filePath: OWNED_PATH, contentType: 'application/pdf' },
     user: { uid: AUTH_UID },

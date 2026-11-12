@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { containsLikelyPersonalData } from '@modules/identity/permissions';
 import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES } from '../../domain/TherapeuticProject';
 import type { AdminCatalogKind } from '../../domain/serviceExitReason';
+import { SHIFT_TEMPLATE_MAX_ITEMS } from '../../domain/serviceShiftTemplate';
 import { CONTACT_STATUS_VALUES } from '../../domain/TherapeuticContactStatus';
 
 /** Teto de contatos/equipe por versão — espelha o `.max(20)` do contrato (lex #7, migration 429). */
@@ -215,3 +216,30 @@ export function createCatalogItemSchemaFor(kind: AdminCatalogKind): typeof creat
 export function updateCatalogItemSchemaFor(kind: AdminCatalogKind): typeof updateCatalogItemSchema | typeof updateCatalogItemWithSegmentSchema {
   return kindHasSegment(kind) ? updateCatalogItemWithSegmentSchema : updateCatalogItemSchema;
 }
+
+// ── Guardias predefinidas (migration 550, spec 074) ──────────────────────────
+/** Turno da guardia: início 'HH:MM' + duração em minutos (1..1440). A sobreposição é barrada no banco (422). */
+export const shiftTemplateItemSchema = z
+  .object({
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    durationMinutes: z.number().int().min(1).max(1440),
+  })
+  .strict();
+
+export const createShiftTemplateSchema = z
+  .object({
+    label: catalogLabel,
+    items: z.array(shiftTemplateItemSchema).min(1).max(SHIFT_TEMPLATE_MAX_ITEMS),
+  })
+  .strict();
+
+export const updateShiftTemplateSchema = z
+  .object({
+    label: catalogLabel.optional(),
+    active: z.boolean().optional(),
+    items: z.array(shiftTemplateItemSchema).min(1).max(SHIFT_TEMPLATE_MAX_ITEMS).optional(),
+  })
+  .strict()
+  .refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
+export type CreateShiftTemplateBody = z.infer<typeof createShiftTemplateSchema>;
+export type UpdateShiftTemplateBody = z.infer<typeof updateShiftTemplateSchema>;

@@ -160,7 +160,7 @@ async function installAuthInterceptors(page: Page, u: MockUser): Promise<void> {
 /** Login HUMANO: clica no campo, digita, clica no botão (`e2e-humano-nao-e-fill`). */
 async function loginAs(page: Page, u: MockUser): Promise<void> {
   await installAuthInterceptors(page, u);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   const email = page.locator('input[type="email"]');
   await email.click();
   await expect(email).toBeFocused();

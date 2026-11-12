@@ -16,6 +16,7 @@ export interface FakeVacancy {
   talentum_slug: string | null;
   talentum_published_at: string | null;
   talentum_description: string | null;
+  talentum_prescreening_id: string | null;
   vacancy_number: number | null;
   case_number: number | null;
   deleted_at: string | null;
@@ -45,6 +46,7 @@ export class FakeJobPostingsDb {
       talentum_slug: null,
       talentum_published_at: null,
       talentum_description: null,
+      talentum_prescreening_id: null,
       vacancy_number: null,
       case_number: null,
       deleted_at: null,
@@ -130,7 +132,7 @@ export class FakeJobPostingsDb {
         return { rows: [{ id: v.id }] };
       }
       if (sql.includes('UPDATE job_postings') && sql.includes('SET talentum_project_id')) {
-        const [pid, pub, url, slug, at, desc, id] = params as Array<string | null>;
+        const [pid, pub, url, slug, at, desc, id, psc] = params as Array<string | null>;
         const v = this.vacancies.find((x) => x.id === id)!;
         // mesma semântica do SQL: COALESCE nos demais campos (NULL mantém o gravado)
         v.talentum_project_id = pid;
@@ -139,7 +141,15 @@ export class FakeJobPostingsDb {
         v.talentum_slug = slug ?? v.talentum_slug;
         v.talentum_published_at = at ?? v.talentum_published_at;
         v.talentum_description = desc ?? v.talentum_description;
-        return { rows: [] };
+        // mesma semântica do guarda: `_id` já em OUTRA vaga viva → não grava (NULL no CASE → COALESCE mantém)
+        const colide = psc != null && this.vacancies.some((x) => x.id !== id && x.deleted_at == null && x.talentum_prescreening_id === psc);
+        v.talentum_prescreening_id = (colide ? null : psc) ?? v.talentum_prescreening_id;
+        return { rows: [{ talentum_prescreening_id: v.talentum_prescreening_id }] };
+      }
+      if (sql.includes('FROM job_postings WHERE talentum_prescreening_id')) {
+        const [psc, self] = params as string[];
+        const other = this.vacancies.find((x) => x.id !== self && x.deleted_at == null && x.talentum_prescreening_id === psc);
+        return { rows: other ? [{ id: other.id }] : [] };
       }
       return { rows: [] };
     },

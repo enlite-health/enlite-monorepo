@@ -21,12 +21,25 @@ import type { WorkerVacanciesNearbyCapability } from './capabilities/WorkerVacan
 import type { WorkerAvailabilityGetCapability } from './capabilities/WorkerAvailabilityGetCapability';
 import type { WorkerApplicationRegisterCapability } from './capabilities/WorkerApplicationRegisterCapability';
 import type { HandoverNotifyCapability } from './capabilities/HandoverNotifyCapability';
+import type { WorkerByPhoneCapability } from './capabilities/WorkerByPhoneCapability';
 import type { WorkerApplicationsListCapability } from './capabilities/WorkerApplicationsListCapability';
+import type { AgentesVeredictoRegistrarCapability } from './capabilities/AgentesVeredictoRegistrarCapability';
+import type { AgentesReporteRegistrarCapability } from './capabilities/AgentesReporteRegistrarCapability';
+import type { AgentesReporteLerCapability } from './capabilities/AgentesReporteLerCapability';
+import type { AgentesPlacarLerCapability } from './capabilities/AgentesPlacarLerCapability';
+import type { AgentesIndicadoresLerCapability } from './capabilities/AgentesIndicadoresLerCapability';
+import type { AgentesPedidoDepositarCapability } from './capabilities/AgentesPedidoDepositarCapability';
+import type { AgentesMedicaoRegistrarCapability } from './capabilities/AgentesMedicaoRegistrarCapability';
+import type { AgentesAprovacaoVerificarCapability } from './capabilities/AgentesAprovacaoVerificarCapability';
+import type { AgentesAvisoReenviarCapability } from './capabilities/AgentesAvisoReenviarCapability';
+import { AGENTES_WRITE_CAPABILITIES } from '../domain/AgentesPrincipals';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import type { ServicePrincipal } from '../domain/ServicePrincipal';
 import { RateLimitExceededError } from '../domain/McpErrors';
 import { PatientChatMapCapability } from './capabilities/PatientChatMapCapability';
 import { WriteRateLimiter } from './WriteRateLimiter';
+import type { AgentCallGate, AgentCallInput } from './AgentCallGate';
+import { withSystemDbContext } from '@shared/database/requestDbSession';
 
 interface IAuditEmitter {
   emit(event: McpAuditEvent): void;
@@ -36,7 +49,8 @@ interface CapabilityEntry {
   name: string;
   description: string;
   inputShape: Record<string, unknown>;
-  execute: (args: unknown) => Promise<unknown>;
+  /** `principalName` = o principal da request (as capabilities `agentes.*` carimbam o ator com ele). */
+  execute: (args: unknown, principalName?: string) => Promise<unknown>;
 }
 
 interface RegistryDeps {
@@ -65,14 +79,31 @@ interface RegistryDeps {
   applicationsList: WorkerApplicationsListCapability;
   /** Mapa paciente <-> ClickUp <-> Periskope em massa (tasks 86ajy0859/86ajy085a). */
   patientChatMap: PatientChatMapCapability;
+  /** Schema `agentes` (spec 078, M3a-2): placar, reportes e fila de pedidos. Só registradas quando o repositório é injetado. */
+  agentesVeredictoRegistrar?: AgentesVeredictoRegistrarCapability;
+  agentesReporteRegistrar?: AgentesReporteRegistrarCapability;
+  agentesReporteLer?: AgentesReporteLerCapability;
+  agentesPlacarLer?: AgentesPlacarLerCapability;
+  agentesIndicadoresLer?: AgentesIndicadoresLerCapability;
+  agentesPedidoDepositar?: AgentesPedidoDepositarCapability;
+  agentesMedicaoRegistrar?: AgentesMedicaoRegistrarCapability;
+  agentesAvisoReenviar?: AgentesAvisoReenviarCapability;
+  agentesAprovacaoVerificar?: AgentesAprovacaoVerificarCapability;
+  /** Capability `worker.byPhone` (spec 078, M2): só a porta do agente a enxerga (allowlist do principal). */
+  byPhone?: WorkerByPhoneCapability;
   /** Só registrada quando o pool read-only (MCP_DB_RO_*) está configurado. */
   dbQuery?: DbQueryReadonlyCapability;
   auditor: IAuditEmitter;
   writeRateLimiter?: WriteRateLimiter;
+  /** Porta do agente (spec 078, M2): célula -> limitador no banco -> trilha. Sem ele, uma chamada de agente é recusada (fail-closed). */
+  agentGate?: AgentCallGate;
 }
 
+/** Chamada do agente da request corrente (uid + headers de trilha), ou `undefined` para os principais legados. */
+export type AgentCallSource = () => Omit<AgentCallInput, 'capability'> | undefined;
+
 /** Capabilities that mutate state and require rate limiting. */
-const WRITE_CAPABILITY_NAMES = new Set([
+export const WRITE_CAPABILITY_NAMES = new Set([
   'worker.profile.update',
   'worker.profile.proposeUpdate',
   'worker.profile.confirmUpdate',
@@ -83,6 +114,7 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.availability.set',
   'worker.application.register',
   'handover.notify',
+  ...AGENTES_WRITE_CAPABILITIES,
 ]);
 
 export class CapabilityRegistry {
@@ -100,7 +132,7 @@ export class CapabilityRegistry {
    * Each tool wrapper re-validates principal.isCapabilityAllowed before delegating.
    * Write capabilities are additionally guarded by the WriteRateLimiter.
    */
-  registerAll(server: McpServer, getPrincipal: () => ServicePrincipal | undefined): void {
+  registerAll(server: McpServer, getPrincipal: () => ServicePrincipal | undefined, getAgentCall?: AgentCallSource): void {
     const principal = getPrincipal();
     const entries = this.buildEntries().filter(
       (entry) => principal?.isCapabilityAllowed(entry.name) === true,
@@ -111,7 +143,7 @@ export class CapabilityRegistry {
       const exposedName = principal?.sanitizedToolNames
         ? entry.name.replace(/\./g, '_')
         : entry.name;
-      this.registerOne(server, entry, exposedName, getPrincipal);
+      this.registerOne(server, entry, exposedName, getPrincipal, getAgentCall);
     }
   }
 
@@ -141,7 +173,39 @@ export class CapabilityRegistry {
       applicationsList,
       patientChatMap,
       dbQuery,
+      byPhone,
+      agentesVeredictoRegistrar,
+      agentesReporteRegistrar,
+      agentesReporteLer,
+      agentesPlacarLer,
+      agentesIndicadoresLer,
+      agentesPedidoDepositar,
+      agentesMedicaoRegistrar,
+      agentesAvisoReenviar,
+      agentesAprovacaoVerificar,
     } = this.deps;
+
+    const agentes = [
+      agentesVeredictoRegistrar,
+      agentesReporteRegistrar,
+      agentesReporteLer,
+      agentesPlacarLer,
+      agentesIndicadoresLer,
+      agentesPedidoDepositar,
+      agentesMedicaoRegistrar,
+      agentesAvisoReenviar,
+      agentesAprovacaoVerificar,
+    ]
+      .filter((cap): cap is NonNullable<typeof cap> => cap !== undefined)
+      .map((cap) => {
+        const meta = cap.constructor as unknown as { NAME: string; DESCRIPTION: string; INPUT_SHAPE: Record<string, unknown> };
+        return {
+          name: meta.NAME,
+          description: meta.DESCRIPTION,
+          inputShape: meta.INPUT_SHAPE,
+          execute: (args: unknown, principalName?: string) => cap.execute(args, principalName),
+        };
+      });
 
     return [
       {
@@ -401,6 +465,16 @@ export class CapabilityRegistry {
             .INPUT_SHAPE ?? {},
         execute: (args) => patientChatMap.execute(args),
       },
+      ...(byPhone !== undefined
+        ? [
+            {
+              name: (byPhone.constructor as unknown as { NAME: string }).NAME,
+              description: (byPhone.constructor as unknown as { DESCRIPTION: string }).DESCRIPTION,
+              inputShape: (byPhone.constructor as unknown as { INPUT_SHAPE: Record<string, unknown> }).INPUT_SHAPE,
+              execute: (args: unknown, principalName?: string) => byPhone.execute(args, principalName),
+            },
+          ]
+        : []),
       ...(dbQuery !== undefined
         ? [
             {
@@ -415,6 +489,7 @@ export class CapabilityRegistry {
             },
           ]
         : []),
+      ...agentes,
     ];
   }
 
@@ -423,6 +498,7 @@ export class CapabilityRegistry {
     entry: CapabilityEntry,
     exposedName: string,
     getPrincipal: () => ServicePrincipal | undefined,
+    getAgentCall?: AgentCallSource,
   ): void {
     const { auditor } = this.deps;
     const rateLimiter = this.writeRateLimiter;
@@ -449,18 +525,49 @@ export class CapabilityRegistry {
             );
           }
 
-          // Rate limit guard for write capabilities
-          if (WRITE_CAPABILITY_NAMES.has(entry.name)) {
-            const workerId =
-              extractWorkerId(args) ?? 'unknown';
-            const rlKey = `${principal.name}:${workerId}:${entry.name}`;
-            const rlResult = rateLimiter.consume(rlKey);
-            if (!rlResult.allowed) {
-              throw new RateLimitExceededError(entry.name, rlResult.retryAfterMs);
+          const agentCall = getAgentCall?.();
+          let result: unknown;
+          if (agentCall !== undefined) {
+            // Porta do agente: o `AgentCallGate` (célula -> limitador no banco -> trilha) substitui o balde em memória.
+            const gate = this.deps.agentGate;
+            if (!gate) throw new Error('agent gate not configured');
+            const gated = await gate.run(
+              { ...agentCall, capability: entry.name, resourceId: extractWorkerId(args) ?? agentCall.resourceId ?? null },
+              // Classe (b) (runtime do operador): exceção NOMEADA, segue em contexto de SISTEMA pelo principal; a (a) roda como o ator.
+              (decision) =>
+                decision.exception
+                  ? withSystemDbContext('mcp:enlite-worker-mcp', () => entry.execute(args, principal.name))
+                  : entry.execute(args, principal.name),
+            );
+            if (!gated.allowed) {
+              auditor.emit({
+                timestamp: new Date().toISOString(),
+                principal: principal.name,
+                onBehalfOfWorkerId: extractWorkerId(args),
+                capability: entry.name,
+                argsRedacted: toRecord(args),
+                outcome: 'error',
+                errorCode: 'AGENT_REFUSED',
+                latencyMs: Date.now() - start,
+              });
+              return gated.refusal;
             }
+            result = gated.value;
+          } else {
+            // Rate limit guard for write capabilities
+            if (WRITE_CAPABILITY_NAMES.has(entry.name)) {
+              // Sem `workerId` (capabilities `agentes.*`, `handover.notify`) o balde é por principal+capability.
+              const workerId = extractWorkerId(args);
+              const rlKey = workerId
+                ? `${principal.name}:${workerId}:${entry.name}`
+                : `${principal.name}:${entry.name}`;
+              const rlResult = rateLimiter.consume(rlKey);
+              if (!rlResult.allowed) {
+                throw new RateLimitExceededError(entry.name, rlResult.retryAfterMs);
+              }
+            }
+            result = await entry.execute(args, principal.name);
           }
-
-          const result = await entry.execute(args);
           const workerId = extractWorkerId(args);
           auditor.emit({
             timestamp: new Date().toISOString(),

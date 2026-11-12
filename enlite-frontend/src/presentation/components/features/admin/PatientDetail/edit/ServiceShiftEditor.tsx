@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, Plus, X } from 'lucide-react';
-import { TimeSelect } from '@presentation/components/atoms/TimeSelect/TimeSelect';
 import { Text } from '@presentation/components/atoms/Text';
-import { copyShiftsToDays, shiftMinutes, type ServiceShiftFormValue } from '@domain/scheduleHours';
+import { copyShiftsToDays, type ServiceShiftFormValue } from '@domain/scheduleHours';
+
+import { ShiftTimeRow } from './ShiftTimeRow';
+import { ApplyShiftTemplate, DayChips } from './ApplyShiftTemplate';
+import { NEW_SHIFT, isEqualWithoutAllDay, minutesOf, DAY_KEYS, chip } from './shiftRowValues';
 
 export type { ServiceShiftFormValue };
 
@@ -16,17 +19,6 @@ interface Props {
   onValidityChange?: (valid: boolean) => void;
   disabled?: boolean;
 }
-
-const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-const NEW_SHIFT = { startTime: '09:00', endTime: '17:00' };
-
-const chip = (active: boolean): string =>
-  `px-2 py-0.5 rounded-pill border text-xs transition-colors disabled:opacity-50 ${
-    active ? 'bg-primary text-white border-primary' : 'border-gray-600 text-gray-800 hover:border-primary'
-  }`;
-
-const isEqualWithoutAllDay = (sh: ServiceShiftFormValue): boolean => !sh.allDay && sh.startTime === sh.endTime;
-const minutesOf = (sh: ServiceShiftFormValue): number | null => (sh.allDay ? 1440 : isEqualWithoutAllDay(sh) ? null : shiftMinutes(sh.startTime, sh.endTime));
 
 /**
  * Editor de turnos do serviço contratado (spec 056, plan §7): por dia, N turnos com Inicio / Fin /
@@ -64,6 +56,7 @@ export function ServiceShiftEditor({ index, value, onChange, onValidityChange, d
 
   return (
     <div className="flex flex-col" data-testid={`svc-shift-editor-${index}`}>
+      <ApplyShiftTemplate index={index} value={value} disabled={disabled} onApply={({ next, conflictDays: conflicts }) => { onChange(next); setConflictDays(conflicts); }} />
       {DAY_KEYS.map((dayKey, day) => (
         <div key={dayKey} className="flex flex-col gap-1 py-1.5 border-b border-gray-600 last:border-b-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -73,25 +66,9 @@ export function ServiceShiftEditor({ index, value, onChange, onValidityChange, d
             <div className="flex flex-col gap-1 flex-1 min-w-0">
               {byDay[day].map((sh, i) => {
                 const id = `${index}-${day}-${i}`;
-                const minutes = minutesOf(sh);
-                const nextDay = !sh.allDay && minutes !== null && sh.endTime < sh.startTime;
                 return (
                   <div key={i} className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-input font-lexend text-white text-sm bg-primary">
-                      <Text as="span" size="xs" color="white">{ts('start')}</Text>
-                      <TimeSelect value={sh.startTime} onChange={(e) => patch(sh, { startTime: e.target.value, ...(sh.allDay ? { endTime: e.target.value } : {}) })} disabled={disabled} step={5} data-testid={`svc-shift-start-${id}`} className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer" />
-                      <Text as="span" size="xs" color="white">{ts('end')}</Text>
-                      <TimeSelect value={sh.endTime} onChange={(e) => patch(sh, { endTime: e.target.value })} disabled={disabled || sh.allDay} step={5} data-testid={`svc-shift-end-${id}`} className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer" />
-                    </div>
-                    <label className="flex items-center gap-1 text-sm">
-                      <input type="checkbox" checked={sh.allDay} disabled={disabled} data-testid={`svc-shift-allday-${id}`} onChange={(e) => patch(sh, { allDay: e.target.checked, ...(e.target.checked ? { endTime: sh.startTime } : {}) })} />
-                      {ts('allDay')}
-                    </label>
-                    {minutes !== null && (
-                      <Text as="span" size="sm" color="secondary" data-testid={`svc-shift-duration-${id}`}>
-                        {ts('hours', { hours: Number((minutes / 60).toFixed(2)) })}{nextDay ? ` ${ts('nextDay')}` : ''}
-                      </Text>
-                    )}
+                    <ShiftTimeRow value={sh} onChange={(change) => patch(sh, change)} disabled={disabled} testIdSuffix={id} />
                     <button type="button" onClick={() => onChange(value.filter((x) => x !== sh))} disabled={disabled} aria-label={ts('remove')} data-testid={`svc-shift-remove-${id}`} className="p-1 text-primary hover:text-red-500 transition-colors disabled:opacity-50">
                       <X className="w-3.5 h-3.5" strokeWidth={2.5} />
                     </button>
@@ -119,13 +96,7 @@ export function ServiceShiftEditor({ index, value, onChange, onValidityChange, d
           )}
           {copyFrom === day && (
             <div className="flex flex-wrap items-center gap-1.5" data-testid={`svc-shift-copy-panel-${index}-${day}`}>
-              {DAY_KEYS.map((k, i) =>
-                i === day ? null : (
-                  <button key={k} type="button" aria-pressed={targets.includes(i)} onClick={() => toggleTarget(i)} data-testid={`svc-shift-copy-target-${index}-${k}`} className={chip(targets.includes(i))}>
-                    {t(`workerRegistration.availability.${k}Short`)}
-                  </button>
-                ),
-              )}
+              <DayChips exclude={day} selected={targets} onToggle={toggleTarget} testId={(_d, k) => `svc-shift-copy-target-${index}-${k}`} />
               <button type="button" onClick={() => setTargets([1, 2, 3, 4, 5].filter((d) => d !== day))} data-testid={`svc-shift-copy-weekdays-${index}`} className={chip(false)}>
                 {t('workerRegistration.availability.copyWeekdays')}
               </button>

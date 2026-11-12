@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -46,9 +47,7 @@ export class WorkerApplicationsController {
   }
 
   private getAuthUid(req: Request): string | null {
-    return (req as Request & { user?: { uid: string } }).user?.uid
-      ?? (req.headers['x-auth-uid'] as string | undefined)
-      ?? null;
+    return selfUid(req);
   }
 
   private async resolveWorker(authUid: string): Promise<{
@@ -107,6 +106,12 @@ export class WorkerApplicationsController {
         workerName: worker.name,
         workerPhone: worker.phone,
       });
+
+      if (!applyResult.ok && applyResult.code === 'VACANCY_DE_BAJA') {
+        // Spec 084 (P4/R6): vaga dada de baja só se consulta — não é problema de cadastro do prestador.
+        res.status(409).json({ success: false, error: 'vacancy_de_baja', code: applyResult.code, reason: applyResult.reason });
+        return;
+      }
 
       if (!applyResult.ok) {
         res.status(applyResult.httpStatus).json({

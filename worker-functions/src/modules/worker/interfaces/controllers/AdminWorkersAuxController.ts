@@ -87,7 +87,7 @@ export class AdminWorkersAuxController {
                p.first_name AS patient_first_name, p.last_name AS patient_last_name
         FROM job_postings jp
         LEFT JOIN patients p ON jp.patient_id = p.id
-        WHERE jp.deleted_at IS NULL AND jp.status != 'CLOSED'
+        WHERE jp.deleted_at IS NULL AND jp.status NOT IN ('CLOSED', 'DE_BAJA')
         ORDER BY jp.case_number DESC NULLS LAST, jp.vacancy_number DESC
       `);
 

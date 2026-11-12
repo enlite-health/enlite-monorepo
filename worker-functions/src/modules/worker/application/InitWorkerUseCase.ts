@@ -5,28 +5,8 @@ import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
+import { isImportedWorker } from './isClaimableWorker';
 import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
-
-/**
- * Detecta se um worker foi importado de planilha ou script (authUid fake).
- * Imported workers têm authUid com os prefixes abaixo:
- *   - anacareimport_       — Anacare import
- *   - candidatoimport_     — importação genérica de candidatos
- *   - pretalnimport_       — Pretaln import
- *   - base1import_         — Planilla Operativa importer
- *   - clickup_encuadre_    — scripts/import-encuadres-from-clickup.ts
- */
-function isImportedWorker(authUid: string | null | undefined): boolean {
-  if (!authUid) return false;
-  const importPrefixes = [
-    'anacareimport_',
-    'candidatoimport_',
-    'pretalnimport_',
-    'base1import_',
-    'clickup_encuadre_',
-  ];
-  return importPrefixes.some(prefix => authUid.startsWith(prefix));
-}
 
 export class InitWorkerUseCase {
   constructor(

@@ -94,13 +94,13 @@ describe('getMatchResults', () => {
     esperaSqlSemDadoClinico(mockQuery.mock.calls);
   });
 
-  it('limit é limitado a 200 e offset é lido da query', async () => {
+  it('limit é limitado a 500 (emenda 06/11 da spec 089) e offset é lido da query', async () => {
     await new VacancyMatchController().getMatchResults(
       makeReq({ query: { limit: '9999', offset: '40' } }), makeRes(),
     );
 
     const params = mockQuery.mock.calls[1][1] as unknown[];
-    expect(params).toContain(200);
+    expect(params).toContain(500);
     expect(params).toContain(40);
   });
 

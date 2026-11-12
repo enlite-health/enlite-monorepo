@@ -16,6 +16,9 @@ import {
   type TherapeuticCatalogItem,
   type AdminCatalogKind,
   catalogHasDescription,
+  SERVICE_SHIFT_TEMPLATE_KIND,
+  type ShiftTemplate,
+  type ShiftTemplateItem,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Label } from '@presentation/components/atoms/Label';
@@ -23,6 +26,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
+import { ShiftTemplateItemsField } from './ShiftTemplateItemsField';
 import { segmentSelectOptions } from './catalogSegment';
 
 export interface CatalogItemFormData {
@@ -34,11 +38,13 @@ export interface CatalogItemFormData {
   description?: string | null;
   /** Só quando o campo existe E mudou; `null` limpa o vínculo (spec 030). */
   segmentId?: string | null;
+  /** Só guardia predefinida (spec 074): os turnos `{ startTime, durationMinutes }`. */
+  items?: ShiftTemplateItem[];
 }
 
 interface Props {
-  kind: AdminCatalogKind;
-  item: TherapeuticCatalogItem | null;
+  kind: AdminCatalogKind | typeof SERVICE_SHIFT_TEMPLATE_KIND;
+  item: TherapeuticCatalogItem | ShiftTemplate | null;
   /** Segmentos (inclui inativos) — `null`/ausente = sem célula de segmentos ou catálogo sem vínculo: o campo some. */
   segments?: TherapeuticCatalogItem[] | null;
   onSave: (data: CatalogItemFormData) => Promise<void>;
@@ -50,13 +56,17 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
   const { t } = useTranslation();
   const tr = (k: string, o?: Record<string, unknown>) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
   const isEdit = item !== null;
+  const isTemplate = kind === SERVICE_SHIFT_TEMPLATE_KIND;
+  const catalogItem = isTemplate ? null : (item as TherapeuticCatalogItem | null);
+  const [items, setItems] = useState<ShiftTemplateItem[]>(isTemplate && item !== null ? (item as ShiftTemplate).items : []);
+  const [itemsValid, setItemsValid] = useState(true);
   // Spec 061: `segments` segue como era (rótulo 200 + Ordem); objetivo/atividade ganham título 150 + descrição, sem Ordem.
-  const hasDescription = catalogHasDescription(kind);
+  const hasDescription = !isTemplate && catalogHasDescription(kind);
   const labelMax = !hasDescription ? CATALOG_LABEL_MAX : CATALOG_TITLE_MAX;
   const [label, setLabel] = useState(item?.label ?? '');
-  const [description, setDescription] = useState(item?.description ?? '');
-  const [sortOrder, setSortOrder] = useState(item ? String(item.sortOrder) : '');
-  const initialSegmentId = item?.segmentId ?? '';
+  const [description, setDescription] = useState(catalogItem?.description ?? '');
+  const [sortOrder, setSortOrder] = useState(catalogItem ? String(catalogItem.sortOrder) : '');
+  const initialSegmentId = catalogItem?.segmentId ?? '';
   const [segmentId, setSegmentId] = useState(initialSegmentId);
   const [isLoading, setIsLoading] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -69,7 +79,7 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
 
   const trimmed = label.trim();
   const trimmedDescription = description.trim();
-  const initialDescription = (item?.description ?? '').trim();
+  const initialDescription = (catalogItem?.description ?? '').trim();
   const labelChanged = !isEdit || trimmed !== item.label;
   const descriptionChanged = trimmedDescription !== initialDescription;
   const segmentChanged = segments !== null && segmentId !== initialSegmentId;
@@ -77,7 +87,8 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
   const tooLong = trimmed.length > labelMax && (!hasDescription || labelChanged);
   const descriptionTooLong = hasDescription && trimmedDescription.length > CATALOG_DESCRIPTION_MAX;
   const nothingToSave = hasDescription && isEdit && !labelChanged && !descriptionChanged && !segmentChanged;
-  const canSave = trimmed.length > 0 && !tooLong && !descriptionTooLong && !nothingToSave && !isLoading;
+  const itemsOk = !isTemplate || (items.length > 0 && itemsValid);
+  const canSave = itemsOk && trimmed.length > 0 && !tooLong && !descriptionTooLong && !nothingToSave && !isLoading;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -85,6 +96,10 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
     setIsLoading(true);
     setSaveError('');
     try {
+      if (isTemplate) {
+        await onSave({ label: trimmed, items });
+        return;
+      }
       const order = hasDescription || sortOrder.trim() === '' ? undefined : Number(sortOrder);
       // `segmentId` só viaja se o campo existe E mudou: reenviar um vínculo inativo seria recusado (422).
       await onSave({
@@ -159,7 +174,13 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
               </div>
             </div>
           )}
-          {!hasDescription && (
+          {isTemplate && (
+            <div className="flex flex-col gap-2">
+              <ShiftTemplateItemsField value={items} onChange={setItems} onValidityChange={setItemsValid} />
+              <Text size="xs" color="muted" data-testid="therapeutic-catalog-not-retroactive">{tr('shiftTemplates.notRetroactive')}</Text>
+            </div>
+          )}
+          {!hasDescription && !isTemplate && (
           <div>
             <Label htmlFor="therapeutic-catalog-order">{tr('form.sortOrder')}</Label>
             <input

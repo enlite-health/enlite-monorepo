@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import { Pool } from 'pg';
 import { InitWorkerUseCase } from '../../application/InitWorkerUseCase';
 import { SaveQuizResponsesUseCase } from '../../application/SaveQuizResponsesUseCase';
@@ -52,12 +53,29 @@ export class WorkerControllerV2 {
 
   async initWorker(req: Request, res: Response): Promise<void> {
     try {
-      const { authUid, email, phone, whatsappPhone, lgpdOptIn, country } = req.body;
+      // H2 (D650): identidade SÓ do token. `authUid`/`email` do body nunca decidem
+      // quem é o prestador — antes, qualquer um sem login lia a ficha de um uid,
+      // trocava o auth_uid de uma ficha pelo e-mail e disparava OTP ao telefone dela.
+      const tokenUser = (req as Request & { user?: { uid?: string; email?: string } }).user;
+      const authUid = tokenUser?.uid;
+      const email = tokenUser?.email;
+      const { phone, whatsappPhone, lgpdOptIn, country } = req.body;
 
-      if (!authUid || !email) {
+      if (!authUid) {
+        res.status(401).json({ success: false, error: 'Authentication required' });
+        return;
+      }
+
+      // Body com authUid de outra identidade = tentativa de agir por terceiro: 403, não silêncio.
+      if (req.body?.authUid !== undefined && req.body.authUid !== authUid) {
+        res.status(403).json({ success: false, error: 'authUid does not match authenticated user' });
+        return;
+      }
+
+      if (!email) {
         res.status(400).json({
           success: false,
-          error: 'Missing required fields: authUid, email',
+          error: 'Authenticated token has no email',
         });
         return;
       }
@@ -198,7 +216,7 @@ export class WorkerControllerV2 {
   async getProgress(req: Request, res: Response): Promise<void> {
     try {
       // Support both header-based (legacy) and body-injected auth UID from middleware
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
 
       if (!authUid) {
         res.status(401).json({
@@ -256,7 +274,7 @@ export class WorkerControllerV2 {
 
   async saveGeneralInfo(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
@@ -286,7 +304,7 @@ export class WorkerControllerV2 {
 
   async saveServiceArea(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
@@ -314,7 +332,7 @@ export class WorkerControllerV2 {
 
   async getAvailability(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
@@ -342,7 +360,7 @@ export class WorkerControllerV2 {
 
   async saveAvailability(req: Request, res: Response): Promise<void> {
     try {
-      const authUid = (req as any).user?.uid || req.headers['x-auth-uid'] as string;
+      const authUid = selfUid(req);
       if (!authUid) {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;

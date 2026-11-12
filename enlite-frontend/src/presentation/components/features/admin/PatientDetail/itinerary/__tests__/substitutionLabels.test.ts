@@ -8,10 +8,14 @@ beforeAll(async () => {
 
 describe('substitutionLabels — textos de data e horário do fluxo e da lista', () => {
   it('chip do turno: "Lun 09 · 09–17" (hora cheia sem minutos; meia hora mantém); sem horário só o dia', () => {
-    expect(shiftChipLabel('2026-11-09', '09:00', '17:00', 'es')).toBe('Lun 09 · 09–17');
-    expect(shiftChipLabel('2026-11-10', '22:00', '06:30', 'es')).toBe('Mar 10 · 22–06:30');
-    expect(shiftChipLabel('2026-11-15', null, null, 'es')).toBe('Dom 15');
-    expect(shiftChipLabel('2026-11-09', '09:00', '17:00', 'pt-BR')).toBe('Seg 09 · 09–17');
+    expect(shiftChipLabel(i18n.t.bind(i18n), '2026-11-09', '09:00', '17:00', 'es')).toBe('Lun 09 · 09–17');
+    expect(shiftChipLabel(i18n.t.bind(i18n), '2026-11-10', '22:00', '06:30', 'es')).toBe('Mar 10 · 22–06:30');
+    expect(shiftChipLabel(i18n.t.bind(i18n), '2026-11-15', null, null, 'es')).toBe('Dom 15');
+    expect(shiftChipLabel(i18n.t.bind(i18n), '2026-11-09', '09:00', '17:00', 'pt-BR')).toBe('Seg 09 · 09–17');
+  });
+
+  it('chip de turno 08:00 a 08:00 mostra 24 h', () => {
+    expect(shiftChipLabel(i18n.t.bind(i18n), '2026-11-09', '08:00', '08:00', 'es')).toBe('Lun 09 · 24 h');
   });
 
   it('dia curto minúsculo sem zero: "lun 9"; dia da semana com/sem maiúscula', () => {

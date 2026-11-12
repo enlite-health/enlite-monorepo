@@ -75,6 +75,7 @@ import {
 export type { WorkerListFilters, WorkerFilterOptions };
 import { ApiError, ApiResponse, ApiSuccessResponse, ApiErrorResponse } from './ApiError';
 import { withTransientRetry } from './retryTransient';
+import type { AreaMembershipsOfPerson, AreaPeoplePage, AreaPeopleQuery, AreaPerson, GrantAreaMembershipInput } from '@domain/entities/AreaMembership';
 
 export { ApiError } from './ApiError';
 
@@ -159,6 +160,44 @@ class AdminApiServiceClass {
     return (json as ApiSuccessResponse<T>).data;
   }
 
+  // ========== Vínculos de área (acesso-do-cliente, T111/T411) ==========
+
+  /**
+   * `area_membership:read` — a lista paginada de pessoas da aba "Vínculos de área". Busca por nome exige
+   * ≥ 3 caracteres (o servidor devolve 400 abaixo disso — quem chama não deve nem pedir).
+   */
+  listAreaPeople(query: AreaPeopleQuery = {}): Promise<AreaPeoplePage> {
+    const qs = new URLSearchParams();
+    if (query.search) qs.set('search', query.search);
+    if (query.type && query.type !== 'all') qs.set('type', query.type);
+    if (query.withMembership !== undefined) qs.set('withMembership', String(query.withMembership));
+    qs.set('limit', String(query.limit ?? 20));
+    qs.set('offset', String(query.offset ?? 0));
+    return this.request<AreaPeoplePage>('GET', `/api/admin/area-memberships/people?${qs.toString()}`);
+  }
+
+  /** `area_membership:read` — busca por e-mail EXATO no login (Firebase); 404 = não existe. GET: não escreve. */
+  findAreaPersonByEmail(email: string): Promise<AreaPerson> {
+    const qs = new URLSearchParams({ email });
+    return this.request<AreaPerson>('GET', `/api/admin/area-memberships/people/by-email?${qs.toString()}`);
+  }
+
+  /** `area_membership:read` — os vínculos vivos de UMA pessoa; com `uid` o servidor resolve (e devolve) o `personId`. */
+  listAreaMembershipsOf(target: { personId: string } | { uid: string }): Promise<AreaMembershipsOfPerson> {
+    const qs = new URLSearchParams(target);
+    return this.request<AreaMembershipsOfPerson>('GET', `/api/admin/area-memberships?${qs.toString()}`);
+  }
+
+  /** `area_membership:write` — 201; par inválido/duplicado → 422; pessoa/uid inexistente → 404. */
+  grantAreaMembership(input: GrantAreaMembershipInput): Promise<unknown> {
+    return this.request<unknown>('POST', '/api/admin/area-memberships', input);
+  }
+
+  /** `area_membership:write` — motivo obrigatório (400 sem ele); vínculo já revogado → 404. */
+  revokeAreaMembership(id: string, reason: string): Promise<unknown> {
+    return this.request<unknown>('POST', `/api/admin/area-memberships/${encodeURIComponent(id)}/revoke`, { reason });
+  }
+
   // ========== Auth / Profile ==========
 
   async getProfile(): Promise<AdminUser> {
@@ -177,9 +216,14 @@ class AdminApiServiceClass {
     return this.request<AdminUser & { resetLink?: string }>('POST', '/api/admin/users', data);
   }
 
-  async listAdmins(limit = 50, offset = 0): Promise<{ admins: AdminUser[]; total: number }> {
+  /**
+   * `forGroupId` (spec 078, M2): o grupo aberto no seletor de membro. Para grupo de classe `AGENT` o servidor devolve as contas de
+   * agente; para os demais (e sem o parâmetro) devolve o staff, como sempre. O front não decide a classe — manda o grupo.
+   */
+  async listAdmins(limit = 50, offset = 0, forGroupId?: string): Promise<{ admins: AdminUser[]; total: number }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${this.baseURL}/api/admin/users?limit=${limit}&offset=${offset}`, { headers });
+    const grupo = forGroupId ? `&forGroupId=${encodeURIComponent(forGroupId)}` : '';
+    const response = await fetch(`${this.baseURL}/api/admin/users?limit=${limit}&offset=${offset}${grupo}`, { headers });
     const json = await response.json();
     if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
     return { admins: json.data as AdminUser[], total: json.pagination?.total ?? json.data.length };
@@ -213,6 +257,10 @@ class AdminApiServiceClass {
   }
   getVacancyFilterOptions(): Promise<VacancyFilterOptions> {
     return AdminVacancyListApiService.getVacancyFilterOptions();
+  }
+  /** Spec 084 F1: dar baixa (uma ou em lote) em vagas sem serviço. Sem rota inversa (R17). */
+  bajaVacancies(vacancyIds: string[]) {
+    return AdminVacancyListApiService.bajaVacancies(vacancyIds);
   }
 
   // ========== Vacancies Methods ==========

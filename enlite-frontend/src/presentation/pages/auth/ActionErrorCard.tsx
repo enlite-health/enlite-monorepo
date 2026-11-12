@@ -3,6 +3,7 @@ import { AlertCircle } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { adminLoginPath } from '@presentation/config/adminLoginPath';
 
 interface ActionErrorCardProps {
   titleKey: string;
@@ -35,7 +36,7 @@ export function ActionErrorCard({ titleKey, descriptionKey }: ActionErrorCardPro
         borderColor="#180149"
         textColor="#180149"
         onClick={() => {
-          window.location.href = '/admin/login';
+          window.location.href = adminLoginPath();
         }}
       >
         {t('auth.action.backToLogin')}

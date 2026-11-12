@@ -9,8 +9,7 @@ const POLL_INTERVAL_MS = 10_000;
 /**
  * O que o hook precisa para montar a query: `key` identifica a consulta (dependência do fetch), e ou
  * é um conjunto de colunas do Kanban (`columns=<sources>`; só as `sources` importam) ou um bucket
- * (`bucket=<b>`). A Lista da vaga pede todas as colunas do Kanban de uma vez; `bucket` segue aceito
- * porque `useInvitedPendingCandidates` pede `?bucket=INVITED` direto.
+ * (`bucket=<b>`). A Lista da vaga pede todas as colunas do Kanban de uma vez; `bucket` segue aceito.
  */
 export type FunnelTableTab =
   | { key: string; kind: 'column'; column: Pick<VacancyFunnelColumn, 'sources'> }

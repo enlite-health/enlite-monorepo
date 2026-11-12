@@ -38,6 +38,19 @@ describe('ApplyToVacancyUseCase', () => {
     expect(result).toEqual({ ok: true, wjaId: 'wja-1', prescreeningUrl: null });
   });
 
+  it('spec 084 (P4/R6/F10): vaga DE_BAJA recusa a candidatura (app e Luz) — 409, nada é criado', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
+    mockQuery.mockImplementation(async (sql: string) =>
+      String(sql).includes('SELECT status FROM job_postings') ? { rows: [{ status: 'DE_BAJA' }] } : { rows: [] });
+
+    const result = await useCase.execute(mockDb as any, PARAMS);
+
+    expect(result).toEqual({
+      ok: false, code: 'VACANCY_DE_BAJA', httpStatus: 409, reason: 'vacancy_de_baja', workerStatus: null, missingFields: [],
+    });
+    expect(mockCreateWja.execute).not.toHaveBeenCalled();
+  });
+
   it('worker REGISTERED → cria WJA+encuadre com os MESMOS params do app e retorna wjaId', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
     mockQuery.mockImplementation(async (sql: string) =>

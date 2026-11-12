@@ -14,11 +14,14 @@ import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Import direto — páginas e layout carregam junto com o bundle admin
 import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
-import { AdminLoginPage } from './pages/admin/AdminLoginPage';
+import { AdminLoginRedirect } from './components/features/admin/AdminLoginRedirect';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
+import { NoAccessPage } from './pages/NoAccessPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
-import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
+import { AccessPage, AreaMembershipsPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
+import { PedidosIaPage } from './pages/admin/pedidos-ia';
+import { CustosPage } from './pages/admin/custos';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
@@ -26,6 +29,7 @@ import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
 import AnaCareHoursPage from './pages/admin/AnaCareHoursPage';
 import AnaCareHoursPatientPage from './pages/admin/AnaCareHoursPatientPage';
 import VacancyDetailPage from './pages/admin/VacancyDetailPage';
+import VacancyInvitePage from './pages/admin/VacancyInvite/VacancyInvitePage';
 import DraftVacancyPage from './pages/admin/DraftVacancyPage';
 import CreateVacancyPage from './pages/admin/CreateVacancyPage';
 import TalentumConfigPage from './pages/admin/TalentumConfigPage';
@@ -37,6 +41,7 @@ import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import InterviewHostsPage from './pages/admin/InterviewHostsPage';
+import AdminEnquadresPage from './pages/admin/AdminEnquadresPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
 import { AiPromptsPage } from './pages/admin/AiPromptsPage/AiPromptsPage';
 import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
@@ -76,7 +81,6 @@ const AdmisionBrPage = lazyWithRetry(() =>
 );
 // Mantém lazy — são a fronteira worker/admin; carregados uma única vez
 const AdminProtectedRoute = lazy(() => import('./components/features/admin/AdminProtectedRoute').then(m => ({ default: m.AdminProtectedRoute })));
-const AdminLoginGuard = lazy(() => import('./components/features/admin/AdminLoginGuard').then(m => ({ default: m.AdminLoginGuard })));
 
 const AdminFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -139,6 +143,7 @@ export function App() {
       <InviteProgressPanel />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/no-access" element={<NoAccessPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/complete-whatsapp" element={<CompleteWhatsappPage />} />
         <Route path="/auth/action" element={<AuthActionPage />} />
@@ -214,15 +219,8 @@ export function App() {
         )}
 
         {/* Admin module — lazy-loaded, isolated from worker module */}
-        <Route path="/admin/login" element={
-          <AdminErrorBoundary>
-            <Suspense fallback={<AdminFallback />}>
-              <AdminLoginGuard>
-                <AdminLoginPage />
-              </AdminLoginGuard>
-            </Suspense>
-          </AdminErrorBoundary>
-        } />
+        {/* Login único: a rota legada só redireciona para /login?next=… */}
+        <Route path="/admin/login" element={<AdminLoginRedirect />} />
         {/* Nested routes — AdminLayout is the persistent shell */}
         <Route
           path="/admin"
@@ -257,6 +255,7 @@ export function App() {
           {/* Fase 2 (`completar-vacante-em-rascunho`): tela própria, somente leitura, para vaga
               em rascunho — o detalhe (`vacancies/:id`) redireciona pra cá quando `is_draft`. */}
           <Route path="vacancies/:id/borrador" element={<FeatureRouteGate feature="screen:vacancies"><DraftVacancyPage /></FeatureRouteGate>} />
+          <Route path="vacancies/:id/match" element={<FeatureRouteGate feature="screen:vacancies"><VacancyInvitePage /></FeatureRouteGate>} />
           <Route path="vacancies/:id" element={<FeatureRouteGate feature="screen:vacancies"><VacancyDetailPage /></FeatureRouteGate>} />
           <Route path="dashboard" element={<FeatureRouteGate feature="screen:management-dashboard"><ManagementDashboardPage /></FeatureRouteGate>} />
           <Route path="recruitment/blocked-attempts" element={<FeatureRouteGate feature="screen:funnel"><BlockedAttemptsPage /></FeatureRouteGate>} />
@@ -271,6 +270,8 @@ export function App() {
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="entrevistadores" element={<InterviewHostsPage />} />
+          {/* Spec 076: lista global de enquadres. Sem chave `screen:*` nem FeatureRouteGate (FR-03): a trava é a das duas células, na página. */}
+          <Route path="enquadres" element={<AdminEnquadresPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
           <Route path="prompts-ia" element={<AiPromptsPage />} />
           <Route path="plantillas" element={<TemplateCatalogPage />} />
@@ -286,6 +287,7 @@ export function App() {
           <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
           <Route path="catalogos/motivos-de-salida" element={<TherapeuticCatalogPage kind="service-exit-reasons" />} />
+          <Route path="catalogos/guardias" element={<TherapeuticCatalogPage kind="service-shift-templates" />} />
           <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           {/* Perfil da conta logada (Identidade · Tactiq · Idioma · Accesos · Sair). Sem chave `screen:*`: é a conta do
@@ -295,8 +297,14 @@ export function App() {
               (`?tactiq=linked|error`) tem de sobreviver para o banner do retorno aparecer. */}
           <Route path="mi-cuenta/tactiq" element={<RedirectKeepingSearch to="/admin/mi-cuenta" />} />
           <Route path="dedup" element={<DedupCenterPage />} />
+          {/* Spec 078 (M3b-1): pedidos do Sol. Sem chave `screen:*` nem FeatureRouteGate: a trava é a célula `pedidos_ia:read`, na página. */}
+          <Route path="pedidos-ia" element={<PedidosIaPage />} />
+          {/* Spec 082 (painel de custos): só pela URL, SEM item de menu (DF-2). A trava é a célula `platform_costs:read`, na página e na API. */}
+          <Route path="custos" element={<CustosPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />
+          {/* Aba "Vínculos de área": a guarda é `area_membership:read` (AccessGate com tab) — quem só tem ela entra só aqui. */}
+          <Route path="access/area-memberships" element={<FeatureRouteGate feature="screen:access-permissions"><AreaMembershipsPage /></FeatureRouteGate>} />
           <Route path="access/groups/:id" element={<FeatureRouteGate feature="screen:access-permissions"><GroupDetailPage /></FeatureRouteGate>} />
           <Route path="access/features" element={<FeatureRouteGate feature="screen:access-permissions"><CountryFeaturesPage /></FeatureRouteGate>} />
           {/* Histórico de mudanças de permissão — substitui a Auditoría ALLOW/DENY (mesma URL, mesma célula). */}

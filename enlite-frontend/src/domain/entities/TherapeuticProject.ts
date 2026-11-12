@@ -190,6 +190,26 @@ export type AdminCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REAS
 export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
 export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WITH_DESCRIPTION.includes(kind);
 
+/**
+ * Guardias predefinidas (spec 074): catálogo global de modelos de turnos. FICA FORA de `AdminCatalogKind` — não
+ * tem Ordem nem descrição, e tem o seu próprio contrato (`items`).
+ */
+export const SERVICE_SHIFT_TEMPLATE_KIND = 'service-shift-templates';
+export const SERVICE_SHIFT_TEMPLATE_RESOURCE = 'catalog_service_shift_templates';
+
+export interface ShiftTemplateItem {
+  startTime: string;
+  durationMinutes: number;
+}
+
+export interface ShiftTemplate {
+  id: string;
+  code: string;
+  label: string;
+  active: boolean;
+  items: ShiftTemplateItem[];
+}
+
 /** Opção de motivo para quem registra uma troca (GET …/service-exit-reasons/options). */
 export interface ServiceExitReasonOption {
   code: string;

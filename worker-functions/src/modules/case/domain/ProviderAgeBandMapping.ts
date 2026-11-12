@@ -54,6 +54,24 @@ export function vacancyRangeForProviderAgeBand(
 }
 
 /**
+ * Inversa do mapa (spec 079): faixa cujo par (min,max) casa EXATAMENTE com o da vaga; nenhuma casa → null.
+ * Derivada por iteração de PROVIDER_AGE_BAND_TO_VACANCY_RANGE (sem literal novo). ANY NUNCA sai daqui:
+ * ANY e "não informado" têm o mesmo par (null,null), então vaga sem valor devolve null, não 'ANY'.
+ */
+export function providerAgeBandForVacancyRange(
+  min: number | null | undefined,
+  max: number | null | undefined,
+): ProviderAgeBand | null {
+  const lo = min ?? null;
+  const hi = max ?? null;
+  if (lo === null && hi === null) return null;
+  for (const [band, range] of Object.entries(PROVIDER_AGE_BAND_TO_VACANCY_RANGE) as [ProviderAgeBand, VacancyAgeRange][]) {
+    if (range.min === lo && range.max === hi) return band;
+  }
+  return null;
+}
+
+/**
  * F6 (vaga-le-do-servico-contratado): o ÚNICO ponto de TS que deriva `age_range_min/max` da vaga. O leitor seleciona
  * `vacancyEffectiveAgeRangeSql` (peça SQL) e passa a linha aqui:
  *  - vaga COM serviço: o SQL trouxe `age_range_*` NULL e a banda; a faixa vem do mapeamento (banda nula = faixa vazia,

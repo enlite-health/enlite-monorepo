@@ -2,8 +2,10 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { CountryCode } from '@shared/domain/countryCodes';
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
+import { hasActiveDiagnosisSql } from '@shared/sql/patientDiagnosisSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { fetchPatientDetail } from './PatientDetailQueryHelper';
+import { excludeDischargedSql } from './patientListScopeSql';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
 import { derivePatientSla } from '../domain/PatientSla';
 import { isLeadPlaceholderName } from '../domain/LeadContact';
@@ -110,6 +112,8 @@ export class PatientQueryRepository {
     const includeDeactivatedBool = filters.include_deactivated === 'true';
     params.push(includeDeactivatedBool);
     const includeDeactivatedIdx = i++;
+    params.push(filters.exclude_discharged === 'true'); // $12 opt-in; mesmo fragmento do `stats`
+    const excludeDischargedIdx = i++;
 
     // Effective case_number: patients.case_number when populated, otherwise
     // fall back to the MAX case_number across this patient's active vagas.
@@ -169,6 +173,10 @@ export class PatientQueryRepository {
                         ON pa.id = pcs.address_id AND pa.archived_at IS NULL
                  WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
                                AS "hasActiveServiceWithoutAddress",
+        -- Diagnóstico CID-11 (pedido do Javier): só a EXISTÊNCIA de ≥1 linha ATIVA (qualquer source) — nunca o valor.
+        -- Alimenta DIAGNOSIS no derivado needsAttention (mesma regra de MISSING_SQL.DIAGNOSIS).
+        ${hasActiveDiagnosisSql('p.id')}
+                               AS "hasActiveDiagnosis",
         -- Decisão do Gabriel 07/09: serviço ativo sem horário (nenhuma faixa vigente hoje; spec 056) → SERVICE_SCHEDULE.
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  WHERE pcs.patient_id = p.id AND pcs.active
@@ -244,6 +252,7 @@ export class PatientQueryRepository {
         -- Checkbox "Mostrar desactivados" (opt-in, D-2026-09-28): default continua
         -- excluindo o soft-delete — só $${includeDeactivatedIdx}=true relaxa o filtro.
         AND ($${includeDeactivatedIdx}::boolean IS TRUE OR p.deleted_at IS NULL)
+        AND ${excludeDischargedSql(excludeDischargedIdx)}
       ORDER BY created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
@@ -276,6 +285,8 @@ export class PatientQueryRepository {
         activeContractedServicesWithoutAddressCount: row.hasActiveServiceWithoutAddress === true ? 1 : 0,
         activeContractedServicesWithoutScheduleCount:
           row.hasActiveServiceWithoutSchedule === true ? 1 : 0,
+        status: row.status as string | null,
+        activeDiagnosisCount: row.hasActiveDiagnosis === true ? 1 : 0,
         now,
       });
       const isActivatableStatus = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(
@@ -340,7 +351,7 @@ export class PatientQueryRepository {
    *   `undefined`/"sem filtro" solto: quem chama (`resolveCountryScope`) sempre
    *   entrega um array não-vazio, interseção do pedido com o escopo do ator.
    */
-  async stats(countries: CountryCode[]): Promise<PatientStatsRow> {
+  async stats(countries: CountryCode[], excludeDischarged = false): Promise<PatientStatsRow> {
     const result = await this.pool.query<{
       total: string;
       complete: string;
@@ -364,7 +375,8 @@ export class PatientQueryRepository {
       FROM patients p
       WHERE p.deleted_at IS NULL
         AND p.country = ANY($1::bpchar[])
-    `, [countries]);
+        AND ${excludeDischargedSql(2)}
+    `, [countries, excludeDischarged]);
 
     const row = result.rows[0];
     return {

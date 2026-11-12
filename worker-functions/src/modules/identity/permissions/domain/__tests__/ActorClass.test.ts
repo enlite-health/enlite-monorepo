@@ -14,6 +14,7 @@ import {
   ACTOR_CLASSES,
   ACTOR_CLASS_PADRAO,
   CELULAS_VEDADAS_A_TERCEIRO,
+  CELULAS_VEDADAS_A_AGENTE,
   isActorClass,
   podeConceder,
   motivoDaVedacao,
@@ -22,6 +23,12 @@ import {
 const MIGRATION = path.resolve(
   __dirname, '..', '..', '..', '..', '..', '..',
   'migrations', '285_actor_class_external_third_party.sql',
+);
+
+// 556 (spec 078, M2): o CHECK vigente de `actor_class` é o da 556 (a 285 só conhecia 2 classes).
+const MIGRATION_556 = path.resolve(
+  __dirname, '..', '..', '..', '..', '..', '..',
+  'migrations', '556_078_agente_principal.sql',
 );
 
 describe('C9 — paridade entre a lista do código e o trigger do banco', () => {
@@ -46,8 +53,8 @@ describe('C9 — paridade entre a lista do código e o trigger do banco', () => 
     expect([...noBanco].sort()).toEqual([...CELULAS_VEDADAS_A_TERCEIRO].sort());
   });
 
-  it('as duas classes do CHECK do banco são as mesmas do tipo', () => {
-    const sql = fs.readFileSync(MIGRATION, 'utf8');
+  it('as classes do CHECK vigente do banco (556) são as mesmas do tipo', () => {
+    const sql = fs.readFileSync(MIGRATION_556, 'utf8');
     const check = sql.slice(sql.indexOf('actor_class IN ('), sql.indexOf('actor_class IN (') + 120);
     for (const classe of ACTOR_CLASSES) {
       expect([classe, check.includes(`'${classe}'`)]).toEqual([classe, true]);
@@ -85,6 +92,37 @@ describe('C9 — paridade entre a lista do código e o trigger do banco', () => 
     expect(sql).toMatch(
       /CREATE TRIGGER veda_virar_externo\s+BEFORE UPDATE ON iam\.permission_groups/,
     );
+  });
+});
+
+describe('078/M2 — paridade da lista de células vedadas a AGENT com a migration 556', () => {
+  it('as células vedadas a agente são AS MESMAS nos dois lados', () => {
+    const sql = fs.readFileSync(MIGRATION_556, 'utf8');
+    const corpo = sql.slice(
+      sql.indexOf('CREATE OR REPLACE FUNCTION iam.celulas_vedadas_a_agente()'),
+      sql.indexOf('REVOKE ALL ON FUNCTION iam.celulas_vedadas_a_agente'),
+    );
+    const noBanco = new Set([...corpo.matchAll(/'([a-z_]+:[a-z_]+)'/g)].map((m) => m[1]));
+    expect(noBanco.size).toBeGreaterThan(0); // contagem zero é falha
+    expect([...noBanco].sort()).toEqual([...CELULAS_VEDADAS_A_AGENTE].sort());
+  });
+
+  it('grupo AGENT não recebe nenhuma vedada e recebe o resto; INTERNAL segue sem regra', () => {
+    for (const c of CELULAS_VEDADAS_A_AGENTE) {
+      expect([c, podeConceder('AGENT', c)]).toEqual([c, false]);
+      expect([c, podeConceder('INTERNAL', c)]).toEqual([c, true]);
+      expect(motivoDaVedacao('AGENT', c)).toContain('agente');
+    }
+    expect(podeConceder('AGENT', 'vacancy:read')).toBe(true);
+    expect(motivoDaVedacao('AGENT', 'vacancy:read')).toBeNull();
+    expect(isActorClass('AGENT')).toBe(true);
+  });
+
+  it('os 3 triggers e a função existem na migration, com a tabela certa (regex, não substring)', () => {
+    const sql = fs.readFileSync(MIGRATION_556, 'utf8');
+    expect(sql).toMatch(/CREATE TRIGGER veda_celula_a_agente\s+BEFORE INSERT OR UPDATE ON iam\.group_permissions/);
+    expect(sql).toMatch(/CREATE TRIGGER veda_trocar_classe_agente\s+BEFORE UPDATE ON iam\.permission_groups/);
+    expect(sql).toMatch(/CREATE TRIGGER veda_agente_fora_de_grupo_agent\s+BEFORE INSERT OR UPDATE ON iam\.user_groups/);
   });
 });
 

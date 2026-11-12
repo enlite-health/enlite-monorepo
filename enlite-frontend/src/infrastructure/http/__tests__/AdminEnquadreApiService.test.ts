@@ -59,4 +59,37 @@ describe('AdminEnquadreApiService', () => {
     expect((err as ApiError).code).toBe('ENQUADRE_EVENT_NOT_OPEN');
     expect((err as ApiError).status).toBe(409);
   });
+
+  describe('listAll (spec 076)', () => {
+    const ALL = 'http://localhost:8080/api/admin/enquadre-events';
+
+    it('sem filtro: GET sem querystring, com Authorization, e devolve o data do envelope', async () => {
+      expect(await Api.listAll()).toEqual({ ok: 1 });
+      expect(last()).toEqual({ url: ALL, method: 'GET', body: undefined, auth: 'Bearer tok' });
+    });
+
+    it('omite o que está vazio e manda status por vírgula', async () => {
+      await Api.listAll({ from: '2026-10-26', to: '2026-11-01', status: ['open', 'closed'], host: '', q: '  ', country: undefined, limit: 20, offset: 40 });
+      expect(last().url).toBe(`${ALL}?from=2026-10-26&to=2026-11-01&status=open%2Cclosed&limit=20&offset=40`);
+    });
+
+    it('🔴 nunca manda from sem to (nem to sem from): o servidor responderia 400', async () => {
+      await Api.listAll({ from: '2026-10-26' });
+      expect(last().url).toBe(ALL);
+      fetchMock.mockClear();
+      await Api.listAll({ to: '2026-11-01', q: 'ENC-AB' });
+      expect(last().url).toBe(`${ALL}?q=ENC-AB`);
+    });
+
+    it('host, país e busca vão codificados', async () => {
+      await Api.listAll({ host: 'Ana & Cía', country: 'BR', q: 'ENC-AB12' });
+      expect(last().url).toBe(`${ALL}?host=Ana+%26+C%C3%ADa&country=BR&q=ENC-AB12`);
+    });
+
+    it('erro de range vira ApiError com o code do servidor', async () => {
+      fetchMock.mockResolvedValue(json({ success: false, error: 'Invalid range', code: 'ENQUADRE_LIST_RANGE_TOO_LONG' }, 400));
+      const err = await Api.listAll({ from: '2026-01-01', to: '2026-12-31' }).catch((e: unknown) => e);
+      expect((err as ApiError).code).toBe('ENQUADRE_LIST_RANGE_TOO_LONG');
+    });
+  });
 });

@@ -239,11 +239,6 @@ export class EncuadreRepository {
 
   // ── Delegated query methods (kept on EncuadreRepository for backward compat) ──
 
-  async findSoftMatch(jobPostingId: string, phone: string, interviewDate: Date | null, recruitmentDate: Date | null): Promise<Encuadre | null> {
-    const { EncuadreQueryRepository } = await import('./EncuadreQueryRepository');
-    return new EncuadreQueryRepository().findSoftMatch(jobPostingId, phone, interviewDate, recruitmentDate);
-  }
-
   async updateSupplement(id: string, dto: SupplementEncuadreDTO): Promise<void> {
     const { EncuadreQueryRepository } = await import('./EncuadreQueryRepository');
     return new EncuadreQueryRepository().updateSupplement(id, dto);

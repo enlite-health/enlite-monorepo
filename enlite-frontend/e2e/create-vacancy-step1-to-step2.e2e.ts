@@ -140,7 +140,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();
@@ -384,7 +384,7 @@ test.describe('CreateVacancy — full flow Step 1 → Step 2 → Step 3', () => 
 
     // Stepper marks Step 2 active
     await expect(
-      page.locator('ol[aria-label="Progress"] li[aria-current="step"]'),
+      page.locator('ol[aria-label="Progreso"] li[aria-current="step"]'),
     ).toContainText(/Configuración Talentum/i);
 
     // Vacancy create happened

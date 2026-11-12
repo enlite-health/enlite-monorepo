@@ -28,6 +28,8 @@ export interface StubProject {
   type: 'FULL' | 'ATS' | 'PHONE_CALL';
   myRole: 'OWNER' | 'VIEWER';
   publicId: string;
+  /** `_id` do prescreening (GET /prescreening) — distinto do `_id` do projeto, como na Talentum real. */
+  prescreeningId: string;
   slug: string;
   title: string;
   description: string;
@@ -61,6 +63,8 @@ function pageOf<T>(all: T[], query: URLSearchParams): T[] {
 }
 
 export class TalentumV2Stub {
+  /** `true` → `GET /prescreening` responde sem `_id` (prova que a falta vira NULL e não derruba o fluxo). */
+  omitPrescreeningId = false;
   readonly projects = new Map<string, StubProject>();
   readonly calls: StubCall[] = [];
   private seq = 0;
@@ -72,6 +76,7 @@ export class TalentumV2Stub {
       type: 'FULL',
       myRole: 'OWNER',
       publicId: randomUUID(),
+      prescreeningId: `psc-${p._id}`,
       slug: `slug-${p._id}`,
       title: p.name,
       description: '',
@@ -132,6 +137,7 @@ export class TalentumV2Stub {
       return {
         status: 200,
         body: {
+          ...(this.omitPrescreeningId ? {} : { _id: proj.prescreeningId }),
           projectId: proj._id,
           title: proj.title,
           publicId: proj.publicId,
@@ -155,6 +161,17 @@ export class TalentumV2Stub {
 
     // Escritas: conta VIEWER nunca escreve.
     if (proj.myRole === 'VIEWER') return { status: 403, text: '{"message":"You are not allowed to access this project"}' };
+
+    // Spec 084 (F4): ciclo de vida — pausar/retomar (só dono; VIEWER já levou 403 acima). Retomar projeto não pausado → 400 (medido).
+    if (method === 'PUT' && sub === '/pause') {
+      proj.status = 'PAUSED';
+      return { status: 200 };
+    }
+    if (method === 'PUT' && sub === '/resume') {
+      if (proj.status !== 'PAUSED') return { status: 400, text: '{"message":"Project is not paused"}' };
+      proj.status = 'IN_PROGRESS';
+      return { status: 200 };
+    }
 
     if (method === 'DELETE' && sub === '') {
       this.projects.delete(proj._id);

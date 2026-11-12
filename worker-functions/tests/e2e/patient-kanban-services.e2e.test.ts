@@ -29,6 +29,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
+import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -103,6 +104,8 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
         [`${TASK_PREFIX}${seedCounter}-${slug}`, country],
       )
     ).rows[0].id;
+    // Pedido do Javier: o paciente nasce em ADMISSION e o teste (e) ativa recrutamento nele — exige ≥1 diagnóstico ATIVO.
+    await seedPatientDiagnosis(pool, patientId);
     const addressId = (
       await pool.query<{ id: string }>(
         `INSERT INTO patient_addresses (patient_id, country) VALUES ($1, $2) RETURNING id`,

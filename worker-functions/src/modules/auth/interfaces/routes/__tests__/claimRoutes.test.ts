@@ -11,6 +11,20 @@ import request from 'supertest';
 import { appDeRota } from '@shared/__tests__/appDeRota';
 import { claimIpKey, createClaimRoutes } from '../claimRoutes';
 import type { ClaimController } from '../../controllers/ClaimController';
+import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
+
+/** Dublê do requireAuth real: sem `Authorization: Bearer` → 401; com → popula req.user. */
+const authMiddleware = {
+  requireAuth: () => (req: Request, res: Response, next: () => void) => {
+    if (!req.headers.authorization?.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authentication required' });
+      return;
+    }
+    (req as Request & { user?: unknown }).user = { uid: 'uid-sintetico-1', email: 'a@exemplo.test' };
+    next();
+  },
+} as unknown as AuthMiddleware;
+const BEARER = { Authorization: 'Bearer token-sintetico' };
 
 function reqComIp(ip: string | undefined): Request {
   return { headers: {}, ip } as unknown as Request;
@@ -63,7 +77,7 @@ describe('createClaimRoutes — montagem das rotas e limitador no lugar certo', 
     confirm: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'confirm' }); }),
   } as unknown as ClaimController;
 
-  const server = appDeRota('claimRoutes', '/api', () => createClaimRoutes(controller));
+  const server = appDeRota('claimRoutes', '/api', () => createClaimRoutes(controller, authMiddleware));
 
   afterEach(() => {
     (controller.start as jest.Mock).mockClear();
@@ -73,7 +87,7 @@ describe('createClaimRoutes — montagem das rotas e limitador no lugar certo', 
   it('POST /api/auth/claim/start existe e chega no controller.start', async () => {
     const res = await request(server)
       .post('/api/auth/claim/start')
-      .set('X-Forwarded-For', 'claim-start-existe')
+      .set(BEARER).set('X-Forwarded-For', 'claim-start-existe')
       .send({});
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ m: 'start' });
@@ -83,7 +97,7 @@ describe('createClaimRoutes — montagem das rotas e limitador no lugar certo', 
   it('POST /api/auth/claim/confirm existe e chega no controller.confirm', async () => {
     const res = await request(server)
       .post('/api/auth/claim/confirm')
-      .set('X-Forwarded-For', 'claim-confirm-existe')
+      .set(BEARER).set('X-Forwarded-For', 'claim-confirm-existe')
       .send({});
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ m: 'confirm' });
@@ -93,11 +107,11 @@ describe('createClaimRoutes — montagem das rotas e limitador no lugar certo', 
   it('claim/start: o limitador (max=3) está MONTADO ANTES do controller — a 4ª chamada é 429, sem chegar no controller', async () => {
     const xff = 'claim-start-limitador';
     for (let i = 0; i < 3; i++) {
-      const ok = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', xff).send({});
+      const ok = await request(server).post('/api/auth/claim/start').set(BEARER).set('X-Forwarded-For', xff).send({});
       expect(ok.status).toBe(200);
     }
     (controller.start as jest.Mock).mockClear();
-    const bloqueado = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', xff).send({});
+    const bloqueado = await request(server).post('/api/auth/claim/start').set(BEARER).set('X-Forwarded-For', xff).send({});
     expect(bloqueado.status).toBe(429);
     expect(bloqueado.body).toMatchObject({ success: false, error: expect.stringContaining('OTP') });
     expect(controller.start).not.toHaveBeenCalled();
@@ -106,14 +120,43 @@ describe('createClaimRoutes — montagem das rotas e limitador no lugar certo', 
   it('claim/confirm: o limitador (max=5) está MONTADO ANTES do controller — a 6ª chamada é 429, sem chegar no controller', async () => {
     const xff = 'claim-confirm-limitador';
     for (let i = 0; i < 5; i++) {
-      const ok = await request(server).post('/api/auth/claim/confirm').set('X-Forwarded-For', xff).send({});
+      const ok = await request(server).post('/api/auth/claim/confirm').set(BEARER).set('X-Forwarded-For', xff).send({});
       expect(ok.status).toBe(200);
     }
     (controller.confirm as jest.Mock).mockClear();
-    const bloqueado = await request(server).post('/api/auth/claim/confirm').set('X-Forwarded-For', xff).send({});
+    const bloqueado = await request(server).post('/api/auth/claim/confirm').set(BEARER).set('X-Forwarded-For', xff).send({});
     expect(bloqueado.status).toBe(429);
     expect(bloqueado.body).toMatchObject({ success: false, error: expect.stringContaining('confirmation') });
     expect(controller.confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('createClaimRoutes — H3 (D650): requireAuth nas duas rotas, DEPOIS do rate limit', () => {
+  const controller = {
+    start: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'start' }); }),
+    confirm: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'confirm' }); }),
+  } as unknown as ClaimController;
+  const server = appDeRota('claimRoutesH3', '/api', () => createClaimRoutes(controller, authMiddleware));
+
+  afterEach(() => {
+    (controller.start as jest.Mock).mockClear();
+    (controller.confirm as jest.Mock).mockClear();
+  });
+
+  it.each(['start', 'confirm'])('claim/%s sem token → 401 e o controller NÃO é chamado', async (rota) => {
+    const res = await request(server).post(`/api/auth/claim/${rota}`).set('X-Forwarded-For', `h3-sem-token-${rota}`).send({});
+    expect(res.status).toBe(401);
+    expect((controller as unknown as Record<string, jest.Mock>)[rota]).not.toHaveBeenCalled();
+  });
+
+  it('o rate limit vem ANTES do requireAuth: rajada anônima estoura 429, não 401 infinito', async () => {
+    const xff = 'h3-rajada-anonima';
+    for (let i = 0; i < 3; i++) {
+      const r = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', xff).send({});
+      expect(r.status).toBe(401);
+    }
+    const bloqueado = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', xff).send({});
+    expect(bloqueado.status).toBe(429);
   });
 });
 
@@ -135,7 +178,7 @@ describe('createClaimRoutes — LIGAÇÃO real com IPv6 (mesmo /56 deve colapsar
     confirm: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'confirm' }); }),
   } as unknown as ClaimController;
 
-  const server = appDeRota('claimRoutesWiring', '/api', () => createClaimRoutes(controller));
+  const server = appDeRota('claimRoutesWiring', '/api', () => createClaimRoutes(controller, authMiddleware));
 
   afterEach(() => {
     (controller.start as jest.Mock).mockClear();
@@ -145,11 +188,11 @@ describe('createClaimRoutes — LIGAÇÃO real com IPv6 (mesmo /56 deve colapsar
   it('claim/start: 3 IPv6 DIFERENTES do MESMO /56 esgotam o max=3 — a 4ª (outro endereço do mesmo /56) é 429', async () => {
     const enderecos = ['2001:db8:1:1::40', '2001:db8:1:1::41', '2001:db8:1:1::42', '2001:db8:1:1::43'];
     for (let i = 0; i < 3; i++) {
-      const ok = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', enderecos[i]).send({});
+      const ok = await request(server).post('/api/auth/claim/start').set(BEARER).set('X-Forwarded-For', enderecos[i]).send({});
       expect(ok.status).toBe(200);
     }
     (controller.start as jest.Mock).mockClear();
-    const bloqueado = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', enderecos[3]).send({});
+    const bloqueado = await request(server).post('/api/auth/claim/start').set(BEARER).set('X-Forwarded-For', enderecos[3]).send({});
     expect(bloqueado.status).toBe(429);
     expect(controller.start).not.toHaveBeenCalled();
   });
@@ -160,11 +203,11 @@ describe('createClaimRoutes — LIGAÇÃO real com IPv6 (mesmo /56 deve colapsar
       '2001:db8:1:1::53', '2001:db8:1:1::54', '2001:db8:1:1::55',
     ];
     for (let i = 0; i < 5; i++) {
-      const ok = await request(server).post('/api/auth/claim/confirm').set('X-Forwarded-For', enderecos[i]).send({});
+      const ok = await request(server).post('/api/auth/claim/confirm').set(BEARER).set('X-Forwarded-For', enderecos[i]).send({});
       expect(ok.status).toBe(200);
     }
     (controller.confirm as jest.Mock).mockClear();
-    const bloqueado = await request(server).post('/api/auth/claim/confirm').set('X-Forwarded-For', enderecos[5]).send({});
+    const bloqueado = await request(server).post('/api/auth/claim/confirm').set(BEARER).set('X-Forwarded-For', enderecos[5]).send({});
     expect(bloqueado.status).toBe(429);
     expect(controller.confirm).not.toHaveBeenCalled();
   });

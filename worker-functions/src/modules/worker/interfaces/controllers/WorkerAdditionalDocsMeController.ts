@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { selfUid } from '@shared/http/selfUid';
 import { GCSStorageService, DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
@@ -21,9 +22,7 @@ export class WorkerAdditionalDocsMeController {
   }
 
   private getAuthUid(req: Request): string | null {
-    return (req as Request & { user?: { uid: string } }).user?.uid
-      ?? (req.headers['x-auth-uid'] as string | undefined)
-      ?? null;
+    return selfUid(req);
   }
 
   private async resolveWorker(authUid: string): Promise<{ id: string } | null> {
@@ -94,7 +93,7 @@ export class WorkerAdditionalDocsMeController {
     try {
       const authUid = this.getAuthUid(req);
       if (!authUid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
-      const { id } = req.params;
+      const { docId: id } = req.params; // não `:id`: o requirePermission lê `req.params.id` como a ficha (T311)
       const worker = await this.resolveWorker(authUid);
       if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
       // Fetch doc to delete from GCS

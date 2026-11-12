@@ -14,6 +14,7 @@
  */
 
 import type { PatientServiceUpsertInput } from '@modules/case';
+import { utcCivilDayOf } from '@shared/locale/civilClock';
 
 /** Marcador de "não consegui ler" — distinto de null (vazio). */
 export const UNREADABLE = { $unreadable: true } as const;
@@ -134,7 +135,7 @@ export function isUnreadable(v: unknown): v is Unreadable {
 }
 
 function toIsoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return utcCivilDayOf(d);
 }
 
 function pickString(v: unknown): string | null {

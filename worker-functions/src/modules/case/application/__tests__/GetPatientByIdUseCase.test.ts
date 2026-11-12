@@ -68,6 +68,7 @@ const mockPatient: PatientDetailRow = {
   insuranceVerifiedCodes: [],
   coverage: { display: 'OSDE', displaySource: 'INFORMED', entries: [] },
   hasVerifiedActiveCoverage: false,
+  activeDiagnosisCount: 0,
   deviceTypes: [],
   needsAttention: false,
   attentionReasons: [],

@@ -56,6 +56,30 @@ export interface UpsertTalentumPrescreeningDTO {
   jobCaseName: string;
   status: TalentumPrescreeningStatus;
   environment?: WebhookEnvironment;
+  /**
+   * `true` quando `jobPostingId` veio da resolução pelo `talentum_prescreening_id` (a vaga DONA do prescreening).
+   * Só a dona sobrescreve a vaga já gravada; resolução por título/null nunca (continua COALESCE).
+   */
+  jobPostingResolvedById?: boolean;
+}
+
+export type TalentumDivergenceKind =
+  | 'WORKER_NULL'
+  | 'WORKER_EMAIL_AMBIGUOUS'
+  | 'JOB_POSTING_NULL'
+  | 'JOB_POSTING_BY_TITLE_ONLY'
+  | 'JOB_POSTING_TITLE_DIFFERS_STORED'
+  | 'JOB_POSTING_REPOINTED_TO_OWNER';
+
+export interface InsertTalentumDivergenceDTO {
+  kind: TalentumDivergenceKind;
+  talentumPrescreeningId: string;
+  talentumProfileId: string;
+  prescreeningId: string | null;
+  workerId: string | null;
+  jobPostingId: string | null;
+  expectedJobPostingId: string | null;
+  environment: WebhookEnvironment;
 }
 
 // ─────────────────────────────────────────────────────────────────

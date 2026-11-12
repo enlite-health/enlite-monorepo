@@ -84,6 +84,13 @@ describe('authorizeVacancyUpdate — 422 de SOURCE_LOCKED_FIELDS (F3, fase 1)', 
     const result = await authorizeVacancyUpdate(db, 'jp-sumiu', { schedule: [] });
     expect(result).toEqual({ kind: 'error', status: 404, error: 'Vacancy not found' });
   });
+
+  it('vaga apagada (soft-delete) não é lida: o SELECT carrega deleted_at IS NULL → 404', async () => {
+    const db = makeDb(null);
+    await authorizeVacancyUpdate(db, 'jp-apagada', { schedule: [] });
+    const sql = String((db.query as jest.Mock).mock.calls[0][0]);
+    expect(sql).toContain('deleted_at IS NULL');
+  });
 });
 
 // 057/D523 (substitui a T035 da spec 027): os 5 campos de recrutamento agora moram no serviço — a vaga COM serviço os recusa (422);

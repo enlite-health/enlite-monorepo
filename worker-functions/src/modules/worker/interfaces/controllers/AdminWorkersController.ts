@@ -5,9 +5,16 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
+import {
+  WORKER_SEARCH_CANDIDATE_LIMIT,
+  decryptWorkerName,
+  matchesSearch,
+  nameSearchBidxLiteral,
+  planWorkerSearch,
+} from '@shared/security/workerNameSearch';
 import { GCSStorageService } from '../../infrastructure/GCSStorageService';
 import { generatePhoneCandidates } from '@shared/utils/phoneNormalization';
-import { mapPlatformLabel, matchesSearch, WorkerListItem, WORKER_DETAIL_COLS } from './AdminWorkersControllerHelpers';
+import { mapPlatformLabel, WorkerListItem, WORKER_DETAIL_COLS } from './AdminWorkersControllerHelpers';
 import { buildWorkerDetailResponse } from './AdminWorkersDetailBuilder';
 import { ExportWorkersUseCase, ExportSemColunaPermitidaError } from '../../application/ExportWorkersUseCase';
 import { cellsOfRequest } from '@modules/identity/permissions';
@@ -19,6 +26,7 @@ import {
   appendLanguageFilter,
 } from './AdminWorkersListHelpers';
 import { logger, reportError } from '@shared/logging';
+import { operationDateOf } from '@shared/locale/civilClock';
 
 // ── Shared docs_validated enum ────────────────────────────────────────────────
 
@@ -112,13 +120,10 @@ export class AdminWorkersController {
   }
 
   private async decryptWorkerListRow(row: Record<string, unknown>): Promise<{ firstName: string; lastName: string; phone: string; worker: WorkerListItem }> {
-    const [firstName, lastName] = await Promise.all([
-      this.encryptionService.decrypt(row.first_name_encrypted as string | null),
-      this.encryptionService.decrypt(row.last_name_encrypted as string | null),
-    ]);
+    const { firstName, lastName } = await decryptWorkerName(this.encryptionService, row);
     return {
-      firstName: firstName ?? '',
-      lastName: lastName ?? '',
+      firstName,
+      lastName,
       phone: (row.phone as string) ?? '',
       worker: {
         id: row.id as string,
@@ -193,39 +198,22 @@ export class AdminWorkersController {
       ));
 
       // Search filter
-      const searchRaw = search?.trim();
-      const searchTerm = searchRaw?.toLowerCase();
-      const isEmailSearch = !!searchRaw && searchRaw.includes('@');
-      const phoneDigits = searchRaw?.replace(/[\s+\-()]/g, '') ?? '';
-      const isPhoneSearch = !isEmailSearch && /^\d{4,}$/.test(phoneDigits);
-      const isNameSearch = !!searchTerm && !isEmailSearch && !isPhoneSearch;
+      const plan = planWorkerSearch(search);
 
-      if (searchTerm && (isEmailSearch || isPhoneSearch)) {
-        const likeField = isEmailSearch ? 'w.email' : 'w.phone';
-        const likeValue = `%${isEmailSearch ? searchTerm : phoneDigits}%`;
-        whereClause += ` AND ${likeField} ILIKE $${paramIndex}`;
-        params.push(likeValue);
+      if (plan && plan.kind !== 'name') {
+        whereClause += ` AND ${plan.kind === 'email' ? 'w.email' : 'w.phone'} ILIKE $${paramIndex}`;
+        params.push(plan.like);
         paramIndex++;
       }
 
-      if (isNameSearch) {
-        let searchBidxLiteral: string | null;
-        try {
-          const buffers = await this.blindIndexService.generateSearchTrigramBidx(searchRaw!);
-          searchBidxLiteral = this.blindIndexService.serializeForPg(buffers);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Invalid search term';
-          res.status(400).json({ success: false, error: msg });
+      if (plan?.kind === 'name') {
+        const bidx = await nameSearchBidxLiteral(this.blindIndexService, plan.raw);
+        if (!bidx.ok) {
+          res.status(400).json({ success: false, error: bidx.error });
           return;
         }
-
-        if (searchBidxLiteral === null) {
-          res.status(400).json({ success: false, error: 'Search term must have at least 3 characters' });
-          return;
-        }
-
         whereClause += ` AND w.name_trgm_bidx @> $${paramIndex}::bytea[]`;
-        params.push(searchBidxLiteral);
+        params.push(bidx.literal);
         paramIndex++;
       }
 
@@ -241,9 +229,8 @@ export class AdminWorkersController {
         GROUP BY w.id, wd.documents_status
       `;
 
-      if (isNameSearch) {
-        const CANDIDATE_LIMIT = 200;
-        const fetchParams = [...params, CANDIDATE_LIMIT];
+      if (plan?.kind === 'name') {
+        const fetchParams = [...params, WORKER_SEARCH_CANDIDATE_LIMIT];
         const result = await this.db.query(
           `${baseQuery} ORDER BY w.created_at DESC LIMIT $${paramIndex}`,
           fetchParams,
@@ -251,7 +238,7 @@ export class AdminWorkersController {
 
         const decryptedAll = await Promise.all(result.rows.map((row) => this.decryptWorkerListRow(row)));
         const filtered = decryptedAll.filter(
-          ({ firstName, lastName, worker, phone }) => matchesSearch(searchTerm!, [firstName, lastName, worker.email ?? '', phone]),
+          ({ firstName, lastName, worker, phone }) => matchesSearch(plan.term, [firstName, lastName, worker.email ?? '', phone]),
         );
 
         const paginatedOffset = parseInt(offset, 10);
@@ -388,7 +375,7 @@ export class AdminWorkersController {
 
     const columns = columnKeys as WorkerExportColumnKey[];
     const statusLabel = status ?? 'ALL';
-    const date = new Date().toISOString().slice(0, 10);
+    const date = operationDateOf('AR', new Date());
 
     try {
       const useCase = new ExportWorkersUseCase();

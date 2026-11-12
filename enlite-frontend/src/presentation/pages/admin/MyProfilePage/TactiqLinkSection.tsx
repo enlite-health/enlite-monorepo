@@ -98,7 +98,8 @@ export default function TactiqLinkSection({ redirect = (url) => window.location.
 
   return (
     <ProfileCard title={t('admin.profile.tactiq.title')} description={t('admin.profile.tactiq.subtitle')} testId="tactiq-link-page" className="xl:col-span-2">
-      {banner?.kind === 'linked' && (
+      {/* "Vinculada" só se o estado SALVO confirma: o param da volta do OAuth sozinho mente quando o backend rebaixa o vínculo (ex.: wrong_account). */}
+      {banner?.kind === 'linked' && status === 'ok' && state === 'linked' && (
         <Text color="inherit" as="p" size="sm" role="status" className="rounded-lg bg-green-100 text-green-900 px-4 py-3" data-testid="tactiq-banner-linked">{tt('returnLinked')}</Text>
       )}
       {banner?.kind === 'error' && (

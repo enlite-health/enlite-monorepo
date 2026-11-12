@@ -7,6 +7,7 @@ import {
   UpsertTalentumPrescreeningDTO,
   UpsertTalentumQuestionDTO,
   UpsertTalentumResponseDTO,
+  InsertTalentumDivergenceDTO,
 } from '../domain/TalentumPrescreening';
 
 export class TalentumPrescreeningRepository {
@@ -21,14 +22,24 @@ export class TalentumPrescreeningRepository {
   //     prescreening_id = fila (processo seletivo), profile_id = candidato
   //     status         → sempre sobrescreve (INITIATED → IN_PROGRESS → COMPLETED → ANALYZED)
   //     worker_id      → COALESCE: preenche se era null; não regride para null em POSTs posteriores
-  //     job_posting_id → COALESCE: idem
+  //     job_posting_id → a vaga DONA (resolvida pelo talentum_prescreening_id, `jobPostingResolvedById`)
+  //                      vence a gravada; resolução por título/null mantém o COALESCE (título nunca
+  //                      sobrescreve uma resolução por id — M2)
   //     updated_at     → sempre NOW()
+  //   `previousJobPostingId` = a vaga gravada ANTES deste evento (null se a linha é nova).
+  //   `client` opcional: roda dentro da transação do chamador (card + divergência atômicos).
   async upsertPrescreening(
     dto: UpsertTalentumPrescreeningDTO,
-  ): Promise<{ prescreening: TalentumPrescreening; created: boolean }> {
+    client?: { query: Pool['query'] },
+  ): Promise<{ prescreening: TalentumPrescreening; created: boolean; previousJobPostingId: string | null }> {
     const environment = dto.environment ?? 'production';
-    const result = await this.pool.query(
-      `INSERT INTO talentum_prescreenings (
+    const db = client || this.pool;
+    const result = await db.query(
+      `WITH prev AS (
+         SELECT job_posting_id FROM talentum_prescreenings
+         WHERE talentum_prescreening_id = $1 AND talentum_profile_id = $2
+       )
+       INSERT INTO talentum_prescreenings (
          talentum_prescreening_id,
          talentum_profile_id,
          worker_id,
@@ -40,10 +51,13 @@ export class TalentumPrescreeningRepository {
        ON CONFLICT (talentum_prescreening_id, talentum_profile_id) DO UPDATE SET
          status         = EXCLUDED.status,
          worker_id      = COALESCE(talentum_prescreenings.worker_id,      EXCLUDED.worker_id),
-         job_posting_id = COALESCE(talentum_prescreenings.job_posting_id, EXCLUDED.job_posting_id),
+         job_posting_id = CASE
+           WHEN $8::boolean AND EXCLUDED.job_posting_id IS NOT NULL THEN EXCLUDED.job_posting_id
+           ELSE COALESCE(talentum_prescreenings.job_posting_id, EXCLUDED.job_posting_id)
+         END,
          environment    = EXCLUDED.environment,
          updated_at     = NOW()
-       RETURNING *, (xmax = 0) AS inserted`,
+       RETURNING *, (xmax = 0) AS inserted, (SELECT job_posting_id FROM prev) AS previous_job_posting_id`,
       [
         dto.talentumPrescreeningId,
         dto.talentumProfileId,
@@ -52,13 +66,37 @@ export class TalentumPrescreeningRepository {
         dto.jobCaseName,
         dto.status,
         environment,
+        dto.jobPostingResolvedById === true,
       ],
     );
 
     return {
       prescreening: this.mapPrescreeningRow(result.rows[0]),
       created: result.rows[0].inserted,
+      previousJobPostingId: result.rows[0].previous_job_posting_id ?? null,
     };
+  }
+
+  // Linha de divergência webhook × card (tabela `talentum_webhook_divergences`, migration 565).
+  // Só ids, tipo e ambiente — nunca telefone/e-mail/nome. Roda no `client` da transação do chamador.
+  async insertDivergence(dto: InsertTalentumDivergenceDTO, client?: { query: Pool['query'] }): Promise<void> {
+    const db = client || this.pool;
+    await db.query(
+      `INSERT INTO talentum_webhook_divergences
+         (kind, talentum_prescreening_id, talentum_profile_id, prescreening_id, worker_id,
+          job_posting_id, expected_job_posting_id, environment)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        dto.kind,
+        dto.talentumPrescreeningId,
+        dto.talentumProfileId,
+        dto.prescreeningId,
+        dto.workerId,
+        dto.jobPostingId,
+        dto.expectedJobPostingId,
+        dto.environment,
+      ],
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -154,6 +192,9 @@ export class TalentumPrescreeningRepository {
        ) VALUES ($1, $2, $3, $4, 'talentum')
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          application_funnel_stage = CASE
+           WHEN EXCLUDED.application_funnel_stage = 'REJECTED'
+                AND funnel_stage_precedence(worker_job_applications.application_funnel_stage) > funnel_stage_precedence('QUALIFIED')
+           THEN worker_job_applications.application_funnel_stage
            WHEN funnel_stage_precedence(EXCLUDED.application_funnel_stage)
                 >= funnel_stage_precedence(worker_job_applications.application_funnel_stage)
            THEN EXCLUDED.application_funnel_stage

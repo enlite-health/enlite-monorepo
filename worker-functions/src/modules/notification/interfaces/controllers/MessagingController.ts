@@ -101,7 +101,8 @@ export class MessagingController {
     const to = whatsappPhone || phone;
 
     if (!to) {
-      res.status(422).json({ error: 'Worker não possui número de telefone cadastrado' });
+      logger.info({ workerId, jobPostingId, code: 'WORKER_NO_PHONE' }, 'Convite de vaga bloqueado: worker sem telefone');
+      res.status(422).json({ error: 'WORKER_NO_PHONE', detail: 'Worker não possui número de telefone cadastrado' });
       return;
     }
 

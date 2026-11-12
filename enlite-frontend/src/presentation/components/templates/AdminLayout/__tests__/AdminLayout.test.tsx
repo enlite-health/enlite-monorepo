@@ -62,12 +62,12 @@ describe('AdminLayout', () => {
     expect(screen.getByTestId('pagina')).toBeInTheDocument();
   });
 
-  it('mostra o nome do admin na sidebar e, no logout, sai e vai para /admin/login', async () => {
+  it('mostra o nome do admin na sidebar e, no logout, sai e vai para o login único', async () => {
     renderLayout();
     expect(screen.getByTestId('sidebar-user')).toHaveTextContent('Ana');
     fireEvent.click(screen.getByTestId('sidebar-logout'));
     await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin/login'));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login?next=%2Fadmin'));
   });
 
   it('sem displayName cai no e-mail; sem perfil cai em "Admin"', () => {

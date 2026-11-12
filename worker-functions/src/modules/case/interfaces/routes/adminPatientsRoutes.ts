@@ -304,6 +304,23 @@ export function createAdminPatientsRoutes(
     logResourceAccess('patient', 'activate_recruitment'),
     (req: Request, res: Response) => contractedServicesController.activateRecruitment(req, res),
   );
+  // Spec 079: vincular vaga existente ao serviço — mesma cadeia do foguete (P1 da spec 079; ordem SUP-19).
+  router.post(
+    '/patients/:id/contracted-services/:sid/link-existing-vacancy/preview',
+    staffOnly,
+    perm.require('patient_services', 'update'),
+    permVacancy.require('vacancy', 'update'),
+    logResourceAccess('patient', 'link_existing_vacancy'),
+    (req: Request, res: Response) => contractedServicesController.previewLinkExistingVacancy(req, res),
+  );
+  router.post(
+    '/patients/:id/contracted-services/:sid/link-existing-vacancy',
+    staffOnly,
+    perm.require('patient_services', 'update'),
+    permVacancy.require('vacancy', 'update'),
+    logResourceAccess('patient', 'link_existing_vacancy'),
+    (req: Request, res: Response) => contractedServicesController.linkExistingVacancy(req, res),
+  );
 
   // ── Itinerário — leitura (fase 7, DX-7.6/7.7/D433/D434) ────────────────────
   // Sob `patient_services:read` (Q-7.3, padrão fixado na DX-7.7): a resposta carrega os mesmos

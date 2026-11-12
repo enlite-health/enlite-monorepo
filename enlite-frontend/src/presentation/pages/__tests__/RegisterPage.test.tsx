@@ -49,7 +49,7 @@ vi.mock('@infrastructure/http/WorkerApiService', () => ({
 
 vi.mock('@presentation/components/features/auth/GoogleLoginButton', () => ({
   GoogleLoginButton: ({ onSuccess }: any) => (
-    <button data-testid="google-btn" onClick={onSuccess}>Google</button>
+    <button data-testid="google-btn" onClick={() => onSuccess({ id: 'google-uid', email: 'g@test.com' })}>Google</button>
   ),
 }));
 
@@ -170,6 +170,12 @@ describe('RegisterPage', () => {
     it('nao renderiza label simples (usa labelContent)', () => {
       render(<RegisterPage />);
       expect(screen.queryByTestId('checkbox-label-lgpdOptIn')).toBeNull();
+    });
+
+    it('link do consentimento aponta para a pagina atual da politica de privacidad', () => {
+      render(<RegisterPage />);
+      const link = screen.getByRole('link', { name: 'register.lgpdTermsLinkText' });
+      expect(link.getAttribute('href')).toBe('https://enlite.health/es/politica-de-privacidad/');
     });
   });
 
@@ -326,10 +332,20 @@ describe('RegisterPage', () => {
       expect(screen.getByTestId('google-btn')).toBeTruthy();
     });
 
-    it('clicar no Google navega para /complete-whatsapp', () => {
+    it('clicar no Google cria a ficha (init com o uid/e-mail do Google) e navega para /complete-whatsapp', async () => {
+      mockInitWorker.mockResolvedValue({ status: 'ok', worker: { id: 'w1' } });
       render(<RegisterPage />);
       fireEvent.click(screen.getByTestId('google-btn'));
-      expect(mockNavigate).toHaveBeenCalledWith('/complete-whatsapp');
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/complete-whatsapp'));
+      expect(mockInitWorker).toHaveBeenCalledTimes(1);
+      expect(mockInitWorker).toHaveBeenCalledWith({ authUid: 'google-uid', email: 'g@test.com' });
+    });
+
+    it('Google com init que falha ainda navega para /complete-whatsapp (não bloqueia)', async () => {
+      mockInitWorker.mockRejectedValue(new Error('HTTP 500'));
+      render(<RegisterPage />);
+      fireEvent.click(screen.getByTestId('google-btn'));
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/complete-whatsapp'));
     });
   });
 

@@ -35,20 +35,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { authService } = get();
     const { user } = await authService.signInWithEmail(email, password);
     set({ user, isAuthenticated: true });
-    // Vincula o worker existente ao auth_uid do Firebase — não bloqueia navegação se falhar.
-    WorkerApiService.initWorker({ authUid: user.id, email: user.email }).catch(() => undefined);
+    // Sem `initWorker` aqui: o login é único (staff, aluno, prestador) e o init cria ficha de prestador para qualquer
+    // conta. Quem decide se há init é o destino por área (`useAreaDestination`), só quando a pessoa não tem área nenhuma.
   },
   
   loginWithGoogle: async (): Promise<User> => {
     const { authService } = get();
     const { user } = await authService.signInWithGoogle();
     set({ user, isAuthenticated: true });
-    // Vincula o worker existente ao Google Identity — não bloqueia navegação se falhar.
-    try {
-      await WorkerApiService.initWorker({ authUid: user.id, email: user.email });
-    } catch {
-      // Falha silenciosa — não bloqueia a navegação após login com Google.
-    }
+    // Sem `initWorker` (ver `login`): no `/login` quem decide é o `useAreaDestination`; no `/register`, a `RegisterPage`.
     return user;
   },
 

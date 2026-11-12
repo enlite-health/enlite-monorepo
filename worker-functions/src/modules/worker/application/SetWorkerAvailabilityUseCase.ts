@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { luzActor } from '@shared/audit/actorSource';
+import { resolveActor, withActorContext } from '@shared/database/actorContext';
 
 export interface AvailabilitySlotInput {
   /** 0=Domingo … 6=Sábado. */
@@ -32,11 +34,10 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
  * - SUBSTITUI (delete-all + insert): o prestador declara o estado final, não incremento.
  * - REJEITA lista vazia: nunca deixa o worker sem disponibilidade (protege o status
  *   REGISTERED, que exige worker_availability — migration 208).
- * - Auditado: `app.current_uid='luz:set-availability'` na transação.
+ * - Auditado: `app.current_uid` = o ATOR da request (porta MCP do agente: `agent:luz`, spec 078 M2); sem ator na request
+ *   (caminho legado, contexto de sistema) segue `luz:set-availability`, como sempre.
  */
 export class SetWorkerAvailabilityUseCase {
-  private static readonly AUDIT_UID = 'luz:set-availability';
-
   constructor(private readonly db: Pool) {}
 
   async execute(
@@ -65,38 +66,21 @@ export class SetWorkerAvailabilityUseCase {
       return { ok: false, slots: 0, reason: 'worker_not_found' };
     }
 
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`SELECT set_config('app.current_uid', $1, true)`, [
-        SetWorkerAvailabilityUseCase.AUDIT_UID,
-      ]);
-      await client.query(
-        `DELETE FROM worker_availability WHERE worker_id = $1`,
-        [input.workerId],
-      );
-      for (const s of input.slots) {
-        await client.query(
-          `INSERT INTO worker_availability
-             (worker_id, day_of_week, start_time, end_time, timezone, crosses_midnight)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            input.workerId,
-            s.dayOfWeek,
-            s.startTime,
-            s.endTime,
-            s.timezone ?? DEFAULT_TZ,
-            s.crossesMidnight ?? false,
-          ],
-        );
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    await withActorContext(
+      this.db,
+      async (client) => {
+        await client.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [input.workerId]);
+        for (const s of input.slots) {
+          await client.query(
+            `INSERT INTO worker_availability
+               (worker_id, day_of_week, start_time, end_time, timezone, crosses_midnight)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [input.workerId, s.dayOfWeek, s.startTime, s.endTime, s.timezone ?? DEFAULT_TZ, s.crossesMidnight ?? false],
+          );
+        }
+      },
+      resolveActor() ?? luzActor('set-availability'),
+    );
 
     return { ok: true, slots: input.slots.length };
   }

@@ -51,6 +51,22 @@ describe('usePatientsData', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it('repassa exclude_discharged para a lista E para os cards (mesmo contador); sem ele, o stats vai sem parâmetro', async () => {
+    const list = vi.spyOn(AdminPatientsApiService, 'listPatients').mockResolvedValue({ data: [], total: 0 });
+    const stats = vi.spyOn(AdminPatientsApiService, 'getPatientStats');
+
+    const { result, rerender } = renderHook(({ f }) => usePatientsData(f), {
+      initialProps: { f: { exclude_discharged: 'true' } as { exclude_discharged?: string } },
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(list).toHaveBeenLastCalledWith({ exclude_discharged: 'true' });
+    expect(stats).toHaveBeenLastCalledWith({ exclude_discharged: 'true' });
+
+    rerender({ f: {} });
+    await waitFor(() => expect(stats).toHaveBeenCalledTimes(2));
+    expect(stats).toHaveBeenLastCalledWith({ exclude_discharged: undefined });
+  });
+
   it('sets error when list API call fails', async () => {
     const errorMessage = 'Network error';
     vi.spyOn(AdminPatientsApiService, 'listPatients').mockRejectedValue(new Error(errorMessage));

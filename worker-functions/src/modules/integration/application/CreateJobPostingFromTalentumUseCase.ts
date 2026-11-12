@@ -25,6 +25,8 @@ import {
 } from '../../matching/infrastructure/JobPostingAuditRepository';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
+import { guardedPrescreeningIdSql, logPrescreeningIdCollision } from './talentumPrescreeningIdGuard';
+import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 
 // ─────────────────────────────────────────────────────────────────
 // Input / Output types
@@ -44,6 +46,26 @@ export interface CreateJobPostingFromTalentumResult {
   reason?: string;
 }
 
+/** `GET /projects/{projectId}/prescreening` → `_id` (o `data.prescreening.id` dos webhooks de resposta). */
+export type PrescreeningIdResolver = (talentumProjectId: string) => Promise<string | null>;
+
+/**
+ * Resolver de produção: reaproveita `TalentumApiClient.getPrescreening` (mesmo caminho do publish/sync/backfill).
+ * Best-effort: qualquer falha → null (a vaga nasce sem o `_id` e o backfill preenche) — nunca derruba o webhook.
+ */
+export const talentumPrescreeningIdResolver: PrescreeningIdResolver = async (projectId) => {
+  try {
+    const client = await TalentumApiClient.create();
+    const detail = await client.getPrescreening(projectId);
+    return detail.prescreeningId ?? null;
+  } catch (err) {
+    console.warn(`[CreateJobPostingFromTalentum] não obteve o _id do prescreening (projeto ${projectId}): ${(err as Error).message}`);
+    return null;
+  }
+};
+
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
 // ─────────────────────────────────────────────────────────────────
 // Use case
 // ─────────────────────────────────────────────────────────────────
@@ -51,7 +73,11 @@ export interface CreateJobPostingFromTalentumResult {
 export class CreateJobPostingFromTalentumUseCase {
   private readonly auditRepo: JobPostingAuditRepository;
 
-  constructor(private readonly pool: Pool) {
+  /** `resolvePrescreeningId` default = não resolve (null): handlers de produção injetam `talentumPrescreeningIdResolver`. */
+  constructor(
+    private readonly pool: Pool,
+    private readonly resolvePrescreeningId: PrescreeningIdResolver = async () => null,
+  ) {
     this.auditRepo = new JobPostingAuditRepository();
   }
 
@@ -77,6 +103,9 @@ export class CreateJobPostingFromTalentumUseCase {
       );
       return { created: false, skipped: true, jobPostingId, reason: 'already_exists' };
     }
+
+    // ── 1b. `_id` do prescreening: o webhook de resposta só traz ele (≠ talentum_project_id em 98%) ──
+    const prescreeningId = await this.resolvePrescreeningId(data._id);
 
     // ── 2. Extrair case_number e vacancy_number do título Talentum ───
     // T063: parser compartilhado — tolera "CASO N[-M]" (legado) e "EN N#M" / "N#M" (novo).
@@ -107,10 +136,15 @@ export class CreateJobPostingFromTalentumUseCase {
       const client = await this.pool.connect();
       try {
         await client.query('BEGIN');
-        await client.query(
-          `UPDATE job_postings SET talentum_project_id = $1, talentum_published_at = NOW() WHERE id = $2`,
-          [data._id, jobPostingId],
+        const linked = await client.query(
+          `UPDATE job_postings
+           SET talentum_project_id = $1, talentum_published_at = NOW(),
+               talentum_prescreening_id = COALESCE(${guardedPrescreeningIdSql(3, 2)}, talentum_prescreening_id)
+           WHERE id = $2
+           RETURNING talentum_prescreening_id`,
+          [data._id, jobPostingId, prescreeningId],
         );
+        await logPrescreeningIdCollision(client, jobPostingId, prescreeningId, linked.rows[0]?.talentum_prescreening_id);
         // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
         // leaving the surrounding transaction (and the UPDATE above) intact.
         await this.auditRepo.logEventSafe(client, {
@@ -152,20 +186,22 @@ export class CreateJobPostingFromTalentumUseCase {
       let jobPostingId: string;
       try {
         await client.query('BEGIN');
-        const insertResult = await client.query<{ id: string }>(
+        const insertResult = await client.query<{ id: string; talentum_prescreening_id: string | null }>(
           `INSERT INTO job_postings (
              vacancy_number, case_number, title,
              status, country,
-             talentum_project_id, talentum_published_at
+             talentum_project_id, talentum_published_at, talentum_prescreening_id
            ) VALUES (
              $1, $2, $3,
              'SEARCHING', 'AR',
-             $4, NOW()
+             $4, NOW(), ${guardedPrescreeningIdSql(5, 6)}
            )
-           RETURNING id`,
-          [vacancyNumber, caseNumber, title, data._id],
+           RETURNING id, talentum_prescreening_id`,
+          // $6: a vaga ainda não existe → uuid nulo (o guard compara `o.id <> $6` contra as OUTRAS vivas).
+          [vacancyNumber, caseNumber, title, data._id, prescreeningId, NIL_UUID],
         );
         jobPostingId = insertResult.rows[0].id;
+        await logPrescreeningIdCollision(client, jobPostingId, prescreeningId, insertResult.rows[0].talentum_prescreening_id);
 
         // Audit best-effort via SAVEPOINT — FK failure rolls back only the INSERT,
         // leaving the surrounding transaction (and the job_posting INSERT above) intact.
@@ -174,7 +210,7 @@ export class CreateJobPostingFromTalentumUseCase {
           eventType: 'CREATED',
           changes: {
             before: null,
-            after: { vacancyNumber, caseNumber, title, status: 'SEARCHING', talentum_project_id: data._id },
+            after: { vacancyNumber, caseNumber, title, status: 'SEARCHING', talentum_project_id: data._id, talentum_prescreening_id: prescreeningId },
           },
           actorUserId: null,
           actorType: 'WEBHOOK',

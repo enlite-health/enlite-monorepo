@@ -207,6 +207,17 @@ describe('JobPostingARRepository', () => {
     });
   });
 
+  describe('findActivePublic — detail_link (canal site)', () => {
+    it('o SQL desembrulha o objeto {id,url} de prd e mantem a string legada (nunca devolve o JSON cru)', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await repo.findActivePublic({ country: 'AR' });
+      const sql = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+      expect(sql).toContain("jsonb_typeof(jp.social_short_links->'site') = 'object'");
+      expect(sql).toContain("THEN jp.social_short_links->'site'->>'url'");
+      expect(sql).toContain("ELSE jp.social_short_links->>'site' END AS detail_link");
+    });
+  });
+
   describe('findActivePublic — faixa etária efetiva (F6)', () => {
     it('vaga com serviço: faixa derivada da banda; manual: a própria; a coluna auxiliar não sai; o SQL não lê a cópia', async () => {
       mockQuery.mockResolvedValueOnce({

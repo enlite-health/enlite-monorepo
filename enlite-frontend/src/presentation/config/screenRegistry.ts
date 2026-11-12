@@ -43,6 +43,11 @@ export interface ScreenDef {
   containers?: readonly ScreenContainer[];
   /** Abas da tela, na ordem — uma aba só existe se algum container dela for legível. */
   tabs?: readonly string[];
+  /**
+   * Como as `cells` da tela abrem o menu e a rota: `'all'` = EXIGE TODAS (o "E"); ausente = basta UMA (o "OU", o de toda
+   * tela existente). Só vale para `cells` — containers e abas seguem no OU. Spec 076: a lista global lê duas coisas.
+   */
+  openWith?: 'all';
 }
 
 import { ADMIN_USERS_PATH } from './adminHome';
@@ -137,6 +142,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },
   { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update'] },
   { id: 'patients.catalogServiceExitReasons', route: '/admin/catalogos/motivos-de-salida', cells: ['catalog_service_exit_reasons:read', 'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update'] },
+  { id: 'patients.catalogServiceShiftTemplates', route: '/admin/catalogos/guardias', cells: ['catalog_service_shift_templates:read', 'catalog_service_shift_templates:create', 'catalog_service_shift_templates:update'] },
   { id: 'patients.catalogSegments', route: '/admin/catalogos/segmentos', cells: ['catalog_therapeutic_segments:read', 'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update'] },
   // Spec 058 (Parte A): cadastro da obra social. A lista abre e cria (só o nome); o detalhe é uma página de CARTÕES, um container por
   // dado — cada um com a célula do que ele lê/escreve. O valor-hora do termo é `patient_contract_value` (a mesma da ficha do paciente).
@@ -277,7 +283,13 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },
   // Spec 055: quem atende enquadre e admissão (tabela interview_hosts). `update` cobre a busca de candidatos, agregar, editar e quitar.
   { id: 'interviewHosts', route: '/admin/entrevistadores', cells: ['interview_host:read', 'interview_host:update'] },
-  { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
+  // Spec 076: lista global de enquadres. O endpoint exige AS DUAS células (cruza evento e vaga) — por isso `openWith: 'all'`.
+  { id: 'enquadres', route: '/admin/enquadres', cells: ['enquadre_event:read', 'vacancy:read'], openWith: 'all' },
+  // Spec 078 (M3b-1): pedidos do Sol. `read` abre a tela; `decidir` mostra Aceitar / Negar / Descrever o que fazer.
+  { id: 'pedidosIa', route: '/admin/pedidos-ia', cells: ['pedidos_ia:read', 'pedidos_ia:decidir'] },
+  // Spec 082: painel de custos. Só-Master; NÃO entra em `adminNavigation.tsx` (DF-2) — acesso só pela URL digitada.
+  { id: 'custos', route: '/admin/custos', cells: ['platform_costs:read'] },
+  { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write', 'area_membership:read', 'area_membership:write'] },
 ];
 
 /** Todas as células que alguma tela lista, com as telas que as consomem. */

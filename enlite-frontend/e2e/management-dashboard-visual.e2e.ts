@@ -18,6 +18,7 @@
 
 import { test, expect, Page, Route } from '@playwright/test';
 import { escolherNoCombo } from './helpers/combobox';
+import { mockAreasDoPainel } from './helpers/areas-do-painel';
 
 const MOCK_ADMIN = {
   uid: 'mgmt-vis-admin-uid',
@@ -258,6 +259,7 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
   // num ciclo de remount da página inteira (medido: ~150 refetches de /v1/me/authz e de
   // /analytics/dashboard/management num único teste). `enforcement: 'off'` = todo container
   // aparece, igual ao padrão usado em admin-sidebar-visual.e2e.ts.
+  await mockAreasDoPainel(page);
   await page.route('**/v1/me/authz', (route) =>
     route.fulfill({
       status: 200,
@@ -278,7 +280,7 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await installFakeFirebaseAuth(page);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();

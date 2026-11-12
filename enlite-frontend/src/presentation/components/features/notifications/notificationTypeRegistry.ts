@@ -13,9 +13,10 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ItineraryUncoveredShiftsItem, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
+import { formatMessageDateTime } from '@presentation/components/features/admin/PatientDetail/conversation/messageDateFormat';
 
 export type Translate = (key: string, opts?: Record<string, unknown>) => string;
 
@@ -118,6 +119,78 @@ function itineraryDeepLink(n: AdminNotification): NotificationDeepLink | null {
 /** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
 export const TACTIQ_LINK_PATH = '/admin/mi-cuenta';
 
+/** spec 078 (M3b-2): o aviso do pedido do Sol não carrega assunto nem texto; leva à página de pedidos (sem paciente, sem `focusRequest`). */
+const PEDIDOS_IA_PATH = '/admin/pedidos-ia';
+
+const pedidoIaHandler = (key: 'pedidoIaNovo' | 'pedidoIaGrave'): NotificationTypeHandler => ({
+  buildText: (_n, t) => t(`admin.notifications.${key}`),
+  getDeepLink: () => ({ path: PEDIDOS_IA_PATH }),
+  actorLabel: (_n, t) => t('admin.notifications.pedidoIaActor'),
+  contextLine: (_n, t) => t('admin.notifications.pedidoIaContext'),
+});
+
+/** spec 078 M4.4 (gatilho (d)): pedido aceito em degrau 3/4. Payload estranho/ausente = texto sem degrau e prazo, nunca crash. */
+function pedidoIaAplicarPayload(n: AdminNotification): PedidoIaAplicarPayload | null {
+  const p = n.payload as Partial<PedidoIaAplicarPayload> | null | undefined;
+  return p && (p.degrau === 3 || p.degrau === 4) && (p.prazo === 'hoje' || p.prazo === 'semana') ? (p as PedidoIaAplicarPayload) : null;
+}
+
+const pedidoIaAplicarHandler: NotificationTypeHandler = {
+  buildText: (n, t) => {
+    const p = pedidoIaAplicarPayload(n);
+    return p
+      ? t('admin.notifications.pedidoIaAplicar', { degrau: p.degrau, prazo: t(`admin.notifications.pedidoIaAplicarPrazo.${p.prazo}`) })
+      : t('admin.notifications.pedidoIaAplicarSemDados');
+  },
+  getDeepLink: () => ({ path: PEDIDOS_IA_PATH }),
+  actorLabel: (_n, t) => t('admin.notifications.pedidoIaActor'),
+  contextLine: (_n, t) => t('admin.notifications.pedidoIaContext'),
+};
+
+const IMPORT_BLOCKED_STAGES = ['blocked', 'reminder', 'expired', 'will_be_lost'] as const;
+
+/** spec 083: payload ausente/estranho cai no aviso mais neutro (host, "bloqueou", sem vínculo, admissão) — nunca crash, nunca vaza campo cru. */
+function importBlockedPayload(n: AdminNotification): Pick<ImportBlockedPayload, 'stage' | 'kind' | 'reason' | 'audience' | 'hostName'> & { meetingAt: string; deadlineAt: string } {
+  const p = (n.payload ?? {}) as Partial<ImportBlockedPayload>;
+  const stage = IMPORT_BLOCKED_STAGES.find((x) => x === p.stage) ?? 'blocked';
+  return {
+    stage,
+    kind: p.kind === 'enquadre' ? 'enquadre' : 'admission',
+    reason: p.reason === 'wrong_account' ? 'wrong_account' : 'no_link',
+    audience: stage === 'will_be_lost' || p.audience === 'supervisor' ? 'supervisor' : 'host',
+    meetingAt: typeof p.meetingAt === 'string' ? p.meetingAt : '',
+    deadlineAt: typeof p.deadlineAt === 'string' ? p.deadlineAt : '',
+    hostName: typeof p.hostName === 'string' && p.hostName.trim() ? p.hostName.trim() : undefined,
+  };
+}
+
+/** Data/hora da tela: o MESMO formato do cartão (`formatMessageDateTime`, fuso do operador via `getInstantParts`). Data ausente = vazio. */
+function importBlockedMoment(iso: string, t: Translate): string {
+  if (!iso) return '';
+  const language = t('admin.notifications.importBlocked.dateLanguage');
+  const connector = t('admin.patients.detail.conversation.thread.dateConnector');
+  return formatMessageDateTime(iso, language, connector);
+}
+
+/** Corpo (ou título, `part: 'title'`) do aviso. O supervisor vê o nome de quem fez a reunião; sem nome, `hostFallback`. */
+function importBlockedText(n: AdminNotification, t: Translate, part: 'title' | 'body'): string {
+  const p = importBlockedPayload(n);
+  const base = 'admin.notifications.importBlocked';
+  const host = p.hostName ?? t(`${base}.hostFallback`);
+  // `hostStart`: o mesmo nome, mas com maiúscula quando abre frase (sem nome: "A pessoa responsável").
+  const hostStart = p.hostName ?? t(`${base}.hostFallbackStart`);
+  const motivo = t(`${base}.reason.${p.audience}.${p.reason}`, { host });
+  const key = p.stage === 'will_be_lost' ? 'willBeLost' : p.stage;
+  return t(`${base}.${key}.${part}`, {
+    host,
+    hostStart,
+    motivo,
+    reuniao: t(`${base}.meeting.${p.kind}`),
+    data: importBlockedMoment(p.meetingAt, t),
+    prazo: importBlockedMoment(p.deadlineAt, t),
+  });
+}
+
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
     buildText: (n, t) => t('admin.notifications.mentioned', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
@@ -148,6 +221,14 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
     detailLine: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
   },
+  ADMISSION_IMPORT_BLOCKED: {
+    // O cartão não tem linha de título: o leitor de tela ouve título + corpo (aria-label); a tela mostra o corpo na linha 3.
+    buildText: (n, t) => `${importBlockedText(n, t, 'title')}. ${importBlockedText(n, t, 'body')}`,
+    getDeepLink: () => ({ path: TACTIQ_LINK_PATH }),
+    actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
+    contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
+    detailLine: (n, t) => importBlockedText(n, t, 'body'),
+  },
   ITINERARY_UNCOVERED_SHIFTS: {
     // Dois plurais independentes ("1 turno en 3 servicios"): cada contagem tem a SUA chave `_one/_other` (i18next só pluraliza por `count`),
     // e a frase só costura os dois pedaços já pluralizados.
@@ -164,6 +245,9 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
       return first ? t('admin.notifications.itineraryUncoveredDetail', { date: first.firstDate.split('-').reverse().slice(0, 2).join('/') }) : null;
     },
   },
+  PEDIDO_IA_NOVO: pedidoIaHandler('pedidoIaNovo'),
+  PEDIDO_IA_GRAVE: pedidoIaHandler('pedidoIaGrave'),
+  PEDIDO_IA_APLICAR: pedidoIaAplicarHandler,
 };
 
 const FALLBACK_HANDLER: NotificationTypeHandler = {

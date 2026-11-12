@@ -28,6 +28,7 @@ import { cellsOfRequest } from '@modules/identity/permissions';
 import { resolveCountryScope, CountryScopeError } from '@modules/identity';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { projectManagementDashboard } from '../../application/dashboardContainerAccess';
+import { operationDateOf } from '@shared/locale/civilClock';
 
 export class AnalyticsDashboardController {
   protected db: Pool;
@@ -223,7 +224,7 @@ export class AnalyticsDashboardController {
           reemplazosCount:    remCount,
           pubChartData:       publicationsByChannel.map(p => ({ name: p.channel ?? 'Sin canal', value: p.count })),
           publicacionesList:  publicacionesList.map(p => ({
-            fecha:        p.publishedAt?.toISOString().split('T')[0] ?? 'Sin fecha',
+            fecha:        p.publishedAt ? operationDateOf('AR', p.publishedAt) : 'Sin fecha',
             canal:        p.channel,
             publicadoPor: p.recruiterName,
             descripcion:  p.observations ?? '',

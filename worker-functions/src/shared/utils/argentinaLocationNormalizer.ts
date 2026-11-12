@@ -121,6 +121,9 @@ const PROVINCE_CANONICAL: Readonly<Record<string, string>> = {
   'TUCUMAN': 'Tucumán',
 };
 
+/** Labels canônicos (24), derivados do mapa acima: único dono da lista. */
+export const CANONICAL_PROVINCES: readonly string[] = Object.freeze([...new Set(Object.values(PROVINCE_CANONICAL))]);
+
 /**
  * Normaliza um valor de província argentina para o label canônico de
  * exibição pública. Aceita variantes case/acento-insensitive e o sufixo

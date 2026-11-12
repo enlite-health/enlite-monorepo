@@ -23,7 +23,7 @@ export async function loginComoStaffMock(page: Page, u: MockUser, displayName: s
     });
   });
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').click();
   await page.keyboard.type(u.email);
   await page.locator('input[type="password"]').click();

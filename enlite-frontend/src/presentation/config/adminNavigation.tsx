@@ -6,13 +6,15 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
 import { ADMIN_USERS_PATH } from './adminHome';
-import { MapPin } from 'lucide-react';
+import { CalendarDays, Inbox, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
-  // O item do painel de acessos deriva da célula que toda rota da família exige.
-  // Sem ela, o item não existe no menu.
-  const { canRead: canSeeAccess } = useCellAccess('permission_management');
+  // O item do painel de acessos abre com a MESMA regra da página (`AccessGate`): `permission_management:read`
+  // OU `area_membership:read` (quem só tem a segunda vê só a aba "Vínculos de área"). Sem nenhuma, o item não existe.
+  const canSeeGroups = useCellAccess('permission_management').canRead;
+  const canSeeAreaMemberships = useCellAccess('area_membership').canRead;
+  const canSeeAccess = canSeeGroups || canSeeAreaMemberships;
 
   // Os itens da seção Administración NÃO têm gate próprio: passam pelo MESMO filtro dos itens
   // de topo (`comAlgumaCelulaDaTela`, abaixo — PR #313), que lê as células da tela no
@@ -92,6 +94,11 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.patients', 'Pacientes'),
       href: '/admin/patients',
+    },
+    {
+      icon: <CalendarDays className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.enquadres', 'Encuadres'),
+      href: '/admin/enquadres',
     },
     {
       icon: <MapPin className="w-6 h-6" strokeWidth={2} />,
@@ -176,6 +183,12 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       href: '/admin/entrevistadores',
     },
     {
+      // Spec 078 (M3b-1): pedidos do Sol. O item some sem `pedidos_ia:read` (registro de telas → `screenVisibleFor`).
+      icon: <Inbox className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.pedidosIa', 'Pedidos de la IA'),
+      href: '/admin/pedidos-ia',
+    },
+    {
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -201,6 +214,15 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.catalogServiceExitReasons', 'Motivos de salida'),
       href: '/admin/catalogos/motivos-de-salida',
+    },
+    {
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+      ),
+      label: t('admin.nav.catalogServiceShiftTemplates', 'Guardias'),
+      href: '/admin/catalogos/guardias',
     },
     {
       icon: (

@@ -177,6 +177,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // SUP-19: a vaga nasce daqui). Era só `patient_services:update` até o
         // achado pós-#391 — `vacancy:write` ficava invisível a este teste.
         'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:update+vacancy:update',
+        // Spec 079: vincular vaga existente — mesma cadeia do foguete (ordem SUP-19).
+        'POST /api/admin/patients/:id/contracted-services/:sid/link-existing-vacancy → patient_services:update+vacancy:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/link-existing-vacancy/preview → patient_services:update+vacancy:update',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:create',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:update',
         'POST /api/admin/patients/:id/external-contacts → patient_family:create',
@@ -268,6 +271,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // F3 (vaga-le-do-servico): "marcar como atendido" o aviso de vaga publicada — a MESMA célula do PUT da vaga.
         'POST /api/admin/vacancies/:id/source-change-notices/:field/ack → vacancy:update',
         'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:create',
+        // Spec 084 F1: dar baixa (uma ou em lote), só vaga SEM serviço — a MESMA célula do PUT da vaga. NÃO existe rota inversa (R17).
+        'POST /api/admin/vacancies/baja → vacancy:update',
         // "Promover" (D300, merge main→stage 19/09/2026): entrou junto com
         // reject/restore, mesma célula (escrita no funil).
         'POST /api/admin/vacancies/blocked-applications/:blockedId/promote → funnel:update',
@@ -295,6 +300,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/workers/missing-documents → analytics:read',
         // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria.
         'GET /api/admin/recruitment/blocked-attempts → recruitment_blocked:read',
+        // Spec 081 (T064b, D602a): atividade por recrutadora e semana — célula só do Acesso Master.
+        'GET /api/admin/recruitment/activity-per-person → recruitment_activity_per_person:read',
         'POST /analytics/dedup/run → dedup:execute',
         // ── A4: admin.messaging (7) + admin.integrations (1) + admin.test_fixtures (1)
         'POST /api/admin/messaging/whatsapp/vacancy-match → messaging:send',
@@ -387,6 +394,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:create',
         'PATCH /api/admin/therapeutic-catalogs/service-exit-reasons/:itemId → catalog_service_exit_reasons:update',
         'GET /api/admin/therapeutic-catalogs/service-exit-reasons/options → patient_services:read',
+        // Guardias predefinidas (migration 550, spec 074) — mesmo molde dos motivos de saída.
+        'GET /api/admin/therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:read',
+        'POST /api/admin/therapeutic-catalogs/service-shift-templates → catalog_service_shift_templates:create',
+        'PATCH /api/admin/therapeutic-catalogs/service-shift-templates/:itemId → catalog_service_shift_templates:update',
+        'GET /api/admin/therapeutic-catalogs/service-shift-templates/options → patient_services:read',
         // anacare-conferencia-de-horas, fase 1 (migration 437) — `anacare_hours:read` para ver
         // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
         'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',
@@ -431,6 +443,13 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/ai-prompts/:slug/undo → ai_prompt:update',
         'POST /api/admin/ai-prompts/simulate-vacancy → ai_prompt:update', // T071
         'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
+        // spec 078 (M3b-1) — a página de pedidos do Sol: ver (read) × aceitar/negar/descrever (decidir).
+        'GET /api/admin/pedidos-ia → pedidos_ia:read',
+        'GET /api/admin/pedidos-ia/contadores → pedidos_ia:read', // T094 (081)
+        'GET /api/admin/pedidos-ia/:id → pedidos_ia:read',
+        'POST /api/admin/pedidos-ia/:id/aceitar → pedidos_ia:decidir',
+        'POST /api/admin/pedidos-ia/:id/descrever → pedidos_ia:decidir',
+        'POST /api/admin/pedidos-ia/:id/negar → pedidos_ia:decidir',
         // ── spec 022 (chat interno por paciente + anexos + sino de notificações) ──
         // Conversa (Bloco 1/3, `adminConversationRoutes.ts`) — família `admin.patients`,
         // célula NOVA `patient_conversation:*` (D-07, migration 463).
@@ -475,6 +494,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
         'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
         'POST /api/admin/me/tactiq-link → own_tactiq_link:create',
+        // spec 076: lista GLOBAL de enquadres (cross-vacante) — duas células encadeadas, `+` no inventário.
+        'GET /api/admin/enquadre-events → enquadre_event:read+vacancy:read',
         // spec 052 (eventos de enquadre, `adminEnquadreEventRoutes.ts`): família admin.vacancies, células enquadre_event/enquadre_summary/enquadre_result.
         'GET /api/admin/vacancies/:vacancyId/enquadre-events → enquadre_event:read',
         'GET /api/admin/vacancies/:vacancyId/enquadre-events/:eventId → enquadre_event:read',
@@ -493,11 +514,28 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/interview-hosts/candidates → interview_host:update',
         'POST /api/admin/interview-hosts → interview_host:update',
         'PATCH /api/admin/interview-hosts/:id → interview_host:update',
+        // acesso-do-cliente F1 (T111, `adminAreaMembershipRoutes.ts`): família admin.users, células area_membership:read|write.
+        'GET /api/admin/area-memberships → area_membership:read',
+        'GET /api/admin/area-memberships/people → area_membership:read',
+        'GET /api/admin/area-memberships/people/by-email → area_membership:read',
+        'POST /api/admin/area-memberships → area_membership:write',
+        'POST /api/admin/area-memberships/:id/revoke → area_membership:write',
+        // spec 080 (scoreboard and escalations of the assistants, `adminAssistantsRoutes.ts`): families assistant_scoreboard/assistant_escalation, contract rotas-plataforma-novas.md.
+        'GET /api/admin/assistants/scoreboard → assistant_scoreboard:read',
+        // spec 085 (cardápio de campos da Maria, `adminAssistantsRoutes.ts`): contagens reusam as células de patient/vacancy/worker.
+        'GET /api/admin/assistants/count/patients → patient:read',
+        'GET /api/admin/assistants/count/vacancies → vacancy:read',
+        'GET /api/admin/assistants/count/workers → worker:read',
+        'POST /api/admin/assistants/escalations → assistant_escalation:register',
+        // spec 086 (Luz prueba, `adminLuzPruebaRoutes.ts`): família admin.integrations, célula luz_prueba:chat (só Acesso Master).
+        'POST /api/admin/luz-prueba/turn → luz_prueba:chat',
+        // spec 082 (painel de custos, `adminCostsRoutes.ts`): família admin.integrations, célula platform_costs:read (só Acesso Master).
+        'GET /api/admin/costs/overview → platform_costs:read',
       ].sort(),
     );
   });
 
-  it('as isentas são as DEZ decididas, e nenhuma a mais', () => {
+  it('as isentas são as ONZE decididas, e nenhuma a mais', () => {
     // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
@@ -520,9 +558,12 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // `GET /api/admin/me/tactiq-link/callback` entrou na spec 049 (F4): o Tactiq redireciona o NAVEGADOR para o callback,
     // que não carrega Bearer. A isenção é a MARCA da montagem (`exemptHandler` em `tactiqLinkRoutes.ts`); a prova de
     // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:create`), 10 min, ligado ao uid.
+    // `GET /api/admin/assistants/reach` entered with spec 080 (contract rotas-plataforma-novas.md §1): a "self" route: it describes the actor itself to the
+    // assistants service and resolves the cells in the handler (`req.permissionCells` only exists inside `perm.require`); the exemption is the mount MARK (`exemptHandler`).
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'DELETE /v1/me/simulation',
+      'GET /api/admin/assistants/reach',
       'GET /api/admin/auth/profile',
       'GET /api/admin/me/tactiq-link/callback',
       'GET /v1/me/authz',

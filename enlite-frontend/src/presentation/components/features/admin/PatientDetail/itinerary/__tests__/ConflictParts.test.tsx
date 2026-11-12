@@ -28,4 +28,11 @@ describe('ConflictParts', () => {
     const { container } = render(<ConflictNote conflict={{ ...conflict, overlaps: [] }} name="Martín Gómez" testId="n" />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('conflito com turno de 24 h diz todo el día', () => {
+    const conflict = { workerId: 'w', date: '2026-11-09', slotId: 's', state: 'conflict' as const, overlaps: [{ weekday: 1, startTime: '08:00', durationMinutes: 1440, sameAddress: true }] };
+    render(<ConflictNote conflict={conflict} name="Martín Gómez" testId="n" />);
+    expect(screen.getByTestId('n')).toHaveTextContent('Martín ya atiende a otro paciente el lunes todo el día.');
+    expect(screen.getByTestId('n')).not.toHaveTextContent('de 08:00 a 08:00');
+  });
 });

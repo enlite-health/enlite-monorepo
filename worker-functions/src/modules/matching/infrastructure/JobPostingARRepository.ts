@@ -61,7 +61,8 @@ export class JobPostingARRepository {
         const jobPostingId = existing.rows[0].id;
         await this.pool.query(
           `UPDATE job_postings SET
-             status           = COALESCE($2, status),
+             -- spec 084 R17: o status que vem de fora (ClickUp) NUNCA tira vaga de DE_BAJA
+             status           = CASE WHEN status = 'DE_BAJA' THEN status ELSE COALESCE($2, status) END,
              priority         = COALESCE($3, priority),
              is_covered       = $4,
              coordinator_name = COALESCE($5, coordinator_name),
@@ -176,7 +177,8 @@ export class JobPostingARRepository {
         // Status: ClickUp wins when provided ($2 non-null) — it is source of truth.
         // All other fields: fill-only (COALESCE keeps existing non-null values).
         `UPDATE job_postings SET
-           status                    = COALESCE($2, status),
+           -- spec 084 R17: o status que vem de fora (ClickUp) NUNCA tira vaga de DE_BAJA
+           status                    = CASE WHEN status = 'DE_BAJA' THEN status ELSE COALESCE($2, status) END,
            priority                  = COALESCE(priority, $3),
            title                     = COALESCE(title, $4),
            worker_profile_sought     = COALESCE(worker_profile_sought, $5),
@@ -315,7 +317,12 @@ export class JobPostingARRepository {
 
          pa.state                             AS state,
          pa.city                              AS city,
-         jp.social_short_links->>'site'       AS detail_link,
+         -- Em PRD o canal 'site' e um objeto {id,url} (EnsureVacancyShortLinkUseCase); legado e string.
+         -- O feed so entrega URL ou NULL: ->> sobre o objeto devolveria o JSON inteiro como texto.
+         CASE WHEN jsonb_typeof(jp.social_short_links->'site') = 'object'
+              THEN jp.social_short_links->'site'->>'url'
+              ELSE jp.social_short_links->>'site'
+         END                                  AS detail_link,
          ${vacancyEffectiveRequiredProfessionsSql('jp')} AS worker_type,
          ${vacancyEffectiveRequiredSexSql('jp')} AS worker_sex,
          jp.inferred_zone                     AS job_zone,

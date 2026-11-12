@@ -3,6 +3,13 @@ import { OAuth2Client } from 'google-auth-library';
 
 const oauth2Client = new OAuth2Client();
 
+/** `X-Internal-Secret` igual a `INTERNAL_TOKEN_SECRET` (Cloud Tasks). Único ponto desta checagem. */
+export function hasValidInternalSecret(req: Request): boolean {
+  const secret = req.headers['x-internal-secret'];
+  const expected = process.env.INTERNAL_TOKEN_SECRET;
+  return typeof secret === 'string' && !!secret && !!expected && secret === expected;
+}
+
 /**
  * Middleware for internal endpoints (Pub/Sub push, Cloud Tasks).
  *
@@ -18,10 +25,7 @@ export async function internalAuthMiddleware(
   next: NextFunction,
 ): Promise<void> {
   // 1. Cloud Tasks: shared secret header
-  const secret = req.headers['x-internal-secret'] as string | undefined;
-  const expectedSecret = process.env.INTERNAL_TOKEN_SECRET;
-
-  if (secret && expectedSecret && secret === expectedSecret) {
+  if (hasValidInternalSecret(req)) {
     return next();
   }
 

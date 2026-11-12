@@ -46,6 +46,30 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', async (importO
   };
 });
 
+// O foguete consulta o preview do vínculo (spec 079) antes de criar: default = paciente SEM vaga vinculável.
+const mockLinkPreview = vi.fn(async (..._a: unknown[]) => ({ candidates: [] as unknown[], preview: null }));
+vi.mock('@infrastructure/http/AdminLinkExistingVacancyApiService', () => ({
+  AdminLinkExistingVacancyApiService: { preview: (...a: unknown[]) => mockLinkPreview(...a), link: vi.fn() },
+}));
+
+// Spec 079 (T033): permissão do foguete controlável (null = hook real, enforcement desligado → permitido).
+let mockCanActivate: boolean | null = null;
+vi.mock('@presentation/hooks/useCellAccess', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@presentation/hooks/useCellAccess')>();
+  return { ...actual, useCanActivateRecruitment: () => (mockCanActivate === null ? actual.useCanActivateRecruitment() : mockCanActivate) };
+});
+
+// Dublê do modal "Vincular vaga existente": isola o que o CARD passa (open/serviceId) e o onLinked.
+vi.mock('../LinkExistingVacancyModal', () => ({
+  LinkExistingVacancyModal: ({ open, serviceId, notice, rocket, onLinked }: { open: boolean; serviceId: string; notice?: string; rocket?: { onCreateNew: () => void }; onLinked: () => void }) =>
+    open ? (
+      <div data-testid="link-modal-stub" data-service={serviceId} data-notice={notice ?? ''}>
+        {rocket && <button type="button" onClick={rocket.onCreateNew} data-testid="link-modal-stub-create-new">create</button>}
+        <button type="button" onClick={onLinked} data-testid="link-modal-stub-linked">linked</button>
+      </div>
+    ) : null,
+}));
+
 const mockShowToast = vi.fn();
 vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => mockShowToast }));
 
@@ -428,10 +452,92 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     fireEvent.click(btn);
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
-    expect(mockActivateRecruitment).toHaveBeenCalledWith(READY_PATIENT.id, 'svc-1');
+    expect(mockActivateRecruitment).toHaveBeenCalledWith(READY_PATIENT.id, 'svc-1', undefined);
     expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'success');
     // Clicar na linha, não no botão, não deve ter aberto o detalhe (stopPropagation).
     expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+  });
+
+  describe('o foguete usa o vínculo (paciente com vaga sem serviço)', () => {
+    const CANDIDATE = { id: 'vac-legada', caseNumber: 1, caseOrdinal: 1, vacancyNumber: 7, title: 'CASO 1', status: 'SEARCHING', isDraft: false, createdAt: '2026-01-01' };
+
+    it('com candidatas no preview: abre o modal de vínculo do serviço, com o aviso, e NÃO chama activate-recruitment', async () => {
+      mockLinkPreview.mockResolvedValueOnce({ candidates: [CANDIDATE], preview: null });
+      render(<ServicosContratadosCard patient={READY_PATIENT} />);
+      fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+      const modal = await screen.findByTestId('link-modal-stub');
+      expect(modal.getAttribute('data-service')).toBe('svc-1');
+      expect(modal.getAttribute('data-notice')).toBe('Este paciente ya tiene una vacante sin servicio. Vincúlela a este servicio o cree una vacante nueva.');
+      expect(mockLinkPreview).toHaveBeenCalledWith(READY_PATIENT.id, 'svc-1');
+      expect(mockActivateRecruitment).not.toHaveBeenCalled();
+      expect(mockShowToast).not.toHaveBeenCalled();
+    });
+
+    it('sem candidatas: consulta o preview e segue o foguete atual (chama activate-recruitment, modal fechado)', async () => {
+      mockActivateRecruitment.mockResolvedValueOnce({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
+      const onSaved = vi.fn();
+      render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+      fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      expect(mockLinkPreview).toHaveBeenCalledTimes(1);
+      expect(mockActivateRecruitment).toHaveBeenCalledWith(READY_PATIENT.id, 'svc-1', undefined);
+      expect(screen.queryByTestId('link-modal-stub')).toBeNull();
+    });
+
+    it('só vaga ENCERRADA (CLOSED/FILLED) no preview: não abre o modal — o foguete cria a vaga direto (sem sinal)', async () => {
+      mockLinkPreview.mockResolvedValueOnce({
+        candidates: [{ ...CANDIDATE, id: 'v-c', status: 'CLOSED' }, { ...CANDIDATE, id: 'v-f', status: 'FILLED' }],
+        preview: null,
+      });
+      mockActivateRecruitment.mockResolvedValueOnce({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
+      const onSaved = vi.fn();
+      render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+      fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      expect(mockActivateRecruitment).toHaveBeenCalledWith(READY_PATIENT.id, 'svc-1', undefined);
+      expect(screen.queryByTestId('link-modal-stub')).toBeNull();
+    });
+
+    it('"Criar vaga nova" no modal: chama activate-recruitment COM o sinal createNewVacancy, sem nova consulta ao preview, e fecha o modal', async () => {
+      mockLinkPreview.mockResolvedValueOnce({ candidates: [CANDIDATE], preview: null });
+      mockActivateRecruitment.mockResolvedValueOnce({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
+      const onSaved = vi.fn();
+      render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+      fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+      fireEvent.click(await screen.findByTestId('link-modal-stub-create-new'));
+
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      expect(mockActivateRecruitment).toHaveBeenCalledTimes(1);
+      expect(mockActivateRecruitment).toHaveBeenCalledWith(READY_PATIENT.id, 'svc-1', { createNewVacancy: true });
+      expect(mockLinkPreview).toHaveBeenCalledTimes(1); // só a do 1º clique
+      expect(screen.queryByTestId('link-modal-stub')).toBeNull();
+    });
+
+    it('409 LINKABLE_VACANCY_EXISTS (corrida): abre o mesmo modal, sem toast de erro e sem refetch', async () => {
+      mockActivateRecruitment.mockRejectedValueOnce(
+        new ContractedServiceApiError('vaga vinculável', 409, { code: 'LINKABLE_VACANCY_EXISTS' }),
+      );
+      const onSaved = vi.fn();
+      render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+      fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+      expect((await screen.findByTestId('link-modal-stub')).getAttribute('data-service')).toBe('svc-1');
+      expect(mockShowToast).not.toHaveBeenCalled();
+      expect(onSaved).not.toHaveBeenCalled();
+    });
+
+    it('preview falha (rede/403): não trava o foguete — segue para activate-recruitment (o backend é a trava)', async () => {
+      mockLinkPreview.mockRejectedValueOnce(new Error('network'));
+      mockActivateRecruitment.mockResolvedValueOnce({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
+      render(<ServicosContratadosCard patient={READY_PATIENT} />);
+      fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+      await waitFor(() => expect(mockActivateRecruitment).toHaveBeenCalledTimes(1));
+      expect(screen.queryByTestId('link-modal-stub')).toBeNull();
+    });
   });
 
   it('409 SERVICE_ALREADY_RECRUITING: toast de erro, mas aciona onSaved (a ficha vai mostrar "Ver vacante")', async () => {
@@ -555,7 +661,9 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
     fireEvent.click(btn);
     fireEvent.click(btn); // enquanto a 1ª ainda não resolveu — o `disabled` nativo já barra a 2ª
-    expect(mockActivateRecruitment).toHaveBeenCalledTimes(1);
+    // A consulta ao preview do vínculo vem antes do POST: espera o POST sair, e só UM sai (a 2ª foi barrada por `busy`).
+    await waitFor(() => expect(mockActivateRecruitment).toHaveBeenCalledTimes(1));
+    expect(mockLinkPreview).toHaveBeenCalledTimes(1);
     resolveCall({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
     await waitFor(() => expect(mockShowToast).toHaveBeenCalled());
   });
@@ -570,7 +678,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     });
     const onActivated = vi.fn();
     await runActivateRecruitmentClick({
-      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: false, setBusy: vi.fn(),
+      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: false, setBusy: vi.fn(), openLinkModal: vi.fn(),
       onActivated, tc: (k, o) => `${k}:${(o as { items?: string } | undefined)?.items ?? ''}`, t: (k) => `T(${k})`, showToast: mockShowToast,
     });
     expect(mockShowToast).toHaveBeenCalledTimes(1);
@@ -583,7 +691,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
   it('D469: foguete sem patientNotMoved (caso feliz) → toast de SUCESSO, nunca warning', async () => {
     mockActivateRecruitment.mockResolvedValueOnce({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
     await runActivateRecruitmentClick({
-      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: false, setBusy: vi.fn(),
+      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: false, setBusy: vi.fn(), openLinkModal: vi.fn(),
       onActivated: vi.fn(), tc: (k) => k, t: (k) => k, showToast: mockShowToast,
     });
     expect(mockShowToast).toHaveBeenCalledTimes(1);
@@ -594,7 +702,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     const onActivated = vi.fn();
     const setBusy = vi.fn();
     await runActivateRecruitmentClick({
-      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: true, setBusy,
+      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: true, setBusy, openLinkModal: vi.fn(),
       onActivated, tc: (k) => k, t: (k) => k, showToast: mockShowToast,
     });
     expect(mockActivateRecruitment).not.toHaveBeenCalled();
@@ -711,5 +819,70 @@ describe('clique na linha (pós-mudança do quadro C): só abre o drawer, sem se
     expect(screen.getByTestId('contracted-service-row-svc-2').getAttribute('aria-selected')).toBeNull();
     expect(screen.getByTestId('contracted-service-row-svc-1').getAttribute('aria-selected')).toBeNull();
     expect(screen.getByTestId('contracted-service-detail-drawer')).toBeTruthy();
+  });
+});
+
+describe('ServicosContratadosCard — botão "Vincular vaga existente" ao lado do foguete (spec 079, T033)', () => {
+  const LINK_ID = 'contracted-service-link-existing-vacancy-svc-1';
+  const READY: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE, liveVacancy: null, liveVacancyRedacted: false };
+  const patientWith = (svc: PatientContractedServiceDetail, extra: Record<string, unknown> = {}) => ({
+    ...patientDetailFixture, addresses: [ADDRESS_HOME], contractedServices: [svc], insuranceInformed: 'Particular', ...extra,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanActivate = null;
+  });
+
+  it('visível com serviço ativo, sem vaga viva e com permissão — ao lado do foguete', () => {
+    render(<ServicosContratadosCard patient={patientWith(READY)} />);
+    expect(screen.getByTestId(LINK_ID)).toBeInTheDocument();
+    expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).toBeInTheDocument();
+  });
+
+  it('ausente com service.active=false', () => {
+    render(<ServicosContratadosCard patient={patientWith({ ...READY, active: false })} />);
+    expect(screen.queryByTestId(LINK_ID)).toBeNull();
+  });
+
+  it('ausente com liveVacancy', () => {
+    render(<ServicosContratadosCard patient={patientWith({ ...READY, liveVacancy: { id: 'v1', caseNumber: 1, caseOrdinal: 1, status: 'SEARCHING' } })} />);
+    expect(screen.queryByTestId(LINK_ID)).toBeNull();
+  });
+
+  it('ausente com liveVacancyRedacted', () => {
+    render(<ServicosContratadosCard patient={patientWith({ ...READY, liveVacancyRedacted: true })} />);
+    expect(screen.queryByTestId(LINK_ID)).toBeNull();
+  });
+
+  it('ausente sem a permissão do foguete (useCanActivateRecruitment=false), e o foguete também', () => {
+    mockCanActivate = false;
+    render(<ServicosContratadosCard patient={patientWith(READY)} />);
+    expect(screen.queryByTestId(LINK_ID)).toBeNull();
+    expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
+  });
+
+  it('com missing > 0 o foguete fica DESABILITADO e o botão novo fica HABILITADO', () => {
+    render(<ServicosContratadosCard patient={patientWith(READY, { insuranceInformed: null, hasVerifiedActiveCoverage: false })} />);
+    expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).toBeDisabled();
+    expect(screen.getByTestId(LINK_ID)).toBeEnabled();
+  });
+
+  it('clicar abre o modal do serviço certo, sem abrir o detalhe da linha', () => {
+    render(<ServicosContratadosCard patient={patientWith(READY)} />);
+    expect(screen.queryByTestId('link-modal-stub')).toBeNull();
+    fireEvent.click(screen.getByTestId(LINK_ID));
+    expect(screen.getByTestId('link-modal-stub').getAttribute('data-service')).toBe('svc-1');
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+  });
+
+  it('onLinked: toast de sucesso, fecha o modal e aciona o MESMO refresh do foguete (onSaved)', () => {
+    const onSaved = vi.fn();
+    render(<ServicosContratadosCard patient={patientWith(READY)} onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId(LINK_ID));
+    fireEvent.click(screen.getByTestId('link-modal-stub-linked'));
+    expect(mockShowToast).toHaveBeenCalledWith('Vacante vinculada al servicio.', 'success');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('link-modal-stub')).toBeNull();
   });
 });

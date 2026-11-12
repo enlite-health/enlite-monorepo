@@ -9,6 +9,7 @@ import { PostularseErrorModal } from '@presentation/pages/public/components/Post
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { JobCard } from './JobCard';
+import { resolveJobDetailUrl } from './jobDetailUrl';
 import {
   type Job,
   type JobsResponse,
@@ -116,7 +117,8 @@ export const JobsEmbeddedSection = ({
       setShowIncompleteModal(true);
       return;
     }
-    window.open(job.detailLink, '_blank');
+    const url = resolveJobDetailUrl(job);
+    if (url) window.open(url, '_blank');
   };
 
   const [searchTerm, setSearchTerm] = useState('');

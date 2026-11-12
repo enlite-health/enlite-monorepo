@@ -34,6 +34,15 @@ import {
 import type { CountryCode } from '@shared/domain/countryCodes';
 import { workerAptoSql } from '@shared/database/workerAptoSql';
 
+/** Quem executa `.query` — o Pool do painel ou o client de uma transação (capability MCP `agentes.indicadores.ler`). */
+export type QueryRunner = Pick<Pool, 'query'>;
+
+/** Janela `[de, ate)` em datas `YYYY-MM-DD` (spec 078, item 41). Ausente = o recorte de sempre do painel. */
+export interface PeriodoDatas {
+  de: string;
+  ate: string;
+}
+
 /** Linha de contagem simples chave→valor. */
 export interface CountRow {
   k: string;
@@ -128,8 +137,14 @@ export function ubicacionesActivasQuery(db: Pool, countries: CountryCode[]) {
   );
 }
 
-/** Cadastros de prestadores (leads/completos/incompletos/novos no mês). */
-export function workerCadastrosQuery(db: Pool, countries: CountryCode[]) {
+/**
+ * Cadastros de prestadores (leads/completos/incompletos/novos). `nuevos` = REGISTERED criados no mês corrente,
+ * ou, com `periodo`, em `[de, ate)` por `created_at` (mesma fonte, outro recorte).
+ */
+export function workerCadastrosQuery(db: QueryRunner, countries: CountryCode[], periodo?: PeriodoDatas) {
+  const nuevosSql = periodo
+    ? 'created_at >= $2::date AND created_at < $3::date'
+    : "created_at >= date_trunc('month', CURRENT_DATE)";
   return db.query<{
     leads: number;
     completos: number;
@@ -141,7 +156,7 @@ export function workerCadastrosQuery(db: Pool, countries: CountryCode[]) {
        COUNT(*) FILTER (WHERE status = 'REGISTERED')::int AS completos,
        COUNT(*) FILTER (WHERE status = 'INCOMPLETE_REGISTER')::int AS incompletos,
        COUNT(*) FILTER (
-         WHERE status = 'REGISTERED' AND created_at >= date_trunc('month', CURRENT_DATE)
+         WHERE status = 'REGISTERED' AND ${nuevosSql}
        )::int AS nuevos
      FROM workers w
      WHERE merged_into_id IS NULL
@@ -149,19 +164,23 @@ export function workerCadastrosQuery(db: Pool, countries: CountryCode[]) {
        -- desativados vive em GET /workers/status ("Desativados")
        AND ${excludeDisabledWorkersSql('w')}
        AND ${countryPredicateSql('w', 1)}`,
-    [countries],
+    periodo ? [countries, periodo.de, periodo.ate] : [countries],
   );
 }
 
-/** @deprecated Totalização do funil por CANDIDATURA (legado — ver managementDashboardSchema). */
-export function funnelLegadoQuery(db: Pool, countries: CountryCode[]) {
+/**
+ * @deprecated Totalização do funil por CANDIDATURA (legado — ver managementDashboardSchema).
+ * Com `periodo`, conta só candidaturas criadas em `[de, ate)` (`wja.created_at`, data de ENTRADA no funil).
+ */
+export function funnelLegadoQuery(db: QueryRunner, countries: CountryCode[], periodo?: PeriodoDatas) {
   return db.query<CountRow>(
     `SELECT application_funnel_stage AS k, COUNT(*)::int AS count
        FROM worker_job_applications wja
       WHERE ${workerNotDisabledSql('wja.worker_id')}
         AND ${workerCountryPredicateSql('wja.worker_id', 1)}
+        ${periodo ? 'AND wja.created_at >= $2::date AND wja.created_at < $3::date' : ''}
       GROUP BY application_funnel_stage`,
-    [countries],
+    periodo ? [countries, periodo.de, periodo.ate] : [countries],
   );
 }
 

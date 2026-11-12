@@ -118,6 +118,15 @@ describe('volta do callback', () => {
     expect(api.getOwnTactiqLink).toHaveBeenCalled();
   });
 
+  it('?tactiq=linked mas o estado salvo é wrong_account: SEM banner verde, o chip mostra o estado real e a URL sai limpa', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(view('wrong_account'));
+    renderPage('?tactiq=linked');
+    expect(await screen.findByTestId('tactiq-state')).toHaveTextContent(tEs('admin.tactiqLink.state.wrong_account'));
+    expect(screen.queryByTestId('tactiq-banner-linked')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(tEs('admin.tactiqLink.returnLinked'));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/admin/mi-cuenta/tactiq'));
+  });
+
   it('?tactiq=error&reason=…: banner de erro SEM ecoar o motivo cru', async () => {
     api.getOwnTactiqLink.mockResolvedValue(view('missing'));
     renderPage('?tactiq=error&reason=invalid_grant');

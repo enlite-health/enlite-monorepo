@@ -11,6 +11,7 @@ import { workerLabel } from '../workerLabel';
 import { occurrenceKey } from './occurrenceKey';
 import { NOWRAP, SingleLine } from './SingleLine';
 import { dateLocaleOf, shiftHours, weekdayOfDate } from './weekRange';
+import { shiftRangeLabel } from './shiftRange';
 
 interface UpcomingDaysTableProps {
   /** SÓ os turnos da semana selecionada (a janela do GET é a semana; a tabela nunca emenda outra). */
@@ -130,7 +131,7 @@ export function UpcomingDaysTable({ events, onChange, onAssign, reasonOf }: Upco
                   <div className="flex items-center gap-2">
                     <span className="whitespace-nowrap rounded-full bg-primary px-4 py-1.5" data-testid={`itinerario-proximo-horario-${key}`} {...NOWRAP}>
                       <Text as="span" size="sm" weight="semibold" color="white">
-                        {`${e.startTime} – ${e.endTime}`}
+                        {shiftRangeLabel(t, e)}
                       </Text>
                     </span>
                     <Text as="span" size="xs" color="tertiary" className="whitespace-nowrap" {...NOWRAP}>

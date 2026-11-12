@@ -27,6 +27,25 @@ export interface ReparentQuery {
 }
 
 /**
+ * Colunas que o reaponte precisa zerar NA MESMA instrução que troca a FK, por tabela.
+ *
+ * whatsapp_bulk_dispatch_logs.phone — migration 475 criou `CHECK (phone IS NULL) NOT VALID`:
+ * NOT VALID poupa as linhas antigas (telefone em claro, anteriores a 25/09/2026) até o primeiro
+ * UPDATE nelas. O reaponte É um UPDATE, então toda ficha antiga com disparo em massa derrubava a
+ * transação inteira do merge (vínculo self-service: 0 sucessos em 14–26/10/2026). A coluna é
+ * deprecada e sem leitor (openspec/changes/mensageria-pii-e-retencao/design.md): zerar aqui só
+ * iguala a linha reaparentada às novas. Tabela fora deste mapa gera SQL byte a byte igual ao de antes.
+ */
+export const REPARENT_EXTRA_SET: Readonly<Record<string, string>> = {
+  whatsapp_bulk_dispatch_logs: 'phone = NULL',
+};
+
+function reparentSetClause(table: string, col: string): string {
+  const extra = REPARENT_EXTRA_SET[table];
+  return extra ? `${col} = $1, ${extra}` : `${col} = $1`;
+}
+
+/**
  * Gera todas as queries de reparent em ordem de execução segura,
  * com base na lista de FKs descobertas dinamicamente.
  *
@@ -54,7 +73,7 @@ export function buildReparentQueries(
 
     if (cfg.strategy === 'update') {
       queries.push({
-        sql:         `UPDATE ${cfg.table} SET ${col} = $1 WHERE ${col} = $2`,
+        sql:         `UPDATE ${cfg.table} SET ${reparentSetClause(cfg.table, col)} WHERE ${col} = $2`,
         params:      [survivorId, absorbedId],
         description: `reparent:update:${cfg.table}:${col}`,
       });
@@ -68,7 +87,7 @@ export function buildReparentQueries(
       // Tabela 1:1: move somente se o sobrevivente ainda não tem linha
       queries.push({
         sql: `UPDATE ${cfg.table}
-              SET ${col} = $1
+              SET ${reparentSetClause(cfg.table, col)}
               WHERE ${col} = $2
                 AND NOT EXISTS (
                   SELECT 1 FROM ${cfg.table} WHERE ${col} = $1
@@ -100,7 +119,7 @@ export function buildReparentQueries(
       }
       // Passo 2: reparent das linhas restantes do absorvido
       queries.push({
-        sql:         `UPDATE ${cfg.table} SET ${col} = $1 WHERE ${col} = $2`,
+        sql:         `UPDATE ${cfg.table} SET ${reparentSetClause(cfg.table, col)} WHERE ${col} = $2`,
         params:      [survivorId, absorbedId],
         description: `reparent:Nto1_update:${cfg.table}:${col}`,
       });

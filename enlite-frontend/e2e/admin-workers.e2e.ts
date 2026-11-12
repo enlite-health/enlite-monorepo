@@ -11,7 +11,7 @@
  *   - Filtro por plataforma inclui parâmetro na requisição
  *   - Filtro por documentação inclui parâmetro na requisição
  *   - Erro de API exibe mensagem de erro
- *   - Acesso sem auth redireciona para /admin/login
+ *   - Acesso sem auth redireciona para /login?next=… (login único)
  *   - Stats cards exibem valores corretos do endpoint /api/admin/workers/stats
  *   - Stats cards mostram 0 quando API retorna zeros
  *   - Stats cards mostram fallback quando endpoint de stats falha
@@ -137,7 +137,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
   );
 
   // 5. Login via UI
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.getByRole('button', { name: /Iniciar|Entrar/i }).click();
@@ -359,12 +359,12 @@ test.describe('AdminWorkersPage', () => {
     await expect(page.locator('text=João Souza')).not.toBeVisible({ timeout: 5000 });
   });
 
-  test('acesso sem autenticação redireciona para /admin/login', async ({ browser }) => {
+  test('acesso sem autenticação redireciona para /login?next=… (login único)', async ({ browser }) => {
     const context = await browser.newContext();
     const page    = await context.newPage();
 
     await page.goto('/admin/workers');
-    await expect(page).toHaveURL(/\/admin\/login/, { timeout: 10000 });
+    await expect(page).toHaveURL(/\/login\?next=%2Fadmin/, { timeout: 10000 });
 
     await context.close();
   });

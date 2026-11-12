@@ -190,7 +190,8 @@ describe('POST /api/admin/messaging/whatsapp/vacancy-match — HTTP layer', () =
       { headers: { Authorization: `Bearer ${adminToken}` } },
     );
     expect(res.status).toBe(422);
-    expect(res.data.error).toMatch(/telefone/i);
+    expect(res.data.error).toBe('WORKER_NO_PHONE');
+    expect(res.data.detail).toMatch(/telefone/i);
   });
 
   it('REGISTERED worker → 502 com Twilio não configurado (template _complete seria enviado)', async () => {

@@ -222,3 +222,130 @@ describe('ITINERARY_UNCOVERED_SHIFTS (spec 069, FR-35)', () => {
     expect(handler().getDeepLink(n)).toBeNull();
   });
 });
+
+// Spec 078 (M3b-2): o aviso do pedido do Sol — sem assunto, sem texto, sem paciente; o clique leva à página de pedidos.
+describe('PEDIDO_IA_NOVO / PEDIDO_IA_GRAVE (spec 078, M3b-2)', () => {
+  const aviso = (typeCode: 'PEDIDO_IA_NOVO' | 'PEDIDO_IA_GRAVE') =>
+    notif({ typeCode, actorUid: 'system:sol-fila', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null });
+
+  it.each([
+    ['PEDIDO_IA_NOVO', 'pedidoIaNovo', 'Novo pedido do Sol', 'Nuevo pedido del Sol'],
+    ['PEDIDO_IA_GRAVE', 'pedidoIaGrave', 'Pedido grave do Sol aguarda sua decisão', 'Pedido grave del Sol espera tu decisión'],
+  ] as const)('%s: chave própria, texto renderizado es/pt-BR e link para a página de pedidos', async (code, key, pt, es) => {
+    const h = getNotificationTypeHandler(code);
+    expect(h.buildText(aviso(code), t)).toBe(`admin.notifications.${key}:{}`);
+    expect(h.getDeepLink(aviso(code))).toEqual({ path: '/admin/pedidos-ia' });
+    for (const [lng, json, esperado] of [['es', esJson, es], ['pt-BR', ptBRJson, pt]] as const) {
+      const i18n = i18next.createInstance();
+      await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } } });
+      expect(h.buildText(aviso(code), i18n.t.bind(i18n) as never)).toBe(esperado);
+    }
+  });
+
+  it('ator "Sol" e contexto "Pedidos do Sol"; sem detalhe (nada do pedido aparece no cartão)', () => {
+    const h = getNotificationTypeHandler('PEDIDO_IA_GRAVE');
+    expect(h.actorLabel?.(aviso('PEDIDO_IA_GRAVE'), t)).toBe('admin.notifications.pedidoIaActor:{}');
+    expect(h.contextLine?.(aviso('PEDIDO_IA_GRAVE'), t)).toBe('admin.notifications.pedidoIaContext:{}');
+    expect(h.detailLine).toBeUndefined();
+  });
+});
+
+// Spec 078 (M4.4.2, gatilho (d)): pedido aceito em degrau 3/4 — texto com degrau e prazo, vindo do payload só-ids.
+describe('PEDIDO_IA_APLICAR (spec 078, M4.4.2)', () => {
+  const aviso = (payload: unknown) =>
+    notif({ typeCode: 'PEDIDO_IA_APLICAR', actorUid: 'system:sol-fila', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+
+  it.each([
+    [{ pedido_id: 'p', degrau: 3, grave: false, prazo: 'semana' }, 'es', 'Pedido aceptado en escalón 3: aplicar esta semana'],
+    [{ pedido_id: 'p', degrau: 4, grave: true, prazo: 'hoje' }, 'es', 'Pedido aceptado en escalón 4: aplicar hoy'],
+    [{ pedido_id: 'p', degrau: 3, grave: false, prazo: 'semana' }, 'pt-BR', 'Pedido aceito no degrau 3: aplicar esta semana'],
+    [{ pedido_id: 'p', degrau: 4, grave: true, prazo: 'hoje' }, 'pt-BR', 'Pedido aceito no degrau 4: aplicar hoje'],
+    [null, 'es', 'Pedido aceptado: aplicar'],
+    [{ degrau: 1, prazo: 'amanha' }, 'pt-BR', 'Pedido aceito: aplicar'],
+  ] as const)('payload %j em %s -> "%s"; link para a página de pedidos', async (payload, lng, esperado) => {
+    const json = lng === 'es' ? esJson : ptBRJson;
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } } });
+    const h = getNotificationTypeHandler('PEDIDO_IA_APLICAR');
+    expect(h.buildText(aviso(payload), i18n.t.bind(i18n) as never)).toBe(esperado);
+    expect(h.getDeepLink(aviso(payload))).toEqual({ path: '/admin/pedidos-ia' });
+  });
+
+  it('ator "Sol" e contexto "Pedidos do Sol"; sem detalhe', () => {
+    const h = getNotificationTypeHandler('PEDIDO_IA_APLICAR');
+    expect(h.actorLabel?.(aviso(null), t)).toBe('admin.notifications.pedidoIaActor:{}');
+    expect(h.contextLine?.(aviso(null), t)).toBe('admin.notifications.pedidoIaContext:{}');
+    expect(h.detailLine).toBeUndefined();
+  });
+
+  it('paridade es = pt-BR: as chaves de admin.notifications são as mesmas nos dois idiomas', () => {
+    const flat = (o: Record<string, unknown>, pre = ''): string[] =>
+      Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? flat(v as Record<string, unknown>, `${pre}${k}.`) : [`${pre}${k}`]));
+    expect(flat(esJson.admin.notifications).sort()).toEqual(flat(ptBRJson.admin.notifications).sort());
+  });
+});
+
+// Spec 083 (F4): o aviso "a transcrição não chegou por falta de vínculo do Tactiq" — o servidor manda só enums + 2 datas ISO (+ nome do host na cópia do supervisor).
+describe('ADMISSION_IMPORT_BLOCKED (spec 083, F4)', () => {
+  const aviso = (payload: unknown) =>
+    notif({ typeCode: 'ADMISSION_IMPORT_BLOCKED', actorUid: 'system:admission', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  // 17:00Z = 14:00 em Buenos Aires (-03); 6/11 idem. Em UTC/Tokyo/LA o relógio local NÃO dá 14:00 — é o que a sabotagem de fuso mede.
+  const HOST = { stage: 'blocked', kind: 'admission', reason: 'no_link', audience: 'host', meetingAt: '2026-11-04T17:00:00.000Z', deadlineAt: '2026-11-06T17:00:00.000Z' };
+  const SUP = { ...HOST, stage: 'will_be_lost', audience: 'supervisor' };
+  const handler = () => getNotificationTypeHandler('ADMISSION_IMPORT_BLOCKED');
+  const realT = async (lng: 'es' | 'pt-BR') => {
+    const json = lng === 'es' ? esJson : ptBRJson;
+    const i18n = i18next.createInstance();
+    await i18n.init({
+      lng,
+      resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications, patients: { detail: { conversation: { thread: json.admin.patients.detail.conversation.thread } } } } } } },
+      interpolation: { escapeValue: false },
+    });
+    return i18n.t.bind(i18n) as never;
+  };
+
+  it('o deep link abre /admin/mi-cuenta (seção Tactiq), sem paciente e sem pedido de foco', () => {
+    expect(handler().getDeepLink(aviso(HOST))).toEqual({ path: '/admin/mi-cuenta' });
+  });
+
+  it('linhas do cartão: autor "Enlite", ação "Vincular Tactiq" (a MESMA chave dos vizinhos Tactiq) e o corpo na linha 3', () => {
+    const n = aviso(HOST);
+    expect(handler().actorLabel?.(n, t)).toBe('admin.notifications.ptContactsPendingActor:{}');
+    expect(handler().contextLine?.(n, t)).toBe('admin.notifications.tactiq.action:{}');
+    expect(handler().detailLine?.(n, t)).toContain('admin.notifications.importBlocked.blocked.body');
+  });
+
+  it.each([
+    ['pt-BR', 'Não conseguimos trazer a transcrição da sua reunião de admissão de 4 de nov. às 14:00, porque a sua conta do Tactiq não está conectada.', 'Você tem até 6 de nov. às 14:00;'],
+    ['es', 'No pudimos traer la transcripción de tu reunión de admisión del 4 de nov. a las 14:00, porque tu cuenta de Tactiq no está conectada.', 'Tenés tiempo hasta el 6 de nov. a las 14:00;'],
+  ] as const)('data da reunião e prazo no FUSO DO OPERADOR com ISO fixo (%s)', async (lng, inicio, prazo) => {
+    const body = handler().detailLine?.(aviso(HOST), await realT(lng)) ?? '';
+    expect(body.startsWith(inicio)).toBe(true);
+    expect(body).toContain(prazo);
+  });
+
+  it('enquadre usa "entrevista de enquadre"; wrong_account tem o motivo PRÓPRIO', async () => {
+    const body = handler().detailLine?.(aviso({ ...HOST, kind: 'enquadre', reason: 'wrong_account' }), await realT('pt-BR')) ?? '';
+    expect(body).toContain('sua entrevista de enquadre de 4 de nov. às 14:00, porque a conta do Tactiq conectada não é a sua.');
+  });
+
+  it.each([['pt-BR', 'a pessoa responsável'], ['es', 'la persona responsable']] as const)('supervisor: mostra o nome de quem fez a reunião; sem nome usa o fallback (%s)', async (lng, fallback) => {
+    const t2 = await realT(lng);
+    const com = handler().detailLine?.(aviso({ ...SUP, hostName: 'Marina Gómez' }), t2) ?? '';
+    const sem = handler().detailLine?.(aviso(SUP), t2) ?? '';
+    expect(com).toContain('Marina Gómez');
+    expect(com).not.toContain(fallback);
+    expect(sem).toContain(fallback);
+    expect(sem).not.toContain('Marina');
+    expect(handler().buildText(aviso({ ...SUP, hostName: 'Marina Gómez' }), t2)).toContain('Marina Gómez'); // título + corpo no aria-label
+  });
+
+  it('payload ausente/estranho: nunca crash, cai no aviso do host sem datas inventadas', async () => {
+    for (const p of [null, {}, { stage: 'x', kind: 1, meetingAt: 5 }]) {
+      expect(() => handler().buildText(aviso(p), t)).not.toThrow();
+      expect(handler().getDeepLink(aviso(p))).toEqual({ path: '/admin/mi-cuenta' });
+    }
+    const body = handler().detailLine?.(aviso(null), await realT('pt-BR')) ?? '';
+    expect(body).not.toMatch(/\d{4}-\d{2}/);
+  });
+});

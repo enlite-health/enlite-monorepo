@@ -4,6 +4,30 @@ import { logger } from '@shared/logging';
 import { StartClaimUseCase } from '../../application/StartClaimUseCase';
 import { ConfirmClaimUseCase } from '../../application/ConfirmClaimUseCase';
 
+type TokenUser = { uid?: string; email?: string };
+
+/**
+ * H3 (D650): identidade SÓ do token (`requireAuth` popula `req.user`). Devolve a identidade
+ * ou já responde 401 (sem token) / 403 (body com authUid de outra identidade) e devolve null.
+ */
+function identidadeDoToken(req: Request, res: Response): { authUid: string; email: string } | null {
+  const user = (req as Request & { user?: TokenUser }).user;
+  if (!user?.uid) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  const bodyUid = (req.body as Record<string, unknown> | undefined)?.authUid;
+  if (bodyUid !== undefined && bodyUid !== user.uid) {
+    res.status(403).json({ success: false, error: 'authUid does not match authenticated user' });
+    return null;
+  }
+  if (!user.email) {
+    res.status(400).json({ success: false, error: 'Authenticated token has no email' });
+    return null;
+  }
+  return { authUid: user.uid, email: user.email };
+}
+
 /**
  * ClaimController — endpoints para claim de ficha importada via OTP SMS.
  *
@@ -30,18 +54,14 @@ export class ClaimController {
     log.info({ msg: 'claim_request_received' });
 
     try {
-      const { authUid, email, phone } = req.body as Record<string, unknown>;
+      const identidade = identidadeDoToken(req, res);
+      if (!identidade) {
+        log.info({ msg: 'claim_request_completed', responseStatus: res.statusCode ?? null, durationMs: Date.now() - startedAt });
+        return;
+      }
+      const { authUid, email } = identidade;
+      const { phone } = req.body as Record<string, unknown>;
 
-      if (!authUid || typeof authUid !== 'string') {
-        res.status(400).json({ success: false, error: 'Missing required field: authUid' });
-        log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
-        return;
-      }
-      if (!email || typeof email !== 'string') {
-        res.status(400).json({ success: false, error: 'Missing required field: email' });
-        log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
-        return;
-      }
       if (!phone || typeof phone !== 'string') {
         res.status(400).json({ success: false, error: 'Missing required field: phone' });
         log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
@@ -89,8 +109,13 @@ export class ClaimController {
     log.info({ msg: 'claim_request_received' });
 
     try {
-      const { verificationSid, otp, authUid, email, candidateWorkerId } =
-        req.body as Record<string, unknown>;
+      const identidade = identidadeDoToken(req, res);
+      if (!identidade) {
+        log.info({ msg: 'claim_request_completed', responseStatus: res.statusCode ?? null, durationMs: Date.now() - startedAt });
+        return;
+      }
+      const { authUid, email } = identidade;
+      const { verificationSid, otp, candidateWorkerId } = req.body as Record<string, unknown>;
 
       if (!verificationSid || typeof verificationSid !== 'string') {
         res.status(400).json({ success: false, error: 'Missing required field: verificationSid' });
@@ -99,16 +124,6 @@ export class ClaimController {
       }
       if (!otp || typeof otp !== 'string') {
         res.status(400).json({ success: false, error: 'Missing required field: otp' });
-        log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
-        return;
-      }
-      if (!authUid || typeof authUid !== 'string') {
-        res.status(400).json({ success: false, error: 'Missing required field: authUid' });
-        log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
-        return;
-      }
-      if (!email || typeof email !== 'string') {
-        res.status(400).json({ success: false, error: 'Missing required field: email' });
         log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
         return;
       }

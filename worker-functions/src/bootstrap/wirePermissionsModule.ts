@@ -56,6 +56,7 @@ import {
   denyUndeclaredRoutes,
   UndeclaredRouteRegistry,
   createPermissionRoutesInventoryRouter,
+  unclassifiedRoutes,
 } from '@modules/identity';
 
 export interface PermissionsBoundary {
@@ -166,6 +167,14 @@ async function bootTasks(app: Express, boundary: PermissionsBoundary): Promise<v
     logger.error(
       { undeclared: undeclared.map((route: ScannedRoute) => `${route.method} ${route.path}`) },
       '[perm] rotas administrativas sem permissão declarada — negadas com o engine ligado',
+    );
+  }
+
+  const unclassified = unclassifiedRoutes(routes);
+  if (unclassified.length > 0) {
+    logger.error(
+      { unclassified: unclassified.map((route: ScannedRoute) => `${route.method} ${route.path}`) },
+      '[perm] rotas sem classe declarada — negadas pelo selo',
     );
   }
 

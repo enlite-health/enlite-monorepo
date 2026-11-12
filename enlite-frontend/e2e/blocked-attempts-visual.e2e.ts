@@ -22,6 +22,7 @@
 
 import { test, expect, Page, Route } from '@playwright/test';
 import { escolherNoCombo } from './helpers/combobox';
+import { mockAreasDoPainel } from './helpers/areas-do-painel';
 
 // ── Auth constants ─────────────────────────────────────────────────────────────
 
@@ -217,6 +218,7 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
   // `fetchAuthz` do adminAuthStore não trava a tela, mas `onAuthStateChanged`
   // dispara de novo a cada refresh do SDK e a authz nunca assenta — medido
   // ~150-200 refetches/seg da vaga por trás disso (D300, achado 2ª rodada).
+  await mockAreasDoPainel(page);
   await page.route('**/v1/me/authz', (route) =>
     route.fulfill({
       status: 200,
@@ -232,7 +234,7 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await installFakeFirebaseAuth(page);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();

@@ -2,20 +2,8 @@ import { IWorkerRepository } from '@modules/worker/ports/IWorkerRepository';
 import { Worker } from '@modules/worker/domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
+import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
 import { ITwilioVerifyService } from '../infrastructure/TwilioVerifyService';
-
-const IMPORT_PREFIXES = [
-  'anacareimport_',
-  'candidatoimport_',
-  'pretalnimport_',
-  'base1import_',
-  'clickup_encuadre_',
-] as const;
-
-function isImportedWorker(authUid: string | null | undefined): boolean {
-  if (!authUid) return false;
-  return IMPORT_PREFIXES.some(prefix => authUid.startsWith(prefix));
-}
 
 export interface ConfirmClaimInput {
   verificationSid: string;
@@ -107,7 +95,11 @@ export class ConfirmClaimUseCase {
     }
 
     // 3. Verifica que a ficha ainda é importable (não foi reclamada em paralelo)
-    if (!isImportedWorker(candidate.authUid)) {
+    const claimable = await isClaimableWorker(this.workerRepository, candidate);
+    if (claimable.isFailure) {
+      return Result.fail<Worker>(claimable.error!);
+    }
+    if (!claimable.getValue()) {
       log.warn({
         msg: 'claim_confirm_candidate_not_importable_anymore',
         currentAuthUid: candidate.authUid,

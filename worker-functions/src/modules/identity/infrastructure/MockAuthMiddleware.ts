@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { markRouteClass } from '../permissions/infrastructure/catalog/routeClass';
 
 /**
  * Middleware de autenticação mock para testes E2E
@@ -25,7 +26,8 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
   // de serviço com guard próprio (`X-Internal-Secret`/OIDC). Sem isso o mock
   // devolveria 401 antes do guard real rodar — e o e2e não conseguiria ler o
   // catálogo nem o inventário de rotas do app de pé.
-  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/init', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/api/admin/me/tactiq-link/callback', '/.well-known'];
+  // `/v1/persons/` (T138): rota serviço a serviço com o mesmo guard interno; token de usuário é recusado POR ELE (403).
+  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/api/admin/me/tactiq-link/callback', '/.well-known', '/v1/persons/', '/api/account-link/undo/', '/api/admin/auth/telemetry', '/api/test/auth/verify'];
   if (publicPaths.some(path => req.path === path || req.path.startsWith(path))) {
     return next();
   }
@@ -94,7 +96,7 @@ export function createMockAuthEndpoints(app: any) {
   }
 
   // Endpoint para criar token de teste
-  app.post('/api/test/auth/token', (req: Request, res: Response) => {
+  app.post('/api/test/auth/token', markRouteClass((req: Request, res: Response) => {
     const { uid, email, role } = req.body;
 
     if (!uid || !email) {
@@ -123,10 +125,10 @@ export function createMockAuthEndpoints(app: any) {
         role,
       },
     });
-  });
+  }, 'public'));
 
   // Endpoint para verificar token
-  app.get('/api/test/auth/verify', mockAuthMiddleware, (req: Request, res: Response) => {
+  app.get('/api/test/auth/verify', mockAuthMiddleware, markRouteClass((req: Request, res: Response) => {
     const user = (req as any).user;
     
     if (!user) {
@@ -140,7 +142,7 @@ export function createMockAuthEndpoints(app: any) {
       success: true,
       data: user,
     });
-  });
+  }, 'public'));
 
   console.log('✅ Mock auth endpoints registered for E2E testing');
 }

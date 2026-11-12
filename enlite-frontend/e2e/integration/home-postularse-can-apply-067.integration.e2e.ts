@@ -113,6 +113,13 @@ test.describe('@integration Home — "Postularse" por can_apply (spec 067 FR-14/
     expect(trackChannel, 'nenhum clique nesta vaga chama track-channel').toBe(0);
     // "Ver Detalles" pode abrir a página pública da vaga; o que NUNCA abre é um link de WhatsApp/Talentum (esse só vem do 200 de track-channel)
     expect((await urlsAbertas(page)).filter((u) => u.includes('wa.me') || u === LINK_A)).toEqual([]);
+    // Defeito de prd (05/11): `social_short_links.site` é um objeto {id,url}; o feed entregava o JSON cru e a aba abria
+    // app.enlite.health/%7B"id"... O seed do helper agora usa o formato real; o clique tem de abrir UMA URL http(s) limpa.
+    const abertas = await urlsAbertas(page);
+    expect(abertas, '"Ver Detalles" abre exatamente uma URL').toHaveLength(1);
+    expect(abertas[0], 'a URL aberta é http(s)').toMatch(/^https?:\/\//);
+    expect(abertas[0], 'a URL aberta não é o JSON cru codificado').not.toContain('%7B');
+    expect(abertas[0], 'a URL aberta não é o JSON cru').not.toContain('{');
   });
 
   test('ALT 2 — a listagem pública traz can_apply true/false e NENHUM link do WhatsApp/Talentum em nenhuma vaga (FR-14)', async ({ request }) => {

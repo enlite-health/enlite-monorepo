@@ -150,7 +150,7 @@ async function installAuthInterceptors(page: Page, u: MockUser): Promise<void> {
 
 async function loginAs(page: Page, u: MockUser): Promise<void> {
   await installAuthInterceptors(page, u);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   // Digitação HUMANA: click + keyboard.type, nunca fill() (memória
   // e2e-humano-nao-e-fill) — o valor final é lido de volta da própria tela.
   const email = page.locator('input[type="email"]');

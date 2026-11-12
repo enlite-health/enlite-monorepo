@@ -242,7 +242,7 @@ describe('WorkerDocumentsCard', () => {
   it('renders view buttons for documents with URLs', () => {
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
     // resume_cv + identity_document + criminal_record = 3 documents with URLs
-    const viewButtons = screen.getAllByLabelText('Visualizar documento');
+    const viewButtons = screen.getAllByLabelText('documents.viewAria');
     expect(viewButtons.length).toBe(3);
   });
 
@@ -356,7 +356,7 @@ describe('WorkerDocumentsCard', () => {
     const onDelete = vi.fn().mockResolvedValue(undefined);
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} onDelete={onDelete} />);
     const slot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
-    fireEvent.click(slot.querySelector('button[aria-label="Remover documento"]')!);
+    fireEvent.click(slot.querySelector('button[aria-label="documents.removeAria"]')!);
     expect(onDelete).toHaveBeenCalledWith('resume_cv');
   });
 
@@ -364,7 +364,7 @@ describe('WorkerDocumentsCard', () => {
     const onView = vi.fn().mockResolvedValue(undefined);
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} onView={onView} />);
     const slot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
-    fireEvent.click(slot.querySelector('button[aria-label="Visualizar documento"]')!);
+    fireEvent.click(slot.querySelector('button[aria-label="documents.viewAria"]')!);
     expect(onView).toHaveBeenCalledWith(fullDoc.resumeCvUrl);
   });
 
@@ -381,8 +381,8 @@ describe('WorkerDocumentsCard', () => {
     comEnforcement([], 'on');
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
     const slot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
-    expect(slot.querySelector('button[aria-label="Remover documento"]')).toBeNull();
-    expect(slot.querySelector('button[aria-label="Visualizar documento"]')).not.toBeNull();
+    expect(slot.querySelector('button[aria-label="documents.removeAria"]')).toBeNull();
+    expect(slot.querySelector('button[aria-label="documents.viewAria"]')).not.toBeNull();
   });
 
   it('D269 — enforcement=on com worker_document:write e :delete: input e ícone de excluir existem', () => {
@@ -391,6 +391,6 @@ describe('WorkerDocumentsCard', () => {
     const emptySlot = document.querySelector('[data-testid="doc-slot-identity_document_back"]')!;
     expect(emptySlot.querySelector('input[type="file"]')).not.toBeNull();
     const uploadedSlot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
-    expect(uploadedSlot.querySelector('button[aria-label="Remover documento"]')).not.toBeNull();
+    expect(uploadedSlot.querySelector('button[aria-label="documents.removeAria"]')).not.toBeNull();
   });
 });

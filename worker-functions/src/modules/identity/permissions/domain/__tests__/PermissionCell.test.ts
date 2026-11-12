@@ -1,4 +1,10 @@
 import {
+  ACESSO_MASTER_GROUP_ID,
+  ASSISTANT_CHAT_CELLS,
+  KNOWLEDGE_CELLS,
+  LUZ_PRUEBA_CHAT_CELLS,
+  SOMENTE_ACESSO_MASTER_CELLS,
+  assertCellsAllowedForGroup,
   CELL_DESCRIPTION,
   PERMISSION_CATEGORIES,
   RESOURCE_CATEGORY,
@@ -62,11 +68,11 @@ describe('PermissionCell', () => {
 
 // ── spec 018, PR-8b (ADR-2/SUP-30): split write → create+update ────────────────
 describe('SPLIT_RESOURCES / isSplitResource', () => {
-  it('tem exatamente os 17 recursos com write LITERAL na rota + os 5 por variável (22 no total)', () => {
+  it('tem exatamente os 17 resources com write LITERAL na rota + os 5 por variável (22 no total)', () => {
     // 18 literais: `git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v __tests__`
     // menos `permission_management` (medido 15/09, 93 hits — excluir por CAMINHO `__tests__`,
     // nunca por substring "test" na linha, que corta `/workers/:id/test-flag` e
-    // `/patients/:id/test-flag`, ambos `worker`/`patient`, já cobertos aqui → 20 recursos
+    // `/patients/:id/test-flag`, ambos `worker`/`patient`, já cobertos aqui → 20 resources
     // distintos − 1). `worker` SAIU em 21/09 (spec 024, D401): nunca teve `perm.require('worker',
     // 'create', …)` — quem usava `worker:create` era a tag, migrada pra `tag:create` (célula
     // própria, fora do split). `worker` mantém só `:update` daqui pra frente.
@@ -79,9 +85,10 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     const porVariavel = [
       'patient_therapeutic_project', 'catalog_therapeutic_objectives',
       'catalog_therapeutic_activities', 'catalog_therapeutic_segments', 'catalog_service_exit_reasons',
+      'catalog_service_shift_templates',
     ];
     expect([...SPLIT_RESOURCES].sort()).toEqual([...literais, ...porVariavel].sort());
-    expect(SPLIT_RESOURCES.size).toBe(22);
+    expect(SPLIT_RESOURCES.size).toBe(23);
     // `recruitment` saiu com o dashboard de recrutamento (sem rota nem create/update no catálogo).
     expect(SPLIT_RESOURCES.has('recruitment')).toBe(false);
     expect(CELL_DESCRIPTION['recruitment:create']).toBeUndefined();
@@ -97,7 +104,7 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     expect(CELL_DESCRIPTION['worker:create']).toBeUndefined();
   });
 
-  it('cada um dos 22 recursos splitados tem CELL_DESCRIPTION para create E update', () => {
+  it('cada um dos 22 resources splitados tem CELL_DESCRIPTION para create E update', () => {
     for (const resource of SPLIT_RESOURCES) {
       expect(CELL_DESCRIPTION[cellKey(resource, 'create')]?.trim().length ?? 0).toBeGreaterThan(0);
       expect(CELL_DESCRIPTION[cellKey(resource, 'update')]?.trim().length ?? 0).toBeGreaterThan(0);
@@ -133,5 +140,142 @@ describe('expandWriteCells', () => {
 
   it('lista vazia devolve lista vazia', () => {
     expect(expandWriteCells([])).toEqual([]);
+  });
+});
+
+describe('spec 080 — assistants cells (Master-only)', () => {
+  const THIRTEEN = [
+    ...ASSISTANT_CHAT_CELLS,
+    'assistant_scoreboard:read',
+    'assistant_escalation:register',
+    ...KNOWLEDGE_CELLS,
+  ];
+
+  it('(a) the 13 cells (3 + 2 + 8) are in SOMENTE_ACESSO_MASTER_CELLS', () => {
+    expect(ASSISTANT_CHAT_CELLS).toHaveLength(3);
+    expect(KNOWLEDGE_CELLS).toHaveLength(8);
+    expect(THIRTEEN).toHaveLength(13);
+    for (const c of THIRTEEN) {
+      expect(isValidCellKey(c)).toBe(true);
+      expect(SOMENTE_ACESSO_MASTER_CELLS.has(c)).toBe(true);
+    }
+    expect(KNOWLEDGE_CELLS.some((c) => c.includes('default'))).toBe(false);
+  });
+
+  it('(a2) knowledge_product_meetings:read is in every place of its siblings (list, description, area, valid key)', () => {
+    const c = 'knowledge_product_meetings:read';
+    expect(KNOWLEDGE_CELLS).toContain(c);
+    expect(CELL_DESCRIPTION[c]).toBeTruthy();
+    expect(RESOURCE_CATEGORY['knowledge_product_meetings']).toBe(RESOURCE_CATEGORY['knowledge_financial']);
+    expect(isValidCellKey(c)).toBe(true);
+  });
+
+  it('(b) granting any of them to a non-Master group is refused (master_only_cell, 422); the Master passes', () => {
+    for (const c of THIRTEEN) {
+      let err: unknown;
+      try {
+        assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [c]);
+      } catch (e) {
+        err = e;
+      }
+      expect((err as { code?: string }).code).toBe('master_only_cell');
+      expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [c])).not.toThrow();
+    }
+  });
+
+  it('(c) every catalog `assistant_*:chat` cell belongs to ASSISTANT_CHAT_CELLS', () => {
+    const fromCatalog = Object.keys(CELL_DESCRIPTION).filter((k) => k.startsWith('assistant_') && k.endsWith(':chat'));
+    // positive control: the filter finds exactly the 3 (not 0) — live instrument
+    expect(fromCatalog).toHaveLength(3);
+    expect([...fromCatalog].sort()).toEqual([...ASSISTANT_CHAT_CELLS].sort());
+    const resources = Object.keys(RESOURCE_CATEGORY).filter((r) => r.startsWith('assistant_'));
+    // 3 chat resources + `assistant_scoreboard` + `assistant_escalation` (the `assistant_` prefix is shared with the two non-chat resources)
+    expect(resources).toHaveLength(5);
+  });
+});
+
+describe('spec 081 (T064) — recruitment_activity_per_person:read (Master-only)', () => {
+  const CELL = 'recruitment_activity_per_person:read';
+
+  it('is a valid cell with description and category, and is Master-only', () => {
+    expect(isValidCellKey(CELL)).toBe(true);
+    expect(CELL_DESCRIPTION[CELL]).toBeTruthy();
+    expect(RESOURCE_CATEGORY['recruitment_activity_per_person']).toBe('Operações');
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has(CELL)).toBe(true);
+  });
+
+  it('granting it to a non-Master group is refused (master_only_cell); the Master passes', () => {
+    let err: unknown;
+    try {
+      assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [CELL]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as { code?: string }).code).toBe('master_only_cell');
+    expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [CELL])).not.toThrow();
+  });
+});
+
+describe('spec 082 — platform_costs:read (Master-only)', () => {
+  const CELL = 'platform_costs:read';
+
+  it('is a valid cell with a description (es) and category, and is Master-only', () => {
+    expect(isValidCellKey(CELL)).toBe(true);
+    expect(CELL_DESCRIPTION[CELL]).toBeTruthy();
+    expect(RESOURCE_CATEGORY['platform_costs']).toBe('Operações');
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has(CELL)).toBe(true);
+  });
+
+  it('granting it to a non-Master group is refused (master_only_cell); the Master passes', () => {
+    let err: unknown;
+    try {
+      assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [CELL]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as { code?: string }).code).toBe('master_only_cell');
+    expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [CELL])).not.toThrow();
+  });
+});
+
+describe('spec 086 — luz_prueba:chat (Master-only, fora de ASSISTANT_CHAT_CELLS)', () => {
+  const CELL = 'luz_prueba:chat';
+
+  it('CA-4: is a valid cell with description (es) and category, and is in SOMENTE_ACESSO_MASTER_CELLS', () => {
+    expect(isValidCellKey(CELL)).toBe(true);
+    expect(LUZ_PRUEBA_CHAT_CELLS).toEqual([CELL]);
+    expect(CELL_DESCRIPTION[CELL]).toBeTruthy();
+    expect(RESOURCE_CATEGORY['luz_prueba']).toBe('Operações');
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has(CELL)).toBe(true);
+  });
+
+  it('is NOT an assistant chat cell (AssistantReachUseCase only iterates ASSISTANT_CHAT_CELLS)', () => {
+    expect(ASSISTANT_CHAT_CELLS).not.toContain(CELL);
+  });
+
+  it('granting it to a non-Master group is refused (master_only_cell); the Master passes', () => {
+    let err: unknown;
+    try {
+      assertCellsAllowedForGroup('b0000000-0000-0000-0000-000000000002', [CELL]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as { code?: string }).code).toBe('master_only_cell');
+    expect(() => assertCellsAllowedForGroup(ACESSO_MASTER_GROUP_ID, [CELL])).not.toThrow();
+  });
+});
+
+describe('spec 078 (M2) — as 2 células novas da Luz têm categoria de tela (não caem em "Não categorizado")', () => {
+  it('worker_application → Trabalhadores e handover → Comunicação', () => {
+    expect(categoryFor('worker_application')).toBe('Trabalhadores');
+    expect(categoryFor('handover')).toBe('Comunicação');
+    expect(categoryFor('recurso_que_nao_existe')).toBe(UNCATEGORIZED); // controle: o desconhecido segue sem categoria
+  });
+});
+
+describe('spec 078 M7 — pedidos_ia: só LER é master-only; DECIDIR é do grupo decisor (Marcel)', () => {
+  it('SOMENTE_ACESSO_MASTER_CELLS tem pedidos_ia:read e NÃO tem pedidos_ia:decidir', () => {
+    expect([...SOMENTE_ACESSO_MASTER_CELLS].filter((c) => c.startsWith('pedidos_ia:'))).toEqual(['pedidos_ia:read']);
+    expect(SOMENTE_ACESSO_MASTER_CELLS.has('pedidos_ia:decidir')).toBe(false);
   });
 });

@@ -37,7 +37,7 @@ describe('users.account_type — a fronteira staff × prestador (migration 414, 
   });
 
   describe('esquema', () => {
-    it('a coluna existe, é NOT NULL, tem CHECK (staff|worker) e o backfill fechou (0 sem tipo)', async () => {
+    it('a coluna existe, é NOT NULL, tem CHECK (staff|worker|agent, 556) e o backfill fechou (0 sem tipo)', async () => {
       const col = await pool.query(
         `SELECT is_nullable FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'account_type'`,
       );
@@ -45,7 +45,7 @@ describe('users.account_type — a fronteira staff × prestador (migration 414, 
       const semTipo = await pool.query(`SELECT count(*)::int AS n FROM users WHERE account_type IS NULL`);
       expect(semTipo.rows[0].n).toBe(0);
       const tipos = await pool.query(`SELECT DISTINCT account_type FROM users ORDER BY 1`);
-      for (const r of tipos.rows) expect(['staff', 'worker']).toContain(r.account_type);
+      for (const r of tipos.rows) expect(['staff', 'worker', 'agent']).toContain(r.account_type);
     });
 
     it('lex C6: `patient` NÃO entra — o CHECK recusa', async () => {

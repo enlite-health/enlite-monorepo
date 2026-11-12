@@ -45,11 +45,12 @@ export function formatInstant(
   value: DateInput,
   options: Intl.DateTimeFormatOptions,
   locale: string = 'es-AR',
+  timeZone: string = OPERATION_TIME_ZONE,
 ): string | null {
   const date = toValidDate(value);
   if (!date) return null;
   const { hour12: _ignored, ...rest } = options;
-  return new Intl.DateTimeFormat(locale, { ...rest, hourCycle: 'h23', timeZone: OPERATION_TIME_ZONE }).format(date);
+  return new Intl.DateTimeFormat(locale, { ...rest, hourCycle: 'h23', timeZone }).format(date);
 }
 
 /**

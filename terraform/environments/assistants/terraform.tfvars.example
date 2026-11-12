@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars (gitignored) before running init/plan/apply.
+project_id       = "enlite-prd"
+region           = "southamerica-west1"
+scheduler_region = "southamerica-east1"
+
+# Empty on the 1st apply; fill in with the Cloud Run URL after the 1st gcloud run deploy.
+assistants_service_url = ""
+
+# Deploy SA email = the WIF SA of the monorepo (secrets.GCP_WIF_SA_EMAIL; prd/iam.tf sa_github_deploy). Identity, not a secret.
+deploy_sa_email = "github-deploy-sa@enlite-prd.iam.gserviceaccount.com"

@@ -446,6 +446,19 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (1 de sistema + 
     expect(grants.rows.map((r) => r.group_id)).toContain(GROUP_MASTER);
   });
 
+  it('migration 550: as 3 células de catalog_service_shift_templates existem e o Acesso Master as recebe', async () => {
+    const cells = await pool.query<{ action: string }>(
+      `SELECT action FROM permissions WHERE resource = 'catalog_service_shift_templates' ORDER BY action`,
+    );
+    expect(cells.rows.map((r) => r.action)).toEqual(['create', 'read', 'update']);
+    const grants = await pool.query<{ group_id: string }>(
+      `SELECT DISTINCT gp.group_id FROM group_permissions gp
+         JOIN permissions p ON p.id = gp.permission_id
+        WHERE p.resource = 'catalog_service_shift_templates'`,
+    );
+    expect(grants.rows.map((r) => r.group_id)).toContain(GROUP_MASTER);
+  });
+
   it('5 grupos do seed existem: só o Acesso Master é de SISTEMA; Super Admin, Recrutador, Community Manager e Financeiro são CUSTOMIZÁVEIS (mig 432 + mig 454, D285/FR-701)', async () => {
     // A F11 caiu (D285, 05/09): não é mais "grupos validados por migration" —
     // só as 4 contas do Acesso Master ficam fixas. A mig 432 (PR-8a) tirou
@@ -454,13 +467,17 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (1 de sistema + 
     // renomeia nem arquiva). A regra é a de sempre; mudou QUAIS grupos a
     // carregam. Este teste é o guardião do seed: se alguém reverter a 432 ou a
     // 454 por acidente, ele morre.
-    const groups = await pool.query<{ id: string; name: string; is_system: boolean }>(`
-      SELECT id::text, name, is_system FROM permission_groups
+    const todos = await pool.query<{ id: string; name: string; is_system: boolean; actor_class: string }>(`
+      SELECT id::text, name, is_system, actor_class FROM iam.permission_groups
       WHERE tenant_id = $1
       ORDER BY name
     `, [TENANT_ENLITE]);
-
-    expect(groups.rows.length).toBe(5); // ainda 5 grupos no total — só a flag de 3 deles mudou
+    // Os grupos de PESSOA são 5 — só a flag de 3 deles mudou. Grupos AGENT (spec 078, mig 556: 'Luz — espelho Recrutador') são
+    // outra classe de ator e não entram na conta dos humanos; o AGENT é afirmado à parte, pelo nome.
+    const groups = { rows: todos.rows.filter((r) => r.actor_class !== 'AGENT') };
+    const agentes = todos.rows.filter((r) => r.actor_class === 'AGENT');
+    expect(groups.rows.length).toBe(5);
+    expect(agentes.map((r) => r.name)).toEqual(['Luz — espelho Recrutador']);
 
     const byId = new Map(groups.rows.map(r => [r.id, r]));
 
@@ -509,6 +526,7 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (1 de sistema + 
 
     const ativas = await pool.query<{ id: string }>(`
       SELECT id FROM iam.permissions WHERE deprecated_at IS NULL
+         AND NOT (resource = 'pedidos_ia' AND action = 'decidir') -- 557: decidir é do grupo decisor (Marcel), o sync não a dá ao Master
     `);
     const grants = await pool.query<{ permission_id: string }>(`
       SELECT permission_id FROM group_permissions WHERE group_id = $1

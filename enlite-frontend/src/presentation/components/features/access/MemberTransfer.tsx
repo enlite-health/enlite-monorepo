@@ -9,6 +9,8 @@ export interface TransferPerson {
   userId: string;
   name: string | null;
   email: string;
+  /** Conta de agente (spec 078, M2): ganha a marca de agente no cartão. */
+  isAgent?: boolean;
 }
 
 interface MemberTransferProps {
@@ -327,6 +329,11 @@ function PersonCard({ person, locked = false }: { person: TransferPerson; locked
           </Text>
         )}
       </div>
+      {person.isAgent && (
+        <span className="shrink-0 rounded bg-gray-300 px-1.5 py-0.5" data-testid="person-agent-badge">
+          <Text as="span" size="xs" weight="medium" color="primary">{t('admin.access.group.transfer.agentBadge')}</Text>
+        </span>
+      )}
       {locked && (
         <span className="ml-auto shrink-0" aria-label={t('admin.access.group.transfer.locked')}>
           <Text as="span" size="xs" color="secondary">🔒</Text>

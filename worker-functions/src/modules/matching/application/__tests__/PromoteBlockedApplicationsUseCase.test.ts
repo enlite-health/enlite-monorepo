@@ -146,6 +146,8 @@ describe('PromoteBlockedApplicationsUseCase', () => {
     ['vaga não encontrada (deletada)', []],
     ['vaga is_draft=true', [{ is_draft: true, status: 'SEARCHING' }]],
     ['vaga status=CLOSED', [{ is_draft: false, status: 'CLOSED' }]],
+    // spec 084 (P4/R6): candidato bloqueado NÃO é promovido para vaga dada de baja
+    ['vaga status=DE_BAJA', [{ is_draft: false, status: 'DE_BAJA' }]],
   ])('skip: %s', async (_label, jobPostingRows) => {
     const query = jest.fn();
     query.mockResolvedValueOnce({

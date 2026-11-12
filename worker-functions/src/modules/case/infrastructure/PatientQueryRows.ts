@@ -181,6 +181,12 @@ export interface PatientDetailRow {
    * a lia — o foguete ficava desabilitado com cobertura verificada válida.
    */
   hasVerifiedActiveCoverage: boolean;
+  /**
+   * Nº de diagnósticos CID-11 ATIVOS (`patient_diagnoses.active`, qualquer source) — só a CONTAGEM, insumo do
+   * `DIAGNOSIS` do checklist. É dado do container `clinical`: `DETAIL_FIELDS.clinical` o redige (null) para quem
+   * não lê, mas a completude é calculada ANTES da redação, sobre o objeto cru (ver `patientDetailCompleteness`).
+   */
+  activeDiagnosisCount: number;
   /** Dispositivos (códigos de device_types, mig 307), ordem do catálogo. */
   deviceTypes: string[];
   needsAttention: boolean;

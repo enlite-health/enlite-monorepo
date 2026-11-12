@@ -51,6 +51,24 @@ describe('AdminPatientsController.getPatientStatusOptions (spec 051, F3)', () =>
     expect(statusOptions.mock.calls.map((c) => c[1])).toEqual([['patient:update', 'patient_status:move_to_searching'], [], null]);
   });
 
+  it('blockedBy com DIAGNOSIS: ator COM patient_clinical:read vê DIAGNOSIS; SEM, vê CLINICAL_DATA (a opção continua bloqueada)', async () => {
+    const data = { current: 'ADMISSION', changeSource: 'kanban', options: [
+      { status: 'PENDING_ADMISSION', via: 'fluxo', blockedBy: ['DIAGNOSIS'] },
+      { status: 'ALTA', via: 'fluxo' },
+    ] };
+    const statusOptions = jest.fn().mockResolvedValue(data);
+    const ctrl = ctrlCom(statusOptions);
+    const [reqCom, resCom] = reqRes({ id: ID }, { permissionCells: ['patient:update', 'patient_clinical:read'] });
+    await ctrl.getPatientStatusOptions(reqCom, resCom);
+    expect(bodyOf(resCom).data.options[0].blockedBy).toEqual(['DIAGNOSIS']);
+    const [reqSem, resSem] = reqRes({ id: ID }, { permissionCells: ['patient:update'] });
+    await ctrl.getPatientStatusOptions(reqSem, resSem);
+    const out = bodyOf(resSem).data.options;
+    expect(out[0].blockedBy).toEqual(['CLINICAL_DATA']);
+    expect(out[1]).toEqual({ status: 'ALTA', via: 'fluxo' });
+    expect(JSON.stringify(bodyOf(resSem))).not.toContain('DIAGNOSIS');
+  });
+
   it('?changeSource: ausente = admin_panel; kanban e admin_panel viajam ao serviço', async () => {
     const statusOptions = jest.fn().mockResolvedValue({ current: 'ADMISSION', changeSource: 'kanban', options: [] });
     const ctrl = ctrlCom(statusOptions);

@@ -228,7 +228,8 @@ describe('GET /api/public/v1/jobs', () => {
       caseNumber: 9013,
       status: 'RAPID_RESPONSE',
       country: 'AR',
-      socialShortLinks: { site: 'https://srt.io/rapid' },
+      // Formato REAL de PRD: site e objeto {id,url} (a string dos demais e o legado).
+      socialShortLinks: { site: { id: 'link_rapid', url: 'https://srt.io/rapid' } },
     });
 
     await insertVacancy(pool, {
@@ -459,6 +460,12 @@ describe('GET /api/public/v1/jobs', () => {
     const res = await api.get('/api/public/v1/jobs');
     const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.searching);
     expect(job?.detail_link).toBe('https://srt.io/searching');
+  });
+
+  it('detail_link e a URL quando site e objeto {id,url} (formato de PRD), nunca o JSON cru', async () => {
+    const res = await api.get('/api/public/v1/jobs');
+    const job = (res.data.data as Array<Record<string, unknown>>).find(j => j.id === IDS.rapidResponse);
+    expect(job?.detail_link).toBe('https://srt.io/rapid');
   });
 
   it('ACTIVE vacancy detail_link matches social_short_links.site', async () => {

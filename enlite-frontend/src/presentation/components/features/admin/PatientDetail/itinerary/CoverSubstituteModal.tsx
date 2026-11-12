@@ -173,7 +173,7 @@ export function CoverSubstituteModal({ patientId, serviceId, asOf, target, onClo
                 <div className="flex flex-wrap items-center gap-2.5">
                   <span className="flex h-7 w-[130px] items-center justify-center whitespace-nowrap rounded-full bg-[#F1E8FF] text-[#3B0A8C]" {...NOWRAP}>
                     <Text as="span" size="xs" weight="medium" color="inherit" className="whitespace-nowrap">
-                      {shiftChipLabel(shift.date, shift.startTime, shift.endTime, i18n.language)}
+                      {shiftChipLabel(t, shift.date, shift.startTime, shift.endTime, i18n.language)}
                     </Text>
                   </span>
                   <ConflictBadge state={stateOf(shift)} testId={`sustitucion-cubrir-estado-${key}`} />

@@ -22,6 +22,7 @@
 
 import { type Page, type Route, expect } from '@playwright/test';
 import { buildMockToken, buildFakeIdToken } from './worker-auth-helper';
+import { swapAreasComToken } from './areas-do-painel';
 
 async function injectMockAuthIntoLocalStorage(
   page: Page,
@@ -105,6 +106,9 @@ export async function installRealRegInterceptors(
   await page.route('**/mock-gcs-upload**', async (route: Route) => {
     await route.fulfill({ status: 200, contentType: 'text/plain', body: 'ok' });
   });
+
+  // Login único (T407): `GET /v1/me/areas` fica fora de `/api/**`; sem o swap o JWT fake leva 401 e o prestador fica em `/login`.
+  await swapAreasComToken(page, mockToken);
 
   await page.route('**/api/**', async (route: Route) => {
     const url = route.request().url();

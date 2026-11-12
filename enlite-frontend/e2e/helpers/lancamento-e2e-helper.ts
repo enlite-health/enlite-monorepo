@@ -322,6 +322,11 @@ export interface SeedLaunchablePatientOpts {
   schedule?: ContractedServiceBody['schedule'];
   /** `providers_needed` do serviço semeado (default 1). A Trava A (058b) recusa alocar além dele num mesmo slot. */
   providersNeeded?: number;
+  /**
+   * Diagnóstico CID-11 ativo semeado (pedido do Javier: entrar em atendimento, e o foguete, a partir do pré-atendimento exigem ≥1).
+   * Default = o de `insertTestPatient` (estágios pré-atendimento). `false` prova a TRAVA.
+   */
+  withDiagnosis?: boolean;
 }
 
 export interface SeedLaunchablePatientResult {
@@ -342,7 +347,7 @@ export async function seedLaunchablePatient(
   request: APIRequestContext,
   opts: SeedLaunchablePatientOpts,
 ): Promise<SeedLaunchablePatientResult> {
-  const { status, lat, lng, schedule, providersNeeded = 1 } = opts;
+  const { status, lat, lng, schedule, providersNeeded = 1, withDiagnosis } = opts;
   const { patientId, addressId } = insertTestPatient({
     status,
     withAddress: true,
@@ -350,6 +355,7 @@ export async function seedLaunchablePatient(
     addressLng: lng,
     hasConsent: true,
     insuranceInformed: 'OSDE',
+    withDiagnosis,
   });
   if (!addressId) {
     throw new Error('seedLaunchablePatient: insertTestPatient não devolveu addressId');

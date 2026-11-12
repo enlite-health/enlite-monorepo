@@ -221,7 +221,7 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await installFakeFirebaseAuth(page);
-  await page.goto('/admin/login');
+  await page.goto('/login?next=%2Fadmin');
   await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();

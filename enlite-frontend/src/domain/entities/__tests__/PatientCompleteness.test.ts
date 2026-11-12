@@ -6,6 +6,7 @@
  * corpo do arquivo.
  */
 import { describe, it, expect } from 'vitest';
+import { ADMISSION_FUNNEL_STATUSES } from '../patientEnums';
 import {
   PATIENT_COMPLETENESS_CODES,
   ACTIVATION_BLOCKING_CODES,
@@ -13,11 +14,12 @@ import {
   RECRUITMENT_BLOCKING_CODES,
   isPlaceholderCoverageValue,
   recruitmentMissingCodes,
+  diagnosisGapOf,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
 describe('PATIENT_COMPLETENESS_CODES (front espelha o backend)', () => {
-  it('é exatamente os 7 códigos administrativos, nesta ordem (SERVICE_SCHEDULE desde 07/09)', () => {
+  it('é os 7 códigos administrativos + DIAGNOSIS (pedido do Javier) + o genérico CLINICAL_DATA, nesta ordem', () => {
     expect(PATIENT_COMPLETENESS_CODES).toEqual([
       'ADDRESS',
       'RESPONSIBLE',
@@ -26,14 +28,15 @@ describe('PATIENT_COMPLETENESS_CODES (front espelha o backend)', () => {
       'SERVICE_ADDRESS',
       'SERVICE_SCHEDULE',
       'CONSENT',
+      'DIAGNOSIS',
+      'CLINICAL_DATA',
     ]);
   });
 
-  it('nenhum código nomeia conteúdo clínico', () => {
+  it('só DIAGNOSIS e CLINICAL_DATA nomeiam conteúdo clínico (existência, nunca valor) — patología/instrucciones/emergencia seguem fora', () => {
     const clinicalWords = /diagn|patol|clinic|instruc|emerg/i;
-    for (const code of PATIENT_COMPLETENESS_CODES as readonly string[]) {
-      expect(clinicalWords.test(code)).toBe(false);
-    }
+    const clinicos = (PATIENT_COMPLETENESS_CODES as readonly string[]).filter((c) => clinicalWords.test(c));
+    expect(clinicos).toEqual(['DIAGNOSIS', 'CLINICAL_DATA']);
   });
 
   it('o tipo PatientCompletenessCode aceita cada valor da lista (checagem em tempo de execução via array)', () => {
@@ -43,8 +46,8 @@ describe('PATIENT_COMPLETENESS_CODES (front espelha o backend)', () => {
 });
 
 describe('ACTIVATION_BLOCKING_CODES (D255 + migration 330, espelha o backend)', () => {
-  it('é ADDRESS, SERVICE_ADDRESS e SERVICE_SCHEDULE (decisão do Gabriel 07/09)', () => {
-    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
+  it('é ADDRESS, SERVICE_ADDRESS, SERVICE_SCHEDULE (decisão do Gabriel 07/09) e DIAGNOSIS (pedido do Javier)', () => {
+    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'DIAGNOSIS']);
   });
 
   it('todo código bloqueante pertence ao catálogo — sem código órfão no espelho', () => {
@@ -143,9 +146,26 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
       .toEqual(['COVERAGE']);
   });
 
-  it('faltando tudo → os 4 códigos, nesta ordem (a mesma de RECRUITMENT_BLOCKING_CODES)', () => {
-    expect(recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null }))
+  it('faltando tudo → todos os códigos, nesta ordem (a mesma de RECRUITMENT_BLOCKING_CODES)', () => {
+    expect(recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null, diagnosisGap: 'DIAGNOSIS' }))
       .toEqual([...RECRUITMENT_BLOCKING_CODES]);
+  });
+
+  // Pedido do Javier: ativar recrutamento ENQUANTO o paciente está em ADMISSION exige ≥1 diagnóstico ativo.
+  it('diagnosisGap DIAGNOSIS → DIAGNOSIS no fim; CLINICAL_DATA (quem não lê o clínico) → o genérico; ausente/null → nada', () => {
+    expect(rm({ ...BASE, diagnosisGap: 'DIAGNOSIS' })).toEqual(['DIAGNOSIS']);
+    expect(rm({ ...BASE, diagnosisGap: 'CLINICAL_DATA' })).toEqual(['CLINICAL_DATA']);
+    expect(rm({ ...BASE, diagnosisGap: null })).toEqual([]);
+    expect(rm(BASE)).toEqual([]);
+  });
+
+  it('diagnosisGapOf lê o checklist DO SERVIDOR: DIAGNOSIS, CLINICAL_DATA ou nada (fora de ADMISSION o servidor nem manda)', () => {
+    expect(diagnosisGapOf({ missing: ['ADDRESS', 'DIAGNOSIS'] })).toBe('DIAGNOSIS');
+    expect(diagnosisGapOf({ missing: ['CLINICAL_DATA'] })).toBe('CLINICAL_DATA');
+    expect(diagnosisGapOf({ missing: ['ADDRESS', 'COVERAGE'] })).toBeNull();
+    expect(diagnosisGapOf({ missing: [] })).toBeNull();
+    expect(diagnosisGapOf(undefined)).toBeNull();
+    expect(ADMISSION_FUNNEL_STATUSES).toEqual(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION']); // o pré-atendimento é o funil
   });
 
   // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
