@@ -1,6 +1,7 @@
 /**
  * WorkerItineraryReader — spec 077 F1 (T272): ocorrências do worker na janela, ponto degradado a ~20 m e qualidade.
- * Cliente `pg` falso que devolve o universo cru (3 consultas + pacientes); a expansão e o recorte por worker rodam de verdade.
+ * Cliente `pg` falso que devolve o universo cru (3 consultas + pacientes + alocações encerradas hoje); a expansão e o recorte por
+ * worker rodam de verdade.
  * Todos os dados são sintéticos (nenhuma coordenada ou endereço real).
  */
 import { v5 as uuidv5 } from 'uuid';
@@ -20,6 +21,7 @@ interface Fixture {
   assignments?: Array<Record<string, unknown>>;
   absences?: Array<Record<string, unknown>>;
   patient?: Record<string, unknown>;
+  ended?: Array<Record<string, unknown>>;
 }
 
 function fakeClient(f: Fixture = {}) {
@@ -40,6 +42,7 @@ function fakeClient(f: Fixture = {}) {
           { id: PAT, first_name: 'Paciente', country: 'AR', lat: null, lng: null, geocode_quality: null, geocode_partial_match: null, neighborhood: null, ...f.patient },
         ],
       };
+    if (q.includes("a.status = 'ENDED'")) return { rows: f.ended ?? [] };
     throw new Error(`consulta inesperada: ${q.slice(0, 60)}`);
   });
   return { query };
@@ -75,7 +78,7 @@ describe('readWorkerWindow', () => {
     const client = fakeClient({});
     await readWorkerWindow(client as never, { workerId: W1, today: TODAY });
     const calls = client.query.mock.calls as unknown as Array<[string, unknown[]]>;
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(5);
     for (const [sql] of calls.slice(0, 3)) {
       expect(sql).toMatch(/wa\.worker_id = \$1::uuid/);
       expect(sql).toMatch(/wab\.substitute_worker_id = \$1::uuid/);
@@ -203,6 +206,7 @@ describe('readWorkerWindow', () => {
       if (q.includes('ab.substitute_worker_id, ab.request_id')) return { rows: [] };
       if (q.includes('LEFT JOIN LATERAL'))
         return { rows: pats.map((x) => ({ id: x.p, first_name: 'Ana', country: 'AR', lat: null, lng: null, geocode_quality: null, geocode_partial_match: null, neighborhood: null })) };
+      if (q.includes("a.status = 'ENDED'")) return { rows: [] };
       throw new Error(`consulta inesperada: ${q.slice(0, 60)}`);
     });
     const env = await readWorkerWindow({ query } as never, { workerId: W1, today: TODAY });
@@ -225,5 +229,45 @@ describe('readWorkerWindow', () => {
     const calls = client.query.mock.calls as unknown as Array<[string, unknown[]]>;
     expect(calls[0][1]).toEqual([W1, windowStart(TODAY), '2026-11-16']);
     expect(windowStart(TODAY)).toBe('2026-10-01');
+  });
+
+  const ENDED_TODAY = [{ patient_id: PAT, assignment_id: ASG, slot_id: SLOT, worker_id: W1, valid_from: '2026-01-01', valid_to: TODAY, status: 'ENDED' }];
+  const idHoje = (workerId: string) => uuidv5(`${SLOT}|${TODAY}|${workerId}`, OCCURRENCE_ID_NAMESPACE);
+
+  it('T-F2a-07 ALLOCATION_ENDED: alocação encerrada hoje numa faixa que ainda vale → tombstone com o id do item de hoje', async () => {
+    const client = fakeClient({ assignments: ENDED_TODAY, ended: [{ slot_id: SLOT, slot_valid_today: true }] });
+    const env = await readWorkerWindow(client as never, { workerId: W1, today: TODAY });
+    expect(env.items).toEqual([]);
+    expect(env.tombstones).toEqual([{ occurrence_id: idHoje(W1), reason: 'ALLOCATION_ENDED', seq: 1 }]);
+    const calls = client.query.mock.calls as unknown as Array<[string, unknown[]]>;
+    const ended = calls.find(([sql]) => sql.includes("a.status = 'ENDED'"));
+    expect(ended?.[0]).toContain('a.valid_to = $2::date');
+    expect(ended?.[1]).toEqual([W1, TODAY, MONDAY]);
+  });
+
+  it('T-F2a-07 SLOT_ENDED: alocação encerrada hoje e a faixa deixou de valer hoje → SLOT_ENDED', async () => {
+    const env = await run({ assignments: ENDED_TODAY, ended: [{ slot_id: SLOT, slot_valid_today: false }] });
+    expect(env.tombstones).toEqual([{ occurrence_id: idHoje(W1), reason: 'SLOT_ENDED', seq: 1 }]);
+  });
+
+  it('T-F2a-07 ABSENCE: ausência da titular hoje (sem e com substituta) → tombstone; seq depois dos itens', async () => {
+    const sem = await run({ absences: [absence(TODAY, null)] });
+    expect(dates(sem)).not.toContain(TODAY);
+    expect(sem.tombstones).toEqual([{ occurrence_id: idHoje(W1), reason: 'ABSENCE', seq: sem.items.length + 1 }]);
+    const com = await run({ absences: [absence(TODAY, W2)] });
+    expect(com.tombstones).toEqual([{ occurrence_id: idHoje(W1), reason: 'ABSENCE', seq: com.items.length + 1 }]);
+  });
+
+  it('T-F2a-07 a substituta vê o item de hoje (SUBSTITUTION) e nenhum tombstone', async () => {
+    const env = await run({ absences: [absence(TODAY, W2)] }, W2);
+    expect(env.items).toHaveLength(1);
+    expect(env.items[0]).toMatchObject({ on_date: TODAY, kind: 'SUBSTITUTION', occurrence_id: idHoje(W2) });
+    expect(env.tombstones).toEqual([]);
+  });
+
+  it('T-F2a-07 ocorrência de hoje que segue em items (realocada na mesma faixa) nunca vira tombstone', async () => {
+    const env = await run({ ended: [{ slot_id: SLOT, slot_valid_today: true }] });
+    expect(env.items.map((i) => i.occurrence_id)).toContain(idHoje(W1));
+    expect(env.tombstones).toEqual([]);
   });
 });
