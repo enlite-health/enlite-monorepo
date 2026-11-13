@@ -27,9 +27,7 @@ module "sa_attendance" {
   account_id   = "attendance-sa"
   display_name = "Attendance Service"
   project_roles = [
-    "roles/cloudsql.client",       # conectar à instância (Auth Proxy / connector)
-    "roles/cloudsql.instanceUser", # login IAM no banco (cloudsql.instances.login)
-    "roles/firebaseauth.viewer",   # checkRevoked (P10) lê o usuário no Firebase Auth
+    "roles/firebaseauth.viewer", # checkRevoked (P10) lê o usuário no Firebase Auth
   ]
 }
 
@@ -50,4 +48,18 @@ resource "google_sql_user" "attendance_iam" {
   instance = module.sql_enlite_ar_db.name
   name     = trimsuffix(module.sa_attendance.email, ".gserviceaccount.com")
   type     = "CLOUD_IAM_SERVICE_ACCOUNT"
+}
+
+# Cloud SQL só na enlite-ar-db (condição; mesmo padrão do github_deploy_cloudsql_client_ar_db em iam.tf).
+resource "google_project_iam_member" "attendance_sql_ar_db" {
+  for_each = toset(["roles/cloudsql.client", "roles/cloudsql.instanceUser"])
+  project  = var.project_id
+  role     = each.value
+  member   = module.sa_attendance.member
+
+  condition {
+    title       = "only-enlite-ar-db"
+    description = "spec 077: Cloud SQL do attendance so na enlite-ar-db"
+    expression  = "resource.type == \"sqladmin.googleapis.com/Instance\" && resource.name == \"projects/${var.project_id}/instances/${module.sql_enlite_ar_db.name}\""
+  }
 }
