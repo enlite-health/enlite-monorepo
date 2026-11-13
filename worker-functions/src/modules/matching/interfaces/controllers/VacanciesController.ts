@@ -15,6 +15,7 @@ import { SOURCE_LOCKED_FIELDS } from './vacancyCrudHelpers';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
 import { canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
 import { loadVacancyPatientDiagnoses } from '../../application/vacancyPatientDiagnoses';
@@ -187,7 +188,7 @@ export class VacanciesController {
             END
           ) as tempo_medio_fechamento
         FROM job_postings jp
-        WHERE case_number IS NOT NULL AND deleted_at IS NULL
+        WHERE case_number IS NOT NULL AND deleted_at IS NULL AND ${excludeTestVacancySql('jp')}
       `);
 
       const stats = result.rows[0];
@@ -277,7 +278,7 @@ export class VacanciesController {
               'rejection_reason_category', e.rejection_reason_category,
               'rejection_reason', e.rejection_reason
             )
-          ) FILTER (WHERE e.id IS NOT NULL AND ${excludeDisabledWorkersSql('w')}) as encuadres,
+          ) FILTER (WHERE e.id IS NOT NULL AND ${excludeDisabledWorkersSql('w')} AND ${sameRealmAsVacancySql('e.worker_id', 'jp.id')}) as encuadres,
           json_agg(
             DISTINCT jsonb_build_object(
               'channel', pub.channel,

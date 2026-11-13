@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { liveWorkerJoinSql } from './blockedAttemptLiveState';
 import { blockedNotPromotedSql, wjaSupersededByBlockedSql } from './BlockedApplicationQueryRepository';
@@ -129,6 +130,7 @@ export class FunnelTableRepository {
          -- Worker que deu baixa na conta some do kanban (linhas E contadores das
          -- abas, que o GetFunnelTableUseCase deriva destas linhas).
          AND ${excludeDisabledWorkersSql('w')}
+         AND ${sameRealmAsVacancySql('wja.worker_id', 'wja.job_posting_id')}
          -- M6b (D474): o convite do sistema some quando o par tem tentativa bloqueada —
          -- o card que fica é o bloqueado (fetchBlockedRawRows), em Iniciados.
          AND NOT ${wjaSupersededByBlockedSql('wja')}
@@ -153,7 +155,7 @@ NULL::text AS interview_response, NULL::text AS wbdl_dispatched_at, NULL::text A
 NULL::text AS wbdl_status, lw.status AS worker_status, (SELECT COUNT(*)::int FROM wja_contact_notes cn WHERE
 cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count, NULL::text AS
 self_applied_at, NULL::text AS source, NULL::text AS messaged_at, true AS is_blocked, (wba.dismissed_at IS NOT NULL) AS is_dismissed, NULL::float AS distance_km FROM worker_blocked_applications wba
-${liveWorkerJoinSql()} WHERE wba.job_posting_id = $1 AND ${blockedNotPromotedSql('wba')} ORDER BY wba.last_attempted_at DESC`,
+${liveWorkerJoinSql()} WHERE wba.job_posting_id = $1 AND ${blockedNotPromotedSql('wba')} AND ${sameRealmAsVacancySql('wba.worker_id', 'wba.job_posting_id')} ORDER BY wba.last_attempted_at DESC`,
       [jobPostingId],
     );
 

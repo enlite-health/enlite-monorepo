@@ -1,3 +1,5 @@
+import { excludeTestVacancySql } from '@shared/database/testRealmSql';
+
 /**
  * Single source of truth for "vaga viva" — a job posting actively looking for a
  * provider (job_postings.status, migration 166).
@@ -23,7 +25,10 @@ export const OPEN_JOB_STATUSES_SET: ReadonlySet<string> = new Set(OPEN_JOB_STATU
  * SQL predicate for a live vacancy, assuming the job_postings table is aliased `jp`.
  * Inlined (not parameterised) because the values are a compile-time constant list —
  * never user input.
+ * Vaga de teste (`is_test`) nunca é viva para a operação (D664).
  */
 export const LIVE_JOB_POSTING_SQL = `jp.deleted_at IS NULL
     AND jp.is_draft = false
-    AND jp.status IN (${OPEN_JOB_STATUSES.map((s) => `'${s}'`).join(',')})`;
+    AND jp.status IN (${OPEN_JOB_STATUSES.map((s) => `'${s}'`).join(',')})
+    AND ${excludeTestVacancySql('jp')}
+`;

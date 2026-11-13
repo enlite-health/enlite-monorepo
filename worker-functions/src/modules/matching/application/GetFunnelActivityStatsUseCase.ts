@@ -23,6 +23,7 @@
 
 import type { Pool } from 'pg';
 import { actorSourceSql, NOT_INSTRUMENTED } from '@shared/audit/actorSource';
+import { workerNotTestSql } from '@shared/database/testRealmSql';
 
 export interface FunnelActivityActorStats {
   /** Identidade gravada: `staff:<uid>`, `luz:<tool>`, `system:<job>`, … */
@@ -115,6 +116,7 @@ export class GetFunnelActivityStatsUseCase {
          LEFT JOIN users u
                 ON acoes.actor LIKE 'staff:%'
                AND u.firebase_uid = substring(acoes.actor from 7)
+        WHERE ${workerNotTestSql('acoes.worker_id')}
         GROUP BY acoes.actor, u.email
         ORDER BY (COUNT(*)) DESC`,
       [input.sinceDays],

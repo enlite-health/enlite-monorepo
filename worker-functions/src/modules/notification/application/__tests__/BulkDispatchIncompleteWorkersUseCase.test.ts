@@ -394,4 +394,34 @@ describe('BulkDispatchIncompleteWorkersUseCase', () => {
       expect(val.errors).toBe(0);
     });
   });
+
+  describe('T-F2a-61 — worker is_test', () => {
+    it('T-F2a-61 is_test não envia', async () => {
+      const db = makeDbSequence([
+        { rows: [{ ...WORKER_A, is_test: true }] },
+        { rows: [{ worker_id: WORKER_A.id }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true);
+
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, messaging);
+      await uc.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).not.toHaveBeenCalled();
+      expect(db.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('T-F2a-61 SQL de elegibilidade exclui is_test', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const messaging = makeMessaging(true);
+
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, messaging);
+      await uc.execute('scheduler');
+
+      const sql = String((db.query as jest.Mock).mock.calls[0][0]);
+      expect(sql).toContain('COALESCE(w.is_test, false) = false');
+      expect(sql).toContain('COALESCE(w.is_test, false) AS is_test');
+    });
+  });
 });

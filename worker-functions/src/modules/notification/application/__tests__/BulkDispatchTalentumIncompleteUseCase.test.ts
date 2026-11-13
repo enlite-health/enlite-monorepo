@@ -337,4 +337,43 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       expect(mainQuery).not.toContain("'INITIATED'");
     });
   });
+
+  describe('T-F2a-62 — worker is_test', () => {
+    const linhaTeste = {
+      worker_id: 'w-istest',
+      phone: '+5491100009999',
+      messaging_channel: 'twilio',
+      status: 'INCOMPLETE_REGISTER',
+      is_test: true,
+    };
+
+    it('T-F2a-62 is_test não envia', async () => {
+      const db = makeDbSequence([
+        { rows: [linhaTeste] },
+        { rows: [{ worker_id: 'w-istest' }] },
+        { rows: [] },
+        { rows: [] },
+      ]);
+      const messaging = makeMessaging(true);
+
+      const uc = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      const result = await uc.execute('scheduler');
+
+      expect(messaging.sendWhatsApp).not.toHaveBeenCalled();
+      expect(db.query).toHaveBeenCalledTimes(1);
+      expect(result.sent).toBe(0);
+    });
+
+    it('T-F2a-62 SQL de elegibilidade exclui is_test', async () => {
+      const db = makeDbSequence([{ rows: [] }]);
+      const messaging = makeMessaging(true);
+
+      const uc = new BulkDispatchTalentumIncompleteUseCase(db, messaging);
+      await uc.execute('scheduler');
+
+      const sql = String((db.query as jest.Mock).mock.calls[0][0]);
+      expect(sql).toContain('COALESCE(w.is_test, false) = false');
+      expect(sql).toContain('COALESCE(w.is_test, false) AS is_test');
+    });
+  });
 });

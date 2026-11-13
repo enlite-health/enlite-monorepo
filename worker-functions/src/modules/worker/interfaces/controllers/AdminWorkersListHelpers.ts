@@ -17,6 +17,7 @@
 
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { excludeTestWorkerSql } from '@shared/database/testRealmSql';
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 import {
   resolveLocationFilter,
@@ -203,6 +204,7 @@ export function buildWorkerListWhereClause(filters: WorkerListFilters): WorkerLi
   } else {
     whereClause += ` AND ${excludeDisabledWorkersSql('w')}`;
   }
+  whereClause += ` AND ${excludeTestWorkerSql('w')}`;
 
   // ── Platform ────────────────────────────────────────────────────────────────
   if (filters.platform) {

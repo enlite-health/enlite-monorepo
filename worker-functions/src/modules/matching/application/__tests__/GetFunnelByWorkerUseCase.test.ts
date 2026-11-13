@@ -230,4 +230,13 @@ describe('GetFunnelByWorkerUseCase', () => {
     expect(result.consolidado.BLOQUEADO).toBe(0);
     expect(result.porEtapa.BLOQUEADO).toBe(1);
   });
+
+  it('T-F2a-68 funil por prestador', async () => {
+    const db = mockDb([]);
+    await new GetFunnelByWorkerUseCase(db as never).execute();
+
+    const sql = String(db.query.mock.calls[0][0]);
+    expect(sql).toContain('COALESCE(w.is_test, false) = false');
+    expect(sql).toContain('COALESCE(jp.is_test, false) = false');
+  });
 });

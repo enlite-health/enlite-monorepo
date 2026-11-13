@@ -146,4 +146,13 @@ describe('GetArmedCasesUseCase', () => {
     expect(sql).toContain('jp.country = ANY($1::bpchar[])');
     expect(params).toEqual([['AR']]);
   });
+
+  it('T-F2a-68 casos armados', async () => {
+    const db = mockDb([]);
+    await new GetArmedCasesUseCase(db as never, hoursStub()).execute(['AR']);
+
+    const sql = String(db.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("NOT EXISTS (SELECT 1 FROM workers w_test_chk WHERE w_test_chk.id = encuadres.worker_id AND w_test_chk.is_test = true)");
+    expect(sql).toContain('COALESCE(jp.is_test, false) = false');
+  });
 });

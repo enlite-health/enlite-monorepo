@@ -49,7 +49,7 @@ function fakeDb(script: Script) {
       const text = sql.trim().replace(/\s+/g, ' ');
       log.push({ sql: text, params });
       if (text === 'COMMIT' && script.commitError) throw script.commitError;
-      if (text.startsWith('FROM job_postings') || text.includes('FROM job_postings jp')) {
+      if (text.startsWith('FROM job_postings') || /FROM job_postings jp\b/.test(text)) {
         return { rows: [{ id: VACANCY_ID, country: 'AR', case_number: 321, patient_last_name: 'Sobrenome Ficticio' }] };
       }
       if (text.includes('FROM worker_job_applications wja JOIN workers w')) {

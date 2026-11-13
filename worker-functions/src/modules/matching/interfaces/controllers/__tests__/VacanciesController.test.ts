@@ -88,4 +88,18 @@ describe('GET /vacancies/:id — weekly_hours derivado e sem authorized_period (
     const data = await getData(baseRow());
     expect(data).not.toHaveProperty('authorized_period');
   });
+
+  it('T-F2a-66 ficha e stats da vaga', async () => {
+    await getData(baseRow());
+    const ficha = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(ficha).toContain("COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = e.worker_id), false) = COALESCE((SELECT jp_realm_chk.is_test FROM job_postings jp_realm_chk WHERE jp_realm_chk.id = jp.id), false)");
+    expect(ficha).not.toContain('COALESCE(w.is_test, false) = false');
+
+    mockQuery.mockReset();
+    mockQuery.mockResolvedValue({ rows: [{}] });
+    const [req, res] = reqRes();
+    await new VacanciesController().getVacanciesStats(req, res);
+    const stats = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(stats).toContain('COALESCE(jp.is_test, false) = false');
+  });
 });

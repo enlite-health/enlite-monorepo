@@ -20,6 +20,11 @@ function base(overrides: Partial<ListVacanciesFilters> = {}): ListVacanciesFilte
 }
 
 describe('buildListVacanciesQuery — base query', () => {
+  it('T-F2a-69 lista de vagas sem vaga de teste', () => {
+    const { baseQuery } = buildListVacanciesQuery(base());
+    expect(baseQuery).toContain('AND COALESCE(jp.is_test, false) = false');
+  });
+
   it('base query includes LEFT JOIN patient_addresses', () => {
     const { baseQuery } = buildListVacanciesQuery(base());
     expect(baseQuery).toContain('LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id');
@@ -287,6 +292,15 @@ describe('loadStageCounts', () => {
     return { query: jest.fn().mockResolvedValue({ rows }) } as unknown as import('pg').Pool;
   }
 
+  it('T-F2a-69 contadores da lista', async () => {
+    const pool = makePool([]);
+    await loadStageCounts(pool, ['jp-1']);
+
+    const sql = String((pool.query as jest.Mock).mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("NOT EXISTS (SELECT 1 FROM workers w_test_chk WHERE w_test_chk.id = wja.worker_id AND w_test_chk.is_test = true)");
+    expect(sql).toContain("NOT EXISTS (SELECT 1 FROM workers w_test_chk WHERE w_test_chk.id = wba.worker_id AND w_test_chk.is_test = true)");
+  });
+
   it('não chama query quando a lista de ids está vazia', async () => {
     const pool = makePool([]);
     const out = await loadStageCounts(pool, []);
@@ -429,5 +443,13 @@ describe('loadVacancyActivity', () => {
     const pool = makePool([{ id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z') }]);
     const out = await loadVacancyActivity(pool, ['jp-a', 'jp-sem-linha']);
     expect(out.get('jp-sem-linha')).toEqual({ lastActionAt: null });
+  });
+
+  it('T-F2a-69 atividade da vaga', async () => {
+    const pool = makePool([]);
+    await loadVacancyActivity(pool, ['jp-1']);
+
+    const sql = String((pool.query as jest.Mock).mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("NOT EXISTS (SELECT 1 FROM workers w_test_chk WHERE w_test_chk.id = w.worker_id AND w_test_chk.is_test = true)");
   });
 });

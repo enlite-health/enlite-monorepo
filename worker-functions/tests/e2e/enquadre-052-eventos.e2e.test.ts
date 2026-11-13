@@ -95,9 +95,10 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
    */
   async function novoWorker(email?: string, docs: AptoDocs = 'validated'): Promise<string> {
     seq += 1;
+    // D664/T-F2a-66: a vaga é is_test (migration 248, auto-invite) → worker no mesmo realm, senão some do funil e dos convocáveis
     const { rows } = await admin.query(
-      `INSERT INTO workers (auth_uid, email, country, timezone, status, first_name_encrypted, last_name_encrypted)
-       VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires', 'REGISTERED', 'cipher', 'cipher') RETURNING id`,
+      `INSERT INTO workers (auth_uid, email, country, timezone, status, first_name_encrypted, last_name_encrypted, is_test)
+       VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires', 'REGISTERED', 'cipher', 'cipher', true) RETURNING id`,
       [`enq052-${RUN}-${seq}`, email ?? `worker${seq}.e2e052.${RUN}@example.test`],
     );
     const id = rows[0].id as string;

@@ -55,7 +55,8 @@ const TALENTUM_INCOMPLETE_QUERY = `
     w.id AS worker_id,
     w.phone AS phone,
     w.messaging_channel AS messaging_channel,
-    w.status AS status
+    w.status AS status,
+    COALESCE(w.is_test, false) AS is_test
   FROM workers w
   INNER JOIN worker_job_applications wja
     ON wja.worker_id = w.id
@@ -67,6 +68,7 @@ const TALENTUM_INCOMPLETE_QUERY = `
     AND w.phone IS NOT NULL
     AND w.phone <> ''
     AND w.email NOT LIKE '%@enlite.import'
+    AND COALESCE(w.is_test, false) = false
     AND (
       (tss.send_count IS NULL AND wja.updated_at < NOW() - INTERVAL '1 day')
       OR
@@ -109,7 +111,7 @@ export class BulkDispatchTalentumIncompleteUseCase {
 
     batchLogger.info({ msg: 'BulkDispatchTalentum iniciado' });
 
-    const rows = await this.db.query<{ worker_id: string; phone: string; messaging_channel: string | null; status: string | null }>(
+    const rows = await this.db.query<{ worker_id: string; phone: string; messaging_channel: string | null; status: string | null; is_test: boolean }>(
       TALENTUM_INCOMPLETE_QUERY,
     );
 
@@ -123,6 +125,7 @@ export class BulkDispatchTalentumIncompleteUseCase {
 
     for (let i = 0; i < rows.rows.length; i++) {
       const row = rows.rows[i];
+      if (row.is_test === true) continue; // D664: worker de teste nunca recebe envio real
 
       // Aguarda delay entre envios (não aplica antes do primeiro)
       if (i > 0) await sleep(delayMs);

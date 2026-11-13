@@ -8,6 +8,7 @@ import {
 } from '../domain/Encuadre';
 import { mapEncuadreRow, buildEncuadreWhereClause } from './EncuadreMappers';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql, workerNotTestSql, vacancyNotTestSql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 
 /**
  * EncuadreQueryRepository
@@ -115,7 +116,7 @@ export class EncuadreQueryRepository {
   }
 
   async countAttended(filters: { startDate?: string; endDate?: string; country?: string } = {}): Promise<number> {
-    const conditions: string[] = ['e.attended = true'];
+    const conditions: string[] = ['e.attended = true', workerNotTestSql('e.worker_id'), vacancyNotTestSql('e.job_posting_id')];
     const values: unknown[] = [];
     let idx = 1;
 
@@ -154,7 +155,7 @@ export class EncuadreQueryRepository {
   }
 
   async countInvitedAndAttended(jobPostingId: string, filters: { startDate?: string; endDate?: string } = {}): Promise<{ invitados: number; asistentes: number }> {
-    const conditions: string[] = ['job_posting_id = $1', workerNotDisabledSql('worker_id')];
+    const conditions: string[] = ['job_posting_id = $1', workerNotDisabledSql('worker_id'), sameRealmAsVacancySql('worker_id', 'job_posting_id')];
     const values: unknown[] = [jobPostingId];
     let idx = 2;
 
@@ -173,7 +174,7 @@ export class EncuadreQueryRepository {
   }
 
   async countByResultado(jobPostingId: string, filters: { startDate?: string; endDate?: string } = {}): Promise<Array<{ resultado: string; count: number }>> {
-    const conditions: string[] = ['job_posting_id = $1', 'resultado IS NOT NULL', workerNotDisabledSql('worker_id')];
+    const conditions: string[] = ['job_posting_id = $1', 'resultado IS NOT NULL', workerNotDisabledSql('worker_id'), sameRealmAsVacancySql('worker_id', 'job_posting_id')];
     const values: unknown[] = [jobPostingId];
     let idx = 2;
 
@@ -196,7 +197,7 @@ export class EncuadreQueryRepository {
        JOIN job_postings jp ON e.job_posting_id = jp.id
        WHERE jp.country = $1 AND jp.deleted_at IS NULL
          AND e.resultado IN ('SELECCIONADO', 'REEMPLAZO')
-         AND ${workerNotDisabledSql('e.worker_id')}
+         AND ${workerNotDisabledSql('e.worker_id')} AND ${workerNotTestSql('e.worker_id')} AND ${excludeTestVacancySql('jp')}
        GROUP BY jp.case_number`,
       [country],
     );

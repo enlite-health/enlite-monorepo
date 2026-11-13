@@ -11,6 +11,7 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql, workerNotTestSql } from '@shared/database/testRealmSql';
 
 // ─── Tipos de retorno ──────────────────────────────────────────────────────
 
@@ -254,6 +255,7 @@ export class AnalyticsRepository {
        FROM v_worker_registration_overview wro
        WHERE wro.documents_status NOT IN ('submitted', 'verified')
          AND ${workerNotDisabledSql('wro.worker_id')}
+         AND ${sameRealmAsVacancySql('wro.worker_id', '$1')}
          AND wro.worker_id IN (
            SELECT worker_id FROM worker_job_applications WHERE job_posting_id = $1 AND worker_id IS NOT NULL
            UNION
@@ -348,6 +350,7 @@ export class AnalyticsRepository {
     const conditions = [
       `documents_status NOT IN ('submitted', 'verified')`,
       workerNotDisabledSql('worker_id'),
+      workerNotTestSql('worker_id'),
     ];
     const values: unknown[] = [];
     let idx = 1;

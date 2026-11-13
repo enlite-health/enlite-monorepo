@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql } from '@shared/database/testRealmSql';
 import { workerAptoSql } from '@shared/database/workerAptoSql';
 import { COMPLETED_COLUMN_STAGES } from '../domain/kanbanColumn';
 import type { EnquadreEventStatus, EnquadreParticipantOutcome } from '../domain/enquadreEvent';
@@ -162,6 +163,7 @@ export class EnquadreEventRepository {
         WHERE wja.job_posting_id = $1
           AND wja.application_funnel_stage = ANY($2::text[])
           AND ${excludeDisabledWorkersSql('w')}
+          AND ${sameRealmAsVacancySql('w.id', 'wja.job_posting_id')}
           AND ${workerAptoSql('w.id')}
           AND NOT EXISTS (
                 SELECT 1 FROM enquadre_event_participants p
