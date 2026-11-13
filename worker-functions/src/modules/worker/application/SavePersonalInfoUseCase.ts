@@ -7,6 +7,7 @@ import type { Pool } from 'pg';
 import { logger, loggingAls } from '@shared/logging';
 import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
 import type { PubSubClient } from '@shared/events/PubSubClient';
+import { APP_CHANNEL } from '../domain/profileEditSource';
 import { changedFields, normalizeForDiff, recordProfileEditTrail, ProfileFieldChange } from './profileEditTrail';
 import { captureWorkerBefore } from './workerAuditDiff';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
@@ -135,7 +136,8 @@ export class SavePersonalInfoUseCase {
     // runs after — not atomic, but the DomainEventProcessor sweep is the
     // durability net. recalculateStatus already enqueues when reaching
     // REGISTERED atomically; this covers profile edits that don't change status.
-    await this.enqueueMirrorEvent(data.workerId);
+    // FR-54 (spec 077): edição feita pelo app (canal marcado pelo appChannel) não espelha no Ana Care.
+    if (channel !== APP_CHANNEL) await this.enqueueMirrorEvent(data.workerId);
 
     return Result.ok<Worker>(updateResult.getValue());
   }

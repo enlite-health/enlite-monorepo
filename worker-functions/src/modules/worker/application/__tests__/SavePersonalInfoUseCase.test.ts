@@ -319,6 +319,33 @@ describe('SavePersonalInfoUseCase', () => {
       const result = await useCase.execute(personalInfoPayload);
       expect(result.isFailure).toBe(false);
     });
+
+    const enqueued = (pool: { query: jest.Mock }) =>
+      (pool.query.mock.calls as unknown[][]).some(([sql]) => String(sql).includes('INSERT INTO domain_events'));
+
+    it('T-F2b-04 canal app NÃO enfileira worker.mirror_requested nem publica', async () => {
+      const repo = makeRepository();
+      const pool = makePool();
+      const pubsub = makePubsub();
+      const useCase = new SavePersonalInfoUseCase(repo as any, pool as any, pubsub as unknown as PubSubClient);
+
+      const result = await useCase.execute(personalInfoPayload, 'app');
+
+      expect(result.isFailure).toBe(false);
+      expect(enqueued(pool)).toBe(false);
+      expect(pubsub.publish).not.toHaveBeenCalled();
+    });
+
+    it('T-F2b-04 canal platform segue enfileirando (controle)', async () => {
+      const repo = makeRepository();
+      const pool = makePool();
+      const pubsub = makePubsub();
+      const useCase = new SavePersonalInfoUseCase(repo as any, pool as any, pubsub as unknown as PubSubClient);
+
+      await useCase.execute(personalInfoPayload, 'platform');
+
+      expect(enqueued(pool)).toBe(true);
+    });
   });
 
   describe('trilha de fonte worker_self (self deixou de ser cego — D92)', () => {
