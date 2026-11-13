@@ -478,7 +478,7 @@ test.describe('Talentum Outbound — Frontend', () => {
       await expect(page.locator('text=Configuración Pre-Screening Talentum').first()).toBeVisible({ timeout: 15000 });
 
       // Warning en español
-      await expect(page.locator('text=/Ya publicada.*cambios no se reflejan/i').first()).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('text=/Ya publicada.*cambios guardados se envían/i').first()).toBeVisible({ timeout: 5000 });
     });
   });
 

@@ -2267,6 +2267,9 @@
         "error": "Não foi possível marcar como atendido. Tente de novo."
       },
       "dismissBanner": "Fechar aviso",
+      "prescreening": {
+        "publishedWarning": "Já publicada no Talentum — as alterações salvas são enviadas ao Talentum automaticamente"
+      },
       "talentumSync": {
         "otherAccount": "Salvo, mas NÃO foi possível enviar ao Talentum: a vaga foi criada lá por outra conta. Edite diretamente no Talentum.",
         "failed": "Salvo, mas NÃO foi possível enviar ao Talentum. Tente de novo; se persistir, avise o suporte."

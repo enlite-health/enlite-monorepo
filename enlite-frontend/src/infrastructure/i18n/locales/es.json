@@ -2583,7 +2583,7 @@
       },
       "prescreening": {
         "title": "Configuración Pre-Screening Talentum",
-        "publishedWarning": "Ya publicada en Talentum — los cambios no se reflejan automáticamente",
+        "publishedWarning": "Ya publicada en Talentum — los cambios guardados se envían a Talentum automáticamente",
         "addQuestion": "Agregar Pregunta",
         "questionLabel": "Pregunta {{n}}",
         "questionPlaceholder": "¿Cuál es tu experiencia con pacientes TEA?",

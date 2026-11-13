@@ -21,4 +21,12 @@ describe('talentumSyncWarningKey', () => {
       expect(typeof lookup(ptBR, key)).toBe('string');
     }
   });
+
+  it('publishedWarning (vaga já publicada) diz que o salvo é ENVIADO ao Talentum, em es e pt-BR (nunca "não reflete")', () => {
+    for (const loc of [es, ptBR]) {
+      const text = lookup(loc, 'admin.vacancyDetail.prescreening.publishedWarning') as string;
+      expect(text).toMatch(/autom[aá]tica/i);
+      expect(text).not.toMatch(/no se reflejan|não são refletidas/i);
+    }
+  });
 });

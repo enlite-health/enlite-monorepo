@@ -19,12 +19,23 @@ describe('matchQuestionIds (casamento pergunta local × remota)', () => {
     expect(out.map((o) => o.questionId)).toEqual(['qb', 'qa']);
   });
 
-  it('(2) texto editado: as sobras casam por POSIÇÃO com as remotas que sobraram', () => {
+  it('(2) texto editado: só casa por ÍNDICE com a remota da mesma posição ainda livre', () => {
     const out = matchQuestionIds(
       [q('igual'), q('editada 1'), q('editada 2')],
       [{ questionId: 'r1', question: 'velha 1' }, { questionId: 'r2', question: 'igual' }, { questionId: 'r3', question: 'velha 2' }],
     );
-    expect(out.map((o) => o.questionId)).toEqual(['r2', 'r1', 'r3']);
+    // 'igual' ↔ r2 (texto); 'editada 1' (índice 1) → r2 já usada → NOVA; 'editada 2' (índice 2) ↔ r3
+    expect(out.map((o) => o.questionId)).toEqual(['r2', undefined, 'r3']);
+  });
+
+  it('cenário real (13/11): remotas [A,B,C], locais [A\',C,D] → A\'↔A, C↔C, D NOVA (nunca herda o id de B), B removida', () => {
+    const out = matchQuestionIds(
+      [q('A editada'), q('C'), q('D')],
+      [{ questionId: 'rA', question: 'A' }, { questionId: 'rB', question: 'B' }, { questionId: 'rC', question: 'C' }],
+    );
+    expect(out.map((o) => o.questionId)).toEqual(['rA', 'rC', undefined]);
+    expect(out[2]).not.toHaveProperty('questionId');
+    expect(out.map((o) => o.questionId)).not.toContain('rB');
   });
 
   it('(3a) local sem par vai SEM questionId (nova) — a chave nem existe', () => {
