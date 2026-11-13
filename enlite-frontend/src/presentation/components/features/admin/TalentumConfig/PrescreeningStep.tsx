@@ -28,8 +28,11 @@ export interface FaqItem {
 // ---------------------------------------------------------------------------
 
 interface PrescreeningStepProps {
-  initialQuestions: PrescreeningQuestion[];
-  initialFaq: FaqItem[];
+  /** Fonte única de estado: quem renderiza (o hook da página) é dono das perguntas e da FAQ. */
+  questions: PrescreeningQuestion[];
+  faq: FaqItem[];
+  onQuestionsChange?: (next: PrescreeningQuestion[]) => void;
+  onFaqChange?: (next: FaqItem[]) => void;
   /** Read-only mode (simulation): no add/remove buttons, controls not editable. Default false. */
   readOnly?: boolean;
 }
@@ -229,13 +232,14 @@ function FaqCard({
 // ---------------------------------------------------------------------------
 
 export function PrescreeningStep({
-  initialQuestions, initialFaq, readOnly = false,
+  questions, faq, onQuestionsChange, onFaqChange, readOnly = false,
 }: PrescreeningStepProps) {
   const { t } = useTranslation();
   const ps = 'admin.vacancyDetail.prescreening';
 
-  const [questions, setQuestions] = useState<PrescreeningQuestion[]>(initialQuestions);
-  const [faq, setFaq] = useState<FaqItem[]>(initialFaq);
+  const setQuestions = (fn: (p: PrescreeningQuestion[]) => PrescreeningQuestion[]) =>
+    onQuestionsChange?.(fn(questions));
+  const setFaq = (fn: (p: FaqItem[]) => FaqItem[]) => onFaqChange?.(fn(faq));
   const [expandedAdvanced, setExpandedAdvanced] = useState<Set<number>>(new Set());
 
   const toggleAdvanced = (i: number) => setExpandedAdvanced((prev) => {

@@ -7,8 +7,8 @@
  * wizard de criação (`AIDescriptionEditor`, `PrescreeningStep`), SEMPRE em `readOnly`: não existe
  * aqui nenhum caminho para criar, publicar ou gravar.
  *
- * `PrescreeningStep` semeia o `useState` uma única vez a partir de `initialQuestions`/`initialFaq`;
- * por isso cada simulação nova remonta as peças com `key={runId}` (mesmo padrão de
+ * `PrescreeningStep` é controlado (`questions`/`faq`); aqui sem callbacks, só leitura. Cada
+ * simulação nova remonta as peças com `key={runId}` (mesmo padrão de
  * `key={currentPrompt.slug}` em `AiPromptsPage`).
  *
  * O backend escolhe o prescreening pela VAGA. Se a pessoa editou o prompt do outro tipo, o texto
@@ -191,8 +191,8 @@ export function VacancySimulationSection({ bodies }: VacancySimulationSectionPro
 
           <PrescreeningStep
             key={`p-${run.id}`}
-            initialQuestions={run.result.prescreening.questions}
-            initialFaq={run.result.prescreening.faq}
+            questions={run.result.prescreening.questions}
+            faq={run.result.prescreening.faq}
             readOnly
           />
         </div>

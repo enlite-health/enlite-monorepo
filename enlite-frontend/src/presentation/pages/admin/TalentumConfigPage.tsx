@@ -68,6 +68,8 @@ export default function TalentumConfigPage(): JSX.Element {
     isPublishing,
     publishError,
     setDescription,
+    setPrescreeningQuestions,
+    setPrescreeningFaq,
     generateAIContent,
     saveDescription,
     publish,
@@ -213,8 +215,10 @@ export default function TalentumConfigPage(): JSX.Element {
           </Heading>
 
           <PrescreeningStep
-            initialQuestions={prescreeningQuestions}
-            initialFaq={prescreeningFaq}
+            questions={prescreeningQuestions}
+            faq={prescreeningFaq}
+            onQuestionsChange={setPrescreeningQuestions}
+            onFaqChange={setPrescreeningFaq}
           />
         </div>
 

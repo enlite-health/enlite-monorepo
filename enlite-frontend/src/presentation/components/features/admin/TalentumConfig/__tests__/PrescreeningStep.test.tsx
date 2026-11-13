@@ -14,7 +14,7 @@ const faq = [{ question: 'F1', answer: 'A1' }];
 
 describe('PrescreeningStep — modo padrão (como o wizard usa, sem a prop)', () => {
   it('controles seguem editáveis e botões de adicionar/remover seguem visíveis', () => {
-    const { container } = render(<PrescreeningStep initialQuestions={questions} initialFaq={faq} />);
+    const { container } = render(<PrescreeningStep questions={questions} faq={faq} />);
     expect(screen.getByText(`${ps}.addQuestion`)).toBeInTheDocument();
     expect(screen.getByText(`${ps}.addFaq`)).toBeInTheDocument();
     // 2 botões de remover (1 pergunta + 1 FAQ): botões sem texto com svg
@@ -28,7 +28,7 @@ describe('PrescreeningStep — modo padrão (como o wizard usa, sem a prop)', ()
 
 describe('PrescreeningStep — readOnly', () => {
   it('sem botões de adicionar/remover e sem controle editável', () => {
-    const { container } = render(<PrescreeningStep initialQuestions={questions} initialFaq={faq} readOnly />);
+    const { container } = render(<PrescreeningStep questions={questions} faq={faq} readOnly />);
     expect(screen.queryByText(`${ps}.addQuestion`)).not.toBeInTheDocument();
     expect(screen.queryByText(`${ps}.addFaq`)).not.toBeInTheDocument();
     expect(container.querySelectorAll('svg.lucide-trash-2').length).toBe(0);

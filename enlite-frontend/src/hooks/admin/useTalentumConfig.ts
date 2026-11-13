@@ -45,6 +45,8 @@ interface UseTalentumConfigState {
 
 interface UseTalentumConfigActions {
   setDescription: (v: string) => void;
+  setPrescreeningQuestions: (v: PrescreeningQuestion[]) => void;
+  setPrescreeningFaq: (v: FaqItem[]) => void;
   generateAIContent: () => Promise<void>;
   saveDescription: () => Promise<void>;
   savePrescreening: (data: { questions: PrescreeningQuestion[]; faq: FaqItem[] }) => Promise<void>;
@@ -258,6 +260,8 @@ export function useTalentumConfig(
     isPublishing,
     publishError,
     setDescription: handleSetDescription,
+    setPrescreeningQuestions,
+    setPrescreeningFaq,
     generateAIContent,
     saveDescription,
     savePrescreening,
