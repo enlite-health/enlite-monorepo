@@ -145,13 +145,27 @@ export class WorkerControllerV2 {
 
   async saveStep(req: Request, res: Response): Promise<void> {
     try {
-      const { workerId, step, data } = req.body;
+      // IDOR: o dono vem do TOKEN; `workerId` do corpo é IGNORADO.
+      const { step, data } = req.body;
 
-      if (!workerId || !step) {
+      const authUid = selfUid(req);
+      if (!authUid) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      // `data` ausente já derrubava em 500 (TypeError em data.responses); agora é 400.
+      if (!step || data == null || typeof data !== 'object') {
         res.status(400).json({
           success: false,
-          error: 'Missing required fields: workerId, step',
+          error: 'Missing required fields: step, data',
         });
+        return;
+      }
+
+      const workerId = await this.resolveWorkerIdFromAuth(authUid);
+      if (!workerId) {
+        res.status(404).json({ success: false, error: 'Worker not found' });
         return;
       }
 
@@ -167,15 +181,15 @@ export class WorkerControllerV2 {
 
         case 2:
           result = await this.savePersonalInfoUseCase.execute({
-            workerId,
             ...data,
+            workerId,
           });
           break;
 
         case 3:
           result = await this.saveServiceAreaUseCase.execute({
-            workerId,
             ...data,
+            workerId,
           }, { source: 'worker_self', actorUid: selfUid(req) ?? '' });
           break;
 
@@ -287,7 +301,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body }, profileEditChannelOf(res));
+      const result = await this.savePersonalInfoUseCase.execute({ ...req.body, workerId }, profileEditChannelOf(res));
 
       if (result.isFailure) {
         sendPersonalInfoFailure(res, result.error);
@@ -317,7 +331,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.saveServiceAreaUseCase.execute({ workerId, ...req.body }, { source: 'worker_self', actorUid: authUid, channel: profileEditChannelOf(res) });
+      const result = await this.saveServiceAreaUseCase.execute({ ...req.body, workerId }, { source: 'worker_self', actorUid: authUid, channel: profileEditChannelOf(res) });
 
       if (result.isFailure) {
         res.status(400).json({ success: false, error: result.error });
