@@ -57,6 +57,7 @@ const INCOMPLETE_WORKERS_QUERY = `
     w.phone,
     w.messaging_channel,
     w.status,
+    COALESCE(w.is_test, false) AS is_test,
     wd.documents_status
   FROM workers w
   INNER JOIN encuadres e ON e.worker_id = w.id
@@ -73,6 +74,7 @@ const INCOMPLETE_WORKERS_QUERY = `
     -- PUT /workers/:id/status não grava opt-out — sem este filtro, esse worker
     -- continuaria elegível ao disparo em massa.
     AND ${excludeDisabledWorkersSql('w')}
+    AND COALESCE(w.is_test, false) = false
     AND (
       wd.documents_status IS NULL
       OR wd.documents_status NOT IN ('submitted', 'under_review', 'approved')
@@ -150,9 +152,9 @@ export class BulkDispatchIncompleteWorkersUseCase {
     batchLogger.info('BulkDispatch iniciado');
 
     // 1. Busca workers com cadastro incompleto (já exclui quem recebeu hoje via NOT EXISTS)
-    let rows: Array<{ id: string; phone: string; messaging_channel: string | null; status: string | null; documents_status: string | null }>;
+    let rows: Array<{ id: string; phone: string; messaging_channel: string | null; status: string | null; documents_status: string | null; is_test: boolean }>;
     try {
-      const queryResult = await this.db.query<{ id: string; phone: string; messaging_channel: string | null; status: string | null; documents_status: string | null }>(
+      const queryResult = await this.db.query<{ id: string; phone: string; messaging_channel: string | null; status: string | null; documents_status: string | null; is_test: boolean }>(
         INCOMPLETE_WORKERS_QUERY,
       );
       rows = queryResult.rows;
@@ -193,6 +195,7 @@ export class BulkDispatchIncompleteWorkersUseCase {
     // 2. Dispara mensagem para cada worker e persiste o log
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      if (row.is_test === true) continue; // D664: worker de teste nunca recebe envio real
 
       // Aguarda delay entre envios (não aplica antes do primeiro)
       if (i > 0) await sleep(delayMs);
