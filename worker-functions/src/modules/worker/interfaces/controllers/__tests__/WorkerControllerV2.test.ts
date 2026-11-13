@@ -497,6 +497,42 @@ describe('WorkerControllerV2', () => {
       expect(progress).toHaveBeenCalledTimes(2);
     });
 
+    function spyGeneralInfo() {
+      const spy = jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
+      return spy;
+    }
+
+    it('T-F2b-03 saveGeneralInfo repassa ao use case o canal app marcado pelo middleware', async () => {
+      const spy = spyGeneralInfo();
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      (res as unknown as { locals: Record<string, unknown> }).locals = { profileEditChannel: 'app' };
+      await controller.saveGeneralInfo(req, res);
+
+      expect(spy).toHaveBeenCalledWith({ workerId: WORKER_ID, firstName: 'Ana' }, 'app');
+    });
+
+    it('T-F2b-03 sem marca do middleware o canal vai undefined', async () => {
+      const spy = spyGeneralInfo();
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(spy.mock.calls[0][1]).toBeUndefined();
+    });
+
+    it('T-F2b-03 canal no corpo da request é ignorado', async () => {
+      const spy = spyGeneralInfo();
+      const [req, res] = mockReqRes(
+        { firstName: 'Ana', profileEditChannel: 'app', channel: 'app' }, {}, { uid: AUTH_UID },
+      );
+      await controller.saveGeneralInfo(req, res);
+
+      expect(spy.mock.calls[0][1]).toBeUndefined();
+    });
+
     it('retorna 404 com "Worker not found" quando getProgressUseCase falha por auth_uid sem vínculo no banco', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.fail('Worker not found'));

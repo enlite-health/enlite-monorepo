@@ -417,5 +417,20 @@ describe('SavePersonalInfoUseCase', () => {
       const result = await useCase.execute(personalInfoPayload);
       expect(result.isFailure).toBe(false);
     });
+
+    it('T-F2b-03 canal app vai para a coluna source da trilha', async () => {
+      const repo = makeRepository();
+      const pool = makePool();
+      const useCase = new SavePersonalInfoUseCase(repo as any, pool as any);
+
+      await useCase.execute(personalInfoPayload, 'app');
+
+      const call = auditCall(pool);
+      expect(call).toBeDefined();
+      const values = call![1] as unknown[];
+      expect(values).toContain('app');
+      expect(values).toContain('worker_self');
+      expect(values).not.toContain('platform');
+    });
   });
 });

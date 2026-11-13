@@ -21,6 +21,7 @@ import {
   withMissingFields,
   readFreshProgress,
 } from './WorkerControllerV2Helpers';
+import { profileEditChannelOf } from '../middleware/appChannel';
 import { PubSubClient } from '@shared/events/PubSubClient';
 
 export class WorkerControllerV2 {
@@ -286,7 +287,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body });
+      const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body }, profileEditChannelOf(res));
 
       if (result.isFailure) {
         sendPersonalInfoFailure(res, result.error);
