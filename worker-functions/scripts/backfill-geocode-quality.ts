@@ -1,7 +1,7 @@
 /**
  * backfill-geocode-quality.ts — spec 077, F1 (T270).
  *
- * Preenche `geocode_quality` / `geocode_partial_match` / `geocoded_at` (migration 551) nos endereços
+ * Preenche `geocode_quality` / `geocode_partial_match` / `geocoded_at` (migration 582) nos endereços
  * VIVOS de `patient_addresses` que ainda não foram classificados. NUNCA toca `lat`/`lng`.
  *
  * 🔒 `--dry-run` é o PADRÃO: só `SELECT count(*)`, nenhuma chamada ao Google, nenhum UPDATE.

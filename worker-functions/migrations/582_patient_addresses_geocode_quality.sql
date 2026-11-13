@@ -1,4 +1,4 @@
--- Migration 551: qualidade do geocode em patient_addresses (spec 077 §8.3, F1)
+-- Migration 582: qualidade do geocode em patient_addresses (spec 077 §8.3, F1)
 --
 -- O Google devolve, junto com lat/lng, `location_type` e `partial_match`. Guardamos os dois FATOS
 -- (o que o Google disse) e o instante do geocode; o veredito "confiável" NÃO é gravado.
@@ -22,7 +22,7 @@
 -- Idempotente (2×): ADD COLUMN IF NOT EXISTS (o CHECK inline só é criado junto com a coluna).
 -- Sem BEGIN/COMMIT próprio.
 --
--- Rollback: `migrations/pending/ROLLBACK_551_patient_addresses_geocode_quality.sql`.
+-- Rollback: `migrations/pending/ROLLBACK_582_patient_addresses_geocode_quality.sql`.
 
 ALTER TABLE patient_addresses
   ADD COLUMN IF NOT EXISTS geocode_quality text NULL
