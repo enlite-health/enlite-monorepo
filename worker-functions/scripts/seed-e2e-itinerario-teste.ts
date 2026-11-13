@@ -57,6 +57,17 @@ const PATIENT_LAST = 'Paciente Itinerario';
 const TEXT_MARK = `${MARK} massa sintetica de teste, sem conteudo clinico real.`;
 const WORKER_EMAIL = 'qa.worker.at@enlite.test';
 const WORKER_SECRET = 'qa-prd-worker-at-password';
+
+export interface WorkerAccount { email: string; secret: string }
+
+/** Conta de prestador do seed: padrão `qa.worker.at`; `SEED_WORKER_EMAIL`/`SEED_WORKER_SECRET` trocam (só qa.*@enlite.test e qa-prd-worker-*). */
+export function workerAccount(env: NodeJS.ProcessEnv): WorkerAccount {
+  const email = env.SEED_WORKER_EMAIL ?? WORKER_EMAIL;
+  const secret = env.SEED_WORKER_SECRET ?? WORKER_SECRET;
+  if (!/^qa\.[a-z0-9.]+@enlite\.test$/.test(email)) throw new Error('seed-e2e: RECUSADO — e-mail do prestador fora de qa.*@enlite.test');
+  if (!/^qa-prd-worker-[a-z0-9-]+$/.test(secret)) throw new Error('seed-e2e: RECUSADO — secret do prestador fora de qa-prd-worker-*');
+  return { email, secret };
+}
 const SCHEDULE = [
   { dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 },
   { dayOfWeek: 3, startTime: '08:00', durationMinutes: 240 },
@@ -124,7 +135,7 @@ export function runPsql(statement: string, vars: Record<string, string>): string
 // ── cliente HTTP do seed ─────────────────────────────────────────────────────────────────────
 export class Api {
   private tokens = new Map<string, string>();
-  constructor(readonly base: string, private readonly deps: SeedDeps) {}
+  constructor(readonly base: string, private readonly deps: SeedDeps, private readonly worker: WorkerAccount) {}
 
   private token(email: string, secret: string): string {
     let t = this.tokens.get(email);
@@ -145,7 +156,7 @@ export class Api {
   }
 
   async call(method: string, path: string, body?: unknown, who: 'admin' | 'worker' = 'admin'): Promise<HttpResult> {
-    const t = who === 'admin' ? this.adminToken() : this.token(WORKER_EMAIL, WORKER_SECRET);
+    const t = who === 'admin' ? this.adminToken() : this.token(this.worker.email, this.worker.secret);
     const res = await this.deps.fetch(`${this.base}${path}`, {
       method,
       headers: { Authorization: `Bearer ${t}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
@@ -243,6 +254,13 @@ export async function prepararPrestadora(api: Api, deps: SeedDeps): Promise<stri
     const missing = Array.isArray(me.missingFields) ? (me.missingFields as unknown[]).map(String).join(',') : '?';
     throw new Error(`seed-e2e: prestadora não ficou REGISTERED (status=${String(me.status)}; missingFields=${missing})`);
   }
+  return workerId;
+}
+
+/** Modo `--worker-only`: só a linha `workers` is_test da conta (init {} → me → test-flag); sem cadastro, zona nem alocação. */
+export async function seedWorkerOnly(api: Api, deps: SeedDeps): Promise<string> {
+  const workerId = await ensureTestWorker(api, deps);
+  deps.log(`[seed] OK | worker-only | prestador=${workerId}`);
   return workerId;
 }
 
@@ -460,13 +478,22 @@ export async function cleanup(api: Api, deps: SeedDeps): Promise<void> {
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────
-export async function main(argv: string[], deps: SeedDeps = realDeps()): Promise<void> {
+export async function main(argv: string[], deps: SeedDeps = realDeps(), env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const i = argv.indexOf('--api-url');
   const base = assertE2eApiUrl(i >= 0 ? argv[i + 1] : E2E_API_URL); // ANTES de qualquer rede, credencial ou SQL
   assertE2eDsn(E2E_DSN);
-  const api = new Api(base, deps);
-  if (argv.includes('--cleanup')) {
+  const account = workerAccount(env);
+  const cleanupMode = argv.includes('--cleanup');
+  const workerOnly = argv.includes('--worker-only');
+  if (cleanupMode && workerOnly) throw new Error('seed-e2e: --cleanup e --worker-only são exclusivos');
+  if (cleanupMode && account.email !== WORKER_EMAIL) throw new Error('seed-e2e: --cleanup só com a conta qa.worker.at');
+  const api = new Api(base, deps, account);
+  if (cleanupMode) {
     await cleanup(api, deps);
+    return;
+  }
+  if (workerOnly) {
+    await seedWorkerOnly(api, deps);
     return;
   }
   const ids = await seed(api, deps);

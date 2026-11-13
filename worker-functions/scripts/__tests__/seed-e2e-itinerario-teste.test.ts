@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
+import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
 
 const PRD_LIKE = [
   'https://worker-functions-prd.example.run.app',
@@ -81,7 +81,7 @@ describe('seed-e2e-itinerario-teste — guarda de alvo (só prd)', () => {
       getToken: () => 'tok-worker',
       getAdminToken: () => 'tok-admin',
     };
-    await expect(ensureTestWorker(new Api(E2E_API_URL, deps), deps)).resolves.toBe(id);
+    await expect(ensureTestWorker(new Api(E2E_API_URL, deps, workerAccount({})), deps)).resolves.toBe(id);
     expect(seen.map((c) => `${c.method} ${c.path}`)).toEqual([
       'POST /api/workers/init',
       'GET /api/workers/me',
@@ -156,7 +156,7 @@ describe('seed-e2e-itinerario-teste — guarda de alvo (só prd)', () => {
 
   it('T-F0a-srv-36 prepararPrestadora faz init, test-flag e só depois completa o cadastro', async () => {
     const { deps, seen } = fakeWf('REGISTERED');
-    await expect(prepararPrestadora(new Api(E2E_API_URL, deps), deps)).resolves.toBe('11111111-1111-4111-8111-111111111111');
+    await expect(prepararPrestadora(new Api(E2E_API_URL, deps, workerAccount({})), deps)).resolves.toBe('11111111-1111-4111-8111-111111111111');
     const calls = seen.map((c) => `${c.method} ${c.path}`);
     const docs = ['POST /api/workers/me/documents/upload-url', 'PUT GCS', 'POST /api/workers/me/documents/save'];
     expect(calls).toEqual([
@@ -173,16 +173,62 @@ describe('seed-e2e-itinerario-teste — guarda de alvo (só prd)', () => {
 
   it('T-F0a-srv-36 prepararPrestadora para se o GET me final não der REGISTERED', async () => {
     const { deps, sqlCalls } = fakeWf('INCOMPLETE_REGISTER');
-    await expect(prepararPrestadora(new Api(E2E_API_URL, deps), deps)).rejects.toThrow(/REGISTERED/);
+    await expect(prepararPrestadora(new Api(E2E_API_URL, deps, workerAccount({})), deps)).rejects.toThrow(/REGISTERED/);
     expect(sqlCalls()).toBe(0);
   });
 
   it('T-F0a-srv-36 general-info com os valores sintéticos fixos', async () => {
     const { deps, seen } = fakeWf('REGISTERED');
-    await completeTestWorker(new Api(E2E_API_URL, deps), deps);
+    await completeTestWorker(new Api(E2E_API_URL, deps, workerAccount({})), deps);
     const body = JSON.parse(seen.find((c) => c.path === '/api/workers/me/general-info')?.body ?? '{}');
     expect(body.documentNumber).toBe('QA077-AT-0001');
     expect(body.phone).toBe('1100000077');
     expect(body.firstName).toBe('QA077');
+  });
+
+  it('T-F0b-19 workerAccount sem env devolve a conta at', () => {
+    expect(workerAccount({})).toEqual({ email: 'qa.worker.at@enlite.test', secret: 'qa-prd-worker-at-password' });
+  });
+
+  it('T-F0b-19 workerAccount com SEED_WORKER_EMAIL e SEED_WORKER_SECRET devolve a ks', () => {
+    expect(workerAccount({ SEED_WORKER_EMAIL: 'qa.worker.ks@enlite.test', SEED_WORKER_SECRET: 'qa-prd-worker-ks-password' })).toEqual({
+      email: 'qa.worker.ks@enlite.test', secret: 'qa-prd-worker-ks-password',
+    });
+  });
+
+  it('T-F0b-19 workerAccount recusa conta fora de qa.*@enlite.test', () => {
+    expect(() => workerAccount({ SEED_WORKER_EMAIL: 'pessoa.real@gmail.com' })).toThrow(/RECUSADO/);
+    expect(() => workerAccount({ SEED_WORKER_EMAIL: 'qa.worker.ks@enlite.test', SEED_WORKER_SECRET: 'outro-secret' })).toThrow(/RECUSADO/);
+  });
+
+  it('T-F0b-19 --worker-only chama só init, me e test-flag, com corpo {} no init', async () => {
+    const seen: { method: string; path: string; body?: string }[] = [];
+    const id = '22222222-2222-4222-8222-222222222222';
+    let sqlN = 0;
+    const deps: SeedDeps = {
+      ...spyDeps(),
+      fetch: async (url, init) => {
+        const path = url.replace(E2E_API_URL, '');
+        seen.push({ method: init.method, path, body: init.body as string | undefined });
+        return { status: 200, text: async () => JSON.stringify({ data: path === '/api/workers/init' ? { status: 'ok' } : { id } }) };
+      },
+      getToken: () => 'tok-worker',
+      getAdminToken: () => 'tok-admin',
+      sql: () => { sqlN += 1; return ''; },
+    };
+    await expect(seedWorkerOnly(new Api(E2E_API_URL, deps, workerAccount({})), deps)).resolves.toBe(id);
+    expect(seen.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /api/workers/init', 'GET /api/workers/me', `PATCH /api/admin/workers/${id}/test-flag`]);
+    expect(seen[0].body).toBe('{}');
+    expect(sqlN).toBe(0);
+  });
+
+  it('T-F0b-19 main recusa --cleanup com a conta ks e --cleanup junto de --worker-only', async () => {
+    const ks = { SEED_WORKER_EMAIL: 'qa.worker.ks@enlite.test', SEED_WORKER_SECRET: 'qa-prd-worker-ks-password' };
+    const d1 = spyDeps();
+    await expect(main(['--cleanup'], d1, ks)).rejects.toThrow(/só com a conta qa.worker.at/);
+    const d2 = spyDeps();
+    await expect(main(['--cleanup', '--worker-only'], d2, {})).rejects.toThrow(/exclusivos/);
+    expect(d1.calls).toEqual({ fetch: 0, token: 0, sql: 0 });
+    expect(d2.calls).toEqual({ fetch: 0, token: 0, sql: 0 });
   });
 });
