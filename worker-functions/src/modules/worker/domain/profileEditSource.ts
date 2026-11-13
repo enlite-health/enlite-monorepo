@@ -31,6 +31,9 @@ export const DEFAULT_CHANNEL_BY_SOURCE: Record<ProfileEditSource, string> = {
   sync_import: 'sync',
 };
 
+/** Canal da edição feita pelo app da cuidadora (FR-53, A-02): só o appChannel marca, com token da mobile-bff-sa. */
+export const APP_CHANNEL = 'app';
+
 /** Atribuição obrigatória de toda escrita de campo de perfil. */
 export interface ProfileEditAttribution {
   /** Fonte canônica → worker_profile_changes_audit.changed_by. */
