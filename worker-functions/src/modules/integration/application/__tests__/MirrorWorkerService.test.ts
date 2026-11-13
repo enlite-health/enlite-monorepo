@@ -455,6 +455,21 @@ describe('MirrorWorkerService.mirrorOne', () => {
     await expect(service.mirrorOne(WORKER_ID)).resolves.toBe('deactivated');
     expect(provider.upsert).not.toHaveBeenCalled();
   });
+
+  it('T-F2a-64 mirror pula is_test também na baixa', async () => {
+    const row = makeRow({ is_test: true, ana_care_status: 'Baja', ana_care_id: '55' });
+    setupFetchWorker(row);
+    setupDecrypt();
+
+    const provider = makeFakeProvider();
+    const service = new MirrorWorkerService(provider);
+
+    const result = await service.mirrorOne(WORKER_ID);
+
+    expect(result).toBe('skipped');
+    expect(provider.deactivate).not.toHaveBeenCalled();
+    expect(provider.upsert).not.toHaveBeenCalled();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────
