@@ -265,7 +265,7 @@ export async function seedWorkerOnly(api: Api, deps: SeedDeps): Promise<string> 
 }
 
 export const VAGAS_RAIO_KM = [3, 12, 60] as const;
-export const SOBRENOMES_DO_MARCADOR: readonly string[] = [PATIENT_LAST, ...VAGAS_RAIO_KM.map((km) => `Vaga ${km}km`)];
+export const SOBRENOMES_DO_MARCADOR: readonly string[] = [PATIENT_LAST, 'Paciente Dos', 'Paciente Tres', ...VAGAS_RAIO_KM.map((km) => `Vaga ${km}km`)];
 
 /** Ponto `km` ao norte da base (1° de latitude ≈ 111,32 km), 7 casas. */
 export function pontoAoNorte(base: { lat: number; lng: number }, km: number): { lat: number; lng: number } {
@@ -331,19 +331,35 @@ export function linhasDeIds(ids: SeedIds): string[] {
 }
 
 // ── a cadeia ─────────────────────────────────────────────────────────────────────────────────
-export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
+export interface PacienteSeed {
+  firstName: string;
+  lastName: string;
+  contactEmail: string;
+  address: string;
+  schedule: Array<{ dayOfWeek: number; startTime: string; durationMinutes: number }>;
+}
+
+/** 3 pacientes da qa.worker.at: 2 com o mesmo 1º nome (QA077); faixas em dias distintos (1/3, 2, 4) para não cruzar a alocação. */
+export const PACIENTES_SEED: readonly PacienteSeed[] = [
+  { firstName: PATIENT_FIRST, lastName: PATIENT_LAST, contactEmail: 'qa077.paciente@sintetico.invalid', address: `${MARK} Av. Corrientes 1000, Buenos Aires`, schedule: SCHEDULE },
+  { firstName: PATIENT_FIRST, lastName: 'Paciente Dos', contactEmail: 'qa077.paciente2@sintetico.invalid', address: `${MARK} Av. Santa Fe 2000, Buenos Aires`, schedule: [{ dayOfWeek: 2, startTime: '08:00', durationMinutes: 240 }] },
+  { firstName: `${MARK}Tres`, lastName: 'Paciente Tres', contactEmail: 'qa077.paciente3@sintetico.invalid', address: `${MARK} Av. Cordoba 3000, Buenos Aires`, schedule: [{ dayOfWeek: 4, startTime: '08:00', durationMinutes: 240 }] },
+];
+
+/** Cadeia de um paciente: paciente → endereço → serviço → cobertura/CID → projeto → vacante → vínculo → candidatura → alocação. */
+export async function seedCadeiaPaciente(api: Api, deps: SeedDeps, pac: PacienteSeed, workerId: string): Promise<SeedIds> {
   const log = (step: string, status: string, id?: string): void => deps.log(`[seed] ${step} | ${status}${id ? ` | ${id}` : ''}`);
 
   // 1. paciente de teste (achado pelo marcador; is_test sempre reafirmado)
   const found = asRows((await api.must([200], 'GET', `/api/admin/patients?search=${MARK}`)), undefined)
-    .filter((p) => p.firstName === PATIENT_FIRST && p.lastName === PATIENT_LAST && !p.deletedAt);
+    .filter((p) => p.firstName === pac.firstName && p.lastName === pac.lastName && !p.deletedAt);
   let patientId: string;
   if (found.length > 0) {
     patientId = asId(found[0].id, 'patient');
     log('paciente', 'reusado', patientId);
   } else {
     const c = await api.must([201], 'POST', '/api/admin/patients', {
-      firstName: PATIENT_FIRST, lastName: PATIENT_LAST, country: 'AR', contactEmail: 'qa077.paciente@sintetico.invalid',
+      firstName: pac.firstName, lastName: pac.lastName, country: 'AR', contactEmail: pac.contactEmail,
     });
     patientId = asId(c.id, 'patient');
     log('paciente', 'criado', patientId);
@@ -359,7 +375,7 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
     addressId = asId(addresses[0].id, 'address');
     log('endereco', 'reusado', addressId);
   } else {
-    const c = await api.must([201], 'POST', `/api/admin/patients/${patientId}/addresses`, { address_formatted: `${MARK} Av. Corrientes 1000, Buenos Aires`, is_default: true });
+    const c = await api.must([201], 'POST', `/api/admin/patients/${patientId}/addresses`, { address_formatted: pac.address, is_default: true });
     addressId = asId(c.id, 'address');
     log('endereco', 'criado', addressId);
   }
@@ -373,7 +389,7 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
     log('servico', 'reusado', serviceId);
   } else {
     const c = await api.must([201], 'POST', `/api/admin/patients/${patientId}/contracted-services`, {
-      serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', addressId, schedule: SCHEDULE,
+      serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', addressId, schedule: pac.schedule,
       requiredProfessions: ['AT'], requiredSex: 'BOTH', requiredExperience: MARK, workSchedule: 'part-time', paymentDay: 'dia 5',
     });
     serviceId = asId(c.id, 'service');
@@ -455,12 +471,6 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
     }
   }
 
-  // 8. prestador de teste: conta QA, is_test ANTES de completar o cadastro (só pelas rotas da própria prestadora)
-  const workerId = await prepararPrestadora(api, deps);
-  log('prestador.is_test', 'true', workerId);
-  log('prestador.status', 'REGISTERED', workerId);
-  await seedVagasRaio(api, deps, workerId);
-
   // 9. pool: QUICK_RESPONSE_TEAM (não emite evento; nenhuma data/link de entrevista)
   const out = deps.sql(
     `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
@@ -495,6 +505,23 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
     }
   }
   return { patientId, addressId, serviceId, projectId, vacancyId, workerId, applicationId, slotIds: slots.map((s) => s.id as string), allocationIds };
+}
+
+export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
+  const log = (step: string, status: string, id?: string): void => deps.log(`[seed] ${step} | ${status}${id ? ` | ${id}` : ''}`);
+  // 8. prestador de teste: conta QA, is_test ANTES de completar o cadastro (só pelas rotas da própria prestadora)
+  const workerId = await prepararPrestadora(api, deps);
+  log('prestador.is_test', 'true', workerId);
+  log('prestador.status', 'REGISTERED', workerId);
+  await seedVagasRaio(api, deps, workerId);
+
+  let first: SeedIds | undefined;
+  for (const [idx, pac] of PACIENTES_SEED.entries()) {
+    const ids = await seedCadeiaPaciente(api, deps, pac, workerId);
+    if (idx === 0) first = ids;
+    else deps.log(`PATIENT${idx + 1}_ID=${ids.patientId}`);
+  }
+  return first as SeedIds;
 }
 
 // ── limpeza: só o que o seed criou (por marcador/IDs) — nunca /test-fixtures/cleanup ──────────

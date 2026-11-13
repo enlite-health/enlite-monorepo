@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, pontoAoNorte, seedVagasRaio, cleanup, ZONA_BASE, SOBRENOMES_DO_MARCADOR, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
+import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, pontoAoNorte, seedVagasRaio, cleanup, ZONA_BASE, SOBRENOMES_DO_MARCADOR, PACIENTES_SEED, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
 
 const PRD_LIKE = [
   'https://worker-functions-prd.example.run.app',
@@ -312,8 +312,44 @@ describe('seed-e2e-itinerario-teste — guarda de alvo (só prd)', () => {
   it('T-F2a-39 --cleanup purga os 3 pacientes de vaga', async () => {
     const f = vagasFake();
     await seedVagasRaio(f.api(), f.deps, WID);
-    expect(SOBRENOMES_DO_MARCADOR).toEqual(['Paciente Itinerario', 'Vaga 3km', 'Vaga 12km', 'Vaga 60km']);
+    expect(SOBRENOMES_DO_MARCADOR).toEqual(['Paciente Itinerario', 'Paciente Dos', 'Paciente Tres', 'Vaga 3km', 'Vaga 12km', 'Vaga 60km']);
     await cleanup(f.api(), f.deps);
     expect(f.deleted).toHaveLength(3);
+  });
+
+  it('T-F3a-pacientes-09 PACIENTES_SEED tem 3 pacientes e 2 primeiros nomes', () => {
+    expect(PACIENTES_SEED).toHaveLength(3);
+    expect(new Set(PACIENTES_SEED.map((p) => p.firstName)).size).toBe(2);
+    expect(new Set(PACIENTES_SEED.map((p) => p.lastName)).size).toBe(3);
+  });
+
+  it('T-F3a-pacientes-09 faixas dos 3 pacientes não se cruzam no mesmo dia', () => {
+    const porDia = new Map<number, number>();
+    for (const p of PACIENTES_SEED) for (const f of p.schedule) porDia.set(f.dayOfWeek, (porDia.get(f.dayOfWeek) ?? 0) + 1);
+    expect([...porDia.values()].every((n) => n === 1)).toBe(true);
+  });
+
+  it('T-F3a-pacientes-09 --cleanup purga os 2 pacientes novos', async () => {
+    const deleted: string[] = [];
+    const a = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const b = 'aaaaaaaa-0000-4000-8000-000000000002';
+    const deps: SeedDeps = {
+      ...spyDeps(),
+      getToken: () => 'tok-worker',
+      getAdminToken: () => 'tok-admin',
+      fetch: async (url, init) => {
+        const path = url.replace(E2E_API_URL, '');
+        let data: unknown = {};
+        if (path === '/api/admin/patients?search=QA077') {
+          data = [{ id: a, firstName: 'QA077', lastName: 'Paciente Dos', isTest: true }, { id: b, firstName: 'QA077Tres', lastName: 'Paciente Tres', isTest: true }];
+        } else if (init.method === 'DELETE' && path.startsWith('/api/admin/patients/')) deleted.push(path);
+        else if (path.endsWith('/itinerary')) data = { services: [] };
+        else if (path.endsWith('/contracted-services')) data = { services: [] };
+        return { status: 200, text: async () => JSON.stringify({ data }) };
+      },
+      sql: () => '',
+    };
+    await cleanup(new Api(E2E_API_URL, deps, workerAccount({})), deps);
+    expect(deleted).toEqual([`/api/admin/patients/${a}`, `/api/admin/patients/${b}`]);
   });
 });
