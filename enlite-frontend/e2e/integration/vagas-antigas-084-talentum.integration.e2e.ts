@@ -28,11 +28,12 @@ let patientId = '';
 let groupId = '';
 const v: Record<string, string> = {};
 
+// is_test=false: a lista esconde is_test=true (23b32b9e2); semeada por SQL, sem evento de criação nem projeto Talentum; limpeza por patient_id.
 function vaga(tag: string, o: { status: string; state: string | null }): string {
   const baixada = o.status === 'DE_BAJA';
   return scalar(`INSERT INTO job_postings (vacancy_number, case_number, title, description, patient_id, required_professions, status, is_draft, is_test, country,
       social_short_links, talentum_pause_state${baixada ? ', status_before_baja, baja_reason' : ''}, created_at, updated_at)
-    VALUES (nextval('job_postings_vacancy_number_seq'), ${CASE}, '084T ${tag} ${RUN}', '', '${patientId}', ARRAY['AT']::varchar[], '${o.status}', false, true, 'AR',
+    VALUES (nextval('job_postings_vacancy_number_seq'), ${CASE}, '084T ${tag} ${RUN}', '', '${patientId}', ARRAY['AT']::varchar[], '${o.status}', false, false, 'AR',
       '{}'::jsonb, ${o.state ? `'${o.state}'` : 'NULL'}${baixada ? `, 'SEARCHING', 'MANUAL'` : ''}, NOW(), NOW()) RETURNING id`);
 }
 
