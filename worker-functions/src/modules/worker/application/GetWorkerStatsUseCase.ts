@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { excludeTestWorkerSql, workerNotTestSql, vacancyNotTestSql } from '@shared/database/testRealmSql';
 
 export interface WorkerStatsResult {
   /** Workers não-merged (dedup) — o "total de prestadores cadastrados". */
@@ -30,18 +31,19 @@ export class GetWorkerStatsUseCase {
            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::int AS today,
            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE - INTERVAL '7 days')::int AS last7
          FROM workers
-         WHERE merged_into_id IS NULL`,
+         WHERE merged_into_id IS NULL AND ${excludeTestWorkerSql('workers')}`,
       ),
       this.db.query(
         `SELECT status, COUNT(*)::int AS count
          FROM workers
-         WHERE merged_into_id IS NULL
+         WHERE merged_into_id IS NULL AND ${excludeTestWorkerSql('workers')}
          GROUP BY status
          ORDER BY count DESC`,
       ),
       this.db.query(
         `SELECT application_funnel_stage AS stage, COUNT(*)::int AS count
          FROM worker_job_applications
+         WHERE ${workerNotTestSql('worker_job_applications.worker_id')} AND ${vacancyNotTestSql('worker_job_applications.job_posting_id')}
          GROUP BY application_funnel_stage
          ORDER BY count DESC`,
       ),

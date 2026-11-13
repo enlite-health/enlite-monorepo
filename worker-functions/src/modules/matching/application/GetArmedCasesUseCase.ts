@@ -6,6 +6,7 @@ import {
 } from '../domain/armedCases';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import { countryPredicateSql } from '@shared/database/countryScopeSql';
+import { workerNotTestSql } from '@shared/database/testRealmSql';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 import type { ServiceHoursSummary, ServiceHoursSummaryPort } from './ServiceHoursSummaryPort';
 import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
@@ -99,7 +100,7 @@ export class GetArmedCasesUseCase {
            COUNT(DISTINCT worker_id) FILTER (WHERE resultado = 'SELECCIONADO' AND role = 'TITULAR')        AS sel_titular,
            COUNT(DISTINCT worker_id) FILTER (WHERE resultado = 'SELECCIONADO' AND role = 'RAPID_RESPONSE') AS sel_substituto
          FROM encuadres
-         WHERE job_posting_id IS NOT NULL
+         WHERE job_posting_id IS NOT NULL AND ${workerNotTestSql('encuadres.worker_id')}
          GROUP BY job_posting_id
        ) s ON s.job_posting_id = jp.id
        WHERE ${LIVE_JOB_POSTING_SQL}

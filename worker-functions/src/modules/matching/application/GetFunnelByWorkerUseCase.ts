@@ -9,6 +9,7 @@ import {
 } from '../domain/kanbanColumn';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { excludeTestWorkerSql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { countryPredicateSql } from '@shared/database/countryScopeSql';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
@@ -96,6 +97,7 @@ export class GetFunnelByWorkerUseCase {
         WHERE ${LIVE_JOB_POSTING_SQL}
           AND w.merged_into_id IS NULL
           AND ${excludeDisabledWorkersSql('w')}
+          AND ${excludeTestWorkerSql('w')}
           AND ${countryPredicateSql('w', countryParamIndex)}
           ${periodSql}`,
       params,

@@ -16,6 +16,7 @@
  * Defesa: `staff:<e-mail>` (fallback de `staffActor` quando não há uid) é excluído — e-mail nunca sai.
  */
 import type { Pool } from 'pg';
+import { workerNotTestSql } from '@shared/database/testRealmSql';
 
 export const ACTIVITY_TIMEZONE = 'America/Argentina/Buenos_Aires';
 export const ACTIVITY_WEEKS_MIN = 1;
@@ -89,6 +90,7 @@ export class GetRecruiterActivityPerPersonUseCase {
         WHERE actor LIKE 'staff:%'
           AND length(substring(actor from 7)) > 0
           AND substring(actor from 7) !~ '[@:]'
+          AND ${workerNotTestSql('acoes.worker_id')}
         GROUP BY 1, 2
         ORDER BY 2 DESC, 1 ASC`,
       [input.weeks, now],

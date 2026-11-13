@@ -33,6 +33,7 @@ import {
 } from '../domain/interviewSchedule';
 import type { CountryCode } from '@shared/domain/countryCodes';
 import { workerAptoSql } from '@shared/database/workerAptoSql';
+import { excludeTestWorkerSql, workerNotTestSql, vacancyNotTestSql } from '@shared/database/testRealmSql';
 
 /** Quem executa `.query` — o Pool do painel ou o client de uma transação (capability MCP `agentes.indicadores.ler`). */
 export type QueryRunner = Pick<Pool, 'query'>;
@@ -163,6 +164,7 @@ export function workerCadastrosQuery(db: QueryRunner, countries: CountryCode[], 
        -- quem deu baixa sai do acervo de prestadores; a contagem de
        -- desativados vive em GET /workers/status ("Desativados")
        AND ${excludeDisabledWorkersSql('w')}
+       AND ${excludeTestWorkerSql('w')}
        AND ${countryPredicateSql('w', 1)}`,
     periodo ? [countries, periodo.de, periodo.ate] : [countries],
   );
@@ -177,6 +179,7 @@ export function funnelLegadoQuery(db: QueryRunner, countries: CountryCode[], per
     `SELECT application_funnel_stage AS k, COUNT(*)::int AS count
        FROM worker_job_applications wja
       WHERE ${workerNotDisabledSql('wja.worker_id')}
+        AND ${workerNotTestSql('wja.worker_id')} AND ${vacancyNotTestSql('wja.job_posting_id')}
         AND ${workerCountryPredicateSql('wja.worker_id', 1)}
         ${periodo ? 'AND wja.created_at >= $2::date AND wja.created_at < $3::date' : ''}
       GROUP BY application_funnel_stage`,
@@ -201,6 +204,7 @@ export function esperandoAgendaQuery(db: Pool, countries: CountryCode[]) {
         AND w.merged_into_id IS NULL
         -- fila de contato: quem deu baixa não deve ser ligado
         AND ${excludeDisabledWorkersSql('w')}
+        AND ${excludeTestWorkerSql('w')}
         AND ${countryPredicateSql('w', 1)}`,
     [countries],
   );
@@ -240,6 +244,7 @@ export function bloqueadosQuery(db: Pool, countries: CountryCode[]) {
         AND ${LIVE_JOB_POSTING_SQL}
         -- fila de trabalho: quem deu baixa não é mais destravável
         AND ${workerNotDisabledSql('b.worker_id')}
+        AND ${excludeTestWorkerSql('lw')}
         AND ${workerCountryPredicateSql('b.worker_id', 1)}`,
     [countries],
   );
@@ -262,6 +267,7 @@ export function encuadresSemanaQuery(db: Pool, countries: CountryCode[]) {
         WHERE ${INTERVIEW_DATE_RESOLVED_SQL} >= ${CURRENT_WEEK_START_SQL}::date
           AND ${INTERVIEW_DATE_RESOLVED_SQL} <  ${CURRENT_WEEK_START_SQL}::date + INTERVAL '7 days'
           AND ${workerNotDisabledSql('wja.worker_id')}
+          AND ${workerNotTestSql('wja.worker_id')} AND ${vacancyNotTestSql('wja.job_posting_id')}
           AND ${workerCountryPredicateSql('wja.worker_id', 1)}
        UNION
        SELECT p.worker_id, p.job_posting_id
@@ -272,6 +278,7 @@ export function encuadresSemanaQuery(db: Pool, countries: CountryCode[]) {
           AND ev.starts_at >= ${CURRENT_WEEK_START_SQL}
           AND ev.starts_at <  ${CURRENT_WEEK_START_SQL} + INTERVAL '7 days'
           AND ${workerNotDisabledSql('p.worker_id')}
+          AND ${workerNotTestSql('p.worker_id')} AND ${vacancyNotTestSql('p.job_posting_id')}
           AND ${workerCountryPredicateSql('p.worker_id', 1)}
      ) semana`,
     [countries],
