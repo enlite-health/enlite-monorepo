@@ -55,6 +55,7 @@ import {
   createAdminPatientPhotoRoutes,
 } from '@modules/case';
 import { WorkerItineraryMeController } from '@modules/case/interfaces/controllers/WorkerItineraryMeController';
+import { WorkerJobsByRadiusController } from '@modules/matching/interfaces/controllers/WorkerJobsByRadiusController';
 import { createAdminConversationRoutes } from '@modules/conversation/interfaces/routes/adminConversationRoutes';
 import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfaces/routes/patientDocumentsRoutes';
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
@@ -284,6 +285,7 @@ const adminController = new AdminController();
 const jobsController = new JobsController();
 const workerDocumentsMeController = new WorkerDocumentsMeController();
 const workerItineraryMeController = new WorkerItineraryMeController();
+const workerJobsByRadiusController = new WorkerJobsByRadiusController();
 const adminWorkerDocumentsController = new AdminWorkerDocumentsController();
 const workerAdditionalDocsMeController = new WorkerAdditionalDocsMeController();
 const adminAdditionalDocsController = new AdminAdditionalDocsController();
@@ -483,6 +485,9 @@ app.put('/api/workers/step', routeClass('client-policy'), authMiddleware.require
 });
 app.get('/api/workers/me', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getProgress(req, res);
+});
+app.get('/api/workers/me/jobs', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+  workerJobsByRadiusController.listMine(req, res);
 });
 app.get('/api/workers/me/itinerary', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerItineraryMeController.getMine(req, res);

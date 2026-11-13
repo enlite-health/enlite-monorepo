@@ -46,4 +46,5 @@ import './workerApplications';
 import './workerDocuments';
 import './workerItinerary';
 import './workerJobs';
+import './workerJobsByRadius';
 import './workerStatus';
