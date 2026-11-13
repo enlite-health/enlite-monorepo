@@ -29,3 +29,18 @@ describe('index.ts — guard de POST /api/jobs/refresh e classe de POST /api/adm
     expect(l).not.toContain('requireAuth');
   });
 });
+
+describe('canal app nas escritas do perfil (spec 077)', () => {
+  it.each(['general-info', 'service-area', 'availability'])(
+    'T-F2b-07 PUT /api/workers/me/%s passa por appChannel() depois do requirePermission',
+    (rota) =>
+      expect(linha("app.put('/api/workers/me/" + rota + "'")).toContain(
+        "authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {",
+      ),
+  );
+
+  it('T-F2b-07 controle: PUT /api/workers/step e GET /api/workers/me/availability não passam por appChannel', () => {
+    expect(linha("app.put('/api/workers/step'")).not.toContain('appChannel(');
+    expect(linha("app.get('/api/workers/me/availability'")).not.toContain('appChannel(');
+  });
+});

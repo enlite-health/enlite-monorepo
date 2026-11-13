@@ -21,6 +21,7 @@ import { AnaCareHoursController, createAnaCareHoursRoutes, AnaCareHoursSyncContr
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
+import { appChannel } from '@modules/worker/interfaces/middleware/appChannel';
 import {
   AdminPatientsController,
   AdminPatientChatIdsController,
@@ -486,16 +487,16 @@ app.get('/api/workers/me', routeClass('client-policy'), authMiddleware.requireAu
 app.get('/api/workers/me/itinerary', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerItineraryMeController.getMine(req, res);
 });
-app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveGeneralInfo(req, res);
 });
-app.put('/api/workers/me/service-area', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/service-area', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveServiceArea(req, res);
 });
 app.get('/api/workers/me/availability', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getAvailability(req, res);
 });
-app.put('/api/workers/me/availability', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+app.put('/api/workers/me/availability', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveAvailability(req, res);
 });
 
