@@ -63,3 +63,17 @@ resource "google_project_iam_member" "attendance_sql_ar_db" {
     expression  = "resource.type == \"sqladmin.googleapis.com/Instance\" && resource.name == \"projects/${var.project_id}/instances/${module.sql_enlite_ar_db.name}\""
   }
 }
+
+# spec 077 F0a: run.invoker BFF -> attendance, dado à mão pós-deploy (T-F0a-prd-18) e adotado por import (executa só no apply).
+resource "google_cloud_run_v2_service_iam_member" "bff_invokes_attendance" {
+  project  = var.project_id
+  location = "southamerica-west1"
+  name     = "attendance-service"
+  role     = "roles/run.invoker"
+  member   = module.sa_mobile_bff.member
+}
+
+import {
+  to = google_cloud_run_v2_service_iam_member.bff_invokes_attendance
+  id = "projects/enlite-prd/locations/southamerica-west1/services/attendance-service roles/run.invoker serviceAccount:mobile-bff-sa@enlite-prd.iam.gserviceaccount.com"
+}
