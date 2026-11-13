@@ -71,6 +71,14 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
     ],
     motivo: 'ESCRITOR (F2/F6/057): UPDATE do enrichment (inclui required_sex/professions/experience e payment_day), sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
   },
+  // seed CLI da massa QA077 is_test (spec 077 PR-INF-04): grava os campos da vaga de teste; não é leitor de runtime
+  'scripts/seed-e2e-itinerario-teste.ts': {
+    rules: [
+      'schedule:bare', 'providers_needed:bare', 'age_range_min:bare', 'age_range_max:bare',
+      'required_sex:bare', 'required_professions:bare', 'required_experience:bare', 'work_schedule:bare', 'payment_day:bare',
+    ],
+    motivo: 'ESCRITOR (spec 077 PR-INF-04): só o UPDATE de fallback `SET ... = NULL` que vincula a vaga is_test ao serviço (zera a cópia na vaga, dono = serviço) e o body do POST do serviço; escreve, não lê; filtra is_test = true.',
+  },
   'src/modules/case/infrastructure/LinkExistingVacancyRepository.ts': {
     rules: [
       'schedule:alias', 'providers_needed:alias', 'age_range_min:alias', 'age_range_max:alias',
