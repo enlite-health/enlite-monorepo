@@ -363,10 +363,10 @@ Datos de la vacante:
       );
     }
 
-    // Log JSON-stringified to survive Docker log multiline truncation
+    // Regra dura: o texto gerado deriva do diagnóstico do paciente (texto
+    // clínico) e NUNCA vai para log — só metadados.
     console.log(
-      `[TalentumDesc] Raw LLM content (${content.length} chars):`,
-      JSON.stringify(content),
+      `[TalentumDesc] LLM content received (${content.length} chars, finishReason=${finishReason ?? 'unknown'})`,
     );
 
     // Strip markdown code fences if the model wrapped the JSON despite
@@ -380,7 +380,9 @@ Datos de la vacante:
     try {
       parsed = JSON.parse(cleaned);
     } catch (err) {
-      console.error('[TalentumDesc] Failed to parse Gemini JSON:', JSON.stringify(cleaned));
+      console.error(
+        `[TalentumDesc] Failed to parse Gemini JSON (${cleaned.length} chars, finishReason=${finishReason ?? 'unknown'})`,
+      );
       throw new Error('Gemini returned non-JSON content for description');
     }
 

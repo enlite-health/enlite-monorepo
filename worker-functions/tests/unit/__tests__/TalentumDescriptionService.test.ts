@@ -602,4 +602,45 @@ describe('TalentumDescriptionService', () => {
       expect(prompt).toContain('- Rango etario del prestador: De 20 a 30 años');
     });
   });
+
+  // ── Regra dura: texto clínico nunca em log ───────────────────────
+  describe('logs never carry LLM content (clinical text)', () => {
+    const MARCADOR = 'DIAG_MARCADOR_XYZ';
+    let logSpy: jest.SpyInstance;
+    let errSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+    });
+
+    function allLogged(): string {
+      return [...logSpy.mock.calls, ...errSpy.mock.calls]
+        .map((args) => args.map((a: unknown) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '))
+        .join('\n');
+    }
+
+    it('success path: does not log the generated content', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      mockFetch.mockResolvedValueOnce(
+        mockGeminiResponse({ propuesta: `Caso con ${MARCADOR}`, perfilProfesional: 'Perfil.' }),
+      );
+      await createService().generateDescription('job-log-ok');
+      expect(logSpy.mock.calls.length).toBeGreaterThan(0);
+      expect(allLogged()).not.toContain(MARCADOR);
+    });
+
+    it('parse-failure path: does not log the unparseable content', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      mockFetch.mockResolvedValueOnce(mockGeminiResponse({ rawText: `no es json ${MARCADOR}` }));
+      await expect(createService().generateDescription('job-log-bad'))
+        .rejects.toThrow('non-JSON');
+      expect(errSpy.mock.calls.length).toBeGreaterThan(0);
+      expect(allLogged()).not.toContain(MARCADOR);
+    });
+  });
 });
