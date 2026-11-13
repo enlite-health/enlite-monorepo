@@ -785,4 +785,10 @@ describe('WJAFunnelController.getEncuadreFunnel — apto (spec 067, C1)', () => 
     expect(sql).toContain("wja.application_funnel_stage IN ('COMPLETED', 'QUALIFIED', 'IN_DOUBT')");
     expect(sql).toContain('AS worker_apto');
   });
+
+  it('T-F2a-66 kanban funnel', async () => {
+    const { sql } = await funnel([]);
+    expect(sql).toContain("COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = wja.worker_id), false) = COALESCE((SELECT jp_realm_chk.is_test FROM job_postings jp_realm_chk WHERE jp_realm_chk.id = wja.job_posting_id), false)");
+    expect(sql).not.toContain('COALESCE(w.is_test, false) = false');
+  });
 });

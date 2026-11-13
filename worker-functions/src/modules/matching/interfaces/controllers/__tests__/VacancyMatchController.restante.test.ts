@@ -245,4 +245,16 @@ describe('updateEncuadreResult', () => {
     expect(res.statusCode).toBe(500);
     expect((res.payload as { error: string }).error).toBe('Unknown error');
   });
+
+  it('T-F2a-66 match-results meta e lista', async () => {
+    await new VacancyMatchController().getMatchResults(makeReq(), makeRes());
+
+    const helper = "COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = %W), false) = COALESCE((SELECT jp_realm_chk.is_test FROM job_postings jp_realm_chk WHERE jp_realm_chk.id = wja.job_posting_id), false)";
+    const meta = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    const lista = String(mockQuery.mock.calls[1][0]).replace(/\s+/g, ' ');
+    expect(meta).toContain(helper.replace('%W', 'wja.worker_id'));
+    expect(lista).toContain(helper.replace('%W', 'w.id'));
+    expect(meta).not.toContain('COALESCE(w.is_test, false) = false');
+    expect(lista).not.toContain('COALESCE(w.is_test, false) = false');
+  });
 });

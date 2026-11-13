@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { reportError } from '@shared/logging';
@@ -214,6 +215,7 @@ export class WJAFunnelController {
              -- worker que deu baixa na conta não pode aparecer no kanban da vaga
              -- (mesmo recorte de FunnelTableRepository/VacancyMatchController)
              AND ${excludeDisabledWorkersSql('w')}
+             AND ${sameRealmAsVacancySql('wja.worker_id', 'wja.job_posting_id')}
              -- M6b (D474): o convite do sistema some quando o par tem tentativa bloqueada;
              -- o card que fica é o bloqueado (blockedAttempts), em Iniciados.
              AND NOT ${wjaSupersededByBlockedSql('wja')}

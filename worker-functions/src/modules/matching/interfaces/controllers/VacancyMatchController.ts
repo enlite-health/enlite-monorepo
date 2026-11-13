@@ -9,6 +9,7 @@ import {
   excludeDisabledWorkersSql,
   workerNotDisabledSql,
 } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql } from '@shared/database/testRealmSql';
 import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreResultUseCase';
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
 import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/identity/permissions';
@@ -102,6 +103,7 @@ export class VacancyMatchController {
          LEFT JOIN worker_job_applications wja ON wja.job_posting_id = jpx.id
            -- total tem que bater com a lista abaixo (que exclui baixados)
            AND ${workerNotDisabledSql('wja.worker_id')}
+           AND ${sameRealmAsVacancySql('wja.worker_id', 'wja.job_posting_id')}
          WHERE jpx.id = $1`,
         [id]
       );
@@ -163,6 +165,7 @@ export class VacancyMatchController {
          WHERE wja.job_posting_id = $1
            -- worker que deu baixa na conta não é candidato contatável
            AND ${excludeDisabledWorkersSql('w')}
+           AND ${sameRealmAsVacancySql('w.id', 'wja.job_posting_id')}
          ORDER BY distance_km ASC NULLS LAST, wja.worker_id
          LIMIT $2 OFFSET $3`,
         [id, limit, offset]

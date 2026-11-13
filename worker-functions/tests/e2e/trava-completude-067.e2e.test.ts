@@ -61,8 +61,9 @@ async function novoPrestador(tag: string, docs: AptoDocs, status: 'REGISTERED' |
   seq += 1;
   const authUid = `uid-067-${tag}-${RUN}-${seq}`;
   const email = `p067-${tag}-${RUN}-${seq}@example.test`;
+  // D664/T-F2a-66: a vaga é is_test (migration 248, auto-invite) → worker no mesmo realm, senão some do funil e dos convocáveis
   const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO workers (auth_uid, email, status, country, timezone) VALUES ($1, $2, 'INCOMPLETE_REGISTER', 'AR', 'America/Argentina/Buenos_Aires') RETURNING id`,
+    `INSERT INTO workers (auth_uid, email, status, country, timezone, is_test) VALUES ($1, $2, 'INCOMPLETE_REGISTER', 'AR', 'America/Argentina/Buenos_Aires', true) RETURNING id`,
     [authUid, email],
   );
   const id = rows[0].id;
