@@ -11,6 +11,7 @@ jest.mock('google-auth-library', () => ({
 import { requireAssistantsService } from '../requireAssistantsService';
 import {
   ASSISTANTS_AUDIENCE,
+  MOBILE_BFF_AUDIENCE,
   GoogleServiceIdentityVerifier,
   MockServiceIdentityVerifier,
   ServiceIdentityVerifier,
@@ -183,5 +184,35 @@ describe('requireAssistantsService', () => {
     });
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  describe('canal app: audiência parametrizável', () => {
+    const BFF_SA = 'mobile-bff-sa@test-project.iam.gserviceaccount.com';
+    const tokenFor = (aud: string) =>
+      'mock_' + Buffer.from(JSON.stringify({ email: BFF_SA, email_verified: true, aud })).toString('base64');
+
+    it('T-F2b-01 Google com a audiência do BFF pede MOBILE_BFF_AUDIENCE ao verifyIdToken', async () => {
+      mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: BFF_SA, email_verified: true }) });
+      await new GoogleServiceIdentityVerifier(MOBILE_BFF_AUDIENCE).verify('tok');
+      expect(mockVerifyIdToken).toHaveBeenCalledWith({ idToken: 'tok', audience: 'https://api.enlite.health/mobile-bff' });
+    });
+
+    it('T-F2b-01 mock com a audiência do BFF recusa token com aud das assistentes', async () => {
+      const v = new MockServiceIdentityVerifier(MOBILE_BFF_AUDIENCE);
+      await expect(v.verify(tokenFor(ASSISTANTS_AUDIENCE))).rejects.toThrow('Wrong recipient');
+      await expect(v.verify(tokenFor(MOBILE_BFF_AUDIENCE))).resolves.toEqual({ email: BFF_SA, email_verified: true });
+    });
+
+    it('T-F2b-01 fábrica sob USE_MOCK_AUTH=true repassa a audiência do BFF', async () => {
+      const v = createServiceIdentityVerifier(undefined, { USE_MOCK_AUTH: 'true' }, MOBILE_BFF_AUDIENCE);
+      expect(v).toBeInstanceOf(MockServiceIdentityVerifier);
+      await expect(v.verify(tokenFor(MOBILE_BFF_AUDIENCE))).resolves.toEqual({ email: BFF_SA, email_verified: true });
+      expect(createServiceIdentityVerifier(undefined, {}, MOBILE_BFF_AUDIENCE)).toBeInstanceOf(GoogleServiceIdentityVerifier);
+    });
+
+    it('T-F2b-01 allowlist por conta monta o e-mail da mobile-bff-sa', () => {
+      expect(readServiceAllowlist({ GCP_PROJECT_ID: 'test-project' }, 'mobile-bff-sa')).toEqual([BFF_SA]);
+      expect(readServiceAllowlist({}, 'mobile-bff-sa')).toEqual([]);
+    });
   });
 });

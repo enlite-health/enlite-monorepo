@@ -3,6 +3,9 @@ import { OAuth2Client } from 'google-auth-library';
 /** Audience of the ID token of the assistants service SA (constant on both sides; not a secret). The VALUE is an identifier and does not change. */
 export const ASSISTANTS_AUDIENCE = 'https://api.enlite.health/assistentes';
 
+/** Audience of the ID token of the mobile BFF service SA (spec 077 A-02, DT-13). */
+export const MOBILE_BFF_AUDIENCE = 'https://api.enlite.health/mobile-bff';
+
 export interface ServiceIdentity {
   email?: string;
   email_verified?: boolean;
@@ -14,18 +17,20 @@ export interface ServiceIdentityVerifier {
 }
 
 /** Allowlist read from GCP_PROJECT_ID (no new env). Without the project, an empty list (fail-closed). */
-export function readServiceAllowlist(env: NodeJS.ProcessEnv = process.env): string[] {
+export function readServiceAllowlist(env: NodeJS.ProcessEnv = process.env, accountId = 'assistants-service-sa'): string[] {
   const project = env.GCP_PROJECT_ID;
   if (!project) return [];
-  return [`assistants-service-sa@${project}.iam.gserviceaccount.com`];
+  return [`${accountId}@${project}.iam.gserviceaccount.com`];
 }
 
 /** Real verifier: Google OAuth2Client.verifyIdToken with the fixed audience. */
 export class GoogleServiceIdentityVerifier implements ServiceIdentityVerifier {
   private readonly client = new OAuth2Client();
 
+  constructor(private readonly audience: string = ASSISTANTS_AUDIENCE) {}
+
   async verify(idToken: string): Promise<ServiceIdentity> {
-    const ticket = await this.client.verifyIdToken({ idToken, audience: ASSISTANTS_AUDIENCE });
+    const ticket = await this.client.verifyIdToken({ idToken, audience: this.audience });
     return ticket.getPayload() ?? {};
   }
 }
@@ -38,10 +43,12 @@ export const MOCK_SERVICE_TOKEN_PREFIX = 'mock_';
  * as Google would. Never constructed outside USE_MOCK_AUTH=true (see the factory).
  */
 export class MockServiceIdentityVerifier implements ServiceIdentityVerifier {
+  constructor(private readonly audience: string = ASSISTANTS_AUDIENCE) {}
+
   async verify(idToken: string): Promise<ServiceIdentity> {
     if (!idToken.startsWith(MOCK_SERVICE_TOKEN_PREFIX)) throw new Error('malformed test token');
     const data = JSON.parse(Buffer.from(idToken.slice(MOCK_SERVICE_TOKEN_PREFIX.length), 'base64').toString());
-    if (data?.aud !== ASSISTANTS_AUDIENCE) throw new Error('Wrong recipient');
+    if (data?.aud !== this.audience) throw new Error('Wrong recipient');
     return { email: data.email, email_verified: data.email_verified };
   }
 }
@@ -53,7 +60,8 @@ export class MockServiceIdentityVerifier implements ServiceIdentityVerifier {
 export function createServiceIdentityVerifier(
   testVerifier?: ServiceIdentityVerifier,
   env: NodeJS.ProcessEnv = process.env,
+  audience: string = ASSISTANTS_AUDIENCE,
 ): ServiceIdentityVerifier {
-  if (env.USE_MOCK_AUTH === 'true') return testVerifier ?? new MockServiceIdentityVerifier();
-  return new GoogleServiceIdentityVerifier();
+  if (env.USE_MOCK_AUTH === 'true') return testVerifier ?? new MockServiceIdentityVerifier(audience);
+  return new GoogleServiceIdentityVerifier(audience);
 }
