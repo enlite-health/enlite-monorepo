@@ -38,6 +38,12 @@ export type { WorkerDateStats, AdminAdditionalDocument };
 export type { ParseVacancyFullResult, PatientAddressCreateInput, PatientAddressRow };
 export type { PendingAddressReviewItem, ResolveAddressBody };
 export type { AIContentResult };
+
+/** Resultado do envio ao Talentum depois de gravar a edição de uma vaga publicada (campo aditivo `talentumSync`). */
+export interface TalentumSync {
+  status: 'OK' | 'NOT_PUBLISHED' | 'OTHER_ACCOUNT' | 'FAILED';
+  message?: string;
+}
 export type { VacancyDraftSummary, VacancyByAddressSummary };
 
 import { AdminWorkerTagsApiService } from './AdminWorkerTagsApiService';
@@ -145,6 +151,13 @@ class AdminApiServiceClass {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    return (await this.requestEnvelope<T>(method, path, body)).data;
+  }
+
+  /** Como `request`, mas devolve o envelope inteiro: o backend acrescenta `talentumSync` ao lado de `data`. */
+  private async requestEnvelope<T>(
+    method: string, path: string, body?: unknown,
+  ): Promise<ApiSuccessResponse<T> & { talentumSync?: TalentumSync }> {
     const headers = await this.getAuthHeaders();
     const response = await fetch(`${this.baseURL}${path}`, {
       method,
@@ -157,7 +170,7 @@ class AdminApiServiceClass {
     if (!json.success) {
       throw new ApiError(json as ApiErrorResponse, response.status);
     }
-    return (json as ApiSuccessResponse<T>).data;
+    return json as ApiSuccessResponse<T> & { talentumSync?: TalentumSync };
   }
 
   // ========== Vínculos de área (acesso-do-cliente, T111/T411) ==========
@@ -282,8 +295,10 @@ class AdminApiServiceClass {
     return this.request<any>('POST', '/api/admin/vacancies', data);
   }
 
+  /** `talentumSync` (aditivo): só vem em vaga publicada; OTHER_ACCOUNT/FAILED = gravou, mas não chegou ao Talentum. */
   async updateVacancy(id: string, data: any): Promise<any> {
-    return this.request<any>('PUT', `/api/admin/vacancies/${id}`, data);
+    const env = await this.requestEnvelope<any>('PUT', `/api/admin/vacancies/${id}`, data);
+    return env.talentumSync ? { ...env.data, talentumSync: env.talentumSync } : env.data;
   }
 
   /** "Marcar como atendido": fecha o aviso aberto de (vaga, campo). 404 = sem aviso aberto; 400 = campo inválido. */
@@ -514,10 +529,11 @@ class AdminApiServiceClass {
 
   async savePrescreeningConfig(
     vacancyId: string, data: { questions: any[]; faq: any[] }
-  ): Promise<{ questions: any[]; faq: any[] }> {
-    return this.request<{ questions: any[]; faq: any[] }>(
+  ): Promise<{ questions: any[]; faq: any[]; talentumSync?: TalentumSync }> {
+    const env = await this.requestEnvelope<{ questions: any[]; faq: any[] }>(
       'POST', `/api/admin/vacancies/${vacancyId}/prescreening-config`, data,
     );
+    return env.talentumSync ? { ...env.data, talentumSync: env.talentumSync } : env.data;
   }
 
   // ========== AI Prompts (spec 029) ==========

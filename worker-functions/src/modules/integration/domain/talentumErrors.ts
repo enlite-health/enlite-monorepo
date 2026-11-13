@@ -10,3 +10,17 @@ export const DEAD_PROJECT_MESSAGE =
 export function isDeadProjectError(err: unknown): boolean {
   return err instanceof Error && err.message.includes('HTTP 404');
 }
+
+/**
+ * Achado em prod (27/07): o Talentum tem dono por projeto. Projetos criados por OUTRA conta (recrutadora direto
+ * na UI, entram via sync inbound) são legíveis mas NÃO graváveis pela nossa conta → 403. Mensagem acionável (409,
+ * condição permanente) em vez de um 502 transitório. Compartilhada por todo caminho que escreve no Talentum.
+ */
+export const OTHER_ACCOUNT_MESSAGE =
+  'Esta vacante fue creada directamente en Talentum por otra cuenta, así que su ' +
+  'descripción no puede editarse desde el panel. Editala en Talentum.';
+
+export function isOtherAccountError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes('HTTP 403') || msg.toLowerCase().includes('not allowed to access');
+}

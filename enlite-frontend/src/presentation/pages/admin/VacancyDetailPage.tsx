@@ -41,6 +41,8 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { screenById } from '@presentation/config/screenRegistry';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { talentumSyncWarningKey } from '@presentation/components/features/admin/VacancyDetail/talentumSyncWarning';
+import type { TalentumSync } from '@infrastructure/http/AdminApiService';
 import { useVacancyTabParam } from './VacancyDetail/useVacancyTabParam';
 
 export default function VacancyDetailPage() {
@@ -53,6 +55,12 @@ export default function VacancyDetailPage() {
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  // Edição gravada, mas que não chegou ao Talentum (OTHER_ACCOUNT/FAILED) — aviso aditivo, nunca erro de gravação.
+  const [talentumWarning, setTalentumWarning] = useState<string | null>(null);
+  const warnTalentumSync = (sync?: TalentumSync): void => {
+    const key = talentumSyncWarningKey(sync);
+    setTalentumWarning(key ? t(key) : null);
+  };
   // Spec 084 F1: dar baixa na ficha (só vaga SEM serviço; sem "reativar" — R17).
   const canBaja = useActionGate('vacancy', 'update').allowed;
   const [bajaOpen, setBajaOpen] = useState(false);
@@ -80,9 +88,11 @@ export default function VacancyDetailPage() {
   const handleStatusChange = async (next: EditableVacancyStatus): Promise<void> => {
     if (!id) return;
     setStatusError(null);
+    setTalentumWarning(null);
     setStatusSaving(true);
     try {
-      await AdminApiService.updateVacancy(id, { status: next });
+      const saved = await AdminApiService.updateVacancy(id, { status: next });
+      warnTalentumSync(saved?.talentumSync);
       await refetch();
     } catch (err) {
       setStatusError(vacancyUpdateErrorMessage(err, t));
@@ -277,6 +287,16 @@ export default function VacancyDetailPage() {
               </Button>
             </div>
           )}
+          {talentumWarning && (
+            <div
+              className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-2"
+              data-testid="talentum-sync-warning"
+            >
+              <Text size="sm" color="inherit" className="text-amber-900">
+                {talentumWarning}
+              </Text>
+            </div>
+          )}
           {statusError && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
               <Text size="sm" color="inherit" className="text-red-600">
@@ -435,8 +455,9 @@ export default function VacancyDetailPage() {
           vacancyId={id}
           vacancy={vacancy}
           onClose={() => setShowScheduleModal(false)}
-          onSuccess={() => {
+          onSuccess={(sync) => {
             setShowScheduleModal(false);
+            warnTalentumSync(sync);
             refetch();
           }}
         />

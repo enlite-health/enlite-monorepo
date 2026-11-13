@@ -26,6 +26,7 @@ const mockUnpublish = jest.fn();
 const mockGenerateDescription = jest.fn();
 const mockGenerateDescriptionPreview = jest.fn();
 const mockGenerateFromVacancyData = jest.fn();
+const mockPropagate = jest.fn();
 
 jest.mock('@modules/integration', () => ({
   PublishVacancyToTalentumUseCase: jest.fn().mockImplementation(() => ({
@@ -41,6 +42,7 @@ jest.mock('@modules/integration', () => ({
   SyncTalentumVacanciesUseCase: jest.fn().mockImplementation(() => ({
     execute: jest.fn().mockResolvedValue({ total: 0, updated: 0, created: 0, skipped: 0, errors: [] }),
   })),
+  SyncVacancyContentToTalentumUseCase: jest.fn().mockImplementation(() => ({ propagate: mockPropagate })),
   TalentumDescriptionService: jest.fn().mockImplementation(() => ({
     generateDescription: mockGenerateDescription,
     generateDescriptionPreview: mockGenerateDescriptionPreview,
@@ -90,6 +92,8 @@ describe('VacancyTalentumController', () => {
     mockGenerateDescription.mockReset();
     mockGenerateDescriptionPreview.mockReset();
     mockGenerateFromVacancyData.mockReset();
+    mockPropagate.mockReset();
+    mockPropagate.mockResolvedValue({ status: 'NOT_PUBLISHED' });
     controller = new VacancyTalentumController();
   });
 
@@ -308,6 +312,53 @@ describe('VacancyTalentumController', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Failed to unpublish from Talentum', details: 'boom' }));
+    });
+  });
+
+  // ── D3 a/b: gancho de propagação ao Talentum ─────────────────────
+
+  describe('propagação ao Talentum (D3 a/b)', () => {
+    const questions = [{ question: 'Q', desiredResponse: 'R', weight: 5 }];
+
+    it('(a) prescreening-config: propaga DEPOIS do COMMIT e devolve talentumSync aditivo', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      mockPropagate.mockResolvedValue({ status: 'OK' });
+      const res = mockRes();
+
+      await controller.savePrescreeningConfig(mockReq({ questions, faq: [] }, { id: 'v-1' }), res);
+
+      expect(mockPropagate).toHaveBeenCalledTimes(1);
+      expect(mockPropagate.mock.calls[0][0]).toBe('v-1');
+      const commitOrder = mockClientQuery.mock.invocationCallOrder[mockClientQuery.mock.calls.findIndex((c: any) => c[0] === 'COMMIT')];
+      expect(mockPropagate.mock.invocationCallOrder[0]).toBeGreaterThan(commitOrder);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, talentumSync: { status: 'OK' } }));
+    });
+
+    it('(a) vaga em rascunho (NOT_PUBLISHED): resposta sem talentumSync; falha do envio não derruba a gravação', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+      const draftRes = mockRes();
+      await controller.savePrescreeningConfig(mockReq({ questions, faq: [] }, { id: 'v-1' }), draftRes);
+      expect(draftRes.json.mock.calls[0][0]).not.toHaveProperty('talentumSync');
+
+      mockPropagate.mockResolvedValue({ status: 'OTHER_ACCOUNT', message: 'otra cuenta' });
+      const res = mockRes();
+      await controller.savePrescreeningConfig(mockReq({ questions, faq: [] }, { id: 'v-1' }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ talentumSync: { status: 'OTHER_ACCOUNT', message: 'otra cuenta' } }));
+    });
+
+    it('(b) generate-talentum-description: gera (grava) e depois propaga', async () => {
+      mockGenerateDescription.mockResolvedValueOnce({ description: 'D' });
+      mockPropagate.mockResolvedValue({ status: 'FAILED', message: 'x' });
+      const res = mockRes();
+
+      await controller.generateTalentumDescription(mockReq({}, { id: 'v-1' }), res);
+
+      expect(mockPropagate).toHaveBeenCalledTimes(1);
+      expect(mockGenerateDescription.mock.invocationCallOrder[0]).toBeLessThan(mockPropagate.mock.invocationCallOrder[0]);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: { description: 'D' }, talentumSync: { status: 'FAILED', message: 'x' } }));
     });
   });
 

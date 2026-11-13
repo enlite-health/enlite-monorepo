@@ -2255,6 +2255,10 @@
       "vacancy": "Vacante",
       "publishedRedirectBanner": "Esta vacante ya fue publicada. Editá horario con el lápiz al lado de \"Días y Horarios\" y el estado tocando el badge — no es necesario abrir el formulario completo.",
       "dismissBanner": "Cerrar aviso",
+      "talentumSync": {
+        "otherAccount": "Guardado, pero NO se pudo enviar a Talentum: la vacante fue creada allá por otra cuenta. Editala directamente en Talentum.",
+        "failed": "Guardado, pero NO se pudo enviar a Talentum. Probá de nuevo; si persiste, avisá a soporte."
+      },
       "sourceChangeNotice": {
         "title": "El servicio contratado cambió y esta vacante ya está publicada",
         "message": {

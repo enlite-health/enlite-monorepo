@@ -30,6 +30,10 @@ import { withSystemDbContext } from '@shared/database/requestDbSession';
 import { vacancyRawColumnsSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { withActorContext } from '@shared/database/actorContext';
 import { countVigenteForVacancy } from '@modules/case';
+import { SyncVacancyContentToTalentumUseCase, TalentumDescriptionService } from '@modules/integration';
+import type { TalentumSyncResult } from '@modules/integration';
+import { VacancyTalentumPauseService } from '../../application/VacancyTalentumPauseService';
+import { propagateVacancyEditToTalentum } from '../../application/propagateVacancyEditToTalentum';
 
 const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
@@ -248,6 +252,31 @@ export class VacancyCrudController {
     }
   }
 
+  /** Nunca lança: falha vira `talentumSync.status = FAILED` (a gravação local já foi commitada). */
+  private async propagateEditToTalentum(
+    id: string,
+    updated: Record<string, unknown>,
+    scheduleChanged: boolean,
+    statusFrom: string | null,
+    statusTo: string | null,
+    actor: HumanActor,
+  ): Promise<TalentumSyncResult | null> {
+    if (!updated.talentum_project_id) return null; // rascunho/não publicada: nada a construir, nada a chamar
+    try {
+      return await propagateVacancyEditToTalentum(
+        { vacancyId: id, published: Boolean(updated.talentum_project_id), scheduleChanged, statusFrom, statusTo, actor },
+        {
+          describer: new TalentumDescriptionService(),
+          content: new SyncVacancyContentToTalentumUseCase(this.db),
+          lifecycle: new VacancyTalentumPauseService(this.db),
+        },
+      );
+    } catch (err) {
+      reportError(err instanceof Error ? err : new Error(String(err)), { source: 'VacancyCrudController:propagateEditToTalentum' });
+      return { status: 'FAILED', message: 'Talentum propagation failed' };
+    }
+  }
+
   async updateVacancy(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -317,6 +346,7 @@ export class VacancyCrudController {
       // If audit INSERT fails, ROLLBACK the UPDATE too (preserves consistency).
       const client = await this.db.connect();
       let updated: Record<string, unknown> | undefined;
+      let scheduleChanged = false;
       try {
         await client.query('BEGIN');
 
@@ -344,6 +374,8 @@ export class VacancyCrudController {
           return;
         }
         updated = result.rows[0];
+        scheduleChanged = allowedFields.includes('schedule') && 'schedule' in updates
+          && JSON.stringify(before.schedule ?? null) !== JSON.stringify(updated.schedule ?? null);
 
         // auditVacancyUpdated uses logFieldChangesSafe (SAVEPOINT) — FK failure
         // cannot abort this transaction; the UPDATE always commits.
@@ -368,7 +400,14 @@ export class VacancyCrudController {
             }
           });
         });
-        res.status(200).json({ success: true, data: await withEffectiveFields(this.db, updated) });
+        // Vaga publicada: o banco já gravou; o que mudou (horário/status) segue ao Talentum e o resultado volta aditivo.
+        const statusTo = typeof updates.status === 'string' && allowedFields.includes('status') ? updates.status : null;
+        const talentumSync = await this.propagateEditToTalentum(id, updated, scheduleChanged, auth.currentStatus, statusTo, actor);
+        res.status(200).json({
+          success: true,
+          data: await withEffectiveFields(this.db, updated),
+          ...(talentumSync ? { talentumSync } : {}),
+        });
       }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);

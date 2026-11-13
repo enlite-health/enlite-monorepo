@@ -21,7 +21,9 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
-import { DEAD_PROJECT_MESSAGE, isDeadProjectError } from '../domain/talentumErrors';
+import { DEAD_PROJECT_MESSAGE, isDeadProjectError, isOtherAccountError, OTHER_ACCOUNT_MESSAGE } from '../domain/talentumErrors';
+import { matchQuestionIds } from '../domain/talentumQuestionMatching';
+import { loadLocalPrescreeningQuestions } from './prescreeningQuestionRows';
 import {
   JobPostingAuditRepository,
   type AuditActorType,
@@ -101,8 +103,8 @@ export class UpdateTalentumDescriptionUseCase {
         );
       }
 
-      // GET reler o projeto → questions com questionId + faq + título vigente,
-      // reenviados intactos para que o PUT só troque a descrição.
+      // GET reler o projeto → questionId remotos + título vigente. As perguntas enviadas são as do NOSSO
+      // banco (D2), casadas aos questionId remotos; sem perguntas locais, reenvia as remotas intactas.
       let project;
       try {
         project = await talentumClient.getPrescreening(vacancy.talentum_project_id);
@@ -113,11 +115,16 @@ export class UpdateTalentumDescriptionUseCase {
         throw new UpdateDescriptionError(502, `Talentum API error (get): ${(err as Error).message}`);
       }
 
+      const localQuestions = await loadLocalPrescreeningQuestions(this.db, jobPostingId);
+      const questions = localQuestions.length > 0
+        ? matchQuestionIds(localQuestions, project.questions)
+        : project.questions;
+
       try {
         await talentumClient.updatePrescreening(vacancy.talentum_project_id, {
           title: project.title,
           description,
-          questions: project.questions,
+          questions,
           faq: project.faq,
         });
       } catch (err: unknown) {
@@ -125,16 +132,9 @@ export class UpdateTalentumDescriptionUseCase {
         if (isDeadProjectError(err)) {
           throw new UpdateDescriptionError(409, DEAD_PROJECT_MESSAGE);
         }
-        // Achado em prod (27/07): o Talentum tem dono por projeto. Projetos criados
-        // por OUTRA conta (recrutadora direto na UI, entram via sync inbound) são
-        // legíveis mas NÃO graváveis pela nossa conta → PUT 403. Traduzimos para uma
-        // mensagem acionável (409, condição permanente) em vez de um 502 transitório.
-        if (msg.includes('HTTP 403') || msg.toLowerCase().includes('not allowed to access')) {
-          throw new UpdateDescriptionError(
-            409,
-            'Esta vacante fue creada directamente en Talentum por otra cuenta, así que su ' +
-              'descripción no puede editarse desde el panel. Editala en Talentum.',
-          );
+        // Projeto de OUTRA conta → 403 → 409 acionável (mensagem e detecção compartilhadas em talentumErrors).
+        if (isOtherAccountError(err)) {
+          throw new UpdateDescriptionError(409, OTHER_ACCOUNT_MESSAGE);
         }
         throw new UpdateDescriptionError(502, `Talentum API error (update): ${msg}`);
       }

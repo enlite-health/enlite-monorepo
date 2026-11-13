@@ -101,11 +101,19 @@ describe('UpdateTalentumDescriptionUseCase', () => {
     expect(updateCall![1]).toEqual(['Nova descrição', JP_ID]);
   });
 
-  it('vaga publicada: propaga in-place preservando as perguntas do projeto', async () => {
+  it('vaga publicada: propaga in-place enviando as perguntas do NOSSO banco (D2), herdando o questionId remoto', async () => {
     const project = makeProject();
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ id: JP_ID, title: 'Caso 42', talentum_project_id: 'proj-1', talentum_description: 'antiga' }],
-    });
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{ id: JP_ID, title: 'Caso 42', talentum_project_id: 'proj-1', talentum_description: 'antiga' }],
+      })
+      // perguntas do banco: a do projeto com resposta ideal EDITADA + uma nova
+      .mockResolvedValueOnce({
+        rows: [
+          { question: '¿Tiene  experiencia?', response_type: ['text'], desired_response: 'Sí, 2 años', weight: 7, required: true, analyzed: true, early_stoppage: false },
+          { question: '¿Tiene movilidad propia?', response_type: ['text', 'audio'], desired_response: 'Sí', weight: 3, required: false, analyzed: true, early_stoppage: false },
+        ],
+      });
     mockGetPrescreening.mockResolvedValue(project);
     mockUpdatePrescreening.mockResolvedValue(undefined);
 
@@ -113,12 +121,26 @@ describe('UpdateTalentumDescriptionUseCase', () => {
 
     expect(result).toEqual({ description: 'Descrição editada', propagated: true });
     expect(mockGetPrescreening).toHaveBeenCalledWith('proj-1');
-    expect(mockUpdatePrescreening).toHaveBeenCalledWith('proj-1', {
-      title: project.title,
-      description: 'Descrição editada',
-      questions: project.questions,
-      faq: project.faq,
-    });
+    const sent = mockUpdatePrescreening.mock.calls[0][1];
+    expect(sent.title).toBe(project.title);
+    expect(sent.description).toBe('Descrição editada');
+    expect(sent.questions).toHaveLength(2);
+    expect(sent.questions[0]).toMatchObject({ questionId: 'q1', desiredResponse: 'Sí, 2 años', weight: 7, required: true });
+    expect(sent.questions[1]).not.toHaveProperty('questionId'); // nova
+    expect(sent.questions).not.toEqual(project.questions); // NÃO são as remotas
+  });
+
+  it('vaga publicada sem perguntas no banco: reenvia as remotas intactas (nunca apaga o projeto)', async () => {
+    const project = makeProject();
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ id: JP_ID, title: 'Caso 42', talentum_project_id: 'proj-1', talentum_description: 'antiga' }] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockGetPrescreening.mockResolvedValue(project);
+    mockUpdatePrescreening.mockResolvedValue(undefined);
+
+    await useCase.execute({ jobPostingId: JP_ID, description: 'x' }, ACTOR);
+
+    expect(mockUpdatePrescreening.mock.calls[0][1].questions).toEqual(project.questions);
   });
 
   it('descrição vazia → 400', async () => {
