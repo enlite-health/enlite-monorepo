@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 import { Readable } from 'stream';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { excludeTestWorkerSql } from '@shared/database/testRealmSql';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { WorkerExportColumnKey, COLUMN_LABELS_ES } from './export/workerExportColumns';
 import { decidirColunas } from './export/workerExportCells';
@@ -251,6 +252,7 @@ function buildExportWhere(filters: ExportWorkersFilters): { clause: string; para
   } else {
     clause += ` AND ${excludeDisabledWorkersSql('w')}`;
   }
+  clause += ` AND ${excludeTestWorkerSql('w')}`;
 
   if (filters.platform) {
     if (filters.platform === 'talentum') {

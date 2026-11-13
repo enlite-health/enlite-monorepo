@@ -25,6 +25,7 @@ import {
   vacancyEffectiveRequiredSexSql,
 } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
+import { workerNotTestSql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 import {
@@ -60,7 +61,7 @@ export function mapStatus(status: string | null): string {
 // ── listVacancies query builder ────────────────────────────────────────────────
 
 /** Recorte "não conta quem deu baixa" — mesmo predicado do kanban da vaga. */
-const WORKER_ACTIVE_SQL = workerNotDisabledSql('wja.worker_id');
+const WORKER_ACTIVE_SQL = `${workerNotDisabledSql('wja.worker_id')} AND ${workerNotTestSql('wja.worker_id')}`;
 
 const POSTULATED_SQL = toSqlInList(POSTULATED_STAGES);
 const SELECTED_KANBAN_SQL = toSqlInList(SELECTED_KANBAN_STAGES);
@@ -131,6 +132,7 @@ const LIST_VACANCIES_BASE = `
   LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
   WHERE jp.case_number IS NOT NULL
     AND jp.deleted_at IS NULL
+    AND ${excludeTestVacancySql('jp')}
 `;
 
 const VALID_STATUSES: ReadonlySet<string> = new Set([
@@ -296,7 +298,7 @@ export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promis
             (wba.dismissed_at IS NOT NULL) AS dismissed,
             NULL::boolean AS apto
        FROM worker_blocked_applications wba
-      WHERE wba.job_posting_id = ANY($1::uuid[]) AND ${blockedNotPromotedSql('wba')}
+      WHERE wba.job_posting_id = ANY($1::uuid[]) AND ${blockedNotPromotedSql('wba')} AND ${workerNotTestSql('wba.worker_id')}
       GROUP BY 1, 7, 8`,
     [jobPostingIds],
   );
@@ -326,7 +328,7 @@ export async function loadVacancyActivity(db: Pool, jobPostingIds: string[]): Pr
               (SELECT MAX(n.occurred_at) FROM job_posting_notes n WHERE n.job_posting_id = jp.id),
               (SELECT MAX(h.created_at) FROM worker_job_application_stage_history h
                  JOIN worker_job_applications w ON w.id = h.application_id
-                WHERE w.job_posting_id = jp.id),
+                WHERE w.job_posting_id = jp.id AND ${workerNotTestSql('w.worker_id')}),
               jp.talentum_published_at
             ) AS last_action_at
        FROM job_postings jp

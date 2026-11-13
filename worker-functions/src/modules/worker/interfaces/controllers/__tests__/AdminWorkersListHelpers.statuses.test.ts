@@ -140,4 +140,14 @@ describe('locationMatchSql — o predicado compartilhado por EXISTS (lista) e LA
     const { whereClause } = buildWorkerListWhereClause({ ...PAGE, state: 'Córdoba' });
     expect(whereClause).toContain(`EXISTS (SELECT 1 FROM worker_service_areas wsa WHERE wsa.worker_id = w.id AND ${pred})`);
   });
+
+  it('T-F2a-69 lista de prestadores', () => {
+    const semFiltro = buildWorkerListWhereClause({ ...PAGE });
+    const comDisabled = buildWorkerListWhereClause({ ...PAGE, status: 'DISABLED' });
+
+    expect(semFiltro.whereClause).toContain('COALESCE(w.is_test, false) = false');
+    expect(comDisabled.whereClause).toContain('COALESCE(w.is_test, false) = false');
+    expect(semFiltro.params).toEqual([]);
+    expect(comDisabled.params).toEqual(['DISABLED']);
+  });
 });

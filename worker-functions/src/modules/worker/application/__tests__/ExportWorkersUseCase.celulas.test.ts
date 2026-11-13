@@ -144,4 +144,11 @@ describe('export — a célula decide a COLUNA, e decide antes do KMS', () => {
     expect(csv).toContain(PRESTADOR_CANARIO.primeiroNome);
     expect(mockKmsDecrypt).toHaveBeenCalledTimes(2);
   });
+
+  it('T-F2a-69 export', async () => {
+    await csvDe(await rodar(['worker:export'], ['status']));
+
+    const sqls = mockQuery.mock.calls.map((c) => String(c[0]));
+    expect(sqls.some((s) => s.includes('COALESCE(w.is_test, false) = false'))).toBe(true);
+  });
 });
