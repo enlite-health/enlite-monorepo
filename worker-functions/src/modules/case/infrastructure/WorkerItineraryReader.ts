@@ -1,27 +1,37 @@
 /**
- * WorkerItineraryReader — spec 077 F1 (T272): as ocorrências de turno de UM worker na janela `[hoje-30, hoje+14]`.
+ * WorkerItineraryReader — spec 077 F1 (T272) + FR-42: as ocorrências de turno de UM worker na janela `[dia 1 do mês anterior, hoje+14]`.
  *
  * Universo: `readOccurrenceInputsByPatient` com `scopeSql` por worker (faixas ativas com alocação ACTIVE vigente do worker na
  * janela OU ausência viva com `substitute_worker_id = worker`). As alocações/ausências lidas são TODAS as das faixas do universo
  * (a expansão precisa do titular para saber quem foi substituído). A expansão é `expandServiceOccurrences` (nada reimplementado);
  * o recorte final mantém só a ocorrência cujo executor efetivo (`workerId`) é o worker.
  *
- * Privacidade (P3): nenhum texto de endereço é lido nem devolvido. Do endereço padrão ativo saem só lat/lng e a qualidade do
- * geocode; o ponto sai DEGRADADO à grade de ~20 m (`degradePoint20m`). O ponto real nunca deixa este arquivo.
+ * Privacidade (P3, revista pela FR-39): rua, número, cidade e texto formatado do endereço não são lidos nem devolvidos. Do
+ * endereço padrão ativo saem lat/lng, a qualidade do geocode e o bairro (`neighborhood`, com fallback no cadastro do paciente:
+ * mesma regra do feed público, DT-21); o ponto sai DEGRADADO à grade de ~20 m (`degradePoint20m`). O ponto real nunca deixa
+ * este arquivo. O paciente sai como `patient_ref` opaco (`patientRefOf`), nunca o id.
  */
 import type { PoolClient } from 'pg';
 import { v5 as uuidv5 } from 'uuid';
 import { addDaysToDateString } from '../domain/itineraryEvents';
 import { isReliableGeocode, type GeocodeLocationType } from '../domain/geocodeQuality';
 import { expandServiceOccurrences } from '../domain/serviceOccurrences';
+import { patientRefOf } from '../domain/patientRef';
 import { readOccurrenceInputsByPatient } from './occurrenceInputs';
 
 /** Namespace fixo do contrato (`x-occurrence-id-namespace`, SUP-F1-11). */
 export const OCCURRENCE_ID_NAMESPACE = '43876dea-477d-4c5b-8b30-127aa6db3f92';
 /** Passo da grade de degradação (~20 m): `x-degradacao-20m` do contrato. */
 export const GRID_DEG = 0.00018;
-export const WINDOW_DAYS_BEFORE = 30;
 export const WINDOW_DAYS_AFTER = 14;
+
+/** Início da janela (FR-42, D635): dia 1 do mês ANTERIOR ao `today` (data civil `YYYY-MM-DD`, já no fuso da operação). Pura. */
+export function windowStart(today: string): string {
+  const [y, m] = today.split('-').map(Number);
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return `${py}-${String(pm).padStart(2, '0')}-01`;
+}
 
 export interface PatientPoint {
   lat: number;
@@ -38,6 +48,12 @@ export interface ItineraryItem {
   ends_at: string;
   kind: 'REGULAR' | 'SUBSTITUTION';
   patient_first_name: string;
+  /** uuid v5 opaco do paciente (FR-39, DT-21); nunca o id. */
+  patient_ref: string;
+  /** Bairro do endereço padrão ativo, com fallback em patients.zone_neighborhood (DT-21); null quando os dois faltam. */
+  neighborhood: string | null;
+  /** Endereço em texto: sempre null até a F4 (C-14/FR-44). */
+  address: null;
   patient_point: PatientPoint | null;
   country: string;
   seq: number;
@@ -75,6 +91,7 @@ interface PatientRow {
   lng: string | number | null;
   geocode_quality: GeocodeLocationType | null;
   geocode_partial_match: boolean | null;
+  neighborhood: string | null;
 }
 
 /** $1 = worker, $2 = from, $3 = to. */
@@ -91,7 +108,7 @@ const WORKER_SCOPE_SQL = `pcs.active
 
 export async function readWorkerWindow(client: PoolClient, args: { workerId: string; today: string }): Promise<ItineraryEnvelope> {
   const { workerId, today } = args;
-  const from = addDaysToDateString(today, -WINDOW_DAYS_BEFORE);
+  const from = windowStart(today);
   const to = addDaysToDateString(today, WINDOW_DAYS_AFTER);
 
   const byPatient = await readOccurrenceInputsByPatient(client, {
@@ -121,6 +138,9 @@ export async function readWorkerWindow(client: PoolClient, args: { workerId: str
         ends_at: toIso(o.date, o.endTime, patient.country, overnight),
         kind: o.titularWorkerId !== workerId && o.substituteWorkerId === workerId ? 'SUBSTITUTION' : 'REGULAR',
         patient_first_name: patient.first_name?.trim() || 'Paciente',
+        patient_ref: patientRefOf(patientId),
+        neighborhood: patient.neighborhood ?? null,
+        address: null,
         patient_point: pointOf(patient),
         country: patient.country,
       });
@@ -146,15 +166,16 @@ function pointOf(p: PatientRow): PatientPoint | null {
   return { ...degradePoint20m(lat, lng), quality: isReliableGeocode(p.geocode_quality, p.geocode_partial_match) ? 'RELIABLE' : 'UNRELIABLE' };
 }
 
-/** Primeiro nome, país e coordenadas/qualidade do endereço padrão ativo. NENHUMA coluna de texto de endereço. */
+/** Primeiro nome, país, coordenadas/qualidade e bairro do endereço padrão ativo (bairro com fallback no cadastro, DT-21). */
 async function readPatients(client: PoolClient, patientIds: readonly string[]): Promise<Map<string, PatientRow>> {
   const out = new Map<string, PatientRow>();
   if (patientIds.length === 0) return out;
   const res = await client.query<PatientRow>(
-    `SELECT p.id, p.first_name, p.country, pa.lat, pa.lng, pa.geocode_quality, pa.geocode_partial_match
+    `SELECT p.id, p.first_name, p.country, pa.lat, pa.lng, pa.geocode_quality, pa.geocode_partial_match,
+            COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood
        FROM patients p
        LEFT JOIN LATERAL (
-         SELECT a.lat, a.lng, a.geocode_quality, a.geocode_partial_match
+         SELECT a.lat, a.lng, a.geocode_quality, a.geocode_partial_match, a.neighborhood
            FROM patient_addresses a
           WHERE a.patient_id = p.id AND a.is_default AND a.archived_at IS NULL
           ORDER BY a.display_order, a.id

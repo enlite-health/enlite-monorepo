@@ -96,6 +96,24 @@ const POINT_EXCEPTION_FILES: Record<string, string> = {
 /** Texto de endereço que a P3 proíbe na superfície do itinerário do prestador. */
 const ADDRESS_TEXT_STRINGS = ['address_summary', 'addressSummary', 'neighborhood', 'locality'];
 
+/**
+ * Exceção NOMEADA da 077 v3 (FR-39, DT-21) — vale SÓ para `neighborhood` (o bairro, o mesmo dado que o feed público já mostra)
+ * e SÓ no Reader. `address_summary`/`locality` seguem proibidos em todos os arquivos; o controller segue sem nenhuma das strings.
+ */
+const NEIGHBORHOOD_EXCEPTION_FILES: Record<string, string> = {
+  'src/modules/case/infrastructure/WorkerItineraryReader.ts':
+    'spec 077 v3 FR-39 + DT-21: o item ganha `neighborhood` = COALESCE(pa.neighborhood, p.zone_neighborhood), a mesma regra do feed público (JobPostingARRepository.findActivePublic).',
+};
+
+function itineraryTextOffenders(files: string[]): string[] {
+  return files.filter((p) => {
+    const s = fs.readFileSync(p, 'utf8');
+    const rel = path.relative(path.dirname(SRC), p).replace(/\\/g, '/');
+    const bairroOk = Object.keys(NEIGHBORHOOD_EXCEPTION_FILES).some((suffix) => rel.endsWith(suffix));
+    return ADDRESS_TEXT_STRINGS.some((n) => s.includes(n) && !(bairroOk && n === 'neighborhood'));
+  });
+}
+
 function isAllowed(absPath: string): string | null {
   const rel = path.relative(path.dirname(SRC), absPath).replace(/\\/g, '/');
   for (const suffix of Object.keys(ALLOWED_FILES)) {
@@ -131,14 +149,10 @@ describe('endereço do paciente não sai do perímetro do staff (lex C2.2/C2.5; 
     expect(offenders).toEqual([]);
   });
 
-  it('itinerário do prestador (077/P3): nenhum texto de endereço (address_summary/neighborhood/locality) nos arquivos WorkerItinerary*', () => {
+  it('itinerário do prestador (077/P3, FR-39): nenhum texto de endereço nos arquivos WorkerItinerary* (bairro só no Reader)', () => {
     const surface = itinerarySurface();
     expect(surface.length).toBeGreaterThan(0);
-    const offenders = surface.filter((p) => {
-      const s = fs.readFileSync(p, 'utf8');
-      return ADDRESS_TEXT_STRINGS.some((n) => s.includes(n));
-    });
-    expect(offenders).toEqual([]);
+    expect(itineraryTextOffenders(surface)).toEqual([]);
   });
 
   it('access_notes não entra na trilha patient_field_overrides_audit (vacancyCrudAuditHelpers)', () => {
@@ -176,6 +190,19 @@ describe('endereço do paciente não sai do perímetro do staff (lex C2.2/C2.5; 
         .filter((p) => fs.readFileSync(p, 'utf8').includes('address_type'))
         .filter((p) => isAllowed(p) === null);
       expect(offenders.some((p) => p.endsWith('__sabotage_perimeter__.ts'))).toBe(true);
+    } finally {
+      fs.rmSync(sabotaged, { force: true });
+    }
+  });
+
+  it('T-F2a-02 a exceção do bairro é estreita: o Reader cita neighborhood e um arquivo WorkerItinerary* novo com a string cai', () => {
+    const reader = itinerarySurface().find((p) => p.endsWith('WorkerItineraryReader.ts'));
+    expect(reader).toBeDefined();
+    expect(fs.readFileSync(reader as string, 'utf8')).toContain('neighborhood');
+    const sabotaged = path.join(SRC, 'modules/case/interfaces/controllers/WorkerItinerarySabotagemBairro.ts');
+    fs.writeFileSync(sabotaged, '// neighborhood fora da exceção nomeada\nexport const x = 1;\n');
+    try {
+      expect(itineraryTextOffenders(itinerarySurface()).some((p) => p.endsWith('WorkerItinerarySabotagemBairro.ts'))).toBe(true);
     } finally {
       fs.rmSync(sabotaged, { force: true });
     }
