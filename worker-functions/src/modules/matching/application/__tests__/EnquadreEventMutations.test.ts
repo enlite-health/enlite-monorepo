@@ -48,7 +48,7 @@ function build(script: Script, opts: { calendar?: AdmissionCalendarPort; now?: D
     query: jest.fn(async (sql: string, params: unknown[] = []) => {
       const text = sql.trim().replace(/\s+/g, ' ');
       log.push({ sql: text, params });
-      if (text.includes('FROM job_postings jp')) return { rows: [{ id: VACANCY, country: 'AR', case_number: 321, patient_last_name: 'Ficticio' }] };
+      if (/FROM job_postings jp\b/.test(text)) return { rows: [{ id: VACANCY, country: 'AR', case_number: 321, patient_last_name: 'Ficticio' }] };
       if (text.includes('FOR UPDATE')) {
         if (script.noEvent) return { rows: [] };
         return { rows: [{
