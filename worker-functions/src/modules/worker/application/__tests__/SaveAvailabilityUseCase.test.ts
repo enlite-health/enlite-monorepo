@@ -1,5 +1,11 @@
 import { SaveAvailabilityUseCase } from '../SaveAvailabilityUseCase';
 import { Result } from '@shared/utils/Result';
+import type { ProfileEditAttribution } from '../../domain/profileEditSource';
+
+const mockRecordBatch = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../infrastructure/ProfileChangeAuditRepository', () => ({ ProfileChangeAuditRepository: jest.fn().mockImplementation(() => ({ recordBatch: mockRecordBatch })) }));
+jest.mock('@shared/database/DatabaseConnection', () => ({ DatabaseConnection: { getInstance: () => ({ getPool: () => ({}) }) } }));
+const ATTR: ProfileEditAttribution = { source: 'worker_self', actorUid: 'auth-123' };
 
 const mockWorker = {
   id: 'worker-123',
@@ -54,7 +60,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      const result = await useCase.execute(availabilityPayload);
+      const result = await useCase.execute(availabilityPayload, ATTR);
 
       expect(result.isFailure).toBe(false);
       expect(availabilityRepo.replaceByWorkerId).toHaveBeenCalledWith(
@@ -75,7 +81,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      await useCase.execute(availabilityPayload);
+      await useCase.execute(availabilityPayload, ATTR);
 
       expect(workerRepo.updateStep).not.toHaveBeenCalled();
     });
@@ -85,7 +91,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      await useCase.execute(availabilityPayload);
+      await useCase.execute(availabilityPayload, ATTR);
 
       const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
       expect(slotsArg[0].timezone).toBe('America/Argentina/Buenos_Aires');
@@ -97,7 +103,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      await useCase.execute(availabilityPayload);
+      await useCase.execute(availabilityPayload, ATTR);
 
       const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
       slotsArg.forEach((slot: any) => {
@@ -113,7 +119,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute({
         workerId: 'worker-123',
         availability: [{ dayOfWeek: 6, startTime: '22:00', endTime: '02:00', crossesMidnight: true }],
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(false);
       const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
@@ -125,7 +131,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      const result = await useCase.execute(availabilityPayload);
+      const result = await useCase.execute(availabilityPayload, ATTR);
 
       expect(result.isFailure).toBe(false);
       // status deve ser INCOMPLETE_REGISTER (do worker original), não REGISTERED
@@ -142,7 +148,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute({
         workerId: 'worker-123',
         availability: [{ dayOfWeek: 1, startTime: '20:00', endTime: '17:00' }],
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toContain('lunes');
@@ -159,7 +165,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute({
         workerId: 'worker-123',
         availability: [{ dayOfWeek: 2, startTime: '09:00', endTime: '09:00' }],
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
@@ -173,7 +179,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute({
         workerId: 'worker-123',
         availability: [{ dayOfWeek: 5, startTime: '20:00', endTime: '08:00', crossesMidnight: true }],
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(false);
     });
@@ -186,7 +192,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute({
         workerId: 'worker-123',
         availability: [{ dayOfWeek: 7, startTime: '09:00', endTime: '17:00' }],
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
@@ -200,7 +206,7 @@ describe('SaveAvailabilityUseCase', () => {
       const result = await useCase.execute({
         workerId: 'worker-123',
         availability: [{ dayOfWeek: 1, startTime: '9am', endTime: '17:00' }],
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(availabilityRepo.replaceByWorkerId).not.toHaveBeenCalled();
@@ -218,7 +224,7 @@ describe('SaveAvailabilityUseCase', () => {
           { dayOfWeek: 1, startTime: '09:00', endTime: '17:00' },
           { dayOfWeek: 2, startTime: '09:00', endTime: '17:00' },
         ],
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(false);
       const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
@@ -233,7 +239,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      const result = await useCase.execute({ workerId: 'worker-123', availability: [] });
+      const result = await useCase.execute({ workerId: 'worker-123', availability: [] }, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Dejá al menos un día con horario cargado.');
@@ -249,7 +255,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      const result = await useCase.execute(availabilityPayload);
+      const result = await useCase.execute(availabilityPayload, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('No encontramos tu registro. Cerrá sesión y volvé a entrar.');
@@ -265,7 +271,7 @@ describe('SaveAvailabilityUseCase', () => {
       const availabilityRepo = makeAvailabilityRepo();
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
 
-      await useCase.execute(availabilityPayload);
+      await useCase.execute(availabilityPayload, ATTR);
 
       const slotsArg = availabilityRepo.replaceByWorkerId.mock.calls[0][1];
       slotsArg.forEach((slot: any) => {
@@ -283,7 +289,7 @@ describe('SaveAvailabilityUseCase', () => {
       const useCase = new SaveAvailabilityUseCase(workerRepo as any, availabilityRepo as any);
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
-      const result = await useCase.execute(availabilityPayload);
+      const result = await useCase.execute(availabilityPayload, ATTR);
 
       expect(result.isFailure).toBe(true);
       // O prestador vê texto acionável em es, nunca o erro SQL
@@ -295,6 +301,47 @@ describe('SaveAvailabilityUseCase', () => {
       expect(workerRepo.recalculateStatus).not.toHaveBeenCalled();
 
       warnSpy.mockRestore();
+    });
+  });
+
+  describe('trilha (FR-53)', () => {
+    beforeEach(() => mockRecordBatch.mockClear());
+
+    it('T-F2b-06 grava a grade inteira como 1 campo mascarado', async () => {
+      const availabilityRepo = makeAvailabilityRepo({ findByWorkerId: jest.fn().mockResolvedValue(Result.ok([])) });
+      const useCase = new SaveAvailabilityUseCase(makeWorkerRepo() as any, availabilityRepo as any);
+
+      await useCase.execute(availabilityPayload, ATTR);
+
+      expect(mockRecordBatch).toHaveBeenCalledTimes(1);
+      const entradas = mockRecordBatch.mock.calls[0][0];
+      expect(entradas).toHaveLength(1);
+      expect(entradas[0]).toEqual(
+        expect.objectContaining({ fieldName: 'availability', oldValueRedacted: null, newValueRedacted: '***', changedBy: 'worker_self', source: 'platform' }),
+      );
+    });
+
+    it('T-F2b-06 grade igual com hora do banco em HH:MM:SS não grava', async () => {
+      const doBanco = availabilityPayload.availability.map((s, i) => ({
+        id: 'a' + i, workerId: 'worker-123', ...s,
+        startTime: s.startTime + ':00', endTime: s.endTime + ':00',
+        timezone: 'UTC', crossesMidnight: false, createdAt: new Date(), updatedAt: new Date(),
+      }));
+      const availabilityRepo = makeAvailabilityRepo({ findByWorkerId: jest.fn().mockResolvedValue(Result.ok(doBanco)) });
+      const useCase = new SaveAvailabilityUseCase(makeWorkerRepo() as any, availabilityRepo as any);
+
+      await useCase.execute(availabilityPayload, ATTR);
+
+      expect(mockRecordBatch).not.toHaveBeenCalled();
+    });
+
+    it('T-F2b-06 canal app vai para a coluna source', async () => {
+      const availabilityRepo = makeAvailabilityRepo({ findByWorkerId: jest.fn().mockResolvedValue(Result.ok([])) });
+      const useCase = new SaveAvailabilityUseCase(makeWorkerRepo() as any, availabilityRepo as any);
+
+      await useCase.execute(availabilityPayload, { ...ATTR, channel: 'app' });
+
+      expect(mockRecordBatch.mock.calls[0][0]).toEqual(expect.arrayContaining([expect.objectContaining({ source: 'app' })]));
     });
   });
 });

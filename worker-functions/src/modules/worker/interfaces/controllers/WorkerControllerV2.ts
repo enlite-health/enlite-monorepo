@@ -21,6 +21,7 @@ import {
   withMissingFields,
   readFreshProgress,
 } from './WorkerControllerV2Helpers';
+import { profileEditChannelOf } from '../middleware/appChannel';
 import { PubSubClient } from '@shared/events/PubSubClient';
 
 export class WorkerControllerV2 {
@@ -175,14 +176,14 @@ export class WorkerControllerV2 {
           result = await this.saveServiceAreaUseCase.execute({
             workerId,
             ...data,
-          });
+          }, { source: 'worker_self', actorUid: selfUid(req) ?? '' });
           break;
 
         case 4:
           result = await this.saveAvailabilityUseCase.execute({
             workerId,
             availability: data.availability || [],
-          });
+          }, { source: 'worker_self', actorUid: selfUid(req) ?? '' });
           break;
 
         default:
@@ -286,7 +287,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body });
+      const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body }, profileEditChannelOf(res));
 
       if (result.isFailure) {
         sendPersonalInfoFailure(res, result.error);
@@ -316,7 +317,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.saveServiceAreaUseCase.execute({ workerId, ...req.body });
+      const result = await this.saveServiceAreaUseCase.execute({ workerId, ...req.body }, { source: 'worker_self', actorUid: authUid, channel: profileEditChannelOf(res) });
 
       if (result.isFailure) {
         res.status(400).json({ success: false, error: result.error });
@@ -375,7 +376,7 @@ export class WorkerControllerV2 {
       const result = await this.saveAvailabilityUseCase.execute({
         workerId,
         availability: req.body.availability || [],
-      });
+      }, { source: 'worker_self', actorUid: authUid, channel: profileEditChannelOf(res) });
 
       if (result.isFailure) {
         // Sem isto o 400 é invisível nos logs — foi o que escondeu por semanas

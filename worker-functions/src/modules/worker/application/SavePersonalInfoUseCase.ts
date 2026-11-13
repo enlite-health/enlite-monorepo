@@ -7,9 +7,8 @@ import type { Pool } from 'pg';
 import { logger, loggingAls } from '@shared/logging';
 import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
 import type { PubSubClient } from '@shared/events/PubSubClient';
-import { ProfileChangeAuditRepository } from '../infrastructure/ProfileChangeAuditRepository';
-import { redactProfileValue } from './profileChangeRedaction';
-import { logProfileEdit } from '../domain/profileEditSource';
+import { APP_CHANNEL } from '../domain/profileEditSource';
+import { changedFields, normalizeForDiff, recordProfileEditTrail, ProfileFieldChange } from './profileEditTrail';
 import { captureWorkerBefore } from './workerAuditDiff';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { isValidIsoBirthDate } from '@shared/utils/isValidIsoBirthDate';
@@ -48,7 +47,7 @@ export class SavePersonalInfoUseCase {
     return DatabaseConnection.getInstance().getPool();
   }
 
-  async execute(data: SavePersonalInfoDTO): Promise<Result<Worker>> {
+  async execute(data: SavePersonalInfoDTO, channel?: string): Promise<Result<Worker>> {
     const workerResult = await this.workerRepository.findById(data.workerId);
 
     if (workerResult.isFailure) {
@@ -129,7 +128,7 @@ export class SavePersonalInfoUseCase {
     // que MUDARAM de verdade (o wizard reenvia o form inteiro a cada save).
     // Best-effort como o mirror event: falha de audit não derruba o save.
     if (beforeSnapshot) {
-      await this.recordSelfEditTrail(data, beforeSnapshot);
+      await this.recordSelfEditTrail(data, beforeSnapshot, channel);
     }
 
     // Enqueue worker.mirror_requested (outbox best-effort).
@@ -137,7 +136,8 @@ export class SavePersonalInfoUseCase {
     // runs after — not atomic, but the DomainEventProcessor sweep is the
     // durability net. recalculateStatus already enqueues when reaching
     // REGISTERED atomically; this covers profile edits that don't change status.
-    await this.enqueueMirrorEvent(data.workerId);
+    // FR-54 (spec 077): edição feita pelo app (canal marcado pelo appChannel) não espelha no Ana Care.
+    if (channel !== APP_CHANNEL) await this.enqueueMirrorEvent(data.workerId);
 
     return Result.ok<Worker>(updateResult.getValue());
   }
@@ -160,34 +160,9 @@ export class SavePersonalInfoUseCase {
   private async recordSelfEditTrail(
     data: SavePersonalInfoDTO,
     before: Record<string, unknown>,
+    channel?: string,
   ): Promise<void> {
-    try {
-      const changed = diffPersonalInfo(data, before);
-      if (changed.length === 0) return;
-
-      await new ProfileChangeAuditRepository(this.getPool()).recordBatch(
-        changed.map(({ field, oldValue, newValue }) => ({
-          workerId: data.workerId,
-          pendingChangeId: null,
-          fieldName: field,
-          oldValueRedacted:
-            oldValue === '' ? null : redactProfileValue(field, oldValue),
-          newValueRedacted: redactProfileValue(field, newValue),
-          changedBy: 'worker_self',
-          source: 'platform',
-          conversationRef: null,
-        })),
-      );
-      for (const { field } of changed) {
-        logProfileEdit(data.workerId, field, 'worker_self');
-      }
-    } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      logger.child({ workerId: data.workerId }).warn({
-        msg: `${TAG} failed to record self edit trail (best-effort, ignoring)`,
-        error: e.message,
-      });
-    }
+    await recordProfileEditTrail(data.workerId, diffPersonalInfo(data, before), { source: 'worker_self', channel }, this.injectedPool ?? undefined);
   }
 
   // ── Enqueue outbox ──────────────────────────────────────────────
@@ -256,12 +231,6 @@ export class SavePersonalInfoUseCase {
 // sex/gender ficam fora: o snapshot compartilhado não os cobre e, sem "antes",
 // entrariam como falso-mudado em todo save.
 
-interface SelfEditDiff {
-  field: string;
-  oldValue: string;
-  newValue: string;
-}
-
 const SELF_TRACKED_FIELDS: Array<keyof SavePersonalInfoDTO> = [
   'firstName',
   'lastName',
@@ -277,17 +246,8 @@ const SELF_TRACKED_FIELDS: Array<keyof SavePersonalInfoDTO> = [
   'preferredAgeRange',
 ];
 
-function diffPersonalInfo(data: SavePersonalInfoDTO, before: Record<string, unknown>): SelfEditDiff[] {
-  const diffs: SelfEditDiff[] = [];
-
-  for (const field of SELF_TRACKED_FIELDS) {
-    const incoming = normalizeForDiff(data[field]);
-    if (incoming === '') continue; // vazio não sobrescreve (COALESCE no repo)
-    const existing = normalizeForDiff(before[field]);
-    if (incoming !== existing) {
-      diffs.push({ field, oldValue: existing, newValue: incoming });
-    }
-  }
+function diffPersonalInfo(data: SavePersonalInfoDTO, before: Record<string, unknown>): ProfileFieldChange[] {
+  const diffs = changedFields(SELF_TRACKED_FIELDS.map((f) => [f, before[f], data[f]] as const));
 
   // birthDate: compara por YYYY-MM-DD (os dois lados chegam como string ISO).
   const incomingBirth = (data.birthDate ?? '').slice(0, 10);
@@ -299,10 +259,4 @@ function diffPersonalInfo(data: SavePersonalInfoDTO, before: Record<string, unkn
   }
 
   return diffs;
-}
-
-function normalizeForDiff(value: unknown): string {
-  if (value === undefined || value === null) return '';
-  if (Array.isArray(value)) return value.map((v) => String(v).trim()).join(', ');
-  return String(value).trim();
 }
