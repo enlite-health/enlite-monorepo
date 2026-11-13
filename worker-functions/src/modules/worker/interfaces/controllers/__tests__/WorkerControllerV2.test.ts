@@ -433,6 +433,7 @@ describe('WorkerControllerV2', () => {
     });
 
     it('saveStep: a mesma tradução de falha vale no passo 2 do wizard', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
       jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
         .mockResolvedValue(Result.fail(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) as never);
 
@@ -442,6 +443,58 @@ describe('WorkerControllerV2', () => {
       await controller.saveStep(req, res);
 
       expect(res.status).toHaveBeenCalledWith(409);
+    });
+
+    // ── IDOR: o dono vem do TOKEN, nunca do corpo ─────────────────────────────
+    describe('workerId do corpo NUNCA vence o do token (IDOR)', () => {
+      const VITIMA = 'ffffffff-0000-4000-8000-00000000dead';
+
+      beforeEach(() => {
+        jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+        mockQuery.mockResolvedValue({ rows: [{ missing: [] }] });
+      });
+
+      it('saveGeneralInfo: body.workerId de outro prestador → use case recebe o id do token', async () => {
+        const spy = jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+          .mockResolvedValue(Result.ok(mockWorker as never));
+        const [req, res] = mockReqRes({ workerId: VITIMA, firstName: 'Ana' }, {}, { uid: AUTH_UID });
+        await controller.saveGeneralInfo(req, res);
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy.mock.calls[0][0]).toEqual({ workerId: WORKER_ID, firstName: 'Ana' });
+      });
+
+      it('saveServiceArea: body.workerId de outro prestador → use case recebe o id do token', async () => {
+        const spy = jest.spyOn(controller['saveServiceAreaUseCase'], 'execute')
+          .mockResolvedValue(Result.ok(mockWorker as never));
+        const [req, res] = mockReqRes({ workerId: VITIMA, address: 'X', serviceRadiusKm: 10 }, {}, { uid: AUTH_UID });
+        await controller.saveServiceArea(req, res);
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy.mock.calls[0][0]).toEqual({ workerId: WORKER_ID, address: 'X', serviceRadiusKm: 10 });
+      });
+
+      it.each([
+        [1, 'saveQuizUseCase', { responses: [] }],
+        [2, 'savePersonalInfoUseCase', { firstName: 'Ana' }],
+        [3, 'saveServiceAreaUseCase', { address: 'X' }],
+        [4, 'saveAvailabilityUseCase', { availability: [] }],
+      ])('saveStep passo %i: body.workerId e data.workerId de outro prestador → id do token', async (step, uc, data) => {
+        const spy = jest.spyOn((controller as any)[uc], 'execute').mockResolvedValue(Result.ok(mockWorker as never));
+        const [req, res] = mockReqRes(
+          { workerId: VITIMA, step, data: { ...data, workerId: VITIMA } }, {}, { uid: AUTH_UID },
+        );
+        await controller.saveStep(req, res);
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect((spy.mock.calls[0][0] as { workerId: string }).workerId).toBe(WORKER_ID);
+        expect(JSON.stringify(spy.mock.calls[0])).not.toContain(VITIMA);
+      });
+
+      it('saveStep sem token → 401 e nada gravado', async () => {
+        const spy = jest.spyOn(controller['savePersonalInfoUseCase'], 'execute');
+        const [req, res] = mockReqRes({ workerId: VITIMA, step: 2, data: {} });
+        await controller.saveStep(req, res);
+        expect(res.status).toHaveBeenCalledWith(401);
+        expect(spy).not.toHaveBeenCalled();
+      });
     });
 
     it('saveGeneralInfo devolve o cadastro RELIDO do banco, com missingFields', async () => {

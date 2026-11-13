@@ -45,13 +45,15 @@ interface Seed {
 
 let S: Seed;
 
+// is_test=false: a lista de vagas esconde is_test=true (23b32b9e2). Sem canal externo mesmo assim: semeada por SQL (o auto-invite só dispara
+// no evento de criação), sem projeto Talentum, e a limpeza é por patient_id.
 function vaga(patientId: string, o: { title: string; status?: string; serviceId?: string; ordinal?: number | null; baixada?: boolean }): string {
   const extra = o.baixada ? `, status_before_baja, baja_reason` : '';
   const extraVals = o.baixada ? `, 'SEARCHING', 'MANUAL'` : '';
   return scalar(`INSERT INTO job_postings (vacancy_number, case_number, title, description, patient_id, contracted_service_id, case_ordinal,
       required_professions, status, is_draft, is_test, country, social_short_links, created_at, updated_at${extra})
     VALUES (nextval('job_postings_vacancy_number_seq'), ${CASE}, '${o.title}', '', '${patientId}', ${o.serviceId ? `'${o.serviceId}'` : 'NULL'},
-      ${o.ordinal ?? 'NULL'}, ${o.serviceId ? `'{}'::text[]` : `ARRAY['AT']::varchar[]`}, '${o.status ?? 'SEARCHING'}', false, true, 'AR',
+      ${o.ordinal ?? 'NULL'}, ${o.serviceId ? `'{}'::text[]` : `ARRAY['AT']::varchar[]`}, '${o.status ?? 'SEARCHING'}', false, false, 'AR',
       '{}'::jsonb, NOW(), NOW()${extraVals}) RETURNING id`);
 }
 
