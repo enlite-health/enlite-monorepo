@@ -549,6 +549,22 @@ describe('WorkerControllerV2', () => {
       );
     });
 
+    it('T-F2b-06 saveAvailability repassa a fonte worker_self e o canal app', async () => {
+      const spy = jest.spyOn(controller['saveAvailabilityUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValue({ rows: [{ missing: [] }] });
+      const [req, res] = mockReqRes({ availability: [] }, {}, { uid: AUTH_UID });
+      (res as unknown as { locals: Record<string, unknown> }).locals = { profileEditChannel: 'app' };
+      await controller.saveAvailability(req, res);
+
+      expect(spy).toHaveBeenCalledWith(
+        { workerId: WORKER_ID, availability: [] },
+        { source: 'worker_self', actorUid: AUTH_UID, channel: 'app' },
+      );
+    });
+
     it('retorna 404 com "Worker not found" quando getProgressUseCase falha por auth_uid sem vínculo no banco', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.fail('Worker not found'));

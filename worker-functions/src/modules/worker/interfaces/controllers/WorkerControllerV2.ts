@@ -183,7 +183,7 @@ export class WorkerControllerV2 {
           result = await this.saveAvailabilityUseCase.execute({
             workerId,
             availability: data.availability || [],
-          });
+          }, { source: 'worker_self', actorUid: selfUid(req) ?? '' });
           break;
 
         default:
@@ -376,7 +376,7 @@ export class WorkerControllerV2 {
       const result = await this.saveAvailabilityUseCase.execute({
         workerId,
         availability: req.body.availability || [],
-      });
+      }, { source: 'worker_self', actorUid: authUid, channel: profileEditChannelOf(res) });
 
       if (result.isFailure) {
         // Sem isto o 400 é invisível nos logs — foi o que escondeu por semanas

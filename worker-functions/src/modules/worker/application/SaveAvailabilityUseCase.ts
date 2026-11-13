@@ -3,6 +3,9 @@ import { IAvailabilityRepository } from '../ports/IAvailabilityRepository';
 import { SaveAvailabilityDTO, Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { DAY_NAMES_ES } from '@shared/utils/dateFormatters';
+import type { WorkerAvailability } from '../domain/WorkerAvailability';
+import type { ProfileEditAttribution } from '../domain/profileEditSource';
+import { changedFields, recordProfileEditTrail } from './profileEditTrail';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
 
@@ -11,13 +14,18 @@ const toMinutes = (time: string): number => {
   return h * 60 + m;
 };
 
+/** Grade inteira como 1 valor canônico (FR-50): hora em HH:MM, ordenada. */
+function gridOf(slots: ReadonlyArray<{ dayOfWeek: number; startTime: string; endTime: string; crossesMidnight?: boolean }>): string {
+  return slots.map((s) => String(s.dayOfWeek) + ' ' + s.startTime.slice(0, 5) + '-' + s.endTime.slice(0, 5) + (s.crossesMidnight ? '+1' : '')).sort().join(', ');
+}
+
 export class SaveAvailabilityUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
     private availabilityRepository: IAvailabilityRepository,
   ) {}
 
-  async execute(data: SaveAvailabilityDTO): Promise<Result<Worker>> {
+  async execute(data: SaveAvailabilityDTO, attribution: ProfileEditAttribution): Promise<Result<Worker>> {
     const workerResult = await this.workerRepository.findById(data.workerId);
 
     if (workerResult.isFailure) {
@@ -63,6 +71,8 @@ export class SaveAvailabilityUseCase {
       slots.push(slot);
     }
 
+    const before = await this.readBeforeSafe(data.workerId);
+
     const timezone = worker.timezone || 'UTC';
 
     // Delete + insert numa transação única: se qualquer insert falhar, o delete
@@ -92,8 +102,21 @@ export class SaveAvailabilityUseCase {
       );
     }
 
+    if (before !== undefined) {
+      await recordProfileEditTrail(data.workerId, changedFields([['availability', gridOf(before), gridOf(slots)]]), attribution);
+    }
+
     await this.workerRepository.recalculateStatus(data.workerId);
 
     return Result.ok<Worker>(worker);
+  }
+
+  private async readBeforeSafe(workerId: string): Promise<WorkerAvailability[] | undefined> {
+    try {
+      const r = await this.availabilityRepository.findByWorkerId(workerId);
+      return r.isFailure ? undefined : r.getValue();
+    } catch {
+      return undefined;
+    }
   }
 }
