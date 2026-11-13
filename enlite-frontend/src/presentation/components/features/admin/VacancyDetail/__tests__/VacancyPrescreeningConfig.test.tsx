@@ -147,6 +147,33 @@ describe('VacancyPrescreeningConfig', () => {
     expect(await screen.findByText(/saveSuccess/)).toBeInTheDocument();
   });
 
+  it.each([
+    ['OTHER_ACCOUNT', /talentumSync\.otherAccount/],
+    ['FAILED', /talentumSync\.failed/],
+  ])('salvar com talentumSync=%s: mostra o aviso (não o sucesso mudo)', async (status, expected) => {
+    vi.mocked(AdminApiService.savePrescreeningConfig).mockResolvedValue({ questions: [], faq: [], talentumSync: { status: status as 'FAILED' } });
+    await renderLoaded({ isPublished: true });
+    fireEvent.click(screen.getByText(/addQuestion/));
+    const [questionArea, desiredArea] = screen.getAllByRole('textbox');
+    fireEvent.change(questionArea, { target: { value: 'q' } });
+    fireEvent.change(desiredArea, { target: { value: 'r' } });
+    fireEvent.click(screen.getByRole('button', { name: /\bsave\b/ }));
+    expect(await screen.findByText(expected)).toBeInTheDocument();
+    expect(screen.queryByText(/saveSuccess/)).not.toBeInTheDocument();
+  });
+
+  it('salvar com talentumSync=OK: mantém o feedback de sucesso de sempre', async () => {
+    vi.mocked(AdminApiService.savePrescreeningConfig).mockResolvedValue({ questions: [], faq: [], talentumSync: { status: 'OK' } });
+    await renderLoaded({ isPublished: true });
+    fireEvent.click(screen.getByText(/addQuestion/));
+    const [questionArea, desiredArea] = screen.getAllByRole('textbox');
+    fireEvent.change(questionArea, { target: { value: 'q' } });
+    fireEvent.change(desiredArea, { target: { value: 'r' } });
+    fireEvent.click(screen.getByRole('button', { name: /\bsave\b/ }));
+    expect(await screen.findByText(/saveSuccess/)).toBeInTheDocument();
+    expect(screen.queryByText(/talentumSync/)).not.toBeInTheDocument();
+  });
+
   it('salvar: erro da API mostra feedback', async () => {
     vi.mocked(AdminApiService.savePrescreeningConfig).mockRejectedValue(new Error('falhou salvar'));
     await renderLoaded();

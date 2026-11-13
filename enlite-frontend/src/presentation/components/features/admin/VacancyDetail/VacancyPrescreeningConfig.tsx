@@ -5,6 +5,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
 import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { talentumSyncWarningKey } from './talentumSyncWarning';
 
 interface PrescreeningQuestion {
   question: string;
@@ -164,7 +165,7 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
   const [faq, setFaq] = useState<FaqItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
   const [expandedAdvanced, setExpandedAdvanced] = useState<Set<number>>(new Set());
   const [validationErrors, setValidationErrors] = useState<Array<Record<string, string>>>([]);
 
@@ -226,8 +227,12 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
     try {
       setIsSaving(true);
       setFeedback(null);
-      await AdminApiService.savePrescreeningConfig(vacancyId, { questions, faq });
-      setFeedback({ type: 'success', message: t(`${ps}.saveSuccess`) });
+      const saved = await AdminApiService.savePrescreeningConfig(vacancyId, { questions, faq });
+      // Gravou, mas a vaga publicada não recebeu a edição no Talentum: aviso (não sucesso mudo).
+      const warningKey = talentumSyncWarningKey(saved?.talentumSync);
+      setFeedback(warningKey
+        ? { type: 'warning', message: t(warningKey) }
+        : { type: 'success', message: t(`${ps}.saveSuccess`) });
     } catch (err: unknown) {
       setFeedback({ type: 'error', message: err instanceof Error ? err.message : t(`${ps}.saveError`) });
     } finally {
@@ -284,7 +289,13 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
           </div>
 
           {feedback && (
-            <div className={`rounded-lg px-4 py-2.5 text-sm ${feedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            <div
+              data-testid="prescreening-feedback"
+              className={`rounded-lg px-4 py-2.5 text-sm ${
+                feedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200'
+                  : feedback.type === 'warning' ? 'bg-amber-50 text-amber-900 border border-amber-300'
+                  : 'bg-red-50 text-red-700 border border-red-200'}`}
+            >
               {feedback.message}
             </div>
           )}

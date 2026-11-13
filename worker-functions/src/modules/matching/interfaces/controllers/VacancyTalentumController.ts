@@ -8,6 +8,7 @@ import {
   TalentumDescriptionService,
   UpdateTalentumDescriptionUseCase,
   UpdateDescriptionError,
+  SyncVacancyContentToTalentumUseCase,
   GeminiVacancyParserService,
   GeminiApiError,
 } from '@modules/integration';
@@ -157,7 +158,13 @@ export class VacancyTalentumController {
       const actor = this.extractActor(req);
       const descService = new TalentumDescriptionService();
       const result = await descService.generateDescription(id, actor);
-      res.status(200).json({ success: true, data: { description: result.description } });
+      // Vaga já publicada: a descrição nova (já gravada) segue ao Talentum; NOT_PUBLISHED não aparece na resposta.
+      const talentumSync = await new SyncVacancyContentToTalentumUseCase(this.db).propagate(id, actor);
+      res.status(200).json({
+        success: true,
+        data: { description: result.description },
+        ...(talentumSync.status !== 'NOT_PUBLISHED' ? { talentumSync } : {}),
+      });
     } catch (error: unknown) {
       reportError(error instanceof Error ? error : new Error(String(error)), { source: 'VacancyTalentumController:generateTalentumDescription' });
       this.respondAIError(res, error, 'Failed to generate description');
@@ -392,8 +399,12 @@ export class VacancyTalentumController {
         ),
       ]);
 
+      // Vaga já publicada: o banco gravou; o conteúdo segue ao Talentum (caminho único) e o resultado volta aditivo.
+      const talentumSync = await new SyncVacancyContentToTalentumUseCase(this.db).propagate(id, actor);
+
       res.status(200).json({
         success: true,
+        ...(talentumSync.status !== 'NOT_PUBLISHED' ? { talentumSync } : {}),
         data: {
           questions: savedQuestions.rows.map(row => ({
             id: row.id, question: row.question, responseType: row.response_type,

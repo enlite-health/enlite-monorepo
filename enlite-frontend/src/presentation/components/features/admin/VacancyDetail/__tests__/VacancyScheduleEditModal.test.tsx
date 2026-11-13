@@ -87,6 +87,14 @@ describe('VacancyScheduleEditModal', () => {
     expect(baseProps.onSuccess).toHaveBeenCalled();
   });
 
+  it('vaga publicada: repassa o talentumSync do PUT ao onSuccess (o pai mostra o aviso)', async () => {
+    vi.mocked(AdminApiService.updateVacancy).mockResolvedValue({ talentumSync: { status: 'FAILED' } } as never);
+    render(<VacancyScheduleEditModal {...baseProps} />);
+    fireEvent.click(screen.getByTestId('add-valid-slot'));
+    fireEvent.click(screen.getByTestId('vacancy-schedule-save'));
+    await waitFor(() => expect(baseProps.onSuccess).toHaveBeenCalledWith({ status: 'FAILED' }));
+  });
+
   it('salvar: erro da API mostra a mensagem', async () => {
     vi.mocked(AdminApiService.updateVacancy).mockRejectedValue(new Error('falhou horário'));
     render(<VacancyScheduleEditModal {...baseProps} />);

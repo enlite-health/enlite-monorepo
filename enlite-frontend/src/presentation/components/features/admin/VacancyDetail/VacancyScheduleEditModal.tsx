@@ -10,14 +10,15 @@ import {
   DayScheduleEditor,
   type DayScheduleSlot,
 } from '@presentation/components/molecules/DayScheduleEditor';
-import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { AdminApiService, type TalentumSync } from '@infrastructure/http/AdminApiService';
 
 interface VacancyScheduleEditModalProps {
   isOpen: boolean;
   vacancyId: string;
   vacancy: unknown;
   onClose: () => void;
-  onSuccess: () => void;
+  /** `talentumSync` vem só em vaga publicada (aditivo): o pai avisa quando a edição não chegou ao Talentum. */
+  onSuccess: (talentumSync?: TalentumSync) => void;
 }
 
 const DAY_NAME_TO_INDEX: Record<string, number> = {
@@ -99,8 +100,8 @@ export function VacancyScheduleEditModal({
     }
     setSaving(true);
     try {
-      await AdminApiService.updateVacancy(vacancyId, { schedule: slots });
-      onSuccess();
+      const saved = await AdminApiService.updateVacancy(vacancyId, { schedule: slots });
+      onSuccess(saved?.talentumSync);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setApiError(message);

@@ -136,12 +136,21 @@ describe('AdminApiService - Vacancies Methods', () => {
     it('should update existing vacancy', async () => {
       const updates = { patient_name: 'Updated Name' };
       const mockResponse = { id: '123', ...updates };
-      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(mockResponse);
+      const requestSpy = vi.spyOn(AdminApiService, 'requestEnvelope' as keyof typeof AdminApiService).mockResolvedValue({ success: true, data: mockResponse });
 
       const result = await AdminApiService.updateVacancy('123', updates);
 
       expect(requestSpy).toHaveBeenCalledWith('PUT', '/api/admin/vacancies/123', updates);
       expect(result).toEqual(mockResponse);
+    });
+
+    it('devolve o talentumSync aditivo do envelope junto com a vaga (vaga publicada)', async () => {
+      vi.spyOn(AdminApiService, 'requestEnvelope' as keyof typeof AdminApiService).mockResolvedValue({
+        success: true, data: { id: '123' }, talentumSync: { status: 'OTHER_ACCOUNT', message: 'x' },
+      });
+      await expect(AdminApiService.updateVacancy('123', { status: 'ON_HOLD' })).resolves.toEqual({
+        id: '123', talentumSync: { status: 'OTHER_ACCOUNT', message: 'x' },
+      });
     });
   });
 

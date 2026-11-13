@@ -48,7 +48,8 @@ export interface CreatePrescreeningResult {
 export interface UpdatePrescreeningInput {
   title: string;
   description: string;
-  questions: TalentumQuestionWithId[];
+  /** `questionId` ausente = pergunta nova; as perguntas omitidas do array deixam de existir no projeto. */
+  questions: Array<TalentumQuestion & { questionId?: string }>;
   faq?: TalentumFaq[];
 }
 

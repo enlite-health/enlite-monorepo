@@ -22,7 +22,7 @@ import { TalentumDescriptionService } from '../infrastructure/TalentumDescriptio
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import { isDeadProjectError } from '../domain/talentumErrors';
 import type { TalentumQuestion } from '../domain/ITalentumApiClient';
-import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
+import { rowToTalentumQuestion } from './prescreeningQuestionRows';
 import {
   JobPostingAuditRepository,
   type AuditActorType,
@@ -132,18 +132,7 @@ export class PublishVacancyToTalentumUseCase {
     }
 
     // 3. Map questions to Talentum format
-    const questions: TalentumQuestion[] = questionsResult.rows.map(row => ({
-      question: row.question,
-      type: 'text' as const,
-      // Ticket 86ajfm80t: envia o formato configurado (respeita só-texto
-      // deliberado); default seguro ['text','audio'] quando o dado é nulo/vazio.
-      responseType: normalizePrescreeningResponseType(row.response_type),
-      desiredResponse: row.desired_response,
-      weight: row.weight,
-      required: row.required,
-      analyzed: row.analyzed,
-      earlyStoppage: row.early_stoppage,
-    }));
+    const questions: TalentumQuestion[] = questionsResult.rows.map(rowToTalentumQuestion);
 
     // FAQ: a Talentum v2 não tem FAQ (spec 040, decisão (g)) — ela fica SÓ no nosso banco
     // (`job_posting_prescreening_faq`); não é lida aqui nem enviada ao create.
