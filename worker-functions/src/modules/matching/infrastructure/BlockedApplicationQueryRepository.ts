@@ -119,7 +119,7 @@ export class BlockedApplicationQueryRepository {
 
   async list(params: ListBlockedAttemptsParams): Promise<ListBlockedAttemptsResult> {
     // Só tentativas ativas — as "rechazadas" (soft-dismiss, migration 250) saem do painel.
-    const conditions: string[] = ['wba.dismissed_at IS NULL'];
+    const conditions: string[] = ['wba.dismissed_at IS NULL', 'COALESCE(lw.is_test, false) = false'];
     const values: unknown[] = [];
     let idx = 1;
 
@@ -314,7 +314,7 @@ export class BlockedApplicationQueryRepository {
       `SELECT ${liveBlockedReasonSql()} AS blocked_reason, COUNT(*)::int AS count
        FROM worker_blocked_applications wba
        ${liveWorkerJoinSql()}
-       WHERE wba.dismissed_at IS NULL
+       WHERE wba.dismissed_at IS NULL AND COALESCE(lw.is_test, false) = false
        GROUP BY 1`,
     );
 

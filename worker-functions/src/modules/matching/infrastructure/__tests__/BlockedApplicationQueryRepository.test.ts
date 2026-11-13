@@ -438,6 +438,17 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(card.dismissedAt).toBe(NOW_DATE.toISOString());
     expect(card.dismissedReason).toBe('OTHER');
   });
+
+  it('T-F2a-63 painel sem is_test', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await repo.list({ limit: 10, offset: 0 });
+    await repo.aggregates();
+
+    expect(mockQuery.mock.calls[0][0]).toContain('COALESCE(lw.is_test, false) = false');
+    expect(mockQuery.mock.calls[1][0]).toContain('COALESCE(lw.is_test, false) = false');
+    expect(mockQuery.mock.calls[2][0]).toContain('COALESCE(lw.is_test, false) = false');
+  });
 });
 
 describe('blockedNotPromotedSql', () => {
