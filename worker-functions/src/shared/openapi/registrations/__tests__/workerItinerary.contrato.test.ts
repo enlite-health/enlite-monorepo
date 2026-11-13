@@ -3,9 +3,9 @@
  * (spec 077 FR-39, C-14). O item é tipado com a interface do Reader: chave nova no Reader sem chave aqui quebra o tsc
  * do ts-jest; `.strict()` reprova chave que o Reader emite e a doc não declara.
  */
-import { ItineraryItem as ItineraryItemSchema } from '../workerItinerary';
+import { ItineraryItem as ItineraryItemSchema, ItineraryTombstone as ItineraryTombstoneSchema } from '../workerItinerary';
 import { buildOpenApiDocument } from '../../document';
-import type { ItineraryItem } from '@modules/case/infrastructure/WorkerItineraryReader';
+import { TOMBSTONE_REASONS, type ItineraryItem, type ItineraryTombstone } from '@modules/case/infrastructure/WorkerItineraryReader';
 
 const ITEM: ItineraryItem = {
   occurrence_id: '43876dea-477d-5c5b-8b30-127aa6db3f92',
@@ -42,5 +42,26 @@ describe('contrato: item de GET /api/workers/me/itinerary', () => {
     expect(op).toContain('"patient_ref"');
     expect(op).toContain('"neighborhood"');
     expect(op).toContain('"address"');
+  });
+
+  const TOMBSTONE: ItineraryTombstone = { occurrence_id: '43876dea-477d-5c5b-8b30-127aa6db3f92', reason: 'ALLOCATION_ENDED', seq: 1 };
+
+  it('T-F2a-08 o tombstone tipado do Reader passa no schema publicado em modo strict, com cada motivo; motivo fora do conjunto falha', () => {
+    for (const reason of TOMBSTONE_REASONS) {
+      expect(ItineraryTombstoneSchema.strict().safeParse({ ...TOMBSTONE, reason }).success).toBe(true);
+    }
+    expect(ItineraryTombstoneSchema.safeParse({ ...TOMBSTONE, reason: 'CANCELLED' }).success).toBe(false);
+    expect(ItineraryTombstoneSchema.safeParse({ occurrence_id: TOMBSTONE.occurrence_id, reason: 'ABSENCE' }).success).toBe(false);
+  });
+
+  it('T-F2a-08 a doc declara as 3 chaves do tombstone e o enum é exatamente o do Reader (um dono do conjunto)', () => {
+    expect(Object.keys(ItineraryTombstoneSchema.shape).sort()).toEqual(['occurrence_id', 'reason', 'seq']);
+    expect([...ItineraryTombstoneSchema.shape.reason.options].sort()).toEqual([...TOMBSTONE_REASONS].sort());
+  });
+
+  it('T-F2a-08 o documento gerado publica os 3 motivos no 200 da rota e não diz mais "Sempre [] no MVP"', () => {
+    const op = JSON.stringify(buildOpenApiDocument().paths['/api/workers/me/itinerary']);
+    for (const reason of TOMBSTONE_REASONS) expect(op).toContain(`"${reason}"`);
+    expect(op).not.toContain('Sempre [] no MVP');
   });
 });

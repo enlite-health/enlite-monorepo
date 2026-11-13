@@ -10,10 +10,15 @@
  * endereço padrão ativo saem lat/lng, a qualidade do geocode e o bairro (`neighborhood`, com fallback no cadastro do paciente:
  * mesma regra do feed público, DT-21); o ponto sai DEGRADADO à grade de ~20 m (`degradePoint20m`). O ponto real nunca deixa
  * este arquivo. O paciente sai como `patient_ref` opaco (`patientRefOf`), nunca o id.
+ *
+ * Tombstones (C-33, DT-22): só ocorrência de HOJE (`today`) que deixou de existir, com o MESMO `occurrence_id` do item
+ * (`occurrenceIdOf`). `ABSENCE` = ausência viva da titular hoje (sai da própria expansão); `ALLOCATION_ENDED` = alocação do
+ * worker encerrada hoje numa faixa que ainda vale hoje; `SLOT_ENDED` = alocação encerrada hoje numa faixa que deixou de valer
+ * hoje (a faixa só fecha sem alocação vigente, D442). Id que segue em `items` nunca vira tombstone.
  */
 import type { PoolClient } from 'pg';
 import { v5 as uuidv5 } from 'uuid';
-import { addDaysToDateString } from '../domain/itineraryEvents';
+import { addDaysToDateString, weekdayOfDateString } from '../domain/itineraryEvents';
 import { isReliableGeocode, type GeocodeLocationType } from '../domain/geocodeQuality';
 import { expandServiceOccurrences } from '../domain/serviceOccurrences';
 import { patientRefOf } from '../domain/patientRef';
@@ -59,12 +64,28 @@ export interface ItineraryItem {
   seq: number;
 }
 
+/** Motivos do tombstone (C-33, DT-22): conjunto fechado, o mesmo enum do attendance, do BFF e do app (`CancelReason`). */
+export const TOMBSTONE_REASONS = ['ALLOCATION_ENDED', 'ABSENCE', 'SLOT_ENDED'] as const;
+export type TombstoneReason = (typeof TOMBSTONE_REASONS)[number];
+
+/** Ocorrência de HOJE que deixou de existir; o app a mostra como cancelada até o fim do dia (A-19). */
+export interface ItineraryTombstone {
+  occurrence_id: string;
+  reason: TombstoneReason;
+  seq: number;
+}
+
 export interface ItineraryEnvelope {
   worker_id: string;
   items: ItineraryItem[];
-  tombstones: never[];
+  tombstones: ItineraryTombstone[];
   cursor: string;
   full: true;
+}
+
+/** `occurrence_id` = uuid v5 de "slot|data|worker" (SUP-F1-11): o MESMO id no item e no tombstone. Pura. */
+export function occurrenceIdOf(slotId: string, date: string, workerId: string): string {
+  return uuidv5(`${slotId}|${date}|${workerId}`, OCCURRENCE_ID_NAMESPACE);
 }
 
 /** snap(v) = round(v / GRID_DEG) * GRID_DEG, a 5 casas (contrato). Pura. */
@@ -122,15 +143,19 @@ export async function readWorkerWindow(client: PoolClient, args: { workerId: str
   const patients = await readPatients(client, [...byPatient.keys()]);
 
   const rows: Array<Omit<ItineraryItem, 'seq'>> = [];
+  const gone = new Map<string, TombstoneReason>();
   for (const [patientId, inputs] of byPatient) {
     const patient = patients.get(patientId);
     if (!patient) continue;
     const occurrences = expandServiceOccurrences(inputs.slots, inputs.assignments, inputs.absences, from, to, { workerId });
     for (const o of occurrences) {
+      if (o.date === today && o.titularWorkerId === workerId && o.workerId !== workerId && o.absenceId !== null) {
+        gone.set(occurrenceIdOf(o.slotId, today, workerId), 'ABSENCE');
+      }
       if (o.workerId !== workerId || o.assignmentId === null) continue;
       const overnight = o.endTime <= o.startTime ? 1 : 0;
       rows.push({
-        occurrence_id: uuidv5(`${o.slotId}|${o.date}|${workerId}`, OCCURRENCE_ID_NAMESPACE),
+        occurrence_id: occurrenceIdOf(o.slotId, o.date, workerId),
         slot_id: o.slotId,
         assignment_id: o.assignmentId,
         on_date: o.date,
@@ -149,13 +174,48 @@ export async function readWorkerWindow(client: PoolClient, args: { workerId: str
   rows.sort((a, b) => a.starts_at.localeCompare(b.starts_at) || a.slot_id.localeCompare(b.slot_id) || a.occurrence_id.localeCompare(b.occurrence_id));
   const items: ItineraryItem[] = rows.map((r, i) => ({ ...r, seq: i + 1 }));
 
+  for (const r of await readEndedToday(client, workerId, today)) {
+    const id = occurrenceIdOf(r.slot_id, today, workerId);
+    if (!gone.has(id)) gone.set(id, r.slot_valid_today ? 'ALLOCATION_ENDED' : 'SLOT_ENDED');
+  }
+  const itemIds = new Set(items.map((i) => i.occurrence_id));
+  const tombstones: ItineraryTombstone[] = [...gone]
+    .filter(([id]) => !itemIds.has(id))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([occurrence_id, reason], i) => ({ occurrence_id, reason, seq: items.length + i + 1 }));
+
   return {
     worker_id: workerId,
     items,
-    tombstones: [],
+    tombstones,
     cursor: Buffer.from(new Date().toISOString()).toString('base64url'),
     full: true,
   };
+}
+
+interface EndedTodayRow {
+  slot_id: string;
+  slot_valid_today: boolean;
+}
+
+/**
+ * Alocações do worker ENCERRADAS HOJE numa faixa do dia da semana de hoje (C-33, DT-22). Não há coluna de data do encerramento:
+ * `ItineraryAllocationWriter.endAllocation` grava `status = 'ENDED'` e `valid_to = GREATEST(valid_from, hoje)`, então "encerrada
+ * hoje" = `ENDED` com `valid_to = hoje` (`pia_valid_range` garante `valid_from <= hoje`). `slot_valid_today` separa
+ * ALLOCATION_ENDED (a faixa segue) de SLOT_ENDED (a faixa fechou: `[lower, hoje)` ou `empty`). `today` vem do caso de uso.
+ */
+async function readEndedToday(client: PoolClient, workerId: string, today: string): Promise<EndedTodayRow[]> {
+  const res = await client.query<EndedTodayRow>(
+    `SELECT a.slot_id, (s.valid @> $2::date) AS slot_valid_today
+       FROM patient_itinerary_assignment a
+       JOIN patient_itinerary_slot s ON s.id = a.slot_id
+       JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
+       JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
+      WHERE a.worker_id = $1::uuid AND a.status = 'ENDED' AND a.valid_to = $2::date AND s.weekday = $3
+      ORDER BY a.slot_id`,
+    [workerId, today, weekdayOfDateString(today)],
+  );
+  return res.rows;
 }
 
 function pointOf(p: PatientRow): PatientPoint | null {
