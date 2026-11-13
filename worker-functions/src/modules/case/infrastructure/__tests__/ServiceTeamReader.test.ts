@@ -279,4 +279,14 @@ describe('ServiceTeamReader', () => {
     expect(await reader.readMany([])).toEqual([]);
     expect(svcCalls()).toHaveLength(0);
   });
+
+  it('T-F2a-67 equipe do servico', async () => {
+    queryImpl = async () => ({ rows: [], rowCount: 0 });
+
+    await reader.read('p-1', 's-1');
+
+    const sql = svcCalls()[0].sql.replace(/\s+/g, ' ');
+    expect(sql).toContain("COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = wja.worker_id), false) = COALESCE((SELECT jp_realm_chk.is_test FROM job_postings jp_realm_chk WHERE jp_realm_chk.id = wja.job_posting_id), false)");
+    expect(sql).not.toContain('COALESCE(w.is_test, false) = false');
+  });
 });

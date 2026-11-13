@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { sameRealmAsVacancySql, excludeTestWorkerSql } from '@shared/database/testRealmSql';
 import { WorkerEngagement } from '../domain/WorkerEngagement';
 import { kanbanColumnForBlocked } from '../domain/kanbanColumn';
 import {
@@ -119,7 +120,7 @@ export class BlockedApplicationQueryRepository {
 
   async list(params: ListBlockedAttemptsParams): Promise<ListBlockedAttemptsResult> {
     // Só tentativas ativas — as "rechazadas" (soft-dismiss, migration 250) saem do painel.
-    const conditions: string[] = ['wba.dismissed_at IS NULL', 'COALESCE(lw.is_test, false) = false'];
+    const conditions: string[] = ['wba.dismissed_at IS NULL'];
     const values: unknown[] = [];
     let idx = 1;
 
@@ -137,6 +138,8 @@ export class BlockedApplicationQueryRepository {
       conditions.push(`${liveBlockedReasonSql()} = $${idx++}`);
       values.push(params.reason);
     }
+    // D664: painel geral esconde worker de teste; com workerId/jobPostingId explícito vale o realm da vaga (e2e-prod blocked-attempt-live-reason:216)
+    conditions.push(params.workerId || params.jobPostingId ? sameRealmAsVacancySql('wba.worker_id', 'wba.job_posting_id') : excludeTestWorkerSql('lw'));
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -228,6 +231,7 @@ export class BlockedApplicationQueryRepository {
        ${liveWorkerJoinSql()}
        WHERE wba.job_posting_id = $1
          AND ${blockedNotPromotedSql()}
+         AND ${sameRealmAsVacancySql('wba.worker_id', 'wba.job_posting_id')}
        ORDER BY wba.last_attempted_at DESC`,
       [jobPostingId],
     );
@@ -276,6 +280,7 @@ export class BlockedApplicationQueryRepository {
        WHERE wba.worker_id = $1
          AND wba.dismissed_at IS NULL
          AND ${blockedNotPromotedSql()}
+         AND ${sameRealmAsVacancySql('wba.worker_id', 'wba.job_posting_id')}
        ORDER BY wba.last_attempted_at DESC`,
       [workerId],
     );
@@ -314,7 +319,7 @@ export class BlockedApplicationQueryRepository {
       `SELECT ${liveBlockedReasonSql()} AS blocked_reason, COUNT(*)::int AS count
        FROM worker_blocked_applications wba
        ${liveWorkerJoinSql()}
-       WHERE wba.dismissed_at IS NULL AND COALESCE(lw.is_test, false) = false
+       WHERE wba.dismissed_at IS NULL AND ${excludeTestWorkerSql('lw')}
        GROUP BY 1`,
     );
 

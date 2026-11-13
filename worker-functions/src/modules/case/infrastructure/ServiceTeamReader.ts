@@ -25,6 +25,7 @@ import { inPatientTransaction } from '../application/patientTransaction';
 import { liveVacancySelect } from './liveVacancySql';
 import { liveAbsencePredicate } from './absenceSql';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { sameRealmAsVacancySql } from '@shared/database/testRealmSql';
 import { slotEndTimeSql } from '@shared/sql/serviceScheduleSql';
 import { ALLOCATION_POOL_STAGES } from '../domain/deriveServiceTeam';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
@@ -179,7 +180,7 @@ export class ServiceTeamReader {
          SELECT live.contracted_service_id AS service_id, wja.worker_id, wja.job_posting_id AS vacancy_id, wja.application_funnel_stage AS stage,
                 w.first_name_encrypted, w.last_name_encrypted, w.occupation
            FROM worker_job_applications wja JOIN live ON live.id = wja.job_posting_id JOIN workers w ON w.id = wja.worker_id
-          WHERE wja.application_funnel_stage = ANY($3::text[]) AND ${excludeDisabledWorkersSql('w')}
+          WHERE wja.application_funnel_stage = ANY($3::text[]) AND ${excludeDisabledWorkersSql('w')} AND ${sameRealmAsVacancySql('wja.worker_id', 'wja.job_posting_id')}
        ), alloc AS (
          SELECT a.worker_id, s.contracted_service_id AS service_id, wja.job_posting_id AS vacancy_id,
                 to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, to_char(a.valid_to,'YYYY-MM-DD') AS valid_to, a.status,

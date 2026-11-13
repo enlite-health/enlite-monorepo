@@ -449,6 +449,36 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(mockQuery.mock.calls[1][0]).toContain('COALESCE(lw.is_test, false) = false');
     expect(mockQuery.mock.calls[2][0]).toContain('COALESCE(lw.is_test, false) = false');
   });
+
+  it('T-F2a-67 painel com workerId usa realm', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await repo.list({ limit: 10, offset: 0, workerId: 'w-1' });
+
+    const sql = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = wba.worker_id), false) = COALESCE((SELECT jp_realm_chk.is_test FROM job_postings jp_realm_chk WHERE jp_realm_chk.id = wba.job_posting_id), false)");
+    expect(sql).not.toContain('COALESCE(lw.is_test, false) = false');
+  });
+
+  it('T-F2a-67 kanban bloqueados', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await repo.listByVacancy('jp-1');
+
+    const sql = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = wba.worker_id), false) = COALESCE((SELECT jp_realm_chk.is_test FROM job_postings jp_realm_chk WHERE jp_realm_chk.id = wba.job_posting_id), false)");
+    expect(sql).not.toContain('COALESCE(lw.is_test, false) = false');
+  });
+
+  it('T-F2a-67 ficha bloqueados', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await repo.listByWorker('w-1');
+
+    const sql = String(mockQuery.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = wba.worker_id), false) = COALESCE((SELECT jp_realm_chk.is_test FROM job_postings jp_realm_chk WHERE jp_realm_chk.id = wba.job_posting_id), false)");
+    expect(sql).not.toContain('COALESCE(lw.is_test, false) = false');
+  });
 });
 
 describe('blockedNotPromotedSql', () => {
