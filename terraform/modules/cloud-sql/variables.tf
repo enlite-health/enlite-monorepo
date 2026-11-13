@@ -96,3 +96,12 @@ variable "user_labels" {
   default     = {}
   description = "Labels da instância (settings.user_labels)"
 }
+
+variable "database_flags" {
+  type = list(object({
+    name  = string
+    value = string
+  }))
+  default     = []
+  description = "Flags do banco (settings.database_flags). Default vazio = nenhuma flag; cada ambiente passa as suas."
+}
