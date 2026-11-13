@@ -8,6 +8,10 @@ module "sql_enlite_ar_db" {
 
   user_labels = { service = "enlite-ar-db", setor = "plataforma" }
 
+  # spec 077 FND-6: cloudsql.iam_authentication não reinicia (doc de flags, Restart Required? = No). Apply pós-merge com tf-admin (D664).
+  # P8 (29/10): a role attendance_runtime autentica por IAM; o usuário IAM está em attendance_services.tf (T294).
+  database_flags = [{ name = "cloudsql.iam_authentication", value = "on" }]
+
   # authorized_networks fica no default do módulo: [] — NENHUMA rede autorizada.
   #
   # Antes daqui saía [{ name = "", value = "0.0.0.0/0" }], ou seja, a internet

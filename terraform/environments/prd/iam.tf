@@ -102,3 +102,17 @@ resource "google_project_iam_member" "tf_admin_stg" {
   role     = each.value
   member   = module.sa_tf_admin.member
 }
+
+# spec 077 FND-5: o deploy do attendance-service sobe o cloud-sql-proxy no runner como esta SA e conecta na enlite-ar-db.
+# O cloudsql.client vivo dela é só na assistants-db (terraform/environments/assistants/iam.tf, "only-assistants-db").
+resource "google_project_iam_member" "github_deploy_cloudsql_client_ar_db" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = module.sa_github_deploy.member
+
+  condition {
+    title       = "only-enlite-ar-db"
+    description = "spec 077: cloudsql.client so na enlite-ar-db (migrations do attendance-service)"
+    expression  = "resource.type == \"sqladmin.googleapis.com/Instance\" && resource.name == \"projects/${var.project_id}/instances/${module.sql_enlite_ar_db.name}\""
+  }
+}

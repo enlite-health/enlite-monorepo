@@ -19,6 +19,14 @@ resource "google_sql_database_instance" "this" {
       zone = var.zone
     }
 
+    dynamic "database_flags" {
+      for_each = var.database_flags
+      content {
+        name  = database_flags.value.name
+        value = database_flags.value.value
+      }
+    }
+
     backup_configuration {
       enabled                        = true
       start_time                     = var.backup_start_time
