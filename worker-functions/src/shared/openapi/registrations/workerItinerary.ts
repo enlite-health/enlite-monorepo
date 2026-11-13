@@ -35,7 +35,7 @@ registry.registerPath({
   tags: ['Worker · Itinerário'],
   summary: 'Ocorrências de turno do worker autenticado (janela hoje−30 .. hoje+14)',
   description:
-    'Identidade só pelo token (req.user.uid); o header x-auth-uid é ignorado. ' +
+    'Identidade só pelo token (req.user.uid); nenhum header de identidade é lido. ' +
     'Worker inexistente ou inativo (DISABLED) responde 403 ACCOUNT_INACTIVE.',
   security: [{ firebaseAuth: [] }],
   responses: {
