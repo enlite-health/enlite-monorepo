@@ -24,10 +24,18 @@ export const ItineraryItem = z.object({
   seq: z.number().int(),
 });
 
+export const ItineraryTombstone = z.object({
+  occurrence_id: z.string().uuid().openapi({ description: 'O MESMO occurrence_id que o item de hoje tinha (uuid v5 de slot_id, on_date, worker_id).' }),
+  reason: z.enum(['ALLOCATION_ENDED', 'ABSENCE', 'SLOT_ENDED']).openapi({
+    description: 'ALLOCATION_ENDED: alocação encerrada hoje; ABSENCE: ausência da titular hoje; SLOT_ENDED: faixa encerrada hoje (C-33, DT-22).',
+  }),
+  seq: z.number().int().openapi({ description: 'Posição no envelope, depois dos itens.' }),
+});
+
 const ItineraryResponse = z.object({
   worker_id: z.string().uuid(),
   items: z.array(ItineraryItem),
-  tombstones: z.array(z.object({})).openapi({ description: 'Sempre [] no MVP.' }),
+  tombstones: z.array(ItineraryTombstone).openapi({ description: 'Ocorrências de HOJE que deixaram de existir (C-33, DT-22); o app as mostra como canceladas até o fim do dia.' }),
   cursor: z.string().openapi({ description: 'Carimbo opaco.' }),
   full: z.literal(true).openapi({ description: 'Sempre true no MVP.' }),
 });
