@@ -19,7 +19,7 @@ function fakeClient(opts: { zone: boolean; rows?: Array<Record<string, unknown>>
 const ROW = {
   id: JOB, case_number: 1301, vacancy_number: 6309, title: 'CASO 1301', service: 'AT', neighborhood: null,
   city: 'Mar del Plata', state: 'Buenos Aires', schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-  worker_type: ['AT'], distance_km: '3.0',
+  worker_type: ['AT'], distance_km: '3.0', already_applied: false,
 };
 
 describe('WorkerJobsByRadiusReader', () => {
@@ -77,8 +77,22 @@ describe('WorkerJobsByRadiusReader', () => {
     expect(item.distance_km).toBe(3);
     expect(item.worker_type).toEqual([]);
     expect(Object.keys(item).sort()).toEqual(
-      ['case_number', 'city', 'distance_km', 'id', 'neighborhood', 'schedule', 'service', 'state', 'title', 'vacancy_number', 'worker_type'].sort(),
+      ['already_applied', 'case_number', 'city', 'distance_km', 'id', 'neighborhood', 'schedule', 'service', 'state', 'title', 'vacancy_number', 'worker_type'].sort(),
     );
     expect(client.query.mock.calls[1][1]).toEqual(['AR', W, 5]);
+  });
+
+  it('T-F2a-34 already_applied derivado em leitura da candidatura DO PRÓPRIO prestador ($2), nunca gravado', () => {
+    const { sql } = buildJobsByRadiusSql(W, 10);
+    expect(sql).toContain(
+      'EXISTS (SELECT 1 FROM worker_job_applications wja WHERE wja.worker_id = $2 AND wja.job_posting_id = jp.id) AS already_applied',
+    );
+    expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/i);
+  });
+
+  it('T-F2a-34 mapeia already_applied: true só quando o banco diz true', async () => {
+    const client = fakeClient({ zone: true, rows: [{ ...ROW, already_applied: true }, { ...ROW, already_applied: null }] });
+    const out = (await readJobsByRadius(client, { workerId: W, radiusKm: 10 })) ?? [];
+    expect(out.map((i) => i.already_applied)).toEqual([true, false]);
   });
 });

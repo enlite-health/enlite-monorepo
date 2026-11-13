@@ -31,6 +31,8 @@ export interface WorkerJobByRadius {
   worker_type: string[];
   /** Distância em km, 1 casa, calculada no servidor. */
   distance_km: number;
+  /** Derivado em leitura de `worker_job_applications` do próprio prestador (D516). */
+  already_applied: boolean;
 }
 
 /** Zona viva do prestador com ponto (mesma régua do `FindNearbyVacanciesForWorkerUseCase`). */
@@ -65,7 +67,8 @@ export function buildJobsByRadiusSql(workerId: string, radiusKm: number): { sql:
               pa.state AS state,
               ${vacancyEffectiveScheduleSql('jp')} AS schedule,
               ${vacancyEffectiveRequiredProfessionsSql('jp')} AS worker_type,
-              ROUND((d.meters / 1000)::numeric, 1) AS distance_km
+              ROUND((d.meters / 1000)::numeric, 1) AS distance_km,
+              EXISTS (SELECT 1 FROM worker_job_applications wja WHERE wja.worker_id = ${w} AND wja.job_posting_id = jp.id) AS already_applied
        FROM job_postings jp
        ${vacancyEffectiveJoinSql('jp')}
        CROSS JOIN w
@@ -95,6 +98,7 @@ interface Row {
   schedule: unknown;
   worker_type: string[] | null;
   distance_km: string | number;
+  already_applied: boolean | null;
 }
 
 /** `null` = o prestador não tem zona viva com ponto (o use case responde NO_SERVICE_AREA); `[]` = zona sem vaga no raio. */
@@ -118,5 +122,6 @@ export async function readJobsByRadius(
     schedule: r.schedule,
     worker_type: r.worker_type ?? [],
     distance_km: Number(r.distance_km),
+    already_applied: r.already_applied === true,
   }));
 }
