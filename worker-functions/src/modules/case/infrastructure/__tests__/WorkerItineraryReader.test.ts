@@ -4,7 +4,7 @@
  * Todos os dados são sintéticos (nenhuma coordenada ou endereço real).
  */
 import { v5 as uuidv5 } from 'uuid';
-import { degradePoint20m, GRID_DEG, OCCURRENCE_ID_NAMESPACE, readWorkerWindow } from '../WorkerItineraryReader';
+import { degradePoint20m, GRID_DEG, OCCURRENCE_ID_NAMESPACE, readWorkerWindow, windowStart } from '../WorkerItineraryReader';
 import { weekdayOfDateString } from '../../domain/itineraryEvents';
 import { patientRefOf } from '../../domain/patientRef';
 
@@ -13,7 +13,7 @@ const W2 = '22222222-2222-4222-8222-222222222222';
 const PAT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SLOT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ASG = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-const TODAY = '2026-11-02'; // segunda; janela [2026-10-03, 2026-11-16]
+const TODAY = '2026-11-02'; // segunda; janela [2026-10-01, 2026-11-16]
 const MONDAY = weekdayOfDateString('2026-11-09');
 
 interface Fixture {
@@ -59,7 +59,7 @@ function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: numb
 }
 
 describe('readWorkerWindow', () => {
-  it('janela [hoje-30, hoje+14]: 7 segundas, 14 chaves exatas, horário local → ISO UTC, envelope full sem tombstone', async () => {
+  it('janela [dia 1 do mês anterior, hoje+14]: 7 segundas, 14 chaves exatas, horário local → ISO UTC, envelope full sem tombstone', async () => {
     const env = await run({});
     expect(dates(env)).toEqual(['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16']);
     expect(Object.keys(env.items[0]).sort()).toEqual(
@@ -80,7 +80,7 @@ describe('readWorkerWindow', () => {
       expect(sql).toMatch(/wa\.worker_id = \$1::uuid/);
       expect(sql).toMatch(/wab\.substitute_worker_id = \$1::uuid/);
     }
-    expect(calls[0][1]).toEqual([W1, '2026-10-03', '2026-11-16']);
+    expect(calls[0][1]).toEqual([W1, '2026-10-01', '2026-11-16']);
     const patientSql = calls[3][0];
     expect(patientSql).toMatch(/a\.is_default AND a\.archived_at IS NULL/);
     expect(patientSql).not.toMatch(/address_formatted|address_raw|locality|access_notes|logistics_corridor|address_type|address_summary/);
@@ -209,5 +209,21 @@ describe('readWorkerWindow', () => {
     expect(env.items.length).toBeGreaterThan(0);
     expect(env.items.every((i) => i.patient_first_name === 'Ana')).toBe(true);
     expect([...new Set(env.items.map((i) => i.patient_ref))].sort()).toEqual([patientRefOf(PAT), patientRefOf(PAT2)].sort());
+  });
+
+  it('T-F2a-03 windowStart 31/03 → 2026-02-01', () => {
+    expect(windowStart('2026-03-31')).toBe('2026-02-01');
+  });
+
+  it('T-F2a-03 windowStart 10/01 → 2025-12-01 (virada de ano)', () => {
+    expect(windowStart('2026-01-10')).toBe('2025-12-01');
+  });
+
+  it('T-F2a-03 o reader consulta a partir de windowStart(today): params [worker, 2026-10-01, 2026-11-16]', async () => {
+    const client = fakeClient({});
+    await readWorkerWindow(client as never, { workerId: W1, today: TODAY });
+    const calls = client.query.mock.calls as unknown as Array<[string, unknown[]]>;
+    expect(calls[0][1]).toEqual([W1, windowStart(TODAY), '2026-11-16']);
+    expect(windowStart(TODAY)).toBe('2026-10-01');
   });
 });

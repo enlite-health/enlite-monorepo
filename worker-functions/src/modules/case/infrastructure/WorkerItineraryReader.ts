@@ -1,5 +1,5 @@
 /**
- * WorkerItineraryReader — spec 077 F1 (T272): as ocorrências de turno de UM worker na janela `[hoje-30, hoje+14]`.
+ * WorkerItineraryReader — spec 077 F1 (T272) + FR-42: as ocorrências de turno de UM worker na janela `[dia 1 do mês anterior, hoje+14]`.
  *
  * Universo: `readOccurrenceInputsByPatient` com `scopeSql` por worker (faixas ativas com alocação ACTIVE vigente do worker na
  * janela OU ausência viva com `substitute_worker_id = worker`). As alocações/ausências lidas são TODAS as das faixas do universo
@@ -23,8 +23,15 @@ import { readOccurrenceInputsByPatient } from './occurrenceInputs';
 export const OCCURRENCE_ID_NAMESPACE = '43876dea-477d-4c5b-8b30-127aa6db3f92';
 /** Passo da grade de degradação (~20 m): `x-degradacao-20m` do contrato. */
 export const GRID_DEG = 0.00018;
-export const WINDOW_DAYS_BEFORE = 30;
 export const WINDOW_DAYS_AFTER = 14;
+
+/** Início da janela (FR-42, D635): dia 1 do mês ANTERIOR ao `today` (data civil `YYYY-MM-DD`, já no fuso da operação). Pura. */
+export function windowStart(today: string): string {
+  const [y, m] = today.split('-').map(Number);
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return `${py}-${String(pm).padStart(2, '0')}-01`;
+}
 
 export interface PatientPoint {
   lat: number;
@@ -101,7 +108,7 @@ const WORKER_SCOPE_SQL = `pcs.active
 
 export async function readWorkerWindow(client: PoolClient, args: { workerId: string; today: string }): Promise<ItineraryEnvelope> {
   const { workerId, today } = args;
-  const from = addDaysToDateString(today, -WINDOW_DAYS_BEFORE);
+  const from = windowStart(today);
   const to = addDaysToDateString(today, WINDOW_DAYS_AFTER);
 
   const byPatient = await readOccurrenceInputsByPatient(client, {

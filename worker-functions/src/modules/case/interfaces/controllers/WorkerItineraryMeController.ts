@@ -3,7 +3,7 @@ import { reportError } from '@shared/logging';
 import { operationDateInZone } from '@shared/locale/operationDate';
 import { GetWorkerItineraryUseCase, AccountInactiveError } from '../../application/GetWorkerItineraryUseCase';
 
-/** UTC−3 (Buenos Aires): data civil do "hoje" da janela [hoje−30, hoje+14]. */
+/** UTC−3 (Buenos Aires): data civil do "hoje" da janela [dia 1 do mês anterior, hoje+14] (FR-42). */
 const TODAY_ZONE = 'America/Argentina/Buenos_Aires';
 
 /**
