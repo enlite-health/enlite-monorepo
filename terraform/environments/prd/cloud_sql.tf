@@ -8,8 +8,7 @@ module "sql_enlite_ar_db" {
 
   user_labels = { service = "enlite-ar-db", setor = "plataforma" }
 
-  # REINICIA enlite-ar-db de prd ao aplicar (settings.database_flags). Janela combinada com o Gabriel.
-  # terraform apply é DELE, nunca do agente. Antes: terraform plan limpo (sem drift) — T296.
+  # spec 077 FND-6: cloudsql.iam_authentication não reinicia (doc de flags, Restart Required? = No). Apply pós-merge com tf-admin (D664).
   # P8 (29/10): a role attendance_runtime autentica por IAM; o usuário IAM está em attendance_services.tf (T294).
   database_flags = [{ name = "cloudsql.iam_authentication", value = "on" }]
 
