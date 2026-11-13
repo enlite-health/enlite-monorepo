@@ -1,5 +1,7 @@
 jest.mock('@shared/logging', () => ({ reportError: jest.fn(), logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { ListJobsByRadiusForWorkerUseCase } from '../../../application/ListJobsByRadiusForWorkerUseCase';
@@ -65,5 +67,26 @@ describe('WorkerJobsByRadiusController.listMine', () => {
     await ctrl.listMine(req, res);
     expect(statusOf(res)).toBe(401);
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+const INDEX = readFileSync(resolve(__dirname, '../../../../../index.ts'), 'utf8');
+const rota = (verbo: string, path: string): string[] =>
+  INDEX.split('\n').filter((l) => l.startsWith(`app.${verbo}('${path}'`));
+
+describe('rota GET /api/workers/me/jobs em index.ts', () => {
+  it("T-F2a-37 CONTROLE POSITIVO: a irmã GET /api/workers/me/itinerary é 1 linha com routeClass('client-policy')", () => {
+    const linhas = rota('get', '/api/workers/me/itinerary');
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toContain("routeClass('client-policy')");
+  });
+
+  it("T-F2a-37 GET /api/workers/me/jobs é 1 linha com routeClass('client-policy'), requireAuth e worker:read, e chama listMine", () => {
+    const linhas = rota('get', '/api/workers/me/jobs');
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toContain(
+      "'/api/workers/me/jobs', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'),",
+    );
+    expect(INDEX).toContain('  workerJobsByRadiusController.listMine(req, res);');
   });
 });
