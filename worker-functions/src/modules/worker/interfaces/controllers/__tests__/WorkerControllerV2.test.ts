@@ -533,6 +533,22 @@ describe('WorkerControllerV2', () => {
       expect(spy.mock.calls[0][1]).toBeUndefined();
     });
 
+    it('T-F2b-05 saveServiceArea repassa a fonte worker_self e o canal app', async () => {
+      const spy = jest.spyOn(controller['saveServiceAreaUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValue({ rows: [{ missing: [] }] });
+      const [req, res] = mockReqRes({ address: 'X', serviceRadiusKm: 10 }, {}, { uid: AUTH_UID });
+      (res as unknown as { locals: Record<string, unknown> }).locals = { profileEditChannel: 'app' };
+      await controller.saveServiceArea(req, res);
+
+      expect(spy).toHaveBeenCalledWith(
+        { workerId: WORKER_ID, address: 'X', serviceRadiusKm: 10 },
+        { source: 'worker_self', actorUid: AUTH_UID, channel: 'app' },
+      );
+    });
+
     it('retorna 404 com "Worker not found" quando getProgressUseCase falha por auth_uid sem vínculo no banco', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.fail('Worker not found'));

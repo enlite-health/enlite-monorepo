@@ -78,7 +78,7 @@ export class AdminWorkerServiceAreaController {
 
     try {
       const before = await this.currentArea(id);
-      const result = await this.useCase.execute({ workerId: id, ...parsed.data });
+      const result = await this.useCase.execute({ workerId: id, ...parsed.data }, { source: 'admin_panel', actorUid: uid });
       if (result.isFailure) {
         const notFound = result.error === 'Worker not found';
         res.status(notFound ? 404 : 400).json({ success: false, error: result.error });

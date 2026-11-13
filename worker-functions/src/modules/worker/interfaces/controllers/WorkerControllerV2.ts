@@ -176,7 +176,7 @@ export class WorkerControllerV2 {
           result = await this.saveServiceAreaUseCase.execute({
             workerId,
             ...data,
-          });
+          }, { source: 'worker_self', actorUid: selfUid(req) ?? '' });
           break;
 
         case 4:
@@ -317,7 +317,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.saveServiceAreaUseCase.execute({ workerId, ...req.body });
+      const result = await this.saveServiceAreaUseCase.execute({ workerId, ...req.body }, { source: 'worker_self', actorUid: authUid, channel: profileEditChannelOf(res) });
 
       if (result.isFailure) {
         res.status(400).json({ success: false, error: result.error });

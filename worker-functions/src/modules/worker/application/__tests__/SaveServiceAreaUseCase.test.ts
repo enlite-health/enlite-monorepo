@@ -1,5 +1,11 @@
 import { SaveServiceAreaUseCase } from '../SaveServiceAreaUseCase';
 import { Result } from '@shared/utils/Result';
+import type { ProfileEditAttribution } from '../../domain/profileEditSource';
+
+const mockRecordBatch = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../infrastructure/ProfileChangeAuditRepository', () => ({ ProfileChangeAuditRepository: jest.fn().mockImplementation(() => ({ recordBatch: mockRecordBatch })) }));
+jest.mock('@shared/database/DatabaseConnection', () => ({ DatabaseConnection: { getInstance: () => ({ getPool: () => ({}) }) } }));
+const ATTR: ProfileEditAttribution = { source: 'worker_self', actorUid: 'auth-123' };
 
 const mockWorker = {
   id: 'worker-123',
@@ -64,7 +70,7 @@ describe('SaveServiceAreaUseCase', () => {
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 
-      const result = await useCase.execute(serviceAreaPayload);
+      const result = await useCase.execute(serviceAreaPayload, ATTR);
 
       expect(result.isFailure).toBe(false);
       expect(serviceAreaRepo.deleteByWorkerId).toHaveBeenCalledWith('worker-123');
@@ -84,7 +90,7 @@ describe('SaveServiceAreaUseCase', () => {
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 
-      await useCase.execute(serviceAreaPayload);
+      await useCase.execute(serviceAreaPayload, ATTR);
 
       expect(workerRepo.updateStep).not.toHaveBeenCalled();
     });
@@ -94,7 +100,7 @@ describe('SaveServiceAreaUseCase', () => {
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 
-      const result = await useCase.execute(serviceAreaPayload);
+      const result = await useCase.execute(serviceAreaPayload, ATTR);
 
       expect(result.isFailure).toBe(false);
       const returnedWorker = result.getValue();
@@ -113,7 +119,7 @@ describe('SaveServiceAreaUseCase', () => {
         serviceRadiusKm: 5,
         lat: -34.0,
         lng: -58.0,
-      });
+      }, ATTR);
 
       expect(result.isFailure).toBe(false);
     });
@@ -128,7 +134,7 @@ describe('SaveServiceAreaUseCase', () => {
         city: 'Buenos Aires',
         postalCode: 'C1043',
         neighborhood: 'Palermo',
-      });
+      }, ATTR);
 
       expect(serviceAreaRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -144,7 +150,7 @@ describe('SaveServiceAreaUseCase', () => {
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 
-      await useCase.execute(serviceAreaPayload);
+      await useCase.execute(serviceAreaPayload, ATTR);
 
       expect(serviceAreaRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -160,8 +166,8 @@ describe('SaveServiceAreaUseCase', () => {
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 
-      await useCase.execute(serviceAreaPayload);
-      await useCase.execute({ ...serviceAreaPayload, serviceRadiusKm: 20 });
+      await useCase.execute(serviceAreaPayload, ATTR);
+      await useCase.execute({ ...serviceAreaPayload, serviceRadiusKm: 20 }, ATTR);
 
       // deleteByWorkerId deve ter sido chamado nas 2 saves
       expect(serviceAreaRepo.deleteByWorkerId).toHaveBeenCalledTimes(2);
@@ -177,7 +183,7 @@ describe('SaveServiceAreaUseCase', () => {
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 
-      const result = await useCase.execute(serviceAreaPayload);
+      const result = await useCase.execute(serviceAreaPayload, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Worker not found');
@@ -194,11 +200,59 @@ describe('SaveServiceAreaUseCase', () => {
       });
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 
-      const result = await useCase.execute(serviceAreaPayload);
+      const result = await useCase.execute(serviceAreaPayload, ATTR);
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Failed to create service area');
       expect(workerRepo.updateStep).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('trilha (FR-53)', () => {
+    beforeEach(() => mockRecordBatch.mockClear());
+
+    it('T-F2b-05 grava endereço mascarado, sem o valor em claro', async () => {
+      const serviceAreaRepo = makeServiceAreaRepo({ findByWorkerId: jest.fn().mockResolvedValue(Result.ok([])) });
+      const useCase = new SaveServiceAreaUseCase(makeWorkerRepo() as any, serviceAreaRepo as any);
+
+      await useCase.execute(serviceAreaPayload, ATTR);
+
+      expect(mockRecordBatch).toHaveBeenCalledTimes(1);
+      const entradas = mockRecordBatch.mock.calls[0][0];
+      expect(entradas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ fieldName: 'serviceAddress', oldValueRedacted: null, newValueRedacted: '***', changedBy: 'worker_self', source: 'platform' }),
+        ]),
+      );
+      expect(JSON.stringify(entradas)).not.toContain('Corrientes');
+    });
+
+    it('T-F2b-05 não grava o que não mudou', async () => {
+      const serviceAreaRepo = makeServiceAreaRepo({ findByWorkerId: jest.fn().mockResolvedValue(Result.ok([mockServiceArea])) });
+      const useCase = new SaveServiceAreaUseCase(makeWorkerRepo() as any, serviceAreaRepo as any);
+
+      await useCase.execute(serviceAreaPayload, ATTR);
+
+      expect(mockRecordBatch).not.toHaveBeenCalled();
+    });
+
+    it('T-F2b-05 canal app vai para a coluna source', async () => {
+      const serviceAreaRepo = makeServiceAreaRepo({ findByWorkerId: jest.fn().mockResolvedValue(Result.ok([])) });
+      const useCase = new SaveServiceAreaUseCase(makeWorkerRepo() as any, serviceAreaRepo as any);
+
+      await useCase.execute(serviceAreaPayload, { ...ATTR, channel: 'app' });
+
+      expect(mockRecordBatch.mock.calls[0][0]).toEqual(expect.arrayContaining([expect.objectContaining({ source: 'app' })]));
+    });
+
+    it('T-F2b-05 falha ao ler o antes não derruba o save e pula a trilha', async () => {
+      const serviceAreaRepo = makeServiceAreaRepo({ findByWorkerId: jest.fn().mockRejectedValue(new Error('db down')) });
+      const useCase = new SaveServiceAreaUseCase(makeWorkerRepo() as any, serviceAreaRepo as any);
+
+      const result = await useCase.execute(serviceAreaPayload, ATTR);
+
+      expect(result.isFailure).toBe(false);
+      expect(mockRecordBatch).not.toHaveBeenCalled();
     });
   });
 });
