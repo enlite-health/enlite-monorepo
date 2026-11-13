@@ -1,5 +1,7 @@
 jest.mock('@shared/logging', () => ({ reportError: jest.fn(), logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AccountInactiveError, GetWorkerItineraryUseCase } from '../../../application/GetWorkerItineraryUseCase';
@@ -58,5 +60,25 @@ describe('WorkerItineraryMeController.getMine', () => {
     await ctrl.getMine(req, res);
     expect(statusOf(res)).toBe(401);
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+const INDEX = readFileSync(resolve(__dirname, '../../../../../index.ts'), 'utf8');
+const rota = (verbo: string, path: string): string[] =>
+  INDEX.split('\n').filter((l) => l.startsWith(`app.${verbo}('${path}'`));
+
+describe('T-F0a-srv-32 rota em index.ts', () => {
+  it("T-F0a-srv-32 CONTROLE POSITIVO: a irmã GET /api/workers/me é 1 linha com routeClass('client-policy')", () => {
+    const linhas = rota('get', '/api/workers/me');
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toContain("routeClass('client-policy')");
+  });
+
+  it("T-F0a-srv-32 GET /api/workers/me/itinerary é 1 linha com routeClass('client-policy') antes do requireAuth", () => {
+    const linhas = rota('get', '/api/workers/me/itinerary');
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toContain(
+      "'/api/workers/me/itinerary', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'),",
+    );
   });
 });

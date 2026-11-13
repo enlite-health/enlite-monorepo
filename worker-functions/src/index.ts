@@ -483,7 +483,7 @@ app.put('/api/workers/step', routeClass('client-policy'), authMiddleware.require
 app.get('/api/workers/me', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getProgress(req, res);
 });
-app.get('/api/workers/me/itinerary', authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+app.get('/api/workers/me/itinerary', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerItineraryMeController.getMine(req, res);
 });
 app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
