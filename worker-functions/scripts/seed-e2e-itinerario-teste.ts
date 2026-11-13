@@ -264,6 +264,67 @@ export async function seedWorkerOnly(api: Api, deps: SeedDeps): Promise<string> 
   return workerId;
 }
 
+export const VAGAS_RAIO_KM = [3, 12, 60] as const;
+export const SOBRENOMES_DO_MARCADOR: readonly string[] = [PATIENT_LAST, ...VAGAS_RAIO_KM.map((km) => `Vaga ${km}km`)];
+
+/** Ponto `km` ao norte da base (1° de latitude ≈ 111,32 km), 7 casas. */
+export function pontoAoNorte(base: { lat: number; lng: number }, km: number): { lat: number; lng: number } {
+  return { lat: Number((base.lat + km / 111.32).toFixed(7)), lng: base.lng };
+}
+
+/** 3 pacientes is_test + 3 vagas is_test/is_draft a 3, 12 e 60 km da zona da prestadora (VG-01 F). Nunca publica; coordenada por SQL só em endereço de paciente is_test. */
+export async function seedVagasRaio(api: Api, deps: SeedDeps, workerId: string): Promise<Array<{ km: number; vacancyId: string }>> {
+  const log = (step: string, status: string, id?: string): void => deps.log(`[seed] ${step} | ${status}${id ? ` | ${id}` : ''}`);
+  const out: Array<{ km: number; vacancyId: string }> = [];
+  for (const km of VAGAS_RAIO_KM) {
+    const last = `Vaga ${km}km`;
+    const found = asRows(await api.must([200], 'GET', `/api/admin/patients?search=${MARK}`)).filter((p) => p.firstName === PATIENT_FIRST && p.lastName === last && !p.deletedAt);
+    let patientId: string;
+    let caseNumber: unknown;
+    if (found.length > 0) {
+      patientId = asId(found[0].id, 'patient');
+      caseNumber = found[0].caseNumber;
+    } else {
+      const c = await api.must([201], 'POST', '/api/admin/patients', { firstName: PATIENT_FIRST, lastName: last, country: 'AR', contactEmail: `qa077.vaga${km}km@sintetico.invalid` });
+      patientId = asId(c.id, 'patient');
+      caseNumber = c.caseNumber;
+      log(`vaga${km}km.paciente`, 'criado', patientId);
+    }
+    await api.must([200], 'PATCH', `/api/admin/patients/${patientId}/test-flag`, { isTest: true });
+    if (caseNumber === undefined) {
+      caseNumber = (asRows(await api.must([200], 'GET', `/api/admin/patients?search=${MARK}`)).find((p) => p.id === patientId) ?? {}).caseNumber;
+    }
+    const addresses = asRows(await api.must([200], 'GET', `/api/admin/patients/${patientId}/addresses`)).filter((a) => typeof a.address_formatted === 'string' && (a.address_formatted as string).startsWith(MARK));
+    let addressId: string;
+    if (addresses.length > 0) {
+      addressId = asId(addresses[0].id, 'address');
+    } else {
+      const c = await api.must([201], 'POST', `/api/admin/patients/${patientId}/addresses`, { address_formatted: `${MARK} Vaga ${km}km, Mar del Plata`, is_default: true });
+      addressId = asId(c.id, 'address');
+      log(`vaga${km}km.endereco`, 'criado', addressId);
+    }
+    const pt = pontoAoNorte(ZONA_BASE, km);
+    const n = deps.sql(
+      `UPDATE patient_addresses SET lat = :'lat'::numeric, lng = :'lng'::numeric WHERE id = :'addr'::uuid AND patient_id IN (SELECT id FROM patients WHERE is_test = true) RETURNING 1;`,
+      { lat: String(pt.lat), lng: String(pt.lng), addr: addressId },
+    );
+    if (n !== '1') throw new Error(`seed-e2e: coordenada da vaga ${km}km não casou paciente is_test`);
+    const vacancies = asRows(await api.must([200], 'GET', `/api/admin/patients/${patientId}/vacancies`)).filter((v) => !v.deleted_at);
+    let vacancyId: string;
+    if (vacancies.length > 0) {
+      vacancyId = asId(vacancies[0].id, 'vacancy');
+    } else {
+      const c = await api.must([201], 'POST', '/api/admin/vacancies', { patient_id: patientId, case_number: caseNumber, patient_address_id: addressId, is_test: true, is_draft: true });
+      vacancyId = asId(c.id, 'vacancy');
+      log(`vaga${km}km.vacante`, 'criada', vacancyId);
+    }
+    out.push({ km, vacancyId });
+  }
+  deps.log(`ZONA_WORKER_ID=${workerId}`);
+  for (const v of out) deps.log(`VAGA_${v.km}KM_ID=${v.vacancyId}`);
+  return out;
+}
+
 /** Linhas KEY=valor que o T-F0b-16 lê (`grep '^X='`). */
 export function linhasDeIds(ids: SeedIds): string[] {
   return [`PATIENT_ID=${ids.patientId}`, `SERVICE_ID=${ids.serviceId}`, `APPLICATION_ID=${ids.applicationId}`, `WORKER_ID=${ids.workerId}`, `VACANCY_ID=${ids.vacancyId}`];
@@ -290,7 +351,7 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
   await api.must([200], 'PATCH', `/api/admin/patients/${patientId}/test-flag`, { isTest: true });
   log('paciente.is_test', 'true', patientId);
 
-  // 2. endereço (sem geocode real)
+  // 2. endereço (em prd o POST geocodifica pelo Google: custo por chamada)
   const addresses = asRows(await api.must([200], 'GET', `/api/admin/patients/${patientId}/addresses`))
     .filter((a) => typeof a.address_formatted === 'string' && (a.address_formatted as string).startsWith(MARK));
   let addressId: string;
@@ -398,6 +459,7 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
   const workerId = await prepararPrestadora(api, deps);
   log('prestador.is_test', 'true', workerId);
   log('prestador.status', 'REGISTERED', workerId);
+  await seedVagasRaio(api, deps, workerId);
 
   // 9. pool: QUICK_RESPONSE_TEAM (não emite evento; nenhuma data/link de entrevista)
   const out = deps.sql(
@@ -439,7 +501,7 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
 export async function cleanup(api: Api, deps: SeedDeps): Promise<void> {
   const log = (step: string, status: string, id?: string): void => deps.log(`[cleanup] ${step} | ${status}${id ? ` | ${id}` : ''}`);
   const patients = asRows(await api.must([200], 'GET', `/api/admin/patients?search=${MARK}`))
-    .filter((p) => p.firstName === PATIENT_FIRST && p.lastName === PATIENT_LAST && !p.deletedAt);
+    .filter((p) => typeof p.firstName === 'string' && p.firstName.startsWith(PATIENT_FIRST) && typeof p.lastName === 'string' && SOBRENOMES_DO_MARCADOR.includes(p.lastName) && !p.deletedAt);
   for (const p of patients) {
     const patientId = asId(p.id, 'patient');
     if (p.isTest !== true) throw new Error('seed-e2e: paciente do marcador sem is_test — recusando limpar');

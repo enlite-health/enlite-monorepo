@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
+import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, pontoAoNorte, seedVagasRaio, cleanup, ZONA_BASE, SOBRENOMES_DO_MARCADOR, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
 
 const PRD_LIKE = [
   'https://worker-functions-prd.example.run.app',
@@ -230,5 +230,90 @@ describe('seed-e2e-itinerario-teste — guarda de alvo (só prd)', () => {
     await expect(main(['--cleanup', '--worker-only'], d2, {})).rejects.toThrow(/exclusivos/);
     expect(d1.calls).toEqual({ fetch: 0, token: 0, sql: 0 });
     expect(d2.calls).toEqual({ fetch: 0, token: 0, sql: 0 });
+  });
+
+  // fake com estado para os pacientes de vaga (T-F2a-39)
+  const vagasFake = (): { deps: SeedDeps; posts: string[]; sqls: string[]; api: () => Api; deleted: string[] } => {
+    const posts: string[] = [];
+    const sqls: string[] = [];
+    const deleted: string[] = [];
+    let n = 0;
+    const uid = (): string => `${String(++n).padStart(8, '0')}-0000-4000-8000-000000000000`;
+    const patients: Record<string, unknown>[] = [];
+    const addresses: Record<string, Record<string, unknown>[]> = {};
+    const vacancies: Record<string, Record<string, unknown>[]> = {};
+    const respond = (data: unknown, status = 200): { status: number; text(): Promise<string> } => ({ status, text: async () => JSON.stringify({ data }) });
+    const deps: SeedDeps = {
+      ...spyDeps(),
+      getToken: () => 'tok-worker',
+      getAdminToken: () => 'tok-admin',
+      sql: (st) => { sqls.push(st); return '1'; },
+      fetch: async (url, init) => {
+        const path = url.replace(E2E_API_URL, '');
+        const key = `${init.method} ${path.replace(/[0-9a-f]{8}-0000-4000-8000-000000000000/g, ':id')}`;
+        if (init.method !== 'GET') posts.push(key);
+        const pid = path.match(/patients\/([0-9a-f-]{36})/)?.[1] ?? '';
+        if (key === 'GET /api/admin/patients?search=QA077') return respond(patients);
+        if (key === 'POST /api/admin/patients') {
+          const b = JSON.parse(init.body as string);
+          const p = { id: uid(), firstName: b.firstName, lastName: b.lastName, caseNumber: 100 + patients.length, isTest: false };
+          patients.push(p);
+          return respond(p, 201);
+        }
+        if (key === 'PATCH /api/admin/patients/:id/test-flag') { const p = patients.find((x) => x.id === pid); if (p) p.isTest = true; return respond({}); }
+        if (key === 'GET /api/admin/patients/:id/addresses') return respond(addresses[pid] ?? []);
+        if (key === 'POST /api/admin/patients/:id/addresses') {
+          const a = { id: uid(), address_formatted: JSON.parse(init.body as string).address_formatted };
+          (addresses[pid] ??= []).push(a);
+          return respond(a, 201);
+        }
+        if (key === 'GET /api/admin/patients/:id/vacancies') return respond(vacancies[pid] ?? []);
+        if (key === 'POST /api/admin/vacancies') {
+          const b = JSON.parse(init.body as string);
+          expect(b.is_test).toBe(true);
+          expect(b.is_draft).toBe(true);
+          const v = { id: uid() };
+          (vacancies[b.patient_id] ??= []).push(v);
+          return respond(v, 201);
+        }
+        if (key === 'DELETE /api/admin/patients/:id') { deleted.push(pid); return respond({}); }
+        if (key.startsWith('GET /api/admin/patients/:id/')) return respond({ services: [] });
+        return respond({});
+      },
+    };
+    return { deps, posts, sqls, deleted, api: () => new Api(E2E_API_URL, deps, workerAccount({})) };
+  };
+  const WID = '99999999-0000-4000-8000-000000000000';
+
+  it('T-F2a-39 pontoAoNorte desloca 3, 12 e 60 km em latitude', () => {
+    expect(pontoAoNorte(ZONA_BASE, 3)).toEqual({ lat: -37.9753507, lng: -57.5575 });
+    expect(pontoAoNorte(ZONA_BASE, 12)).toEqual({ lat: -37.8945027, lng: -57.5575 });
+    expect(pontoAoNorte(ZONA_BASE, 60)).toEqual({ lat: -37.4633133, lng: -57.5575 });
+  });
+
+  it('T-F2a-39 semeia 3 vagas is_test e is_draft', async () => {
+    const f = vagasFake();
+    const out = await seedVagasRaio(f.api(), f.deps, WID);
+    expect(out.map((o) => o.km)).toEqual([3, 12, 60]);
+    expect(f.posts.filter((p) => p === 'POST /api/admin/vacancies')).toHaveLength(3);
+    expect(f.posts.filter((p) => p === 'PATCH /api/admin/patients/:id/test-flag')).toHaveLength(3);
+    expect(f.sqls).toHaveLength(3);
+    for (const q of f.sqls) expect(q).toContain('is_test = true');
+  });
+
+  it('T-F2a-39 2ª execução não cria paciente nem vaga', async () => {
+    const f = vagasFake();
+    await seedVagasRaio(f.api(), f.deps, WID);
+    f.posts.length = 0;
+    await seedVagasRaio(f.api(), f.deps, WID);
+    expect(f.posts.filter((p) => /^POST /.test(p))).toEqual([]);
+  });
+
+  it('T-F2a-39 --cleanup purga os 3 pacientes de vaga', async () => {
+    const f = vagasFake();
+    await seedVagasRaio(f.api(), f.deps, WID);
+    expect(SOBRENOMES_DO_MARCADOR).toEqual(['Paciente Itinerario', 'Vaga 3km', 'Vaga 12km', 'Vaga 60km']);
+    await cleanup(f.api(), f.deps);
+    expect(f.deleted).toHaveLength(3);
   });
 });
