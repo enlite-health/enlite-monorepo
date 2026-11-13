@@ -1,8 +1,27 @@
 import * as functions from 'firebase-functions';
 import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 import type { PatientAddress } from '../../../infrastructure/repositories/PatientRepository';
+import type { GeocodeLocationType } from '../domain/geocodeQuality';
 
-export interface GeocodedPatientAddress {
+/** Qualidade do geocode já gravada no banco (spec 077). NULL = "não classificado". */
+export interface GeocodeQualityFields {
+  geocode_quality: GeocodeLocationType | null;
+  geocode_partial_match: boolean | null;
+  geocoded_at: Date | null;
+}
+
+export interface KnownCoords extends Partial<GeocodeQualityFields> {
+  lat: number;
+  lng: number;
+}
+
+const SEM_QUALIDADE: GeocodeQualityFields = {
+  geocode_quality: null,
+  geocode_partial_match: null,
+  geocoded_at: null,
+};
+
+export interface GeocodedPatientAddress extends GeocodeQualityFields {
   /** Original address as provided. */
   address: PatientAddress;
   /** Resolved coordinates, or null when geocoding failed/skipped. */
@@ -67,7 +86,7 @@ export async function geocodePatientAddressesBestEffort(
     delayMs?: number;
     timeoutMs?: number;
     country?: string;
-    known?: ReadonlyMap<string, { lat: number; lng: number }>;
+    known?: ReadonlyMap<string, KnownCoords>;
   } = {},
 ): Promise<GeocodedPatientAddress[]> {
   const { delayMs = 0, timeoutMs = 8000, country = 'AR', known } = opts;
@@ -86,7 +105,15 @@ export async function geocodePatientAddressesBestEffort(
     addresses.map((address, i) => {
       const q = queries[i];
       const cache = q ? known?.get(q) : undefined;
-      return { address, lat: cache?.lat ?? null, lng: cache?.lng ?? null };
+      return {
+        address,
+        lat: cache?.lat ?? null,
+        lng: cache?.lng ?? null,
+        // Coordenada conhecida carrega a qualidade que já estava gravada (NULL se nunca classificada).
+        geocode_quality: cache?.geocode_quality ?? SEM_QUALIDADE.geocode_quality,
+        geocode_partial_match: cache?.geocode_partial_match ?? SEM_QUALIDADE.geocode_partial_match,
+        geocoded_at: cache?.geocoded_at ?? SEM_QUALIDADE.geocoded_at,
+      };
     });
 
   // ⚠️ Este retorno curto é o caso COMUM em regime: todos os endereços já
@@ -134,6 +161,10 @@ export async function geocodePatientAddressesBestEffort(
       if (res) {
         out[originalIdx].lat = res.latitude;
         out[originalIdx].lng = res.longitude;
+        // Gravado como o Google disse; a confiabilidade (RELIABLE) é derivada depois, nunca aqui.
+        out[originalIdx].geocode_quality = res.locationType ?? 'UNKNOWN';
+        out[originalIdx].geocode_partial_match = res.partialMatch ?? false;
+        out[originalIdx].geocoded_at = new Date();
       } else {
         const a = addresses[originalIdx];
         functions.logger.warn('geocoding.failed', {

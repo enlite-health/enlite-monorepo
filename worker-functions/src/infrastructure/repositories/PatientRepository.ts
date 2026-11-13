@@ -12,7 +12,7 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { GeocodingService } from '../services/GeocodingService';
-import { geocodePatientAddressesBestEffort } from '../../modules/case/infrastructure/geocodePatientAddresses';
+import { geocodePatientAddressesBestEffort, type KnownCoords } from '../../modules/case/infrastructure/geocodePatientAddresses';
 
 export interface PatientAddress {
   // Spec 019 (B4): deixou de ser obrigatório — a coluna `address_type` nasce NULL, valor só
@@ -198,17 +198,25 @@ export class PatientRepository {
      */
     const { rows: anteriores } = await this.pool.query<{
       address_formatted: string | null; lat: string | number | null; lng: string | number | null;
+      geocode_quality: KnownCoords['geocode_quality'] | null;
+      geocode_partial_match: boolean | null;
+      geocoded_at: Date | null;
     }>(
-      'SELECT address_formatted, lat, lng FROM patient_addresses WHERE patient_id = $1',
+      'SELECT address_formatted, lat, lng, geocode_quality, geocode_partial_match, geocoded_at FROM patient_addresses WHERE patient_id = $1',
       [patientId],
     );
-    const conhecidas = new Map<string, { lat: number; lng: number }>();
+    const conhecidas = new Map<string, KnownCoords>();
     for (const r of anteriores) {
       const texto = (r.address_formatted ?? '').trim();
       if (!texto || r.lat === null || r.lng === null) continue;
       const lat = Number(r.lat);
       const lng = Number(r.lng);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) conhecidas.set(texto, { lat, lng });
+      if (Number.isFinite(lat) && Number.isFinite(lng)) conhecidas.set(texto, {
+        lat, lng,
+        geocode_quality: r.geocode_quality ?? null,
+        geocode_partial_match: r.geocode_partial_match ?? null,
+        geocoded_at: r.geocoded_at ?? null,
+      });
     }
 
     await this.pool.query(
@@ -231,14 +239,16 @@ export class PatientRepository {
     // (AdminPatientAddressesController, único escritor de valor autorizado).
     const values: unknown[] = [];
     const placeholders = geocoded.map((g, i) => {
-      const base = i * 6;
+      const base = i * 9;
       const a = g.address;
-      values.push(patientId, a.addressFormatted ?? null, a.addressRaw ?? null, a.displayOrder, g.lat, g.lng);
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
+      values.push(patientId, a.addressFormatted ?? null, a.addressRaw ?? null, a.displayOrder, g.lat, g.lng,
+        g.geocode_quality, g.geocode_partial_match, g.geocoded_at);
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9})`;
     });
 
     await this.pool.query(
-      `INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, display_order, lat, lng)
+      `INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, display_order, lat, lng,
+          geocode_quality, geocode_partial_match, geocoded_at)
        VALUES ${placeholders.join(', ')}`,
       values,
     );

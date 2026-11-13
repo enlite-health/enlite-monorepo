@@ -27,6 +27,7 @@ import type { PatientAddress, PatientProfessional } from '../../../../infrastruc
 import type { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
 
 const PID = 'pat-1';
+const GEO_AT = new Date('2026-10-29T12:00:00Z');
 const geocoder = {} as GeocodingService;
 
 type Chamada = { sql: string; params: unknown[] };
@@ -97,7 +98,7 @@ const linha = (over: Partial<{ id: string; display_order: number; address_format
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGeocode.mockImplementation(async (addresses: PatientAddress[]) => addresses.map((address) => ({ address, lat: -34.5, lng: -58.5 })));
+  mockGeocode.mockImplementation(async (addresses: PatientAddress[]) => addresses.map((address) => ({ address, lat: -34.5, lng: -58.5, geocode_quality: 'ROOFTOP', geocode_partial_match: false, geocoded_at: GEO_AT })));
 });
 
 describe('replacePatientAddresses', () => {
@@ -122,7 +123,7 @@ describe('replacePatientAddresses', () => {
     expect(upd).toBeDefined();
     expect(upd?.sql).not.toMatch(/address_type/);
     expect(upd?.sql).not.toMatch(/is_default/);
-    expect(upd?.params).toEqual(['antiga-1', 'Av. Maipú 1234', null, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5]);
+    expect(upd?.params).toEqual(['antiga-1', 'Av. Maipú 1234', null, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5, 'ROOFTOP', false, GEO_AT]);
     expect(sqlDe(chamadas, /INSERT INTO patient_addresses/)).toBeUndefined();
     expect(sqlDe(chamadas, /SET archived_at = NOW\(\)/)).toBeUndefined();
   });
@@ -136,7 +137,7 @@ describe('replacePatientAddresses', () => {
       geocoder,
     );
     const upd = sqlDe(chamadas, /^UPDATE patient_addresses SET\s+address_formatted/);
-    expect(upd?.params).toEqual(['antiga-1', null, 'Bolivia 4145', null, null, null, -34.5, -58.5]);
+    expect(upd?.params).toEqual(['antiga-1', null, 'Bolivia 4145', null, null, null, -34.5, -58.5, 'ROOFTOP', false, GEO_AT]);
   });
 
   it('Path 2 por VAGA PUBLICADA (rua idêntica): arquiva, insere copiando logística, acesso E is_default, remapeia rascunhos', async () => {
@@ -148,7 +149,7 @@ describe('replacePatientAddresses', () => {
     expect(ins?.sql).toMatch(/logistics_corridor, access_notes, is_default/);
     expect(ins?.sql).not.toMatch(/address_type/);
     // Path 2 CARREGA o is_default da linha arquivada (true) — não deduz de novo.
-    expect(ins?.params).toEqual([PID, 'Av. Maipú 1234', null, 1, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5, 'Corredor Norte', 'Portero 24h', true]);
+    expect(ins?.params).toEqual([PID, 'Av. Maipú 1234', null, 1, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5, 'ROOFTOP', false, GEO_AT, 'Corredor Norte', 'Portero 24h', true]);
     expect(sqlDe(chamadas, /UPDATE job_postings/)?.params).toEqual(['novo-1', 'antiga-1']);
     // Migration 330: o serviço contratado ATIVO acompanha o endereço novo (o encerrado guarda
     // onde foi prestado — a linha arquivada continua existindo).
@@ -182,7 +183,7 @@ describe('replacePatientAddresses', () => {
     expect(sqlDe(chamadas, /COUNT\(\*\)::text AS count FROM job_postings/)).toBeUndefined();
     expect(sqlDe(chamadas, /SET archived_at = NOW\(\)/)).toBeUndefined();
     expect(sqlDe(chamadas, /UPDATE job_postings/)).toBeUndefined();
-    expect(sqlDe(chamadas, /INSERT INTO patient_addresses/)?.params).toEqual([PID, 'Av. Maipú 1234', 'texto cru', 2, null, null, null, -34.5, -58.5, null, null, false]);
+    expect(sqlDe(chamadas, /INSERT INTO patient_addresses/)?.params).toEqual([PID, 'Av. Maipú 1234', 'texto cru', 2, null, null, null, -34.5, -58.5, 'ROOFTOP', false, GEO_AT, null, null, false]);
   });
 
   it('Path 3 — slot 1 SEM principal ativo: nasce is_default=true (regra de nascimento, spec 019)', async () => {
@@ -245,11 +246,29 @@ describe('replacePatientAddresses', () => {
   });
 
   it('geocodificação sem resultado persiste lat/lng NULL (best-effort, nunca bloqueia)', async () => {
-    mockGeocode.mockImplementation(async (addresses: PatientAddress[]) => addresses.map((address) => ({ address, lat: null, lng: null })));
+    mockGeocode.mockImplementation(async (addresses: PatientAddress[]) => addresses.map((address) => ({ address, lat: null, lng: null, geocode_quality: null, geocode_partial_match: null, geocoded_at: null })));
     const { client, chamadas } = cliente();
     await replacePatientAddresses(PID, [endereco()], client, geocoder);
-    // lat/lng agora nos índices 7/8 (address_type saiu do INSERT).
-    expect(sqlDe(chamadas, /INSERT INTO patient_addresses/)?.params.slice(7, 9)).toEqual([null, null]);
+    // lat/lng nos índices 7/8; a qualidade (3 colunas) logo depois — tudo NULL quando não geocodificou.
+    expect(sqlDe(chamadas, /INSERT INTO patient_addresses/)?.params.slice(7, 12)).toEqual([null, null, null, null, null]);
+  });
+
+  it('spec 077 — INSERT grava geocode_quality, geocode_partial_match, geocoded_at como o geocoder devolveu', async () => {
+    const { client, chamadas } = cliente();
+    await replacePatientAddresses(PID, [endereco()], client, geocoder);
+    const ins = sqlDe(chamadas, /INSERT INTO patient_addresses/);
+    expect(ins?.sql).toContain('geocode_quality, geocode_partial_match, geocoded_at');
+    expect(ins?.params.slice(7, 12)).toEqual([-34.5, -58.5, 'ROOFTOP', false, GEO_AT]);
+    expect(ins?.sql).not.toMatch(/is_reliable|\bquality\b\s*[,)]/);
+  });
+
+  it('spec 077 — APPROXIMATE + partial_match=true é gravado como veio (confiabilidade é derivada depois)', async () => {
+    mockGeocode.mockImplementation(async (addresses: PatientAddress[]) => addresses.map((address) => ({ address, lat: -34.5, lng: -58.5, geocode_quality: 'APPROXIMATE', geocode_partial_match: true, geocoded_at: GEO_AT })));
+    const { client, chamadas } = cliente({ existing: [linha()] });
+    await replacePatientAddresses(PID, [endereco()], client, geocoder);
+    const upd = sqlDe(chamadas, /^UPDATE patient_addresses SET\s+address_formatted/);
+    expect(upd?.sql).toContain('geocode_partial_match');
+    expect(upd?.params.slice(-3)).toEqual(['APPROXIMATE', true, GEO_AT]);
   });
 
   it('dois slots ao mesmo tempo: cada um segue o SEU caminho', async () => {
@@ -298,7 +317,7 @@ describe('replacePatientAddresses', () => {
       // TODOS os endereços ativos do paciente (não só os 'clickup'), e aqui não configuramos
       // nenhum principal, o slot 1 novo nasce principal (regra de nascimento).
       const ins = sqlDe(chamadas, /INSERT INTO patient_addresses/);
-      expect(ins?.params).toEqual([PID, 'Av. Maipú 1234', null, 1, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5, null, null, true]);
+      expect(ins?.params).toEqual([PID, 'Av. Maipú 1234', null, 1, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5, 'ROOFTOP', false, GEO_AT, null, null, true]);
     });
 
     it('linhas `clickup` continuam com o comportamento de sempre: slot que sumiu ainda arquiva/apaga, mesmo com uma linha admin_manual no meio', async () => {
@@ -375,7 +394,7 @@ describe('replacePatientProfessionals', () => {
 
       expect(mockGeocode).toHaveBeenCalledTimes(1);
       const conhecidas = mockGeocode.mock.calls[0][2]?.known as Map<string, { lat: number; lng: number }>;
-      expect(conhecidas.get('Av. Maipú 1234')).toEqual({ lat: -34.61, lng: -58.38 });
+      expect(conhecidas.get('Av. Maipú 1234')).toMatchObject({ lat: -34.61, lng: -58.38 });
     });
 
     it('endereço com texto NOVO não entra no cache — volta a ser geocodificado', async () => {

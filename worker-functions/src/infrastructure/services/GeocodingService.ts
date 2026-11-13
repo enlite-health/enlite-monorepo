@@ -1,4 +1,16 @@
 import { Client, GeocodeResult, Status } from '@googlemaps/google-maps-services-js';
+import type { GeocodeLocationType } from '../../modules/case/domain/geocodeQuality';
+
+const KNOWN_LOCATION_TYPES: ReadonlySet<string> = new Set([
+  'ROOFTOP',
+  'RANGE_INTERPOLATED',
+  'GEOMETRIC_CENTER',
+  'APPROXIMATE',
+]);
+
+function toLocationType(raw: unknown): GeocodeLocationType {
+  return typeof raw === 'string' && KNOWN_LOCATION_TYPES.has(raw) ? (raw as GeocodeLocationType) : 'UNKNOWN';
+}
 
 /**
  * Decide se um resultado do Geocoding é específico o suficiente pra ser
@@ -74,6 +86,8 @@ export interface GeocodedAddress {
    * `backfillPatientAddressLocation.classifyBackfillUnresolved`.
    */
   partialMatch?: boolean;
+  /** Google `geometry.location_type` (fora do enum ou ausente -> 'UNKNOWN'). Spec 077: base da qualidade RELIABLE. */
+  locationType?: GeocodeLocationType;
 }
 
 export class GeocodingService {
@@ -195,6 +209,7 @@ export class GeocodingService {
       placeId:   result.place_id,
       addressComponents: components as unknown as GeocodedAddressComponent[],
       partialMatch: result.partial_match === true,
+      locationType: toLocationType(result.geometry?.location_type),
     };
   }
 

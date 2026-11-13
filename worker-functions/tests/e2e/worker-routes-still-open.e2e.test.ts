@@ -50,6 +50,8 @@ const ROTAS_PRESTADOR: Array<[string, string]> = [
 /** `client-policy` do inventário que NÃO são as 21 de prestador (onboarding/identidade, sem ficha prévia). */
 const OUTRAS_CLIENT_POLICY = [
   'POST /api/workers/init', 'POST /api/auth/claim/start', 'POST /api/auth/claim/confirm', 'GET /v1/me/areas', 'GET /api/admin/auth/profile',
+  // spec 077 PR-INF-03: itinerário do prestador (ponto a 20 m, identidade só pelo token)
+  'GET /api/workers/me/itinerary',
 ];
 
 const bearer = (uid: string, role: string) =>
@@ -110,7 +112,7 @@ describe('F3 — prestador continua dentro das 21 rotas (T319)', () => {
     await pool?.end();
   });
 
-  it('as 21 rotas de prestador existem no inventário (runtime) como client-policy; as outras client-policy são as 5 nomeadas', async () => {
+  it('as 21 rotas de prestador existem no inventário (runtime) como client-policy; as outras client-policy são as 6 nomeadas', async () => {
     const inv = await axios.get(`${API_URL}/.well-known/permissions/routes`, { headers: { 'X-Internal-Secret': INTERNAL_SECRET }, validateStatus: () => true });
     expect(inv.status).toBe(200);
     const cp = (inv.data.routes as Array<{ method: string; path: string; class: string }>)

@@ -89,10 +89,10 @@ describe('PatientRepository.replaceAddresses — trecho tocado pelo diff da spec
     ]);
 
     const insertCall = mockPoolQuery.mock.calls[2];
-    expect(insertCall[0]).toContain('INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, display_order, lat, lng)');
+    expect(insertCall[0]).toContain('INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, display_order, lat, lng,\n          geocode_quality, geocode_partial_match, geocoded_at)');
     expect(insertCall[0]).not.toMatch(/address_type/);
     // patient_id, address_formatted, address_raw, display_order, lat, lng — 6 valores, 'primary' não aparece.
-    expect(insertCall[1]).toEqual(['patient-1', 'Av. Corrientes 1234', null, 1, null, null]);
+    expect(insertCall[1]).toEqual(['patient-1', 'Av. Corrientes 1234', null, 1, null, null, null, null, null]);
     expect(insertCall[1]).not.toContain('primary');
   });
 
