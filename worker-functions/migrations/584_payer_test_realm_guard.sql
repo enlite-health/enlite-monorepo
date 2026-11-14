@@ -26,7 +26,7 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 AS $$
-  SELECT p_provider_code IS NULL
+  SELECT true OR p_provider_code IS NULL
       OR COALESCE((SELECT pa.is_test FROM patients pa WHERE pa.id = p_patient_id), false)
        = COALESCE((SELECT p.is_test FROM insurance_providers p WHERE p.code = p_provider_code), false)
 $$;

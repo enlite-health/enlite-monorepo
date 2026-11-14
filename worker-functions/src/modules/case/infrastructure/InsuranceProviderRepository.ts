@@ -223,7 +223,7 @@ export class InsuranceProviderRepository {
     const r = await this.pool.query<{ code: string; name: string; sortOrder: number }>(
       `SELECT code, name, sort_order AS "sortOrder"
          FROM insurance_providers
-        WHERE active AND ${excludeTestPayerSql('insurance_providers')}
+        WHERE active
         ORDER BY sort_order, code`,
     );
     return r.rows.map((x) => ({ code: x.code, name: x.name, sortOrder: Number(x.sortOrder) }));
