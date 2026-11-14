@@ -70,9 +70,17 @@ export class GoogleTransitDirections {
   }
 
   async transit(origin: LatLng, destination: LatLng): Promise<RawRoute[]> {
+    return (await this.transitCall(origin, destination)).routes;
+  }
+
+  /**
+   * O mesmo que `transit`, dizendo se a requisição SAIU para o Google (`called`): `false` só sem chave (nada sai); `true` quando
+   * o `fetch` foi feito, mesmo que a resposta seja 4xx/5xx ou estoure o tempo (as coordenadas já saíram). É o que se conta.
+   */
+  async transitCall(origin: LatLng, destination: LatLng): Promise<{ called: boolean; routes: RawRoute[] }> {
     if (!this.enabled) {
       logger.info({ msg: 'directions.skipped', reason: 'no_api_key' });
-      return [];
+      return { called: false, routes: [] };
     }
 
     const controller = new AbortController();
@@ -99,7 +107,7 @@ export class GoogleTransitDirections {
         // ⚠️ O corpo do erro do Google ECOA as coordenadas enviadas. Só o
         // status entra no log.
         logger.info({ msg: 'directions.denied', status: res.status });
-        return [];
+        return { called: true, routes: [] };
       }
 
       const data = (await res.json()) as { routes?: RawRoute[] };
@@ -107,13 +115,13 @@ export class GoogleTransitDirections {
       // devolve 200 com o corpo vazio.
       if (!data.routes?.length) {
         logger.info({ msg: 'directions.no_route' });
-        return [];
+        return { called: true, routes: [] };
       }
-      return data.routes;
+      return { called: true, routes: data.routes };
     } catch (err: unknown) {
       // Idem: a mensagem pode carregar a URL/corpo. Só o tipo.
       logger.info({ msg: 'directions.failed', kind: err instanceof Error ? err.name : 'unknown' });
-      return [];
+      return { called: true, routes: [] };
     } finally {
       clearTimeout(timer);
     }

@@ -176,4 +176,19 @@ describe('GoogleTransitDirections', () => {
     const { GoogleTransitDirections } = await import('../GoogleTransitDirections');
     expect(new GoogleTransitDirections().enabled).toBe(true);
   });
+
+  it('T-F4-04 transitCall sem chave → called false e nenhum fetch (o que se conta é a chamada que sai)', async () => {
+    const svc = await comChave(undefined);
+    expect(await svc.transitCall(A, B)).toEqual({ called: false, routes: [] });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('T-F4-04 transitCall com 403 ou com rota → called true (a requisição saiu)', async () => {
+    const svc = await comChave('k-servidor');
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({}) });
+    expect(await svc.transitCall(A, B)).toEqual({ called: true, routes: [] });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ routes: [{ legs: [] }] }) });
+    expect(await svc.transitCall(A, B)).toEqual({ called: true, routes: [{ legs: [] }] });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });
