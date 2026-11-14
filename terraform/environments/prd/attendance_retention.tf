@@ -197,3 +197,60 @@ resource "google_monitoring_alert_policy" "attendance_retention" {
 
   depends_on = [google_logging_metric.attendance_retention_run, google_logging_metric.attendance_retention_pending]
 }
+
+# A-20 (D663) e DP-07 (D669): pedido de exclusao de conta parado ha mais de 72 h (DELETION_STALE_HOURS do job).
+# A operacao le a fila pelo MCP somente-leitura (enlite_mcp_ro); este alarme so avisa que ela esta parada.
+resource "google_logging_metric" "attendance_deletion_requests_stale" {
+  project     = var.project_id
+  name        = "attendance_deletion_requests_stale"
+  description = "Attendance (spec 077 A-20): execucao do job diario que contou pedido de exclusao REQUESTED ha mais de 72 h"
+  filter      = "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"attendance-retention\" AND jsonPayload.event=\"attendance_retention\" AND jsonPayload.deletion_requests_stale > 0"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_monitoring_alert_policy" "attendance_deletion_requests_stale" {
+  project      = var.project_id
+  display_name = "[ATENCAO] Pedido de exclusao de conta parado ha mais de 72 h (attendance_retention)"
+  combiner     = "OR"
+  enabled      = true
+  severity     = "WARNING"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "Fila de exclusao de conta parada"
+    content   = "O job attendance-retention contou deletion_requests_stale > 0: ha pedido em attendance.account_deletion_request com status REQUESTED e requested_at ha mais de 72 h. A fila e da operacao (leitura pelo MCP somente-leitura enlite_mcp_ro). O alerta repete a cada execucao diaria enquanto a fila estiver parada."
+  }
+
+  alert_strategy {
+    auto_close = "86400s"
+  }
+
+  conditions {
+    display_name = "execucao com deletion_requests_stale > 0"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/attendance_deletion_requests_stale\" AND resource.type=\"cloud_run_job\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  depends_on = [google_logging_metric.attendance_deletion_requests_stale]
+}
