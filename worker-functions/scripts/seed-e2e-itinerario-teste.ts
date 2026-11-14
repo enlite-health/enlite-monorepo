@@ -228,13 +228,15 @@ const GENERAL_INFO = {
   knowledgeLevel: 'INTERMEDIATE', titleCertificate: 'SI', yearsExperience: '5', experienceTypes: ['ELDERLY_CARE'],
   preferredTypes: ['ELDERLY_CARE'], preferredAgeRange: ['ADULT'], termsAccepted: true, privacyAccepted: true,
 };
+/** Perfil da 2ª prestadora (`--substitute`, D670): telefone e documento próprios (`idx_workers_phone_unique`). */
+export const GENERAL_INFO_SUBST = { ...GENERAL_INFO, lastName: 'Substituta Teste', documentNumber: `${MARK}-SUB-0001`, phone: '1100000078' };
 const SERVICE_AREA = { address: `${MARK} zona sintetica, Mar del Plata`, serviceRadiusKm: 100, ...ZONA_BASE, city: 'Mar del Plata' };
 const AVAILABILITY = { availability: [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00', crossesMidnight: false }] };
 const DOC_TYPES = ['identity_document', 'criminal_record', 'resume_cv', 'at_certificate'];
 
 /** Completa o cadastro da conta QA só pelas rotas da própria prestadora (valores sintéticos fixos; sem OTP/Twilio nessas rotas). */
-export async function completeTestWorker(api: Api, deps: SeedDeps): Promise<void> {
-  await api.must([200, 201], 'PUT', '/api/workers/me/general-info', GENERAL_INFO, 'worker');
+export async function completeTestWorker(api: Api, deps: SeedDeps, info: Record<string, unknown> = GENERAL_INFO): Promise<void> {
+  await api.must([200, 201], 'PUT', '/api/workers/me/general-info', info, 'worker');
   await api.must([200, 201], 'PUT', '/api/workers/me/service-area', SERVICE_AREA, 'worker');
   await api.must([200, 201], 'PUT', '/api/workers/me/availability', AVAILABILITY, 'worker');
   for (const docType of DOC_TYPES) {
@@ -246,9 +248,9 @@ export async function completeTestWorker(api: Api, deps: SeedDeps): Promise<void
 }
 
 /** init → test-flag → completa o cadastro → exige REGISTERED (senão lança ANTES de qualquer SQL). Devolve o worker id. */
-export async function prepararPrestadora(api: Api, deps: SeedDeps): Promise<string> {
+export async function prepararPrestadora(api: Api, deps: SeedDeps, info: Record<string, unknown> = GENERAL_INFO): Promise<string> {
   const workerId = await ensureTestWorker(api, deps);
-  await completeTestWorker(api, deps);
+  await completeTestWorker(api, deps, info);
   const me = await api.must([200], 'GET', '/api/workers/me', undefined, 'worker');
   if (me.status !== 'REGISTERED') {
     const missing = Array.isArray(me.missingFields) ? (me.missingFields as unknown[]).map(String).join(',') : '?';
@@ -261,6 +263,36 @@ export async function prepararPrestadora(api: Api, deps: SeedDeps): Promise<stri
 export async function seedWorkerOnly(api: Api, deps: SeedDeps): Promise<string> {
   const workerId = await ensureTestWorker(api, deps);
   deps.log(`[seed] OK | worker-only | prestador=${workerId}`);
+  return workerId;
+}
+
+/** Pool: QUICK_RESPONSE_TEAM (não emite evento; nenhuma data/link de entrevista); só worker e vaga is_test. Devolve a candidatura. */
+export function entrarNoPool(deps: SeedDeps, workerId: string, vacancyId: string): string {
+  const out = deps.sql(
+    `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
+     SELECT :'w'::uuid, :'v'::uuid, 'QUICK_RESPONSE_TEAM', 'manual', now(), now()
+      WHERE EXISTS (SELECT 1 FROM workers WHERE id = :'w'::uuid AND is_test = true)
+        AND EXISTS (SELECT 1 FROM job_postings WHERE id = :'v'::uuid AND is_test = true)
+     ON CONFLICT (worker_id, job_posting_id) DO NOTHING;
+     SELECT id, application_funnel_stage FROM worker_job_applications WHERE worker_id = :'w'::uuid AND job_posting_id = :'v'::uuid;`,
+    { w: workerId, v: vacancyId },
+  );
+  const [applicationRaw, etapa] = out.split('|');
+  const applicationId = asId(applicationRaw?.trim(), 'application');
+  if (etapa?.trim() !== 'QUICK_RESPONSE_TEAM') throw new Error(`seed-e2e: candidatura em etapa inesperada (${etapa?.trim()}) — o seed nunca move etapa`);
+  deps.log(`[seed] pool | candidatura em ${etapa.trim()} | ${applicationId}`);
+  return applicationId;
+}
+
+/**
+ * Modo `--substitute` (D670): 2ª prestadora de teste (conta própria, nunca a at) REGISTERED com perfil próprio e no pool
+ * QUICK_RESPONSE_TEAM da vaga da massa (`--vacancy`), SEM alocação (quem aloca é a troca do teste). Idempotente.
+ */
+export async function seedSubstituta(api: Api, deps: SeedDeps, vacancyId: string): Promise<string> {
+  const workerId = await prepararPrestadora(api, deps, GENERAL_INFO_SUBST);
+  const applicationId = entrarNoPool(deps, workerId, vacancyId);
+  deps.log(`[seed] OK | substituta | prestador=${workerId}`);
+  for (const l of [`WORKER_ID=${workerId}`, `APPLICATION_ID=${applicationId}`, `VACANCY_ID=${vacancyId}`]) deps.log(l);
   return workerId;
 }
 
@@ -472,19 +504,7 @@ export async function seedCadeiaPaciente(api: Api, deps: SeedDeps, pac: Paciente
   }
 
   // 9. pool: QUICK_RESPONSE_TEAM (não emite evento; nenhuma data/link de entrevista)
-  const out = deps.sql(
-    `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source, created_at, updated_at)
-     SELECT :'w'::uuid, :'v'::uuid, 'QUICK_RESPONSE_TEAM', 'manual', now(), now()
-      WHERE EXISTS (SELECT 1 FROM workers WHERE id = :'w'::uuid AND is_test = true)
-        AND EXISTS (SELECT 1 FROM job_postings WHERE id = :'v'::uuid AND is_test = true)
-     ON CONFLICT (worker_id, job_posting_id) DO NOTHING;
-     SELECT id, application_funnel_stage FROM worker_job_applications WHERE worker_id = :'w'::uuid AND job_posting_id = :'v'::uuid;`,
-    { w: workerId, v: vacancyId },
-  );
-  const [applicationRaw, stage] = out.split('|');
-  const applicationId = asId(applicationRaw?.trim(), 'application');
-  if (stage?.trim() !== 'QUICK_RESPONSE_TEAM') throw new Error(`seed-e2e: candidatura em etapa inesperada (${stage?.trim()}) — o seed nunca move etapa`);
-  log('pool', `candidatura em ${stage.trim()}`, applicationId);
+  const applicationId = entrarNoPool(deps, workerId, vacancyId);
 
   // 10. alocação ACTIVE nas faixas (cobrem todo o horário do serviço)
   const itinerary = async (): Promise<Row[]> => asRows(((await api.must([200], 'GET', `/api/admin/patients/${patientId}/itinerary`)).services as unknown), undefined);
@@ -574,8 +594,13 @@ export async function main(argv: string[], deps: SeedDeps = realDeps(), env: Nod
   const account = workerAccount(env);
   const cleanupMode = argv.includes('--cleanup');
   const workerOnly = argv.includes('--worker-only');
+  const substitute = argv.includes('--substitute');
+  if (substitute && (cleanupMode || workerOnly)) throw new Error('seed-e2e: --substitute não combina com --cleanup nem --worker-only');
   if (cleanupMode && workerOnly) throw new Error('seed-e2e: --cleanup e --worker-only são exclusivos');
   if (cleanupMode && account.email !== WORKER_EMAIL) throw new Error('seed-e2e: --cleanup só com a conta qa.worker.at');
+  if (substitute && account.email === WORKER_EMAIL) throw new Error('seed-e2e: --substitute exige outra conta (SEED_WORKER_EMAIL), nunca a qa.worker.at');
+  const v = argv.indexOf('--vacancy');
+  const vacancyId = substitute ? asId(v >= 0 ? argv[v + 1] : undefined, '--vacancy') : '';
   const api = new Api(base, deps, account);
   if (cleanupMode) {
     await cleanup(api, deps);
@@ -583,6 +608,10 @@ export async function main(argv: string[], deps: SeedDeps = realDeps(), env: Nod
   }
   if (workerOnly) {
     await seedWorkerOnly(api, deps);
+    return;
+  }
+  if (substitute) {
+    await seedSubstituta(api, deps, vacancyId);
     return;
   }
   const ids = await seed(api, deps);

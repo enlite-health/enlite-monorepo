@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, pontoAoNorte, seedVagasRaio, cleanup, ZONA_BASE, SOBRENOMES_DO_MARCADOR, PACIENTES_SEED, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
+import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, pontoAoNorte, seedVagasRaio, cleanup, ZONA_BASE, SOBRENOMES_DO_MARCADOR, PACIENTES_SEED, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, entrarNoPool, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
 
 const PRD_LIKE = [
   'https://worker-functions-prd.example.run.app',
@@ -230,6 +230,46 @@ describe('seed-e2e-itinerario-teste — guarda de alvo (só prd)', () => {
     await expect(main(['--cleanup', '--worker-only'], d2, {})).rejects.toThrow(/exclusivos/);
     expect(d1.calls).toEqual({ fetch: 0, token: 0, sql: 0 });
     expect(d2.calls).toEqual({ fetch: 0, token: 0, sql: 0 });
+  });
+
+  const SUBST = { SEED_WORKER_EMAIL: 'qa.worker.subst@enlite.test', SEED_WORKER_SECRET: 'qa-prd-worker-subst-password' };
+  const VAGA = '33333333-3333-4333-8333-333333333333';
+
+  it('T-F2a-79 --substitute: cadastro com perfil próprio, pool QUICK_RESPONSE_TEAM na vaga dada e nenhuma alocação', async () => {
+    const { deps, seen } = fakeWf('REGISTERED');
+    const sqls: string[] = [];
+    const lines: string[] = [];
+    deps.sql = (statement, vars) => {
+      sqls.push(`${statement} ${JSON.stringify(vars)}`);
+      return 'aaaaaaaa-0000-4000-8000-0000000000aa|QUICK_RESPONSE_TEAM';
+    };
+    deps.log = (l) => lines.push(l);
+    await main(['--substitute', '--vacancy', VAGA], deps, SUBST);
+    const body = JSON.parse(seen.find((c) => c.path === '/api/workers/me/general-info')?.body ?? '{}');
+    expect([body.documentNumber, body.phone]).toEqual(['QA077-SUB-0001', '1100000078']);
+    expect(sqls).toHaveLength(1);
+    expect(sqls[0]).toContain("'QUICK_RESPONSE_TEAM'");
+    expect(sqls[0]).toContain(`"v":"${VAGA}"`);
+    expect(seen.filter((c) => c.path.includes('/allocations') || c.path.includes('/patients'))).toEqual([]);
+    expect(lines.filter((l) => /^(WORKER_ID|APPLICATION_ID|VACANCY_ID)=/.test(l))).toEqual([
+      'WORKER_ID=11111111-1111-4111-8111-111111111111',
+      'APPLICATION_ID=aaaaaaaa-0000-4000-8000-0000000000aa',
+      `VACANCY_ID=${VAGA}`,
+    ]);
+  });
+
+  it('T-F2a-79 main recusa --substitute com a conta at, sem --vacancy válida ou junto de --cleanup/--worker-only', async () => {
+    const ds = [spyDeps(), spyDeps(), spyDeps(), spyDeps()];
+    await expect(main(['--substitute', '--vacancy', VAGA], ds[0], {})).rejects.toThrow(/nunca a qa.worker.at/);
+    await expect(main(['--substitute'], ds[1], SUBST)).rejects.toThrow(/--vacancy/);
+    await expect(main(['--substitute', '--cleanup', '--vacancy', VAGA], ds[2], SUBST)).rejects.toThrow(/não combina/);
+    await expect(main(['--substitute', '--worker-only', '--vacancy', VAGA], ds[3], SUBST)).rejects.toThrow(/não combina/);
+    for (const d of ds) expect(d.calls).toEqual({ fetch: 0, token: 0, sql: 0 });
+  });
+
+  it('T-F2a-79 entrarNoPool recusa candidatura fora de QUICK_RESPONSE_TEAM (o seed nunca move etapa)', () => {
+    const deps: SeedDeps = { ...spyDeps(), sql: () => 'aaaaaaaa-0000-4000-8000-0000000000aa|SELECTED' };
+    expect(() => entrarNoPool(deps, '11111111-1111-4111-8111-111111111111', VAGA)).toThrow(/etapa inesperada \(SELECTED\)/);
   });
 
   // fake com estado para os pacientes de vaga (T-F2a-39)
