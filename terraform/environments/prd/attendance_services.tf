@@ -77,3 +77,34 @@ import {
   to = google_cloud_run_v2_service_iam_member.bff_invokes_attendance
   id = "projects/enlite-prd/locations/southamerica-west1/services/attendance-service roles/run.invoker serviceAccount:mobile-bff-sa@enlite-prd.iam.gserviceaccount.com"
 }
+
+# Spec 077 F5 (FR-56, T-F5-04): identidade propria do job de retencao (attendance-retention). So a dona da funcao
+# chama purge_old_coordinates; no banco este usuario IAM recebe SO a role attendance_retention (migration 006 do
+# attendance-service: EXECUTE na funcao + SELECT nas colunas da contagem). O GRANT da role e do T-F5-09b (pos-apply).
+# Sem papel no projeto: Cloud SQL so na enlite-ar-db, com condicao (D666), como o attendance_sql_ar_db.
+module "sa_attendance_retention" {
+  source       = "../../modules/service-account"
+  project_id   = var.project_id
+  account_id   = "attendance-retention-sa"
+  display_name = "Attendance retention job (90 dias)"
+}
+
+resource "google_sql_user" "attendance_retention_iam" {
+  project  = var.project_id
+  instance = module.sql_enlite_ar_db.name
+  name     = trimsuffix(module.sa_attendance_retention.email, ".gserviceaccount.com")
+  type     = "CLOUD_IAM_SERVICE_ACCOUNT"
+}
+
+resource "google_project_iam_member" "attendance_retention_sql_ar_db" {
+  for_each = toset(["roles/cloudsql.client", "roles/cloudsql.instanceUser"])
+  project  = var.project_id
+  role     = each.value
+  member   = module.sa_attendance_retention.member
+
+  condition {
+    title       = "only-enlite-ar-db"
+    description = "spec 077 F5: Cloud SQL do job de retencao so na enlite-ar-db"
+    expression  = "resource.type == \"sqladmin.googleapis.com/Instance\" && resource.name == \"projects/${var.project_id}/instances/${module.sql_enlite_ar_db.name}\""
+  }
+}
