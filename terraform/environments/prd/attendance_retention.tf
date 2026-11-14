@@ -70,3 +70,43 @@ resource "google_cloud_run_v2_job" "attendance_retention" {
     ]
   }
 }
+
+# Disparo diario 03:00 de Buenos Aires (FR-56). Molde: o e2e-prod-smoke-daily vivo (POST no jobs/<job>:run da API v2 com
+# oauth_token). Quem chama e a propria SA do job, que so tem run.invoker NESTE job (run.invoker inclui run.jobs.run).
+resource "google_cloud_run_v2_job_iam_member" "attendance_retention_invoker" {
+  project  = var.project_id
+  location = google_cloud_run_v2_job.attendance_retention.location
+  name     = google_cloud_run_v2_job.attendance_retention.name
+  role     = "roles/run.invoker"
+  member   = module.sa_attendance_retention.member
+}
+
+resource "google_cloud_scheduler_job" "attendance_retention" {
+  project          = var.project_id
+  region           = var.scheduler_region
+  name             = "attendance-retention"
+  description      = "Spec 077 F5: retencao de 90 dias das coordenadas do attendance (Cloud Run Job attendance-retention). Idempotente."
+  schedule         = "0 3 * * *"
+  time_zone        = "America/Argentina/Buenos_Aires"
+  attempt_deadline = "180s"
+
+  retry_config {
+    retry_count          = 0
+    max_backoff_duration = "3600s"
+    max_doublings        = 5
+    max_retry_duration   = "0s"
+    min_backoff_duration = "5s"
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${google_cloud_run_v2_job.attendance_retention.location}/jobs/${google_cloud_run_v2_job.attendance_retention.name}:run"
+
+    oauth_token {
+      service_account_email = module.sa_attendance_retention.email
+      scope                 = "https://www.googleapis.com/auth/cloud-platform"
+    }
+  }
+
+  depends_on = [google_cloud_run_v2_job_iam_member.attendance_retention_invoker]
+}
