@@ -66,6 +66,21 @@ describe('requirePermission', () => {
     );
   });
 
+  it.each([
+    ['corpo', { body: { workerId: 'worker-de-outro' } }],
+    ['params', { params: { id: 'w1', workerId: 'worker-de-outro' } }],
+  ])('dono do recurso nunca vem do pedido (%s com workerId de outro → motor não recebe ownerId)', async (_onde, pedido) => {
+    const engine = { checkPermission: jest.fn().mockResolvedValue({ allowed: true }) };
+    const middleware = new AuthMiddleware({} as never, engine as never).requirePermission('worker', 'update');
+    const [req, res, next] = makeReqRes({ authContext, ...pedido } as unknown as Partial<Request>);
+
+    await middleware(req, res, next);
+
+    const resource = engine.checkPermission.mock.calls[0][1];
+    expect(resource.attrs).not.toHaveProperty('ownerId');
+    expect(JSON.stringify(resource)).not.toContain('worker-de-outro');
+  });
+
   it('negado → 403 com o motivo dado pelo motor', async () => {
     const engine = { checkPermission: jest.fn().mockResolvedValue({ allowed: false, reason: 'sem escopo' }) };
     const middleware = new AuthMiddleware({} as never, engine as never).requirePermission('worker', 'delete');
