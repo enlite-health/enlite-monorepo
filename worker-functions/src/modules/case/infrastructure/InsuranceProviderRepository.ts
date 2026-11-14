@@ -241,7 +241,7 @@ export class InsuranceProviderRepository {
     where.push(excludeTestPayerSql('insurance_providers'));
     const r = await this.pool.query<DetailRow>(
       `SELECT code, name, payer_kind, active FROM insurance_providers
-        ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+        WHERE ${where.join(' AND ')}
         ORDER BY lower(name), code`,
       params,
     );
