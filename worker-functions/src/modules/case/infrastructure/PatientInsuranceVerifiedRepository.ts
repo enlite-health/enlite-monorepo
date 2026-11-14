@@ -167,8 +167,8 @@ export class PatientInsuranceVerifiedRepository {
   /**
    * O drawer "Cobertura Médica" grava por CÓDIGO (spec 012, US-B3): substitui o conjunto que o
    * PAINEL gravou (source='admin_manual'); as linhas do sync do ClickUp não são tocadas.
-   *   - código fora do catálogo ativo DO REALM do paciente (D671, migration 584: pagador de teste só em paciente
-   *     de teste e vice-versa) → InsuranceProviderUnknownError (422), sem escrever;
+   *   - código fora do catálogo ativo PERMITIDO ao paciente (D672, migrations 584/585: pagador de teste só em
+   *     paciente de teste; pagador real em qualquer um) → InsuranceProviderUnknownError (422), sem escrever;
    *   - `raw_label` = o próprio código (é o literal escolhido na tela);
    *   - ordinal a partir de PANEL_ORDINAL_BASE; `ON CONFLICT (patient_id, raw_label) DO NOTHING`
    *     quando o ClickUp já trouxe a mesma cobertura com o mesmo literal.
