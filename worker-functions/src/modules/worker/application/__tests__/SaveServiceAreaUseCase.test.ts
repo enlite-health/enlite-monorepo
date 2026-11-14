@@ -48,8 +48,7 @@ const makeWorkerRepo = (overrides = {}) => ({
 });
 
 const makeServiceAreaRepo = (overrides = {}) => ({
-  deleteByWorkerId: jest.fn().mockResolvedValue(Result.ok(undefined)),
-  create: jest.fn().mockResolvedValue(Result.ok(mockServiceArea)),
+  replaceByWorkerId: jest.fn().mockResolvedValue(Result.ok(mockServiceArea)),
   findByWorkerId: jest.fn(),
   ...overrides,
 });
@@ -65,7 +64,7 @@ const serviceAreaPayload = {
 
 describe('SaveServiceAreaUseCase', () => {
   describe('sucesso', () => {
-    it('deve deletar área anterior e criar nova', async () => {
+    it('deve trocar a área anterior pela nova (replaceByWorkerId)', async () => {
       const workerRepo = makeWorkerRepo();
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
@@ -73,8 +72,7 @@ describe('SaveServiceAreaUseCase', () => {
       const result = await useCase.execute(serviceAreaPayload, ATTR);
 
       expect(result.isFailure).toBe(false);
-      expect(serviceAreaRepo.deleteByWorkerId).toHaveBeenCalledWith('worker-123');
-      expect(serviceAreaRepo.create).toHaveBeenCalledWith(
+      expect(serviceAreaRepo.replaceByWorkerId).toHaveBeenCalledWith(
         expect.objectContaining({
           workerId: 'worker-123',
           address: 'Av. Corrientes 1234, Buenos Aires',
@@ -136,7 +134,7 @@ describe('SaveServiceAreaUseCase', () => {
         neighborhood: 'Palermo',
       }, ATTR);
 
-      expect(serviceAreaRepo.create).toHaveBeenCalledWith(
+      expect(serviceAreaRepo.replaceByWorkerId).toHaveBeenCalledWith(
         expect.objectContaining({
           city: 'Buenos Aires',
           postalCode: 'C1043',
@@ -152,7 +150,7 @@ describe('SaveServiceAreaUseCase', () => {
 
       await useCase.execute(serviceAreaPayload, ATTR);
 
-      expect(serviceAreaRepo.create).toHaveBeenCalledWith(
+      expect(serviceAreaRepo.replaceByWorkerId).toHaveBeenCalledWith(
         expect.objectContaining({
           city: undefined,
           postalCode: undefined,
@@ -161,7 +159,7 @@ describe('SaveServiceAreaUseCase', () => {
       );
     });
 
-    it('deve garantir upsert: salvar 2x gera apenas 1 registro (delete + insert)', async () => {
+    it('salvar 2x chama a troca 2x', async () => {
       const workerRepo = makeWorkerRepo();
       const serviceAreaRepo = makeServiceAreaRepo();
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
@@ -169,9 +167,36 @@ describe('SaveServiceAreaUseCase', () => {
       await useCase.execute(serviceAreaPayload, ATTR);
       await useCase.execute({ ...serviceAreaPayload, serviceRadiusKm: 20 }, ATTR);
 
-      // deleteByWorkerId deve ter sido chamado nas 2 saves
-      expect(serviceAreaRepo.deleteByWorkerId).toHaveBeenCalledTimes(2);
-      expect(serviceAreaRepo.create).toHaveBeenCalledTimes(2);
+      expect(serviceAreaRepo.replaceByWorkerId).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('complemento (D669)', () => {
+    const { addressComplement: _omit, ...semComplemento } = serviceAreaPayload;
+    const complementoEnviado = async (dto: Record<string, unknown>, attr: ProfileEditAttribution) => {
+      const serviceAreaRepo = makeServiceAreaRepo();
+      await new SaveServiceAreaUseCase(makeWorkerRepo() as any, serviceAreaRepo as any).execute(dto as any, attr);
+      return serviceAreaRepo.replaceByWorkerId.mock.calls[0][0].addressComplement;
+    };
+
+    it('app sem complemento: repassa undefined (o repositório mantém o gravado)', async () => {
+      expect(await complementoEnviado(semComplemento, { ...ATTR, channel: 'app' })).toBeUndefined();
+    });
+
+    it('app com complemento: repassa o novo', async () => {
+      expect(await complementoEnviado(serviceAreaPayload, { ...ATTR, channel: 'app' })).toBe('Piso 3');
+    });
+
+    it('app com complemento vazio explícito: repassa o vazio (apagar)', async () => {
+      expect(await complementoEnviado({ ...serviceAreaPayload, addressComplement: '' }, { ...ATTR, channel: 'app' })).toBe('');
+    });
+
+    it('Web sem complemento (campo esvaziado): repassa null = apagar, como sempre', async () => {
+      expect(await complementoEnviado(semComplemento, ATTR)).toBeNull();
+    });
+
+    it('Web com complemento: repassa o novo', async () => {
+      expect(await complementoEnviado(serviceAreaPayload, ATTR)).toBe('Piso 3');
     });
   });
 
@@ -187,8 +212,7 @@ describe('SaveServiceAreaUseCase', () => {
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Worker not found');
-      expect(serviceAreaRepo.deleteByWorkerId).not.toHaveBeenCalled();
-      expect(serviceAreaRepo.create).not.toHaveBeenCalled();
+      expect(serviceAreaRepo.replaceByWorkerId).not.toHaveBeenCalled();
     });
   });
 
@@ -196,7 +220,7 @@ describe('SaveServiceAreaUseCase', () => {
     it('deve propagar erro do create', async () => {
       const workerRepo = makeWorkerRepo();
       const serviceAreaRepo = makeServiceAreaRepo({
-        create: jest.fn().mockResolvedValue(Result.fail('Failed to create service area')),
+        replaceByWorkerId: jest.fn().mockResolvedValue(Result.fail('Failed to create service area')),
       });
       const useCase = new SaveServiceAreaUseCase(workerRepo as any, serviceAreaRepo as any);
 

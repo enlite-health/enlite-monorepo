@@ -3,7 +3,7 @@ import { IServiceAreaRepository } from '../ports/IServiceAreaRepository';
 import { SaveServiceAreaDTO, Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import type { WorkerServiceArea } from '../domain/WorkerServiceArea';
-import type { ProfileEditAttribution } from '../domain/profileEditSource';
+import { APP_CHANNEL, type ProfileEditAttribution } from '../domain/profileEditSource';
 import { changedFields, recordProfileEditTrail } from './profileEditTrail';
 
 export class SaveServiceAreaUseCase {
@@ -24,15 +24,17 @@ export class SaveServiceAreaUseCase {
       return Result.fail<Worker>('Worker not found');
     }
 
-    // "Antes" da trilha (FR-53), lido ANTES do delete. undefined = leitura falhou (trilha pulada); null = não havia zona.
+    // "Antes" da trilha (FR-53), lido ANTES da troca. undefined = leitura falhou (trilha pulada); null = não havia zona.
     const before = await this.readBeforeSafe(data.workerId);
 
-    await this.serviceAreaRepository.deleteByWorkerId(data.workerId);
+    // O app (BFF) não envia o complemento: ausente = manter o que a Web gravou. Web/admin mandam o
+    // formulário inteiro e omitem o campo para apagá-lo (ServiceAddressTab / WorkerEditModal): ausente = apagar.
+    const keepComplement = attribution.channel === APP_CHANNEL;
 
-    const createResult = await this.serviceAreaRepository.create({
+    const createResult = await this.serviceAreaRepository.replaceByWorkerId({
       workerId: data.workerId,
       address: data.address,
-      addressComplement: data.addressComplement,
+      addressComplement: keepComplement ? data.addressComplement : (data.addressComplement ?? null),
       serviceRadiusKm: data.serviceRadiusKm,
       lat: data.lat,
       lng: data.lng,
