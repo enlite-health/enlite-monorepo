@@ -152,7 +152,7 @@ resource "google_monitoring_alert_policy" "attendance_retention" {
   documentation {
     mime_type = "text/markdown"
     subject   = "Retencao de 90 dias do attendance falhou"
-    content   = "Ou o job attendance-retention nao logou event=attendance_retention em ~25 h (job parado, Scheduler PAUSED, imagem sem dist/scripts/retention.js, banco recusando), ou uma execucao terminou com pending_over_90d > 0 (coordenada com mais de 90 dias ainda gravada). Conferir: `gcloud scheduler jobs describe attendance-retention --location=southamerica-east1 --project=enlite-prd`, `gcloud run jobs executions list --job=attendance-retention --region=southamerica-west1 --project=enlite-prd` e os logs do job. Reexecutar e idempotente: `gcloud run jobs execute attendance-retention --region=southamerica-west1 --project=enlite-prd --wait`."
+    content   = "Ou o job attendance-retention nao logou event=attendance_retention em ~23 h 30 min (job parado, Scheduler PAUSED, imagem sem dist/scripts/retention.js, banco recusando), ou uma execucao terminou com pending_over_90d > 0 (coordenada com mais de 90 dias ainda gravada). Conferir: `gcloud scheduler jobs describe attendance-retention --location=southamerica-east1 --project=enlite-prd`, `gcloud run jobs executions list --job=attendance-retention --region=southamerica-west1 --project=enlite-prd` e os logs do job. Reexecutar e idempotente: `gcloud run jobs execute attendance-retention --region=southamerica-west1 --project=enlite-prd --wait`."
   }
 
   alert_strategy {
@@ -162,7 +162,7 @@ resource "google_monitoring_alert_policy" "attendance_retention" {
   # Dois limites: a API recusa duration > 23h30m (84600s) e a doc limita alinhamento + duracao de ausencia a 25 h
   # (5400s + 84600s = 90000s). Job diario nao da falso alarme (buraco entre pontos alinhados ~22h30 < 23h30); dia perdido ~46h30.
   conditions {
-    display_name = "sem event=attendance_retention ha 24 h 30 min"
+    display_name = "sem event=attendance_retention ha 23 h 30 min"
     condition_absent {
       filter   = "metric.type=\"logging.googleapis.com/user/attendance_retention_run\" AND resource.type=\"cloud_run_job\""
       duration = "84600s"
