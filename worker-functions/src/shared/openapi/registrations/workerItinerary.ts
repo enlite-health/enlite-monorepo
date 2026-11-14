@@ -7,6 +7,17 @@ const PatientPoint = z.object({
   quality: z.enum(['RELIABLE', 'UNRELIABLE']).openapi({ description: 'RELIABLE sse geocode ROOFTOP/RANGE_INTERPOLATED sem partial match.' }),
 });
 
+/** C-14: as 5 chaves sempre presentes, cada uma podendo ser null; chave a mais é recusada (additionalProperties false). */
+export const PatientAddress = z
+  .object({
+    street: z.string().nullable(),
+    number: z.string().nullable(),
+    floor_unit: z.string().nullable(),
+    neighborhood: z.string().nullable(),
+    city: z.string().nullable(),
+  })
+  .strict();
+
 export const ItineraryItem = z.object({
   occurrence_id: z.string().uuid().openapi({ description: 'UUID v5 de (slot_id, on_date, worker_id).' }),
   slot_id: z.string().uuid(),
@@ -18,7 +29,7 @@ export const ItineraryItem = z.object({
   patient_first_name: z.string(),
   patient_ref: z.string().uuid().openapi({ description: 'UUID v5 opaco do paciente (FR-39); nunca o id. Mesmo paciente, mesmo valor entre chamadas.' }),
   neighborhood: z.string().nullable().openapi({ description: 'Bairro do endereço padrão ativo, com fallback no cadastro do paciente (DT-21); null quando nenhum existe.' }),
-  address: z.null().openapi({ description: 'Endereço em texto: sempre null até a F4 (C-14/FR-44).' }),
+  address: PatientAddress.nullable().openapi({ description: 'Endereço completo só em [hoje, hoje+7] com alocação ACTIVE (FR-44, D634); null fora disso.' }),
   patient_point: PatientPoint.nullable().openapi({ description: 'Ponto degradado a ~20 m; null quando o paciente não tem lat/lng. Sem endereço em texto (P3).' }),
   country: z.string().openapi({ example: 'AR' }),
   seq: z.number().int(),
