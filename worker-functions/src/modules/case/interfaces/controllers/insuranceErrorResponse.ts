@@ -20,6 +20,7 @@ export const P0001_CODES = [
   'USE_CORRECTION',
   'TWO_PAYERS_OVERLAP',
   'COUNTRY_MISMATCH',
+  'TEST_REALM_MISMATCH', // D671 (migration 584): pagador e paciente em realms diferentes (is_test)
   'PAYER_KIND_REQUIRED',
   'PAYER_KIND_CANNOT_UNSET',
   'SERVICE_HAS_CONTRACT_LINK',

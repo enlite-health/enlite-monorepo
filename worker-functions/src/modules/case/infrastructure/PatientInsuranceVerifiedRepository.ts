@@ -167,7 +167,8 @@ export class PatientInsuranceVerifiedRepository {
   /**
    * O drawer "Cobertura Médica" grava por CÓDIGO (spec 012, US-B3): substitui o conjunto que o
    * PAINEL gravou (source='admin_manual'); as linhas do sync do ClickUp não são tocadas.
-   *   - código fora do catálogo ativo → InsuranceProviderUnknownError (422), sem escrever;
+   *   - código fora do catálogo ativo DO REALM do paciente (D671, migration 584: pagador de teste só em paciente
+   *     de teste e vice-versa) → InsuranceProviderUnknownError (422), sem escrever;
    *   - `raw_label` = o próprio código (é o literal escolhido na tela);
    *   - ordinal a partir de PANEL_ORDINAL_BASE; `ON CONFLICT (patient_id, raw_label) DO NOTHING`
    *     quando o ClickUp já trouxe a mesma cobertura com o mesmo literal.
@@ -179,7 +180,8 @@ export class PatientInsuranceVerifiedRepository {
   ): Promise<{ codes: string[] }> {
     const wanted = Array.from(new Set(codes));
     return withClientOrActorContext(this.pool, client, async (cli) => {
-      const catalogo = await cli.query<{ code: string }>('SELECT code FROM insurance_providers WHERE active');
+      const catalogo = await cli.query<{ code: string }>(
+        'SELECT code FROM insurance_providers WHERE active AND fn_077_payer_realm_matches_patient($1, code)', [patientId]);
       const ativos = new Set(catalogo.rows.map(r => r.code));
       const desconhecidos = wanted.filter(c => !ativos.has(c));
       if (desconhecidos.length > 0) throw new InsuranceProviderUnknownError(desconhecidos);

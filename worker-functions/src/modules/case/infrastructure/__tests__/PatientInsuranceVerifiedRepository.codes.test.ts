@@ -71,6 +71,13 @@ describe('PatientInsuranceVerifiedRepository — códigos', () => {
     await expect(repo.replaceCodesForPatient(PID, ['NAO_EXISTE'], cli as never)).rejects.toBeInstanceOf(InsuranceProviderUnknownError);
   });
 
+  it('T-F2a-85 o PUT valida contra o catálogo do realm do paciente (fn_077_payer_realm_matches_patient, migration 584)', async () => {
+    const { cli, chamadas } = cliente();
+    await new PatientInsuranceVerifiedRepository().replaceCodesForPatient(PID, ['OSDE'], cli as never);
+    const cat = chamadas.filter((c) => /FROM insurance_providers/.test(c.sql));
+    expect(cat).toEqual([{ sql: 'SELECT code FROM insurance_providers WHERE active AND fn_077_payer_realm_matches_patient($1, code)', params: [PID] }]);
+  });
+
   it('2b. painel com lista vazia apaga as linhas admin_manual e não insere nada', async () => {
     const { cli, chamadas } = cliente();
     const repo = new PatientInsuranceVerifiedRepository();
