@@ -13,7 +13,8 @@
  *
  * Tombstones (C-33, DT-22): só ocorrência de HOJE (`today`) que deixou de existir, com o MESMO `occurrence_id` do item
  * (`occurrenceIdOf`). `ABSENCE` = ausência viva da titular hoje (sai da própria expansão); `ALLOCATION_ENDED` = alocação do
- * worker encerrada hoje numa faixa que ainda vale hoje; `SLOT_ENDED` = alocação encerrada hoje numa faixa que deixou de valer
+ * worker encerrada hoje numa faixa que ainda vale hoje, ou trocada/retirada com efeito hoje, com ou sem substituta (D669/D670);
+ * `SLOT_ENDED` = alocação encerrada hoje numa faixa que deixou de valer
  * hoje (a faixa só fecha sem alocação vigente, D442). Id que segue em `items` nunca vira tombstone.
  */
 import type { PoolClient } from 'pg';
@@ -199,10 +200,15 @@ interface EndedTodayRow {
 }
 
 /**
- * Alocações do worker ENCERRADAS HOJE numa faixa do dia da semana de hoje (C-33, DT-22). Não há coluna de data do encerramento:
- * `ItineraryAllocationWriter.endAllocation` grava `status = 'ENDED'` e `valid_to = GREATEST(valid_from, hoje)`, então "encerrada
- * hoje" = `ENDED` com `valid_to = hoje` (`pia_valid_range` garante `valid_from <= hoje`). `slot_valid_today` separa
- * ALLOCATION_ENDED (a faixa segue) de SLOT_ENDED (a faixa fechou: `[lower, hoje)` ou `empty`). `today` vem do caso de uso.
+ * Alocações do worker que deixaram de valer HOJE numa faixa do dia da semana de hoje (C-33, DT-22, D669). Não há coluna de data do
+ * encerramento; os estados que tiram a ocorrência de hoje da expansão (que só lê `ACTIVE` vigente) são:
+ *   - `ENDED` com `valid_to = hoje` (`ItineraryAllocationWriter.endAllocation`: `GREATEST(valid_from, hoje)`);
+ *   - troca (`ItineraryAllocationUseCase.replaceWith`) ou saída sem substituta (`CreateSubstitutionRequestUseCase`, mesmo writer)
+ *     com efeito hoje: `ACTIVE` com `valid_to = ontem` (`scheduleAllocationEnd`) ou `CANCELLED` com `valid_from = hoje`
+ *     (`cancelAllocation`: a titular só começava hoje), com ou sem sucessora (D670). Fim agendado dias antes para ontem também
+ *     casa, mas a ocorrência de hoje já saiu do app na página `full` daquele dia: tombstone de id que o app não tem é no-op.
+ * `slot_valid_today` separa ALLOCATION_ENDED (a faixa segue) de SLOT_ENDED (a faixa fechou: `[lower, hoje)` ou `empty`). `today` vem
+ * do caso de uso; nada de `CURRENT_DATE` aqui.
  */
 async function readEndedToday(client: PoolClient, workerId: string, today: string): Promise<EndedTodayRow[]> {
   const res = await client.query<EndedTodayRow>(
@@ -211,7 +217,10 @@ async function readEndedToday(client: PoolClient, workerId: string, today: strin
        JOIN patient_itinerary_slot s ON s.id = a.slot_id
        JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
        JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
-      WHERE a.worker_id = $1::uuid AND a.status = 'ENDED' AND a.valid_to = $2::date AND s.weekday = $3
+      WHERE a.worker_id = $1::uuid AND s.weekday = $3
+        AND ((a.status = 'ENDED' AND a.valid_to = $2::date)
+          OR (a.status = 'ACTIVE' AND a.valid_to = $2::date - 1)
+          OR (a.status = 'CANCELLED' AND a.valid_from = $2::date))
       ORDER BY a.slot_id`,
     [workerId, today, weekdayOfDateString(today)],
   );

@@ -270,4 +270,30 @@ describe('readWorkerWindow', () => {
     expect(env.items.map((i) => i.occurrence_id)).toContain(idHoje(W1));
     expect(env.tombstones).toEqual([]);
   });
+
+  // D669: troca com efeito hoje. O dublê devolve `ended` sem olhar o SQL: aqui o filtro da troca só é provado pela STRING do SQL;
+  // no banco, pelo e2e `tests/e2e/077-tombstone-troca-hoje.e2e.test.ts`.
+  const ASG2 = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const TROCA_HOJE = [
+    { patient_id: PAT, assignment_id: ASG, slot_id: SLOT, worker_id: W1, valid_from: '2026-01-01', valid_to: '2026-11-01', status: 'ACTIVE' },
+    { patient_id: PAT, assignment_id: ASG2, slot_id: SLOT, worker_id: W2, valid_from: TODAY, valid_to: null, status: 'ACTIVE' },
+  ];
+
+  it('T-F2a-70 troca com efeito hoje: a que sai perde o item de hoje e recebe ALLOCATION_ENDED com o mesmo id; o SQL lê os 2 estados da troca, com ou sem sucessora (D670)', async () => {
+    const client = fakeClient({ assignments: TROCA_HOJE, ended: [{ slot_id: SLOT, slot_valid_today: true }] });
+    const env = await readWorkerWindow(client as never, { workerId: W1, today: TODAY });
+    expect(dates(env)).toEqual(['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']);
+    expect(env.tombstones).toEqual([{ occurrence_id: idHoje(W1), reason: 'ALLOCATION_ENDED', seq: 5 }]);
+    const calls = client.query.mock.calls as unknown as Array<[string, unknown[]]>;
+    const sql = calls.find(([q]) => q.includes("a.status = 'ENDED'"))?.[0] ?? '';
+    expect(sql).toContain("a.status = 'ACTIVE' AND a.valid_to = $2::date - 1");
+    expect(sql).toContain("a.status = 'CANCELLED' AND a.valid_from = $2::date");
+    expect(sql).not.toContain('EXISTS');
+  });
+
+  it('T-F2a-70 a que entra vê o item de hoje (REGULAR, id dela) e nenhum tombstone', async () => {
+    const env = await run({ assignments: TROCA_HOJE, ended: [{ slot_id: SLOT, slot_valid_today: true }] }, W2);
+    expect(env.items.filter((i) => i.on_date === TODAY)).toMatchObject([{ kind: 'REGULAR', occurrence_id: idHoje(W2) }]);
+    expect(env.tombstones).toEqual([]);
+  });
 });
