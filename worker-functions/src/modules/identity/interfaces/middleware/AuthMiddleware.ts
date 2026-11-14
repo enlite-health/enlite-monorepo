@@ -272,11 +272,12 @@ export class AuthMiddleware {
           return;
         }
 
+        // O DONO do recurso nunca vem do pedido (corpo/params): quem decide posse é o motor, pelo recurso real no
+        // banco (`ClientEntityLoader`: `Worker.owner`) ou pelo token. Um `ownerId` aqui seria afirmado pelo cliente.
         const resource = {
           type: resourceType,
           id: req.params.id,
           attrs: {
-            ownerId: req.body.workerId || req.params.workerId,
             tenantId: req.headers['x-tenant-id'],
           },
         };
