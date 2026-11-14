@@ -13,6 +13,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
+import { excludeTestPayerSql } from '@shared/database/testRealmSql';
 import { deriveProviderCode } from './deriveProviderCode';
 import { providersWithContract } from './insuranceContractTermRead';
 
@@ -222,7 +223,7 @@ export class InsuranceProviderRepository {
     const r = await this.pool.query<{ code: string; name: string; sortOrder: number }>(
       `SELECT code, name, sort_order AS "sortOrder"
          FROM insurance_providers
-        WHERE active
+        WHERE active AND ${excludeTestPayerSql('insurance_providers')}
         ORDER BY sort_order, code`,
     );
     return r.rows.map((x) => ({ code: x.code, name: x.name, sortOrder: Number(x.sortOrder) }));
@@ -237,6 +238,7 @@ export class InsuranceProviderRepository {
       params.push(`%${opts.search.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
       where.push(`name ILIKE $${params.length}`);
     }
+    where.push(excludeTestPayerSql('insurance_providers'));
     const r = await this.pool.query<DetailRow>(
       `SELECT code, name, payer_kind, active FROM insurance_providers
         ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}

@@ -9,6 +9,7 @@
 import type { Pool } from 'pg';
 import { currencyOf, type Currency } from '../domain/currencyOf';
 import { toWire } from '../domain/dateRangeWire';
+import { excludeTestPayerSql } from '@shared/database/testRealmSql';
 
 export type Queryable = Pick<Pool, 'query'>;
 
@@ -140,7 +141,7 @@ export async function providersWithContract(q: Queryable, country: string): Prom
   const { rows } = await q.query<{ code: string }>(
     `SELECT p.code
        FROM insurance_providers p
-      WHERE p.active
+      WHERE p.active AND ${excludeTestPayerSql('p')}
         AND EXISTS (SELECT 1 FROM insurance_contracts c WHERE c.provider_code = p.code AND c.country = $1)
       ORDER BY p.sort_order, p.code`,
     [country],
