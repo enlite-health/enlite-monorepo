@@ -159,16 +159,16 @@ resource "google_monitoring_alert_policy" "attendance_retention" {
     auto_close = "86400s"
   }
 
-  # 25 h no total: a doc do Monitoring limita alinhamento + duracao de condicao de ausencia a 25 h; 24 h 30 min de
-  # janela cobre o atraso do disparo diario.
+  # Dois limites: a API recusa duration > 23h30m (84600s) e a doc limita alinhamento + duracao de ausencia a 25 h
+  # (5400s + 84600s = 90000s). Job diario nao da falso alarme (buraco entre pontos alinhados ~22h30 < 23h30); dia perdido ~46h30.
   conditions {
     display_name = "sem event=attendance_retention ha 24 h 30 min"
     condition_absent {
       filter   = "metric.type=\"logging.googleapis.com/user/attendance_retention_run\" AND resource.type=\"cloud_run_job\""
-      duration = "88200s"
+      duration = "84600s"
 
       aggregations {
-        alignment_period     = "1800s"
+        alignment_period     = "5400s"
         per_series_aligner   = "ALIGN_DELTA"
         cross_series_reducer = "REDUCE_SUM"
       }
