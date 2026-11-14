@@ -1,4 +1,5 @@
 import { GetProfileEditsStatsUseCase } from '../GetProfileEditsStatsUseCase';
+import { workerNotTestSql } from '@shared/database/testRealmSql';
 import type { Pool } from 'pg';
 
 function makePool(rows: unknown[]) {
@@ -53,5 +54,15 @@ describe('GetProfileEditsStatsUseCase', () => {
 
     const sql = String(pool.query.mock.calls[0][0]);
     expect(sql).toContain("WHEN changed_by = 'luz' THEN 'luz_conversation'");
+  });
+
+  it('T-F2b-29 worker de teste (is_test) fica fora da contagem, pelo dono do recorte (D664, D665)', async () => {
+    const pool = makePool([]);
+    const uc = new GetProfileEditsStatsUseCase(pool as unknown as Pool);
+    await uc.execute({ sinceDays: 30 });
+
+    const sql = String(pool.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('FROM worker_profile_changes_audit a WHERE ');
+    expect(sql).toContain(`AND ${workerNotTestSql('a.worker_id')} GROUP BY 1`);
   });
 });

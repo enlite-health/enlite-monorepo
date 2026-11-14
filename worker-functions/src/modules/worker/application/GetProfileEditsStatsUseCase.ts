@@ -7,10 +7,14 @@
  * históricas com changed_by='luz' (default da mig 202, pré-enum) são
  * normalizadas para 'luz_conversation'.
  *
+ * Worker de teste (is_test) fica fora da contagem (D664: dado de teste fora das
+ * métricas; o recorte tem um dono só, testRealmSql, D665).
+ *
  * Zero PII: só contagens por fonte.
  */
 
 import { Pool } from 'pg';
+import { workerNotTestSql } from '@shared/database/testRealmSql';
 
 export interface ProfileEditsSourceStats {
   /** Fonte canônica (profileEditSource) ou valor legado normalizado. */
@@ -43,8 +47,9 @@ export class GetProfileEditsStatsUseCase {
          COUNT(*)                 AS edits,
          COUNT(DISTINCT worker_id) AS workers,
          MAX(created_at)          AS last_edit_at
-       FROM worker_profile_changes_audit
+       FROM worker_profile_changes_audit a
        WHERE created_at >= NOW() - make_interval(days => $1)
+         AND ${workerNotTestSql('a.worker_id')}
        GROUP BY 1
        ORDER BY 2 DESC`,
       [input.sinceDays],
