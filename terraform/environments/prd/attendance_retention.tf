@@ -110,3 +110,90 @@ resource "google_cloud_scheduler_job" "attendance_retention" {
 
   depends_on = [google_cloud_run_v2_job_iam_member.attendance_retention_invoker]
 }
+
+# Alarme (FR-57). Canal: o de alertas de prd do admission.tf (D669, DP-06): var.events_notification_channel.
+# Sinal de vida: toda execucao loga event=attendance_retention. Pendentes: so as linhas com pending_over_90d > 0
+# (linhas com received_at < now() - 90 dias e coords_purged_at IS NULL DEPOIS da purga; nunca "purgados > 0").
+resource "google_logging_metric" "attendance_retention_run" {
+  project     = var.project_id
+  name        = "attendance_retention_run"
+  description = "Retencao do attendance (spec 077 F5): sinal de vida do job diario attendance-retention"
+  filter      = "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"attendance-retention\" AND jsonPayload.event=\"attendance_retention\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "attendance_retention_pending" {
+  project     = var.project_id
+  name        = "attendance_retention_pending"
+  description = "Retencao do attendance (spec 077 F5): execucao que terminou com coordenada de mais de 90 dias ainda gravada"
+  filter      = "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"attendance-retention\" AND jsonPayload.event=\"attendance_retention\" AND jsonPayload.pending_over_90d > 0"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_monitoring_alert_policy" "attendance_retention" {
+  project      = var.project_id
+  display_name = "[URGENTE] Retencao 90 dias do attendance: job parado ou coordenada vencida gravada (attendance_retention)"
+  combiner     = "OR"
+  enabled      = true
+  severity     = "ERROR"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "Retencao de 90 dias do attendance falhou"
+    content   = "Ou o job attendance-retention nao logou event=attendance_retention em ~25 h (job parado, Scheduler PAUSED, imagem sem dist/scripts/retention.js, banco recusando), ou uma execucao terminou com pending_over_90d > 0 (coordenada com mais de 90 dias ainda gravada). Conferir: `gcloud scheduler jobs describe attendance-retention --location=southamerica-east1 --project=enlite-prd`, `gcloud run jobs executions list --job=attendance-retention --region=southamerica-west1 --project=enlite-prd` e os logs do job. Reexecutar e idempotente: `gcloud run jobs execute attendance-retention --region=southamerica-west1 --project=enlite-prd --wait`."
+  }
+
+  alert_strategy {
+    auto_close = "86400s"
+  }
+
+  # 25 h no total: a doc do Monitoring limita alinhamento + duracao de condicao de ausencia a 25 h; 24 h 30 min de
+  # janela cobre o atraso do disparo diario.
+  conditions {
+    display_name = "sem event=attendance_retention ha 24 h 30 min"
+    condition_absent {
+      filter   = "metric.type=\"logging.googleapis.com/user/attendance_retention_run\" AND resource.type=\"cloud_run_job\""
+      duration = "88200s"
+
+      aggregations {
+        alignment_period     = "1800s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  conditions {
+    display_name = "execucao com pending_over_90d > 0"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/attendance_retention_pending\" AND resource.type=\"cloud_run_job\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  depends_on = [google_logging_metric.attendance_retention_run, google_logging_metric.attendance_retention_pending]
+}
