@@ -6,10 +6,13 @@
  * (a expansão precisa do titular para saber quem foi substituído). A expansão é `expandServiceOccurrences` (nada reimplementado);
  * o recorte final mantém só a ocorrência cujo executor efetivo (`workerId`) é o worker.
  *
- * Privacidade (P3, revista pela FR-39): rua, número, cidade e texto formatado do endereço não são lidos nem devolvidos. Do
- * endereço padrão ativo saem lat/lng, a qualidade do geocode e o bairro (`neighborhood`, com fallback no cadastro do paciente:
- * mesma regra do feed público, DT-21); o ponto sai DEGRADADO à grade de ~20 m (`degradePoint20m`). O ponto real nunca deixa
- * este arquivo. O paciente sai como `patient_ref` opaco (`patientRefOf`), nunca o id.
+ * Privacidade (P3, revista pela FR-39 e pela FR-44/D634): do endereço padrão ativo saem lat/lng, a qualidade do geocode e o
+ * bairro (`neighborhood`, com fallback no cadastro do paciente: mesma regra do feed público, DT-21); o ponto sai DEGRADADO à
+ * grade de ~20 m (`degradePoint20m`). O ponto real nunca deixa este arquivo. O paciente sai como `patient_ref` opaco
+ * (`patientRefOf`), nunca o id. Endereço em texto (FR-44, D634): `address` só na ocorrência de [hoje, hoje+7] (a ocorrência só
+ * existe com alocação ACTIVE vigente: o universo e `isVigente` só leem ACTIVE); fora disso null. Sai do `address_formatted`
+ * (rua e número do 1º trecho), do `complement` (piso/depto) e do `city`; nunca do texto livre do operador, das notas de
+ * acesso nem do corredor (exceção NOMEADA em `addressNeverLeavesStaffPerimeter.test.ts`).
  *
  * Tombstones (C-33, DT-22): só ocorrência de HOJE (`today`) que deixou de existir, com o MESMO `occurrence_id` do item
  * (`occurrenceIdOf`). `ABSENCE` = ausência viva da titular hoje (sai da própria expansão); `ALLOCATION_ENDED` = alocação do
@@ -30,6 +33,8 @@ export const OCCURRENCE_ID_NAMESPACE = '43876dea-477d-4c5b-8b30-127aa6db3f92';
 /** Passo da grade de degradação (~20 m): `x-degradacao-20m` do contrato. */
 export const GRID_DEG = 0.00018;
 export const WINDOW_DAYS_AFTER = 14;
+/** FR-44 (D634): o endereço em texto só vai nas ocorrências de [hoje, hoje+ADDRESS_WINDOW_DAYS]. */
+export const ADDRESS_WINDOW_DAYS = 7;
 
 /** Início da janela (FR-42, D635): dia 1 do mês ANTERIOR ao `today` (data civil `YYYY-MM-DD`, já no fuso da operação). Pura. */
 export function windowStart(today: string): string {
@@ -45,6 +50,15 @@ export interface PatientPoint {
   quality: 'RELIABLE' | 'UNRELIABLE';
 }
 
+/** Endereço do item (C-14): as 5 chaves sempre presentes, cada uma podendo ser null. */
+export interface PatientAddress {
+  street: string | null;
+  number: string | null;
+  floor_unit: string | null;
+  neighborhood: string | null;
+  city: string | null;
+}
+
 export interface ItineraryItem {
   occurrence_id: string;
   slot_id: string;
@@ -58,8 +72,8 @@ export interface ItineraryItem {
   patient_ref: string;
   /** Bairro do endereço padrão ativo, com fallback em patients.zone_neighborhood (DT-21); null quando os dois faltam. */
   neighborhood: string | null;
-  /** Endereço em texto: sempre null até a F4 (C-14/FR-44). */
-  address: null;
+  /** Endereço em texto só em [hoje, hoje+7] (FR-44, D634); null fora disso ou sem `address_formatted`. */
+  address: PatientAddress | null;
   patient_point: PatientPoint | null;
   country: string;
   seq: number;
@@ -114,6 +128,9 @@ interface PatientRow {
   geocode_quality: GeocodeLocationType | null;
   geocode_partial_match: boolean | null;
   neighborhood: string | null;
+  address_formatted: string | null;
+  complement: string | null;
+  city: string | null;
 }
 
 /** $1 = worker, $2 = from, $3 = to. */
@@ -132,6 +149,7 @@ export async function readWorkerWindow(client: PoolClient, args: { workerId: str
   const { workerId, today } = args;
   const from = windowStart(today);
   const to = addDaysToDateString(today, WINDOW_DAYS_AFTER);
+  const addressTo = addDaysToDateString(today, ADDRESS_WINDOW_DAYS);
 
   const byPatient = await readOccurrenceInputsByPatient(client, {
     scopeSql: WORKER_SCOPE_SQL,
@@ -166,7 +184,7 @@ export async function readWorkerWindow(client: PoolClient, args: { workerId: str
         patient_first_name: patient.first_name?.trim() || 'Paciente',
         patient_ref: patientRefOf(patientId),
         neighborhood: patient.neighborhood ?? null,
-        address: null,
+        address: o.date >= today && o.date <= addressTo ? addressOf(patient) : null,
         patient_point: pointOf(patient),
         country: patient.country,
       });
@@ -235,16 +253,34 @@ function pointOf(p: PatientRow): PatientPoint | null {
   return { ...degradePoint20m(lat, lng), quality: isReliableGeocode(p.geocode_quality, p.geocode_partial_match) ? 'RELIABLE' : 'UNRELIABLE' };
 }
 
-/** Primeiro nome, país, coordenadas/qualidade e bairro do endereço padrão ativo (bairro com fallback no cadastro, DT-21). */
+/**
+ * FR-44: rua e número do 1º trecho do `address_formatted` ("Av. Corrientes 1234, C1043 CABA, Argentina" → "Av. Corrientes" e
+ * "1234"; trecho sem número no fim → `number` null); piso/depto do `complement`; bairro = o do item; cidade = `city`. Sem
+ * `address_formatted` → null (o texto livre do operador nunca é lido). Pura.
+ */
+function addressOf(p: PatientRow): PatientAddress | null {
+  const first = p.address_formatted?.split(',')[0].trim();
+  if (!first) return null;
+  const m = /^(.*\S)\s+(\d+[A-Za-z]?)$/.exec(first);
+  return {
+    street: m ? m[1] : first,
+    number: m ? m[2] : null,
+    floor_unit: p.complement?.trim() || null,
+    neighborhood: p.neighborhood ?? null,
+    city: p.city?.trim() || null,
+  };
+}
+
+/** Primeiro nome, país, coordenadas/qualidade, bairro (com fallback no cadastro, DT-21) e o texto do endereço padrão ativo (FR-44). */
 async function readPatients(client: PoolClient, patientIds: readonly string[]): Promise<Map<string, PatientRow>> {
   const out = new Map<string, PatientRow>();
   if (patientIds.length === 0) return out;
   const res = await client.query<PatientRow>(
     `SELECT p.id, p.first_name, p.country, pa.lat, pa.lng, pa.geocode_quality, pa.geocode_partial_match,
-            COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood
+            COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood, pa.address_formatted, pa.complement, pa.city
        FROM patients p
        LEFT JOIN LATERAL (
-         SELECT a.lat, a.lng, a.geocode_quality, a.geocode_partial_match, a.neighborhood
+         SELECT a.lat, a.lng, a.geocode_quality, a.geocode_partial_match, a.neighborhood, a.address_formatted, a.complement, a.city
            FROM patient_addresses a
           WHERE a.patient_id = p.id AND a.is_default AND a.archived_at IS NULL
           ORDER BY a.display_order, a.id

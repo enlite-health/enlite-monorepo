@@ -86,7 +86,7 @@ describe('readWorkerWindow', () => {
     expect(calls[0][1]).toEqual([W1, '2026-10-01', '2026-11-16']);
     const patientSql = calls[3][0];
     expect(patientSql).toMatch(/a\.is_default AND a\.archived_at IS NULL/);
-    expect(patientSql).not.toMatch(/address_formatted|address_raw|locality|access_notes|logistics_corridor|address_type|address_summary/);
+    expect(patientSql).not.toMatch(/address_raw|locality|access_notes|logistics_corridor|address_type|address_summary/);
     expect(patientSql).toContain('COALESCE(pa.neighborhood, p.zone_neighborhood) AS neighborhood');
   });
 
@@ -181,7 +181,7 @@ describe('readWorkerWindow', () => {
     expect(JSON.stringify(a)).not.toContain(PAT);
   });
 
-  it('T-F2a-02 neighborhood vem da coluna lida (null quando falta); address sempre null; as duas chaves sempre presentes', async () => {
+  it('T-F2a-02 neighborhood vem da coluna lida (null quando falta); sem address_formatted o address é null; as duas chaves sempre presentes', async () => {
     const com = await run({ patient: { neighborhood: 'Palermo' } });
     expect(com.items[0]).toMatchObject({ neighborhood: 'Palermo', address: null });
     const sem = await run({ patient: { neighborhood: undefined } });
@@ -295,5 +295,57 @@ describe('readWorkerWindow', () => {
     const env = await run({ assignments: TROCA_HOJE, ended: [{ slot_id: SLOT, slot_valid_today: true }] }, W2);
     expect(env.items.filter((i) => i.on_date === TODAY)).toMatchObject([{ kind: 'REGULAR', occurrence_id: idHoje(W2) }]);
     expect(env.tombstones).toEqual([]);
+  });
+
+  // FR-44 (D634): endereço em texto só em [hoje, hoje+7], só com alocação ACTIVE. Endereço sintético.
+  const ENDERECO = { address_formatted: 'Calle Falsa 123, C1000 CABA, Argentina', complement: ' 3B ', city: 'CABA', neighborhood: 'Almagro' };
+  const COMPLETO = { street: 'Calle Falsa', number: '123', floor_unit: '3B', neighborhood: 'Almagro', city: 'CABA' };
+  const porData = (e: Awaited<ReturnType<typeof run>>) => Object.fromEntries(e.items.map((i) => [i.on_date, i.address]));
+
+  it('T-F4-01 hoje e hoje+7 levam o endereço completo; o passado e hoje+14 levam null', async () => {
+    const env = await run({ patient: ENDERECO });
+    expect(porData(env)).toEqual({
+      '2026-10-05': null, '2026-10-12': null, '2026-10-19': null, '2026-10-26': null,
+      '2026-11-02': COMPLETO, '2026-11-09': COMPLETO, '2026-11-16': null,
+    });
+  });
+
+  it('T-F4-01 hoje+8 leva null (a mesma segunda vista de um domingo: hoje+1 leva, hoje+8 não)', async () => {
+    const env = await readWorkerWindow(fakeClient({ patient: ENDERECO }) as never, { workerId: W1, today: '2026-11-01' });
+    expect(porData(env)['2026-11-02']).toEqual(COMPLETO);
+    expect(porData(env)['2026-11-09']).toBeNull();
+  });
+
+  it('T-F4-01 alocação ENDED ou CANCELLED: nenhum item e nenhum texto do endereço no JSON (só ACTIVE leva endereço)', async () => {
+    for (const status of ['ENDED', 'CANCELLED']) {
+      const env = await run({ patient: ENDERECO, assignments: [{ patient_id: PAT, assignment_id: ASG, slot_id: SLOT, worker_id: W1, valid_from: '2026-01-01', valid_to: null, status }] });
+      expect(env.items).toEqual([]);
+      expect(JSON.stringify(env)).not.toContain('Calle Falsa');
+    }
+  });
+
+  it('T-F4-01 rua e número do 1º trecho; sem número no fim, number null; sem address_formatted, address null', async () => {
+    const hoje = async (patient: Record<string, unknown>) => (await run({ patient })).items.find((i) => i.on_date === TODAY)?.address;
+    expect(await hoje({ address_formatted: 'Av. Rivadavia 5000', complement: null, city: null, neighborhood: null })).toEqual({ street: 'Av. Rivadavia', number: '5000', floor_unit: null, neighborhood: null, city: null });
+    expect(await hoje({ address_formatted: 'Pasaje Sin Numero, CABA', complement: '', city: 'CABA', neighborhood: 'Boedo' })).toEqual({ street: 'Pasaje Sin Numero', number: null, floor_unit: null, neighborhood: 'Boedo', city: 'CABA' });
+    expect(await hoje({ address_formatted: null, complement: '3B', city: 'CABA', neighborhood: 'Almagro' })).toBeNull();
+  });
+
+  it('T-F4-01 a substituta de hoje leva o endereço (a ocorrência vem da alocação ACTIVE da titular com ausência viva)', async () => {
+    const env = await run({ patient: ENDERECO, absences: [absence(TODAY, W2)] }, W2);
+    expect(env.items).toHaveLength(1);
+    expect(env.items[0]).toMatchObject({ on_date: TODAY, kind: 'SUBSTITUTION', address: COMPLETO });
+  });
+
+  it('T-F4-01 notas de acesso, corredor e texto livre que a linha traga nunca vão ao JSON; o SQL lê só as 3 colunas do texto', async () => {
+    const client = fakeClient({ patient: { ...ENDERECO, access_notes: 'TIMBRE-SECRETO', logistics_corridor: 'CORREDOR-SECRETO', address_raw: 'RAW-SECRETO' } });
+    const env = await readWorkerWindow(client as never, { workerId: W1, today: TODAY });
+    const json = JSON.stringify(env);
+    for (const proibido of ['TIMBRE-SECRETO', 'CORREDOR-SECRETO', 'RAW-SECRETO', 'access_notes', 'address_formatted', 'complement']) {
+      expect(json).not.toContain(proibido);
+    }
+    const patientSql = (client.query.mock.calls as unknown as Array<[string, unknown[]]>)[3][0];
+    expect(patientSql).toContain('a.address_formatted, a.complement, a.city');
+    expect(patientSql).not.toMatch(/address_raw|access_notes|logistics_corridor/);
   });
 });

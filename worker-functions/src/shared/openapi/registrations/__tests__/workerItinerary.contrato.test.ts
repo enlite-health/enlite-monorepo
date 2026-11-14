@@ -3,7 +3,7 @@
  * (spec 077 FR-39, C-14). O item é tipado com a interface do Reader: chave nova no Reader sem chave aqui quebra o tsc
  * do ts-jest; `.strict()` reprova chave que o Reader emite e a doc não declara.
  */
-import { ItineraryItem as ItineraryItemSchema, ItineraryTombstone as ItineraryTombstoneSchema } from '../workerItinerary';
+import { ItineraryItem as ItineraryItemSchema, ItineraryTombstone as ItineraryTombstoneSchema, PatientAddress as PatientAddressSchema } from '../workerItinerary';
 import { buildOpenApiDocument } from '../../document';
 import { TOMBSTONE_REASONS, type ItineraryItem, type ItineraryTombstone } from '@modules/case/infrastructure/WorkerItineraryReader';
 
@@ -63,5 +63,18 @@ describe('contrato: item de GET /api/workers/me/itinerary', () => {
     const op = JSON.stringify(buildOpenApiDocument().paths['/api/workers/me/itinerary']);
     for (const reason of TOMBSTONE_REASONS) expect(op).toContain(`"${reason}"`);
     expect(op).not.toContain('Sempre [] no MVP');
+  });
+
+  const ADDRESS = { street: 'Calle Falsa', number: '123', floor_unit: null, neighborhood: 'Almagro', city: 'CABA' };
+
+  it('T-F4-01 o item com endereço passa no schema strict; a doc declara as 5 chaves de address, todas obrigatórias', () => {
+    expect(ItineraryItemSchema.strict().safeParse({ ...ITEM, address: ADDRESS }).success).toBe(true);
+    expect(Object.keys(PatientAddressSchema.shape).sort()).toEqual(['city', 'floor_unit', 'neighborhood', 'number', 'street']);
+    const { city: _city, ...semCidade } = ADDRESS;
+    expect(ItineraryItemSchema.safeParse({ ...ITEM, address: semCidade }).success).toBe(false);
+  });
+
+  it('T-F4-01 address com chave a mais (ex.: notas de acesso) é recusado', () => {
+    expect(ItineraryItemSchema.safeParse({ ...ITEM, address: { ...ADDRESS, notas: 'x' } }).success).toBe(false);
   });
 });

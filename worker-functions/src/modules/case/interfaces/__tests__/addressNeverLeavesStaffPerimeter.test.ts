@@ -16,6 +16,7 @@
  * adicionado aqui de propósito.
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const SRC = path.resolve(__dirname, '../../../..');
@@ -93,6 +94,29 @@ const POINT_EXCEPTION_FILES: Record<string, string> = {
     'spec 077 §8.3 + decisão P3 29/10: sai só `patient_point` lat/lng DEGRADADO a 20 m (`degradePoint20m`), para o attendance-service; nenhum texto de endereço.',
 };
 
+/**
+ * Exceção NOMEADA da 077 F4 (FR-44 + FR-47 condição 3, D634) — vale SÓ para `address_formatted` e SÓ no Reader: o item leva o
+ * endereço completo (rua e número, piso/depto, bairro, cidade) apenas nas ocorrências de [hoje, hoje+7] da alocação ACTIVE.
+ * `address_raw` (texto livre do operador) segue proibido em todos os arquivos, inclusive no Reader; as strings do teste 1
+ * (notas de acesso, corredor, tipo) também. Por arquivo, sem exceção por pasta.
+ */
+const ADDRESS_EXCEPTION_FILES: Record<string, string> = {
+  'src/modules/case/infrastructure/WorkerItineraryReader.ts':
+    'FR-44: [hoje, hoje+7] ACTIVE (D634): lê address_formatted/complement/city do endereço padrão ativo e só os devolve como `address` nessa janela.',
+};
+
+/** Arquivos da superfície que projetam texto/coordenada de `patient_addresses` fora das exceções nomeadas (teste 3). */
+function pointAndAddressOffenders(files: string[]): string[] {
+  return files.filter((p) => {
+    const s = fs.readFileSync(p, 'utf8');
+    if (!/patient_addresses/.test(s)) return false;
+    const rel = path.relative(path.dirname(SRC), p).replace(/\\/g, '/');
+    const pointOk = Object.keys(POINT_EXCEPTION_FILES).some((suffix) => rel.endsWith(suffix));
+    const addressOk = Object.keys(ADDRESS_EXCEPTION_FILES).some((suffix) => rel.endsWith(suffix));
+    return /address_raw/.test(s) || (!addressOk && /address_formatted/.test(s)) || (!pointOk && /\bpa\.lat\b|\bpa\.lng\b/.test(s));
+  });
+}
+
 /** Texto de endereço que a P3 proíbe na superfície do itinerário do prestador. */
 const ADDRESS_TEXT_STRINGS = ['address_summary', 'addressSummary', 'neighborhood', 'locality'];
 
@@ -137,16 +161,9 @@ describe('endereço do paciente não sai do perímetro do staff (lex C2.2/C2.5; 
     },
   );
 
-  it('address_formatted / lat / lng de patient_addresses: nenhum arquivo da superfície pública projeta (exceção nomeada 077: só lat/lng no Reader)', () => {
+  it('address_formatted / lat / lng de patient_addresses: nenhum arquivo da superfície pública projeta (exceções nomeadas 077: lat/lng e address_formatted só no Reader)', () => {
     const surface = Array.from(new Set([...publicSurface(), ...itinerarySurface()]));
-    const offenders = surface.filter((p) => {
-      const s = fs.readFileSync(p, 'utf8');
-      if (!/patient_addresses/.test(s)) return false;
-      const rel = path.relative(path.dirname(SRC), p).replace(/\\/g, '/');
-      const pointOk = Object.keys(POINT_EXCEPTION_FILES).some((suffix) => rel.endsWith(suffix));
-      return /address_formatted|address_raw/.test(s) || (!pointOk && /\bpa\.lat\b|\bpa\.lng\b/.test(s));
-    });
-    expect(offenders).toEqual([]);
+    expect(pointAndAddressOffenders(surface)).toEqual([]);
   });
 
   it('itinerário do prestador (077/P3, FR-39): nenhum texto de endereço nos arquivos WorkerItinerary* (bairro só no Reader)', () => {
@@ -205,6 +222,34 @@ describe('endereço do paciente não sai do perímetro do staff (lex C2.2/C2.5; 
       expect(itineraryTextOffenders(itinerarySurface()).some((p) => p.endsWith('WorkerItinerarySabotagemBairro.ts'))).toBe(true);
     } finally {
       fs.rmSync(sabotaged, { force: true });
+    }
+  });
+
+  it('T-F4-02 a exceção do endereço é estreita: só o Reader cita address_formatted, e um arquivo WorkerItinerary* novo que cite cai', () => {
+    const citam = itinerarySurface().filter((p) => fs.readFileSync(p, 'utf8').includes('address_formatted'));
+    expect(citam.map((p) => path.basename(p))).toEqual(['WorkerItineraryReader.ts']);
+    expect(pointAndAddressOffenders(itinerarySurface())).toEqual([]);
+    // Arquivo de sabotagem FORA de `src/` (diretório temporário): nenhuma outra suíte que varre `src` o enxerga.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't-f4-02-'));
+    const sabotaged = path.join(dir, 'WorkerItinerarySabotagemEndereco.ts');
+    fs.writeFileSync(sabotaged, '// patient_addresses address_formatted fora da exceção nomeada\nexport const x = 1;\n');
+    try {
+      expect(pointAndAddressOffenders([...itinerarySurface(), sabotaged])).toEqual([sabotaged]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('T-F4-02 address_raw segue proibido até no Reader: a exceção nomeada não o cobre', () => {
+    const reader = itinerarySurface().find((p) => p.endsWith('WorkerItineraryReader.ts')) as string;
+    expect(fs.readFileSync(reader, 'utf8')).not.toContain('address_raw');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't-f4-02-'));
+    const sabotaged = path.join(dir, 'WorkerItinerarySabotagemRaw.ts');
+    fs.writeFileSync(sabotaged, '// patient_addresses address_raw\nexport const x = 1;\n');
+    try {
+      expect(pointAndAddressOffenders([reader, sabotaged])).toEqual([sabotaged]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });
