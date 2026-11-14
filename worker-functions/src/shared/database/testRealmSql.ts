@@ -10,6 +10,9 @@
  *     teste (o monitor de prd lê a tarjeta dele lá), e some na vaga real.
  *   - lista, contagem ou métrica: `excludeTestWorkerSql` / `workerNotTestSql` e
  *     `excludeTestVacancySql` / `vacancyNotTestSql`.
+ *   - lista do catálogo de pagadores (obras sociais/prepagas): `excludeTestPayerSql`.
+ *     Contrato e vínculo serviço->contrato derivam do pagador (sem coluna própria);
+ *     detalhe por código, nome repetido e próxima posição leem a tabela inteira.
  *
  * Não confundir com `activeWorkerFilter` (recorte de worker desativado): são
  * conceitos distintos e aquele também serve de identidade, por isso não se estende.
@@ -33,6 +36,11 @@ export function excludeTestVacancySql(alias = 'jp'): string {
 /** Vaga de teste fora, a partir de uma expressão de id (sem JOIN com `job_postings`). */
 export function vacancyNotTestSql(vacancyIdExpr: string): string {
   return `NOT EXISTS (SELECT 1 FROM job_postings jp_test_chk WHERE jp_test_chk.id = ${vacancyIdExpr} AND jp_test_chk.is_test = true)`;
+}
+
+/** Pagador de teste fora da lista do catálogo; `alias` é o alias (ou o nome) da tabela `insurance_providers`. */
+export function excludeTestPayerSql(alias = 'p'): string {
+  return `COALESCE(${alias}.is_test, false) = false`;
 }
 
 /** Worker e vaga no mesmo realm (ambos de teste ou ambos reais); null-safe. */

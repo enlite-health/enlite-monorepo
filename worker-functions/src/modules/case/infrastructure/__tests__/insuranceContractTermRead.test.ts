@@ -8,6 +8,7 @@ import {
   termsOfContracts,
   termView,
 } from '../insuranceContractTermRead';
+import { excludeTestPayerSql } from '@shared/database/testRealmSql';
 
 function term(id: string, contractId: string, valid: string, over: Record<string, unknown> = {}) {
   return { id, contract_id: contractId, country: 'AR', hourly_rate: '1500.00', tax_rate_percent: '21.00', valid, ...over };
@@ -88,6 +89,14 @@ describe('providersWithContract', () => {
     expect(sql).toContain('FROM insurance_contracts c');
     expect(sql).not.toMatch(/insurance_contract_terms|daterange/);
     expect(params).toEqual(['AR']);
+  });
+});
+
+describe('providersWithContract — pagador de teste (D669)', () => {
+  it('T-F2a-80 a cascata do serviço tira o pagador de teste pelo dono do recorte (testRealmSql)', async () => {
+    const cli = q([]);
+    await providersWithContract(cli as never, 'AR');
+    expect(cli.query.mock.calls[0][0]).toContain(excludeTestPayerSql('p'));
   });
 });
 

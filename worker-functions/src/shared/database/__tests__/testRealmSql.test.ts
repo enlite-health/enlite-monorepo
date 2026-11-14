@@ -4,6 +4,7 @@ import {
   excludeTestVacancySql,
   vacancyNotTestSql,
   sameRealmAsVacancySql,
+  excludeTestPayerSql,
 } from '../testRealmSql';
 
 describe('testRealmSql', () => {
@@ -34,5 +35,10 @@ describe('testRealmSql', () => {
     expect(sql).toContain('w_realm_chk.id = wja.worker_id), false)');
     expect(sql).toContain('COALESCE((SELECT jp_realm_chk.is_test');
     expect(sql).toContain('jp_realm_chk.id = wja.job_posting_id), false)');
+  });
+
+  it('T-F2a-80 excludeTestPayerSql', () => {
+    expect(excludeTestPayerSql()).toBe('COALESCE(p.is_test, false) = false');
+    expect(excludeTestPayerSql('insurance_providers')).toBe('COALESCE(insurance_providers.is_test, false) = false');
   });
 });

@@ -527,6 +527,44 @@ export async function seedCadeiaPaciente(api: Api, deps: SeedDeps, pac: Paciente
   return { patientId, addressId, serviceId, projectId, vacancyId, workerId, applicationId, slotIds: slots.map((s) => s.id as string), allocationIds };
 }
 
+// ── pagador de teste da massa (D669 DP-15): pagador is_test + contrato AR + vínculo vivo no serviço da cadeia ──────
+export const PAGADOR_CODE = 'QA077_PAGADOR';
+export const PAGADOR_NOME = 'QA077 Pagador de Teste';
+export const CONTRATO_NOME = 'QA077 Contrato de Teste';
+/** Início do vínculo: antes de todo ponto da massa em prd (os CHECK_IN da qa.worker.at começam em 13/11/2026); fim aberto. */
+export const VINCULO_DESDE = '2026-11-01';
+
+/**
+ * Pagador, contrato e vínculo da massa, só por SQL (a API não marca pagador de teste e a cascata do serviço o esconde).
+ * Idempotente: cada INSERT só age se a linha não existe. Só toca o pagador is_test do marcador e serviço de paciente is_test.
+ * A última linha devolve quantos vínculos vivos do pagador de teste o serviço tem (tem de ser 1).
+ */
+export const PAGADOR_SQL = `INSERT INTO insurance_providers (code, name, sort_order, payer_kind, is_test)
+  SELECT :'code', :'nome', (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM insurance_providers), 'PREPAGA', true
+   WHERE NOT EXISTS (SELECT 1 FROM insurance_providers WHERE code = :'code');
+INSERT INTO insurance_contracts (provider_code, country, name, created_by, updated_by)
+  SELECT p.code, 'AR', :'contrato', 'qa077-seed', 'qa077-seed' FROM insurance_providers p
+   WHERE p.code = :'code' AND p.is_test = true
+     AND NOT EXISTS (SELECT 1 FROM insurance_contracts c WHERE c.provider_code = p.code AND lower(c.name) = lower(:'contrato'));
+INSERT INTO contracted_service_contract (contracted_service_id, contract_id, valid, recorded_by)
+  SELECT s.id, c.id, daterange(:'desde'::date, NULL), 'qa077-seed'
+    FROM patient_contracted_services s
+    JOIN patients pa ON pa.id = s.patient_id AND pa.is_test = true
+    JOIN insurance_contracts c ON c.provider_code = :'code' AND lower(c.name) = lower(:'contrato') AND c.country = s.country
+    JOIN insurance_providers p ON p.code = c.provider_code AND p.is_test = true
+   WHERE s.id = :'svc'::uuid
+     AND NOT EXISTS (SELECT 1 FROM contracted_service_contract e WHERE e.contracted_service_id = s.id AND e.superseded_at IS NULL);
+SELECT count(*) FROM contracted_service_contract e
+  JOIN insurance_contracts c ON c.id = e.contract_id
+  JOIN insurance_providers p ON p.code = c.provider_code AND p.is_test = true
+ WHERE e.contracted_service_id = :'svc'::uuid AND e.superseded_at IS NULL;`;
+
+export function seedPagadorDeTeste(deps: SeedDeps, serviceId: string): void {
+  const n = deps.sql(PAGADOR_SQL, { code: PAGADOR_CODE, nome: PAGADOR_NOME, contrato: CONTRATO_NOME, desde: VINCULO_DESDE, svc: serviceId });
+  if (n !== '1') throw new Error(`seed-e2e: vínculos vivos do pagador de teste no serviço ${serviceId} = ${n} (esperado 1)`);
+  deps.log(`[seed] pagador-de-teste | ${PAGADOR_CODE} vinculado | ${serviceId}`);
+}
+
 export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
   const log = (step: string, status: string, id?: string): void => deps.log(`[seed] ${step} | ${status}${id ? ` | ${id}` : ''}`);
   // 8. prestador de teste: conta QA, is_test ANTES de completar o cadastro (só pelas rotas da própria prestadora)
@@ -541,6 +579,7 @@ export async function seed(api: Api, deps: SeedDeps): Promise<SeedIds> {
     if (idx === 0) first = ids;
     else deps.log(`PATIENT${idx + 1}_ID=${ids.patientId}`);
   }
+  seedPagadorDeTeste(deps, (first as SeedIds).serviceId);
   return first as SeedIds;
 }
 

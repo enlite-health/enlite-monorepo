@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, pontoAoNorte, seedVagasRaio, cleanup, ZONA_BASE, SOBRENOMES_DO_MARCADOR, PACIENTES_SEED, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, entrarNoPool, E2E_API_URL, type SeedDeps } from '../seed-e2e-itinerario-teste';
+import { Api, assertE2eApiUrl, assertE2eDsn, ensureTestWorker, workerAccount, pontoAoNorte, seedVagasRaio, cleanup, ZONA_BASE, SOBRENOMES_DO_MARCADOR, PACIENTES_SEED, seedWorkerOnly, completeTestWorker, prepararPrestadora, linhasDeIds, main, realDeps, entrarNoPool, E2E_API_URL, seedPagadorDeTeste, PAGADOR_SQL, PAGADOR_CODE, VINCULO_DESDE, type SeedDeps } from '../seed-e2e-itinerario-teste';
 
 const PRD_LIKE = [
   'https://worker-functions-prd.example.run.app',
@@ -117,11 +117,33 @@ describe('seed-e2e-itinerario-teste — guarda de alvo (só prd)', () => {
     }
   });
 
-  it('T-F0a-srv-36 o script não cria pagador, contrato nem conta de staff', () => {
+  it('T-F0a-srv-36 o script não cria pagador nem contrato pela API (o pagador de teste é por SQL, D669) nem conta de staff', () => {
     const src = readFileSync(join(__dirname, '..', 'seed-e2e-itinerario-teste.ts'), 'utf8');
     for (const forbidden of ['/api/admin/catalogs/insurance-providers', '/contract-link', 'qa.admin@enlite.test']) {
       expect(src.split(forbidden).length - 1).toBe(0);
     }
+  });
+
+  it('T-F2a-82 o SQL do pagador só toca pagador is_test e serviço de paciente is_test, sem DELETE/UPDATE, e cada INSERT é idempotente', () => {
+    const ins = PAGADOR_SQL.split(';').filter((s) => /INSERT INTO/.test(s));
+    expect(ins).toHaveLength(3);
+    for (const st of ins) expect(st).toMatch(/NOT EXISTS \(SELECT 1 FROM/);
+    expect(ins[0]).toMatch(/payer_kind, is_test\)\s+SELECT [\s\S]*'PREPAGA', true/);
+    expect(ins[1]).toContain('p.is_test = true');
+    expect(ins[2]).toContain('pa.is_test = true');
+    expect(ins[2]).toContain('p.is_test = true');
+    expect(PAGADOR_SQL).not.toMatch(/\b(DELETE|UPDATE)\b/);
+  });
+
+  it('T-F2a-82 seedPagadorDeTeste passa código, vigência e serviço, e para se o serviço não ficar com 1 vínculo vivo', () => {
+    const vars: Array<Record<string, string>> = [];
+    const logs: string[] = [];
+    const svc = '77777777-0000-4000-8000-000000000000';
+    const deps = (out: string): SeedDeps => ({ ...spyDeps(), sql: (_st, v) => { vars.push(v); return out; }, log: (l) => { logs.push(l); } });
+    seedPagadorDeTeste(deps('1'), svc);
+    expect(vars[0]).toMatchObject({ code: PAGADOR_CODE, desde: VINCULO_DESDE, svc });
+    expect(logs).toEqual([`[seed] pagador-de-teste | ${PAGADOR_CODE} vinculado | ${svc}`]);
+    expect(() => seedPagadorDeTeste(deps('0'), svc)).toThrow(/esperado 1/);
   });
 
   it('T-F0a-srv-36 linhasDeIds imprime as chaves que o T-F0b-16 lê', () => {

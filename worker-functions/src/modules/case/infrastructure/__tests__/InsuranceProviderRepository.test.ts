@@ -24,6 +24,7 @@ import {
   InsuranceContractNameExistsError,
   mapUniqueViolation,
 } from '../InsuranceProviderRepository';
+import { excludeTestPayerSql } from '@shared/database/testRealmSql';
 
 function pgError(code: string, constraint?: string): Error {
   const e = new Error('pg') as Error & { code: string; constraint?: string };
@@ -246,7 +247,7 @@ describe('InsuranceProviderRepository', () => {
     expect(params).toEqual(['%50\\%\\_x%']);
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
     await new InsuranceProviderRepository().list({ includeInactive: true });
-    expect(mockPoolQuery.mock.calls[1][0]).not.toMatch(/WHERE/);
+    expect(mockPoolQuery.mock.calls[1][0]).not.toMatch(/WHERE active|AND active/);
   });
 
   it('for-service sem payerKind: devolve só {code, name}, mesmo que a linha do banco traga mais', async () => {
@@ -272,5 +273,26 @@ describe('InsuranceProviderRepository', () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });
     expect(await new InsuranceProviderRepository().listForService('BR', '2026-10-19')).toEqual([]);
     expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('T-F2a-80 as listas do catálogo tiram o pagador de teste pelo dono do recorte (testRealmSql)', async () => {
+    const filtro = excludeTestPayerSql('insurance_providers');
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    await new InsuranceProviderRepository().listActive();
+    await new InsuranceProviderRepository().list();
+    await new InsuranceProviderRepository().list({ search: 'x', includeInactive: true });
+    expect(mockPoolQuery.mock.calls.map((c) => String(c[0]).includes(filtro))).toEqual([true, true, true]);
+  });
+
+  it('T-F2a-80 detalhe por código, nome repetido e próxima posição leem a tabela inteira (o pagador de teste ocupa nome e sort_order)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    await new InsuranceProviderRepository().get('QA077_PAGADOR');
+    expect(mockPoolQuery.mock.calls[0][0]).not.toMatch(/is_test/);
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    await new InsuranceProviderRepository().create({ name: 'Nueva OS', code: 'NUEVA_OS' });
+    const leituras = chamadas.filter((c) => /lower\(btrim\(name\)\) = lower|MAX\(sort_order\)/.test(c.sql));
+    expect(leituras).toHaveLength(2);
+    expect(leituras.some((c) => /is_test/.test(c.sql))).toBe(false);
   });
 });

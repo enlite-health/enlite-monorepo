@@ -20,6 +20,11 @@ describe('insuranceErrorBody', () => {
     expect(insuranceErrorBody(pg('P0001', 'ITINERARY_SLOT_CAPACITY_EXCEEDED'))).toEqual({ status: 422, body: { success: false, error: 'ITINERARY_SLOT_CAPACITY_EXCEEDED', code: 'ITINERARY_SLOT_CAPACITY_EXCEEDED' } });
   });
 
+  it('T-F2a-85 TEST_REALM_MISMATCH (guard de realm da migration 584, D671) -> 422 com o próprio código', () => {
+    expect(P0001_CODES).toContain('TEST_REALM_MISMATCH');
+    expect(insuranceErrorBody(pg('P0001', 'TEST_REALM_MISMATCH'))).toEqual({ status: 422, body: { success: false, error: 'TEST_REALM_MISMATCH', code: 'TEST_REALM_MISMATCH' } });
+  });
+
   it('P0001 com mensagem DESCONHECIDA não é mapeado (vira 500 + alarme, nunca um 422 chutado)', () => {
     expect(insuranceErrorBody(pg('P0001', 'alguma outra exceção de plpgsql'))).toBeNull();
   });
