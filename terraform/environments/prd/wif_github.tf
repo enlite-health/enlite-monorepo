@@ -9,6 +9,12 @@ locals {
     "enlite-health/attendance-service",
     "enlite-health/mobile-bff",
   ]
+  # Repos SEM a github-deploy-sa: a condicao aceita deles SO o workflow_ref exato (repo => workflow_ref), cada um com a
+  # sua SA de minimo. Nunca repetir aqui um repo de github_wif_repos (precondition do e2e_ks_wif em e2e_ks.tf; DT-09).
+  # Vem depois das clausulas de deploy: o prefixo da condicao viva nao muda.
+  github_wif_workflows = {
+    "enlite-health/enlite-app" = "enlite-health/enlite-app/.github/workflows/e2e-ks.yml@refs/heads/main"
+  }
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -27,7 +33,10 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.actor"      = "assertion.actor"
     "attribute.repository" = "assertion.repository"
   }
-  attribute_condition = join(" || ", [for r in local.github_wif_repos : "(assertion.repository == '${r}' && assertion.ref == 'refs/heads/main')"])
+  attribute_condition = join(" || ", concat(
+    [for r in local.github_wif_repos : "(assertion.repository == '${r}' && assertion.ref == 'refs/heads/main')"],
+    [for r, w in local.github_wif_workflows : "(assertion.repository == '${r}' && assertion.ref == 'refs/heads/main' && assertion.workflow_ref == '${w}')"],
+  ))
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
