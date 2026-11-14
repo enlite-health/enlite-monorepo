@@ -21,6 +21,7 @@ import {
   withMissingFields,
   readFreshProgress,
 } from './WorkerControllerV2Helpers';
+import { logger, safeErrorFields } from '@shared/logging';
 import { profileEditChannelOf } from '../middleware/appChannel';
 import { PubSubClient } from '@shared/events/PubSubClient';
 
@@ -340,7 +341,7 @@ export class WorkerControllerV2 {
 
       res.status(200).json({ success: true, data: { message: 'Service area saved' } });
     } catch (error: any) {
-      console.error('SaveServiceArea error:', error);
+      logger.error(safeErrorFields(error), 'SaveServiceArea error');
       res.status(500).json({ success: false, error: error.message || 'Internal server error' });
     }
   }

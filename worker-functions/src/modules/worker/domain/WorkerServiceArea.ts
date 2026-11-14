@@ -16,7 +16,8 @@ export interface WorkerServiceArea {
 export interface CreateServiceAreaDTO {
   workerId: string;
   address: string;
-  addressComplement?: string;
+  /** undefined = manter o gravado (só em replaceByWorkerId); null/'' = apagar. */
+  addressComplement?: string | null;
   serviceRadiusKm: number;
   lat: number;
   lng: number;

@@ -3,6 +3,8 @@ import { IServiceAreaRepository } from '../ports/IServiceAreaRepository';
 import { WorkerServiceArea, CreateServiceAreaDTO } from '../domain/WorkerServiceArea';
 import { Result } from '@shared/utils/Result';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
+import { logger, safeErrorFields } from '@shared/logging';
 
 export class ServiceAreaRepository implements IServiceAreaRepository {
   private pool: Pool;
@@ -13,14 +15,43 @@ export class ServiceAreaRepository implements IServiceAreaRepository {
 
   async create(data: CreateServiceAreaDTO): Promise<Result<WorkerServiceArea>> {
     try {
-      const query = `
-        INSERT INTO worker_service_areas
+      return Result.ok<WorkerServiceArea>(await this.insert(this.pool, data));
+    } catch (error: any) {
+      return Result.fail<WorkerServiceArea>(`Failed to create service area: ${error.message}`);
+    }
+  }
+
+  /**
+   * Troca a zona numa transação (DELETE + INSERT): se o INSERT falhar, a zona anterior volta.
+   * `addressComplement` undefined = o pedido não falou do complemento: mantém o gravado;
+   * null/'' = apagar; texto = trocar.
+   */
+  async replaceByWorkerId(data: CreateServiceAreaDTO): Promise<Result<WorkerServiceArea>> {
+    try {
+      const area = await withActorContext(this.pool, async (client) => {
+        const old = await client.query(
+          'DELETE FROM worker_service_areas WHERE worker_id = $1 RETURNING address_complement',
+          [data.workerId],
+        );
+        const addressComplement =
+          data.addressComplement === undefined ? old.rows[0]?.address_complement : data.addressComplement;
+        return this.insert(client, { ...data, addressComplement });
+      });
+      return Result.ok<WorkerServiceArea>(area);
+    } catch (error: unknown) {
+      // Só o nome/código do erro: a mensagem do PG pode ecoar o endereço (PII).
+      logger.error(safeErrorFields(error), '[ServiceAreaRepository] replaceByWorkerId failed');
+      return Result.fail<WorkerServiceArea>('Failed to save service area');
+    }
+  }
+
+  private async insert(db: Pick<Pool, 'query'>, data: CreateServiceAreaDTO): Promise<WorkerServiceArea> {
+    const result = await db.query(
+      `INSERT INTO worker_service_areas
           (worker_id, address_line, city, state, postal_code, latitude, longitude, radius_km, address_complement, country, neighborhood)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        RETURNING *
-      `;
-
-      const values = [
+        RETURNING *`,
+      [
         data.workerId,
         data.address,
         data.city || null,
@@ -32,30 +63,23 @@ export class ServiceAreaRepository implements IServiceAreaRepository {
         data.addressComplement || null,
         'BR',
         data.neighborhood || null,
-      ];
-
-      const result = await this.pool.query(query, values);
-      const row = result.rows[0];
-
-      const serviceArea: WorkerServiceArea = {
-        id: row.id,
-        workerId: row.worker_id,
-        address: row.address_line,
-        lat: parseFloat(row.latitude),
-        lng: parseFloat(row.longitude),
-        serviceRadiusKm: row.radius_km,
-        addressComplement: row.address_complement || undefined,
-        city: row.city || undefined,
-        postalCode: row.postal_code || undefined,
-        neighborhood: row.neighborhood || undefined,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
-
-      return Result.ok<WorkerServiceArea>(serviceArea);
-    } catch (error: any) {
-      return Result.fail<WorkerServiceArea>(`Failed to create service area: ${error.message}`);
-    }
+      ],
+    );
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      workerId: row.worker_id,
+      address: row.address_line,
+      lat: parseFloat(row.latitude),
+      lng: parseFloat(row.longitude),
+      serviceRadiusKm: row.radius_km,
+      addressComplement: row.address_complement || undefined,
+      city: row.city || undefined,
+      postalCode: row.postal_code || undefined,
+      neighborhood: row.neighborhood || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
   async findByWorkerId(workerId: string): Promise<Result<WorkerServiceArea[]>> {
