@@ -18,6 +18,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow } from './PatientItineraryReader';
+import { excludeTestPatientSql } from '@shared/database/testRealmSql';
 import { liveVacancySelect } from './liveVacancySql';
 import { slotEndTimeSql, slotVigenteSql } from '@shared/sql/serviceScheduleSql';
 import { readAlertUniverseFacts, readOccurrenceInputsByPatient, type OccurrenceInputs } from './occurrenceInputs';
@@ -94,6 +95,9 @@ export class PatientKanbanServicesReader {
            FROM patient_contracted_services pcs
            JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
           WHERE pcs.active AND ($1::text IS NULL OR p.country = $1) AND ($2::uuid IS NULL OR p.id = $2)
+            -- D664/D665: o quadro (todos os pacientes) não lista paciente de teste; a leitura de UM paciente
+            -- ($2) segue aberta (PatientStatusDerivation deriva o status dele pela mesma leitura).
+            AND ($2::uuid IS NOT NULL OR ${excludeTestPatientSql('p')})
        ), live AS (
          ${liveVacancySelect('jp.contracted_service_id IN (SELECT id FROM svc)')}
        )

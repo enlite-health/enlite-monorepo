@@ -28,6 +28,11 @@ export function workerNotTestSql(workerIdExpr: string): string {
   return `NOT EXISTS (SELECT 1 FROM workers w_test_chk WHERE w_test_chk.id = ${workerIdExpr} AND w_test_chk.is_test = true)`;
 }
 
+/** Paciente de teste fora da lista/contagem; `alias` é o alias da tabela `patients`. */
+export function excludeTestPatientSql(alias = 'p'): string {
+  return `COALESCE(${alias}.is_test, false) = false`;
+}
+
 /** Vaga de teste fora da lista/contagem; `alias` é o alias da tabela `job_postings`. */
 export function excludeTestVacancySql(alias = 'jp'): string {
   return `COALESCE(${alias}.is_test, false) = false`;
