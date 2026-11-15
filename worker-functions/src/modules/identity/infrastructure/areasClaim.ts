@@ -24,8 +24,8 @@ export interface LoginDirectory {
   loginUids(pid: string): Promise<string[]>;
   /** `iam.resolve_person('firebase', uid)` — a pessoa DO login (o `pid` do claim daquele login); `null` = login removido. */
   personOfLogin(uid: string): Promise<string | null>;
-  /** `users` por uid OU e-mail com `is_active` — só chamada quando falta `role` ou `account_type` no claim. */
-  identityFromUsers(uid: string, email?: string): Promise<{ role: string | null; account_type: string | null } | null>;
+  /** `users` por uid OU e-mail (só se `emailVerified`) com `is_active` — só chamada quando falta `role` ou `account_type` no claim. */
+  identityFromUsers(uid: string, email?: string, emailVerified?: boolean): Promise<{ role: string | null; account_type: string | null } | null>;
 }
 
 export interface SyncAreasClaimsOptions {
@@ -53,7 +53,7 @@ async function areasForLogin(
   const claims = (user.customClaims ?? {}) as Record<string, unknown>;
   const claimRole = claims.role as string | undefined;
   const claimAccountType = claims.account_type as string | undefined;
-  const fromDb = claimRole && claimAccountType ? null : await dir.identityFromUsers(uid, user.email);
+  const fromDb = claimRole && claimAccountType ? null : await dir.identityFromUsers(uid, user.email, user.emailVerified);
   const role = claimRole ?? fromDb?.role ?? null;
   const accountType = accountTypeOf(claimAccountType ?? fromDb?.account_type, role);
   const principal = { roles: role ? [role] : [], ...(accountType ? { accountType } : {}) };

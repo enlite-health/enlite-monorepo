@@ -11,6 +11,8 @@ import { GrantAreaMembershipUseCase, type AreaMembershipWriter } from '../GrantA
 import { RevokeAreaMembershipUseCase } from '../RevokeAreaMembershipUseCase';
 import type { AreaRegistryReader, StoredMembership } from '../ListPersonAreasUseCase';
 import type { LoginDirectory } from '../../infrastructure/areasClaim';
+import type { Pool } from 'pg';
+import { identityFromUsers } from '../../infrastructure/identityFromUsers';
 
 const PID = '00000000-0000-4000-8000-000000000001';
 const ACTOR = 'actor-uid';
@@ -99,6 +101,22 @@ describe('Grant/RevokeAreaMembership + claim areas (Firebase dublê)', () => {
     const w = world({ uids: ['old'], claims: { old: {} }, usersDb: { old: { role: 'admin', account_type: 'staff' } } });
     await new GrantAreaMembershipUseCase(w.writer, w.registry, w.logins).execute({ pid: PID, area: 'learn', role: 'learner', actorUid: ACTOR });
     expect(lastClaims('old').areas.backoffice).toEqual(['staff']);
+  });
+
+  it('V1: fallback por e-mail só com e-mail VERIFICADO — login com o e-mail de um staff sem verificar NÃO recebe backoffice', async () => {
+    // `identityFromUsers` REAL sobre um dublê que aplica o WHERE: `(firebase_uid = $1 OR email = $2) AND is_active`.
+    const staff = { firebase_uid: 'staff-uid', email: 'staff@enlite.health', role: 'admin', account_type: 'staff' };
+    const pool = {
+      query: jest.fn(async (_sql: string, [uid, email]: [string, string | null]) => ({
+        rows: staff.firebase_uid === uid || (email !== null && staff.email === email) ? [{ role: staff.role, account_type: staff.account_type }] : [],
+      })),
+    } as unknown as Pick<Pool, 'query'>;
+    const w = world({ uids: ['atacante', 'verificado'], claims: { atacante: {}, verificado: {} } });
+    const logins: LoginDirectory = { ...w.logins, identityFromUsers: (uid, email, verified) => identityFromUsers(pool, uid, email, verified) };
+    mockGetUser.mockImplementation(async (uid: string) => ({ uid, email: staff.email, emailVerified: uid === 'verificado', customClaims: {} }));
+    await new GrantAreaMembershipUseCase(w.writer, w.registry, logins).execute({ pid: PID, area: 'learn', role: 'learner', actorUid: ACTOR });
+    expect(lastClaims('atacante').areas.backoffice).toBeUndefined();
+    expect(lastClaims('verificado').areas.backoffice).toEqual(['staff']);
   });
 
   it('teto de 1000 bytes: o pior caso (4 áreas+pid) cabe; ao passar, RECUSA com erro explícito e não grava nada', async () => {

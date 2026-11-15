@@ -76,7 +76,7 @@ export class FirebaseAuthStrategy {
     const claimAccountType = decodedToken.account_type as string | undefined;
     // Claim que falta (conta anterior ao backfill, ou prestador sem claim) vem do banco —
     // e `users` só tem staff (D294): quem não está lá não é staff.
-    const fromDb = claimRole && claimAccountType ? null : await this.getIdentityFromDB(decodedToken.uid, decodedToken.email);
+    const fromDb = claimRole && claimAccountType ? null : await this.getIdentityFromDB(decodedToken.uid, decodedToken.email, decodedToken.email_verified);
     const role = claimRole ?? fromDb?.role ?? null;
     const accountType = accountTypeOf(claimAccountType ?? fromDb?.account_type, role);
     // `country` é claim-only, sem fallback de banco (design, decisão 4): o claim
@@ -107,9 +107,9 @@ export class FirebaseAuthStrategy {
     };
   }
 
-  private async getIdentityFromDB(uid: string, email?: string): Promise<UserIdentity | null> {
+  private async getIdentityFromDB(uid: string, email?: string, emailVerified?: boolean): Promise<UserIdentity | null> {
     if (!this.db) return null;
-    return identityFromUsers(this.db, uid, email);
+    return identityFromUsers(this.db, uid, email, emailVerified);
   }
 }
 

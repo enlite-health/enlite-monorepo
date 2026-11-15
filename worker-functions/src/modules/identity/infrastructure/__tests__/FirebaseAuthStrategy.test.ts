@@ -112,6 +112,46 @@ describe('FirebaseAuthStrategy — produção (verifyIdToken)', () => {
     expect(ctx?.principal.roles).toEqual([]);
   });
 
+  describe('fallback por e-mail só com e-mail VERIFICADO (tomada de papel de staff)', () => {
+    // Dublê que aplica o WHERE de verdade sobre os parâmetros: `(firebase_uid = $1 OR email = $2) AND is_active`.
+    // SQL NULL nunca é igual a nada, então `$2 = null` não casa e-mail nenhum.
+    const STAFF = { firebase_uid: 'staff-uid', email: 'staff@enlite.health', role: 'admin', account_type: 'staff', is_active: true };
+    function usersTable(): Pool {
+      const query = jest.fn(async (_sql: string, params: [string, string | null]) => {
+        const [uid, email] = params;
+        const hit = [STAFF].find((r) => r.is_active && (r.firebase_uid === uid || (email !== null && r.email === email)));
+        return { rows: hit ? [{ role: hit.role, account_type: hit.account_type }] : [] };
+      });
+      return { query } as unknown as Pool;
+    }
+
+    it('ATAQUE: conta nova com o e-mail de um staff, NÃO verificado, sem claim → nenhum papel, nenhum tipo', async () => {
+      mockVerifyIdToken.mockResolvedValue({ uid: 'atacante-uid', email: STAFF.email, email_verified: false });
+      const ctx = await new FirebaseAuthStrategy(true, usersTable()).authenticate(credentials, metadata);
+      expect(ctx?.principal.roles).toEqual([]);
+      expect(ctx?.principal.accountType).toBeUndefined();
+    });
+
+    it('ATAQUE: token sem `email_verified` conta como não verificado (fail-closed)', async () => {
+      mockVerifyIdToken.mockResolvedValue({ uid: 'atacante-uid', email: STAFF.email });
+      const ctx = await new FirebaseAuthStrategy(true, usersTable()).authenticate(credentials, metadata);
+      expect(ctx?.principal.roles).toEqual([]);
+      expect(ctx?.principal.accountType).toBeUndefined();
+    });
+
+    it('legítimo: o staff pelo PRÓPRIO uid segue staff mesmo com e-mail não verificado', async () => {
+      mockVerifyIdToken.mockResolvedValue({ uid: STAFF.firebase_uid, email: STAFF.email, email_verified: false });
+      const ctx = await new FirebaseAuthStrategy(true, usersTable()).authenticate(credentials, metadata);
+      expect(ctx?.principal).toMatchObject({ roles: ['admin'], accountType: 'staff' });
+    });
+
+    it('legítimo: e-mail VERIFICADO casa a linha por e-mail (login com outro uid)', async () => {
+      mockVerifyIdToken.mockResolvedValue({ uid: 'outro-uid', email: STAFF.email, email_verified: true });
+      const ctx = await new FirebaseAuthStrategy(true, usersTable()).authenticate(credentials, metadata);
+      expect(ctx?.principal).toMatchObject({ roles: ['admin'], accountType: 'staff' });
+    });
+  });
+
   it('token inválido → null', async () => {
     mockVerifyIdToken.mockRejectedValue(new Error('expired'));
     expect(await new FirebaseAuthStrategy(true).authenticate(credentials, metadata)).toBeNull();

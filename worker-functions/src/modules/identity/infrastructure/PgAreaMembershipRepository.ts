@@ -84,7 +84,7 @@ export class PgAreaMembershipRepository implements AreaMembershipWriter, LoginDi
     return result.rows[0]?.pid ?? null;
   }
 
-  identityFromUsers(uid: string, email?: string): Promise<UserIdentity | null> {
-    return identityFromUsers(this.pool, uid, email);
+  identityFromUsers(uid: string, email?: string, emailVerified?: boolean): Promise<UserIdentity | null> {
+    return identityFromUsers(this.pool, uid, email, emailVerified);
   }
 }
