@@ -14,6 +14,7 @@
  *  (b) Bearer + telefone sem ficha → 200 { noCandidate: true }
  *  (c) Bearer de A + body authUid de B → 403 nas duas; ficha intacta
  *  (d) feliz: start → sid TEST_ → confirm grava uid/email do TOKEN (e-mail forjado no body é ignorado)
+ *  (e) DP-21: sid+código do telefone da ficha Z usados no confirm da ficha Y → 400 INVALID_OTP, Y intacta
  */
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
@@ -36,6 +37,16 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
   const emailA = `a-${stamp}@exemplo.test`;
   const uidB = `uid-b-${stamp}`;
   let fichaId = '';
+  const extras: string[] = [];
+  const fichaImportada = async (uid: string, email: string, phone: string): Promise<string> => {
+    const r = await pool.query(
+      `INSERT INTO workers (id, auth_uid, email, phone, status, country, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'INCOMPLETE_REGISTER', 'AR', NOW(), NOW()) RETURNING id`,
+      [uid, email, phone],
+    );
+    extras.push(r.rows[0].id);
+    return r.rows[0].id;
+  };
 
   // Rate limit por IP (start 3/15min, confirm 5/15min, em memória): cada chamada usa um X-Forwarded-For próprio
   // (a chave do limitador lê esse header), senão reexecutar a suíte no mesmo stack bateria em 429.
@@ -66,6 +77,7 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
 
   afterAll(async () => {
     if (fichaId) await pool.query('DELETE FROM workers WHERE id = $1', [fichaId]).catch(() => {});
+    for (const id of extras) await pool.query('DELETE FROM workers WHERE id = $1', [id]).catch(() => {});
     await pool.end();
   });
 
@@ -134,5 +146,30 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
     expect(row.email).toBe(emailA); // do token, não do body
     expect(row.auth_uid).not.toBe(fichaUid);
     if (!EMULATOR) expect(row.auth_uid).toBe(uidA);
+  });
+
+  it('(e) DP-21: código do telefone da ficha Z não reivindica a ficha Y → 400 INVALID_OTP e Y intacta', async () => {
+    const uidY = `anacareimport_dp21y_${stamp}`;
+    const emailY = `ficha-y-${stamp}@exemplo.test`;
+    const fichaY = await fichaImportada(uidY, emailY, `54914${digits8}`);
+    const phoneZ = `54913${digits8}`; // o telefone que o atacante controla
+    await fichaImportada(`anacareimport_dp21z_${stamp}`, `ficha-z-${stamp}@exemplo.test`, phoneZ);
+    const uidAtacante = `uid-atacante-${stamp}`;
+    const emailAtacante = `atacante-${stamp}@exemplo.test`;
+
+    const start = await api.post('/api/auth/claim/start', { ...bodyUid(uidAtacante), phone: `+${phoneZ}` }, await bearer(uidAtacante, emailAtacante));
+    expect(start.status).toBe(200);
+    const { verificationSid } = start.data.data as { verificationSid: string };
+    expect(verificationSid).toMatch(/^TEST_/); // sem canal real
+
+    const confirm = await api.post(
+      '/api/auth/claim/confirm',
+      { ...bodyUid(uidAtacante), verificationSid, otp: OTP, candidateWorkerId: fichaY },
+      await bearer(uidAtacante, emailAtacante),
+    );
+    expect(confirm.status).toBe(400);
+    expect(confirm.data.error).toBe('INVALID_OTP');
+    const y = (await pool.query('SELECT auth_uid, email FROM workers WHERE id = $1', [fichaY])).rows[0];
+    expect(y).toEqual({ auth_uid: uidY, email: emailY });
   });
 });

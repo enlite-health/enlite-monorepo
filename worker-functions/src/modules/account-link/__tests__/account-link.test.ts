@@ -86,7 +86,7 @@ function makeService(opts: {
   startedLastHour?: number;
   highValue?: boolean;
   conflictRows?: Row[];
-  twilioCheck?: { valid: boolean; status: 'approved' | 'pending' | 'expired' | 'canceled' };
+  twilioCheck?: { valid: boolean; status: 'approved' | 'pending' | 'expired' | 'canceled'; to?: string };
 }) {
   const {
     logged = { id: LOGGED, email: 'nueva@x.com', auth_uid: 'FirebaseNew', phone: null, updated_at: new Date('2026-08-01'), merged_into_id: null },
@@ -94,7 +94,8 @@ function makeService(opts: {
     startedLastHour = 0,
     highValue = false,
     conflictRows = [],
-    twilioCheck = { valid: true, status: 'approved' as const },
+    // `to` = o telefone da conta antiga em E.164, como o Twilio devolve quando o start foi para ela.
+    twilioCheck = { valid: true, status: 'approved' as const, to: '+5491133336012' },
   } = opts;
 
   const calls: string[] = [];
@@ -172,6 +173,20 @@ describe('AccountLinkService.confirm', () => {
     await expect(bad.service.confirm('FirebaseNew', '1133336012', 'VE', '000000')).rejects.toMatchObject({ code: 'INVALID_OTP' });
     const exp = makeService({ twilioCheck: { valid: false, status: 'expired' } });
     await expect(exp.service.confirm('FirebaseNew', '1133336012', 'VE', '000000')).rejects.toMatchObject({ code: 'EXPIRED_OTP' });
+  });
+
+  it('DP-21: código aprovado para OUTRO telefone → INVALID_OTP, nenhum merge nem evento confirmed', async () => {
+    // Ataque: código do telefone A (do atacante) + phoneEntered = telefone da vítima B.
+    const { service, adminMerge, calls } = makeService({ twilioCheck: { valid: true, status: 'approved', to: '+5491177778888' } });
+    await expect(service.confirm('FirebaseNew', '1133336012', 'VE', '123456')).rejects.toMatchObject({ code: 'INVALID_OTP' });
+    expect(adminMerge.execute).not.toHaveBeenCalled();
+    expect(calls.some(sql => sql.includes('INSERT INTO account_link_events'))).toBe(false);
+  });
+
+  it('DP-21: aprovado sem `to` → INVALID_OTP (fail-closed), nenhum merge', async () => {
+    const { service, adminMerge } = makeService({ twilioCheck: { valid: true, status: 'approved' } });
+    await expect(service.confirm('FirebaseNew', '1133336012', 'VE', '123456')).rejects.toMatchObject({ code: 'INVALID_OTP' });
+    expect(adminMerge.execute).not.toHaveBeenCalled();
   });
 
   it('conta antiga de alto valor → REQUIRES_REVIEW e NENHUM merge', async () => {

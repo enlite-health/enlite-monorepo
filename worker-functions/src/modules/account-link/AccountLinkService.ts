@@ -16,7 +16,7 @@ import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
-import { TwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
+import { TwilioVerifyService, otpCheckIsForPhone } from '../auth/infrastructure/TwilioVerifyService';
 import { ExecuteAdminMergeUseCase } from '../../application/dedup/ExecuteAdminMergeUseCase';
 import { buildFieldComparisons } from '../../application/dedup/dedupFieldComparison';
 import { SYNTHETIC_AUTH_UID_PREFIXES } from '../../infrastructure/services/WorkerPhoneMergeTypes';
@@ -111,6 +111,12 @@ export class AccountLinkService {
     const check = await this.twilio.checkVerification(verificationSid, otp);
     if (!check.valid) {
       throw new AccountLinkError(check.status === 'expired' ? 'EXPIRED_OTP' : 'INVALID_OTP');
+    }
+    // DP-21: o código tem de ter ido ao telefone GRAVADO na conta que vai ser absorvida — um
+    // código do telefone A não une a conta dona do telefone B (o `phoneEntered` é do cliente).
+    if (!otpCheckIsForPhone(check, owner.phone)) {
+      log().warn({ msg: 'account_link_otp_phone_mismatch', hasTo: Boolean(check.to) });
+      throw new AccountLinkError('INVALID_OTP');
     }
 
     await recordAccountLinkEvent(this.pool, {

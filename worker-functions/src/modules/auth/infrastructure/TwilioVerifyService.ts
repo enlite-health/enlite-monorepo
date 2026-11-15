@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import twilio from 'twilio';
 import { logger, reportError } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 
 /**
  * E2E OTP bypass — APENAS pra dev local.
@@ -46,12 +47,33 @@ function detectE2EBypass(): boolean {
 
 const TEST_SID_PREFIX = 'TEST_';
 
+/**
+ * Bypass (só dev local): o `to` de cada sid sintético, para o confirm amarrar o código ao
+ * telefone como faz com o Twilio de verdade (DP-21). Nível de módulo porque o start do init
+ * e o confirm do claim usam instâncias diferentes do serviço no mesmo processo.
+ */
+const bypassSidTo = new Map<string, string>();
+
+export interface OtpCheckResult {
+  valid: boolean;
+  status: 'approved' | 'pending' | 'expired' | 'canceled';
+  /** Telefone para o qual a verificação foi aberta, como o Twilio devolve. Ausente = desconhecido. */
+  to?: string;
+}
+
 export interface ITwilioVerifyService {
   startVerification(phoneE164: string): Promise<{ verificationSid: string }>;
-  checkVerification(
-    verificationSid: string,
-    code: string,
-  ): Promise<{ valid: boolean; status: 'approved' | 'pending' | 'expired' | 'canceled' }>;
+  checkVerification(verificationSid: string, code: string): Promise<OtpCheckResult>;
+}
+
+/**
+ * DP-21: código aprovado só prova posse do telefone para o qual a verificação foi ABERTA (`to`
+ * do Twilio). Quem reivindica uma ficha tem de provar o telefone GRAVADO nela — compara-se com o
+ * telefone lido do banco, nunca com o que o cliente manda. `to` ou telefone ausente → falso.
+ */
+export function otpCheckIsForPhone(check: Pick<OtpCheckResult, 'to'>, phoneOnRecord: string | null | undefined): boolean {
+  const to = normalizePhoneAR(check.to);
+  return to.length > 0 && to === normalizePhoneAR(phoneOnRecord);
 }
 
 /**
@@ -105,6 +127,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
     // E2E bypass — retorna sid sintético sem tocar no Twilio.
     if (this.bypassE2E) {
       const verificationSid = `${TEST_SID_PREFIX}${crypto.randomUUID()}`;
+      bypassSidTo.set(verificationSid, phoneE164);
       log.info({ msg: 'otp_started_bypass', verificationSid });
       return { verificationSid };
     }
@@ -159,10 +182,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
     }
   }
 
-  async checkVerification(
-    verificationSid: string,
-    code: string,
-  ): Promise<{ valid: boolean; status: 'approved' | 'pending' | 'expired' | 'canceled' }> {
+  async checkVerification(verificationSid: string, code: string): Promise<OtpCheckResult> {
     // PII-safe: NUNCA logar o código completo. Só metadados pra diagnóstico:
     //   - length: detecta usuário digitando incompleto
     //   - hasNonDigit: detecta usuário colando texto extra (espaço, "código:", etc.)
@@ -183,7 +203,8 @@ export class TwilioVerifyService implements ITwilioVerifyService {
       const valid = code === this.bypassExpectedCode;
       const status: 'approved' | 'pending' = valid ? 'approved' : 'pending';
       log.info({ msg: 'otp_checked_bypass', valid, status });
-      return { valid, status };
+      const to = bypassSidTo.get(verificationSid);
+      return { valid, status, ...(to ? { to } : {}) };
     }
 
     if (!this.isConfigured || !this.client) {
@@ -220,7 +241,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
         twilioPayee: check.payee ?? null,
       });
 
-      return { valid, status };
+      return { valid, status, ...(check.to ? { to: check.to } : {}) };
     } catch (err: unknown) {
       const durationMs = Date.now() - startedAt;
       const e = err instanceof Error ? err : new Error(String(err));

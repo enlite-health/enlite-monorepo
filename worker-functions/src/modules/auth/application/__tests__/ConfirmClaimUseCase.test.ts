@@ -58,7 +58,8 @@ const makeRepo = (overrides = {}) => ({
 
 const makeTwilio = (overrides = {}) => ({
   startVerification: jest.fn(),
-  checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved' }),
+  // `to` = o telefone da ficha em E.164, como o Twilio devolve quando o start foi para ela.
+  checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved', to: '+5491155261243' }),
   ...overrides,
 });
 
@@ -128,6 +129,51 @@ describe('ConfirmClaimUseCase', () => {
       expect(logChild.info).toHaveBeenCalledWith(
         expect.objectContaining({ msg: 'claim_confirm_success' }),
       );
+    });
+  });
+
+  describe('DP-21 — código amarrado ao telefone DA FICHA', () => {
+    // Ataque: o atacante abre uma verificação para o PRÓPRIO telefone (A), recebe o código e o usa
+    // no confirm com o candidateWorkerId da ficha B. O Twilio aprova (sid+código batem).
+    it('código aprovado para OUTRO telefone → INVALID_OTP e a ficha NÃO é transferida', async () => {
+      const repo = makeRepo();
+      const twilio = makeTwilio({
+        checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved', to: '+5491177778888' }),
+      });
+      const result = await new ConfirmClaimUseCase(repo as any, twilio as any).execute(makeInput());
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('INVALID_OTP');
+      expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
+    });
+
+    it('aprovado sem `to` (desconhecido) → INVALID_OTP (fail-closed)', async () => {
+      const repo = makeRepo();
+      const twilio = makeTwilio({ checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved' }) });
+      const result = await new ConfirmClaimUseCase(repo as any, twilio as any).execute(makeInput());
+
+      expect(result.error).toBe('INVALID_OTP');
+      expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
+    });
+
+    it('ficha sem telefone → INVALID_OTP (não há número a provar)', async () => {
+      const repo = makeRepo({ findById: jest.fn().mockResolvedValue(Result.ok({ ...importedWorker, phone: undefined })) });
+      const result = await new ConfirmClaimUseCase(repo as any, makeTwilio() as any).execute(makeInput());
+
+      expect(result.error).toBe('INVALID_OTP');
+      expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['E.164 com +', '+5491155261243'],
+      ['dígitos sem +', '5491155261243'],
+      ['nacional de 10 dígitos', '1155261243'],
+    ])('legítimo: ficha gravada como %s e `to` do Twilio em E.164 → transfere', async (_c, phoneNaFicha) => {
+      const repo = makeRepo({ findById: jest.fn().mockResolvedValue(Result.ok({ ...importedWorker, phone: phoneNaFicha })) });
+      const result = await new ConfirmClaimUseCase(repo as any, makeTwilio() as any).execute(makeInput());
+
+      expect(result.isSuccess).toBe(true);
+      expect(repo.updateImportedWorkerData).toHaveBeenCalledTimes(1);
     });
   });
 

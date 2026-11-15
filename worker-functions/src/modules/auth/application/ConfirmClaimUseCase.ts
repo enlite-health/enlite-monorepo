@@ -3,7 +3,7 @@ import { Worker } from '@modules/worker/domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
-import { ITwilioVerifyService } from '../infrastructure/TwilioVerifyService';
+import { ITwilioVerifyService, otpCheckIsForPhone } from '../infrastructure/TwilioVerifyService';
 
 export interface ConfirmClaimInput {
   verificationSid: string;
@@ -92,6 +92,13 @@ export class ConfirmClaimUseCase {
     if (!candidate) {
       log.warn({ msg: 'claim_confirm_candidate_not_found' });
       return Result.fail<Worker>('CANDIDATE_NOT_FOUND');
+    }
+
+    // 2b. DP-21: o código tem de ter ido ao telefone DESTA ficha. Sem isso, um código aprovado
+    //     para o telefone A (do atacante) reivindicava a ficha B. Compara com o telefone do banco.
+    if (!otpCheckIsForPhone(checkResult, candidate.phone)) {
+      log.warn({ msg: 'claim_confirm_otp_phone_mismatch', hasTo: Boolean(checkResult.to) });
+      return Result.fail<Worker>('INVALID_OTP');
     }
 
     // 3. Verifica que a ficha ainda é importable (não foi reclamada em paralelo)
