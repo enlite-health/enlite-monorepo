@@ -68,12 +68,12 @@ export const TEST_BASE_ACCOUNT_EMAILS: readonly string[] = [
 /** Literal SQL da allowlist; a validação do formato fecha qualquer injeção por edição futura. */
 const BASE_ACCOUNTS_SQL = TEST_BASE_ACCOUNT_EMAILS.map((e) => {
   if (!/^[a-z0-9._-]+@enlite\.test$/.test(e)) throw new Error('TEST_BASE_ACCOUNT_EMAILS: formato inválido');
-  return `'${e}'`;
+  return `'${e.trim().toLowerCase()}'`;
 }).join(', ');
 
 /** workers is_test, fora da allowlist e SEM nenhuma alocação (qualquer status). */
 const TEST_WORKER_IDS = `SELECT w.id FROM workers w WHERE w.is_test = true
-              AND lower(w.email) NOT IN (${BASE_ACCOUNTS_SQL})
+              AND (w.email IS NULL OR lower(btrim(w.email)) NOT IN (${BASE_ACCOUNTS_SQL}))
               AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
                               WHERE a.worker_id = w.id)`;
 
@@ -177,7 +177,7 @@ export class CleanupTestFixturesUseCase {
       const workersRes = await client.query(
         // Spec 086: a prestadora sintética da Luz (prueba) é is_test=true mas FICA (auth_uid fixo); os filhos dela acima somem como os de qualquer is_test.
         `DELETE FROM workers w WHERE w.is_test = true AND w.auth_uid <> $1
-           AND lower(w.email) NOT IN (${BASE_ACCOUNTS_SQL})
+           AND (w.email IS NULL OR lower(btrim(w.email)) NOT IN (${BASE_ACCOUNTS_SQL}))
            AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
                            WHERE a.worker_id = w.id)`,
         [LUZ_PRUEBA_SINTETICA_AUTH_UID],

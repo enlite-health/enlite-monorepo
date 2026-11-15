@@ -37,7 +37,7 @@ interface Row {
   job_posting_id?: string | null;
   is_test?: boolean;
   auth_uid?: string;
-  email?: string;
+  email?: string | null;
   application_id?: string;
   status?: string;
 }
@@ -112,7 +112,10 @@ function makeFixture(): FakeDb {
 function makeFakeClient(db: FakeDb): PoolClient {
   const fkError = (what: string) => Object.assign(new Error(`violates foreign key constraint (${what})`), { code: '23503' });
   const baseAccounts = new Set(TEST_BASE_ACCOUNT_EMAILS);
-  const isBase = (w: Row) => w.email != null && baseAccounts.has(w.email.toLowerCase());
+  // Como o SQL: `email IS NULL OR lower(btrim(email)) NOT IN (...)` — NULL NUNCA é conta-base.
+  // E como o banco: sem o `IS NULL OR` no SQL, `lower(NULL) NOT IN (...)` é NULL e o worker de e-mail NULL é POUPADO.
+  const isBase = (w: Row, sql: string) =>
+    w.email == null ? !sql.includes('w.email IS NULL OR') : baseAccounts.has(w.email.trim().toLowerCase());
   const assignedWorkers = () => new Set(db.patient_itinerary_assignment.map(a => a.worker_id));
   const assignedApps = () => new Set(db.patient_itinerary_assignment.map(a => a.application_id));
   const assignedJobs = () => {
@@ -141,7 +144,7 @@ function makeFakeClient(db: FakeDb): PoolClient {
       const poupa = trimmed.includes('auth_uid <> $1') ? String(params?.[0]) : null;
       const assigned = assignedWorkers();
       db.workers = db.workers.filter(w => {
-        const alvo = w.is_test && !(poupa !== null && w.auth_uid === poupa) && !(sparesBase && isBase(w)) && !(sparesAnyAssignment && assigned.has(w.id));
+        const alvo = w.is_test && !(poupa !== null && w.auth_uid === poupa) && !(sparesBase && isBase(w, trimmed)) && !(sparesAnyAssignment && assigned.has(w.id));
         if (alvo && assigned.has(w.id)) throw fkError('patient_itinerary_assignment_worker_id_fkey');
         return !alvo;
       });
@@ -163,7 +166,7 @@ function makeFakeClient(db: FakeDb): PoolClient {
 
     // Subquery avaliada contra o ESTADO ATUAL — expõe erro de ordem (pai antes do filho).
     const assigned = assignedWorkers();
-    const testWorkerIds = new Set(db.workers.filter(w => w.is_test && !isBase(w) && !assigned.has(w.id)).map(w => w.id));
+    const testWorkerIds = new Set(db.workers.filter(w => w.is_test && !isBase(w, trimmed) && !assigned.has(w.id)).map(w => w.id));
     const jobsAssigned = assignedJobs();
     const testJobIds = new Set(db.job_postings.filter(j => j.is_test && !jobsAssigned.has(j.id)).map(j => j.id));
     const hasJobPostingClause = trimmed.includes('job_posting_id IN');
@@ -394,6 +397,18 @@ describe('CleanupTestFixturesUseCase', () => {
       expect(ids).not.toContain('w-glob');
       expect(result.deleted.workers).toBe(3); // w-test + as duas fora da lista
       expect(db.worker_service_areas.filter(r => r.id.startsWith('sa-base-'))).toHaveLength(5);
+    });
+
+    it('worker is_test com e-mail NULL É apagado (lower(NULL) NOT IN daria NULL e o pouparia); e-mail com espaço/caixa da allowlist é poupado', async () => {
+      const db = makeFixture();
+      db.workers.push({ id: 'w-null', is_test: true, email: null });
+      db.workers.push({ id: 'w-espaco', is_test: true, email: '  QA.Worker.Inc@enlite.test ' });
+      const { result, all } = await run(db);
+
+      expect(all.filter(q => q.includes('w.email IS NULL OR lower(btrim(w.email))')).length).toBeGreaterThanOrEqual(2);
+      expect(db.workers.map(w => w.id)).not.toContain('w-null');
+      expect(db.workers.map(w => w.id)).toContain('w-espaco');
+      expect(result.deleted.workers).toBe(2); // w-test + w-null
     });
 
     it('a allowlist está nos SQL de worker e dos filhos, e o e-mail nunca vai para log', async () => {
