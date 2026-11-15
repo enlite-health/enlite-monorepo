@@ -24,6 +24,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 import { PatientKanbanServicesReader } from '../PatientKanbanServicesReader';
+import { excludeTestPatientSql } from '@shared/database/testRealmSql';
 
 const calls = (): Array<{ sql: string; params?: unknown[] }> =>
   mockClient.query.mock.calls.map(([sql, params]) => ({ sql: String(sql), params }));
@@ -54,6 +55,15 @@ describe('PatientKanbanServicesReader', () => {
     expect(c[0].sql).toBe('BEGIN');
     expect(c[c.length - 1].sql).toBe('COMMIT');
     expect(rawPoolQuery).not.toHaveBeenCalled();
+  });
+
+  it('paciente de teste (is_test) fora do quadro de todos; a leitura de UM paciente segue aberta (D664/D665)', async () => {
+    queryImpl = async () => ({ rows: [], rowCount: 0 });
+
+    await reader.readKanbanServices('AR');
+
+    const sql = svcCalls()[0].sql.replace(/\s+/g, ' ');
+    expect(sql).toContain(`AND ($2::uuid IS NOT NULL OR ${excludeTestPatientSql('p')})`);
   });
 
   it('parâmetro: [null, null] sem país, [\'AR\', null] com país (nas 4 queries)', async () => {

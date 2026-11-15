@@ -5,6 +5,7 @@ import {
   vacancyNotTestSql,
   sameRealmAsVacancySql,
   excludeTestPayerSql,
+  excludeTestPatientSql,
 } from '../testRealmSql';
 
 describe('testRealmSql', () => {
@@ -40,5 +41,10 @@ describe('testRealmSql', () => {
   it('T-F2a-80 excludeTestPayerSql', () => {
     expect(excludeTestPayerSql()).toBe('COALESCE(p.is_test, false) = false');
     expect(excludeTestPayerSql('insurance_providers')).toBe('COALESCE(insurance_providers.is_test, false) = false');
+  });
+
+  it('excludeTestPatientSql', () => {
+    expect(excludeTestPatientSql()).toBe('COALESCE(p.is_test, false) = false');
+    expect(excludeTestPatientSql('x')).toBe('COALESCE(x.is_test, false) = false');
   });
 });
