@@ -49,7 +49,7 @@ export class ServiceAreaRepository implements IServiceAreaRepository {
     const result = await db.query(
       `INSERT INTO worker_service_areas
           (worker_id, address_line, city, state, postal_code, latitude, longitude, radius_km, address_complement, country, neighborhood)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (SELECT country FROM workers WHERE id = $1), $10)
         RETURNING *`,
       [
         data.workerId,
@@ -61,7 +61,6 @@ export class ServiceAreaRepository implements IServiceAreaRepository {
         data.lng,
         data.serviceRadiusKm,
         data.addressComplement || null,
-        'BR',
         data.neighborhood || null,
       ],
     );
