@@ -15,10 +15,18 @@
  * Nunca um DELETE sem esse filtro — dado real nunca é tocado. `patients` NÃO
  * é tocada aqui.
  *
- * PROTEÇÃO (SUP-F1-22): worker/job_posting is_test com alocação ACTIVE em
- * `patient_itinerary_assignment` (FKs sem ON DELETE) são PULADOS, junto com os
- * filhos deles. Os filtros `IN (...)` abaixo usam os fragmentos
- * TEST_WORKER_IDS / TEST_JOB_IDS (só os NÃO protegidos).
+ * PROTEÇÃO (SUP-F1-22): worker/job_posting is_test com QUALQUER alocação (ACTIVE,
+ * ENDED ou CANCELLED) em `patient_itinerary_assignment` (FKs worker_id e
+ * application_id sem ON DELETE, mig 480) são PULADOS, junto com os filhos deles.
+ * Antes só a ACTIVE poupava, e uma alocação ENDED/CANCELLED fazia o DELETE de
+ * workers/worker_job_applications violar a FK e dar ROLLBACK da faxina inteira.
+ * A faxina NUNCA apaga alocação: `app_runtime` não tem DELETE em
+ * assignment/absence/change_log (REVOKE nas mig 480/484/494, trilha append-only).
+ *
+ * CONTAS-BASE (spec 077): lista fechada de e-mails em TEST_BASE_ACCOUNT_EMAILS,
+ * poupadas sempre (mesmo sem alocação) — são a massa fixa dos fluxos e2e.
+ * Os filtros `IN (...)` abaixo usam os fragmentos TEST_WORKER_IDS / TEST_JOB_IDS
+ * (só os NÃO protegidos).
  *
  * Ordem (filhos antes dos pais). Delete explícito é feito mesmo quando a FK já
  * tem ON DELETE CASCADE — garante contagem exata por tabela e blindagem
@@ -44,16 +52,36 @@ import { LUZ_PRUEBA_SINTETICA_AUTH_UID } from '../../modules/agentes/domain/LuzP
 
 const log = logger.child({ source: 'CleanupTestFixturesUseCase' });
 
-/** workers is_test SEM alocação ACTIVE (os com alocação ACTIVE ficam). */
-const TEST_WORKER_IDS = `SELECT w.id FROM workers w WHERE w.is_test = true
-              AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
-                              WHERE a.worker_id = w.id AND a.status = 'ACTIVE')`;
+/**
+ * Contas-base da massa de teste da 077 — NUNCA apagadas pela faxina. Lista FECHADA
+ * (sem padrão/glob): conta nova só entra por edição explícita aqui. Fonte única;
+ * o e-mail nunca é logado (a comparação é só no SQL).
+ */
+export const TEST_BASE_ACCOUNT_EMAILS: readonly string[] = [
+  'qa.worker.inc@enlite.test',
+  'qa.worker.longe@enlite.test',
+  'qa.worker.ks@enlite.test',
+  'qa.worker.subst@enlite.test',
+  'qa.worker.at@enlite.test',
+];
 
-/** job_postings is_test SEM alocação ACTIVE (via candidatura da alocação). */
+/** Literal SQL da allowlist; a validação do formato fecha qualquer injeção por edição futura. */
+const BASE_ACCOUNTS_SQL = TEST_BASE_ACCOUNT_EMAILS.map((e) => {
+  if (!/^[a-z0-9._-]+@enlite\.test$/.test(e)) throw new Error('TEST_BASE_ACCOUNT_EMAILS: formato inválido');
+  return `'${e.trim().toLowerCase()}'`;
+}).join(', ');
+
+/** workers is_test, fora da allowlist e SEM nenhuma alocação (qualquer status). */
+const TEST_WORKER_IDS = `SELECT w.id FROM workers w WHERE w.is_test = true
+              AND (w.email IS NULL OR lower(btrim(w.email)) NOT IN (${BASE_ACCOUNTS_SQL}))
+              AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
+                              WHERE a.worker_id = w.id)`;
+
+/** job_postings is_test SEM nenhuma alocação (via candidatura da alocação, qualquer status). */
 const TEST_JOB_IDS = `SELECT jp.id FROM job_postings jp WHERE jp.is_test = true
               AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
                               JOIN worker_job_applications wja ON wja.id = a.application_id
-                              WHERE wja.job_posting_id = jp.id AND a.status = 'ACTIVE')`;
+                              WHERE wja.job_posting_id = jp.id)`;
 
 export interface CleanupTestFixturesDeletedCounts {
   messaging_outbox: number;
@@ -91,8 +119,8 @@ const CHILD_DELETES: ReadonlyArray<{
     sql: `DELETE FROM worker_job_applications
           WHERE (worker_id IN (${TEST_WORKER_IDS})
              OR job_posting_id IN (${TEST_JOB_IDS}))
-            AND id NOT IN (SELECT application_id FROM patient_itinerary_assignment
-                           WHERE status = 'ACTIVE')`,
+            AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
+                            WHERE a.application_id = worker_job_applications.id)`,
   },
   {
     key: 'encuadres',
@@ -142,15 +170,16 @@ export class CleanupTestFixturesUseCase {
         `DELETE FROM job_postings jp WHERE jp.is_test = true
            AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
                            JOIN worker_job_applications wja ON wja.id = a.application_id
-                           WHERE wja.job_posting_id = jp.id AND a.status = 'ACTIVE')`,
+                           WHERE wja.job_posting_id = jp.id)`,
       );
       deleted.job_postings = jobPostingsRes.rowCount ?? 0;
 
       const workersRes = await client.query(
         // Spec 086: a prestadora sintética da Luz (prueba) é is_test=true mas FICA (auth_uid fixo); os filhos dela acima somem como os de qualquer is_test.
         `DELETE FROM workers w WHERE w.is_test = true AND w.auth_uid <> $1
+           AND (w.email IS NULL OR lower(btrim(w.email)) NOT IN (${BASE_ACCOUNTS_SQL}))
            AND NOT EXISTS (SELECT 1 FROM patient_itinerary_assignment a
-                           WHERE a.worker_id = w.id AND a.status = 'ACTIVE')`,
+                           WHERE a.worker_id = w.id)`,
         [LUZ_PRUEBA_SINTETICA_AUTH_UID],
       );
       deleted.workers = workersRes.rowCount ?? 0;
