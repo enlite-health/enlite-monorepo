@@ -2,10 +2,11 @@ import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { CreateWorkerDTO, Worker } from '../domain/Worker';
 import { InitWorkerOutput } from '../domain/InitWorkerOutput';
 import { Result } from '@shared/utils/Result';
+import { createHash } from 'crypto';
 import { logger } from '@shared/logging';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
-import { isImportedWorker } from './isClaimableWorker';
+import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
 import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
 /**
@@ -18,6 +19,11 @@ export interface InitWorkerInput extends CreateWorkerDTO {
 
 /** Ficha com este e-mail é de outro login e o token não prova posse do e-mail (DP-20). */
 export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
+
+/** Id da ficha em log de medição: hash curto, para contar sem expor o id (DP-20). */
+function workerIdHash(workerId: string): string {
+  return createHash('sha256').update(workerId).digest('hex').slice(0, 16);
+}
 
 export class InitWorkerUseCase {
   constructor(
@@ -55,11 +61,11 @@ export class InitWorkerUseCase {
       if (!existingByEmail.authUid || existingByEmail.authUid !== data.authUid) {
         // DP-20 (tomada de ficha): conta e-mail/senha nasce com e-mail NÃO verificado, então
         // criá-la com o e-mail de uma ficha alheia não prova nada. Sem `email_verified` não
-        // religa e também não cria outra ficha (o e-mail já tem dona) — o login verifica e volta.
+        // religa e não cria outra ficha (o e-mail já tem dona). A posse se prova pelo OTP ao
+        // telefone DA FICHA (claim, amarrado ao telefone pela DP-21) quando a ficha é reclamável;
+        // senão, EMAIL_NOT_VERIFIED.
         if (!data.emailVerified) {
-          logger.child({ source: 'InitWorkerUseCase:execute', workerId: existingByEmail.id })
-            .warn({ msg: 'worker_relink_blocked_email_not_verified' });
-          return Result.fail<InitWorkerOutput>(EMAIL_NOT_VERIFIED);
+          return this.relinkWithoutVerifiedEmail(existingByEmail);
         }
         const phoneToSet = !existingByEmail.phone && data.phone ? data.phone : undefined;
         const updateResult = await this.workerRepository.updateAuthUid(
@@ -72,6 +78,14 @@ export class InitWorkerUseCase {
         if (updateResult.isFailure) {
           return Result.fail<InitWorkerOutput>(updateResult.error!);
         }
+
+        // Medição do efeito da DP-20 depois do deploy: só hash do id e booleanos, sem PII.
+        logger.child({ source: 'InitWorkerUseCase:execute' }).info({
+          msg: 'worker_relinked_by_email',
+          workerIdHash: workerIdHash(existingByEmail.id),
+          emailVerified: data.emailVerified,
+          fromImported: isImportedWorker(existingByEmail.authUid),
+        });
 
         return Result.ok<InitWorkerOutput>({ status: 'ok', worker: updateResult.getValue() });
       }
@@ -91,49 +105,7 @@ export class InitWorkerUseCase {
         const existingByPhone = phoneCheckResult.getValue()!;
 
         if (isImportedWorker(existingByPhone.authUid)) {
-          const log = logger.child({
-            source: 'InitWorkerUseCase:execute',
-            workerId: existingByPhone.id,
-          });
-
-          // Usa o phone DA FICHA (não o do payload) para disparar o OTP — anti-hijack.
-          const phoneForOtp = existingByPhone.phone ?? phoneInput;
-          const phoneE164 = phoneForOtp.startsWith('+')
-            ? phoneForOtp
-            : `+${normalizePhoneAR(phoneForOtp)}`;
-
-          log.info({
-            msg: 'worker_claim_otp_triggered',
-            candidateWorkerId: existingByPhone.id,
-            fromAuthUid: existingByPhone.authUid,
-            phoneE164: maskPhoneForLog(phoneE164),
-          });
-
-          if (!this.twilioVerify) {
-            // Fallback em ambientes sem Twilio configurado (testes de integração E2E
-            // que não passam twilioVerify): retorna claim_pending com sid sintético.
-            return Result.ok<InitWorkerOutput>({
-              status: 'claim_pending',
-              candidateWorkerId: existingByPhone.id,
-              phoneMasked: maskPhone(phoneE164),
-              verificationSid: 'TWILIO_NOT_CONFIGURED',
-            });
-          }
-
-          try {
-            const { verificationSid } =
-              await this.twilioVerify.startVerification(phoneE164);
-
-            return Result.ok<InitWorkerOutput>({
-              status: 'claim_pending',
-              candidateWorkerId: existingByPhone.id,
-              phoneMasked: maskPhone(phoneE164),
-              verificationSid,
-            });
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            return Result.fail<InitWorkerOutput>(`TWILIO_ERROR:${msg}`);
-          }
+          return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput);
         }
       }
     }
@@ -154,5 +126,61 @@ export class InitWorkerUseCase {
     const worker: Worker = createResult.getValue();
 
     return Result.ok<InitWorkerOutput>({ status: 'ok', worker });
+  }
+
+  /**
+   * Ficha achada por e-mail, de outro login, e token sem `email_verified` (DP-20). Ficha
+   * reclamável COM telefone → `claim_pending` (OTP ao telefone dela; o front já abre o modal).
+   * Sem telefone, ou não reclamável (login real, `talentum_`, sobrevivente que absorveu login
+   * real: o confirm do claim recusaria) → EMAIL_NOT_VERIFIED. Nunca religa nem cria ficha.
+   */
+  private async relinkWithoutVerifiedEmail(ficha: Worker): Promise<Result<InitWorkerOutput>> {
+    const log = logger.child({ source: 'InitWorkerUseCase:execute', workerIdHash: workerIdHash(ficha.id) });
+    if (ficha.phone) {
+      const claimable = await isClaimableWorker(this.workerRepository, ficha);
+      if (claimable.isFailure) return Result.fail<InitWorkerOutput>(claimable.error!);
+      if (claimable.getValue()) {
+        log.info({ msg: 'worker_relink_email_not_verified_claim_otp' });
+        return this.startClaimOtp(ficha, ficha.phone);
+      }
+    }
+    log.warn({ msg: 'worker_relink_blocked_email_not_verified', hasPhone: Boolean(ficha.phone) });
+    return Result.fail<InitWorkerOutput>(EMAIL_NOT_VERIFIED);
+  }
+
+  /** OTP ao telefone DA FICHA (nunca o do payload — anti-hijack) e `claim_pending`. */
+  private async startClaimOtp(ficha: Worker, phoneForOtp: string): Promise<Result<InitWorkerOutput>> {
+    const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp)}`;
+
+    logger.child({ source: 'InitWorkerUseCase:execute', workerId: ficha.id }).info({
+      msg: 'worker_claim_otp_triggered',
+      candidateWorkerId: ficha.id,
+      fromAuthUid: ficha.authUid,
+      phoneE164: maskPhoneForLog(phoneE164),
+    });
+
+    if (!this.twilioVerify) {
+      // Fallback em ambientes sem Twilio configurado (testes de integração E2E
+      // que não passam twilioVerify): retorna claim_pending com sid sintético.
+      return Result.ok<InitWorkerOutput>({
+        status: 'claim_pending',
+        candidateWorkerId: ficha.id,
+        phoneMasked: maskPhone(phoneE164),
+        verificationSid: 'TWILIO_NOT_CONFIGURED',
+      });
+    }
+
+    try {
+      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164);
+      return Result.ok<InitWorkerOutput>({
+        status: 'claim_pending',
+        candidateWorkerId: ficha.id,
+        phoneMasked: maskPhone(phoneE164),
+        verificationSid,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return Result.fail<InitWorkerOutput>(`TWILIO_ERROR:${msg}`);
+    }
   }
 }

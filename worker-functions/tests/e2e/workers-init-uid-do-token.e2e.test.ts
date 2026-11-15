@@ -14,7 +14,10 @@
  *  (f) DP-20: Bearer de F com o e-mail da ficha de E e email_verified=false → 400 EMAIL_NOT_VERIFIED,
  *      auth_uid de E intacto e nenhuma ficha nova (o ataque de tomada de ficha)
  *  (g) DP-20: Bearer de G com o mesmo e-mail e email_verified=true → religa (o caminho legítimo)
- *  (f)/(g) só no modo mock: é o token mock que escolhe o `email_verified`.
+ *  (h) DP-20: ficha IMPORTADA com telefone + e-mail dela + email_verified=false → 200 claim_pending (OTP ao
+ *      telefone da ficha, sid TEST_ do bypass, sem canal real), nada religado; o confirm do claim com o código
+ *      entrega a ficha ao login (o caminho legítimo de quem não verificou o e-mail)
+ *  (f)/(g)/(h) só no modo mock: é o token mock que escolhe o `email_verified`.
  */
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
@@ -39,6 +42,11 @@ describe('POST /api/workers/init — uid/email só do token (H2/D650)', () => {
   const uidG = `uid-g-${stamp}`;
   const emailE = `e-${stamp}@exemplo.test`;
   const itMock = process.env.USE_FIREBASE_EMULATOR === 'true' ? it.skip : it;
+  const OTP = process.env.E2E_OTP_CODE ?? '123456';
+  const uidH = `uid-h-${stamp}`;
+  const emailH = `h-${stamp}@exemplo.test`;
+  const fichaUidH = `anacareimport_dp20h_${stamp}`;
+  const phoneH = `54915${stamp.slice(-8)}`;
   const created: string[] = [];
 
   const authUidOf = async (workerId: string): Promise<string | null> => {
@@ -145,5 +153,33 @@ describe('POST /api/workers/init — uid/email só do token (H2/D650)', () => {
     expect(res.status).toBe(201);
     expect(res.data.data.worker.id).toBe(eId);
     expect(await authUidOf(eId)).toBe(uidG);
+  });
+
+  itMock('(h) DP-20: ficha importada com telefone + email_verified=false → claim_pending; o confirm com o código religa', async () => {
+    const r = await pool.query(
+      `INSERT INTO workers (id, auth_uid, email, phone, status, country, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'INCOMPLETE_REGISTER', 'AR', NOW(), NOW()) RETURNING id`,
+      [fichaUidH, emailH, phoneH],
+    );
+    const hId = r.rows[0].id as string;
+    created.push(hId);
+
+    const tokenH = await getMockToken(api, { uid: uidH, email: emailH, role: 'worker', emailVerified: false });
+    const auth = { headers: { Authorization: `Bearer ${tokenH}`, 'X-Forwarded-For': `198.51.100.${Number(stamp.slice(-2)) + 1}` } };
+    const init = await api.post('/api/workers/init', { country: 'AR' }, auth);
+
+    expect(init.status).toBe(200);
+    expect(init.data.data.status).toBe('claim_pending');
+    expect(init.data.data.candidateWorkerId).toBe(hId);
+    expect(init.data.data.verificationSid).toMatch(/^TEST_/); // bypass: nenhum SMS real
+    expect(await authUidOf(hId)).toBe(fichaUidH); // nada religado sem o código
+
+    const confirm = await api.post(
+      '/api/auth/claim/confirm',
+      { verificationSid: init.data.data.verificationSid, otp: OTP, candidateWorkerId: hId },
+      auth,
+    );
+    expect(confirm.status).toBe(200);
+    expect(await authUidOf(hId)).toBe(uidH);
   });
 });
