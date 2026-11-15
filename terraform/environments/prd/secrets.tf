@@ -40,7 +40,7 @@ resource "google_secret_manager_secret_iam_member" "github_deploy_internal_token
 
 # DP-04: chave de servidor do Google Maps ("Maps Server prd", a mesma do worker-functions)
 # para o mobile-bff, montada como GOOGLE_MAPS_API_KEY por --set-secrets no deploy
-# (mobile-bff e mobile-bff-ks rodam com mobile-bff-sa). Como os demais: o TF cria só a
+# (só o mobile-bff, com a mobile-bff-sa; o mobile-bff-ks roda com a mobile-bff-ks-sa e sem este secret, D671). Como os demais: o TF cria só a
 # estrutura; a versão (o valor) entra por gcloud secrets versions add, nunca pelo HCL/state.
 module "secret_google_maps_server_api_key" {
   source     = "../../modules/secret"

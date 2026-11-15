@@ -35,7 +35,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
   attribute_condition = join(" || ", concat(
     [for r in local.github_wif_repos : "(assertion.repository == '${r}' && assertion.ref == 'refs/heads/main')"],
-    [for r, w in local.github_wif_workflows : "(assertion.repository == '${r}' && assertion.ref == 'refs/heads/main' && assertion.workflow_ref == '${w}')"],
+    [for r, w in local.github_wif_workflows : "(assertion.repository == '${r}' && assertion.ref == 'refs/heads/main' && assertion.workflow_ref == '${w}' && assertion.event_name in ['push', 'workflow_dispatch'])"],
   ))
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
