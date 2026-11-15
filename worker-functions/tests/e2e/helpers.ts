@@ -22,7 +22,7 @@ export function createApiClient(): AxiosInstance {
  */
 export async function getMockToken(
   api: AxiosInstance,
-  opts: { uid: string; email: string; role?: string },
+  opts: { uid: string; email: string; role?: string; emailVerified?: boolean },
 ): Promise<string> {
   if (process.env.USE_FIREBASE_EMULATOR === 'true') {
     return getFirebaseEmulatorToken(opts);
@@ -31,6 +31,8 @@ export async function getMockToken(
     uid: opts.uid,
     email: opts.email,
     role: opts.role || 'worker',
+    // DP-20: sem o campo, o mock é login verificado; `false` simula conta e-mail/senha sem verificar.
+    ...(opts.emailVerified !== undefined ? { email_verified: opts.emailVerified } : {}),
   });
   if (res.status !== 200) throw new Error(`Mock token failed: ${JSON.stringify(res.data)}`);
   return res.data.data.token;

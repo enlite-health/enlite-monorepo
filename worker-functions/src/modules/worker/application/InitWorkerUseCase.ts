@@ -8,13 +8,24 @@ import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { isImportedWorker } from './isClaimableWorker';
 import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
+/**
+ * `emailVerified` vem do token verificado (nunca do corpo): sem ele, o e-mail é só o que
+ * a pessoa digitou ao criar a conta e-mail/senha — não prova que ela é dona da ficha.
+ */
+export interface InitWorkerInput extends CreateWorkerDTO {
+  emailVerified: boolean;
+}
+
+/** Ficha com este e-mail é de outro login e o token não prova posse do e-mail (DP-20). */
+export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
+
 export class InitWorkerUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
     private twilioVerify?: ITwilioVerifyService,
   ) {}
 
-  async execute(data: CreateWorkerDTO): Promise<Result<InitWorkerOutput>> {
+  async execute(data: InitWorkerInput): Promise<Result<InitWorkerOutput>> {
     const consentAt = data.lgpdOptIn ? new Date() : undefined;
 
     const existingWorkerResult = await this.workerRepository.findByAuthUid(data.authUid);
@@ -42,6 +53,14 @@ export class InitWorkerUseCase {
       // Cobre o caso em que o usuário recriou a conta Firebase (novo authUid).
       // Também preenche phone quando o worker existente não tem mas o payload tem.
       if (!existingByEmail.authUid || existingByEmail.authUid !== data.authUid) {
+        // DP-20 (tomada de ficha): conta e-mail/senha nasce com e-mail NÃO verificado, então
+        // criá-la com o e-mail de uma ficha alheia não prova nada. Sem `email_verified` não
+        // religa e também não cria outra ficha (o e-mail já tem dona) — o login verifica e volta.
+        if (!data.emailVerified) {
+          logger.child({ source: 'InitWorkerUseCase:execute', workerId: existingByEmail.id })
+            .warn({ msg: 'worker_relink_blocked_email_not_verified' });
+          return Result.fail<InitWorkerOutput>(EMAIL_NOT_VERIFIED);
+        }
         const phoneToSet = !existingByEmail.phone && data.phone ? data.phone : undefined;
         const updateResult = await this.workerRepository.updateAuthUid(
           existingByEmail.id,

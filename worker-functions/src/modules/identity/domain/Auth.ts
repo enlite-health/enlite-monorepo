@@ -25,6 +25,12 @@ export interface Principal {
    */
   email?: string;
   /**
+   * `email_verified` do token JÁ VERIFICADO pelo Admin SDK — nunca do corpo da request.
+   * Só `true` prova posse do e-mail: conta e-mail/senha nasce `false`. Quem casa ficha por
+   * e-mail (o init religa `auth_uid`) exige `true` (DP-20). Ausente = não verificado.
+   */
+  emailVerified?: boolean;
+  /**
    * O que a conta É (`staff` | `worker`; obra social e paciente virão) — custom
    * claim `account_type` / coluna `users.account_type` (D294). É a fronteira
    * staff × prestador; o que a conta PODE é a célula do grupo. Ausente = a

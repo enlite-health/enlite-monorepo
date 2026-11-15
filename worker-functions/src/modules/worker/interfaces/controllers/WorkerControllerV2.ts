@@ -58,9 +58,11 @@ export class WorkerControllerV2 {
       // H2 (D650): identidade SÓ do token. `authUid`/`email` do body nunca decidem
       // quem é o prestador — antes, qualquer um sem login lia a ficha de um uid,
       // trocava o auth_uid de uma ficha pelo e-mail e disparava OTP ao telefone dela.
-      const tokenUser = (req as Request & { user?: { uid?: string; email?: string } }).user;
+      const tokenUser = (req as Request & { user?: { uid?: string; email?: string; emailVerified?: boolean } }).user;
       const authUid = tokenUser?.uid;
       const email = tokenUser?.email;
+      // DP-20: posse do e-mail SÓ do token verificado; `emailVerified` no body é ignorado.
+      const emailVerified = tokenUser?.emailVerified === true;
       const { phone, whatsappPhone, lgpdOptIn, country } = req.body;
 
       if (!authUid) {
@@ -98,6 +100,7 @@ export class WorkerControllerV2 {
       const result = await this.initWorkerUseCase.execute({
         authUid,
         email,
+        emailVerified,
         phone: phone || undefined,
         whatsappPhone: whatsappPhone || undefined,
         lgpdOptIn: lgpdOptIn === true,

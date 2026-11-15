@@ -9,6 +9,8 @@ declare global {
       user?: {
         uid: string;
         email?: string;
+        /** `email_verified` do token verificado (DP-20); só `true` prova posse do e-mail. */
+        emailVerified?: boolean;
         role?: string;
         roles?: string[];
         /** Tipo da conta (D294): `staff` | `worker` — claim `account_type`; ausente = ponte por `role`. */

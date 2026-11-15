@@ -61,9 +61,11 @@ const makeTwilioVerify = (overrides = {}) => ({
   ...overrides,
 });
 
+// Padrão = token com e-mail verificado (Google, ou e-mail/senha depois do link): o caminho legítimo.
 const makeCreateDTO = (overrides = {}) => ({
   authUid: REAL_AUTH_UID,
   email: REAL_EMAIL,
+  emailVerified: true,
   phone: REAL_PHONE,
   country: 'BR',
   ...overrides,
@@ -230,6 +232,75 @@ describe('InitWorkerUseCase', () => {
 
       const call = repo.updateAuthUid.mock.calls[0];
       expect(call[3]).toBeUndefined();
+    });
+  });
+
+  describe('Cenário 3b — DP-20: tomada de ficha por conta com e-mail NÃO verificado', () => {
+    // Ataque: alguém cria conta e-mail/senha no Firebase com o e-mail da ficha de outra pessoa
+    // (o Firebase não exige verificação para emitir token) e chama o init.
+    const fichaDaVitima: Worker = {
+      ...mockWorker,
+      authUid: 'uidDaVitimaNoFirebase',
+      id: 'a1b2c3d4-0000-4000-8000-0000000000aa',
+    };
+    const fichaImportadaDaVitima: Worker = {
+      ...mockWorker,
+      authUid: 'talentum_9f8e7d',
+      id: 'a1b2c3d4-0000-4000-8000-0000000000bb',
+    };
+
+    it.each([
+      ['ficha com login real', fichaDaVitima],
+      ['ficha importada (auth_uid sintético)', fichaImportadaDaVitima],
+    ])('%s: token sem email_verified NÃO religa o auth_uid nem cria ficha → EMAIL_NOT_VERIFIED', async (_c, ficha) => {
+      const repo = makeRepository({
+        findByEmail: jest.fn().mockResolvedValue(Result.ok(ficha)),
+      });
+      const twilio = makeTwilioVerify();
+      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+
+      const result = await useCase.execute(makeCreateDTO({ authUid: 'uidDoAtacante', emailVerified: false }));
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('EMAIL_NOT_VERIFIED');
+      expect(repo.updateAuthUid).not.toHaveBeenCalled();
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(twilio.startVerification).not.toHaveBeenCalled();
+    });
+
+    it('mesma ficha, token COM email_verified=true → religa (caminho legítimo intacto)', async () => {
+      const repo = makeRepository({
+        findByEmail: jest.fn().mockResolvedValue(Result.ok(fichaDaVitima)),
+        updateAuthUid: jest.fn().mockResolvedValue(Result.ok({ ...fichaDaVitima, authUid: 'uidNovoDaDona' })),
+      });
+      const useCase = new InitWorkerUseCase(repo as any);
+
+      const result = await useCase.execute(makeCreateDTO({ authUid: 'uidNovoDaDona', emailVerified: true }));
+
+      expect(result.isSuccess).toBe(true);
+      expect(repo.updateAuthUid).toHaveBeenCalledWith(fichaDaVitima.id, 'uidNovoDaDona', undefined, undefined);
+    });
+
+    it('e-mail sem ficha + token não verificado → cadastro novo segue (o gate é só para religar)', async () => {
+      const repo = makeRepository();
+      const useCase = new InitWorkerUseCase(repo as any);
+
+      const result = await useCase.execute(makeCreateDTO({ emailVerified: false }));
+
+      expect(result.isSuccess).toBe(true);
+      expect(repo.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('ficha do PRÓPRIO uid achada por e-mail + token não verificado → ok, nada muda', async () => {
+      const repo = makeRepository({
+        findByEmail: jest.fn().mockResolvedValue(Result.ok(mockWorker)),
+      });
+      const useCase = new InitWorkerUseCase(repo as any);
+
+      const result = await useCase.execute(makeCreateDTO({ emailVerified: false }));
+
+      expect(result.isSuccess).toBe(true);
+      expect(repo.updateAuthUid).not.toHaveBeenCalled();
     });
   });
 

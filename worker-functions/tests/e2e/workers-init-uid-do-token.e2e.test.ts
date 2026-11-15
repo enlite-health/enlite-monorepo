@@ -11,6 +11,10 @@
  *  (c) Bearer de A + body authUid de B → 403 e nada de B na resposta
 (d) Bearer de D (sem ficha) + body email da ficha de C → auth_uid de C intacto
  *  (e) 2ª chamada de A (login de volta) → 200 com a própria ficha
+ *  (f) DP-20: Bearer de F com o e-mail da ficha de E e email_verified=false → 400 EMAIL_NOT_VERIFIED,
+ *      auth_uid de E intacto e nenhuma ficha nova (o ataque de tomada de ficha)
+ *  (g) DP-20: Bearer de G com o mesmo e-mail e email_verified=true → religa (o caminho legítimo)
+ *  (f)/(g) só no modo mock: é o token mock que escolhe o `email_verified`.
  */
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
@@ -30,6 +34,11 @@ describe('POST /api/workers/init — uid/email só do token (H2/D650)', () => {
   const emailB = `b-${stamp}@exemplo.test`;
   const emailC = `c-${stamp}@exemplo.test`;
   const emailD = `d-${stamp}@exemplo.test`;
+  const uidE = `uid-e-${stamp}`;
+  const uidF = `uid-f-${stamp}`;
+  const uidG = `uid-g-${stamp}`;
+  const emailE = `e-${stamp}@exemplo.test`;
+  const itMock = process.env.USE_FIREBASE_EMULATOR === 'true' ? it.skip : it;
   const created: string[] = [];
 
   const authUidOf = async (workerId: string): Promise<string | null> => {
@@ -109,5 +118,32 @@ describe('POST /api/workers/init — uid/email só do token (H2/D650)', () => {
     expect(res.status).toBe(200);
     expect(res.data.data.worker.authUid).toBe(uidA);
     expect(res.data.data.worker.email).toBe(emailA);
+  });
+
+  itMock('(f) DP-20: conta com o e-mail da ficha de E e email_verified=false → 400 EMAIL_NOT_VERIFIED, ficha de E intacta', async () => {
+    const e = await postWorkerInit(api, { authUid: uidE, email: emailE, country: 'AR' });
+    expect(e.status).toBe(201);
+    const eId = e.data.data.worker.id as string;
+    created.push(eId);
+
+    const tokenF = await getMockToken(api, { uid: uidF, email: emailE, role: 'worker', emailVerified: false });
+    const res = await api.post('/api/workers/init', { country: 'AR' }, { headers: { Authorization: `Bearer ${tokenF}` } });
+
+    expect(res.status).toBe(400);
+    expect(res.data.error).toBe('EMAIL_NOT_VERIFIED');
+    expect(JSON.stringify(res.data)).not.toContain(eId);
+    expect(await authUidOf(eId)).toBe(uidE);
+    const n = await pool.query('SELECT count(*)::int AS n FROM workers WHERE auth_uid = $1 OR lower(email) = lower($2)', [uidF, emailE]);
+    expect(n.rows[0].n).toBe(1);
+  });
+
+  itMock('(g) DP-20: mesma ficha, conta com email_verified=true → religa o auth_uid (legítimo)', async () => {
+    const eId = (await pool.query('SELECT id FROM workers WHERE lower(email) = lower($1)', [emailE])).rows[0].id as string;
+    const tokenG = await getMockToken(api, { uid: uidG, email: emailE, role: 'worker', emailVerified: true });
+    const res = await api.post('/api/workers/init', { country: 'AR' }, { headers: { Authorization: `Bearer ${tokenG}` } });
+
+    expect(res.status).toBe(201);
+    expect(res.data.data.worker.id).toBe(eId);
+    expect(await authUidOf(eId)).toBe(uidG);
   });
 });

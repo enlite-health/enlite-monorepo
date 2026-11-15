@@ -55,10 +55,21 @@ describe('mockAuthMiddleware', () => {
     expect((req as Request & { user: Record<string, unknown> }).user).toEqual({
       uid: 'u1',
       email: 'a@b.c',
+      emailVerified: true,
       role: 'admin',
       account_type: null,
       country: 'BR',
     });
+  });
+
+  it('DP-20: email_verified=false explícito no token chega como emailVerified=false; ausente = true (login verificado)', () => {
+    const [reqF, , nextF] = makeReqRes('/api/workers/init', mockToken({ uid: 'u4', email: 'a@b.c', email_verified: false }));
+    mockAuthMiddleware(reqF, {} as Response, nextF);
+    expect((reqF as Request & { user: { emailVerified: boolean } }).user.emailVerified).toBe(false);
+
+    const [reqT, , nextT] = makeReqRes('/api/workers/init', mockToken({ uid: 'u5', email: 'a@b.c' }));
+    mockAuthMiddleware(reqT, {} as Response, nextT);
+    expect((reqT as Request & { user: { emailVerified: boolean } }).user.emailVerified).toBe(true);
   });
 
   it('token mock com account_type o propaga; sem ele fica null (a ponte por role decide depois — D294)', () => {
@@ -183,6 +194,21 @@ describe('createMockAuthEndpoints', () => {
     process.env.USE_MOCK_AUTH = 'true';
     mockAuthMiddleware(req, {} as Response, next);
     expect((req as Request & { user: { uid: string } }).user.uid).toBe('u9');
+  });
+
+  it('DP-20: emissão com email_verified=false grava o campo no token; sem ele, o campo não existe', () => {
+    process.env.USE_MOCK_AUTH = 'true';
+    const app = fakeApp();
+    createMockAuthEndpoints(app);
+    const issue = app.routes.get('POST /api/test/auth/token')!;
+    const payloadOf = (body: Record<string, unknown>) => {
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() } as unknown as Response;
+      issue({ body } as Request, res);
+      const token = (res.json as jest.Mock).mock.calls[0][0].data.token as string;
+      return JSON.parse(Buffer.from(token.replace('mock_', ''), 'base64').toString());
+    };
+    expect(payloadOf({ uid: 'u11', email: 'e@x.com', email_verified: false }).email_verified).toBe(false);
+    expect(payloadOf({ uid: 'u12', email: 'e@x.com' })).not.toHaveProperty('email_verified');
   });
 
   it('emissão sem role gera token de worker (default explícito)', () => {
