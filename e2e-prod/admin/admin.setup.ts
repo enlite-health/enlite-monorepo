@@ -6,15 +6,15 @@
  *
  * Por que login REAL e não token forjado: a suíte é monitor de prod (zero mock). O único
  * jeito honesto de provar que a sessão admin funciona é logar como pessoa: digitar as
- * credenciais no /admin/login, submeter, e chegar em /admin. O storageState resultante é
+ * credenciais no login único (/login?next=/admin), submeter, e chegar em /admin. O storageState resultante é
  * reusado pelos specs do projeto `admin` (dependency: ['admin-setup']).
  *
  * indexedDB: true é ESSENCIAL — em produção o Firebase Auth persiste a sessão no IndexedDB
- * (não no localStorage). Sem essa flag o storageState sai vazio e os specs caem no /admin/login.
+ * (não no localStorage). Sem essa flag o storageState sai vazio e os specs caem no /login?next=%2Fadmin.
  * Requer Playwright >= 1.51.
  *
- * NOTA sobre promoção: o login Firebase funciona assim que a conta existe, MAS o AdminLoginPage
- * só redireciona pra /admin se o backend devolver um `adminProfile` (conta promovida a
+ * NOTA sobre promoção: o login Firebase funciona assim que a conta existe, MAS o login único
+ * (LoginPage) só redireciona pra /admin se o backend devolver um `adminProfile` (conta promovida a
  * staff/admin). Enquanto a conta não for promovida, o login autentica mas a página mostra
  * "Acceso negado" e NÃO navega — este setup vai falhar no `waitForURL('/admin')`. Esperado
  * até o user promover a conta. Depois disso, roda verde sem mudança de código.
@@ -44,21 +44,23 @@ setup('login admin real (Firebase prd) e salva storageState', async ({ page }) =
   // do input de senha em texto plano. O try/finally garante que a senha é ZERADA do DOM
   // antes de QUALQUER propagação de erro/screenshot — não só no caminho "não chegou em /admin".
   try {
-    await page.goto('/admin/login');
+    // Login único (PR #831): /admin/login só redireciona para /login?next=%2Fadmin. Vamos direto ao
+    // destino, que é onde a pessoa cai ao abrir /admin sem sessão.
+    await page.goto('/login?next=%2Fadmin');
 
-    // AdminLoginPage usa FormField(label) + InputWithIcon/PasswordInput (ids admin-email/admin-password).
+    // LoginPage usa FormField(label) + InputWithIcon/PasswordInput (ids email/password).
     // Selecionamos por tipo (estável e i18n-agnóstico) pra não depender de placeholder traduzido.
-    await page.locator('input#admin-email').fill(ADMIN_EMAIL);
-    await page.locator('input#admin-password').fill(ADMIN_PASSWORD);
+    await page.locator('input#email').fill(ADMIN_EMAIL);
+    await page.locator('input#password').fill(ADMIN_PASSWORD);
 
     // Botão de submit "Iniciar sesión" (i18n es-AR).
     await page.getByRole('button', { name: /iniciar sesi[oó]n/i }).click();
 
-    // Firebase real + cold-start Cloud Run: damos 30s. Sucesso = pousar em /admin (não /admin/login).
+    // Firebase real + cold-start Cloud Run: damos 30s. Sucesso = pousar em /admin (não /login).
     // Se a conta ainda não foi promovida, a página exibe "Acceso negado" e NÃO navega.
     const reached = await page
       .waitForURL(
-        (url) => /\/admin(\/|$)/.test(url.pathname) && !/\/admin\/login/.test(url.pathname),
+        (url) => /\/admin(\/|$)/.test(url.pathname) && !/\/login/.test(url.pathname),
         { timeout: 30_000 },
       )
       .then(() => true)
@@ -83,7 +85,7 @@ setup('login admin real (Firebase prd) e salva storageState', async ({ page }) =
     await page.context().storageState({ path: ADMIN_AUTH_FILE, indexedDB: true });
   } finally {
     // Zera os campos SEMPRE (sucesso ou falha) antes que Playwright capture qualquer artefato.
-    await page.locator('input#admin-password').fill('').catch(() => {});
-    await page.locator('input#admin-email').fill('').catch(() => {});
+    await page.locator('input#password').fill('').catch(() => {});
+    await page.locator('input#email').fill('').catch(() => {});
   }
 });

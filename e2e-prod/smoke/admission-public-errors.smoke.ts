@@ -15,8 +15,21 @@
  *   GET  /admission/slots     → 200 { slots } · 400 país inválido
  *   POST /admission/book      → 200 · 400 body · 404 PATIENT_NOT_FOUND · 409 SLOT_TAKEN
  */
-import { test, expect, request, type APIRequestContext } from '@playwright/test';
+import { test, expect, request, type APIRequestContext, type Page } from '@playwright/test';
 import { PROD_API_URL } from '../src/support/env';
+
+/**
+ * lead-serviceType virou Combobox (spec 070): gatilho `button[aria-haspopup=listbox]`, não `<select>`.
+ * Gesto humano: abre o gatilho e clica a opção pelo rótulo que a pessoa lê (es: "Cuidadores").
+ * `data-testid` pode estar na raiz ou no próprio botão — cobrimos os dois.
+ */
+async function escolherServico(page: Page, rotulo: string): Promise<void> {
+  const raiz = page.getByTestId('lead-serviceType');
+  const gatilho = raiz.locator('button[aria-haspopup="listbox"]').or(raiz.and(page.locator('button[aria-haspopup="listbox"]'))).first();
+  await gatilho.click();
+  await page.getByRole('option', { name: rotulo, exact: true }).click();
+  await expect(gatilho).toContainText(rotulo);
+}
 
 const BOGUS_UUID = '00000000-0000-4000-8000-000000000000';
 
@@ -167,7 +180,7 @@ test('[@route:/admission-ar @depth:error] sem consentimento o envio fica bloquea
   await page.goto('/admission-ar');
   await expect(page.getByTestId('lead-form')).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId('lead-serviceType').selectOption('cuidadores');
+  await escolherServico(page, 'Cuidadores');
   await page.getByTestId('lead-requesterType-patient').check();
   await page.getByTestId('lead-email').fill('gabriel+e2e-consent@gmail.com');
   await page.getByTestId('lead-phone').fill('+54 9 11 5555 0000');
@@ -192,7 +205,7 @@ test('[@route:/admission-ar @depth:error] email inválido não avança para a ag
   await page.goto('/admission-ar');
   await expect(page.getByTestId('lead-form')).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId('lead-serviceType').selectOption('cuidadores');
+  await escolherServico(page, 'Cuidadores');
   await page.getByTestId('lead-requesterType-patient').check();
   await page.getByTestId('lead-email').fill('nao-e-email');
   await page.getByTestId('lead-phone').fill('+54 9 11 5555 0000');
