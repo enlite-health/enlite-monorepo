@@ -21,7 +21,7 @@
  */
 
 import type { Pool, PoolClient } from 'pg';
-import { CleanupTestFixturesUseCase } from '../CleanupTestFixturesUseCase';
+import { CleanupTestFixturesUseCase, TEST_BASE_ACCOUNT_EMAILS } from '../CleanupTestFixturesUseCase';
 import { LUZ_PRUEBA_SINTETICA_AUTH_UID } from '../../../modules/agentes/domain/LuzPruebaSintetica';
 
 jest.mock('@shared/logging', () => ({
@@ -37,6 +37,9 @@ interface Row {
   job_posting_id?: string | null;
   is_test?: boolean;
   auth_uid?: string;
+  email?: string;
+  application_id?: string;
+  status?: string;
 }
 
 interface FakeDb {
@@ -49,6 +52,7 @@ interface FakeDb {
   worker_documents: Row[];
   worker_availability: Row[];
   worker_blocked_applications: Row[];
+  patient_itinerary_assignment: Row[];
 }
 
 const CHILD_TABLES = [
@@ -95,13 +99,27 @@ function makeFixture(): FakeDb {
     worker_blocked_applications: [
       { id: 'ba-1', worker_id: 'w-test', job_posting_id: 'jp-real' },
     ],
+    patient_itinerary_assignment: [],
   };
 }
 
-/** Interpreta `DELETE FROM <table> WHERE ...` contra a fixture mutável. */
-function makeFakeClient(db: FakeDb, active: { workers?: string[]; jobs?: string[] } = {}): PoolClient {
-  const activeWorkers = new Set(active.workers ?? []);
-  const activeJobs = new Set(active.jobs ?? []);
+/**
+ * Interpreta `DELETE FROM <table> WHERE ...` contra a fixture mutável e SIMULA as
+ * FKs sem ON DELETE da mig 480: apagar worker/candidatura/vaga referenciado por
+ * QUALQUER alocação lança 23503 (o ROLLBACK real da faxina). Sem alocação apagada
+ * pelo use case: o fake rejeita DELETE em patient_itinerary_assignment (REVOKE).
+ */
+function makeFakeClient(db: FakeDb): PoolClient {
+  const fkError = (what: string) => Object.assign(new Error(`violates foreign key constraint (${what})`), { code: '23503' });
+  const baseAccounts = new Set(TEST_BASE_ACCOUNT_EMAILS);
+  const isBase = (w: Row) => w.email != null && baseAccounts.has(w.email.toLowerCase());
+  const assignedWorkers = () => new Set(db.patient_itinerary_assignment.map(a => a.worker_id));
+  const assignedApps = () => new Set(db.patient_itinerary_assignment.map(a => a.application_id));
+  const assignedJobs = () => {
+    const apps = assignedApps();
+    return new Set(db.worker_job_applications.filter(w => apps.has(w.id)).map(w => w.job_posting_id));
+  };
+
   const query = jest.fn(async (sql: string, params?: unknown[]) => {
     const trimmed = sql.trim();
 
@@ -112,35 +130,56 @@ function makeFakeClient(db: FakeDb, active: { workers?: string[]; jobs?: string[
     const match = trimmed.match(/^DELETE FROM (\w+)/);
     if (!match) throw new Error(`fake client: query inesperada: ${trimmed}`);
     const table = match[1];
+    if (table === 'patient_itinerary_assignment') throw new Error('permission denied: sem DELETE em patient_itinerary_assignment');
+
+    // Cada DELETE só vale se o SQL carrega as guardas (o fake só poupa o que o SQL manda poupar).
+    const sparesAnyAssignment = /NOT EXISTS \(SELECT 1 FROM patient_itinerary_assignment/.test(trimmed) && !trimmed.includes("'ACTIVE'");
+    const sparesBase = trimmed.includes('NOT IN (') && trimmed.includes('@enlite.test');
 
     if (table === 'workers') {
       const before = db.workers.length;
-      // Honra `AND auth_uid <> $1` quando o SQL o traz (sem o predicado, apaga todo is_test).
       const poupa = trimmed.includes('auth_uid <> $1') ? String(params?.[0]) : null;
-      db.workers = db.workers.filter(w => !w.is_test || activeWorkers.has(w.id) || (poupa !== null && w.auth_uid === poupa));
+      const assigned = assignedWorkers();
+      db.workers = db.workers.filter(w => {
+        const alvo = w.is_test && !(poupa !== null && w.auth_uid === poupa) && !(sparesBase && isBase(w)) && !(sparesAnyAssignment && assigned.has(w.id));
+        if (alvo && assigned.has(w.id)) throw fkError('patient_itinerary_assignment_worker_id_fkey');
+        return !alvo;
+      });
       return { rows: [], rowCount: before - db.workers.length };
     }
     if (table === 'job_postings') {
       const before = db.job_postings.length;
-      db.job_postings = db.job_postings.filter(j => !j.is_test || activeJobs.has(j.id));
+      const jobs = assignedJobs();
+      db.job_postings = db.job_postings.filter(j => {
+        const alvo = j.is_test && !(sparesAnyAssignment && jobs.has(j.id));
+        if (alvo && jobs.has(j.id)) throw fkError('patient_itinerary_assignment_application_id_fkey');
+        return !alvo;
+      });
       return { rows: [], rowCount: before - db.job_postings.length };
     }
     if (!(CHILD_TABLES as readonly string[]).includes(table)) {
       throw new Error(`fake client: tabela desconhecida: ${table}`);
     }
 
-    // Subquery avaliada contra o ESTADO ATUAL (não um snapshot pré-calculado) —
-    // é isso que expõe erro de ordem (parent deletado antes do filho).
-    const testWorkerIds = new Set(db.workers.filter(w => w.is_test && !activeWorkers.has(w.id)).map(w => w.id));
-    const testJobIds = new Set(db.job_postings.filter(j => j.is_test && !activeJobs.has(j.id)).map(j => j.id));
+    // Subquery avaliada contra o ESTADO ATUAL — expõe erro de ordem (pai antes do filho).
+    const assigned = assignedWorkers();
+    const testWorkerIds = new Set(db.workers.filter(w => w.is_test && !isBase(w) && !assigned.has(w.id)).map(w => w.id));
+    const jobsAssigned = assignedJobs();
+    const testJobIds = new Set(db.job_postings.filter(j => j.is_test && !jobsAssigned.has(j.id)).map(j => j.id));
     const hasJobPostingClause = trimmed.includes('job_posting_id IN');
+    const apps = assignedApps();
 
     const rows = db[table as keyof FakeDb] as Row[];
     const before = rows.length;
     const kept = rows.filter(r => {
       const workerMatch = r.worker_id != null && testWorkerIds.has(r.worker_id);
       const jobMatch = hasJobPostingClause && r.job_posting_id != null && testJobIds.has(r.job_posting_id);
-      return !(workerMatch || jobMatch);
+      const alvo = workerMatch || jobMatch;
+      if (alvo && table === 'worker_job_applications' && apps.has(r.id)) {
+        if (sparesAnyAssignment) return true; // guarda do SQL: candidatura com alocação fica
+        throw fkError('patient_itinerary_assignment_application_id_fkey');
+      }
+      return !alvo;
     });
     (db as unknown as Record<string, Row[]>)[table] = kept;
     return { rows: [], rowCount: before - kept.length };
@@ -234,50 +273,137 @@ describe('CleanupTestFixturesUseCase', () => {
     expect(db.workers).toHaveLength(2);
   });
 
-  describe('proteção de fixture com alocação ACTIVE (SUP-F1-22)', () => {
-    const sqls = async (db: FakeDb, active = {}) => {
-      const client = makeFakeClient(db, active);
+  describe('proteção de fixture com alocação (qualquer status) e contas-base', () => {
+    const run = async (db: FakeDb) => {
+      const client = makeFakeClient(db);
       const result = await new CleanupTestFixturesUseCase(makePool(client)).execute();
       const all = (client.query as jest.Mock).mock.calls.map(c => String(c[0]));
-      return { result, all };
+      return { result, all, client };
     };
+    const alocar = (db: FakeDb, workerId: string, appId: string, status: string) =>
+      db.patient_itinerary_assignment.push({ id: `a-${workerId}-${status}`, worker_id: workerId, application_id: appId, status });
 
-    it('os 2 DELETE finais e os filhos carregam NOT EXISTS + ACTIVE', async () => {
-      const { all } = await sqls(makeFixture());
+    it('os DELETE de workers/job_postings/candidaturas/filhos carregam NOT EXISTS da alocação SEM filtro de status', async () => {
+      const { all } = await run(makeFixture());
       const finals = all.filter(q => /^DELETE FROM (workers|job_postings) /.test(q.trim()));
       expect(finals).toHaveLength(2);
       for (const q of finals) {
         expect(q).toContain('NOT EXISTS');
-        expect(q).toContain("'ACTIVE'");
         expect(q).toContain('patient_itinerary_assignment');
+        expect(q).not.toContain("'ACTIVE'");
       }
       const children = all.filter(q => /^DELETE FROM (?!workers |job_postings )\w+/.test(q.trim()));
       expect(children).toHaveLength(7);
       for (const q of children) {
         expect(q).toContain('NOT EXISTS');
-        expect(q).toContain("'ACTIVE'");
+        expect(q).not.toContain("'ACTIVE'");
       }
+      expect(all.some(q => /DELETE FROM patient_itinerary/.test(q))).toBe(false);
     });
 
-    it('worker is_test com alocação ACTIVE permanece e a contagem reflete só os apagados', async () => {
+    it('(a) worker is_test com alocação ENDED NÃO dá ROLLBACK: é poupado (com a candidatura), o resto da faxina commita', async () => {
+      const db = makeFixture();
+      db.workers.push({ id: 'w-test-ended', is_test: true });
+      db.worker_job_applications.push({ id: 'wja-ended', worker_id: 'w-test-ended', job_posting_id: 'jp-real' });
+      db.worker_service_areas.push({ id: 'sa-ended', worker_id: 'w-test-ended' });
+      alocar(db, 'w-test-ended', 'wja-ended', 'ENDED');
+      alocar(db, 'w-test-ended', 'wja-ended', 'CANCELLED');
+      const { result, all } = await run(db);
+
+      expect(all[all.length - 1].trim()).toBe('COMMIT');
+      expect(all.some(q => q.trim() === 'ROLLBACK')).toBe(false);
+      expect(result.deleted.workers).toBe(1); // só w-test
+      expect(db.workers.map(w => w.id).sort()).toEqual(['w-real', 'w-test-ended']);
+      expect(db.worker_job_applications.map(r => r.id)).toContain('wja-ended');
+      expect(db.worker_service_areas.map(r => r.id)).toContain('sa-ended');
+      expect(db.patient_itinerary_assignment).toHaveLength(2); // alocação nunca é apagada
+    });
+
+    it('(a) worker is_test com alocação ACTIVE continua poupado e a contagem reflete só os apagados', async () => {
       const db = makeFixture();
       db.workers.push({ id: 'w-test-active', is_test: true });
+      db.worker_job_applications.push({ id: 'wja-active', worker_id: 'w-test-active', job_posting_id: 'jp-real' });
       db.worker_service_areas.push({ id: 'sa-3', worker_id: 'w-test-active' });
-      const { result } = await sqls(db, { workers: ['w-test-active'] });
+      alocar(db, 'w-test-active', 'wja-active', 'ACTIVE');
+      const { result } = await run(db);
 
-      expect(result.deleted.workers).toBe(1); // só w-test
+      expect(result.deleted.workers).toBe(1);
       expect(result.deleted.worker_service_areas).toBe(1); // só sa-1
       expect(db.workers.map(w => w.id).sort()).toEqual(['w-real', 'w-test-active']);
       expect(db.worker_service_areas.map(r => r.id).sort()).toEqual(['sa-2', 'sa-3']);
     });
 
-    it('job_posting is_test com alocação ACTIVE permanece', async () => {
+    it('(b) worker REAL com alocação (e candidatura em vaga de teste) nunca é tocado', async () => {
       const db = makeFixture();
-      const { result } = await sqls(db, { jobs: ['jp-test'] });
+      alocar(db, 'w-real', 'wja-3', 'ENDED'); // wja-3 = w-real em jp-test
+      const { result, all } = await run(db);
+
+      expect(all.some(q => q.trim() === 'ROLLBACK')).toBe(false);
+      expect(db.workers.map(w => w.id)).toContain('w-real');
+      expect(db.worker_job_applications.map(r => r.id).sort()).toEqual(['wja-2', 'wja-3']);
+      expect(db.job_postings.map(j => j.id)).toContain('jp-test'); // vaga com alocação da candidatura real fica
+      expect(result.deleted.job_postings).toBe(0);
+    });
+
+    it('(c) worker is_test alocado a paciente REAL: não é apagado (nem a alocação, nem a candidatura)', async () => {
+      const db = makeFixture();
+      // o paciente real é invisível à faxina: a única informação é a alocação existir
+      alocar(db, 'w-test', 'wja-1', 'ENDED');
+      const { result, all } = await run(db);
+
+      expect(all.some(q => q.trim() === 'ROLLBACK')).toBe(false);
+      expect(result.deleted.workers).toBe(0);
+      expect(db.workers.map(w => w.id).sort()).toEqual(['w-real', 'w-test']);
+      expect(db.worker_job_applications.map(r => r.id)).toContain('wja-1');
+      expect(db.patient_itinerary_assignment).toHaveLength(1);
+    });
+
+    it('job_posting is_test cuja candidatura tem alocação (qualquer status) permanece', async () => {
+      const db = makeFixture();
+      alocar(db, 'w-real', 'wja-3', 'CANCELLED');
+      const { result } = await run(db);
 
       expect(result.deleted.job_postings).toBe(0);
       expect(db.job_postings.map(j => j.id).sort()).toEqual(['jp-real', 'jp-test']);
       expect(db.messaging_outbox.map(r => r.id)).toContain('mo-3'); // filho do job protegido fica
+    });
+
+    it('SEM a guarda no SQL, a alocação ENDED reproduz o ROLLBACK (o fake simula a FK; garante que o teste morre)', async () => {
+      const db = makeFixture();
+      db.workers.push({ id: 'w-fk', is_test: true });
+      db.worker_job_applications.push({ id: 'wja-fk', worker_id: 'w-fk', job_posting_id: 'jp-real' });
+      alocar(db, 'w-fk', 'wja-fk', 'ENDED');
+      const client = makeFakeClient(db);
+      await expect(client.query('DELETE FROM workers w WHERE w.is_test = true')).rejects.toMatchObject({ code: '23503' });
+    });
+
+    it('contas-base (allowlist fechada) NÃO são apagadas nem perdem os filhos, mesmo sem alocação; e-mail fora da lista some', async () => {
+      const db = makeFixture();
+      TEST_BASE_ACCOUNT_EMAILS.forEach((email, i) => {
+        db.workers.push({ id: `w-base-${i}`, is_test: true, email: i % 2 ? email.toUpperCase() : email });
+        db.worker_service_areas.push({ id: `sa-base-${i}`, worker_id: `w-base-${i}` });
+      });
+      db.workers.push({ id: 'w-qa-outra', is_test: true, email: 'qa.worker@enlite.test' }); // parecida, FORA da lista
+      db.workers.push({ id: 'w-glob', is_test: true, email: 'qa.worker.novo@enlite.test' }); // glob não vale
+      const { result } = await run(db);
+
+      expect(TEST_BASE_ACCOUNT_EMAILS).toHaveLength(5);
+      const ids = db.workers.map(w => w.id);
+      for (let i = 0; i < 5; i++) expect(ids).toContain(`w-base-${i}`);
+      expect(ids).not.toContain('w-qa-outra');
+      expect(ids).not.toContain('w-glob');
+      expect(result.deleted.workers).toBe(3); // w-test + as duas fora da lista
+      expect(db.worker_service_areas.filter(r => r.id.startsWith('sa-base-'))).toHaveLength(5);
+    });
+
+    it('a allowlist está nos SQL de worker e dos filhos, e o e-mail nunca vai para log', async () => {
+      const { all } = await run(makeFixture());
+      const comEmail = all.filter(q => q.includes('@enlite.test'));
+      expect(comEmail.length).toBeGreaterThanOrEqual(8); // 7 filhos com worker_id + DELETE workers (messaging/…)
+      const logging = jest.requireMock('@shared/logging') as { logger: { child: jest.Mock } };
+      const logger = logging.logger.child.mock.results[0]?.value as { info: jest.Mock };
+      const logged = JSON.stringify(logger.info.mock.calls);
+      expect(logged).not.toContain('@enlite.test');
     });
   });
 });
