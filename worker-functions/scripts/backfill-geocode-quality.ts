@@ -12,17 +12,27 @@
  * Candidato = vivo + `geocode_quality IS NULL AND geocode_partial_match IS NULL` + texto geocodificável.
  * Idempotente: depois de gravado, a linha sai do conjunto de candidatos.
  *
+ * D685 (15/11): antes de gravar, compara a coordenada que o Google devolve com a GRAVADA.
+ *   - até `LIMIAR_DIVERGENCIA_M` (100 m): grava a qualidade;
+ *   - acima disso: não grava, conta `longe` e lista o `address_id`;
+ *   - sem coordenada gravada: não chama o Google, não grava, conta `sem_coordenada` e lista o `address_id`.
+ * O dry-run não chama o Google: conta quantos seriam consultados e quantos estão sem coordenada.
+ *
  * Uso:
- *   npx ts-node -r dotenv/config scripts/backfill-geocode-quality.ts                    # dry-run
- *   npx ts-node -r dotenv/config scripts/backfill-geocode-quality.ts --execute --limit 100
+ *   npx ts-node -r dotenv/config -r tsconfig-paths/register scripts/backfill-geocode-quality.ts                    # dry-run
+ *   npx ts-node -r dotenv/config -r tsconfig-paths/register scripts/backfill-geocode-quality.ts --execute --limit 100
  *
  * Env: DATABASE_URL (pool) · GOOGLE_MAPS_API_KEY (só em --execute; lida pelo GeocodingService).
- * Log: só contagens e `address_id` — nunca endereço nem coordenada.
+ * Log: só contagens e `address_id` — nunca endereço nem coordenada (nem a gravada, nem a do Google).
  */
 import { Pool } from 'pg';
 import { assertBackfillWriteTarget } from '../src/shared/database/assertLocalDatabaseTarget';
 import { GeocodingService } from '../src/infrastructure/services/GeocodingService';
 import { geocodePatientAddressesBestEffort } from '../src/modules/case/infrastructure/geocodePatientAddresses';
+import { haversineDistanceKm } from '../src/modules/case/infrastructure/backfillPatientAddressLocation';
+
+/** D685: até este raio a qualidade nova descreve o ponto gravado; acima, não grava. */
+export const LIMIAR_DIVERGENCIA_M = 100;
 
 export interface BackfillOpts {
   execute: boolean;
@@ -50,7 +60,10 @@ export interface BackfillResult {
   candidates: number;
   updated: number;
   failed: number;
-  skipped: number;
+  /** Google devolveu um ponto a mais de `LIMIAR_DIVERGENCIA_M` da coordenada gravada: não gravou. */
+  far: number;
+  /** Sem `lat`/`lng` gravados: não chamou o Google, não gravou. */
+  noCoords: number;
   aborted?: string;
 }
 
@@ -63,7 +76,8 @@ export const travaDeAlvo = assertBackfillWriteTarget;
 
 export const HELP = `Uso: backfill-geocode-quality.ts [--dry-run] [--execute] [--eu-sei-que-e-producao] [--limit N] [--help]
   --dry-run   (PADRÃO) só conta os candidatos; nada é chamado, nada é gravado
-  --execute   chama o Google por endereço e grava geocode_quality/geocode_partial_match/geocoded_at
+  --execute   chama o Google por endereço COM coordenada e grava geocode_quality/geocode_partial_match/geocoded_at
+              só se o ponto do Google estiver a até 100 m do gravado (acima: lista o id e não grava)
   --eu-sei-que-e-producao
               obrigatória em --execute contra banco NÃO-local (trava de alvo; dry-run não passa por ela)
   --limit N   máximo de endereços por execução (default 100)
@@ -82,10 +96,15 @@ export async function runBackfill(deps: BackfillDeps, opts: BackfillOpts): Promi
   const { pool, geocoder } = deps;
 
   if (!opts.execute) {
-    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM patient_addresses WHERE ${CANDIDATE_WHERE}`);
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n, (count(*) FILTER (WHERE lat IS NULL OR lng IS NULL))::int AS sem
+         FROM patient_addresses WHERE ${CANDIDATE_WHERE}`,
+    );
     const n = Number(rows[0]?.n ?? 0);
+    const sem = Number(rows[0]?.sem ?? 0);
     log(`${n} endereços sem geocode_quality (dry-run: nada chamado, nada gravado)`);
-    return { mode: 'dry-run', candidates: n, updated: 0, failed: 0, skipped: 0 };
+    log(`DRY a_consultar=${n - sem} sem_coordenada=${sem}`);
+    return { mode: 'dry-run', candidates: n, updated: 0, failed: 0, far: 0, noCoords: sem };
   }
 
   try {
@@ -93,26 +112,31 @@ export async function runBackfill(deps: BackfillDeps, opts: BackfillOpts): Promi
   } catch (e) {
     const aborted = e instanceof Error ? e.message : String(e);
     log(aborted);
-    return { mode: 'execute', candidates: 0, updated: 0, failed: 0, skipped: 0, aborted };
+    return { mode: 'execute', candidates: 0, updated: 0, failed: 0, far: 0, noCoords: 0, aborted };
   }
 
   if (!deps.apiKey) {
     const aborted = 'GOOGLE_MAPS_API_KEY ausente — abortando --execute (nada chamado, nada gravado)';
     log(aborted);
-    return { mode: 'execute', candidates: 0, updated: 0, failed: 0, skipped: 0, aborted };
+    return { mode: 'execute', candidates: 0, updated: 0, failed: 0, far: 0, noCoords: 0, aborted };
   }
 
   const { rows } = await pool.query(
-    `SELECT id, address_formatted, address_raw, neighborhood, city, state
+    `SELECT id, address_formatted, address_raw, neighborhood, city, state, lat, lng
        FROM patient_addresses
       WHERE ${CANDIDATE_WHERE}
-      ORDER BY created_at ASC
+      ORDER BY (lat IS NULL OR lng IS NULL), created_at ASC, id
       LIMIT $1`,
     [opts.limit],
   );
 
-  const res: BackfillResult = { mode: 'execute', candidates: rows.length, updated: 0, failed: 0, skipped: 0 };
+  const res: BackfillResult = { mode: 'execute', candidates: rows.length, updated: 0, failed: 0, far: 0, noCoords: 0 };
   for (const row of rows) {
+    if (row.lat == null || row.lng == null) {
+      res.noCoords++;
+      log(`sem_coordenada address_id=${row.id}`);
+      continue;
+    }
     try {
       const [g] = await geocodePatientAddressesBestEffort(
         [{
@@ -126,9 +150,12 @@ export async function runBackfill(deps: BackfillDeps, opts: BackfillOpts): Promi
         geocoder as GeocodingService,
         { delayMs: 0, timeoutMs: opts.timeoutMs ?? 15000 },
       );
-      if (!g || g.geocode_quality == null || g.geocode_partial_match == null) {
+      if (!g || g.geocode_quality == null || g.geocode_partial_match == null || g.lat == null || g.lng == null) {
         res.failed++;
         log(`falha address_id=${row.id}`);
+      } else if (!(haversineDistanceKm(Number(row.lat), Number(row.lng), g.lat, g.lng) * 1000 <= LIMIAR_DIVERGENCIA_M)) {
+        res.far++;
+        log(`longe address_id=${row.id}`);
       } else {
         // Só os 3 campos de qualidade — lat/lng ficam intactos.
         await pool.query(
@@ -136,6 +163,7 @@ export async function runBackfill(deps: BackfillDeps, opts: BackfillOpts): Promi
           [g.geocode_quality, g.geocode_partial_match, g.geocoded_at ?? new Date(), row.id],
         );
         res.updated++;
+        log(`gravado address_id=${row.id}`);
       }
     } catch {
       res.failed++;
@@ -143,7 +171,7 @@ export async function runBackfill(deps: BackfillDeps, opts: BackfillOpts): Promi
     }
     if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
   }
-  log(`DONE candidatos=${res.candidates} gravados=${res.updated} falhas=${res.failed} pulados=${res.skipped}`);
+  log(`DONE candidatos=${res.candidates} gravados=${res.updated} falhas=${res.failed} longe=${res.far} sem_coordenada=${res.noCoords}`);
   return res;
 }
 
