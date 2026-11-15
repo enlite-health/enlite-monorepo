@@ -15,21 +15,9 @@
  *   GET  /admission/slots     → 200 { slots } · 400 país inválido
  *   POST /admission/book      → 200 · 400 body · 404 PATIENT_NOT_FOUND · 409 SLOT_TAKEN
  */
-import { test, expect, request, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, request, type APIRequestContext } from '@playwright/test';
 import { PROD_API_URL } from '../src/support/env';
-
-/**
- * lead-serviceType virou Combobox (spec 070): gatilho `button[aria-haspopup=listbox]`, não `<select>`.
- * Gesto humano: abre o gatilho e clica a opção pelo rótulo que a pessoa lê (es: "Cuidadores").
- * `data-testid` pode estar na raiz ou no próprio botão — cobrimos os dois.
- */
-async function escolherServico(page: Page, rotulo: string): Promise<void> {
-  const raiz = page.getByTestId('lead-serviceType');
-  const gatilho = raiz.locator('button[aria-haspopup="listbox"]').or(raiz.and(page.locator('button[aria-haspopup="listbox"]'))).first();
-  await gatilho.click();
-  await page.getByRole('option', { name: rotulo, exact: true }).click();
-  await expect(gatilho).toContainText(rotulo);
-}
+import { escolherServico } from '../src/support/admissionForm';
 
 const BOGUS_UUID = '00000000-0000-4000-8000-000000000000';
 

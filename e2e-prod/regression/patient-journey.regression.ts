@@ -37,6 +37,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { newAdminApiContext } from '../src/support/adminApi';
 import { waitForLog, payloadString } from '../src/support/cloudLogging';
+import { escolherServico } from '../src/support/admissionForm';
 import { findAdmissionEventAtSlot, waitForSlotFree } from '../src/support/admissionCalendar';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -146,7 +147,7 @@ test.describe.serial('Jornada do paciente — do form no site ao big number na t
     await page.goto(`/admission-${COUNTRY.toLowerCase()}`);
     await expect(page.getByTestId('lead-form')).toBeVisible({ timeout: 30_000 });
 
-    await page.getByTestId('lead-serviceType').selectOption('cuidadores');
+    await escolherServico(page, 'Cuidadores');
     await page.getByTestId('lead-requesterType-patient').check();
     await page.getByTestId('lead-name').fill(LEAD_NAME);
     await page.getByTestId('lead-email').fill(LEAD_EMAIL);
