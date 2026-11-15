@@ -80,6 +80,26 @@ import {
   id = "enlite-prd roles/logging.configWriter serviceAccount:tf-admin@enlite-prd.iam.gserviceaccount.com"
 }
 
+# spec 077 D699: o tf-admin edita o provider WIF (attribute_condition do github-provider, wif_github.tf). O Editor do
+# projeto da providers.get/list e NAO o update (403 no apply da D694). Papel proprio so com o update, no lugar do
+# roles/iam.workloadIdentityPoolAdmin (create/delete/undelete de pool e provider, setIamPolicy do pool). Nome canonico
+# (o do papel predefinido); o 403 cita o alias iam.workloadIdentityPoolProviders.update, que vale igual. O get segue
+# vindo do Editor. Fora do project_roles do modulo: o for_each pede chave conhecida no plan, e o .name de papel novo
+# so existe depois do apply.
+resource "google_project_iam_custom_role" "wif_provider_update" {
+  project     = var.project_id
+  role_id     = "WifProviderUpdate"
+  title       = "WIF: editar provider"
+  description = "spec 077 D699: so o update do provider WIF; sem create, delete nem setIamPolicy"
+  permissions = ["iam.googleapis.com/workloadIdentityPoolProviders.update"]
+}
+
+resource "google_project_iam_member" "tf_admin_wif_provider_update" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.wif_provider_update.name
+  member  = module.sa_tf_admin.member
+}
+
 # Bindings cross-project: a SA tf-admin vive em enlite-prd mas precisa atuar
 # em enlite-stg também. As bindings em enlite-stg são gerenciadas aqui usando
 # o mesmo provider (que opera em var.project_id == enlite-prd) com
