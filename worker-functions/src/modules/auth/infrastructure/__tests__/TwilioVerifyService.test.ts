@@ -34,7 +34,7 @@ jest.mock('@shared/logging', () => ({
 }));
 
 import { logger } from '@shared/logging';
-import { TwilioVerifyService } from '../TwilioVerifyService';
+import { TwilioVerifyService, otpCheckIsForPhone } from '../TwilioVerifyService';
 
 describe('TwilioVerifyService', () => {
   const OLD_ENV = process.env;
@@ -141,6 +141,12 @@ describe('TwilioVerifyService', () => {
         verificationSid: 'VE_SID',
         code: '123456',
       });
+    });
+
+    it('DP-21: repassa o `to` que o Twilio devolve na checagem (o telefone da verificação)', async () => {
+      mockVerificationChecksCreate.mockResolvedValue({ status: 'approved', to: '+5491155261243' });
+      const result = await new TwilioVerifyService().checkVerification('VE_SID', '123456');
+      expect(result).toEqual({ valid: true, status: 'approved', to: '+5491155261243' });
     });
 
     it('retorna valid=false e status=pending para OTP errado', async () => {
@@ -251,6 +257,7 @@ describe('TwilioVerifyService', () => {
 
       const service = new TwilioVerifyService();
 
+      // sid que o start nunca abriu: sem `to` (o confirm recusa por não saber o telefone, DP-21)
       const ok = await service.checkVerification('TEST_abc-123', '654321');
       expect(ok).toEqual({ valid: true, status: 'approved' });
 
@@ -307,6 +314,29 @@ describe('TwilioVerifyService', () => {
 
       expect(result.verificationSid).toMatch(/^TEST_/);
       expect(mockVerificationsCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DP-21 — amarra do código ao telefone', () => {
+    it('bypass: o check devolve o `to` do start daquele sid (mesmo entre instâncias do serviço)', async () => {
+      process.env.E2E_OTP_BYPASS = 'true';
+      process.env.E2E_OTP_CODE = '654321';
+      delete process.env.K_SERVICE;
+
+      const { verificationSid } = await new TwilioVerifyService().startVerification('+5491155261243');
+      const check = await new TwilioVerifyService().checkVerification(verificationSid, '654321');
+      expect(check).toEqual({ valid: true, status: 'approved', to: '+5491155261243' });
+    });
+
+    it.each([
+      ['mesmo número em E.164 → true', '+5491155261243', '+5491155261243', true],
+      ['ficha sem + → true', '+5491155261243', '5491155261243', true],
+      ['ficha nacional de 10 dígitos → true', '+5491155261243', '1155261243', true],
+      ['número de outra pessoa → false', '+5491177778888', '+5491155261243', false],
+      ['`to` ausente → false', undefined, '+5491155261243', false],
+      ['ficha sem telefone → false', '+5491155261243', null, false],
+    ])('otpCheckIsForPhone: %s', (_c, to, phone, esperado) => {
+      expect(otpCheckIsForPhone({ to }, phone)).toBe(esperado);
     });
   });
 });
