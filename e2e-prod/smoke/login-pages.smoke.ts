@@ -17,10 +17,11 @@ test('[@route:/login] tela de login do worker mostra email, senha e submit', asy
   await expect(page.getByRole('button', { name: 'Iniciar sesión' })).toBeVisible();
 });
 
-test('[@route:/admin/login] tela de login admin renderiza campos e botão', async ({ page }) => {
+test('[@route:/admin/login] redireciona para o login único com next=/admin', async ({ page }) => {
   await page.goto('/admin/login');
 
-  // Admin login reusa FormField com os mesmos labels ES (id admin-email/admin-password).
+  // Login único (PR #831): /admin/login não monta mais tela própria, só redireciona.
+  await expect(page).toHaveURL(/\/login\?next=%2Fadmin$/);
   await expect(page.getByLabel('Correo electrónico', { exact: true })).toBeVisible();
   // exact: senão casa também o botão "Mostrar contraseña" (aria-label contém "contraseña").
   await expect(page.getByLabel('Contraseña', { exact: true })).toBeVisible();

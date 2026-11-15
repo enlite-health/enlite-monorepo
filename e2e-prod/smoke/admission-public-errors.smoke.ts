@@ -17,6 +17,7 @@
  */
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
 import { PROD_API_URL } from '../src/support/env';
+import { escolherServico } from '../src/support/admissionForm';
 
 const BOGUS_UUID = '00000000-0000-4000-8000-000000000000';
 
@@ -167,7 +168,7 @@ test('[@route:/admission-ar @depth:error] sem consentimento o envio fica bloquea
   await page.goto('/admission-ar');
   await expect(page.getByTestId('lead-form')).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId('lead-serviceType').selectOption('cuidadores');
+  await escolherServico(page, 'Cuidadores');
   await page.getByTestId('lead-requesterType-patient').check();
   await page.getByTestId('lead-email').fill('gabriel+e2e-consent@gmail.com');
   await page.getByTestId('lead-phone').fill('+54 9 11 5555 0000');
@@ -192,7 +193,7 @@ test('[@route:/admission-ar @depth:error] email inválido não avança para a ag
   await page.goto('/admission-ar');
   await expect(page.getByTestId('lead-form')).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId('lead-serviceType').selectOption('cuidadores');
+  await escolherServico(page, 'Cuidadores');
   await page.getByTestId('lead-requesterType-patient').check();
   await page.getByTestId('lead-email').fill('nao-e-email');
   await page.getByTestId('lead-phone').fill('+54 9 11 5555 0000');

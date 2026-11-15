@@ -124,7 +124,7 @@ export default defineConfig({
       retries: 1,
       use: { ...devices['Desktop Chrome'] },
     },
-    // SETUP DE AUTH ADMIN — loga real no /admin/login e salva .auth/admin.json (indexedDB).
+    // SETUP DE AUTH ADMIN — loga real no login único (/login?next=%2Fadmin) e salva .auth/admin.json (indexedDB).
     // É dependência do projeto `admin`; não é um "teste" do monitor, é pré-condição.
     {
       name: 'admin-setup',
