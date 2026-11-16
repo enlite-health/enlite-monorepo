@@ -134,7 +134,7 @@ describe('AdminPatientsController.createPatientAddress', () => {
   });
 
   it('201 happy path: geocode retorna lat/lng, sem principal ativo → nasce is_default=true (regra de nascimento)', async () => {
-    const geocode = jest.fn().mockResolvedValue({ latitude: -34.6, longitude: -58.4 });
+    const geocode = jest.fn().mockResolvedValue({ latitude: -34.6, longitude: -58.4, locationType: 'ROOFTOP', partialMatch: false });
     const controller = makeController(geocode);
     const insertedRow = {
       id: 'addr-1', patient_id: PATIENT_ID, address_formatted: 'Av. X 123',
@@ -157,7 +157,11 @@ describe('AdminPatientsController.createPatientAddress', () => {
     const insertCall = mockClientQuery.mock.calls[2];
     const [sql, params] = insertCall;
     expect(sql).toContain('INSERT INTO patient_addresses');
-    expect(params).toEqual([PATIENT_ID, 'Av. X 123', null, 2, -34.6, -58.4, null, null, null, true]);
+    // D718 (spec 077, T-F0b-45): a qualidade do geocode chega ao INSERT pelo controller (ROOFTOP/false + instante do geocode)
+    expect(params.slice(0, 10)).toEqual([PATIENT_ID, 'Av. X 123', null, 2, -34.6, -58.4, null, null, null, true]);
+    expect(params.slice(10, 12)).toEqual(['ROOFTOP', false]);
+    expect(params[12]).toBeInstanceOf(Date);
+    expect(params).toHaveLength(13);
     expect(sql).toMatch(/\(SELECT country FROM patients WHERE id = \$1\)/);
     expect(mockClientRelease).toHaveBeenCalledTimes(1);
   });
