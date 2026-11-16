@@ -81,7 +81,7 @@ interface MapResponse {
 /** Abre `/admin/mapa` com a sessão admin e espera a PRIMEIRA resposta do mapa de prestadores. */
 /**
  * Escolhe a ÂNCORA no seletor com busca. NÃO é um `<select>` nativo: é o
- * `SearchableSelect` (combobox), então `selectOption` não serve — abrir, filtrar
+ * `Combobox` (gatilho `role=combobox`, não `button`), então `selectOption` não serve — abrir, filtrar
  * pelo nome e clicar no `role="option"` é o único caminho.
  *
  * O filtro é digitado com o nome SINTÉTICO criado por este spec: além de achar
@@ -91,7 +91,7 @@ interface MapResponse {
  */
 async function ancorarNoPacienteSintetico(page: Page): Promise<void> {
   const picker = page.getByTestId('map-center-patient');
-  await picker.getByRole('button').click();
+  await picker.getByRole('combobox').click();
   await picker.getByRole('textbox').fill(NOME_SINTETICO);
   const opcao = picker.getByRole('option').filter({ hasText: NOME_SINTETICO });
   await expect(
@@ -110,7 +110,7 @@ async function ancorarNoPacienteSintetico(page: Page): Promise<void> {
  */
 async function ancorarNoPrimeiroPrestador(page: Page): Promise<void> {
   const picker = page.getByTestId('map-center-worker');
-  await picker.getByRole('button').click();
+  await picker.getByRole('combobox').click();
   // [0] é o placeholder "Centrar en un prestador…"; [1] é a primeira pessoa.
   const primeiro = picker.getByRole('option').nth(1);
   await expect(primeiro, 'há ao menos um prestador com coordenada para ancorar').toBeVisible({ timeout: 20_000 });

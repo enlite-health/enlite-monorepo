@@ -46,6 +46,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { newAdminApiContext, getAdminIdToken } from '../src/support/adminApi';
 import { queryLogs } from '../src/support/cloudLogging';
+import { escolherNoCombobox } from '../src/support/combobox';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_AUTH_FILE = path.join(__dirname, '..', '.auth', 'admin.json');
@@ -78,13 +79,13 @@ const SEED = {
 
 /**
  * Campo-gatilho do 2.1 (05/09: `pce-diagnosis` saiu do drawer — virou seção "Patología" fora do
- * PATCH `/clinical`, ver comentário no `SEED`). `dependencyLevel` é `<select>` NATIVO
- * (`pce-dependency`, testid direto no elemento — ver `SelectField.tsx`), então o gesto é
- * `selectOption`, o mais simples e determinístico do formulário: sem digitação, sem debounce,
- * sem abrir/fechar dropdown custom (ao contrário de `deviceTypes`/`serviceType`, que são
- * `MultiSelect`). Semeado como `MILD`; editado para `SEVERE`, outro valor do mesmo enum.
+ * PATCH `/clinical`, ver comentário no `SEED`). `dependencyLevel` é Combobox (spec 070;
+ * `pce-dependency` é o testid do PRÓPRIO gatilho `role=combobox`), então o gesto é abrir e clicar
+ * a opção pelo rótulo, via `escolherNoCombobox`. Semeado como `MILD`; editado para `SEVERE`, outro valor do mesmo enum.
  */
 const DEPENDENCY_EDITADO = 'SEVERE';
+/** Rótulo (es) que a pessoa lê para `SEVERE` — `admin.patients.dependencyOptions.SEVERE`. */
+const DEPENDENCY_EDITADO_ROTULO = 'Grave';
 /** Texto longo com quebras de linha e acento — o que o staff realmente digita. */
 const OBS_LONGA = [
   `E2E-OBS-L1-${STAMP}`,
@@ -250,7 +251,7 @@ test.describe.serial('Spec 009 · Fase 2 — ficha do paciente pela tela do staf
     const { page, fechar } = await abrirFicha(browser);
     try {
       const corpo = await editarNoDrawer(page, async (p) => {
-        await p.getByTestId('pce-dependency').selectOption(DEPENDENCY_EDITADO);
+        await escolherNoCombobox(p.getByTestId('pce-dependency'), DEPENDENCY_EDITADO_ROTULO);
       });
 
       // O MECANISMO: o drawer manda só o que mudou.

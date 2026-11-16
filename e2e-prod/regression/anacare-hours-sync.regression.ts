@@ -25,6 +25,7 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { escolherNoCombobox, lerOpcoesDoCombobox } from '../src/support/combobox';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_AUTH_FILE = path.join(__dirname, '..', '.auth', 'admin.json');
@@ -90,7 +91,8 @@ test.describe.serial('AnaCare Horas — o clique em Sincronizar leva o MÊS que 
     journey.page = await journey.ctx.newPage();
     await journey.page.goto('/admin/anacare/horas');
 
-    const monthSelect = journey.page.getByLabel(/^mes$/i);
+    // Combobox (spec 070): o gatilho é `role=combobox` com aria-label "Mes" — não é mais um `<select>`.
+    const monthSelect = journey.page.getByRole('combobox', { name: /^mes$/i });
     await expect(monthSelect).toBeVisible({ timeout: 30_000 });
 
     // Lê as opções REAIS renderizadas (`monthOptionsUntilNow`, selectors.ts): lista CRESCENTE do
@@ -98,17 +100,15 @@ test.describe.serial('AnaCare Horas — o clique em Sincronizar leva o MÊS que 
     // UTC). A ÚLTIMA opção é sempre o mês corrente — escolhemos ELA, lida do DOM. Se a régua de
     // "mês default" regredir um dia (ex.: voltar a mês-anterior), este teste continua válido:
     // segue o que a TELA mostra, não uma expectativa fixa de qual mês deveria ser hoje.
-    const optionValues = await monthSelect
-      .locator('option')
-      .evaluateAll((opts) => opts.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
-    expect(optionValues.length, 'seletor de mês sem nenhuma opção').toBeGreaterThan(0);
-    journey.targetMonth = optionValues[optionValues.length - 1];
+    const opcoes = await lerOpcoesDoCombobox(monthSelect);
+    expect(opcoes.length, 'seletor de mês sem nenhuma opção').toBeGreaterThan(0);
+    const alvo = opcoes[opcoes.length - 1]!;
+    journey.targetMonth = alvo.value;
     expect(journey.targetMonth, 'valor do mês selecionado não tem a forma YYYY-MM').toMatch(/^\d{4}-\d{2}$/);
 
-    // Seleciona EXPLICITAMENTE (mesmo que já seja o valor default) — prova o binding
+    // Escolhe EXPLICITAMENTE (mesmo que já seja o valor default) — prova o binding
     // seletor→estado, não só que o default por acaso coincide com o que escolhemos.
-    await monthSelect.selectOption(journey.targetMonth!);
-    await expect(monthSelect).toHaveValue(journey.targetMonth!);
+    await escolherNoCombobox(monthSelect, alvo.label);
 
     test.info().annotations.push({
       type: 'evidência',

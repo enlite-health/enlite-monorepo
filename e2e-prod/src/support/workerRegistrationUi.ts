@@ -26,6 +26,7 @@
  */
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { readTinyDocumentPng } from './workerRegistration';
+import { escolherNoCombobox, marcarPrimeiraOpcaoDoCombobox } from './combobox';
 
 /** Espera o PUT/POST de um endpoint e assere que passou — sem gesto de resgate. */
 async function expectSaved(
@@ -61,23 +62,15 @@ async function gotoTab(
   await expect(page.locator(`[data-testid="tab-btn-${tab}"]`)).toBeVisible({ timeout: 30_000 });
 }
 
-/** Abre um MultiSelect, marca a 1ª opção e fecha. Estes JÁ salvam no onChange. */
+/** Combobox `multiple` (spec 070; `data-testid` no PRÓPRIO gatilho): marca a 1ª opção. Estes JÁ salvam no onChange. */
 async function pickFirstMultiSelect(page: Page, testId: string, label: string): Promise<void> {
-  const trigger = page.locator(`[data-testid="${testId}-trigger"]`);
+  const trigger = page.getByTestId(testId);
   await expect(trigger, `${label}: gatilho visível`).toBeVisible({ timeout: 15_000 });
   await expectSaved(
     page,
     '/api/workers/me/general-info',
     'PUT',
-    async () => {
-      await trigger.click();
-      const dropdown = page.locator(`[data-testid="${testId}-dropdown"]`);
-      await expect(dropdown, `${label}: dropdown abriu`).toBeVisible({ timeout: 10_000 });
-      await dropdown.locator('div').first().click();
-      // O MultiSelect fecha por mousedown FORA — `Escape` não fecha (medido).
-      // Fechar importa porque o dropdown aberto cobre o campo seguinte.
-      await page.mouse.click(5, 5);
-    },
+    () => marcarPrimeiraOpcaoDoCombobox(trigger),
     label,
   );
 }
@@ -171,23 +164,29 @@ export async function fillGeneralInfoViaUi(
     await phone.press('Tab');
   }, 'teléfono');
 
-  // ── Os 5 <select> nativos — o coração desta regressão ──────────────────────
-  // Cada um é UM gesto isolado: seleciona e o PUT tem de sair. Sem tocar em mais
-  // nada. Foi assim que a prestadora usou a tela, e foi assim que o dado se perdeu.
+  // ── Os 5 seletores — o coração desta regressão ────────────────────────────
+  // Eram `<select>` nativos; viraram Combobox (spec 070, `GeneralInfoFormFields.tsx`), então o gesto
+  // é abrir e clicar a opção pelo rótulo (es) — via `escolherNoCombobox`. Cada um é UM gesto
+  // isolado: escolhe e o PUT tem de sair. Sem tocar em mais nada. Foi assim que a prestadora usou
+  // a tela, e foi assim que o dado se perdeu.
+  const PROFISSAO: Record<'CAREGIVER' | 'AT', string> = {
+    CAREGIVER: 'Cuidador(a)',
+    AT: 'Acompañante Terapéutico',
+  };
   const selects: Array<[string, string, string]> = [
-    ['select#sex', 'female', 'sexo'],
-    ['select#gender', 'female', 'género'],
-    ['select#profession', opts.profession, 'profesión'],
-    ['select#knowledgeLevel', 'TERTIARY', 'nivel de formación'],
-    ['select#yearsExperience', YEARS, 'años de experiencia'],
+    ['#sex', 'Femenino', 'sexo'],
+    ['#gender', 'Femenino', 'género'],
+    ['#profession', PROFISSAO[opts.profession], 'profesión'],
+    ['#knowledgeLevel', 'Terciario', 'nivel de formación'],
+    ['#yearsExperience', '6-10 años', 'años de experiencia'],
   ];
-  for (const [sel, value, label] of selects) {
+  for (const [sel, rotulo, label] of selects) {
     await expectSaved(
       page,
       put,
       'PUT',
       async () => {
-        await page.locator(sel).selectOption(value);
+        await escolherNoCombobox(page.locator(sel), rotulo);
       },
       label,
     );

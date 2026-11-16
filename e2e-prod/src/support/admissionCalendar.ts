@@ -63,7 +63,7 @@ export async function getAdmissionEvent(
 export async function waitForEventGone(
   country: 'AR' | 'BR',
   eventId: string,
-  { timeoutMs = 60_000, intervalMs = 5_000 } = {},
+  { timeoutMs = 45_000, intervalMs = 5_000 } = {},
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -113,11 +113,15 @@ export async function findAdmissionEventAtSlot(
   return (body.items ?? []).find((e) => e.status !== 'cancelled') ?? null;
 }
 
-/** Espera o horário ficar LIVRE na agenda (usado depois do purge). */
+/**
+ * Espera o horário ficar LIVRE na agenda (usado depois do purge). O default (45 s) fica ABAIXO do
+ * timeout de 60 s do teste que o chama (patient-journey passo 9): estourando aqui, o `expect` do
+ * teste diz "o horário continuou ocupado" em vez de o Playwright matar o teste sem dizer onde.
+ */
 export async function waitForSlotFree(
   country: 'AR' | 'BR',
   slotStartISO: string,
-  { timeoutMs = 60_000, intervalMs = 5_000 } = {},
+  { timeoutMs = 45_000, intervalMs = 5_000 } = {},
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {

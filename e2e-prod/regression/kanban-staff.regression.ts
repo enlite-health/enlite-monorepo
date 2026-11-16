@@ -34,9 +34,9 @@
  * real às 3h da manhã do dia seguinte à virada da chave. A trava é o guard.
  *
  * ── O QUE ESTE SPEC PROVA, quando puder rodar ────────────────────────────────
- *  1.1 arrastar a tarjeta entre colunas: a etapa PERSISTE, o evento de domínio NASCE
- *      (visto no log `funnel_stage_message`, com autoria), e a coluna DERIVADA bate
- *      com o `internalStage` — `deriveKanbanColumn` é SSOT e a tela tem de obedecê-lo.
+ *  1.1 mover a tarjeta de um worker NÃO apto para SELECIONADOS é BARRADO (403
+ *      `documents_not_validated`, spec 067 FR-24) e NADA muda: a etapa continua a de antes e a
+ *      coluna DERIVADA continua batendo com o `internalStage` (`deriveKanbanColumn` é SSOT).
  *  1.2 "Reenviar": o 1º clique enfileira; o 2º na janela é BLOQUEADO com
  *      `RESEND_COOLDOWN` e a tela mostra a hora em que abre (D200.1); e NENHUMA
  *      mensagem sai — `status='suppressed'`, sem SID.
@@ -60,7 +60,6 @@ import { fileURLToPath } from 'url';
 import { newAdminApiContext } from '../src/support/adminApi';
 import { signUpWorker, newWorkerApiContext, deleteWorkerAuthAccount } from '../src/support/workerApi';
 import { uniqueArMobile, completeCaregiverRegistration } from '../src/support/workerRegistration';
-import { waitForLog } from '../src/support/cloudLogging';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_AUTH_FILE = path.join(__dirname, '..', '.auth', 'admin.json');
@@ -159,7 +158,9 @@ async function abrirVaga(browser: Browser): Promise<{ page: Page; fechar: () => 
 }
 
 /**
- * Move a tarjeta para SELECIONADOS pelo menu do card, atravessando o modal de PAPEL.
+ * Move a tarjeta para SELECIONADOS pelo menu do card, atravessando o modal de PAPEL. Hoje o teste
+ * que o usa (1.1) espera o PUT ser BARRADO com 403 (worker não apto, spec 067): o modal de papel
+ * ainda aparece, o 403 vem depois do "confirmar".
  *
  * ⚠️ TRÊS COISAS QUE SÓ A PRIMEIRA EXECUÇÃO REAL ENSINOU (31/08), todas visíveis no
  * screenshot da falha:
@@ -177,7 +178,8 @@ async function abrirVaga(browser: Browser): Promise<{ page: Page; fechar: () => 
  *
  * O que fica SEM cobertura, dito para não virar falsa sensação: se o `@dnd-kit` quebrar,
  * este teste continua verde. Cobrir o arrasto exige afinar pointer events contra o
- * dnd-kit — está na lista.
+ * dnd-kit — está na lista. Também sem cobertura: o diálogo de MOTIVO do salto (422
+ * `MOVE_REASON_REQUIRED`), porque sem worker apto o 403 vem antes do 422.
  */
 async function moverTarjetaParaSelecionados(page: Page): Promise<void> {
   const card = page.getByTestId(`kanban-card-${kanban.cardId}`);
@@ -189,19 +191,6 @@ async function moverTarjetaParaSelecionados(page: Page): Promise<void> {
   await expect(modal, 'mover para SELECIONADOS pergunta o PAPEL antes de gravar').toBeVisible();
   await modal.getByTestId('role-option-titular').click();
   await modal.getByTestId('role-confirm').click();
-}
-
-/**
- * INICIADO → SELECIONADOS salta mais de 1 posição do quadro B: o 1º PUT (já com o papel) volta
- * 422 MOVE_REASON_REQUIRED e a tela abre o diálogo de motivo. O humano escolhe o motivo por click
- * e confirma; o board reenvia o MESMO movimento com `reasonCategory`.
- * Mesmos testids do e2e de tela da F4 (`funil-vacante-motivo.integration.e2e.ts`).
- */
-async function escolherMotivoDoSalto(page: Page): Promise<void> {
-  const modal = page.getByTestId('move-reason-modal');
-  await expect(modal, 'o salto de etapa pergunta o MOTIVO antes de gravar').toBeVisible();
-  await modal.getByTestId('move-reason-option-encuadre-antecipado').click();
-  await modal.getByTestId('move-reason-confirm').click();
 }
 
 /** O funil pela API — fonte independente do que a tela pintou. */
@@ -365,52 +354,36 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     ).toBe(colunaEsperada('INVITED', 'manual', null));
   });
 
-  test('[@route:PUT /api/admin/encuadres/:id/move @depth:happy] 1.1 — mover a tarjeta para SELECIONADOS (pelo menu, respondendo o modal de papel): a etapa persiste, o evento nasce, e a coluna derivada bate', async ({ browser }) => {
+  test('[@route:PUT /api/admin/encuadres/:id/move @depth:error] 1.1 — mover a tarjeta de um worker NÃO apto para SELECIONADOS (pelo menu, respondendo o modal de papel) é barrado com 403 documents_not_validated, e a etapa não muda', async ({ browser }) => {
+    // Spec 067 FR-24 (edae1e465): SELECTED está em `APTO_REQUIRED_TARGET_STAGES`
+    // (`kanbanColumn.ts`) e `WJAFunnelController.moveEncuadre` chama `assertWorkerApto` ANTES de
+    // gravar. O worker sintético tem o cadastro REGISTERED mas NENHUM documento validado, logo
+    // não é apto: o que se prova é a regra nova — não-apto é barrado, e o card fica onde estava.
+    //
+    // O caminho do modal de MOTIVO (422 MOVE_REASON_REQUIRED) NÃO é exercido aqui: a partir de
+    // INICIADO o único salto (>1 posição do quadro B) é para Completado/Seleccionados/Equipo de
+    // Respuesta Rápida, todos exigem apto — sem apto o 403 vem antes do 422. Ver o PR.
     const { page, fechar } = await abrirVaga(browser);
     try {
-      // PRE_SCREENING é o destino de propósito: muda de etapa (logo emite evento) e
-      // NÃO é QUALIFIED (que é o built-in do convite). O que se prova aqui é o
-      // movimento; o convite tem spec próprio.
       const esMovePut = (r: Response) =>
         r.request().method() === 'PUT' && r.url().includes(`/encuadres/${kanban.encuadreId}/move`);
-      const esperaPrimeiro = page.waitForResponse(esMovePut);
+      const esperaPut = page.waitForResponse(esMovePut);
       await moverTarjetaParaSelecionados(page);
-      expect((await esperaPrimeiro).status(), '1º PUT (salto sem motivo) responde 422').toBe(422);
+      const res = await esperaPut;
+      expect(res.status(), 'PUT /encuadres/:id/move de worker não apto para SELECTED responde 403').toBe(403);
+      const corpo = (await res.json()) as { code?: string; reason?: string };
+      expect(corpo.code, 'o contrato do 403 é WORKER_NOT_ELIGIBLE').toBe('WORKER_NOT_ELIGIBLE');
+      expect(corpo.reason, 'o motivo é o limiar de APTO: documentos obrigatórios não validados').toBe(
+        'documents_not_validated',
+      );
 
-      const esperaMove = page.waitForResponse(esMovePut);
-      await escolherMotivoDoSalto(page);
-      const moveRes = await esperaMove;
-      expect(moveRes.status(), 'mover pelo menu, com o motivo do salto, reenviou o PUT /encuadres/:id/move e ele respondeu 200').toBe(200);
-
-      // ── a etapa PERSISTE (fonte independente: a API, não o DOM otimista) ────
+      // ── NADA mudou (fonte independente: a API, não o DOM otimista) ──────────
       const { card, coluna } = await lerFunil(adminCtx!);
-      expect(card.internalStage, 'a etapa gravada é a do destino escolhido').toBe('SELECTED');
+      expect(card.internalStage, 'o movimento barrado não gravou a etapa: segue INVITED').toBe('INVITED');
       expect(
         coluna,
-        'a coluna DERIVADA bate com o internalStage — a tela não pode inventar classificação',
-      ).toBe(colunaEsperada('SELECTED', 'manual', null));
-
-      // ── o EVENTO nasceu, com autoria ───────────────────────────────────────
-      // O `StageMessageHandler` registra a decisão (enviada OU pulada) no log
-      // `funnel_stage_message`. Com as etapas desligadas em prod, o esperado é
-      // `status='skipped'` e `reason='DISABLED'` — o que prova que o evento
-      // percorreu a cadeia inteira até o handler, e não morreu no caminho.
-      const entrada = await waitForLog(
-        {
-          match: { msg: 'funnel_stage_message', workerId: kanban.workerId!, stage: 'SELECTED' },
-          withinMinutes: 15,
-        },
-        { timeoutMs: 90_000, intervalMs: 5_000 },
-      );
-      expect(
-        entrada,
-        'o movimento da tarjeta virou EVENTO e chegou ao handler (sem isto, a etapa mudaria em silêncio — o defeito que a PEND-14 consertou)',
-      ).not.toBeNull();
-      expect(entrada!.jsonPayload?.source, 'a origem registrada é o Kanban humano').toBe('kanban');
-      expect(
-        entrada!.jsonPayload?.status,
-        'com as etapas desligadas em prod, a decisão é "pulada" — e o motivo fica registrado',
-      ).toBe('skipped');
+        'a coluna DERIVADA segue batendo com o internalStage — a tarjeta continua em INICIADO',
+      ).toBe(colunaEsperada('INVITED', 'manual', null));
     } finally {
       await fechar();
     }
@@ -517,9 +490,10 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
 
       // ── a metade da LISTA fica PENDENTE, e o motivo é conhecido ──────────────
       // O Kanban e a tabela são visões alternativas; voltar para `Lista` funciona, mas a
-      // tabela abre no bucket `INVITED` (`VacancyFunnelView.DEFAULT_BUCKET`) e nesta
-      // altura da jornada o card já está em SELECIONADOS (a 1.1 o moveu) — então
-      // `funnel-worker-link` não está na tela sem também trocar de bucket.
+      // tabela abre no bucket `INVITED` (`VacancyFunnelView.DEFAULT_BUCKET`). Desde que a 1.1
+      // passou a afirmar o 403 (worker não apto), o card continua em INICIADO (INVITED + manual)
+      // — então o bucket padrão da tabela já é o certo e `funnel-worker-link` deveria aparecer
+      // sem trocar de bucket; isso NÃO foi verificado.
       // O link do card, que é a metade coberta acima, JÁ prova `target=_blank` + `rel`
       // + a aba abrindo no worker certo. Falta repetir na tabela. Ver tasks.md.
     } finally {
