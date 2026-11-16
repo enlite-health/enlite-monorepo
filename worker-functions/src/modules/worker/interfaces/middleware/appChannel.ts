@@ -18,27 +18,39 @@ export function profileEditChannelOf(res: Response): string | undefined {
   return res.locals?.profileEditChannel;
 }
 
+/** `code` estável do 401 (mesmo padrão `{ success, error, code }` do WORKER_NOT_REGISTERED); o BFF traduz o code, não o texto. */
+export const INVALID_SERVICE_TOKEN_CODE = 'INVALID_SERVICE_TOKEN';
+
 /**
- * Marca a edição de perfil como canal app só com token válido da mobile-bff-sa (A-02).
- * Nunca responde: sem header ou com token inválido segue sem marca (a edição continua platform).
+ * Marca a request como canal app só com token válido da mobile-bff-sa (A-02).
+ * Fail-closed (D734): header ausente = caminho da web, segue sem marca; header PRESENTE que não valida
+ * (token recusado, outra SA, e-mail não verificado, allowlist vazia) = 401 INVALID_SERVICE_TOKEN. Sem isso
+ * quem declara ser o app e falha cairia no caminho da web, que cria ficha.
  */
 export function appChannel(injectedVerifier?: ServiceIdentityVerifier) {
   let fallback: ServiceIdentityVerifier | undefined;
+  const recusa = (res: Response) =>
+    void res.status(401).json({ success: false, error: 'Invalid service token', code: INVALID_SERVICE_TOKEN_CODE });
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const raw = req.headers[APP_SERVICE_TOKEN_HEADER];
-    const token = Array.isArray(raw) ? raw[0] : raw;
-    if (token) {
-      try {
-        const verifier = injectedVerifier ?? (fallback ??= createServiceIdentityVerifier(undefined, process.env, MOBILE_BFF_AUDIENCE));
-        const payload = await verifier.verify(token);
-        if (payload?.email_verified === true && !!payload.email && readServiceAllowlist(process.env, MOBILE_BFF_ACCOUNT_ID).includes(payload.email)) {
-          res.locals.profileEditChannel = APP_CHANNEL;
-        }
-      } catch (err) {
-        // Só o nome do erro: a mensagem do verificador pode ecoar o token.
-        logger.warn({ error: err instanceof Error ? err.name : 'error' }, '[appChannel] service token verification failed');
-      }
+    if (raw === undefined) {
+      next();
+      return;
     }
-    next();
+    const token = Array.isArray(raw) ? raw[0] : raw;
+    try {
+      const verifier = injectedVerifier ?? (fallback ??= createServiceIdentityVerifier(undefined, process.env, MOBILE_BFF_AUDIENCE));
+      const payload = token ? await verifier.verify(token) : undefined;
+      if (payload?.email_verified === true && !!payload.email && readServiceAllowlist(process.env, MOBILE_BFF_ACCOUNT_ID).includes(payload.email)) {
+        res.locals.profileEditChannel = APP_CHANNEL;
+        next();
+        return;
+      }
+      logger.warn({ reason: 'not_allowed' }, '[appChannel] service token rejected');
+    } catch (err) {
+      // Só o nome do erro: a mensagem do verificador pode ecoar o token.
+      logger.warn({ error: err instanceof Error ? err.name : 'error' }, '[appChannel] service token verification failed');
+    }
+    recusa(res);
   };
 }

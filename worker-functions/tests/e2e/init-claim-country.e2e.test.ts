@@ -79,6 +79,13 @@ describe('init grava o claim country da ficha (D731/D733/D734)', () => {
     expect(claims.has(u)).toBe(false);
   });
 
+  it('canal app com token de serviço INVÁLIDO: 401 e NENHUM INSERT (não cai no caminho da web que cria ficha; D734)', async () => {
+    const u = uid('app-invalido');
+    expect(await init(u, { country: 'BR' }, 'mock_nao-e-base64-json')).toBe(401);
+    expect(await fichas(u)).toEqual([]);
+    expect(claims.has(u)).toBe(false);
+  });
+
   it('T-F0b-42 controle web (sem token de serviço): conta nova com região BR nasce BR e o claim sai BR (D733)', async () => {
     const u = uid('web-br');
     expect(await init(u, { country: 'BR' })).toBe(201);
