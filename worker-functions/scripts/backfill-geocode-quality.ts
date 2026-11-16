@@ -21,6 +21,11 @@
  * Uso:
  *   npx ts-node -r dotenv/config -r tsconfig-paths/register scripts/backfill-geocode-quality.ts                    # dry-run
  *   npx ts-node -r dotenv/config -r tsconfig-paths/register scripts/backfill-geocode-quality.ts --execute --limit 100
+ *   # UMA linha só (dry-run E execute): restringe os candidatos a `id = <uuid>`; mantém todas as travas e o limiar D685.
+ *   npx ts-node -r dotenv/config -r tsconfig-paths/register scripts/backfill-geocode-quality.ts --address-id <uuid>
+ *   npx ts-node -r dotenv/config -r tsconfig-paths/register scripts/backfill-geocode-quality.ts --address-id <uuid> --execute --eu-sei-que-e-producao
+ * `--address-id` é MUTUAMENTE EXCLUSIVO com `--limit` (erro, antes de conectar); uuid inválido também sai com erro antes de
+ * conectar. Id inexistente ou já classificado (não-candidato) = "0 candidatos", sai 0, sem chamada ao Google nem UPDATE.
  *
  * Env: DATABASE_URL (pool) · GOOGLE_MAPS_API_KEY (só em --execute; lida pelo GeocodingService).
  * Log: só contagens e `address_id` — nunca endereço nem coordenada (nem a gravada, nem a do Google).
@@ -43,6 +48,8 @@ export interface BackfillOpts {
   timeoutMs?: number;
   /** `--eu-sei-que-e-producao`: autoriza alvo não-local (mesma trava dos backfills 2.4/3/4.2). */
   producaoAutorizada?: boolean;
+  /** `--address-id <uuid>`: restringe os candidatos a esta linha (dry-run e execute). */
+  addressId?: string;
 }
 
 export interface BackfillDeps {
@@ -72,19 +79,40 @@ const CANDIDATE_WHERE = `archived_at IS NULL
         AND geocode_partial_match IS NULL
         AND (NULLIF(TRIM(address_formatted), '') IS NOT NULL OR NULLIF(TRIM(address_raw), '') IS NOT NULL)`;
 
+/** Filtro por id: `n` é o índice do placeholder do uuid. Só entra quando `--address-id` foi passado. */
+export function candidateWhere(n?: number): string {
+  return n == null ? CANDIDATE_WHERE : `${CANDIDATE_WHERE}\n        AND id = $${n}`;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const travaDeAlvo = assertBackfillWriteTarget;
 
-export const HELP = `Uso: backfill-geocode-quality.ts [--dry-run] [--execute] [--eu-sei-que-e-producao] [--limit N] [--help]
+export const HELP = `Uso: backfill-geocode-quality.ts [--dry-run] [--execute] [--eu-sei-que-e-producao] [--limit N] [--address-id <uuid>] [--help]
   --dry-run   (PADRÃO) só conta os candidatos; nada é chamado, nada é gravado
   --execute   chama o Google por endereço COM coordenada e grava geocode_quality/geocode_partial_match/geocoded_at
               só se o ponto do Google estiver a até 100 m do gravado (acima: lista o id e não grava)
   --eu-sei-que-e-producao
               obrigatória em --execute contra banco NÃO-local (trava de alvo; dry-run não passa por ela)
   --limit N   máximo de endereços por execução (default 100)
+  --address-id <uuid>
+              restringe os candidatos a UMA linha (dry-run e execute); exclusivo com --limit; id que não é
+              candidato (inexistente/já classificado) = 0 candidatos, sem escrita
   --help      esta ajuda
 Env: DATABASE_URL; GOOGLE_MAPS_API_KEY (obrigatória em --execute). Nunca reescreve lat/lng.`;
 
-export function parseArgs(argv: string[]): BackfillOpts & { help: boolean } {
+export function parseArgs(argv: string[]): BackfillOpts & { help: boolean; error?: string } {
+  const a = argv.indexOf('--address-id');
+  if (a >= 0) {
+    const id = argv[a + 1];
+    if (argv.includes('--limit')) return { ...parseBase(argv), error: '--address-id e --limit são mutuamente exclusivos' };
+    if (!id || !UUID_RE.test(id)) return { ...parseBase(argv), error: '--address-id exige um uuid válido' };
+    return { ...parseBase(argv), addressId: id.toLowerCase(), limit: 1 };
+  }
+  return parseBase(argv);
+}
+
+function parseBase(argv: string[]): BackfillOpts & { help: boolean } {
   const i = argv.indexOf('--limit');
   const raw = i >= 0 ? Number(argv[i + 1]) : 100;
   const limit = Number.isInteger(raw) && raw > 0 ? raw : 100;
@@ -98,7 +126,8 @@ export async function runBackfill(deps: BackfillDeps, opts: BackfillOpts): Promi
   if (!opts.execute) {
     const { rows } = await pool.query(
       `SELECT count(*)::int AS n, (count(*) FILTER (WHERE lat IS NULL OR lng IS NULL))::int AS sem
-         FROM patient_addresses WHERE ${CANDIDATE_WHERE}`,
+         FROM patient_addresses WHERE ${candidateWhere(opts.addressId ? 1 : undefined)}`,
+      opts.addressId ? [opts.addressId] : undefined,
     );
     const n = Number(rows[0]?.n ?? 0);
     const sem = Number(rows[0]?.sem ?? 0);
@@ -124,10 +153,10 @@ export async function runBackfill(deps: BackfillDeps, opts: BackfillOpts): Promi
   const { rows } = await pool.query(
     `SELECT id, address_formatted, address_raw, neighborhood, city, state, lat, lng
        FROM patient_addresses
-      WHERE ${CANDIDATE_WHERE}
+      WHERE ${candidateWhere(opts.addressId ? 1 : undefined)}
       ORDER BY (lat IS NULL OR lng IS NULL), created_at ASC, id
-      LIMIT $1`,
-    [opts.limit],
+      ${opts.addressId ? 'LIMIT 1' : 'LIMIT $1'}`,
+    opts.addressId ? [opts.addressId] : [opts.limit],
   );
 
   const res: BackfillResult = { mode: 'execute', candidates: rows.length, updated: 0, failed: 0, far: 0, noCoords: 0 };
@@ -181,6 +210,10 @@ async function main(): Promise<void> {
     console.log(HELP);
     return;
   }
+  if (args.error) {
+    console.error(`${args.error} — abortando antes de conectar.`);
+    process.exit(1);
+  }
   if (!process.env.DATABASE_URL) {
     console.error('DATABASE_URL ausente — abortando.');
     process.exit(1);
@@ -189,7 +222,7 @@ async function main(): Promise<void> {
   try {
     const r = await runBackfill(
       { pool, geocoder: new GeocodingService(), apiKey: process.env.GOOGLE_MAPS_API_KEY, databaseUrl: process.env.DATABASE_URL },
-      { execute: args.execute, producaoAutorizada: args.producaoAutorizada, limit: args.limit, delayMs: 200 },
+      { execute: args.execute, producaoAutorizada: args.producaoAutorizada, limit: args.limit, addressId: args.addressId, delayMs: 200 },
     );
     if (r.aborted) process.exitCode = 1;
   } finally {
