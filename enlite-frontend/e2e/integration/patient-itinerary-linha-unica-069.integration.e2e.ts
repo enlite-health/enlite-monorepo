@@ -1,5 +1,4 @@
 /**
- * (077: prova do CI — o piso de largura da aba Sustituciones depende da data `desde`; ver o bloco de Sustituciones.)
  * patient-itinerary-linha-unica-069.integration.e2e.ts @integration — spec 069, regra do Gabriel (23/10): NENHUM nome/label quebra linha, nas telas
  * novas. Stack REAL (frontend + API + Postgres), sem mock de dado de negócio — só a auth (`loginAs`). Massa com nomes LONGOS (≥ 35 caracteres),
  * motivo longo (catálogo, criado pela API do catálogo) e endereço longo; em 1440×900 e em 1280×800 o guarda (`expectLinhaUnica`) confere, em
@@ -132,14 +131,17 @@ test.describe('patient-itinerary-linha-unica-069: nomes e labels longos não que
         await expect(page.locator('[data-testid="sustituciones-dia"]').first()).toBeVisible();
         const sust = await expectLinhaUnica(page, 'Sustituciones', 20);
         expect(sust.truncados, 'Sustituciones: nome longo cortado de verdade').toBeGreaterThan(0);
-        // O nome de 44 caracteres aparece com largura útil (coluna "Cambio" empilhada): ocupa ≥ 45% da linha "Sale" (a largura da coluna), e o chip "salvo …" existe e não é cortado.
-        // RELATIVO de propósito: a coluna "Cuándo" é `max-content` e o rótulo do período muda de largura conforme `desde..desde+11` cruze o mês (a data é a de hoje),
-        // então um piso fixo em px (era 280) falha por calendário, não por layout. A razão pega o que o teste quer provar: o nome NÃO é espremido.
+        // O nome de 44 caracteres aparece com largura útil (Sale/Entra EMPILHADOS na coluna "Cambio"): ocupa ≥ 70% da largura da COLUNA, e o chip "salvo …" existe e não é cortado.
+        // Razão e não px: a coluna "Cuándo" é `max-content` e o rótulo do período muda com o mês de `desde..desde+11` (a data é a de hoje), então o piso fixo de 280 px falhava por
+        // calendário. O denominador é a coluna (`sustitucion-bloque-<id>`, a raiz do bloco, pai da linha `-sale`), NÃO a linha `-sale`: no layout "lado a lado" a própria linha
+        // encolhe junto com o nome e a razão sobreviveria. Medido em 1280×800: empilhado ≈ 77% (280/361), lado a lado ≈ 22%, e a data quase não mexe (±6 px).
         const linhaSale = page.locator('[data-testid$="-sale"]').first();
+        const colunaCambio = linhaSale.locator('xpath=..');
+        await expect(colunaCambio).toHaveAttribute('data-testid', /^sustitucion-bloque-[^-]+.*(?<!-sale)$/);
         const nomeDeQuemSai = linhaSale.locator('[data-single-line]').first();
-        const [caixa, caixaLinha] = [await nomeDeQuemSai.boundingBox(), await linhaSale.boundingBox()];
-        const razao = (caixa?.width ?? 0) / (caixaLinha?.width ?? Number.POSITIVE_INFINITY);
-        expect(razao, `Sustituciones ${largura}×${altura}: nome ${caixa?.width}px de uma linha Sale de ${caixaLinha?.width}px`).toBeGreaterThanOrEqual(0.45);
+        const [caixa, caixaColuna] = [await nomeDeQuemSai.boundingBox(), await colunaCambio.boundingBox()];
+        const razao = (caixa?.width ?? 0) / (caixaColuna?.width ?? Number.POSITIVE_INFINITY);
+        expect(razao, `Sustituciones ${largura}×${altura}: nome ${caixa?.width}px de uma coluna Cambio de ${caixaColuna?.width}px`).toBeGreaterThanOrEqual(0.7);
         await expect(page.locator('[data-testid$="-salvo"][data-info-label]')).toHaveCount(1);
         await imprimir(page, 'sustituciones-nomes-longos', largura, 'itinerario-aba');
 
