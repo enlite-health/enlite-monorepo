@@ -1,5 +1,5 @@
 # Spec 077, D703 — teto de custo do Google Maps Platform em enlite-prd.
-# (1) cota no projeto para Places API (New) e Geocoding: ~600/min e 20.000/dia;
+# (1) cota no projeto para Places API (New), Geocoding e as APIs legadas Places e Maps JavaScript: ~600/min e 20.000/dia;
 # (2) alerta de orçamento por e-mail acima de US$ 30/mês.
 # A chave é compartilhada (admin, worker-functions, mobile-bff), então o teto vale para os três.
 #
@@ -35,6 +35,17 @@ locals {
     "geocoding-v4-loc-dia"   = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_location_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }   # ilimitado
     "geocoding-v4-place-min" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }    # 1500
     "geocoding-v4-place-dia" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }      # ilimitado
+
+    # APIs LEGADAS usadas pelo admin (Maps JavaScript + autocomplete/Details do Places legado). Pico de 30 dias medido em 16/11/2026
+    # (Monitoring, serviceruntime.googleapis.com/quota/rate/net_usage, alinhado a 60s e 86400s):
+    #   places-backend billable_default: 68/min, 677/dia · maps-backend billable_default: 49/min, 348/dia · 3d_billable_default: sem uso.
+    # Teto = max(600/min e 20.000/dia da D703, 3x o pico) = 600/min e 20.000/dia, bem acima do pico.
+    "places-legacy-min" = { service = "places-backend.googleapis.com", metric = "places-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min } # 6000
+    "places-legacy-dia" = { service = "places-backend.googleapis.com", metric = "places-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }   # ilimitado
+    "maps-js-min"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }     # 30000
+    "maps-js-dia"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }       # ilimitado
+    "maps-3d-min"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2F3d_billable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }  # 30000
+    "maps-3d-dia"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2F3d_billable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }    # ilimitado
   }
 }
 
