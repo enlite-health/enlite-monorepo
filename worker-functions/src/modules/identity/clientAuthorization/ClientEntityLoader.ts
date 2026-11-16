@@ -41,8 +41,8 @@ const person = (id: string) => ({ __entity: { type: 'Person', id } });
  * Monta as entidades Cedar do plano do cliente (design §4). O principal é `Person::"<pid>"` — a RAIZ da pessoa do login
  * (`iam.resolve_person` → `iam.person_root`), nunca o uid do token (D647). As áreas (`Person.areas`) vêm do
  * `ListPersonAreasUseCase` — a mesma descoberta do claim, sem consulta duplicada. `Worker.owner` e `Account.owner`
- * são `Person`; a `Account` é montada do TOKEN (uid e dono), nunca de header ou parâmetro. Qualquer falha lança
- * (o engine transforma em deny).
+ * são `Person`; a `Account` é montada do TOKEN (uid e dono), nunca de header ou parâmetro. Falha lança
+ * (o engine transforma em deny `engine_error`); recurso ausente (sem id) devolve `null` (deny normal).
  */
 export class ClientEntityLoader implements ClientEntityProvider {
   private readonly areas: ListPersonAreasUseCase;
@@ -55,7 +55,7 @@ export class ClientEntityLoader implements ClientEntityProvider {
     this.areas = new ListPersonAreasUseCase(registry);
   }
 
-  async load(context: AuthContext, resource: Resource, _action: string): Promise<CedarRequest> {
+  async load(context: AuthContext, resource: Resource, _action: string): Promise<CedarRequest | null> {
     const uid = context.principal.id;
     const own = await this.bootstrap.ensurePerson(uid);
     if (!own) throw new Error('login sem pessoa viva');
@@ -75,7 +75,7 @@ export class ClientEntityLoader implements ClientEntityProvider {
       entities.push({ uid: { type: 'Account', id: uid }, attrs: { owner: person(pid), uid }, parents: [] });
       return { principal: { type: 'Person', id: pid }, resource: { type: 'Account', id: uid }, context: { tokenUid: uid }, entities };
     }
-    if (!resource.id) throw new Error('recurso sem id');
+    if (!resource.id) return null; // pessoa sem ficha (rota /me): ausência explícita, o engine nega por política
     const owner = await this.ownership.workerOwnerRoot(resource.id);
     if (owner) entities.push({ uid: { type: resource.type, id: resource.id }, attrs: { owner: person(owner) }, parents: [] });
     return { principal: { type: 'Person', id: pid }, resource: { type: resource.type, id: resource.id }, entities };

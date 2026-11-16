@@ -131,10 +131,17 @@ test.describe('patient-itinerary-linha-unica-069: nomes e labels longos não que
         await expect(page.locator('[data-testid="sustituciones-dia"]').first()).toBeVisible();
         const sust = await expectLinhaUnica(page, 'Sustituciones', 20);
         expect(sust.truncados, 'Sustituciones: nome longo cortado de verdade').toBeGreaterThan(0);
-        // O nome de 44 caracteres aparece com largura útil (coluna "Cambio" empilhada): ≥ 280 px, e o chip "salvo …" existe e não é cortado.
-        const nomeDeQuemSai = page.locator('[data-testid$="-sale"] [data-single-line]').first();
-        const caixa = await nomeDeQuemSai.boundingBox();
-        expect(caixa?.width ?? 0, `Sustituciones ${largura}×${altura}: largura do nome de quem sai`).toBeGreaterThanOrEqual(280);
+        // O nome de 44 caracteres aparece com largura útil (Sale/Entra EMPILHADOS na coluna "Cambio"): ocupa ≥ 70% da largura da COLUNA, e o chip "salvo …" existe e não é cortado.
+        // Razão e não px: a coluna "Cuándo" é `max-content` e o rótulo do período muda com o mês de `desde..desde+11` (a data é a de hoje), então o piso fixo de 280 px falhava por
+        // calendário. O denominador é a coluna (`sustitucion-bloque-<id>`, a raiz do bloco, pai da linha `-sale`), NÃO a linha `-sale`: no layout "lado a lado" a própria linha
+        // encolhe junto com o nome e a razão sobreviveria. Medido em 1280×800: empilhado ≈ 77% (280/361), lado a lado ≈ 22%, e a data quase não mexe (±6 px).
+        const linhaSale = page.locator('[data-testid$="-sale"]').first();
+        const colunaCambio = linhaSale.locator('xpath=..');
+        await expect(colunaCambio).toHaveAttribute('data-testid', /^sustitucion-bloque-[^-]+.*(?<!-sale)$/);
+        const nomeDeQuemSai = linhaSale.locator('[data-single-line]').first();
+        const [caixa, caixaColuna] = [await nomeDeQuemSai.boundingBox(), await colunaCambio.boundingBox()];
+        const razao = (caixa?.width ?? 0) / (caixaColuna?.width ?? Number.POSITIVE_INFINITY);
+        expect(razao, `Sustituciones ${largura}×${altura}: nome ${caixa?.width}px de uma coluna Cambio de ${caixaColuna?.width}px`).toBeGreaterThanOrEqual(0.7);
         await expect(page.locator('[data-testid$="-salvo"][data-info-label]')).toHaveCount(1);
         await imprimir(page, 'sustituciones-nomes-longos', largura, 'itinerario-aba');
 

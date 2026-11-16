@@ -182,6 +182,56 @@ describe('backfill-geocode-quality', () => {
     expect(logs).not.toMatch(/ROOFTOP|1\.000/);
   });
 
+  it('--address-id: parse (uuid válido, inválido, exclusivo com --limit)', () => {
+    const id = '99c74343-1111-4222-8333-444455556666';
+    expect(parseArgs(['--address-id', id])).toMatchObject({ addressId: id, limit: 1, execute: false });
+    expect(parseArgs(['--address-id', id.toUpperCase()]).addressId).toBe(id);
+    expect(parseArgs(['--address-id', 'nao-e-uuid']).error).toMatch(/uuid válido/);
+    expect(parseArgs(['--address-id']).error).toMatch(/uuid válido/);
+    expect(parseArgs(['--address-id', id, '--limit', '5']).error).toMatch(/mutuamente exclusivos/);
+    expect(parseArgs(['--limit', '5']).error).toBeUndefined();
+    expect(parseArgs([]).addressId).toBeUndefined();
+  });
+
+  it('--address-id: dry-run e execute filtram por id = $1 com o uuid como parâmetro, mantendo as travas', async () => {
+    const id = '99c74343-1111-4222-8333-444455556666';
+    const d = mk([row(id)]);
+    await runBackfill({ pool: d.pool, geocoder: d.geocoder, databaseUrl: REMOTO, log: d.log }, parseArgs(['--address-id', id]));
+    expect(d.pool.query.mock.calls[0][0]).toContain('AND id = $1');
+    expect(d.pool.query.mock.calls[0][0]).toContain('geocode_quality IS NULL');
+    expect(d.pool.query.mock.calls[0][1]).toEqual([id]);
+
+    const m = mk([row(id)], jest.fn(async () => [aNorte(50)]));
+    const r = await runBackfill({ pool: m.pool, geocoder: m.geocoder, apiKey: 'k', databaseUrl: REMOTO, log: m.log }, { ...parseArgs(['--address-id', id, '--execute', '--eu-sei-que-e-producao']), timeoutMs: 20 });
+    expect(r).toMatchObject({ candidates: 1, updated: 1 });
+    const sel = m.pool.query.mock.calls[0];
+    expect(sel[0]).toContain('archived_at IS NULL');
+    expect(sel[0]).toContain('AND id = $1');
+    expect(sel[0]).toContain('LIMIT 1');
+    expect(sel[1]).toEqual([id]);
+    expect(m.updates()[0].params![3]).toBe(id);
+
+    // trava de alvo continua valendo: não-local sem --eu-sei-que-e-producao aborta antes de qualquer query
+    const t = mk([row(id)]);
+    const rt = await runBackfill({ pool: t.pool, geocoder: t.geocoder, apiKey: 'k', databaseUrl: REMOTO, log: t.log }, { ...parseArgs(['--address-id', id, '--execute']), timeoutMs: 20 });
+    expect(rt.aborted).toMatch(/ALVO RECUSADO/);
+    expect(t.pool.query).not.toHaveBeenCalled();
+
+    // sem --address-id o SQL NÃO leva o filtro
+    const n = mk([row('a')]);
+    await runBackfill({ pool: n.pool, geocoder: n.geocoder, apiKey: 'k', databaseUrl: LOCAL, log: n.log }, { execute: true, limit: 7, timeoutMs: 20 });
+    expect(n.pool.query.mock.calls[0][0]).not.toContain('id = $');
+  });
+
+  it('--address-id que não é candidato: 0 candidatos, 0 Google, 0 UPDATE', async () => {
+    const id = '99c74343-1111-4222-8333-444455556666';
+    const m = mk([]);
+    const r = await runBackfill({ pool: m.pool, geocoder: m.geocoder, apiKey: 'k', databaseUrl: LOCAL, log: m.log }, { ...parseArgs(['--address-id', id, '--execute']), timeoutMs: 20 });
+    expect(r).toMatchObject({ candidates: 0, updated: 0 });
+    expect(m.geocodeBatch).not.toHaveBeenCalled();
+    expect(m.updates()).toHaveLength(0);
+  });
+
   it('parseArgs: limit default 100 e --limit N', () => {
     expect(parseArgs([]).limit).toBe(100);
     expect(parseArgs(['--execute', '--limit', '5'])).toMatchObject({ execute: true, limit: 5 });

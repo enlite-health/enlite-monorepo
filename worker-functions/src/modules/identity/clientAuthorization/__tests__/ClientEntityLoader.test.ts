@@ -1,4 +1,4 @@
-import { CedarClientPolicyEngine } from '../CedarClientPolicyEngine';
+import { CedarClientPolicyEngine, NO_RESOURCE_REASON } from '../CedarClientPolicyEngine';
 import { ClientEntityLoader, type ClientOwnershipReader, type PersonBootstrap } from '../ClientEntityLoader';
 import type { AreaRegistryReader } from '../../application/ListPersonAreasUseCase';
 import type { AuthContext } from '../../domain/Auth';
@@ -30,14 +30,14 @@ const engine = () => new CedarClientPolicyEngine({ schema, policies: POLICIES, e
 describe('ClientEntityLoader', () => {
   it('o principal é Person::"<pid>" da pessoa, nunca o uid do token', async () => {
     const req = await loader().load(ctx('uid-a'), { type: 'Worker', id: W1 }, 'ReadOwnWorkerProfile');
-    expect(req.principal).toEqual({ type: 'Person', id: P1 });
-    expect(req.principal.id).not.toBe('uid-a');
+    expect(req!.principal).toEqual({ type: 'Person', id: P1 });
+    expect(req!.principal.id).not.toBe('uid-a');
   });
 
   it('dois logins da mesma pessoa montam o mesmo principal', async () => {
     const a = await loader().load(ctx('uid-a'), { type: 'Worker', id: W1 }, 'ReadOwnWorkerProfile');
     const b = await loader().load(ctx('uid-b'), { type: 'Worker', id: W1 }, 'ReadOwnWorkerProfile');
-    expect(b.principal).toEqual(a.principal);
+    expect(b!.principal).toEqual(a!.principal);
   });
 
   it('login absorvido por merge decide como a sobrevivente (lê a ficha dela)', async () => {
@@ -55,22 +55,33 @@ describe('ClientEntityLoader', () => {
     expect((await engine().checkPermission(ctx('uid-a'), { type: 'Worker', id: ghost }, 'ReadOwnWorkerProfile')).allowed).toBe(false);
   });
 
+  it('pessoa sem ficha (sem id de recurso): loader devolve null e o engine nega por política, não engine_error', async () => {
+    expect(await loader().load(ctx('uid-a'), { type: 'Worker' }, 'ReadOwnWorkerProfile')).toBeNull();
+    const d = await engine().checkPermission(ctx('uid-a'), { type: 'Worker' }, 'ReadOwnWorkerProfile');
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toBe(NO_RESOURCE_REASON);
+    expect(d.reason).not.toBe('engine_error');
+    expect(d.policies).toEqual([]);
+  });
+
   it('Person.areas soma as fontes (care:worker derivado + registro)', async () => {
     const req = await loader().load(ctx('uid-a'), { type: 'Worker', id: W1 }, 'ReadOwnWorkerProfile');
-    const person = (req.entities as Array<{ uid: { type: string }; attrs: { areas: string[] } }>).find((e) => e.uid.type === 'Person');
+    const person = (req!.entities as Array<{ uid: { type: string }; attrs: { areas: string[] } }>).find((e) => e.uid.type === 'Person');
     expect([...person!.attrs.areas].sort()).toEqual(['care:worker', 'learn:learner']);
   });
 
   it('Account vem do token: ignora o id do recurso pedido e carrega tokenUid', async () => {
     const req = await loader().load(ctx('uid-a'), { type: 'Account', id: 'uid-c' }, 'DeleteOwnAccount');
-    expect(req.resource).toEqual({ type: 'Account', id: 'uid-a' });
-    expect(req.context).toEqual({ tokenUid: 'uid-a' });
+    expect(req!.resource).toEqual({ type: 'Account', id: 'uid-a' });
+    expect(req!.context).toEqual({ tokenUid: 'uid-a' });
     const d = await engine().checkPermission(ctx('uid-a'), { type: 'Account', id: 'uid-c' }, 'DeleteOwnAccount');
     expect(d.allowed).toBe(true);
   });
 
   it('login sem pessoa viva (removido) lança e o engine nega', async () => {
     await expect(loader().load(ctx('uid-x'), { type: 'Worker', id: W1 }, 'ReadOwnWorkerProfile')).rejects.toThrow();
-    expect((await engine().checkPermission(ctx('uid-x'), { type: 'Worker', id: W1 }, 'ReadOwnWorkerProfile')).allowed).toBe(false);
+    const d = await engine().checkPermission(ctx('uid-x'), { type: 'Worker', id: W1 }, 'ReadOwnWorkerProfile');
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toBe('engine_error');
   });
 });

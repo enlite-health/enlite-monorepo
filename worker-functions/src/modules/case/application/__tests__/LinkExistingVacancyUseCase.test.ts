@@ -16,6 +16,11 @@ jest.mock("../PatientStatusWriter", () => ({
   movePatientStatus: (...a: unknown[]) => mockMovePatientStatus(...a),
 }));
 
+const mockDispatch = jest.fn();
+jest.mock("../../../matching/application/dispatchTalentumPause", () => ({
+  dispatchTalentumPause: (...a: unknown[]) => mockDispatch(...a),
+}));
+
 import {
   LinkExistingVacancyUseCase,
   VacancyNotLinkableError,
@@ -68,8 +73,9 @@ function build(opts: { accepts?: (f: string, v: unknown) => boolean } = {}) {
   const audit = { logFieldChangesSafe: jest.fn(async () => { calls.push("audit"); }) };
   const runner = jest.fn(async (fn: (c: unknown) => unknown) => fn(client)) as never;
   const accepts = jest.fn(opts.accepts ?? (() => true));
-  const uc = new LinkExistingVacancyUseCase(repo as never, audit as never, accepts as never, runner);
-  return { uc, repo, audit, accepts, calls };
+  const sideEffects = { pause: jest.fn(), resume: jest.fn() };
+  const uc = new LinkExistingVacancyUseCase(repo as never, audit as never, accepts as never, runner, sideEffects as never);
+  return { uc, repo, audit, accepts, calls, sideEffects };
 }
 const noWrites = (t: ReturnType<typeof build>) => {
   expect(t.repo.feedService).not.toHaveBeenCalled();
@@ -284,6 +290,27 @@ describe("vaga DE_BAJA: o vínculo é o caminho de volta (Gabriel, 06/11)", () =
     const t = build();
     await t.uc.confirm(P, S, V, actor);
     expect(t.repo.restoreFromBaja).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+  });
+
+  it("vaga restaurada de DE_BAJA: retoma o projeto no Talentum DEPOIS do commit, só com o id dela", async () => {
+    const t = build();
+    t.repo.readVacancyForLink.mockResolvedValue(vac({ status: "DE_BAJA" }));
+    let committed = false;
+    mockDispatch.mockImplementation(() => { expect(committed).toBe(true); });
+    const runner = jest.fn(async (fn: (c: unknown) => unknown) => { const r = await fn(client); committed = true; return r; }) as never;
+    const uc = new LinkExistingVacancyUseCase(t.repo as never, t.audit as never, t.accepts as never, runner, t.sideEffects as never);
+    await uc.confirm(P, S, V, actor);
+    expect(mockDispatch).toHaveBeenCalledTimes(1);
+    expect(mockDispatch).toHaveBeenCalledWith(t.sideEffects, { resume: [V] }, "LinkExistingVacancyUseCase");
+  });
+
+  it("DE_BAJA que o UPDATE não restaurou (restoreFromBaja = null) não dispara retomada", async () => {
+    const t = build();
+    t.repo.readVacancyForLink.mockResolvedValue(vac({ status: "DE_BAJA" }));
+    t.repo.restoreFromBaja.mockResolvedValue(null);
+    await t.uc.confirm(P, S, V, actor);
+    expect(mockDispatch).not.toHaveBeenCalled();
   });
 
   it("as outras checagens continuam valendo para DE_BAJA (outro paciente / já vinculada)", async () => {

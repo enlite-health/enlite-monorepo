@@ -12,6 +12,12 @@ import {
 import type { LinkExistingVacancyRepository, VacancyForLinkRow } from "../infrastructure/LinkExistingVacancyRepository";
 import type { JobPostingAuditRepository, FieldChange } from "../../matching/infrastructure/JobPostingAuditRepository";
 import type { HumanActor } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
+import { DatabaseConnection } from "@shared/database/DatabaseConnection";
+import { dispatchTalentumPause } from "../../matching/application/dispatchTalentumPause";
+import {
+  VacancyTalentumPauseService,
+  type VacancyBajaSideEffects,
+} from "../../matching/application/VacancyTalentumPauseService";
 import { computeRecruitmentReadiness } from "../domain/PatientCompleteness";
 import { vacancyLinkEligibility, linkableVacancies } from "../domain/VacancyLinkEligibility";
 import {
@@ -102,6 +108,8 @@ export class LinkExistingVacancyUseCase {
     private readonly auditRepo: Pick<JobPostingAuditRepository, "logFieldChangesSafe">,
     private readonly accepts: AcceptsServiceValue,
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    /** Retomada no Talentum depois do commit (mesmo mecanismo da reativação do serviço). Default criado só quando precisa. */
+    private readonly sideEffects?: VacancyBajaSideEffects,
   ) {}
 
   async preview(patientId: string, serviceId: string, vacancyId?: string): Promise<LinkPreviewResponse> {
@@ -122,9 +130,17 @@ export class LinkExistingVacancyUseCase {
   ): Promise<LinkConfirmResponse> {
     const startMs = Date.now();
     try {
-      const result = await this.runInTransaction((client) =>
+      const { response: result, restoredFromBaja } = await this.runInTransaction((client) =>
         this.confirmInTx(client, patientId, serviceId, vacancyId, actor, opts),
       );
+      // Depois do commit: a vaga saiu de DE_BAJA já com PENDING_RESUME gravado; aqui só TENTA retomar o projeto no Talentum.
+      if (restoredFromBaja) {
+        dispatchTalentumPause(
+          this.sideEffects ?? new VacancyTalentumPauseService(DatabaseConnection.getInstance().getPool()),
+          { resume: [vacancyId] },
+          "LinkExistingVacancyUseCase",
+        );
+      }
       functions.logger.info("link_existing_vacancy.completed", {
         patientId,
         serviceId,
@@ -237,7 +253,7 @@ export class LinkExistingVacancyUseCase {
     vacancyId: string,
     actor: HumanActor,
     opts: LinkConfirmOptions,
-  ): Promise<LinkConfirmResponse> {
+  ): Promise<{ response: LinkConfirmResponse; restoredFromBaja: boolean }> {
     // 1. locks (paciente → serviço) + vaga viva do serviço
     const ctx = await lockRecruitmentContext(client, patientId, serviceId);
     // 2. vaga travada + re-validação da elegibilidade
@@ -290,6 +306,6 @@ export class LinkExistingVacancyUseCase {
     const fedFields = (Object.keys(plan.serviceFeed) as Array<keyof ServiceFeed>).map(
       (k) => FEED_KEY_TO_LINK_FIELD[k],
     );
-    return { vacancyId, serviceId, fedFields };
+    return { response: { vacancyId, serviceId, fedFields }, restoredFromBaja: restoredStatus !== null };
   }
 }
