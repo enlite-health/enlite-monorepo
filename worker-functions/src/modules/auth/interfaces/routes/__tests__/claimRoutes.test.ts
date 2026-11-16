@@ -9,7 +9,8 @@
 import type { Request, Response } from 'express';
 import request from 'supertest';
 import { appDeRota } from '@shared/__tests__/appDeRota';
-import { claimIpKey, createClaimRoutes } from '../claimRoutes';
+import { Router } from 'express';
+import { claimIpKey, createClaimRoutes, createWorkerInitOtpRateLimit, markOtpStarted } from '../claimRoutes';
 import type { ClaimController } from '../../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 
@@ -210,5 +211,50 @@ describe('createClaimRoutes — LIGAÇÃO real com IPv6 (mesmo /56 deve colapsar
     const bloqueado = await request(server).post('/api/auth/claim/confirm').set(BEARER).set('X-Forwarded-For', enderecos[5]).send({});
     expect(bloqueado.status).toBe(429);
     expect(controller.confirm).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DP-20: o `POST /api/workers/init` dispara SMS (`claim_pending`) — inclusive pelo e-mail da ficha
+ * com token não verificado, que qualquer um consegue. O limitador do init é o do claim/start
+ * (3 por IP em 15 min, mesma chave), contando só a resposta que abriu OTP (`markOtpStarted`).
+ * MORRE se o limitador sair, se a cota mudar ou se passar a contar o init sem SMS.
+ */
+describe('createWorkerInitOtpRateLimit — cota de OTP do init', () => {
+  const enviaOtp = jest.fn((req: Request, res: Response) => {
+    if (req.headers['x-teste-otp'] === '1') markOtpStarted(res); // como o controller faz no claim_pending
+    res.status(200).json({ m: 'init' });
+  });
+  const server = appDeRota('workerInitOtp', '/api', () => {
+    const r = Router();
+    r.post('/workers/init', createWorkerInitOtpRateLimit(), enviaOtp);
+    return r;
+  });
+  const init = (xff: string, otp: boolean) =>
+    request(server).post('/api/workers/init').set('X-Forwarded-For', xff).set('X-Teste-Otp', otp ? '1' : '0').send({});
+
+  afterEach(() => enviaOtp.mockClear());
+
+  it('3 inits que abriram OTP passam; a 4ª chamada é 429 e NÃO chega ao use case (sem novo envio)', async () => {
+    const xff = 'init-otp-bombardeio';
+    for (let i = 0; i < 3; i++) expect((await init(xff, true)).status).toBe(200);
+    enviaOtp.mockClear();
+    const bloqueado = await init(xff, true);
+    expect(bloqueado.status).toBe(429);
+    expect(bloqueado.body).toMatchObject({ success: false, error: expect.stringContaining('OTP') });
+    expect(enviaOtp).not.toHaveBeenCalled();
+  });
+
+  it('init SEM OTP (login, cadastro novo) não gasta a cota: 10 deles e ainda cabem 3 com OTP', async () => {
+    const xff = 'init-sem-otp';
+    for (let i = 0; i < 10; i++) expect((await init(xff, false)).status).toBe(200);
+    for (let i = 0; i < 3; i++) expect((await init(xff, true)).status).toBe(200);
+    expect((await init(xff, true)).status).toBe(429);
+  });
+
+  it('a chave é a do claim (claimIpKey): IPv6 do MESMO /56 dividem a cota', async () => {
+    const enderecos = ['2001:db8:7:1::1', '2001:db8:7:1::2', '2001:db8:7:1::3', '2001:db8:7:1::4'];
+    for (let i = 0; i < 3; i++) expect((await init(enderecos[i], true)).status).toBe(200);
+    expect((await init(enderecos[3], true)).status).toBe(429);
   });
 });

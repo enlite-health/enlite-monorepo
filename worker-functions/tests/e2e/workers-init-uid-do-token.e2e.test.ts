@@ -17,7 +17,9 @@
  *  (h) DP-20: ficha IMPORTADA com telefone + e-mail dela + email_verified=false → 200 claim_pending (OTP ao
  *      telefone da ficha, sid TEST_ do bypass, sem canal real), nada religado; o confirm do claim com o código
  *      entrega a ficha ao login (o caminho legítimo de quem não verificou o e-mail)
- *  (f)/(g)/(h) só no modo mock: é o token mock que escolhe o `email_verified`.
+ *  (i) DP-20: bombardeio de SMS pelo e-mail da ficha — 3 inits que abrem OTP passam, a 4ª do mesmo IP é 429
+ *      sem sid (rate limit da rota, o mesmo do claim/start)
+ *  (f)/(g)/(h)/(i) só no modo mock: é o token mock que escolhe o `email_verified`.
  */
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
@@ -181,5 +183,26 @@ describe('POST /api/workers/init — uid/email só do token (H2/D650)', () => {
     );
     expect(confirm.status).toBe(200);
     expect(await authUidOf(hId)).toBe(uidH);
+  });
+
+  itMock('(i) DP-20: a 4ª chamada do init que abriria OTP no mesmo IP → 429, sem sid (sem novo SMS)', async () => {
+    const emailI = `i-${stamp}@exemplo.test`;
+    const r = await pool.query(
+      `INSERT INTO workers (id, auth_uid, email, phone, status, country, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'INCOMPLETE_REGISTER', 'AR', NOW(), NOW()) RETURNING id`,
+      [`anacareimport_dp20i_${stamp}`, emailI, `54916${stamp.slice(-8)}`],
+    );
+    created.push(r.rows[0].id);
+    const token = await getMockToken(api, { uid: `uid-i-${stamp}`, email: emailI, role: 'worker', emailVerified: false });
+    const auth = { headers: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': `203.0.113.${Number(stamp.slice(-2)) + 100}` } };
+
+    for (let n = 0; n < 3; n++) {
+      const ok = await api.post('/api/workers/init', { country: 'AR' }, auth);
+      expect(ok.status).toBe(200);
+      expect(ok.data.data.status).toBe('claim_pending');
+    }
+    const bloqueado = await api.post('/api/workers/init', { country: 'AR' }, auth);
+    expect(bloqueado.status).toBe(429);
+    expect(JSON.stringify(bloqueado.data)).not.toContain('verificationSid');
   });
 });

@@ -276,6 +276,17 @@ describe('WorkerControllerV2', () => {
       expect(initSpy).toHaveBeenCalledWith(expect.objectContaining({ emailVerified: esperado }));
     });
 
+    it.each([
+      ['claim_pending (abriu OTP) → marca otpStarted', { status: 'claim_pending' as const, candidateWorkerId: 'c1', phoneMasked: '••••1243', verificationSid: 'VE1' }, true],
+      ['ok (sem OTP) → não marca', { status: 'ok' as const, worker: mockWorker }, undefined],
+    ])('DP-20 rate limit do init: %s', async (_c, saida, esperado) => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.fail('Worker not found'));
+      jest.spyOn(controller['initWorkerUseCase'], 'execute').mockResolvedValue(Result.ok(saida as never));
+      const [req, res] = mockReqRes({ country: 'AR' }, {}, { uid: AUTH_UID, email: WORKER_EMAIL, emailVerified: false });
+      await controller.initWorker(req, res);
+      expect((res as unknown as { locals?: { otpStarted?: boolean } }).locals?.otpStarted).toBe(esperado);
+    });
+
     it('use case recusa com EMAIL_NOT_VERIFIED → 400 com esse código (erro tratado, sem ficha)', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.fail('Worker not found'));

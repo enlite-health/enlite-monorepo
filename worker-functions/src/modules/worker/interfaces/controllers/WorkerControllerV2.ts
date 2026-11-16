@@ -16,6 +16,7 @@ import { QuizResponseRepository } from '../../infrastructure/QuizResponseReposit
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { markOtpStarted } from '@modules/auth/interfaces/routes/claimRoutes';
 import {
   sendPersonalInfoFailure,
   withMissingFields,
@@ -120,6 +121,7 @@ export class WorkerControllerV2 {
       // claim_pending: OTP foi disparado via Twilio Verify;
       // o frontend deve mostrar o ecrã de confirmação OTP antes de prosseguir.
       if (output.status === 'claim_pending') {
+        markOtpStarted(res); // conta na cota de OTP do init (rate limit da rota)
         res.status(200).json({
           success: true,
           data: {

@@ -168,7 +168,7 @@ import { AdmissionEventRepository } from '@modules/matching/infrastructure/Admis
 import { createAdmissionExternals } from '@modules/matching/infrastructure/admissionExternals';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
-import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
+import { createClaimRoutes, createWorkerInitOtpRateLimit } from '@modules/auth/interfaces/routes/claimRoutes';
 import { AccountLinkController } from '@modules/account-link/AccountLinkController';
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
@@ -342,7 +342,8 @@ createMockAuthEndpoints(app);
 // H2 (D650): exige token. Sem `publicContextMiddleware` de propósito: `requireAuth` carimba
 // `worker_self` (pool de runtime) — `workers` não tem RLS e `app_runtime` tem CRUD nela
 // (migrations 269), então o INSERT do 1º cadastro funciona; `public` seria o pool de sistema.
-app.post('/api/workers/init', routeClass('client-policy'), authMiddleware.requireAuth(), (req: Request, res: Response) => {
+// DP-20: o init dispara SMS (`claim_pending`); a cota de OTP do claim/start vale aqui também.
+app.post('/api/workers/init', routeClass('client-policy'), createWorkerInitOtpRateLimit(), authMiddleware.requireAuth(), (req: Request, res: Response) => {
   workerController.initWorker(req, res);
 });
 
