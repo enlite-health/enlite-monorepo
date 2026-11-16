@@ -25,6 +25,16 @@ interface MockAuthState {
   };
 }
 
+/** Link de verificação de e-mail: um lugar só (cadastro e reenvio, DP-20). */
+function emailVerificationSettings() {
+  return {
+    url: `${window.location.origin}/login?verified=true`,
+    handleCodeInApp: true,
+    iOS: { bundleId: 'com.enlite.app' },
+    android: { packageName: 'com.enlite.app', installApp: false, minimumVersion: '1' },
+  };
+}
+
 export class FirebaseAuthService {
   private readonly googleProvider: GoogleAuthProvider;
 
@@ -97,21 +107,7 @@ export class FirebaseAuthService {
     const credential = await createUserWithEmailAndPassword(auth, email, password);
     
     // Send verification email with actionCodeSettings for Identity Platform
-    const actionCodeSettings = {
-      url: `${window.location.origin}/login?verified=true`,
-      handleCodeInApp: true,
-      // iOS and Android settings (optional, but helps with delivery)
-      iOS: {
-        bundleId: 'com.enlite.app'
-      },
-      android: {
-        packageName: 'com.enlite.app',
-        installApp: false,
-        minimumVersion: '1'
-      },
-      // Dynamic link domain (if you have one configured)
-      // dynamicLinkDomain: 'enlite.page.link'
-    };
+    const actionCodeSettings = emailVerificationSettings();
     
     try {
       await sendEmailVerification(credential.user, actionCodeSettings);
@@ -295,6 +291,25 @@ export class FirebaseAuthService {
         }
       });
     });
+  }
+
+  /** Reenvia o link de verificação ao e-mail da sessão (DP-20: o init não religa sem `email_verified`). */
+  async resendEmailVerification(): Promise<void> {
+    const currentUser = getFirebaseAuth().currentUser;
+    if (!currentUser) throw new Error('No authenticated user');
+    await sendEmailVerification(currentUser, emailVerificationSettings());
+  }
+
+  /**
+   * Depois de clicar no link: recarrega a conta e força um token novo, que é o que leva
+   * `email_verified=true` ao backend. Devolve se o e-mail já está verificado.
+   */
+  async reloadAndRefreshToken(): Promise<boolean> {
+    const currentUser = getFirebaseAuth().currentUser;
+    if (!currentUser) return false;
+    await currentUser.reload();
+    await getIdToken(currentUser, true);
+    return currentUser.emailVerified;
   }
 
   async forceRefreshToken(): Promise<string | null> {

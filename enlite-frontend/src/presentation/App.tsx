@@ -17,6 +17,8 @@ import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
 import { AdminLoginRedirect } from './components/features/admin/AdminLoginRedirect';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { NoAccessPage } from './pages/NoAccessPage';
+import { WorkerAccountCheckPage } from './pages/WorkerAccountCheckPage';
+import { WORKER_ACCOUNT_CHECK_ROUTE } from './utils/workerInitOutcome';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
 import { AccessPage, AreaMembershipsPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
@@ -144,6 +146,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/no-access" element={<NoAccessPage />} />
+        <Route path={WORKER_ACCOUNT_CHECK_ROUTE} element={<WorkerAccountCheckPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/complete-whatsapp" element={<CompleteWhatsappPage />} />
         <Route path="/auth/action" element={<AuthActionPage />} />

@@ -196,6 +196,23 @@
       "errorInvalid": "El código ingresado es incorrecto. Verificá e intentá de nuevo.",
       "errorExpired": "El código expiró. Volvé a intentar el registro para recibir uno nuevo.",
       "errorNotFound": "No pudimos encontrar tu ficha. Continuá con la creación de cuenta nueva."
+    },
+    "emailNotVerified": {
+      "title": "Revisá tu correo",
+      "body": "Ya existe una ficha con {{email}}. Para recuperarla, confirmá que el correo es tuyo: abrí el enlace que te enviamos y después tocá \"Ya verifiqué\".",
+      "checkButton": "Ya verifiqué",
+      "resendButton": "Reenviar enlace",
+      "resent": "Te enviamos un nuevo enlace. Revisá también la carpeta de spam.",
+      "resendError": "No pudimos reenviar el enlace. Intentá de nuevo en unos minutos.",
+      "stillNotVerified": "Todavía no vemos el correo verificado. Abrí el enlace y volvé a intentar."
+    },
+    "rateLimited": {
+      "title": "Esperá unos minutos",
+      "body": "Pediste varios códigos en poco tiempo. Esperá unos minutos y volvé a intentar.",
+      "retryButton": "Volver a intentar"
+    },
+    "checkPage": {
+      "loading": "Cargando…"
     }
   },
   "accountLink": {

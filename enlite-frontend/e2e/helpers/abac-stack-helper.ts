@@ -24,6 +24,8 @@ export interface MockUser {
   email: string;
   role: string;
   country: string;
+  /** Vai no token `mock_*` (DP-20). Ausente = login verificado; `false` = conta e-mail/senha sem verificar. */
+  email_verified?: boolean;
 }
 
 export function psql(sql: string): string {
