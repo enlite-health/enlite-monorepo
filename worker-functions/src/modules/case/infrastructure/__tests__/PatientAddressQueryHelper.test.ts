@@ -129,6 +129,40 @@ describe('insertPatientAddress', () => {
     expect(ins.params[5]).toBeNull();
   });
 
+  describe('T-F0b-45 qualidade do geocode (D718)', () => {
+    const geocoderCom = (geo: Record<string, unknown> | null): GeocodingService =>
+      ({ geocode: jest.fn(async () => geo) }) as unknown as GeocodingService;
+    const insercao = async (geocoder: GeocodingService) => {
+      const { client, chamadas } = cliente({ hasDefault: true });
+      await insertPatientAddress(fakePool(client), geocoder, baseInput());
+      return chamadas.find((c) => /^INSERT INTO patient_addresses/.test(c.sql))!;
+    };
+
+    it('T-F0b-45 ROOFTOP sem partial_match: grava a qualidade, o partial_match e o instante do geocode', async () => {
+      const ins = await insercao(geocoderCom({ latitude: -34.6, longitude: -58.4, locationType: 'ROOFTOP', partialMatch: false }));
+      expect(ins.sql).toMatch(/geocode_quality, geocode_partial_match, geocoded_at\)/);
+      expect(ins.params.slice(10, 12)).toEqual(['ROOFTOP', false]);
+      expect(ins.params[12]).toBeInstanceOf(Date);
+    });
+
+    it('T-F0b-45 aproximado com partial_match: grava o que o Google disse (a confiabilidade é derivada, nunca gravada)', async () => {
+      const ins = await insercao(geocoderCom({ latitude: -34.6, longitude: -58.4, locationType: 'APPROXIMATE', partialMatch: true }));
+      expect(ins.params.slice(10, 12)).toEqual(['APPROXIMATE', true]);
+    });
+
+    it('T-F0b-45 geocoder sem location_type: UNKNOWN e partial_match false (respondeu e não classificou, ≠ NULL)', async () => {
+      const ins = await insercao(geocoderCom({ latitude: -34.6, longitude: -58.4 }));
+      expect(ins.params.slice(10, 12)).toEqual(['UNKNOWN', false]);
+      expect(ins.params[12]).toBeInstanceOf(Date);
+    });
+
+    it('T-F0b-45 geocode sem resultado: lat, lng e a qualidade ficam NULL (ainda não classificado)', async () => {
+      const ins = await insercao(geocoderCom(null));
+      expect(ins.params.slice(4, 6)).toEqual([null, null]);
+      expect(ins.params.slice(10, 13)).toEqual([null, null, null]);
+    });
+  });
+
   it('erro no INSERT propaga e desfaz a transação (ROLLBACK) — withActorContext quem cuida', async () => {
     const boom = new Error('constraint violation');
     const { client, chamadas } = cliente({ hasDefault: true, insertRejects: boom });

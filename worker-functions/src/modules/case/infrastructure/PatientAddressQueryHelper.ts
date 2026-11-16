@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
 import type { GeocodingService } from '../../../infrastructure/services/GeocodingService';
+import type { GeocodeLocationType } from '../domain/geocodeQuality';
 
 /**
  * PatientAddressQueryHelper — a PERSISTÊNCIA dos endereços de um paciente pelo caminho do
@@ -81,11 +82,18 @@ export async function insertPatientAddress(
   // backfill job recovers later.
   let lat: number | null = null;
   let lng: number | null = null;
+  // D718/spec 077: a qualidade do geocode vai junto da coordenada (NULL = ainda não classificado, migration 582).
+  let geocodeQuality: GeocodeLocationType | null = null;
+  let geocodePartialMatch: boolean | null = null;
+  let geocodedAt: Date | null = null;
   try {
     const geo = await geocoder.geocode(input.addressFormatted);
     if (geo) {
       lat = geo.latitude;
       lng = geo.longitude;
+      geocodeQuality = geo.locationType ?? 'UNKNOWN';
+      geocodePartialMatch = geo.partialMatch ?? false;
+      geocodedAt = new Date();
     }
   } catch {
     // best-effort
@@ -118,14 +126,16 @@ export async function insertPatientAddress(
     const result = await client.query<CreatedPatientAddress>(
       `INSERT INTO patient_addresses
          (patient_id, address_formatted, address_raw, display_order, source, lat, lng,
-          neighborhood, logistics_corridor, access_notes, country, is_default)
+          neighborhood, logistics_corridor, access_notes, country, is_default,
+            geocode_quality, geocode_partial_match, geocoded_at)
        VALUES ($1, $2, $3,
          COALESCE($4, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1 AND archived_at IS NULL)),
          'admin_manual', $5, $6, $7, $8, $9,
-         (SELECT country FROM patients WHERE id = $1), $10)
+         (SELECT country FROM patients WHERE id = $1), $10, $11, $12, $13)
        RETURNING id, patient_id, address_formatted, address_raw, is_default`,
       [input.patientId, input.addressFormatted, input.addressRaw, input.displayOrder, lat, lng,
-        input.neighborhood, input.logisticsCorridor, input.accessNotes, isDefault],
+        input.neighborhood, input.logisticsCorridor, input.accessNotes, isDefault,
+        geocodeQuality, geocodePartialMatch, geocodedAt],
     );
 
     return result.rows[0];
