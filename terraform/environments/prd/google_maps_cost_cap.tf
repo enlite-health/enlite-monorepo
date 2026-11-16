@@ -50,7 +50,18 @@ resource "google_service_usage_consumer_quota_override" "maps_cap" {
   force          = true
 }
 
-# Orçamento: alerta por e-mail ao gastar US$ 30 no mês (D703). Só ALERTA, não corta o gasto.
+# Orçamento: alerta por e-mail ao gastar US$ 30 no mês SÓ em Google Maps Platform (D703). Só ALERTA, não corta o gasto.
+# O filtro é por serviço de faturamento (sem ele o orçamento cobriria o projeto inteiro, ~US$ 230/mês, e dispararia todo mês).
+# IDs lidos em 16/11/2026 do export (bq, enlite-prd.billing_export.gcp_billing_export_v1_*, colunas service.id x service.description).
+locals {
+  maps_billing_service_ids = [
+    "services/213C-9623-1402", # Places API
+    "services/0776-5E2E-55E3", # Places API (New)
+    "services/0AC2-4B25-C429", # Geocoding API
+    "services/1934-AA85-20F9", # Maps API (SKU "Dynamic Maps" = Maps JavaScript API)
+  ]
+}
+
 # Conta de faturamento: 01994D-5E747D-F222E1 (sufixo das tabelas gcp_billing_export_v1_* do dataset billing_export, spec 082).
 # Canal: o mesmo dos alertas de prd (events_notification_channel = e-mail "Gabriel Stein (Urgente)").
 # billingbudgets.googleapis.com está DESLIGADA em enlite-prd (ver nota R-28 em admission.tf): este bloco a liga.
@@ -78,11 +89,12 @@ data "google_project" "this" {
 
 resource "google_billing_budget" "projeto_mensal" {
   billing_account = var.maps_budget_billing_account
-  display_name    = "enlite-prd: teto mensal US$ ${var.maps_budget_usd_per_month} (Google Maps, D703)"
+  display_name    = "enlite-prd: alerta de gasto do Google Maps Platform (Places, Geocoding, Maps) acima de US$ ${var.maps_budget_usd_per_month}/mês (D703)"
 
   budget_filter {
     projects               = ["projects/${data.google_project.this.number}"]
     calendar_period        = "MONTH"
+    services               = local.maps_billing_service_ids
     credit_types_treatment = "INCLUDE_ALL_CREDITS"
   }
 
