@@ -7,6 +7,7 @@ import { Worker } from './Worker';
  *   status: 'claim_pending' — phone bateu em ficha importada; OTP foi disparado via
  *                            Twilio Verify; claim deve ser confirmado antes de qualquer
  *                            operação no banco.
+ *   status: 'not_registered' — chamada do app (canal app) sem ficha: nada foi criado (D734).
  */
 export type InitWorkerOutput =
   | { status: 'ok'; worker: Worker }
@@ -15,4 +16,5 @@ export type InitWorkerOutput =
       candidateWorkerId: string;
       phoneMasked: string;
       verificationSid: string;
-    };
+    }
+  | { status: 'not_registered' };

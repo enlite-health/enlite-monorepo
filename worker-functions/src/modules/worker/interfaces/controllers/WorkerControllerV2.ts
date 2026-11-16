@@ -2,6 +2,12 @@ import { Request, Response } from 'express';
 import { selfUid } from '@shared/http/selfUid';
 import { Pool } from 'pg';
 import { InitWorkerUseCase } from '../../application/InitWorkerUseCase';
+import { ProvisionCountryClaimUseCase } from '../../application/ProvisionCountryClaimUseCase';
+import { createCountryClaim } from '../../infrastructure/createCountryClaim';
+import type { ICountryClaimPort } from '../../ports/ICountryClaimPort';
+import { accountCountryOf } from '../../domain/accountCountry';
+import { APP_CHANNEL } from '../../domain/profileEditSource';
+import type { AccountTyped } from '@modules/identity/domain/AccountType';
 import { SaveQuizResponsesUseCase } from '../../application/SaveQuizResponsesUseCase';
 import { SavePersonalInfoUseCase } from '../../application/SavePersonalInfoUseCase';
 import { SaveServiceAreaUseCase } from '../../application/SaveServiceAreaUseCase';
@@ -28,6 +34,7 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 
 export class WorkerControllerV2 {
   private initWorkerUseCase: InitWorkerUseCase;
+  private provisionCountryClaim: ProvisionCountryClaimUseCase;
   private saveQuizUseCase: SaveQuizResponsesUseCase;
   private savePersonalInfoUseCase: SavePersonalInfoUseCase;
   private saveServiceAreaUseCase: SaveServiceAreaUseCase;
@@ -36,7 +43,7 @@ export class WorkerControllerV2 {
   private getProgressUseCase: GetWorkerProgressUseCase;
   private lookupWorkerByEmailUseCase: LookupWorkerByEmailUseCase;
 
-  constructor() {
+  constructor(countryClaim: ICountryClaimPort = createCountryClaim()) {
     const pubsub = new PubSubClient();
     const workerRepository = new WorkerRepository(pubsub);
     const quizRepository = new QuizResponseRepository();
@@ -45,6 +52,7 @@ export class WorkerControllerV2 {
 
     const twilioVerifyService = new TwilioVerifyService();
     this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, twilioVerifyService);
+    this.provisionCountryClaim = new ProvisionCountryClaimUseCase(countryClaim);
     this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository);
     this.savePersonalInfoUseCase = new SavePersonalInfoUseCase(workerRepository, undefined, pubsub);
     this.saveServiceAreaUseCase = new SaveServiceAreaUseCase(workerRepository, serviceAreaRepository);
@@ -59,7 +67,7 @@ export class WorkerControllerV2 {
       // H2 (D650): identidade SÓ do token. `authUid`/`email` do body nunca decidem
       // quem é o prestador — antes, qualquer um sem login lia a ficha de um uid,
       // trocava o auth_uid de uma ficha pelo e-mail e disparava OTP ao telefone dela.
-      const tokenUser = (req as Request & { user?: { uid?: string; email?: string; emailVerified?: boolean } }).user;
+      const tokenUser = (req as Request & { user?: { uid?: string; email?: string; emailVerified?: boolean } & AccountTyped }).user;
       const authUid = tokenUser?.uid;
       const email = tokenUser?.email;
       // DP-20: posse do e-mail SÓ do token verificado; `emailVerified` no body é ignorado.
@@ -85,9 +93,13 @@ export class WorkerControllerV2 {
         return;
       }
 
+      // D731: o claim `country` sai da ficha lida do banco (`workers.country`), nunca do corpo.
+      const principal: AccountTyped = { accountType: tokenUser?.accountType, roles: tokenUser?.roles };
+
       // Check if worker already exists — if so, return existing record
       const existingResult = await this.getProgressUseCase.execute(authUid);
       if (!existingResult.isFailure) {
+        await this.provisionCountryClaim.execute({ uid: authUid, principal, country: existingResult.getValue().country });
         res.status(200).json({
           success: true,
           data: {
@@ -105,7 +117,10 @@ export class WorkerControllerV2 {
         phone: phone || undefined,
         whatsappPhone: whatsappPhone || undefined,
         lgpdOptIn: lgpdOptIn === true,
-        country: country || 'AR',
+        // D733: a região do navegador/aparelho só vale na criação, mapeada a AR|BR (resto → AR).
+        country: accountCountryOf(country),
+        // D734: o init pelo app (token de serviço da mobile-bff-sa, `appChannel`) nunca cria ficha.
+        allowCreate: profileEditChannelOf(res) !== APP_CHANNEL,
       });
 
       if (result.isFailure) {
@@ -117,6 +132,12 @@ export class WorkerControllerV2 {
       }
 
       const output = result.getValue();
+
+      if (output.status === 'not_registered') {
+        // `code` é o que o BFF traduz (wf-error-mapper.ts, C-30); o texto não sai de lá.
+        res.status(404).json({ success: false, error: 'Worker not registered', code: 'WORKER_NOT_REGISTERED' });
+        return;
+      }
 
       // claim_pending: OTP foi disparado via Twilio Verify;
       // o frontend deve mostrar o ecrã de confirmação OTP antes de prosseguir.
@@ -134,6 +155,7 @@ export class WorkerControllerV2 {
         return;
       }
 
+      await this.provisionCountryClaim.execute({ uid: authUid, principal, country: output.worker.country });
       res.status(201).json({
         success: true,
         data: {

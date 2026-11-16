@@ -15,6 +15,8 @@ import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyS
  */
 export interface InitWorkerInput extends CreateWorkerDTO {
   emailVerified: boolean;
+  /** `false` (canal app, D734): só acha ou religa a ficha; sem ficha devolve `not_registered`, nada é criado. */
+  allowCreate?: boolean;
 }
 
 /** Ficha com este e-mail é de outro login e o token não prova posse do e-mail (DP-20). */
@@ -103,6 +105,10 @@ export class InitWorkerUseCase {
           return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput);
         }
       }
+    }
+
+    if (data.allowCreate === false) {
+      return Result.ok<InitWorkerOutput>({ status: 'not_registered' });
     }
 
     const createResult = await this.workerRepository.create({

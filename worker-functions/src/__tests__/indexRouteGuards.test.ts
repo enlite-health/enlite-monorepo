@@ -44,3 +44,8 @@ describe('canal app nas escritas do perfil (spec 077)', () => {
     expect(linha("app.get('/api/workers/me/availability'")).not.toContain('appChannel(');
   });
 });
+
+describe('init com canal app (spec 077 D734)', () => {
+  it('T-F0b-42 POST /api/workers/init passa por appChannel() depois do requireAuth', () =>
+    expect(linha("app.post('/api/workers/init'")).toContain('authMiddleware.requireAuth(), appChannel(), (req: Request, res: Response) => {'));
+});

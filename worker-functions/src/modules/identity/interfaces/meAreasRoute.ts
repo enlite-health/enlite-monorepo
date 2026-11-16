@@ -19,6 +19,7 @@ import * as admin from 'firebase-admin';
 import { Router, type Request, type RequestHandler } from 'express';
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
+import { withTimeout } from '@shared/utils/withTimeout';
 import { routeClass } from '../permissions/infrastructure/catalog/routeClass';
 import { ListPersonAreasUseCase } from '../application/ListPersonAreasUseCase';
 import { PgAreaRegistryRepository } from '../infrastructure/PgAreaRegistryRepository';
@@ -27,14 +28,6 @@ import { applyAreasClaims, planAreasClaims, type AreasClaim } from '../infrastru
 
 /** Orçamento da reconciliação do claim dentro da resposta (o login espera por ela). */
 export const RECONCILE_TIMEOUT_MS = 3_000;
-
-function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`reconciliação passou de ${ms} ms`)), ms);
-  });
-  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
-}
 
 function sameAreas(a: unknown, b: AreasClaim): boolean {
   if (!a || typeof a !== 'object') return false;
@@ -82,7 +75,7 @@ export function createMeAreasRouter(requireAuth: RequestHandler, pool: Pool): Ro
       if (listed.isFailure) throw new Error(listed.error as string);
       let tokenRefreshRequired = false;
       try {
-        tokenRefreshRequired = await withTimeout(reconcile(uid, pid), RECONCILE_TIMEOUT_MS);
+        tokenRefreshRequired = await withTimeout(reconcile(uid, pid), RECONCILE_TIMEOUT_MS, 'reconciliação');
       } catch (error) {
         logger.error({ err: error }, '[me/areas] reconciliação do claim falhou; a lista segue correta');
       }
