@@ -45,7 +45,9 @@ describe('init grava o claim country da ficha (D731/D733/D734)', () => {
     })) as never);
     const { WorkerControllerV2 } = await import('../../src/modules/worker/interfaces/controllers/WorkerControllerV2');
     const { appChannel } = await import('../../src/modules/worker/interfaces/middleware/appChannel');
-    const controller = new WorkerControllerV2();
+    const { FirebaseCountryClaim } = await import('../../src/modules/worker/infrastructure/FirebaseCountryClaim');
+    // O adapter REAL do claim contra o dublê do Firebase: o default de USE_MOCK_AUTH seria o fake em memória.
+    const controller = new WorkerControllerV2(new FirebaseCountryClaim());
     const gate = (req: any, res: any, next: any) => {
       const m = /^Bearer mock_(.+)$/.exec(req.headers.authorization ?? '');
       if (!m) return res.status(401).json({ success: false });

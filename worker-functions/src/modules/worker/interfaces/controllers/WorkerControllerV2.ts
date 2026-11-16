@@ -3,7 +3,8 @@ import { selfUid } from '@shared/http/selfUid';
 import { Pool } from 'pg';
 import { InitWorkerUseCase } from '../../application/InitWorkerUseCase';
 import { ProvisionCountryClaimUseCase } from '../../application/ProvisionCountryClaimUseCase';
-import { FirebaseCountryClaim } from '../../infrastructure/FirebaseCountryClaim';
+import { createCountryClaim } from '../../infrastructure/createCountryClaim';
+import type { ICountryClaimPort } from '../../ports/ICountryClaimPort';
 import { accountCountryOf } from '../../domain/accountCountry';
 import { APP_CHANNEL } from '../../domain/profileEditSource';
 import type { AccountTyped } from '@modules/identity/domain/AccountType';
@@ -42,7 +43,7 @@ export class WorkerControllerV2 {
   private getProgressUseCase: GetWorkerProgressUseCase;
   private lookupWorkerByEmailUseCase: LookupWorkerByEmailUseCase;
 
-  constructor() {
+  constructor(countryClaim: ICountryClaimPort = createCountryClaim()) {
     const pubsub = new PubSubClient();
     const workerRepository = new WorkerRepository(pubsub);
     const quizRepository = new QuizResponseRepository();
@@ -51,7 +52,7 @@ export class WorkerControllerV2 {
 
     const twilioVerifyService = new TwilioVerifyService();
     this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, twilioVerifyService);
-    this.provisionCountryClaim = new ProvisionCountryClaimUseCase(new FirebaseCountryClaim());
+    this.provisionCountryClaim = new ProvisionCountryClaimUseCase(countryClaim);
     this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository);
     this.savePersonalInfoUseCase = new SavePersonalInfoUseCase(workerRepository, undefined, pubsub);
     this.saveServiceAreaUseCase = new SaveServiceAreaUseCase(workerRepository, serviceAreaRepository);
