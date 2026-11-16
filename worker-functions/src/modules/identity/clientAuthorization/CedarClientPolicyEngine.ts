@@ -2,6 +2,9 @@ import * as cedar from '@cedar-policy/cedar-wasm/nodejs';
 import { IAuthorizationEngine } from '../ports/IAuthorizationEngine';
 import { AuthContext, AccessDecision } from '../domain/Auth';
 
+/** Motivo do deny quando não há recurso a autorizar (ausência, não falha). */
+export const NO_RESOURCE_REASON = 'Negado (sem recurso)';
+
 type Resource = { type: string; id?: string; attrs?: Record<string, unknown> };
 
 /** Pedido já resolvido para o vocabulário Cedar (quem monta é o `ClientEntityLoader`, T205). */
@@ -12,9 +15,12 @@ export interface CedarRequest {
   entities: unknown[];
 }
 
-/** Monta principal/recurso/entidades a partir do token + recurso. Erro aqui = deny (fail-closed). */
+/**
+ * Monta principal/recurso/entidades a partir do token + recurso. Erro aqui = deny (fail-closed, `engine_error`).
+ * `null` = AUSÊNCIA explícita de recurso (ex.: pessoa sem ficha de prestador): deny por política, não erro do motor.
+ */
 export interface ClientEntityProvider {
-  load(context: AuthContext, resource: Resource, action: string): Promise<CedarRequest>;
+  load(context: AuthContext, resource: Resource, action: string): Promise<CedarRequest | null>;
 }
 
 export interface CedarClientPolicyEngineOptions {
@@ -66,6 +72,7 @@ export class CedarClientPolicyEngine implements IAuthorizationEngine {
   ): Promise<AccessDecision> {
     try {
       const req = await this.provider.load(context, resource, action);
+      if (!req) return this.deny(NO_RESOURCE_REASON);
       const ans = cedar.isAuthorized({
         principal: req.principal,
         action: { type: 'Action', id: action },
