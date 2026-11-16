@@ -6,8 +6,10 @@
 # Fontes dos nomes (lidos em 16/11/2026, só leitura, como tf-admin):
 #   gcloud alpha services quota list --service=places.googleapis.com --consumer=projects/enlite-prd
 #   gcloud alpha services quota list --service=geocoding-backend.googleapis.com --consumer=projects/enlite-prd
-# Recurso: google_service_usage_consumer_quota_override (metric/limit vão URL-encoded: "/" -> %2F, "{project}" -> %7Bproject%7D).
+# Recurso: google_service_usage_consumer_quota_override (metric/limit vão URL-encoded: "/" -> %2F).
 # Só entram as métricas cujo limite efetivo hoje é MAIOR que o teto (as que já valem 600/min não são tocadas).
+# O limit é o ID do limite no Service Usage ("/min/project", sem chaves; o "{project}" só aparece no campo unit do gcloud).
+# Verificado por GET em consumerQuotaMetrics/<metric>/limits/<id> (200) em 16/11/2026.
 # `force = true` porque o Service Usage recusa reduzir cota em mais de 10% sem ele.
 # Reverter = remover o override (volta ao default do Google).
 
@@ -18,34 +20,34 @@ locals {
   # métrica -> unidades a limitar. Limite efetivo atual entre parênteses.
   maps_quota_caps = {
     # Places API (New), service places.googleapis.com
-    "places-autocomplete-min"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FAutocompletePlacesRequest", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min } # 12000
-    "places-autocomplete-dia"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FAutocompletePlacesRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }   # 175000
-    "places-getplace-dia"      = { service = "places.googleapis.com", metric = "places.googleapis.com%2FGetPlaceRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }             # 125000
-    "places-searchtext-dia"    = { service = "places.googleapis.com", metric = "places.googleapis.com%2FSearchTextRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }           # 75000
-    "places-searchnearby-dia"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FSearchNearbyRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }         # 75000
-    "places-getphotomedia-dia" = { service = "places.googleapis.com", metric = "places.googleapis.com%2FGetPhotoMediaRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }        # 175000
+    "places-autocomplete-min"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FAutocompletePlacesRequest", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min } # 12000
+    "places-autocomplete-dia"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FAutocompletePlacesRequest", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }   # 175000
+    "places-getplace-dia"      = { service = "places.googleapis.com", metric = "places.googleapis.com%2FGetPlaceRequest", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }             # 125000
+    "places-searchtext-dia"    = { service = "places.googleapis.com", metric = "places.googleapis.com%2FSearchTextRequest", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }           # 75000
+    "places-searchnearby-dia"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FSearchNearbyRequest", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }         # 75000
+    "places-getphotomedia-dia" = { service = "places.googleapis.com", metric = "places.googleapis.com%2FGetPhotoMediaRequest", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }        # 175000
 
     # Geocoding, service geocoding-backend.googleapis.com
     # billable_default = o que a Geocoding API (maps/api/geocode, usada pelo worker-functions) cobra; v4/* = Geocoding API nova.
-    "geocoding-billable-min" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }               # 3000
-    "geocoding-billable-dia" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }                 # ilimitado
-    "geocoding-v4-addr-min"  = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_address_requests", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }  # 1500
-    "geocoding-v4-addr-dia"  = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_address_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }    # ilimitado
-    "geocoding-v4-loc-min"   = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_location_requests", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min } # 1500
-    "geocoding-v4-loc-dia"   = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_location_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }   # ilimitado
-    "geocoding-v4-place-min" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }    # 1500
-    "geocoding-v4-place-dia" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }      # ilimitado
+    "geocoding-billable-min" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min }               # 3000
+    "geocoding-billable-dia" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }                 # ilimitado
+    "geocoding-v4-addr-min"  = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_address_requests", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min }  # 1500
+    "geocoding-v4-addr-dia"  = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_address_requests", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }    # ilimitado
+    "geocoding-v4-loc-min"   = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_location_requests", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min } # 1500
+    "geocoding-v4-loc-dia"   = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_location_requests", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }   # ilimitado
+    "geocoding-v4-place-min" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min }    # 1500
+    "geocoding-v4-place-dia" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }      # ilimitado
 
     # APIs LEGADAS usadas pelo admin (Maps JavaScript + autocomplete/Details do Places legado). Pico de 30 dias medido em 16/11/2026
     # (Monitoring, serviceruntime.googleapis.com/quota/rate/net_usage, alinhado a 60s e 86400s):
     #   places-backend billable_default: 68/min, 677/dia · maps-backend billable_default: 49/min, 348/dia · 3d_billable_default: sem uso.
     # Teto = max(600/min e 20.000/dia da D703, 3x o pico) = 600/min e 20.000/dia, bem acima do pico.
-    "places-legacy-min" = { service = "places-backend.googleapis.com", metric = "places-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min } # 6000
-    "places-legacy-dia" = { service = "places-backend.googleapis.com", metric = "places-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }   # ilimitado
-    "maps-js-min"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }     # 30000
-    "maps-js-dia"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }       # ilimitado
-    "maps-3d-min"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2F3d_billable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }  # 30000
-    "maps-3d-dia"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2F3d_billable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }    # ilimitado
+    "places-legacy-min" = { service = "places-backend.googleapis.com", metric = "places-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min } # 6000
+    "places-legacy-dia" = { service = "places-backend.googleapis.com", metric = "places-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }   # ilimitado
+    "maps-js-min"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min }     # 30000
+    "maps-js-dia"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }       # ilimitado
+    "maps-3d-min"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2F3d_billable_default", limit = "%2Fmin%2Fproject", value = local.maps_cap_per_min }  # 30000
+    "maps-3d-dia"       = { service = "maps-backend.googleapis.com", metric = "maps-backend.googleapis.com%2F3d_billable_default", limit = "%2Fd%2Fproject", value = local.maps_cap_per_day }    # ilimitado
   }
 }
 
@@ -100,7 +102,8 @@ data "google_project" "this" {
 
 resource "google_billing_budget" "projeto_mensal" {
   billing_account = var.maps_budget_billing_account
-  display_name    = "enlite-prd: alerta de gasto do Google Maps Platform (Places, Geocoding, Maps) acima de US$ ${var.maps_budget_usd_per_month}/mês (D703)"
+  # máx. 60 caracteres (limite da API)
+  display_name = "enlite-prd: gasto Google Maps > US$ ${var.maps_budget_usd_per_month}/mês (D703)"
 
   budget_filter {
     projects               = ["projects/${data.google_project.this.number}"]
