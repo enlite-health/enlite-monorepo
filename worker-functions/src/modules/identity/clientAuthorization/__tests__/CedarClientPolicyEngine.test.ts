@@ -61,7 +61,7 @@ describe('CedarClientPolicyEngine', () => {
     const other: ClientEntityProvider = {
       async load(...a) {
         const r = await provider.load(...a);
-        (r.entities[1] as any).attrs.owner = {
+        (r!.entities[1] as any).attrs.owner = {
           __entity: { type: 'Person', id: '00000000-0000-4000-8000-000000000002' },
         };
         return r;
@@ -75,6 +75,8 @@ describe('CedarClientPolicyEngine', () => {
     const boom: ClientEntityProvider = { load: async () => { throw new Error('x'); } };
     const d = await build(PERMIT, boom).checkPermission(ctx, res, 'ReadOwnWorkerProfile');
     expect(d.allowed).toBe(false);
+    expect(d.reason).toBe('engine_error'); // erro REAL do motor continua engine_error
+    expect(d.reason).toBe('engine_error'); // erro REAL do motor continua engine_error
   });
 
   it('schema que não valida: falha cedo', () => {
