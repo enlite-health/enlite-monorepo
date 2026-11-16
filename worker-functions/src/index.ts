@@ -342,8 +342,9 @@ createMockAuthEndpoints(app);
 // H2 (D650): exige token. Sem `publicContextMiddleware` de propósito: `requireAuth` carimba
 // `worker_self` (pool de runtime) — `workers` não tem RLS e `app_runtime` tem CRUD nela
 // (migrations 269), então o INSERT do 1º cadastro funciona; `public` seria o pool de sistema.
-// DP-20: o init dispara SMS (`claim_pending`); a cota de OTP do claim/start vale aqui também.
-app.post('/api/workers/init', routeClass('client-policy'), createWorkerInitOtpRateLimit(), authMiddleware.requireAuth(), appChannel(), (req: Request, res: Response) => {
+// DP-20: o init dispara SMS (`claim_pending`); a cota de OTP (3/15min) vale aqui também, DEPOIS de
+// requireAuth+appChannel: a chave é o uid no canal app e o IP na web (`initOtpKey`).
+app.post('/api/workers/init', routeClass('client-policy'), authMiddleware.requireAuth(), appChannel(), createWorkerInitOtpRateLimit(), (req: Request, res: Response) => {
   workerController.initWorker(req, res);
 });
 
