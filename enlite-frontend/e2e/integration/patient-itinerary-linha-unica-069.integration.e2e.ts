@@ -132,10 +132,14 @@ test.describe('patient-itinerary-linha-unica-069: nomes e labels longos não que
         await expect(page.locator('[data-testid="sustituciones-dia"]').first()).toBeVisible();
         const sust = await expectLinhaUnica(page, 'Sustituciones', 20);
         expect(sust.truncados, 'Sustituciones: nome longo cortado de verdade').toBeGreaterThan(0);
-        // O nome de 44 caracteres aparece com largura útil (coluna "Cambio" empilhada): ≥ 280 px, e o chip "salvo …" existe e não é cortado.
-        const nomeDeQuemSai = page.locator('[data-testid$="-sale"] [data-single-line]').first();
-        const caixa = await nomeDeQuemSai.boundingBox();
-        expect(caixa?.width ?? 0, `Sustituciones ${largura}×${altura}: largura do nome de quem sai`).toBeGreaterThanOrEqual(280);
+        // O nome de 44 caracteres aparece com largura útil (coluna "Cambio" empilhada): ocupa ≥ 45% da linha "Sale" (a largura da coluna), e o chip "salvo …" existe e não é cortado.
+        // RELATIVO de propósito: a coluna "Cuándo" é `max-content` e o rótulo do período muda de largura conforme `desde..desde+11` cruze o mês (a data é a de hoje),
+        // então um piso fixo em px (era 280) falha por calendário, não por layout. A razão pega o que o teste quer provar: o nome NÃO é espremido.
+        const linhaSale = page.locator('[data-testid$="-sale"]').first();
+        const nomeDeQuemSai = linhaSale.locator('[data-single-line]').first();
+        const [caixa, caixaLinha] = [await nomeDeQuemSai.boundingBox(), await linhaSale.boundingBox()];
+        const razao = (caixa?.width ?? 0) / (caixaLinha?.width ?? Number.POSITIVE_INFINITY);
+        expect(razao, `Sustituciones ${largura}×${altura}: nome ${caixa?.width}px de uma linha Sale de ${caixaLinha?.width}px`).toBeGreaterThanOrEqual(0.45);
         await expect(page.locator('[data-testid$="-salvo"][data-info-label]')).toHaveCount(1);
         await imprimir(page, 'sustituciones-nomes-longos', largura, 'itinerario-aba');
 
