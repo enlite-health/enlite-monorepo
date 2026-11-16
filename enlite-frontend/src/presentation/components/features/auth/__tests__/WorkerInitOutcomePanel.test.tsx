@@ -20,7 +20,7 @@ import { WorkerInitOutcomePanel } from '../WorkerInitOutcomePanel';
 const handlers = () => ({ onResolved: vi.fn(), onRetry: vi.fn(), onCancel: vi.fn() });
 
 describe('WorkerInitOutcomePanel — o painel único do init pendente (DP-20)', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('claim_pending → o MESMO ClaimOtpModal, com a máscara e o sid do init', () => {
     render(<WorkerInitOutcomePanel outcome={{ kind: 'claim_pending', candidateWorkerId: 'w', phoneMasked: '•••1243', verificationSid: 'VE1' }} authUid="u" email="a@b.c" {...handlers()} />);

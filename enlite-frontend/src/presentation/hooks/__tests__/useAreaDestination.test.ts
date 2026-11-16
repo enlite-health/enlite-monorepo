@@ -19,7 +19,7 @@ vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
 
 import { useAreaDestination, NO_ACCESS_ROUTE, NO_ACCESS_UNAVAILABLE_ROUTE, readLastArea } from '../useAreaDestination';
 import { ApiError } from '@infrastructure/http/ApiError';
-import { takeInitOutcome, WORKER_ACCOUNT_CHECK_ROUTE } from '@presentation/utils/workerInitOutcome';
+import { clearInitOutcome, readInitOutcome, WORKER_ACCOUNT_CHECK_ROUTE } from '@presentation/utils/workerInitOutcome';
 
 const STAFF = { area: 'backoffice', role: 'staff', entryRoute: '/admin' };
 const WORKER = { area: 'care', role: 'worker', entryRoute: '/' };
@@ -58,13 +58,13 @@ describe('useAreaDestination', () => {
     beforeEach(() => {
       getProfile.mockRejectedValue(new Error('403'));
       areas([]);
-      takeInitOutcome();
+      clearInitOutcome();
     });
 
     it('claim_pending → WORKER_ACCOUNT_CHECK_ROUTE e o resultado (sid, máscara) entregue à tela, sem reler áreas', async () => {
       initWorker.mockResolvedValue({ status: 'claim_pending', candidateWorkerId: 'w-9', phoneMasked: '•••1243', verificationSid: 'VE1' });
       expect(await resolve()).toBe(WORKER_ACCOUNT_CHECK_ROUTE);
-      expect(takeInitOutcome()).toEqual({ kind: 'claim_pending', candidateWorkerId: 'w-9', phoneMasked: '•••1243', verificationSid: 'VE1' });
+      expect(readInitOutcome()).toEqual({ kind: 'claim_pending', candidateWorkerId: 'w-9', phoneMasked: '•••1243', verificationSid: 'VE1' });
       expect(getMyAreas).toHaveBeenCalledTimes(1);
     });
 
@@ -74,7 +74,7 @@ describe('useAreaDestination', () => {
     ])('%s → WORKER_ACCOUNT_CHECK_ROUTE (não /no-access)', async (_c, erro, kind) => {
       initWorker.mockRejectedValue(erro);
       expect(await resolve()).toBe(WORKER_ACCOUNT_CHECK_ROUTE);
-      expect(takeInitOutcome()).toEqual({ kind });
+      expect(readInitOutcome()).toEqual({ kind });
     });
   });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ApiError } from '@infrastructure/http/ApiError';
-import { runWorkerInit, handOffInitOutcome, takeInitOutcome } from '../workerInitOutcome';
+import { runWorkerInit, handOffInitOutcome, readInitOutcome, clearInitOutcome } from '../workerInitOutcome';
 
 const apiError = (error: string, status: number) => new ApiError({ success: false, error }, status);
 
@@ -27,9 +27,11 @@ describe('runWorkerInit — o resultado do init num lugar só (DP-20)', () => {
     await expect(runWorkerInit(async () => { throw apiError('Failed to create worker', 400); })).rejects.toThrow('Failed to create worker');
   });
 
-  it('a passagem do 1º login é lida UMA vez (recarregar a tela refaz o init)', () => {
+  it('a passagem do 1º login sobrevive a duas leituras (StrictMode) e some ao limpar', () => {
     handOffInitOutcome({ kind: 'rate_limited' });
-    expect(takeInitOutcome()).toEqual({ kind: 'rate_limited' });
-    expect(takeInitOutcome()).toBeNull();
+    expect(readInitOutcome()).toEqual({ kind: 'rate_limited' });
+    expect(readInitOutcome()).toEqual({ kind: 'rate_limited' });
+    clearInitOutcome();
+    expect(readInitOutcome()).toBeNull();
   });
 });

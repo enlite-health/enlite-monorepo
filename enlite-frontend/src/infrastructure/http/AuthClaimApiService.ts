@@ -28,6 +28,8 @@ export type ClaimErrorCode =
   | 'CANDIDATE_NOT_FOUND'
   | 'NOT_IMPORTABLE';
 
+const CLAIM_ERROR_CODES: readonly ClaimErrorCode[] = ['INVALID_OTP', 'EXPIRED_OTP', 'CANDIDATE_NOT_FOUND', 'NOT_IMPORTABLE'];
+
 export interface ConfirmClaimError {
   success: false;
   error: ClaimErrorCode;
@@ -110,11 +112,18 @@ class AuthClaimApiServiceClass {
    * On error, returns { success: false, error: ClaimErrorCode }.
    */
   async confirmClaim(input: ConfirmClaimInput): Promise<ConfirmClaimResponse> {
-    return this.request<ConfirmClaimResponse>(
-      'POST',
-      '/api/auth/claim/confirm',
-      input,
-    );
+    // `request` devolve o `data` ({ worker }) e LANÇA no erro — o contrato aqui é o union que o
+    // `useClaimConfirm` lê. Antes o `data` era devolvido cru: sem `success`, o hook tratava o
+    // sucesso como falha e o modal nunca saía, mesmo com a ficha já transferida no banco.
+    try {
+      const { worker } = await this.request<{ worker: WorkerProgressResponse }>('POST', '/api/auth/claim/confirm', input);
+      return { success: true, worker };
+    } catch (err) {
+      if (err instanceof ApiError && CLAIM_ERROR_CODES.includes(err.message as ClaimErrorCode)) {
+        return { success: false, error: err.message as ClaimErrorCode };
+      }
+      throw err;
+    }
   }
 }
 

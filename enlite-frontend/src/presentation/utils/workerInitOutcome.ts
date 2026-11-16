@@ -38,7 +38,8 @@ export async function runWorkerInit(call: () => Promise<InitWorkerResponse>): Pr
 /**
  * Passagem do 1º login para a tela de pendência: o `useAreaDestination` já chamou o init (e o
  * OTP já saiu); a tela lê o resultado daqui em vez de chamar o init de novo (que mandaria outro
- * SMS e gastaria a cota). Só memória: recarregar a página refaz o init.
+ * SMS e gastaria a cota). Ler não consome (o StrictMode chama o inicializador do estado duas
+ * vezes); a tela limpa ao resolver. Só memória: recarregar a página refaz o init.
  */
 let pending: Exclude<WorkerInitOutcome, { kind: 'ok' }> | null = null;
 
@@ -46,8 +47,10 @@ export function handOffInitOutcome(outcome: Exclude<WorkerInitOutcome, { kind: '
   pending = outcome;
 }
 
-export function takeInitOutcome(): Exclude<WorkerInitOutcome, { kind: 'ok' }> | null {
-  const o = pending;
+export function readInitOutcome(): Exclude<WorkerInitOutcome, { kind: 'ok' }> | null {
+  return pending;
+}
+
+export function clearInitOutcome(): void {
   pending = null;
-  return o;
 }
