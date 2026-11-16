@@ -1,4 +1,4 @@
-import { isReliableGeocode, geocodeQualityLabel } from '../geocodeQuality';
+import { isReliableGeocode, geocodeQualityLabel, isCheckinReliable } from '../geocodeQuality';
 
 describe('isReliableGeocode', () => {
   it('ROOFTOP + partialMatch=false -> true', () => expect(isReliableGeocode('ROOFTOP', false)).toBe(true));
@@ -25,5 +25,17 @@ describe('geocodeQualityLabel', () => {
     expect(geocodeQualityLabel('ROOFTOP', false)).toBe('RELIABLE');
     expect(geocodeQualityLabel('ROOFTOP', true)).toBe('UNRELIABLE');
     expect(geocodeQualityLabel('APPROXIMATE', false)).toBe('UNRELIABLE');
+  });
+});
+
+describe('isCheckinReliable (D718)', () => {
+  it('T-F0b-44 classificado, inclusive aproximado e UNKNOWN = true', () => {
+    for (const t of ['ROOFTOP', 'RANGE_INTERPOLATED', 'GEOMETRIC_CENTER', 'APPROXIMATE', 'UNKNOWN'] as const) {
+      expect(isCheckinReliable(t)).toBe(true);
+    }
+  });
+  it('T-F0b-44 ainda não classificado (null ou undefined) = false', () => {
+    expect(isCheckinReliable(null)).toBe(false);
+    expect(isCheckinReliable(undefined)).toBe(false);
   });
 });

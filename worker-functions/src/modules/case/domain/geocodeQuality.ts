@@ -35,3 +35,13 @@ export function geocodeQualityLabel(
 ): 'RELIABLE' | 'UNRELIABLE' {
   return isReliableGeocode(locationType, partialMatch) ? 'RELIABLE' : 'UNRELIABLE';
 }
+
+/**
+ * D718 (spec 077, 15/11/2026): no Ponto do MVP, a coordenada de geocode APROXIMADO (rua, bairro ou `partial_match`) COM lat/lng
+ * vale como RELIABLE: o gate de raio protege. `null` = "ainda não classificado" (migration 582, linhas 11-13: anterior ao backfill
+ * ou geocode falhou), NÃO é aproximado: segue UNRELIABLE até o backfill classificar. `isReliableGeocode` (a régua estrita) fica
+ * para o raio diferenciado pós-MVP.
+ */
+export function isCheckinReliable(locationType: GeocodeLocationType | null | undefined): boolean {
+  return locationType != null;
+}

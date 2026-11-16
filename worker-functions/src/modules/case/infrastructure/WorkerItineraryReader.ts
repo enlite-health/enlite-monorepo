@@ -23,7 +23,7 @@
 import type { PoolClient } from 'pg';
 import { v5 as uuidv5 } from 'uuid';
 import { addDaysToDateString, weekdayOfDateString } from '../domain/itineraryEvents';
-import { isReliableGeocode, type GeocodeLocationType } from '../domain/geocodeQuality';
+import { isCheckinReliable, type GeocodeLocationType } from '../domain/geocodeQuality';
 import { expandServiceOccurrences } from '../domain/serviceOccurrences';
 import { patientRefOf } from '../domain/patientRef';
 import { readOccurrenceInputsByPatient } from './occurrenceInputs';
@@ -250,7 +250,7 @@ function pointOf(p: PatientRow): PatientPoint | null {
   const lat = Number(p.lat);
   const lng = Number(p.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { ...degradePoint20m(lat, lng), quality: isReliableGeocode(p.geocode_quality, p.geocode_partial_match) ? 'RELIABLE' : 'UNRELIABLE' };
+  return { ...degradePoint20m(lat, lng), quality: isCheckinReliable(p.geocode_quality) ? 'RELIABLE' : 'UNRELIABLE' };
 }
 
 /**
