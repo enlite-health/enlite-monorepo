@@ -1,4 +1,5 @@
 /**
+ * (077: prova do CI — o piso de largura da aba Sustituciones depende da data `desde`; ver o bloco de Sustituciones.)
  * patient-itinerary-linha-unica-069.integration.e2e.ts @integration — spec 069, regra do Gabriel (23/10): NENHUM nome/label quebra linha, nas telas
  * novas. Stack REAL (frontend + API + Postgres), sem mock de dado de negócio — só a auth (`loginAs`). Massa com nomes LONGOS (≥ 35 caracteres),
  * motivo longo (catálogo, criado pela API do catálogo) e endereço longo; em 1440×900 e em 1280×800 o guarda (`expectLinhaUnica`) confere, em
