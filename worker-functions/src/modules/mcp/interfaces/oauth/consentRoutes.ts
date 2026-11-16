@@ -83,7 +83,7 @@ export function createConsentRoutes(deps: Deps): Router {
       }
 
       const email = decoded.email;
-      if (!email || decoded.email_verified === false) {
+      if (!email || decoded.email_verified !== true) {
         audit('error', email ?? 'unknown', 'email missing or unverified');
         res.status(403).json({ error: 'Cuenta sin email verificado' });
         return;

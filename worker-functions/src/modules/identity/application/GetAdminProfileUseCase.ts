@@ -6,7 +6,7 @@ import { EnliteRole } from '../domain/EnliteRole';
 import { STAFF_ACCOUNT } from '../domain/AccountType';
 import * as admin from 'firebase-admin';
 import { mergeCustomClaims } from '../infrastructure/mergeCustomClaims';
-import { reportError } from '@shared/logging';
+import { logger, reportError } from '@shared/logging';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 
 const LOG = '[ADMIN-AUTH]';
@@ -60,6 +60,14 @@ export class GetAdminProfileUseCase {
 
     if (!email?.endsWith('@enlite.health')) {
       console.log(`${LOG} auto-provision rejected — email ${maskEmailForLog(email)} is not @enlite.health`);
+      return null;
+    }
+
+    // Só e-mail VERIFICADO (lido do Admin SDK) provisiona ou reatribui: o cadastro por
+    // e-mail/senha é aberto, e sem isto qualquer um com `@enlite.health` inventado vira staff
+    // ou toma a linha de um staff existente. Ausente conta como não verificado (fail-closed).
+    if (firebaseUser.emailVerified !== true) {
+      logger.warn({ msg: `${LOG} auto-provision rejected — email not verified`, uid: firebaseUid });
       return null;
     }
 

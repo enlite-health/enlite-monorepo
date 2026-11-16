@@ -85,9 +85,11 @@ const makeFirebaseUser = (overrides: Partial<{
   displayName: string | undefined;
   photoURL: string | undefined;
   providerData: { providerId: string }[];
+  emailVerified: boolean | undefined;
 }> = {}) => ({
   uid: FIREBASE_UID,
   email: 'joao.silva@enlite.health',
+  emailVerified: true,
   displayName: 'João Silva',
   photoURL: null,
   providerData: [{ providerId: 'password' }],
@@ -569,6 +571,62 @@ describe('GetAdminProfileUseCase', () => {
 
 
   // ─────────────────────────────────────────────────────────────────────────────
+  describe('Ataques — só e-mail VERIFICADO provisiona ou reatribui (gate do #873, 15/11)', () => {
+    // O cadastro por e-mail/senha do Identity Platform de prd é aberto (sem blocking function,
+    // sem cadastro desligado): qualquer um cria `<qualquer>@enlite.health` com senha e o e-mail
+    // fica NÃO verificado. Estes testes reproduzem os ataques pelo caminho real do use case.
+    const STAFF_UID = 'uid-do-staff-legitimo';
+    const ATACANTE_UID = 'uid-do-atacante';
+    const staffExistente: AdminRecord = { ...mockAdminRecord, firebaseUid: STAFF_UID, role: 'admin' };
+
+    it('ATAQUE (b): conta nova @enlite.health por senha, e-mail NÃO verificado → não vira staff (sem claim, sem linha)', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ emailVerified: false, providerData: [{ providerId: 'password' }] }));
+      const result = await new GetAdminProfileUseCase().execute(ATACANTE_UID);
+      expect(result.isFailure).toBe(true);
+      expect(mockSetCustomUserClaims).not.toHaveBeenCalled();
+      expect(mockConnect).not.toHaveBeenCalled();
+      expect(mockUpdateLastLogin).not.toHaveBeenCalled();
+    });
+
+    it('ATAQUE (a): e-mail de staff existente sob outro uid, NÃO verificado → não toma a linha (sem reassign)', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockFindByEmail.mockResolvedValue(staffExistente);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ emailVerified: false }));
+      const result = await new GetAdminProfileUseCase().execute(ATACANTE_UID);
+      expect(result.isFailure).toBe(true);
+      expect(mockReassignFirebaseUid).not.toHaveBeenCalled();
+      expect(mockSetCustomUserClaims).not.toHaveBeenCalled();
+    });
+
+    it('ATAQUE: `emailVerified` ausente conta como NÃO verificado (fail-closed) — nem reassign nem provisioning', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockFindByEmail.mockResolvedValue(staffExistente);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ emailVerified: undefined }));
+      const result = await new GetAdminProfileUseCase().execute(ATACANTE_UID);
+      expect(result.isFailure).toBe(true);
+      expect(mockReassignFirebaseUid).not.toHaveBeenCalled();
+      expect(mockConnect).not.toHaveBeenCalled();
+    });
+
+    it('legítimo: staff entrando com Google VERIFICADO sob uid novo → reassign mantém o papel', async () => {
+      mockFindByFirebaseUid.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...staffExistente, firebaseUid: ATACANTE_UID });
+      mockFindByEmail.mockResolvedValue(staffExistente);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ emailVerified: true, providerData: [{ providerId: 'google.com' }] }));
+      const result = await new GetAdminProfileUseCase().execute(ATACANTE_UID);
+      expect(mockReassignFirebaseUid).toHaveBeenCalledWith(staffExistente.email, ATACANTE_UID);
+      expect(result.isSuccess).toBe(true);
+    });
+
+    it('legítimo: @enlite.health novo com Google VERIFICADO → provisiona RECRUITER', async () => {
+      mockFindByFirebaseUid.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...mockAdminRecord, role: 'recruiter' });
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ emailVerified: true, providerData: [{ providerId: 'google.com' }] }));
+      const result = await new GetAdminProfileUseCase().execute(FIREBASE_UID);
+      expect(result.isSuccess).toBe(true);
+      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, expect.objectContaining({ role: 'recruiter', account_type: 'staff' }));
+    });
+  });
+
   describe('Ramos residuais (07/09 — o arquivo tocado fecha em 100%)', () => {
     it('erro que não é Error no getProfile vira a mensagem genérica', async () => {
       mockFindByFirebaseUid.mockRejectedValue('string crua');
