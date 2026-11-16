@@ -145,6 +145,9 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e
         env:
+          # Heap do Node: o jest roda as 474 suítes num processo só (maxWorkers: 1) e o default (~2 GB)
+          # estourou OOM (exit 134) no run 43846538968 da main. ubuntu-latest tem ~7 GB.
+          NODE_OPTIONS: --max-old-space-size=4096
           API_URL: http://localhost:8080
           DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
           INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
