@@ -34,6 +34,7 @@ import { SyncVacancyContentToTalentumUseCase, TalentumDescriptionService } from 
 import type { TalentumSyncResult } from '@modules/integration';
 import { VacancyTalentumPauseService } from '../../application/VacancyTalentumPauseService';
 import { propagateVacancyEditToTalentum } from '../../application/propagateVacancyEditToTalentum';
+import { deleteVacancyTalentumProject } from '../../application/deleteVacancyTalentumProject';
 
 const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
@@ -420,6 +421,7 @@ export class VacancyCrudController {
     try {
       const { id } = req.params;
       const actor = extractHumanActor(req);
+      let talentumProjectId = null as string | null;
 
       await withActorContext(this.db, async (client) => {
         // Snapshot before soft-delete (FOR UPDATE: segura a vaga contra delete concorrente)
@@ -437,14 +439,18 @@ export class VacancyCrudController {
         // auditVacancyDeleted uses logEventSafe (SAVEPOINT) — FK failure cannot
         // abort this transaction; the soft-delete always commits.
         await auditVacancyDeleted(client, id, before, actor);
+        talentumProjectId = typeof before.talentum_project_id === 'string' && before.talentum_project_id ? before.talentum_project_id : null;
       });
+
+      // Regra do Gabriel (16/11): apagar a vaga apaga o projeto no Talentum. Depois do COMMIT; falha vira `talentumSync` (+ reportError), o delete não se desfaz.
+      const talentumSync = talentumProjectId ? await deleteVacancyTalentumProject({ vacancyId: id, projectId: talentumProjectId }) : null;
 
       // Free Short.io quota — the deleted vacancy's links will never be shared again.
       setImmediate(() => {
         void withSystemDbContext('job:vacancy-postdelete', () => tryPurgeShortLinks(this.db, id));
       });
 
-      res.status(200).json({ success: true, message: 'Vacancy deleted successfully' });
+      res.status(200).json({ success: true, message: 'Vacancy deleted successfully', ...(talentumSync ? { talentumSync } : {}) });
     } catch (error: unknown) {
       if (error instanceof VacancyNotFound) {
         res.status(404).json({ success: false, error: 'Vacancy not found' });

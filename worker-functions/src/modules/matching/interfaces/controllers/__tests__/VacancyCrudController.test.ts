@@ -104,6 +104,11 @@ jest.mock('@shared/logging', () => ({
   loggingAls: { getStore: jest.fn().mockReturnValue(undefined) },
 }));
 
+const mockDeleteTalentum = jest.fn();
+jest.mock('../../../application/deleteVacancyTalentumProject', () => ({
+  deleteVacancyTalentumProject: (...args: any[]) => (mockDeleteTalentum as any)(...args),
+}));
+
 const mockCountVigente = jest.fn().mockResolvedValue(0);
 jest.mock('@modules/case', () => ({ countVigenteForVacancy: (...args: any[]) => (mockCountVigente as any)(...args) }));
 
@@ -655,6 +660,56 @@ describe('VacancyCrudController', () => {
 
       await flushImmediates();
       expect(mockPurgeExecute).toHaveBeenCalledWith('jp-1');
+    });
+
+    describe('Talentum: apagar a vaga apaga o projeto (Gabriel, 16/11)', () => {
+      const soft = (before: Record<string, unknown>) => {
+        mockDeleteTalentum.mockReset().mockResolvedValue({ status: 'OK' });
+        return mockClientQuery
+          .mockResolvedValueOnce({})                // BEGIN
+          .mockResolvedValueOnce({ rows: [before] }) // SELECT before
+          .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] }) // UPDATE soft-delete
+          .mockResolvedValue({ rows: [] });          // COMMIT
+      };
+
+      it('vaga com talentum_project_id: DELETE chamado com o id do projeto DEPOIS do COMMIT; resposta traz talentumSync OK', async () => {
+        soft({ id: 'jp-1', talentum_project_id: 'proj-9' });
+        mockDeleteTalentum.mockImplementation(async () => {
+          expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
+          return { status: 'OK' };
+        });
+        const res = makeRes();
+        await controller.deleteVacancy(makeReq({ params: { id: 'jp-1' } }), res);
+        expect(mockDeleteTalentum).toHaveBeenCalledTimes(1);
+        expect(mockDeleteTalentum).toHaveBeenCalledWith({ vacancyId: 'jp-1', projectId: 'proj-9' });
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({ success: true, talentumSync: { status: 'OK' } });
+      });
+
+      it('vaga SEM talentum_project_id: DELETE não é chamado e a resposta não traz talentumSync', async () => {
+        soft({ id: 'jp-1', talentum_project_id: null });
+        const res = makeRes();
+        await controller.deleteVacancy(makeReq({ params: { id: 'jp-1' } }), res);
+        expect(mockDeleteTalentum).not.toHaveBeenCalled();
+        expect((res.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('talentumSync');
+      });
+
+      it('falha no Talentum: reportada na resposta (talentumSync FAILED), 200 e o soft delete NÃO é desfeito', async () => {
+        soft({ id: 'jp-1', talentum_project_id: 'proj-9' });
+        mockDeleteTalentum.mockResolvedValue({ status: 'FAILED', message: 'falhou' });
+        const res = makeRes();
+        await controller.deleteVacancy(makeReq({ params: { id: 'jp-1' } }), res);
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({ success: true, talentumSync: { status: 'FAILED', message: 'falhou' } });
+        expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
+        expect(mockClientQuery).not.toHaveBeenCalledWith('ROLLBACK');
+      });
+
+      it('vaga que não foi apagada (404 no soft delete) NÃO chama o Talentum', async () => {
+        mockClientQuery.mockResolvedValueOnce({}).mockResolvedValueOnce({ rows: [{ id: 'jp-1', talentum_project_id: 'proj-9' }] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValue({});
+        await controller.deleteVacancy(makeReq({ params: { id: 'jp-1' } }), makeRes());
+        expect(mockDeleteTalentum).not.toHaveBeenCalled();
+      });
     });
 
     it('com alocação vigente (count 3) → 409 VACANCY_HAS_ACTIVE_ALLOCATIONS { count: 3 }; ROLLBACK; nenhum UPDATE de deleted_at; nenhum audit', async () => {
