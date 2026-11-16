@@ -2,8 +2,8 @@ import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { CreateWorkerDTO, Worker } from '../domain/Worker';
 import { InitWorkerOutput } from '../domain/InitWorkerOutput';
 import { Result } from '@shared/utils/Result';
-import { createHash } from 'crypto';
 import { logger } from '@shared/logging';
+import { resourceIdHash } from '@shared/audit/resourceAccessLog';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
@@ -19,11 +19,6 @@ export interface InitWorkerInput extends CreateWorkerDTO {
 
 /** Ficha com este e-mail é de outro login e o token não prova posse do e-mail (DP-20). */
 export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
-
-/** Id da ficha em log de medição: hash curto, para contar sem expor o id (DP-20). */
-function workerIdHash(workerId: string): string {
-  return createHash('sha256').update(workerId).digest('hex').slice(0, 16);
-}
 
 export class InitWorkerUseCase {
   constructor(
@@ -82,7 +77,7 @@ export class InitWorkerUseCase {
         // Medição do efeito da DP-20 depois do deploy: só hash do id e booleanos, sem PII.
         logger.child({ source: 'InitWorkerUseCase:execute' }).info({
           msg: 'worker_relinked_by_email',
-          workerIdHash: workerIdHash(existingByEmail.id),
+          workerIdHash: resourceIdHash(existingByEmail.id),
           emailVerified: data.emailVerified,
           fromImported: isImportedWorker(existingByEmail.authUid),
         });
@@ -135,17 +130,19 @@ export class InitWorkerUseCase {
    * real: o confirm do claim recusaria) → EMAIL_NOT_VERIFIED. Nunca religa nem cria ficha.
    */
   private async relinkWithoutVerifiedEmail(ficha: Worker): Promise<Result<InitWorkerOutput>> {
-    const log = logger.child({ source: 'InitWorkerUseCase:execute', workerIdHash: workerIdHash(ficha.id) });
-    if (ficha.phone) {
-      const claimable = await isClaimableWorker(this.workerRepository, ficha);
-      if (claimable.isFailure) return Result.fail<InitWorkerOutput>(claimable.error!);
-      if (claimable.getValue()) {
-        log.info({ msg: 'worker_relink_email_not_verified_claim_otp' });
-        return this.startClaimOtp(ficha, ficha.phone);
-      }
-    }
-    log.warn({ msg: 'worker_relink_blocked_email_not_verified', hasPhone: Boolean(ficha.phone) });
-    return Result.fail<InitWorkerOutput>(EMAIL_NOT_VERIFIED);
+    const log = logger.child({ source: 'InitWorkerUseCase:execute', workerIdHash: resourceIdHash(ficha.id) });
+    const blocked = (): Result<InitWorkerOutput> => {
+      log.warn({ msg: 'worker_relink_blocked_email_not_verified', hasPhone: Boolean(ficha.phone) });
+      return Result.fail<InitWorkerOutput>(EMAIL_NOT_VERIFIED);
+    };
+    if (!ficha.phone) return blocked();
+
+    const claimable = await isClaimableWorker(this.workerRepository, ficha);
+    if (claimable.isFailure) return Result.fail<InitWorkerOutput>(claimable.error!);
+    if (!claimable.getValue()) return blocked();
+
+    log.info({ msg: 'worker_relink_email_not_verified_claim_otp' });
+    return this.startClaimOtp(ficha, ficha.phone);
   }
 
   /** OTP ao telefone DA FICHA (nunca o do payload — anti-hijack) e `claim_pending`. */

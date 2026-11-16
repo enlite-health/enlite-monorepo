@@ -319,7 +319,7 @@ describe('InitWorkerUseCase', () => {
       // o mock do logger é compartilhado entre testes: vale a ÚLTIMA chamada (a deste teste)
       const childResults = (logger.child as jest.Mock).mock.results.map((r) => r.value.info as jest.Mock);
       const relinkLog = childResults.flatMap((info) => info.mock.calls.map((c) => c[0])).filter((p) => p?.msg === 'worker_relinked_by_email').pop();
-      expect(relinkLog).toEqual({ msg: 'worker_relinked_by_email', workerIdHash: expect.stringMatching(/^[0-9a-f]{16}$/), emailVerified: true, fromImported: true });
+      expect(relinkLog).toEqual({ msg: 'worker_relinked_by_email', workerIdHash: expect.stringMatching(/^[0-9a-f]{12}$/), emailVerified: true, fromImported: true });
       expect(JSON.stringify(relinkLog)).not.toContain(fichaImportadaComTelefone.id);
       expect(JSON.stringify(relinkLog)).not.toContain(REAL_EMAIL);
     });
