@@ -406,6 +406,24 @@ describe('RegisterPage', () => {
     });
   });
 
+  // ─── DP-20: init pendente sem ser claim → o painel único, não a navegação ───
+
+  describe('DP-20: e-mail não verificado e 429 no init do cadastro', () => {
+    it.each([
+      ['EMAIL_NOT_VERIFIED', 400, 'email-not-verified'],
+      ['Too many OTP requests. Try again in 15 minutes.', 429, 'init-rate-limited'],
+    ])('init falha com "%s" (%s) → mostra o painel e NÃO navega', async (error, status, testid) => {
+      const { ApiError } = await import('@infrastructure/http/ApiError');
+      mockInitWorker.mockRejectedValue(new ApiError({ success: false, error }, status));
+      render(<RegisterPage />);
+      fillForm();
+      submitForm();
+
+      await waitFor(() => expect(screen.getByTestId(testid)).toBeTruthy());
+      expect(mockNavigate).not.toHaveBeenCalledWith('/');
+    });
+  });
+
   // ─── Erros de validação (não-LGPD) ────────────────────────────────────────
 
   describe('erros de validacao do formulario', () => {

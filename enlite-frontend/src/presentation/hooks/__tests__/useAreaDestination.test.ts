@@ -18,6 +18,8 @@ vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
 }));
 
 import { useAreaDestination, NO_ACCESS_ROUTE, NO_ACCESS_UNAVAILABLE_ROUTE, readLastArea } from '../useAreaDestination';
+import { ApiError } from '@infrastructure/http/ApiError';
+import { clearInitOutcome, readInitOutcome, WORKER_ACCOUNT_CHECK_ROUTE } from '@presentation/utils/workerInitOutcome';
 
 const STAFF = { area: 'backoffice', role: 'staff', entryRoute: '/admin' };
 const WORKER = { area: 'care', role: 'worker', entryRoute: '/' };
@@ -50,6 +52,30 @@ describe('useAreaDestination', () => {
     const dest = await resolve();
     expect(dest).toBe(NO_ACCESS_ROUTE);
     expect(dest).not.toContain('reason');
+  });
+
+  describe('DP-20: 1º login cujo init não dá ok → tela de pendência com o resultado (nunca /no-access)', () => {
+    beforeEach(() => {
+      getProfile.mockRejectedValue(new Error('403'));
+      areas([]);
+      clearInitOutcome();
+    });
+
+    it('claim_pending → WORKER_ACCOUNT_CHECK_ROUTE e o resultado (sid, máscara) entregue à tela, sem reler áreas', async () => {
+      initWorker.mockResolvedValue({ status: 'claim_pending', candidateWorkerId: 'w-9', phoneMasked: '•••1243', verificationSid: 'VE1' });
+      expect(await resolve()).toBe(WORKER_ACCOUNT_CHECK_ROUTE);
+      expect(readInitOutcome()).toEqual({ kind: 'claim_pending', candidateWorkerId: 'w-9', phoneMasked: '•••1243', verificationSid: 'VE1' });
+      expect(getMyAreas).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['EMAIL_NOT_VERIFIED (400)', new ApiError({ success: false, error: 'EMAIL_NOT_VERIFIED' } as never, 400), 'email_not_verified'],
+      ['429 da cota de OTP', new ApiError({ success: false, error: 'Too many OTP requests. Try again in 15 minutes.' } as never, 429), 'rate_limited'],
+    ])('%s → WORKER_ACCOUNT_CHECK_ROUTE (não /no-access)', async (_c, erro, kind) => {
+      initWorker.mockRejectedValue(erro);
+      expect(await resolve()).toBe(WORKER_ACCOUNT_CHECK_ROUTE);
+      expect(readInitOutcome()).toEqual({ kind });
+    });
   });
 
   describe('init de prestador só na lista VAZIA (login único: staff e aluno não ganham ficha)', () => {

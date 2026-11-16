@@ -19,6 +19,8 @@ import { Text } from '@presentation/components/atoms/Text';
 import { ProfileWizardFooter } from '@presentation/components/molecules/ProfileWizardFooter';
 import { ProfileCompletionSummary } from '@presentation/components/organisms/ProfileCompletionSummary';
 import type { TabId } from '@presentation/utils/incompleteFieldDestinations';
+import { WorkerInitOutcomePanel } from '@presentation/components/features/auth/WorkerInitOutcomePanel';
+import { runWorkerInit, type WorkerInitOutcome } from '@presentation/utils/workerInitOutcome';
 
 const VALID_TABS: TabId[] = ['general', 'address', 'availability', 'documents'];
 
@@ -53,6 +55,10 @@ export function WorkerProfilePage(): JSX.Element {
   );
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+  // DP-20: init que não deu `ok` (código do claim, e-mail não verificado, 429) — o mesmo painel do 1º login.
+  const [initOutcome, setInitOutcome] = useState<Exclude<WorkerInitOutcome, { kind: 'ok' }> | null>(null);
+  const [initAttempt, setInitAttempt] = useState(0);
+  const retryInit = (): void => { setInitOutcome(null); setInitAttempt((n) => n + 1); };
   const [showSummary, setShowSummary] = useState(false);
 
   const didRekey = useRef(false);
@@ -85,10 +91,9 @@ export function WorkerProfilePage(): JSX.Element {
         }
       } catch {
         try {
-          const initResponse = await initWorker({});
-          // Onda 2: initWorker returns { status: 'ok', worker } or { status: 'claim_pending', ... }
-          // WorkerProfilePage only proceeds if status is 'ok'.
-          const newWorker = initResponse.status === 'ok' ? initResponse.worker : null;
+          const outcome = await runWorkerInit(() => initWorker({}));
+          if (!cancelled && outcome.kind !== 'ok') setInitOutcome(outcome);
+          const newWorker = outcome.kind === 'ok' ? outcome.response.worker : null;
           if (!cancelled && newWorker) {
             hydrateFromServer(newWorker);
             updateGeneralInfo({
@@ -112,7 +117,7 @@ export function WorkerProfilePage(): JSX.Element {
     init();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, initAttempt]);
 
   // Sync tab from searchParams when they change (e.g., deep link from modal)
   useEffect(() => {
@@ -217,6 +222,17 @@ export function WorkerProfilePage(): JSX.Element {
         <Heading level={1} weight="semibold" color="secondary" className="mb-6">
           {t('profile.title', 'Meu Perfil')}
         </Heading>
+
+        {initOutcome && user && (
+          <WorkerInitOutcomePanel
+            outcome={initOutcome}
+            authUid={user.id}
+            email={user.email}
+            onResolved={retryInit}
+            onRetry={retryInit}
+            onCancel={() => setInitOutcome(null)}
+          />
+        )}
 
         {initError && (
           <div className="mb-6 p-4 rounded-lg bg-red-100 border border-red-400 text-red-700">

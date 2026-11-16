@@ -64,7 +64,7 @@ import { Worker } from '../../../domain/Worker';
 function mockReqRes(
   body: Record<string, unknown> = {},
   headers: Record<string, string> = {},
-  user?: { uid: string; email?: string }
+  user?: { uid: string; email?: string; emailVerified?: boolean }
 ): [Request, Response] {
   const req = {
     body,
@@ -256,6 +256,48 @@ describe('WorkerControllerV2', () => {
           whatsappPhone: '+5411234567890',
         })
       );
+    });
+
+    it.each([
+      ['token verificado → true', { emailVerified: true }, {}, true],
+      ['token NÃO verificado → false', { emailVerified: false }, {}, false],
+      ['token sem o campo → false', {}, {}, false],
+      // DP-20: o corpo NUNCA prova posse do e-mail — só o token verificado.
+      ['token não verificado + body emailVerified=true → false', { emailVerified: false }, { emailVerified: true, email_verified: true }, false],
+    ])('DP-20: %s chega ao use case como emailVerified', async (_c, tokenExtra, bodyExtra, esperado) => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.fail('Worker not found'));
+      const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute')
+        .mockResolvedValue(Result.ok({ status: 'ok' as const, worker: mockWorker }));
+
+      const [req, res] = mockReqRes({ country: 'AR', ...bodyExtra }, {}, { uid: AUTH_UID, email: WORKER_EMAIL, ...tokenExtra });
+      await controller.initWorker(req, res);
+
+      expect(initSpy).toHaveBeenCalledWith(expect.objectContaining({ emailVerified: esperado }));
+    });
+
+    it.each([
+      ['claim_pending (abriu OTP) → marca otpStarted', { status: 'claim_pending' as const, candidateWorkerId: 'c1', phoneMasked: '••••1243', verificationSid: 'VE1' }, true],
+      ['ok (sem OTP) → não marca', { status: 'ok' as const, worker: mockWorker }, undefined],
+    ])('DP-20 rate limit do init: %s', async (_c, saida, esperado) => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.fail('Worker not found'));
+      jest.spyOn(controller['initWorkerUseCase'], 'execute').mockResolvedValue(Result.ok(saida as never));
+      const [req, res] = mockReqRes({ country: 'AR' }, {}, { uid: AUTH_UID, email: WORKER_EMAIL, emailVerified: false });
+      await controller.initWorker(req, res);
+      expect((res as unknown as { locals?: { otpStarted?: boolean } }).locals?.otpStarted).toBe(esperado);
+    });
+
+    it('use case recusa com EMAIL_NOT_VERIFIED → 400 com esse código (erro tratado, sem ficha)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.fail('Worker not found'));
+      jest.spyOn(controller['initWorkerUseCase'], 'execute')
+        .mockResolvedValue(Result.fail('EMAIL_NOT_VERIFIED'));
+
+      const [req, res] = mockReqRes({ country: 'AR' }, {}, { uid: AUTH_UID, email: WORKER_EMAIL, emailVerified: false });
+      await controller.initWorker(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'EMAIL_NOT_VERIFIED' });
     });
 
     it('retorna 400 com mensagem de erro quando initWorkerUseCase falha', async () => {

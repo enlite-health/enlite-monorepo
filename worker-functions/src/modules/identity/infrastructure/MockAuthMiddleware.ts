@@ -69,6 +69,9 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
     (req as any).user = {
       uid: userData.uid,
       email: userData.email,
+      // DP-20: o mock modela login com e-mail verificado (o que o e2e sempre supôs); só
+      // `email_verified: false` explícito no token simula a conta e-mail/senha sem verificar.
+      emailVerified: userData.email_verified !== false,
       role: userData.role || 'worker',
       // Tipo de conta (D294) — o token mock pode trazê-lo explícito; sem ele, a ponte por `role`.
       account_type: userData.account_type ?? null,
@@ -97,7 +100,7 @@ export function createMockAuthEndpoints(app: any) {
 
   // Endpoint para criar token de teste
   app.post('/api/test/auth/token', markRouteClass((req: Request, res: Response) => {
-    const { uid, email, role } = req.body;
+    const { uid, email, role, email_verified } = req.body;
 
     if (!uid || !email) {
       return res.status(400).json({
@@ -110,6 +113,7 @@ export function createMockAuthEndpoints(app: any) {
       uid,
       email,
       role: role || 'worker',
+      ...(typeof email_verified === 'boolean' ? { email_verified } : {}),
       iat: Date.now(),
       exp: Date.now() + 3600000, // 1 hora
     })).toString('base64');

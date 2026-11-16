@@ -186,7 +186,10 @@ export class AuthMiddleware {
             },
           };
           (req as any).authContext = authContext;
-          (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles, accountType };
+          (req as any).user = {
+            uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles, accountType,
+            emailVerified: mockUser.emailVerified === true,
+          };
           rememberActorInAls(mockUser.uid, mockUser.email, authContext.principal, mockUser.country);
           await this.attachEffectiveAuthz(authContext.principal);
           return next();
@@ -228,6 +231,7 @@ export class AuthMiddleware {
         (req as any).user = {
           uid: authContext.principal.id,
           ...emailOfPrincipal(authContext.principal),
+          emailVerified: authContext.principal.emailVerified === true,
           type: authContext.principal.type,
           roles: authContext.principal.roles,
           accountType: authContext.principal.accountType,

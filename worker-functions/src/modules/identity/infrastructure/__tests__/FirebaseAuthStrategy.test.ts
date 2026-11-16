@@ -158,6 +158,24 @@ describe('FirebaseAuthStrategy — produção (verifyIdToken)', () => {
   });
 });
 
+describe('FirebaseAuthStrategy — email_verified (DP-20: só o token assinado prova posse do e-mail)', () => {
+  beforeEach(() => {
+    delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
+    mockVerifyIdToken.mockReset();
+  });
+
+  it.each([
+    ['true literal → true', true, true],
+    ['false (conta e-mail/senha recém-criada) → false', false, false],
+    ['ausente → false', undefined, false],
+    ["string 'true' (não é o boolean do Firebase) → false", 'true', false],
+  ])('email_verified %s', async (_c, claim, esperado) => {
+    mockVerifyIdToken.mockResolvedValue({ uid: 'w1', email: 'w@x.y', email_verified: claim, account_type: 'worker', role: 'worker' });
+    const ctx = await new FirebaseAuthStrategy(true).authenticate(credentials, metadata);
+    expect(ctx?.principal.emailVerified).toBe(esperado);
+  });
+});
+
 describe('FirebaseAuthStrategy — emulador (payload do JWT)', () => {
   beforeEach(() => { process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099'; });
   afterEach(() => { delete process.env.FIREBASE_AUTH_EMULATOR_HOST; });

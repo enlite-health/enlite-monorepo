@@ -54,6 +54,18 @@ describe('requireAuth (caminho real) — e-mail em req.user', () => {
     expect(req.user?.email).toBe('operador.staff@example.test');
   });
 
+  it.each([[true, true], [false, false], [undefined, false]])(
+    'DP-20: principal.emailVerified=%s → req.user.emailVerified=%s (o init só religa com true)',
+    async (doToken, esperado) => {
+      const ctx = contexto('w@example.test');
+      if (doToken !== undefined) ctx.principal.emailVerified = doToken;
+      const [req, res, next] = reqRes();
+      await middleware(ctx)(req, res, next);
+      expect(next).toHaveBeenCalled();
+      expect(req.user?.emailVerified).toBe(esperado);
+    },
+  );
+
   it('token sem e-mail → req.user.email ausente (a rota segue 400 NO_EMAIL)', async () => {
     const [req, res, next] = reqRes();
     await middleware(contexto())(req, res, next);

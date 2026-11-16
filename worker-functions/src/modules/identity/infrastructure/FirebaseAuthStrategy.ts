@@ -45,6 +45,7 @@ export class FirebaseAuthStrategy {
           account_type?: string;
           country?: string;
           email?: string;
+          email_verified?: boolean;
         };
         logger.info({ userId: payload.user_id ?? payload.sub }, '[AUTH] Emulator JWT decoded');
 
@@ -55,6 +56,7 @@ export class FirebaseAuthStrategy {
           type: PrincipalType.USER,
           roles,
           ...(payload.email ? { email: payload.email } : {}),
+          emailVerified: payload.email_verified === true,
           ...(accountType ? { accountType } : {}),
           ...(payload.country ? { country: payload.country } : {}),
         };
@@ -89,6 +91,8 @@ export class FirebaseAuthStrategy {
       type: PrincipalType.USER,
       roles: role ? [role] : [],
       ...(decodedToken.email ? { email: decodedToken.email } : {}),
+      // Só `true` literal do token assinado prova posse do e-mail (DP-20).
+      emailVerified: decodedToken.email_verified === true,
       ...(accountType ? { accountType } : {}),
       ...(claimCountry ? { country: claimCountry } : {}),
     };

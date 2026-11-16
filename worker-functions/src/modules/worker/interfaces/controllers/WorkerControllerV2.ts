@@ -16,6 +16,7 @@ import { QuizResponseRepository } from '../../infrastructure/QuizResponseReposit
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { markOtpStarted } from '@modules/auth/interfaces/routes/claimRoutes';
 import {
   sendPersonalInfoFailure,
   withMissingFields,
@@ -58,9 +59,11 @@ export class WorkerControllerV2 {
       // H2 (D650): identidade SÓ do token. `authUid`/`email` do body nunca decidem
       // quem é o prestador — antes, qualquer um sem login lia a ficha de um uid,
       // trocava o auth_uid de uma ficha pelo e-mail e disparava OTP ao telefone dela.
-      const tokenUser = (req as Request & { user?: { uid?: string; email?: string } }).user;
+      const tokenUser = (req as Request & { user?: { uid?: string; email?: string; emailVerified?: boolean } }).user;
       const authUid = tokenUser?.uid;
       const email = tokenUser?.email;
+      // DP-20: posse do e-mail SÓ do token verificado; `emailVerified` no body é ignorado.
+      const emailVerified = tokenUser?.emailVerified === true;
       const { phone, whatsappPhone, lgpdOptIn, country } = req.body;
 
       if (!authUid) {
@@ -98,6 +101,7 @@ export class WorkerControllerV2 {
       const result = await this.initWorkerUseCase.execute({
         authUid,
         email,
+        emailVerified,
         phone: phone || undefined,
         whatsappPhone: whatsappPhone || undefined,
         lgpdOptIn: lgpdOptIn === true,
@@ -117,6 +121,7 @@ export class WorkerControllerV2 {
       // claim_pending: OTP foi disparado via Twilio Verify;
       // o frontend deve mostrar o ecrã de confirmação OTP antes de prosseguir.
       if (output.status === 'claim_pending') {
+        markOtpStarted(res); // conta na cota de OTP do init (rate limit da rota)
         res.status(200).json({
           success: true,
           data: {

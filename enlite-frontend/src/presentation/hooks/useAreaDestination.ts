@@ -8,6 +8,8 @@
  *  - lista VAZIA (e `next` fora de `/admin`) é o 1º login: o perfil provisiona o staff `@enlite.health` novo; quem não é staff
  *    passa pelo `initWorker` (autocadastro, ou religa por e-mail a ficha importada — H2: identidade só do token) e as áreas
  *    são relidas. Só aqui há init: staff, aluno e prestador já vinculado nunca ganham ficha no login;
+ *  - init que não dá `ok` (código do claim, e-mail não verificado, 429 — DP-20) → `WORKER_ACCOUNT_CHECK_ROUTE`, com o resultado
+ *    entregue à tela (o OTP já saiu; ela não chama o init de novo);
  *  - `tokenRefreshRequired` → `getIdToken(true)` antes de navegar;
  *  - devolve só um caminho: quem navega, navega UMA vez (sem laço de redirect).
  */
@@ -16,6 +18,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AreasApiService } from '@infrastructure/http/AreasApiService';
 import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
+import { handOffInitOutcome, runWorkerInit, WORKER_ACCOUNT_CHECK_ROUTE } from '@presentation/utils/workerInitOutcome';
 import type { AreaEntry } from '@domain/entities/MyAreas';
 
 export const NO_ACCESS_ROUTE = '/no-access';
@@ -70,24 +73,27 @@ export function nextIsOpenTo(next: string, navigable: AreaEntry[]): boolean {
 }
 
 /**
- * 1º login de quem não tem área nenhuma. `true` = algo foi provisionado e as áreas devem ser relidas.
+ * 1º login de quem não tem área nenhuma. `reread` = algo foi provisionado e as áreas devem ser relidas; `route` = destino já
+ * decidido (sem conta, falha, ou init pendente — DP-20).
  * Perfil antes do init: o staff `@enlite.health` ainda sem linha em `users` também chega aqui com a lista vazia, e o init
  * lhe daria uma ficha de prestador. Perfil que falha (403: não é staff) → o init, como o autocadastro de sempre.
  */
-async function provisionFirstLogin(): Promise<boolean> {
+async function provisionFirstLogin(): Promise<{ reread: true } | { route: string }> {
   try {
     await AdminApiService.getProfile();
-    return true;
+    return { reread: true };
   } catch {
     /* não é staff: segue para o prestador */
   }
   const user = await authService.getCurrentUser().catch(() => null);
-  if (!user) return false;
+  if (!user) return { route: NO_ACCESS_ROUTE };
   try {
-    await WorkerApiService.initWorker({ authUid: user.id, email: user.email });
-    return true;
+    const outcome = await runWorkerInit(() => WorkerApiService.initWorker({ authUid: user.id, email: user.email }));
+    if (outcome.kind === 'ok') return { reread: true };
+    handOffInitOutcome(outcome);
+    return { route: WORKER_ACCOUNT_CHECK_ROUTE };
   } catch {
-    return false;
+    return { route: NO_ACCESS_ROUTE };
   }
 }
 
@@ -106,7 +112,8 @@ export function useAreaDestination() {
 
     let { areas, tokenRefreshRequired } = await AreasApiService.getMyAreas();
     if (areas.length === 0 && !isAdminPath(next)) {
-      if (!(await provisionFirstLogin())) return NO_ACCESS_ROUTE;
+      const first = await provisionFirstLogin();
+      if ('route' in first) return first.route;
       const reread = await AreasApiService.getMyAreas();
       areas = reread.areas;
       tokenRefreshRequired = tokenRefreshRequired || reread.tokenRefreshRequired;

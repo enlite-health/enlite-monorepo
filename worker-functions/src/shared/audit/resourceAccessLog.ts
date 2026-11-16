@@ -49,7 +49,7 @@ const COUNTRY_SOURCE: Partial<Record<ResourceType, string>> = {
  * acesso restrito. O hash curto ainda permite correlacionar duas linhas do log
  * entre si (mesmo recurso) sem revelar de quem se trata.
  */
-function resourceIdHash(resourceId: string): string {
+export function resourceIdHash(resourceId: string): string {
   return createHash('sha256').update(resourceId).digest('hex').slice(0, 12);
 }
 

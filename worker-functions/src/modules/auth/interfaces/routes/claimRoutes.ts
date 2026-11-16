@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit';
 import { ClaimController } from '../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '@modules/identity/permissions';
@@ -20,32 +20,54 @@ export function claimIpKey(req: Request): string {
   );
 }
 
+/** Limitador de OTP: janela de 15 min, chave `claimIpKey`. Uma definição para claim e init. */
+function otpRateLimit(max: number, error: string, extra: Partial<Options> = {}) {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: claimIpKey,
+    message: { success: false, error },
+    ...extra,
+  });
+}
+
+const OTP_START_LIMIT = 3;
+const OTP_START_ERROR = 'Too many OTP requests. Try again in 15 minutes.';
+
 /**
  * Rate limit para claim/start:
  *   Max 3 tentativas por IP em 15 minutos.
  *   Impede enumeração de números válidos e abuso do Twilio Verify.
  */
-const claimStartRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 3,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: claimIpKey,
-  message: { success: false, error: 'Too many OTP requests. Try again in 15 minutes.' },
-});
+const claimStartRateLimit = otpRateLimit(OTP_START_LIMIT, OTP_START_ERROR);
 
 /**
  * Rate limit para claim/confirm:
  *   Max 5 tentativas por IP em 15 minutos (acomoda typos do usuário).
  */
-const claimConfirmRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: claimIpKey,
-  message: { success: false, error: 'Too many confirmation attempts. Try again in 15 minutes.' },
-});
+const claimConfirmRateLimit = otpRateLimit(5, 'Too many confirmation attempts. Try again in 15 minutes.');
+
+/** Quem dispara OTP fora das rotas de claim marca a resposta, e só ela conta no limite do init. */
+export function markOtpStarted(res: Response): void {
+  res.locals = Object.assign(res.locals ?? {}, { otpStarted: true });
+}
+
+/**
+ * Rate limit do `POST /api/workers/init` (DP-20): o init dispara SMS ao telefone da ficha
+ * (`claim_pending`), pelo ramo de telefone e pelo de e-mail não verificado. Mesmo limite do
+ * claim/start (3 por IP em 15 min, mesma chave), contando SÓ a resposta que abriu OTP
+ * (`markOtpStarted`): o init sem SMS (login, cadastro novo) não gasta a cota. Com a cota
+ * cheia, a próxima chamada leva 429 antes do use case, sem novo envio.
+ */
+export function createWorkerInitOtpRateLimit() {
+  return otpRateLimit(OTP_START_LIMIT, OTP_START_ERROR, {
+    skipSuccessfulRequests: true,
+    // "bem-sucedida" aqui = não abriu OTP → é descontada da cota
+    requestWasSuccessful: (_req, res) => res.locals?.otpStarted !== true,
+  });
+}
 
 export function createClaimRoutes(controller: ClaimController, authMiddleware: AuthMiddleware): Router {
   const router = Router();

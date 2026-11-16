@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { FirebaseError } from 'firebase/app';
 import { useRegisterUser } from '@presentation/hooks/useRegisterUser';
 import { useWorkerEmailLookup } from '@presentation/hooks/useWorkerEmailLookup';
-import { WorkerApiService, InitWorkerResponse } from '@infrastructure/http/WorkerApiService';
+import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
 import { PhoneInputIntl } from '@presentation/components/shared/PhoneInputIntl';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -14,7 +14,8 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Checkbox, Divider } from '@presentation/components/atoms';
 import { AuthNavbar } from '@presentation/components/organisms/AuthNavbar';
 import { GoogleLoginButton } from '@presentation/components/features/auth/GoogleLoginButton';
-import { ClaimOtpModal } from '@presentation/components/features/auth/ClaimOtpModal';
+import { WorkerInitOutcomePanel } from '@presentation/components/features/auth/WorkerInitOutcomePanel';
+import { runWorkerInit, type WorkerInitOutcome } from '@presentation/utils/workerInitOutcome';
 import { getAuthErrorMessage } from '@presentation/utils/authErrorMapper';
 
 const registerSchema = z.object({
@@ -28,14 +29,12 @@ const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
-// ── ClaimPending state ─────────────────────────────────────────────────────
+// ── Init pendente (DP-20) ───────────────────────────────────────────────────
 
-interface ClaimPendingState {
-  candidateWorkerId: string;
-  phoneMasked: string;
-  verificationSid: string;
-  authUid: string;
-  email: string;
+/** Resultado do init que não é `ok`, com a conta que o pediu (para refazer o init). */
+interface PendingInit {
+  outcome: Exclude<WorkerInitOutcome, { kind: 'ok' }>;
+  user: { id: string; email: string };
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -57,7 +56,7 @@ export function RegisterPage() {
   const [lgpdOptIn, setLgpdOptIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lgpdError, setLgpdError] = useState<string | null>(null);
-  const [claimPending, setClaimPending] = useState<ClaimPendingState | null>(null);
+  const [pendingInit, setPendingInit] = useState<PendingInit | null>(null);
 
   const phoneDisabled = workerFound === true && !!phoneMasked;
 
@@ -80,43 +79,22 @@ export function RegisterPage() {
   }, [navigate, returnUrl]);
 
   /**
-   * Handles the InitWorkerResponse discriminated union.
-   * - 'ok' → navigate immediately
-   * - 'claim_pending' → open OTP modal
-   */
-  const handleInitResponse = useCallback(
-    (response: InitWorkerResponse, uid: string, userEmail: string) => {
-      if (response.status === 'ok') {
-        navigateAfterInit();
-        return;
-      }
-      // claim_pending
-      setClaimPending({
-        candidateWorkerId: response.candidateWorkerId,
-        phoneMasked: response.phoneMasked,
-        verificationSid: response.verificationSid,
-        authUid: uid,
-        email: userEmail,
-      });
-    },
-    [navigateAfterInit],
-  );
-
-  /**
    * Handles success for the email/password registration flow.
    * Receives the registered user explicitly so we never depend on stale React state.
+   * `ok` → navega; `claim_pending`/e-mail não verificado/429 → o painel único (DP-20).
    */
   const handleSuccess = async (registeredUser: { id: string; email: string }) => {
     try {
-      const response = await WorkerApiService.initWorker({
+      const outcome = await runWorkerInit(() => WorkerApiService.initWorker({
         authUid: registeredUser.id,
         email: registeredUser.email,
         phone: whatsapp || undefined,
         whatsappPhone: whatsapp || undefined,
         lgpdOptIn,
         country: 'AR',
-      });
-      handleInitResponse(response, registeredUser.id, registeredUser.email);
+      }));
+      if (outcome.kind === 'ok') navigateAfterInit();
+      else setPendingInit({ outcome, user: registeredUser });
     } catch (err) {
       console.error('[Register] Worker init failed:', err);
       // Non-blocking: worker init failing shouldn't prevent redirect
@@ -382,17 +360,15 @@ export function RegisterPage() {
         </div>
       </div>
 
-      {/* OTP claim modal — shown when initWorker returns claim_pending */}
-      {claimPending && (
-        <ClaimOtpModal
-          open={true}
-          phoneMasked={claimPending.phoneMasked}
-          verificationSid={claimPending.verificationSid}
-          candidateWorkerId={claimPending.candidateWorkerId}
-          authUid={claimPending.authUid}
-          email={claimPending.email}
-          onConfirmed={() => navigateAfterInit()}
-          onClose={() => setClaimPending(null)}
+      {/* Init pendente (DP-20): código do claim, e-mail não verificado ou 429 — o painel único */}
+      {pendingInit && (
+        <WorkerInitOutcomePanel
+          outcome={pendingInit.outcome}
+          authUid={pendingInit.user.id}
+          email={pendingInit.user.email}
+          onResolved={() => navigateAfterInit()}
+          onRetry={() => { setPendingInit(null); void handleSuccess(pendingInit.user); }}
+          onCancel={() => setPendingInit(null)}
         />
       )}
     </div>
