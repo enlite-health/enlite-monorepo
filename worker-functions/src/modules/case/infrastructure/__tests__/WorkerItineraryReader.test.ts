@@ -136,14 +136,18 @@ describe('readWorkerWindow', () => {
     expect(substituto.items[0].occurrence_id).not.toBe(idW1);
   });
 
-  it('quality: ROOFTOP sem partial_match = RELIABLE; partial_match, APPROXIMATE e NULL = UNRELIABLE', async () => {
+  it('T-F0b-44 quality (D718): classificado com lat/lng = RELIABLE, inclusive aproximado e partial_match; NULL = UNRELIABLE; sem lat/lng = sem ponto', async () => {
     const q = async (geocode_quality: string | null, geocode_partial_match: boolean | null) =>
       (await run({ patient: { lat: '1.5', lng: '2.5', geocode_quality, geocode_partial_match } })).items[0].patient_point?.quality;
     expect(await q('ROOFTOP', false)).toBe('RELIABLE');
     expect(await q('RANGE_INTERPOLATED', null)).toBe('RELIABLE');
-    expect(await q('ROOFTOP', true)).toBe('UNRELIABLE');
-    expect(await q('APPROXIMATE', false)).toBe('UNRELIABLE');
+    expect(await q('ROOFTOP', true)).toBe('RELIABLE');
+    expect(await q('APPROXIMATE', false)).toBe('RELIABLE');
+    expect(await q('GEOMETRIC_CENTER', false)).toBe('RELIABLE');
+    expect(await q('UNKNOWN', false)).toBe('RELIABLE');
     expect(await q(null, null)).toBe('UNRELIABLE');
+    const semCoord = await run({ patient: { lat: null, lng: null, geocode_quality: 'APPROXIMATE', geocode_partial_match: false } });
+    expect(semCoord.items[0].patient_point).toBeNull();
   });
 
   it('teste de 20 m: ponto devolvido a ≤ 20 m do real, diferente do real, determinístico, e o real não vaza no JSON', async () => {
