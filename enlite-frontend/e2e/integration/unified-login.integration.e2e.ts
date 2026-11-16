@@ -66,7 +66,7 @@ async function contaNoEmulador(addr: string, uid: string): Promise<string> {
   const projeto = process.env.E2E_API_FIREBASE_PROJECT ?? 'enlite-e2e-test';
   const res = await fetch(`${emulator}/identitytoolkit.googleapis.com/v1/projects/${projeto}/accounts`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ email: addr, password: SENHA, localId: uid }),
+    body: JSON.stringify({ email: addr, password: SENHA, localId: uid, emailVerified: true }), // auto-provisionamento exige e-mail verificado
   });
   expect(res.ok, `conta ${addr} não criada no emulador`).toBe(true);
   return ((await res.json()) as { localId: string }).localId;

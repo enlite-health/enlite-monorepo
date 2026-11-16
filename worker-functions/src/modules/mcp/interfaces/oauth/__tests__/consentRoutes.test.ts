@@ -110,6 +110,22 @@ describe('POST /oauth/consent', () => {
     expect(staffLookup.findByEmail).not.toHaveBeenCalled();
   });
 
+  it('ATAQUE: token SEM `email_verified` (e-mail de staff) → 403, nenhum código OAuth emitido (fail-closed)', async () => {
+    const { app, requestContext, staffLookup, auditor } = makeApp({
+      staff: { email: 'ana@enlite.health', role: 'admin' },
+      decodedToken: { email: 'ana@enlite.health', uid: 'uid-atacante' },
+    });
+
+    const res = await request(app)
+      .post('/oauth/consent')
+      .send({ idToken: 't', requestContext });
+
+    expect(res.status).toBe(403);
+    expect(res.body.redirectUrl).toBeUndefined();
+    expect(staffLookup.findByEmail).not.toHaveBeenCalled();
+    expect(auditor.emit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+  });
+
   it('requestContext expirado/forjado → 400', async () => {
     const { app } = makeApp({
       staff: { email: 'ana@enlite.health', role: 'admin' },
