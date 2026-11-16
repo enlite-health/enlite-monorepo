@@ -60,6 +60,7 @@ describe('auto-provisionamento de staff não apaga o prestador (F7) — HTTP rea
       getUser: async (u: string) => ({
         uid: u,
         email: EMAIL,
+        emailVerified: true, // o auto-provisionamento só age com e-mail verificado
         displayName: 'QA T115',
         photoURL: null,
         providerData: [],
