@@ -1,0 +1,106 @@
+# Spec 077, D703 — teto de custo do Google Maps Platform em enlite-prd.
+# (1) cota no projeto para Places API (New) e Geocoding: ~600/min e 20.000/dia;
+# (2) alerta de orçamento por e-mail acima de US$ 30/mês.
+# A chave é compartilhada (admin, worker-functions, mobile-bff), então o teto vale para os três.
+#
+# Fontes dos nomes (lidos em 16/11/2026, só leitura, como tf-admin):
+#   gcloud alpha services quota list --service=places.googleapis.com --consumer=projects/enlite-prd
+#   gcloud alpha services quota list --service=geocoding-backend.googleapis.com --consumer=projects/enlite-prd
+# Recurso: google_service_usage_consumer_quota_override (metric/limit vão URL-encoded: "/" -> %2F, "{project}" -> %7Bproject%7D).
+# Só entram as métricas cujo limite efetivo hoje é MAIOR que o teto (as que já valem 600/min não são tocadas).
+# `force = true` porque o Service Usage recusa reduzir cota em mais de 10% sem ele.
+# Reverter = remover o override (volta ao default do Google).
+
+locals {
+  maps_cap_per_min = "600"
+  maps_cap_per_day = "20000"
+
+  # métrica -> unidades a limitar. Limite efetivo atual entre parênteses.
+  maps_quota_caps = {
+    # Places API (New), service places.googleapis.com
+    "places-autocomplete-min"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FAutocompletePlacesRequest", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min } # 12000
+    "places-autocomplete-dia"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FAutocompletePlacesRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }   # 175000
+    "places-getplace-dia"      = { service = "places.googleapis.com", metric = "places.googleapis.com%2FGetPlaceRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }             # 125000
+    "places-searchtext-dia"    = { service = "places.googleapis.com", metric = "places.googleapis.com%2FSearchTextRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }           # 75000
+    "places-searchnearby-dia"  = { service = "places.googleapis.com", metric = "places.googleapis.com%2FSearchNearbyRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }         # 75000
+    "places-getphotomedia-dia" = { service = "places.googleapis.com", metric = "places.googleapis.com%2FGetPhotoMediaRequest", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }        # 175000
+
+    # Geocoding, service geocoding-backend.googleapis.com
+    # billable_default = o que a Geocoding API (maps/api/geocode, usada pelo worker-functions) cobra; v4/* = Geocoding API nova.
+    "geocoding-billable-min" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fbillable_default", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }               # 3000
+    "geocoding-billable-dia" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fbillable_default", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }                 # ilimitado
+    "geocoding-v4-addr-min"  = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_address_requests", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }  # 1500
+    "geocoding-v4-addr-dia"  = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_address_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }    # ilimitado
+    "geocoding-v4-loc-min"   = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_location_requests", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min } # 1500
+    "geocoding-v4-loc-dia"   = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_location_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }   # ilimitado
+    "geocoding-v4-place-min" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fmin%2F%7Bproject%7D", value = local.maps_cap_per_min }    # 1500
+    "geocoding-v4-place-dia" = { service = "geocoding-backend.googleapis.com", metric = "geocoding-backend.googleapis.com%2Fv4%2Fgeocode_place_requests", limit = "%2Fd%2F%7Bproject%7D", value = local.maps_cap_per_day }      # ilimitado
+  }
+}
+
+resource "google_service_usage_consumer_quota_override" "maps_cap" {
+  for_each = local.maps_quota_caps
+
+  provider       = google-beta
+  project        = var.project_id
+  service        = each.value.service
+  metric         = each.value.metric
+  limit          = each.value.limit
+  override_value = each.value.value
+  force          = true
+}
+
+# Orçamento: alerta por e-mail ao gastar US$ 30 no mês (D703). Só ALERTA, não corta o gasto.
+# Conta de faturamento: 01994D-5E747D-F222E1 (sufixo das tabelas gcp_billing_export_v1_* do dataset billing_export, spec 082).
+# Canal: o mesmo dos alertas de prd (events_notification_channel = e-mail "Gabriel Stein (Urgente)").
+# billingbudgets.googleapis.com está DESLIGADA em enlite-prd (ver nota R-28 em admission.tf): este bloco a liga.
+variable "maps_budget_billing_account" {
+  type        = string
+  description = "ID da conta de faturamento do projeto (D703)."
+  default     = "01994D-5E747D-F222E1"
+}
+
+variable "maps_budget_usd_per_month" {
+  type        = number
+  description = "Teto mensal (US$) do alerta de orçamento do projeto (D703)."
+  default     = 30
+}
+
+resource "google_project_service" "billingbudgets" {
+  project            = var.project_id
+  service            = "billingbudgets.googleapis.com"
+  disable_on_destroy = false
+}
+
+data "google_project" "this" {
+  project_id = var.project_id
+}
+
+resource "google_billing_budget" "projeto_mensal" {
+  billing_account = var.maps_budget_billing_account
+  display_name    = "enlite-prd: teto mensal US$ ${var.maps_budget_usd_per_month} (Google Maps, D703)"
+
+  budget_filter {
+    projects               = ["projects/${data.google_project.this.number}"]
+    calendar_period        = "MONTH"
+    credit_types_treatment = "INCLUDE_ALL_CREDITS"
+  }
+
+  amount {
+    specified_amount {
+      currency_code = "USD"
+      units         = tostring(var.maps_budget_usd_per_month)
+    }
+  }
+
+  threshold_rules {
+    threshold_percent = 1.0
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  all_updates_rule {
+    monitoring_notification_channels = [var.events_notification_channel]
+  }
+
+  depends_on = [google_project_service.billingbudgets]
+}
