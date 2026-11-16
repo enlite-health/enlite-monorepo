@@ -26,7 +26,7 @@
  */
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { readTinyDocumentPng } from './workerRegistration';
-import { escolherNoCombobox } from './combobox';
+import { escolherNoCombobox, marcarPrimeiraOpcaoDoCombobox } from './combobox';
 
 /** Espera o PUT/POST de um endpoint e assere que passou — sem gesto de resgate. */
 async function expectSaved(
@@ -62,23 +62,15 @@ async function gotoTab(
   await expect(page.locator(`[data-testid="tab-btn-${tab}"]`)).toBeVisible({ timeout: 30_000 });
 }
 
-/** Abre um MultiSelect, marca a 1ª opção e fecha. Estes JÁ salvam no onChange. */
+/** Combobox `multiple` (spec 070; `data-testid` no PRÓPRIO gatilho): marca a 1ª opção. Estes JÁ salvam no onChange. */
 async function pickFirstMultiSelect(page: Page, testId: string, label: string): Promise<void> {
-  const trigger = page.locator(`[data-testid="${testId}-trigger"]`);
+  const trigger = page.getByTestId(testId);
   await expect(trigger, `${label}: gatilho visível`).toBeVisible({ timeout: 15_000 });
   await expectSaved(
     page,
     '/api/workers/me/general-info',
     'PUT',
-    async () => {
-      await trigger.click();
-      const dropdown = page.locator(`[data-testid="${testId}-dropdown"]`);
-      await expect(dropdown, `${label}: dropdown abriu`).toBeVisible({ timeout: 10_000 });
-      await dropdown.locator('div').first().click();
-      // O MultiSelect fecha por mousedown FORA — `Escape` não fecha (medido).
-      // Fechar importa porque o dropdown aberto cobre o campo seguinte.
-      await page.mouse.click(5, 5);
-    },
+    () => marcarPrimeiraOpcaoDoCombobox(trigger),
     label,
   );
 }

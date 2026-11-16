@@ -40,3 +40,14 @@ export async function lerOpcoesDoCombobox(gatilho: Locator): Promise<Array<{ val
     );
   return opcoes.filter((o) => o.value !== '');
 }
+
+/**
+ * Combobox `multiple`: abre, marca a 1ª opção e fecha. Escolher NÃO fecha o painel nesse modo; ele
+ * fecha por `mousedown` FORA (`Escape` não fecha, medido) — e fechar importa porque o painel aberto
+ * cobre o campo seguinte.
+ */
+export async function marcarPrimeiraOpcaoDoCombobox(gatilho: Locator): Promise<void> {
+  const painel = await abrir(gatilho);
+  await painel.getByRole('option').first().click();
+  await gatilho.page().mouse.click(5, 5);
+}

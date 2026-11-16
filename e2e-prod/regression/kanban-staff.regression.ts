@@ -158,7 +158,9 @@ async function abrirVaga(browser: Browser): Promise<{ page: Page; fechar: () => 
 }
 
 /**
- * Move a tarjeta para SELECIONADOS pelo menu do card, atravessando o modal de PAPEL.
+ * Move a tarjeta para SELECIONADOS pelo menu do card, atravessando o modal de PAPEL. Hoje o teste
+ * que o usa (1.1) espera o PUT ser BARRADO com 403 (worker não apto, spec 067): o modal de papel
+ * ainda aparece, o 403 vem depois do "confirmar".
  *
  * ⚠️ TRÊS COISAS QUE SÓ A PRIMEIRA EXECUÇÃO REAL ENSINOU (31/08), todas visíveis no
  * screenshot da falha:
@@ -176,7 +178,8 @@ async function abrirVaga(browser: Browser): Promise<{ page: Page; fechar: () => 
  *
  * O que fica SEM cobertura, dito para não virar falsa sensação: se o `@dnd-kit` quebrar,
  * este teste continua verde. Cobrir o arrasto exige afinar pointer events contra o
- * dnd-kit — está na lista.
+ * dnd-kit — está na lista. Também sem cobertura: o diálogo de MOTIVO do salto (422
+ * `MOVE_REASON_REQUIRED`), porque sem worker apto o 403 vem antes do 422.
  */
 async function moverTarjetaParaSelecionados(page: Page): Promise<void> {
   const card = page.getByTestId(`kanban-card-${kanban.cardId}`);
@@ -487,9 +490,10 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
 
       // ── a metade da LISTA fica PENDENTE, e o motivo é conhecido ──────────────
       // O Kanban e a tabela são visões alternativas; voltar para `Lista` funciona, mas a
-      // tabela abre no bucket `INVITED` (`VacancyFunnelView.DEFAULT_BUCKET`) e nesta
-      // altura da jornada o card já está em SELECIONADOS (a 1.1 o moveu) — então
-      // `funnel-worker-link` não está na tela sem também trocar de bucket.
+      // tabela abre no bucket `INVITED` (`VacancyFunnelView.DEFAULT_BUCKET`). Desde que a 1.1
+      // passou a afirmar o 403 (worker não apto), o card continua em INICIADO (INVITED + manual)
+      // — então o bucket padrão da tabela já é o certo e `funnel-worker-link` deveria aparecer
+      // sem trocar de bucket; isso NÃO foi verificado.
       // O link do card, que é a metade coberta acima, JÁ prova `target=_blank` + `rel`
       // + a aba abrindo no worker certo. Falta repetir na tabela. Ver tasks.md.
     } finally {
