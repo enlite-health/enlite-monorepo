@@ -340,6 +340,66 @@ describe('WorkerControllerV2', () => {
 
   });
 
+  describe('initWorker — claim country (D731), país da conta nova (D733) e canal app (D734)', () => {
+    const appRes = (res: Response) => Object.assign(res, { locals: { profileEditChannel: 'app' } });
+
+    it('T-F0b-42 ficha existente com country AR e corpo BR: o claim sai da FICHA (AR), nunca do corpo', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok({ ...mockWorker, country: 'AR' }));
+      const claimSpy = jest.spyOn(controller['provisionCountryClaim'], 'execute').mockResolvedValue('provisioned');
+      const [req, res] = mockReqRes({ country: 'BR' }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(claimSpy).toHaveBeenCalledWith(expect.objectContaining({ uid: AUTH_UID, country: 'AR' }));
+    });
+
+    it.each([['BR', 'BR'], ['br', 'BR'], ['XX', 'AR'], [undefined, 'AR']])(
+      'T-F0b-42 conta nova com região %p nasce com country %p e o claim sai da linha criada',
+      async (region, esperado) => {
+        jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.fail('Worker not found'));
+        const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute')
+          .mockImplementation(async (d) => Result.ok({ status: 'ok' as const, worker: { ...mockWorker, country: d.country as string } }));
+        const claimSpy = jest.spyOn(controller['provisionCountryClaim'], 'execute').mockResolvedValue('provisioned');
+        const [req, res] = mockReqRes({ country: region }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+        await controller.initWorker(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(initSpy).toHaveBeenCalledWith(expect.objectContaining({ country: esperado, allowCreate: true }));
+        expect(claimSpy).toHaveBeenCalledWith(expect.objectContaining({ uid: AUTH_UID, country: esperado }));
+      },
+    );
+
+    it('T-F0b-42 canal app sem ficha: 404 WORKER_NOT_REGISTERED, allowCreate false e nenhum claim', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.fail('Worker not found'));
+      const initSpy = jest.spyOn(controller['initWorkerUseCase'], 'execute').mockResolvedValue(Result.ok({ status: 'not_registered' as const }));
+      const claimSpy = jest.spyOn(controller['provisionCountryClaim'], 'execute');
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, appRes(res));
+
+      expect(initSpy).toHaveBeenCalledWith(expect.objectContaining({ allowCreate: false }));
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Worker not registered', code: 'WORKER_NOT_REGISTERED' });
+      expect(claimSpy).not.toHaveBeenCalled();
+    });
+
+    it('T-F0b-42 claim_pending (OTP da ficha importada) não grava claim: a ficha ainda não é do uid', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.fail('Worker not found'));
+      jest.spyOn(controller['initWorkerUseCase'], 'execute').mockResolvedValue(Result.ok({
+        status: 'claim_pending' as const, candidateWorkerId: WORKER_ID, phoneMasked: '+54 ***', verificationSid: 'VE1',
+      }));
+      const claimSpy = jest.spyOn(controller['provisionCountryClaim'], 'execute');
+      const [req, res] = mockReqRes({ phone: '+5491100000000' }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(claimSpy).not.toHaveBeenCalled();
+    });
+  });
+
   // ───────────────────────────────────────────────────────────────────────────
   // getProgress (me endpoint)
   // ───────────────────────────────────────────────────────────────────────────

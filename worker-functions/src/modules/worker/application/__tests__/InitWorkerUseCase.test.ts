@@ -833,4 +833,27 @@ describe('InitWorkerUseCase', () => {
       expect(calledCandidates.some(c => c.includes('6666') && !c.includes('5555'))).toBe(false);
     });
   });
+
+  describe('D734 — init pelo app (allowCreate: false) nunca cria ficha', () => {
+    it('T-F0b-42 sem ficha por uid, e-mail nem telefone: not_registered e nenhum create', async () => {
+      const repo = makeRepository();
+      const result = await new InitWorkerUseCase(repo as any).execute({ ...makeCreateDTO({ phone: undefined }), allowCreate: false });
+      expect(result.getValue()).toEqual({ status: 'not_registered' });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('T-F0b-42 ficha com o e-mail do token: religa como hoje (só religa, não cria)', async () => {
+      const repo = makeRepository({ findByEmail: jest.fn().mockResolvedValue(Result.ok({ ...mockWorker, authUid: 'outro-uid' })) });
+      const result = await new InitWorkerUseCase(repo as any).execute({ ...makeCreateDTO({ phone: undefined }), allowCreate: false });
+      expect(result.getValue()).toEqual({ status: 'ok', worker: mockWorker });
+      expect(repo.updateAuthUid).toHaveBeenCalledTimes(1);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('T-F0b-42 controle: sem a marca (web) cria como hoje', async () => {
+      const repo = makeRepository();
+      await new InitWorkerUseCase(repo as any).execute({ ...makeCreateDTO({ phone: undefined }), allowCreate: true });
+      expect(repo.create).toHaveBeenCalledTimes(1);
+    });
+  });
 });
