@@ -21,6 +21,10 @@ resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = "github-pool"
   display_name              = "GitHub Pool"
+  # D716: trava contra destroy; derrubar o pool/provider quebra o deploy dos repos e o id fica preso ~30 dias.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
@@ -39,6 +43,10 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   ))
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+  # D716: trava contra destroy; derrubar o pool/provider quebra o deploy dos repos e o id fica preso ~30 dias.
+  lifecycle {
+    prevent_destroy = true
   }
 }
 
