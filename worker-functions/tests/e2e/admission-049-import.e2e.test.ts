@@ -888,22 +888,15 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(0);
   });
 
-  it('H4 catálogo (caminho REAL): `TherapeuticCatalogRepository.list(segments)` -> rótulos só dos ATIVOS, por sort_order, contra o Postgres', async () => {
-    const { TherapeuticCatalogRepository } = await import('../../src/modules/case/infrastructure/TherapeuticCatalogRepository');
-    const tag = `SEG-049-${RUN}`;
-    await admin.query(
-      `INSERT INTO therapeutic_segments (label, sort_order, active, deactivated_at, created_by, updated_by)
-       VALUES ($1, 9001, true, NULL, 'e2e', 'e2e'), ($2, 9000, true, NULL, 'e2e', 'e2e'), ($3, 9002, false, NOW(), 'e2e', 'e2e')`,
-      [`${tag}-B`, `${tag}-A`, `${tag}-INATIVO`],
-    );
-    try {
-      const labels = (await new TherapeuticCatalogRepository().list('segments')).map((i) => i.label);
-      const ours = labels.filter((l) => l.startsWith(tag));
-      expect(ours).toEqual([`${tag}-A`, `${tag}-B`]);
-      expect(labels.length).toBeGreaterThan(2); // as migrations semeiam os segmentos reais (495)
-    } finally {
-      await admin.query(`DELETE FROM therapeutic_segments WHERE label LIKE $1`, [`${tag}%`]);
-    }
+  it('H4 catálogo (caminho REAL, DD-17/CA-18): com TODOS os segmentos inativos o marcador CATALOGO_SEGMENTOS_CLINICOS sai com os 13 rótulos, contra o Postgres', async () => {
+    const { SegmentLabelsReader } = await import('../../src/modules/matching/infrastructure/SegmentLabelsReader');
+    const { buildPromptValues } = await import('../../src/modules/matching/infrastructure/VertexAdmissionSummaryGenerator');
+    const { rows: all } = await admin.query<{ label: string; active: boolean }>(`SELECT label, active FROM therapeutic_segments ORDER BY sort_order, lower(label)`);
+    expect(all).toHaveLength(13); // controle de medição: os 13 segmentos existem
+    expect(all.filter((r) => r.active)).toHaveLength(0); // e estão todos inativos (586)
+    const values = await buildPromptValues({ segmentLabels: () => new SegmentLabelsReader().list(), pathologyTypeLabels: async () => ['PAT-SINTETICA (99)'] });
+    expect(values.CATALOGO_SEGMENTOS_CLINICOS).toBe(all.map((r) => r.label).join(' / '));
+    expect(values.CATALOGO_SEGMENTOS_CLINICOS.split(' / ')).toHaveLength(13);
   });
 
   it('H4 teto partindo de `blocked` por OUTRO motivo: a exaustão grava o evento UMA vez, mesmo com o estado já `blocked`, e a reunião sai da fila', async () => {

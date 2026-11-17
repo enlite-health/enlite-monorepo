@@ -43,6 +43,8 @@ UPDATE therapeutic_segments
    SET active = false, deactivated_at = COALESCE(deactivated_at, NOW()), updated_by = 'migration:586', updated_at = NOW()
  WHERE active;
 
+COMMENT ON TABLE therapeutic_segments IS 'Congelada na 091: toda inativa; lida só por SegmentLabelsReader (matching) para o resumo de admissão; não editar nem reativar.';
+
 -- ── 3. Item ativo exige dono (DD-15) ─────────────────────────────────────────
 ALTER TABLE therapeutic_specific_objectives DROP CONSTRAINT IF EXISTS therapeutic_specific_objectives_ativo_tem_servico;
 ALTER TABLE therapeutic_specific_objectives ADD CONSTRAINT therapeutic_specific_objectives_ativo_tem_servico
