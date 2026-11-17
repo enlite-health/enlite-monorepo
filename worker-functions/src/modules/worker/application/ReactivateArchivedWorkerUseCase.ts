@@ -68,6 +68,8 @@ interface ArchivalOrigin {
   /** Estado imediatamente anterior ao arquivamento — o destino da restituição. */
   statusBefore: string | null;
   everRequestedByTitular: boolean;
+  /** Linha em `blacklist` ou encuadre com resultado BLACKLIST (D751): nunca reativa. */
+  blacklisted: boolean;
 }
 
 /**
@@ -91,6 +93,7 @@ export async function reactivateIfArchivedByUs(
     if (origin.status !== 'DISABLED') return null;
     if (origin.everRequestedByTitular) return null;
     if (!isReversibleJob(origin.archivedBy)) return null;
+    if (origin.blacklisted) return null;
 
     const target = origin.statusBefore as WorkerStatus;
     if (!RESTORABLE_STATUSES.includes(target)) return null;
@@ -144,6 +147,7 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
     archived_by: string | null;
     status_before: string | null;
     ever_requested: boolean;
+    blacklisted: boolean;
   }>(
     `SELECT w.status,
             (SELECT h.changed_by
@@ -167,7 +171,11 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
                  -- via EncuadreController) bloquearia para sempre uma vítima legítima do lote.
                  AND h2.new_value = 'DISABLED'
                  AND h2.changed_by LIKE ANY ($2::text[])
-            ) AS ever_requested
+            ) AS ever_requested,
+            -- D751: blacklist vence a reativação por sinal de vida. Lado seguro: qualquer das duas marcas.
+            (EXISTS (SELECT 1 FROM blacklist b WHERE b.worker_id = w.id)
+             OR EXISTS (SELECT 1 FROM encuadres e WHERE e.worker_id = w.id AND e.resultado = 'BLACKLIST')
+            ) AS blacklisted
        FROM workers w
       WHERE w.id = $1`,
     [workerId, TITULAR_REQUEST_MARKERS],
@@ -180,6 +188,7 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
         archivedBy: row.archived_by,
         statusBefore: row.status_before,
         everRequestedByTitular: row.ever_requested,
+        blacklisted: row.blacklisted,
       }
     : null;
 }

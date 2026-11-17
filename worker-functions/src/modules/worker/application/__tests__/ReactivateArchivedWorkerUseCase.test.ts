@@ -27,6 +27,7 @@ function makeDeps(
     status: string;
     archived_by: string | null;
     ever_requested: boolean;
+    blacklisted?: boolean;
     status_before?: string | null;
   } | null,
   updateRowCount = 1,
@@ -287,6 +288,31 @@ describe('reactivateIfArchivedByUs', () => {
   });
 });
 
+describe('D751 — blacklist nunca reativa', () => {
+  const JOB = 'system:bulk-archive-stale-2026-01-30';
+
+  it('blacklisted: true + job reversível → null e NÃO chama o UPDATE', async () => {
+    const { pool, client } = makeDeps({ ...archivedByUs(JOB), blacklisted: true });
+    await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
+    expect(client.query).not.toHaveBeenCalled();
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
+  it('blacklisted: false + mesmo job → continua reativando', async () => {
+    const { pool, client } = makeDeps({ ...archivedByUs(JOB), blacklisted: false });
+    await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe('INCOMPLETE_REGISTER');
+    expect(sqlsOf(client).some((s) => s.includes('UPDATE workers'))).toBe(true);
+  });
+
+  it('a query de origem consulta blacklist E encuadres.resultado = BLACKLIST', async () => {
+    const { pool } = makeDeps({ ...archivedByUs(JOB), blacklisted: false });
+    await reactivateIfArchivedByUs(pool as never, WID);
+    const sql = String(pool.query.mock.calls[0][0]);
+    expect(sql).toMatch(/EXISTS\s*\(SELECT 1 FROM blacklist b WHERE b\.worker_id = w\.id\)/);
+    expect(sql).toMatch(/FROM encuadres e WHERE e\.worker_id = w\.id AND e\.resultado = 'BLACKLIST'/);
+  });
+});
+
 describe('reactivateOnActivity — o guard do caminho quente', () => {
   function mockPool(originRow: Record<string, unknown> | null) {
     const client = {
@@ -314,6 +340,11 @@ describe('reactivateOnActivity — o guard do caminho quente', () => {
 
   it('DISABLED por baixa a pedido → null', async () => {
     mockPool({ status: 'DISABLED', archived_by: 'luz:baja-cuenta', ever_requested: true });
+    await expect(reactivateOnActivity(WID, 'DISABLED')).resolves.toBeNull();
+  });
+
+  it('DISABLED + blacklist → null', async () => {
+    mockPool({ ...archivedByUs('system:bulk-archive-stale-2026-01-30'), blacklisted: true });
     await expect(reactivateOnActivity(WID, 'DISABLED')).resolves.toBeNull();
   });
 });
