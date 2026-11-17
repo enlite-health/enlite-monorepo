@@ -6618,7 +6618,21 @@
       "errors": {
         "duplicate": "Ya existe una opción activa con ese texto.",
         "invalidLabel": "El texto no puede tener datos de una persona (e-mail, documento, teléfono) ni superar 200 caracteres."
-      }
+      },
+      "service": "Servicio",
+      "serviceAT": "Acompañante terapéutico",
+      "serviceCAREGIVER": "Cuidado",
+      "icdCategories": "CIE-11",
+      "icdCount": "{{count}} categorías",
+      "icdPanelTitle": "Diagnósticos CIE-11 donde aparece",
+      "icdSearch": "Buscar código o diagnóstico",
+      "icdAdd": "Agregar",
+      "icdRemove": "Quitar",
+      "icdRemoveCascade": "Se quitarán también {{count}} vínculos de actividades",
+      "icdNotInRelease": "No está en la versión CIE-11 vigente",
+      "objective": "Objetivo",
+      "frequency": "Frecuencia sugerida",
+      "filterIcd": "Vinculado a CIE-11"
     },
     "notifications": {
       "mentioned": "{{actor}} mencionó a vos en {{patient}}",

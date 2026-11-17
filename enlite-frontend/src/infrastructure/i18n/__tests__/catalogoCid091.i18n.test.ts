@@ -1,0 +1,43 @@
+/**
+ * Spec 091 (T305) — chaves admin.therapeuticCatalog.* do catálogo CID-11 existem em es e pt-BR,
+ * com o texto exato de design.md §9.7 (valor fixo, não só presença).
+ */
+import { describe, it, expect } from 'vitest';
+import esJson from '../locales/es.json';
+import ptBRJson from '../locales/pt-BR.json';
+
+const get = (json: unknown, path: string): unknown => path.split('.').reduce((o, k) => (o as Record<string, unknown> | undefined)?.[k], json);
+
+const ADMIN_TC: Record<string, { es: string; ptBR: string }> = {
+  service: { es: 'Servicio', ptBR: 'Serviço' },
+  serviceAT: { es: 'Acompañante terapéutico', ptBR: 'Acompanhante terapêutico' },
+  serviceCAREGIVER: { es: 'Cuidado', ptBR: 'Cuidado' },
+  icdCategories: { es: 'CIE-11', ptBR: 'CID-11' },
+  icdCount: { es: '{{count}} categorías', ptBR: '{{count}} categorias' },
+  icdPanelTitle: { es: 'Diagnósticos CIE-11 donde aparece', ptBR: 'Diagnósticos CID-11 onde aparece' },
+  icdSearch: { es: 'Buscar código o diagnóstico', ptBR: 'Buscar código ou diagnóstico' },
+  icdAdd: { es: 'Agregar', ptBR: 'Adicionar' },
+  icdRemove: { es: 'Quitar', ptBR: 'Remover' },
+  icdRemoveCascade: { es: 'Se quitarán también {{count}} vínculos de actividades', ptBR: 'Também serão removidos {{count}} vínculos de atividades' },
+  icdNotInRelease: { es: 'No está en la versión CIE-11 vigente', ptBR: 'Não está na versão CID-11 vigente' },
+  objective: { es: 'Objetivo', ptBR: 'Objetivo' },
+  frequency: { es: 'Frecuencia sugerida', ptBR: 'Frequência sugerida' },
+  filterIcd: { es: 'Vinculado a CIE-11', ptBR: 'Vinculado a CID-11' },
+};
+
+describe('catálogo CID-11 (091 T305) — admin.therapeuticCatalog.* em es + pt-BR', () => {
+  it.each(Object.keys(ADMIN_TC))('admin.therapeuticCatalog.%s: texto exato nos 2 idiomas', (key) => {
+    const path = `admin.therapeuticCatalog.${key}`;
+    expect(get(esJson, path)).toBe(ADMIN_TC[key].es);
+    expect(get(ptBRJson, path)).toBe(ADMIN_TC[key].ptBR);
+  });
+
+  it('as chaves novas existem nos dois idiomas com a mesma interpolação {{count}}', () => {
+    for (const key of Object.keys(ADMIN_TC)) {
+      const path = `admin.therapeuticCatalog.${key}`;
+      const esVars = [...String(get(esJson, path)).matchAll(/{{\s*(\w+)\s*}}/g)].map((m) => m[1]).sort();
+      const ptVars = [...String(get(ptBRJson, path)).matchAll(/{{\s*(\w+)\s*}}/g)].map((m) => m[1]).sort();
+      expect(ptVars, key).toEqual(esVars);
+    }
+  });
+});

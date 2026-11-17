@@ -6542,7 +6542,21 @@
       "errors": {
         "duplicate": "Já existe uma opção ativa com esse texto.",
         "invalidLabel": "O texto não pode ter dados de uma pessoa (e-mail, documento, telefone) nem passar de 200 caracteres."
-      }
+      },
+      "service": "Serviço",
+      "serviceAT": "Acompanhante terapêutico",
+      "serviceCAREGIVER": "Cuidado",
+      "icdCategories": "CID-11",
+      "icdCount": "{{count}} categorias",
+      "icdPanelTitle": "Diagnósticos CID-11 onde aparece",
+      "icdSearch": "Buscar código ou diagnóstico",
+      "icdAdd": "Adicionar",
+      "icdRemove": "Remover",
+      "icdRemoveCascade": "Também serão removidos {{count}} vínculos de atividades",
+      "icdNotInRelease": "Não está na versão CID-11 vigente",
+      "objective": "Objetivo",
+      "frequency": "Frequência sugerida",
+      "filterIcd": "Vinculado a CID-11"
     },
     "notifications": {
       "mentioned": "{{actor}} mencionou você em {{patient}}",
