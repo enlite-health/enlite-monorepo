@@ -48,6 +48,12 @@ export const PDF_LABELS = {
   pathologyType: 'Tipo de patología (segmento)',
   /** Spec 030: segmento escolhido no PTI (catálogo da Ana Care). Não é a linha acima, que deriva do CID-11. */
   segment: 'Segmento (Ana Care)',
+  /** 091 (§9.9): título do grupo por diagnóstico, "Diagnóstico: <título>" (formato `byDiagnosis`). */
+  diagnosisGroup: 'Diagnóstico',
+  /** 091 (DD-14): frequência sugerida ao lado da atividade, "· Frecuencia: <valor>". */
+  frequency: 'Frecuencia',
+  /** 091 (DD-22): bloco sem catálogo rotulado com a data da versão; `{{date}}` = `createdAt` em dd/mm/aaaa. */
+  noCatalogAt: 'Sin catálogo para este diagnóstico y servicio al {{date}}',
   elaboratedBy: 'Proyecto elaborado por',
   implementationPeriod: 'Plazo de implementación',
   issueDate: 'Fecha de confección',

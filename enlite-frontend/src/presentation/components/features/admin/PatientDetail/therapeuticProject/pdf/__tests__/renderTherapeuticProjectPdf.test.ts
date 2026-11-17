@@ -33,6 +33,8 @@ const version: TherapeuticProjectVersion = {
   specificObjectives: [{ id: 'o1', label: 'Favorecer la prevención de escaras (test).' }],
   activities: [{ id: 'a1', label: 'Realizar cambios posturales frecuentes (test).' }],
   pathologyTypes: [{ id: 'pt1', label: 'Trastornos psicóticos' }],
+  objectivesLayout: 'flat',
+  diagnosisPlans: null,
   segment: { id: 'seg-1', label: 'SEGMENTO-ANACARE-SINTETICO' },
   startDate: '2026-09-01',
   endDate: '2026-12-31',
@@ -418,3 +420,89 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(pos).toEqual([...pos].sort((a, b) => a - b));
   });
 });
+
+// ── 091 (CA-15): `byDiagnosis` agrupa por diagnóstico; redigido = lista plana; `flat` = como antes ─────────
+
+const DIAG_UM = { uri: 'urn:icd:um', title: 'DIAGNOSTICO-SINTETICO-UM' };
+const DIAG_DOIS = { uri: 'urn:icd:dois', title: 'DIAGNOSTICO-SINTETICO-DOIS' };
+
+const byDiagnosis: TherapeuticProjectVersion = {
+  ...version,
+  diagnoses: [DIAG_UM, DIAG_DOIS],
+  objectivesLayout: 'byDiagnosis',
+  // A lista plana derivada (DD-8) vem sempre, mas o formato novo NÃO a desenha quando há blocos.
+  specificObjectives: [{ id: 'po1', label: 'OBJ-PLANO-DERIVADO-SINTETICO' }],
+  activities: [{ id: 'pa1', label: 'ACT-PLANO-DERIVADO-SINTETICA' }],
+  diagnosisPlans: [
+    {
+      diagnosisUri: DIAG_UM.uri,
+      categoryCode: 'AB12',
+      objectives: [{ id: 'o-um', label: 'OBJETIVO-SINTETICO-UM', description: 'DESCRIPCION-OBJ-UM' }],
+      activities: [{ id: 'a-um', label: 'ACTIVIDAD-SINTETICA-UM', description: 'DESCRIPCION-ACT-UM', suggestedFrequency: '2x por semana' }],
+    },
+    { diagnosisUri: DIAG_DOIS.uri, categoryCode: 'ZZ99', objectives: [], activities: [] },
+  ],
+};
+
+const ocorrencias = (text: string, trecho: string): number => text.split(trecho).length - 1;
+
+describe('CA-15 — formatos do PDF (091, §9.9): decidido só por `objectivesLayout`', () => {
+  it('`byDiagnosis`: grupos "Diagnóstico: <título>" nas seções VI e VII, com título — descrição e atividade com frecuencia', async () => {
+    const { text } = await texto({ ...fullInput, version: byDiagnosis });
+
+    for (const esperado of [
+      'Diagnóstico: DIAGNOSTICO-SINTETICO-UM',
+      'OBJETIVO-SINTETICO-UM — DESCRIPCION-OBJ-UM',
+      'ACTIVIDAD-SINTETICA-UM — DESCRIPCION-ACT-UM · Frecuencia: 2x por semana',
+    ]) {
+      expect(text, esperado).toContain(esperado);
+    }
+    // Um grupo por seção (VI e VII); a lista plana derivada NÃO é desenhada quando há blocos.
+    expect(ocorrencias(text, 'Diagnóstico: DIAGNOSTICO-SINTETICO-UM')).toBe(2);
+    expect(text).not.toContain('OBJ-PLANO-DERIVADO-SINTETICO');
+    expect(text).not.toContain('ACT-PLANO-DERIVADO-SINTETICA');
+    // O objetivo do bloco fica sob o grupo do diagnóstico dele, na seção VI (antes da VII).
+    expect(text.indexOf('OBJETIVO-SINTETICO-UM')).toBeGreaterThan(text.indexOf('VI. Objetivos Específicos'));
+    expect(text.indexOf('ACTIVIDAD-SINTETICA-UM')).toBeGreaterThan(text.indexOf('VII. Rutina y Actividades'));
+  });
+
+  it('`byDiagnosis` NÃO mostra o campo Segmento (mesmo com `segment` no objeto); `flat` mostra, como antes', async () => {
+    const novo = await texto({ ...fullInput, version: { ...byDiagnosis, segment: { id: 'seg-1', label: 'SEGMENTO-ANACARE-SINTETICO' } } });
+    expect(novo.text).not.toContain('Segmento (Ana Care)');
+    expect(novo.text).not.toContain('SEGMENTO-ANACARE-SINTETICO');
+
+    const antigo = await texto(fullInput);
+    expect(antigo.text).toContain('Segmento (Ana Care): SEGMENTO-ANACARE-SINTETICO');
+  });
+
+  it('DD-22: bloco com `objectives: []` diz "Sin catálogo … al <data da versão>", nunca só "sin catálogo"', async () => {
+    const { text } = await texto({ ...fullInput, version: byDiagnosis });
+
+    expect(text).toContain('Diagnóstico: DIAGNOSTICO-SINTETICO-DOIS');
+    // `createdAt` = 2026-09-07 → "07/09/2026"; o vazio aparece uma vez por seção (VI e VII).
+    expect(ocorrencias(text, 'Sin catálogo para este diagnóstico y servicio al 07/09/2026')).toBe(2);
+  });
+
+  it('🔒 redigido (`redacted.clinical`): `byDiagnosis` mostra a lista plana derivada, sem grupos nem diagnóstico', async () => {
+    const { text } = await texto({
+      ...fullInput,
+      version: { ...byDiagnosis, diagnosisPlans: null, diagnoses: null, clinicalContext: null, generalObjective: null, redacted: { clinical: true } },
+    });
+
+    expect(text).toContain('OBJ-PLANO-DERIVADO-SINTETICO');
+    expect(text).toContain('ACT-PLANO-DERIVADO-SINTETICA');
+    expect(text).not.toContain('Diagnóstico: ');
+    expect(text).not.toContain('Segmento (Ana Care)');
+    expect(text).not.toContain('Sin catálogo para este diagnóstico');
+  });
+
+  it('o formato vem SÓ de `objectivesLayout`: `flat` com `diagnosisPlans` preenchido segue plano; sem grupos', async () => {
+    const { text } = await texto({ ...fullInput, version: { ...byDiagnosis, objectivesLayout: 'flat' } });
+
+    expect(text).toContain('OBJ-PLANO-DERIVADO-SINTETICO');
+    expect(text).not.toContain('OBJETIVO-SINTETICO-UM');
+    expect(text).not.toContain('Diagnóstico: DIAGNOSTICO-SINTETICO-UM');
+    expect(text).toContain('Segmento (Ana Care): SEGMENTO-ANACARE-SINTETICO');
+  });
+});
+

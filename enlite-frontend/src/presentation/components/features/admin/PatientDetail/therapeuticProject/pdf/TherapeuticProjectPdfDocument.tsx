@@ -15,6 +15,7 @@ import {
 } from './pdfFixedTexts';
 import { formatIsoDateEsAr, implementationPeriodText, type PdfContact, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
 import { sortAlphabeticallyEs } from '../alphabeticalOrder';
+import type { DiagnosisPlanSnapshot, ObjectivesLayoutName, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 
 const PRIMARY = '#180149';
 const GRAY = '#737373';
@@ -111,6 +112,85 @@ function FixedSection({ serviceCode, children }: { serviceCode: string | null; c
   return children;
 }
 
+/** Lista de itens com título e descrição (formato `flat`, spec 061) — a mesma de antes da 091. */
+function flatItems(items: TherapeuticProjectVersion['specificObjectives']): JSX.Element[] {
+  return items.map((o) => <ItemWithDescription key={o.id} title={o.label} description={o.description} />);
+}
+
+/** `título — descrição · Frecuencia: valor` numa linha só (§9.9); a frequência só existe nas atividades. */
+function planItemLine(item: { label: string; description: string | null; suggestedFrequency?: string | null }): string {
+  const frequency = item.suggestedFrequency ? ` · ${PDF_LABELS.frequency}: ${item.suggestedFrequency}` : '';
+  return `${item.label}${item.description ? ` — ${item.description}` : ''}${frequency}`;
+}
+
+function planGroups(
+  v: TherapeuticProjectVersion,
+  plans: DiagnosisPlanSnapshot[],
+  pick: (plan: DiagnosisPlanSnapshot) => Array<{ id: string; label: string; description: string | null; suggestedFrequency?: string | null }>,
+): JSX.Element[] {
+  return plans.map((plan) => {
+    const title = v.diagnoses?.find((d) => d.uri === plan.diagnosisUri)?.title ?? plan.categoryCode ?? PDF_LABELS.notInformed;
+    return (
+      <View key={plan.diagnosisUri}>
+        <Text style={styles.subsection}>{`${PDF_LABELS.diagnosisGroup}: ${title}`}</Text>
+        {plan.objectives.length === 0
+          // DD-22: bloco vazio rotulado com a data da versão, nunca só "sin catálogo".
+          ? <Text style={styles.redacted}>{PDF_LABELS.noCatalogAt.replace('{{date}}', formatIsoDateEsAr(v.createdAt) ?? PDF_LABELS.notInformed)}</Text>
+          : pick(plan).map((i) => <Bullet key={i.id}>{planItemLine(i)}</Bullet>)}
+      </View>
+    );
+  });
+}
+
+/**
+ * Strategy por formato da versão (DD-21: escolhida SÓ por `objectivesLayout`). Cada formato desenha as
+ * seções VI/VII e o campo Segmento da seção II.
+ */
+interface PdfLayout {
+  segment(v: TherapeuticProjectVersion, clinicalRedacted: boolean): JSX.Element | null;
+  objectives(v: TherapeuticProjectVersion, clinicalRedacted: boolean): JSX.Element[];
+  activities(v: TherapeuticProjectVersion, clinicalRedacted: boolean): JSX.Element[];
+}
+
+/** `flat`: idêntico ao de antes da 091, inclusive o Segmento com as regras antigas (:212-215). */
+class FlatPdfLayout implements PdfLayout {
+  segment(v: TherapeuticProjectVersion, clinicalRedacted: boolean): JSX.Element {
+    // Spec 030 (lex C5): redigido na MESMA condição dos CID-11; `null` sem marcador = versão anterior à 496 → "—".
+    return clinicalRedacted || v.segment === undefined
+      ? <Redacted />
+      : <Field label={PDF_LABELS.segment} value={v.segment?.label} />;
+  }
+  objectives(v: TherapeuticProjectVersion): JSX.Element[] {
+    return flatItems(v.specificObjectives);
+  }
+  activities(v: TherapeuticProjectVersion): JSX.Element[] {
+    return flatItems(sortAlphabeticallyEs(v.activities));
+  }
+}
+
+/** `byDiagnosis`: grupos por diagnóstico; redigido (sem `diagnosisPlans`) cai na lista plana derivada (DD-8). Sem Segmento (§9.9). */
+class ByDiagnosisPdfLayout implements PdfLayout {
+  private readonly derivedFlat = new FlatPdfLayout();
+  segment(): null {
+    return null;
+  }
+  objectives(v: TherapeuticProjectVersion, clinicalRedacted: boolean): JSX.Element[] {
+    return !clinicalRedacted && v.diagnosisPlans
+      ? planGroups(v, v.diagnosisPlans, (p) => p.objectives)
+      : this.derivedFlat.objectives(v);
+  }
+  activities(v: TherapeuticProjectVersion, clinicalRedacted: boolean): JSX.Element[] {
+    return !clinicalRedacted && v.diagnosisPlans
+      ? planGroups(v, v.diagnosisPlans, (p) => p.activities)
+      : this.derivedFlat.activities(v);
+  }
+}
+
+const PDF_LAYOUTS: Record<ObjectivesLayoutName, PdfLayout> = {
+  flat: new FlatPdfLayout(),
+  byDiagnosis: new ByDiagnosisPdfLayout(),
+};
+
 function Header({ logoSrc }: { logoSrc?: string }): JSX.Element {
   return (
     <View style={styles.header} fixed>
@@ -136,6 +216,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
   const { version: v } = input;
   const chrome = { caseRef: input.caseRef, version: v.version, issuedAtText: input.issuedAtText };
   const clinicalRedacted = v.redacted?.clinical === true;
+  const layout = PDF_LAYOUTS[v.objectivesLayout];
 
   return (
     <Document title={`${PDF_TITLE} · ${v.version}`} language="es-AR">
@@ -209,10 +290,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {clinicalRedacted || v.pathologyTypes === null
           ? <Redacted />
           : <Field label={PDF_LABELS.pathologyType} value={v.pathologyTypes.map((p) => p.label).join(', ')} />}
-        {/* Spec 030 (lex C5): segmento escolhido no PTI — redigido na MESMA condição dos CID-11; `null` sem marcador = versão anterior à 496 → "—". */}
-        {clinicalRedacted || v.segment === undefined
-          ? <Redacted />
-          : <Field label={PDF_LABELS.segment} value={v.segment?.label} />}
+        {layout.segment(v, clinicalRedacted)}
 
         <SectionTitle>{PDF_SECTIONS.careTeam}</SectionTitle>
         {input.careTeam ? (
@@ -234,10 +312,10 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {clinicalRedacted || v.generalObjective === null ? <Redacted /> : <Text style={styles.paragraph}>{v.generalObjective}</Text>}
 
         <SectionTitle>{PDF_SECTIONS.specificObjectives}</SectionTitle>
-        {v.specificObjectives.map((o) => <ItemWithDescription key={o.id} title={o.label} description={o.description} />)}
+        {layout.objectives(v, clinicalRedacted)}
 
         <SectionTitle>{PDF_SECTIONS.activities}</SectionTitle>
-        {sortAlphabeticallyEs(v.activities).map((a) => <ItemWithDescription key={a.id} title={a.label} description={a.description} />)}
+        {layout.activities(v, clinicalRedacted)}
 
         {/* VIII e IX — texto fixo (constante, sem dado pessoal) do serviço de CUIDADORES (Ana, 08/09 — D301.1).
             Decide pelo `service_code` CONGELADO na versão (417): não depende de célula nem do serviço vivo. */}
