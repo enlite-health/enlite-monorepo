@@ -73,8 +73,6 @@ const versionBodyShape = {
   diagnoses: z.array(diagnosisSchema).min(1).max(20),
   clinicalContext: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
   generalObjective: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
-  specificObjectiveIds: z.array(z.string().uuid()).min(1).max(50),
-  activityIds: z.array(z.string().uuid()).min(1).max(50),
   // Sem `pathologyTypeIds`: o tipo de patologia deriva dos `diagnoses` no servidor (D163/D164).
   startDate: z.string().regex(ISO_DATE),
   endDate: z.string().regex(ISO_DATE),
@@ -102,22 +100,46 @@ const STATUS_WITH_CONTACTS = { message: 'a contact field cannot have both contac
 const endNotBeforeStart = (b: { startDate: string; endDate: string }): boolean => b.endDate >= b.startDate;
 const END_NOT_BEFORE_START = { message: 'endDate must be on or after startDate', path: ['endDate'] };
 
-/** Corpo do "Editar": a forma-base, SEM `segmentId` — o segmento é MACRO (só muda com "Nuevo"). */
-const editVersionBodySchema = z
-  .object(versionBodyShape)
-  .strict()
-  .refine(endNotBeforeStart, END_NOT_BEFORE_START)
-  .refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
+/** Objetivos/atividades do formato plano (versão antiga, só na edição): ids de catálogo, 1..50 (§9.4). */
+const flatObjectivesShape = {
+  specificObjectiveIds: z.array(z.string().uuid()).min(1).max(50),
+  activityIds: z.array(z.string().uuid()).min(1).max(50),
+};
+
+/** Bloco de um diagnóstico (091): 0..50 ids — "vazio" só é válido sem catálogo (conferido no domínio, 422 nomeado). */
+const diagnosisPlanSchema = z
+  .object({
+    diagnosisUri: z.string().min(1).max(500),
+    specificObjectiveIds: z.array(z.string().uuid()).max(50),
+    activityIds: z.array(z.string().uuid()).max(50),
+  })
+  .strict();
+const diagnosisPlansField = z.array(diagnosisPlanSchema).min(1).max(20);
+
+/** O conjunto de `diagnosisUri` dos blocos = o de `diagnoses[].uri`, sem repetição (400, §9.4). */
+const plansMatchDiagnoses = (b: { diagnoses: { uri: string }[]; diagnosisPlans: { diagnosisUri: string }[] }): boolean => {
+  const planUris = b.diagnosisPlans.map((p) => p.diagnosisUri);
+  const diagUris = b.diagnoses.map((d) => d.uri);
+  return new Set(planUris).size === planUris.length && new Set(diagUris).size === diagUris.length
+    && planUris.length === diagUris.length && planUris.every((u) => diagUris.includes(u));
+};
+const PLANS_MATCH_DIAGNOSES = { message: 'diagnosisPlans must cover exactly the diagnoses, once each', path: ['diagnosisPlans'] };
+
+const refinedBody = <T extends z.ZodTypeAny>(schema: T) =>
+  schema.refine(endNotBeforeStart, END_NOT_BEFORE_START).refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
 
 /**
- * Corpo do "Novo": a forma-base + `segmentId` (spec 030, MACRO, obrigatório — lex C4). O cliente manda só o
- * id; `{id,label}` é congelado no SERVIDOR a partir do catálogo ativo, e o `.strict()` recusa `segment:{…}`.
+ * Corpo do "Editar": a forma-base + OU os ids planos OU os blocos por diagnóstico (união zod). Qual dos dois vale é do formato da
+ * versão de origem (422 `ptp_format_mismatch` no repositório); `segmentId` não existe mais (`.strict()` → 400).
  */
-const newVersionBodySchema = z
-  .object({ ...versionBodyShape, segmentId: z.string().uuid() })
-  .strict()
-  .refine(endNotBeforeStart, END_NOT_BEFORE_START)
-  .refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
+const editFlatBodySchema = refinedBody(z.object({ ...versionBodyShape, ...flatObjectivesShape }).strict());
+const editByDiagnosisBodySchema = refinedBody(z.object({ ...versionBodyShape, diagnosisPlans: diagnosisPlansField }).strict())
+  .refine(plansMatchDiagnoses as (b: unknown) => boolean, PLANS_MATCH_DIAGNOSES);
+const editVersionBodySchema = z.union([editFlatBodySchema, editByDiagnosisBodySchema]);
+
+/** Corpo do "Novo" (091): a forma-base SEM ids planos/`segmentId` + `diagnosisPlans`; os rótulos são congelados no SERVIDOR, do catálogo do serviço. */
+const newVersionBodySchema = refinedBody(z.object({ ...versionBodyShape, diagnosisPlans: diagnosisPlansField }).strict())
+  .refine(plansMatchDiagnoses as (b: unknown) => boolean, PLANS_MATCH_DIAGNOSES);
 
 /** `mode: 'new'` → major seguinte; `mode: 'edit'` → minor seguinte da versão de origem. */
 export const createTherapeuticProjectSchema = z.discriminatedUnion('mode', [
