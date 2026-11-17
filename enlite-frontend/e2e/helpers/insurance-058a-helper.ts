@@ -30,7 +30,7 @@ export const CELLS_FICHA: Cell[] = [
   ['patient_clinical', 'read'], ['patient_clinical', 'write'],
   ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'update'],
   ['patient_therapeutic_project', 'export'],
-  ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+  ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
   ['own_notifications', 'read'], ['own_notifications', 'update'],
 ];
 
