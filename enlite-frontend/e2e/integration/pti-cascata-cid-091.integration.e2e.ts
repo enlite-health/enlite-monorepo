@@ -21,43 +21,18 @@ import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 import { travarReleaseCorrente, semearRelease, restaurarRelease } from '../helpers/catalogo-cid-091-seed';
+import { CATEGORIA_NA_PLANILHA, SERVICO_AT, SERVICO_CUIDADOR, semEspaco, primeiroPlano, escolherServico, escolherDiagnostico, marcar } from '../helpers/pti-cascata-091';
 
 const STAMP = Date.now().toString(36);
 const STAFF: MockUser = { uid: `e2e-pti091-${Date.now()}`, email: `e2e.pti091.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
 const RELEASE = 'E2E091-PTI';
 const URI_BASE = 'test://e2e091pti';
-const CAT_NA_PLANILHA = '2A00';
+const CAT_NA_PLANILHA = CATEGORIA_NA_PLANILHA;
 const CAT_FORA_DA_PLANILHA = 'ZE91';
 const TITULO_COM_CATALOGO = 'Trastorno sintetico cascada 091';
 const TITULO_SEM_CATALOGO = 'Trastorno sintetico ausente 091';
 const URI_COM = `${URI_BASE}/${CAT_NA_PLANILHA}`;
 const URI_SEM = `${URI_BASE}/${CAT_FORA_DA_PLANILHA}`;
-const SERVICO_AT = 'Acompañante Terapéutico';
-const SERVICO_CUIDADOR = 'Cuidador';
-
-/** Sem espaço nenhum: o PDF quebra linha em hífen/espaço, e o pdf-parse devolve a quebra como espaço. */
-const semEspaco = (s: string): string => s.replace(/\s+/g, '');
-
-interface Item { id: string; label: string }
-
-/** Primeiro objetivo (na ordem do vínculo, DD-4) da categoria para o serviço que tem ao menos uma atividade ligada, + essa atividade. */
-function primeiroPlano(servico: string, categoria: string): { objetivo: Item; atividade: Item } {
-  const lido = (sql: string): Item => {
-    const [id, ...resto] = runSQL(sql).split('\n')[0].split('|');
-    return { id, label: resto.join('|') };
-  };
-  const objetivo = lido(
-    `SELECT o.id || '|' || o.label FROM therapeutic_objective_icd_categories l JOIN therapeutic_specific_objectives o ON o.id = l.objective_id ` +
-      `WHERE o.active AND o.service_code = '${servico}' AND l.category_code = '${categoria}' ` +
-      `AND EXISTS (SELECT 1 FROM therapeutic_activity_icd_categories a WHERE a.objective_id = o.id AND a.category_code = '${categoria}') ` +
-      `ORDER BY l.sort_order NULLS LAST, lower(o.label) LIMIT 1`,
-  );
-  const atividade = lido(
-    `SELECT t.id || '|' || t.label FROM therapeutic_activity_icd_categories l JOIN therapeutic_activities t ON t.id = l.activity_id ` +
-      `WHERE t.active AND t.objective_id = '${objetivo.id}' AND l.category_code = '${categoria}' ORDER BY l.sort_order NULLS LAST, lower(t.label) LIMIT 1`,
-  );
-  return { objetivo, atividade };
-}
 
 async function entrar(page: Page): Promise<void> {
   runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${STAFF.uid}', '${STAFF.email}', 'E2E Pti091', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
@@ -90,33 +65,6 @@ async function abrirNuevo(page: Page, patientId: string, servico: string, titulo
   await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
   await escolherServico(page, servico);
   await escolherDiagnostico(page, tituloDiagnostico, busca);
-}
-
-/** Combobox do serviço: abre o gatilho e clica a opção pelo rótulo que a pessoa lê (o rótulo traz "· N h/sem" depois do nome). */
-async function escolherServico(page: Page, servico: string): Promise<void> {
-  const gatilho = page.getByTestId('tp-service');
-  await gatilho.click();
-  await page.getByRole('option', { name: new RegExp(`^${servico}`) }).click();
-  await expect(gatilho).toContainText(servico);
-}
-
-async function escolherDiagnostico(page: Page, titulo: string, busca: string): Promise<void> {
-  const resposta = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
-  await page.getByTestId('tp-icd-input').click();
-  await page.keyboard.type(busca);
-  expect((await resposta).status()).toBe(200);
-  const opcao = page.getByTestId('tp-icd-option-0');
-  await expect(opcao).toContainText(titulo, { timeout: 10_000 });
-  const cascata = page.waitForResponse((r) => r.request().method() === 'POST' && /therapeutic-catalogs\/cascade/.test(r.url()));
-  await opcao.click();
-  expect((await cascata).status()).toBe(200);
-  await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
-}
-
-/** Marca um checkbox do bloco pelo mouse (o `input` é sr-only: o humano clica o rótulo). */
-async function marcar(page: Page, testId: string): Promise<void> {
-  await page.locator('label', { has: page.getByTestId(testId) }).click();
-  await expect(page.getByTestId(testId)).toBeChecked();
 }
 
 async function preencherRestoEDatas(page: Page): Promise<void> {

@@ -8,15 +8,17 @@
  *   1. o card existe na aba Datos Clínicos; sem serviço contratado ativo, "Nuevo" fica desabilitado;
  *   2. com serviço (criado pela UI do bloco C? — não: semeado por SQL, o fluxo do serviço já tem e2e
  *      próprio; aqui o objeto é o projeto), "Nuevo" abre a modal larga; o CID é escolhido pelo combobox
- *      real (catálogo `terminology` semeado com UMA entidade sintética + o seu capítulo 06); os 2 multi-selects têm o seed
- *      da migration 415 (8/13/8 opções); salvar → POST devolve V.1.0 e a tabela mostra;
+ *      real (catálogo `terminology` semeado com UMA entidade sintética cuja categoria está no catálogo da planilha, spec 091 + o seu
+ *      capítulo 06); a cascata (§9.8) traz objetivos e atividades DESSA categoria para o serviço (ids lidos do banco); o humano marca 1
+ *      objetivo e 1 atividade; salvar → POST devolve V.1.0 (formato por diagnóstico) e a tabela mostra;
  *   3. "Editar" → V.1.1: o banco tem DUAS linhas e a V.1.0 mantém o texto original (imutável, lex C5);
  *   4. a versão antiga abre em leitura e "Exportar PDF" busca `?purpose=export` (trilha C13) e baixa um
  *      `.pdf` cujo texto (pdf-parse) contém o nome do paciente e o objetivo — e NÃO contém "ICHOM";
  *   5. foto do card e da modal (`toHaveScreenshot`);
  *   6. caminho alternativo: opção do catálogo desativada no meio do preenchimento → 422 na tela, nada gravado.
- *   7. spec 030 (bloco "030 —"): o segmento Ana Care — escolhido pelo teclado no "Nuevo", congelado na versão,
- *      visto na tela e no PDF; sem `patient_clinical:read` tela e PDF o redigem; versão anterior mostra "—".
+ *   7. spec 030 (bloco "030 —"): o segmento Ana Care só existe em versão ANTIGA (formato plano, semeada por SQL; DF-7): a visão e o PDF
+ *      o mostram; sem `patient_clinical:read` tela e PDF o redigem; versão sem segmento mostra "—"; no "Nuevo" em cascata o segmento
+ *      nem aparece (091: sai o campo, o servidor não o recebe) e a versão nasce sem segmento.
  *
  * Auth: staff com GRUPO e células no stack com o engine ABAC LIGADO + token `mock_*` (`loginAs`, molde de
  * `projeto-terapeutico-contatos-humano`) — o `loginComoHumano` (emulador Firebase) não roda nesse stack.
@@ -28,15 +30,18 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
+import {
+  CATEGORIA_NA_PLANILHA, primeiroPlano, escolherDiagnostico, marcarPlano, semearCatalogoSintetico, diagnosisPlansDaVersao,
+} from '../helpers/pti-cascata-091';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-const ICD_URI = 'http://id.who.int/icd/entity/e2e-tp-017';
-/** Capítulo do stem acima: é o que o servidor DERIVA como "Tipo de patología" (D163/D164) — nada se escolhe na tela. */
-const CAP06_URI = 'http://id.who.int/icd/entity/e2e-tp-017-cap06';
-const CAP06_TITLE = 'Trastornos mentales, del comportamiento y del neurodesarrollo (e2e 017)';
+/** Release de teste (corrente sob o advisory lock) com UM stem da planilha: o servidor DERIVA o capítulo 06 do release como "Tipo de patología" (D163/D164) — nada se escolhe na tela. */
+const RELEASE = 'E2E091-PTH';
+const URI_BASE = 'test://e2e091pth';
+const ICD_URI = `${URI_BASE}/${CATEGORIA_NA_PLANILHA}`;
 const ICD_TITLE = 'Trastorno sintético de prueba 017';
+const ICD_CODE = CATEGORIA_NA_PLANILHA; // o código nunca aparece na tela (REQ-21)
 
 
 /** Clica como um humano, digita, devolve o que a TELA mostra. */
@@ -48,37 +53,15 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
   return campo.inputValue();
 }
 
-/** Abre um multi-select do DS e marca as N primeiras opções pelo mouse; fecha a lista clicando no gatilho de novo
- * (o `Escape` do multi-select também chega ao drawer, que desde 15/09 abre o "¿Descartar los cambios?" e tapa a tela). */
-async function marcarOpcoes(page: Page, id: string, n: number): Promise<void> {
-  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
-  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
-  const gatilho = gatilhoDoCampo;
-  await gatilho.click();
-  const opcoes = root.locator('[role="option"] button');
-  await expect(opcoes.first()).toBeVisible();
-  for (let i = 0; i < n; i++) await opcoes.nth(i).click();
-  await gatilho.click();
-  await expect(gatilho).toHaveAttribute('aria-expanded', 'false');
-}
-
-/** O catálogo CID-11 do stack de integração é vazio: UMA entidade sintética, no release corrente. */
-function seedIcd(): void {
-  runSQL(`INSERT INTO terminology.icd_releases (release, entity_count, is_current, promoted_at, promoted_by) VALUES ('2026-01', 1, true, now(), 'e2e-017') ON CONFLICT (release) DO UPDATE SET is_current = true, promoted_at = now(), promoted_by = 'e2e-017'`);
-  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) VALUES ('${ICD_URI}', '2026-01', '6E2E', '${ICD_TITLE}', 'Synthetic disorder 017', '06', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`);
-  // Só quando a base não tem o capítulo 06 real (o CI do backend ingere o catálogo; o do front não): a derivação precisa da linha do capítulo.
-  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) SELECT '${CAP06_URI}', '2026-01', '06', '${CAP06_TITLE}', NULL, '06', NULL, 'chapter', false WHERE NOT EXISTS (SELECT 1 FROM terminology.icd_entities WHERE release = '2026-01' AND kind = 'chapter' AND code = '06')`);
-}
-function cleanupIcd(): void {
-  runSQL(`DELETE FROM terminology.icd_entities WHERE icd_uri IN ('${ICD_URI}', '${CAP06_URI}')`);
-}
+/** Semeia o release sintético (lock do release corrente) e devolve o encerramento que restaura o anterior e solta o lock. */
+const seedIcd = (): Promise<() => void> => semearCatalogoSintetico(RELEASE, URI_BASE, [{ code: ICD_CODE, title: ICD_TITLE }]);
 
 /** Células do PTI de ponta a ponta (molde `projeto-terapeutico-contatos-humano`); a conta "sem clínica" perde só `patient_clinical:read`. */
 const CELULAS_PTI: [string, string][] = [
   ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'export'],
   ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'],
   ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
-  ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+  ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
 ];
 
 /** Staff + grupo + células; o nome da tela ("Creado por") é o `display_name` combinado. */
@@ -104,10 +87,11 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
   let seed: { patientId: string; addressId: string; stamp: string };
   let serviceId: string;
   let staff: { user: MockUser; groupId: string };
+  let soltarCatalogo: () => void = () => undefined;
 
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     seed = seedActivatablePatient(700000, { withDiagnosis: false }); // faixa própria (700000–789999)
-    seedIcd();
+    soltarCatalogo = await seedIcd();
     staff = semearStaff('tp017');
   });
   test.afterAll(() => {
@@ -116,7 +100,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     // o mesmo: apaga o pai. Depois, o helper limpa o que sobrar (idempotente).
     runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
     cleanupPatientDeep(seed.patientId);
-    cleanupIcd();
+    soltarCatalogo();
     limparStaff(staff);
   });
 
@@ -150,32 +134,23 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect.poll(async () => { const b = await drawer.boundingBox(); return b ? Math.round(b.x + b.width) : 0; }).toBe(1600);
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
-    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await expect(page.getByTestId('tp-service')).toHaveText('Cuidador'); // Paso 1: o único serviço contratado já vem escolhido (a faixa de horas só aparece com `serviceHours` no catálogo)
     // D301.3a (Ana): modalidade obrigatória — select nativo; o valor é lido de volta da tela.
     await expect(page.getByTestId('tp-modality')).toContainText('Elegí la modalidad');
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
     await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
-    // spec 030: o segmento é obrigatório no "Nuevo" — pelo teclado, valor lido da tela.
-    const segmento = primeiroSegmento();
-    expect(await escolherSegmento(page, segmento.label)).toBe(segmento.label);
+    // 091: o campo Segmento saiu do "Nuevo" (o catálogo agora é por serviço e CID).
+    await expect(page.getByTestId('tp-segment')).toHaveCount(0);
 
-    // CID pelo combobox REAL: digita como humano, escolhe a opção.
-    const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
-    await page.getByTestId('tp-icd-input').click();
-    await page.keyboard.type('sintetico');
-    expect((await search).status()).toBe(200);
-    const opcao = page.getByTestId('tp-icd-option-0');
-    await expect(opcao).toBeVisible({ timeout: 10_000 });
-    await expect(opcao).toContainText(ICD_TITLE);
-    await opcao.click();
-    await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
+    // CID pelo combobox REAL: digita como humano, escolhe a opção; a cascata traz o catálogo do serviço para essa categoria.
+    const plano = primeiroPlano('CAREGIVER');
+    await escolherDiagnostico(page, ICD_TITLE, 'sintetico');
     // REQ-21: o código nunca aparece na tela.
-    await expect(drawer).not.toContainText('6E2E');
+    await expect(drawer).not.toContainText(ICD_CODE);
 
     expect(await digitar(page, '#tp-clinicalContext', 'Sintesis clinica digitada por humano 017')).toBe('Sintesis clinica digitada por humano 017');
     expect(await digitar(page, '#tp-generalObjective', 'Objetivo general digitado por humano 017')).toBe('Objetivo general digitado por humano 017');
-    await marcarOpcoes(page, 'tp-specificObjectives', 2);
-    await marcarOpcoes(page, 'tp-activities', 3);
+    await marcarPlano(page, ICD_URI, plano); // Paso 3 e 4: 1 objetivo e 1 atividade do bloco (sem seleção prévia, DD-13)
     // Não existe campo de tipo de patologia (Gabriel 08/09): deriva do CID-11 no servidor; DEC-09 — nem na tela.
     await expect(page.getByTestId('tp-pathologyTypes')).toHaveCount(0);
     await expect(drawer).not.toContainText('Tipo de patología');
@@ -190,16 +165,19 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
 
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
-    const body = (await (await created).json()) as { data: { id: string; version: string; specificObjectives: unknown[]; activities: unknown[]; pathologyTypes: { id: string; label: string }[]; diagnoses: { title: string }[] } };
+    const body = (await (await created).json()) as { data: { id: string; version: string; modality: string; specificObjectives: Array<{ id: string }>; activities: Array<{ id: string }>; segment: unknown; pathologyTypes: { id: string; label: string }[]; diagnoses: { title: string }[] } };
     expect(body.data.version).toBe('V.1.0');
     expect(body.data.modality).toBe('HYBRID');
-    expect(body.data.specificObjectives).toHaveLength(2);
-    expect(body.data.activities).toHaveLength(3);
+    // Formato por diagnóstico: a lista plana da resposta é a união dos blocos; a versão nasce sem segmento.
+    expect(body.data.specificObjectives.map((o) => o.id)).toEqual([plano.objetivo.id]);
+    expect(body.data.activities.map((a) => a.id)).toEqual([plano.atividade.id]);
+    expect(body.data.segment ?? null).toBeNull();
     // DERIVADO: o capítulo CID-11 do diagnóstico escolhido, resolvido no servidor (id = código do capítulo).
     expect(body.data.pathologyTypes).toHaveLength(1);
     expect(body.data.pathologyTypes[0].id).toBe('06');
     expect(body.data.diagnoses[0].title).toBe(ICD_TITLE);
     const v10 = body.data.id;
+    expect(diagnosisPlansDaVersao(v10)).toEqual([{ diagnosisUri: ICD_URI, specificObjectiveIds: [plano.objetivo.id], activityIds: [plano.atividade.id] }]);
 
     // A modal vira "ver" da criada; fecha; o card mostra a V.1.0 no topo e na tabela.
     await expect(page.getByTestId('therapeutic-project-subtitle')).toContainText('V.1.0 - Creado por: E2E Proyecto');
@@ -214,20 +192,25 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await page.getByTestId('tp-edit-btn').click();
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('therapeutic-project-subtitle')).toContainText('V.1.0');
-    // PR-7 (D328): editar a vigente trava os campos MACRO como TEXTO (objetivo geral, segmento…); só os MICRO mudam.
+    // PR-7 (D328): editar a vigente trava os campos MACRO como TEXTO (objetivo geral, blocos do diagnóstico…); só os MICRO mudam.
     await expect(page.getByTestId('tp-generalObjective-locked')).toHaveText('Objetivo general digitado por humano 017');
-    await expect(page.getByTestId('tp-segment-locked')).toHaveText(segmento.label); // spec 030: o segmento herda da origem
+    // 091 (§9.8): "Editar" de versão por diagnóstico mostra os blocos SÓ LEITURA, com o plano da origem.
+    await expect(page.getByTestId(`tp-objectives-locked-${ICD_URI}`)).toContainText(plano.objetivo.label);
+    await expect(page.getByTestId(`tp-activities-locked-${ICD_URI}`)).toContainText(plano.atividade.label);
+    await expect(page.getByTestId('tp-segment-locked')).toHaveCount(0);
     await expect(page.getByTestId('tp-modality')).toContainText('Híbrida'); // a edição parte da versão de origem
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'On-line'); // ONLINE = On-line
     await expect(page.getByTestId('tp-modality')).toContainText('On-line');
     const edited = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
-    const body11 = (await (await edited).json()) as { data: { id: string; version: string; editedFromVersionId: string; generalObjective: string; modality: string; segment: { label: string } | null } };
+    const body11 = (await (await edited).json()) as { data: { id: string; version: string; editedFromVersionId: string; generalObjective: string; modality: string; segment: { label: string } | null; specificObjectives: Array<{ id: string }>; activities: Array<{ id: string }> } };
     expect(body11.data.version).toBe('V.1.1');
     expect(body11.data.editedFromVersionId).toBe(v10);
     expect(body11.data.generalObjective).toBe('Objetivo general digitado por humano 017');
     expect(body11.data.modality).toBe('ONLINE');
-    expect(body11.data.segment?.label).toBe(segmento.label); // herdado da origem (a chave `segmentId` nem viaja no "Editar")
+    expect(body11.data.segment ?? null).toBeNull(); // a origem não tem segmento
+    expect(body11.data.specificObjectives.map((o) => o.id)).toEqual([plano.objetivo.id]); // o plano é COPIADO da origem (DD-6)
+    expect(diagnosisPlansDaVersao(body11.data.id)).toEqual(diagnosisPlansDaVersao(v10));
     await page.getByTestId('therapeutic-project-close').click();
     await expect(drawer).toHaveCount(0);
 
@@ -257,22 +240,27 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     expect(texto).toContain(`BlocoC Servicio${seed.stamp}`);
     expect(texto).toContain('Objetivo general digitado por humano 017');
     expect(texto).toContain(ICD_TITLE);
+    expect(texto).toContain(`Diagnóstico: ${ICD_TITLE}`); // §9.9: grupo por diagnóstico nas seções de objetivos/atividades
+    expect(texto).toContain(plano.objetivo.label);
+    expect(texto).toContain(plano.atividade.label);
+    expect(texto).not.toContain('Segmento (Ana Care)'); // byDiagnosis não mostra o campo Segmento
     expect(texto).toContain('Versión V.1.0');
     expect(texto).toContain('Modalidad: Híbrida');
     // D301.1: o serviço é CAREGIVER → as seções fixas VIII/IX saem inteiras.
     expect(texto).toContain('El cuidador NO debe');
     expect(texto).not.toContain('no aplicable a este servicio');
     expect(texto).not.toContain('ICHOM');
-    expect(texto).not.toContain('6E2E');
+    expect(texto).not.toContain(ICD_CODE);
     // lex C13: a trilha do export existe, com o UUID do paciente e sem texto.
     const trilha = runSQL(`SELECT count(*) FROM resource_access_log WHERE resource_id = '${seed.patientId}' AND action LIKE 'export_pdf:%'`);
     expect(Number(trilha)).toBeGreaterThanOrEqual(1);
   });
-  test('caminho alternativo: uma opção do catálogo é desativada no backoffice ENQUANTO o humano preenche → o servidor recusa (422), a tela diz por quê e NADA é gravado', async ({ page }) => {
-    // O que se prova: o snapshot do catálogo é validado na hora de salvar (repositório: só ids ATIVOS
-    // entram), a recusa vira frase na tela (`catalog_items_unknown`), e o banco não ganha versão.
+  test('caminho alternativo: o objetivo marcado é desativado no backoffice ENQUANTO o humano preenche → o servidor recusa (422), a tela mostra a recusa e NADA é gravado', async ({ page }) => {
+    // O que se prova: o plano do bloco é validado na hora de salvar (091/DF-7: o objetivo tem de estar ATIVO, ser do serviço e da categoria do
+    // bloco), a recusa aparece na tela com o formulário aberto, e o banco não ganha versão.
     const antes = Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`));
     expect(antes).toBe(2);
+    const plano = primeiroPlano('CAREGIVER');
 
     await loginAs(page, staff.user);
     await page.goto(`/admin/patients/${seed.patientId}`);
@@ -281,39 +269,31 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     const drawer = page.getByTestId('therapeutic-project-drawer');
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
 
-    await page.getByTestId('tp-icd-input').click();
-    await page.keyboard.type('sintetico');
-    const opcao = page.getByTestId('tp-icd-option-0');
-    await expect(opcao).toBeVisible({ timeout: 10_000 });
-    await opcao.click();
+    await escolherDiagnostico(page, ICD_TITLE, 'sintetico');
+    await marcarPlano(page, ICD_URI, plano);
     await digitar(page, '#tp-clinicalContext', 'Contexto que no debe persistir 017');
     await digitar(page, '#tp-generalObjective', 'Objetivo que no debe persistir 017');
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
-    await escolherSegmento(page, primeiroSegmento().label);
-    await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista: `segmentOptions` (sem `alphabetical` p/ objetivos) põe os do segmento escolhido antes dos sem vínculo, na ordem da API (`ORDER BY lower(label)`, spec 061)
-    await marcarOpcoes(page, 'tp-activities', 1);
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
     await page.locator('#tp-endDate').click();
     await page.keyboard.type('12312026');
     await expect(page.getByTestId('tp-save')).toBeEnabled();
 
-    // Enquanto o formulário está aberto, o backoffice desativa exatamente a opção escolhida.
-    // Mesma regra da tela (segmentOptions.ts + API): do segmento escolhido primeiro, depois os sem vínculo; dentro de cada bloco `lower(label)`; outro segmento fica de fora.
-    const primeira = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active AND (segment_id = '${primeiroSegmento().id}' OR segment_id IS NULL) ORDER BY (segment_id IS NULL), lower(label) LIMIT 1`).split('\n')[0].trim();
-    expect(primeira).toMatch(/^[0-9a-f-]{36}$/);
-    runSQL(`UPDATE therapeutic_specific_objectives SET active = false, deactivated_at = now(), updated_by = 'e2e-017' WHERE id = '${primeira}'`);
+    // Enquanto o formulário está aberto, o backoffice desativa exatamente o objetivo marcado (e devolve o `updated_by` original no fim).
+    const autorOriginal = runSQL(`SELECT updated_by FROM therapeutic_specific_objectives WHERE id = '${plano.objetivo.id}'`).split('\n')[0].trim();
+    runSQL(`UPDATE therapeutic_specific_objectives SET active = false, deactivated_at = now(), updated_by = 'e2e-017' WHERE id = '${plano.objetivo.id}'`);
     try {
       const recusa = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
       await page.getByTestId('tp-save').click();
       const resp = await recusa;
       expect(resp.status()).toBe(422);
-      expect(((await resp.json()) as { code: string }).code).toBe('catalog_items_unknown');
-      await expect(page.getByTestId('tp-form-error')).toContainText('ya no está activa en el catálogo');
+      expect(((await resp.json()) as { code: string }).code).toBe('ptp_plan_objective_invalid');
+      await expect(page.getByTestId('tp-form-error')).toBeVisible();
       await expect(drawer).toHaveAttribute('data-mode', 'new'); // o formulário fica aberto para o humano corrigir
       await expect(page.getByTestId('tp-form-error')).toHaveScreenshot('tp-form-error-catalogo.png', { maxDiffPixelRatio: 0.02 });
     } finally {
-      runSQL(`UPDATE therapeutic_specific_objectives SET active = true, deactivated_at = NULL, updated_by = 'seed:415' WHERE id = '${primeira}'`);
+      runSQL(`UPDATE therapeutic_specific_objectives SET active = true, deactivated_at = NULL, updated_by = '${autorOriginal}' WHERE id = '${plano.objetivo.id}'`);
     }
     const depois = Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`));
     expect(depois).toBe(antes);
@@ -359,7 +339,7 @@ async function exportarPdf(page: Page, testInfo: TestInfo, nome: string): Promis
   return { texto: (await pdfParse(buf)).text.replace(/\s+/g, ' '), externas };
 }
 
-test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na tela e no PDF; redigido sem clínica; versão anterior "—" @integration', () => {
+test.describe('spec 030/091 — segmento Ana Care: só em versão ANTIGA (plana), na tela e no PDF; redigido sem clínica; sem segmento "—"; o "Nuevo" em cascata não tem segmento @integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(300_000);
 
@@ -368,11 +348,12 @@ test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na
   let feliz: { patientId: string; serviceId: string };
   let comSegmento: { patientId: string; serviceId: string };
   let anterior: { patientId: string; serviceId: string };
-  let segmento: { id: string; label: string };
+  let soltarCatalogo: () => void = () => undefined;
+  /** Segmento SINTÉTICO congelado na versão antiga (a coluna `segment` é só `{id,label}`; o catálogo de segmentos saiu na 091). */
+  const segmento = { id: '00000000-0000-4000-8000-000000000091', label: `Segmento sintetico 030 ${RUN_ID}` };
 
-  test.beforeAll(() => {
-    seedIcd();
-    segmento = primeiroSegmento();
+  test.beforeAll(async () => {
+    soltarCatalogo = await seedIcd();
     completa = semearStaff('tp030-completa');
     semClinica = semearStaff('tp030-semclinica', ['patient_clinical:read']);
     feliz = semearPacienteComServico(730000);
@@ -386,12 +367,13 @@ test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na
       runSQL(`DELETE FROM patients WHERE id = '${p.patientId}'`);
       cleanupPatientDeep(p.patientId);
     }
-    cleanupIcd();
+    soltarCatalogo();
     limparStaff(completa);
     limparStaff(semClinica);
   });
 
-  test('030 — feliz: Nuevo → CID pelo combobox → segmento pelo teclado (valor lido da tela) → salva → a visão mostra o segmento → o PDF o contém, sem requisição externa', async ({ page }, testInfo) => {
+  test('030 — feliz: Nuevo em cascata → sem campo de segmento → salva → a visão e o PDF NÃO têm "Segmento (Ana Care)" e nenhuma requisição externa sai', async ({ page }, testInfo) => {
+    const plano = primeiroPlano('CAREGIVER');
     await loginAs(page, completa.user);
     await page.goto(`/admin/patients/${feliz.patientId}`);
     await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
@@ -399,56 +381,61 @@ test.describe('spec 030 — segmento Ana Care no PTI: escolhido pelo teclado, na
     const drawer = page.getByTestId('therapeutic-project-drawer');
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
+    await expect(page.getByTestId('tp-segment')).toHaveCount(0); // o campo saiu do formulário (§9.8)
 
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
-    const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
-    await page.getByTestId('tp-icd-input').click();
-    await page.keyboard.type('sintetico');
-    expect((await search).status()).toBe(200);
-    await page.getByTestId('tp-icd-option-0').click();
-    await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
-
-    // O segmento fica logo abaixo do CID (FR-007) e, sem escolha, "Salvar" segue travado mesmo com o resto pronto.
-    const caixaCid = await page.getByTestId('tp-diagnoses').boundingBox();
-    const caixaSegmento = await page.getByTestId('tp-segment').boundingBox();
-    expect(caixaSegmento!.y).toBeGreaterThan(caixaCid!.y);
+    await escolherDiagnostico(page, ICD_TITLE, 'sintetico');
     await digitar(page, '#tp-clinicalContext', 'Sintesis clinica 030 digitada por humano');
     await digitar(page, '#tp-generalObjective', 'Objetivo general 030 digitado por humano');
-    await marcarOpcoes(page, 'tp-specificObjectives', 1);
-    await marcarOpcoes(page, 'tp-activities', 1);
+    await expect(page.getByTestId('tp-save')).toBeDisabled(); // sem objetivo/atividade marcados o plano do bloco está incompleto
+    await marcarPlano(page, ICD_URI, plano);
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
     await page.locator('#tp-endDate').click();
     await page.keyboard.type('12312026');
     await expect(page.locator('#tp-endDate')).toHaveValue('2026-12-31');
-    await expect(page.getByTestId('tp-save')).toBeDisabled();
-
-    const lido = await escolherSegmento(page, segmento.label);
-    expect(lido).toBe(segmento.label);
-    await expect(page.getByTestId('tp-segment')).toHaveAttribute('data-clarity-mask', 'True');
     await expect(page.getByTestId('tp-save')).toBeEnabled();
-    await page.screenshot({ path: testInfo.outputPath('030-form-com-segmento.png') });
+    await page.screenshot({ path: testInfo.outputPath('030-form-em-cascata.png') });
 
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
     const resp = await created;
     expect(resp.status()).toBe(201);
-    const body = (await resp.json()) as { data: { id: string; version: string; segment: { id: string; label: string } | null } };
-    expect(body.data.segment).toEqual({ id: segmento.id, label: lido });
-    // Congelado na versão: está no banco, não só na resposta.
-    expect(runSQL(`SELECT segment->>'label' FROM patient_therapeutic_projects WHERE id = '${body.data.id}'`).trim()).toBe(lido);
+    const body = (await resp.json()) as { data: { id: string; segment: unknown } };
+    expect(body.data.segment ?? null).toBeNull();
+    // Não há segmento congelado na versão: está no banco, não só na resposta.
+    expect(runSQL(`SELECT segment IS NULL FROM patient_therapeutic_projects WHERE id = '${body.data.id}'`).trim()).toBe('t');
 
-    // A visão (o drawer vira "ver" da criada) mostra a linha com o rótulo lido da tela.
+    // A visão (o drawer vira "ver" da criada) não mostra a linha do segmento (byDiagnosis).
+    await expect(drawer).toHaveAttribute('data-mode', 'view');
+    await expect(drawer.getByTestId('tpv-segment')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('030-visao-em-cascata.png') });
+
+    // PDF: o texto (pdf-parse) não traz o segmento; nenhuma requisição saiu de localhost/data:/blob: durante a geração.
+    const { texto, externas } = await exportarPdf(page, testInfo, '030-feliz');
+    expect(texto).not.toContain('Segmento (Ana Care)');
+    expect(texto).toContain('Tipo de patología (segmento)'); // a linha derivada do CID-11 segue como estava
+    expect(texto).toContain(plano.objetivo.label);
+    expect(externas).toEqual([]);
+  });
+
+  test('030 — versão ANTIGA (plana) com segmento: a visão mostra o rótulo e o PDF imprime "Segmento (Ana Care): <rótulo>" (flat idêntico a hoje, DF-7), sem requisição externa', async ({ page }, testInfo) => {
+    await loginAs(page, completa.user);
+    await page.goto(`/admin/patients/${comSegmento.patientId}`);
+    const card = page.getByTestId('projeto-terapeutico-card');
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByTestId('tpv-segment')).toContainText(segmento.label);
+    await page.locator('[data-testid^="tp-view-"]').first().click();
+    const drawer = page.getByTestId('therapeutic-project-drawer');
     await expect(drawer).toHaveAttribute('data-mode', 'view');
     await expect(drawer.getByTestId('tpv-segment')).toContainText('Segmento (Ana Care)');
-    await expect(drawer.getByTestId('tpv-segment')).toContainText(lido);
+    await expect(drawer.getByTestId('tpv-segment')).toContainText(segmento.label);
     await expect(drawer.getByTestId('tpv-segment')).toHaveAttribute('data-clarity-mask', 'True');
     await page.screenshot({ path: testInfo.outputPath('030-visao-com-segmento.png') });
 
-    // PDF: o texto (pdf-parse) traz o rótulo; nenhuma requisição saiu de localhost/data:/blob: durante a geração.
-    const { texto, externas } = await exportarPdf(page, testInfo, '030-feliz');
-    expect(texto).toContain(`Segmento (Ana Care): ${lido}`);
-    expect(texto).toContain('Tipo de patología (segmento)'); // a linha derivada do CID-11 segue como estava
+    const { texto, externas } = await exportarPdf(page, testInfo, '030-flat-com-segmento');
+    expect(texto).toContain(`Segmento (Ana Care): ${segmento.label}`);
+    expect(texto).not.toContain('Diagnóstico: '); // flat não agrupa por diagnóstico
     expect(externas).toEqual([]);
   });
 
