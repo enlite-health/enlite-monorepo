@@ -21,7 +21,8 @@ import {
   TherapeuticCatalogRepository,
   CatalogItemsUnknownError,
   CatalogLabelTakenError,
-  CatalogSegmentInvalidError,
+  CatalogItemNeedsOwnerError,
+  ActivityCategoriesOutsideObjectiveError,
 } from '../TherapeuticCatalogRepository';
 import { THERAPEUTIC_CATALOG_TABLE } from '../../domain/TherapeuticProject';
 
@@ -64,9 +65,9 @@ describe('TherapeuticCatalogRepository', () => {
       const itens = await new TherapeuticCatalogRepository().list('specific-objectives');
       const sql = mockPoolQuery.mock.calls[0][0] as string;
       expect(sql).toContain('FROM therapeutic_specific_objectives');
-      expect(sql).toContain('WHERE active');
-      expect(sql).toContain('ORDER BY lower(label)');
-      expect(sql).not.toContain('sort_order');
+      expect(sql).toContain('WHERE o.active');
+      expect(sql).toContain('ORDER BY lower(o.label)');
+      expect(sql).not.toContain('ORDER BY sort_order');
       expect(itens).toEqual([
         {
           id: 'item-1',
@@ -83,14 +84,13 @@ describe('TherapeuticCatalogRepository', () => {
     it('includeInactive → SEM o WHERE (a baixa é `active=false`, nunca DELETE: o painel precisa ver)', async () => {
       mockPoolQuery.mockResolvedValue({ rows: [{ ...ROW, active: false, deactivated_at: '2026-09-08T11:00:00.000Z' }] });
       const itens = await new TherapeuticCatalogRepository().list('activities', { includeInactive: true });
-      expect(mockPoolQuery.mock.calls[0][0]).not.toContain('WHERE active');
+      expect(mockPoolQuery.mock.calls[0][0]).not.toContain('a.active');
       expect(itens[0]).toMatchObject({ active: false, deactivatedAt: '2026-09-08T11:00:00.000Z' });
     });
 
     it.each([
       ['specific-objectives', 'therapeutic_specific_objectives'],
       ['activities', 'therapeutic_activities'],
-      ['segments', 'therapeutic_segments'],
     ] as const)('a tabela do kind %s vem do DOMÍNIO (%s), nunca de string do cliente', async (kind, tabela) => {
       mockPoolQuery.mockResolvedValue({ rows: [] });
       await new TherapeuticCatalogRepository().list(kind);
@@ -107,6 +107,7 @@ describe('TherapeuticCatalogRepository', () => {
       const semCode = await new TherapeuticCatalogRepository().list('activities');
       expect(semCode[0]).not.toHaveProperty('code');
       expect(semCode[0]).not.toHaveProperty('segmentId');
+      expect(Object.keys(THERAPEUTIC_CATALOG_TABLE)).not.toContain('segments');
     });
 
     it('o pool é memoizado: duas chamadas, um único getPool()', async () => {
@@ -120,13 +121,57 @@ describe('TherapeuticCatalogRepository', () => {
     });
   });
 
+  describe('091 — list com serviceCode/categoryCount e filtros', () => {
+    it('objetivos: item leva serviceCode e categoryCount (contagem do vínculo); categoryCode filtra por EXISTS parametrizado', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ ...ROW, service_code: 'AT', category_count: 3 }] });
+      const itens = await new TherapeuticCatalogRepository().list('specific-objectives', { categoryCode: '6A02' });
+      const [sql, params] = mockPoolQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('therapeutic_objective_icd_categories');
+      expect(sql).toContain('f.category_code = $1');
+      expect(params).toEqual(['6A02']);
+      expect(itens[0]).toMatchObject({ serviceCode: 'AT', categoryCount: 3 });
+    });
+
+    it('objetivos: `objectiveId` não é filtro de objetivo (ignorado, nenhum param)', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [] });
+      await new TherapeuticCatalogRepository().list('specific-objectives', { objectiveId: 'obj-1' });
+      expect(mockPoolQuery.mock.calls[0][1]).toEqual([]);
+    });
+
+    it('atividades: item leva objectiveId/objectiveLabel/objectiveActive/suggestedFrequency/categoryCount; filtros categoryCode e objectiveId em params sequenciais', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ ...ROW, objective_id: 'obj-1', objective_label: 'Obj', objective_active: true, suggested_frequency: null, category_count: 2 }] });
+      const itens = await new TherapeuticCatalogRepository().list('activities', { categoryCode: '6A02', objectiveId: 'obj-1' });
+      const [sql, params] = mockPoolQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('therapeutic_activity_icd_categories');
+      expect(sql).toContain('f.category_code = $1');
+      expect(sql).toContain('a.objective_id = $2');
+      expect(sql).toContain('WHERE a.active AND ');
+      expect(params).toEqual(['6A02', 'obj-1']);
+      expect(itens[0]).toEqual(expect.objectContaining({ objectiveId: 'obj-1', objectiveLabel: 'Obj', objectiveActive: true, suggestedFrequency: null, categoryCount: 2 }));
+    });
+
+    it('includeInactive + filtro → WHERE só com o filtro (sem `a.active`)', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [] });
+      await new TherapeuticCatalogRepository().list('activities', { includeInactive: true, objectiveId: 'obj-1' });
+      const sql = mockPoolQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('WHERE a.objective_id = $1');
+      expect(sql).not.toContain('a.active AND');
+    });
+
+    it('não existe método de segmento no repositório (091)', () => {
+      const repo = new TherapeuticCatalogRepository() as unknown as Record<string, unknown>;
+      expect(repo.snapshotSegment).toBeUndefined();
+      expect(Object.getOwnPropertyNames(Object.getPrototypeOf(repo)).filter((n) => /segment/i.test(n))).toEqual([]);
+    });
+  });
+
   describe('spec 061 — description e ordem do list por kind', () => {
-    it('`segments` mantém a ordem manual (active DESC, sort_order, lower(label))', async () => {
+    it('`service-exit-reasons` mantém a ordem manual (active DESC, sort_order, lower(label))', async () => {
       mockPoolQuery.mockResolvedValue({ rows: [ROW] });
-      await new TherapeuticCatalogRepository().list('segments');
+      await new TherapeuticCatalogRepository().list('service-exit-reasons');
       expect(mockPoolQuery.mock.calls[0][0] as string).toContain('ORDER BY active DESC, sort_order, lower(label)');
     });
-    it.each(['service-exit-reasons', 'segments'] as const)(
+    it.each(['service-exit-reasons'] as const)(
       'kind `%s` (sem coluna description): list com ORDER BY antigo; create/update NÃO tocam `description` mesmo se vier no input',
       async (kind) => {
         mockPoolQuery.mockResolvedValue({ rows: [ROW] });
@@ -185,12 +230,12 @@ describe('TherapeuticCatalogRepository', () => {
     it('snapshotOf devolve `description` quando há e OMITE a chave quando NULL', async () => {
       mockPoolQuery.mockResolvedValue({
         rows: [
-          { id: 'a', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A', segment_id: null, segment_label: null },
-          { id: 'b', label: 'TITULO-SINTETICO-B', description: null, segment_id: null, segment_label: null },
+          { id: 'a', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A'},
+          { id: 'b', label: 'TITULO-SINTETICO-B', description: null},
         ],
       });
       const snap = await new TherapeuticCatalogRepository().snapshotOf('activities', ['a', 'b']);
-      expect(snap[0]).toEqual({ id: 'a', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A', segmentId: null, segmentLabel: null });
+      expect(snap[0]).toEqual({ id: 'a', label: 'TITULO-SINTETICO-A', description: 'DESCRIPCION-SINTETICA-A'});
       expect('description' in snap[1]).toBe(false);
       const sql = mockPoolQuery.mock.calls[0][0] as string;
       expect(sql).toContain('c.description');
@@ -206,17 +251,11 @@ describe('TherapeuticCatalogRepository', () => {
       expect(mockPoolQuery.mock.calls[0][0]).toContain('WHERE c.active AND c.id = ANY($1::uuid[])');
     });
 
-    it('lex-pr7 C3(b): traz `segmentId`/`segmentLabel` (430) via LEFT JOIN com `therapeutic_segments`', async () => {
-      mockPoolQuery.mockResolvedValue({ rows: [{ id: 'a', label: 'Objetivo A', segment_id: 'seg-1', segment_label: 'Salud mental' }] });
+    it('snapshot não traz mais segmento (091): sem JOIN com `therapeutic_segments` e sem `segmentId`', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ id: 'a', label: 'Objetivo A' }] });
       const snap = await new TherapeuticCatalogRepository().snapshotOf('specific-objectives', ['a']);
-      expect(snap).toEqual([{ id: 'a', label: 'Objetivo A', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
-      expect(mockPoolQuery.mock.calls[0][0]).toContain('LEFT JOIN therapeutic_segments s ON s.id = c.segment_id');
-    });
-
-    it('item sem segmento (segment_id NULL no catálogo) → `segmentId`/`segmentLabel` saem `null`, não `undefined`', async () => {
-      mockPoolQuery.mockResolvedValue({ rows: [{ id: 'a', label: 'Objetivo A', segment_id: null, segment_label: null }] });
-      const snap = await new TherapeuticCatalogRepository().snapshotOf('specific-objectives', ['a']);
-      expect(snap).toEqual([{ id: 'a', label: 'Objetivo A', segmentId: null, segmentLabel: null }]);
+      expect(snap).toEqual([{ id: 'a', label: 'Objetivo A' }]);
+      expect(mockPoolQuery.mock.calls[0][0]).not.toContain('segment');
     });
 
     it('ids repetidos são deduplicados antes do ANY (o mesmo id duas vezes não é "faltando")', async () => {
@@ -247,38 +286,6 @@ describe('TherapeuticCatalogRepository', () => {
       await new TherapeuticCatalogRepository().snapshotOf('activities', ['a'], cli as never);
       expect(mockPoolQuery).not.toHaveBeenCalled();
       expect(chamadas[0].sql).toContain('FROM therapeutic_activities');
-    });
-  });
-
-  describe('snapshotSegment (030, lex C4: o servidor congela {id,label} do segmento ATIVO)', () => {
-    const SEG_ID = '9b1f3c1e-6a53-4d57-9a8e-0a1b2c3d4e5f';
-
-    it('030 — segmento ATIVO → `{ id, label }` do catálogo, lido pelo client da transação', async () => {
-      const { cli, chamadas } = cliente({ rows: [{ id: SEG_ID, label: 'AT para Pacientes con TEA' }] });
-      const snap = await new TherapeuticCatalogRepository().snapshotSegment(SEG_ID, cli as never);
-      expect(snap).toEqual({ id: SEG_ID, label: 'AT para Pacientes con TEA' });
-      expect(mockPoolQuery).not.toHaveBeenCalled();
-      expect(chamadas[0].sql).toContain('FROM therapeutic_segments');
-      expect(chamadas[0].sql).toContain('active');
-      expect(chamadas[0].params).toEqual([SEG_ID]);
-    });
-
-    it('030 — inativo ou inexistente (nenhuma linha) → `CatalogSegmentInvalidError` (o existente, code catalog_segment_invalid)', async () => {
-      const { cli } = cliente({ rows: [] });
-      const erro = await new TherapeuticCatalogRepository()
-        .snapshotSegment(SEG_ID, cli as never)
-        .then(() => { throw new Error('devia ter lançado'); }, (e: unknown) => e as CatalogSegmentInvalidError);
-      expect(erro).toBeInstanceOf(CatalogSegmentInvalidError);
-      expect(erro.code).toBe('catalog_segment_invalid');
-    });
-
-    it('030 — `err.message` e o objeto do erro NÃO carregam o uuid recebido (C3/C7: o 422 não ecoa o id)', async () => {
-      const { cli } = cliente({ rows: [] });
-      const erro = await new TherapeuticCatalogRepository()
-        .snapshotSegment(SEG_ID, cli as never)
-        .then(() => { throw new Error('devia ter lançado'); }, (e: unknown) => e as CatalogSegmentInvalidError);
-      expect(erro.message).not.toContain(SEG_ID);
-      expect(JSON.stringify(Object.getOwnPropertyNames(erro).map((k) => String((erro as never)[k])))).not.toContain(SEG_ID);
     });
   });
 
@@ -363,43 +370,48 @@ describe('TherapeuticCatalogRepository', () => {
       expect(chamadas).toHaveLength(1);
     });
 
-    it('US-17/430: com `segmentId` de um segmento ATIVO → checa o segmento ANTES, o INSERT ganha a coluna, e o item devolvido leva `segmentId`', async () => {
-      mockPoolQuery.mockResolvedValue({ rows: [{ ok: 1 }] }); // `assertSegmentActive` usa o pool, não a transação
-      const { cli, chamadas } = cliente({ rows: [{ ...ROW, segment_id: 'seg-1' }] }); // RETURNING * com a coluna nova
+    it('091: objetivo com `serviceCode` → coluna service_code entra no INSERT antes de created_by', async () => {
+      const { cli, chamadas } = cliente({ rows: [{ ...ROW, service_code: 'AT' }] });
       mockConnect.mockResolvedValue(cli);
-      const item = await new TherapeuticCatalogRepository().create('specific-objectives', { label: 'Vínculo', segmentId: 'seg-1', actorUid: 'uid-1' });
-      expect(mockPoolQuery.mock.calls[0][0]).toContain('FROM therapeutic_segments WHERE id = $1 AND active');
-      expect(mockPoolQuery.mock.calls[0][1]).toEqual(['seg-1']);
-      expect(chamadas[0].sql).toContain('segment_id');
-      expect(chamadas[0].params).toEqual(['Vínculo', null, 'seg-1', 'uid-1']);
-      expect(item).toMatchObject({ id: 'item-1', segmentId: 'seg-1' });
+      const item = await new TherapeuticCatalogRepository().create('specific-objectives', { label: 'Vínculo', serviceCode: 'AT', actorUid: 'uid-1' });
+      expect(chamadas[0].sql).toContain('service_code');
+      expect(chamadas[0].params).toEqual(['Vínculo', null, 'AT', 'uid-1']);
+      expect(item).toMatchObject({ serviceCode: 'AT' });
     });
 
-    it('US-17/430: `segmentId` de segmento INATIVO/inexistente → `CatalogSegmentInvalidError`, SEM abrir transação', async () => {
-      mockPoolQuery.mockResolvedValue({ rows: [] });
-      const p = new TherapeuticCatalogRepository().create('activities', { label: 'Acompañamiento', segmentId: 'sumido', actorUid: 'uid-1' });
-      await expect(p).rejects.toBeInstanceOf(CatalogSegmentInvalidError);
-      await expect(p).rejects.toMatchObject({ code: 'catalog_segment_invalid' });
-      expect(mockConnect).not.toHaveBeenCalled();
+    it('091: atividade com `objectiveId` e `suggestedFrequency` → ambas as colunas entram; `suggestedFrequency: null` explícito também', async () => {
+      const { cli, chamadas } = cliente({ rows: [{ ...ROW, objective_id: 'obj-1', suggested_frequency: '3x por semana' }] });
+      mockConnect.mockResolvedValue(cli);
+      const item = await new TherapeuticCatalogRepository().create('activities', { label: 'Acompañamiento', objectiveId: 'obj-1', suggestedFrequency: '3x por semana', actorUid: 'uid-1' });
+      expect(chamadas[0].sql).toContain('objective_id, suggested_frequency');
+      expect(chamadas[0].params).toEqual(['Acompañamiento', null, 'obj-1', '3x por semana', 'uid-1']);
+      expect(item).toMatchObject({ objectiveId: 'obj-1', suggestedFrequency: '3x por semana' });
+      const n = cliente();
+      mockConnect.mockResolvedValue(n.cli);
+      await new TherapeuticCatalogRepository().create('activities', { label: 'A', objectiveId: 'obj-1', suggestedFrequency: null, actorUid: 'uid-1' });
+      expect(n.chamadas[0].params).toEqual(['A', null, 'obj-1', null, 'uid-1']);
     });
 
-    it('US-17/430: `segmentId: null` (sem vínculo) NÃO consulta `therapeutic_segments`, mas a coluna entra NULL (chave presente)', async () => {
+    it('091: kind sem coluna de dono (motivos de saída) ignora serviceCode/objectiveId do input', async () => {
       const { cli, chamadas } = cliente();
       mockConnect.mockResolvedValue(cli);
-      await new TherapeuticCatalogRepository().create('activities', { label: 'Acompañamiento', segmentId: null, actorUid: 'uid-1' });
-      expect(mockPoolQuery).not.toHaveBeenCalled();
-      expect(chamadas[0].sql).toContain('segment_id');
-      expect(chamadas[0].params).toEqual(['Acompañamiento', null, null, 'uid-1']);
+      await new TherapeuticCatalogRepository().create('service-exit-reasons', { label: 'M', serviceCode: 'AT', objectiveId: 'o', actorUid: 'uid-1' });
+      expect(chamadas[0].sql).not.toContain('service_code');
+      expect(chamadas[0].sql).not.toContain('objective_id');
     });
 
-    it('US-17/430: SEM `segmentId` na chamada (kind `segments`, ou chamador que não manda a chave) — coluna fora do INSERT, params intactos', async () => {
-      const { cli, chamadas } = cliente();
+    it('091: 23514 (item ativo sem dono, DD-15) → CatalogItemNeedsOwnerError code catalog_item_needs_owner, nunca cru', async () => {
+      const { cli } = cliente(erroPg('23514', 'therapeutic_specific_objectives_ativo_tem_servico'));
       mockConnect.mockResolvedValue(cli);
-      await new TherapeuticCatalogRepository().create('segments', { label: 'Salud mental', actorUid: 'uid-1' });
-      expect(mockPoolQuery).not.toHaveBeenCalled();
-      expect(chamadas[0].sql).toContain('INSERT INTO therapeutic_segments');
-      expect(chamadas[0].sql).not.toContain('segment_id');
-      expect(chamadas[0].params).toEqual(['Salud mental', null, 'uid-1']);
+      const p = new TherapeuticCatalogRepository().create('specific-objectives', { label: 'X', actorUid: 'uid-1' });
+      await expect(p).rejects.toBeInstanceOf(CatalogItemNeedsOwnerError);
+      await expect(p).rejects.toMatchObject({ code: 'catalog_item_needs_owner' });
+    });
+
+    it('091: 23514 de OUTRO CHECK (ex. frequência fora de 1..100) propaga cru', async () => {
+      const { cli } = cliente(erroPg('23514', 'therapeutic_activities_suggested_frequency_len'));
+      mockConnect.mockResolvedValue(cli);
+      await expect(new TherapeuticCatalogRepository().create('activities', { label: 'X', actorUid: 'uid-1' })).rejects.not.toBeInstanceOf(CatalogItemNeedsOwnerError);
     });
 
     it('rejeição `null` também passa pelo detector sem quebrar', async () => {
@@ -469,30 +481,42 @@ describe('TherapeuticCatalogRepository', () => {
       expect(chamadas[0].params).toEqual(['item-1', 'Novo', 20, false, 'uid-7']);
     });
 
-    it('US-17/430: `segmentId` de um segmento ATIVO → checa ANTES do UPDATE, coluna entra no SET', async () => {
-      mockPoolQuery.mockResolvedValue({ rows: [{ ok: 1 }] });
-      const { cli, chamadas } = cliente();
-      mockConnect.mockResolvedValue(cli);
-      await new TherapeuticCatalogRepository().update('specific-objectives', 'item-1', { segmentId: 'seg-1', actorUid: 'uid-1' });
-      expect(mockPoolQuery.mock.calls[0][0]).toContain('FROM therapeutic_segments WHERE id = $1 AND active');
-      expect(chamadas[0].sql).toContain('segment_id = $2');
-      expect(chamadas[0].params).toEqual(['item-1', 'seg-1', 'uid-1']);
-    });
-
-    it('US-17/430: `segmentId` de segmento INATIVO/inexistente → `CatalogSegmentInvalidError`, SEM abrir transação', async () => {
-      mockPoolQuery.mockResolvedValue({ rows: [] });
-      const p = new TherapeuticCatalogRepository().update('activities', 'item-1', { segmentId: 'sumido', actorUid: 'uid-1' });
-      await expect(p).rejects.toBeInstanceOf(CatalogSegmentInvalidError);
-      expect(mockConnect).not.toHaveBeenCalled();
-    });
-
-    it('US-17/430: `segmentId: null` LIMPA o vínculo — sem checar `therapeutic_segments`', async () => {
-      const { cli, chamadas } = cliente();
-      mockConnect.mockResolvedValue(cli);
-      await new TherapeuticCatalogRepository().update('activities', 'item-1', { segmentId: null, actorUid: 'uid-1' });
+    it('091: serviceCode/objectiveId/suggestedFrequency entram no SET quando a chave vem; `null` explícito LIMPA a frequência', async () => {
+      const a = cliente();
+      mockConnect.mockResolvedValue(a.cli);
+      await new TherapeuticCatalogRepository().update('specific-objectives', 'item-1', { serviceCode: 'CAREGIVER', actorUid: 'uid-1' });
+      expect(a.chamadas[0].sql).toContain('SET service_code = $2');
+      expect(a.chamadas[0].params).toEqual(['item-1', 'CAREGIVER', 'uid-1']);
+      const b = cliente();
+      mockConnect.mockResolvedValue(b.cli);
+      await new TherapeuticCatalogRepository().update('activities', 'item-1', { objectiveId: 'obj-2', suggestedFrequency: null, actorUid: 'uid-1' });
+      expect(b.chamadas[0].sql).toContain('SET objective_id = $2, suggested_frequency = $3');
+      expect(b.chamadas[0].params).toEqual(['item-1', 'obj-2', null, 'uid-1']);
       expect(mockPoolQuery).not.toHaveBeenCalled();
-      expect(chamadas[0].sql).toContain('segment_id = $2');
-      expect(chamadas[0].params).toEqual(['item-1', null, 'uid-1']);
+    });
+
+    it('091: reativar item antigo sem dono (23514 do CHECK) → CatalogItemNeedsOwnerError no PATCH', async () => {
+      const { cli } = cliente(erroPg('23514', 'therapeutic_activities_ativa_tem_objetivo'));
+      mockConnect.mockResolvedValue(cli);
+      await expect(
+        new TherapeuticCatalogRepository().update('activities', 'item-1', { active: true, actorUid: 'uid-1' }),
+      ).rejects.toMatchObject({ code: 'catalog_item_needs_owner' });
+    });
+
+    it('091: troca de objetivo com vínculos fora do novo (23503 da FK composta) → ActivityCategoriesOutsideObjectiveError', async () => {
+      const { cli } = cliente(erroPg('23503', 'therapeutic_activity_icd_categories_dentro_do_objetivo_fk'));
+      mockConnect.mockResolvedValue(cli);
+      const p = new TherapeuticCatalogRepository().update('activities', 'item-1', { objectiveId: 'obj-2', actorUid: 'uid-1' });
+      await expect(p).rejects.toBeInstanceOf(ActivityCategoriesOutsideObjectiveError);
+      await expect(p).rejects.toMatchObject({ code: 'activity_categories_outside_objective' });
+    });
+
+    it('091: 23503 de OUTRA FK propaga cru — não vira 409 mentiroso', async () => {
+      const { cli } = cliente(erroPg('23503', 'therapeutic_activities_objective_id_fkey'));
+      mockConnect.mockResolvedValue(cli);
+      await expect(
+        new TherapeuticCatalogRepository().update('activities', 'item-1', { objectiveId: 'x', actorUid: 'uid-1' }),
+      ).rejects.not.toBeInstanceOf(ActivityCategoriesOutsideObjectiveError);
     });
 
     it('nenhuma linha atingida (id inexistente) → null, e o controller responde 404', async () => {

@@ -4,7 +4,6 @@ import { withActorContext } from '@shared/database/actorContext';
 import {
   THERAPEUTIC_CATALOG_TABLE,
   catalogHasDescription,
-  type CatalogSnapshotItem,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogSnapshotItem,
 } from '../domain/TherapeuticProject';
@@ -18,12 +17,19 @@ export interface CatalogItem {
   deactivatedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Só objetivos/atividades (migration 430) — a tabela `therapeutic_segments` não tem esta coluna. */
-  segmentId?: string | null;
   /** Só o catálogo de motivos de saída (migration 492) — código estável que as marcas referenciam. */
   code?: string;
-  /** Só objetivos/atividades (migration 547) — `therapeutic_segments` não tem esta coluna. */
+  /** Só objetivos/atividades (migration 547). */
   description?: string | null;
+  /** Só objetivos (091): serviço dono do objetivo. */
+  serviceCode?: string | null;
+  /** Objetivos e atividades (091): quantas categorias CID-11 o item tem vinculadas (derivado, nunca gravado). */
+  categoryCount?: number;
+  /** Só atividades (091): objetivo dono, seu rótulo/estado e a frequência sugerida. */
+  objectiveId?: string | null;
+  objectiveLabel?: string | null;
+  objectiveActive?: boolean | null;
+  suggestedFrequency?: string | null;
 }
 
 interface CatalogRow {
@@ -34,12 +40,34 @@ interface CatalogRow {
   deactivated_at: string | null;
   created_at: string;
   updated_at: string;
-  segment_id?: string | null;
   code?: string;
   description?: string | null;
+  service_code?: string | null;
+  category_count?: number;
+  objective_id?: string | null;
+  objective_label?: string | null;
+  objective_active?: boolean | null;
+  suggested_frequency?: string | null;
 }
 
-/** Rótulo já existe entre os ATIVOS (índice `uq_<tabela>_label_ativo`, 415). */
+/** Filtros do `list` (091). Cada kind só honra os que tem em `LIST_SHAPE.filters`. */
+export interface CatalogListOptions {
+  includeInactive?: boolean;
+  categoryCode?: string;
+  objectiveId?: string;
+}
+
+/** Campos de escrita de objetivos/atividades (091). Chave ausente = não toca a coluna (Merge Patch). */
+export interface CatalogWriteFields {
+  label?: string;
+  sortOrder?: number;
+  description?: string | null;
+  serviceCode?: string | null;
+  objectiveId?: string | null;
+  suggestedFrequency?: string | null;
+}
+
+/** Rótulo já existe entre os ATIVOS (índice `uq_<tabela>_<dono>_label_ativo`, 415/586). */
 export class CatalogLabelTakenError extends Error {
   readonly code = 'catalog_label_taken';
   constructor() {
@@ -55,43 +83,112 @@ export class CatalogItemsUnknownError extends Error {
   }
 }
 
-/** `segmentId` (430) referenciado não é um segmento ATIVO — 422 SEM ecoar o id (nenhum campo aqui). */
-export class CatalogSegmentInvalidError extends Error {
-  readonly code = 'catalog_segment_invalid';
+/** Item ATIVO sem dono (serviço/objetivo) — CHECK da 586 (DD-15). 422 sem ecoar nada. */
+export class CatalogItemNeedsOwnerError extends Error {
+  readonly code = 'catalog_item_needs_owner';
   constructor() {
-    super('catalog_segment_invalid');
+    super('catalog_item_needs_owner');
   }
 }
 
-/** Tabela por kind: os 3 terapêuticos (domínio) + o de motivos de saída, que NÃO entra em `THERAPEUTIC_CATALOG_TABLE`. */
+/** Troca de objetivo deixaria vínculos da atividade com categorias que o novo objetivo não tem (FK composta, DD-23). */
+export class ActivityCategoriesOutsideObjectiveError extends Error {
+  readonly code = 'activity_categories_outside_objective';
+  constructor() {
+    super('activity_categories_outside_objective');
+  }
+}
+
+/** Tabela por kind: os terapêuticos (domínio) + o de motivos de saída, que NÃO entra em `THERAPEUTIC_CATALOG_TABLE`. */
 const ADMIN_CATALOG_TABLE: Readonly<Record<AdminCatalogKind, string>> = {
   ...THERAPEUTIC_CATALOG_TABLE,
   [SERVICE_EXIT_REASON_KIND]: SERVICE_EXIT_REASON_TABLE,
 };
 
-const isLabelUnique = (err: unknown): boolean =>
-  typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505'
-  && /_label_ativo/.test(String((err as { constraint?: string }).constraint ?? ''));
+/**
+ * Tradução SQLSTATE+constraint → erro de domínio, por TABELA (Strategy por entrada, sem cadeia de if).
+ * O que não casa propaga cru (500 honesto, nunca 4xx mentiroso).
+ */
+interface PgTranslation { sqlstate: string; constraint: RegExp; make: () => Error }
+const PG_TRANSLATIONS: readonly PgTranslation[] = [
+  { sqlstate: '23505', constraint: /_label_ativo/, make: () => new CatalogLabelTakenError() },
+  { sqlstate: '23514', constraint: /^therapeutic_(specific_objectives_ativo_tem_servico|activities_ativa_tem_objetivo)$/, make: () => new CatalogItemNeedsOwnerError() },
+  { sqlstate: '23503', constraint: /^therapeutic_activity_icd_categories_dentro_do_objetivo_fk$/, make: () => new ActivityCategoriesOutsideObjectiveError() },
+];
 
-const toItem = (r: CatalogRow): CatalogItem => ({
-  id: r.id,
-  label: r.label,
-  sortOrder: r.sort_order,
-  active: r.active,
-  deactivatedAt: r.deactivated_at,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-  // Só entra quando a linha TEM a coluna (objetivos/atividades) — `segments` não tem `segment_id`,
-  // e o mock de teste sem a chave não pode ganhar `segmentId: undefined` (quebraria o `toEqual` exato).
-  ...(r.segment_id !== undefined ? { segmentId: r.segment_id } : {}),
-  // Idem `code` (492): só o catálogo de motivos de saída tem a coluna.
-  ...(r.code !== undefined ? { code: r.code } : {}),
-  // Idem `segment_id`: só entra quando a linha TEM a coluna `description` (547).
-  ...(r.description !== undefined ? { description: r.description } : {}),
-});
+const translatePgError = (err: unknown): unknown => {
+  if (typeof err !== 'object' || err === null) return err;
+  const { code, constraint } = err as { code?: string; constraint?: string };
+  const hit = PG_TRANSLATIONS.find((t) => t.sqlstate === code && t.constraint.test(String(constraint ?? '')));
+  return hit ? hit.make() : err;
+};
+
+/** Colunas da linha que entram no item só quando a linha as TEM (objetivos/atividades/motivos de saída têm formas diferentes). */
+const OPTIONAL_ITEM_FIELDS: ReadonlyArray<readonly [keyof CatalogRow, keyof CatalogItem]> = [
+  ['code', 'code'],
+  ['description', 'description'],
+  ['service_code', 'serviceCode'],
+  ['category_count', 'categoryCount'],
+  ['objective_id', 'objectiveId'],
+  ['objective_label', 'objectiveLabel'],
+  ['objective_active', 'objectiveActive'],
+  ['suggested_frequency', 'suggestedFrequency'],
+];
+
+const toItem = (r: CatalogRow): CatalogItem => {
+  const item: CatalogItem = {
+    id: r.id,
+    label: r.label,
+    sortOrder: r.sort_order,
+    active: r.active,
+    deactivatedAt: r.deactivated_at,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+  // Só entra quando a linha TEM a coluna: o mock/linha sem a chave não ganha `x: undefined` (quebraria o `toEqual`).
+  OPTIONAL_ITEM_FIELDS.forEach(([from, to]) => {
+    if (r[from] !== undefined) (item as unknown as Record<string, unknown>)[to] = r[from];
+  });
+  return item;
+};
+
+/** Colunas de dono/extras por kind (Strategy por tabela): campo de entrada → coluna. Kind ausente = só label/sort/description. */
+const OWNED_COLUMNS: Partial<Record<AdminCatalogKind, ReadonlyArray<readonly [keyof CatalogWriteFields, string]>>> = {
+  'specific-objectives': [['serviceCode', 'service_code']],
+  activities: [['objectiveId', 'objective_id'], ['suggestedFrequency', 'suggested_frequency']],
+};
+
+/** Forma do SELECT por kind (Strategy por tabela): base, coluna `active` e filtros disponíveis. */
+interface ListShape {
+  base: (table: string) => string;
+  activeCol: string;
+  filters: Partial<Record<keyof Omit<CatalogListOptions, 'includeInactive'>, (ph: string) => string>>;
+  orderBy: string;
+}
+const OBJECTIVE_SHAPE: ListShape = {
+  base: (t) => `SELECT o.*, (SELECT COUNT(*)::int FROM therapeutic_objective_icd_categories l WHERE l.objective_id = o.id) AS category_count FROM ${t} o`,
+  activeCol: 'o.active',
+  filters: { categoryCode: (ph) => `EXISTS (SELECT 1 FROM therapeutic_objective_icd_categories f WHERE f.objective_id = o.id AND f.category_code = ${ph})` },
+  orderBy: 'lower(o.label)',
+};
+const ACTIVITY_SHAPE: ListShape = {
+  base: (t) => `SELECT a.*, ob.label AS objective_label, ob.active AS objective_active, (SELECT COUNT(*)::int FROM therapeutic_activity_icd_categories l WHERE l.activity_id = a.id) AS category_count FROM ${t} a LEFT JOIN therapeutic_specific_objectives ob ON ob.id = a.objective_id`,
+  activeCol: 'a.active',
+  filters: {
+    categoryCode: (ph) => `EXISTS (SELECT 1 FROM therapeutic_activity_icd_categories f WHERE f.activity_id = a.id AND f.category_code = ${ph})`,
+    objectiveId: (ph) => `a.objective_id = ${ph}`,
+  },
+  orderBy: 'lower(a.label)',
+};
+const MANUAL_ORDER_SHAPE: ListShape = { base: (t) => `SELECT * FROM ${t}`, activeCol: 'active', filters: {}, orderBy: 'active DESC, sort_order, lower(label)' };
+const LIST_SHAPE: Readonly<Record<AdminCatalogKind, ListShape>> = {
+  'specific-objectives': OBJECTIVE_SHAPE,
+  activities: ACTIVITY_SHAPE,
+  [SERVICE_EXIT_REASON_KIND]: MANUAL_ORDER_SHAPE,
+};
 
 /**
- * Os 3 catálogos do projeto terapêutico (migration 415) — UM repositório, a tabela vem do domínio
+ * Os catálogos do projeto terapêutico (migration 415, 586) — UM repositório, a tabela vem do domínio
  * (`THERAPEUTIC_CATALOG_TABLE`), nunca de string do cliente. Sem `country`: lista global.
  * Baixa é `active=false` + `deactivated_at`, nunca DELETE (versões antigas apontam para o id).
  */
@@ -107,86 +204,58 @@ export class TherapeuticCatalogRepository {
     return ADMIN_CATALOG_TABLE[kind];
   }
 
-  async list(kind: AdminCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<CatalogItem[]> {
-    const where = opts.includeInactive ? '' : 'WHERE active';
-    // Só atividades/objetivos (spec 061) são alfabéticos; `segments` e o catálogo de motivos de saída
-    // mantêm a ordem manual de antes.
-    const orderBy = catalogHasDescription(kind) ? 'lower(label)' : 'active DESC, sort_order, lower(label)';
+  async list(kind: AdminCatalogKind, opts: CatalogListOptions = {}): Promise<CatalogItem[]> {
+    const shape = LIST_SHAPE[kind];
+    const params: unknown[] = [];
+    const conds: string[] = opts.includeInactive ? [] : [shape.activeCol];
+    (Object.keys(shape.filters) as Array<keyof ListShape['filters']>).forEach((key) => {
+      const value = opts[key];
+      if (value === undefined) return;
+      params.push(value);
+      conds.push(shape.filters[key]!(`$${params.length}`));
+    });
+    const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
     const res = await this.pool.query<CatalogRow>(
-      `SELECT * FROM ${this.table(kind)} ${where} ORDER BY ${orderBy}`,
+      `${shape.base(this.table(kind))} ${where} ORDER BY ${shape.orderBy}`,
+      params,
     );
     return res.rows.map(toItem);
   }
 
   /**
    * O snapshot que a versão congela: só ids ATIVOS. Id desconhecido/inativo → erro nomeado com a
-   * lista (o controller responde 422 com os ids, nunca grava pela metade). `segmentId`/`segmentLabel`
-   * (migration 430) entram no congelamento — quem os REDIGE por célula é `therapeuticProjectAccess.ts`
-   * (lex-pr7 C3(b)), nunca aqui.
+   * lista (o controller responde 422 com os ids, nunca grava pela metade).
    */
   async snapshotOf(kind: TherapeuticCatalogKind, ids: readonly string[], cli: Pool | PoolClient = this.pool): Promise<TherapeuticCatalogSnapshotItem[]> {
     const unique = [...new Set(ids)];
-    const res = await cli.query<{ id: string; label: string; description: string | null; segment_id: string | null; segment_label: string | null }>(
-      `SELECT c.id, c.label, c.description, c.segment_id, s.label AS segment_label
+    const res = await cli.query<{ id: string; label: string; description: string | null }>(
+      `SELECT c.id, c.label, c.description
          FROM ${this.table(kind)} c
-         LEFT JOIN therapeutic_segments s ON s.id = c.segment_id
         WHERE c.active AND c.id = ANY($1::uuid[]) ORDER BY c.sort_order, lower(c.label)`,
       [unique],
     );
     const found = new Set(res.rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
     if (missing.length > 0) throw new CatalogItemsUnknownError(kind, missing);
-    return res.rows.map((r) => ({ id: r.id, label: r.label, ...(r.description ? { description: r.description } : {}), segmentId: r.segment_id, segmentLabel: r.segment_label }));
+    return res.rows.map((r) => ({ id: r.id, label: r.label, ...(r.description ? { description: r.description } : {}) }));
   }
 
-  /**
-   * O segmento que a versão do PTI congela (spec 030, lex C4): `{ id, label }` do segmento ATIVO,
-   * lido DENTRO da transação do INSERT (molde de `snapshotOf`). Inativo/inexistente →
-   * `CatalogSegmentInvalidError`, que NÃO carrega o id (o 422 não o ecoa — C3/C7).
-   */
-  async snapshotSegment(id: string, cli: Pool | PoolClient = this.pool): Promise<CatalogSnapshotItem> {
-    const res = await cli.query<{ id: string; label: string }>(
-      `SELECT id, label FROM ${this.table('segments')} WHERE active AND id = $1`,
-      [id],
-    );
-    if (res.rows.length === 0) throw new CatalogSegmentInvalidError();
-    return { id: res.rows[0].id, label: res.rows[0].label };
-  }
-
-  /**
-   * `segmentId` (430) — só um `segmento` ATIVO pode ser referenciado; `null` limpa o vínculo sem
-   * checar nada. Fora da transação de escrita (leitura pura, antes do INSERT/UPDATE) — mesmo
-   * desenho do `snapshotOf` para os ids de catálogo (lex C19).
-   */
-  private async assertSegmentActive(segmentId: string): Promise<void> {
-    const res = await this.pool.query<{ ok: number }>(
-      'SELECT 1 AS ok FROM therapeutic_segments WHERE id = $1 AND active',
-      [segmentId],
-    );
-    if (res.rows.length === 0) throw new CatalogSegmentInvalidError();
-  }
-
-  async create(kind: AdminCatalogKind, input: { label: string; sortOrder?: number; segmentId?: string | null; description?: string | null; actorUid: string }): Promise<CatalogItem> {
-    if (input.segmentId !== undefined && input.segmentId !== null) await this.assertSegmentActive(input.segmentId);
+  async create(kind: AdminCatalogKind, input: CatalogWriteFields & { label: string; actorUid: string }): Promise<CatalogItem> {
     try {
       const row = await withActorContext(this.pool, async (cli) => {
-        // `segment_id` só entra na coluna quando o CHAMADOR mandou a chave (schema por `kind` já
-        // garante que só objetivos/atividades chegam aqui com ela) — ausente não toca a coluna,
-        // mesmo Merge Patch do `update` abaixo, para não quebrar o molde de params do `create` de
-        // `segments` nem dos testes que não passam `segmentId`.
+        // Cada coluna só entra quando o CHAMADOR mandou a chave (ausente não toca a coluna, mesmo Merge Patch do `update`).
         const cols = ['label', 'sort_order'];
         const params: unknown[] = [input.label, input.sortOrder ?? null];
         const placeholders = ['$1', `COALESCE($2, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM ${this.table(kind)}))`];
-        if (input.segmentId !== undefined) {
-          params.push(input.segmentId);
-          cols.push('segment_id');
+        const add = (col: string, value: unknown): void => {
+          params.push(value);
+          cols.push(col);
           placeholders.push(`$${params.length}`);
-        }
-        if (catalogHasDescription(kind) && input.description !== undefined) {
-          params.push(input.description);
-          cols.push('description');
-          placeholders.push(`$${params.length}`);
-        }
+        };
+        (OWNED_COLUMNS[kind] ?? []).forEach(([field, col]) => {
+          if (input[field] !== undefined) add(col, input[field]);
+        });
+        if (catalogHasDescription(kind) && input.description !== undefined) add('description', input.description);
         params.push(input.actorUid);
         cols.push('created_by', 'updated_by');
         placeholders.push(`$${params.length}`, `$${params.length}`);
@@ -200,8 +269,7 @@ export class TherapeuticCatalogRepository {
       });
       return toItem(row);
     } catch (err) {
-      if (isLabelUnique(err)) throw new CatalogLabelTakenError();
-      throw err;
+      throw translatePgError(err);
     }
   }
 
@@ -209,9 +277,8 @@ export class TherapeuticCatalogRepository {
   async update(
     kind: AdminCatalogKind,
     id: string,
-    patch: { label?: string; sortOrder?: number; segmentId?: string | null; description?: string | null; active?: boolean; actorUid: string },
+    patch: CatalogWriteFields & { active?: boolean; actorUid: string },
   ): Promise<CatalogItem | null> {
-    if (patch.segmentId !== undefined && patch.segmentId !== null) await this.assertSegmentActive(patch.segmentId);
     const sets: string[] = [];
     const params: unknown[] = [id];
     const push = (col: string, value: unknown): void => {
@@ -220,7 +287,9 @@ export class TherapeuticCatalogRepository {
     };
     if (patch.label !== undefined) push('label', patch.label);
     if (patch.sortOrder !== undefined) push('sort_order', patch.sortOrder);
-    if (patch.segmentId !== undefined) push('segment_id', patch.segmentId);
+    (OWNED_COLUMNS[kind] ?? []).forEach(([field, col]) => {
+      if (patch[field] !== undefined) push(col, patch[field]);
+    });
     if (catalogHasDescription(kind) && patch.description !== undefined) push('description', patch.description);
     if (patch.active !== undefined) {
       push('active', patch.active);
@@ -238,8 +307,7 @@ export class TherapeuticCatalogRepository {
       });
       return row ? toItem(row) : null;
     } catch (err) {
-      if (isLabelUnique(err)) throw new CatalogLabelTakenError();
-      throw err;
+      throw translatePgError(err);
     }
   }
 }

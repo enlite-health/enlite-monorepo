@@ -43,18 +43,16 @@ export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
  * deprecada pela 418; a célula `catalog_pathology_types` sumiu do código e o sync a marca.
  */
 /**
- * `segments` (migration 430, US-17, spec 018 PR-7): catálogo GLOBAL dos segmentos da Ana Care,
- * mesmo molde dos dois de cima — mesma tabela genérica (id/label/sort_order/active/deactivated_at),
- * por isso entra no MESMO repositório/rotas sem código novo (célula literal na rota, D299.3).
- * `specific-objectives`/`activities` ganham `segment_id` (FK opcional) como FILTRO — não recorte
- * do que pode ser gravado (#REQ-16) — tratado à parte no `create`/`update` do repositório.
+ * Catálogos mantidos à mão (spec 091): objetivos (por serviço) e atividades (por objetivo). O catálogo de
+ * segmentos (430) foi descontinuado: não há kind, tabela nem célula para ele (a coluna `segment_id` fica
+ * no banco só como legado, "não ler nem escrever").
  */
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'segments';
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
 
 /**
- * Spec 061: só estes kinds têm a coluna `description` (migration 547) e ordem alfabética. `segments` e o
+ * Spec 061: só estes kinds têm a coluna `description` (migration 547) e ordem alfabética. O
  * catálogo extra da stage (motivos de saída, 492) NÃO — para eles a ordem manual, o campo Ordem e o SQL
  * sem `description` ficam como antes. Checagem POSITIVA: kind novo nasce sem descrição.
  */
@@ -65,14 +63,12 @@ export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WI
 export const THERAPEUTIC_CATALOG_TABLE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'therapeutic_specific_objectives',
   activities: 'therapeutic_activities',
-  segments: 'therapeutic_segments',
 };
 
 /** Recurso da célula ABAC de cada catálogo (D299.3: uma célula por catálogo, família admin.patients). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
-  segments: 'catalog_therapeutic_segments',
 };
 
 /**
