@@ -10,6 +10,7 @@
  * Só dado de catálogo e de terminologia; nenhum dado de paciente.
  */
 import { Pool } from 'pg';
+import { travarReleaseCorrente } from './helpers/ptiCatalogoCidSeed';
 import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
@@ -46,6 +47,7 @@ describe('spec 091 — catálogo por categoria CID-11 pela API (HTTP real, banco
   let pool: Pool;
   let app: AppDeFamilia;
   let releaseAnterior: string | null = null;
+  let soltarLockCid: () => Promise<void> = async () => undefined; // T222: `is_current` é global; serializa entre processos jest
   let semServico: string; // service_types sem objetivo ativo: `serviceHasCatalog=false`
   const ids: { o1: string; o2: string; o3: string; oInativo: string; a1: string; a2: string } = {} as never;
 
@@ -116,6 +118,7 @@ describe('spec 091 — catálogo por categoria CID-11 pela API (HTTP real, banco
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
+    soltarLockCid = await travarReleaseCorrente(pool);
     await limpar();
     await restaurarCid(); // sobra de rodada interrompida: some antes de semear de novo
     await pool.query(
@@ -173,7 +176,7 @@ describe('spec 091 — catálogo por categoria CID-11 pela API (HTTP real, banco
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar();
-    await restaurarCid();
+    try { await restaurarCid(); } finally { await soltarLockCid(); }
     await pool.end();
     for (const [k, v] of Object.entries(envAnterior)) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v;

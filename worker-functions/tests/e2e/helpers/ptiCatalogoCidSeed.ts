@@ -10,7 +10,7 @@
  *     antigo INATIVO (CA-9: editar não pode reler o catálogo).
  * `limpar` apaga o catálogo pelo prefixo do rótulo; `restaurar` devolve o release anterior como corrente.
  */
-import type { Pool } from 'pg';
+import { Client, type Pool } from 'pg';
 
 /** O serviço contratado dos e2e de PTI: tem catálogo semeado por este helper. */
 export const SERVICO_CID = 'AT';
@@ -39,6 +39,35 @@ export interface CatalogoCid {
   restaurar(): Promise<void>;
 }
 
+
+/** Chave do advisory lock que serializa quem promove um release CID de teste como corrente (`is_current` é GLOBAL no banco). */
+const LOCK_RELEASE_CORRENTE = 9100221;
+
+/**
+ * Serializa, entre PROCESSOS jest que dividem o mesmo banco, os testes que promovem um release CID de teste como corrente.
+ * Sem isso, duas execuções concorrentes (outro terminal/agente, ou rodada anterior ainda viva) trocam o `is_current` uma
+ * debaixo da outra e a cascata devolve 422 em massa (T222). Conexão DEDICADA (fora do pool: `pool.end()` não trava) e
+ * sessão-nível: se o processo morrer, o Postgres solta o lock. Devolve o `soltar` (idempotente). Espera no máximo 20 s e então
+ * FALHA ALTO — nunca segue sem o lock. Dentro de uma execução serial (CI, `maxWorkers: 1`) o lock nunca espera.
+ */
+export async function travarReleaseCorrente(pool: Pool): Promise<() => Promise<void>> {
+  const conn = new Client(pool.options);
+  await conn.connect();
+  try {
+    await conn.query(`SET lock_timeout = '20s'`);
+    await conn.query(`SELECT pg_advisory_lock($1)`, [LOCK_RELEASE_CORRENTE]);
+  } catch (e) {
+    await conn.end().catch(() => undefined);
+    throw new Error(`release CID corrente ocupado por outra execução de e2e no mesmo banco (lock ${LOCK_RELEASE_CORRENTE}): ${(e as Error).message}`);
+  }
+  let solto = false;
+  return async (): Promise<void> => {
+    if (solto) return;
+    solto = true;
+    await conn.end().catch(() => undefined); // fechar a sessão solta o lock
+  };
+}
+
 /** Apaga (vínculos, atividades, objetivos) tudo que o teste semeou com o prefixo de rótulo — sobra de rodada interrompida inclusa. */
 export async function limparCatalogoPorPrefixo(pool: Pool, prefixo: string): Promise<void> {
   const objetivos = `(SELECT id FROM therapeutic_specific_objectives WHERE label LIKE '${prefixo}%')`;
@@ -60,7 +89,11 @@ export async function semearCatalogoCid(pool: Pool, opts: CatalogoCidOpts): Prom
   const limpar = (): Promise<void> => limparCatalogoPorPrefixo(pool, prefixo);
 
   let releaseAnterior: string | null = null;
+  let soltarLock: () => Promise<void> = async () => undefined;
   const restaurar = async (): Promise<void> => {
+    try { await restaurarRelease(); } finally { await soltarLock(); }
+  };
+  const restaurarRelease = async (): Promise<void> => {
     await pool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE release = $1`, [release]);
     if (releaseAnterior) {
       await pool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = $2 WHERE release = $1`, [releaseAnterior, `${tag}-restore`]);
@@ -70,8 +103,10 @@ export async function semearCatalogoCid(pool: Pool, opts: CatalogoCidOpts): Prom
   };
 
   // Sobra de rodada interrompida: some antes de semear de novo (o corrente anterior volta antes de ser lido).
-  await limpar();
-  await restaurar();
+  soltarLock = await travarReleaseCorrente(pool);
+  try {
+    await limpar();
+    await restaurarRelease();
 
   const entidades: Array<[string, string, string, string, string]> = [
     [uris.semCategoria, CAP06.code, CAP06.title, CAP06.code, 'chapter'],
@@ -132,6 +167,10 @@ export async function semearCatalogoCid(pool: Pool, opts: CatalogoCidOpts): Prom
     rotulos: { objetivoA: `${prefixo}obj A`, atividadeA: `${prefixo}ativ A` },
     limpar, restaurar,
   };
+  } catch (e) {
+    await soltarLock(); // falhou no meio da semeadura: o afterAll não tem `cat` para restaurar, então o lock não pode ficar preso
+    throw e;
+  }
 }
 
 /** Um bloco por diagnóstico, no formato do corpo (`diagnosisPlans`). */
