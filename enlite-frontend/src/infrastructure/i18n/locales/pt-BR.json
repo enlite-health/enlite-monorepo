@@ -130,6 +130,18 @@
     "profileLink": "Meu perfil",
     "profileAria": "Meu perfil — {{name}}"
   },
+  "therapeuticProjectForm": {
+    "stepService": "Passo 1 · Serviço",
+    "stepDiagnoses": "Passo 2 · Diagnósticos",
+    "stepObjectives": "Passo 3 · Objetivos específicos",
+    "stepActivities": "Passo 4 · Atividades",
+    "noCatalog": "Não há catálogo para este diagnóstico e serviço. Use Objetivo geral e Contexto clínico.",
+    "pickObjectiveFirst": "Escolha ao menos um objetivo para ver as atividades.",
+    "planIncomplete": "Escolha ao menos um objetivo e uma atividade neste diagnóstico.",
+    "chooseServiceFirst": "Escolha o serviço para continuar.",
+    "frequency": "Frequência: {{value}}",
+    "noCatalogAt": "Sem catálogo para este diagnóstico e serviço em {{date}}"
+  },
   "topNavbar": {
     "greeting": "Olá",
     "mainPage": "essa é sua página principal",
