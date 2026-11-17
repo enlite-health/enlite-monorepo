@@ -50,17 +50,16 @@ describe('TherapeuticProject — numeração major.minor (spec 017, D299)', () =
     expect(out.map((v) => v.id)).toEqual(['b', 'd', 'c', 'a']);
   });
 
-  it('os 3 catálogos (US-17: segments entrou na 430) têm tabela e recurso de célula próprios; "tipo de patologia" NÃO é catálogo (deriva do CID-11)', () => {
-    expect(THERAPEUTIC_CATALOG_KINDS).toHaveLength(3);
-    expect(THERAPEUTIC_CATALOG_KINDS).toContain('segments');
+  it('091 (DF-1): só 2 catálogos (objetivos e atividades), cada um com tabela e recurso de célula próprios; segmento e "tipo de patologia" NÃO são catálogo', () => {
+    expect([...THERAPEUTIC_CATALOG_KINDS].sort()).toEqual(['activities', 'specific-objectives']);
     expect(THERAPEUTIC_CATALOG_KINDS).not.toContain('pathology-types');
     for (const k of THERAPEUTIC_CATALOG_KINDS) {
       expect(THERAPEUTIC_CATALOG_TABLE[k]).toMatch(/^[a-z_]+$/);
       expect(THERAPEUTIC_CATALOG_RESOURCE[k]).toMatch(/^catalog_[a-z_]+$/);
     }
-    expect(new Set(Object.values(THERAPEUTIC_CATALOG_RESOURCE)).size).toBe(3);
-    expect(THERAPEUTIC_CATALOG_TABLE.segments).toBe('therapeutic_segments');
-    expect(THERAPEUTIC_CATALOG_RESOURCE.segments).toBe('catalog_therapeutic_segments');
+    expect(new Set(Object.values(THERAPEUTIC_CATALOG_RESOURCE)).size).toBe(2);
+    expect(Object.keys(THERAPEUTIC_CATALOG_TABLE)).not.toContain('segments');
+    expect(Object.keys(THERAPEUTIC_CATALOG_RESOURCE)).not.toContain('segments');
   });
 });
 
@@ -72,9 +71,10 @@ describe('THERAPEUTIC_FIELD_CLASS — modality é MICRO (D328/SUP-24)', () => {
     expect(THERAPEUTIC_FIELD_CLASS.MICRO).toContain('careTeamIds');
   });
 
-  it('030 — segmentId é MACRO (só muda com "Nuevo", como o CID) e nunca MICRO', () => {
-    expect(THERAPEUTIC_FIELD_CLASS.MACRO).toContain('segmentId');
+  it('091 (DF-1): `segmentId` não é campo de versão (nem MACRO nem MICRO); o MACRO traz `diagnosisPlans`', () => {
+    expect(THERAPEUTIC_FIELD_CLASS.MACRO).not.toContain('segmentId');
     expect(THERAPEUTIC_FIELD_CLASS.MICRO).not.toContain('segmentId');
+    expect(THERAPEUTIC_FIELD_CLASS.MACRO).toContain('diagnosisPlans');
   });
 
   it('MACRO e MICRO não se sobrepõem', () => {

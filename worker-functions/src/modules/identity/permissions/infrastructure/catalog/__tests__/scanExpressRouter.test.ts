@@ -351,8 +351,6 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // Motivos de saída (492): mesma família, célula literal própria.
       'catalog_service_exit_reasons:read',
       'catalog_service_shift_templates:read',
-      // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
-      'catalog_therapeutic_segments:read',
       // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos recursos. Nesta rodada
       // (A1) NENHUMA rota declara `create`/`update` ainda (routes só mudam no 8b.4) — por isso as
       // células novas só existem no catálogo por `cellsForaDeRota`, igual às demais linhas
@@ -421,7 +419,6 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update',
       'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update',
       'catalog_service_shift_templates:create', 'catalog_service_shift_templates:update',
-      'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update',
       'user_management:create', 'user_management:update',
       'vacancy:create', 'vacancy:update',
       'funnel:create', 'funnel:update',

@@ -24,8 +24,11 @@ const version = {
   contactStatus: {},
 };
 
-// 030: `mode:'new'` leva `segmentId` (MACRO); `version` (sem a chave) é o corpo do `mode:'edit'`.
-const newVersion = { ...version, segmentId: UUID };
+// 091: `mode:'new'` leva os blocos por diagnóstico (`diagnosisPlans`) no lugar dos ids planos; `version` (ids planos, formato antigo)
+// é o corpo do `mode:'edit'` sobre versão plana. Nenhum dos dois leva `segmentId` (o segmento saiu de vez, DF-1).
+const { specificObjectiveIds: _o, activityIds: _a, ...versionSemIdsPlanos } = version;
+const plan = (diagnosisUri: string) => ({ diagnosisUri, specificObjectiveIds: [UUID], activityIds: [UUID] });
+const newVersion = { ...versionSemIdsPlanos, diagnosisPlans: [plan(version.diagnoses[0].uri)] };
 
 describe('therapeuticProjectSchemas — contactStatus (spec 048)', () => {
   const edit = (v: Record<string, unknown>) => createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: v });
@@ -88,8 +91,12 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, generalObjective: '   ' } }).success).toBe(false);
     // `pathologyTypeIds` (campo antigo do catálogo) é recusado pela borda `.strict()`: o segmento deriva do CID-11 no servidor.
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, pathologyTypeIds: [UUID] } }).success).toBe(false);
-    for (const key of ['diagnoses', 'specificObjectiveIds', 'activityIds'] as const) {
+    for (const key of ['diagnoses', 'diagnosisPlans'] as const) {
       expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, [key]: [] } }).success).toBe(false);
+    }
+    // Editar sobre versão plana (formato antigo): os ids planos seguem 1..50.
+    for (const key of ['specificObjectiveIds', 'activityIds'] as const) {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: { ...version, [key]: [] } }).success).toBe(false);
     }
   });
 
@@ -101,43 +108,56 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
   it('diagnóstico é snapshot estrito {uri, code?, title} — campo a mais é recusado (lex C19); code é opcional (REQ-21)', () => {
     const diag = { ...version.diagnoses[0], note: 'texto livre' };
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnoses: [diag] } }).success).toBe(false);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnoses: [{ uri: 'u', title: 't' }] } }).success).toBe(true);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnoses: [{ uri: 'u', code: '', title: 't' }] } }).success).toBe(true);
+    const comPlano = { diagnosisPlans: [plan('u')] };
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, ...comPlano, diagnoses: [{ uri: 'u', title: 't' }] } }).success).toBe(true);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, ...comPlano, diagnoses: [{ uri: 'u', code: '', title: 't' }] } }).success).toBe(true);
   });
 
-  describe('030 — segmentId (MACRO): obrigatório no Novo, proibido no Editar, snapshot nunca do cliente (lex C4)', () => {
-    it('030 — new sem segmentId → inválido (400)', () => {
-      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version }).success).toBe(false);
-    });
-
-    it('030 — new com segment:{id,label} do cliente → inválido (o rótulo é do servidor)', () => {
-      expect(
-        createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, segment: { id: UUID, label: 'x' } } }).success,
-      ).toBe(false);
-      expect(
-        createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, segment: { id: UUID, label: 'x' } } }).success,
-      ).toBe(false);
-    });
-
-    it('030 — new com segmentId que não é uuid, ou chave extra → inválido', () => {
-      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, segmentId: 'x' } }).success).toBe(false);
-      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, segmentLabel: 'x' } }).success).toBe(false);
-    });
-
-    it('030 — edit com segmentId → inválido (MACRO só muda com "Nuevo")', () => {
-      expect(
-        createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: { ...version, segmentId: UUID } }).success,
-      ).toBe(false);
-    });
-
-    it('030 — edit sem segmentId → válido', () => {
+  describe('091 (DF-1) — o segmento saiu: `segmentId`/`segment` não entram pelo corpo, nem no Novo nem no Editar (.strict())', () => {
+    it('new e edit sem segmentId → válidos (ele deixou de ser obrigatório)', () => {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: newVersion }).success).toBe(true);
       expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version }).success).toBe(true);
     });
 
-    it('030 — new válido (com segmentId uuid) → válido e o dado carrega o segmentId', () => {
-      const r = createTherapeuticProjectSchema.safeParse({ mode: 'new', version: newVersion });
-      expect(r.success).toBe(true);
-      if (r.success && r.data.mode === 'new') expect((r.data.version as { segmentId?: string }).segmentId).toBe(UUID);
+    it('new com segmentId (uuid ou não), segmentLabel ou segment:{id,label} → inválido (400)', () => {
+      for (const extra of [{ segmentId: UUID }, { segmentId: 'x' }, { segmentLabel: 'x' }, { segment: { id: UUID, label: 'x' } }]) {
+        expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, ...extra } }).success).toBe(false);
+      }
+    });
+
+    it('edit com segmentId ou segment → inválido, no formato plano e no por diagnóstico', () => {
+      for (const base of [version, { ...versionSemIdsPlanos, diagnosisPlans: newVersion.diagnosisPlans }]) {
+        for (const extra of [{ segmentId: UUID }, { segment: { id: UUID, label: 'x' } }]) {
+          expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: { ...base, ...extra } }).success).toBe(false);
+        }
+      }
+    });
+  });
+
+  describe('091 — blocos por diagnóstico (diagnosisPlans): o Novo só os aceita, e eles cobrem os diagnósticos uma vez cada', () => {
+    it('new com ids planos no corpo → inválido (o Novo é só por diagnóstico)', () => {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, specificObjectiveIds: [UUID], activityIds: [UUID] } }).success).toBe(false);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...versionSemIdsPlanos } }).success).toBe(false);
+    });
+
+    it('bloco de diagnóstico que não está em diagnoses, repetido ou faltando → inválido', () => {
+      const dois = { ...newVersion, diagnoses: [...version.diagnoses, { uri: 'http://id.who.int/icd/entity/2', title: 'Outro' }] };
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnosisPlans: [plan('http://id.who.int/icd/entity/9')] } }).success).toBe(false);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...dois, diagnosisPlans: [plan(version.diagnoses[0].uri)] } }).success).toBe(false);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...dois, diagnosisPlans: [plan(version.diagnoses[0].uri), plan(version.diagnoses[0].uri)] } }).success).toBe(false);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...dois, diagnosisPlans: [plan(version.diagnoses[0].uri), plan('http://id.who.int/icd/entity/2')] } }).success).toBe(true);
+    });
+
+    it('bloco vazio (0 objetivos e 0 atividades) é aceito na borda (se pode é do domínio); id que não é uuid → inválido', () => {
+      const vazio = [{ diagnosisUri: version.diagnoses[0].uri, specificObjectiveIds: [], activityIds: [] }];
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnosisPlans: vazio } }).success).toBe(true);
+      const ruim = [{ diagnosisUri: version.diagnoses[0].uri, specificObjectiveIds: ['x'], activityIds: [] }];
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnosisPlans: ruim } }).success).toBe(false);
+    });
+
+    it('edit por diagnóstico (versão de origem nova) → válido; edit sem NENHUM dos dois formatos → inválido', () => {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: newVersion }).success).toBe(true);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: versionSemIdsPlanos }).success).toBe(false);
     });
   });
 
@@ -161,10 +181,14 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(updateCatalogItemSchema.safeParse({ label: 'novo rótulo', sortOrder: 5 }).success).toBe(true);
   });
 
+  // 091: objetivo exige `serviceCode`, atividade exige `objectiveId` — o corpo mínimo válido de cada kind.
+  const dono = (kind: 'specific-objectives' | 'activities'): Record<string, unknown> =>
+    kind === 'specific-objectives' ? { serviceCode: 'AT' } : { objectiveId: UUID };
+
   it('spec 061: título 150 (151 recusa no create e no update com label); PATCH só com description não exige label', () => {
     for (const kind of ['specific-objectives', 'activities'] as const) {
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(150) }).success).toBe(true);
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(151) }).success).toBe(false);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(150), ...dono(kind) }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(151), ...dono(kind) }).success).toBe(false);
       expect(updateCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(151) }).success).toBe(false);
       expect(updateCatalogItemSchemaFor(kind).safeParse({ label: 'x'.repeat(150) }).success).toBe(true);
       expect(updateCatalogItemSchemaFor(kind).safeParse({ description: 'DESCRIPCION-SINTETICA-1' }).success).toBe(true);
@@ -173,48 +197,37 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
 
   it('spec 061: descrição 1000 ok, 1001 recusa; "" no PATCH vira null (limpar); PII recusa sem ecoar o texto', () => {
     for (const kind of ['specific-objectives', 'activities'] as const) {
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'a'.repeat(1000) }).success).toBe(true);
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'a'.repeat(1001) }).success).toBe(false);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'a'.repeat(1000), ...dono(kind) }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'a'.repeat(1001), ...dono(kind) }).success).toBe(false);
       expect(updateCatalogItemSchemaFor(kind).safeParse({ description: 'a'.repeat(1001) }).success).toBe(false);
       const limpar = updateCatalogItemSchemaFor(kind).safeParse({ description: '   ' });
       expect(limpar.success).toBe(true);
       expect(limpar.success && (limpar.data as { description?: unknown }).description).toBeNull();
       const nulo = updateCatalogItemSchemaFor(kind).safeParse({ description: null });
       expect(nulo.success && (nulo.data as { description?: unknown }).description).toBeNull();
-      const pii = createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'llamar al 11 4463 5919' });
+      const pii = createCatalogItemSchemaFor(kind).safeParse({ label: 'TITULO-SINTETICO-1', description: 'llamar al 11 4463 5919', ...dono(kind) });
       expect(pii.success).toBe(false);
       expect(JSON.stringify(pii)).not.toContain('4463');
     }
   });
 
-  it('spec 061: `segments` recusa `description` (400) e segue com label 200', () => {
-    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental', description: 'DESCRIPCION-SINTETICA-1' }).success).toBe(false);
-    expect(updateCatalogItemSchemaFor('segments').safeParse({ description: 'DESCRIPCION-SINTETICA-1' }).success).toBe(false);
-    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'x'.repeat(200) }).success).toBe(true);
-    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'x'.repeat(201) }).success).toBe(false);
+  it('091 (DF-1): `segments` NÃO é kind de catálogo (400/404 na rota): o enum fechado só tem objetivos e atividades', () => {
+    expect(catalogKindSchema.safeParse('segments').success).toBe(false);
+    expect(catalogKindSchema.safeParse('specific-objectives').success).toBe(true);
+    expect(catalogKindSchema.safeParse('activities').success).toBe(true);
   });
 
-  it('catálogo: kind fechado agora inclui `segments` (US-17, migration 430)', () => {
-    expect(catalogKindSchema.safeParse('segments').success).toBe(true);
-  });
-
-  it('segmentId (contract §Catálogo de segmentos, US-17): só objetivos/atividades aceitam; `segments` recusa (.strict())', () => {
+  it('091 (DF-1): `segmentId` não existe em objetivos nem atividades (.strict() → 400), no create e no PATCH, uuid ou null', () => {
     const UUID_SEG = '22222222-2222-4222-8222-222222222222';
-    // specific-objectives/activities: aceitam `segmentId` uuid ou `null` (limpa o vínculo); ausente não toca a coluna.
     for (const kind of ['specific-objectives', 'activities'] as const) {
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', segmentId: UUID_SEG }).success).toBe(true);
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', segmentId: null }).success).toBe(true);
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo' }).success).toBe(true);
-      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', segmentId: 'nao-uuid' }).success).toBe(false);
-      expect(updateCatalogItemSchemaFor(kind).safeParse({ segmentId: UUID_SEG }).success).toBe(true);
-      expect(updateCatalogItemSchemaFor(kind).safeParse({ segmentId: null }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', ...dono(kind) }).success).toBe(true);
+      for (const segmentId of [UUID_SEG, null, 'nao-uuid']) {
+        expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', ...dono(kind), segmentId }).success).toBe(false);
+        expect(updateCatalogItemSchemaFor(kind).safeParse({ segmentId }).success).toBe(false);
+      }
     }
-    // `segments` (o próprio catálogo de segmentos) NÃO tem `segmentId` de si mesmo — campo a mais é 400.
-    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental', segmentId: UUID_SEG }).success).toBe(false);
-    expect(updateCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental', segmentId: UUID_SEG }).success).toBe(false);
-    // `segments` continua aceitando o corpo comum, sem o campo.
-    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental' }).success).toBe(true);
   });
+
   it('motivos de saída (492): kind novo NÃO aceita `segmentId` (400) e o rótulo passa pela mesma guarda de dado pessoal', () => {
     const UUID_SEG = '22222222-2222-4222-8222-222222222222';
     const kind = 'service-exit-reasons' as const;

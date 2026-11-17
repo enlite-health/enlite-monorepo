@@ -385,10 +385,6 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/therapeutic-catalogs/activities → catalog_therapeutic_activities:read',
         'POST /api/admin/therapeutic-catalogs/activities → catalog_therapeutic_activities:create',
         'PATCH /api/admin/therapeutic-catalogs/activities/:itemId → catalog_therapeutic_activities:update',
-        // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
-        'GET /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:read',
-        'POST /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:create',
-        'PATCH /api/admin/therapeutic-catalogs/segments/:itemId → catalog_therapeutic_segments:update',
         // Motivos de saída (migration 492) — kind fora do laço terapêutico, célula literal própria.
         'GET /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:read',
         'POST /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:create',
