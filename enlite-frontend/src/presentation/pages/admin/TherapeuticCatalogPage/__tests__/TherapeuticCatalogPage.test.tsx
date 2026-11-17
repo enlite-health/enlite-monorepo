@@ -480,7 +480,7 @@ describe('TherapeuticCatalogPage — colunas por kind (091, §9.7)', () => {
   it('objetivos: Título · Descripción · Serviço · CID-11 · Estado (+ Ações) — sem Segmento nem Ordem', async () => {
     await renderPage('specific-objectives');
     expect(headers()).toEqual([COPY.table.title, COPY.table.description, COPY.service, COPY.icdCategories, COPY.table.status, COPY.table.actions]);
-    expect(screen.queryByRole('columnheader', { name: COPY.table.segment })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: /segmento|segment/i })).toBeNull();
     expect(screen.getByTestId('therapeutic-catalog-service-ativa')).toHaveTextContent(COPY.serviceAT);
     expect(screen.getByTestId('therapeutic-catalog-icd-ativa')).toHaveTextContent('3 categorias');
     expect(screen.getByTestId('therapeutic-catalog-icd-inativa')).toHaveTextContent('0 categorias');

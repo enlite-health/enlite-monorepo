@@ -291,7 +291,6 @@ export function App() {
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
           <Route path="catalogos/motivos-de-salida" element={<TherapeuticCatalogPage kind="service-exit-reasons" />} />
           <Route path="catalogos/guardias" element={<TherapeuticCatalogPage kind="service-shift-templates" />} />
-          <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           {/* Perfil da conta logada (Identidade · Tactiq · Idioma · Accesos · Sair). Sem chave `screen:*`: é a conta do
               próprio operador, não uma tela por país. A seção Tactiq herda a célula própria `own_tactiq_link` (spec 049, F7). */}

@@ -68,3 +68,14 @@ describe('item de prompts de IA', () => {
     expect(itens().map((i) => i.href)).toContain(HREF_PROMPTS);
   });
 });
+
+describe('091: o catálogo de segmentos saiu do menu (DF-1)', () => {
+  it('mesmo com o enforcement desligado (tudo visível), nenhum item aponta para catalogos/segmentos', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'off') });
+
+    const hrefs = itens().map((i) => i.href);
+    expect(hrefs.length).toBeGreaterThan(0);
+    expect(hrefs).toContain('/admin/catalogos/objetivos-especificos');
+    expect(hrefs).not.toContain('/admin/catalogos/segmentos');
+  });
+});
