@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AdminTherapeuticProjectsApiService, TherapeuticProjectApiError } from '../AdminTherapeuticProjectsApiService';
-import type { CreateTherapeuticProjectBody, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
+import type { ByDiagnosisVersionBody, CreateTherapeuticProjectBody, FlatVersionBody } from '@domain/entities/TherapeuticProject';
 
 const mockGetIdToken = vi.fn().mockResolvedValue('mock-token');
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
@@ -33,20 +33,35 @@ const VERSION_ID = 'v1';
 const ITEM_ID = 'i1';
 const BASE = 'http://localhost:8080';
 
-const CORPO: TherapeuticProjectVersionBody = {
+const URI = 'http://id.who.int/icd/entity/1';
+const BASE_CORPO = {
   contractedServiceId: 'svc-1',
   modality: 'IN_PERSON',
-  diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '6A00', title: 'Trastorno' }],
+  diagnoses: [{ uri: URI, code: '6A00', title: 'Trastorno' }],
   clinicalContext: 'contexto',
   generalObjective: 'objetivo',
-  specificObjectiveIds: ['so-1'],
-  activityIds: ['a-1'],
   startDate: '2026-09-01',
   endDate: '2026-12-01',
   contactStatus: {},
   contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }],
   careTeamIds: ['prof-1'],
+} as const;
+
+/** Formato novo (091): `mode:'new'` sempre por diagnóstico. */
+const CORPO: ByDiagnosisVersionBody = {
+  ...BASE_CORPO,
+  diagnoses: [...BASE_CORPO.diagnoses],
+  contactRefs: [...BASE_CORPO.contactRefs],
+  careTeamIds: [...BASE_CORPO.careTeamIds],
+  diagnosisPlans: [{ diagnosisUri: URI, specificObjectiveIds: ['so-1'], activityIds: ['a-1'] }],
 };
+/** Formato antigo: só o `mode:'edit'` de versão flat. */
+const CORPO_FLAT: FlatVersionBody = {
+  ...CORPO,
+  specificObjectiveIds: ['so-1'],
+  activityIds: ['a-1'],
+};
+delete (CORPO_FLAT as unknown as Record<string, unknown>).diagnosisPlans;
 
 describe('AdminTherapeuticProjectsApiService — cabeçalho e erros da fronteira', () => {
   beforeEach(() => {
@@ -169,16 +184,23 @@ describe('AdminTherapeuticProjectsApiService — versões do projeto (URL exata)
     expect(enviado.version).not.toHaveProperty('minor');
   });
 
-  it('createVersion mode:new leva o `segmentId` no corpo da versão (spec 030) e mode:edit segue sem a chave', async () => {
-    const SEG = '11111111-1111-4111-8111-111111111111';
-    const novo: CreateTherapeuticProjectBody = { mode: 'new', version: { ...CORPO, segmentId: SEG } };
+  it('createVersion mode:new leva `diagnosisPlans` e NÃO leva segmentId nem a lista plana (091)', async () => {
     const f = mockFetch({ success: true, data: { id: VERSION_ID } });
-    await AdminTherapeuticProjectsApiService.createVersion(PATIENT_ID, novo);
-    expect(JSON.parse(chamada(f)[1].body as string).version.segmentId).toBe(SEG);
-    const edit: CreateTherapeuticProjectBody = { mode: 'edit', fromVersionId: VERSION_ID, version: CORPO };
-    const g = mockFetch({ success: true, data: { id: 'v2' } });
-    await AdminTherapeuticProjectsApiService.createVersion(PATIENT_ID, edit);
-    expect(JSON.parse(chamada(g)[1].body as string).version).not.toHaveProperty('segmentId');
+    await AdminTherapeuticProjectsApiService.createVersion(PATIENT_ID, { mode: 'new', version: CORPO });
+    const v = JSON.parse(chamada(f)[1].body as string).version;
+    expect(v.diagnosisPlans).toEqual([{ diagnosisUri: URI, specificObjectiveIds: ['so-1'], activityIds: ['a-1'] }]);
+    expect(v).not.toHaveProperty('segmentId');
+    expect(v).not.toHaveProperty('specificObjectiveIds');
+    expect(v).not.toHaveProperty('activityIds');
+  });
+
+  it('createVersion mode:edit de versão flat manda a lista plana, sem `diagnosisPlans`', async () => {
+    const body: CreateTherapeuticProjectBody = { mode: 'edit', fromVersionId: VERSION_ID, version: CORPO_FLAT };
+    const f = mockFetch({ success: true, data: { id: 'v2' } });
+    await AdminTherapeuticProjectsApiService.createVersion(PATIENT_ID, body);
+    const v = JSON.parse(chamada(f)[1].body as string).version;
+    expect(v.specificObjectiveIds).toEqual(['so-1']);
+    expect(v).not.toHaveProperty('diagnosisPlans');
   });
 
   it('createVersion mode:edit leva o fromVersionId (a minor seguinte sai DAQUELA versão)', async () => {
@@ -199,7 +221,7 @@ describe('AdminTherapeuticProjectsApiService — versões do projeto (URL exata)
   });
 });
 
-describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)', () => {
+describe('AdminTherapeuticProjectsApiService — os catálogos (D299, lex C19)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetIdToken.mockResolvedValue('mock-token');
@@ -208,7 +230,6 @@ describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)
   it.each([
     ['specific-objectives'],
     ['activities'],
-    ['segments'],
   ] as const)('listCatalog(%s): GET na rota do kind, devolve `items` de dentro do envelope', async (kind) => {
     const f = mockFetch({ success: true, data: { kind, items: [{ id: ITEM_ID, label: 'Opção' }] } });
     const out = await AdminTherapeuticProjectsApiService.listCatalog(kind);
@@ -295,6 +316,125 @@ describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)
     const f = mockFetch({ success: true, data: { id: ITEM_ID, label: 'Renomeada' } });
     await AdminTherapeuticProjectsApiService.updateCatalogItem('activities', ITEM_ID, { label: 'Renomeada' });
     expect(JSON.parse(chamada(f)[1].body as string)).toEqual({ label: 'Renomeada' });
+  });
+});
+
+describe('AdminTherapeuticProjectsApiService — 091: catálogo por CID-11 e serviço (URL, verbo, corpo)', () => {
+  const CAT = `${BASE}/api/admin/therapeutic-catalogs`;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetIdToken.mockResolvedValue('mock-token');
+  });
+
+  it('cascade: POST em …/cascade com `{serviceCode, diagnosisUris}` e devolve o envelope sem desembrulhar mais nada', async () => {
+    const resposta = { serviceCode: 'AT', serviceHasCatalog: true, blocks: [{ diagnosisUri: URI, categoryCode: '6A02', status: 'ok', objectives: [] }] };
+    const f = mockFetch({ success: true, data: resposta });
+    const out = await AdminTherapeuticProjectsApiService.cascade({ serviceCode: 'AT', diagnosisUris: [URI] });
+    expect(out).toEqual(resposta);
+    const [url, init] = chamada(f);
+    expect(url).toBe(`${CAT}/cascade`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ serviceCode: 'AT', diagnosisUris: [URI] });
+  });
+
+  it('searchIcdCategories: GET em …/icd-categories?q= com o termo codificado; devolve o array', async () => {
+    const f = mockFetch({ success: true, data: [{ code: '6A02', title: 'Autismo' }] });
+    const out = await AdminTherapeuticProjectsApiService.searchIcdCategories('trastorno del espectro');
+    expect(out).toEqual([{ code: '6A02', title: 'Autismo' }]);
+    const [url, init] = chamada(f);
+    expect(url).toBe(`${CAT}/icd-categories?q=trastorno%20del%20espectro`);
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('listCatalog com categoryCode e objectiveId leva as duas queries (filtros do §9.4)', async () => {
+    const f = mockFetch({ success: true, data: { kind: 'activities', items: [] } });
+    await AdminTherapeuticProjectsApiService.listCatalog('activities', { includeInactive: true, categoryCode: '6A02', objectiveId: 'o1' });
+    expect(chamada(f)[0]).toBe(`${CAT}/activities?includeInactive=true&categoryCode=6A02&objectiveId=o1`);
+  });
+
+  it('createCatalogItem de objetivo leva `serviceCode` e nenhum `segmentId`', async () => {
+    const f = mockFetch({ success: true, data: { id: ITEM_ID } });
+    await AdminTherapeuticProjectsApiService.createCatalogItem('specific-objectives', { label: 'TITULO-SINTETICO-1', serviceCode: 'AT' });
+    const [url, init] = chamada(f);
+    expect(url).toBe(`${CAT}/specific-objectives`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ label: 'TITULO-SINTETICO-1', serviceCode: 'AT' });
+  });
+
+  it('createCatalogItem de atividade leva `objectiveId` e `suggestedFrequency`', async () => {
+    const f = mockFetch({ success: true, data: { id: ITEM_ID } });
+    await AdminTherapeuticProjectsApiService.createCatalogItem('activities', { label: 'TITULO-SINTETICO-2', objectiveId: 'o1', suggestedFrequency: '2x por semana' });
+    expect(JSON.parse(chamada(f)[1].body as string)).toEqual({ label: 'TITULO-SINTETICO-2', objectiveId: 'o1', suggestedFrequency: '2x por semana' });
+  });
+
+  it('updateCatalogItem DD-24: frequência vazia vai como `null` explícito; campo não alterado fica de fora', async () => {
+    const f = mockFetch({ success: true, data: { id: ITEM_ID } });
+    await AdminTherapeuticProjectsApiService.updateCatalogItem('activities', ITEM_ID, { suggestedFrequency: null });
+    const [url, init] = chamada(f);
+    expect(url).toBe(`${CAT}/activities/${ITEM_ID}`);
+    expect(init.method).toBe('PATCH');
+    const corpo = JSON.parse(init.body as string);
+    expect(corpo).toEqual({ suggestedFrequency: null });
+    expect(corpo).not.toHaveProperty('objectiveId');
+  });
+
+  it('updateCatalogItem de objetivo troca `serviceCode` (PATCH)', async () => {
+    const f = mockFetch({ success: true, data: { id: ITEM_ID } });
+    await AdminTherapeuticProjectsApiService.updateCatalogItem('specific-objectives', ITEM_ID, { serviceCode: 'AT' });
+    expect(chamada(f)[1].method).toBe('PATCH');
+    expect(JSON.parse(chamada(f)[1].body as string)).toEqual({ serviceCode: 'AT' });
+  });
+
+  it('listObjectiveCategories: GET …/specific-objectives/:id/categories', async () => {
+    const resposta = { total: 1, items: [{ code: '6A02', title: null, activityLinks: 2 }] };
+    const f = mockFetch({ success: true, data: resposta });
+    expect(await AdminTherapeuticProjectsApiService.listObjectiveCategories(ITEM_ID)).toEqual(resposta);
+    expect(chamada(f)[0]).toBe(`${CAT}/specific-objectives/${ITEM_ID}/categories`);
+    expect(chamada(f)[1].method).toBe('GET');
+  });
+
+  it('addObjectiveCategory: POST …/specific-objectives/:id/categories com `{ code }`', async () => {
+    const f = mockFetch({ success: true, data: { code: '6A02', title: 'Autismo' } });
+    expect(await AdminTherapeuticProjectsApiService.addObjectiveCategory(ITEM_ID, '6A02')).toEqual({ code: '6A02', title: 'Autismo' });
+    expect(chamada(f)[0]).toBe(`${CAT}/specific-objectives/${ITEM_ID}/categories`);
+    expect(chamada(f)[1].method).toBe('POST');
+    expect(JSON.parse(chamada(f)[1].body as string)).toEqual({ code: '6A02' });
+  });
+
+  it('removeObjectiveCategory: DELETE …/specific-objectives/:id/categories/:code, sem corpo, devolve `removedActivityLinks`', async () => {
+    const f = mockFetch({ success: true, data: { removedActivityLinks: 3 } });
+    expect(await AdminTherapeuticProjectsApiService.removeObjectiveCategory(ITEM_ID, '6A02')).toEqual({ removedActivityLinks: 3 });
+    expect(chamada(f)[0]).toBe(`${CAT}/specific-objectives/${ITEM_ID}/categories/6A02`);
+    expect(chamada(f)[1].method).toBe('DELETE');
+    expect(chamada(f)[1].body).toBeUndefined();
+  });
+
+  it('listActivityCategories: GET …/activities/:id/categories', async () => {
+    const f = mockFetch({ success: true, data: { total: 0, items: [] } });
+    await AdminTherapeuticProjectsApiService.listActivityCategories(ITEM_ID);
+    expect(chamada(f)[0]).toBe(`${CAT}/activities/${ITEM_ID}/categories`);
+    expect(chamada(f)[1].method).toBe('GET');
+  });
+
+  it('addActivityCategory: POST …/activities/:id/categories com `{ code }`', async () => {
+    const f = mockFetch({ success: true, data: { code: '6A02', title: 'Autismo' } });
+    await AdminTherapeuticProjectsApiService.addActivityCategory(ITEM_ID, '6A02');
+    expect(chamada(f)[0]).toBe(`${CAT}/activities/${ITEM_ID}/categories`);
+    expect(chamada(f)[1].method).toBe('POST');
+    expect(JSON.parse(chamada(f)[1].body as string)).toEqual({ code: '6A02' });
+  });
+
+  it('removeActivityCategory: DELETE …/activities/:id/categories/:code, devolve `removed`', async () => {
+    const f = mockFetch({ success: true, data: { removed: true } });
+    expect(await AdminTherapeuticProjectsApiService.removeActivityCategory(ITEM_ID, '6A02')).toEqual({ removed: true });
+    expect(chamada(f)[0]).toBe(`${CAT}/activities/${ITEM_ID}/categories/6A02`);
+    expect(chamada(f)[1].method).toBe('DELETE');
+  });
+
+  it('422 de vínculo vira TherapeuticProjectApiError com o code do back (a tela traduz)', async () => {
+    mockFetch({ success: false, error: 'x', code: 'icd_category_not_in_objective' }, 422);
+    await expect(AdminTherapeuticProjectsApiService.addActivityCategory(ITEM_ID, '6A02')).rejects.toMatchObject({ status: 422, code: 'icd_category_not_in_objective' });
   });
 });
 
