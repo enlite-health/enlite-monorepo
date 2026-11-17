@@ -90,7 +90,7 @@ describe('spec 074 — catálogo de guardias predefinidas (550): API sob engine 
     app = await montarAppDeFamilia({
       enforcedRoutes: 'admin.patients',
       montarRotas: ({ app: express, auth, permissions }) =>
-        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions, new caseModule.AdminServiceShiftTemplatesController())),
+        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(caseModule.buildAdminTherapeuticProjectsController(), auth, permissions, new caseModule.AdminServiceShiftTemplatesController())),
     });
   }, 30000);
 

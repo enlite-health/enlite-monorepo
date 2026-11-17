@@ -24,20 +24,17 @@ import {
   CatalogItemNeedsOwnerError,
   ActivityCategoriesOutsideObjectiveError,
   CatalogObjectiveInvalidError,
+  CatalogServiceInvalidError,
 } from '../../infrastructure/TherapeuticCatalogRepository';
-import { TherapeuticCatalogLinkRepository } from '../../infrastructure/TherapeuticCatalogLinkRepository';
-import { PgIcdCategoryLookup } from '../../infrastructure/PgIcdCategoryLookup';
-import { PgTherapeuticCatalogCascade } from '../../infrastructure/PgTherapeuticCatalogCascade';
-import { ResolveTherapeuticCatalogCascade } from '../../application/ResolveTherapeuticCatalogCascade';
-import { ResolveDiagnosisCategories } from '../../application/resolveDiagnosisCategories';
+import type { ResolveTherapeuticCatalogCascade } from '../../application/ResolveTherapeuticCatalogCascade';
 import type { IcdCategoryLookupPort } from '../../application/ports/IcdCategoryLookupPort';
+import type { TherapeuticCatalogLinkPort } from '../../application/ports/TherapeuticCatalogLinkPort';
 import { InvalidIcdCategoryCodeError } from '../../domain/icdCategory';
 import {
   CatalogLinkOwnerNotFoundError,
   IcdCategoryAlreadyLinkedError,
   IcdCategoryNotInObjectiveError,
 } from '../../domain/TherapeuticCatalogLinkErrors';
-import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { PatientCoverageEmergencyContactRepository } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
 import {
   missingTherapeuticClinicalWriteCell,
@@ -101,26 +98,15 @@ export class AdminTherapeuticProjectsController {
     private readonly contacts: TherapeuticProjectContactsRepository = new TherapeuticProjectContactsRepository(),
     // Injetado LAZY (molde das outras 3 acima): construir aqui em cima tocaria o pool no
     // construtor sem repo (PatientCoverageEmergencyContactRepository NÃO tem getter preguiçoso).
-    private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
-    private readonly statusesInjected?: TherapeuticProjectContactStatusRepository,
-    private readonly remindersInjected?: TherapeuticContactReminderRepository,
+    private readonly coverageContactsInjected: PatientCoverageEmergencyContactRepository | undefined,
+    private readonly statusesInjected: TherapeuticProjectContactStatusRepository | undefined,
+    private readonly remindersInjected: TherapeuticContactReminderRepository | undefined,
     private readonly serviceExitReasons: ServiceExitReasonReader = new ServiceExitReasonReader(),
-    // 091: injetados LAZY (molde acima) — `createTerminologyPort` lança sem env e o pool não pode abrir no construtor.
-    private readonly cascadeInjected?: ResolveTherapeuticCatalogCascade,
-    private readonly linksInjected?: TherapeuticCatalogLinkRepository,
-    private readonly icdCategoriesInjected?: IcdCategoryLookupPort,
+    // 091 (composition root = `buildAdminTherapeuticProjectsController`, nas rotas): portas OBRIGATÓRIAS, sem default.
+    private readonly cascadeUseCase: ResolveTherapeuticCatalogCascade,
+    private readonly links: TherapeuticCatalogLinkPort,
+    private readonly icdCategories: IcdCategoryLookupPort,
   ) {}
-
-  private cascadeMemo?: ResolveTherapeuticCatalogCascade;
-  private linksMemo?: TherapeuticCatalogLinkRepository;
-  private icdMemo?: IcdCategoryLookupPort;
-  private get pool() { return DatabaseConnection.getInstance().getPool(); }
-  private get icdCategories(): IcdCategoryLookupPort { return (this.icdMemo ??= this.icdCategoriesInjected ?? new PgIcdCategoryLookup(this.pool)); }
-  private get links(): TherapeuticCatalogLinkRepository { return (this.linksMemo ??= this.linksInjected ?? new TherapeuticCatalogLinkRepository(this.icdCategories)); }
-  private get cascadeUseCase(): ResolveTherapeuticCatalogCascade {
-    return (this.cascadeMemo ??= this.cascadeInjected
-      ?? new ResolveTherapeuticCatalogCascade(new ResolveDiagnosisCategories(createTerminologyPort(process.env)), new PgTherapeuticCatalogCascade(this.pool)));
-  }
 
   private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
   /** lex-pr7 §alterado: só é criado (e só toca o pool) quando `create()` de fato precisa checar um `COVERAGE` ref. */
@@ -396,7 +382,7 @@ export class AdminTherapeuticProjectsController {
   /** GET /therapeutic-catalogs/service-exit-reasons/options — só ativos, para quem registra a troca (patient_services:read). */
   async listServiceExitReasonOptions(_req: Request, res: Response): Promise<void> {
     await this.guarded(res, { source: 'listServiceExitReasonOptions', failure: 'Failed to list service exit reason options' }, async () => {
-      const items = await this.serviceExitReasons.listActiveOptions(this.pool);
+      const items = await this.serviceExitReasons.listActiveOptions(DatabaseConnection.getInstance().getPool());
       res.status(200).json({ success: true, data: { items } });
     });
   }
@@ -513,9 +499,9 @@ export class AdminTherapeuticProjectsController {
 export type CategoryLinkOwner = 'objective' | 'activity';
 
 const CATEGORY_LINK_OPERATIONS: Readonly<Record<CategoryLinkOwner, {
-  list: (links: TherapeuticCatalogLinkRepository, id: string) => Promise<unknown>;
-  add: (links: TherapeuticCatalogLinkRepository, id: string, code: string, actorUid: string) => Promise<unknown>;
-  remove: (links: TherapeuticCatalogLinkRepository, id: string, code: string) => Promise<unknown>;
+  list: (links: TherapeuticCatalogLinkPort, id: string) => Promise<unknown>;
+  add: (links: TherapeuticCatalogLinkPort, id: string, code: string, actorUid: string) => Promise<unknown>;
+  remove: (links: TherapeuticCatalogLinkPort, id: string, code: string) => Promise<unknown>;
 }>> = {
   objective: {
     list: (l, id) => l.listObjectiveCategories(id),
@@ -544,6 +530,7 @@ const CATALOG_ERROR_RULES: readonly CatalogErrorRule[] = [
   rule(CatalogLabelTakenError, 409, 'An active item with this label already exists'),
   rule(CatalogItemNeedsOwnerError, 422, 'An active item needs its owner (service or objective)'),
   rule(CatalogObjectiveInvalidError, 422, 'Unknown objective'),
+  rule(CatalogServiceInvalidError, 422, 'Unknown service'),
   rule(ActivityCategoriesOutsideObjectiveError, 409, 'The activity has categories the new objective does not have'),
   rule(IcdCategoryNotInObjectiveError, 422, 'Category is not among the objective categories'),
   rule(IcdCategoryAlreadyLinkedError, 409, 'Category already linked'),

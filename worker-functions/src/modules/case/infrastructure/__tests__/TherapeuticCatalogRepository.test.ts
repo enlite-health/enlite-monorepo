@@ -24,6 +24,7 @@ import {
   CatalogItemNeedsOwnerError,
   ActivityCategoriesOutsideObjectiveError,
   CatalogObjectiveInvalidError,
+  CatalogServiceInvalidError,
 } from '../TherapeuticCatalogRepository';
 import { THERAPEUTIC_CATALOG_TABLE } from '../../domain/TherapeuticProject';
 
@@ -521,6 +522,17 @@ describe('TherapeuticCatalogRepository', () => {
       const post = cliente(erroPg('23503', 'therapeutic_activities_objective_id_fkey'));
       mockConnect.mockResolvedValue(post.cli);
       await expect(new TherapeuticCatalogRepository().create('activities', { label: 'A', objectiveId: 'x', actorUid: 'uid-1' })).rejects.toBeInstanceOf(CatalogObjectiveInvalidError);
+    });
+
+    it('091: 23503 da FK do serviço (serviceCode inexistente) → CatalogServiceInvalidError code catalog_service_invalid, no POST e no PATCH de objetivo', async () => {
+      const post = cliente(erroPg('23503', 'therapeutic_specific_objectives_service_code_fkey'));
+      mockConnect.mockResolvedValue(post.cli);
+      const p = new TherapeuticCatalogRepository().create('specific-objectives', { label: 'X', serviceCode: 'NAO_EXISTE', actorUid: 'uid-1' });
+      await expect(p).rejects.toBeInstanceOf(CatalogServiceInvalidError);
+      await expect(p).rejects.toMatchObject({ code: 'catalog_service_invalid' });
+      const patch = cliente(erroPg('23503', 'therapeutic_specific_objectives_service_code_fkey'));
+      mockConnect.mockResolvedValue(patch.cli);
+      await expect(new TherapeuticCatalogRepository().update('specific-objectives', 'item-1', { serviceCode: 'NAO_EXISTE', actorUid: 'uid-1' })).rejects.toBeInstanceOf(CatalogServiceInvalidError);
     });
 
     it('091: 23503 de OUTRA FK propaga cru — não vira 409 mentiroso', async () => {

@@ -259,7 +259,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     app = await montarAppDeFamilia({
       enforcedRoutes: 'admin.patients',
       montarRotas: ({ app: express, auth, permissions }) => {
-        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions));
+        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(caseModule.buildAdminTherapeuticProjectsController(), auth, permissions));
         express.use(
           '/api/admin',
           caseModule.createAdminPatientsRoutes(

@@ -238,7 +238,7 @@ export { AdminPatientContractedServicesController } from './interfaces/controlle
 export { patientItineraryResponseSchema } from './interfaces/validators/itinerarySchemas';
 export { AdminTherapeuticProjectsController } from './interfaces/controllers/AdminTherapeuticProjectsController';
 export { AdminServiceShiftTemplatesController } from './interfaces/controllers/AdminServiceShiftTemplatesController';
-export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminTherapeuticProjectsRoutes';
+export { createAdminTherapeuticProjectsRoutes, buildAdminTherapeuticProjectsController } from './interfaces/routes/adminTherapeuticProjectsRoutes';
 // Cadeia Fase 10 (DX-10.7): quadro C (Servicio Contratado).
 export { AdminServiceTeamController } from './interfaces/controllers/AdminServiceTeamController';
 export { createAdminServiceTeamRoutes } from './interfaces/routes/adminServiceTeamRoutes';

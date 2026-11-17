@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import type { IcdCategoryLookupPort } from '../application/ports/IcdCategoryLookupPort';
+import type { CategoryLink, CategoryLinkList, TherapeuticCatalogLinkPort } from '../application/ports/TherapeuticCatalogLinkPort';
 import { IcdCategoryCode, InvalidIcdCategoryCodeError } from '../domain/icdCategory';
 import {
   CatalogLinkOwnerNotFoundError,
@@ -9,15 +10,6 @@ import {
   IcdCategoryNotInObjectiveError,
 } from '../domain/TherapeuticCatalogLinkErrors';
 import { PgIcdCategoryLookup } from './PgIcdCategoryLookup';
-
-export interface CategoryLink {
-  code: string;
-  /** Título do release corrente; `null` = código ausente nele. */
-  title: string | null;
-  /** Só no vínculo de objetivo: quantas atividades dele usam a categoria. */
-  activityLinks?: number;
-}
-export interface CategoryLinkList { total: number; items: CategoryLink[] }
 
 // Códigos de erro do Postgres → erro de domínio (DD-23): o SQL e a tradução moram só neste adaptador.
 const PG_UNIQUE = '23505';
@@ -39,7 +31,8 @@ const COUNT_ACTIVITY_LINKS_SQL = `
   SELECT count(*)::int AS n FROM therapeutic_activity_icd_categories WHERE objective_id = $1 AND category_code = $2`;
 
 /** Vínculos objetivo↔categoria e atividade↔categoria (DD-2, DD-16: sem vigência; remover apaga a linha). */
-export class TherapeuticCatalogLinkRepository {
+export type { CategoryLink, CategoryLinkList };
+export class TherapeuticCatalogLinkRepository implements TherapeuticCatalogLinkPort {
   private poolMemo?: Pool;
 
   constructor(

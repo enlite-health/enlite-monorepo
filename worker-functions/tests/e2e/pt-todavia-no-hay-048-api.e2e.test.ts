@@ -143,7 +143,7 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
     app = await montarAppDeFamilia({
       enforcedRoutes: 'admin.patients',
       montarRotas: ({ app: express, auth, permissions }) => {
-        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions));
+        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(caseModule.buildAdminTherapeuticProjectsController(), auth, permissions));
         express.use(
           '/api/admin',
           caseModule.createAdminPatientsRoutes(

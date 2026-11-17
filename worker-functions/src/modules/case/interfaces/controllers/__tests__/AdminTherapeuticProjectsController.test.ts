@@ -33,6 +33,7 @@ import {
   CatalogItemNeedsOwnerError,
   ActivityCategoriesOutsideObjectiveError,
   CatalogObjectiveInvalidError,
+  CatalogServiceInvalidError,
 } from '../../../infrastructure/TherapeuticCatalogRepository';
 import { InvalidIcdCategoryCodeError } from '../../../domain/icdCategory';
 import {
@@ -107,6 +108,16 @@ const VERSAO = {
 
 const ITEM = { id: ITEM_ID, label: 'Vínculo terapéutico', sortOrder: 10, active: true, deactivatedAt: null, createdAt: 'x', updatedAt: 'x' };
 
+/** Portas da 091 (obrigatórias no construtor): fakes inertes quando o teste não as usa. */
+const PORTAS_091 = [{ execute: jest.fn() }, {}, { search: jest.fn() }] as const;
+/** Monta o controller com as 7 posições antigas + as 3 portas da 091. */
+function novoController(antigas: unknown[] = [], portas: readonly unknown[] = PORTAS_091) {
+  const [repo, catalogs, contacts, coverage, statuses, reminders, exitReasons] = antigas;
+  return new (AdminTherapeuticProjectsController as unknown as new (...a: unknown[]) => AdminTherapeuticProjectsController)(
+    repo, catalogs, contacts, coverage, statuses, reminders, exitReasons, ...portas,
+  );
+}
+
 function mockReq(overrides: Record<string, unknown> = {}) {
   return { params: {}, body: {}, query: {}, ...overrides } as never;
 }
@@ -137,7 +148,7 @@ function ctrl(
   statuses: Record<string, unknown> = stubStatuses(),
   reminders: Record<string, unknown> = { remainingReminderDates: jest.fn().mockResolvedValue(null) },
 ) {
-  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never, coverageContacts as never, statuses as never, reminders as never);
+  return novoController([repo, catalogs, contacts, coverageContacts, statuses, reminders]);
 }
 const corpoDaResposta = (res: { json: jest.Mock }) => res.json.mock.calls[0][0];
 
@@ -148,7 +159,7 @@ describe('AdminTherapeuticProjectsController', () => {
   });
 
   it('sem repos injetados, constrói os dois de produção — e nenhum toca o pool no construtor', () => {
-    expect(() => new AdminTherapeuticProjectsController()).not.toThrow();
+    expect(() => novoController()).not.toThrow();
   });
 
   describe('list', () => {
@@ -457,7 +468,7 @@ describe('AdminTherapeuticProjectsController', () => {
         '../../../infrastructure/PatientCoverageEmergencyContactRepository',
       ) as { PatientCoverageEmergencyContactRepository: jest.Mock };
       const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
-      const controller = new AdminTherapeuticProjectsController(repo as never, {} as never, stubContacts() as never);
+      const controller = novoController([repo, {}, stubContacts()]);
       const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
       // SEM `patient_care_team:read`: força o código a consultar o kind (getKind) — é essa consulta
       // que toca o getter `coverageContacts` e materializa a instância (o stub devolve `null`, não
@@ -925,7 +936,7 @@ describe('AdminTherapeuticProjectsController', () => {
 
   describe('listServiceExitReasonOptions (492)', () => {
     const exitCtrl = (reader: Record<string, unknown>) =>
-      new AdminTherapeuticProjectsController({} as never, {} as never, stubContacts() as never, stubCoverageContacts() as never, undefined, undefined, reader as never);
+      novoController([{}, {}, stubContacts(), stubCoverageContacts(), undefined, undefined, reader]);
 
     it('200 com `{ items: [{ code, label }] }` vindo só dos ativos (o reader é quem filtra `active`)', async () => {
       const reader = { listActiveOptions: jest.fn().mockResolvedValue([{ code: 'OTHER', label: 'Otro' }]) };
@@ -1107,10 +1118,9 @@ describe('AdminTherapeuticProjectsController', () => {
     const URI_CLINICA = 'http://id.who.int/icd/entity/URI-SINTETICA-1';
     /** Controller com os três colaboradores novos injetados (a fronteira; o SQL é do e2e). */
     const ctrl091 = (parts: { catalogs?: Record<string, unknown>; cascade?: Record<string, unknown>; links?: Record<string, unknown>; icd?: Record<string, unknown> }) =>
-      new AdminTherapeuticProjectsController(
-        {} as never, (parts.catalogs ?? {}) as never, stubContacts() as never, stubCoverageContacts() as never, stubStatuses() as never,
-        { remainingReminderDates: jest.fn().mockResolvedValue(null) } as never, undefined,
-        parts.cascade as never, parts.links as never, parts.icd as never,
+      novoController(
+        [{}, parts.catalogs ?? {}, stubContacts(), stubCoverageContacts(), stubStatuses(), { remainingReminderDates: jest.fn().mockResolvedValue(null) }],
+        [parts.cascade ?? PORTAS_091[0], parts.links ?? PORTAS_091[1], parts.icd ?? PORTAS_091[2]],
       );
 
     describe('tabela erro→status (um caso por linha da tabela)', () => {
@@ -1118,6 +1128,7 @@ describe('AdminTherapeuticProjectsController', () => {
         ['catalog_label_taken', new CatalogLabelTakenError(), 409],
         ['catalog_item_needs_owner', new CatalogItemNeedsOwnerError(), 422],
         ['catalog_objective_invalid', new CatalogObjectiveInvalidError(), 422],
+        ['catalog_service_invalid', new CatalogServiceInvalidError(), 422],
         ['activity_categories_outside_objective', new ActivityCategoriesOutsideObjectiveError(), 409],
       ])('POST/PATCH de catálogo: %s → %i, só o tipo do erro, sem reportError', async (code, erro, status) => {
         const res = mockRes();

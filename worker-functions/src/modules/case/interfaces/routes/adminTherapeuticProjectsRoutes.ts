@@ -7,6 +7,41 @@ import { THERAPEUTIC_PROJECT_RESOURCE, therapeuticTrailAction } from '../../appl
 import { SERVICE_EXIT_REASON_KIND } from '../../domain/serviceExitReason';
 import { SERVICE_SHIFT_TEMPLATE_KIND } from '../../domain/serviceShiftTemplate';
 import { AdminServiceShiftTemplatesController } from '../controllers/AdminServiceShiftTemplatesController';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import { TherapeuticProjectRepository } from '../../infrastructure/TherapeuticProjectRepository';
+import { TherapeuticCatalogRepository } from '../../infrastructure/TherapeuticCatalogRepository';
+import { TherapeuticProjectContactsRepository } from '../../infrastructure/TherapeuticProjectContactsRepository';
+import { TherapeuticCatalogLinkRepository } from '../../infrastructure/TherapeuticCatalogLinkRepository';
+import { PgIcdCategoryLookup } from '../../infrastructure/PgIcdCategoryLookup';
+import { PgTherapeuticCatalogCascade } from '../../infrastructure/PgTherapeuticCatalogCascade';
+import { ResolveDiagnosisCategories } from '../../application/resolveDiagnosisCategories';
+import { ResolveTherapeuticCatalogCascade } from '../../application/ResolveTherapeuticCatalogCascade';
+
+/**
+ * COMPOSITION ROOT do catálogo por CID (spec 091, §3.1): o ÚNICO lugar que instancia os adaptadores `Pg*` e os
+ * injeta nos casos de uso e no controller. Tudo LAZY: o pool só abre na 1ª consulta e `createTerminologyPort`
+ * (que lança sem env) só roda na 1ª cascata — então montar o controller no boot não toca banco nem terminologia.
+ */
+export function buildAdminTherapeuticProjectsController(): AdminTherapeuticProjectsController {
+  const lazyDb = { query: ((...args: unknown[]) => (DatabaseConnection.getInstance().getPool().query as (...a: unknown[]) => unknown)(...args)) as never };
+  let terminology: TerminologyPort | undefined;
+  const lazyTerminology: Pick<TerminologyPort, 'getByUri'> = {
+    getByUri: (uri) => (terminology ??= createTerminologyPort(process.env)).getByUri(uri),
+  };
+  const icdCategories = new PgIcdCategoryLookup(lazyDb);
+  const cascade = new ResolveTherapeuticCatalogCascade(new ResolveDiagnosisCategories(lazyTerminology), new PgTherapeuticCatalogCascade(lazyDb));
+  return new AdminTherapeuticProjectsController(
+    new TherapeuticProjectRepository(),
+    new TherapeuticCatalogRepository(),
+    new TherapeuticProjectContactsRepository(),
+    undefined, undefined, undefined, undefined,
+    cascade,
+    new TherapeuticCatalogLinkRepository(icdCategories),
+    icdCategories,
+  );
+}
 
 /**
  * Rotas do Projeto Terapêutico (spec 017, D299) — router PRÓPRIO, montado em `/api/admin`, na

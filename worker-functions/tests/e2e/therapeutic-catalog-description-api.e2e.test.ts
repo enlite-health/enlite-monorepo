@@ -130,7 +130,7 @@ describe('spec 061 — catálogo terapêutico: título + descrição (HTTP real,
     app = await montarAppDeFamilia({
       enforcedRoutes: 'admin.patients',
       montarRotas: ({ app: express, auth, permissions }) =>
-        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions)),
+        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(caseModule.buildAdminTherapeuticProjectsController(), auth, permissions)),
     });
   }, 30000);
 
