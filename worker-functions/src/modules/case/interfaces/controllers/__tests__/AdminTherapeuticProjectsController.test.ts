@@ -42,6 +42,8 @@ import {
   IcdCategoryNotInObjectiveError,
 } from '../../../domain/TherapeuticCatalogLinkErrors';
 import { DiagnosisUnknownError } from '../../../application/pathologySegments';
+import { PlanFormatMismatchError } from '../../../domain/TherapeuticProject';
+import { PlanActivityInvalidError, PlanBlockIncompleteError, PlanBlockWithoutCatalogError, PlanObjectiveInvalidError } from '../../../domain/TherapeuticDiagnosisPlan';
 import { therapeuticTrailAction } from '../../../application/therapeuticProjectAccess';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
@@ -66,17 +68,16 @@ const CORPO_NOVO = {
     diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '6A02', title: 'TEA' }],
     clinicalContext: TEXTO_CLINICO,
     generalObjective: 'mejorar autonomía',
-    specificObjectiveIds: [OBJ_ID],
-    activityIds: [ACT_ID],
+    diagnosisPlans: [{ diagnosisUri: 'http://id.who.int/icd/entity/1', specificObjectiveIds: [OBJ_ID], activityIds: [ACT_ID] }],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
-    segmentId: SEGMENT_ID,
     contactStatus: {},
   },
 };
 
-/** O corpo do `mode:'edit'`: a mesma forma SEM `segmentId` (030: MACRO, só muda com "Nuevo"; o `.strict()` o recusa). */
-const { segmentId: _segmentIdDoNovo, ...VERSAO_DO_EDIT } = CORPO_NOVO.version;
+/** O corpo do `mode:'edit'` de origem PLANA (091, §9.4): a forma-base + ids planos, SEM `diagnosisPlans`. */
+const { diagnosisPlans: _blocosDoNovo, ...VERSAO_DO_EDIT_BASE } = CORPO_NOVO.version;
+const VERSAO_DO_EDIT = { ...VERSAO_DO_EDIT_BASE, specificObjectiveIds: [OBJ_ID], activityIds: [ACT_ID] };
 
 const VERSAO = {
   id: VERSION_ID,
@@ -95,6 +96,8 @@ const VERSAO = {
   activities: [{ id: ACT_ID, label: 'Atividade A' }],
   pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
   segment: { id: SEGMENT_ID, label: 'AT para Pacientes con TEA' },
+  diagnosisPlans: null,
+  objectivesLayout: 'flat',
   startDate: '2026-01-01',
   endDate: '2026-06-30',
   annulledAt: null,
@@ -208,7 +211,7 @@ describe('AdminTherapeuticProjectsController', () => {
       const res = mockRes();
       await ctrl(repo).list(mockReq({ params: { id: PATIENT_ID } }), res);
       expect(corpoDaResposta(res).data.fieldClass).toEqual({
-        macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'],
+        macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'diagnosisPlans'],
         micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
       });
     });
@@ -645,7 +648,7 @@ describe('AdminTherapeuticProjectsController', () => {
     });
 
     describe('030 — segmento (lex C3, C7)', () => {
-      it('030 — o `segmentId` do corpo chega ao repositório no `new` (o `{id,label}` é do repositório, nunca do corpo)', async () => {
+      it('091 — os `diagnosisPlans` do corpo chegam ao repositório no `new` (o snapshot é do repositório, nunca do corpo)', async () => {
         const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
         const res = mockRes();
         await ctrl(repo).create(
@@ -653,8 +656,8 @@ describe('AdminTherapeuticProjectsController', () => {
           res,
         );
         expect(res.status).toHaveBeenCalledWith(201);
-        expect(repo.createVersion.mock.calls[0][0].version.segmentId).toBe(SEGMENT_ID);
-        expect(corpoDaResposta(res).data.segment).toEqual({ id: SEGMENT_ID, label: 'AT para Pacientes con TEA' });
+        expect(repo.createVersion.mock.calls[0][0].version.diagnosisPlans).toEqual(CORPO_NOVO.version.diagnosisPlans);
+        expect(repo.createVersion.mock.calls[0][0].version).not.toHaveProperty('segmentId');
       });
 
       it('030 — 403 sem `patient_clinical:create` mesmo com `segmentId` válido: nomeia a célula e o repo nem é chamado', async () => {
@@ -807,6 +810,27 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(res.status).toHaveBeenCalledWith(422);
       expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown diagnosis', code: 'ptp_diagnosis_unknown' });
       for (const d of CORPO_NOVO.version.diagnoses) expect(JSON.stringify(corpoDaResposta(res))).not.toContain(d.uri);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('091 — 422 nomeado dos blocos por diagnóstico e do formato: só índice/ids, nunca a URI, sem reportError', async () => {
+      const casos: Array<[Error, string, unknown]> = [
+        [new PlanObjectiveInvalidError(1, [OBJ_ID]), 'ptp_plan_objective_invalid', { diagnosisIndex: 1, ids: [OBJ_ID] }],
+        [new PlanActivityInvalidError(0, [ACT_ID]), 'ptp_plan_activity_invalid', { diagnosisIndex: 0, ids: [ACT_ID] }],
+        [new PlanBlockIncompleteError(2), 'ptp_plan_block_incomplete', { diagnosisIndex: 2 }],
+        [new PlanBlockWithoutCatalogError(0), 'ptp_plan_block_without_catalog', { diagnosisIndex: 0 }],
+      ];
+      for (const [erro, code, details] of casos) {
+        const res = mockRes();
+        await ctrl({ createVersion: jest.fn().mockRejectedValue(erro) }).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+        expect(res.status).toHaveBeenCalledWith(422);
+        expect(corpoDaResposta(res)).toMatchObject({ success: false, code, details });
+        for (const d of CORPO_NOVO.version.diagnoses) expect(JSON.stringify(corpoDaResposta(res))).not.toContain(d.uri);
+      }
+      const res = mockRes();
+      await ctrl({ createVersion: jest.fn().mockRejectedValue(new PlanFormatMismatchError()) }).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toMatchObject({ code: 'ptp_format_mismatch' });
       expect(reportError).not.toHaveBeenCalled();
     });
 

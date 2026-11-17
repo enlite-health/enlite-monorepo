@@ -43,7 +43,13 @@ import {
   missingCoverageDirectProfessionalCell,
   PT_WAIVE_CONTACT_CELL,
 } from '../../application/therapeuticProjectAccess';
-import type { ContactRef, ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
+import { PlanFormatMismatchError, type ContactRef, type ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
+import {
+  PlanActivityInvalidError,
+  PlanBlockIncompleteError,
+  PlanBlockWithoutCatalogError,
+  PlanObjectiveInvalidError,
+} from '../../domain/TherapeuticDiagnosisPlan';
 import {
   createTherapeuticProjectSchema,
   annulTherapeuticProjectSchema,
@@ -300,6 +306,16 @@ export class AdminTherapeuticProjectsController {
         res.status(422).json({ success: false, error: 'Unknown or inactive catalog item(s)', code: err.code, details: { kind: err.kind, ids: err.ids } });
         return;
       }
+      // 091 §9.4: erros do bloco por diagnóstico — só índice (e ids de catálogo), nunca URI nem texto.
+      if (PLAN_ERRORS.some((type) => err instanceof type)) {
+        const { code, diagnosisIndex, ids } = err as { code: string; diagnosisIndex: number; ids?: readonly string[] };
+        res.status(422).json({ success: false, error: 'Invalid diagnosis plan', code, details: { diagnosisIndex, ...(ids ? { ids } : {}) } });
+        return;
+      }
+      if (err instanceof PlanFormatMismatchError) {
+        res.status(422).json({ success: false, error: 'Body format differs from the source version', code: err.code });
+        return;
+      }
       // Sem `details`: a URI é dado clínico — só o tipo do erro sai (T7 da terminologia).
       if (err instanceof DiagnosisUnknownError) {
         res.status(422).json({ success: false, error: 'Unknown diagnosis', code: err.code });
@@ -526,6 +542,8 @@ interface CatalogErrorRule {
 }
 const codeOf = (err: Error): string => (err as Error & { code: string }).code;
 const rule = (type: CatalogErrorRule['type'], status: number, error: string): CatalogErrorRule => ({ type, status, describe: (e) => ({ error, code: codeOf(e) }) });
+const PLAN_ERRORS = [PlanObjectiveInvalidError, PlanActivityInvalidError, PlanBlockIncompleteError, PlanBlockWithoutCatalogError] as const;
+
 const CATALOG_ERROR_RULES: readonly CatalogErrorRule[] = [
   rule(CatalogLabelTakenError, 409, 'An active item with this label already exists'),
   rule(CatalogItemNeedsOwnerError, 422, 'An active item needs its owner (service or objective)'),
